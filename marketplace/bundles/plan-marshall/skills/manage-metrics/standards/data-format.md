@@ -7,7 +7,7 @@ Storage format specifications for plan metrics collection and reporting.
 | File | Format | Purpose |
 |------|--------|---------|
 | `work/metrics.toon` | TOON key-value | Intermediate timing and token data per phase |
-| `work/metrics-accumulator-{phase}.toon` | TOON key-value | Per-phase running totals of subagent `<usage>` data, written by `accumulate-agent-usage` and read as fallback by `end-phase` / `phase-boundary` |
+| `work/metrics-accumulator-{phase}.toon` | TOON key-value | Per-phase running totals of agent-reported token/tool/duration data, written by `accumulate-agent-usage` and read as fallback by `end-phase` / `phase-boundary` |
 | `metrics.md` | Markdown | Human-readable report with tables |
 
 All files live in `.plan/plans/{plan_id}/`. Accumulator files are created lazily — only phases that dispatch agents (and call `accumulate-agent-usage`) produce one.
@@ -24,11 +24,19 @@ Every token- and usage-bearing field `manage-metrics.py` writes measures exactly
 
 | Population | Meaning |
 |------------|---------|
-| `dispatched-subagent` | Work performed by dispatched `execution-context` leaves, measured from their `<usage>` envelopes — forwarded flags, the per-phase accumulator, or the `enrich` transcript walk. |
-| `main-context-window` | Context the orchestrator's own turns loaded and produced, measured from raw `message.usage` dicts in the parent transcript and in the subagent transcripts attributed to the same phase window. |
+| `dispatched-subagent` | Work performed by dispatched `execution-context` leaves, measured from the agent-reported totals in the runtime's normalized view — forwarded flags, the per-phase accumulator, or the `enrich` run. |
+| `main-context-window` | Context the orchestrator's own turns loaded and produced, measured from the runtime's normalized `{input, output, cache_read, cache_creation}` categories for the parent window and the subagent transcripts attributed to the same phase window. |
 | `per-dispatch` | One dispatch's own totals at its termination, recorded one row per dispatch. Never aggregated into a phase figure unless a named field says it is. |
-| `derived-cost` | A weighted cost figure derived from another population's fields — a billing measure, not a work measure. |
+| `derived-cost` | A weighted cost figure derived from another population's fields — a cost measure computed by the runtime's pricing model, not a work measure. |
 | `population-discriminated` | The field's population **varies per row**, and the row carries an explicit discriminator naming which one applies. Exactly one field is in this class — `total_tokens`, discriminated by `total_tokens_population` (`dispatched` / `inline` / `mixed`). A consumer MUST read the discriminator; it may not infer a population from the field's name. |
+
+The metrics boundary is a **normalized shape** — per-phase `{input, output,
+cache_read, cache_creation, total}` emitted by the host platform's runtime
+engine (`platform-runtime`'s `metrics normalized-tokens` op), which owns the
+per-target transcript detail. `manage-metrics` consumes that shape and never
+parses a transcript itself; where a transcript vocabulary is named below
+(`<usage>` return tags, `message.usage` entries, the cache-pricing weights),
+it is **the Claude runtime's own concern**, not the metrics format.
 
 The lattice has two directions and **both halves are first-class**. A field that is recorded but never rendered is not a footnote: it is a measure the report declines to show, which is exactly how a larger competing figure stays invisible while a smaller one is presented as the total. Direction 2 is therefore evidence in its own right, not an appendix to Direction 1.
 
@@ -36,18 +44,18 @@ The lattice has two directions and **both halves are first-class**. A field that
 
 | Field | Producer | Population | Measurement method | Rendered as |
 |-------|----------|------------|--------------------|-------------|
-| `total_tokens` | `_close_phase_accumulating` (`end-phase` / `phase-boundary`); backfilled by `_reconcile_accumulator_into_phase`; folded by `cmd_enrich` on an inline-only phase | population-discriminated | Dispatched rows: forwarded `<usage>` total (per-close delta, ADDED) or the per-phase accumulator's cumulative value (ASSIGNED). Inline rows: the `cmd_enrich` fold of `input + output + cache_creation`. The row's `total_tokens_population` names which applies | Phase Breakdown `Tokens` cell and the `Total tokens` bullet — both print the row's population label |
-| `tool_uses` | `_close_phase_accumulating`; backfilled by `_reconcile_accumulator_into_phase` | dispatched-subagent | Forwarded `<usage>` `tool_uses` or the accumulator's cumulative value | Phase Breakdown `Tool Uses` cell, and the `Tool uses` bullet |
+| `total_tokens` | `_close_phase_accumulating` (`end-phase` / `phase-boundary`); backfilled by `_reconcile_accumulator_into_phase`; folded by `cmd_enrich` on an inline-only phase | population-discriminated | Dispatched rows: the forwarded `total` figure of the runtime's normalized view (per-close delta, ADDED) or the per-phase accumulator's cumulative value (ASSIGNED). Inline rows: the `cmd_enrich` fold of `input + output + cache_creation`. The row's `total_tokens_population` names which applies | Phase Breakdown `Tokens` cell and the `Total tokens` bullet — both print the row's population label |
+| `tool_uses` | `_close_phase_accumulating`; backfilled by `_reconcile_accumulator_into_phase` | dispatched-subagent | Forwarded agent-reported tool-use count or the accumulator's cumulative value | Phase Breakdown `Tool Uses` cell, and the `Tool uses` bullet |
 | `dispatch_boundary_total` | `cmd_generate` via `_read_dispatch_boundary_totals` | dispatched-subagent | Sum of the `total_tokens` column across the phase's recorded dispatch-boundary rows. **Partial-capable** — the file may hold fewer rows than the phase had dispatches, so the sum is a floor unless `dispatch_boundary_rows_recorded` covers `subagent_samples` | `Dispatch-boundary total` bullet, which states the measure's coverage and whether it won; may also supply the `Tokens` cell under the reconciliation rule |
 | `dispatch_boundary_rows_recorded` | `cmd_generate` via `_read_dispatch_boundary_totals` | per-dispatch | Count of data rows summed into `dispatch_boundary_total`. Persisted whenever the file held rows, including when they sum to zero | The coverage clause of the `Dispatch-boundary total` bullet |
-| `subagent_total_tokens` | `cmd_enrich` | dispatched-subagent | Sum of `<usage>` totals across the dispatches attributed to the phase window | Named in the reconciliation annotation when it wins the maximum, and supplies the `Tokens` cell when it does |
-| `input_tokens` | `cmd_enrich` | main-context-window | `message.usage.input_tokens` summed across the phase window's parent turns and its attributed subagent transcripts | own bullet, nested under the `Main-context-window usage` heading that names the population |
-| `output_tokens` | `cmd_enrich` | main-context-window | `message.usage.output_tokens`, same dual-source attribution | own bullet, under the same heading |
-| `cache_read_input_tokens` | `cmd_enrich` | main-context-window | `message.usage.cache_read_input_tokens`, same dual-source attribution | own bullet, under the same heading |
-| `cache_creation_input_tokens` | `cmd_enrich` | main-context-window | `message.usage.cache_creation_input_tokens`, same dual-source attribution | own bullet, under the same heading |
-| `billing_weighted_total` | `cmd_enrich` | derived-cost | `input + output + round(0.1 × cache_read) + round(1.25 × cache_creation)` over the four-field view | First-class `Billing (cost)` column with its own Total, plus the `Billing-weighted total` bullet. Aggregated into the `total_billing_weighted` return field — never into `total_tokens` |
+| `subagent_total_tokens` | `cmd_enrich` | dispatched-subagent | Sum of the runtime's agent-reported `total` figures across the dispatches attributed to the phase window | Named in the reconciliation annotation when it wins the maximum, and supplies the `Tokens` cell when it does |
+| `input_tokens` | `cmd_enrich` | main-context-window | the runtime's normalized `input` category for the phase window — its parent turns and its attributed subagent transcripts | own bullet, nested under the `Main-context-window usage` heading that names the population |
+| `output_tokens` | `cmd_enrich` | main-context-window | the runtime's normalized `output` category, same attribution | own bullet, under the same heading |
+| `cache_read_input_tokens` | `cmd_enrich` | main-context-window | the runtime's normalized `cache_read` category, same attribution | own bullet, under the same heading |
+| `cache_creation_input_tokens` | `cmd_enrich` | main-context-window | the runtime's normalized `cache_creation` category, same attribution | own bullet, under the same heading |
+| `billing_weighted_total` | `cmd_enrich` | derived-cost | the runtime's derived-cost figure over the normalized categories — `input + output + round(0.1 × cache_read) + round(1.25 × cache_creation)`, weights owned by the Claude runtime's pricing model | First-class `Billing (cost)` column with its own Total, plus the `Billing-weighted total` bullet. Aggregated into the `total_billing_weighted` return field — never into `total_tokens` |
 | `cache_read_per_tool_use` | `cmd_generate` | derived-cost | `round(cache_read_input_tokens / tool_uses)` — the resident-context factor of the read-cost decomposition. Numerator and denominator are different populations (main-context-window ÷ dispatched-subagent); the ratio is disclosed as a cost-decomposition factor, not a single-population measure | `Read-cost decomposition` bullet, which states the identity `cache_read ≈ resident_context_per_call × turns` and names the population span. Never aggregated into any Total |
-| `inline_main_context_tokens` | `cmd_enrich` (the figure, on BOTH the inline-only and the mixed branch); `cmd_generate` (the measured-`0` / `unmeasured` completion) | main-context-window | `input + output + cache_creation`, EXCLUDING `cache_read`, so the figure matches the dispatched-`<usage>` total definition | `Inline main-context tokens` bullet, whose text states whether the figure stands alongside a dispatched total (mixed) or IS the folded `total_tokens` (inline). A `0` or `unmeasured` value renders no bullet |
+| `inline_main_context_tokens` | `cmd_enrich` (the figure, on BOTH the inline-only and the mixed branch); `cmd_generate` (the measured-`0` / `unmeasured` completion) | main-context-window | `input + output + cache_creation`, EXCLUDING `cache_read`, so the figure matches the dispatched `total` definition | `Inline main-context tokens` bullet, whose text states whether the figure stands alongside a dispatched total (mixed) or IS the folded `total_tokens` (inline). A `0` or `unmeasured` value renders no bullet |
 | `exploration_tool_calls` | `cmd_enrich` | main-context-window | Count of phase-window tool calls classified *exploration* | own bullet, on a presence test |
 | `work_tool_calls` | `cmd_enrich` | main-context-window | Count classified *work* | own bullet, on a presence test |
 | `execute_tool_calls` | `cmd_enrich` | main-context-window | Count classified *execute* | own bullet, on a presence test |
@@ -63,14 +71,14 @@ The lattice has two directions and **both halves are first-class**. A field that
 
 | Field | Producer | Population | Measurement method | Why it never surfaces |
 |-------|----------|------------|--------------------|-----------------------|
-| `subagent_tool_uses` | `cmd_enrich` | dispatched-subagent | Sum of `<usage>` `tool_uses` across the same attributed dispatches | No render site |
-| `subagent_duration_ms` | `cmd_enrich` | dispatched-subagent | Sum of `<usage>` `duration_ms` across the same attributed dispatches | Consumed only inside `_worked_ms`'s `max()`; never rendered as a figure of its own |
+| `subagent_tool_uses` | `cmd_enrich` | dispatched-subagent | Sum of the runtime's agent-reported tool-use counts across the same attributed dispatches | No render site |
+| `subagent_duration_ms` | `cmd_enrich` | dispatched-subagent | Sum of the runtime's agent-reported durations across the same attributed dispatches | Consumed only inside `_worked_ms`'s `max()`; never rendered as a figure of its own |
 | `subagent_samples` | `cmd_enrich` | dispatched-subagent | Count of dispatch returns attributed to the phase window | No render site — yet it is the only signal that separates a measured dispatched zero from a phase that was never walked |
 | `retrospective_tokens` | `_close_phase_accumulating` | dispatched-subagent | `--retrospective-tokens` flag (per-close delta, ADDED) or the accumulator's cumulative value (ASSIGNED) | No render site; read only by the audit checks that exclude deliberate-analysis spend |
 | `samples` (accumulator file) | `cmd_accumulate_agent_usage` | per-dispatch | Count of `accumulate-agent-usage` calls folded into the phase accumulator | Accumulator-local; `generate` reads the accumulator's totals but never its call count |
 | `tool_uses` (dispatch-boundary column 4) | `cmd_record_dispatch_boundary` | per-dispatch | `--tool-uses` at dispatch termination, default `0` | Recorded per dispatch, never aggregated into a phase figure and never rendered |
 | `duration_ms` (dispatch-boundary column 5) | `cmd_record_dispatch_boundary` | per-dispatch | `--duration-ms` at dispatch termination, default `0` | Recorded per dispatch, never aggregated and never rendered |
-| `input_tokens` (dispatch-boundary column 6) | `cmd_record_dispatch_boundary` | per-dispatch | `--input-tokens` (`message.usage`) at dispatch termination. An omitted flag writes the `unmeasured` token, NOT `0` | Recorded per dispatch, never aggregated and never rendered |
+| `input_tokens` (dispatch-boundary column 6) | `cmd_record_dispatch_boundary` | per-dispatch | `--input-tokens` (the normalized `input` figure) at dispatch termination. An omitted flag writes the `unmeasured` token, NOT `0` | Recorded per dispatch, never aggregated and never rendered |
 | `output_tokens` (dispatch-boundary column 7) | `cmd_record_dispatch_boundary` | per-dispatch | `--output-tokens` at dispatch termination. An omitted flag writes the `unmeasured` token, NOT `0` | Recorded per dispatch, never aggregated and never rendered |
 | `cache_read_input_tokens` (dispatch-boundary column 8) | `cmd_record_dispatch_boundary` | per-dispatch | `--cache-read-input-tokens` at dispatch termination. An omitted flag writes the `unmeasured` token, NOT `0` | Recorded per dispatch, never aggregated and never rendered |
 | `cache_creation_input_tokens` (dispatch-boundary column 9) | `cmd_record_dispatch_boundary` | per-dispatch | `--cache-creation-input-tokens` at dispatch termination. An omitted flag writes the `unmeasured` token, NOT `0` | Recorded per dispatch, never aggregated and never rendered |
@@ -115,7 +123,7 @@ totals_tokens_spans_populations: true
 
 > **Phase naming**: TOON keys use the `phase.{N}-{name}.{field}` prefix form (e.g., `phase.1-init.start`). The canonical phase name is `1-init` — see [manage-contract.md](../../ref-workflow-architecture/standards/manage-contract.md) for the standard phase list.
 
-- `phase.{phase_name}.{field}` — per-phase timing/token data, including the four-field usage view (`input_tokens`, `output_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens`) and the derived `billing_weighted_total` written by `enrich`
+- `phase.{phase_name}.{field}` — per-phase timing/token data, including the normalized context-load view (`input_tokens`, `output_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens`) and the runtime-derived `billing_weighted_total` written by `enrich`
 - `session_message_count` — plan-level count of transcript messages carrying usage data, written by `enrich`
 
 ### Per-Phase Fields
@@ -128,20 +136,20 @@ totals_tokens_spans_populations: true
 | `value_scope` | `single_close` \| `mixed_cumulative_and_last_close` | Written by `end-phase` / `phase-boundary` on **every** close, as the last write of the close. Names what the close did to the row's OWN fields: `single_close` (this is the first close — every value covers exactly one close, so the cumulative-vs-last-close split is vacuous), `mixed_cumulative_and_last_close` (the row was closed more than once — some values are sums across every close and some are scoped to the latest close, named individually by `cumulative_fields` / `last_close_fields`). **Absent reads as `single_close`** — the best available default, not a guarantee: a row written before this discriminator existed whose `close_count` is 1 reaches the same absent state as a pre-stamping re-entered row, and the default under-reports the second. A consumer that has `close_count` on the row SHOULD prefer it — `close_count > 1` is the authoritative re-entry marker, and `value_scope` says what that re-entry did to the individual fields. Follows the `total_tokens_population` precedent: a row-level discriminator with a documented absent-reads-as default |
 | `cumulative_fields` | list (comma-joined) | Written by `end-phase` / `phase-boundary` **only** on a `close_count > 1` row. Names, from the fields the row actually carries, those whose value is the SUM across every close. Absent on a `single_close` row, where the distinction is vacuous. This is what makes the split readable off the row itself — a script consumer never has to consult this document to interpret a re-entered row |
 | `last_close_fields` | list (comma-joined) | Written alongside `cumulative_fields`, under the same condition. Names the fields scoped to the LATEST close alone — assigned unconditionally on every close, never summed (`start_time`, `end_time`) |
-| `total_tokens` | int | Task agent `<usage>` tag (forwarded explicitly OR read from accumulator file). **Accumulating**: an explicitly-forwarded flag value is a per-close delta ADDED to the row; an accumulator-sourced value is already cumulative and is ASSIGNED. On an inline-only phase the field is instead filled by `enrich`'s main-context fold — read `total_tokens_population` before treating the value as a dispatched measurement |
-| `total_tokens_population` | `dispatched` \| `inline` \| `mixed` | Written by `enrich` on every phase row it touches. Names which population this row's `total_tokens` measures: `dispatched` (dispatched-subagent `<usage>` / accumulator, no inline spend attributed), `inline` (the phase dispatched nothing and `total_tokens` carries the main-context fold), `mixed` (dispatched `total_tokens` PLUS a separately-recorded `inline_main_context_tokens` the field does not include). **Absent reads as `dispatched`** — the best available default, not a guarantee: the absent set is wider than the never-enriched set. A row `enrich` never touched can only have been filled from dispatched sources (exact); a row enriched by a PRE-labelling `enrich` already received the inline fold yet carries no discriminator, so it renders unmarked and its Total takes no `spans populations` marker (under-reported). The second case is unrecoverable without re-enriching a usually-gone transcript and is accepted rather than guessed at — go-forward rows are always stamped. See Inline Main-Context Attribution below |
-| `duration_ms` | int | Task agent `<usage>` tag (agent-reported, distinct from wall-clock) |
-| `tool_uses` | int | Task agent `<usage>` tag |
+| `total_tokens` | int | Agent-reported total (forwarded explicitly OR read from accumulator file). **Accumulating**: an explicitly-forwarded flag value is a per-close delta ADDED to the row; an accumulator-sourced value is already cumulative and is ASSIGNED. On an inline-only phase the field is instead filled by `enrich`'s main-context fold — read `total_tokens_population` before treating the value as a dispatched measurement |
+| `total_tokens_population` | `dispatched` \| `inline` \| `mixed` | Written by `enrich` on every phase row it touches. Names which population this row's `total_tokens` measures: `dispatched` (the dispatched-subagent reported total / accumulator, no inline spend attributed), `inline` (the phase dispatched nothing and `total_tokens` carries the main-context fold), `mixed` (dispatched `total_tokens` PLUS a separately-recorded `inline_main_context_tokens` the field does not include). **Absent reads as `dispatched`** — the best available default, not a guarantee: the absent set is wider than the never-enriched set. A row `enrich` never touched can only have been filled from dispatched sources (exact); a row enriched by a PRE-labelling `enrich` already received the inline fold yet carries no discriminator, so it renders unmarked and its Total takes no `spans populations` marker (under-reported). The second case is unrecoverable without re-enriching a usually-gone transcript and is accepted rather than guessed at — go-forward rows are always stamped. See Inline Main-Context Attribution below |
+| `duration_ms` | int | Agent-reported duration (distinct from wall-clock) |
+| `tool_uses` | int | Agent-reported tool-use count |
 | `retrospective_tokens` | int | Tokens attributable to the plan-retrospective dispatch within the phase window (forwarded explicitly via `--retrospective-tokens` OR read from the accumulator when the finalize retrospective step seeded it). Default-absent — present only on `[6-finalize]` rows of plans where the opt-in retrospective step ran |
-| `subagent_total_tokens` | int | `enrich` post-hoc transcript walk (sum of `<usage>` totals for Task calls inside this phase's window) |
-| `subagent_tool_uses` | int | `enrich` post-hoc transcript walk |
-| `subagent_duration_ms` | int | `enrich` post-hoc transcript walk |
-| `subagent_samples` | int | `enrich` post-hoc transcript walk — count of attributed Task-agent calls |
-| `input_tokens` | int | `enrich` four-field walk — sum of `message.usage.input_tokens` across the parent orchestrator turns AND every subagent transcript attributed to this phase |
-| `output_tokens` | int | `enrich` four-field walk — sum of `message.usage.output_tokens` (same dual-source attribution) |
-| `cache_read_input_tokens` | int | `enrich` four-field walk — sum of `message.usage.cache_read_input_tokens` (same dual-source attribution) |
-| `cache_creation_input_tokens` | int | `enrich` four-field walk — sum of `message.usage.cache_creation_input_tokens` (same dual-source attribution) |
-| `billing_weighted_total` | int | Derived by `enrich` from the four-field view: `input + output + round(0.1 × cache_read) + round(1.25 × cache_creation)`. A **derived-cost** measure over the main-context window — what the phase cost to buy, a different question from how much dispatched work was done. Never summed into `total_tokens` |
+| `subagent_total_tokens` | int | `enrich` — the runtime's attributed `total` figure for Task calls inside this phase's window |
+| `subagent_tool_uses` | int | `enrich` — the runtime's attributed tool-use count |
+| `subagent_duration_ms` | int | `enrich` — the runtime's attributed duration |
+| `subagent_samples` | int | `enrich` — the runtime's count of attributed Task-agent calls |
+| `input_tokens` | int | `enrich` — the runtime's normalized `input` category for this phase (parent orchestrator turns AND every subagent transcript attributed to it) |
+| `output_tokens` | int | `enrich` — the runtime's normalized `output` category (same attribution) |
+| `cache_read_input_tokens` | int | `enrich` — the runtime's normalized `cache_read` category (same attribution) |
+| `cache_creation_input_tokens` | int | `enrich` — the runtime's normalized `cache_creation` category (same attribution) |
+| `billing_weighted_total` | int | The runtime's derived-cost figure over the normalized categories: `input + output + round(0.1 × cache_read) + round(1.25 × cache_creation)` — the weight constants are owned by the Claude runtime's pricing model, applied inside the runtime engine before the boundary. A **derived-cost** measure over the main-context window — what the phase cost to buy, a different question from how much dispatched work was done. Never summed into `total_tokens` |
 | `idle_duration_ms` | int | Derived by `generate` — the per-phase idle residual `max(0, wall_clock_ms - worked_ms)` |
 | `cache_read_per_tool_use` | int | Derived by `generate` — `round(cache_read_input_tokens / tool_uses)`, the resident-context factor of the read-cost decomposition (see § Read-Cost Decomposition). Written ONLY when both operands are present and `tool_uses > 0`; absent otherwise, never a guessed `0`. A **derived-cost** ratio whose numerator and denominator are DIFFERENT populations (main-context-window cache_read over dispatched-subagent tool_uses) — read it as a cost-decomposition factor, never as a single-population measurement |
 | `dispatch_boundary_total` | int | Derived by `generate` — the sum of the `total_tokens` column across the phase's `work/metrics-dispatch-boundaries-{phase}.toon` rows. Persisted as a DISTINCT field (it never overwrites `total_tokens`); present only when the boundary file exists and sums to a truthy value. See Dispatch-Boundary Reconciliation below |
@@ -212,22 +220,24 @@ The residual `cache_read_unattributed` is **large by construction** in any windo
 
 The consequence: in a phase where the cache-read is billed against **subagent-dispatched** work (whose payloads have no parent residency) or against context the parent loaded but the walk saw no per-bucket residency for, the named `cache_read_attributed_{bucket}` shares are small and `cache_read_unattributed` is the majority — **and that residual is the honest disclosure, not a defect**. Attributing it to a named bucket would spread cache-read over buckets it was never observed to occupy, which is exactly the mislabel the residual exists to prevent. "It cannot be attributed there, and here is why" is the outcome: the split names what parent-observed residency can explain and discloses the rest. Improving the attribution — splitting the subagent-folded share by its own residency — would require the producer to fold subagent-transcript turns into the residency walk, which this emission contract does not do; whether that improvement is warranted needs a population of instrumented records to size the residual across phases, which is not reachable from a fresh clone (the archived records live under the git-ignored `.plan/` tree).
 
-The four-field usage view (`input_tokens`, `output_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens`) lives only in the raw `message.usage` dicts inside the transcripts — the single-figure `<usage>` return tag carries no input/output split and no cache fields. `enrich` accumulates these four fields per phase from BOTH the parent orchestrator turns and every discovered subagent transcript, then records `billing_weighted_total` per phase. These fields exist independently of `total_tokens`, which `enrich` leaves untouched.
+The context-load view (`input_tokens`, `output_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens`) is the canonical `{input, output, cache_read, cache_creation}` shape of the runtime boundary, distinct from the single-figure `total` / `<usage>`-tag boundary (which carries no input/output split and no cache fields). `enrich` persists the runtime's per-phase categories plus its derived `billing_weighted_total` per phase. These fields exist independently of `total_tokens`, which `enrich` leaves untouched.
 
 #### Whole-transcript attribution and slug-gap robustness
 
-Each subagent transcript is summed as a whole and attributed to the single phase window containing its spawn/first-message timestamp (latest-window-wins on a boundary tie). Transcripts are NOT split by slug boundaries — the whole transcript is attributed to the one phase that spawned it. Subagent discovery is anchored to the *resolved parent transcript location* (`{parent_transcript_path.parent}/{session_id}/subagents/agent-*.jsonl`) rather than re-derived from the current git root, so the worktree-vs-main-checkout cwd at `enrich` time no longer changes the answer. The direct-session-file fallback branch retains the legacy cwd-slug path.
+Each subagent transcript is attributed as a whole to the single phase window containing its spawn/first-message timestamp (latest-window-wins on a boundary tie). Transcripts are NOT split by slug boundaries — the whole transcript is attributed to the one phase that spawned it. Both discovery mechanics are the runtime engine's: subagent discovery is anchored to the *resolved parent transcript location* rather than re-derived from the current git root, so the worktree-vs-main-checkout cwd at `enrich` time no longer changes the answer.
 
-#### Billing weights
+#### Billing-weighted derivation (the Claude runtime's pricing model)
 
-| Field | Weight | Rationale |
-|-------|--------|-----------|
-| `input_tokens` | 1.0 | Baseline input cost |
-| `output_tokens` | 1.0 | Counted at par in the weighted total |
-| `cache_read_input_tokens` | 0.1 | A cached read is ~0.1× the cost of an input token (request-stated approximation) |
-| `cache_creation_input_tokens` | 1.25 | A cache-creation write is ~1.25× the cost of an input token (request-stated approximation) |
+The per-phase `billing_weighted_total` figure is computed by the runtime engine over the normalized categories. The weight constants below are **the Claude runtime's own pricing model**, applied inside its engine before the metrics boundary — `manage-metrics` consumes the resulting figure and does not restate the model as its own:
 
-`subagent_*` fields exist independently of the closed-phase `total_tokens` row. The closed-phase row is filled at `end-phase` time from explicit flags (preferred) or the accumulator file (fallback). The `subagent_*` fields are written by `enrich` as a post-hoc safety net so that even when the orchestrator never called `accumulate-agent-usage`, the transcript walk surfaces the missed totals.
+| Category | Weight | Rationale |
+|----------|--------|-----------|
+| `input` | 1.0 | Baseline input cost |
+| `output` | 1.0 | Counted at par in the weighted total |
+| `cache_read` | 0.1 | A cached read is ~0.1× the cost of an input token (request-stated approximation) |
+| `cache_creation` | 1.25 | A cache-creation write is ~1.25× the cost of an input token (request-stated approximation) |
+
+`subagent_*` fields exist independently of the closed-phase `total_tokens` row. The closed-phase row is filled at `end-phase` time from explicit flags (preferred) or the accumulator file (fallback). The `subagent_*` fields are written by `enrich` as a post-hoc safety net so that even when the orchestrator never called `accumulate-agent-usage`, the runtime's walk surfaces the missed totals.
 
 ### Read-Cost Decomposition
 
@@ -245,7 +255,7 @@ cache_read_input_tokens  ≈  cache_read_per_tool_use  ×  tool_uses
 
 #### The cache-creation inversion — not established here
 
-A separate anomaly motivates reading this decomposition: one phase can spend the large majority of its billing weight on cache **creation** where the others spend a small minority, at a read/creation ratio an order of magnitude apart. The **mechanism** of the two is readable — `cache_creation_input_tokens` bills the *first write* of newly-loaded context into the cache (weight `1.25`), while `cache_read_input_tokens` bills each *re-read* of already-resident context (weight `0.1`), so a window that loads much fresh context but re-reads it little skews toward creation, and a long window that re-reads a stable context skews toward read. What is **not established** is that any specific phase's inversion is a real, reproducible effect: the originating observation is `n=1`, and the corpus needed to size the ratio across phases lives under the git-ignored `.plan/` tree and is **not reachable from a fresh clone**. Ruled out as a cause: the **record model** — the `_close_phase_accumulating` write path's currency verdicts are all `current` (§ Per-Field Write Semantics), so the creation/read figures are not a write-path artifact. The inversion is therefore recorded here as *mechanism-named, magnitude-not-established (corpus-blocked)* rather than assigned a settled cause.
+A separate anomaly motivates reading this decomposition: one phase's derived cost can weigh heavily on cache **creation** where the others weigh little, at a read/creation ratio an order of magnitude apart. The **mechanism** of the two is readable under the Claude runtime's pricing model — `cache_creation` bills the *first write* of newly-loaded context into the cache (weight `1.25`), while `cache_read` bills each *re-read* of already-resident context (weight `0.1`), so a window that loads much fresh context but re-reads it little skews toward creation, and a long window that re-reads a stable context skews toward read. What is **not established** is that any specific phase's inversion is a real, reproducible effect: the originating observation is `n=1`, and the corpus needed to size the ratio across phases lives under the git-ignored `.plan/` tree and is **not reachable from a fresh clone**. Ruled out as a cause: the **record model** — the `_close_phase_accumulating` write path's currency verdicts are all `current` (§ Per-Field Write Semantics), so the creation/read figures are not a write-path artifact. The inversion is therefore recorded here as *mechanism-named, magnitude-not-established (corpus-blocked)* rather than assigned a settled cause.
 
 ### Dispatch-Boundary Reconciliation
 
@@ -260,9 +270,9 @@ routes, and they routinely disagree:
 
 | Measure | Route |
 |---------|-------|
-| `total_tokens` | Forwarded `<usage>` flags, or the per-phase accumulator |
+| `total_tokens` | The forwarded agent-reported total, or the per-phase accumulator |
 | `dispatch_boundary_total` | Sum of the per-dispatch boundary rows |
-| `subagent_total_tokens` | `enrich`'s post-hoc transcript walk |
+| `subagent_total_tokens` | `enrich` — the runtime's attributed total |
 
 They diverge when a leaf appears in one route and not another — a leaf whose
 Step-8b `record-dispatch-boundary` fired but whose accumulator fold
@@ -297,7 +307,7 @@ so. Two eligibility rules keep the comparison honest:
    `dispatch_boundary_rows_recorded > subagent_samples`: the numerator exceeds the
    denominator, which is impossible for one population — the numerator
    (boundary rows, written by `record-dispatch-boundary`) and the denominator
-   (`subagent_samples`, from `enrich`'s transcript walk) are then drawn from
+   (`subagent_samples`, the runtime's attributed count) are then drawn from
    different populations (e.g. a resumed / re-entered phase appends boundary rows
    the single-window walk never re-counts). An over-covering measure is rendered
    as a loud `FAILURE` that names both producers — never `complete` — and is
@@ -366,22 +376,22 @@ The `#812` `end_time`-presence check (`any_phase_missing_end_time` /
 ### Inline Main-Context Attribution
 
 An **inline** step runs in the orchestrator's own (main) context rather than as a
-dispatched subagent, so it produces no `<usage>` envelope and contributes nothing
-to the per-phase accumulator — there is no per-step `<usage>` source. Its cost is
-instead captured by `enrich`'s phase-window attribution, which sums the
-parent-window `message.usage` four-field view into the phase row.
+dispatched subagent, so it produces no reported total and contributes nothing
+to the per-phase accumulator — there is no per-step reported-total source. Its cost is
+instead captured by `enrich`'s phase-window attribution, which persists the
+runtime's normalized context-load categories for the parent window into the phase row.
 
 `enrich` writes that inline contribution to the `inline_main_context_tokens`
 field on **every** phase whose window carries a non-zero
 `input_tokens + output_tokens + cache_creation_input_tokens` sum — the
-derivation below, not the full four-field `message.usage` view, is the trigger:
+derivation below, not the full context-load view, is the trigger:
 
 ```text
 inline_main_context_tokens = input_tokens + output_tokens + cache_creation_input_tokens
 ```
 
-`cache_read_input_tokens` is **excluded** so the figure matches the
-dispatched-`<usage>` total definition (which is fed via `end-phase --total-tokens`
+`cache_read_input_tokens` is **excluded** so the figure matches the dispatched
+total definition (which is fed via `end-phase --total-tokens`
 and excludes cache reads); including it would over-count the inline contribution
 by ~100× versus comparable dispatched rows.
 
@@ -390,7 +400,7 @@ by ~100× versus comparable dispatched rows.
 The derivation is the same wherever it applies; what differs is whether the sum is
 ALSO folded into `total_tokens`, and the row records which case applied. "Non-zero
 inline sum" below means the `input + output + cache_creation` derivation above, NOT
-the full four-field `message.usage` view — a window carrying only
+the full context-load view — a window carrying only
 `cache_read_input_tokens` takes the `dispatched` row:
 
 | Signature | Condition | `total_tokens` | `inline_main_context_tokens` | `total_tokens_population` |
@@ -422,7 +432,7 @@ prevent that, and they are written together, never apart:
   qualifier on the Phase Details `Total tokens` bullet.
 
 `total_tokens` is **explicit-wins** on both non-inline signatures: a value
-recorded by a dispatched step's `<usage>` / the accumulator is never overwritten.
+recorded by a dispatched step's reported total / the accumulator is never overwritten.
 This attribution does not touch the `#812` `end_time`-presence check — a
 timestamps-only inline close still carries its `end_time` marker.
 
@@ -442,7 +452,7 @@ must not infer a population from the field's name, which states a total.
 
 #### Worked <= Reported (wall) Invariant
 
-For every phase row that carries both signals, `Worked <= Reported (wall)` MUST hold. The invariant is what makes the `Idle` column non-blank for subagent-dispatching phases — when Worked could exceed wall (the prior additive formula), Idle clamped to zero and the column rendered `-`, hiding all user-wait time. The `max(agent_duration_ms, subagent_duration_ms)` definition guarantees the invariant for any phase whose dispatched subagents return within the phase window; out-of-window attribution (a subagent that overruns the boundary) cannot occur because `enrich` only attributes `<usage>` totals to phases whose `start_time..end_time` window contains the subagent's timestamp.
+For every phase row that carries both signals, `Worked <= Reported (wall)` MUST hold. The invariant is what makes the `Idle` column non-blank for subagent-dispatching phases — when Worked could exceed wall (the prior additive formula), Idle clamped to zero and the column rendered `-`, hiding all user-wait time. The `max(agent_duration_ms, subagent_duration_ms)` definition guarantees the invariant for any phase whose dispatched subagents return within the phase window; out-of-window attribution (a subagent that overruns the boundary) cannot occur because `enrich` only attributes reported totals to phases whose `start_time..end_time` window contains the subagent's timestamp.
 
 **On a re-entered row the invariant survives because the wall span accumulates alongside the worked span**, and it is preserved by **clamping the summed worked value against the accumulated wall span** — not by any re-entry carve-out inside the clamp. The write site accumulates `agent_duration_ms` first and hands the clamp the SUM, which the clamp then bounds by the already-accumulated `duration_seconds`. The opposite ordering is unsound: clamping each per-close delta against the accumulated wall and then adding it to an already-clamped existing value can sum past that wall span and break the invariant. The clamp itself is therefore ordering-dependent but re-entry-agnostic — it needs no knowledge of `close_count`.
 
@@ -535,7 +545,7 @@ Two scoping facts ride with that rule. `phase-boundary` regenerates unconditiona
 
 ### Enrichment Fields
 
-`enrich` writes the four-field usage view and `billing_weighted_total` per phase (under the `phase.{phase_name}.{field}` prefix — see Per-Phase Fields above), plus one plan-level field:
+`enrich` writes the normalized context-load view and `billing_weighted_total` per phase (under the `phase.{phase_name}.{field}` prefix — see Per-Phase Fields above), plus one plan-level field:
 
 | Field | Type | Source |
 |-------|------|--------|
@@ -543,7 +553,7 @@ Two scoping facts ride with that rule. `phase-boundary` regenerates unconditiona
 
 The denominator family (`deliverable_count`, `files_modified`, `tasks_completed`, their `_sampling_point` companions, and `denominators_sampled_at`) lives at the same plan-level tier and is written by `generate` — see § Denominators and Their Sampling Point.
 
-The four-field usage view is no longer stored as plan-level `enriched.{field}` keys — it is attributed per phase by the transcript walks. See the Per-Phase Fields table for `input_tokens`, `output_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens`, and `billing_weighted_total`.
+The context-load view is no longer stored as plan-level `enriched.{field}` keys — it is attributed per phase by the runtime's walk. See the Per-Phase Fields table for `input_tokens`, `output_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens`, and `billing_weighted_total`.
 
 ## Per-Field Write Semantics
 
@@ -713,8 +723,8 @@ Generated: 2026-03-14 09:41:07 UTC
 
 ## 2-refine
 
-- **Total tokens**: 42,000 (dispatched-subagent population — summed from the dispatched leaves' `<usage>` envelopes)
-- **Main-context-window usage**: raw `message.usage` summed over this phase's parent turns and the subagent transcripts attributed to the same window. Every bullet below measures that one population
+- **Total tokens**: 42,000 (dispatched-subagent population — summed from the dispatched leaves' reported totals)
+- **Main-context-window usage**: the runtime's normalized context-load view over this phase's parent turns and the subagent transcripts attributed to the same window. Every bullet below measures that one population
   - **Input tokens**: 38,000
   - **Output tokens**: 4,000
   - **Cache read input tokens**: 210,000
@@ -724,9 +734,9 @@ Generated: 2026-03-14 09:41:07 UTC
 
 The `Generated:` line is the report's single absolute wall-clock timestamp and the only figure in `metrics.md` that renders through the **display-only** timezone — UTC-suffixed by default, and carrying an unambiguous `ABBREV (UTC±HH:MM)` label instead whenever the operator has configured a zone the instant is actually converted into; every other value in the report is a duration, a count, or a name, and storage and comparison stay UTC unconditionally because the knob never reaches a write or compare path. See [`manage-run-config` run-config-standard.md](../../manage-run-config/standards/run-config-standard.md) § Display-Timezone Section.
 
-The four-field usage view and the billing-weighted total are rendered per phase (each phase that carries them gets its own bullet list), not as a single plan-level "Session Enrichment" block. Each four-field bullet renders only when its underlying value is present and non-zero.
+The normalized context-load view and the billing-weighted total are rendered per phase (each phase that carries them gets its own bullet list), not as a single plan-level "Session Enrichment" block. Each context-load bullet renders only when its underlying value is present and non-zero.
 
-The four `message.usage` bullets are **nested under a `Main-context-window usage` heading** that names the population all four measure. An API field name states no population at all, so without the heading these were the only rendered token figures carrying no population claim. The heading states its population outright rather than as a default-plus-exception, because all four fields measure that one population on every row — there is no exception to mark. The bullet-label set is `_FOUR_FIELD_USAGE_LABELS` in `manage-metrics.py`: a usage field added there renders under the same heading and cannot slip in unlabelled.
+The four context-load bullets are **nested under a `Main-context-window usage` heading** that names the population all four measure. An API field name states no population at all, so without the heading these were the only rendered token figures carrying no population claim. The heading states its population outright rather than as a default-plus-exception, because all four fields measure that one population on every row — there is no exception to mark. The bullet-label set is `_FOUR_FIELD_USAGE_LABELS` in `manage-metrics.py`: a usage field added there renders under the same heading and cannot slip in unlabelled.
 
 ### Default-plus-exception labelling of the `Tokens` column
 
@@ -838,10 +848,10 @@ generate status in `generate_status` / `generate_message` instead of
 
 | Source | When Used | Granularity |
 |--------|-----------|-------------|
-| Task agent `<usage>` tags (forwarded to `end-phase` flags) | Agent-delegated phases — single agent per phase (Claude-target envelope; parsed by `platform-runtime`'s chat/usage ops) | Per-phase |
+| Agent-reported total forwarded to `end-phase` flags | Agent-delegated phases — single agent per phase | Per-phase |
 | `accumulate-agent-usage` per-phase accumulator file | Phases that dispatch multiple agents (`5-execute`, `6-finalize`) | Per-phase, summed across agent returns |
-| JSONL session transcript (`enrich` subagent `<usage>`-tag attribution) | Any phase whose timestamp window contains Task tool calls | Per-phase (`subagent_*` fields) |
-| Raw `message.usage` dicts in the parent + subagent transcripts (`enrich` four-field walk) | Any phase whose window contains a parent turn or a spawned subagent transcript | Per-phase (`input_tokens`, `output_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens`, `billing_weighted_total`) |
+| The runtime's normalized-tokens attribution (`enrich`; the `metrics normalized-tokens` op of `platform-runtime`) | Any phase whose timestamp window contains Task tool calls | Per-phase (`subagent_*` fields) |
+| The runtime's normalized context-load categories for the parent + subagent transcripts (`enrich`) | Any phase whose window contains a parent turn or a spawned subagent transcript | Per-phase (`input_tokens`, `output_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens`, `billing_weighted_total`) |
 | `tool_use` / `tool_result` content items in the parent + subagent transcripts (`enrich` tool-call walk) | Any phase whose window contains a tool call, on a target that exposes a transcript | Per-phase (`{exploration,work,execute,orchestration,unclassified}_tool_calls` and the matching `_result_bytes`). ABSENT — never zero — on a target that declines the transcript primitive |
 | Payload residency across the phase's billed turns (`enrich` tool-call walk) | Same condition as the row above — the attribution is derived from the same payloads | Per-phase (`cache_read_attributed_{bucket}` and the `cache_read_unattributed` residual, reconciling EXACTLY to `cache_read_input_tokens`). ABSENT — never zero — on a target that declines the transcript primitive |
 | Target path on each exploration `tool_use` item's `input` (`enrich` tool-call walk) | Same condition as the two rows above — the sub-split re-cuts the same payloads | Per-phase (`exploration_{index_answerable,doc_residency,unattributed}_bytes`, partitioning `exploration_result_bytes` EXACTLY). ABSENT — never zero — on a target that declines the transcript primitive |
@@ -872,7 +882,7 @@ updated: 2026-03-27T10:25:00+00:00
 | `total_tokens` | int | Running sum across every `accumulate-agent-usage` call for this phase |
 | `tool_uses` | int | Running sum |
 | `duration_ms` | int | Running sum |
-| `retrospective_tokens` | int | Running sum of `--retrospective-tokens` values — non-zero only when the finalize retrospective step forwarded its `<usage>` total. `end-phase` / `phase-boundary` read this as the fallback for the `[6-finalize].retrospective_tokens` row |
+| `retrospective_tokens` | int | Running sum of `--retrospective-tokens` values — non-zero only when the finalize retrospective step forwarded its reported total. `end-phase` / `phase-boundary` read this as the fallback for the `[6-finalize].retrospective_tokens` row |
 | `samples` | int | Number of `accumulate-agent-usage` calls — reflects how many Task-agent returns were rolled in |
 | `updated` | ISO 8601 timestamp | Updated atomically on every write |
 
@@ -900,29 +910,29 @@ rows[]{timestamp,termination_cause,total_tokens,tool_uses,duration_ms,input_toke
 
 The first three lines are the TOON-tabular header (`plan_id:`, `phase:`, `rows[]{…}:`); each subsequent line is one CSV-style data row in the declared column order.
 
-The three data rows above are the three distinguishable cases, in order: a dispatch whose context load was measured; one whose caller forwarded no `message.usage` figures at all (four `unmeasured` cells); and one measured to be zero on three of the four columns (three genuine `0` cells). Before the `unmeasured` token existed, row 2 would have carried four literal `0`s — and **that** all-zero pre-token row is byte-identical to a genuine all-measured-zero row, since neither carries anything on columns 6–9 but zeros. Row 3 is not half of that pair: its nonzero `input_tokens` cell dates the row, so its three `0`s are readable as genuine measured zeros. See *Provenance of a measured zero* below for the fingerprint rule that separates the two members of the identical pair — and for why, absent a fingerprint, it cannot.
+The three data rows above are the three distinguishable cases, in order: a dispatch whose context load was measured; one whose caller forwarded no context-load figures at all (four `unmeasured` cells); and one measured to be zero on three of the four columns (three genuine `0` cells). Before the `unmeasured` token existed, row 2 would have carried four literal `0`s — and **that** all-zero pre-token row is byte-identical to a genuine all-measured-zero row, since neither carries anything on columns 6–9 but zeros. Row 3 is not half of that pair: its nonzero `input_tokens` cell dates the row, so its three `0`s are readable as genuine measured zeros. See *Provenance of a measured zero* below for the fingerprint rule that separates the two members of the identical pair — and for why, absent a fingerprint, it cannot.
 
 ### Per-Dispatch Context-Load Attribution
 
 This section is the **single source of truth** for the dispatch-boundary row's column order, count, and unmeasured representation. Every consumer cites it as authority — and each one nonetheless RESTATES part of the schema in its own file, because they run in separate processes and cannot import a shared constant. Those restating surfaces are enumerated, with the obligation they carry, in **Restating surfaces (lock-step obligation)** at the end of this section; that list is the thing to keep in sync, and it is not empty.
 
-Each row carries **nine columns**: the **legacy five** followed by the **four context-load columns appended at the END** for positional backward compatibility. The four context-load columns are the per-DISPATCH counterpart to the per-PHASE four-field `message.usage` view that `enrich` writes (see Per-Phase Fields above); they capture the dispatched agent's context-load totals at dispatch termination so per-dispatch context cost (dispatch count, collapsed triage contexts, per-dispatch context size) becomes measurable.
+Each row carries **nine columns**: the **legacy five** followed by the **four context-load columns appended at the END** for positional backward compatibility. The four context-load columns are the per-DISPATCH counterpart to the per-PHASE context-load view that `enrich` writes (see Per-Phase Fields above); they capture the dispatched agent's context-load categories at dispatch termination so per-dispatch context cost (dispatch count, collapsed triage contexts, per-dispatch context size) becomes measurable.
 
 | # | Column | Type | Source | Value when the flag is omitted |
 |---|--------|------|--------|--------------------------------|
 | 1 | `timestamp` | ISO 8601 timestamp | Set by `record-dispatch-boundary` at append time | — |
 | 2 | `termination_cause` | enum | `--termination-cause` (see enum below) | — (required) |
-| 3 | `total_tokens` | int | `--total-tokens` (subagent `<usage>` total at termination) | `0` |
+| 3 | `total_tokens` | int | `--total-tokens` (agent-reported total at termination) | `0` |
 | 4 | `tool_uses` | int | `--tool-uses` | `0` |
 | 5 | `duration_ms` | int | `--duration-ms` | `0` |
-| 6 | `input_tokens` | int \| `unmeasured` | `--input-tokens` (dispatch `message.usage.input_tokens`) | the literal `unmeasured` |
-| 7 | `output_tokens` | int \| `unmeasured` | `--output-tokens` (dispatch `message.usage.output_tokens`) | the literal `unmeasured` |
-| 8 | `cache_read_input_tokens` | int \| `unmeasured` | `--cache-read-input-tokens` (dispatch `message.usage.cache_read_input_tokens`) | the literal `unmeasured` |
-| 9 | `cache_creation_input_tokens` | int \| `unmeasured` | `--cache-creation-input-tokens` (dispatch `message.usage.cache_creation_input_tokens`) | the literal `unmeasured` |
+| 6 | `input_tokens` | int \| `unmeasured` | `--input-tokens` (the normalized `input` category at dispatch termination) | the literal `unmeasured` |
+| 7 | `output_tokens` | int \| `unmeasured` | `--output-tokens` (the normalized `output` category) | the literal `unmeasured` |
+| 8 | `cache_read_input_tokens` | int \| `unmeasured` | `--cache-read-input-tokens` (the normalized `cache_read` category) | the literal `unmeasured` |
+| 9 | `cache_creation_input_tokens` | int \| `unmeasured` | `--cache-creation-input-tokens` (the normalized `cache_creation` category) | the literal `unmeasured` |
 
 #### The unmeasured token, and the cell read
 
-The four context-load columns are OPTIONAL — a caller with no `message.usage` figure to forward passes no flag. They therefore carry **no numeric default**: an omitted flag writes the literal `unmeasured`, never `0`. "The caller passed no measurement" and "the dispatch loaded zero context" are different facts, and writing `0` for both made them byte-identical rows. This is the module's own absent-is-not-zero rule (the one the exploration counters and the cache-read attribution group already follow — see § Exploration-share counters) applied to the ledger row; the positional row shape means the column cannot be dropped, so it carries a token instead.
+The four context-load columns are OPTIONAL — a caller with no context-load figure to forward passes no flag. They therefore carry **no numeric default**: an omitted flag writes the literal `unmeasured`, never `0`. "The caller passed no measurement" and "the dispatch loaded zero context" are different facts, and writing `0` for both made them byte-identical rows. This is the module's own absent-is-not-zero rule (the one the exploration counters and the cache-read attribution group already follow — see § Exploration-share counters) applied to the ledger row; the positional row shape means the column cannot be dropped, so it carries a token instead.
 
 The legacy five columns keep their `0` default deliberately: no consumer distinguishes an absent from a zero on those, so introducing a second unmeasured surface there would add a distinction nothing reads.
 

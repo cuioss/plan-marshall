@@ -18,7 +18,7 @@ Collects wall-clock duration and token usage data per phase, generates increment
 
 **Skill-specific constraints:**
 - Script-only skill — all access via the script API
-- Never hard-code token values — only use data from Task agent `<usage>` tags
+- Never hard-code token values — only use data from the runtime boundary: the normalized token/tool/duration figures the platform-runtime metrics ops emit (see **Token data sources**)
 - Metrics data stored in `.plan/plans/{plan_id}/work/metrics.toon`; human-readable output in `.plan/plans/{plan_id}/metrics.md`
 - Phase names must be one of: `1-init`, `2-refine`, `3-outline`, `4-plan`, `5-execute`, `6-finalize` (must match `manage-status` phases exactly)
 
@@ -64,12 +64,12 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics end-
 ```
 
 **Parameters:**
-- `--total-tokens` — Total tokens from Task agent `<usage>` tag (optional, non-negative integer)
-- `--duration-ms` — Agent-reported duration in milliseconds from Task agent `<usage>` tag. This is the agent's self-reported time, separate from wall-clock duration computed from start/end timestamps. (optional)
-- `--tool-uses` — Tool use count from Task agent `<usage>` tag (optional)
+- `--total-tokens` — Total tokens for the phase, in the runtime-normalized `total` figure (optional, non-negative integer)
+- `--duration-ms` — Agent-reported duration in milliseconds, in the runtime-normalized duration figure. This is the agent's self-reported time, separate from wall-clock duration computed from start/end timestamps. (optional)
+- `--tool-uses` — Tool use count, in the runtime-normalized tool-use figure (optional)
 - `--retrospective-tokens` — Tokens attributable to the plan-retrospective dispatch within this phase window, recorded as the `retrospective_tokens` sub-field (optional; the explicit override for the accumulator-carried value the finalize retrospective step seeds)
 
-**Token data sources**: Task agents (spawned via Agent tool) report usage in `<usage>` XML tags upon completion (Claude target; the envelope shape is the host's, and `platform-runtime`'s chat/usage ops parse it — OpenCode reports usage through its own channel). These contain `total_tokens`, `duration_ms`, and optionally `tool_uses`. The orchestrator may forward each return's totals via the optional flags above, or rely on `accumulate-agent-usage` to persist them on disk between agent dispatches (recommended for `phase-5-execute` and `phase-6-finalize` — see below).
+**Token data sources**: the metrics boundary is a **normalized shape** — per-phase `{input, output, cache_read, cache_creation, total}` (plus the agent-reported `tool_uses` and `duration_ms`). The host platform's runtime owns the per-target transcript detail: [`platform-runtime`](../platform-runtime/SKILL.md)'s `metrics normalized-tokens` op walks a target's session transcript, normalizes every usage record into that shape, and returns the per-phase figures that `enrich` persists — `manage-metrics` never parses a transcript itself. On the Claude target the transcript records it recognises are `message.usage` four-field entries and `<usage>` return tags (total tokens, duration, optionally tool uses); that vocabulary is **the Claude runtime's own concern**, stated in its engine, not restated here as the format. The orchestrator may forward each return's totals via the optional flags above, or rely on `accumulate-agent-usage` to persist them on disk between agent dispatches (recommended for `phase-5-execute` and `phase-6-finalize` — see below).
 
 **Output:**
 ```toon
@@ -238,7 +238,7 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics phas
 - `--next-phase` — phase being entered (must be a valid phase name)
 - `--total-tokens`, `--duration-ms`, `--tool-uses` — optional, forwarded
   verbatim to the `end-phase` step. Omit when the closing phase ran in main
-  context (no agent `<usage>` data to record).
+  context (no agent-reported figures to record).
 - `--retrospective-tokens` — optional, recorded as the closing phase's
   `retrospective_tokens` sub-field; the explicit override for the
   accumulator-carried value.
@@ -282,9 +282,10 @@ accumulator. `duration_seconds` accumulates the per-close active span, and the
 worked `agent_duration_ms` is summed before being clamped to that accumulated
 span. See the `end-phase` "Re-entry" paragraph for the three rules in full.
 
-**Inline-phase recording mode (omit the `<usage>` flags)**: a phase that runs
+**Inline-phase recording mode (omit the token flags)**: a phase that runs
 *inline* in the main orchestrator context — rather than as a dispatched
-`execution-context` leaf — produces no agent `<usage>` envelope, so the caller
+`execution-context` leaf — produces no agent-reported token/tool/duration
+figures, so the caller
 OMITS `--total-tokens` / `--duration-ms` / `--tool-uses` (and has no accumulator
 file to fall back on). Omitting them is the sanctioned recording mode for an
 inline phase, NOT an incomplete call: the closing phase's `end_time` is stamped
@@ -294,7 +295,7 @@ closed row therefore carries the marker — it is never listed under
 `phases_missing_end_time` and never flips `any_phase_missing_end_time` to
 `true`, preserving the #812 floor-not-truth semantics. This is the path the
 inline **1-init → 2-refine** boundary takes (phase-1-init runs inline in the
-orchestrator, so its close carries no `<usage>` data), and equally the
+orchestrator, so its close carries no agent-reported token figures), and equally the
 recipe-inline **2-refine → 3-outline** / **3-outline → 4-plan** boundaries. The
 same guarantee holds for the standalone `end-phase` close.
 
@@ -367,7 +368,7 @@ reason: prev phase has no metrics row (never started)
 
 ### accumulate-agent-usage
 
-Persist running per-phase totals of subagent `<usage>` data to disk. Designed
+Persist running per-phase totals of agent-reported token/tool/duration data to disk. Designed
 to be called from `phase-5-execute` and `phase-6-finalize` SKILL.md
 immediately after every Task-agent return — the on-disk file replaces the
 fragile model-context-only `agent_usage_totals` discipline that lost data
@@ -381,7 +382,7 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics accu
 
 **Parameters:**
 - `--phase` — Phase being accumulated (must be a valid phase name).
-- `--total-tokens`, `--tool-uses`, `--duration-ms` — Subagent `<usage>` values to add to the running totals (each optional). Pass the values parsed from the agent's returned `<usage>...</usage>` block.
+- `--total-tokens`, `--tool-uses`, `--duration-ms` — Agent-reported values to add to the running totals (each optional). Pass the values forwarded from the agent's return, in the runtime-normalized figures (see **Token data sources**).
 - `--retrospective-tokens` — Tokens attributable to the plan-retrospective dispatch to add to the running `retrospective_tokens` total (optional). Forwarded by `phase-6-finalize` ONLY when the just-returned dispatched step is the opt-in retrospective step — this is the producer side of the `retrospective_tokens` attribution that `end-phase` / `phase-boundary` read back from the accumulator.
 
 **Behaviour:**
@@ -412,7 +413,7 @@ be called by the orchestrator (`plan-marshall` workflows) immediately after
 every phase Task return so the audit trail captures *why* the dispatch
 ended — voluntary checkpoint, bare `task_complete` echo, harness
 cancellation, error, or clean exit on an empty queue — together with the
-dispatched agent's `<usage>` totals at termination time. The accumulating
+dispatched agent's reported token/tool/duration figures at termination time. The accumulating
 file is the audit trail that `plan-retrospective` correlates with
 `[OUTCOME]`-log coverage gaps to detect agent-initiated re-dispatch
 See `plan-retrospective` for the correlation logic.
@@ -445,8 +446,8 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics reco
   Because this bullet list, the command block above, and the `record-dispatch-boundary` block under **Canonical invocations** all enumerate the same set, a value added to `DISPATCH_TERMINATION_CAUSES` must be added to all three in the same change; the contract test in `test/plan-marshall/manage-metrics/test_manage_metrics.py` discovers every occurrence in this document and fails until each one matches the tuple.
 
   That test reads **this document only**, so those three sites are the whole *guarded-in-SKILL.md* population — not the whole population. Full-set enumerations living in other files are guarded by their own structural-equality tests, also in `test_manage_metrics.py`: the `termination_cause` enum line in [standards/data-format.md](standards/data-format.md) § Per-Dispatch Context-Load Attribution (`test_data_format_termination_cause_enum_matches_the_enum`) and the accepted-causes set in [plan-retrospective/references/logging-gap-analysis.md](../plan-retrospective/references/logging-gap-analysis.md) (`test_logging_gap_analysis_termination_cause_set_matches_the_enum`). The `record-dispatch-boundary` argparse `description=` and `choices=` in `scripts/manage-metrics.py` are **both derived from the tuple** and so are not mirrors — nothing to keep in sync there. When adding a new full-set enumeration, either derive it from the tuple or add a structural-equality test, and prefer deriving.
-- `--total-tokens`, `--tool-uses`, `--duration-ms` — Subagent `<usage>` totals at termination (each optional, default 0).
-- `--input-tokens`, `--output-tokens`, `--cache-read-input-tokens`, `--cache-creation-input-tokens` — Per-dispatch context-load totals from the dispatched agent's four-field `message.usage` view at termination (each optional). These are the per-DISPATCH counterpart to the per-PHASE four-field view `enrich` writes; they are recorded as four columns appended at the END of each row so the legacy five columns stay positionally unchanged. **They have no numeric default**: an omitted flag writes the literal `unmeasured` into its column and omits the key from the result TOON, so "the caller passed no measurement" stays distinguishable from "the dispatch loaded zero context". A *measured* zero is still written and returned as `0`. See [data-format.md](standards/data-format.md) § Per-Dispatch Context-Load Attribution for the canonical column order, count, and the four-way (measured / unmeasured / unrecognised / indeterminate) reader contract.
+- `--total-tokens`, `--tool-uses`, `--duration-ms` — Reported token/tool/duration figures at termination, in the runtime-normalized totals (each optional, default 0).
+- `--input-tokens`, `--output-tokens`, `--cache-read-input-tokens`, `--cache-creation-input-tokens` — Per-dispatch context-load totals in the normalized `{input, output, cache_read, cache_creation}` shape (each optional). These are the per-DISPATCH counterpart to the per-PHASE context-load view `enrich` writes; they are recorded as four columns appended at the END of each row so the legacy five columns stay positionally unchanged. **They have no numeric default**: an omitted flag writes the literal `unmeasured` into its column and omits the key from the result TOON, so "the caller passed no measurement" stays distinguishable from "the dispatch loaded zero context". A *measured* zero is still written and returned as `0`. See [data-format.md](standards/data-format.md) § Per-Dispatch Context-Load Attribution for the canonical column order, count, and the four-way (measured / unmeasured / unrecognised / indeterminate) reader contract.
 
 **Behaviour:**
 - Appends one row to `.plan/plans/{plan_id}/work/metrics-dispatch-boundaries-{phase}.toon`.
@@ -490,20 +491,26 @@ dispatch_boundary_file: work/metrics-dispatch-boundaries-5-execute.toon
 
 ### enrich
 
-Parse JSONL session transcripts to attribute token usage per phase. `enrich`
-performs two complementary walks against the host platform's
-session-transcript directory:
+Attribute token usage to phases through the host platform's runtime engine.
+`enrich` delegates the entire transcript walk to [`platform-runtime`](../platform-runtime/SKILL.md)'s
+`metrics normalized-tokens` op: it hands the op the `session_id` and the phase
+windows, and the runtime's engine walks the session transcript, normalizes every
+usage record into the **five canonical categories** `{input, output, cache_read,
+cache_creation, total}` per phase, and writes the per-phase result back.
+`manage-metrics` **never parses a transcript itself** — it reads and persists the
+runtime's normalized numbers:
 
-1. **Parent-transcript `<usage>`-tag walk** — searches for the JSONL file
-   matching `session_id` and walks `tool_result` content for embedded
-   `<usage>...</usage>` return tags, attributing each tag's single-figure
-   totals to the phase whose timestamp window contains the `Task` tool call.
-2. **Subagent-transcript walk** — discovers every subagent transcript
-   (`{project_dir}/{parent_session_id}/subagents/agent-*.jsonl`) and sums the
-   four raw `message.usage` fields across each whole transcript.
+1. The op locates the parent JSONL session record for `session_id`.
+2. The op discovers subagent transcripts
+   (`{project_dir}/{parent_session_id}/subagents/agent-*.jsonl`) and every usage
+   record inside them.
 
 All attribution uses the `start_time` / `end_time` windows recorded in
-`work/metrics.toon`. Usage outside any recorded phase window is ignored.
+`work/metrics.toon`. Usage outside any recorded phase window is ignored. The
+per-target transcript vocabulary the engine recognises — on the Claude target,
+`message.usage` four-field entries, `<usage>` return tags, and
+`tool_use` / `tool_result` content items — is **the runtime's own concern**,
+stated in its engine, not restated here as the format.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics enrich \
@@ -523,14 +530,16 @@ subagent_transcripts_walked: 4
 four_field_phases_attributed: 5
 ```
 
-**Four-field usage view + billing-weighted total**: The four distinct Claude
-API usage fields — `input_tokens`, `output_tokens`, `cache_read_input_tokens`,
-and `cache_creation_input_tokens` — live only in the raw `message.usage` dicts
-inside the transcripts; the single-figure `<usage>` return tag carries no
-input/output split and no cache fields. `enrich` accumulates these four fields
-per phase from BOTH the parent orchestrator turns AND every discovered subagent
-transcript, then records a `billing_weighted_total` per phase computed as
-`input + output + round(0.1 × cache_read) + round(1.25 × cache_creation)`.
+**Context-load view + billing-weighted total**: the normalized per-phase context-load
+figures — `input_tokens`, `output_tokens`, `cache_read_input_tokens`, and
+`cache_creation_input_tokens` — are the four canonical `{input, output,
+cache_read, cache_creation}` categories the runtime engine emits. On the Claude
+target they originate in `message.usage` dicts inside the transcripts (the
+single-figure `<usage>` return tag carries no input/output split and no cache
+fields); how the runtime distils them is **the Claude runtime's own concern**,
+not the metrics format. `enrich` persists those four categories per phase and the
+runtime's derived `billing_weighted_total` per phase — computed over the
+categories with the runtime's own cache-pricing weights.
 
 The weighted total is a **derived-cost** measure: it answers what the phase cost
 to buy over the main-context window, which is a different question from how much
@@ -542,29 +551,27 @@ renders it as the first-class `Billing (cost)` column with its own total
 (`total_billing_weighted`), and it is never summed into the dispatched `Tokens`
 total.
 
-**Whole-transcript attribution**: Each subagent transcript is summed as a whole
-and attributed to the single phase window containing its spawn/first-message
-timestamp (latest-window-wins on a boundary tie). Transcripts are NOT split by
-slug boundaries — the whole transcript is attributed to the one phase that
-spawned it.
+**Whole-transcript attribution**: the runtime engine attributes each subagent
+transcript as a whole to the single phase window containing its spawn
+timestamp, rather than splitting it across windows. The consumer-relevant
+consequence is that a phase's attributed subagent figures are whole-transcript
+sums, never per-slug slices.
 
-**Slug-gap robustness**: Subagent discovery is anchored to the *resolved parent
-transcript location* (`{parent_transcript_path.parent}/{session_id}/subagents`)
-rather than re-derived from the current git root. Phase-5 pins cwd to the plan's
-worktree, so subagent transcripts produced during phase-5+ live under a
-worktree-derived project-dir slug, while `enrich` (run at finalize) may resolve
-a main-checkout git root; re-deriving the slug from the git root would look
-under the wrong directory and silently return `[]`, zeroing every field. The
-direct-session-file fallback branch retains the legacy cwd-slug path.
+**Slug-gap robustness**: subagent-transcript discovery ships inside the runtime
+engine and is anchored to the *resolved parent transcript location* rather than
+re-derived from the current git root — that is the runtime's own detail, and
+the reason it exists matters here only as a guarantee: discoverability of
+worktree-produced subagent transcripts does not depend on where `enrich` runs
+from.
 
 The per-phase rows in `work/metrics.toon` gain `subagent_total_tokens`,
-`subagent_tool_uses`, `subagent_duration_ms`, and `subagent_samples` (from the
-`<usage>`-tag walk), plus `input_tokens`, `output_tokens`,
+`subagent_tool_uses`, `subagent_duration_ms`, and `subagent_samples`, plus
+`input_tokens`, `output_tokens`,
 `cache_read_input_tokens`, `cache_creation_input_tokens`, and
-`billing_weighted_total` (from the four-field walks), plus the ten
+`billing_weighted_total` (all from the runtime's per-phase normalized view), plus the ten
 exploration-share counters `{exploration,work,execute,orchestration,unclassified}_tool_calls`
 and `{exploration,work,execute,orchestration,unclassified}_result_bytes` (from
-the tool-call walk) — see [data-format.md](standards/data-format.md). `enrich`
+the runtime's tool-call walk) — see [data-format.md](standards/data-format.md). `enrich`
 also stamps `total_tokens_population` on every row it touches, and writes
 `inline_main_context_tokens` on any row whose
 `input + output + cache_creation` sum is non-zero (`cache_read` is excluded, so
@@ -629,7 +636,7 @@ manifest would otherwise produce by turning every boundary row into an orphan.
 ```text
 .plan/plans/{plan_id}/
   work/metrics.toon                        # Intermediate timing/token data per phase
-  work/metrics-accumulator-{phase}.toon    # Per-phase subagent <usage> running totals (one per phase that dispatches agents)
+  work/metrics-accumulator-{phase}.toon    # Per-phase agent-reported running totals (one per phase that dispatches agents)
   metrics.md                               # Human-readable metrics report
 ```
 
@@ -791,7 +798,7 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics reco
 
 1. **Phase start**: Call `start-phase` when entering a phase (called by plan-marshall orchestrator)
 2. **Phase end**: Call `end-phase` when phase completes, passing token data from agent notifications
-3. **Enrich** (optional): Call `enrich` after execution to attribute per-phase subagent `<usage>` totals
+3. **Enrich** (optional): Call `enrich` after execution to attribute per-phase normalized token totals through the runtime engine
 4. **Generate**: Call `generate` to produce the human-readable metrics.md report
 
 ## Error Responses
@@ -804,7 +811,7 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics reco
 | `invalid_phase` | Phase name not in valid set (start-phase, end-phase, phase-boundary, boundary-status, accumulate-agent-usage) |
 | `no_data` | No metrics collected yet (generate) |
 | `write_failed` | File system permission denied |
-| `session_not_found` | JSONL file not found for session_id (enrich) |
+| `success, enriched: false` | Runtime engine found no transcript for session_id — enrich degrades gracefully (its no-op carries `transcript_not_found` as a reason, not an error) |
 
 ## Integration
 
@@ -813,9 +820,9 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics reco
 | Client | Operation | Purpose |
 |--------|-----------|---------|
 | `plan-marshall:plan-marshall` orchestrator | start-phase, end-phase, phase-boundary, boundary-status | Record phase timing at boundaries; reconcile a half-stamped boundary on cross-session resume (boundary-status → conditional phase-boundary) |
-| `plan-marshall:phase-5-execute` SKILL.md | accumulate-agent-usage | Persist per-task agent `<usage>` totals after each `execute-task` return |
-| `plan-marshall:phase-6-finalize` SKILL.md | accumulate-agent-usage | Persist per-step agent `<usage>` totals after each Task-agent return; forwards `--retrospective-tokens` for the opt-in retrospective step (producer side of the `retrospective_tokens` attribution) |
-| Phase agents (via Task tool) | end-phase (with token args) | Pass `<usage>` tag data after agent completion (alternative to accumulator path) |
+| `plan-marshall:phase-5-execute` SKILL.md | accumulate-agent-usage | Persist per-task agent-reported totals after each `execute-task` return |
+| `plan-marshall:phase-6-finalize` SKILL.md | accumulate-agent-usage | Persist per-step agent-reported totals after each Task-agent return; forwards `--retrospective-tokens` for the opt-in retrospective step (producer side of the `retrospective_tokens` attribution) |
+| Phase agents (via Task tool) | end-phase (with token args) | Pass the runtime-normalized totals after agent completion (alternative to accumulator path) |
 
 ### Consumers
 
@@ -827,9 +834,9 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics reco
 ### Data Sources
 
 - Wall-clock timing: bash timestamps via start-phase/end-phase
-- Token data: Task agent `<usage>` tags (total_tokens, duration_ms, tool_uses) — the Claude-target envelope, parsed by `platform-runtime`'s chat/usage ops
-- JSONL enrichment: host-platform session transcripts (per-phase subagent `<usage>` attribution)
-- Four-field usage view: raw `message.usage` dicts in the parent and subagent transcripts (input_tokens, output_tokens, cache_read_input_tokens, cache_creation_input_tokens), plus the derived `billing_weighted_total`, attributed per phase by `enrich`
+- Token data: agent-reported `total_tokens` / `duration_ms` / `tool_uses` forwarded via the token flags or the accumulator (the per-target envelope — on Claude, the `<usage>` return tag — is the runtime's own concern, parsed by `platform-runtime`'s metrics ops)
+- Normalized context-load view: the runtime engine's per-phase `{input, output, cache_read, cache_creation}` categories plus the derived `billing_weighted_total`, persisted per phase by `enrich`
+- Exploration-share counters and cache-read attribution: the runtime engine's tool-call walk, persisted per phase by `enrich`
 
 ## Standards
 
