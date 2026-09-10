@@ -729,7 +729,7 @@ Generated: 2026-03-14 09:41:07 UTC
   - **Output tokens**: 4,000
   - **Cache read input tokens**: 210,000
   - **Cache creation input tokens**: 12,000
-- **Billing-weighted total**: 78,000 (derived-cost population — input + output + 0.1 × cache_read + 1.25 × cache_creation. What this phase cost to buy, over the main-context window; a different question from the dispatched work the Tokens column measures, so the two are never summed)
+- **Billing-weighted total**: 78,000 (derived-cost population — the runtime's billing-weighted figure over the main-context window. What this phase cost to buy, a different question from the dispatched work the Tokens column measures, so the two are never summed)
 ```
 
 The `Generated:` line is the report's single absolute wall-clock timestamp and the only figure in `metrics.md` that renders through the **display-only** timezone — UTC-suffixed by default, and carrying an unambiguous `ABBREV (UTC±HH:MM)` label instead whenever the operator has configured a zone the instant is actually converted into; every other value in the report is a duration, a count, or a name, and storage and comparison stay UTC unconditionally because the knob never reaches a write or compare path. See [`manage-run-config` run-config-standard.md](../../manage-run-config/standards/run-config-standard.md) § Display-Timezone Section.
