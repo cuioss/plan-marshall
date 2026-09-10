@@ -89,6 +89,7 @@ from _lessons_retention import (
     _resolve_quiet_days,
     _resolve_retention_days,
 )
+from command_forms import PLAN_MARSHALL_COMMAND
 from constants import LESSON_CATEGORIES
 from file_ops import (
     atomic_write_file,
@@ -792,7 +793,7 @@ def cmd_aggregate(args: argparse.Namespace) -> dict:
 
     headline_records.sort()
     top_n_commands = [
-        f'/plan-marshall:plan-marshall lesson={primary_id}'
+        f'{PLAN_MARSHALL_COMMAND}:plan-marshall lesson={primary_id}'
         for _tier, _neg_count, _key, primary_id in headline_records[:top_n]
     ]
 
