@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Deploy engine for the project-local ``sync-opencode`` skill.
+"""Deploy engine for the project-level ``sync-opencode`` command.
 
 Pipeline:
 
