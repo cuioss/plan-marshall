@@ -4,7 +4,7 @@ Comprehensive standards for requirements and specification documentation, coveri
 
 ## Overview
 
-This bundle provides Claude Code with expert knowledge in creating, structuring, and maintaining requirements and specification documentation. It ensures consistent documentation practices with complete traceability from requirements through implementation.
+This bundle provides expert knowledge in creating, structuring, and maintaining requirements and specification documentation. It ensures consistent documentation practices with complete traceability from requirements through implementation.
 
 ## Skills Included
 

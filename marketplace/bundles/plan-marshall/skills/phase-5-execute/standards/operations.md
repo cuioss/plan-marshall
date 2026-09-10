@@ -60,7 +60,7 @@ npm run lint
 **Trigger**: "sonar", "quality gate"
 
 ```text
-mcp__sonarqube__search_sonar_issues_in_projects
+Search SonarQube for issues in the project's repositories via the configured SonarQube integration
 ```
 
 ## Implementation Operations
