@@ -811,7 +811,7 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics reco
 | `invalid_phase` | Phase name not in valid set (start-phase, end-phase, phase-boundary, boundary-status, accumulate-agent-usage) |
 | `no_data` | No metrics collected yet (generate) |
 | `write_failed` | File system permission denied |
-| `success, enriched: false` | Runtime engine found no transcript for session_id — enrich degrades gracefully (its no-op carries `transcript_not_found` as a reason, not an error) |
+| `success, enriched: false` | No normalized-token data for session_id (runtime status carried in the message) — enrich degrades gracefully; this is a no-op, not an error |
 
 ## Integration
 

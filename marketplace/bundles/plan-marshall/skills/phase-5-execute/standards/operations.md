@@ -59,8 +59,11 @@ npm run lint
 ### Sonar Check
 **Trigger**: "sonar", "quality gate"
 
-```text
-Search SonarQube for issues in the project's repositories via the configured SonarQube integration
+Dispatch PR-scoped new-code issues through the Sonar provider — the pre-filter (`sonar-rules.json`) applies before one `sonar-issue` finding is filed per surviving issue:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar fetch_findings \
+  --plan-id {plan_id} --project {project_key} --pr {pr_number}
 ```
 
 ## Implementation Operations
