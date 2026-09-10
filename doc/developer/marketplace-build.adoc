@@ -176,7 +176,8 @@ This is meta-project-only: a consumer project has no derived-state finalize step
 
 The Claude inner loop is one command: edit `marketplace/bundles/`, run
 `/sync-plugin-cache`, done. The OpenCode inner loop is the same shape,
-via the project-local `/sync-opencode` skill:
+via the project-level `/sync-opencode` command
+(`.opencode/commands/sync-opencode.md`):
 
 ```bash
 ./pw generate-opencode
@@ -192,9 +193,10 @@ directory rename OpenCode expects, removes stale **managed** entries (those in
 the `{bundle}-{skill}` namespace of the bundles being synced) while never
 touching unmanaged user entries or agents, and reports its actions as a TOON
 document. It is the exact counterpart of `/sync-plugin-cache` for the OpenCode
-target, and like that skill it is project-local — consumer projects never
-generate OpenCode output. See `.claude/skills/sync-opencode/SKILL.md` for the
-source-of-truth statement and parameters table.
+target, and like that command it is project-level — consumer projects never
+generate OpenCode output. See `.opencode/commands/sync-opencode.md` and
+`.opencode/scripts/sync_opencode.py` for the source-of-truth statement and
+parameters.
 
 The reopen-closed loop is then the same as Claude's: edit source, regenerate,
 `/sync-opencode`, verify against a temp target (`--target-dir`) to avoid
