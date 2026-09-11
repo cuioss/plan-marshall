@@ -270,6 +270,35 @@ def _is_contentless_boilerplate(body: str, bot_kind: str | None) -> bool:
     return not any(marker in body for marker in disqualifying)
 
 
+def _is_participation_evidence(comment: dict, bot_kind: str) -> bool:
+    """True if ``comment`` is ADMISSIBLE participation evidence for ``bot_kind``.
+
+    Two registry reads, both generic — no bot name appears here:
+
+    1. SHAPE — the comment's ``kind`` is one of the publish shapes the bot declares
+       in ``participation_evidence``.
+    2. CONTENT — when the bot declares a ``participation_evidence_markers`` entry for
+       THAT shape, the body carries the declared literal. A shape a bot publishes
+       both before its review completes and after it finishes credits only the
+       artifact carrying the marker, so a pre-review walkthrough in a declared shape
+       is not evidence. An undeclared shape is FAIL-OPEN and credits on the shape
+       alone, exactly as before the gate existed (see
+       ``bot_registry.participation_evidence_marker``).
+
+    This is the admissibility question only. The refusal exclusion and the
+    ``participation_requires_update`` currency test stay at the call site, because
+    they answer different questions: a refusal is admissible-shaped but is evidence
+    of NON-participation, and the currency test decides WHICH commit an admissible
+    comment reviewed. A comment this predicate rejects is therefore neither
+    credited nor stale — it is not a review artifact at all.
+    """
+    kind = comment.get('kind') or 'inline'
+    if kind not in bot_registry.participation_evidence(bot_kind):
+        return False
+    marker = bot_registry.participation_evidence_marker(bot_kind, kind)
+    return not marker or marker in str(comment.get('body') or '')
+
+
 def _is_obvious_noise(body: str, bot_kind: str | None = None) -> bool:
     """Pre-filter: True if the comment body is shared or per-bot noise.
 
@@ -1039,7 +1068,10 @@ def cmd_fetch_findings(args):
     comments were entirely noise-filtered or entirely already-resolved is still
     credited). A bot qualifies only when an observed comment's ``kind`` is one of
     the publish shapes its registry record declares in ``participation_evidence``
-    — the mere presence of some comment resolving to its login is NOT evidence.
+    — the mere presence of some comment resolving to its login is NOT evidence —
+    and, when the record gates that shape on a content marker
+    (``participation_evidence_markers``), only when the body carries it; an
+    ungated shape credits on the shape alone (``_is_participation_evidence``).
     For a bot whose record sets ``participation_requires_update`` (it re-reviews by
     editing one persistent comment in place) the record additionally requires the
     comment to prove a review of the MERGE CANDIDATE commit
@@ -1067,8 +1099,9 @@ def cmd_fetch_findings(args):
 
     ``stale_participation_bots``: where that currency-test failure now GOES, instead
     of being discarded. Same ``{bot_kind, evidence_kind}`` record shape as
-    ``participated_bots``, carrying one entry per bot whose observed comment kind
-    ALREADY matched a declared publish shape but which failed the
+    ``participated_bots``, carrying one entry per bot whose observed comment was
+    ALREADY admissible evidence — a declared publish shape, carrying its content
+    marker where one is declared — but which failed the
     ``participation_requires_update`` currency test. The proven set is subtracted
     before emitting, so a bot with one stale and one fresh comment appears only in
     ``participated_bots``. The completeness layer consumes it as
@@ -1290,9 +1323,14 @@ def cmd_fetch_findings(args):
     # comment reviewed against an EARLIER commit proves only that the bot reviewed
     # an earlier HEAD.
     #
+    # A shape the bot additionally gates on a content marker
+    # (``participation_evidence_markers``) credits only a comment carrying that marker,
+    # and an ungated shape credits on the shape alone — see
+    # ``_is_participation_evidence``.
+    #
     # A bot declaring no evidence shape resolves fail-closed: it can never be
     # proven a participant. There is no bot-name literal here — the evidence
-    # shapes and the update requirement are registry data.
+    # shapes, their content markers, and the update requirement are registry data.
     participated: dict[str, str] = {}
     stale_participation: dict[str, str] = {}
     # The THIRD outcome: a currency-subject bot whose comment matched a declared publish
@@ -1326,9 +1364,14 @@ def cmd_fetch_findings(args):
         # proven participant and satisfy the quorum on zero review coverage.
         if _is_refusal_notice(str(_comment.get('body') or ''), _bot_kind):
             continue
-        _kind = _comment.get('kind') or 'inline'
-        if _kind not in bot_registry.participation_evidence(_bot_kind):
+        # Admissibility — the declared publish SHAPE, plus the declared content marker
+        # when the bot gates that shape on one. Evaluated BEFORE the currency test, so a
+        # comment that is not a review artifact at all (a walkthrough posted before the
+        # review completed) is neither credited nor reported stale, and stages no
+        # currency-ledger row that a later edit would then be measured against.
+        if not _is_participation_evidence(_comment, _bot_kind):
             continue
+        _kind = _comment.get('kind') or 'inline'
         if _requires_update and not _reviewed_at_merge_candidate(
             _comment,
             currency_records,
@@ -1336,8 +1379,8 @@ def cmd_fetch_findings(args):
             reviewed_commit_sha,
             merge_candidate_committed_at,
         ):
-            # The comment's kind ALREADY matched a declared publish shape — only the
-            # currency test failed. Discarding it here is what collapsed a stale
+            # The comment was ALREADY admissible evidence — only the currency test
+            # failed. Discarding it here is what collapsed a stale
             # review into ``absent``, and the two have OPPOSITE remedies: ``absent``
             # means the bot never engaged (escalate the non-participation), while a
             # stale publish means it engaged against an EARLIER commit (re-trigger a
@@ -1688,10 +1731,12 @@ def cmd_fetch_findings(args):
     # — which is the defect being fixed, where such a bot reported as one that
     # reviewed and found nothing.
     #
-    # The comment set is restricted to the bot's DECLARED publish shapes, so the
-    # quantifier ranges over exactly the comments that could have granted the credit
-    # in the first place. A bot with no such comment is not swept up: the empty set
-    # would make ``all()`` vacuously true, so a non-empty evidence set is required.
+    # The comment set is restricted to the comments ``_is_participation_evidence``
+    # admits — the bot's DECLARED publish shapes, and the declared content marker on a
+    # shape the bot gates on one — so the quantifier ranges over exactly the comments
+    # that could have granted the credit in the first place. A bot with no such comment
+    # is not swept up: the empty set would make ``all()`` vacuously true, so a non-empty
+    # evidence set is required.
     #
     # NOISE IS EXCLUDED FIRST, and that is a position precondition rather than a
     # refinement. ``_is_unrecognised_refusal`` is the enumerative arm, whose contract
@@ -1708,12 +1753,11 @@ def cmd_fetch_findings(args):
     # the credit stands.
     unrecognised_only_bots: set[str] = set()
     for _credited_bot in participated:
-        _shapes = bot_registry.participation_evidence(_credited_bot)
         _evidence_comments = [
             _c
             for _c in raw_comments
             if bot_kind_for_author(_c.get('author') or 'unknown') == _credited_bot
-            and (_c.get('kind') or 'inline') in _shapes
+            and _is_participation_evidence(_c, _credited_bot)
             and not _is_obvious_noise(str(_c.get('body') or ''), _credited_bot)
         ]
         if _evidence_comments and all(

@@ -43,13 +43,17 @@ import pytest
 
 from conftest import get_script_path, get_skill_dir
 
-#: The symbol family a participation site is recognised by. Copied verbatim from
-#: the deliverable's specification — these are the names the credit-granting and
-#: new-information decisions are written in.
+#: The symbol family a participation site is recognised by — the names the
+#: credit-granting and new-information decisions are written in. The admissibility
+#: gate (``_is_participation_evidence``) and the per-shape content-marker accessor it
+#: reads (``participation_evidence_marker``) decide whether a comment can grant a
+#: credit at all, so they are members of the family.
 SEED_SYMBOLS: tuple[str, ...] = (
     '_reviewed_at_merge_candidate',
     'participation_requires_update',
     'participation_evidence',
+    'participation_evidence_marker',
+    '_is_participation_evidence',
     'head_sha_verified',
     'stale_participation',
     'existing_comment_keys',
@@ -156,8 +160,9 @@ SITE_EXPECTATIONS: dict[str, SiteExpectation] = {
         'registry_data',
         'none',
         'yes',
-        'Declares each bot’s participation_evidence and participation_requires_update. A pure '
-        'read over the parsed standards docs — it observes nothing, so it anchors on nothing.',
+        'Declares each bot’s participation_evidence, the per-shape participation_evidence_markers '
+        'content gate, and participation_requires_update. A pure read over the parsed standards '
+        'docs — it observes nothing, so it anchors on nothing.',
     ),
     f'{_SKILLS}/automatic-review/scripts/review_completeness.py': SiteExpectation(
         'producer_sets',
