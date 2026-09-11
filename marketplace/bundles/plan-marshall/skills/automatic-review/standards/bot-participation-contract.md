@@ -204,6 +204,33 @@ An empty reviewer roster distributes nothing, so the summary is the empty string
 back to its count-only form. That is the honest value: inventing a bucket for reviewers nobody
 configured would be a claim about a population that does not exist.
 
+### A credited clean review resolves `participated_but_empty`
+
+A clean review — the bot published a review artifact against this diff, and every comment it
+published was dropped as noise — has exactly one correct member. The two it can be mistaken for are
+both wrong, and each in a direction an operator would act on:
+
+- **Never `absent`.** `absent` prescribes escalating a reviewer that never engaged. A clean reviewer
+  did engage, so escalating it chases a review that already happened — and on a required bot it holds
+  a clean PR open.
+- **Never `participated`.** `participated` is the outcome in which the bot produced findings. A clean
+  review produced none, so reporting it there claims findings that do not exist.
+
+The mapping needs no member of its own, because its two inputs are taken on opposite sides of the
+noise filter: the participation credit is derived from the raw comment list before the pre-filter
+runs, and the finding count after it. A clean review therefore arrives as *credited, zero findings*,
+and `review_completeness.classify_bot` resolves that pair to `participated_but_empty` on
+`has_findings`. `test_review_completeness.py` pins it, together with its matched control: the same
+observation set with one surviving finding resolves `participated`.
+
+⛔ **The credit has to come from a shape that clears the content gate.** A clean review's entire
+output is noise, so the publish shape carrying its credit is the only thing between it and `absent`.
+Where a bot gates that shape on a content marker (§ "A shape may be gated on a content marker"), its
+clean-review artifact must carry the marker — a gate that rejected it would move the review to
+`absent` without any finding changing. Which shape carries a given bot's clean-review credit is a
+per-bot fact recorded in that bot's registry doc; for CodeRabbit it is the marker-bearing verdict
+`issue_comment` — see [`coderabbit.md`](coderabbit.md) § "Participation evidence".
+
 ## Evidence taxonomy
 
 Participation is **evidence-typed, not presence-typed.** The mere existence of a comment resolving to
