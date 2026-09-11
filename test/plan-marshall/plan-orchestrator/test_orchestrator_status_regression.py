@@ -202,7 +202,10 @@ class TestClaimIndexRegression:
         assert 'claims_total: 2' in result.stdout
         text = spec.read_text(encoding='utf-8')
         assert _CLAIM_B in text
-        assert 'verdict: corroborated' in text
+        assert text.count('  - verdict: corroborated') == 1
+        assert text.index(_CLAIM_B) < text.index('  - verdict: corroborated')
+        between = text[text.index(_CLAIM_A) : text.index(_CLAIM_B)]
+        assert 'verdict:' not in between
 
     def test_should_report_visible_claim_indices_with_interleaved_operational_bullets_through_cli(
         self, plan_context: Any
