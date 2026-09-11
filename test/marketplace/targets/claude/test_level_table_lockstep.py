@@ -16,6 +16,9 @@ Covered bindings:
 - Every ``LEVEL_TABLE`` alias resolves in the shipped
   ``mapping.json::model_map``; every non-gated effort is advertised by
   its alias's ``supports_effort`` (the "universally available" claim).
+- Every alias-capability-gated effort from ``LEVEL_TABLE`` is advertised
+  by its alias's ``supports_effort`` in ``mapping.json`` (the gate never
+  skips an intended top tier).
 """
 
 from __future__ import annotations
@@ -97,6 +100,29 @@ def test_level_table_aliases_resolve_in_mapping_json() -> None:
     for level, binding in LEVEL_TABLE.items():
         alias = binding['model']
         assert alias in model_map, f'{level}: alias {alias!r} missing from mapping.json model_map'
+
+
+def test_gated_efforts_are_advertised_by_their_alias() -> None:
+    """A gated (xhigh/max) level is only emittable when its alias advertises it.
+
+    The shipped mapping.json must advertise every gated effort the table asks
+    for — otherwise the top tiers would always be skipped by the Claude gate,
+    which the level palette does not intend. (Relocated here when the OpenCode
+    adapter stopped gating: the alias-capability gate is Claude-only.)
+    """
+    model_map = json.loads(MAPPING_JSON.read_text(encoding='utf-8'))['model_map']
+    for level, binding in LEVEL_TABLE.items():
+        effort = binding['effort']
+        if effort not in ALIAS_GATED_EFFORTS:
+            continue
+        alias = binding['model']
+        assert isinstance(alias, str)
+        supported = model_map[alias]['supports_effort']
+        assert effort in supported, (
+            f'{level}: gated effort {effort!r} not advertised by '
+            f'{binding["model"]}.supports_effort {supported} — the top tier '
+            f'would always be skipped'
+        )
 
 
 def test_ungated_efforts_are_universally_supported() -> None:
