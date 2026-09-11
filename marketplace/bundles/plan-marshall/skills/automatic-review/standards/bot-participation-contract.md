@@ -489,25 +489,31 @@ to trigger again. `declined` is distinct from the four refusal members, which na
 rate-limit / quota / size **refusal notice**; the decline is the quieter shape — the bot answered, but
 its answer did not reference the commit being merged.
 
-The deciding bit — whether the re-review produced a review of the new HEAD (`head_sha_verified: true`)
-or only a comment (`head_sha_verified: false`) — is **computed and must be consumed**: a `matched:
-true` with `head_sha_verified: false` is a decline, never a completed re-review, and a consumer that
-reads `matched` alone credits a review that never referenced the commit it was awaited for.
+The deciding bit — whether the re-review produced evidence naming the new HEAD (`head_sha_verified:
+true`) or only a comment that does not reference it (`head_sha_verified: false`) — is **computed and
+must be consumed**: a `matched: true` with `head_sha_verified: false` is a decline, never a completed
+re-review, and a consumer that reads `matched` alone credits a review that never referenced the commit
+it was awaited for.
 
 #### The reviewed-commit reference is recognised wherever it sits, and compared for EQUALITY
 
-`head_sha_verified` is decided by whether a review's reviewed-commit evidence **references** the
-awaited HEAD — not by whether that evidence *is* the bare SHA. The same reviewed-commit value arrives
-in more than one shape: a bare hex token, or the SHA carried inside a `…/commit/{sha}` permalink. Both
-name the same commit, so both MUST verify.
+`head_sha_verified` is decided by whether the matched signal's evidence **references** the awaited
+HEAD — not by whether that evidence *is* the bare SHA. On the review arm the evidence is the review's
+reviewed-commit field; on the issue-comment arm it is the comment **body**, because a bot that
+republishes its summary in place states the commit it reviewed there (CodeRabbit's `Review updated
+until commit …`). The same reviewed-commit value arrives in more than one
+shape: a bare hex token, the SHA carried inside a `…/commit/{sha}` permalink, or either of those
+inside prose. Each names the same commit, so each MUST verify — and both arms read it through the
+one recogniser, `github_re_review._references_head_sha`.
 
 ⛔ **This predicate fails toward BLOCKING, which is the opposite direction from the rest of this
 contract's refusal handling, and is why the recognition must be wide.** A reference the matcher does
-not recognise falls through to the weaker comment discriminator and publishes `head_sha_verified:
-false` — a `declined` verdict the bot never made, on the one member whose documented remedy is to
-ACCEPT the decline rather than re-trigger. The false verdict therefore stops a merge AND steers the
-operator away from the retry that would have exposed it, so a narrower recogniser is not merely less
-useful here, it is strictly worse.
+not recognise publishes `head_sha_verified: false` — a `declined` verdict the bot never made, on the
+one member whose documented remedy is to ACCEPT the decline rather than re-trigger. The false verdict
+therefore stops a merge AND steers the operator away from the retry that would have exposed it, so a
+narrower recogniser is not merely less useful here, it is strictly worse. That holds on both arms: a
+comment arm that published `false` as a constant manufactured exactly that decline for every
+in-place-republished summary naming the awaited HEAD.
 
 **Widen WHERE the SHA may sit, never WHICH commit counts.** Every token recovered from the evidence is
 compared for **equality** against the awaited HEAD; an abbreviation or leading run never matches.
@@ -523,10 +529,13 @@ Worked example — awaited HEAD `a1b2c3d4e5f60718293a4b5c6d7e8f9012345678`:
 | `https://github.com/{owner}/{repo}/commit/a1b2c3d4e5f60718293a4b5c6d7e8f9012345678` | `true` | The permalink CARRIES the awaited HEAD — the location differs, the commit does not. |
 | `https://github.com/{owner}/{repo}/commit/0f1e2d3c4b5a69788796a5b4c3d2e1f098765432` | `false` | The same shape naming a genuinely different commit: the negative control the widening must still fail. |
 | `https://github.com/{owner}/{repo}/commit/a1b2c3d4e5f6` | `false` | An abbreviation of the awaited HEAD — equality, never prefix. |
+| comment body: `Review updated until commit [a1b2c3d](https://github.com/{owner}/{repo}/commit/a1b2c3d4e5f60718293a4b5c6d7e8f9012345678)` | `true` | The in-place-republished summary names the awaited HEAD in its body. |
+| comment body naming no commit | `false` | The bot answered without naming what it reviewed — the decline this member exists to record. |
 
 A widening asserted only by its positive case cannot show it did not simply match everything, so the
-two permalink rows differ only in which commit they name, and the abbreviation row pins the equality
-boundary the location widening must not cross.
+two permalink rows differ only in which commit they name, the abbreviation row pins the equality
+boundary the location widening must not cross, and the comment-body rows differ only in whether the
+body names the awaited commit.
 
 ## Participation is not review quality
 

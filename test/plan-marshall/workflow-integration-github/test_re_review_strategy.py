@@ -1330,6 +1330,80 @@ def test_the_comment_and_review_paths_share_ONE_predicate():
 
 
 # =============================================================================
+# The same body-derived verdict on the OTHER publish shape — an in-place
+# republished summary
+# =============================================================================
+#
+# The structural constant did not only silence the permalink Guide above: it reported
+# ``false`` just as flatly for a CodeRabbit summary REPUBLISHED IN PLACE whose body
+# names the very commit it reviewed, manufacturing the same blocking ``declined``
+# verdict one publish shape over. These cases hold the one predicate against that
+# second shape, and they carry the boundary the Guide cases do not reach — an
+# ABBREVIATION of the awaited SHA — so the widening is demonstrably in LOCATION only
+# and equality still decides WHICH commit counts.
+#
+# Every case is built by ``_republished_comment`` and differs ONLY in the reference its
+# body carries: the awaited HEAD verifies; no commit, a different commit, and an
+# abbreviation of the awaited one do not. Each negative still MATCHES — the bot did
+# answer — which is exactly the decline a consumer routes on ``head_sha_verified``.
+
+
+def _republished_comment(reference):
+    """A CodeRabbit in-place-republished summary naming ``reference`` in its body."""
+    body = f'Review updated until commit {reference}. No actionable comments were generated.'
+    return _comment(_CODERABBIT_LOGIN, created_at='2026-01-01T00:00:00Z', updated_at='2026-01-01T00:05:00Z', body=body)
+
+
+def test_await_verifies_a_republished_comment_naming_the_awaited_head(monkeypatch):
+    """POSITIVE: a comment whose body links the awaited HEAD reports ``head_sha_verified: true``.
+
+    The body links the full SHA behind an abbreviated label, so the full SHA sits
+    inside a commit URL in the body — the same location widening the review arm
+    already applies, while the abbreviated label alone would not verify. No review
+    is supplied, so only the comment arm can match and the verdict is attributable
+    to the body alone.
+    """
+    reference = f'[{_HEAD_SHA[:7]}]({_HEAD_SHA_URL})'
+
+    result = _await_with_comments(
+        monkeypatch, [_republished_comment(reference)], bot_kind='coderabbit', head_sha=_HEAD_SHA
+    )
+
+    assert result['matched'] is True
+    assert result['matched_signal'] == 'issue_comment'
+    assert result['head_sha_verified'] is True
+    assert result['matched_review'] == {}
+    assert result['refusal_detected'] is False
+
+
+@pytest.mark.parametrize(
+    'reference',
+    [
+        pytest.param('the latest push', id='names-no-commit'),
+        pytest.param(f'[{_OTHER_SHA[:7]}]({_OTHER_SHA_URL})', id='names-a-different-commit'),
+        pytest.param(_HEAD_SHA[:12], id='abbreviates-the-awaited-commit'),
+    ],
+)
+def test_await_does_not_verify_a_republished_comment_not_naming_the_awaited_head(reference, monkeypatch):
+    """MATCHED NEGATIVE CONTROL: the same comment, naming anything but the awaited HEAD.
+
+    Same builder, same author, same timestamps — only the body's reference differs
+    from the positive above. The comment still completes the await (the bot answered),
+    so ``matched`` stays true while ``head_sha_verified`` stays false: the
+    incremental-review decline a consumer records as ``declined``. A body-derived
+    verdict that returned true here would credit a review of some other commit — or of
+    nothing — as a review of this HEAD.
+    """
+    result = _await_with_comments(
+        monkeypatch, [_republished_comment(reference)], bot_kind='coderabbit', head_sha=_HEAD_SHA
+    )
+
+    assert result['matched'] is True
+    assert result['matched_signal'] == 'issue_comment'
+    assert result['head_sha_verified'] is False
+
+
+# =============================================================================
 # Refusal notices are NOT a completed review — on BOTH discriminator paths
 # =============================================================================
 #
