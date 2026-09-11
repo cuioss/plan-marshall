@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the OpenCode variant emitter (dynamic-level-executor variants).
 
-Mirrors the intent of the Claude target's variant-emission tests: a
-role-eligible canonical (declaring ``implements:
+A role-eligible canonical (declaring ``implements:
 ext-point-dynamic-level-executor``) emits one ``{base}-level-N`` file per
-ordinal level with a concrete, provider-qualified model and — for tiers that
-differ only by effort — a ``reasoningEffort`` passthrough that keeps them
-distinct. Non-eligible agents emit a single file as before.
+ordinal level. Every OpenCode variant is an **inherit-only** copy of the
+canonical: it carries no ``model:`` and no ``reasoningEffort:``, so each
+level variant dispatches on the session model. Non-eligible agents emit a
+single file as before.
 """
 
 from __future__ import annotations
@@ -96,54 +96,33 @@ def test_canonical_carries_no_model_or_effort(role_bundle: Path, tmp_path: Path)
     assert fm.get('mode') == 'subagent'
 
 
-def test_variant_models_resolve_to_anthropic_ids(role_bundle: Path, tmp_path: Path) -> None:
+def test_variants_carry_no_pinned_model(role_bundle: Path, tmp_path: Path) -> None:
     out = tmp_path / 'out'
     emit_bundles(role_bundle, out, CONFIG_DIR)
     agent_dir = out / 'agent'
-    expected = {
-        'level-1': 'anthropic/claude-haiku-4-5-20251001',
-        'level-2': 'anthropic/claude-sonnet-4-6',
-        'level-3': 'anthropic/claude-sonnet-4-6',
-        'level-4': 'anthropic/claude-opus-4-8',
-        'level-5': 'anthropic/claude-opus-4-8',
-        'level-6': 'anthropic/claude-opus-4-8',
-        'level-7': 'anthropic/claude-fable-5',
-    }
-    for level, model in expected.items():
+    for level in ALL_LEVELS:
         fm = _fm_of(agent_dir / f'execution-context-{level}.md')
-        assert fm.get('model') == model, f'{level}: model mismatch'
+        assert 'model' not in fm, f'{level}: variant must not pin a model'
 
 
-def test_variant_effort_passthrough_per_level(role_bundle: Path, tmp_path: Path) -> None:
+def test_variants_carry_no_effort_key(role_bundle: Path, tmp_path: Path) -> None:
     out = tmp_path / 'out'
     emit_bundles(role_bundle, out, CONFIG_DIR)
     agent_dir = out / 'agent'
-    # level-1 (haiku) carries no effort key; the rest carry their keyword.
-    expected = {
-        'level-1': None,
-        'level-2': 'medium',
-        'level-3': 'high',
-        'level-4': 'medium',
-        'level-5': 'high',
-        'level-6': 'xhigh',
-        'level-7': 'max',
-    }
-    for level, effort in expected.items():
+    for level in ALL_LEVELS:
         fm = _fm_of(agent_dir / f'execution-context-{level}.md')
-        assert fm.get('reasoningEffort') == effort, f'{level}: effort mismatch'
+        assert 'reasoningEffort' not in fm, f'{level}: variant must not carry an effort key'
 
 
-def test_same_model_tiers_stay_distinct(role_bundle: Path, tmp_path: Path) -> None:
-    """The effort passthrough keeps same-model tiers from collapsing to identical files."""
+def test_all_level_variants_are_inherit_copies_of_canonical(role_bundle: Path, tmp_path: Path) -> None:
+    """Every level variant is frontmatter-identical to the canonical (inherit)."""
     out = tmp_path / 'out'
     emit_bundles(role_bundle, out, CONFIG_DIR)
     agent_dir = out / 'agent'
-    l2 = (agent_dir / 'execution-context-level-2.md').read_text(encoding='utf-8')
-    l3 = (agent_dir / 'execution-context-level-3.md').read_text(encoding='utf-8')
-    l4 = (agent_dir / 'execution-context-level-4.md').read_text(encoding='utf-8')
-    l5 = (agent_dir / 'execution-context-level-5.md').read_text(encoding='utf-8')
-    assert l2 != l3, 'level-2 and level-3 (both sonnet) collapsed to identical files'
-    assert l4 != l5, 'level-4 and level-5 (both opus) collapsed to identical files'
+    canon_fm = _fm_of(agent_dir / 'execution-context.md')
+    for level in ALL_LEVELS:
+        fm = _fm_of(agent_dir / f'execution-context-{level}.md')
+        assert fm == canon_fm, f'{level}: variant frontmatter must equal the canonical (inherit)'
 
 
 def test_variant_body_matches_canonical_body(role_bundle: Path, tmp_path: Path) -> None:
@@ -218,7 +197,6 @@ def test_emit_agent_variants_returns_none_for_non_eligible() -> None:
         load_mapping(CONFIG_DIR),
         load_rules(CONFIG_DIR),
         source_label='agents/demo/plain.md',
-        mapping_path=CONFIG_DIR / 'mapping.json',
     )
     assert result is None
 
@@ -239,10 +217,10 @@ def test_validate_canonical_rejects_model(tmp_path: Path) -> None:
         emit_bundles(marketplace, out, CONFIG_DIR)
 
 
-def test_gated_effort_skipped_when_alias_lacks_support(tmp_path: Path) -> None:
-    """When mapping.json's alias does not advertise a gated effort, that level is skipped."""
-    # Custom mapping where opus lacks xhigh -> level-6 must be skipped, but
-    # level-4/level-5 (opus medium/high, ungated) still emit.
+def test_all_levels_emit_regardless_of_mapping_capabilities(tmp_path: Path) -> None:
+    """The alias-capability gate is Claude-only: OpenCode emits every level."""
+    # Custom mapping where opus/fable advertise no xhigh/max — the Claude side
+    # would skip level-6/level-7 here; OpenCode must still emit all seven.
     custom_mapping = {
         'tool_permissions': {
             'Read': 'read',
@@ -258,14 +236,9 @@ def test_gated_effort_skipped_when_alias_lacks_support(tmp_path: Path) -> None:
             'haiku': {'id': 'claude-haiku-4-5-20251001', 'supports_effort': []},
             'sonnet': {'id': 'claude-sonnet-4-6', 'supports_effort': ['medium', 'high']},
             'opus': {'id': 'claude-opus-4-8', 'supports_effort': ['medium', 'high']},
-            'fable': {
-                'id': 'claude-fable-5',
-                'supports_effort': ['medium', 'high', 'xhigh', 'max'],
-            },
+            'fable': {'id': 'claude-fable-5', 'supports_effort': []},
         },
     }
-    mapping_path = tmp_path / 'mapping.json'
-    mapping_path.write_text(json.dumps(custom_mapping), encoding='utf-8')
 
     fm, _ = parse_frontmatter(_role_agent_source())
     agent_dir = tmp_path / 'agent'
@@ -277,14 +250,12 @@ def test_gated_effort_skipped_when_alias_lacks_support(tmp_path: Path) -> None:
         custom_mapping,
         load_rules(CONFIG_DIR),
         source_label='agents/demo/execution-context.md',
-        mapping_path=mapping_path,
     )
     assert result is not None
-    assert 'level-6' not in result.variants_emitted
-    assert 'level-6' in [lvl for lvl, _ in result.variants_skipped]
-    assert 'level-4' in result.variants_emitted
-    assert 'level-5' in result.variants_emitted
-    assert not (agent_dir / 'execution-context-level-6.md').exists()
+    assert result.variants_emitted == ALL_LEVELS
+    assert result.variants_skipped == []
+    for level in ALL_LEVELS:
+        assert (agent_dir / f'execution-context-{level}.md').is_file(), f'missing variant for {level}'
 
 
 def test_render_variant_frontmatter_shape() -> None:
@@ -299,9 +270,9 @@ def test_render_variant_frontmatter_shape() -> None:
     assert block.startswith('---\n')
     assert block.rstrip().endswith('---')
     assert 'mode: subagent' in block
-    assert 'model: anthropic/claude-opus-4-8' in block
-    assert 'reasoningEffort: xhigh' in block
-    # implements/levels are stripped; permission block present.
+    # Inherit policy: no model / effort pin; implements/levels stripped.
+    assert 'model:' not in block
+    assert 'reasoningEffort' not in block
     assert 'implements' not in block
     assert 'permission:' in block
 

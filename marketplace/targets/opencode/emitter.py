@@ -352,7 +352,6 @@ def _emit_agent(
     body_transformer: BodyTransformer,
     written: list[Path],
     agent_index: dict[str, dict[str, str]],
-    mapping_path: Path,
 ) -> None:
     if not agent_md.exists():
         return
@@ -375,9 +374,10 @@ def _emit_agent(
     agent_index[agent_id] = {'bundle': bundle_name, 'source': source_label}
 
     # Role-eligible agents (dynamic-level-executor extension point) also emit
-    # per-level variant files alongside the canonical one, each with a concrete
-    # model resolved from LEVEL_TABLE + mapping.json::model_map. Non-eligible
-    # agents leave this a no-op (returns None).
+    # per-level variant files alongside the canonical one, so
+    # ``{base}-level-N`` resolve-target results stay dispatchable. Every
+    # variant is an inherit-only copy of the canonical frontmatter (no
+    # model/effort pin) — non-eligible agents leave this a no-op (None).
     result = emit_agent_variants(
         fm,
         new_body,
@@ -386,7 +386,6 @@ def _emit_agent(
         mapping,
         rules,
         source_label=source_label,
-        mapping_path=mapping_path,
     )
     if result is not None:
         for level in result.variants_emitted:
@@ -545,7 +544,6 @@ def emit_bundles(
 
     mapping = load_mapping(config_dir)
     rules = load_rules(config_dir)
-    mapping_path = config_dir / 'mapping.json'
     transform_body = body_transformer or _identity_body
 
     bundle_list = list(bundles) if bundles is not None else None
@@ -595,7 +593,6 @@ def emit_bundles(
                 transform_body,
                 written,
                 agent_index,
-                mapping_path,
             )
 
         for command_md in _resolve_md_components(bundle_dir, plugin_config, 'commands', 'commands'):
