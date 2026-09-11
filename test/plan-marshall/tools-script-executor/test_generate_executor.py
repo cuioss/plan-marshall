@@ -3027,8 +3027,7 @@ def test_surface_derivation_depth_covers_deepest_executor_verb_chain():
 
     observed_deepest = 4
     assert observed_deepest < config.max_depth, (
-        f'deepest observed verb chain ({observed_deepest}) must sit strictly '
-        f'inside max_depth={config.max_depth}'
+        f'deepest observed verb chain ({observed_deepest}) must sit strictly inside max_depth={config.max_depth}'
     )
 
     source = GENERATE_SCRIPT.read_text(encoding='utf-8')
