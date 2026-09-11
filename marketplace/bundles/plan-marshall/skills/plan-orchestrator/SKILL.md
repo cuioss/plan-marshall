@@ -417,8 +417,8 @@ A landing carries a fenced `landing-facts` block specified by [`standards/landin
 
 | Class | Values | Counts as missing at |
 |-------|--------|----------------------|
-| **Answered-degraded** — asserts a real end state ("there is no such thing") | `n/a` | `plan_id`, `deliverables_total`, `deliverables_done`, `total_tokens`, `steps` only; it stays a legal answer for `pr` and `merge_state` |
-| **Could-not-read** — asserts only that nothing was observed | `unknown` | EVERY key, with no allow-list — `pr` and `merge_state` included |
+| **Answered-degraded** — asserts a real end state ("there is no such thing") | `n/a` | `plan_id`, `deliverables_total`, `deliverables_done`, `total_tokens`, `steps` only; it stays a legal answer for `pr`, `merge_state` and `cleanup_owed` |
+| **Could-not-read** — asserts only that nothing was observed | `unknown` | EVERY key, with no allow-list — `pr`, `merge_state` and `cleanup_owed` included |
 
 So `merge_state=n/a` leaves a landing complete while `merge_state=unknown` does not: the first records "no PR exists", the second records a read that failed, and the drain must not reconcile against a failed read. The two classes are separate vocabularies precisely because one gated set cannot express both. A PRE-FIX prose-only landing has no block at all, so `missing_keys` is the whole required set — this is the known-incomplete input the check is SEEN to fail on. `complete: false` is a VERDICT (`status: success`), never a fault: the drain records it as an Open Defect and continues. This is what lets the orchestrator turn "the queue is empty" into "every REQUIRED fact drained" — the two coincide only when every drained landing was complete. It does not reach the OPTIONAL keys, so it never establishes that nothing whatsoever is outstanding. Consumed by [`workflow/analyze.md`](workflow/analyze.md) Step 4.
 

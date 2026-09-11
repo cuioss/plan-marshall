@@ -15,6 +15,7 @@ records_facts:
   - merge_mechanism
   - merge_state
   - work_performed
+  - cleanup_owed
 default_on: true
 presets:
   - local
@@ -1815,7 +1816,7 @@ Pass a `--display-detail` value alongside `--outcome done` so the output-templat
 
 ### Structured facts recorded here
 
-This step declares the `records_facts` union `action`, `upstream_commit_count`, `merge_mechanism`, `merge_state`, `work_performed`. The union is a step-level declaration, NOT a per-branch mandate — each of the eight terminal call sites below (**Branches A through E**, plus **F1/F2/F3**, the three observations the queue landing gate routes to Branch F; seven record `--outcome done` and F1 records `--outcome loop_back`, which is terminal for this dispatch and so carries the same fact obligation) records only the **honest subset** its own path produced, per [ext-point-finalize-step.md](../../extension-api/standards/ext-point-finalize-step.md) § "Structured step facts". The path conditions:
+This step declares the `records_facts` union `action`, `upstream_commit_count`, `merge_mechanism`, `merge_state`, `work_performed`, `cleanup_owed`. The union is a step-level declaration, NOT a per-branch mandate — each of the eight terminal call sites below (**Branches A through E**, plus **F1/F2/F3**, the three observations the queue landing gate routes to Branch F; seven record `--outcome done` and F1 records `--outcome loop_back`, which is terminal for this dispatch and so carries the same fact obligation) records only the **honest subset** its own path produced, per [ext-point-finalize-step.md](../../extension-api/standards/ext-point-finalize-step.md) § "Structured step facts". The path conditions:
 
 | Fact | Recorded iff |
 |------|--------------|
@@ -1824,6 +1825,7 @@ This step declares the `records_facts` union `action`, `upstream_commit_count`, 
 | `merge_mechanism` | The merge actually **landed** and was corroborated (`{merge_landed} == true`). Value is `pr_safe_merge` when `ci pr safe-merge` returned a corroborated `merged: true`, or `merge_queue` when § "Wait for the Queue Merge to Land (bounded)" observed the platform queue merge the enqueued PR. A path that enqueued but whose merge never landed (**Branch F**) records NO `merge_mechanism` — dispatching a merge-shaped verb is not the same fact as a merge, and that branch reports the enqueue in its `display_detail` instead. A path that never merged at all likewise records none. |
 | `merge_state` | **Every** terminal call site below, `done` and Branch F's `loop_back` alike. Unlike `merge_mechanism` — which records HOW a merge landed and is therefore absent wherever none did — `merge_state` records WHAT STATE the PR is in, and every branch determines that: `merged` on the two branches that landed a merge (A, E); `open` where a live PR is left unmerged (C declined, F1 still queued); `closed` where the queue dequeued it without merging (F2); `unknown` where the PR state could not be read at all (F3); and `n/a` where no PR exists (B local-only, D no-PR-found). The five values are distinct claims and are not interchangeable — `closed` is not `open`, and `unknown` asserts only that nothing was observed. Recording it everywhere is the honest subset, not an exception: no branch lacks the value. Its consumer is the terminal `default:emit-landing` step, whose `landing-facts` block carries a required `merge_state` key. ⚠ `unknown` is a COULD-NOT-READ marker, and the drain's completeness check treats that class as a gap at every key with no carve-out: a landing carrying `merge_state=unknown` is reported INCOMPLETE at that key. That is the intended honest outcome, not a defect to avoid — never substitute an observed-looking value for a state the run could not read, because a fabricated merge state is worse than a recorded gap. |
 | `work_performed` | **Every** terminal call site below, `true` or `false`, never omitted — the one declared exception to the honest-subset rule. |
+| `cleanup_owed` | **Every** terminal call site below, `done` and Branch F1's `loop_back` alike, for the same reason `merge_state` is: every branch determines whether this run still owes branch cleanup, so no branch lacks the value. `false` where the cleanup was completed or there was nothing to clean up — A and E (merged and cleaned up), B (local-only cleanup performed), D (no PR, nothing to clean up); `true` where cleanup is left owed — C (declined: the live PR and branch are left standing), F1 (deferred until the queue merge lands), F2 (dequeued without merging), F3 (queue state unreadable). It is the structured carrier of owed cleanup: F2's `merge_state=closed` is a fully-readable value, so without this fact an F2 landing reads complete and clean and its owed-ness survives only in a `display_detail` string no consumer routes on. Its consumer is the terminal `default:emit-landing` step, whose `landing-facts` block carries a required `cleanup_owed` key. |
 
 `--display-detail` on every branch is a **rendering of the facts that branch recorded**. In particular it MUST NOT assert a rebase or a merge the recorded facts do not support — a fixed literal claiming a rebase unconditionally is exactly what the per-branch facts exist to prevent. It MUST equally not render an *enqueue* as a merge, nor a queue merge as a merge this step performed: `merge_mechanism == merge_queue` records that the PLATFORM merged the PR and this step corroborated the landing, so its rendering says so rather than reusing the direct-merge phrasing.
 
@@ -1845,6 +1847,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
   {--fact upstream_commit_count={rebase_upstream_commit_count} (if use_merge_queue == false)} \
   --fact merge_mechanism={merge_mechanism} \
   --fact merge_state=merged \
+  --fact cleanup_owed=false \
   --fact work_performed=true \
   --display-detail "{rendered_detail}"
 ```
@@ -1868,32 +1871,35 @@ Render `{rendered_detail}` as `"{rebase_clause}, {merge_clause}, cleanup complet
 
 The `merge_queue` clause is deliberately not the word "merged" alone: the platform performed the merge and this step observed it land, which is a different fact from this step having merged the PR itself. Worst-case expansion is the 70-char string checked in § "Length discipline" above.
 
-**Branch B — local-only mode** (no PR was created; only the local switch-to-base-branch was performed). This path never reaches the rebase and never merges, so it records neither `action`, nor `upstream_commit_count`, nor `merge_mechanism` — but it DID perform its characteristic local cleanup, so `work_performed=true`:
+**Branch B — local-only mode** (no PR was created; only the local switch-to-base-branch was performed). This path never reaches the rebase and never merges, so it records neither `action`, nor `upstream_commit_count`, nor `merge_mechanism` — but it DID perform its characteristic local cleanup, so `work_performed=true` and `cleanup_owed=false`:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step branch-cleanup --outcome done \
   --fact merge_state=n/a \
+  --fact cleanup_owed=false \
   --fact work_performed=true \
   --display-detail "local-only: switched to {base_branch}"
 ```
 
-**Branch C — declined by user** (interactive prompt was rejected; cleanup was not performed). Nothing was rebased, merged, or cleaned up, so `work_performed=false`. The PR is left live and unmerged, so `merge_state=open`; no `action` or `merge_mechanism` is recorded, because no path produced one:
+**Branch C — declined by user** (interactive prompt was rejected; cleanup was not performed). Nothing was rebased, merged, or cleaned up, so `work_performed=false`. The PR is left live and unmerged, so `merge_state=open`, and the live PR and branch left standing are cleanup this run still owes, so `cleanup_owed=true`; no `action` or `merge_mechanism` is recorded, because no path produced one:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step branch-cleanup --outcome done \
   --fact merge_state=open \
+  --fact cleanup_owed=true \
   --fact work_performed=false \
   --display-detail "declined by user"
 ```
 
-**Branch D — no PR found** (PR mode, `pr view` returned `status: error` — there is no PR for the current branch, so there is nothing to clean up on the remote side). The path exits before the rebase and before any merge, so it records `work_performed=false` and, since no PR exists to be in any state, `merge_state=n/a`; no `action` or `merge_mechanism` is recorded:
+**Branch D — no PR found** (PR mode, `pr view` returned `status: error` — there is no PR for the current branch, so there is nothing to clean up on the remote side). The path exits before the rebase and before any merge, so it records `work_performed=false`, `cleanup_owed=false` (nothing exists to clean up) and, since no PR exists to be in any state, `merge_state=n/a`; no `action` or `merge_mechanism` is recorded:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step branch-cleanup --outcome done \
   --fact merge_state=n/a \
+  --fact cleanup_owed=false \
   --fact work_performed=false \
   --display-detail "no PR, nothing to clean up"
 ```
@@ -1911,6 +1917,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
   {--fact upstream_commit_count={rebase_upstream_commit_count} (if use_merge_queue == false)} \
   --fact merge_mechanism={merge_mechanism} \
   --fact merge_state=merged \
+  --fact cleanup_owed=false \
   --fact work_performed=true \
   --display-detail "merged under {kind}, gap recorded"
 ```
@@ -1928,16 +1935,18 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
   --plan-id {plan_id} --phase 6-finalize --step branch-cleanup --outcome loop_back \
   --loop-back-target 6-finalize \
   --fact merge_state=open \
+  --fact cleanup_owed=true \
   --fact work_performed=true \
   --display-detail "queued, merge not landed in budget, cleanup deferred"
 ```
 
-**F2 — dequeued without merging** (`state == closed`). The queue removed the PR — its re-test went red against the latest base, or an operator removed it. **Re-running cannot change this**: identical input yields the identical answer, so a `loop_back` here would spin to `max_iterations` against a state only an operator can clear. It terminates, reporting the state actually observed:
+**F2 — dequeued without merging** (`state == closed`). The queue removed the PR — its re-test went red against the latest base, or an operator removed it. **Re-running cannot change this**: identical input yields the identical answer, so a `loop_back` here would spin to `max_iterations` against a state only an operator can clear. It terminates, reporting the state actually observed, and records `cleanup_owed=true` — that fact, not the state, is what carries the owed cleanup into the landing: `merge_state=closed` is a fully-readable value, so on its own it leaves a landing that reads complete and clean:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step branch-cleanup --outcome done \
   --fact merge_state=closed \
+  --fact cleanup_owed=true \
   --fact work_performed=true \
   --display-detail "dequeued without merging, cleanup owed"
 ```
@@ -1950,6 +1959,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step branch-cleanup --outcome done \
   --fact merge_state=unknown \
+  --fact cleanup_owed=true \
   --fact work_performed=true \
   --display-detail "queue state unreadable, cleanup owed"
 ```
@@ -1969,7 +1979,9 @@ as no record — dispatch as fresh run)"* — so re-entry once the queue merge l
 now actually does. F2 and F3 also leave cleanup owed, but **re-running cannot discharge it**: a
 dequeued PR stays dequeued and an unreadable provider stays unreadable until something outside this
 run changes, so looping there would convert a diagnosable stop into `max_iterations` of identical
-retries. They terminate with an honest `merge_state` and carry the owed cleanup in the landing. The `max_iterations` ceiling bounds the retries, and the merge mutex was already
+retries. They terminate with an honest `merge_state` and record `cleanup_owed=true`, which is what
+carries the owed cleanup into the landing; F3's `merge_state=unknown` additionally makes the landing
+INCOMPLETE at that key. The `max_iterations` ceiling bounds F1's retries, and the merge mutex was already
 released above, so the loop-back holds no lock. `emit-landing`'s failed-write branch takes the same
 remedy for the same reason.
 

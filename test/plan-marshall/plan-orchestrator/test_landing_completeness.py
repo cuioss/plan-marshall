@@ -79,6 +79,7 @@ _SAMPLE_FACT_VALUES: dict[str, str] = {
     'plan_id': 'truthful-signals-302',
     'pr': '#1234',
     'merge_state': 'merged',
+    'cleanup_owed': 'false',
     'deliverables_total': '6',
     'deliverables_done': '6',
     'total_tokens': '512000',
@@ -175,11 +176,11 @@ class TestSeenToFailOnPreFixLanding:
 #
 # - ANSWERED-degraded (``n/a``) asserts a real end state — "there is no such
 #   thing" — so it is rejected only at the keys
-#   ``LANDING_SENTINEL_REJECTING_KEYS`` names, and stays a legal answer at ``pr``
-#   and ``merge_state``.
+#   ``LANDING_SENTINEL_REJECTING_KEYS`` names, and stays a legal answer at ``pr``,
+#   ``merge_state`` and ``cleanup_owed``.
 # - COULD-NOT-READ (``unknown``) asserts only that nothing was observed, so it is
-#   rejected at EVERY key with no allow-list — ``pr`` and ``merge_state``
-#   included.
+#   rejected at EVERY key with no allow-list — ``pr``, ``merge_state`` and
+#   ``cleanup_owed`` included.
 #
 # That is why the fix was to SPLIT the vocabulary rather than to add
 # ``merge_state`` to the rejecting set: ``merge_state=n/a`` must stay an answer
@@ -263,6 +264,21 @@ class TestDegradedSentinelFacts:
         assert complete is True
         assert missing == []
 
+    def test_degraded_cleanup_owed_stays_complete(self):
+        """``cleanup_owed=n/a`` is an answer: no ``branch-cleanup`` step ran.
+
+        A plan whose manifest carried no cleanup step owes no cleanup it could
+        record, so the ANSWERED token there is an observed absence rather than a
+        gap. This is the negative control that keeps ``cleanup_owed`` OUTSIDE the
+        rejecting set — adding it there would turn this red.
+        """
+        landing = _facts_landing(cleanup_owed='n/a')
+
+        complete, missing = check_landing_completeness(landing)
+
+        assert complete is True
+        assert missing == []
+
     def test_sentinel_match_ignores_case_and_surrounding_space(self):
         """A producer's ``N/A`` is the same sanctioned degraded value as ``n/a``."""
         landing = _facts_landing(total_tokens='  N/A  ')
@@ -301,7 +317,7 @@ class TestDegradedSentinelFacts:
         assert missing == ['merge_state']
 
     def test_could_not_read_pr_is_reported_missing(self):
-        """``pr`` is the other key outside the rejecting set — same rule applies."""
+        """``pr`` is another key outside the rejecting set — same rule applies."""
         landing = _facts_landing(pr='unknown')
 
         complete, missing = check_landing_completeness(landing)
@@ -309,13 +325,27 @@ class TestDegradedSentinelFacts:
         assert complete is False
         assert missing == ['pr']
 
+    def test_could_not_read_cleanup_owed_is_reported_missing(self):
+        """POSITIVE CONTROL: ``cleanup_owed=unknown`` is a GAP, not a fact.
+
+        ``cleanup_owed`` sits outside ``LANDING_SENTINEL_REJECTING_KEYS`` so that
+        ``n/a`` stays an answer there, and that placement must not let a failed
+        read of the fact drain as a settled "nothing owed".
+        """
+        landing = _facts_landing(cleanup_owed='unknown')
+
+        complete, missing = check_landing_completeness(landing)
+
+        assert complete is False
+        assert missing == ['cleanup_owed']
+
     def test_could_not_read_at_a_rejecting_set_key_is_reported_missing(self):
         """The class also rejects at a key the ANSWERED gate already covers.
 
         ``total_tokens`` is in ``LANDING_SENTINEL_REJECTING_KEYS``, so both
         classes are unsupplied there. Pinning it proves the could-not-read rule
-        is unconditional rather than an else-branch that only fires at the two
-        keys the gate omits.
+        is unconditional rather than an else-branch that only fires at the keys
+        the gate omits.
         """
         landing = _facts_landing(total_tokens='unknown')
 
@@ -405,7 +435,7 @@ _FACT_KEY = re.compile(r'^([a-z][a-z0-9_]*)(?:=.*)?$')
 #: The degraded-value tokens the producer prose writes in code spans. A sentinel
 #: is a VALUE, never a fact key, but ``unknown`` is spelled exactly like one —
 #: lowercase letters and nothing else — so ``_FACT_KEY`` cannot tell the two
-#: apart and would harvest it as a ninth required key, failing the equality below
+#: apart and would harvest it as an extra required key, failing the equality below
 #: against prose that is entirely correct. The sibling sentinel ``n/a`` is kept
 #: out by ``_FACT_KEY`` alone, but only by the accident of its slash: resting a
 #: key set on a token's punctuation is what let this through, so both
@@ -516,7 +546,7 @@ class TestDocumentedEnumerationsMatchTheConstant:
 
         ``unknown`` is spelled exactly like a key — lowercase letters, nothing
         else — so without an explicit exclusion the producer prose that NAMES the
-        token to state the could-not-read rule contributes a ninth "required key"
+        token to state the could-not-read rule contributes an extra "required key"
         and the equality below fails against text that is entirely correct.
 
         The key-qualified spelling is pinned in the same breath: dropping a BARE
@@ -549,8 +579,8 @@ class TestDocumentedEnumerationsMatchTheConstant:
 
         The equality above compares Key cells only, so a row documenting the
         wrong value vocabulary is invisible to it. That blind spot matters most
-        at exactly these keys: `pr` and `merge_state` are the two required keys
-        OUTSIDE ``LANDING_SENTINEL_REJECTING_KEYS``, so `n/a` is a legal answer
+        at exactly these keys: `pr`, `merge_state` and `cleanup_owed` are the
+        required keys OUTSIDE ``LANDING_SENTINEL_REJECTING_KEYS``, so `n/a` is a legal answer
         there while `unknown` is still a gap — and a producer author reads the
         Value cell to learn which tokens are legal. A cell naming only `n/a`
         teaches them to write it for a failed read, reproducing the
@@ -764,7 +794,7 @@ class TestProducerRoutesConditionsToTokens:
         assert not offenders, (
             'A producer document instructs the emitter to write `n/a` for a value it could '
             'not READ. `n/a` is the ANSWERED token ("there is no such thing") and is exempt '
-            'at `pr` and `merge_state`, so a failed read routed there drains as a settled '
+            'at `pr`, `merge_state` and `cleanup_owed`, so a failed read routed there drains as a settled '
             'fact — the false-completeness class this check exists to close. Route the '
             'failed-read condition to `unknown` instead, which is a gap at every key. '
             f'Offending units: {offenders}'
