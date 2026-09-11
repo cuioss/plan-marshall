@@ -457,7 +457,7 @@ timeout, NOT an unanswerable one.
 comment on the PR is a rate-limit / service notice posted in place of a review:
 
 ```toon
-rate_limited_bots[N]{bot_kind,rate_limit_class,eta,cause,cap}:
+rate_limited_bots[N]{bot_kind,rate_limit_class,eta,cause,cap,layer,body}:
 ```
 
 - `bot_kind` — the registry key of the refusing bot. The bot set, and each bot's login, are derived
@@ -476,6 +476,17 @@ rate_limited_bots[N]{bot_kind,rate_limit_class,eta,cause,cap}:
 - `cap` — the ceiling the size notice itself stated, via that bot's registry
   `refusal_size_cap_patterns`, or `""` when it stated none. An empty `cap` means *unknown* and is
   never defaulted: a figure nobody observed would make an accepted gap look audited when it was not.
+- `layer` — the recognition arm that read the notice, from the shared `_github_pr.REFUSAL_LAYERS`
+  vocabulary: `registry_refusal_patterns` when the bot's own declared phrasing matched (reported even
+  when the structural arm also fired), `structural_fallback` when the notice was recognised by its
+  shape alone. The enumerative arm runs after the noise filter and never reaches this detector.
+- `body` — the notice itself, whitespace-collapsed and truncated to one TOON-safe line: the same
+  excerpt the `github_re_review` `refusals[]` record carries.
+
+`layer` and `body` give this record the same observation fields as the `refusals[]` record, so a
+consumer that arms a wait on either producer's refusal can state which arm read the notice and what the
+notice said, rather than re-deriving it after the fact. `body` is untrusted bot text; a consumer that
+interpolates it into a shell argument owns its quoting.
 
 ⛔ **Read `cause` BEFORE `rate_limit_class` when choosing a remedy.** The two are INDEPENDENT axes,
 not one axis restated: `cause` is observed per REFUSAL while `rate_limit_class` is declared per BOT,

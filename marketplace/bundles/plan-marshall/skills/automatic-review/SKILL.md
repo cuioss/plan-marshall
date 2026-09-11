@@ -355,8 +355,8 @@ Once every participating bot is completed, markerless (buffer-settled), or logge
 > **GitLab provider asymmetry:** `bot_completion` is a GitHub-only read verb — the GitLab provider (`gitlab_pr`) has no completion-check-run equivalent (the same asymmetry the FIND stage's `--required-bots` / `--optional-bots` note documents). On a GitLab host, skip the completion-aware poll entirely; every bot relies on the `review_bot_buffer_seconds` settle.
 
 The `pr wait-for-comments` return carries a **`rate_limited_bots[]`** discriminator — one
-`{bot_kind, rate_limit_class, eta, cause, cap}` record per REGISTERED bot whose newest comment is a
-rate-limit status notice posted in place of a review. A non-empty list signals that those specific bots did not
+`{bot_kind, rate_limit_class, eta, cause, cap, layer, body}` record per REGISTERED bot whose newest
+comment is a rate-limit status notice posted in place of a review. A non-empty list signals that those specific bots did not
 review because their limit was hit, rather than that a genuine review landed or the buffer timed out
 cleanly. An empty list means no registered bot is rate-limited. See
 [`../workflow-integration-github/SKILL.md`](../workflow-integration-github/SKILL.md) § Canonical
@@ -377,8 +377,8 @@ below acts on this discriminator when the opt-in is enabled; when the opt-in is 
 A detected refusal is a **branchable signal, never a silent drop**. Two producers surface one:
 
 - **`rate_limited_bots[]`** on the "Wait for review-bot comments" return — one
-  `{bot_kind, rate_limit_class, eta, cause, cap}` record per registered bot whose newest comment is a
-  rate-limit notice.
+  `{bot_kind, rate_limit_class, eta, cause, cap, layer, body}` record per registered bot whose newest
+  comment is a rate-limit notice.
 - **`refusal_detected` / `refusal_class` / `refusal_eta` / `refusals[]`** on the
   `github_re_review re-review` return — the re-review await recorded a refusal instead of collapsing
   it into a bare `matched: false` / `timed_out: true`.
@@ -387,6 +387,9 @@ Both carry the same discriminators, so this section treats them uniformly: `{bot
 `rate_limit_class` (`awaitable_window` / `hard_quota` / `unknown`), the refusal's `cause` (`size` /
 `quota`, from the `refused_causes[]` overlay), plus the stated `eta` when the bot's registry
 `rate_limit_eta_patterns` matched and the stated `cap` when its `refusal_size_cap_patterns` matched.
+Both records also carry the OBSERVATION behind the refusal: `layer`, the recognition arm that read the
+notice, and `body`, the notice itself as a whitespace-collapsed, truncated excerpt. Branch 2 discloses
+those two fields when it arms a wait — see § "The arming disclosure" below.
 
 Read `review_rate_window_await` and `review_rate_window_timeout_seconds` off the same `params` object returned by the one-stop `manage-execution-manifest step-params get --plan-id {plan_id} --phase 6-finalize --step-id plan-marshall:automatic-review` call used for `review_bot_buffer_seconds` (defaults: `false` and `3600`). **When `review_rate_window_await == false`**, skip this entire subsection and proceed directly to "Producer: FIND" below — a detected refusal is treated as an ordinary settle.
 
@@ -507,13 +510,44 @@ Branch on the returned `status`:
   ```
 
 - **`status: success`** — the window is claimed (`action` is `claimed` / `renewed` / `reclaimed`).
-  Decision-log the claim with its `expires_at` and `attempts_remaining`, then proceed to Branch 3.
+  Decision-log the claim together with the observation that armed it (§ "The arming disclosure"
+  below), then proceed to Branch 3.
 
   ```bash
   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
     decision --plan-id {plan_id} --level INFO \
-    --message "(plan-marshall:automatic-review) refusal recovery ARMED — claimed {bot_kind} rate window ({action}), eta={refusal_eta} seconds_remaining={seconds_remaining} attempts={attempts}/{attempt_cap}"
+    --message '(plan-marshall:automatic-review) refusal recovery ARMED — claimed {bot_kind} rate window ({action}), seconds_remaining={seconds_remaining} attempts={attempts}/{attempt_cap}; armed by producer={producer} layer={layer} eta={eta} body={body}'
   ```
+
+**The arming disclosure.** The ARMED line records the OBSERVATION that armed the wait, not only the
+claim it produced. A wait whose arming record names only its own action and clock cannot be read back
+on a resume: the run re-derives what it is waiting on, and a cancelled wait becomes indistinguishable
+from a spent one. So the disclosure names four facts, read off the ONE refusal record that selected this
+recovery and never re-derived:
+
+- `{producer}` — which producer surfaced the refusal: `wait-for-comments` when the record came from
+  the `rate_limited_bots[]` list on the "Wait for review-bot comments" return, `re-review` when it came
+  from the `refusals[]` list on the `github_re_review re-review` return. On the `re-review` producer the
+  record is the one the envelope's `refusal_eta` was read from — the first record carrying a non-empty
+  `eta`, and the first record when none does.
+- `{layer}` — the record's `layer`: which recognition arm read the notice, from the shared
+  `_github_pr.REFUSAL_LAYERS` vocabulary.
+- `{eta}` — the record's `eta`, the reset time the notice itself stated, or the literal `unknown` when it
+  stated none. It is an estimate the bot published, not a contract — which is why Branch 3 polls the
+  claim rather than sleeping through it.
+- `{body}` — the record's `body`, the notice's whitespace-collapsed, truncated excerpt.
+
+⛔ **The excerpt is untrusted bot text, so the `--message` value above is SINGLE-quoted, and must stay
+that way.** Inside a double-quoted argument a backtick or `$` is command substitution — and refusal
+notices quote the bot's own trigger (CodeRabbit's names `` `@coderabbitai review` ``), which would run
+as a command. Write any single quote inside the excerpt as `'\''`.
+
+The same four facts, with `{bot_kind}`, are carried as a `rate_window_arming[]` row on the envelope this
+step returns (see "Output"), because the decision log is a single sink that a resumed run does not read
+back. The disclosure is emitted ONLY here, on a successful claim. Branch 0 and Branch 1 escalate
+without claiming, Branch 2's `recovery_cap_exhausted` and `window_held_by_other_plan` arms claim
+nothing, and a run with `review_rate_window_await: false` never enters this section — none of them
+armed a wait, so none of them discloses an arming record, neither on the log nor on the envelope.
 
 #### Branch 3 — poll the claimed window to expiry (bounded, paced, never one long sleep)
 
@@ -1046,9 +1080,24 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
 status: success | error | loop_back | escalate_ask
 display_detail: "<{N} comment(s) found — {review_state_summary} (unified triage pending)>"
 comments_found: {N}
+rate_window_arming[N]{producer,bot_kind,layer,eta,body}:   # present ONLY when Branch 2 armed a wait on this pass
 ```
 
 The `display_detail` carries the `review_state_summary` (the reviewer-state distribution) alongside the count, so *reviewed-and-clean* and *nobody-reviewed* — both `0 comment(s) found` — no longer render identically; the summary segment is omitted when the reviewer roster is empty (nothing to distribute).
+
+`rate_window_arming[]` is the envelope half of the arming disclosure ("Rate-limit refusal recovery"
+Branch 2, § "The arming disclosure"): one row per rate window this pass CLAIMED, carrying the producer
+that surfaced the refusal, the refusing `bot_kind`, the recognition `layer` that read the notice, the
+`eta` the notice stated (the literal `unknown` when it stated none), and the notice's truncated `body`
+excerpt — the same values the ARMED decision-log line names. It rides the envelope because the log is a
+single sink a resumed run does not read back; on the envelope, the observation that armed a wait
+survives the resume rather than being re-derived. The field is carried on EVERY envelope this step
+returns after a successful Branch 2 claim — this one, and the `rate_window_timeout` /
+`rate_window_exhausted` escalations below, which a claimed window can still end in. ⛔ **It is ABSENT —
+the key omitted entirely — on a pass that armed no wait**: never an empty table, and never a row of
+defaulted fields, which a reader would take as a wait armed on nothing. Branch 0 and Branch 1, Branch 2's
+`recovery_cap_exhausted` and `window_held_by_other_plan` arms, and a run with the opt-in off all return
+without it.
 
 FIND-only producer — this step fetches and files `pr-comment` findings; the per-finding LLM triage is delegated to the dispatcher-owned unified wait-region triage (`producer=finalize-feedback`), not dispatched here. `comments_found` is the count filed to the store. The `display_detail` value (≤80 chars, ASCII, no trailing period) is forwarded via `mark-step-done --display-detail`. A `loop_back` status is emitted ONLY by the D3 participation guard (awaiting a bot whose participation is unproven), never for a triage disposition; on `loop_back` the step re-fires on the next phase entry per the HEAD-dependent resumability rules above.
 
@@ -1099,6 +1148,7 @@ bot_kind: {the refusing bot}
 refusal_class: {awaitable_window | hard_quota | unknown}
 timeout_seconds: {review_rate_window_timeout_seconds}
 pr_number: {pr_number}
+rate_window_arming[N]{producer,bot_kind,layer,eta,body}:   # present ONLY when a Branch 2 claim armed a wait on this pass
 prompt_options[3]:
   - "Wait another {review_rate_window_timeout_seconds}s"
   - "Merge anyway — proceed unreviewed"
@@ -1150,6 +1200,7 @@ Field contract:
 - `head_sha`: present only on the `re_review_timeout` variant — the full worktree HEAD SHA the timed-out re-review was awaiting; the unreviewed commit the operator decision applies to. Omitted on the rate-window and structural variants (no HEAD advance is involved).
 - `timed_out`: `true` only for `rate_window_timeout` (a budget genuinely elapsed). `rate_window_not_awaitable`, `rate_window_exhausted`, and `refusal_structural` escalate WITHOUT awaiting, so they report `false` — reporting a timeout that never happened would misdescribe the escalation.
 - `bot_kind` / `refusal_class`: present on the rate-window and structural variants — which bot refused and under which class, so the operator sees whether the non-participation is awaitable at all.
+- `rate_window_arming[]`: present on a rate-window variant ONLY when a Branch 2 claim armed a wait earlier on this pass — in practice `rate_window_timeout`, and `rate_window_exhausted` when it is reached from the re-consult after the claim rather than from Branch 2's own `recovery_cap_exhausted` refusal. Same rows and same absence rule as on the main envelope above; `rate_window_not_awaitable` and `refusal_structural` escalate without claiming, so they never carry it.
 - `refusal_cause` / `cap` / `measured_diff_size`: present ONLY on the `refusal_structural` variant. `refusal_cause` is always `size` there (it is what selected the variant); `cap` is the ceiling the notice stated and `measured_diff_size` is how big the refused diff was, each the literal `unknown` when unavailable. The pair is what makes an accepted gap auditable rather than asserted — and the two carry different units by design, so read them as an order-of-magnitude comparison, never as an equality check.
 - `timeout_seconds`: the exhausted budget — `re_review_await_timeout_seconds` for `re_review_timeout`, `review_rate_window_timeout_seconds` for the rate-window variants. ⛔ **Absent on `refusal_structural`**: nothing was awaited and nothing is awaitable, so carrying a budget would invite a consumer to render a wait option.
 - `prompt_options[]`: the three operator choices the orchestrator presents when `action: ask`. "Wait another {timeout_seconds}s" is realized by the orchestrator re-dispatching `plan-marshall:automatic-review` from scratch with a fresh budget (the harness cannot resume a spawned agent — see [phase-6-finalize SKILL.md](../phase-6-finalize/SKILL.md) Step 3). ⛔ **The `refusal_structural` variant's option set contains no wait**, and a consumer MUST NOT add one: its limit is a property of the diff, so waiting is an action guaranteed not to work. Present only when `action: ask`; omitted for `action: defer`.
