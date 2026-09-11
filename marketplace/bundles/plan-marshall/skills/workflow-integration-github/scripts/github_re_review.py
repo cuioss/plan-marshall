@@ -36,8 +36,11 @@ two completion signals, checked in that order of strength:
    published ``head_sha_verified: false`` for a HEAD the bot HAD reviewed.
 2. An **issue comment** authored by the awaited ``bot_kind`` whose later of
    ``updated_at`` / ``created_at`` post-dates ``trigger_time``. Reported as
-   ``matched_signal: issue_comment`` with ``head_sha_verified: false`` — a
-   comment carries no reviewed-commit SHA, so it establishes that the bot
+   ``matched_signal: issue_comment``, with ``head_sha_verified`` DERIVED from the
+   comment body by the same :func:`_references_head_sha` recogniser the review
+   arm uses: ``true`` when the body names ``head_sha`` (an in-place-republished
+   summary states the commit it reviewed), ``false`` when it names no commit or a
+   different one. A comment that names no commit establishes that the bot
    responded, NOT that it reviewed the new HEAD.
 
 BOTH discriminators additionally reject a **refusal notice** — a comment or a
@@ -240,10 +243,11 @@ _COMMIT_SHA_TOKEN_RE = re.compile(r'(?<![0-9A-Za-z])[0-9a-fA-F]{7,40}(?![0-9A-Za
 def _references_head_sha(evidence: str, head_sha: str) -> bool:
     """Return True when ``evidence`` names ``head_sha`` as a commit reference.
 
-    ``evidence`` is the reviewed-commit field carried on a review record. It may be
-    the bare SHA, or it may carry the SHA embedded in a commit URL; both name the
-    same commit, so both are recognised. Every SHA-shaped token in ``evidence`` is
-    extracted and compared case-insensitively for EQUALITY against ``head_sha``.
+    ``evidence`` is the reviewed-commit field carried on a review record, or the
+    body of a matched issue comment. It may be the bare SHA, or it may carry the
+    SHA embedded in a commit URL or in prose; each names the same commit, so each
+    is recognised. Every SHA-shaped token in ``evidence`` is extracted and
+    compared case-insensitively for EQUALITY against ``head_sha``.
 
     **Equality, never prefix.** A token that merely shares a leading run with
     ``head_sha`` does not match. That boundary is what makes the widening
@@ -685,8 +689,10 @@ class _ReReviewStrategy:
         Identical for every bot. The review match is checked first and wins when
         both are present. Returns a TOON envelope carrying ``matched``,
         ``matched_signal`` (``review`` | ``issue_comment`` | empty when
-        unmatched), the matched record, and ``head_sha_verified`` — ``true``
-        only on the review path.
+        unmatched), the matched record, and ``head_sha_verified`` — always
+        ``true`` on the review path (its match already required the SHA), and
+        on the comment path ``true`` only when the comment body names
+        ``head_sha`` (:func:`_references_head_sha`).
 
         Args:
             pr_number: PR to poll.
@@ -750,9 +756,15 @@ class _ReReviewStrategy:
             'matched_signal': matched_signal,
             'matched_review': record if matched_signal == 'review' else {},
             'matched_comment': record if matched_signal == 'issue_comment' else {},
-            # An issue comment carries no reviewed-commit SHA, so it cannot prove
-            # the new HEAD was reviewed. Only the review path verifies that.
-            'head_sha_verified': matched_signal == 'review',
+            # The review path's match already required the SHA. On the comment
+            # path the verdict is read from the body: an in-place-republished
+            # summary names the commit it reviewed, and a comment naming no commit
+            # or a different one stays unverified. Equality-anchored either way.
+            'head_sha_verified': matched_signal == 'review'
+            or (
+                matched_signal == 'issue_comment'
+                and _references_head_sha(str((record or {}).get('body') or ''), head_sha)
+            ),
             'refusal_detected': bool(refusals),
             # The recovery strategy the refusal arms, from the bot's registry
             # `rate_limit_class` (fail-closed to `unknown`). Empty when no refusal

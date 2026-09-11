@@ -71,7 +71,7 @@ restates it.
 | `refused_structural` | The bot posted a refusal whose **cause is a ceiling on the diff itself** — the PR is over a per-PR size budget (an observed `cause: size`). Decided by the cause axis, whatever the bot's `rate_limit_class` declares. | **The only member whose refusal is not temporal.** The other three say *not now*; this one says *not this diff*, and the same request never succeeds while the diff is this size. Remedies: **split**, **accept the gap**, or **disable this reviewer for this PR** — ⛔ **never await.** The finding carries the **cap** the notice stated, so the gap is auditable against the measured diff size. |
 | `participated_but_empty` | The bot posted at least one comment, but every comment was filtered out (noise) so it stored zero findings. | **Accounted-for, not a failure.** The bot did its pass and had nothing actionable to say. |
 | `participated_stale` | The bot's comment matched a declared `participation_evidence` publish shape but failed the `participation_requires_update` currency test — the currency ledger anchors the comment to a commit that is **not** the merge candidate, and its `updated_at` is unchanged from the value recorded at that credit. | The bot reviewed an **earlier** commit, so nothing has reviewed the current diff. Blocking, but the remedy is a re-review trigger. |
-| `declined` | The bot was asked to review the merge candidate (a re-review was triggered) and answered without producing a review of it — an **incremental-review decline**: it responded with a comment carrying no reviewed-commit SHA (`head_sha_verified: false`) rather than a review of this HEAD. | The bot engaged but **declined** to review this commit. Blocking, but re-triggering is futile — the productive action is to accept the decline (move the bot to `optional`, or record a merge-authorization), not to trigger again. |
+| `declined` | The bot was asked to review the merge candidate (a re-review was triggered) and answered without producing a review of it — an **incremental-review decline**: it responded with a comment whose body names no reviewed commit equal to this HEAD (`head_sha_verified: false`) rather than a review of this HEAD. | The bot engaged but **declined** to review this commit. Blocking, but re-triggering is futile — the productive action is to accept the decline (move the bot to `optional`, or record a merge-authorization), not to trigger again. |
 
 `participated_but_empty` is the member most often misread. A bot that reviewed and found nothing is a
 *successful* review, not a silent one — it must never be treated as an incompleteness, or a clean PR
@@ -472,8 +472,8 @@ exactly that distinction and prescribe escalating a reviewer whose review only n
 
 `participated_stale` catches *a review anchored to a commit that is not the merge candidate*; it
 cannot catch *no review at all, answered as engagement*. Those are disjoint. When a re-review is triggered for the merge
-candidate and the bot answers with a comment that carries **no reviewed-commit SHA**
-(`head_sha_verified: false` from the re-review await), the bot **declined** to review this commit — an
+candidate and the bot answers with a comment whose body names **no reviewed commit equal to this
+HEAD** (`head_sha_verified: false` from the re-review await), the bot **declined** to review this commit — an
 **incremental-review decline**. A refusal at first pass leaves no reviewed-SHA to compare, so there is
 nothing stale to detect; the currency rule has nothing to work with, and the decline must be recorded
 in its own right.
@@ -486,25 +486,31 @@ to trigger again. `declined` is distinct from the four refusal members, which na
 rate-limit / quota / size **refusal notice**; the decline is the quieter shape — the bot answered, but
 its answer named no commit.
 
-The deciding bit — whether the re-review produced a review of the new HEAD (`head_sha_verified: true`)
-or only a comment (`head_sha_verified: false`) — is **computed and must be consumed**: a `matched:
-true` with `head_sha_verified: false` is a decline, never a completed re-review, and a consumer that
-reads `matched` alone credits a review that never named the commit it matched.
+The deciding bit — whether the re-review produced evidence naming the new HEAD (`head_sha_verified:
+true`) or only a comment naming no such commit (`head_sha_verified: false`) — is **computed and must
+be consumed**: a `matched: true` with `head_sha_verified: false` is a decline, never a completed
+re-review, and a consumer that reads `matched` alone credits a review that never named the commit it
+matched.
 
 #### The reviewed-commit reference is recognised wherever it sits, and compared for EQUALITY
 
-`head_sha_verified` is decided by whether a review's reviewed-commit evidence **references** the
-awaited HEAD — not by whether that evidence *is* the bare SHA. The same reviewed-commit value arrives
-in more than one shape: a bare hex token, or the SHA carried inside a `…/commit/{sha}` permalink. Both
-name the same commit, so both MUST verify.
+`head_sha_verified` is decided by whether the matched signal's evidence **references** the awaited
+HEAD — not by whether that evidence *is* the bare SHA. On the review arm the evidence is the review's
+reviewed-commit field; on the issue-comment arm it is the comment **body**, because a bot that
+republishes its summary in place states the commit it reviewed there (CodeRabbit's `Review updated
+until commit …`). The same reviewed-commit value arrives in more than one
+shape: a bare hex token, the SHA carried inside a `…/commit/{sha}` permalink, or either of those
+inside prose. Each names the same commit, so each MUST verify — and both arms read it through the
+one recogniser, `github_re_review._references_head_sha`.
 
 ⛔ **This predicate fails toward BLOCKING, which is the opposite direction from the rest of this
 contract's refusal handling, and is why the recognition must be wide.** A reference the matcher does
-not recognise falls through to the weaker comment discriminator and publishes `head_sha_verified:
-false` — a `declined` verdict the bot never made, on the one member whose documented remedy is to
-ACCEPT the decline rather than re-trigger. The false verdict therefore stops a merge AND steers the
-operator away from the retry that would have exposed it, so a narrower recogniser is not merely less
-useful here, it is strictly worse.
+not recognise publishes `head_sha_verified: false` — a `declined` verdict the bot never made, on the
+one member whose documented remedy is to ACCEPT the decline rather than re-trigger. The false verdict
+therefore stops a merge AND steers the operator away from the retry that would have exposed it, so a
+narrower recogniser is not merely less useful here, it is strictly worse. That holds on both arms: a
+comment arm that published `false` as a constant manufactured exactly that decline for every
+in-place-republished summary naming the awaited HEAD.
 
 **Widen WHERE the SHA may sit, never WHICH commit counts.** Every token recovered from the evidence is
 compared for **equality** against the awaited HEAD; an abbreviation or leading run never matches.
@@ -520,10 +526,13 @@ Worked example — awaited HEAD `a1b2c3d4e5f60718293a4b5c6d7e8f9012345678`:
 | `https://github.com/{owner}/{repo}/commit/a1b2c3d4e5f60718293a4b5c6d7e8f9012345678` | `true` | The permalink CARRIES the awaited HEAD — the location differs, the commit does not. |
 | `https://github.com/{owner}/{repo}/commit/0f1e2d3c4b5a69788796a5b4c3d2e1f098765432` | `false` | The same shape naming a genuinely different commit: the negative control the widening must still fail. |
 | `https://github.com/{owner}/{repo}/commit/a1b2c3d4e5f6` | `false` | An abbreviation of the awaited HEAD — equality, never prefix. |
+| comment body: `Review updated until commit [a1b2c3d](https://github.com/{owner}/{repo}/commit/a1b2c3d4e5f60718293a4b5c6d7e8f9012345678)` | `true` | The in-place-republished summary names the awaited HEAD in its body. |
+| comment body naming no commit | `false` | The bot answered without naming what it reviewed — the decline this member exists to record. |
 
 A widening asserted only by its positive case cannot show it did not simply match everything, so the
-two permalink rows differ only in which commit they name, and the abbreviation row pins the equality
-boundary the location widening must not cross.
+two permalink rows differ only in which commit they name, the abbreviation row pins the equality
+boundary the location widening must not cross, and the comment-body rows differ only in whether the
+body names the awaited commit.
 
 ## Participation is not review quality
 

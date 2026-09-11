@@ -405,10 +405,13 @@ persistent comment of kind `issue_comment`, and submits no GitHub *review* objec
    than batched here.
 2. **No review object to await.** Because the bot submits no review, `github_re_review
    await_fresh_review` cannot match one. It matches the bot's **issue-comment** completion signal
-   instead, returning `matched_signal: issue_comment` with `head_sha_verified: false` — the comment
-   carries no reviewed-commit SHA, so completion is established by authorship plus post-dating the
-   trigger. That is weaker evidence than a review match, and the envelope says so rather than
-   implying the new HEAD was reviewed.
+   instead, returning `matched_signal: issue_comment`. On that arm `head_sha_verified` is derived
+   from the comment body — `true` only when the body names the awaited HEAD — and **for this bot
+   `false` is the correct verdict**: the observed Guide (#103, #1078) carries no commit SHA at all,
+   so there is nothing in it to verify against. Completion is therefore established by authorship
+   plus post-dating the trigger — weaker evidence than a review match, and the envelope says so
+   rather than implying the new HEAD was reviewed. The derivation is generic, not a per-bot branch:
+   a Guide that ever began naming its reviewed commit would verify with no change here.
 
 ## Participation evidence — `issue_comment` and `inline`, plus update movement
 
