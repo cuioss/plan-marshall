@@ -262,14 +262,15 @@ Poll `gh pr checks 123 --json state` at intervals until all checks complete.
 **Completion Logic**:
 ```python
 def is_complete(checks):
-    return all(c["state"] == "completed" for c in checks)
+    return all(c['state'] == 'completed' for c in checks)
+
 
 def get_final_status(checks):
-    if any(c["conclusion"] == "failure" for c in checks):
-        return "failure"
-    if all(c["conclusion"] == "success" for c in checks):
-        return "success"
-    return "mixed"
+    if any(c['conclusion'] == 'failure' for c in checks):
+        return 'failure'
+    if all(c['conclusion'] == 'success' for c in checks):
+        return 'success'
+    return 'mixed'
 ```
 
 ---
@@ -363,13 +364,13 @@ gh issue view 123 --json number,url,title,body,author,state,createdAt,updatedAt,
 ### Error Detection Pattern
 
 ```python
-result = subprocess.run(["gh", "pr", "view", "123"], capture_output=True)
+result = subprocess.run(['gh', 'pr', 'view', '123'], capture_output=True)
 if result.returncode != 0:
     stderr = result.stderr.decode()
-    if "not logged in" in stderr.lower():
-        return {"status": "error", "error": "Not authenticated"}
-    if "could not find" in stderr.lower():
-        return {"status": "error", "error": f"PR {pr_number} not found"}
+    if 'not logged in' in stderr.lower():
+        return {'status': 'error', 'error': 'Not authenticated'}
+    if 'could not find' in stderr.lower():
+        return {'status': 'error', 'error': f'PR {pr_number} not found'}
 ```
 
 ---

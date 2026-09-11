@@ -215,24 +215,22 @@ result = await_until(
     condition=lambda: check_ci_status(pr_number),
     timeout_seconds=300,
     poll_interval_seconds=30,
-    description="CI checks to pass"
+    description='CI checks to pass',
 )
+
 
 # With condition result object
 def check_build_status():
     status = get_build_status()
-    if status == "success":
-        return ConditionResult.success(data={"build_id": 123})
-    elif status == "failed":
-        return ConditionResult.failure(error="Build failed")
+    if status == 'success':
+        return ConditionResult.success(data={'build_id': 123})
+    elif status == 'failed':
+        return ConditionResult.failure(error='Build failed')
     else:
-        return ConditionResult.pending(message="Build in progress")
+        return ConditionResult.pending(message='Build in progress')
 
-result = await_until(
-    condition=check_build_status,
-    timeout_seconds=600,
-    poll_interval_seconds=60
-)
+
+result = await_until(condition=check_build_status, timeout_seconds=600, poll_interval_seconds=60)
 ```
 
 ### CLI Script API
@@ -368,22 +366,40 @@ await_until uses subprocess calls to delegate timeout management:
 ```python
 def get_adaptive_timeout(command_key: str) -> Optional[int]:
     """Get timeout via run-config timeout get."""
-    result = subprocess.run([
-        "python3", ".plan/execute-script.py",
-        "plan-marshall:manage-run-config:run_config",
-        "timeout", "get", "--command", command_key, "--default", "300"
-    ], capture_output=True, text=True)
+    result = subprocess.run(
+        [
+            'python3',
+            '.plan/execute-script.py',
+            'plan-marshall:manage-run-config:run_config',
+            'timeout',
+            'get',
+            '--command',
+            command_key,
+            '--default',
+            '300',
+        ],
+        capture_output=True,
+        text=True,
+    )
     # Returns plain number in seconds
     return int(result.stdout.strip())  # Clamped to 60s-600s bounds
 
+
 def update_timeout(command_key: str, duration_sec: int) -> None:
     """Update timeout via run-config timeout set."""
-    subprocess.run([
-        "python3", ".plan/execute-script.py",
-        "plan-marshall:manage-run-config:run_config",
-        "timeout", "set", "--command", command_key,
-        "--duration", str(duration_sec)
-    ])
+    subprocess.run(
+        [
+            'python3',
+            '.plan/execute-script.py',
+            'plan-marshall:manage-run-config:run_config',
+            'timeout',
+            'set',
+            '--command',
+            command_key,
+            '--duration',
+            str(duration_sec),
+        ]
+    )
 ```
 
 All margin and weighting logic is encapsulated in `run-config timeout`.

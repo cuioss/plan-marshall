@@ -69,11 +69,11 @@ analyze-tool-coverage.sh "$file"
 **Check Results**:
 ```python
 result = run_tool_coverage(file)
-if fix_type == "unused-tool-declared":
+if fix_type == 'unused-tool-declared':
     success = result['unused_count'] == 0
-elif fix_type == "tool-not-declared":
+elif fix_type == 'tool-not-declared':
     success = result['missing_count'] == 0
-elif fix_type == "agent-task-tool-prohibited":
+elif fix_type == 'agent-task-tool-prohibited':
     success = not result['has_task_tool']
 ```
 
@@ -111,15 +111,12 @@ For multiple fixes, verify each:
 results = []
 for fix in applied_fixes:
     result = verify_fix(fix['type'], fix['file'])
-    results.append({
-        'fix': fix,
-        'verification': result
-    })
+    results.append({'fix': fix, 'verification': result})
 
 # Summary
 resolved = sum(1 for r in results if r['verification']['issue_resolved'])
 total = len(results)
-print(f"Verified: {resolved}/{total} fixes resolved issues")
+print(f'Verified: {resolved}/{total} fixes resolved issues')
 ```
 
 ## Verification Report Format

@@ -304,8 +304,12 @@ consumer imports via PYTHONPATH:
 
 ```python
 from _ledger_core import (
-    resolve_ledger_path, append_entry, read_entries,
-    build_record, change_record, job_record,
+    resolve_ledger_path,
+    append_entry,
+    read_entries,
+    build_record,
+    change_record,
+    job_record,
 )
 ```
 

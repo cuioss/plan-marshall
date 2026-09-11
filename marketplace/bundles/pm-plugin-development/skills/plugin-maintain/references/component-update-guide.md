@@ -59,11 +59,7 @@ scripts/analyze-component.py {component_path}
 
 **Adding Sections**:
 ```python
-{
-  "type": "section",
-  "section": "Error Handling",
-  "content": "- If X fails: Do Y\n- If Z fails: Do W"
-}
+{'type': 'section', 'section': 'Error Handling', 'content': '- If X fails: Do Y\n- If Z fails: Do W'}
 ```
 
 ### Tool Compliance

@@ -272,9 +272,9 @@ The executor sets PYTHONPATH to include `extension-api/scripts/`, so imports wor
 # Extension framework (public API via extension_base re-exports)
 from extension_base import (
     ExtensionBase,
-    discover_descriptors,    # Re-exported from _build_discover
-    build_module_base,       # Re-exported from _build_discover
-    find_readme,             # Re-exported from _build_discover
+    discover_descriptors,  # Re-exported from _build_discover
+    build_module_base,  # Re-exported from _build_discover
+    find_readme,  # Re-exported from _build_discover
     CMD_VERIFY,
     CMD_MODULE_TESTS,
 )
@@ -388,20 +388,20 @@ Import `CMD_*` constants from `extension_base` for type-safe command references:
 
 ```python
 from extension_base import (
-    CMD_CLEAN,             # "clean"
-    CMD_COMPILE,           # "compile"
-    CMD_TEST_COMPILE,      # "test-compile"
-    CMD_MODULE_TESTS,      # "module-tests"
-    CMD_INTEGRATION_TESTS, # "integration-tests"
-    CMD_COVERAGE,          # "coverage"
-    CMD_BENCHMARK,         # "benchmark"
-    CMD_QUALITY_GATE,      # "quality-gate"
-    CMD_VERIFY,            # "verify"
-    CMD_INSTALL,           # "install"
-    CMD_CLEAN_INSTALL,     # "clean-install"
-    CMD_PACKAGE,           # "package"
+    CMD_CLEAN,  # "clean"
+    CMD_COMPILE,  # "compile"
+    CMD_TEST_COMPILE,  # "test-compile"
+    CMD_MODULE_TESTS,  # "module-tests"
+    CMD_INTEGRATION_TESTS,  # "integration-tests"
+    CMD_COVERAGE,  # "coverage"
+    CMD_BENCHMARK,  # "benchmark"
+    CMD_QUALITY_GATE,  # "quality-gate"
+    CMD_VERIFY,  # "verify"
+    CMD_INSTALL,  # "install"
+    CMD_CLEAN_INSTALL,  # "clean-install"
+    CMD_PACKAGE,  # "package"
     ALL_CANONICAL_COMMANDS,
-    PROFILE_PATTERNS,      # Profile ID to canonical mapping (for internal use)
+    PROFILE_PATTERNS,  # Profile ID to canonical mapping (for internal use)
 )
 ```
 
@@ -426,19 +426,17 @@ class Extension(ExtensionBase):
 
     def get_skill_domains(self) -> list[dict]:
         """Domain metadata for skill loading."""
-        return [{
-            "domain": {
-                "key": "domain-key",
-                "name": "Domain Name",
-                "description": "Domain description"
-            },
-            "profiles": {
-                "core": {"defaults": [], "optionals": []},
-                "implementation": {"defaults": [], "optionals": []},
-                "module_testing": {"defaults": [], "optionals": []},
-                "quality": {"defaults": [], "optionals": []}
+        return [
+            {
+                'domain': {'key': 'domain-key', 'name': 'Domain Name', 'description': 'Domain description'},
+                'profiles': {
+                    'core': {'defaults': [], 'optionals': []},
+                    'implementation': {'defaults': [], 'optionals': []},
+                    'module_testing': {'defaults': [], 'optionals': []},
+                    'quality': {'defaults': [], 'optionals': []},
+                },
             }
-        }]
+        ]
 
     def discover_modules(self, project_root: str) -> list:
         """Discover modules in the project.
@@ -448,22 +446,25 @@ class Extension(ExtensionBase):
         """
         # Find descriptors
         from _build_discover import discover_descriptors, build_module_base
-        descriptors = discover_descriptors(project_root, "descriptor-file")
+
+        descriptors = discover_descriptors(project_root, 'descriptor-file')
 
         modules = []
         for desc_path in descriptors:
             base = build_module_base(project_root, desc_path)
             # Enrich with extension-specific metadata, stats, commands
-            modules.append({
-                "name": base.name,
-                "build_systems": ["my-build-system"],
-                "paths": base.paths.to_dict(),
-                "metadata": {},
-                "packages": {},
-                "dependencies": [],
-                "stats": {"source_files": 0, "test_files": 0},
-                "commands": self._resolve_commands(base)
-            })
+            modules.append(
+                {
+                    'name': base.name,
+                    'build_systems': ['my-build-system'],
+                    'paths': base.paths.to_dict(),
+                    'metadata': {},
+                    'packages': {},
+                    'dependencies': [],
+                    'stats': {'source_files': 0, 'test_files': 0},
+                    'commands': self._resolve_commands(base),
+                }
+            )
         return modules
 ```
 

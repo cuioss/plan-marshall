@@ -178,13 +178,13 @@ from input_validation import (
     verify_lesson_ids_exist,
 )
 
-text = "Per lesson 2026-04-29-10-001, anchor regex against live inventory."
+text = 'Per lesson 2026-04-29-10-001, anchor regex against live inventory.'
 try:
     tokens = scan_lesson_id_tokens(text)
     presence = verify_lesson_ids_exist(tokens)
     missing = [tok for tok, ok in presence.items() if not ok]
     if missing:
-        raise ValueError(f"Unresolved lesson IDs: {missing}")
+        raise ValueError(f'Unresolved lesson IDs: {missing}')
 except LessonRegexAnchoringError as exc:
     # Hard fail — the regex shape has drifted from the inventory.
     raise

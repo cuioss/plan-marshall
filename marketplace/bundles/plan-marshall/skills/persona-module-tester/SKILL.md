@@ -45,7 +45,7 @@ Use when: Analyzing test coverage, defining corner cases, improving coverage met
 ```python
 def test_discount_applied_for_premium_user():
     # Arrange
-    user = User(tier="premium")
+    user = User(tier='premium')
     cart = Cart(items=[Item(price=100)])
 
     # Act

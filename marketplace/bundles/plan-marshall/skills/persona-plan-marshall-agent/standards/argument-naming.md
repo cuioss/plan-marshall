@@ -202,15 +202,15 @@ argparse's `choices=[...]` parameter compares each incoming CLI token literally 
 ```python
 _OUTCOME_ALIASES = {'passed': 'PASS', 'failed': 'FAIL'}
 
+
 def normalize_outcome(value: str) -> str:
     folded = value.casefold()
     if folded in _OUTCOME_ALIASES:
         return _OUTCOME_ALIASES[folded]
     if value in _OUTCOME_ALIASES.values():
         return value
-    raise argparse.ArgumentTypeError(
-        f"invalid outcome: {value!r} (expected one of: PASS, FAIL, passed, failed)"
-    )
+    raise argparse.ArgumentTypeError(f'invalid outcome: {value!r} (expected one of: PASS, FAIL, passed, failed)')
+
 
 parser.add_argument('--outcome', type=normalize_outcome, required=True)
 ```
@@ -222,7 +222,8 @@ The error message in `ArgumentTypeError` is what argparse renders in its usage l
 ```python
 result = subprocess.run(
     ['python3', str(script_path), 'verb', '--outcome', 'passed', ...],
-    capture_output=True, text=True,
+    capture_output=True,
+    text=True,
 )
 assert result.returncode == 0, result.stderr  # The alias path reaches the handler
 ```

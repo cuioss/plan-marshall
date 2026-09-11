@@ -309,12 +309,13 @@ Poll pipeline status at intervals until complete.
 **Completion Logic**:
 ```python
 def is_complete(pipeline_status):
-    return pipeline_status in ["success", "failed", "canceled", "skipped"]
+    return pipeline_status in ['success', 'failed', 'canceled', 'skipped']
+
 
 def get_final_status(pipeline_status):
-    if pipeline_status == "success":
-        return "success"
-    return "failure"  # failed, canceled, skipped all map to failure
+    if pipeline_status == 'success':
+        return 'success'
+    return 'failure'  # failed, canceled, skipped all map to failure
 ```
 
 ---
@@ -408,13 +409,13 @@ glab issue view 123 --output json
 ### Error Detection Pattern
 
 ```python
-result = subprocess.run(["glab", "mr", "view", "123"], capture_output=True)
+result = subprocess.run(['glab', 'mr', 'view', '123'], capture_output=True)
 if result.returncode != 0:
     stderr = result.stderr.decode()
-    if "not logged in" in stderr.lower() or "authentication" in stderr.lower():
-        return {"status": "error", "error": "Not authenticated"}
-    if "not found" in stderr.lower():
-        return {"status": "error", "error": f"MR {mr_number} not found"}
+    if 'not logged in' in stderr.lower() or 'authentication' in stderr.lower():
+        return {'status': 'error', 'error': 'Not authenticated'}
+    if 'not found' in stderr.lower():
+        return {'status': 'error', 'error': f'MR {mr_number} not found'}
 ```
 
 ---

@@ -14,13 +14,13 @@ items: list[str]
 mapping: dict[str, int]
 optional: str | None
 
+
 # Union syntax with |
-def fetch(url: str) -> dict | None:
-    ...
+def fetch(url: str) -> dict | None: ...
+
 
 # Use float instead of int | float (float accepts int)
-def calculate(value: float) -> float:
-    ...
+def calculate(value: float) -> float: ...
 ```
 
 ### Abstract Types for Parameters
@@ -30,9 +30,11 @@ Use `collections.abc` for function parameters to accept any compatible type:
 ```python
 from collections.abc import Mapping, Sequence, Iterable
 
+
 # Accept any mapping, return concrete dict
 def transform(data: Mapping[str, int]) -> dict[str, str]:
     return {k: str(v) for k, v in data.items()}
+
 
 # Accept any iterable
 def process_all(items: Iterable[str]) -> list[str]:
@@ -44,13 +46,14 @@ def process_all(items: Iterable[str]) -> list[str]:
 ```python
 from typing import TypedDict, NotRequired
 
+
 class UserData(TypedDict):
     name: str
     email: str
     age: NotRequired[int]  # Optional field
 
-def create_user(data: UserData) -> None:
-    ...
+
+def create_user(data: UserData) -> None: ...
 ```
 
 ### Type Aliases
@@ -62,6 +65,7 @@ type Matrix = list[Vector]
 
 # Pre-3.12 alternative
 from typing import TypeAlias
+
 Vector: TypeAlias = list[float]
 ```
 
@@ -83,11 +87,13 @@ Vector: TypeAlias = list[float]
 ```python
 from dataclasses import dataclass, field
 
+
 @dataclass(slots=True)
 class User:
     name: str
     email: str
     tags: list[str] = field(default_factory=list)
+
 
 # Immutable version
 @dataclass(frozen=True, slots=True)
@@ -103,12 +109,13 @@ For simple immutable records:
 ```python
 from typing import NamedTuple
 
+
 class Point(NamedTuple):
     x: float
     y: float
 
     def distance_from_origin(self) -> float:
-        return (self.x ** 2 + self.y ** 2) ** 0.5
+        return (self.x**2 + self.y**2) ** 0.5
 ```
 
 ---
@@ -131,14 +138,15 @@ try:
 except FileNotFoundError:
     config = default_config()
 except json.JSONDecodeError as e:
-    raise ConfigError(f"Invalid JSON in {path}") from e
+    raise ConfigError(f'Invalid JSON in {path}') from e
+
 
 # Early validation
 def process_file(path: Path) -> dict:
     if not path.exists():
-        raise FileNotFoundError(f"File not found: {path}")
-    if not path.suffix == ".json":
-        raise ValueError(f"Expected JSON file, got: {path.suffix}")
+        raise FileNotFoundError(f'File not found: {path}')
+    if not path.suffix == '.json':
+        raise ValueError(f'Expected JSON file, got: {path.suffix}')
     # Main logic after validation
     ...
 ```
@@ -150,15 +158,15 @@ After reading a block from external or user-editable config (`config.setdefault(
 ```python
 config = load_config()  # parsed from a hand-editable file
 
-system = config.get("system", {})
+system = config.get('system', {})
 if not isinstance(system, dict):
-    raise ValueError(f"system block is not a dict, got {type(system).__name__}")
+    raise ValueError(f'system block is not a dict, got {type(system).__name__}')
 
 # Guard each nested descent before mutating it.
-retention = system.get("retention", {})
+retention = system.get('retention', {})
 if not isinstance(retention, dict):
-    raise ValueError(f"system.retention is not a dict, got {type(retention).__name__}")
-retention["logs_days"] = 7
+    raise ValueError(f'system.retention is not a dict, got {type(retention).__name__}')
+retention['logs_days'] = 7
 ```
 
 ### Filesystem-Boundary I/O Guards
@@ -171,7 +179,7 @@ A read or write that crosses the filesystem boundary can fail for reasons outsid
 def list_agent_logs(subagents_dir: Path) -> list[Path]:
     try:
         # OSError surfaces HERE, during iteration — not at the .glob() call.
-        return list(subagents_dir.glob("agent-*.jsonl"))
+        return list(subagents_dir.glob('agent-*.jsonl'))
     except OSError:
         return []
 ```
@@ -180,16 +188,16 @@ def list_agent_logs(subagents_dir: Path) -> list[Path]:
 
 ```python
 # Lossy-but-total decode: malformed bytes become U+FFFD instead of crashing.
-with path.open(encoding="utf-8", errors="replace") as handle:
+with path.open(encoding='utf-8', errors='replace') as handle:
     for line in handle:
         process(line)
 
 # If you must distinguish, catch BOTH classes — `except OSError` alone lets
 # UnicodeDecodeError (a ValueError) escape and crash the caller.
 try:
-    raw = path.read_text(encoding="utf-8")
+    raw = path.read_text(encoding='utf-8')
 except (OSError, ValueError) as e:  # OSError: open/read failure; ValueError: decode failure
-    raise IngestError(f"Could not read {path}: {e}") from e
+    raise IngestError(f'Could not read {path}: {e}') from e
 ```
 
 Chain with `from e` so the originating exception stays attached for debugging.
@@ -228,11 +236,11 @@ Always use context managers for resources that need cleanup:
 
 ```python
 # File operations
-with open(path, "r", encoding="utf-8") as f:
+with open(path, 'r', encoding='utf-8') as f:
     data = f.read()
 
 # Multiple resources
-with open(input_path) as src, open(output_path, "w") as dst:
+with open(input_path) as src, open(output_path, 'w') as dst:
     dst.write(process(src.read()))
 
 # Database connections, network sockets, locks
@@ -246,12 +254,12 @@ with connection.cursor() as cursor:
 from pathlib import Path
 
 # Simple read/write (handles open/close automatically)
-content = Path("data.txt").read_text(encoding="utf-8")
-Path("output.txt").write_text(result, encoding="utf-8")
+content = Path('data.txt').read_text(encoding='utf-8')
+Path('output.txt').write_text(result, encoding='utf-8')
 
 # Binary files
-data = Path("image.png").read_bytes()
-Path("copy.png").write_bytes(data)
+data = Path('image.png').read_bytes()
+Path('copy.png').write_bytes(data)
 ```
 
 ### Custom Context Managers
@@ -259,10 +267,12 @@ Path("copy.png").write_bytes(data)
 ```python
 from contextlib import contextmanager
 
+
 @contextmanager
 def temporary_directory():
     import tempfile
     import shutil
+
     path = Path(tempfile.mkdtemp())
     try:
         yield path
@@ -280,7 +290,7 @@ def temporary_directory():
 from pathlib import Path
 
 # Path construction with / operator
-config_path = Path("data") / "config" / "settings.json"
+config_path = Path('data') / 'config' / 'settings.json'
 
 # Cross-platform - works on Windows and Unix
 project_root = Path.cwd()
@@ -294,14 +304,14 @@ home = Path.home()
 ### Common Operations
 
 ```python
-path = Path("data/config/settings.json")
+path = Path('data/config/settings.json')
 
 # Components
-path.name        # "settings.json"
-path.stem        # "settings"
-path.suffix      # ".json"
-path.parent      # Path("data/config")
-path.parts       # ("data", "config", "settings.json")
+path.name  # "settings.json"
+path.stem  # "settings"
+path.suffix  # ".json"
+path.parent  # Path("data/config")
+path.parts  # ("data", "config", "settings.json")
 
 # Checks
 path.exists()
@@ -310,11 +320,11 @@ path.is_dir()
 
 # Traversal
 for file in path.parent.iterdir():
-    if file.suffix == ".json":
+    if file.suffix == '.json':
         process(file)
 
 # Glob patterns
-for py_file in Path("src").rglob("*.py"):
+for py_file in Path('src').rglob('*.py'):
     analyze(py_file)
 ```
 
@@ -323,11 +333,11 @@ for py_file in Path("src").rglob("*.py"):
 ```python
 # Validate user input paths to prevent traversal attacks
 user_path = Path(user_input)
-safe_base = Path("/data/uploads")
+safe_base = Path('/data/uploads')
 
 # Check path doesn't escape base directory
 if not user_path.resolve().is_relative_to(safe_base):
-    raise ValueError("Invalid path")
+    raise ValueError('Invalid path')
 ```
 
 ### Injection and Unsafe Deserialization
@@ -342,14 +352,15 @@ Treat every externally-sourced value (request data, file contents, environment, 
 import subprocess
 
 # Right: argv list, no shell — arguments are never re-parsed
-subprocess.run(["git", "log", "--oneline", user_ref], check=True)
+subprocess.run(['git', 'log', '--oneline', user_ref], check=True)
 
 # Wrong: shell=True lets user_ref inject arbitrary commands
-subprocess.run(f"git log {user_ref}", shell=True)  # command injection
+subprocess.run(f'git log {user_ref}', shell=True)  # command injection
 
 # If a shell is genuinely unavoidable, quote each interpolated value
 import shlex
-subprocess.run(f"git log {shlex.quote(user_ref)}", shell=True)
+
+subprocess.run(f'git log {shlex.quote(user_ref)}', shell=True)
 ```
 
 **Unsafe deserialization** — `pickle` executes arbitrary code while loading; never unpickle untrusted bytes, and never use bare `yaml.load`:
@@ -362,11 +373,12 @@ import yaml
 pickle.loads(untrusted_bytes)
 
 # Wrong: yaml.load without a safe loader can construct arbitrary objects
-yaml.load(untrusted_text)               # unsafe
+yaml.load(untrusted_text)  # unsafe
 
 # Right: yaml.safe_load for YAML; json for plain data interchange
 yaml.safe_load(untrusted_text)
 import json
+
 json.loads(untrusted_text)
 ```
 
@@ -388,11 +400,11 @@ value = ast.literal_eval(untrusted_expr)  # e.g. "[1, 2, 3]" -> [1, 2, 3]
 import sqlite3
 
 # Right: placeholder + params tuple — the driver escapes the value
-cur.execute("SELECT * FROM users WHERE id = ?", (user_id,))      # sqlite3
-cur.execute("SELECT * FROM users WHERE id = %s", (user_id,))     # psycopg
+cur.execute('SELECT * FROM users WHERE id = ?', (user_id,))  # sqlite3
+cur.execute('SELECT * FROM users WHERE id = %s', (user_id,))  # psycopg
 
 # Wrong: string interpolation is SQL injection
-cur.execute(f"SELECT * FROM users WHERE id = {user_id}")
+cur.execute(f'SELECT * FROM users WHERE id = {user_id}')
 ```
 
 ---
@@ -404,12 +416,14 @@ cur.execute(f"SELECT * FROM users WHERE id = {user_id}")
 ```python
 import asyncio
 
+
 async def main():
     result = await fetch_data()
     return result
 
+
 # Always use asyncio.run() as entry point
-if __name__ == "__main__":
+if __name__ == '__main__':
     asyncio.run(main())
 ```
 
@@ -417,18 +431,18 @@ if __name__ == "__main__":
 
 ```python
 # Sequential (slow) - each await blocks
-result1 = await fetch("url1")
-result2 = await fetch("url2")
+result1 = await fetch('url1')
+result2 = await fetch('url2')
 
 # Concurrent (fast) - both run simultaneously
 results = await asyncio.gather(
-    fetch("url1"),
-    fetch("url2"),
+    fetch('url1'),
+    fetch('url2'),
 )
 
 # With tasks for more control
-task1 = asyncio.create_task(fetch("url1"))
-task2 = asyncio.create_task(fetch("url2"))
+task1 = asyncio.create_task(fetch('url1'))
+task2 = asyncio.create_task(fetch('url2'))
 result1 = await task1
 result2 = await task2
 ```
@@ -454,13 +468,11 @@ Offload CPU-intensive work to avoid blocking the event loop:
 import asyncio
 from concurrent.futures import ProcessPoolExecutor
 
+
 async def process_images(paths: list[Path]):
     loop = asyncio.get_running_loop()
     with ProcessPoolExecutor() as pool:
-        results = await asyncio.gather(*[
-            loop.run_in_executor(pool, process_image, path)
-            for path in paths
-        ])
+        results = await asyncio.gather(*[loop.run_in_executor(pool, process_image, path) for path in paths])
     return results
 ```
 
@@ -473,14 +485,14 @@ async def process_images(paths: list[Path]):
 ```python
 def handle_command(command: str) -> str:
     match command.split():
-        case ["quit"]:
-            return "Goodbye"
-        case ["go", direction]:
-            return f"Moving {direction}"
-        case ["get", item] if item != "sword":
-            return f"Picked up {item}"
+        case ['quit']:
+            return 'Goodbye'
+        case ['go', direction]:
+            return f'Moving {direction}'
+        case ['get', item] if item != 'sword':
+            return f'Picked up {item}'
         case _:
-            return "Unknown command"
+            return 'Unknown command'
 ```
 
 ### Matching Data Structures
@@ -488,11 +500,11 @@ def handle_command(command: str) -> str:
 ```python
 def process_event(event: dict) -> None:
     match event:
-        case {"type": "click", "position": (x, y)}:
+        case {'type': 'click', 'position': (x, y)}:
             handle_click(x, y)
-        case {"type": "keypress", "key": str(key)}:
+        case {'type': 'keypress', 'key': str(key)}:
             handle_key(key)
-        case {"type": "error", "code": int(code)} if code >= 500:
+        case {'type': 'error', 'code': int(code)} if code >= 500:
             handle_server_error(code)
         case _:
             log_unknown_event(event)
@@ -503,19 +515,21 @@ def process_event(event: dict) -> None:
 ```python
 from dataclasses import dataclass
 
+
 @dataclass
 class Point:
     x: float
     y: float
 
+
 def describe(shape) -> str:
     match shape:
         case Point(x=0, y=0):
-            return "Origin"
+            return 'Origin'
         case Point(x, y) if x == y:
-            return f"On diagonal at {x}"
+            return f'On diagonal at {x}'
         case Point(x, y):
-            return f"Point({x}, {y})"
+            return f'Point({x}, {y})'
 ```
 
 ### When to Use Match vs If/Elif
@@ -533,22 +547,23 @@ def describe(shape) -> str:
 # Raise multiple exceptions together
 def validate_all(data: dict) -> None:
     errors = []
-    if not data.get("name"):
-        errors.append(ValueError("name is required"))
-    if not data.get("email"):
-        errors.append(ValueError("email is required"))
+    if not data.get('name'):
+        errors.append(ValueError('name is required'))
+    if not data.get('email'):
+        errors.append(ValueError('email is required'))
     if errors:
-        raise ExceptionGroup("validation failed", errors)
+        raise ExceptionGroup('validation failed', errors)
+
 
 # Catch specific exceptions from a group
 try:
     validate_all(data)
 except* ValueError as eg:
     for err in eg.exceptions:
-        print(f"Validation: {err}")
+        print(f'Validation: {err}')
 except* TypeError as eg:
     for err in eg.exceptions:
-        print(f"Type error: {err}")
+        print(f'Type error: {err}')
 ```
 
 ### Override Decorator (3.12+)
@@ -556,18 +571,20 @@ except* TypeError as eg:
 ```python
 from typing import override
 
+
 class Base:
     def get_color(self) -> str:
-        return "blue"
+        return 'blue'
+
 
 class Child(Base):
     @override
     def get_color(self) -> str:  # Verified by type checkers
-        return "red"
+        return 'red'
 
     @override
     def get_colour(self) -> str:  # Type checker ERROR: no matching base method
-        return "red"
+        return 'red'
 ```
 
 ### Batched Iteration (3.12+)
@@ -597,6 +614,7 @@ def calculate_total(items: list[Item], tax_rate: float = 0.0) -> float:
     subtotal = sum(item.price * item.quantity for item in items)
     return subtotal * (1 + tax_rate)
 
+
 # Use early returns to reduce nesting
 def get_user(user_id: int) -> User | None:
     if user_id <= 0:
@@ -615,6 +633,7 @@ def append_item(item, items=[]):
     items.append(item)
     return items
 
+
 # GOOD: Use None and create inside function
 def append_item(item, items: list | None = None):
     if items is None:
@@ -622,8 +641,10 @@ def append_item(item, items: list | None = None):
     items.append(item)
     return items
 
+
 # BEST: Use dataclass field factory for class attributes
 from dataclasses import dataclass, field
+
 
 @dataclass
 class Container:
@@ -639,6 +660,7 @@ class UserService:
         self._repository = repository
         self._cache = cache
 
+
 # Use properties only for trivial computed values
 class Rectangle:
     def __init__(self, width: float, height: float):
@@ -648,6 +670,7 @@ class Rectangle:
     @property
     def area(self) -> float:
         return self.width * self.height
+
 
 # Avoid staticmethod - use module-level functions instead
 # BAD: Rectangle.validate(data)
@@ -709,9 +732,10 @@ from pathlib import Path
 # BAD: re-dispatches the matcher per element
 matched = any(fnmatch.fnmatch(name, pattern) for name in names)
 
+
 # GOOD: one batch pass — and regime-aware
 def pattern_matches_any(pattern: str, names: list[str]) -> bool:
-    if "/" not in pattern:  # bare-basename: match at any depth
+    if '/' not in pattern:  # bare-basename: match at any depth
         return bool(fnmatch.filter([Path(n).name for n in names], pattern))
     return bool(fnmatch.filter(names, pattern))  # path-bearing: full path
 ```
@@ -729,10 +753,10 @@ import re
 
 # BAD: surrounding quotes leak into the captured value
 m = re.search(r'^domain:\s*(.+)$', content, re.MULTILINE)
-domain = m.group(1).strip()            # '"plan-marshall"' — fails an exact match
+domain = m.group(1).strip()  # '"plan-marshall"' — fails an exact match
 
 # GOOD: normalise the quotes so the downstream comparison succeeds
-domain = m.group(1).strip().strip("\"'")   # 'plan-marshall'
+domain = m.group(1).strip().strip('"\'')  # 'plan-marshall'
 ```
 
 ---

@@ -57,17 +57,19 @@ BASIC_PLAN = """# Task Plan: Test Feature
 **Current Task**: task-1
 """
 
+
 def test_parse_basic_plan():
     """Test parsing a basic plan."""
     temp_file = create_temp_file(BASIC_PLAN)
     try:
         result = run_script(SCRIPT_PATH, str(temp_file))
-        assert result.success, f"Script failed: {result.stderr}"
+        assert result.success, f'Script failed: {result.stderr}'
         data = result.json()
         assert data['title'] == 'Test Feature'
         assert data['current_phase'] == 'init'
     finally:
         temp_file.unlink()
+
 
 def test_file_not_found():
     """Test error handling for missing file."""
@@ -76,12 +78,15 @@ def test_file_not_found():
     data = result.json_or_error()
     assert 'error' in data
 
+
 if __name__ == '__main__':
     runner = TestRunner()
-    runner.add_tests([
-        test_parse_basic_plan,
-        test_file_not_found,
-    ])
+    runner.add_tests(
+        [
+            test_parse_basic_plan,
+            test_file_not_found,
+        ]
+    )
     sys.exit(runner.run())
 ```
 
@@ -159,7 +164,7 @@ Malformed input data.
 ```python
 def test_invalid_format():
     """Invalid input - malformed content."""
-    temp_file = create_temp_file("not valid yaml: {{{")
+    temp_file = create_temp_file('not valid yaml: {{{')
     try:
         result = run_script(SCRIPT_PATH, str(temp_file))
         assert not result.success
@@ -173,7 +178,7 @@ Empty input, boundary values.
 ```python
 def test_empty_input():
     """Edge case - empty file."""
-    temp_file = create_temp_file("")
+    temp_file = create_temp_file('')
     try:
         result = run_script(SCRIPT_PATH, str(temp_file))
         # Verify appropriate handling
@@ -215,11 +220,13 @@ def test_no_assertion():
     result = run_script(SCRIPT_PATH, 'arg')
     result.json()  # No assertion!
 
+
 # BAD: Assigns to variable but never asserts
 def test_assigns_only():
     result = run_script(SCRIPT_PATH, 'arg')
     data = result.json()
     status = data['status']  # No assertion on status!
+
 
 # BAD: Checks parsing without verifying content
 def test_parses_only():
@@ -247,14 +254,12 @@ SCRIPT_PATH = get_script_path('plan-marshall', 'manage-references', 'manage-refe
 # Alias for backward compatibility (optional)
 TestContext = PlanTestContext
 
+
 def test_create_references():
     """Test creating a references file."""
     with PlanTestContext(plan_id='test-references') as ctx:
-        result = run_script(SCRIPT_PATH, 'create',
-            '--plan-id', 'test-references',
-            '--domain', 'java'
-        )
-        assert result.success, f"Script failed: {result.stderr}"
+        result = run_script(SCRIPT_PATH, 'create', '--plan-id', 'test-references', '--domain', 'java')
+        assert result.success, f'Script failed: {result.stderr}'
         # ctx.fixture_dir - base test directory
         # ctx.plan_dir - path to plans/{plan_id}
 ```
@@ -312,6 +317,7 @@ from pathlib import Path
 
 FIXTURES_DIR = Path(__file__).parent / 'fixtures'
 
+
 def test_with_fixture_file():
     fixture_path = FIXTURES_DIR / 'sample-maven-success.log'
     result = run_script(SCRIPT_PATH, '--log', str(fixture_path))
@@ -365,8 +371,14 @@ from pathlib import Path
 
 _SCRIPTS_DIR = (
     Path(__file__).parent.parent.parent.parent
-    / 'marketplace' / 'bundles' / '{bundle}' / 'skills' / '{skill}' / 'scripts'
+    / 'marketplace'
+    / 'bundles'
+    / '{bundle}'
+    / 'skills'
+    / '{skill}'
+    / 'scripts'
 )
+
 
 def _load_module(name, filename):
     """Load a module by file path with a unique synthetic name."""
@@ -374,6 +386,7 @@ def _load_module(name, filename):
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
+
 
 # Use unique prefixes for synthetic module names
 _crud = _load_module('_tasks_cmd_crud', '_tasks_crud.py')

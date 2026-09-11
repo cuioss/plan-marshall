@@ -451,8 +451,8 @@ from pathlib import Path
 _PLAN_DIR_NAME = os.environ.get('PLAN_DIR_NAME', '.plan')
 
 # Use in path construction
-DATA_DIR = Path(_PLAN_DIR_NAME) / "project-architecture"
-LOG_DIR = Path(_PLAN_DIR_NAME) / "logs"
+DATA_DIR = Path(_PLAN_DIR_NAME) / 'project-architecture'
+LOG_DIR = Path(_PLAN_DIR_NAME) / 'logs'
 ```
 
 **Key points**:

@@ -65,8 +65,9 @@ CRITICAL_SYSTEM_PATHS = [
     r'/bin/.*',
     r'/sbin/.*',
     r'/usr/bin/.*',
-    r'/usr/sbin/.*'
+    r'/usr/sbin/.*',
 ]
+
 
 def detect_system_directory_access(permission):
     """Detect permissions accessing critical system directories."""
@@ -78,7 +79,7 @@ def detect_system_directory_access(permission):
                 'severity': 'HIGH',
                 'path': path,
                 'pattern': pattern,
-                'recommendation': 'Remove permission - system directories should never be accessed'
+                'recommendation': 'Remove permission - system directories should never be accessed',
             }
     return None
 ```
@@ -93,8 +94,9 @@ TEMP_DIRECTORY_PATTERNS = [
     r'.*//private/tmp/.*',
     r'.*/var/tmp/.*',
     r'Read\(//tmp/\*\*\)',
-    r'Write\(//tmp/\*\*\)'
+    r'Write\(//tmp/\*\*\)',
 ]
+
 
 def detect_temp_directory_access(permission):
     """Detect permissions accessing temp directories."""
@@ -104,7 +106,7 @@ def detect_temp_directory_access(permission):
                 'violation': 'TEMP_DIRECTORY_ACCESS',
                 'severity': 'MEDIUM',
                 'permission': permission,
-                'recommendation': 'Use project-specific temp directory instead'
+                'recommendation': 'Use project-specific temp directory instead',
             }
     return None
 ```
@@ -119,8 +121,9 @@ BROAD_WILDCARD_PATTERNS = [
     (r'Read\(//Users/\*\*\)', 'All user files'),
     (r'Read\(//home/\*\*\)', 'All user files (Linux)'),
     (r'Write\(//\*\*\)', 'Entire filesystem'),
-    (r'Bash\(\*\)', 'All bash commands')
+    (r'Bash\(\*\)', 'All bash commands'),
 ]
+
 
 def detect_overly_broad_wildcards(permission):
     """Detect dangerously broad wildcard patterns."""
@@ -131,7 +134,7 @@ def detect_overly_broad_wildcards(permission):
                 'severity': 'HIGH',
                 'permission': permission,
                 'scope': description,
-                'recommendation': 'Narrow to specific directories or files needed'
+                'recommendation': 'Narrow to specific directories or files needed',
             }
     return None
 ```
@@ -148,8 +151,9 @@ DANGEROUS_COMMANDS = {
     'chown': 'Ownership changes - require specific files',
     'dd': 'Disk operations - prohibited',
     'mkfs': 'Filesystem creation - prohibited',
-    'fdisk': 'Disk partitioning - prohibited'
+    'fdisk': 'Disk partitioning - prohibited',
 }
+
 
 def detect_dangerous_commands(permission):
     """Detect dangerous bash command patterns."""
@@ -167,7 +171,7 @@ def detect_dangerous_commands(permission):
                 'command': command,
                 'reason': DANGEROUS_COMMANDS[command],
                 'permission': permission,
-                'recommendation': f'Either remove or restrict to specific paths/arguments'
+                'recommendation': f'Either remove or restrict to specific paths/arguments',
             }
     return None
 ```
@@ -187,15 +191,18 @@ def detect_redundant_permissions(permission, all_permissions):
 
         # Check if 'other' is broader and covers 'permission'
         if is_broader_pattern(other, permission):
-            redundancies.append({
-                'violation': 'REDUNDANT_PERMISSION',
-                'severity': 'LOW',
-                'redundant': permission,
-                'covered_by': other,
-                'recommendation': f'Remove {permission} (covered by {other})'
-            })
+            redundancies.append(
+                {
+                    'violation': 'REDUNDANT_PERMISSION',
+                    'severity': 'LOW',
+                    'redundant': permission,
+                    'covered_by': other,
+                    'recommendation': f'Remove {permission} (covered by {other})',
+                }
+            )
 
     return redundancies if redundancies else None
+
 
 def is_broader_pattern(broader, specific):
     """Check if 'broader' pattern covers 'specific' pattern."""
@@ -218,21 +225,25 @@ def detect_path_format_issues(permission):
 
     # Check for absolute paths that should be user-relative
     if re.search(r'/Users/[^/]+/', permission):
-        issues.append({
-            'violation': 'ABSOLUTE_PATH_INSTEAD_OF_RELATIVE',
-            'severity': 'LOW',
-            'permission': permission,
-            'recommendation': 'Use ~/ instead of /Users/username/'
-        })
+        issues.append(
+            {
+                'violation': 'ABSOLUTE_PATH_INSTEAD_OF_RELATIVE',
+                'severity': 'LOW',
+                'permission': permission,
+                'recommendation': 'Use ~/ instead of /Users/username/',
+            }
+        )
 
     # Check for empty patterns
     if permission.endswith('()'):
-        issues.append({
-            'violation': 'EMPTY_PATTERN',
-            'severity': 'MEDIUM',
-            'permission': permission,
-            'recommendation': 'Remove empty permission or specify pattern'
-        })
+        issues.append(
+            {
+                'violation': 'EMPTY_PATTERN',
+                'severity': 'MEDIUM',
+                'permission': permission,
+                'recommendation': 'Remove empty permission or specify pattern',
+            }
+        )
 
     return issues if issues else None
 ```
@@ -253,7 +264,7 @@ def calculate_severity_score(violation):
         'TEMP_DIRECTORY_ACCESS': 50,
         'REDUNDANT_PERMISSION': 20,
         'ABSOLUTE_PATH_INSTEAD_OF_RELATIVE': 10,
-        'EMPTY_PATTERN': 30
+        'EMPTY_PATTERN': 30,
     }
 
     score = base_scores.get(violation['violation'], 0)
@@ -380,7 +391,7 @@ def validate_permissions(permissions):
             detect_temp_directory_access(permission),
             detect_overly_broad_wildcards(permission),
             detect_dangerous_commands(permission),
-            detect_path_format_issues(permission)
+            detect_path_format_issues(permission),
         ]
 
         # Add redundancy check

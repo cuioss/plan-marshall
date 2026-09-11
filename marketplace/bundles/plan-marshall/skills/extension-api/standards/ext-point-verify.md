@@ -104,7 +104,7 @@ A verify participation is not a Python hook method on `ExtensionBase` — it IS 
 # find_implementors / record parse surfaces verification_profile when declared:
 {
     'name': ...,
-    'verification_profile': 'security',   # present only when the producer declared it
+    'verification_profile': 'security',  # present only when the producer declared it
     'source': ...,
     'path': ...,
 }

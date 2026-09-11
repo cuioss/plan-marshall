@@ -271,6 +271,7 @@ HEADER_PATTERN = re.compile(
 )
 FIELD_PATTERN = re.compile(r'^  (\w+): (.+)$')
 
+
 def parse_log_file(content: str) -> list[dict]:
     entries = []
     current = None
@@ -285,7 +286,7 @@ def parse_log_file(content: str) -> list[dict]:
                 'level': header_match.group(2),
                 'hash_id': header_match.group(3),
                 'message': header_match.group(4),
-                'fields': {}
+                'fields': {},
             }
         elif current:
             field_match = FIELD_PATTERN.match(line)

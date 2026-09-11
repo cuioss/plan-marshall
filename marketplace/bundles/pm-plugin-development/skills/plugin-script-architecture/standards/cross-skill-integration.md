@@ -138,7 +138,7 @@ from _config_core import ext_defaults_get
 # Get extension default value
 value = ext_defaults_get('build.maven.profiles.skip', project_dir)
 if value:
-    skip_list = [s.strip() for s in value.split(",")]
+    skip_list = [s.strip() for s in value.split(',')]
 ```
 
 **Return Value**: The value directly, or `None` if key not found.
@@ -182,11 +182,20 @@ output = serialize_toon({'status': 'success', 'count': 42})
 import subprocess
 import json
 
-result = subprocess.run([
-    "python3", ".plan/execute-script.py",
-    "plan-marshall:manage-logging:plan_logging",
-    "script", "global", "INFO", "message"
-], capture_output=True, text=True, timeout=5)
+result = subprocess.run(
+    [
+        'python3',
+        '.plan/execute-script.py',
+        'plan-marshall:manage-logging:plan_logging',
+        'script',
+        'global',
+        'INFO',
+        'message',
+    ],
+    capture_output=True,
+    text=True,
+    timeout=5,
+)
 ```
 
 ### Correct Pattern
@@ -354,6 +363,7 @@ SCRIPT_PATH = get_script_path('my-bundle', 'my-skill', 'my-script.py')
 
 # Direct imports from other skills work automatically
 from toon_parser import parse_toon
+
 
 def test_example():
     result = run_script(SCRIPT_PATH, 'subcommand', '--arg', 'value')

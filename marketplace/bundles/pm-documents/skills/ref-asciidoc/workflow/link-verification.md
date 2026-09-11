@@ -279,8 +279,8 @@ Step 3: /project/requirements/spec.adoc (normalized)
 
 ```python
 # Resolving from project root
-base = "/project/"
-target = "../../requirements/spec.adoc"
+base = '/project/'
+target = '../../requirements/spec.adoc'
 # Results in /requirements/spec.adoc (outside project!)
 ```
 
@@ -288,8 +288,8 @@ target = "../../requirements/spec.adoc"
 
 ```python
 # Resolving from current file's directory
-base = "/project/standards/java/"
-target = "../../requirements/spec.adoc"
+base = '/project/standards/java/'
+target = '../../requirements/spec.adoc'
 # Results in /project/requirements/spec.adoc
 ```
 

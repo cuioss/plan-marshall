@@ -98,10 +98,10 @@ Build skills use the `ExecuteConfig` dataclass + `create_execute_handlers()` fac
 ```python
 @dataclass
 class ExecuteConfig:
-    tool_name: str           # e.g., "maven", "gradle"
-    wrapper_names: list      # e.g., ["mvnw", "./mvnw"]
-    system_command: str      # e.g., "mvn"
-    descriptor_file: str     # e.g., "pom.xml"
+    tool_name: str  # e.g., "maven", "gradle"
+    wrapper_names: list  # e.g., ["mvnw", "./mvnw"]
+    system_command: str  # e.g., "mvn"
+    descriptor_file: str  # e.g., "pom.xml"
 ```
 
 ## Current Implementations

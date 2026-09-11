@@ -15,12 +15,12 @@ The exit-code contract for every `python3 .plan/execute-script.py` call in this 
 test_user_service.py
 test_build_wrapper.py
 
-# Test functions: test_<behavior>
-def test_detect_wrapper_finds_unix_on_unix():
-    ...
 
-def test_returns_none_when_missing():
-    ...
+# Test functions: test_<behavior>
+def test_detect_wrapper_finds_unix_on_unix(): ...
+
+
+def test_returns_none_when_missing(): ...
 ```
 
 ### AAA Pattern
@@ -49,6 +49,7 @@ Tests that change `cwd` must restore it. Use an autouse fixture as a safety net:
 import os
 import pytest
 
+
 @pytest.fixture(autouse=True)
 def _restore_cwd():
     """Restore cwd after each test to prevent pollution."""
@@ -73,7 +74,7 @@ Use `tmp_path` for isolated file operations:
 
 ```python
 def test_creates_output_file(tmp_path):
-    output = tmp_path / "result.json"
+    output = tmp_path / 'result.json'
     generate_report(output)
     assert output.exists()
 ```
@@ -107,6 +108,7 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).resolve().parent
 _ROOT_FROM_SCRIPT = SCRIPT_DIR.parent.parent.parent
 
+
 def find_project_root() -> Path | None:
     """Find root with cwd-first, script-relative fallback.
 
@@ -132,14 +134,16 @@ def find_project_root() -> Path | None:
 # Function scope (default) - runs for each test
 @pytest.fixture
 def sample_data():
-    return {"key": "value"}
+    return {'key': 'value'}
+
 
 # Module scope - runs once per test file
-@pytest.fixture(scope="module")
+@pytest.fixture(scope='module')
 def database_connection():
     conn = create_connection()
     yield conn
     conn.close()
+
 
 # Autouse - runs automatically for every test
 @pytest.fixture(autouse=True)
@@ -151,11 +155,14 @@ def _clear_cache():
 ### Parametrization
 
 ```python
-@pytest.mark.parametrize("input,expected", [
-    ("hello", "HELLO"),
-    ("world", "WORLD"),
-    ("", ""),
-])
+@pytest.mark.parametrize(
+    'input,expected',
+    [
+        ('hello', 'HELLO'),
+        ('world', 'WORLD'),
+        ('', ''),
+    ],
+)
 def test_uppercase(input, expected):
     assert input.upper() == expected
 ```
@@ -174,16 +181,16 @@ from hypothesis import strategies as st
 
 
 @given(st.text())
-@example("")                      # pin a known-adversarial vector (empty string)
+@example('')  # pin a known-adversarial vector (empty string)
 @example("'; DROP TABLE users--")  # pin a known injection-shaped vector
 def test_normalise_is_idempotent(value):
-    assume("\x00" not in value)   # filter out preconditions that don't apply
+    assume('\x00' not in value)  # filter out preconditions that don't apply
     once = normalise(value)
     assert normalise(once) == once  # property: normalise is idempotent
 
 
 @given(st.integers(min_value=0))
-@settings(max_examples=500)        # budget control — more examples, deeper search
+@settings(max_examples=500)  # budget control — more examples, deeper search
 def test_encode_decode_roundtrip(n):
     assert decode(encode(n)) == n
 ```
@@ -242,6 +249,7 @@ The language-agnostic statement of the same discriminator is
 
 ```python
 from unittest.mock import patch
+
 
 def test_platform_detection():
     with patch('module.IS_WINDOWS', True):
@@ -310,8 +318,9 @@ assert len(items) == 3
 ```python
 import pytest
 
+
 def test_raises_on_invalid_input():
-    with pytest.raises(ValueError, match="must be positive"):
+    with pytest.raises(ValueError, match='must be positive'):
         process_value(-1)
 ```
 
@@ -329,14 +338,15 @@ assert result == pytest.approx(3.14159, rel=1e-3)
 def test_prints_summary(capsys):
     generate_report(data)
     captured = capsys.readouterr()
-    assert "Total: 42" in captured.out
-    assert captured.err == ""
+    assert 'Total: 42' in captured.out
+    assert captured.err == ''
+
 
 def test_file_descriptor_output(capfd):
     # capfd captures at file descriptor level (includes subprocess output)
     run_external_tool()
     captured = capfd.readouterr()
-    assert "success" in captured.out
+    assert 'success' in captured.out
 ```
 
 ## Subprocess / Script Testing
@@ -349,22 +359,23 @@ Tests that invoke Python scripts via `subprocess.run` are common for CLI tools a
 import subprocess
 from pathlib import Path
 
+
 def test_script_produces_valid_output(tmp_path):
     # Arrange
-    input_file = tmp_path / "input.json"
+    input_file = tmp_path / 'input.json'
     input_file.write_text('{"key": "value"}')
 
     # Act
     result = subprocess.run(
-        ["python3", str(script_path), "subcommand", "--arg", str(input_file)],
+        ['python3', str(script_path), 'subcommand', '--arg', str(input_file)],
         capture_output=True,
         text=True,
         timeout=30,
     )
 
     # Assert
-    assert result.returncode == 0, f"Script failed: {result.stderr}"
-    assert "expected_output" in result.stdout
+    assert result.returncode == 0, f'Script failed: {result.stderr}'
+    assert 'expected_output' in result.stdout
 ```
 
 ### Asserting on Structured Output
@@ -374,17 +385,18 @@ When scripts emit structured output (JSON, TOON), parse and assert on the struct
 ```python
 import json
 
+
 def test_script_returns_structured_data():
     result = subprocess.run(
-        ["python3", str(script_path), "list"],
+        ['python3', str(script_path), 'list'],
         capture_output=True,
         text=True,
         timeout=30,
     )
     assert result.returncode == 0
     data = json.loads(result.stdout)
-    assert data["status"] == "ok"
-    assert len(data["items"]) > 0
+    assert data['status'] == 'ok'
+    assert len(data['items']) > 0
 ```
 
 ### Assert the returncode BEFORE parsing stdout
@@ -403,11 +415,12 @@ Scripts that import shared modules (e.g., `toon_parser`) need PYTHONPATH set:
 ```python
 import os
 
+
 def test_script_with_shared_imports():
     env = os.environ.copy()
-    env["PYTHONPATH"] = str(shared_lib_dir)
+    env['PYTHONPATH'] = str(shared_lib_dir)
     result = subprocess.run(
-        ["python3", str(script_path), "run"],
+        ['python3', str(script_path), 'run'],
         capture_output=True,
         text=True,
         env=env,
@@ -421,13 +434,13 @@ def test_script_with_shared_imports():
 ```python
 def test_script_fails_on_missing_arg():
     result = subprocess.run(
-        ["python3", str(script_path)],
+        ['python3', str(script_path)],
         capture_output=True,
         text=True,
         timeout=30,
     )
     assert result.returncode != 0
-    assert "usage" in result.stderr.lower() or "error" in result.stderr.lower()
+    assert 'usage' in result.stderr.lower() or 'error' in result.stderr.lower()
 ```
 
 ## Test Organization
@@ -601,9 +614,11 @@ Place shared fixtures and helpers in `conftest.py`:
 # test/conftest.py
 import pytest
 
+
 @pytest.fixture
 def sample_config():
-    return {"debug": True}
+    return {'debug': True}
+
 
 def run_script(script_path, *args):
     """Helper to run scripts with subprocess."""

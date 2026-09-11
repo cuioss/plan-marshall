@@ -32,25 +32,27 @@ import argparse
 import json
 import sys
 
+
 def cmd_get(args):
     """Handle 'get' subcommand."""
     # Implementation
     pass
+
 
 def cmd_set(args):
     """Handle 'set' subcommand."""
     # Implementation
     pass
 
+
 def cmd_list(args):
     """Handle 'list' subcommand."""
     # Implementation
     pass
 
+
 def main():
-    parser = argparse.ArgumentParser(
-        description="Manage configuration files for plans"
-    )
+    parser = argparse.ArgumentParser(description='Manage configuration files for plans')
     subparsers = parser.add_subparsers(dest='command', required=True)
 
     # get subcommand
@@ -74,7 +76,8 @@ def main():
     args = parser.parse_args()
     args.func(args)
 
-if __name__ == "__main__":
+
+if __name__ == '__main__':
     main()
 ```
 
@@ -155,15 +158,15 @@ python3 .plan/execute-script.py {bundle}:{skill} {subcommand} --help
 ```python
 def cmd_get(args):
     """Handle 'get' subcommand."""
-    plan_path = Path(f".plan/plans/{args.plan_id}")
+    plan_path = Path(f'.plan/plans/{args.plan_id}')
 
     # Validate plan exists — return error dict, exit 0 (expected error)
     if not plan_path.exists():
-        return {"status": "error", "error": f"Plan not found: {args.plan_id}"}
+        return {'status': 'error', 'error': f'Plan not found: {args.plan_id}'}
 
     # Validate key format — return error dict, exit 0 (expected error)
     if not re.match(r'^[a-z][a-z0-9_]*$', args.key):
-        return {"status": "error", "error": f"Invalid key format: {args.key}"}
+        return {'status': 'error', 'error': f'Invalid key format: {args.key}'}
 
     # ... implementation
 ```
@@ -174,16 +177,16 @@ def cmd_get(args):
 
 **Good Examples**:
 ```python
-{"error": "Plan not found: EXAMPLE-PLAN"}
-{"error": "Invalid key format. Expected: lowercase with underscores, got: MyKey"}
-{"error": "Config file parsing failed at line 42: unexpected character"}
+{'error': 'Plan not found: EXAMPLE-PLAN'}
+{'error': 'Invalid key format. Expected: lowercase with underscores, got: MyKey'}
+{'error': 'Config file parsing failed at line 42: unexpected character'}
 ```
 
 **Bad Examples**:
 ```python
-{"error": "Error"}  # Too vague
-{"error": "Failed"}  # No context
-{"error": "1"}  # Not descriptive
+{'error': 'Error'}  # Too vague
+{'error': 'Failed'}  # No context
+{'error': '1'}  # Not descriptive
 ```
 
 ## Sibling-Element Invariant Inheritance
@@ -212,21 +215,23 @@ A new branch must apply the same precondition rejections a sibling already appli
 # Sibling branch (established): rejects a file lacking an H1 title before rewriting
 def cmd_update_title(args):
     text = path.read_text()
-    if not text.lstrip().startswith("# "):
-        return {"status": "error", "error": "No H1 title to update"}
+    if not text.lstrip().startswith('# '):
+        return {'status': 'error', 'error': 'No H1 title to update'}
     # ... safe rewrite
+
 
 # WRONG — new branch rewrites without inheriting the H1-title guard
 def cmd_prepend_section(args):
     text = path.read_text()
-    new_text = insert_after_title(text, section)   # corrupts a file with no H1
+    new_text = insert_after_title(text, section)  # corrupts a file with no H1
     path.write_text(new_text)
+
 
 # RIGHT — new branch inherits the sibling's precondition guard
 def cmd_prepend_section(args):
     text = path.read_text()
-    if not text.lstrip().startswith("# "):
-        return {"status": "error", "error": "No H1 title to anchor the section"}
+    if not text.lstrip().startswith('# '):
+        return {'status': 'error', 'error': 'No H1 title to anchor the section'}
     path.write_text(insert_after_title(text, section))
 ```
 
@@ -236,13 +241,13 @@ A new `status: success` return must carry the same documented fields its sibling
 
 ```python
 # Sibling success branch returns {status, plan_id, path}
-return {"status": "success", "plan_id": pid, "path": str(p)}
+return {'status': 'success', 'plan_id': pid, 'path': str(p)}
 
 # WRONG — new success branch drops fields the sibling guarantees
-return {"status": "success", "path": str(p)}   # caller reading plan_id breaks
+return {'status': 'success', 'path': str(p)}  # caller reading plan_id breaks
 
 # RIGHT — new branch returns the full sibling field set
-return {"status": "success", "plan_id": pid, "path": str(p)}
+return {'status': 'success', 'plan_id': pid, 'path': str(p)}
 ```
 
 #### (c) Input-validation range clamps
@@ -251,14 +256,13 @@ A parallel or CLI-override entry point must apply the same range/format validati
 
 ```python
 # Primary (config-read) path clamps retention to a non-negative floor
-retention = max(0, config.get("retention_days", 30))
+retention = max(0, config.get('retention_days', 30))
 
 # WRONG — CLI override skips the clamp; a negative value slips through
-retention = args.retention_days   # -1 bypasses the floor the config path enforces
+retention = args.retention_days  # -1 bypasses the floor the config path enforces
 
 # RIGHT — the override inherits the same clamp
-retention = max(0, args.retention_days if args.retention_days is not None
-                else config.get("retention_days", 30))
+retention = max(0, args.retention_days if args.retention_days is not None else config.get('retention_days', 30))
 ```
 
 #### (d) Routing / dispatch-registration
@@ -271,18 +275,18 @@ A new subcommand alias must inherit the sibling dispatch contract. Determine the
 Pin the alias with a **subprocess-level CLI test** — an in-process handler test invokes the handler directly and never exercises the routing layer, so it cannot catch the gap. See [`argument-naming.md`](../../../../plan-marshall/skills/persona-plan-marshall-agent/standards/argument-naming.md) Rule 2 for the accepted-secondary-spellings contract.
 
 ```python
-COMMANDS = {"read": cmd_read, "get": cmd_read}   # alias gets its OWN key
+COMMANDS = {'read': cmd_read, 'get': cmd_read}  # alias gets its OWN key
 
 # argparse side
-p = subparsers.add_parser("read", aliases=["get"])
+p = subparsers.add_parser('read', aliases=['get'])
 
 # WRONG — alias only on add_parser, missing from the map
-COMMANDS = {"read": cmd_read}                     # `get` → COMMANDS.get("get") → None → unknown-command
-subparsers.add_parser("read", aliases=["get"])
+COMMANDS = {'read': cmd_read}  # `get` → COMMANDS.get("get") → None → unknown-command
+subparsers.add_parser('read', aliases=['get'])
 
 # RIGHT — alias present in BOTH the map and the subparser
-COMMANDS = {"read": cmd_read, "get": cmd_read}
-subparsers.add_parser("read", aliases=["get"])
+COMMANDS = {'read': cmd_read, 'get': cmd_read}
+subparsers.add_parser('read', aliases=['get'])
 ```
 
 #### (e) Normalization-before-decision
@@ -291,19 +295,19 @@ A new security/control-flow matcher over a trust-boundary input must canonicaliz
 
 ```python
 # WRONG — raw-token program ban: bypassed by an absolute path
-if program == "gh":            # "/usr/bin/gh" slips past
+if program == 'gh':  # "/usr/bin/gh" slips past
     reject()
 
 # RIGHT — basename-strip before the program ban (sibling normalization)
-if os.path.basename(program) == "gh":
+if os.path.basename(program) == 'gh':
     reject()
 
 # WRONG — bare substring path-containment: "/safe-evil" matches "/safe"
-if "/safe" in target_path:
+if '/safe' in target_path:
     allow()
 
 # RIGHT — segment/separator-anchored containment
-if target_path == "/safe" or target_path.startswith("/safe/"):
+if target_path == '/safe' or target_path.startswith('/safe/'):
     allow()
 ```
 
@@ -315,16 +319,19 @@ A new producer-declared frontmatter opt-in field must inherit the sibling field-
 
 ```python
 # Sibling opt-in field is read from metadata as a direct child, empty == absent
-meta = frontmatter.get("metadata") or {}
+meta = frontmatter.get('metadata') or {}
+
+
 def opted_in(field):
     val = meta.get(field)
-    return isinstance(val, str) and val.strip() != ""
+    return isinstance(val, str) and val.strip() != ''
+
 
 # WRONG — new field read at top level, presence-only test
-enabled = "new_flag" in frontmatter          # wrong nesting AND treats `new_flag:` as present
+enabled = 'new_flag' in frontmatter  # wrong nesting AND treats `new_flag:` as present
 
 # RIGHT — new field inherits the sibling parsing contract
-enabled = opted_in("new_flag")               # metadata-nested, non-empty-string required
+enabled = opted_in('new_flag')  # metadata-nested, non-empty-string required
 ```
 
 ### Author / reviewer checklist
@@ -375,15 +382,16 @@ For scripts with multiple operations:
 
 ```python
 FIX_HANDLERS = {
-    "missing_frontmatter": handle_missing_frontmatter,
-    "invalid_yaml": handle_invalid_yaml,
-    "unused_tools": handle_unused_tools,
+    'missing_frontmatter': handle_missing_frontmatter,
+    'invalid_yaml': handle_invalid_yaml,
+    'unused_tools': handle_unused_tools,
 }
+
 
 def apply_fix(fix_type: str, file_path: str, **kwargs) -> dict:
     handler = FIX_HANDLERS.get(fix_type)
     if not handler:
-        return {"error": f"Unknown fix type: {fix_type}"}
+        return {'error': f'Unknown fix type: {fix_type}'}
     return handler(file_path, **kwargs)
 ```
 
@@ -395,6 +403,7 @@ Always backup files before modification:
 import shutil
 from pathlib import Path
 
+
 def apply_fix_with_backup(file_path: str, fix_func) -> dict:
     backup_path = Path(file_path).with_suffix('.bak')
     shutil.copy2(file_path, backup_path)
@@ -405,7 +414,7 @@ def apply_fix_with_backup(file_path: str, fix_func) -> dict:
     except Exception as e:
         shutil.copy2(backup_path, file_path)  # Restore on failure
         backup_path.unlink()
-        return {"error": str(e)}
+        return {'error': str(e)}
 ```
 
 ## Executable Permissions
@@ -493,12 +502,12 @@ Apply modularization when:
 # BAD: Mixing milliseconds and seconds
 timeout_ms = timeout_get(...)  # Returns milliseconds
 duration = int(time.time() - start)  # Seconds (time.time() returns seconds)
-config["duration_ms"] = duration * 1000  # Convert back to ms
+config['duration_ms'] = duration * 1000  # Convert back to ms
 
 output = {
-    "duration_ms": duration_ms,
-    "timeout_used_ms": timeout_ms,
-    "elapsed": duration  # Seconds - inconsistent!
+    'duration_ms': duration_ms,
+    'timeout_used_ms': timeout_ms,
+    'elapsed': duration,  # Seconds - inconsistent!
 }
 ```
 
@@ -508,12 +517,9 @@ output = {
 # GOOD: Everything in seconds
 timeout = timeout_get(...)  # Returns seconds
 duration = int(time.time() - start)  # Seconds
-config["timeout_seconds"] = timeout
+config['timeout_seconds'] = timeout
 
-output = {
-    "duration_seconds": duration,
-    "timeout_seconds": timeout
-}
+output = {'duration_seconds': duration, 'timeout_seconds': timeout}
 ```
 
 ### Unit Naming Convention
@@ -554,7 +560,7 @@ def timeout_get(command_key: str, default: int, project_dir: str = '.') -> int:
         Timeout in seconds
     """
     config = load_run_config(get_config_path(project_dir))
-    persisted = config.get("commands", {}).get(command_key, {}).get("timeout_seconds")
+    persisted = config.get('commands', {}).get(command_key, {}).get('timeout_seconds')
     return default if persisted is None else int(persisted * SAFETY_MARGIN)
 
 
@@ -567,13 +573,13 @@ def timeout_set(command_key: str, duration: int, project_dir: str = '.') -> None
 def cmd_timeout_get(args):
     """CLI wrapper for timeout_get."""
     result = timeout_get(args.command_key, args.default, args.project_dir or '.')
-    print(json.dumps({"timeout_seconds": result}))
+    print(json.dumps({'timeout_seconds': result}))
 
 
 def cmd_timeout_set(args):
     """CLI wrapper for timeout_set."""
     timeout_set(args.command_key, args.duration, args.project_dir or '.')
-    print(json.dumps({"status": "ok"}))
+    print(json.dumps({'status': 'ok'}))
 ```
 
 ### API Function Requirements
@@ -659,8 +665,8 @@ from pathlib import Path
 _PLAN_DIR_NAME = os.environ.get('PLAN_DIR_NAME', '.plan')
 
 # Use in path construction
-DATA_DIR = Path(_PLAN_DIR_NAME) / "project-architecture"
-CONFIG_PATH = Path(project_dir) / _PLAN_DIR_NAME / "run-configuration.json"
+DATA_DIR = Path(_PLAN_DIR_NAME) / 'project-architecture'
+CONFIG_PATH = Path(project_dir) / _PLAN_DIR_NAME / 'run-configuration.json'
 ```
 
 ### Why Use Environment Variables
@@ -681,7 +687,7 @@ CONFIG_PATH = Path(project_dir) / _PLAN_DIR_NAME / "run-configuration.json"
 
 ```python
 # BAD: Hardcoded path
-DATA_DIR = Path(".plan/project-architecture")
+DATA_DIR = Path('.plan/project-architecture')
 
 # BAD: No fallback
 _PLAN_DIR_NAME = os.environ['PLAN_DIR_NAME']  # Raises KeyError if not set

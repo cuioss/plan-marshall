@@ -73,8 +73,8 @@ Exit codes indicate whether the **script executed successfully**, not whether th
 import sys
 
 # Operation succeeded
-print("status: success")
-print("items_processed: 42")
+print('status: success')
+print('items_processed: 42')
 sys.exit(0)
 ```
 
@@ -85,9 +85,9 @@ import sys
 
 # Operation failed but script ran successfully
 # Example: item not found, validation failed, requires --force
-print("status: error")
-print("error: Task not found: TASK-999")
-print("plan_id: EXAMPLE-PLAN")
+print('status: error')
+print('error: Task not found: TASK-999')
+print('plan_id: EXAMPLE-PLAN')
 sys.exit(0)  # Exit 0 - status is in output
 ```
 
@@ -101,7 +101,7 @@ from toon_parser import serialize_toon
 try:
     config = load_required_config()
 except FileNotFoundError:
-    print(serialize_toon({"status": "error", "error": "Required config file not found"}))
+    print(serialize_toon({'status': 'error', 'error': 'Required config file not found'}))
     sys.exit(0)  # Exit 0 - expected error reported via TOON
 
 # Exit 1 is reserved for @safe_main crash handler only
