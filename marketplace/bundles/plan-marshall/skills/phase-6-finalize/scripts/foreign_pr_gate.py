@@ -33,8 +33,8 @@ Return shape (CLI emits TOON; programmatic callers consume the dict directly)::
     status: clear | blocked | error
     plan_id: <id>
     foreign_deliverable_count: <int>
-    excluded_read_only_count: <int>                       # foreign paths kept out as read-only
-    excluded_read_only[E]{deliverable,path}: ...          # one row per excluded path
+    excluded_read_only_count: <int>                       # count of excluded_read_only rows
+    excluded_read_only[E]{deliverable,path}: ...          # one row per (deliverable, excluded path)
     repos[N]{repo_root,landing_state,deliverables}: ...   # one row per foreign repo
     blocking[M]{repo_root,deliverables}: ...              # the pushed_no_pr rows (blocked only)
     unresolved[K]{path,reason}: ...                       # foreign paths whose repo could not be resolved
@@ -226,9 +226,12 @@ def _partition_foreign_paths(deliverables: list[dict]) -> _ForeignPopulation:
     passes :func:`declares_change`. A foreign entry that fails the predicate —
     a ``read`` intent, which is also what a marker-less ``Files to survey``
     bullet parses to — is recorded as an exclusion instead, so the narrowing
-    stays visible on the result. A path that one field declares as a change is
-    in the population and is not reported as excluded, even when another field
-    declares it ``read``.
+    stays visible on the result. A path that ANY deliverable declares as a
+    change is in the population and is not reported as excluded anywhere, even
+    when another field or another deliverable declares it ``read``: the gate
+    evaluates that path, so naming it as skipped would be false. Exclusion rows
+    are keyed by ``(deliverable, path)``, so a path two deliverables both
+    declare ``read`` yields two rows.
 
     The deliverable roll-up ``foreign`` flag is deliberately NOT consulted: it
     is derived from the same two facts, and skipping on it would hide a
@@ -237,8 +240,7 @@ def _partition_foreign_paths(deliverables: list[dict]) -> _ForeignPopulation:
     exclusion contribute nothing. Pure — no I/O — so the population logic is
     unit-testable against a fixture deliverable list.
     """
-    by_deliverable: list[tuple[int, list[str]]] = []
-    excluded_read_only: list[dict] = []
+    walked: list[tuple[int, list[str], list[str]]] = []
     for deliverable in deliverables:
         if not isinstance(deliverable, dict):
             continue
@@ -269,10 +271,18 @@ def _partition_foreign_paths(deliverables: list[dict]) -> _ForeignPopulation:
                 elif path not in read_seen:
                     read_seen.add(path)
                     read_paths.append(path)
-        number = int(deliverable.get('number', 0))
-        if paths:
-            by_deliverable.append((number, paths))
-        excluded_read_only.extend({'deliverable': number, 'path': path} for path in read_paths if path not in seen)
+        walked.append((int(deliverable.get('number', 0)), paths, read_paths))
+    # The exclusion test runs against the WHOLE population, not one
+    # deliverable's slice of it, so a path gated through one deliverable is
+    # never also reported as excluded through another.
+    population: set[str] = {path for _, paths, _ in walked for path in paths}
+    by_deliverable = [(number, paths) for number, paths, _ in walked if paths]
+    excluded_read_only = [
+        {'deliverable': number, 'path': path}
+        for number, _, read_paths in walked
+        for path in read_paths
+        if path not in population
+    ]
     return _ForeignPopulation(by_deliverable, excluded_read_only)
 
 

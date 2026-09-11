@@ -429,6 +429,32 @@ def test_a_path_declared_read_and_write_is_gated_not_excluded():
     assert result['excluded_read_only'] == []
 
 
+def test_a_path_gated_through_one_deliverable_is_not_excluded_through_another():
+    """The exclusion test spans the whole population, not one deliverable's slice.
+
+    Deliverable 1 only reads the path; deliverable 2 changes it. The gate
+    evaluates it through deliverable 2, so an exclusion row naming it through
+    deliverable 1 would tell the operator the gate skipped a path it evaluated.
+    """
+    deliverables = [
+        _deliverable(1, foreign=True, paths=['/foreign/repo/shared.py'], intent='read'),
+        _deliverable(2, foreign=True, paths=['/foreign/repo/shared.py']),
+    ]
+    resolved: list[str] = []
+
+    result = _run(
+        deliverables,
+        roots={'/foreign/repo/shared.py': '/foreign/repo'},
+        landings={'/foreign/repo': 'merged'},
+        resolved_paths=resolved,
+    )
+
+    assert result['status'] == 'clear'
+    assert resolved == ['/foreign/repo/shared.py']
+    assert result['excluded_read_only_count'] == 0
+    assert result['excluded_read_only'] == []
+
+
 def test_the_population_consumes_the_shared_predicate(monkeypatch):
     """The gate routes through ``declares_change`` rather than a local copy of the rule.
 
@@ -452,6 +478,7 @@ def test_the_population_consumes_the_shared_predicate(monkeypatch):
 
 
 def test_a_clear_reached_after_exclusions_names_the_excluded_paths():
+    """Rows are keyed by (deliverable, path): ref.py, read by both, appears twice."""
     deliverables = [
         _deliverable(1, foreign=True, paths=['/foreign/repo/ref.py'], intent='read'),
         _deliverable(2, foreign=True, paths=['/foreign/repo/other.py', '/foreign/repo/ref.py'], intent='read'),

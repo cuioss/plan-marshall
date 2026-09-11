@@ -40,7 +40,7 @@ of each:
 | Report exposes | Inbox (historical) | Classification | Routed as |
 |---|---|---|---|
 | PR number + merge/landing state (headline token `MERGED`/`OPEN`/…) | narrative "the PR reference" | MECHANISABLE | `pr`, `merge_state` |
-| Branch cleanup left owed (the `branch-cleanup` detail "cleanup owed" on a declined, deferred, dequeued or unreadable run) | absent | MECHANISABLE | `cleanup_owed` |
+| Branch cleanup left owed | absent | MECHANISABLE | `cleanup_owed` |
 | Deliverables `N_done/N_total` + titles | narrative "what shipped" | MECHANISABLE | `deliverables_total`, `deliverables_done` |
 | Per-step outcome + `display_detail` for every finalize step, in composed order | absent | MECHANISABLE | **required** `steps`, which carries the per-step `{step}:{outcome}` pairs ONLY (split each element on its LAST colon — a namespaced step id contains one; [`../workflow/analyze.md`](../workflow/analyze.md) § Step 4 is where the drain applies it); each step's typed `facts` ride the **optional** `step.{name}.{fact_key}` keys |
 | Token totals + wall-clock (`record-metrics`) | absent | MECHANISABLE | **required** `total_tokens`; the wall-clock rides the **optional** `total_wall_seconds` |
