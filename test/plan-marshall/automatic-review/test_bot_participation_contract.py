@@ -739,6 +739,69 @@ class TestFailureTaxonomyIsExhaustive:
 
 
 # =============================================================================
+# A credited clean review resolves participated_but_empty
+# =============================================================================
+
+#: The heading the contract states the clean-review mapping under. Per-bot registry
+#: docs cite it by this title, so it is read here once and checked in both places.
+_CLEAN_REVIEW_HEADING = '### A credited clean review resolves `participated_but_empty`'
+
+#: Every ``(bot_kind, shape)`` a registered bot can be credited through, DERIVED from
+#: the registry. Guarded non-empty at import: a parametrize over an empty tuple SKIPS
+#: rather than fails, so an empty population would retire the sweep below silently.
+_CREDITED_SHAPES: tuple[tuple[str, str], ...] = tuple(
+    (bot, shape) for bot in bot_registry.bot_kinds() for shape in bot_registry.participation_evidence(bot)
+)
+assert _CREDITED_SHAPES, (
+    'no registered bot declares a participation_evidence shape — the clean-review '
+    'sweep would generate zero cases, which pytest reports as SKIPPED rather than failed'
+)
+
+
+class TestACreditedCleanReviewResolvesParticipatedButEmpty:
+    """The clean-review mapping the contract states holds across the whole population.
+
+    ``test_review_completeness.py`` pins it for CodeRabbit's clean review together with
+    its matched control; this suite pins the CONTRACT that case instantiates — every
+    credited shape of every registered bot, with nothing filed, is accounted-for as
+    ``participated_but_empty`` and never ``absent`` or ``participated``.
+    """
+
+    @pytest.mark.parametrize(
+        ('bot_kind', 'shape'),
+        _CREDITED_SHAPES,
+        ids=[f'{bot_kind}-{shape}' for bot_kind, shape in _CREDITED_SHAPES],
+    )
+    def test_a_credited_shape_with_nothing_filed_resolves_participated_but_empty(self, plan_context, bot_kind, shape):
+        """Credited, zero findings is the clean-review pair — and it lands on its member."""
+        plan_id = f'bpc-clean-review-{bot_kind}-{shape.replace("_", "-")}'
+        plan_context.plan_dir_for(plan_id)
+
+        result = rc.check_completeness(
+            plan_id, [bot_kind], participated_bots=rc.parse_participation(f'{bot_kind}:{shape}')
+        )
+
+        states = [r['state'] for r in result['bot_states'] if r['bot_kind'] == bot_kind]
+        assert states == [rc.STATE_PARTICIPATED_BUT_EMPTY]
+        assert result['participation_complete'] is True
+
+    def test_the_contract_states_the_mapping_and_the_coderabbit_record_cites_it(self):
+        """The mapping has its own heading, and CodeRabbit's registry doc points at it by title.
+
+        ``coderabbit.md`` records which publish shape carries its clean-review credit and
+        defers the member to this contract by section title. Renaming the heading
+        without the pointer would leave that record citing a section that no longer
+        exists, so both ends are read here. Whitespace is collapsed on the pointer side
+        because the citation wraps across a line break in the source.
+        """
+        assert _CLEAN_REVIEW_HEADING in _CONTRACT_DOC.read_text(encoding='utf-8').splitlines()
+
+        title = _CLEAN_REVIEW_HEADING.removeprefix('### ')
+        coderabbit = (_CONTRACT_DOC.parent / 'coderabbit.md').read_text(encoding='utf-8')
+        assert f'§ "{title}"' in ' '.join(coderabbit.split())
+
+
+# =============================================================================
 # Call-site population sweep — the argument-marshalling family
 # =============================================================================
 #

@@ -185,6 +185,19 @@ field's reach, and why an absent declaration is fail-open, are stated once in
 [`bot-participation-contract.md`](bot-participation-contract.md) § "A shape may be gated on a content
 marker".
 
+**A clean review's credit rides the marker-bearing `issue_comment`.** When CodeRabbit finds nothing,
+it publishes no `review_body` and no `inline` comment: its whole output is the review-verdict
+`issue_comment` — the marker above followed by `No actionable comments were generated in the recent
+review` — observed as its only comment on `cuioss/cui-http#194`. That text is one of the
+`ignore_patterns`, so the comment files no finding, yet it still earns the participation credit,
+because participation is derived from the raw comment list before the noise filter runs. The marker
+is therefore load-bearing twice over: it is what keeps the walkthrough from crediting a review that
+has not happened, and it is the only thing crediting a clean review that has. A verdict comment that
+stopped carrying it would resolve a clean review `absent`. Which taxonomy member a credited clean
+review lands on is the cross-bot contract's to state, not this doc's — see
+[`bot-participation-contract.md`](bot-participation-contract.md) § "A credited clean review resolves
+`participated_but_empty`".
+
 **Presence alone is not enough — the update must move.** CodeRabbit **edits its summary comment in
 place** on re-review rather than appending a fresh one, so the comment's continued
 presence proves only that the bot reviewed at some *earlier* commit; after a force-push or a

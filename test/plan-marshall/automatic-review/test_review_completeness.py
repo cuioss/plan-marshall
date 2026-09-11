@@ -405,6 +405,95 @@ class TestPRAgentParticipation:
 
 
 # =============================================================================
+# CodeRabbit's clean review — credited, and every comment dropped as noise
+# =============================================================================
+
+#: The publish shape a CodeRabbit clean review is credited through: its review-verdict
+#: ``issue_comment``, the only comment it publishes when it finds nothing (see
+#: ``standards/coderabbit.md`` § "Participation evidence"). That it is the shape
+#: CodeRabbit gates on a content marker is asserted below rather than assumed.
+_CODERABBIT_CLEAN_REVIEW_SHAPE = 'issue_comment'
+
+
+class TestCodeRabbitCleanReviewCredit:
+    """A credited CodeRabbit clean review resolves ``participated_but_empty``.
+
+    Every comment of a clean review is dropped as noise, so the store holds nothing for
+    the bot while the producer still credits it — participation is derived before the
+    noise filter runs. *Credited, zero findings* must land on the existing
+    ``participated_but_empty`` member: never ``absent`` (which escalates a reviewer that
+    did review) and never ``participated`` (which claims findings that do not exist).
+    See ``bot-participation-contract.md`` § "A credited clean review resolves
+    ``participated_but_empty``".
+    """
+
+    def test_the_clean_review_shape_is_coderabbits_marker_gated_evidence(self):
+        """The credit rides the one shape CodeRabbit gates on its review-verdict marker.
+
+        Guards the premise of the cases below: were the shape undeclared or ungated,
+        the pair they feed would no longer stand for the marker-bearing verdict the
+        producer credits on a clean review.
+        """
+        assert _CODERABBIT_CLEAN_REVIEW_SHAPE in rc.bot_registry.participation_evidence('coderabbit')
+        assert rc.bot_registry.participation_evidence_marker('coderabbit', _CODERABBIT_CLEAN_REVIEW_SHAPE)
+
+    def test_a_credited_clean_review_resolves_participated_but_empty_and_renders_empty(self, plan_context):
+        """The clean review is an accounted-for success, shown as ``empty`` on the summary line."""
+        plan_id = 'rc-coderabbit-clean-review'
+        plan_context.plan_dir_for(plan_id)
+
+        result = rc.check_completeness(
+            plan_id,
+            ['coderabbit'],
+            participated_bots=rc.parse_participation(f'coderabbit:{_CODERABBIT_CLEAN_REVIEW_SHAPE}'),
+        )
+
+        assert _state_of(result, 'coderabbit') == rc.STATE_PARTICIPATED_BUT_EMPTY
+        assert result['review_state_summary'] == '1 empty'
+        assert result['participation_complete'] is True
+        assert result['unproven_bots'] == []
+
+    def test_the_same_observations_with_a_surviving_finding_resolve_participated(self, plan_context):
+        """⛔ MATCHED CONTROL: one surviving finding is the only difference, and it moves the member.
+
+        Same bot, same credited shape, same quorum — the store now holds one finding
+        the noise filter let through. The member moves to ``participated`` and the
+        summary to ``reviewed``, so the case above cannot pass by resolving every
+        credited bot ``participated_but_empty`` regardless of what it filed.
+        """
+        plan_id = 'rc-coderabbit-clean-review-finding'
+        plan_context.plan_dir_for(plan_id)
+        _seed(plan_id, 'coderabbit')
+
+        result = rc.check_completeness(
+            plan_id,
+            ['coderabbit'],
+            participated_bots=rc.parse_participation(f'coderabbit:{_CODERABBIT_CLEAN_REVIEW_SHAPE}'),
+        )
+
+        assert _state_of(result, 'coderabbit') == rc.STATE_PARTICIPATED
+        assert result['review_state_summary'] == '1 reviewed'
+        assert result['participation_complete'] is True
+
+    def test_the_same_empty_store_without_the_credit_is_absent(self, plan_context):
+        """The credit alone separates a clean review from no review at all.
+
+        The store is as empty as a clean review leaves it; only the credit is missing —
+        which is what a verdict comment lacking its marker produces. The bot resolves
+        ``absent`` and holds the quorum open, so the credit is load-bearing rather than
+        incidental to the ``participated_but_empty`` verdict above.
+        """
+        plan_id = 'rc-coderabbit-clean-review-uncredited'
+        plan_context.plan_dir_for(plan_id)
+
+        result = rc.check_completeness(plan_id, ['coderabbit'])
+
+        assert _state_of(result, 'coderabbit') == rc.STATE_ABSENT
+        assert result['review_state_summary'] == '1 absent'
+        assert result['participation_complete'] is False
+
+
+# =============================================================================
 # The quorum is over required_bots only
 # =============================================================================
 
