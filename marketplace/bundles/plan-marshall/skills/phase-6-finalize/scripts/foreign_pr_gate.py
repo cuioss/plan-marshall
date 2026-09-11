@@ -13,9 +13,18 @@ branch that no PR carries.
 
 The gate is a consumer of two deterministic signals, never of artifact prose:
 
-* the ``foreign`` column on ``manage-solution-outline list-deliverables`` — the
-  population it iterates (a change outside the project root), so a coverage
-  decision never silently pools host paths with foreign ones; and
+* the ``foreign`` column on ``manage-solution-outline list-deliverables``
+  intersected with the ``declares_change`` predicate (``_plan_parsing``) — the
+  population it iterates: every declared path that is BOTH outside the project
+  root (the per-entry ``foreign`` flag) AND declares a change. A foreign path
+  declared ``read`` — including a marker-less ``Files to survey`` bullet, which
+  parses as ``read`` — names a file the deliverable only consults; no commit can
+  carry it, so no pull request could ever clear it, and it is kept out of the
+  population. It is never dropped silently: every such path is named on the
+  result (``excluded_read_only[]``). A foreign entry with no intent marker still
+  enters the population. The column's deliverable roll-up is decided by the
+  same predicate, so the column and the gate agree on what a foreign change is;
+  and
 * the ``ci pr landing-state`` verb — the per-repository done-ness discriminator
   (``merged`` / ``pr_open`` / ``pushed_no_pr`` / ``unpushed``).
 
@@ -24,14 +33,25 @@ Return shape (CLI emits TOON; programmatic callers consume the dict directly)::
     status: clear | blocked | error
     plan_id: <id>
     foreign_deliverable_count: <int>
+    excluded_read_only_count: <int>                       # foreign paths kept out as read-only
+    excluded_read_only[E]{deliverable,path}: ...          # one row per excluded path
     repos[N]{repo_root,landing_state,deliverables}: ...   # one row per foreign repo
     blocking[M]{repo_root,deliverables}: ...              # the pushed_no_pr rows (blocked only)
     unresolved[K]{path,reason}: ...                       # foreign paths whose repo could not be resolved
 
+``excluded_read_only_count`` and ``excluded_read_only[]`` ride on every result
+the population walk reached, whatever its status, and are absent only from the
+two errors raised before the walk (``project_root_unresolvable`` /
+``deliverables_unavailable``), where nothing was evaluated.
+
 Outcome semantics:
 
 * ``clear`` — no foreign deliverable is ``pushed_no_pr``. Archive may proceed.
-  This includes the common case of zero foreign deliverables.
+  This includes the common case of zero foreign deliverables. A ``clear`` with a
+  non-zero ``excluded_read_only_count`` was reached over a population the
+  predicate narrowed: the named paths were excluded as read-only, not evaluated
+  and found landed — which is what separates it from a ``clear`` over a
+  genuinely empty foreign population.
 * ``blocked`` — at least one foreign deliverable's repository is ``pushed_no_pr``.
   The dispatcher MUST NOT archive; it surfaces ``blocking[]`` (the offending
   repos and the deliverables that named them) so the operator opens the missing
@@ -67,7 +87,9 @@ import argparse
 import os
 import subprocess
 import sys
+from typing import NamedTuple
 
+from _plan_parsing import declares_change
 from ci_base import LANDING_STATES
 from file_ops import cwd_checkout_root, get_executor_path
 from toon_parser import parse_toon, serialize_toon
@@ -89,9 +111,10 @@ _CI_NOTATION = 'plan-marshall:tools-integration-ci:ci'
 def _list_deliverables(plan_id: str) -> dict:
     """Return the parsed ``manage-solution-outline list-deliverables`` TOON.
 
-    Consumes the deliverables — including the ``foreign`` column this gate
-    iterates — through the executor proxy so the gate reads the SAME structured
-    signal every other consumer does, never a re-parse of the outline markdown.
+    Consumes the deliverables — including the per-entry ``foreign`` flags and
+    ``intent`` markers this gate reads — through the executor proxy so the gate
+    reads the SAME structured signal every other consumer does, never a re-parse
+    of the outline markdown.
     Returns the parsed dict verbatim; the caller inspects ``status``.
     """
     executor = get_executor_path()
@@ -182,41 +205,85 @@ def _resolve_landing_state(repo_root: str) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def _foreign_paths_by_deliverable(deliverables: list[dict]) -> list[tuple[int, list[str]]]:
-    """Extract ``(deliverable_number, [foreign_path, ...])`` for foreign deliverables.
+class _ForeignPopulation(NamedTuple):
+    """One walk of the listed deliverables' foreign entries, with both outcomes.
 
-    Reads the ``foreign`` flags stamped by ``list-deliverables``: a deliverable
-    contributes when its roll-up ``foreign`` is true, and only its entries whose
-    own ``foreign`` flag is true are collected. Deliverables with no foreign
-    entry are dropped. Pure — no I/O — so the population logic is unit-testable
-    against a fixture deliverable list.
+    ``by_deliverable`` is the population the gate iterates; ``excluded_read_only``
+    is every foreign path :func:`declares_change` kept out of it. Both come from
+    the SAME pass, so the exclusions reported on the result are exactly the ones
+    the population was narrowed by.
     """
-    result: list[tuple[int, list[str]]] = []
+
+    by_deliverable: list[tuple[int, list[str]]]
+    excluded_read_only: list[dict]
+
+
+def _partition_foreign_paths(deliverables: list[dict]) -> _ForeignPopulation:
+    """Split every foreign entry into the gate's population or the read-only exclusions.
+
+    An entry joins the population only when it is BOTH foreign (its own
+    per-entry ``foreign`` flag, stamped lexically by ``list-deliverables``) AND
+    passes :func:`declares_change`. A foreign entry that fails the predicate —
+    a ``read`` intent, which is also what a marker-less ``Files to survey``
+    bullet parses to — is recorded as an exclusion instead, so the narrowing
+    stays visible on the result. A path that one field declares as a change is
+    in the population and is not reported as excluded, even when another field
+    declares it ``read``.
+
+    The deliverable roll-up ``foreign`` flag is deliberately NOT consulted: it
+    is derived from the same two facts, and skipping on it would hide a
+    deliverable whose only foreign entries are read-only — exactly the one whose
+    exclusions must be named. Deliverables with neither a population path nor an
+    exclusion contribute nothing. Pure — no I/O — so the population logic is
+    unit-testable against a fixture deliverable list.
+    """
+    by_deliverable: list[tuple[int, list[str]]] = []
+    excluded_read_only: list[dict] = []
     for deliverable in deliverables:
-        if not isinstance(deliverable, dict) or not deliverable.get('foreign'):
+        if not isinstance(deliverable, dict):
             continue
         # All THREE declaration fields — a survey-scope deliverable declares
         # `Files expected to mutate:` instead of `Affected files:`, and its
         # foreign paths must reach this gate like any other. Reading one field
         # made the gate's population a strict subset of the declared surface.
         seen: set[str] = set()
-        paths = []
+        paths: list[str] = []
+        read_seen: set[str] = set()
+        read_paths: list[str] = []
         for field in ('affected_files', 'mutation_scope', 'survey_scope'):
             for entry in deliverable.get(field, []) or []:
                 if not isinstance(entry, dict) or not entry.get('foreign'):
                     continue
                 path = str(entry.get('path') or '')
+                if not path:
+                    continue
                 # Deduplicated rather than assumed disjoint. The survey-scope
                 # convention requires the two lists to share no path, but that
                 # is an AUTHORING rule no check enforces, so a doubly-declared
                 # path would otherwise be named twice in the operator's
                 # blocking message.
-                if path and path not in seen:
-                    seen.add(path)
-                    paths.append(path)
+                if declares_change(entry):
+                    if path not in seen:
+                        seen.add(path)
+                        paths.append(path)
+                elif path not in read_seen:
+                    read_seen.add(path)
+                    read_paths.append(path)
+        number = int(deliverable.get('number', 0))
         if paths:
-            result.append((int(deliverable.get('number', 0)), paths))
-    return result
+            by_deliverable.append((number, paths))
+        excluded_read_only.extend({'deliverable': number, 'path': path} for path in read_paths if path not in seen)
+    return _ForeignPopulation(by_deliverable, excluded_read_only)
+
+
+def _foreign_paths_by_deliverable(deliverables: list[dict]) -> list[tuple[int, list[str]]]:
+    """Extract ``(deliverable_number, [foreign_path, ...])`` — the gate's population.
+
+    The population view of :func:`_partition_foreign_paths`: every path that is
+    both foreign and declares a change, grouped by the deliverable that declared
+    it. Deliverables with no such path are dropped.
+    """
+    return _partition_foreign_paths(deliverables).by_deliverable
 
 
 # ---------------------------------------------------------------------------
@@ -276,13 +343,22 @@ def check(
             'message': str(message),
         }
 
-    foreign = _foreign_paths_by_deliverable(listed.get('deliverables', []))
+    population = _partition_foreign_paths(listed.get('deliverables', []))
+    foreign = population.by_deliverable
+    # The exclusions ride on every result from here on, so a clear reached by
+    # the predicate filtering the population away never reads as a clear over a
+    # genuinely empty foreign population.
+    exclusions = {
+        'excluded_read_only_count': len(population.excluded_read_only),
+        'excluded_read_only': population.excluded_read_only,
+    }
     if not foreign:
         return {
             'status': 'clear',
             'plan_id': plan_id,
             'project_root': project_root,
             'foreign_deliverable_count': 0,
+            **exclusions,
             'repos': [],
         }
 
@@ -342,6 +418,7 @@ def check(
         'plan_id': plan_id,
         'project_root': project_root,
         'foreign_deliverable_count': len(foreign),
+        **exclusions,
         'repos': repos,
     }
     if blocking:
