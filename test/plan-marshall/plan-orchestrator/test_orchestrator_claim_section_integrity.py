@@ -512,3 +512,53 @@ class TestPreFixParserCollapsedTheThreeForms:
         lines = _spec_text(claim_lines).splitlines()
 
         assert _pre_fix_parse_claims(lines) == parse_claim_section(lines)['claims'] == []
+
+
+# =============================================================================
+# (d) Operational bullets excluded from the claim count
+# =============================================================================
+#
+# A top-level ``- `` bullet whose text starts with ``⚙️`` is an operational note,
+# not a claim. The parser excludes it from ``claims`` so interleaved operational
+# bullets do not shift later ``--claim-index`` ordinals.
+
+
+_OPERATIONAL_BULLET = '- ⚙️ operational note: re-check at `a.py` § `f`'
+
+_OPERATIONAL_CLAIM_A = '- OBSERVED: first claim — read at `a.py` § `f`'
+
+_OPERATIONAL_CLAIM_B = '- OBSERVED: second claim — read at `b.py` § `g`'
+
+
+class TestOperationalBulletsExcludedFromClaimCount:
+    def test_an_operational_only_section_is_unreadable_not_parsed(self):
+        lines = _spec_text([_OPERATIONAL_BULLET]).splitlines()
+
+        section = parse_claim_section(lines)
+
+        assert section['state'] == CLAIM_SECTION_UNREADABLE
+        assert section['claims'] == []
+
+    def test_interleaved_operational_bullets_do_not_shift_claim_ordinals(self):
+        claim_lines = [_OPERATIONAL_CLAIM_A, _OPERATIONAL_BULLET, _OPERATIONAL_CLAIM_B]
+        lines = _spec_text(claim_lines).splitlines()
+
+        section = parse_claim_section(lines)
+
+        assert section['state'] == CLAIM_SECTION_PARSED
+        assert [claim['text'] for claim in section['claims']] == [
+            _OPERATIONAL_CLAIM_A[2:],
+            _OPERATIONAL_CLAIM_B[2:],
+        ]
+        assert [claim['index'] for claim in section['claims']] == [0, 1]
+
+    def test_a_leading_operational_bullet_does_not_consume_index_zero(self):
+        claim_lines = [_OPERATIONAL_BULLET, _OPERATIONAL_CLAIM_A]
+        lines = _spec_text(claim_lines).splitlines()
+
+        section = parse_claim_section(lines)
+
+        assert section['state'] == CLAIM_SECTION_PARSED
+        assert len(section['claims']) == 1
+        assert section['claims'][0]['index'] == 0
+        assert section['claims'][0]['text'] == _OPERATIONAL_CLAIM_A[2:]
