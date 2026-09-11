@@ -122,11 +122,11 @@ The accepted flag set per form — `--status` is the one flag two forms share, a
 
 A four-way surface over `status.json`'s `plans[]` — one read and three writes. With no write flags the verb reads the queue.
 
-`--transition` and `--status` are supplied together and transition the named plan to the new status. `--set-row`, `--field`, and `--value` are likewise supplied together and stamp ONE result field of the named plan's row — an out-of-whitelist `--field` returns `invalid_field`, and `status` is reachable only through `--transition`. `--add-row`, `--slug-value`, and `--workstream` are supplied together and APPEND one new row.
+`--transition` and `--status` are supplied together and transition the named plan to the new status. `--set-row`, `--field`, and `--value` are likewise supplied together and stamp ONE result field of the named plan's row — an out-of-whitelist `--field` returns `invalid_field`, and `status` is reachable only through `--transition`. `--add-row`, `--slug-value`, and `--workstream` are supplied together and APPEND one new row. An out-of-vocabulary `--status` on either `--transition` or `--add-row` returns `invalid_field` with nothing written.
 
 `--field` whitelist (mirrors `PLAN_ROW_FIELDS`): `plan_marshall_plan_id`, `pr`, `landing`
 
-Both enumerations this section publishes — the `--field` whitelist above and the `--add-row` seed fields below — sit on their own line, behind a fixed anchor, so each is machine-locatable rather than embedded in prose. `test_orchestrator.py` extracts them through one shared reader and asserts SET EQUALITY in both directions against the constant each mirrors: `PLAN_ROW_FIELDS`, which `cmd_queue` actually validates `--field` against, and `ADD_ROW_SEED_FIELDS`, the tuple `--add-row` seeds a row from. Each check fails rather than passes if its extraction yields nothing, so a reworded or deleted anchor is a red test and not a silent skip. The seed-field line is additionally asserted in DECLARATION ORDER, because that tuple's order is the key order an appended row is written in. Closure is therefore re-checked against the declaring source on every run instead of being asserted here by hand.
+All three enumerations this document publishes — the `--field` whitelist above, the `--status` vocabulary in ## Status Vocabulary below, and the `--add-row` seed fields below — sit on their own line, behind a fixed anchor, so each is machine-locatable rather than embedded in prose. `test_orchestrator.py` extracts them through one shared reader and asserts SET EQUALITY in both directions against the constant each mirrors: `PLAN_ROW_FIELDS`, which `cmd_queue` actually validates `--field` against, `VALID_STATUS_VOCABULARY`, which `cmd_queue` actually validates `--status` against, and `ADD_ROW_SEED_FIELDS`, the tuple `--add-row` seeds a row from. Each check fails rather than passes if its extraction yields nothing, so a reworded or deleted anchor is a red test and not a silent skip. The seed-field line is additionally asserted in DECLARATION ORDER, because that tuple's order is the key order an appended row is written in. Closure is therefore re-checked against the declaring source on every run instead of being asserted here by hand.
 
 The three write forms are mutually exclusive: supplying more than one returns `wrong_parameters`, as does an incomplete triple. `--status` is REQUIRED with `--transition` and OPTIONAL with `--add-row`, so it no longer marks the transition form on its own — supplied with neither, it is still rejected.
 
@@ -421,6 +421,12 @@ A landing carries a fenced `landing-facts` block specified by [`standards/landin
 | **Could-not-read** — asserts only that nothing was observed | `unknown` | EVERY key, with no allow-list — `pr` and `merge_state` included |
 
 So `merge_state=n/a` leaves a landing complete while `merge_state=unknown` does not: the first records "no PR exists", the second records a read that failed, and the drain must not reconcile against a failed read. The two classes are separate vocabularies precisely because one gated set cannot express both. A PRE-FIX prose-only landing has no block at all, so `missing_keys` is the whole required set — this is the known-incomplete input the check is SEEN to fail on. `complete: false` is a VERDICT (`status: success`), never a fault: the drain records it as an Open Defect and continues. This is what lets the orchestrator turn "the queue is empty" into "every REQUIRED fact drained" — the two coincide only when every drained landing was complete. It does not reach the OPTIONAL keys, so it never establishes that nothing whatsoever is outstanding. Consumed by [`workflow/analyze.md`](workflow/analyze.md) Step 4.
+
+## Status Vocabulary
+
+`--status` vocabulary (mirrors `VALID_STATUS_VOCABULARY`): `staged`, `launched`, `running`, `parked`, `shipped`, `landed`
+
+`queue --transition --status` and `queue --add-row --status` accept only members of this vocabulary; any other token is refused with `invalid_field` and nothing is written. The vocabulary is defined once as `VALID_STATUS_VOCABULARY` in `orchestrator.py`.
 
 ## Related
 

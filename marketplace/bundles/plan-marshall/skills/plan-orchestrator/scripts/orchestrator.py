@@ -156,6 +156,13 @@ FILE_STATUS = 'status.json'
 # creation — by ``decompose`` or by ``--add-row`` — and never patched.
 PLAN_ROW_FIELDS = frozenset({'plan_marshall_plan_id', 'pr', 'landing'})
 
+# The closed status vocabulary ``queue --transition --status`` may write and
+# ``queue --add-row --status`` may seed. Mirrors the ``PLAN_ROW_FIELDS`` pattern:
+# defined once here as a ``frozenset`` (membership, no order), published in
+# ``plan-orchestrator/SKILL.md`` under the machine-locatable status-vocabulary
+# anchor, and validated by :func:`cmd_queue` with the ``invalid_field`` error.
+VALID_STATUS_VOCABULARY = frozenset({'staged', 'launched', 'running', 'parked', 'shipped', 'landed'})
+
 #: The fields one appended ``plans[]`` row is seeded with, in the order
 #: ``--add-row`` writes them: the three identity fields the caller supplies, the
 #: status it starts at, and the three RESULT fields (:data:`PLAN_ROW_FIELDS`)
@@ -1066,8 +1073,8 @@ def cmd_queue(args: argparse.Namespace) -> dict[str, Any]:
     - **read** (no write flags): returns ``phase``, ``resume_anchor``, and the
       full ``plans[]`` queue.
     - **transition** (``--transition PLAN-NN --status X``): sets that plan's
-      ``status``. The status vocabulary is owned by the orchestrator workflows;
-      the script stores the supplied value verbatim.
+      ``status``. ``X`` must be a member of :data:`VALID_STATUS_VOCABULARY`;
+      any other token is refused with ``invalid_field`` and nothing is written.
     - **set-row** (``--set-row PLAN-NN --field F --value V``): sets one result
       field of that plan's row, where ``F`` is one of :data:`PLAN_ROW_FIELDS`.
       This is the sanctioned way to stamp a landing (``pr``, ``landing``,
@@ -1133,6 +1140,12 @@ def cmd_queue(args: argparse.Namespace) -> dict[str, Any]:
             args.slug,
             'invalid_field',
             f'--field must be one of {sorted(PLAN_ROW_FIELDS)}, got: {args.field}',
+        )
+    if args.status is not None and args.status not in VALID_STATUS_VOCABULARY:
+        return _error(
+            args.slug,
+            'invalid_field',
+            f'--status must be one of {sorted(VALID_STATUS_VOCABULARY)}, got: {args.status}',
         )
     if add_row_given and not _ADD_ROW_PLAN_ID_RE.match(args.add_row):
         return _error(
@@ -1845,7 +1858,10 @@ def _parse_claim_section(lines: list[str]) -> dict[str, Any]:
 
     A TOP-LEVEL bullet beginning with :data:`VERDICT_PREFIX` is NOT a claim — it
     is the section-scoped verdict, recorded apart and excluded from ``claims``, so
-    ``--claim-index`` ordinals are unaffected by its presence. ``first_line`` is
+    ``--claim-index`` ordinals are unaffected by its presence. A top-level bullet
+    whose text starts with ``⚙️`` is likewise NOT a claim — it is an operational
+    note, excluded from ``claims`` so interleaved operational bullets do not shift
+    later claim ordinals. ``first_line`` is
     the body's first line AS AUTHORED, so after a section-scoped stamp it quotes
     that verdict bullet rather than the offending prose: by then the diagnostic
     value has moved to the section verdict being present.
@@ -1887,6 +1903,8 @@ def _parse_claim_section(lines: list[str]) -> dict[str, Any]:
                 if section_verdict_line < 0:
                     section_verdict_line = index
                     section_verdict_text = text
+                continue
+            if text.startswith('⚙️'):
                 continue
             claims.append(
                 {

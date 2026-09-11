@@ -22,11 +22,12 @@ group's envelope schema and handler surface have theirs
   arms are asserted for the same reason. It also carries the three-valued
   spec-presence probe, whose ``absent`` and ``unlistable`` verdicts are asserted
   apart so a measured negative is never confused with an unobserved one.
-- doc contract: BOTH enumerations SKILL.md mirrors are extracted through one
+- doc contract: ALL THREE enumerations SKILL.md mirrors are extracted through one
   shared anchored reader and asserted EQUAL to their declaring constants in both
   directions — the ``--field`` whitelist against ``PLAN_ROW_FIELDS``, which
-  ``cmd_queue`` validates against, and the ``--add-row`` seed fields against
-  ``ADD_ROW_SEED_FIELDS``. Each check asserts its anchored extraction and both
+  ``cmd_queue`` validates against, the ``--status`` vocabulary against
+  ``VALID_STATUS_VOCABULARY``, which ``cmd_queue`` validates against, and the
+  ``--add-row`` seed fields against ``ADD_ROW_SEED_FIELDS``. Each check asserts its anchored extraction and both
   populations non-empty FIRST, so an equality can never pass over two empty
   sets. The seed fields are additionally asserted in DECLARATION ORDER, because
   that tuple's order is the key order an appended row is written in; the
@@ -75,6 +76,7 @@ SKILL_MD_PATH = Path(SCRIPT_PATH).parent.parent / 'SKILL.md'
 #: a silent pass.
 FIELD_WHITELIST_ANCHOR = '`--field` whitelist (mirrors `PLAN_ROW_FIELDS`):'
 ADD_ROW_SEED_FIELDS_ANCHOR = '`--add-row` seed fields (mirrors `ADD_ROW_SEED_FIELDS`):'
+STATUS_VOCABULARY_ANCHOR = '`--status` vocabulary (mirrors `VALID_STATUS_VOCABULARY`):'
 
 #: Every backticked token, used to lift the whitelist entries off the anchored
 #: line.
@@ -89,6 +91,7 @@ cmd_resume_summary = _orch.cmd_resume_summary
 EPIC_SUBDIRS = _orch.EPIC_SUBDIRS
 PLAN_ROW_FIELDS = _orch.PLAN_ROW_FIELDS
 ADD_ROW_SEED_FIELDS = _orch.ADD_ROW_SEED_FIELDS
+VALID_STATUS_VOCABULARY = _orch.VALID_STATUS_VOCABULARY
 
 FIXED_TIMESTAMP = '2020-01-01T00:00:00Z'
 
@@ -630,6 +633,27 @@ class TestDocumentedFieldWhitelistMatchesDeclaration:
         documented, _ = _documented_entries(FIELD_WHITELIST_ANCHOR)
 
         _assert_sets_agree(FIELD_WHITELIST_ANCHOR, documented, PLAN_ROW_FIELDS)
+
+
+class TestDocumentedStatusVocabularyMatchesDeclaration:
+    """SKILL.md's ``--status`` vocabulary equals ``VALID_STATUS_VOCABULARY``, both ways.
+
+    The third mirrored enumeration in the same document, pinned by the same
+    mechanism as the ``--field`` whitelist above rather than by a second parallel
+    one. ``VALID_STATUS_VOCABULARY`` is a ``frozenset`` validated by ``cmd_queue``
+    with the ``invalid_field`` error, so it declares MEMBERSHIP and no order;
+    the doc line's order is therefore presentational and is not pinned.
+    """
+
+    def test_the_vocabulary_and_its_declaration_are_both_non_empty(self):
+        documented, anchor_matches = _documented_entries(STATUS_VOCABULARY_ANCHOR)
+
+        _assert_extraction_is_not_vacuous(STATUS_VOCABULARY_ANCHOR, documented, anchor_matches, VALID_STATUS_VOCABULARY)
+
+    def test_documented_vocabulary_equals_valid_status_vocabulary(self):
+        documented, _ = _documented_entries(STATUS_VOCABULARY_ANCHOR)
+
+        _assert_sets_agree(STATUS_VOCABULARY_ANCHOR, documented, VALID_STATUS_VOCABULARY)
 
 
 class TestDocumentedSeedFieldsMatchDeclaration:
