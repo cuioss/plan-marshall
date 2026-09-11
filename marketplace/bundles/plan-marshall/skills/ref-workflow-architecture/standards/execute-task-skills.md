@@ -63,18 +63,20 @@ The profile system is open for extension. While `_config_defaults.py` defines a 
 1. **Add profile to domain extension.py**:
    ```python
    def get_skill_domains(self) -> list[dict]:
-       return [{
-           "domain": {...},
-           "profiles": {
-               "core": {...},
-               "implementation": {...},
-               "module_testing": {...},
-               "my_new_profile": {  # New profile
-                   "defaults": ["my-bundle:my-skill"],
-                   "optionals": []
-               }
+       return [
+           {
+               'domain': {...},
+               'profiles': {
+                   'core': {...},
+                   'implementation': {...},
+                   'module_testing': {...},
+                   'my_new_profile': {  # New profile
+                       'defaults': ['my-bundle:my-skill'],
+                       'optionals': [],
+                   },
+               },
            }
-       }]
+       ]
    ```
 
 2. **Add a profile workflow section** to `plan-marshall:execute-task/SKILL.md` describing how the new profile executes (the unified skill dispatches on `task.profile`).

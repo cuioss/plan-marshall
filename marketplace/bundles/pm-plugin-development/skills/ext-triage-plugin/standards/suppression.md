@@ -8,7 +8,7 @@ How to suppress various types of findings in marketplace plugin development.
 
 ```python
 # Suppress specific rule
-long_line = "This is a very long line that exceeds the limit"  # noqa: E501
+long_line = 'This is a very long line that exceeds the limit'  # noqa: E501
 
 # Suppress multiple rules
 from module import *  # noqa: F401,F403
@@ -54,12 +54,13 @@ data = json.loads(text)  # type: ignore[arg-type] - text is validated above
 ### Skip Test
 
 ```python
-@pytest.mark.skip(reason="Requires external service")
+@pytest.mark.skip(reason='Requires external service')
 def test_external_api():
     pass
 
+
 # Conditional skip
-@pytest.mark.skipif(sys.platform == "win32", reason="Unix only")
+@pytest.mark.skipif(sys.platform == 'win32', reason='Unix only')
 def test_unix_feature():
     pass
 ```
@@ -67,12 +68,13 @@ def test_unix_feature():
 ### Expected Failure
 
 ```python
-@pytest.mark.xfail(reason="Known bug, tracked in ISSUE-123")
+@pytest.mark.xfail(reason='Known bug, tracked in ISSUE-123')
 def test_known_failure():
     pass
 
+
 # Strict xfail - fails if test passes
-@pytest.mark.xfail(reason="Bug fixed?", strict=True)
+@pytest.mark.xfail(reason='Bug fixed?', strict=True)
 def test_should_still_fail():
     pass
 ```
@@ -80,10 +82,13 @@ def test_should_still_fail():
 ### Parameterize Skip
 
 ```python
-@pytest.mark.parametrize("value,expected", [
-    ("valid", True),
-    pytest.param("edge", False, marks=pytest.mark.skip(reason="Edge case TBD")),
-])
+@pytest.mark.parametrize(
+    'value,expected',
+    [
+        ('valid', True),
+        pytest.param('edge', False, marks=pytest.mark.skip(reason='Edge case TBD')),
+    ],
+)
 def test_validation(value, expected):
     pass
 ```
@@ -160,9 +165,10 @@ allowed-tools: Read, Glob
 
 ```python
 # Good - explains why
-@pytest.mark.skip(reason="Requires Redis server - run with integration profile")
+@pytest.mark.skip(reason='Requires Redis server - run with integration profile')
 def test_redis_connection():
     pass
+
 
 # Bad - no explanation
 @pytest.mark.skip
@@ -180,10 +186,10 @@ def test_redis_connection():
 
 ```python
 # Good - specific rule
-long_url = "https://..."  # noqa: E501
+long_url = 'https://...'  # noqa: E501
 
 # Avoid - suppresses everything
-long_url = "https://..."  # noqa
+long_url = 'https://...'  # noqa
 ```
 
 ## When NOT to Suppress

@@ -39,6 +39,7 @@ Provider extensions use a Python docstring reference (no SKILL.md frontmatter):
 ```python
 """Extension point: plan-marshall:extension-api/standards/ext-point-provider"""
 
+
 def get_provider_declarations() -> list[dict]:
     return [
         {
@@ -59,6 +60,7 @@ def get_provider_declarations() -> list[dict]:
 
 ```python
 """Extension point: plan-marshall:extension-api/standards/ext-point-provider"""
+
 
 def get_provider_declarations() -> list[dict]:
     return [

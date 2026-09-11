@@ -183,13 +183,8 @@ Import `file_ops` module in Python scripts that write to `.plan/` directories:
 
 ```python
 #!/usr/bin/env python3
-from file_ops import (
-    atomic_write_file,
-    base_path,
-    output_success,
-    output_error,
-    generate_markdown_metadata
-)
+from file_ops import atomic_write_file, base_path, output_success, output_error, generate_markdown_metadata
+
 
 def main():
     try:
@@ -197,20 +192,17 @@ def main():
         filepath = base_path('lessons-learned', '2025-11-28-001.md')
 
         # Generate metadata
-        metadata = generate_markdown_metadata({
-            'id': '2025-11-28-001',
-            'component.type': 'command',
-            'applied': 'false'
-        })
+        metadata = generate_markdown_metadata({'id': '2025-11-28-001', 'component.type': 'command', 'applied': 'false'})
 
         # Write atomically (creates directories automatically)
-        content = f"{metadata}\n# Lesson Title\n\nContent here..."
+        content = f'{metadata}\n# Lesson Title\n\nContent here...'
         atomic_write_file(filepath, content)
 
         output_success('write-lesson', file=str(filepath))
     except Exception as e:
         output_error('write-lesson', str(e))
         sys.exit(1)
+
 
 if __name__ == '__main__':
     main()
@@ -295,12 +287,13 @@ When scripts in one domain (e.g., `plan-marshall:plan-files`) need to access res
 # Script in planning domain needs to access lesson from lessons-learned domain
 # CORRECT: Accept ID, resolve path internally
 
+
 def copy_lesson_to_plan(lesson_id: str, plan_dir: Path) -> dict:
     # Resolve ID to path internally
-    lesson_file = base_path("lessons-learned", f"{lesson_id}.md")
+    lesson_file = base_path('lessons-learned', f'{lesson_id}.md')
 
     if not lesson_file.exists():
-        return {"success": False, "error": f"Lesson not found: {lesson_id}"}
+        return {'success': False, 'error': f'Lesson not found: {lesson_id}'}
 
     # Proceed with copy...
 ```

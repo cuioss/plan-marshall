@@ -34,7 +34,7 @@ implements: plan-marshall:extension-api/standards/ext-point-triage
 ```python
 class Extension(ExtensionBase):
     def provides_triage(self) -> str | None:
-        return "pm-dev-java:ext-triage-java"
+        return 'pm-dev-java:ext-triage-java'
 ```
 
 ## Runtime Invocation Contract

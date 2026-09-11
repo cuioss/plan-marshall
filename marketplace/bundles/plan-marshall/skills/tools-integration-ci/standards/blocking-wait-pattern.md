@@ -56,8 +56,7 @@ def cmd_pr_wait_for_comments(args):
         return int(data.get('unresolved', 0)) > baseline
 
     # 4. Delegate the loop.
-    result = poll_until(check_fn, is_complete_fn,
-                       timeout=args.timeout, interval=args.interval)
+    result = poll_until(check_fn, is_complete_fn, timeout=args.timeout, interval=args.interval)
 
     # 5. Shape the response dict.
     final_count = int(result['last_data'].get('unresolved', baseline))

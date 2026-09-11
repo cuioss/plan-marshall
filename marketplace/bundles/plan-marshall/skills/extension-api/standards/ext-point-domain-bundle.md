@@ -44,19 +44,21 @@ class Extension(ExtensionBase):
     """Domain extension for {bundle}."""
 
     def get_skill_domains(self) -> list[dict]:
-        return [{
-            "domain": {
-                "key": "my-domain",
-                "name": "My Domain",
-                "description": "What this domain covers",
-            },
-            "profiles": {
-                "core": {"defaults": [], "optionals": []},
-                "implementation": {"defaults": [], "optionals": []},
-                "module_testing": {"defaults": [], "optionals": []},
-                "quality": {"defaults": [], "optionals": []},
-            },
-        }]
+        return [
+            {
+                'domain': {
+                    'key': 'my-domain',
+                    'name': 'My Domain',
+                    'description': 'What this domain covers',
+                },
+                'profiles': {
+                    'core': {'defaults': [], 'optionals': []},
+                    'implementation': {'defaults': [], 'optionals': []},
+                    'module_testing': {'defaults': [], 'optionals': []},
+                    'quality': {'defaults': [], 'optionals': []},
+                },
+            }
+        ]
 ```
 
 See [extension-contract.md](extension-contract.md) for the complete method contract (required `get_skill_domains()`, optional `config_defaults`, `discover_modules`, `provides_triage`, `provides_outline_skill`, `provides_recipes`, `provides_retrospective_aspects`, `provides_arch_gate`, `provides_domain_verb`, `provides_file_globs`) and the minimal / build-bundle examples. The Axis-B classification methods (`classify_paths`, `classify_path_specificity`, `classify_globs`, `classify_build_class`) are **not** available to a domain-bundle manifest — they belong to `BuildExtensionBase` and are contracted in [extension-contract.md § BuildExtensionBase Methods (Axis-B)](extension-contract.md#buildextensionbase-methods-axis-b).

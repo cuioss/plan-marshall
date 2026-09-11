@@ -66,23 +66,20 @@ ignore_missing_imports = true
 ```python
 import pytest
 
+
 # Skip unconditionally
-@pytest.mark.skip(reason="Requires external service")
-def test_external_api():
-    ...
+@pytest.mark.skip(reason='Requires external service')
+def test_external_api(): ...
+
 
 # Skip conditionally
-@pytest.mark.skipif(
-    sys.platform == "win32",
-    reason="Unix-only test"
-)
-def test_unix_permissions():
-    ...
+@pytest.mark.skipif(sys.platform == 'win32', reason='Unix-only test')
+def test_unix_permissions(): ...
+
 
 # Expected failure (test runs but failure is not reported)
-@pytest.mark.xfail(reason="Known upstream bug, see #123")
-def test_known_issue():
-    ...
+@pytest.mark.xfail(reason='Known upstream bug, see #123')
+def test_known_issue(): ...
 ```
 
 ### Filtering in pyproject.toml

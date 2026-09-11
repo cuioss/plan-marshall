@@ -223,17 +223,17 @@ from run_config import timeout_get, timeout_set
 
 # Before execution: get timeout to use
 timeout = timeout_get(
-    command_key="maven:clean_verify",  # Identifier for this command
-    default=300,                        # Default if no learned value
-    project_dir="."                     # Project root
+    command_key='maven:clean_verify',  # Identifier for this command
+    default=300,  # Default if no learned value
+    project_dir='.',  # Project root
 )
 # Returns: default (first run) or learned * 1.25 (subsequent runs)
 
 # After execution: record actual duration
 timeout_set(
-    command_key="maven:clean_verify",
-    duration=165,                       # Actual execution time
-    project_dir="."
+    command_key='maven:clean_verify',
+    duration=165,  # Actual execution time
+    project_dir='.',
 )
 # Updates learned value with weighted average (80% higher, 20% lower)
 ```
@@ -327,19 +327,19 @@ Extensions generate complete commands per module during discovery:
 
 ```python
 def _build_commands(module_name: str, profiles: list) -> dict:
-    base = "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args"
-    pl_arg = f" -pl {module_name}" if module_name != "." else ""
+    base = 'python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args'
+    pl_arg = f' -pl {module_name}' if module_name != '.' else ''
 
     commands = {
-        "clean": f'{base} "clean{pl_arg}"',
-        "verify": f'{base} "verify{pl_arg}"',
-        "module-tests": f'{base} "test{pl_arg}"',
+        'clean': f'{base} "clean{pl_arg}"',
+        'verify': f'{base} "verify{pl_arg}"',
+        'module-tests': f'{base} "test{pl_arg}"',
     }
 
     # Add profile-based commands
     for profile in profiles:
-        if profile["canonical"] == "quality-gate":
-            commands["quality-gate"] = f'{base} "verify -P{profile["id"]}{pl_arg}"'
+        if profile['canonical'] == 'quality-gate':
+            commands['quality-gate'] = f'{base} "verify -P{profile["id"]}{pl_arg}"'
 
     return commands
 ```
@@ -385,15 +385,15 @@ from maven_execute import execute_direct  # or gradle_execute, npm_execute
 from build_result import DirectCommandResult
 
 result: DirectCommandResult = execute_direct(
-    args="help:all-profiles dependency:tree -DoutputType=text",
-    command_key="maven:discover-modules",
+    args='help:all-profiles dependency:tree -DoutputType=text',
+    command_key='maven:discover-modules',
     default_timeout=120,
-    project_dir=".",
-    plan_id=plan_id,          # required keyword; NO_PLAN_SENTINEL when plan-less
+    project_dir='.',
+    plan_id=plan_id,  # required keyword; NO_PLAN_SENTINEL when plan-less
 )
 
-if result["status"] == "success":
-    log_content = Path(result["log_file"]).read_text()
+if result['status'] == 'success':
+    log_content = Path(result['log_file']).read_text()
     # Parse log content...
 ```
 
@@ -612,7 +612,7 @@ if result['status'] == 'success':
     pass
 elif result['status'] == 'timeout':
     # NON-FINISH: our own bound fired. Not a failing build — no verdict exists.
-    print(f"Timed out after {result.get('timeout_used_seconds', 'unknown')}s")
+    print(f'Timed out after {result.get("timeout_used_seconds", "unknown")}s')
 elif result['status'] == 'killed':
     # NON-FINISH: a signal we did not send. Not a failing build, not a timeout.
     # Do NOT blind-retry — establish why it was killed first.
@@ -622,10 +622,10 @@ elif result['status'] == 'indeterminate':
     print(result.get('message', 'outcome could not be determined'))
 elif result['status'] == 'error':
     # Build ran and FAILED - check log file for details
-    print(f"See: {result['log_file']}")
+    print(f'See: {result["log_file"]}')
 else:
     # A status this caller does not know: report it, never guess at it.
-    print(f"Unrecognised build status {result['status']!r}; see {result['log_file']}")
+    print(f'Unrecognised build status {result["status"]!r}; see {result["log_file"]}')
 ```
 
 **Branch on `error` explicitly; do not let it be the `else`.** Every non-green

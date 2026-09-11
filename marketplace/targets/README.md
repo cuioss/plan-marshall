@@ -72,7 +72,7 @@ class TargetBase(ABC):
     def config_dir(self) -> Path: ...
 
     @property
-    def emits_bundle_tree(self) -> bool: ...   # default True
+    def emits_bundle_tree(self) -> bool: ...  # default True
 ```
 
 `generate()` reads source bundles and writes the target's output. The

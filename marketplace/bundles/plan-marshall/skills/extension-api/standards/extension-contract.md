@@ -89,6 +89,7 @@ All extensions must import and inherit from `ExtensionBase`:
 ```python
 from extension_base import ExtensionBase
 
+
 class Extension(ExtensionBase):
     # Implement required methods
     ...
@@ -254,10 +255,11 @@ The critical contract: **only write if the key doesn't exist**. The `extension-d
 ```python
 from _config_core import ext_defaults_set_default
 
+
 class Extension(ExtensionBase):
     def config_defaults(self, project_root: str) -> None:
-        ext_defaults_set_default("build.maven.profiles.skip", "itest,native", project_root)
-        ext_defaults_set_default("build.maven.profiles.map.canonical", "pre-commit:quality-gate", project_root)
+        ext_defaults_set_default('build.maven.profiles.skip', 'itest,native', project_root)
+        ext_defaults_set_default('build.maven.profiles.map.canonical', 'pre-commit:quality-gate', project_root)
 ```
 
 **Alternative** — CLI via subprocess:
@@ -412,8 +414,7 @@ For all extension-related configuration paths, see [marshal-json-reference.md](m
 ### applies_to_module
 
 ```python
-def applies_to_module(self, module_data: dict,
-                      active_profiles: set[str] | None = None) -> dict:
+def applies_to_module(self, module_data: dict, active_profiles: set[str] | None = None) -> dict:
     """Check if this domain applies to a specific module and return resolved skills.
 
     Called during architecture enrichment to determine which skill domains
@@ -676,8 +677,7 @@ Because `fnmatch` lets a single `*` span `/`, the `marketplace/bundles/*.py` rou
 #### _detect_applicable_profiles
 
 ```python
-def _detect_applicable_profiles(self, profiles: dict,
-                                 module_data: dict | None) -> set[str] | None:
+def _detect_applicable_profiles(self, profiles: dict, module_data: dict | None) -> set[str] | None:
     """Detect which profiles are applicable based on module signals.
 
     Returns set of applicable profile names, or None for no filtering
@@ -754,30 +754,32 @@ class Extension(ExtensionBase):
 
     def get_skill_domains(self) -> list[dict]:
         """Domain metadata for skill loading."""
-        return [{
-            "domain": {
-                "key": "documentation",
-                "name": "Documentation",
-                "description": "AsciiDoc documentation, ADRs, and interface specifications"
-            },
-            "profiles": {
-                "core": {
-                    "defaults": [
-                        {"skill": "pm-documents:ref-asciidoc", "description": "AsciiDoc formatting and validation"},
-                        {"skill": "pm-documents:ref-documentation", "description": "Content quality and review"},
-                    ],
-                    "optionals": []
+        return [
+            {
+                'domain': {
+                    'key': 'documentation',
+                    'name': 'Documentation',
+                    'description': 'AsciiDoc documentation, ADRs, and interface specifications',
                 },
-                "implementation": {
-                    "defaults": [],
-                    "optionals": [
-                        {"skill": "plan-marshall:manage-adr", "description": "ADR creation and management"},
-                    ]
+                'profiles': {
+                    'core': {
+                        'defaults': [
+                            {'skill': 'pm-documents:ref-asciidoc', 'description': 'AsciiDoc formatting and validation'},
+                            {'skill': 'pm-documents:ref-documentation', 'description': 'Content quality and review'},
+                        ],
+                        'optionals': [],
+                    },
+                    'implementation': {
+                        'defaults': [],
+                        'optionals': [
+                            {'skill': 'plan-marshall:manage-adr', 'description': 'ADR creation and management'},
+                        ],
+                    },
+                    'module_testing': {'defaults': [], 'optionals': []},
+                    'quality': {'defaults': [], 'optionals': []},
                 },
-                "module_testing": {"defaults": [], "optionals": []},
-                "quality": {"defaults": [], "optionals": []}
             }
-        }]
+        ]
 ```
 
 ### Build Bundle Extension (With Module Discovery)
@@ -793,41 +795,44 @@ class Extension(ExtensionBase):
     """Java/Maven extension for pm-dev-java bundle."""
 
     def get_skill_domains(self) -> list[dict]:
-        return [{
-            "domain": {
-                "key": "java",
-                "name": "Java Development",
-                "description": "Java code patterns, JUnit testing, Maven builds"
-            },
-            "profiles": {
-                "core": {
-                    "defaults": [
-                        {"skill": "pm-dev-java:java-core", "description": "Core Java patterns and standards"},
-                    ],
-                    "optionals": []
+        return [
+            {
+                'domain': {
+                    'key': 'java',
+                    'name': 'Java Development',
+                    'description': 'Java code patterns, JUnit testing, Maven builds',
                 },
-                "implementation": {"defaults": [], "optionals": []},
-                "module_testing": {
-                    "defaults": [
-                        {"skill": "pm-dev-java:junit-core", "description": "JUnit 5 testing patterns"},
-                    ],
-                    "optionals": []
+                'profiles': {
+                    'core': {
+                        'defaults': [
+                            {'skill': 'pm-dev-java:java-core', 'description': 'Core Java patterns and standards'},
+                        ],
+                        'optionals': [],
+                    },
+                    'implementation': {'defaults': [], 'optionals': []},
+                    'module_testing': {
+                        'defaults': [
+                            {'skill': 'pm-dev-java:junit-core', 'description': 'JUnit 5 testing patterns'},
+                        ],
+                        'optionals': [],
+                    },
+                    'quality': {
+                        'defaults': [
+                            {'skill': 'pm-dev-java:javadoc', 'description': 'JavaDoc documentation standards'},
+                        ],
+                        'optionals': [],
+                    },
                 },
-                "quality": {
-                    "defaults": [
-                        {"skill": "pm-dev-java:javadoc", "description": "JavaDoc documentation standards"},
-                    ],
-                    "optionals": []
-                }
             }
-        }]
+        ]
 
     def provides_triage(self) -> str | None:
-        return "pm-dev-java:ext-triage-java"
+        return 'pm-dev-java:ext-triage-java'
 
     def discover_modules(self, project_root: str) -> list:
         # Delegate to script in scripts/ directory
         from _maven_cmd_discover import discover_maven_modules
+
         return discover_maven_modules(project_root)
 ```
 

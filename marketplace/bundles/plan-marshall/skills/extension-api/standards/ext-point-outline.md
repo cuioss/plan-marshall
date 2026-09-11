@@ -41,7 +41,7 @@ implements: plan-marshall:extension-api/standards/ext-point-outline
 ```python
 class Extension(ExtensionBase):
     def provides_outline_skill(self) -> str | None:
-        return "pm-plugin-development:ext-outline-workflow"
+        return 'pm-plugin-development:ext-outline-workflow'
 ```
 
 ## Runtime Invocation Contract

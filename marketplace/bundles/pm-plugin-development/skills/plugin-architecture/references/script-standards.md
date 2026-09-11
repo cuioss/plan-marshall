@@ -115,13 +115,9 @@ Scripts should validate architectural rules automatically:
 ```python
 def check_rule_6(content, component_type):
     """Agents CANNOT use Task tool."""
-    if component_type != "agent":
+    if component_type != 'agent':
         return None
-    if "Task" in extract_tools(content):
-        return {
-            "rule": "Rule 6",
-            "severity": "error",
-            "message": "Agents cannot use Task tool"
-        }
+    if 'Task' in extract_tools(content):
+        return {'rule': 'Rule 6', 'severity': 'error', 'message': 'Agents cannot use Task tool'}
     return None
 ```

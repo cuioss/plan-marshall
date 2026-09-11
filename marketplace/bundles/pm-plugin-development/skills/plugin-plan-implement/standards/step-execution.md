@@ -42,8 +42,8 @@ Content...
 
 ```python
 # Pattern: Add or update frontmatter field
-old: "tools: Read, Write"
-new: "tools: Read, Write, Edit"
+old: 'tools: Read, Write'
+new: 'tools: Read, Write, Edit'
 ```
 
 Use Edit tool with precise old/new strings.
@@ -65,8 +65,8 @@ new: """```{new_language}
 
 ```python
 # Pattern: Replace section header or content
-old: "## Old Section Title\n\nOld content"
-new: "## New Section Title\n\nNew content"
+old: '## Old Section Title\n\nOld content'
+new: '## New Section Title\n\nNew content'
 ```
 
 ## Execution Flow Per Step
