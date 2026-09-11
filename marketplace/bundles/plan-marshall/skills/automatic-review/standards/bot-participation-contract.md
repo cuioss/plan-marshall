@@ -210,7 +210,8 @@ Participation is **evidence-typed, not presence-typed.** The mere existence of a
 a bot's login proves nothing about whether that bot reviewed *this diff* — it may be a help reply, a
 stale comment tied to a prior HEAD, or a marketing footer. A bot counts as a participant only when an
 observed comment's `kind` is one of the publish shapes its own registry doc declares in
-`participation_evidence`.
+`participation_evidence` — and, where that doc gates the shape on a content marker, only when the
+comment carries it (§ "A shape may be gated on a content marker" below).
 
 ### What counts as evidence, per publish shape
 
@@ -232,6 +233,32 @@ has no admissible evidence kind at all.
 
 A bot whose `participation_evidence` is **empty resolves fail-closed** — it can never be *proven* a
 participant, and is reported as `absent` rather than silently credited.
+
+### A shape may be gated on a content marker
+
+A publish shape is evidence because of what it *is*, but one bot can publish two different artifacts
+in the same shape — one proving a review **started**, one proving it **finished** — and the shape
+cannot tell them apart. `participation_evidence_markers` is the per-bot, per-shape field that closes
+that: a map from a declared publish shape to the literal a comment in that shape must carry to count.
+A comment in a gated shape without the literal is **not evidence** — it is neither credited nor
+reported as a stale publish, because it is not a review artifact at all. The producer applies the gate
+before the currency test (`github_pr._is_participation_evidence`, read through
+`bot_registry.participation_evidence_marker`), so no bot name enters the code.
+
+**The gate is FAIL-OPEN on an absent declaration.** A shape with no entry — and every shape of a bot
+that declares no map — credits on the shape alone, exactly as it did before the field existed. That
+is the same inert-by-default posture `contentless_review_markers` takes, and it is chosen for the same
+reason: failing closed would turn every undeclared shape into non-evidence, and would regress a bot
+whose unconditional evidence shape carries no marker straight to `absent`. The field only ever
+**narrows** one declared shape; it can never admit a shape `participation_evidence` does not declare.
+
+**Its reach is exactly the declarations, and each registered bot's position is a recorded decision:**
+
+| Bot | Declaration | Why |
+|-----|-------------|-----|
+| CodeRabbit | `issue_comment` gated on `<!-- recent_review_start -->` | Its walkthrough / summary `issue_comment` is posted before any review completes; its review verdict carries the marker. Ungated, the walkthrough alone credited a review that had not happened. See [`coderabbit.md`](coderabbit.md). |
+| Sourcery | none | It declares no `issue_comment` shape at all — `review_body` is its only publish shape, and no pre-review artifact of its shares that shape — so there is nothing to gate. |
+| PR-Agent (`cuioss-review-bot`) | none — **deliberately left undeclared** | Its Guide `issue_comment` is its only UNCONDITIONAL evidence shape. Gating it is a change to the one shape that keeps this bot from resolving `absent`, and it was not taken here. The accepted reach of that decision: its other `issue_comment` publishes — a `/help` reference, an `/ask` answer — still credit on the shape alone. |
 
 ### Why a check-run state is not evidence
 
@@ -938,7 +965,7 @@ accumulate, the verb ships as a measurement with **no parity claim attached**.
 | Consumer | What it reads |
 |----------|---------------|
 | `automatic-review/SKILL.md` | Both lists, to drive the completion-aware poll, the re-review trigger set, and the step-done guard. |
-| `github_pr fetch_findings` | Both lists, to classify each ingested comment and emit the unclassified-bot warning; each bot's `participation_evidence` / `participation_requires_update`, to derive the evidence-typed `participated_bots[]` **and the `stale_participation_bots[]` set that carries `participated_stale`**; each bot's `refusal_patterns`, to branch a refusal into `refused_bots[]` rather than drop it, and its `refusal_size_patterns`, to attribute each refusal's CAUSE into `refused_causes[]` (size vs quota), and its `refusal_size_cap_patterns`, to read the stated ceiling into `refused_size_caps[]`; the enumerative arm, to report a refusal no earlier arm could read into `unrecognised_refusal[]` — withholding the finding, denying the participation credit, and carrying the registry file and field that close the gap; each bot's `contentless_review_markers` / `actionable_content_markers`, to drop a fully clean review comment as noise. |
+| `github_pr fetch_findings` | Both lists, to classify each ingested comment and emit the unclassified-bot warning; each bot's `participation_evidence` / `participation_evidence_markers` / `participation_requires_update`, to derive the evidence-typed `participated_bots[]` **and the `stale_participation_bots[]` set that carries `participated_stale`**; each bot's `refusal_patterns`, to branch a refusal into `refused_bots[]` rather than drop it, and its `refusal_size_patterns`, to attribute each refusal's CAUSE into `refused_causes[]` (size vs quota), and its `refusal_size_cap_patterns`, to read the stated ceiling into `refused_size_caps[]`; the enumerative arm, to report a refusal no earlier arm could read into `unrecognised_refusal[]` — withholding the finding, denying the participation credit, and carrying the registry file and field that close the gap; each bot's `contentless_review_markers` / `actionable_content_markers`, to drop a fully clean review comment as noise. |
 | `github_pr fetch_findings` → `merge_candidate_sha_resolved` | Nothing from this contract — it is the producer's report of whether the merge-candidate SHA could be READ at all. `fetch_pr_head_sha` returns `''` on any failure path, so a `false` is *"the head is unresolvable"*, never a verdict about a bot that an operator can act on. **Producer-side disclosure: no taxonomy member routes on it.** |
 | `github_pr fetch_findings` → `undecidable_participation_bots[]` | Each bot's `participation_evidence` / `participation_requires_update`, to name the bots whose comment matched a declared publish shape on a fetch where the merge candidate was unreadable. Reported in **neither** `participated_bots[]` (nothing anchors the credit) **nor** `stale_participation_bots[]` (stale's remedy is a re-review trigger, which cannot fix a failed read). ⚠ **Producer-side disclosure with no classifier member yet** — the failure taxonomy above has no member for this state, so no consumer reaches it. Widening the taxonomy is a separate plan, and this field is the prerequisite it needs; the gap is stated here rather than left to surface as an unreachable branch. |
 | `github_pr fetch_findings` → `refusal_pattern_drift[]` | Each bot's `refusal_patterns` and `participation_evidence`, read through the `_github_pr.refusal_layers` provenance seam at the FILING pre-filter only (never the participation loop), to emit one `{bot_kind, layer}` record per bot whose notice the STRUCTURAL arm read **while that bot's own declared `refusal_patterns` did NOT** — `layer` naming the arm that read it, and therefore always `structural_fallback`: the notice was caught by shape while the registry record missed it, so that record has drifted from the bot's current wording. ⛔ **The predicate is DIRECTIONAL, not "exactly one arm fired".** The mirror case — the registry arm matching while the structural arm does not — is the DESIGNED state for a whole class of refusals and is never emitted: a diff-size ceiling is a comparison rather than an "exceeded / reached / hit" statement, so it is invisible to the structural arm BY CONSTRUCTION (see § "Two axes"), and recording its registry-only match would report the architecture working as designed as decay. **Diagnostic only: it changes no verdict, denies no credit, and no taxonomy member routes on it** — the refusal itself was still recognised and classified normally. Deduped on `(bot_kind, layer)`, because drift is a property of the declared wording rather than of each comment carrying it. |
