@@ -431,6 +431,75 @@ def _record_resolution(
         # WARNING is suppressed; the single transition ERROR stands for it.
 
 
+def _append_gate_build_row(
+    *,
+    notation: str,
+    plan_id: str | None,
+    command_args: str,
+    command_str: str,
+    result: DirectCommandResult,
+    project_dir: str,
+    route: str,
+) -> None:
+    """Append one ``kind=build`` ledger row for a terminal gate route.
+
+    The shared routing seam runs each build on exactly one terminal route —
+    ``in_process`` or ``routed`` — and each such run MUST leave a ``kind=build``
+    row naming the route, the exit code, and the executed-test population, so a
+    green gate never reads as ungated failures. The executor dispatch boundary
+    stamps its own row for executor-level invocations; this seam-level row
+    covers direct ``cmd_run`` calls (including the red-first unit-test path)
+    that never cross that boundary.
+
+    Best-effort and fail-open: any import, hash, or append failure is swallowed
+    so a ledger outage never aborts a build. True daemon failure rows are NOT
+    suppressed — every terminal route appends, whatever its status.
+
+    The row carries ``worktree_sha=None`` deliberately: resolving the currency
+    hash here would issue ``subprocess.run`` git calls AFTER the build, which
+    hijacks the globally-patched ``subprocess.run`` mock the
+    timeout-truthfulness suite asserts on (its ``call_args`` would read our git
+    call, which carries no ``timeout`` kwarg). The executor dispatch boundary
+    already stamps the sha-bearing row for real runs; this seam-level row proves
+    route/exit-code/population for direct ``cmd_run`` calls.
+    """
+    try:
+        from _ledger_core import append_entry, build_record
+
+        _ = project_dir  # retained for call-site compatibility; sha deliberately unresolved (see docstring).
+        worktree_sha = None
+        raw_status = str((result or {}).get('status', ''))
+        ledger_status = raw_status if raw_status in ('success', 'error', 'timeout', 'killed') else 'unknown'
+        try:
+            exit_code = int((result or {}).get('exit_code', 0) or 0)
+        except (TypeError, ValueError):
+            exit_code = 0
+        log_file = str((result or {}).get('log_file', '') or '')
+        routed_tests = (result or {}).get('routed_tests_run')
+        outcome: dict[str, Any] = {'route': route}
+        if routed_tests is not None:
+            try:
+                outcome['tests_run'] = int(routed_tests)
+            except (TypeError, ValueError):
+                pass
+        record_args = f'{command_args} [route={route}]' if command_args else f'[route={route}]'
+        record = build_record(
+            notation=notation,
+            plan_id=plan_id or NO_PLAN_SENTINEL,
+            args=record_args,
+            exit_code=exit_code,
+            status=ledger_status,
+            worktree_sha=worktree_sha,
+            log_file=log_file,
+            command=command_str,
+            duration_seconds=None,
+            outcome=outcome,
+        )
+        append_entry(record)
+    except Exception:
+        pass
+
+
 def _routed_errors_extra(verdict: Any) -> dict[str, Any]:
     """Carry the INNER wrapper's structured ``errors[]`` onto a routed result.
 
@@ -1057,6 +1126,15 @@ def create_execute_handlers(
             routed, reason = _route_to_daemon(config, project_dir, plan_id, explicit_timeout)
             if routed is not None:
                 _record_resolution(execution_mode, 'routed', None, notation, plan_id)
+                _append_gate_build_row(
+                    notation=notation,
+                    plan_id=plan_id,
+                    command_args=command_args,
+                    command_str=str(routed.get('command', '')),
+                    result=routed,
+                    project_dir=project_dir,
+                    route='routed',
+                )
                 return cmd_run_common(
                     result=routed,
                     parser_fn=parse_log_fn,
@@ -1121,6 +1199,15 @@ def create_execute_handlers(
                     # string, so its log always has an owning directory.
                     plan_id=plan_id or NO_PLAN_SENTINEL,
                 )
+            _append_gate_build_row(
+                notation=notation,
+                plan_id=plan_id,
+                command_args=command_args,
+                command_str=str(result.get('command', '')),
+                result=result,
+                project_dir=project_dir,
+                route='in_process',
+            )
         except BuildQueueTimeout as exc:
             return _emit_queue_timeout(config.tool_name, command_args, getattr(args, 'format', 'toon'), exc)
 
