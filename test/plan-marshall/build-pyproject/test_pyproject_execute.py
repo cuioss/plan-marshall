@@ -698,7 +698,6 @@ class TestGateRouteLedgerRecord:
         assert row['exit_code'] == 0
         assert '[route=in_process]' in str(row.get('args', ''))
         assert (row.get('outcome') or {}).get('route') == 'in_process'
-        assert row['worktree_sha'] is not None or True
 
     def test_daemon_route_leaves_same_row_shape(self, monkeypatch, tmp_path):
         monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path / '.plan'))
