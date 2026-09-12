@@ -477,6 +477,7 @@ python3 .plan/execute-script.py plan-marshall:manage-locks:build_queue release \
 
 - [scope-limited-negative-is-unknown.md](standards/scope-limited-negative-is-unknown.md) — the structural encoding of the invariant "an empty result from a scope that could not have observed the subject is `unknown`, not `absent`", the scope-limited-enumeration generalization of ADR-009 that `holder_staleness` + `release --require-stale` realize in code.
 - [cwd-keyed-store-resolution-audit.md](standards/cwd-keyed-store-resolution-audit.md) — the fix-or-justify enumeration of every CWD-keyed store-resolution site against that invariant.
+- [machine-global-config-scope-audit.md](standards/machine-global-config-scope-audit.md) — the derived enumeration of the sites where a config key and the state it governs sit in different anchoring tiers: a key read after a process moved its cwd away from the key's resolution root, and a key read per caller yet applied to machine-global shared state. Publishes both populations with the sweeps and the `ast` classification that re-derive them, the supplementary sweep covering the trees the inventory does not walk, and a current-state disposition for `build.queue.max_slots` and `build.queue.upper_limit_seconds`.
 
 ## Related
 
