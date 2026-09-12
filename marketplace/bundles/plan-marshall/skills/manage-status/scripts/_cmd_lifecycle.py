@@ -490,6 +490,13 @@ def cmd_archive(args: argparse.Namespace) -> dict[str, Any] | None:
     This is deliberately NOT identical to ``cmd_transition``: that verb advances one
     phase at a time through a plan that is still running, whereas archive closes out
     whatever state the plan was abandoned in.
+
+    Archive is also the SECOND consumption point for ``metadata.loop_back_reentry``.
+    A plan archived while a re-entry is still open never reaches the guarded boundary
+    at which ``cmd_transition`` would consume that marker, so it is consumed here and
+    the archived record states that the re-entry ended without completing. Both the pop
+    and that outcome land in the same write that closes the phases — see
+    ``status-lifecycle.md`` § "Loop-back re-entry marker: two consumption points".
     """
     require_valid_plan_id(args)
 
@@ -560,6 +567,45 @@ def cmd_archive(args: argparse.Namespace) -> dict[str, Any] | None:
     # set cannot silently start claiming completion over a phase left running.
     if not in_progress_phases(status):
         status['current_phase'] = 'complete'
+    # Consume the loop-back re-entry marker when one is still open. ``cmd_transition``
+    # consumes it at the next guarded boundary, but a plan archived while a re-entry is
+    # still open never REACHES that boundary — so without this the marker rode into the
+    # permanent record still asserting that a loop-back was in flight. Archive is
+    # therefore the SECOND consumption point for the ONE marker, never a second marker:
+    # what is recorded here is that the re-entry ENDED WITHOUT COMPLETING, which is what
+    # actually happened, rather than the marker being silently dropped.
+    #
+    # The pop and the outcome write both happen BEFORE the single ``write_status`` below,
+    # so they land in the SAME write that closes the phases. A follow-up write would be a
+    # second commit of the same document, and after ``shutil.move`` the live plan path no
+    # longer resolves — exactly the failure the atomic phase-close exists to avoid.
+    metadata = normalize_metadata(status)
+    loop_back_marker = metadata.pop('loop_back_reentry', None)
+    if loop_back_marker is not None:
+        # A structurally odd marker (not a dict) is still consumed rather than left
+        # behind: the record it would otherwise leave is the thing being corrected.
+        marker_fields = loop_back_marker if isinstance(loop_back_marker, dict) else {}
+        reentry_outcome: dict[str, Any] = {
+            'outcome': 'ended_without_completing',
+            'from_phase': marker_fields.get('from_phase', 'unknown'),
+            'to_phase': marker_fields.get('to_phase', 'unknown'),
+            'consumed_at': now_utc_iso(),
+            'consumed_by': 'archive',
+        }
+        scheduled_at = marker_fields.get('at')
+        if scheduled_at is not None:
+            reentry_outcome['scheduled_at'] = scheduled_at
+        metadata['loop_back_reentry_outcome'] = reentry_outcome
+        log_entry(
+            'decision',
+            args.plan_id,
+            'INFO',
+            f'(plan-marshall:manage-status) Loop-back re-entry marker consumed at archive '
+            f'(scheduled by {reentry_outcome["from_phase"]} loop_back to '
+            f'{reentry_outcome["to_phase"]}) — the plan was archived before the re-entry '
+            'reached a guarded boundary, so the archived record states that the re-entry '
+            'ended without completing',
+        )
     # Drop any in-flight terminal-title token (any TITLE_TOKEN_STATES value —
     # lock-waiting/lock-owned/build-busy) before archiving. An archived plan
     # holds no live coordination state worth arbitrating over, so this pop is

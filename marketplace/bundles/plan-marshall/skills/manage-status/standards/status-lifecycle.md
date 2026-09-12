@@ -21,6 +21,21 @@ pending ──→ in_progress ──→ done
 - `transition --completed X` marks phase X as `done` and advances to the next phase
 - The first phase is automatically marked `in_progress` on plan creation
 
+### Loop-back re-entry marker: two consumption points
+
+A backward `set-phase` — one whose target phase precedes the current phase in the plan's phase list — is a sanctioned **loop-back re-entry**. It re-opens the target phase as `in_progress` (the one sanctioned backward status move, which is why the forward-only rule above describes the ordinary path rather than an invariant) and persists `metadata.loop_back_reentry` as `{from_phase, to_phase, at}`. The marker is a *scheduling* record: a re-entered phase re-captures its invariants against a tree that has legitimately moved on, so handshake drift at the next guarded boundary is guaranteed by construction, and the marker is what authorises auto-resolving exactly that drift.
+
+A backward `set-phase` never clears a **later** phase, so the phase it re-opens is additive: a plan looping back from `6-finalize` to `5-execute` then holds **two** phases `in_progress` at once. That is the ordinary way a plan arrives in the multi-open-phase state the archive post-condition below has to close.
+
+**There is exactly one marker, and it has two consumption points.** A reader who sees only the first would wrongly conclude the transition path is the only one:
+
+| Consumption point | Reached when | What is recorded |
+|---|---|---|
+| `transition` at a guarded boundary | The re-entered phases reach the next guarded boundary (today `6-finalize`) | The marker is cleared. On drift it authorises one auto-override re-capture; on a **clean** verify it is cleared anyway, so a later genuinely-unscheduled drift cannot find a stale marker and have it auto-overridden |
+| `archive` | The plan is archived while a re-entry is still open, so it never reaches that boundary at all | The marker is cleared and `metadata.loop_back_reentry_outcome` records `outcome: ended_without_completing` alongside the marker's `from_phase` / `to_phase`, its `scheduled_at`, and `consumed_at` / `consumed_by: archive` |
+
+Both points consume the **same** marker; neither introduces a second one. At `archive` the pop and the outcome write land in the **same write that closes the phases** — deliberately not a follow-up write, because `shutil.move` has by then invalidated the live plan path. Without this second point the marker would ride into the permanent record still asserting that a loop-back was in flight for a plan that had already finished.
+
 ## Plan Lifecycle
 
 ```text
