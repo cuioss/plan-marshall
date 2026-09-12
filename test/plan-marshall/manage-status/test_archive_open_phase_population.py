@@ -272,9 +272,7 @@ def test_the_two_worktree_state_refusals_are_a_distinct_pair(tmp_path: Path, out
     # carries the enumerated paths that make it actionable.
     assert dirty is not None
     assert dirty['error'] == 'worktree_dirty_at_boundary', dirty
-    assert dirty['dirty_files'] == ['src.py'], (
-        f'A tree that was read must enumerate what made it dirty; got {dirty!r}.'
-    )
+    assert dirty['dirty_files'] == ['src.py'], f'A tree that was read must enumerate what made it dirty; got {dirty!r}.'
 
     # NEGATIVE half: git status fails, so nothing was read — a different code, and no
     # dirty_files key at all rather than an empty list standing in for a real zero.
@@ -286,9 +284,7 @@ def test_the_two_worktree_state_refusals_are_a_distinct_pair(tmp_path: Path, out
 
     assert unreadable is not None
     assert unreadable['error'] == 'worktree_unreadable_at_boundary', unreadable
-    assert 'dirty_files' not in unreadable, (
-        f'An unenumerated tree must publish no dirty_files key; got {unreadable!r}.'
-    )
+    assert 'dirty_files' not in unreadable, f'An unenumerated tree must publish no dirty_files key; got {unreadable!r}.'
 
     assert dirty['error'] != unreadable['error'], 'the two conditions must not collapse into one code'
     for refusal in (dirty, unreadable):

@@ -402,9 +402,9 @@ def test_archive_consumes_an_open_marker_and_records_it_never_completed(
     result = cmd_archive(Namespace(plan_id=plan_id, dry_run=False, reason=None))
     assert result['status'] == 'success', f'archive failed: {result}'
 
-    archived_metadata = json.loads(
-        (Path(result['archived_to']) / 'status.json').read_text(encoding='utf-8')
-    ).get('metadata', {})
+    archived_metadata = json.loads((Path(result['archived_to']) / 'status.json').read_text(encoding='utf-8')).get(
+        'metadata', {}
+    )
 
     assert 'loop_back_reentry' not in archived_metadata, (
         f'The permanent record must not carry a still-open loop-back marker; got {archived_metadata!r}.'
@@ -445,9 +445,9 @@ def test_archive_without_an_open_marker_records_no_outcome(plan_context, _stubbe
     result = cmd_archive(Namespace(plan_id=plan_id, dry_run=False, reason=None))
     assert result['status'] == 'success', f'archive failed: {result}'
 
-    archived_metadata = json.loads(
-        (Path(result['archived_to']) / 'status.json').read_text(encoding='utf-8')
-    ).get('metadata', {})
+    archived_metadata = json.loads((Path(result['archived_to']) / 'status.json').read_text(encoding='utf-8')).get(
+        'metadata', {}
+    )
     assert 'loop_back_reentry_outcome' not in archived_metadata, (
         f'A plan that never looped back must carry no re-entry outcome; got {archived_metadata!r}.'
     )

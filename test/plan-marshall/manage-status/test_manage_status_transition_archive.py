@@ -102,8 +102,7 @@ def test_archive_closes_every_in_progress_phase_not_just_one(plan_context):
             f'{name} was open before archive and must be closed after; got {by_name[name]!r}.'
         )
     assert archived_status['current_phase'] == 'complete', (
-        f'With no phase left in_progress the completion gate must fire; got '
-        f'{archived_status["current_phase"]!r}.'
+        f'With no phase left in_progress the completion gate must fire; got {archived_status["current_phase"]!r}.'
     )
 
 
@@ -143,8 +142,7 @@ def test_archive_of_an_early_abandoned_plan_leaves_pending_phases_pending(plan_c
         f'Expected {pending_before!r} all still pending, got {observed_tail!r}.'
     )
     assert by_name['2-refine'] == 'done', (
-        f'2-refine really was in_progress, so it is the one phase archive must close '
-        f'here; got {by_name["2-refine"]!r}.'
+        f'2-refine really was in_progress, so it is the one phase archive must close here; got {by_name["2-refine"]!r}.'
     )
     assert by_name['1-init'] == 'done', f'An already-done phase must stay done; got {by_name["1-init"]!r}.'
     assert archived_status['current_phase'] == 'complete', (
