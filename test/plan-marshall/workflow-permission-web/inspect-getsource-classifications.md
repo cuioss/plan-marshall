@@ -7,9 +7,10 @@ whether the assertion is vacuous (pins source *text* where *behaviour* is the re
 property) or structural-but-meaningful (derives or prohibits call structure that a
 behaviour test cannot observe without instrumentation).
 
-A fresh architecture content-search for the literal `inspect.getsource` under
-`test/` re-derives **16 uses / 8 files** (16 = per-file module-attribution rows;
-`test_not_triggered_detection.py` carries two of the nine call sites).
+The surveyed population is the pre-change tree: **9 call sites in 8 files**
+(a fresh architecture content-search re-derives the same files as 16 per-file
+module-attribution rows; `test_not_triggered_detection.py` carries two of the
+nine call sites).
 
 ## Classification scheme
 

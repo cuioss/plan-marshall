@@ -193,6 +193,11 @@ def test_running_the_cli_creates_no_settings_file(tmp_path):
     The scan proves the module *looks* incapable of settings I/O; this asserts
     the same claim runnable: drive the CLI in a scratch working directory and
     confirm no ``.claude/settings*.json`` file materialises anywhere under it.
+    ``HOME`` is isolated to the scratch dir so a regression writing to the
+    global settings path is observed (and contained) rather than escaping it.
+    The isolation is live by construction: ``env_overrides`` is applied to the
+    subprocess environment inside ``run_script``, so the ``categorize`` run the
+    matched control below proves live is the run the ``HOME`` override covers.
     """
     result = run_script(
         SCRIPT_PATH,
@@ -200,6 +205,7 @@ def test_running_the_cli_creates_no_settings_file(tmp_path):
         '--domains',
         '["docs.oracle.com", "unknown-site.xyz"]',
         cwd=str(tmp_path),
+        env_overrides={'HOME': str(tmp_path)},
     )
 
     assert result.returncode == 0, f'categorize failed: rc={result.returncode} stderr={result.stderr!r}'
