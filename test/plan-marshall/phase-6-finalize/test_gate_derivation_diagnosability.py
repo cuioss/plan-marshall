@@ -259,7 +259,11 @@ def test_the_fall_through_branch_reports_rather_than_drops():
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == 'startswith'
     ]
     assert any(
-        node.args and isinstance(node.args[0], ast.Name) and node.args[0].id == '_BUNDLES_PREFIX'
+        node.args
+        and isinstance(node.args[0], ast.Name)
+        and node.args[0].id == '_BUNDLES_PREFIX'
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == 'path'
         for node in startswith_calls
     ), (
         'matched control: the parsed if/elif/else root does not branch on '
