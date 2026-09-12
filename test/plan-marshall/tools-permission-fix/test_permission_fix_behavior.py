@@ -12,8 +12,10 @@ copies (explicit ``--settings`` paths, or ``monkeypatch.chdir`` into ``tmp_path`
 for the ``--target project`` resolvers) — never the developer's real settings.
 """
 
+import ast
 import json
 from argparse import Namespace
+from pathlib import Path
 
 import pytest
 
@@ -332,6 +334,120 @@ class TestSharedSeamCallSites:
 
         assert 'Bash(npm:*)' in _read_allow(shared)
         assert local.read_bytes() == local_before
+
+
+class TestSharedSeamCallSiteRosterIsDerived:
+    """``TestSharedSeamCallSites`` carries a row for every ``resolve_settings_arg`` caller.
+
+    The class above is a hand-written roster: one method per call site. A fifth
+    subcommand routed through the seam would add a call site that no method
+    exercises, and every existing method would still pass — the roster would be
+    silently short. This guard closes that by deriving BOTH sides from source:
+    the callers from ``permission_fix.py``, the covered handlers from this
+    module. Neither side is transcribed, so neither can fall behind the other.
+
+    The comparison is a SUBSET, not an equality. ``TestSharedSeamCallSites`` also
+    drives ``pf.cmd_add`` as the four-vs-ten boundary control, and ``cmd_add`` is
+    deliberately not a seam caller — so the covered set is legitimately a proper
+    superset and equality would fail on the control.
+
+    Both sides are read statically rather than by inspecting live function
+    objects: a runtime inspection cannot see a call site that never executes,
+    which is precisely the drift this guard exists to catch.
+    """
+
+    #: The shared helper whose call sites the roster above must cover.
+    SEAM = 'resolve_settings_arg'
+
+    #: The roster class whose methods are the coverage being checked.
+    ROSTER_CLASS = 'TestSharedSeamCallSites'
+
+    @staticmethod
+    def _seam_callers(source: str, seam: str) -> set[str]:
+        """Names of the functions in ``source`` whose body calls ``seam`` by name.
+
+        The seam's own definition is excluded, so a future recursive call cannot
+        make the helper report itself as one of its own callers.
+        """
+        callers = set()
+        for node in ast.walk(ast.parse(source)):
+            if not isinstance(node, ast.FunctionDef) or node.name == seam:
+                continue
+            for inner in ast.walk(node):
+                if isinstance(inner, ast.Call) and isinstance(inner.func, ast.Name) and inner.func.id == seam:
+                    callers.add(node.name)
+                    break
+        return callers
+
+    @staticmethod
+    def _roster_handlers(source: str, class_name: str) -> set[str]:
+        """Names of the ``pf.cmd_*`` handlers driven inside ``class_name``."""
+        covered = set()
+        for node in ast.walk(ast.parse(source)):
+            if not isinstance(node, ast.ClassDef) or node.name != class_name:
+                continue
+            for inner in ast.walk(node):
+                func = inner.func if isinstance(inner, ast.Call) else None
+                if (
+                    isinstance(func, ast.Attribute)
+                    and isinstance(func.value, ast.Name)
+                    and func.value.id == 'pf'
+                    and func.attr.startswith('cmd_')
+                ):
+                    covered.add(func.attr)
+        return covered
+
+    def test_every_seam_caller_has_a_roster_row(self):
+        """Every derived ``resolve_settings_arg`` caller is driven by the roster class."""
+        module_path = Path(pf.__file__)
+        callers = self._seam_callers(module_path.read_text(encoding='utf-8'), self.SEAM)
+        covered = self._roster_handlers(Path(__file__).read_text(encoding='utf-8'), self.ROSTER_CLASS)
+
+        # Non-vacuity FIRST: a subset assertion over an empty left side passes no
+        # matter what the right side holds, so a derivation that silently stopped
+        # matching would turn this guard green rather than red.
+        assert callers, (
+            f'Derived ZERO callers of {self.SEAM}() from {module_path.name}, so the subset '
+            f'check below would pass vacuously. Population sizes: callers=0, '
+            f'covered={len(covered)}. The derivation, not the roster, is what broke.'
+        )
+
+        uncovered = callers - covered
+        assert not uncovered, (
+            f'{len(uncovered)} of {len(callers)} {self.SEAM}() call site(s) have no row in '
+            f'{self.ROSTER_CLASS}: {sorted(uncovered)}. Population sizes: '
+            f'callers={len(callers)}, covered={len(covered)}. Add one method per '
+            f'uncovered handler asserting it resolves the overriding local file.'
+        )
+
+    def test_the_derivation_reports_a_fifth_caller_as_uncovered(self):
+        """The matched negative control: a caller with no roster row is derived as uncovered.
+
+        The guard above can only ever be observed PASSING against the real tree,
+        so a derivation that quietly stopped matching would look exactly like a
+        roster that is complete. Driving both derivations over synthetic sources
+        is what makes the failure path itself observable — and it pins the two
+        behaviours the guard rests on: the seam's own definition is not counted
+        as a caller, and a handler absent from the roster survives the
+        subtraction.
+        """
+        module_source = (
+            'def resolve_settings_arg(args):\n'
+            '    return str(args)\n'
+            'def cmd_on_the_roster(args):\n'
+            '    return resolve_settings_arg(args)\n'
+            'def cmd_added_without_a_row(args):\n'
+            '    return resolve_settings_arg(args)\n'
+        )
+        roster_source = 'class Roster:\n    def test_one(self):\n        pf.cmd_on_the_roster(None)\n'
+
+        callers = self._seam_callers(module_source, self.SEAM)
+        covered = self._roster_handlers(roster_source, 'Roster')
+
+        assert callers == {'cmd_on_the_roster', 'cmd_added_without_a_row'}
+        assert self.SEAM not in callers
+        assert covered == {'cmd_on_the_roster'}
+        assert callers - covered == {'cmd_added_without_a_row'}
 
 
 # =============================================================================
