@@ -36,9 +36,30 @@ two completion signals, checked in that order of strength:
    published ``head_sha_verified: false`` for a HEAD the bot HAD reviewed.
 2. An **issue comment** authored by the awaited ``bot_kind`` whose later of
    ``updated_at`` / ``created_at`` post-dates ``trigger_time``. Reported as
-   ``matched_signal: issue_comment`` with ``head_sha_verified: false`` — a
-   comment carries no reviewed-commit SHA, so it establishes that the bot
-   responded, NOT that it reviewed the new HEAD.
+   ``matched_signal: issue_comment``, with ``head_sha_verified`` decided by the
+   SAME :func:`_references_head_sha` predicate the review path uses, run over the
+   comment BODY.
+
+   ⛔ **"An issue comment carries no reviewed-commit SHA" was a premise, not an
+   observation, and it is false for a bot whose only declared publish shape is an
+   issue comment.** ``cuioss-review-bot`` declares ``participation_evidence:
+   issue_comment`` and an empty ``completion_check_name`` — it submits no review
+   object at all — and it names the commit it reviewed INSIDE that comment, as a
+   ``…/commit/{sha}`` permalink: the exact URL-embedded form
+   :func:`_references_head_sha` already recognises on the review path. Hard-coding
+   ``false`` here meant the matcher never inspected the body, so every correct
+   re-review that bot performed was published as ``matched: true`` /
+   ``head_sha_verified: false`` — which both consumers route as an
+   incremental-review DECLINE. That member is blocking and its documented remedy is
+   to demote the bot to ``optional_bots`` or take a merge-authorization waiver, so a
+   REQUIRED bot in this shape could never verify and the pipeline's advice was to
+   stop requiring it.
+
+   A comment that references the awaited HEAD therefore reports
+   ``head_sha_verified: true``; one that does not still reports ``false``, which is
+   the genuine decline. The signal ORDER is unchanged — a review still wins when
+   both are present — because a review object remains the stronger artifact even
+   when a comment verifies the same commit.
 
 BOTH discriminators additionally reject a **refusal notice** — a comment or a
 review body a bot posts to say it could NOT review — running the same
@@ -240,10 +261,14 @@ _COMMIT_SHA_TOKEN_RE = re.compile(r'(?<![0-9A-Za-z])[0-9a-fA-F]{7,40}(?![0-9A-Za
 def _references_head_sha(evidence: str, head_sha: str) -> bool:
     """Return True when ``evidence`` names ``head_sha`` as a commit reference.
 
-    ``evidence`` is the reviewed-commit field carried on a review record. It may be
-    the bare SHA, or it may carry the SHA embedded in a commit URL; both name the
-    same commit, so both are recognised. Every SHA-shaped token in ``evidence`` is
-    extracted and compared case-insensitively for EQUALITY against ``head_sha``.
+    ``evidence`` is whichever field carries a bot's reviewed-commit claim on the
+    record being matched: the ``commit_sha`` of a review record on the review path,
+    and the comment BODY on the issue-comment path. The predicate is the same on
+    both, deliberately — where the SHA sits is a property of the publish shape the
+    bot chose, not of whether it reviewed the commit. It may be the bare SHA, or it
+    may carry the SHA embedded in a commit URL; both name the same commit, so both
+    are recognised. Every SHA-shaped token in ``evidence`` is extracted and compared
+    case-insensitively for EQUALITY against ``head_sha``.
 
     **Equality, never prefix.** A token that merely shares a leading run with
     ``head_sha`` does not match. That boundary is what makes the widening
@@ -268,6 +293,36 @@ def _references_head_sha(evidence: str, head_sha: str) -> bool:
     if evidence.strip().lower() == target:
         return True
     return any(token.lower() == target for token in _COMMIT_SHA_TOKEN_RE.findall(evidence))
+
+
+def _verifies_head_sha(matched_signal: str, record: dict | None, head_sha: str) -> bool:
+    """Return the envelope's ``head_sha_verified`` for the signal that matched.
+
+    One predicate, two evidence FIELDS — which is the whole correction. A matched
+    review already gated on :func:`_references_head_sha` over its ``commit_sha``
+    (:meth:`_ReReviewStrategy._match_review` returns no review that failed it), so
+    the review arm is ``True`` by construction and is not re-derived here. The
+    comment arm runs that same predicate over the comment BODY, because the
+    reviewed-commit claim of a bot that publishes no review object lives there.
+
+    ⛔ **The comment arm is a WIDENING of what can verify, never of which commit
+    counts.** ``_references_head_sha`` compares every extracted token for EQUALITY,
+    so a comment naming a genuinely different commit — or naming none at all — still
+    reports ``False`` and is still consumed as the ``declined`` member. That is what
+    keeps the correction from laundering an ordinary "thanks, looking" comment into
+    a verified review: the bot has to name THIS commit.
+
+    Fail-closed on an unmatched signal and on an absent record: with nothing matched
+    there is no evidence to verify against, and ``False`` is the direction that
+    reports less than was observed rather than more.
+    """
+    if record is None:
+        return False
+    if matched_signal == 'review':
+        return True
+    if matched_signal == 'issue_comment':
+        return _references_head_sha(str(record.get('body') or ''), head_sha)
+    return False
 
 
 def _resolve_refusal_class(bot_kind: str | None, refusals: list[dict]) -> str:
@@ -685,12 +740,22 @@ class _ReReviewStrategy:
         Identical for every bot. The review match is checked first and wins when
         both are present. Returns a TOON envelope carrying ``matched``,
         ``matched_signal`` (``review`` | ``issue_comment`` | empty when
-        unmatched), the matched record, and ``head_sha_verified`` — ``true``
-        only on the review path.
+        unmatched), the matched record, and ``head_sha_verified``.
+
+        ``head_sha_verified`` is decided on BOTH paths by the same
+        :func:`_references_head_sha` predicate, run over whichever field the matched
+        record carries the reviewed-commit claim in — the review's ``commit_sha``, or
+        the comment's BODY. It is emphatically NOT "true only on the review path":
+        that shortcut manufactured a decline for every bot whose sole declared
+        publish shape is an issue comment naming its reviewed commit as a permalink.
+        See the module docstring's signal-2 entry for the incident and the taxonomy
+        consequence.
 
         Args:
             pr_number: PR to poll.
-            head_sha: Commit the fresh review must have reviewed (review path).
+            head_sha: Commit the fresh review must have reviewed. Gates the review
+                match, and is the value the matched comment's body is checked
+                against on the comment path.
             trigger_time: ISO-8601 lower bound both signals must post-date.
             bot_kind: The awaited bot. Required for the comment path — without
                 it there is no authorship to gate on, so only the review path
@@ -750,9 +815,7 @@ class _ReReviewStrategy:
             'matched_signal': matched_signal,
             'matched_review': record if matched_signal == 'review' else {},
             'matched_comment': record if matched_signal == 'issue_comment' else {},
-            # An issue comment carries no reviewed-commit SHA, so it cannot prove
-            # the new HEAD was reviewed. Only the review path verifies that.
-            'head_sha_verified': matched_signal == 'review',
+            'head_sha_verified': _verifies_head_sha(matched_signal, record, head_sha),
             'refusal_detected': bool(refusals),
             # The recovery strategy the refusal arms, from the bot's registry
             # `rate_limit_class` (fail-closed to `unknown`). Empty when no refusal
@@ -969,6 +1032,16 @@ class _ReReviewStrategy:
         or an unparseable timestamp yields no match. Every refusal this path skips
         is APPENDED to ``refusals`` for the caller to surface, exactly as
         :meth:`_match_review` does.
+
+        **This matcher decides WHETHER the bot answered; it does not decide whether
+        the answer verified the HEAD.** Unlike :meth:`_match_review` — where the SHA
+        reference is a MATCH condition — a comment's reviewed-commit reference is
+        read afterwards, by :func:`_verifies_head_sha`, off the matched record's
+        body. The asymmetry is deliberate and load-bearing: making the reference a
+        match condition here would turn a genuine incremental-review DECLINE (the bot
+        answered, naming no commit) back into a bare timeout, erasing the one
+        observation the ``declined`` member exists to record. So the await still
+        completes on the answer, and the envelope reports how strong that answer was.
         """
         if not bot_kind or trigger_dt is None:
             return None

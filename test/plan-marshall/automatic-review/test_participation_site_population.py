@@ -260,9 +260,13 @@ SITE_EXPECTATIONS: dict[str, SiteExpectation] = {
         'live_comment_scan',
         'both',
         'no',
-        'The re-review awaiter: a review matched by reviewed-commit SHA yields '
-        'head_sha_verified: true, a comment matched by timestamp yields false. Its verdict '
-        'depends on when it is asked, so it is not idempotent.',
+        'The re-review awaiter. The two signals differ in HOW a bot is matched — a review by '
+        'reviewed-commit SHA, a comment by timestamp — but head_sha_verified is decided for '
+        'BOTH by one predicate over whichever field carries the reviewed-commit claim: the '
+        'review’s commit_sha, or the comment’s BODY. Pinning the comment path to false was a '
+        'premise, not an observation, and it manufactured a decline for every bot whose only '
+        'declared publish shape is a comment naming its reviewed commit. Its verdict depends '
+        'on when it is asked, so it is not idempotent.',
     ),
     f'{_SKILLS}/workflow-pr-doctor/standards/automated-review-lifecycle.md': SiteExpectation(
         'normative_text',

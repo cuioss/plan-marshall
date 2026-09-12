@@ -919,6 +919,15 @@ to the parser. What makes the empty case safe is that each flag declares `nargs=
 `review_completeness — check`), so a bare flag reads as the empty list instead of swallowing the next
 token or tripping an argparse rejection at end of line.
 
+⛔ **The scalar `--measured-diff-size` is covered by that same defence, and for it the empty case is
+the COMMON one.** The producer measures the diff **only** when a size refusal was actually seen, while
+the call above interpolates the flag unconditionally — so on every run where no reviewer refused on
+size, the executor delivers a bare `--measured-diff-size`. It declares `nargs='?'` with `const=''` for
+exactly that reason, and bare reads as unmeasured. Were it a value-required flag, the documented call
+would be an argparse rejection on the ordinary path, which § "UNKNOWN — the predicate itself failed"
+below names UNKNOWN — and an UNKNOWN verdict is never authorizable, so the happy path would block the
+merge with no way out.
+
 The placeholders are still double-quoted above, and should stay quoted — quoting is what keeps a
 *non-empty* value with spaces as one argument, and it is the correct habit for any direct
 (non-executor) invocation. Just do not read it as the empty-value defence: **never rely on quoting
