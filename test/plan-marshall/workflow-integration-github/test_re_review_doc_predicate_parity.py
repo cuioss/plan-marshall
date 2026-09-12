@@ -104,7 +104,7 @@ _RETIRED_EQUALITY_RE = re.compile(
 _RETIRED_COMMENT_CONSTANT_RE = re.compile(
     r'(?i)('
     r'issue[ _]comment[^.\n]{0,80}head_sha_verified`?:\s*`?false'
-    r'|comment[^.\n]{0,40}carr(?:ies|ying|y)\s+no\s+reviewed[\s\-]*commit\s+SHA'
+    r'|comment[^.\n]{0,40}carr(?:ies|ying|ied|y)\s+no\s+reviewed[\s\-]*commit\s+SHA'
     r')'
 )
 
@@ -197,11 +197,10 @@ class TestNoDocStatesTheRetiredEqualityPredicate:
             f'derived ZERO documents mentioning {_FIELD} under {_BUNDLES} — the scan '
             f'is misrooted, so a clean result here would be vacuous'
         )
-        # _CONSUMER_SCRIPT is the .py member: the population globs *.py as well as
-        # *.md because three statements of the retired rule sat in this script's
-        # docstrings, outside an *.md-only scan. Asserting a known member of EACH
-        # half is what makes a revert to *.md-only fail loudly here rather than
-        # silently dropping the .py half back out of the scan.
+        # Asserting a known member of EACH half of the population is what makes a
+        # revert to an *.md-only scan fail loudly here rather than silently dropping
+        # the .py half back out. Why the population globs *.py at all is stated once,
+        # in _doc_population()'s own docstring.
         for known in (_PRODUCER_DOC, _AR_SKILL, _BRANCH_CLEANUP_REREVIEW, _CONSUMER_SCRIPT):
             assert known in population, f'{known} missing from the derived population'
 
@@ -332,6 +331,11 @@ class TestTheCommentArmDerivesItsVerdict:
             # Without this param, reverting arm (b) to that literal leaves every control green.
             'answered the re-review with a comment carrying no reviewed-commit SHA '
             '(`head_sha_verified: false`)',
+            # The past tense completes the inflection set the arm claims to cover. It is
+            # the register these docs actually use ("AND carried that shape's declared
+            # content marker" sits inside the scanned population), so omitting it left
+            # the class one inflection wide open while the comment asserted completeness.
+            'a comment that carried no reviewed-commit SHA (`head_sha_verified: false`)',
         ],
     )
     def test_planted_constant_is_detected(self, planted):
