@@ -250,7 +250,7 @@ The reader assigns each spec exactly one **derivation status**, and only one of 
 
 ⛔ **An absent or unresolvable declaration is `indeterminate`, never `disjoint`.** A spec in any non-`declarative` status contributes no row to the overlap matcher, so the machine reports no collision against it and that SILENCE is indistinguishable from a checked negative. Such a candidate is sequenced with a shortfall reason naming its status; it is never emitted on the strength of a comparison that had nothing to compare. **A plan the gate cannot see is a plan the gate cannot serialize.** Governing authority: **ADR-019** (*An audit separates what it could not evaluate from what it evaluated and found wanting*). `absent` and `unreadable` are reported apart because they are different facts and only the first is a spec-authoring gap.
 
-The verdict is read from `corpus surfaces`, which publishes the per-spec status, the counts, and the population each was computed over — so a `file_overlap_match_count: 0` states which zero it is.
+The verdict is read from `corpus surfaces`, which publishes the per-spec status, the counts, and the population each was computed over — so a `file_overlap_match_count: 0` states which zero it is. The live side rides the same separation in `corpus cross-check`: `live_indeterminate_plans[]` names the active plans with no comparable surface (empty `affected_files`), `live_plan_surfaces[]` carries the per-plan comparability, and `live_checked_and_clean_count` (compared, no overlap and no shared origin) versus `live_could_not_check_count` (no comparable surface) keep checked-and-clean apart from could-not-check — an indeterminate live plan never renders as disjoint.
 
 ### What the gate can and cannot promise
 
