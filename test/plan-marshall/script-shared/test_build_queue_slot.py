@@ -23,6 +23,14 @@ These tests cover:
   ``_set_title_token`` / ``_clear_title_token`` / ``_push_title_token`` symbols.
 * **max_retries resolution** — read from marshal.json with a 10 fallback.
 * **_emit_queue_timeout** — renders a structured ``queue_saturated`` error.
+* **Queue warnings reach BOTH sinks, exactly once per invocation** — each
+  ``acquire`` warning is surfaced to stderr AND the plan work log, deduplicated
+  by ``code`` across the blocked re-polls, so a build that waits does not repeat
+  the identical warning once per poll. Two distinct codes are both surfaced (the
+  matched control proving the collapse is per-code, not "at most one"), an empty
+  or absent ``warnings`` key surfaces nothing, a plan-less build writes no
+  work-log line, a malformed entry is skipped rather than raised on, and a
+  warning never blocks the build.
 
 The queue acquire/release seam (``_acquire`` / ``_release_raw``) is mocked
 directly, so the tests are independent of whether the queue is reached by a
@@ -303,6 +311,189 @@ def test_release_failure_is_logged_not_raised(monkeypatch):
     # the slot without an exception is the assertion.
     with build_queue_slot('P'):
         pass
+
+
+# =============================================================================
+# Queue warnings reach BOTH sinks, exactly once per invocation
+# =============================================================================
+
+#: The demoted-key warning the queue attaches to every acquire result while the
+#: caller's marshal.json still carries the inert key.
+_DEMOTION_WARNING = {
+    'code': 'per_repo_max_slots_not_in_effect',
+    'message': 'marshal.json sets build.queue.max_slots=1, which is NOT in effect',
+}
+
+_OTHER_WARNING = {'code': 'some_other_condition', 'message': 'a different condition entirely'}
+
+
+def _admitted(warnings: list[dict] | None = None, entry_id: str = 'P:uuid-1') -> dict:
+    """Build an ``admitted`` acquire result, optionally carrying ``warnings``."""
+    result: dict = {'status': 'success', 'admission': 'admitted', 'id': entry_id}
+    if warnings is not None:
+        result['warnings'] = warnings
+    return result
+
+
+def _blocked(warnings: list[dict] | None = None, entry_id: str = 'P:uuid-1') -> dict:
+    """Build a ``blocked`` acquire result, optionally carrying ``warnings``."""
+    result: dict = {'status': 'success', 'admission': 'blocked', 'id': entry_id}
+    if warnings is not None:
+        result['warnings'] = warnings
+    return result
+
+
+@pytest.fixture
+def work_log(monkeypatch: pytest.MonkeyPatch) -> list[tuple]:
+    """Capture ``log_entry`` calls instead of writing to a real plan work log."""
+    calls: list[tuple] = []
+    monkeypatch.setattr(bqs, 'log_entry', lambda *args: calls.append(args))
+    return calls
+
+
+def test_a_warning_reaches_stderr_and_the_work_log(monkeypatch, capsys, work_log):
+    """Both sinks, because neither alone is sufficient.
+
+    stderr is the only sink a build subprocess has without a configured logging
+    handler; the work log is the PERSISTENT record a later "why was my cap
+    ignored?" scan reads. Emitting to one only would either lose the warning
+    from the live run or lose it from the audit trail.
+    """
+    _install_queue(monkeypatch, _QueueDouble([_admitted([_DEMOTION_WARNING])]))
+
+    with build_queue_slot('P'):
+        pass
+
+    assert _DEMOTION_WARNING['message'] in capsys.readouterr().err
+    assert len(work_log) == 1
+    assert work_log[0][0] == 'work'
+    assert work_log[0][1] == 'P'
+    assert work_log[0][2] == 'WARNING'
+    assert _DEMOTION_WARNING['message'] in work_log[0][3]
+
+
+def test_a_warning_is_surfaced_exactly_once_across_blocked_re_polls(monkeypatch, capsys, work_log):
+    """Four acquires carrying the SAME warning produce ONE line in each sink.
+
+    This is the deduplication assertion and the reason it is keyed on ``code``:
+    a blocked build re-polls once per wait interval, so a per-acquire emission
+    would repeat the identical warning for the whole wait and bury the rest of
+    the build output under it.
+    """
+    monkeypatch.setattr(bqs, '_resolve_max_retries', lambda: 5)
+    _install_queue(
+        monkeypatch,
+        _QueueDouble(
+            [
+                _blocked([_DEMOTION_WARNING]),
+                _blocked([_DEMOTION_WARNING]),
+                _blocked([_DEMOTION_WARNING]),
+                _admitted([_DEMOTION_WARNING]),
+            ]
+        ),
+    )
+
+    with build_queue_slot('P'):
+        pass
+
+    assert capsys.readouterr().err.count(_DEMOTION_WARNING['message']) == 1
+    assert len(work_log) == 1
+
+
+def test_two_distinct_codes_are_both_surfaced(monkeypatch, capsys, work_log):
+    """The matched control for the dedup test: it collapses by CODE, not to one.
+
+    Without this, the assertion above would pass equally against an
+    implementation that emitted at most one warning ever — which would silently
+    swallow every condition after the first.
+    """
+    _install_queue(monkeypatch, _QueueDouble([_admitted([_DEMOTION_WARNING, _OTHER_WARNING])]))
+
+    with build_queue_slot('P'):
+        pass
+
+    err = capsys.readouterr().err
+    assert _DEMOTION_WARNING['message'] in err
+    assert _OTHER_WARNING['message'] in err
+    assert len(work_log) == 2
+
+
+def test_an_empty_warnings_list_surfaces_nothing(monkeypatch, capsys, work_log):
+    """A migrated repository gets no noise — the common case must stay silent."""
+    _install_queue(monkeypatch, _QueueDouble([_admitted([])]))
+
+    with build_queue_slot('P'):
+        pass
+
+    assert capsys.readouterr().err == ''
+    assert work_log == []
+
+
+def test_an_absent_warnings_key_surfaces_nothing(monkeypatch, capsys, work_log):
+    """A result predating the ``warnings`` field must not crash the build.
+
+    The queue always sends the key now, so this is the defensive boundary for a
+    stale in-process copy — a warning is a report, and failing a legitimately
+    admitted build over a missing report field would be the wrong trade.
+    """
+    _install_queue(monkeypatch, _QueueDouble([_admitted()]))
+
+    with build_queue_slot('P'):
+        pass
+
+    assert capsys.readouterr().err == ''
+    assert work_log == []
+
+
+@pytest.mark.parametrize('plan_id', _PLAN_LESS_PLAN_IDS, ids=_PLAN_LESS_PLAN_ID_IDS)
+def test_a_plan_less_build_writes_no_work_log_line(monkeypatch, capsys, work_log, plan_id):
+    """A plan-less build has no plan work log to write to, and writes none.
+
+    It never reaches the queue at all (the no-op passthrough), so there is no
+    acquire result to carry a warning — the backward-compatibility guarantee
+    covers the reporting surface too, not just the slot.
+    """
+    _install_queue(monkeypatch, _QueueDouble([_admitted([_DEMOTION_WARNING])]))
+
+    with build_queue_slot(plan_id):
+        pass
+
+    assert work_log == []
+    assert capsys.readouterr().err == ''
+
+
+def test_a_warning_never_blocks_the_build(monkeypatch, work_log):
+    """Reporting is not gating: the body still runs and the slot still releases."""
+    double = _QueueDouble([_admitted([_DEMOTION_WARNING])])
+    _install_queue(monkeypatch, double)
+
+    ran = False
+    with build_queue_slot('P'):
+        ran = True
+
+    assert ran is True
+    assert double.released_ids == ['P:uuid-1']
+
+
+@pytest.mark.parametrize(
+    'malformed',
+    [
+        pytest.param(['not-a-dict'], id='entry-is-not-a-mapping'),
+        pytest.param([{'message': 'no code'}], id='entry-has-no-code'),
+        pytest.param([{'code': 'no_message'}], id='entry-has-no-message'),
+        pytest.param([{'code': 1, 'message': 2}], id='entry-fields-are-not-strings'),
+    ],
+)
+def test_a_malformed_warning_entry_is_skipped_not_raised(monkeypatch, capsys, work_log, malformed):
+    """A queue result that fails to describe itself must not fail the build."""
+    _install_queue(monkeypatch, _QueueDouble([_admitted(malformed)]))
+
+    ran = False
+    with build_queue_slot('P'):
+        ran = True
+
+    assert ran is True
+    assert work_log == []
 
 
 #: ``(the marshal.json body ``read_json`` returns, resolved max_retries)``. Only

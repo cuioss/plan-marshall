@@ -30,11 +30,31 @@ lives. Contract under test:
   unrelated machine-global state.
 * **The state directory is ``0o700``** — machine-global state is not
   world-listable.
+* **A demoted per-repo key is read to REPORT it, never to resolve a cap** —
+  ``read_per_repo_max_slots`` returns the repository's value raw and
+  unvalidated (an unusable value included, because the report has to echo what
+  the operator's own file says), and ``per_repo_max_slots_warning`` renders the
+  audible not-in-effect message: both values, the machine-global source, both
+  paths, and both ways out.
+* **The conditional migration writer refuses rather than overwrites** —
+  ``write_max_slots_if_unset`` writes ONLY on ``default``. ``machine_config``,
+  ``invalid`` and ``unreadable`` all leave the file byte-identical, because each
+  means the file exists and holds something a copy would destroy. Its unset test
+  runs INSIDE the write guard, so a value committed by a racing writer is
+  observed and preserved — the ordering assertion is what stops a caller
+  deleting its repository key on a stale "unset".
+* **One guard serializes BOTH writers, and a stale guard is reclaimed** — tested
+  over both entry points, since a guard only one writer respected would
+  serialize nothing. Each blocking / reclaiming assertion is paired with its
+  matched control, so neither passes against an implementation that never
+  reclaims or always reclaims.
 """
 
 from __future__ import annotations
 
 import json
+import os
+import time
 from pathlib import Path
 
 import pytest
@@ -438,3 +458,388 @@ def test_rejected_write_leaves_an_existing_file_untouched(home: Path) -> None:
 
     assert _config_path(home).read_bytes() == before
     assert machine_config.resolve_max_slots().value == 6
+
+
+# =============================================================================
+# read_per_repo_max_slots — the demoted key, read to REPORT it only
+# =============================================================================
+
+
+def _write_marshal(tmp_path: Path, payload: object) -> Path:
+    """Stage a repository ``marshal.json`` carrying ``payload`` and return its path."""
+    marshal = tmp_path / 'repo' / '.plan' / 'marshal.json'
+    marshal.parent.mkdir(parents=True, exist_ok=True)
+    marshal.write_text(json.dumps(payload), encoding='utf-8')
+    return marshal
+
+
+def test_per_repo_reader_returns_the_raw_configured_value(tmp_path: Path) -> None:
+    """A present key is returned so a caller can report what the repo actually says."""
+    marshal = _write_marshal(tmp_path, {'build': {'queue': {'max_slots': 12}}})
+
+    assert machine_config.read_per_repo_max_slots(marshal) == 12
+
+
+def test_per_repo_reader_returns_an_absent_key_as_none(tmp_path: Path) -> None:
+    """``None`` means "there is no key to report", distinct from any value."""
+    marshal = _write_marshal(tmp_path, {'build': {'queue': {'max_retries': 10}}})
+
+    assert machine_config.read_per_repo_max_slots(marshal) is None
+
+
+def test_per_repo_reader_returns_none_for_a_missing_file(tmp_path: Path) -> None:
+    """A repository with no marshal.json has no key to report."""
+    assert machine_config.read_per_repo_max_slots(tmp_path / 'nope' / 'marshal.json') is None
+
+
+@pytest.mark.parametrize(
+    'payload',
+    [
+        pytest.param({}, id='empty-object'),
+        pytest.param({'build': {}}, id='no-queue-block'),
+        pytest.param({'build': 'not-a-block'}, id='build-not-a-dict'),
+        pytest.param({'build': {'queue': 'not-a-block'}}, id='queue-not-a-dict'),
+        pytest.param([1, 2, 3], id='not-an-object'),
+    ],
+)
+def test_per_repo_reader_returns_none_when_the_key_is_unreachable(tmp_path: Path, payload: object) -> None:
+    """Any shape that puts the key out of reach reads as "no key to report"."""
+    marshal = _write_marshal(tmp_path, payload)
+
+    assert machine_config.read_per_repo_max_slots(marshal) is None
+
+
+def test_per_repo_reader_returns_none_for_an_unparseable_file(tmp_path: Path) -> None:
+    """A broken repo config is not a reportable key, and does not raise.
+
+    This reader sits on the build admission path, so it degrades rather than
+    failing a build over a repository config it only wanted to describe.
+    """
+    marshal = tmp_path / 'repo' / '.plan' / 'marshal.json'
+    marshal.parent.mkdir(parents=True)
+    marshal.write_text('{not json', encoding='utf-8')
+
+    assert machine_config.read_per_repo_max_slots(marshal) is None
+
+
+@pytest.mark.parametrize(
+    'stored',
+    [
+        pytest.param(0, id='zero'),
+        pytest.param(-1, id='negative'),
+        pytest.param('8', id='string'),
+        pytest.param(True, id='bool-true'),
+    ],
+)
+def test_per_repo_reader_returns_an_invalid_value_raw_and_unvalidated(tmp_path: Path, stored: object) -> None:
+    """A value that could never be a cap is still returned VERBATIM.
+
+    Validation deliberately does not live in this reader: a report saying "your
+    marshal.json sets this and it does nothing" has to echo what is actually
+    written there. Coercing or dropping an unusable value would make the report
+    describe a key the operator cannot find in their own file.
+    """
+    marshal = _write_marshal(tmp_path, {'build': {'queue': {'max_slots': stored}}})
+
+    assert machine_config.read_per_repo_max_slots(marshal) == stored
+
+
+# =============================================================================
+# per_repo_max_slots_warning — the audible not-in-effect report
+# =============================================================================
+
+
+def test_warning_carries_the_deduplication_code(home: Path) -> None:
+    """``code`` is the stable identity consumers deduplicate on, not the text."""
+    warning = machine_config.per_repo_max_slots_warning(
+        '/repo/.plan/marshal.json', 9, machine_config.resolve_max_slots()
+    )
+
+    assert warning['code'] == machine_config.WARNING_PER_REPO_MAX_SLOTS_NOT_IN_EFFECT
+
+
+def test_warning_names_both_values_the_source_and_both_paths(home: Path) -> None:
+    """The message is self-sufficient: what the repo says, and what is in effect.
+
+    The machine-global SOURCE is named as well as the value, because a cap value
+    alone cannot distinguish a configured 5 from a fallback 5 — an operator told
+    only "the cap is 5" cannot tell whether anyone set it.
+    """
+    _write_cap(home, 7)
+    cap = machine_config.resolve_max_slots()
+
+    message = machine_config.per_repo_max_slots_warning('/repo/.plan/marshal.json', 9, cap)['message']
+
+    assert '/repo/.plan/marshal.json' in message
+    assert '9' in message
+    assert '7' in message
+    assert machine_config.SOURCE_MACHINE_CONFIG in message
+    assert str(_config_path(home)) in message
+
+
+def test_warning_gives_the_one_step_fix_and_the_alternative(home: Path) -> None:
+    """Both ways out are named, so the operator never has to go look them up."""
+    message = machine_config.per_repo_max_slots_warning(
+        '/repo/.plan/marshal.json', 9, machine_config.resolve_max_slots()
+    )['message']
+
+    assert machine_config.MIGRATE_COMMAND in message
+    assert 'config migrate' in message
+    assert 'config set --max-slots' in message
+
+
+def test_warning_reports_a_degraded_machine_source_rather_than_hiding_it(home: Path) -> None:
+    """A broken machine config is named in the warning, not smoothed into a value."""
+    _write_raw(home, '{broken')
+
+    message = machine_config.per_repo_max_slots_warning(
+        '/repo/.plan/marshal.json', 9, machine_config.resolve_max_slots()
+    )['message']
+
+    assert machine_config.SOURCE_UNREADABLE in message
+
+
+# =============================================================================
+# write_max_slots_if_unset — the conditional migration writer
+# =============================================================================
+
+
+def test_conditional_write_writes_when_no_file_exists(home: Path) -> None:
+    """An absent file is genuinely unset, so the migration value lands."""
+    assert not _config_path(home).exists()
+
+    resolution, wrote = machine_config.write_max_slots_if_unset(7)
+
+    assert wrote is True
+    assert resolution.value == 7
+    assert resolution.source == machine_config.SOURCE_MACHINE_CONFIG
+    assert machine_config.resolve_max_slots().value == 7
+
+
+def test_conditional_write_writes_when_the_key_is_absent_and_keeps_siblings(home: Path) -> None:
+    """A readable file without the key is unset — and its other keys survive."""
+    _write_raw(
+        home,
+        json.dumps(
+            {
+                'version': 1,
+                'top_level_sibling': 'keep-me',
+                'build': {'build_sibling': 'keep-me-too', 'queue': {'queue_sibling': 'keep-me-three'}},
+            }
+        ),
+    )
+
+    resolution, wrote = machine_config.write_max_slots_if_unset(4)
+
+    assert wrote is True
+    assert resolution.value == 4
+    payload = json.loads(_config_path(home).read_text(encoding='utf-8'))
+    assert payload['build']['queue']['max_slots'] == 4
+    assert payload['top_level_sibling'] == 'keep-me'
+    assert payload['build']['build_sibling'] == 'keep-me-too'
+    assert payload['build']['queue']['queue_sibling'] == 'keep-me-three'
+
+
+@pytest.mark.parametrize(
+    ('staged', 'expected_source'),
+    [
+        pytest.param(6, 'machine_config', id='configured'),
+        pytest.param(0, 'invalid', id='invalid'),
+        pytest.param(True, 'invalid', id='bool'),
+    ],
+)
+def test_conditional_write_refuses_and_leaves_the_file_byte_identical(
+    home: Path, staged: object, expected_source: str
+) -> None:
+    """Anything already on the machine side is NOT unset, so nothing is written.
+
+    ``invalid`` is in this set deliberately: the file exists and holds something,
+    so a cap may well be configured there and merely mistyped. Overwriting it
+    would silently discard an operator's setting, which is why only
+    :data:`SOURCE_DEFAULT` counts as unset.
+    """
+    _write_cap(home, staged)
+    before = _config_path(home).read_bytes()
+
+    resolution, wrote = machine_config.write_max_slots_if_unset(7)
+
+    assert wrote is False
+    assert resolution.source == expected_source
+    assert _config_path(home).read_bytes() == before
+
+
+def test_conditional_write_refuses_an_unreadable_file_byte_identically(home: Path) -> None:
+    """An unreadable file is the sharpest refusal: a cap may be in there.
+
+    ``_locks_core.rmw_json`` would read this file as ``{}`` and let the write
+    through, which is exactly why the conditional writer does not use it.
+    """
+    _write_raw(home, '{broken')
+    before = _config_path(home).read_bytes()
+
+    resolution, wrote = machine_config.write_max_slots_if_unset(7)
+
+    assert wrote is False
+    assert resolution.source == machine_config.SOURCE_UNREADABLE
+    assert _config_path(home).read_bytes() == before
+
+
+def test_conditional_write_sees_a_concurrent_value_that_lands_inside_the_guard(
+    home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The unset test runs INSIDE the guard, so a racing writer is not overwritten.
+
+    This is the ordering assertion, and it is the whole point of the guard. The
+    competing value is injected by wrapping :func:`_acquire_guard`, so it lands
+    strictly AFTER the guard is taken — meaning only a re-resolve performed
+    inside the guarded section can observe it. A function that tested "is it
+    unset?" before acquiring would still see the absent file, write over the
+    racing value, and report a migration whose value had already been replaced;
+    the caller would then delete its repository key on that stale answer.
+    """
+    real_acquire = machine_config._acquire_guard
+
+    def _acquire_then_race(guard_path: Path) -> int:
+        # Annotated local: ``machine_config`` is a dynamically loaded module, so
+        # its members are typed ``Any`` and returning one directly would be an
+        # implicit Any-return.
+        fd: int = real_acquire(guard_path)
+        _write_cap(home, 6)  # a concurrent `config set` commits here
+        return fd
+
+    monkeypatch.setattr(machine_config, '_acquire_guard', _acquire_then_race)
+    assert not _config_path(home).exists()
+
+    resolution, wrote = machine_config.write_max_slots_if_unset(7)
+
+    assert wrote is False
+    assert resolution.value == 6
+    assert resolution.source == machine_config.SOURCE_MACHINE_CONFIG
+    assert machine_config.resolve_max_slots().value == 6
+
+
+# =============================================================================
+# The write guard (serialization + stale reclaim)
+# =============================================================================
+
+
+def _guard_path(home: Path) -> Path:
+    """Return the write-guard path beside the machine config."""
+    config = _config_path(home)
+    return config.with_name(f'{config.name}.lock')
+
+
+@pytest.mark.parametrize(
+    'writer',
+    [
+        pytest.param('write_max_slots', id='unconditional'),
+        pytest.param('write_max_slots_if_unset', id='conditional'),
+    ],
+)
+def test_a_held_guard_blocks_the_other_writer(home: Path, monkeypatch: pytest.MonkeyPatch, writer: str) -> None:
+    """A guard held by another writer serializes BOTH writers, not just one.
+
+    Parametrized over both entry points because they share ONE guard: a guard
+    that only the conditional writer respected would serialize nothing, since
+    the unconditional writer could still land between the conditional writer's
+    re-resolve and its write.
+
+    The timeout is shortened so the negative control is fast and deterministic;
+    the matched positive control is the sibling test below, where the same call
+    succeeds once the guard is gone.
+    """
+    machine_config.ensure_machine_config_dir()
+    guard = _guard_path(home)
+    guard.write_text('held', encoding='utf-8')
+    monkeypatch.setattr(machine_config, '_GUARD_TIMEOUT_SECONDS', 0.05)
+
+    with pytest.raises(TimeoutError):
+        getattr(machine_config, writer)(7)
+
+    assert not _config_path(home).exists()
+
+
+@pytest.mark.parametrize(
+    'writer',
+    [
+        pytest.param('write_max_slots', id='unconditional'),
+        pytest.param('write_max_slots_if_unset', id='conditional'),
+    ],
+)
+def test_a_free_guard_lets_the_writer_through(home: Path, monkeypatch: pytest.MonkeyPatch, writer: str) -> None:
+    """The matched positive control for the blocked case above.
+
+    Same shortened timeout, same call, no guard held — so the ``TimeoutError``
+    in the sibling test is attributable to the held guard and not to the
+    tightened budget.
+    """
+    monkeypatch.setattr(machine_config, '_GUARD_TIMEOUT_SECONDS', 0.05)
+
+    getattr(machine_config, writer)(7)
+
+    assert machine_config.resolve_max_slots().value == 7
+
+
+def test_a_stale_guard_is_reclaimed(home: Path) -> None:
+    """A crashed writer's abandoned guard must not wedge the file forever."""
+    machine_config.ensure_machine_config_dir()
+    guard = _guard_path(home)
+    guard.write_text('abandoned', encoding='utf-8')
+    stale = time.time() - (machine_config._GUARD_STALE_SECONDS + 30)
+    os.utime(guard, (stale, stale))
+
+    written = machine_config.write_max_slots(7)
+
+    assert written.value == 7
+    assert machine_config.resolve_max_slots().value == 7
+
+
+def test_a_fresh_guard_is_not_reclaimed(home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The matched negative control for the stale reclaim above.
+
+    Without this pairing, the reclaim test would pass just as well against an
+    implementation that reclaimed EVERY guard, stale or not — which would defeat
+    the serialization entirely.
+    """
+    machine_config.ensure_machine_config_dir()
+    guard = _guard_path(home)
+    guard.write_text('held', encoding='utf-8')
+    monkeypatch.setattr(machine_config, '_GUARD_TIMEOUT_SECONDS', 0.05)
+
+    with pytest.raises(TimeoutError):
+        machine_config.write_max_slots(7)
+
+
+def test_the_guard_is_removed_after_a_successful_write(home: Path) -> None:
+    """The guard is released in a ``finally``, so it never leaks to the next writer."""
+    machine_config.write_max_slots(7)
+
+    assert not _guard_path(home).exists()
+
+
+def test_the_guard_is_removed_after_a_refused_conditional_write(home: Path) -> None:
+    """A refusal releases the guard too — the refusing path also runs the ``finally``."""
+    _write_cap(home, 6)
+
+    _resolution, wrote = machine_config.write_max_slots_if_unset(7)
+
+    assert wrote is False
+    assert not _guard_path(home).exists()
+
+
+@pytest.mark.parametrize(
+    'bad',
+    [
+        pytest.param(0, id='zero'),
+        pytest.param(-1, id='negative'),
+        pytest.param('5', id='string'),
+        pytest.param(None, id='null'),
+        pytest.param(True, id='bool-true'),
+    ],
+)
+def test_conditional_write_rejects_a_value_that_cannot_be_a_cap(home: Path, bad: object) -> None:
+    """The conditional writer validates too — a bad cap never reaches disk."""
+    with pytest.raises(ValueError):
+        machine_config.write_max_slots_if_unset(bad)
+
+    assert not _config_path(home).exists()

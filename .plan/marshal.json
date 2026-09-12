@@ -189,7 +189,6 @@
   },
   "build": {
     "queue": {
-      "max_slots": 5,
       "max_retries": 10,
       "upper_limit_seconds": 600
     },

@@ -96,6 +96,20 @@ the default. Every ``acquire`` / ``release`` result therefore reports
 source is not ``machine_config``), because the value alone cannot distinguish a
 configured 5 from a fallback 5.
 
+**A surviving per-repo cap key is reported, never honoured.** ``acquire`` reads
+the CALLER's own ``marshal.json`` — via the cwd-relative
+:func:`file_ops.get_marshal_path`, which is the correct resolver here precisely
+because the question is about the caller's repository — for the SOLE purpose of
+detecting a demoted ``build.queue.max_slots``. The value never reaches the
+admitted cap. When the key is present the result carries
+``per_repo_max_slots: {value, in_effect: false}`` and one
+``per_repo_max_slots_not_in_effect`` warning, so a repository that still
+configures the old key learns that it does nothing on every queued build rather
+than silently believing a cap it does not have. The result ALWAYS carries a
+``warnings`` list — empty when nothing applies — so a consumer iterates it
+unconditionally and never has to branch on whether the key is there; an
+optional-key shape is what makes a consumer forget to look.
+
 **Concurrency correctness (TOCTOU / check-then-act):** the admit/release cycle is
 a read-modify-write (read the queue → decide admit/promote → write the queue) —
 a classic check-then-act window across concurrent build sessions. Every mutation
@@ -156,7 +170,14 @@ from pathlib import Path
 from typing import Any
 
 from _locks_core import holder_is_dead, log_lock_event, rmw_json
-from _machine_config import SOURCE_MACHINE_CONFIG, CapResolution, resolve_max_slots
+from _machine_config import (
+    SOURCE_MACHINE_CONFIG,
+    CapResolution,
+    per_repo_max_slots_warning,
+    read_per_repo_max_slots,
+    resolve_max_slots,
+)
+from file_ops import get_marshal_path
 from marketplace_paths import (
     ensure_home_root,
     main_checkout_root,
@@ -218,6 +239,40 @@ def _cap_fields(cap: CapResolution) -> dict[str, Any]:
     if cap.source != SOURCE_MACHINE_CONFIG:
         fields['max_slots_detail'] = cap.detail
     return fields
+
+
+def _demotion_fields(cap: CapResolution) -> dict[str, Any]:
+    """Return the demoted-per-repo-key report fields for an ``acquire`` result.
+
+    Reads the CALLER's own ``marshal.json`` — :func:`file_ops.get_marshal_path`
+    is cwd-relative, which is right here because the question being asked IS
+    "does the repository this build is running in still configure the old key?".
+    That is the opposite of the cap resolution itself, which must be
+    cwd-independent; the two resolvers are deliberately different because they
+    answer different questions.
+
+    The value read here NEVER influences the admitted cap. It is reported so an
+    operator learns their key is inert, and reported on every queued build
+    because a once-off notice is one an operator who inherited the repository
+    never saw.
+
+    Args:
+        cap: The machine-global resolution actually in effect, named in the
+            warning so the operator sees what replaced their key.
+
+    Returns:
+        ``{'warnings': []}`` when no per-repo key is present, else that plus
+        ``per_repo_max_slots: {value, in_effect: False}``. ``warnings`` is
+        ALWAYS present so consumers iterate unconditionally.
+    """
+    marshal_path = get_marshal_path()
+    raw = read_per_repo_max_slots(marshal_path)
+    if raw is None:
+        return {'warnings': []}
+    return {
+        'per_repo_max_slots': {'value': raw, 'in_effect': False},
+        'warnings': [per_repo_max_slots_warning(marshal_path, raw, cap)],
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -388,6 +443,12 @@ def run_acquire(args: Namespace) -> dict[str, Any]:
     ``acquire`` while blocked WITHOUT releasing first, so a queued plan retains its
     place rather than being shuffled to the back on every poll. A ``blocked``
     result is a structured signal the wrapper re-polls against, not an error.
+
+    Every result also reports the demoted per-repo cap key (see
+    :func:`_demotion_fields`): a ``warnings`` list — always present, empty when
+    nothing applies — plus ``per_repo_max_slots`` when the caller's
+    ``marshal.json`` still carries the inert key. That read never influences the
+    admitted cap, which comes solely from the machine-global resolver.
     """
     plan_id: str = args.plan_id
     queue_path = _resolve_queue_path()
@@ -505,6 +566,7 @@ def run_acquire(args: Namespace) -> dict[str, Any]:
         'id': outcome['id'],
         'admission': outcome['admission'],
         **_cap_fields(cap),
+        **_demotion_fields(cap),
         'active_count': outcome['active_count'],
         'waiting_count': outcome['waiting_count'],
         'queue_path': str(queue_path),

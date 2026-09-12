@@ -290,3 +290,122 @@ class TestMachineGlobalCap:
         assert result['max_slots'] == 5
         assert result['max_slots_source'] == 'invalid'
         assert result['max_slots_detail'] is not None
+
+
+# =============================================================================
+# The demoted per-repo key is REPORTED on every queued build
+# =============================================================================
+
+
+class TestPerRepoDemotionReport:
+    """The audible half of the demotion: the key does nothing AND says so.
+
+    The cap-is-unchanged half is asserted by :class:`TestMachineGlobalCap`
+    above. These tests assert the reporting half — without it the demotion is
+    silent, and an operator whose repository still sets the key would keep
+    believing a cap they do not have.
+    """
+
+    def _write_per_repo_cap(self, isolated_base: dict, value: object) -> None:
+        """Stage a per-repo ``build.queue.max_slots`` where the caller resolves it.
+
+        ``PLAN_BASE_DIR`` is what ``file_ops.get_tracked_config_dir`` returns
+        under this fixture, so this is the exact path ``run_acquire``'s
+        cwd-relative ``get_marshal_path()`` reads.
+        """
+        (isolated_base['base'] / 'marshal.json').write_text(
+            json.dumps({'build': {'queue': {'max_slots': value, 'max_retries': 10}}}), encoding='utf-8'
+        )
+
+    def test_a_present_per_repo_key_is_reported_as_not_in_effect(self, isolated_base: dict) -> None:
+        """The value is echoed back, explicitly flagged as inoperative."""
+        _set_max_slots(isolated_base['home'], 4)
+        self._write_per_repo_cap(isolated_base, 1)
+
+        result = build_queue.run_acquire(Namespace(plan_id='plan-a'))
+
+        assert result['per_repo_max_slots'] == {'value': 1, 'in_effect': False}
+
+    def test_a_present_per_repo_key_yields_exactly_one_warning(self, isolated_base: dict) -> None:
+        """One warning, not zero and not several.
+
+        The cardinality is the assertion: the wrapper deduplicates by ``code``
+        across re-polls, so a queue emitting the same condition twice per
+        acquire would make that deduplication load-bearing for correctness
+        rather than for noise.
+        """
+        _set_max_slots(isolated_base['home'], 4)
+        self._write_per_repo_cap(isolated_base, 1)
+
+        result = build_queue.run_acquire(Namespace(plan_id='plan-a'))
+
+        assert len(result['warnings']) == 1
+        assert result['warnings'][0]['code'] == 'per_repo_max_slots_not_in_effect'
+
+    def test_the_warning_names_the_repo_value_and_the_cap_in_effect(self, isolated_base: dict) -> None:
+        """Both numbers appear, so the operator can see which one won."""
+        _set_max_slots(isolated_base['home'], 4)
+        self._write_per_repo_cap(isolated_base, 1)
+
+        message = build_queue.run_acquire(Namespace(plan_id='plan-a'))['warnings'][0]['message']
+
+        assert str(isolated_base['base'] / 'marshal.json') in message
+        assert 'config migrate' in message
+
+    def test_no_per_repo_key_yields_an_empty_warnings_list(self, isolated_base: dict) -> None:
+        """``warnings`` is ALWAYS present — absent means nothing to say, not no key.
+
+        An optional key would let a consumer branch on presence and forget to
+        look; an always-present empty list is iterated unconditionally.
+        """
+        _set_max_slots(isolated_base['home'], 4)
+
+        result = build_queue.run_acquire(Namespace(plan_id='plan-a'))
+
+        assert result['warnings'] == []
+        assert 'per_repo_max_slots' not in result
+
+    def test_a_per_repo_key_is_reported_even_with_no_machine_config_at_all(self, isolated_base: dict) -> None:
+        """The commonest real case: a legacy repo key on an unconfigured host.
+
+        The cap in effect is the fallback 5, and the warning must still fire —
+        reporting only when a machine-global value happens to be set would leave
+        exactly the repositories that never migrated in silence.
+        """
+        self._write_per_repo_cap(isolated_base, 1)
+
+        result = build_queue.run_acquire(Namespace(plan_id='plan-a'))
+
+        assert result['max_slots'] == 5
+        assert result['max_slots_source'] == 'default'
+        assert result['per_repo_max_slots'] == {'value': 1, 'in_effect': False}
+        assert len(result['warnings']) == 1
+
+    def test_an_unusable_per_repo_value_is_still_reported_verbatim(self, isolated_base: dict) -> None:
+        """A value that could never be a cap is echoed as written, not corrected.
+
+        The report has to name what is in the operator's own file, or they
+        cannot find the key it is telling them about.
+        """
+        self._write_per_repo_cap(isolated_base, 0)
+
+        result = build_queue.run_acquire(Namespace(plan_id='plan-a'))
+
+        assert result['per_repo_max_slots'] == {'value': 0, 'in_effect': False}
+        assert len(result['warnings']) == 1
+
+    def test_a_repo_carrying_only_max_retries_yields_no_warning(self, isolated_base: dict) -> None:
+        """The matched negative control: ``max_retries`` is a LEGITIMATE per-repo key.
+
+        Without this, the tests above would pass equally against an
+        implementation that warned about any ``build.queue`` block at all — which
+        would fire on every correctly-migrated repository.
+        """
+        (isolated_base['base'] / 'marshal.json').write_text(
+            json.dumps({'build': {'queue': {'max_retries': 10, 'upper_limit_seconds': 600}}}), encoding='utf-8'
+        )
+
+        result = build_queue.run_acquire(Namespace(plan_id='plan-a'))
+
+        assert result['warnings'] == []
+        assert 'per_repo_max_slots' not in result

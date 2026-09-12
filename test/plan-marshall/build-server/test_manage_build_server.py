@@ -8,6 +8,17 @@ loader. Every test isolates the machine-global home root by pointing
 ``~/.plan-marshall/`` tree. The OS seams (``_spawn_detached`` / ``_signal`` /
 ``_ping``) are monkeypatched so no real daemon is launched, no real signal is
 sent, and no real socket is opened.
+
+The ``config`` verbs (``get`` / ``set`` / ``migrate``) span TWO files — the
+machine-global ``machine-config.json`` under the isolated home root, and the
+caller repository's ``marshal.json`` under the autouse ``_plan_base_dir_sandbox``
+— so every ``migrate`` outcome is asserted against a byte snapshot of BOTH.
+That pairing is the point rather than a formality: the verb's central guarantee
+is that it refuses instead of guessing, and a refusal is only a refusal if
+neither file moved. ``migrated`` and ``removed_duplicate`` are asserted on parsed
+content for ``marshal.json`` (``save_config`` canonicalises key order on every
+write, so its bytes legitimately change) and on bytes for ``machine-config.json``,
+which ``removed_duplicate`` must leave untouched.
 """
 
 from __future__ import annotations
@@ -70,6 +81,9 @@ _STATUS_ARGS = _verb_args('status')
 _INSTALL_ARGS = _verb_args('install')
 _UPGRADE_ARGS = _verb_args('upgrade')
 _LOGS_ARGS = _verb_args('logs')
+_CONFIG_GET_ARGS = _verb_args('config', 'get')
+_CONFIG_MIGRATE_ARGS = _verb_args('config', 'migrate')
+_CONFIG_SET_ARGS = _verb_args('config', 'set', '--max-slots', '7')
 
 
 @pytest.fixture
@@ -740,3 +754,547 @@ def test_logs_renders_legacy_row_fail_closed_with_unknown_fate(home):
     assert rendered['request_status'] == 'unknown'
     assert rendered['fate'] == 'unknown'
     assert 'outcome' not in rendered
+
+
+# =============================================================================
+# config get / set / migrate — the machine-global build-slot cap
+# =============================================================================
+
+
+def _machine_config_path(home: Path) -> Path:
+    """The machine-global cap file under the isolated home root."""
+    return home / 'marshalld' / 'machine-config.json'
+
+
+def _stage_machine_cap(home: Path, value: object) -> Path:
+    """Stage a well-formed machine config carrying ``max_slots=value``."""
+    path = _machine_config_path(home)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({'version': 1, 'build': {'queue': {'max_slots': value}}}), encoding='utf-8')
+    return path
+
+
+def _stage_machine_raw(home: Path, text: str) -> Path:
+    """Stage raw bytes at the machine-config path (for the unreadable case)."""
+    path = _machine_config_path(home)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding='utf-8')
+    return path
+
+
+def _repo_marshal_path() -> Path:
+    """The caller repository's marshal.json, as the verbs themselves resolve it.
+
+    Resolved through the production resolver rather than rebuilt from the
+    fixture, so the test writes to the exact path ``config get`` / ``config
+    migrate`` read. Under the autouse ``_plan_base_dir_sandbox`` this is the
+    per-test sandbox, and ``_config_core.MARSHAL_PATH`` is patched to the same
+    file — so the reader and the writer agree.
+    """
+    return Path(mbs.get_marshal_path())
+
+
+def _stage_repo_marshal(queue_block: dict | None, **extra: Any) -> Path:
+    """Stage a repository marshal.json carrying ``build.queue = queue_block``."""
+    path = _repo_marshal_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload: dict = dict(extra)
+    if queue_block is not None:
+        payload.setdefault('build', {})['queue'] = queue_block
+    path.write_text(json.dumps(payload, indent=2), encoding='utf-8')
+    return path
+
+
+def _snapshot(*paths: Path) -> dict[str, bytes | None]:
+    """Capture each path's exact bytes, or ``None`` when it does not exist.
+
+    ``None`` for a missing file is load-bearing: "both files unchanged" has to
+    cover "and the one that did not exist still does not", which a bytes-only
+    snapshot could not express.
+    """
+    return {str(p): (p.read_bytes() if p.exists() else None) for p in paths}
+
+
+def _both_files(home: Path) -> tuple[Path, Path]:
+    """The two files every migrate outcome is asserted against."""
+    return _machine_config_path(home), _repo_marshal_path()
+
+
+# --- config get --------------------------------------------------------------
+
+
+def test_config_get_reports_the_machine_cap_with_its_source_and_path(home):
+    """The cap is reported WITH its provenance, never as a bare number.
+
+    ``max_slots`` alone cannot distinguish a configured 5 from a fallback 5, so
+    an operator reading only the value cannot tell whether anyone ever set it.
+    """
+    _stage_machine_cap(home, 9)
+
+    result = mbs.run_config_get(_CONFIG_GET_ARGS)
+
+    assert result['status'] == 'success'
+    assert result['max_slots'] == 9
+    assert result['max_slots_source'] == 'machine_config'
+    assert result['path'] == str(_machine_config_path(home))
+
+
+def test_config_get_reports_an_unconfigured_host_as_default(home):
+    """An unconfigured host says ``default``, not silence."""
+    result = mbs.run_config_get(_CONFIG_GET_ARGS)
+
+    assert result['max_slots'] == 5
+    assert result['max_slots_source'] == 'default'
+
+
+def test_config_get_reports_a_broken_machine_config_as_unreadable(home):
+    """A broken file is named, never smoothed into "nothing configured"."""
+    _stage_machine_raw(home, '{broken')
+
+    result = mbs.run_config_get(_CONFIG_GET_ARGS)
+
+    assert result['max_slots_source'] == 'unreadable'
+    assert result['max_slots_detail'] is not None
+
+
+def test_config_get_reports_an_absent_per_repo_key_as_absent(home):
+    """``absent`` is stated explicitly rather than left as a missing key."""
+    _stage_repo_marshal({'max_retries': 10})
+
+    result = mbs.run_config_get(_CONFIG_GET_ARGS)
+
+    assert result['per_repo_max_slots'] == 'absent'
+
+
+def test_config_get_reports_a_present_per_repo_key_as_not_in_effect(home):
+    """The demoted key is echoed with ``in_effect: False`` spelled out.
+
+    Reporting the value without that flag would let a reader mistake it for the
+    cap actually in force — which is the entire confusion the demotion creates.
+    """
+    _stage_machine_cap(home, 9)
+    _stage_repo_marshal({'max_slots': 1, 'max_retries': 10})
+
+    result = mbs.run_config_get(_CONFIG_GET_ARGS)
+
+    assert result['per_repo_max_slots'] == {'value': 1, 'in_effect': False}
+    assert result['max_slots'] == 9
+
+
+def test_config_get_writes_neither_file(home):
+    """``get`` is read-only — it must not materialise the machine config."""
+    _stage_repo_marshal({'max_slots': 1})
+    before = _snapshot(*_both_files(home))
+
+    mbs.run_config_get(_CONFIG_GET_ARGS)
+
+    assert _snapshot(*_both_files(home)) == before
+
+
+# --- config set --------------------------------------------------------------
+
+
+def test_config_set_round_trips_through_get(home):
+    """What ``set`` writes is what ``get`` reads back, with source ``machine_config``."""
+    result = mbs.run_config_set(_CONFIG_SET_ARGS)
+
+    assert result['status'] == 'success'
+    assert result['max_slots'] == 7
+    assert result['max_slots_source'] == 'machine_config'
+    assert mbs.run_config_get(_CONFIG_GET_ARGS)['max_slots'] == 7
+
+
+def test_config_set_notes_that_a_running_daemon_needs_no_restart(home):
+    """The operator is told the daemon picks it up, so they do not restart it."""
+    result = mbs.run_config_set(_CONFIG_SET_ARGS)
+
+    assert 'next submit' in result['note']
+
+
+@pytest.mark.parametrize(
+    'bad',
+    [
+        pytest.param(0, id='zero'),
+        pytest.param(-1, id='negative'),
+        pytest.param(True, id='bool-true'),
+        pytest.param(2.5, id='float'),
+        pytest.param('8', id='string'),
+    ],
+)
+def test_config_set_rejects_a_value_that_cannot_be_a_cap(home, bad):
+    """An unusable cap is refused at the handler and never reaches disk.
+
+    ``True`` is here deliberately: ``bool`` is an ``int`` subclass, so without an
+    explicit guard a stored ``true`` would become a cap of 1 and serialize every
+    build on the host. The float and string rows cover an in-process caller,
+    which does not pass through argparse's ``type=int``.
+    """
+    result = mbs.run_config_set(_variant(_CONFIG_SET_ARGS, max_slots=bad))
+
+    assert result['status'] == 'error'
+    assert not _machine_config_path(home).exists()
+
+
+@pytest.mark.parametrize(
+    'raw',
+    [
+        pytest.param('true', id='bool-literal'),
+        pytest.param('8.5', id='float-literal'),
+        pytest.param('lots', id='word'),
+    ],
+)
+def test_config_set_rejects_a_non_integer_at_the_cli_boundary(home, raw):
+    """argparse's ``type=int`` refuses these before the handler ever runs.
+
+    Asserted separately from the handler-level rejection above because the two
+    are different boundaries: a CLI caller is stopped by the parser, an
+    in-process caller by the writer's own validation. Testing only one would
+    leave the other able to regress unnoticed.
+    """
+    with pytest.raises(SystemExit):
+        _verb_args('config', 'set', '--max-slots', raw)
+
+
+def test_config_set_repairs_an_invalid_machine_value(home):
+    """``set`` is the UNCONDITIONAL writer, so it is the repair path.
+
+    ``migrate`` refuses on an invalid machine value precisely because it must not
+    overwrite; something has to be able to fix it, and this is that verb.
+    """
+    _stage_machine_cap(home, -3)
+
+    result = mbs.run_config_set(_CONFIG_SET_ARGS)
+
+    assert result['max_slots'] == 7
+    assert result['max_slots_source'] == 'machine_config'
+
+
+def test_config_set_replaces_an_unreadable_machine_config(home):
+    """The same repair path covers a corrupt file, which nothing else can fix."""
+    _stage_machine_raw(home, '{not json')
+
+    result = mbs.run_config_set(_CONFIG_SET_ARGS)
+
+    assert result['max_slots'] == 7
+    assert result['max_slots_source'] == 'machine_config'
+
+
+def test_config_set_does_not_touch_the_repo_marshal_json(home):
+    """Setting the machine cap is not a migration — the repo file is untouched."""
+    _stage_repo_marshal({'max_slots': 1, 'max_retries': 10})
+    before = _snapshot(_repo_marshal_path())
+
+    mbs.run_config_set(_CONFIG_SET_ARGS)
+
+    assert _snapshot(_repo_marshal_path()) == before
+
+
+# --- config migrate: nothing_to_migrate --------------------------------------
+
+
+def test_migrate_with_no_per_repo_key_is_nothing_to_migrate(home):
+    """A repo that carries no cap key has nothing to move, and writes nothing."""
+    _stage_repo_marshal({'max_retries': 10})
+    before = _snapshot(*_both_files(home))
+
+    result = mbs.run_config_migrate(_CONFIG_MIGRATE_ARGS)
+
+    assert result['status'] == 'success'
+    assert result['outcome'] == 'nothing_to_migrate'
+    assert result['machine_config_modified'] is False
+    assert result['marshal_json_modified'] is False
+    assert _snapshot(*_both_files(home)) == before
+
+
+def test_migrate_with_no_marshal_json_at_all_is_nothing_to_migrate(home):
+    """An un-initialised project is a no-op success, not a crash."""
+    assert not _repo_marshal_path().exists()
+    before = _snapshot(*_both_files(home))
+
+    result = mbs.run_config_migrate(_CONFIG_MIGRATE_ARGS)
+
+    assert result['status'] == 'success'
+    assert result['outcome'] == 'nothing_to_migrate'
+    assert _snapshot(*_both_files(home)) == before
+
+
+# --- config migrate: migrated ------------------------------------------------
+
+
+def test_migrate_moves_the_value_when_nothing_is_set_machine_wide(home):
+    """The happy path: the value lands machine-wide and the repo key goes."""
+    _stage_repo_marshal({'max_slots': 12, 'max_retries': 10})
+
+    result = mbs.run_config_migrate(_CONFIG_MIGRATE_ARGS)
+
+    assert result['status'] == 'success'
+    assert result['outcome'] == 'migrated'
+    assert result['machine_config_modified'] is True
+    assert result['marshal_json_modified'] is True
+    assert result['max_slots'] == 12
+    assert result['max_slots_source'] == 'machine_config'
+
+
+def test_migrate_removes_only_the_cap_key_and_keeps_every_other(home):
+    """Exactly ONE key goes — ``max_retries``, the block, and siblings survive.
+
+    Asserted on parsed content rather than bytes because ``save_config``
+    canonicalises key order and formatting on every write; the contract is which
+    KEYS survive, not the file's byte layout.
+    """
+    _stage_repo_marshal(
+        {'max_slots': 12, 'max_retries': 10, 'upper_limit_seconds': 600},
+        project={'user_language': 'auto'},
+    )
+
+    mbs.run_config_migrate(_CONFIG_MIGRATE_ARGS)
+
+    payload = json.loads(_repo_marshal_path().read_text(encoding='utf-8'))
+    assert 'max_slots' not in payload['build']['queue']
+    assert payload['build']['queue']['max_retries'] == 10
+    assert payload['build']['queue']['upper_limit_seconds'] == 600
+    assert payload['project'] == {'user_language': 'auto'}
+
+
+def test_migrate_writes_the_value_into_the_machine_config(home):
+    """The machine-global file gains the repo's value, source ``machine_config``."""
+    _stage_repo_marshal({'max_slots': 12})
+
+    mbs.run_config_migrate(_CONFIG_MIGRATE_ARGS)
+
+    payload = json.loads(_machine_config_path(home).read_text(encoding='utf-8'))
+    assert payload['build']['queue']['max_slots'] == 12
+    assert mbs.run_config_get(_CONFIG_GET_ARGS)['max_slots_source'] == 'machine_config'
+
+
+def test_a_second_migrate_after_a_migration_is_nothing_to_migrate(home):
+    """Idempotence: the verb converges and does not keep reporting work."""
+    _stage_repo_marshal({'max_slots': 12, 'max_retries': 10})
+    mbs.run_config_migrate(_CONFIG_MIGRATE_ARGS)
+
+    result = mbs.run_config_migrate(_CONFIG_MIGRATE_ARGS)
+
+    assert result['outcome'] == 'nothing_to_migrate'
+
+
+# --- config migrate: removed_duplicate ---------------------------------------
+
+
+def test_migrate_with_an_equal_machine_value_removes_only_the_duplicate(home):
+    """Equal values need no copy — only the redundant repo key is removed."""
+    _stage_machine_cap(home, 12)
+    _stage_repo_marshal({'max_slots': 12, 'max_retries': 10})
+    machine_before = _snapshot(_machine_config_path(home))
+
+    result = mbs.run_config_migrate(_CONFIG_MIGRATE_ARGS)
+
+    assert result['status'] == 'success'
+    assert result['outcome'] == 'removed_duplicate'
+    assert result['machine_config_modified'] is False
+    assert result['marshal_json_modified'] is True
+    # The machine-global file is byte-identical: there was nothing to write.
+    assert _snapshot(_machine_config_path(home)) == machine_before
+    assert 'max_slots' not in json.loads(_repo_marshal_path().read_text(encoding='utf-8'))['build']['queue']
+
+
+# --- config migrate: refused (both files byte-identical) ---------------------
+
+
+def test_migrate_refuses_when_the_values_differ_and_changes_neither_file(home):
+    """The central guarantee: a disagreement is reported, never resolved.
+
+    Picking a winner is exactly what this verb must not do — a per-caller cap
+    over one shared queue is the disagreement the queue itself reports, so
+    silently choosing would install a cap the operator never chose.
+    """
+    _stage_machine_cap(home, 4)
+    _stage_repo_marshal({'max_slots': 12, 'max_retries': 10})
+    before = _snapshot(*_both_files(home))
+
+    result = mbs.run_config_migrate(_CONFIG_MIGRATE_ARGS)
+
+    assert result['status'] == 'error'
+    assert result['outcome'] == 'refused'
+    assert result['reason'] == 'values_differ'
+    assert result['machine_config_modified'] is False
+    assert result['marshal_json_modified'] is False
+    assert _snapshot(*_both_files(home)) == before
+
+
+def test_the_values_differ_refusal_names_both_values_and_both_ways_out(home):
+    """A refusal the operator cannot act on is only half a refusal."""
+    _stage_machine_cap(home, 4)
+    _stage_repo_marshal({'max_slots': 12})
+
+    result = mbs.run_config_migrate(_CONFIG_MIGRATE_ARGS)
+
+    assert result['per_repo_max_slots'] == 12
+    assert result['machine_max_slots'] == 4
+    assert 'config set --max-slots 12' in result['error']
+    assert str(_repo_marshal_path()) in result['error']
+
+
+@pytest.mark.parametrize(
+    ('staged', 'reason'),
+    [
+        pytest.param(0, 'machine_config_invalid', id='invalid-zero'),
+        pytest.param(-1, 'machine_config_invalid', id='invalid-negative'),
+        pytest.param(True, 'machine_config_invalid', id='invalid-bool'),
+    ],
+)
+def test_migrate_refuses_an_invalid_machine_value_byte_identically(home, staged, reason):
+    """An invalid machine value is NOT "unset" — the file exists and holds it.
+
+    Copying over it could discard a cap that is merely mistyped, so migrate
+    refuses and ``config set`` remains the repair path.
+    """
+    _stage_machine_cap(home, staged)
+    _stage_repo_marshal({'max_slots': 12})
+    before = _snapshot(*_both_files(home))
+
+    result = mbs.run_config_migrate(_CONFIG_MIGRATE_ARGS)
+
+    assert result['status'] == 'error'
+    assert result['outcome'] == 'refused'
+    assert result['reason'] == reason
+    assert _snapshot(*_both_files(home)) == before
+
+
+def test_migrate_refuses_an_unreadable_machine_config_byte_identically(home):
+    """The sharpest refusal: a cap may be configured in there and unreachable."""
+    _stage_machine_raw(home, '{broken')
+    _stage_repo_marshal({'max_slots': 12})
+    before = _snapshot(*_both_files(home))
+
+    result = mbs.run_config_migrate(_CONFIG_MIGRATE_ARGS)
+
+    assert result['status'] == 'error'
+    assert result['outcome'] == 'refused'
+    assert result['reason'] == 'machine_config_unreadable'
+    assert _snapshot(*_both_files(home)) == before
+
+
+@pytest.mark.parametrize(
+    'bad',
+    [
+        pytest.param(0, id='zero'),
+        pytest.param(-1, id='negative'),
+        pytest.param('8', id='string'),
+        pytest.param(True, id='bool-true'),
+    ],
+)
+def test_migrate_refuses_an_invalid_per_repo_value_byte_identically(home, bad):
+    """Copying a value that could never be a cap would install a broken cap.
+
+    The refusal is checked BEFORE the machine side is consulted, so the operator
+    is told about their own bad value rather than about a comparison made
+    against it.
+    """
+    _stage_repo_marshal({'max_slots': bad, 'max_retries': 10})
+    before = _snapshot(*_both_files(home))
+
+    result = mbs.run_config_migrate(_CONFIG_MIGRATE_ARGS)
+
+    assert result['status'] == 'error'
+    assert result['outcome'] == 'refused'
+    assert result['reason'] == 'per_repo_value_invalid'
+    assert _snapshot(*_both_files(home)) == before
+
+
+# --- config migrate: partial -------------------------------------------------
+
+
+def test_migrate_reports_partial_when_the_repo_edit_does_not_commit(home, monkeypatch):
+    """The machine write lands first, so a failed repo edit is RECOVERABLE.
+
+    The ordering is deliberate: the reverse order would delete the operator's
+    only record of the value before it was stored anywhere. ``partial`` names
+    exactly what happened rather than reporting a success or a clean refusal.
+    """
+    import _config_core
+
+    def _refuse(_config):
+        raise _config_core.ConcurrentConfigModificationError('marshal.json changed on disk')
+
+    _stage_repo_marshal({'max_slots': 12, 'max_retries': 10})
+    monkeypatch.setattr(_config_core, 'save_config', _refuse)
+
+    result = mbs.run_config_migrate(_CONFIG_MIGRATE_ARGS)
+
+    assert result['status'] == 'error'
+    assert result['outcome'] == 'partial'
+    assert result['machine_config_modified'] is True
+    assert result['marshal_json_modified'] is False
+    # The machine side IS settled, and the repo key IS still there.
+    assert json.loads(_machine_config_path(home).read_text(encoding='utf-8'))['build']['queue']['max_slots'] == 12
+    assert json.loads(_repo_marshal_path().read_text(encoding='utf-8'))['build']['queue']['max_slots'] == 12
+
+
+def test_a_re_run_after_partial_converges_to_removed_duplicate(home, monkeypatch):
+    """The recovery path the ``partial`` report promises actually works.
+
+    Without this the ``partial`` message would be an unverified claim — it tells
+    the operator to re-run, so the re-run has to converge.
+    """
+    import _config_core
+
+    real_save = _config_core.save_config
+
+    def _refuse(_config):
+        raise _config_core.ConcurrentConfigModificationError('marshal.json changed on disk')
+
+    _stage_repo_marshal({'max_slots': 12, 'max_retries': 10})
+    monkeypatch.setattr(_config_core, 'save_config', _refuse)
+    assert mbs.run_config_migrate(_CONFIG_MIGRATE_ARGS)['outcome'] == 'partial'
+
+    monkeypatch.setattr(_config_core, 'save_config', real_save)
+    result = mbs.run_config_migrate(_CONFIG_MIGRATE_ARGS)
+
+    assert result['status'] == 'success'
+    assert result['outcome'] == 'removed_duplicate'
+    assert 'max_slots' not in json.loads(_repo_marshal_path().read_text(encoding='utf-8'))['build']['queue']
+
+
+# --- config migrate: the concurrent-writer race ------------------------------
+
+
+def test_migrate_reclassifies_an_equal_value_that_lands_inside_the_guard(home, monkeypatch):
+    """A racing writer that set the SAME value converges to removed_duplicate.
+
+    Staged by having the conditional writer report "I did not write, and the
+    post-state holds 12" — which is what it returns when a concurrent
+    ``config set`` committed between the caller's resolve and the guarded write.
+    The repo key is then removed on the basis of the POST state, not the stale
+    pre-state.
+    """
+    _stage_repo_marshal({'max_slots': 12, 'max_retries': 10})
+    racing = mbs.CapResolution(value=12, source='machine_config', path=str(_machine_config_path(home)))
+    monkeypatch.setattr(mbs, 'write_max_slots_if_unset', lambda _v: (racing, False))
+
+    result = mbs.run_config_migrate(_CONFIG_MIGRATE_ARGS)
+
+    assert result['status'] == 'success'
+    assert result['outcome'] == 'removed_duplicate'
+    assert result['machine_config_modified'] is False
+    assert 'max_slots' not in json.loads(_repo_marshal_path().read_text(encoding='utf-8'))['build']['queue']
+
+
+def test_migrate_refuses_a_different_value_that_lands_inside_the_guard(home, monkeypatch):
+    """A racing writer that set a DIFFERENT value refuses, keeping the repo key.
+
+    This is the data-loss case the guarded re-resolve exists to prevent: on a
+    stale "unset" the verb would delete the repository's key while its value had
+    already been replaced by the racing writer, losing it entirely.
+    """
+    _stage_repo_marshal({'max_slots': 12, 'max_retries': 10})
+    before = _snapshot(_repo_marshal_path())
+    racing = mbs.CapResolution(value=4, source='machine_config', path=str(_machine_config_path(home)))
+    monkeypatch.setattr(mbs, 'write_max_slots_if_unset', lambda _v: (racing, False))
+
+    result = mbs.run_config_migrate(_CONFIG_MIGRATE_ARGS)
+
+    assert result['status'] == 'error'
+    assert result['outcome'] == 'refused'
+    assert result['reason'] == 'values_differ'
+    assert result['marshal_json_modified'] is False
+    assert _snapshot(_repo_marshal_path()) == before

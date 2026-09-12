@@ -9,8 +9,12 @@ operator drives to enrol a project and manage the machine-global build-server
 daemon. It is the **operator-interactivity wall** (S1) — ``register`` /
 ``unregister`` write the machine-global ``registry.json`` and live ONLY here,
 never in a dispatch's ``skills[]``, so a plan can never launder itself onto the
-served set. The daemon is strictly opt-in: registration IS the enable signal
-(there is no config knob and nothing git-tracked).
+served set. The daemon is strictly opt-in: registration IS the enable signal —
+there is no config knob that turns the daemon on and nothing git-tracked that
+does. That statement is about the ENABLE signal specifically; the build-slot cap
+does have a machine-wide setting, reached through the ``config`` verbs below and
+stored in the machine-global ``machine-config.json`` (host state, still nothing
+git-tracked).
 
 Verbs:
 
@@ -49,6 +53,18 @@ Verbs:
   Each row is rendered with an explicit ``kind`` label, and an interaction row
   carries its request-scoped ``request_status`` and the job's ``fate`` as two
   separate columns, so a per-request row can never be misread as a job record.
+* ``config get`` — report the machine-global build-slot cap with its source and
+  path, plus the caller project's per-repo ``build.queue.max_slots``: ``absent``,
+  or its value together with ``in_effect: false``. Read-only.
+* ``config set --max-slots N`` — set the machine-global cap. The unconditional
+  writer, and therefore the only verb that can repair an invalid or unreadable
+  machine-config value. A running daemon applies it on its next submit.
+* ``config migrate`` — move the caller repository's ``build.queue.max_slots`` to
+  its machine-global home in one step. It copies the value ONLY when nothing is
+  set machine-wide, then removes the per-repo key; when the two values differ it
+  changes NEITHER file and reports both. It never picks a winner — a per-caller
+  cap over one shared queue is a disagreement to surface, not to silently
+  resolve.
 
 Every lifecycle verb appends one JSON-lines entry to the append-only lifecycle
 audit log (``lifecycle-audit.log`` under the daemon state dir) so the daemon's
@@ -86,13 +102,23 @@ from _build_server_registry import (
     register_project,
     unregister_project,
 )
+from _machine_config import (
+    SOURCE_INVALID,
+    SOURCE_MACHINE_CONFIG,
+    SOURCE_UNREADABLE,
+    CapResolution,
+    read_per_repo_max_slots,
+    resolve_max_slots,
+    write_max_slots,
+    write_max_slots_if_unset,
+)
 from _marshalld_audit import (
     FATE_UNKNOWN,
     KIND_INTERACTION,
     KIND_JOB_FATE,
     InteractionAudit,
 )
-from file_ops import now_utc_iso
+from file_ops import get_marshal_path, now_utc_iso
 from marketplace_paths import main_checkout_root
 from triage_helpers import ErrorCode, make_error, print_toon, safe_main
 
@@ -932,6 +958,422 @@ def run_logs(args: Namespace) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# Machine-global build-slot cap (config get / set / migrate)
+# ---------------------------------------------------------------------------
+
+
+def _cap_report(cap: CapResolution) -> dict[str, Any]:
+    """Render a :class:`CapResolution` as the machine-global cap report fields.
+
+    ``max_slots_source`` and ``max_slots_detail`` ride along unconditionally,
+    including a ``None`` detail on a nominal resolution: the operator surface is
+    a report, and a key that appears only sometimes is one a reader learns to
+    stop looking for. The VALUE alone can never distinguish a configured 5 from
+    a fallback 5, which is why the source is not optional here.
+    """
+    return {
+        'max_slots': cap.value,
+        'max_slots_source': cap.source,
+        'max_slots_detail': cap.detail,
+        'path': cap.path,
+    }
+
+
+def _per_repo_report() -> dict[str, Any]:
+    """Report the caller project's per-repo cap key, which never takes effect.
+
+    Reads the CALLER's own ``marshal.json`` through the cwd-relative
+    :func:`file_ops.get_marshal_path` — the same "the caller's repo" question
+    ``config migrate`` asks, and deliberately NOT the cwd-independent resolver
+    the cap itself uses.
+
+    Returns:
+        ``{'per_repo_max_slots': 'absent', ...}`` when no key is present, else
+        the raw ``value`` together with ``in_effect: False`` — stated explicitly
+        rather than implied, so a reader of the report cannot mistake a reported
+        value for an operative one.
+    """
+    marshal_path = get_marshal_path()
+    raw = read_per_repo_max_slots(marshal_path)
+    if raw is None:
+        return {'per_repo_max_slots': 'absent', 'marshal_json_path': str(marshal_path)}
+    return {
+        'per_repo_max_slots': {'value': raw, 'in_effect': False},
+        'marshal_json_path': str(marshal_path),
+    }
+
+
+def run_config_get(_args: Namespace) -> dict[str, Any]:
+    """Report the machine-global build-slot cap and the caller's demoted key.
+
+    Read-only: it writes neither file. The two halves are reported together
+    because that pairing IS the operator's question — "what cap am I running
+    under, and is the key in my repository doing anything?" — and answering only
+    one half is what leaves an operator editing an inert key.
+    """
+    return {
+        'status': 'success',
+        'action': 'config get',
+        **_cap_report(resolve_max_slots()),
+        **_per_repo_report(),
+    }
+
+
+def run_config_set(args: Namespace) -> dict[str, Any]:
+    """Set the machine-global build-slot cap to ``--max-slots N``.
+
+    Rejects anything that cannot be a cap — a non-positive int, a non-int, and a
+    ``bool`` (argparse ``type=int`` already excludes the latter two from the CLI,
+    but the validation lives in the writer so an in-process caller is held to the
+    same contract). This is the UNCONDITIONAL writer: it replaces whatever is
+    there, which is also what makes it the only verb that can repair an invalid
+    or unreadable machine-config value.
+
+    The reported resolution is re-read from disk after the write, so the operator
+    sees what was actually persisted rather than what was requested.
+    """
+    try:
+        cap = write_max_slots(args.max_slots)
+    except ValueError as exc:
+        return make_error(str(exc), code=ErrorCode.INVALID_INPUT, action='config set')
+    except TimeoutError as exc:
+        return make_error(str(exc), code=ErrorCode.TIMEOUT, action='config set')
+    return {
+        'status': 'success',
+        'action': 'config set',
+        **_cap_report(cap),
+        'note': (
+            'A running daemon applies the new cap on its next submit — it re-resolves '
+            'the cap per submit, so no restart is required.'
+        ),
+    }
+
+
+def _remove_per_repo_max_slots() -> dict[str, Any]:
+    """Delete ONLY ``build.queue.max_slots`` from the caller's ``marshal.json``.
+
+    Writes through :mod:`_config_core`'s own :func:`load_config` /
+    :func:`save_config` — the writer ``manage-providers`` and ``marshall-steward
+    upgrade`` already use from outside ``manage-config`` — so the canonical
+    top-level key order and the concurrent-modification fingerprint guard both
+    apply and NO second ``marshal.json`` writer is introduced.
+
+    The import is deliberately deferred into this function: ``_config_core``
+    binds ``MARSHAL_PATH`` at import time, so importing it at module scope would
+    make every OTHER verb in this script depend on a resolvable ``marshal.json``
+    — and ``register`` / ``start`` / ``status`` must keep working in a checkout
+    that has none.
+
+    ``max_retries`` and every other key in the ``build.queue`` block survive, as
+    does the block itself: the demotion is of ONE key, not of the queue's config.
+
+    Returns:
+        ``{'status': 'success'}`` on a committed removal, else an error payload
+        naming ``concurrent_modification`` — the guard refusing to clobber a
+        concurrent writer, which is recoverable by re-running, not a crash.
+    """
+    from _config_core import (
+        ConcurrentConfigModificationError,
+        load_config,
+        save_config,
+    )
+
+    config = load_config()
+    queue = config.get('build', {}).get('queue')
+    if isinstance(queue, dict):
+        queue.pop('max_slots', None)
+    try:
+        save_config(config)
+    except ConcurrentConfigModificationError as exc:
+        # No ErrorCode member names "a guard declined to clobber a concurrent
+        # writer", and borrowing a member that means something else would route
+        # this to the wrong handler. The named `reason` IS the routing key here.
+        return make_error(str(exc), reason='concurrent_modification')
+    return {'status': 'success'}
+
+
+def _migrate_refused(reason: str, message: str, **extra: Any) -> dict[str, Any]:
+    """Build a ``refused`` payload — nothing was mutated on either side.
+
+    Every refusal is reported with BOTH files untouched, which is the verb's
+    central guarantee: a migration that cannot pick a winner must not leave the
+    operator half-migrated, so it declines rather than choosing.
+    """
+    # No `code=`: a refusal is a well-typed outcome of this verb, not a generic
+    # failure, and the `outcome` / `reason` pair is what a caller branches on.
+    # Borrowing an ErrorCode member that means something else would misroute it.
+    return make_error(
+        message,
+        action='config migrate',
+        outcome='refused',
+        reason=reason,
+        machine_config_modified=False,
+        marshal_json_modified=False,
+        **extra,
+    )
+
+
+def _classify_machine_side(cap: CapResolution, per_repo_value: int, marshal_path: str) -> dict[str, Any] | None:
+    """Refuse when the machine-global side is not safely writable, else ``None``.
+
+    The three refusals share one shape and one reason: something IS on the
+    machine-global side, so copying over it would destroy it.
+
+    * :data:`SOURCE_UNREADABLE` / :data:`SOURCE_INVALID` — the file exists and
+      holds something. It is emphatically NOT "unset": a cap may well be
+      configured there and merely unreachable or mistyped, and overwriting it
+      would silently discard an operator's setting. ``config set`` is the verb
+      that repairs those; migrate is not.
+    * :data:`SOURCE_MACHINE_CONFIG` with a DIFFERENT value — the disagreement
+      deliverable 4 reports at the queue is the same disagreement here, and
+      picking a winner is precisely what this verb declines to do.
+
+    :data:`SOURCE_MACHINE_CONFIG` with an EQUAL value is not a refusal (it is
+    ``removed_duplicate``), and :data:`SOURCE_DEFAULT` is the migratable state;
+    both return ``None``.
+    """
+    if cap.source == SOURCE_UNREADABLE:
+        return _migrate_refused(
+            'machine_config_unreadable',
+            (
+                f'refusing to migrate: the machine-global config at {cap.path} exists but cannot be read '
+                f'({cap.detail}). It is not unset, so copying build.queue.max_slots={per_repo_value!r} over it '
+                f'could discard a configured cap. Repair or remove {cap.path}, then re-run config migrate.'
+            ),
+            machine_config_path=cap.path,
+            marshal_json_path=marshal_path,
+            per_repo_max_slots=per_repo_value,
+        )
+    if cap.source == SOURCE_INVALID:
+        return _migrate_refused(
+            'machine_config_invalid',
+            (
+                f'refusing to migrate: the machine-global config at {cap.path} holds an invalid '
+                f'build.queue.max_slots ({cap.detail}). It is not unset, so copying '
+                f'build.queue.max_slots={per_repo_value!r} over it could discard a configured cap. '
+                f'Fix it with `config set --max-slots N`, then re-run config migrate.'
+            ),
+            machine_config_path=cap.path,
+            marshal_json_path=marshal_path,
+            per_repo_max_slots=per_repo_value,
+        )
+    if cap.source == SOURCE_MACHINE_CONFIG and cap.value != per_repo_value:
+        return _migrate_refused(
+            'values_differ',
+            (
+                f'refusing to migrate: {marshal_path} sets build.queue.max_slots={per_repo_value!r} while the '
+                f'machine-global cap at {cap.path} is {cap.value}. Neither file was changed. Either accept the '
+                f'repository value machine-wide with `config set --max-slots {per_repo_value}` and re-run '
+                f'config migrate, or accept the machine-global {cap.value} by deleting '
+                f'build.queue.max_slots from {marshal_path}.'
+            ),
+            machine_config_path=cap.path,
+            marshal_json_path=marshal_path,
+            per_repo_max_slots=per_repo_value,
+            machine_max_slots=cap.value,
+        )
+    return None
+
+
+def run_config_migrate(_args: Namespace) -> dict[str, Any]:
+    """Move this repository's build-slot cap to its machine-global home, in one step.
+
+    The whole verb is defined by what it refuses to do: it copies the repository
+    value machine-wide ONLY when nothing is configured there, and when the two
+    sides disagree it changes NEITHER file and reports both values. Picking a
+    winner is not a convenience here — a per-caller cap over one shared queue is
+    the disagreement the queue itself reports, so silently resolving it would
+    install a cap the operator never chose.
+
+    Outcomes:
+
+    * ``nothing_to_migrate`` — no per-repo key (or no ``marshal.json``). Nothing
+      written.
+    * ``migrated`` — the machine-global side is unset; the value is copied there
+      and the per-repo key removed.
+    * ``removed_duplicate`` — the machine-global side already holds the SAME
+      value; only the per-repo key is removed and ``machine-config.json`` is left
+      byte-identical.
+    * ``refused`` (``status: error``) — ``values_differ``,
+      ``machine_config_invalid``, ``machine_config_unreadable``, or
+      ``per_repo_value_invalid``. Both files byte-identical.
+    * ``partial`` (``status: error``) — the machine-global side is settled but
+      the ``marshal.json`` edit did not commit. Re-running converges via
+      ``removed_duplicate``.
+
+    The machine-global write happens FIRST and is ordered that way deliberately:
+    if the repository edit then fails, the recoverable state is "value is
+    machine-wide, key still present", which a re-run completes. The reverse order
+    would delete the operator's only record of the value before it was stored
+    anywhere.
+    """
+    marshal_path = str(get_marshal_path())
+    per_repo_raw = read_per_repo_max_slots(marshal_path)
+    if per_repo_raw is None:
+        return {
+            'status': 'success',
+            'action': 'config migrate',
+            'outcome': 'nothing_to_migrate',
+            'detail': (
+                f'{marshal_path} carries no build.queue.max_slots (the file may not exist) — '
+                'there is nothing to migrate.'
+            ),
+            'machine_config_modified': False,
+            'marshal_json_modified': False,
+            'marshal_json_path': marshal_path,
+        }
+
+    # Validate BEFORE consulting the machine side: copying a value that could
+    # never be a cap would install a broken cap machine-wide, and reporting the
+    # repository's own bad value is more useful than reporting a comparison
+    # against it.
+    if isinstance(per_repo_raw, bool) or not isinstance(per_repo_raw, int) or per_repo_raw <= 0:
+        return _migrate_refused(
+            'per_repo_value_invalid',
+            (
+                f'refusing to migrate: {marshal_path} sets build.queue.max_slots={per_repo_raw!r}, which is not a '
+                'positive integer and could not be a valid cap. Correct or delete the key, then re-run '
+                'config migrate.'
+            ),
+            marshal_json_path=marshal_path,
+            per_repo_max_slots=per_repo_raw,
+        )
+
+    cap = resolve_max_slots()
+    refusal = _classify_machine_side(cap, per_repo_raw, marshal_path)
+    if refusal is not None:
+        return refusal
+
+    if cap.source == SOURCE_MACHINE_CONFIG:
+        # Equal values — the machine side is already correct, so ONLY the
+        # redundant per-repo key goes and machine-config.json is not touched.
+        removal = _remove_per_repo_max_slots()
+        if removal.get('status') != 'success':
+            return {
+                **removal,
+                'action': 'config migrate',
+                'outcome': 'partial',
+                'machine_config_modified': False,
+                'marshal_json_modified': False,
+                'detail': (
+                    f'the machine-global cap at {cap.path} already holds {cap.value}, but removing '
+                    f'build.queue.max_slots from {marshal_path} did not commit. Nothing was changed on either '
+                    'side; re-run config migrate to complete it.'
+                ),
+                'machine_config_path': cap.path,
+                'marshal_json_path': marshal_path,
+            }
+        return {
+            'status': 'success',
+            'action': 'config migrate',
+            'outcome': 'removed_duplicate',
+            'machine_config_modified': False,
+            'marshal_json_modified': True,
+            'detail': (
+                f'the machine-global cap at {cap.path} already held {cap.value}; removed the redundant '
+                f'build.queue.max_slots from {marshal_path} and left machine-config.json untouched. '
+                'marshal.json is git-tracked — commit the edit.'
+            ),
+            **_cap_report(cap),
+            'marshal_json_path': marshal_path,
+        }
+
+    # The machine side is unset. Copy the value there under the write guard, which
+    # re-resolves INSIDE the guard — so a concurrent set/migrate that landed since
+    # the resolve above is observed and preserved rather than overwritten.
+    try:
+        post, wrote = write_max_slots_if_unset(per_repo_raw)
+    except (ValueError, TimeoutError) as exc:
+        return _migrate_refused(
+            'machine_config_write_failed',
+            f'refusing to migrate: the machine-global write did not happen ({exc}). Neither file was changed.',
+            marshal_json_path=marshal_path,
+            per_repo_max_slots=per_repo_raw,
+        )
+
+    if not wrote:
+        # A concurrent writer won the race. Re-classify from the POST state — the
+        # repository's key is never removed on the strength of a stale "unset".
+        refusal = _classify_machine_side(post, per_repo_raw, marshal_path)
+        if refusal is not None:
+            return refusal
+        if post.source != SOURCE_MACHINE_CONFIG:
+            return _migrate_refused(
+                'machine_config_unresolved',
+                (
+                    f'refusing to migrate: the machine-global write was skipped but {post.path} did not resolve '
+                    f'to a configured cap (source={post.source}). Neither file was changed.'
+                ),
+                machine_config_path=post.path,
+                marshal_json_path=marshal_path,
+                per_repo_max_slots=per_repo_raw,
+            )
+        # Equal value landed concurrently — this is removed_duplicate, reached by
+        # the race path rather than by the check above.
+        removal = _remove_per_repo_max_slots()
+        if removal.get('status') != 'success':
+            return {
+                **removal,
+                'action': 'config migrate',
+                'outcome': 'partial',
+                'machine_config_modified': False,
+                'marshal_json_modified': False,
+                'detail': (
+                    f'a concurrent writer set the machine-global cap at {post.path} to {post.value}, matching this '
+                    f'repository, but removing build.queue.max_slots from {marshal_path} did not commit. '
+                    'Re-run config migrate to complete it.'
+                ),
+                'machine_config_path': post.path,
+                'marshal_json_path': marshal_path,
+            }
+        return {
+            'status': 'success',
+            'action': 'config migrate',
+            'outcome': 'removed_duplicate',
+            'machine_config_modified': False,
+            'marshal_json_modified': True,
+            'detail': (
+                f'a concurrent writer had already set the machine-global cap at {post.path} to {post.value}, '
+                f'matching this repository; removed the redundant build.queue.max_slots from {marshal_path}. '
+                'marshal.json is git-tracked — commit the edit.'
+            ),
+            **_cap_report(post),
+            'marshal_json_path': marshal_path,
+        }
+
+    removal = _remove_per_repo_max_slots()
+    if removal.get('status') != 'success':
+        return {
+            **removal,
+            'action': 'config migrate',
+            'outcome': 'partial',
+            'machine_config_modified': True,
+            'marshal_json_modified': False,
+            'detail': (
+                f'the machine-global cap at {post.path} was written as {post.value}, but build.queue.max_slots is '
+                f'STILL present in {marshal_path} — its removal did not commit. Re-run config migrate to '
+                'complete the migration through the removed_duplicate branch.'
+            ),
+            **_cap_report(post),
+            'marshal_json_path': marshal_path,
+        }
+
+    return {
+        'status': 'success',
+        'action': 'config migrate',
+        'outcome': 'migrated',
+        'machine_config_modified': True,
+        'marshal_json_modified': True,
+        'detail': (
+            f'moved build.queue.max_slots={per_repo_raw} from {marshal_path} to the machine-global '
+            f'{post.path}. marshal.json is git-tracked — commit the edit.'
+        ),
+        **_cap_report(post),
+        'marshal_json_path': marshal_path,
+    }
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -1003,6 +1445,42 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         ),
     )
     logs.set_defaults(func=run_logs)
+
+    config = sub.add_parser(
+        'config',
+        help='Read, set, or migrate the machine-global build-slot cap.',
+        allow_abbrev=False,
+    )
+    config_sub = config.add_subparsers(dest='config_command', required=True)
+    config_sub.add_parser(
+        'get',
+        help=(
+            'Report the machine-global max_slots with its source and path, plus this '
+            "project's per-repo key (absent, or its value with in_effect: false)."
+        ),
+        allow_abbrev=False,
+    ).set_defaults(func=run_config_get)
+    config_set = config_sub.add_parser(
+        'set',
+        help='Set the machine-global max_slots (a running daemon applies it on its next submit).',
+        allow_abbrev=False,
+    )
+    config_set.add_argument(
+        '--max-slots',
+        type=int,
+        required=True,
+        help='The machine-global build-slot cap — a positive integer.',
+    )
+    config_set.set_defaults(func=run_config_set)
+    config_sub.add_parser(
+        'migrate',
+        help=(
+            "Move this repository's build.queue.max_slots machine-wide in one step: copied only "
+            'when nothing is set machine-wide, per-repo key removed, and refused with neither file '
+            'changed when the two values differ.'
+        ),
+        allow_abbrev=False,
+    ).set_defaults(func=run_config_migrate)
     return parser
 
 

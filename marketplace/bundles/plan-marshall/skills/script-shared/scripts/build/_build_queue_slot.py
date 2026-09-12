@@ -22,6 +22,12 @@ ever called) enforce the no-stacking invariant.
 This module is a **pure concurrency limiter**: it admits, waits, and releases
 build-queue slots and does nothing else. It writes no terminal-title state.
 
+The one thing it additionally *reports* is the queue's own ``warnings`` — today,
+a surviving per-repo ``build.queue.max_slots`` that no longer takes effect. Each
+is surfaced once per invocation, deduplicated by ``code`` across the blocked
+re-polls (see :func:`_surface_warnings`), to stderr and to the plan work log. A
+warning never blocks, delays, or aborts the build; reporting is not gating.
+
 Behaviour:
 
 * **routed → NO-OP passthrough.** When ``routed`` is true the build already ran
@@ -76,6 +82,7 @@ from typing import Any
 
 from file_ops import get_marshal_path, read_json
 from marketplace_paths import names_real_plan
+from plan_logging import log_entry
 
 logger = logging.getLogger(__name__)
 
@@ -197,6 +204,49 @@ def _acquire(plan_id: str) -> dict[str, Any]:
     return result if isinstance(result, dict) else {'status': 'error', 'error': 'non-dict acquire result'}
 
 
+def _surface_warnings(result: dict[str, Any], plan_id: str, seen: set[str]) -> None:
+    """Surface each new ``acquire`` warning to stderr and the plan work log.
+
+    Emission mirrors ``_build_execute_factory._record_resolution``: stderr
+    unconditionally (the only sink a build subprocess has without a configured
+    logging handler — a ``logger.warning`` call here would be discarded), and the
+    plan's captured work log at ``WARNING`` when ``plan_id`` names a real plan.
+
+    **Deduplicated by ``code``, not by message.** ``seen`` is created once per
+    :func:`build_queue_slot` invocation and threaded through every re-poll, so a
+    build that blocks and re-polls N times reports the demoted-key warning ONCE
+    rather than N+1 times. The code is the stable identity for this: a message
+    embeds the live cap resolution, so two messages for one condition can differ
+    in text while naming the same problem, and deduplicating on text would let
+    the queue spam a blocked build.
+
+    A warning is a report, never a verdict: nothing here blocks, delays, or
+    aborts the build. Malformed entries are skipped rather than raised on,
+    because a queue result that fails to describe itself must not take down a
+    build that was legitimately admitted.
+
+    Args:
+        result: The ``acquire`` result dict.
+        plan_id: The acquiring plan. The ``names_real_plan`` test below is
+            redundant at the sole call site — :func:`build_queue_slot` already
+            returned early for a plan-less build — and is kept so the emitter
+            owns its own precondition rather than inheriting it from a caller.
+        seen: Codes already surfaced during this invocation; mutated in place.
+    """
+    for warning in result.get('warnings') or []:
+        if not isinstance(warning, dict):
+            continue
+        code = warning.get('code')
+        message = warning.get('message')
+        if not isinstance(code, str) or not isinstance(message, str) or code in seen:
+            continue
+        seen.add(code)
+        line = f'[BUILD-QUEUE] {message}'
+        print(line, file=sys.stderr)
+        if names_real_plan(plan_id):
+            log_entry('work', plan_id, 'WARNING', line)
+
+
 def _release(plan_id: str, admission_id: str) -> None:
     """Best-effort release of ``admission_id`` (logged, never raised).
 
@@ -237,12 +287,19 @@ def _wait_for_admission(plan_id: str, max_retries: int) -> str:
     :class:`BuildQueueTimeout` when still blocked after ``max_retries`` re-polls
     (the final queued id IS released first, as cleanup, so an exhausted plan does
     not leak a waiting entry).
+
+    Each ``acquire`` result's ``warnings`` are surfaced through
+    :func:`_surface_warnings`, deduplicated by ``code`` across every re-poll via
+    the ``seen`` set created here — so the whole wait reports a given condition
+    once, not once per poll.
     """
+    seen: set[str] = set()
     result = _acquire(plan_id)
     if result.get('status') != 'success':
         # acquire is NOT best-effort: a queue we cannot reach is a hard failure.
         raise RuntimeError(f'build_queue acquire failed for {plan_id!r}: {result.get("error")}')
 
+    _surface_warnings(result, plan_id, seen)
     admission_id = str(result['id'])
     if result.get('admission') == 'admitted':
         return admission_id
@@ -265,6 +322,7 @@ def _wait_for_admission(plan_id: str, max_retries: int) -> str:
             result = _acquire(plan_id)
             if result.get('status') != 'success':
                 raise RuntimeError(f'build_queue acquire failed for {plan_id!r}: {result.get("error")}')
+            _surface_warnings(result, plan_id, seen)
             admission_id = str(result['id'])
             if result.get('admission') == 'admitted':
                 return admission_id

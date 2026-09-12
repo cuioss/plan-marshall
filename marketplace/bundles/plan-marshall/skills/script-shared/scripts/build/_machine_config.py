@@ -48,19 +48,44 @@ Config layout (``machine-config.json``)::
 The key path mirrors ``marshal.json``'s ``build.queue.max_slots`` exactly, so a
 message about the cap names an identical path whichever file it came from.
 
+**A surviving per-repo key never takes effect, and says so.**
+:func:`read_per_repo_max_slots` reads a repository's demoted
+``build.queue.max_slots`` for the sole purpose of REPORTING it, never of
+resolving a cap from it. :func:`per_repo_max_slots_warning` renders that report:
+the per-repo path and value, the machine-global value/source/path actually in
+effect, and the one-step fix. The two are deliberately separate from
+:func:`resolve_max_slots`, which never consults a repository at all — the cap and
+the report about a stale key are different questions, and fusing them is how a
+per-repo value creeps back into the admitted budget.
+
 **Concurrency correctness.** Writes go through
 :func:`file_ops.atomic_write_file` (temp file + ``os.replace``), so a concurrent
-reader observes either the old or the new file and never a torn one. The read
-path takes no lock: it is a single atomic-replace-consistent read, performed
-OUTSIDE the build queue's ``rmw_json`` critical section exactly where the
-previous per-caller resolver ran, so it opens no new check-then-act window
+reader observes either the old or the new file and never a torn one. Both
+writers — :func:`write_max_slots` and :func:`write_max_slots_if_unset` —
+additionally serialize on ONE ``O_EXCL`` guard file
+(``machine-config.json.lock``, with the stale-guard reclaim ``_locks_core`` uses),
+because :func:`write_max_slots_if_unset` is a check-then-act: its "is the cap
+unset?" test and its write must not be separable, or two repositories migrating
+concurrently would both observe ``default``, both write, and one would report a
+successful migration whose value had already been overwritten. The guarded
+re-resolve inside :func:`write_max_slots_if_unset` is what closes that window.
+Deliberately NOT routed through :func:`_locks_core.rmw_json`: its read treats a
+missing OR CORRUPT file as ``{}``, which would let a conditional write overwrite
+an unreadable file a caller must refuse on — the very distinction this module
+exists to preserve. Concurrent :func:`write_max_slots` calls remain
+last-writer-wins, each write individually atomic.
+
+The read path takes no lock: it is a single atomic-replace-consistent read,
+performed OUTSIDE the build queue's ``rmw_json`` critical section exactly where
+the previous per-caller resolver ran, so it opens no new check-then-act window
 against the queue. See the TOCTOU / check-then-act menu in
 ``ref-code-quality/standards/code-organization.md#toctou--check-then-act-hazards``.
 
 Usage:
     from _machine_config import (
         CapResolution, DEFAULT_MAX_SLOTS, machine_config_path,
-        resolve_max_slots, write_max_slots,
+        per_repo_max_slots_warning, read_per_repo_max_slots,
+        resolve_max_slots, write_max_slots, write_max_slots_if_unset,
     )
 
     resolution = resolve_max_slots()
@@ -69,8 +94,10 @@ Usage:
 
 from __future__ import annotations
 
+import errno
 import json
 import os
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -96,6 +123,24 @@ so the cap default is defined here and nowhere else.
 
 _MACHINE_CONFIG_SUBDIR = 'marshalld'
 _MACHINE_CONFIG_FILENAME = 'machine-config.json'
+
+# Guard-file spin parameters for the write serialization, mirroring
+# `_locks_core`'s idiom (a fixed small backoff over a bounded budget, with a
+# stale guard reclaimed so a crashed writer cannot wedge the file permanently).
+# The values are deliberately the same magnitudes: a cap write is an equally
+# short critical section, and two coordination guards on one host that time out
+# differently is a difference with no reason behind it.
+_GUARD_BACKOFF_SECONDS = 0.01
+_GUARD_TIMEOUT_SECONDS = 30.0
+_GUARD_STALE_SECONDS = 60.0
+_GUARD_SUFFIX = '.lock'
+
+WARNING_PER_REPO_MAX_SLOTS_NOT_IN_EFFECT = 'per_repo_max_slots_not_in_effect'
+"""Warning ``code`` for a surviving per-repo ``build.queue.max_slots`` key.
+
+The code — not the message text — is what consumers deduplicate on, so it is a
+named constant rather than a literal repeated at each emission site.
+"""
 
 _DIR_MODE = 0o700
 """State-directory mode — owner-only (machine-global state is not world-listable)."""
@@ -124,6 +169,17 @@ def machine_config_dir() -> Path:
 def machine_config_path() -> Path:
     """Return the path to the machine-global ``machine-config.json``."""
     return machine_config_dir() / _MACHINE_CONFIG_FILENAME
+
+
+def machine_config_guard_path() -> Path:
+    """Return the write-serialization guard path beside the machine config.
+
+    ONE guard for BOTH writers (:func:`write_max_slots` and
+    :func:`write_max_slots_if_unset`), because they contend for the same file and
+    a guard each would serialize neither against the other.
+    """
+    path = machine_config_path()
+    return path.with_name(f'{path.name}{_GUARD_SUFFIX}')
 
 
 def ensure_machine_config_dir() -> Path:
@@ -288,40 +344,171 @@ def resolve_max_slots() -> CapResolution:
 
 
 # =============================================================================
+# Per-repo demotion (report only — never a cap source)
+# =============================================================================
+
+MIGRATE_COMMAND = 'python3 .plan/execute-script.py plan-marshall:manage-build-server:manage_build_server config migrate'
+"""The one-step fix the not-in-effect warning names. A single definition, because
+a command an operator is told to run must be copy-pasteable and identical
+wherever it is quoted."""
+
+_SET_COMMAND = (
+    'python3 .plan/execute-script.py plan-marshall:manage-build-server:manage_build_server config set --max-slots N'
+)
+
+
+def read_per_repo_max_slots(marshal_path: str | Path) -> Any:
+    """Return a repository's raw ``build.queue.max_slots``, or ``None`` if absent.
+
+    This reader exists to REPORT a demoted key, never to resolve a cap from it —
+    :func:`resolve_max_slots` consults no repository at all. It therefore returns
+    the value **raw and unvalidated**: a caller reporting "your marshal.json sets
+    this and it does nothing" must echo back what is actually written there,
+    including a value that could never have been a valid cap. Validation belongs
+    to whichever caller would COPY the value (see
+    :func:`write_max_slots_if_unset`'s callers), not to the act of reading it.
+
+    Args:
+        marshal_path: The repository's ``marshal.json`` path — supplied by the
+            caller (typically ``file_ops.get_marshal_path()``, the cwd-relative
+            resolver, which is the correct resolver here precisely because the
+            question IS about the caller's own repository).
+
+    Returns:
+        The raw value at ``build.queue.max_slots``, or ``None`` when the file is
+        absent, unreadable, unparseable, not a JSON object, or simply does not
+        carry the key. All of those collapse deliberately: there is no key to
+        report, and a build's admission path is the wrong place to raise about a
+        repository config it only wanted to describe.
+    """
+    try:
+        text = Path(marshal_path).read_text(encoding='utf-8')
+    except OSError:
+        return None
+    try:
+        payload = json.loads(text)
+    except ValueError:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    build = payload.get('build')
+    if not isinstance(build, dict):
+        return None
+    queue = build.get('queue')
+    if not isinstance(queue, dict):
+        return None
+    return queue.get('max_slots')
+
+
+def per_repo_max_slots_warning(
+    marshal_path: str | Path,
+    per_repo_value: Any,
+    cap: CapResolution,
+) -> dict[str, str]:
+    """Build the ``per_repo_max_slots_not_in_effect`` warning for a demoted key.
+
+    The message states all three things an operator needs in order to act
+    without going to look anything up: what their repository says, what is
+    ACTUALLY in effect (value, source and path — the source included because the
+    cap value alone cannot distinguish a configured 5 from a fallback 5), and the
+    exact commands that resolve it. A warning that named only "this key does
+    nothing" would leave the operator to discover the machine-global home and its
+    verbs on their own.
+
+    Args:
+        marshal_path: The repository config carrying the demoted key.
+        per_repo_value: The raw value read by :func:`read_per_repo_max_slots`.
+        cap: The machine-global resolution actually in effect.
+
+    Returns:
+        ``{'code': ..., 'message': ...}`` — ``code`` is
+        :data:`WARNING_PER_REPO_MAX_SLOTS_NOT_IN_EFFECT`, the stable identity
+        consumers deduplicate on.
+    """
+    return {
+        'code': WARNING_PER_REPO_MAX_SLOTS_NOT_IN_EFFECT,
+        'message': (
+            f'{marshal_path} sets build.queue.max_slots={per_repo_value!r}, which is NOT in effect: '
+            f'the build-slot cap is machine-global. The cap in effect is {cap.value} '
+            f'(source={cap.source}, path={cap.path}). '
+            f'To move this repository onto the machine-global cap in one step, run: {MIGRATE_COMMAND} — '
+            f'or set the machine-global value yourself with `{_SET_COMMAND}` '
+            f'and then delete build.queue.max_slots from {marshal_path}.'
+        ),
+    }
+
+
+# =============================================================================
 # Cap write
 # =============================================================================
 
 
-def write_max_slots(value: int) -> CapResolution:
-    """Persist ``build.queue.max_slots`` machine-wide, preserving sibling keys.
+def _acquire_guard(guard_path: Path) -> int:
+    """Acquire the ``O_EXCL`` write guard, returning the open fd.
 
-    The existing file is read first and rewritten with only the cap replaced, so
-    any other key it carries survives the write. An existing file that cannot be
-    read or parsed is REPLACED rather than merged into — there is no readable
-    prior state to preserve, and refusing here would leave a corrupt file
-    unfixable through the only verb that writes this file.
+    Mirrors :func:`_locks_core._acquire_guard` rather than importing it: that
+    module belongs to ``manage-locks``, which sits ABOVE this one in the
+    dependency order (``build_queue.py`` imports ``_machine_config``, so the
+    reverse import would be a cycle through a layering inversion).
 
-    The write is atomic (temp file + ``os.replace`` via
-    :func:`file_ops.atomic_write_file`), so a concurrent reader sees the old or
-    the new file and never a partial one. Concurrent writers are
-    last-writer-wins, each write individually atomic.
-
-    Args:
-        value: The cap to store — a positive ``int``. A ``bool`` is rejected
-            even though it is an ``int`` subclass.
-
-    Returns:
-        The :class:`CapResolution` describing the stored state, re-resolved from
-        disk so the caller reports what was actually persisted rather than what
-        it intended to persist.
+    Spins with a fixed small backoff until the guard is free or the budget
+    elapses. A guard older than :data:`_GUARD_STALE_SECONDS` is reclaimed (a
+    crashed writer left it behind) and the create is re-attempted; if a third
+    process won the race in between, the create loses cleanly (``EEXIST``) and
+    the spin continues.
 
     Raises:
-        ValueError: when ``value`` is not a positive, non-``bool`` ``int``.
+        TimeoutError: when the guard cannot be acquired within the budget.
     """
-    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
-        raise ValueError(f'max_slots must be a positive integer, got {value!r}')
+    guard_path.parent.mkdir(parents=True, exist_ok=True)
+    deadline = time.monotonic() + _GUARD_TIMEOUT_SECONDS
+    while True:
+        try:
+            return os.open(str(guard_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+        except OSError as exc:
+            if exc.errno != errno.EEXIST:
+                raise
+        # The guard is held — reclaim it if stale, else spin.
+        try:
+            age = time.time() - guard_path.stat().st_mtime
+        except OSError:
+            age = 0.0
+        if age > _GUARD_STALE_SECONDS:
+            try:
+                os.unlink(str(guard_path))
+            except OSError:
+                pass  # Someone else already reclaimed it — fall through to retry.
+            continue
+        if time.monotonic() >= deadline:
+            raise TimeoutError(
+                f'could not acquire machine-config write guard {guard_path} within {_GUARD_TIMEOUT_SECONDS}s'
+            )
+        time.sleep(_GUARD_BACKOFF_SECONDS)
 
-    ensure_machine_config_dir()
+
+def _release_guard(fd: int, guard_path: Path) -> None:
+    """Close and remove the write guard (always from a ``finally``)."""
+    os.close(fd)
+    try:
+        os.unlink(str(guard_path))
+    except OSError:
+        pass
+
+
+def _write_cap_unguarded(value: int) -> None:
+    """Persist ``value`` to the machine config. Caller MUST hold the write guard.
+
+    Split out so both writers share one payload-merge-and-commit path while the
+    guard is acquired by each of them at its own scope — the conditional writer
+    needs its re-resolve INSIDE the guard, which an all-in-one writer could not
+    express.
+
+    The existing file is read first and rewritten with only the cap replaced, so
+    any other key it carries survives. An existing file that cannot be read or
+    parsed is REPLACED rather than merged into — there is no readable prior state
+    to preserve, and refusing here would leave a corrupt file unfixable through
+    the only verb that writes it.
+    """
     path = machine_config_path()
     payload, _unreadable_detail = _read_machine_config(path)
     if payload is None:
@@ -341,4 +528,111 @@ def write_max_slots(value: int) -> CapResolution:
     atomic_write_file(path, json.dumps(payload, indent=2))
     if (path.stat().st_mode & 0o777) != _FILE_MODE:
         os.chmod(path, _FILE_MODE)
-    return resolve_max_slots()
+
+
+def _validate_cap(value: int) -> None:
+    """Reject anything that cannot be a cap, ``bool`` included.
+
+    Raises:
+        ValueError: when ``value`` is not a positive, non-``bool`` ``int``.
+    """
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise ValueError(f'max_slots must be a positive integer, got {value!r}')
+
+
+def write_max_slots_if_unset(value: int) -> tuple[CapResolution, bool]:
+    """Write the cap machine-wide ONLY when nothing is configured there yet.
+
+    This is the migration writer, and its whole value is that it does NOT
+    overwrite. The "is it unset?" test therefore runs INSIDE the write guard,
+    immediately before the write, against a fresh :func:`resolve_max_slots` — so
+    a machine-global value committed by a concurrent ``config set`` / ``config
+    migrate`` after the caller's own earlier resolve is observed here and
+    preserved. A caller that tested outside the guard and wrote inside it would
+    report a successful migration whose value had already been replaced, and
+    would then delete its repository's key on the strength of that stale
+    "unset" — the exact silent data loss this function exists to prevent.
+
+    "Unset" means *only* :data:`SOURCE_DEFAULT` (the file or the key is absent).
+    :data:`SOURCE_INVALID` and :data:`SOURCE_UNREADABLE` are NOT unset: the file
+    exists and holds something. Writing over them would destroy a cap that may
+    well be configured and merely unreachable, so both leave the file
+    byte-identical and are reported back for the caller to refuse on. This is why
+    the re-resolve goes through :func:`resolve_max_slots` and not through a
+    missing-or-corrupt-reads-as-``{}`` helper, which would collapse exactly the
+    three states that must stay distinct.
+
+    Args:
+        value: The cap to store — a positive ``int`` (``bool`` rejected).
+
+    Returns:
+        ``(resolution, wrote)`` where ``resolution`` is the POST-state read from
+        disk — what is actually in effect now, whether or not this call is what
+        put it there — and ``wrote`` says whether this call performed the write.
+        Both are needed: ``wrote`` alone cannot tell a caller what the surviving
+        value is, and the resolution alone cannot tell it whose value that is.
+
+    Raises:
+        ValueError: when ``value`` is not a positive, non-``bool`` ``int``.
+        TimeoutError: when the write guard cannot be acquired.
+    """
+    _validate_cap(value)
+
+    ensure_machine_config_dir()
+    guard_path = machine_config_guard_path()
+    fd = _acquire_guard(guard_path)
+    try:
+        existing = resolve_max_slots()
+        if existing.source != SOURCE_DEFAULT:
+            return existing, False
+        _write_cap_unguarded(value)
+        return resolve_max_slots(), True
+    finally:
+        _release_guard(fd, guard_path)
+
+
+def write_max_slots(value: int) -> CapResolution:
+    """Persist ``build.queue.max_slots`` machine-wide, preserving sibling keys.
+
+    This is the UNCONDITIONAL writer — the operator's ``config set``, which is
+    meant to replace whatever is there, including an invalid or unreadable value
+    (it is the only verb that can repair one). Its conditional sibling
+    :func:`write_max_slots_if_unset` is the migration writer that refuses to
+    overwrite.
+
+    The existing file is read first and rewritten with only the cap replaced, so
+    any other key it carries survives the write. An existing file that cannot be
+    read or parsed is REPLACED rather than merged into — there is no readable
+    prior state to preserve, and refusing here would leave a corrupt file
+    unfixable through the only verb that writes this file.
+
+    The write is atomic (temp file + ``os.replace`` via
+    :func:`file_ops.atomic_write_file`), so a concurrent reader sees the old or
+    the new file and never a partial one. It takes the SAME write guard as
+    :func:`write_max_slots_if_unset`, so it cannot land between that function's
+    guarded re-resolve and its write; two concurrent ``config set`` calls remain
+    last-writer-wins, which is the intended semantics for an unconditional set.
+
+    Args:
+        value: The cap to store — a positive ``int``. A ``bool`` is rejected
+            even though it is an ``int`` subclass.
+
+    Returns:
+        The :class:`CapResolution` describing the stored state, re-resolved from
+        disk so the caller reports what was actually persisted rather than what
+        it intended to persist.
+
+    Raises:
+        ValueError: when ``value`` is not a positive, non-``bool`` ``int``.
+        TimeoutError: when the write guard cannot be acquired.
+    """
+    _validate_cap(value)
+
+    ensure_machine_config_dir()
+    guard_path = machine_config_guard_path()
+    fd = _acquire_guard(guard_path)
+    try:
+        _write_cap_unguarded(value)
+        return resolve_max_slots()
+    finally:
+        _release_guard(fd, guard_path)
