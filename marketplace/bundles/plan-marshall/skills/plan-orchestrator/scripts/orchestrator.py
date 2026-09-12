@@ -2440,19 +2440,72 @@ def _live_plan_records() -> list[dict[str, Any]]:
     so the live plan set is enumerated through ``_cmd_sibling_collision``'s own
     active-plan walk and each plan contributes its ``source_id`` origin and its
     ``references.json`` ``affected_files`` surface.
+
+    A live plan with an empty path set declares no comparable surface (before
+    footprint capture it has nothing to compare), so it is flagged
+    ``comparable: False`` — the live-side analog of a spec in any
+    :data:`SURFACE_INDETERMINATE_STATES` state. An empty set contributes no
+    overlap row at all, so without the flag its absence from the match list is
+    indistinguishable from a checked negative.
     """
     records: list[dict[str, Any]] = []
     for plan_id, plan_dir in sorted(_iter_active_plan_dirs().items()):
         _, source_id = _read_request_source(plan_dir)
         pointers = _spec_pointers(source_id) if source_id else set()
+        paths = _read_affected_files(plan_dir)
         records.append(
             {
                 'name': plan_id,
                 'pointers': pointers,
-                'paths': _read_affected_files(plan_dir),
+                'paths': paths,
+                'comparable': bool(paths),
             }
         )
     return records
+
+
+def _glob_stem(container: str) -> str:
+    """The stem of a recursive-glob entry, without the trailing ``**``.
+
+    ``test/plan-marshall/**`` stems to ``test/plan-marshall``; the root glob
+    ``**`` stems to ``''``. The caller guarantees ``container`` ends with
+    ``**`` — the ``recursive_glob`` kind :func:`epic_spec_parser._entry_kind`
+    resolves, consulted read-only with no claim-membership change.
+    """
+    return container[:-2].rstrip('/')
+
+
+def _contains(container: str, contained: str) -> bool:
+    """Whether ``container`` contains ``contained`` under the stated rule.
+
+    A ``recursive_glob`` entry (path ending in ``**``) contains another
+    entry's normalized path when that path equals the glob stem or starts
+    with ``stem + '/'``. A ``directory`` entry (path ending in ``'/'``)
+    contains another entry when that entry equals the directory or starts
+    with it. Every other kind — ``file`` and ``filename_glob`` — never
+    contains: a ``filename_glob`` with no ``'/'`` never contains across
+    directories, and matching without a ``'/'`` boundary (bare
+    substring/prefix) never counts, so the matcher does not loosen into
+    serializing non-colliding plans.
+    """
+    if not container or not contained or container == contained:
+        return False
+    if container.endswith('**'):
+        stem = _glob_stem(container)
+        if not stem:
+            return True
+        if contained.endswith('**'):
+            other = _glob_stem(contained)
+        elif contained.endswith('/'):
+            other = contained.rstrip('/')
+        else:
+            other = contained
+        return other == stem or other.startswith(stem + '/')
+    if container.endswith('/'):
+        if contained.rstrip('/') == container.rstrip('/'):
+            return True
+        return contained.startswith(container)
+    return False
 
 
 def _collision_rows(
@@ -2461,12 +2514,25 @@ def _collision_rows(
     """Score one spec/candidate pair on the two collision classes.
 
     The classes are ``_cmd_sibling_collision``'s, unchanged — a shared
-    source-origin id (primary) and an exact normalized file-path overlap
-    (secondary). No third similarity notion is introduced, and neither row is
+    source-origin id (primary) and a normalized file-path overlap
+    (secondary) that is exact equality plus the stated containment
+    extension: a ``recursive_glob`` (or ``directory``) entry contains
+    another entry's normalized path under :func:`_contains`. No third
+    similarity notion is introduced, and neither row is
     ever a bare score: each names the overlapping surface.
     """
     shared_origin = sorted(spec['pointers'] & candidate['pointers'])
-    overlap = sorted(spec['paths'] & candidate['paths'])
+    exact = spec['paths'] & candidate['paths']
+    contained: set[str] = set()
+    for left in spec['paths']:
+        for right in candidate['paths']:
+            if left == right:
+                continue
+            if _contains(left, right):
+                contained.add(right)
+            elif _contains(right, left):
+                contained.add(left)
+    overlap = sorted(exact | contained)
     origin_row = (
         {
             'spec': spec['name'],
@@ -2556,6 +2622,33 @@ def cmd_corpus_cross_check(args: argparse.Namespace) -> dict[str, Any]:
     own_unreadable_count = len(own_paths) - len(own)
     own_tally[SURFACE_UNREADABLE] += own_unreadable_count
     comparable = [record for record in own if record['paths']]
+    # The live-side population the file-overlap class actually COMPARED. A live
+    # plan with an empty path set declares no comparable surface, so it can form
+    # no overlap row at all — the live-side analog of a spec in any
+    # SURFACE_INDETERMINATE_STATES state. Without these keys a
+    # ``file_overlap_match_count: 0`` over live candidates cannot state which
+    # zero it is: nothing collided, or nothing was comparable. An indeterminate
+    # live plan never renders as disjoint: it is named in
+    # ``live_indeterminate_plans`` and counted in ``live_could_not_check_count``,
+    # never in the checked-and-clean count.
+    live_plan_surfaces = [
+        {'plan': record['name'], 'comparable': bool(record.get('comparable', bool(record['paths'])))}
+        for record in live
+    ]
+    live_indeterminate_plans = sorted(
+        record['name'] for record in live if not record.get('comparable', bool(record['paths']))
+    )
+    live_comparable_records = [
+        record for record in live if record.get('comparable', bool(record['paths']))
+    ]
+    live_matched_names = {
+        row['candidate'] for row in origin_matches if row.get('candidate_kind') == 'live_plan'
+    } | {
+        row['candidate'] for row in overlap_matches if row.get('candidate_kind') == 'live_plan'
+    }
+    live_checked_and_clean = sorted(
+        record['name'] for record in live_comparable_records if record['name'] not in live_matched_names
+    )
     return {
         'status': 'success',
         'operation': 'corpus-cross-check',
@@ -2573,6 +2666,17 @@ def cmd_corpus_cross_check(args: argparse.Namespace) -> dict[str, Any]:
         'compared_path_count': sum(len(record['paths']) for record in own),
         'spec_surface_states': [{'derivation_status': state, 'count': own_tally[state]} for state in SURFACE_STATES],
         'spec_surfaces': own_surfaces,
+        # The comparison's live population: checked-and-clean (compared, no
+        # overlap and no shared origin) versus could-not-check (no comparable
+        # surface), so a zero overlap over live candidates states which zero it
+        # is. The indeterminate names are the population that was not checked.
+        'live_plans_comparable': len(live_comparable_records),
+        'live_plans_indeterminate': len(live_indeterminate_plans),
+        'live_indeterminate_plans': live_indeterminate_plans,
+        'live_plan_surfaces': live_plan_surfaces,
+        'live_checked_and_clean_count': len(live_checked_and_clean),
+        'live_checked_and_clean': live_checked_and_clean,
+        'live_could_not_check_count': len(live_indeterminate_plans),
         'source_origin_match_count': len(origin_matches),
         'source_origin_matches': origin_matches,
         'file_overlap_match_count': len(overlap_matches),

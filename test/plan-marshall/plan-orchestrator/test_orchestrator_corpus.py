@@ -1865,6 +1865,119 @@ class TestCrossCheckFileOverlapClass:
         assert result['candidates_scanned'] == 1
 
 
+class TestCrossCheckContainmentMatching:
+    """Containment-aware overlap: a recursive glob or directory contains a path.
+
+    Red-first guards for the disjointness-gate comparability fix: exact
+    equality alone reads a glob claim and a file claim as disjoint, so the
+    matcher learns the stated `/`-boundary containment rule with its
+    deliberate non-matches pinned beside it.
+    """
+
+    CONTAINED_FILE = 'test/plan-marshall/plan-orchestrator/test_orchestrator_corpus.py'
+
+    def test_should_match_a_recursive_glob_containing_a_file(self, plan_context):
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(
+            plan_context,
+            'PLAN-01-alpha.md',
+            surface_lines=_surface('test/plan-marshall/**'),
+        )
+        _write_live_plan(plan_context, LIVE_PLAN_ID, affected_files=[self.CONTAINED_FILE])
+
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        assert result['file_overlap_match_count'] == 1
+        row = result['file_overlap_matches'][0]
+        assert row['candidate_kind'] == 'live_plan'
+        assert row['overlap_count'] == 1
+        assert row['overlapping_files'] == self.CONTAINED_FILE
+
+    def test_should_match_a_directory_containing_a_file(self, plan_context):
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(
+            plan_context,
+            'PLAN-01-alpha.md',
+            surface_lines=_surface('test/plan-marshall/'),
+        )
+        _write_live_plan(plan_context, LIVE_PLAN_ID, affected_files=[self.CONTAINED_FILE])
+
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        assert result['file_overlap_match_count'] == 1
+        row = result['file_overlap_matches'][0]
+        assert row['overlap_count'] == 1
+        assert row['overlapping_files'] == self.CONTAINED_FILE
+
+    def test_should_never_contain_through_a_filename_glob_without_slash(self):
+        spec = {'name': 'spec', 'pointers': set(), 'paths': {'*.py'}}
+        candidate = {'name': 'candidate', 'pointers': set(), 'paths': {'test/plan-marshall/foo.py'}}
+
+        _, overlap_row = _orch._collision_rows(spec, candidate, 'live_plan')
+
+        assert overlap_row is None
+
+    def test_should_never_count_a_bare_prefix_without_slash_boundary(self):
+        spec = {'name': 'spec', 'pointers': set(), 'paths': {'test/plan-marshall/**'}}
+        candidate = {'name': 'candidate', 'pointers': set(), 'paths': {'test/plan-marshall-other/foo.py'}}
+
+        _, overlap_row = _orch._collision_rows(spec, candidate, 'live_plan')
+
+        assert overlap_row is None
+
+    def test_should_stay_silent_for_a_glob_and_an_unrelated_surface(self, plan_context):
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(
+            plan_context,
+            'PLAN-01-alpha.md',
+            surface_lines=_surface('test/plan-marshall/**'),
+        )
+        _write_live_plan(plan_context, LIVE_PLAN_ID, affected_files=[OTHER_PATH])
+
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        assert result['file_overlap_match_count'] == 0
+        assert result['collision_detected'] is False
+
+
+class TestCrossCheckLiveIndeterminatePopulation:
+    """Named indeterminate live population: could-not-check never reads as clean.
+
+    Red-first guards for the live-side comparability fix: a live plan with no
+    ``affected_files`` declares no comparable surface, so the payload must name
+    it in the indeterminate population and keep checked-and-clean apart from
+    could-not-check — otherwise its zero overlap reads as a clean disjoint.
+    """
+
+    def test_should_report_an_unfootprinted_live_plan_as_indeterminate(self, plan_context):
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
+        _write_live_plan(plan_context, LIVE_PLAN_ID, affected_files=[])
+
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        assert result['live_indeterminate_plans'] == [LIVE_PLAN_ID]
+        assert result['live_plans_indeterminate'] == 1
+        assert result['live_could_not_check_count'] == 1
+        assert result['live_plans_comparable'] == 0
+        assert result['live_checked_and_clean_count'] == 0
+        assert result['file_overlap_match_count'] == 0
+        assert all(row['candidate'] != LIVE_PLAN_ID for row in result['file_overlap_matches'])
+
+    def test_should_still_compare_a_footprinted_live_plan_normally(self, plan_context):
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
+        _write_live_plan(plan_context, LIVE_PLAN_ID, affected_files=[SHARED_PATH])
+
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        assert result['file_overlap_match_count'] == 1
+        assert result['live_plans_comparable'] == 1
+        assert result['live_could_not_check_count'] == 0
+        assert result['live_indeterminate_plans'] == []
+        assert result['live_checked_and_clean_count'] == 0
+
+
 class TestCrossCheckUnreadable:
     """Report-never-skip, on BOTH sides of the comparison."""
 
