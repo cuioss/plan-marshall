@@ -218,6 +218,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -876,7 +877,8 @@ def _resolve_main_root() -> Path:
     main-anchored: the lessons corpus (`.plan/local/lessons-learned`), the global
     log corpus (`.plan/local/logs`), the merge-lock logs, the single append-only
     change-ledger (`.plan/work/change-ledger.jsonl`), and the project config
-    (`.plan/marshal.json`, `.plan/run-configuration.json`). One copy of each
+    (`.plan/marshal.json`, `.plan/local/run-configuration.json` — the path
+    `get_run_config_path()` resolves to, and the only one that file sits at). One copy of each
     exists per machine and it lives in the main checkout; a linked worktree either
     lacks them outright or carries only the sliver belonging to the plan currently
     executing there.
@@ -2805,9 +2807,10 @@ _LOG_BENIGN_PROBE_SUBCOMMANDS = frozenset({'exists', 'read', 'get', 'list', 'fin
 # run far longer — #849's adaptive ci-wait ratchet grows the ci-wait budget as
 # observed durations rise — so bounding them at 600 s falsely flagged every
 # ratcheted ci-wait as "impossible". Those calls are instead bounded by the
-# ratcheted ci-wait ceiling read inline from `run-configuration.json` (see
-# `_ratcheted_ci_wait_ceiling`), so a long-but-legitimate ci-wait lands in the
-# *slow* band, not the *impossible* one.
+# ratcheted ci-wait ceiling read inline from the main-anchored
+# `.plan/local/run-configuration.json` and the machine-global `build-queue.json`
+# (see `_ratcheted_ci_wait_ceiling`), so a long-but-legitimate ci-wait lands in
+# the *slow* band, not the *impossible* one.
 _IMPOSSIBLE_DURATION_SECONDS = 600.0
 
 # Build / ci-wait / sonar-CE / merge-wait call classifier over the global-log
@@ -2837,37 +2840,39 @@ def _ratcheted_ci_wait_ceiling(repo_root: Path) -> float:
     """Inline-read the ratcheted ci-wait impossible-duration ceiling.
 
     #849's adaptive ci-wait ratchet persists a per-command timeout under
-    `commands.{key}.timeout_seconds` in `run-configuration.json` that grows as
-    observed ci-wait durations rise; `build.queue.upper_limit_seconds` is the
-    companion ratcheted build-queue ceiling. A build / ci-wait call running near
-    either ratcheted value is legitimate, not an impossible-duration artifact, so
-    the global-log check bounds those calls by the MAX of the persisted ceilings
-    (never below the flat `_IMPOSSIBLE_DURATION_SECONDS` floor). Inline read (no
-    manage-* dispatch) per the skill's inline-reader rule; degrades to the flat
-    ceiling when the config or the ratcheted values are absent.
+    `commands.{key}.timeout_seconds` in the main-anchored
+    `.plan/local/run-configuration.json` — the location `get_run_config_path()`
+    resolves to, and the only path that file ever sits at. The companion
+    ratcheted build-queue reap threshold is machine-global, because it is applied
+    to every repo's entries in the one host-wide build queue: it is the top-level
+    `upper_limit_seconds` field of `build-queue.json` under the home root
+    (`PLAN_MARSHALL_HOME` when set, otherwise `~/.plan-marshall`). A build /
+    ci-wait call running near either ratcheted value is legitimate, not an
+    impossible-duration artifact, so the global-log check bounds those calls by
+    the MAX of the persisted ceilings (never below the flat
+    `_IMPOSSIBLE_DURATION_SECONDS` floor). Both reads are inline (no manage-*
+    dispatch) per the skill's inline-reader rule, and each degrades to the flat
+    ceiling independently — an absent or unreadable source contributes no
+    ceiling of its own and never suppresses the other.
     """
-    try:
-        config = read_json(repo_root / '.plan' / 'run-configuration.json')
-    except (OSError, ValueError):
-        return _IMPOSSIBLE_DURATION_SECONDS
-    if not isinstance(config, dict):
-        return _IMPOSSIBLE_DURATION_SECONDS
     ceilings: list[float] = [_IMPOSSIBLE_DURATION_SECONDS]
-    commands = config.get('commands')
-    if isinstance(commands, dict):
-        for key, entry in commands.items():
-            if not (isinstance(entry, dict) and _is_build_or_ci_wait_call(str(key))):
-                continue
-            secs = entry.get('timeout_seconds')
-            if isinstance(secs, (int, float)) and secs > 0:
-                ceilings.append(float(secs))
-    build = config.get('build')
-    if isinstance(build, dict):
-        queue = build.get('queue')
-        if isinstance(queue, dict):
-            secs = queue.get('upper_limit_seconds')
-            if isinstance(secs, (int, float)) and secs > 0:
-                ceilings.append(float(secs))
+    config = read_json(repo_root / '.plan' / 'local' / 'run-configuration.json')
+    if isinstance(config, dict):
+        commands = config.get('commands')
+        if isinstance(commands, dict):
+            for key, entry in commands.items():
+                if not (isinstance(entry, dict) and _is_build_or_ci_wait_call(str(key))):
+                    continue
+                secs = entry.get('timeout_seconds')
+                if isinstance(secs, (int, float)) and secs > 0:
+                    ceilings.append(float(secs))
+    home = os.environ.get('PLAN_MARSHALL_HOME')
+    home_root = Path(home) if home else Path.home() / '.plan-marshall'
+    queue_state = read_json(home_root / 'build-queue.json')
+    if isinstance(queue_state, dict):
+        secs = queue_state.get('upper_limit_seconds')
+        if isinstance(secs, (int, float)) and secs > 0:
+            ceilings.append(float(secs))
     return max(ceilings)
 
 

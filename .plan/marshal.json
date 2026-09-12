@@ -189,8 +189,7 @@
   },
   "build": {
     "queue": {
-      "max_retries": 10,
-      "upper_limit_seconds": 600
+      "max_retries": 10
     },
     "map": {
       "python": [

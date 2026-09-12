@@ -32,14 +32,15 @@ FIFO-promote. The self-healing reaper :func:`validate_lock_queue` runs implicitl
 at the start of EVERY acquire and release — inside the SAME ``rmw_json``
 mutation — and reaps any active entry whose age (``now - active_since``) exceeds
 ``2 × build_queue_upper_limit`` (the adaptive, monotonic-up, clamped ``[600 s,
-3600 s]`` threshold tracked in the main-anchored ``run-configuration.json``),
+3600 s]`` threshold held as a TOP-LEVEL field of the machine-global
+``build-queue.json`` itself — see **The reap threshold is machine-global too**),
 freeing the slot, FIFO-promoting waiters, and emitting a WARN ``[LOCK]``
 ``reaped-stale`` event. This complements the dead-holder prune
 (:func:`_prune_dead_active`): the prune clears a holder whose plan dir is GONE,
 the reaper clears a hard-killed (``SIGKILL``-past-``finally``) holder whose plan
 dir still exists.
 
-It exposes two actions:
+It exposes four actions — two slot actions and two threshold actions:
 
   * ``acquire`` — resolve the admission for ``--plan-id`` **idempotently** under
     the serialized read-modify-write: first run the implicit
@@ -65,11 +66,17 @@ It exposes two actions:
     when capacity allows (stamping the promoted entry's ``active_since``), and —
     only on a real release — append an id+timestamp entry to the ``run_log``,
     pruning it to the most recent 100 entries so ``build-queue.json`` stays
-    bounded. After the commit it recomputes the adaptive
-    ``build_queue_upper_limit`` from the released entry's held duration
+    bounded. In the SAME mutation it recomputes the adaptive
+    ``upper_limit_seconds`` from the released entry's held duration
     (``now - active_since``), persisting ``max(current, held)`` clamped to
     ``[600 s, 3600 s]`` so the reap threshold tracks the longest observed real
     build without ever exceeding a 1 h ceiling.
+  * ``limit get`` — report the reap threshold in effect and its ``source``, plus
+    the caller's own retired per-repo value when one survives (see **The reap
+    threshold is machine-global too**). Read-only.
+  * ``limit set --value N`` — set the threshold (a positive int, clamped to
+    ``[600 s, 3600 s]``) through the same serialized ``rmw_json`` mutation every
+    other write to this file uses.
 
 **Machine-global resolution — the host-wide home-root tier:** the queue file
 resolves under the machine-global home root (:func:`marketplace_paths.home_root`,
@@ -95,6 +102,35 @@ the default. Every ``acquire`` / ``release`` result therefore reports
 ``max_slots_source`` beside ``max_slots`` (plus ``max_slots_detail`` when that
 source is not ``machine_config``), because the value alone cannot distinguish a
 configured 5 from a fallback 5.
+
+**The reap threshold is machine-global too.** ``upper_limit_seconds`` is a
+TOP-LEVEL field of ``build-queue.json`` — the same file whose entries it governs —
+rather than a per-repo key in the main-anchored ``run-configuration.json``. It
+moved for the reason ADR-008 names as the hazard of placing host-wide state under
+a per-repo anchor: the reap threshold is applied to EVERY repository's entries in
+the one machine-global queue, so a per-repo value meant a repo that had never
+seen a long build could reap another repo's live long build early, while each
+repo's releases ratcheted only its own copy. Living in the queue's own state
+makes it single-valued host-wide by construction.
+
+Its resolution states its source, for the same reason the cap's does: ``queue_state``
+for a valid positive ``int`` (a ``bool`` is rejected though it is an ``int``
+subclass), and ``default_floor`` when the field is absent or unusable — the
+fallback IS the floor, so the value alone cannot distinguish a configured 600
+from an unconfigured one.
+
+The threshold is read and written INSIDE the queue's own ``rmw_json`` critical
+section on every path: the reaper reads it from the state it is already mutating,
+``release`` recomputes ``max(current, held)`` there too, and ``limit set`` writes
+through the same mutation. That closes a real window the previous design had — the
+old release path wrote the recomputed limit to a SEPARATE file outside the queue's
+critical section, a non-atomic read-modify-write of ``run-configuration.json``.
+
+**A surviving per-repo reap threshold is reported, never honoured.** ``limit get``
+reads the caller's own main-anchored ``run-configuration.json`` for the SOLE
+purpose of reporting a surviving ``build.queue.upper_limit_seconds`` as
+``per_repo_value`` with ``in_effect: false``. That read never reaches the applied
+threshold — exactly the shape the demoted per-repo cap key already has below.
 
 **A surviving per-repo cap key is reported, never honoured.** ``acquire`` reads
 the CALLER's own ``marshal.json`` — via the cwd-relative
@@ -202,6 +238,8 @@ logging failure is swallowed and cannot affect admission/release.
 
 from __future__ import annotations
 
+import argparse
+import json
 import time
 import uuid
 from argparse import Namespace
@@ -221,13 +259,9 @@ from marketplace_paths import (
     ensure_home_root,
     main_checkout_root,
 )
-from run_config import (
-    _read_build_queue_upper_limit,
-    _write_build_queue_upper_limit,
-)
+from run_config import get_run_config_path
 from triage_helpers import (
     ErrorCode,
-    create_workflow_cli,
     make_error,
     print_toon,
     safe_main,
@@ -259,6 +293,38 @@ stamp is a comparison that did not happen, and reporting it as agreement is the
 scope-limited-negative-as-clean-negative error ADR-009 forbids.
 """
 
+UPPER_LIMIT_FIELD = 'upper_limit_seconds'
+"""Top-level ``build-queue.json`` field holding the adaptive reap threshold.
+
+A top-level field of the queue's OWN state, not a nested per-repo config key: the
+threshold governs every repository's entries in this one machine-global queue, so
+it belongs to the queue rather than to any one caller's repository.
+"""
+
+UPPER_LIMIT_FLOOR_SECONDS = 600
+"""Floor for the adaptive reap threshold, and the value an unset field reads as.
+
+Owned here rather than imported, because the queue is now the threshold's home.
+Floored at 10 min so a legitimately long build is never falsely reaped.
+"""
+
+UPPER_LIMIT_CEILING_SECONDS = 3600
+"""Ceiling for the adaptive reap threshold.
+
+Capped at 1 h so a single anomalously long held slot can never ratchet the
+threshold further; the reaper's own ``2 x`` threshold therefore tops out at 2 h.
+"""
+
+SOURCE_QUEUE_STATE = 'queue_state'
+"""The threshold was read from the queue state as a valid positive int."""
+
+SOURCE_DEFAULT_FLOOR = 'default_floor'
+"""The field is absent or unusable, so the floor applies.
+
+Reported distinctly from :data:`SOURCE_QUEUE_STATE` because the fallback IS the
+floor: a returned 600 cannot otherwise be told apart from a configured 600.
+"""
+
 WARNING_CAP_DISAGREEMENT = 'cap_disagreement'
 """Warning ``code`` for a detected, unreconciled cap disagreement.
 
@@ -286,6 +352,99 @@ def _resolve_queue_path() -> Path:
     leave machine-global queue state world-listable.
     """
     return ensure_home_root() / _QUEUE_FILENAME
+
+
+def _next_state(
+    state: dict[str, Any],
+    active: list[dict[str, Any]],
+    waiting: list[dict[str, Any]],
+    run_log: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Build the state to commit, carrying every unrecognised top-level field over.
+
+    The three entry lists are replaced; everything else the read state held is
+    preserved. Spreading ``state`` rather than returning a fresh three-key dict is
+    load-bearing now that the reap threshold lives as a TOP-LEVEL field of this
+    same file: a hand-built ``{'active', 'waiting', 'run_log'}`` return would
+    silently delete ``upper_limit_seconds`` on the next acquire, so a configured
+    threshold would survive exactly until the next build and then read as
+    ``default_floor`` again. Carrying the whole state forward also means a field
+    added later cannot be dropped by a mutator that predates it.
+
+    The carried threshold is deliberately NOT normalised here. Normalising on
+    every read-write would materialise an absent field as the floor, and the
+    ``default_floor`` source exists precisely so an unconfigured threshold stays
+    distinguishable from one configured AT the floor. Only the writers
+    (``release``'s recompute and ``limit set``) put a value in.
+    """
+    return {**state, 'active': active, 'waiting': waiting, 'run_log': run_log}
+
+
+def _clamp_upper_limit(value: int) -> int:
+    """Clamp ``value`` into ``[floor, ceiling]`` for the reap threshold."""
+    return max(UPPER_LIMIT_FLOOR_SECONDS, min(UPPER_LIMIT_CEILING_SECONDS, value))
+
+
+def _resolve_upper_limit(state: dict[str, Any]) -> tuple[int, str]:
+    """Resolve the reap threshold from the queue state, naming its source.
+
+    A pure read over the state dict already in hand — it does NO file I/O, so it
+    is callable from inside an ``rmw_json`` ``_mutate`` callback, which is where
+    the reaper and the release recompute both need it.
+
+    A ``bool`` is rejected although it is an ``int`` subclass, so a stored
+    ``true`` never becomes a one-second threshold; a non-``int`` and a
+    non-positive value are likewise unusable. Every unusable case resolves to the
+    floor under :data:`SOURCE_DEFAULT_FLOOR` rather than silently reading as a
+    configured floor.
+
+    Args:
+        state: The queue state as read by ``rmw_json``.
+
+    Returns:
+        ``(value, source)`` — ``value`` always within the clamp bounds.
+    """
+    raw = state.get(UPPER_LIMIT_FIELD)
+    if isinstance(raw, bool) or not isinstance(raw, int) or raw <= 0:
+        return UPPER_LIMIT_FLOOR_SECONDS, SOURCE_DEFAULT_FLOOR
+    return _clamp_upper_limit(raw), SOURCE_QUEUE_STATE
+
+
+def _read_per_repo_upper_limit() -> Any:
+    """Return the caller's retired ``build.queue.upper_limit_seconds``, or ``None``.
+
+    Reads the main-anchored ``run-configuration.json`` — the threshold's FORMER
+    home — for the sole purpose of REPORTING a surviving key, never of resolving
+    a threshold from it. The value is returned raw and unvalidated, because a
+    report saying "your config sets this and it does nothing" must echo back what
+    is actually written there, including a value that could never have been
+    usable.
+
+    Mirrors :func:`_machine_config.read_per_repo_max_slots` deliberately: the two
+    answer the same question about two retired keys, so they have the same shape.
+
+    Returns:
+        The raw value, or ``None`` when the file is absent, unreadable,
+        unparseable, not a JSON object, or simply does not carry the key — all of
+        which collapse, because in each there is no key to report.
+    """
+    try:
+        text = get_run_config_path().read_text(encoding='utf-8')
+    except (OSError, RuntimeError):
+        return None
+    try:
+        payload = json.loads(text)
+    except ValueError:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    build = payload.get('build')
+    if not isinstance(build, dict):
+        return None
+    queue = build.get('queue')
+    if not isinstance(queue, dict):
+        return None
+    return queue.get(UPPER_LIMIT_FIELD)
 
 
 def _cap_fields(cap: CapResolution) -> dict[str, Any]:
@@ -554,7 +713,7 @@ def _prune_dead_active(active: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [e for e in active if not holder_is_dead(_plan_id_of(e['id']), project_root=e.get('project_root'))]
 
 
-def validate_lock_queue(state: dict[str, Any], now: float, upper_limit: int, max_slots: int) -> list[dict[str, Any]]:
+def validate_lock_queue(state: dict[str, Any], now: float, max_slots: int) -> list[dict[str, Any]]:
     """Reap over-age active entries and FIFO-promote waiters into freed slots.
 
     A pure mutation over the passed-in ``state`` (it does NO file I/O — it is
@@ -566,9 +725,13 @@ def validate_lock_queue(state: dict[str, Any], now: float, upper_limit: int, max
     still exists — that the liveness prune never clears, so without a time-based
     reaper its slot starves the queue indefinitely.
 
-    The reap threshold is ``2 × upper_limit`` (the ``2 ×`` safety factor over the
-    already monotonic-up adaptive limit makes a false reap of a genuinely long
-    build vanishingly unlikely). Age is measured from ``active_since`` — the
+    The reap threshold is ``2 x`` the adaptive limit, which this function reads
+    from the very state it is mutating via :func:`_resolve_upper_limit` — no
+    caller passes it in, and nothing outside this file is consulted, so the
+    threshold applied to a repository's entries can no longer come from a
+    different repository's config. The ``2 x`` safety factor over the already
+    monotonic-up limit makes a false reap of a genuinely long build vanishingly
+    unlikely. Age is measured from ``active_since`` — the
     wall-clock time the entry entered ``active`` — NOT from the informational
     admit/enqueue ``ts``: a promoted entry's ``ts`` is its
     original enqueue time, so measuring age from ``ts`` would over-age a recently
@@ -579,10 +742,14 @@ def validate_lock_queue(state: dict[str, Any], now: float, upper_limit: int, max
     (:func:`_fifo_front_n` — serialized append order, never admit-``ts``)
     into the freed slots up to ``max_slots``, each stamped with a fresh
     ``active_since``. The function mutates ``state['active']`` / ``state['waiting']``
-    in place and returns the list of reaped entries (each carrying its ``id`` and
-    computed ``held`` duration) so the caller can emit a best-effort
-    ``reaped-stale`` ``[LOCK]`` event AFTER the ``rmw_json`` commit.
+    in place and returns the list of reaped entries (each carrying its ``id``, its
+    computed ``held`` duration, and the ``threshold`` actually applied) so the
+    caller can emit a best-effort ``reaped-stale`` ``[LOCK]`` event AFTER the
+    ``rmw_json`` commit. ``threshold`` rides on the row because the threshold is
+    now resolved in HERE: an emission site outside the mutation has no other way
+    to name the value the reap was actually judged against.
     """
+    upper_limit, _source = _resolve_upper_limit(state)
     threshold = 2 * upper_limit
     active = _entry_list(state, 'active')
     waiting = _entry_list(state, 'waiting')
@@ -597,7 +764,7 @@ def validate_lock_queue(state: dict[str, Any], now: float, upper_limit: int, max
         active_since = entry.get('active_since', now)
         held = now - active_since
         if held > threshold:
-            reaped.append({'id': entry['id'], 'held': held})
+            reaped.append({'id': entry['id'], 'held': held, 'threshold': threshold})
         else:
             survivors.append(entry)
     active = survivors
@@ -674,7 +841,6 @@ def run_acquire(args: Namespace) -> dict[str, Any]:
 
     cap = resolve_max_slots()
     max_slots = cap.value
-    upper_limit = _read_build_queue_upper_limit()
     new_entry_id = f'{plan_id}:{uuid.uuid4()}'
     ts = time.time()
     outcome: dict[str, Any] = {'reaped': []}
@@ -685,7 +851,7 @@ def run_acquire(args: Namespace) -> dict[str, Any]:
         # then run the existing prune/admit logic on the reaped state. Running it
         # here (not as a separate rmw call) keeps the reap + admit decision in one
         # serialized read-modify-write, so a reap can never race a concurrent admit.
-        outcome['reaped'] = validate_lock_queue(state, ts, upper_limit, max_slots)
+        outcome['reaped'] = validate_lock_queue(state, ts, max_slots)
 
         active = _prune_dead_active(_entry_list(state, 'active'))
         waiting = _entry_list(state, 'waiting')
@@ -707,7 +873,7 @@ def run_acquire(args: Namespace) -> dict[str, Any]:
             outcome['admission'] = 'admitted'
             outcome['active_count'] = len(active)
             outcome['waiting_count'] = len(waiting)
-            return {'active': active, 'waiting': waiting, 'run_log': run_log}
+            return _next_state(state, active, waiting, run_log)
 
         # Idempotent re-poll: a plan already in the waiting queue keeps its FIFO
         # position. Promote it ONLY when a slot has freed up AND it is within the
@@ -727,7 +893,7 @@ def run_acquire(args: Namespace) -> dict[str, Any]:
             outcome['id'] = existing_waiting['id']
             outcome['active_count'] = len(active)
             outcome['waiting_count'] = len(waiting)
-            return {'active': active, 'waiting': waiting, 'run_log': run_log}
+            return _next_state(state, active, waiting, run_log)
 
         # First acquire for this plan: admit when a slot is free, else enqueue at
         # the back of the FIFO waiting queue. An admitted entry records
@@ -756,7 +922,7 @@ def run_acquire(args: Namespace) -> dict[str, Any]:
         outcome['id'] = new_entry_id
         outcome['active_count'] = len(active)
         outcome['waiting_count'] = len(waiting)
-        return {'active': active, 'waiting': waiting, 'run_log': run_log}
+        return _next_state(state, active, waiting, run_log)
 
     rmw_json(queue_path, _mutate)
 
@@ -768,7 +934,7 @@ def run_acquire(args: Namespace) -> dict[str, Any]:
             'reaped-stale',
             lock_id=reaped['id'],
             held=reaped['held'],
-            threshold=2 * upper_limit,
+            threshold=reaped['threshold'],
         )
 
     # [LOCK] cap-disagreement emission — best-effort, AFTER rmw_json commits
@@ -859,7 +1025,6 @@ def run_release(args: Namespace) -> dict[str, Any]:
 
     cap = resolve_max_slots()
     max_slots = cap.value
-    upper_limit = _read_build_queue_upper_limit()
     now = time.time()
     outcome: dict[str, Any] = {'reaped': [], 'held': None}
 
@@ -867,7 +1032,12 @@ def run_release(args: Namespace) -> dict[str, Any]:
         # Self-healing reaper FIRST (inside the SAME rmw_json mutation), then the
         # existing release/promote logic runs on the reaped state — one serialized
         # read-modify-write covering reap + release.
-        outcome['reaped'] = validate_lock_queue(state, now, upper_limit, max_slots)
+        outcome['reaped'] = validate_lock_queue(state, now, max_slots)
+        # The threshold this release will recompute against, read from the state
+        # already in hand rather than from a separate file.
+        upper_limit, upper_limit_source = _resolve_upper_limit(state)
+        outcome['upper_limit'] = upper_limit
+        outcome['upper_limit_source'] = upper_limit_source
 
         active = _entry_list(state, 'active')
         waiting = _entry_list(state, 'waiting')
@@ -911,21 +1081,34 @@ def run_release(args: Namespace) -> dict[str, Any]:
             run_log = run_log[-100:]
         outcome['active_count'] = len(active)
         outcome['waiting_count'] = len(waiting)
-        return {'active': active, 'waiting': waiting, 'run_log': run_log}
+
+        next_state = _next_state(state, active, waiting, run_log)
+
+        # Adaptive-threshold recompute — INSIDE this mutation, against the state
+        # this same call is committing. The threshold tracks the longest observed
+        # real build held-duration monotonically-up, clamped to
+        # [600, 3600], so a single anomalously long hold cannot ratchet it past
+        # the ceiling. Previously this wrote a SEPARATE file after the commit — a
+        # non-atomic read-modify-write of run-configuration.json outside the
+        # queue's critical section. Folding it in here closes that window: the
+        # recomputed threshold is committed by the same atomic replace that
+        # commits the release which produced the observation.
+        held = outcome['held']
+        if held is not None:
+            new_limit = _clamp_upper_limit(max(upper_limit, int(held)))
+            # Persist ONLY when the value actually moved. A short hold under an
+            # unconfigured threshold recomputes to the floor it already resolved
+            # to, and writing that would materialise the field — turning every
+            # subsequent read from `default_floor` into `queue_state` and
+            # destroying the one distinction that source partition exists to
+            # make. Nothing is lost by not writing: an absent field already
+            # resolves to exactly this value.
+            if new_limit != upper_limit:
+                next_state[UPPER_LIMIT_FIELD] = new_limit
+                outcome['upper_limit'] = new_limit
+        return next_state
 
     rmw_json(queue_path, _mutate)
-
-    # Adaptive-limit recompute (clamped [600, 3600]) — OUTSIDE _mutate (it writes
-    # a SEPARATE config file, not the queue file). The new limit tracks the
-    # longest observed real build held-duration monotonically-up; persist only
-    # when it would actually change. _write_build_queue_upper_limit clamps to
-    # [600, 3600], so a single anomalously long held lock cannot ratchet the
-    # stored limit past the 3600 s ceiling.
-    held = outcome['held']
-    if held is not None:
-        new_limit = max(upper_limit, int(held))
-        if new_limit != upper_limit:
-            _write_build_queue_upper_limit(new_limit)
 
     # [LOCK] reaped-stale emission — best-effort, AFTER rmw_json commits (never
     # from inside _mutate). One WARN event per reaped over-age active entry.
@@ -935,7 +1118,7 @@ def run_release(args: Namespace) -> dict[str, Any]:
             'reaped-stale',
             lock_id=reaped['id'],
             held=reaped['held'],
-            threshold=2 * upper_limit,
+            threshold=reaped['threshold'],
         )
 
     # [LOCK] emission — best-effort, AFTER rmw_json commits (never from inside
@@ -972,55 +1155,188 @@ def run_release(args: Namespace) -> dict[str, Any]:
     }
 
 
+def run_limit_get(args: Namespace) -> dict[str, Any]:
+    """Report the reap threshold in effect, its source, and any retired per-repo value.
+
+    Read-only: it opens the queue file through the same ``rmw_json`` serialization
+    every other access uses, committing the state unchanged, so the reported value
+    cannot be a torn read taken mid-write.
+
+    ``per_repo_value`` is reported ONLY when the caller's own
+    ``run-configuration.json`` still carries the retired
+    ``build.queue.upper_limit_seconds``, and always with ``in_effect: false`` —
+    the value never reaches the applied threshold. An operator whose config still
+    sets the old key otherwise has no way to learn it does nothing.
+
+    Takes no ``--plan-id``: unlike ``acquire`` / ``release``, which need a holder
+    identity, this verb reads machine-global state that belongs to no plan, and
+    the queue path resolves under the home root without any plan resolution.
+    """
+    del args  # unused — fixed-shape verb
+    try:
+        queue_path = _resolve_queue_path()
+    except RuntimeError as exc:
+        return make_error(str(exc), code=ErrorCode.NOT_FOUND)
+
+    resolved: dict[str, Any] = {}
+
+    def _mutate(state: dict[str, Any]) -> dict[str, Any]:
+        value, source = _resolve_upper_limit(state)
+        resolved['value'] = value
+        resolved['source'] = source
+        return state
+
+    rmw_json(queue_path, _mutate)
+
+    result: dict[str, Any] = {
+        'status': 'success',
+        'field': UPPER_LIMIT_FIELD,
+        'value': resolved['value'],
+        'source': resolved['source'],
+        'floor_seconds': UPPER_LIMIT_FLOOR_SECONDS,
+        'ceiling_seconds': UPPER_LIMIT_CEILING_SECONDS,
+        'reap_threshold_seconds': 2 * resolved['value'],
+        'queue_path': str(queue_path),
+    }
+    per_repo = _read_per_repo_upper_limit()
+    if per_repo is not None:
+        result['per_repo_value'] = {'value': per_repo, 'in_effect': False}
+    return result
+
+
+def run_limit_set(args: Namespace) -> dict[str, Any]:
+    """Set the reap threshold (positive int, clamped) through the queue's mutation.
+
+    Written through :func:`_locks_core.rmw_json` — the same serialized
+    read-modify-write the admit/release cycle uses — so a set cannot interleave
+    with a release's own recompute of the same field, and the committed value is
+    never a lost update.
+
+    Takes no ``--plan-id``, for the same reason :func:`run_limit_get` does not.
+    The ``--value`` spelling is deliberately carried over from the retired
+    ``run_config`` build-queue upper-limit setter this verb replaces, so an
+    operator who learned that flag does not mispredict this one.
+    """
+    value: int = args.value
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        return make_error(
+            f'--value must be a positive integer (seconds), got {value!r}',
+            code=ErrorCode.INVALID_INPUT,
+        )
+    try:
+        queue_path = _resolve_queue_path()
+    except RuntimeError as exc:
+        return make_error(str(exc), code=ErrorCode.NOT_FOUND)
+
+    clamped = _clamp_upper_limit(value)
+
+    def _mutate(state: dict[str, Any]) -> dict[str, Any]:
+        next_state = dict(state)
+        next_state[UPPER_LIMIT_FIELD] = clamped
+        return next_state
+
+    rmw_json(queue_path, _mutate)
+
+    return {
+        'status': 'success',
+        'field': UPPER_LIMIT_FIELD,
+        'value': clamped,
+        'requested': value,
+        'clamped': clamped != value,
+        'source': SOURCE_QUEUE_STATE,
+        'floor_seconds': UPPER_LIMIT_FLOOR_SECONDS,
+        'ceiling_seconds': UPPER_LIMIT_CEILING_SECONDS,
+        'reap_threshold_seconds': 2 * clamped,
+        'queue_path': str(queue_path),
+    }
+
+
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
 
 def main() -> int:
-    """Entry point — ``acquire`` / ``release`` actions."""
-    parser = create_workflow_cli(
+    """Entry point — ``acquire`` / ``release`` / ``limit get`` / ``limit set``.
+
+    Built directly on :mod:`argparse` rather than through
+    :func:`triage_helpers.create_workflow_cli`, because that helper builds exactly
+    ONE level of subcommands and the threshold surface is a two-token verb
+    (``limit get`` / ``limit set``) grouping two operations under one noun. The
+    two slot verbs keep the flag surface they already had.
+    """
+    parser = argparse.ArgumentParser(
         description='Build-queue concurrency limiter: bounded-k-slot admitter with a FIFO waiting queue',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
   build_queue.py acquire --plan-id EXAMPLE-PLAN
   build_queue.py release --plan-id EXAMPLE-PLAN --id EXAMPLE-PLAN:UUID
+  build_queue.py limit get
+  build_queue.py limit set --value 1800
 """,
-        subcommands=[
-            {
-                'name': 'acquire',
-                'help': 'Admit a build slot (or enqueue when at capacity)',
-                'handler': run_acquire,
-                'args': [
-                    {
-                        'flags': ['--plan-id'],
-                        'dest': 'plan_id',
-                        'required': True,
-                        'help': 'Holder source — the plan_id acquiring a slot (mandatory)',
-                    },
-                ],
-            },
-            {
-                'name': 'release',
-                'help': 'Release a build slot and FIFO-promote the oldest waiting entry',
-                'handler': run_release,
-                'args': [
-                    {
-                        'flags': ['--plan-id'],
-                        'dest': 'plan_id',
-                        'required': True,
-                        'help': 'Holder source — the plan_id releasing a slot (mandatory)',
-                    },
-                    {
-                        'flags': ['--id'],
-                        'dest': 'id',
-                        'required': True,
-                        'help': 'The admission id returned by acquire (mandatory)',
-                    },
-                ],
-            },
-        ],
+        allow_abbrev=False,
     )
+    subparsers = parser.add_subparsers(dest='command', required=True)
+
+    p_acquire = subparsers.add_parser(
+        'acquire', help='Admit a build slot (or enqueue when at capacity)', allow_abbrev=False
+    )
+    p_acquire.add_argument(
+        '--plan-id',
+        dest='plan_id',
+        required=True,
+        help='Holder source — the plan_id acquiring a slot (mandatory)',
+    )
+    p_acquire.set_defaults(func=run_acquire)
+
+    p_release = subparsers.add_parser(
+        'release', help='Release a build slot and FIFO-promote the oldest waiting entry', allow_abbrev=False
+    )
+    p_release.add_argument(
+        '--plan-id',
+        dest='plan_id',
+        required=True,
+        help='Holder source — the plan_id releasing a slot (mandatory)',
+    )
+    p_release.add_argument(
+        '--id',
+        dest='id',
+        required=True,
+        help='The admission id returned by acquire (mandatory)',
+    )
+    p_release.set_defaults(func=run_release)
+
+    p_limit = subparsers.add_parser(
+        'limit',
+        help='Manage the adaptive stale-reclaim threshold held in the queue state',
+        allow_abbrev=False,
+    )
+    limit_subparsers = p_limit.add_subparsers(dest='limit_command', required=True, help='Threshold operation')
+
+    p_limit_get = limit_subparsers.add_parser(
+        'get',
+        help=f'Report the threshold and its source (default {UPPER_LIMIT_FLOOR_SECONDS} s)',
+        allow_abbrev=False,
+    )
+    p_limit_get.set_defaults(func=run_limit_get)
+
+    p_limit_set = limit_subparsers.add_parser(
+        'set',
+        help=f'Set the threshold (clamped [{UPPER_LIMIT_FLOOR_SECONDS}, {UPPER_LIMIT_CEILING_SECONDS}])',
+        allow_abbrev=False,
+    )
+    p_limit_set.add_argument(
+        '--value',
+        dest='value',
+        type=int,
+        required=True,
+        help=(
+            f'Threshold seconds (positive int; clamped to [{UPPER_LIMIT_FLOOR_SECONDS}, {UPPER_LIMIT_CEILING_SECONDS}])'
+        ),
+    )
+    p_limit_set.set_defaults(func=run_limit_set)
+
     args = parser.parse_args()
     return print_toon(args.func(args))
 

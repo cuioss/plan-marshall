@@ -5,13 +5,22 @@
 concurrency limiter with a FIFO waiting queue.
 
 Scope: reaping a stale active entry on the next acquire or release, the
-``active_since`` stamp every admission path must leave, and the staleness limit that
-grows with a long hold between its floor and its ceiling.
+``active_since`` stamp every admission path must leave, and the adaptive staleness
+threshold — now a TOP-LEVEL ``upper_limit_seconds`` field of the machine-global
+``build-queue.json`` itself rather than a per-repo ``run-configuration.json`` key.
+
+The threshold's move is what these tests pin: it is seeded IN the queue state, read
+by the reaper from the state it is already mutating, recomputed by ``release``
+inside that same mutation, and read/written by the ``limit get`` / ``limit set``
+verbs. A per-repo value surviving in ``run-configuration.json`` is REPORTED by
+``limit get`` and never honoured.
 """
 
 from __future__ import annotations
 
+import json
 from argparse import Namespace
+from pathlib import Path
 
 from _build_queue_fixtures import (
     _FRESH_AGE_SECONDS,
@@ -26,6 +35,48 @@ from _build_queue_fixtures import (
     build_queue,
     isolated_base,
 )
+
+# The threshold's home: a top-level field of the queue's own state. Read off the
+# module under test rather than restated, so a rename cannot leave these tests
+# asserting a key nothing writes.
+_FIELD = build_queue.UPPER_LIMIT_FIELD
+_FLOOR = build_queue.UPPER_LIMIT_FLOOR_SECONDS
+_CEILING = build_queue.UPPER_LIMIT_CEILING_SECONDS
+_QUEUE_STATE = build_queue.SOURCE_QUEUE_STATE
+_DEFAULT_FLOOR = build_queue.SOURCE_DEFAULT_FLOOR
+
+
+def _seed_state(
+    queue_path: Path,
+    *,
+    upper_limit: object = None,
+    active: list[dict] | None = None,
+    waiting: list[dict] | None = None,
+) -> None:
+    """Seed the queue state, optionally carrying the top-level threshold field.
+
+    ``upper_limit=None`` writes NO ``upper_limit_seconds`` key — the unconfigured
+    case, which must resolve to the floor under ``default_floor`` rather than read
+    as a configured floor. Written here rather than through
+    ``_build_queue_fixtures._seed_active_entry`` because the threshold is a
+    top-level field of the state, not a property of an entry.
+    """
+    state: dict = {'active': active or [], 'waiting': waiting or [], 'run_log': []}
+    if upper_limit is not None:
+        state[_FIELD] = upper_limit
+    _write_queue(queue_path, state)
+
+
+def _stored_limit(queue_path: Path) -> object:
+    """The persisted threshold field, or ``None`` when it was never materialised."""
+    return _read_queue(queue_path).get(_FIELD)
+
+
+def _active_entry(entry_id: str, plan_id: str, *, held_seconds: float) -> dict:
+    """An active entry whose ``active_since`` puts it ``held_seconds`` in the past."""
+    import time
+
+    return {'id': entry_id, 'plan_id': plan_id, 'ts': 0.0, 'active_since': time.time() - held_seconds}
 
 
 class TestStaleReap:
@@ -232,78 +283,350 @@ class TestStaleReap:
         assert promoted['active_since'] >= time.time() - _FRESH_AGE_SECONDS
 
 
-class TestAdaptiveUpperLimit:
-    def _read_limit(self) -> int:
-        """Read the persisted build_queue_upper_limit via the run_config getter."""
-        from run_config import _read_build_queue_upper_limit
+class TestThresholdResolution:
+    """``upper_limit_seconds`` resolves from the QUEUE STATE, naming its source.
 
-        return _read_build_queue_upper_limit()
+    The source partition is the whole point: the fallback IS the floor, so a
+    returned 600 cannot otherwise be told apart from a configured 600.
+    """
 
-    def test_limit_grows_on_long_hold_clamped_to_ceiling(self, isolated_base: dict) -> None:
-        """A release whose held duration exceeds the 3600 s ceiling persists
-        build_queue_upper_limit == 3600 exactly — never higher."""
-        import time
+    def test_unconfigured_state_resolves_to_the_floor_as_default_floor(self, isolated_base: dict) -> None:
+        """An absent field resolves to the floor under ``default_floor``."""
+        _seed_state(isolated_base['queue_path'])
 
+        got = build_queue.run_limit_get(Namespace())
+
+        assert got['value'] == _FLOOR
+        assert got['source'] == _DEFAULT_FLOOR
+        assert got['reap_threshold_seconds'] == 2 * _FLOOR
+        # The read must not materialise the field — that would turn every later
+        # read from `default_floor` into `queue_state`.
+        assert _stored_limit(isolated_base['queue_path']) is None
+
+    def test_configured_state_resolves_as_queue_state(self, isolated_base: dict) -> None:
+        """A valid positive int resolves under ``queue_state``, reap = 2 x value."""
+        _seed_state(isolated_base['queue_path'], upper_limit=1800)
+
+        got = build_queue.run_limit_get(Namespace())
+
+        assert got['value'] == 1800
+        assert got['source'] == _QUEUE_STATE
+        assert got['reap_threshold_seconds'] == 3600
+
+    def test_below_floor_stored_value_clamps_up_but_stays_configured(self, isolated_base: dict) -> None:
+        """A configured-but-too-low value clamps to the floor, source ``queue_state``.
+
+        The value matches the unconfigured case exactly; only the SOURCE separates
+        them, which is why the source is asserted rather than the value alone.
+        """
+        _seed_state(isolated_base['queue_path'], upper_limit=100)
+
+        got = build_queue.run_limit_get(Namespace())
+
+        assert got['value'] == _FLOOR
+        assert got['source'] == _QUEUE_STATE
+
+    def test_unusable_stored_values_read_as_the_floor(self, isolated_base: dict) -> None:
+        """A bool, a non-positive int and a string all resolve to ``default_floor``.
+
+        ``True`` is the load-bearing case: it is an ``int`` subclass, so an
+        unguarded read would apply a ONE-SECOND reap threshold and reclaim every
+        live holder on sight.
+        """
+        for unusable in (True, 0, -1, '1800', 1800.5, None):
+            _seed_state(isolated_base['queue_path'])
+            state = _read_queue(isolated_base['queue_path'])
+            state[_FIELD] = unusable
+            _write_queue(isolated_base['queue_path'], state)
+
+            got = build_queue.run_limit_get(Namespace())
+
+            assert got['value'] == _FLOOR, f'{unusable!r} should read as the floor'
+            assert got['source'] == _DEFAULT_FLOOR, f'{unusable!r} should be unusable'
+
+
+class TestReaperReadsTheQueueStateThreshold:
+    """The reaper takes the threshold from the state it is already mutating."""
+
+    def test_configured_threshold_spares_an_entry_the_floor_would_reap(self, isolated_base: dict) -> None:
+        """A 2000 s hold survives under a configured 1800 s threshold.
+
+        Under the unconfigured floor the reap threshold is 1200 s and this entry
+        would be reclaimed, so the survival is attributable to the configured
+        value and to nothing else.
+        """
+        base = isolated_base['base']
+        _set_max_slots(isolated_base['home'], 2)
+        _make_live_plan(base, 'plan-long')
+        _make_live_plan(base, 'plan-new')
+        long_id = 'plan-long:long-uuid'
+        _seed_state(
+            isolated_base['queue_path'],
+            upper_limit=1800,  # reap threshold 3600 s
+            active=[_active_entry(long_id, 'plan-long', held_seconds=2000.0)],
+        )
+
+        build_queue.run_acquire(Namespace(plan_id='plan-new'))
+
+        state = _read_queue(isolated_base['queue_path'])
+        assert long_id in [e['id'] for e in state['active']]
+        assert 'reaped-stale' not in _read_lock_log()
+
+    def test_reaped_event_names_the_configured_threshold_applied(self, isolated_base: dict) -> None:
+        """The ``[LOCK]`` reaped-stale event carries the threshold actually applied.
+
+        The threshold is resolved INSIDE the mutation now, so the emission site
+        has no other way to name the value the reap was judged against.
+        """
+        base = isolated_base['base']
+        _set_max_slots(isolated_base['home'], 2)
+        _make_live_plan(base, 'plan-stale')
+        _make_live_plan(base, 'plan-new')
+        stale_id = 'plan-stale:stale-uuid'
+        _seed_state(
+            isolated_base['queue_path'],
+            upper_limit=700,  # reap threshold 1400 s
+            active=[_active_entry(stale_id, 'plan-stale', held_seconds=5000.0)],
+        )
+
+        build_queue.run_acquire(Namespace(plan_id='plan-new'))
+
+        content = _read_lock_log()
+        assert f'[LOCK] (build:reaped-stale) {stale_id}' in content
+        assert 'threshold: 1400' in content  # 2 x the CONFIGURED 700, not 2 x 600
+
+
+class TestAdaptiveThresholdRecompute:
+    """``release`` recomputes ``max(current, held)`` clamped, INSIDE the mutation."""
+
+    def test_release_grows_the_threshold_in_the_queue_state(self, isolated_base: dict) -> None:
+        """A hold longer than the resolved threshold persists it into the state."""
+        base = isolated_base['base']
+        _make_live_plan(base, 'plan-mid')
+        mid_id = 'plan-mid:mid-uuid'
+        # Unconfigured → threshold 1200 s, so a 1000 s hold is not reaped first.
+        _seed_state(
+            isolated_base['queue_path'],
+            active=[_active_entry(mid_id, 'plan-mid', held_seconds=1000.0)],
+        )
+
+        rel = build_queue.run_release(Namespace(plan_id='plan-mid', id=mid_id))
+        assert rel['action'] == 'released'
+
+        stored = _stored_limit(isolated_base['queue_path'])
+        assert isinstance(stored, int)
+        assert stored >= 1000
+        assert build_queue.run_limit_get(Namespace())['source'] == _QUEUE_STATE
+
+    def test_release_recompute_clamps_to_the_ceiling(self, isolated_base: dict) -> None:
+        """An over-ceiling observation persists the ceiling exactly, never higher.
+
+        Seeded at 2000 s (reap threshold 4000 s) so the 3900 s hold is not reaped
+        before the release can recompute — and so the stored value MOVES, which is
+        what makes the clamp observable rather than a coincidence of the seed.
+        """
         base = isolated_base['base']
         _make_live_plan(base, 'plan-long')
         long_id = 'plan-long:long-uuid'
-        # The reaper removes an entry held longer than 2 × the LIVE limit, so a
-        # hold long enough to exercise the ceiling is also long enough to be
-        # reaped before the release can recompute anything. Raising the live
-        # limit to the ceiling first puts the reap threshold at 7200 s, which the
-        # 4000 s hold below is under — so the release exercises the clamp rather
-        # than the reaper.
-        from run_config import _write_build_queue_upper_limit
-
-        _write_build_queue_upper_limit(3600)  # reap threshold now 2 × 3600 = 7200 s
-        _seed_active_entry(
+        _seed_state(
             isolated_base['queue_path'],
-            entry_id=long_id,
-            plan_id='plan-long',
-            active_since=time.time() - 4000.0,  # under 7200 s threshold → not reaped
+            upper_limit=2000,
+            active=[_active_entry(long_id, 'plan-long', held_seconds=3900.0)],
         )
 
         rel = build_queue.run_release(Namespace(plan_id='plan-long', id=long_id))
         assert rel['action'] == 'released'
 
-        # held ≈ 4000 s > 3600 ceiling → stored limit clamps to exactly 3600.
-        assert self._read_limit() == 3600
+        assert _stored_limit(isolated_base['queue_path']) == _CEILING
 
-    def test_limit_floors_at_600_for_short_hold(self, isolated_base: dict) -> None:
-        """A short hold never drops the limit below the 600 s floor — the limit is
-        monotonic-up and floored, so a quick release leaves it at the floor."""
+    def test_release_never_lowers_a_configured_threshold(self, isolated_base: dict) -> None:
+        """The threshold is monotonic-up: a short hold leaves a higher value alone."""
         base = isolated_base['base']
         _make_live_plan(base, 'plan-short')
+        _seed_state(isolated_base['queue_path'], upper_limit=1800)
+
         acq = build_queue.run_acquire(Namespace(plan_id='plan-short'))
-        # Immediate release → held ≈ 0 s, well under the floor.
         build_queue.run_release(Namespace(plan_id='plan-short', id=acq['id']))
 
-        assert self._read_limit() == 600  # floor preserved
+        assert _stored_limit(isolated_base['queue_path']) == 1800
 
-    def test_limit_grows_toward_observed_hold_within_bounds(self, isolated_base: dict) -> None:
-        """A hold between floor and ceiling grows the limit to that held value."""
-        import time
+    def test_short_hold_does_not_materialise_an_unconfigured_field(self, isolated_base: dict) -> None:
+        """A recompute that does not MOVE the value writes nothing at all.
 
+        Writing an unchanged floor would materialise the field and turn every
+        later read from ``default_floor`` into ``queue_state`` — destroying the one
+        distinction that source partition exists to make.
+        """
         base = isolated_base['base']
-        _make_live_plan(base, 'plan-mid')
-        mid_id = 'plan-mid:mid-uuid'
-        # Pre-grow the live limit so the 1800 s hold is not reaped first
-        # (2 × 1800 = 3600 s threshold > 1800 s held).
-        from run_config import _write_build_queue_upper_limit
+        _make_live_plan(base, 'plan-short')
+        _seed_state(isolated_base['queue_path'])
 
-        _write_build_queue_upper_limit(1800)
-        _seed_active_entry(
+        acq = build_queue.run_acquire(Namespace(plan_id='plan-short'))
+        build_queue.run_release(Namespace(plan_id='plan-short', id=acq['id']))
+
+        assert _stored_limit(isolated_base['queue_path']) is None
+        assert build_queue.run_limit_get(Namespace())['source'] == _DEFAULT_FLOOR
+
+    def test_threshold_survives_an_acquire(self, isolated_base: dict) -> None:
+        """An acquire carries the top-level field over rather than dropping it.
+
+        The commit path replaces the three entry lists and spreads the rest of the
+        read state; a hand-built three-key return would silently delete the
+        threshold on the next build, so a configured value would survive exactly
+        until then and read as ``default_floor`` again.
+        """
+        base = isolated_base['base']
+        _make_live_plan(base, 'plan-a')
+        _seed_state(isolated_base['queue_path'], upper_limit=1800)
+
+        build_queue.run_acquire(Namespace(plan_id='plan-a'))
+
+        assert _stored_limit(isolated_base['queue_path']) == 1800
+
+    def test_threshold_survives_a_noop_release(self, isolated_base: dict) -> None:
+        """A no-op release of an absent id also preserves the field."""
+        _seed_state(isolated_base['queue_path'], upper_limit=1800)
+
+        build_queue.run_release(Namespace(plan_id='plan-ghost', id='plan-ghost:absent'))
+
+        assert _stored_limit(isolated_base['queue_path']) == 1800
+
+
+class TestLimitVerbs:
+    """``limit get`` / ``limit set`` — the operator surface over the queue state."""
+
+    def test_limit_set_persists_through_the_queue_mutation(self, isolated_base: dict) -> None:
+        """``limit set`` writes the field and ``limit get`` reads it straight back."""
+        _seed_state(isolated_base['queue_path'])
+
+        result = build_queue.run_limit_set(Namespace(value=1800))
+
+        assert result['status'] == 'success'
+        assert result['field'] == _FIELD
+        assert result['value'] == 1800
+        assert result['requested'] == 1800
+        assert result['clamped'] is False
+        assert result['source'] == _QUEUE_STATE
+        assert result['reap_threshold_seconds'] == 3600
+        assert _stored_limit(isolated_base['queue_path']) == 1800
+        assert build_queue.run_limit_get(Namespace())['value'] == 1800
+
+    def test_limit_set_clamps_below_the_floor(self, isolated_base: dict) -> None:
+        """A sub-floor request clamps up and reports that it was clamped."""
+        _seed_state(isolated_base['queue_path'])
+
+        result = build_queue.run_limit_set(Namespace(value=1))
+
+        assert result['value'] == _FLOOR
+        assert result['requested'] == 1
+        assert result['clamped'] is True
+        assert _stored_limit(isolated_base['queue_path']) == _FLOOR
+
+    def test_limit_set_clamps_above_the_ceiling(self, isolated_base: dict) -> None:
+        """An over-ceiling request clamps down to the ceiling, never higher."""
+        _seed_state(isolated_base['queue_path'])
+
+        result = build_queue.run_limit_set(Namespace(value=99999))
+
+        assert result['value'] == _CEILING
+        assert result['clamped'] is True
+        assert _stored_limit(isolated_base['queue_path']) == _CEILING
+
+    def test_limit_set_rejects_a_non_positive_or_bool_value(self, isolated_base: dict) -> None:
+        """``0`` / negative / ``True`` are refused, and nothing is written.
+
+        ``True`` is refused although it is an ``int`` subclass — the same guard
+        the state read applies, checked here at the write boundary too.
+        """
+        for rejected in (0, -1, True):
+            _seed_state(isolated_base['queue_path'])
+
+            result = build_queue.run_limit_set(Namespace(value=rejected))
+
+            assert result['status'] == 'error', f'{rejected!r} should be refused'
+            assert _stored_limit(isolated_base['queue_path']) is None
+
+    def test_limit_set_preserves_the_entry_lists(self, isolated_base: dict) -> None:
+        """Setting the threshold leaves active/waiting entries untouched."""
+        base = isolated_base['base']
+        _make_live_plan(base, 'plan-held')
+        held = _active_entry('plan-held:held-uuid', 'plan-held', held_seconds=5.0)
+        _seed_state(
             isolated_base['queue_path'],
-            entry_id=mid_id,
-            plan_id='plan-mid',
-            active_since=time.time() - 1800.0,
+            active=[held],
+            waiting=[{'id': 'plan-w:w-uuid', 'plan_id': 'plan-w', 'ts': 1.0}],
         )
 
-        build_queue.run_release(Namespace(plan_id='plan-mid', id=mid_id))
+        build_queue.run_limit_set(Namespace(value=1800))
 
-        # held ≈ 1800 s, current limit 1800 → max(1800, 1800) = 1800 (no change),
-        # but a slightly longer real observation would grow it. Assert it is at
-        # least the observed hold and within bounds.
-        limit = self._read_limit()
-        assert 600 <= limit <= 3600
-        assert limit >= 1800
+        state = _read_queue(isolated_base['queue_path'])
+        assert [e['id'] for e in state['active']] == ['plan-held:held-uuid']
+        assert [e['id'] for e in state['waiting']] == ['plan-w:w-uuid']
+        assert state[_FIELD] == 1800
+
+    def test_limit_get_reports_a_surviving_per_repo_value_as_not_in_effect(
+        self, isolated_base: dict, tmp_path: Path, monkeypatch
+    ) -> None:
+        """A retired per-repo key is REPORTED, never honoured.
+
+        The applied threshold stays the machine-global one; the per-repo value
+        rides the result solely so an operator whose config still sets the old key
+        learns it does nothing.
+        """
+        per_repo = tmp_path / 'run-configuration.json'
+        per_repo.write_text(
+            json.dumps({'version': 1, 'build': {'queue': {_FIELD: 2400}}}),
+            encoding='utf-8',
+        )
+        monkeypatch.setattr(build_queue, 'get_run_config_path', lambda: per_repo)
+        _seed_state(isolated_base['queue_path'], upper_limit=1800)
+
+        got = build_queue.run_limit_get(Namespace())
+
+        assert got['per_repo_value'] == {'value': 2400, 'in_effect': False}
+        # The retired value never reaches the applied threshold.
+        assert got['value'] == 1800
+        assert got['source'] == _QUEUE_STATE
+
+    def test_limit_get_reports_an_unusable_per_repo_value_verbatim(
+        self, isolated_base: dict, tmp_path: Path, monkeypatch
+    ) -> None:
+        """The report echoes back what is actually written, unvalidated.
+
+        A report saying "your config sets this and it does nothing" must name the
+        value the operator will find in their file, including one that could never
+        have been usable.
+        """
+        per_repo = tmp_path / 'run-configuration.json'
+        per_repo.write_text(json.dumps({'build': {'queue': {_FIELD: 'nonsense'}}}), encoding='utf-8')
+        monkeypatch.setattr(build_queue, 'get_run_config_path', lambda: per_repo)
+        _seed_state(isolated_base['queue_path'])
+
+        got = build_queue.run_limit_get(Namespace())
+
+        assert got['per_repo_value'] == {'value': 'nonsense', 'in_effect': False}
+        assert got['value'] == _FLOOR
+
+    def test_limit_get_omits_per_repo_value_when_no_key_survives(
+        self, isolated_base: dict, tmp_path: Path, monkeypatch
+    ) -> None:
+        """An absent file / absent key yields NO ``per_repo_value`` key at all.
+
+        Omission rather than a ``None`` placeholder: there is no retired key to
+        report, and a present-but-empty key would read as one.
+        """
+        # Bound ONCE outside the loop: the path is the same every iteration, and a
+        # lambda closing over a loop variable is a late-binding trap (ruff B023).
+        per_repo = tmp_path / 'run-configuration.json'
+        monkeypatch.setattr(build_queue, 'get_run_config_path', lambda: per_repo)
+        payloads: tuple[dict | None, ...] = (None, {}, {'build': {}}, {'build': {'queue': {}}})
+        for payload in payloads:
+            if payload is None:
+                per_repo.unlink(missing_ok=True)
+            else:
+                per_repo.write_text(json.dumps(payload), encoding='utf-8')
+            _seed_state(isolated_base['queue_path'])
+
+            got = build_queue.run_limit_get(Namespace())
+
+            assert 'per_repo_value' not in got, f'{payload!r} should report no per-repo key'
