@@ -746,8 +746,9 @@ def classify_bot(
       decline, not to re-trigger a bot that already declined this commit.
     - **``participated_stale``** — the producer admitted the bot's comment as
       evidence (what admission requires is stated once in
-      ``bot-participation-contract.md`` § "A shape may be gated on a content
-      marker"), but the currency test failed: the currency ledger — the sole source that test
+      ``bot-participation-contract.md`` § "Evidence taxonomy", which carries both
+      conjuncts — the declared publish shape and, where gated, that shape's content
+      marker), but the currency test failed: the currency ledger — the sole source that test
       reads — anchors the comment to a commit that is not the merge candidate, and its
       ``updated_at`` is unchanged from the value recorded at that credit, so the review
       it proves predates this HEAD. Unproven and therefore blocking, but the remedy is to
