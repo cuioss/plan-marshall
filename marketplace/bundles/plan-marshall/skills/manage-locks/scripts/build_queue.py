@@ -110,6 +110,42 @@ than silently believing a cap it does not have. The result ALWAYS carries a
 unconditionally and never has to branch on whether the key is there; an
 optional-key shape is what makes a consumer forget to look.
 
+**Cap disagreement is reported, never reconciled.** Because the cap is resolved
+per process while the queue is shared host-wide, two sessions can still admit
+against different caps — a daemon started before a ``config set``, or a caller
+whose machine-global file became unreadable. Every new entry is therefore stamped
+at admission with ``admitted_under_max_slots``, the cap it was actually admitted
+under, and a promotion carries that original stamp forward unchanged (the entry
+dict moves between ``waiting`` and ``active``; the stamp is never rewritten).
+``acquire`` compares its own resolved cap against the stamps of every
+pre-existing active and waiting entry and reports the verdict as
+``cap_agreement``: ``disagree`` when any stamped entry was admitted under a
+different cap, otherwise ``unknown`` when at least one entry carries no usable
+stamp, otherwise ``agree``. ``disagree`` outranks ``unknown`` because a proven
+disagreement is not made less true by a second entry that could not be compared.
+
+The verdict always rides with its population, so an ``agree`` can never be read
+off a comparison that never happened: ``cap_compared_count`` is how many entries
+were examined — the population itself, ``0`` for an empty queue — and
+``cap_unstamped_count`` how many of those could not be compared, with the
+remainder being the entries actually compared. An entry with no stamp, or one
+whose stamp is not a positive ``int``, counts as unstamped and is NEVER counted
+as agreement (ADR-009 and
+``manage-locks/standards/scope-limited-negative-is-unknown.md``: a scope-limited
+negative is ``unknown``, not a clean negative). ``cap_disagreement[]`` names each
+disagreeing holder (``id``, ``plan_id``, ``project_root``,
+``admitted_under_max_slots``) so the report identifies the projects involved and
+not merely that a conflict exists.
+
+**Reporting is the whole of it.** Admission logic is unchanged: the admitting
+caller applies ITS OWN cap, existing stamps are left exactly as they were
+admitted, and neither value is picked as authoritative — reconciling the two is
+deliberately out of scope, because choosing a winner is what a per-caller cap
+over a shared queue cannot do correctly. The comparison and the stamp both happen
+inside the SAME serialized ``rmw_json`` mutation that admits, so the verdict
+describes exactly the queue state the admission decided against, with no
+check-then-act window between observing the disagreement and admitting.
+
 **Concurrency correctness (TOCTOU / check-then-act):** the admit/release cycle is
 a read-modify-write (read the queue → decide admit/promote → write the queue) —
 a classic check-then-act window across concurrent build sessions. Every mutation
@@ -156,7 +192,10 @@ release and ALSO ``acquired`` for a FIFO-promoted waiter (its slot was just
 granted, so the promotion is recorded in the same timeline). BOTH actions emit a
 WARN-level ``reaped-stale`` event (carrying ``held`` and ``threshold``) for each
 over-age active entry the implicit :func:`validate_lock_queue` reaper reclaimed.
-A no-op release emits nothing. The ``lock_id`` is the admission id
+A no-op release emits nothing. ``acquire`` additionally emits ONE WARN-level
+``cap-disagreement`` event — one per acquire, not one per disagreeing holder —
+whenever ``cap_agreement`` is ``disagree``, carrying the caller's cap and source
+and the disagreeing holders. The ``lock_id`` is the admission id
 ``{plan_id}:{uuid4}``. A
 logging failure is swallowed and cannot affect admission/release.
 """
@@ -195,6 +234,37 @@ from triage_helpers import (
 )
 
 _QUEUE_FILENAME = 'build-queue.json'
+
+STAMP_ADMITTED_UNDER_MAX_SLOTS = 'admitted_under_max_slots'
+"""Entry field recording the cap an entry was ACTUALLY admitted under.
+
+Written once, at admission, and never rewritten — a promotion moves the entry
+dict from ``waiting`` to ``active`` and carries the original stamp with it. The
+stamp is what makes a cap disagreement observable at all: without it, two
+sessions admitting against different caps leave a queue whose entries are
+indistinguishable from entries admitted under one agreed cap.
+"""
+
+CAP_AGREEMENT_AGREE = 'agree'
+"""Every pre-existing entry carries a stamp equal to the caller's resolved cap."""
+
+CAP_AGREEMENT_DISAGREE = 'disagree'
+"""At least one pre-existing entry was admitted under a different cap."""
+
+CAP_AGREEMENT_UNKNOWN = 'unknown'
+"""Nothing disagreed, but at least one entry could not be compared at all.
+
+Distinct from :data:`CAP_AGREEMENT_AGREE` on purpose: an entry with no usable
+stamp is a comparison that did not happen, and reporting it as agreement is the
+scope-limited-negative-as-clean-negative error ADR-009 forbids.
+"""
+
+WARNING_CAP_DISAGREEMENT = 'cap_disagreement'
+"""Warning ``code`` for a detected, unreconciled cap disagreement.
+
+The code — not the message text — is what consumers deduplicate on, mirroring
+:data:`_machine_config.WARNING_PER_REPO_MAX_SLOTS_NOT_IN_EFFECT`.
+"""
 
 
 # ---------------------------------------------------------------------------
@@ -241,7 +311,7 @@ def _cap_fields(cap: CapResolution) -> dict[str, Any]:
     return fields
 
 
-def _demotion_fields(cap: CapResolution) -> dict[str, Any]:
+def _demotion_fields(cap: CapResolution) -> tuple[dict[str, Any], list[dict[str, str]]]:
     """Return the demoted-per-repo-key report fields for an ``acquire`` result.
 
     Reads the CALLER's own ``marshal.json`` — :func:`file_ops.get_marshal_path`
@@ -261,17 +331,151 @@ def _demotion_fields(cap: CapResolution) -> dict[str, Any]:
             warning so the operator sees what replaced their key.
 
     Returns:
-        ``{'warnings': []}`` when no per-repo key is present, else that plus
-        ``per_repo_max_slots: {value, in_effect: False}``. ``warnings`` is
-        ALWAYS present so consumers iterate unconditionally.
+        ``(fields, warnings)`` — ``fields`` is empty when no per-repo key is
+        present, else ``{'per_repo_max_slots': {'value', 'in_effect': False}}``;
+        ``warnings`` holds the one not-in-effect warning, or is empty.
+
+        The warnings are returned SEPARATELY rather than as a ``warnings`` key
+        because the result's ``warnings`` list now has two independent producers
+        (this demotion report and the cap-disagreement report), and a helper that
+        owned the key would silently win or lose against the other on a dict
+        merge. The always-present-``warnings`` invariant is a property of the
+        RESULT payload, assembled by :func:`run_acquire`, not of this helper.
     """
     marshal_path = get_marshal_path()
     raw = read_per_repo_max_slots(marshal_path)
     if raw is None:
-        return {'warnings': []}
+        return {}, []
+    return (
+        {'per_repo_max_slots': {'value': raw, 'in_effect': False}},
+        [per_repo_max_slots_warning(marshal_path, raw, cap)],
+    )
+
+
+def _stamped_cap(entry: dict[str, Any]) -> int | None:
+    """Return an entry's usable ``admitted_under_max_slots`` stamp, else ``None``.
+
+    A stamp is usable only when it is a positive ``int`` — the same shape the cap
+    resolver guarantees. A ``bool`` is rejected despite being an ``int`` subclass,
+    so a ``true`` written into the queue file never reads as a cap of 1.
+
+    ``None`` means "this entry cannot be compared", which the classifier counts
+    toward :data:`CAP_AGREEMENT_UNKNOWN`. It deliberately does NOT mean "this
+    entry agrees": an absent or malformed stamp is a missing measurement, and
+    treating a missing measurement as a match is what would let a real
+    disagreement report as ``agree``.
+    """
+    raw = entry.get(STAMP_ADMITTED_UNDER_MAX_SLOTS)
+    if isinstance(raw, bool) or not isinstance(raw, int) or raw <= 0:
+        return None
+    return raw
+
+
+def _classify_cap_agreement(
+    caller_cap: int,
+    active: list[dict[str, Any]],
+    waiting: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Compare ``caller_cap`` against every pre-existing entry's admission stamp.
+
+    A pure computation over the passed-in lists — it performs NO file I/O,
+    because it runs inside the ``rmw_json`` ``_mutate`` callback, whose contract
+    forbids that. Called AFTER the reaper and the dead-holder prune, so a reaped
+    or pruned entry's stamp never contributes a disagreement nobody can act on,
+    and BEFORE the caller's own entry is appended, so an empty queue reports a
+    population of ``0`` rather than counting the entry this very call is about to
+    create.
+
+    Args:
+        caller_cap: The cap THIS caller resolved and will admit against.
+        active: The post-reap, post-prune active entries.
+        waiting: The waiting entries.
+
+    Returns:
+        The four result fields: ``cap_agreement`` (see the three
+        ``CAP_AGREEMENT_*`` constants), ``cap_compared_count`` — the examined
+        POPULATION, so that a verdict is never separable from the number of
+        entries behind it — ``cap_unstamped_count`` (how many of that population
+        could not be compared), and ``cap_disagreement`` (one row per disagreeing
+        holder). The entries actually compared are the population minus the
+        unstamped ones; publishing the population is what makes an ``agree`` over
+        an empty queue visible as such instead of reading like a clean bill of
+        health.
+    """
+    entries = [*active, *waiting]
+    unstamped = 0
+    disagreeing: list[dict[str, Any]] = []
+    for entry in entries:
+        stamp = _stamped_cap(entry)
+        if stamp is None:
+            unstamped += 1
+            continue
+        if stamp != caller_cap:
+            disagreeing.append(
+                {
+                    'id': entry['id'],
+                    'plan_id': entry.get('plan_id'),
+                    'project_root': entry.get('project_root'),
+                    STAMP_ADMITTED_UNDER_MAX_SLOTS: stamp,
+                }
+            )
+
+    if disagreeing:
+        agreement = CAP_AGREEMENT_DISAGREE
+    elif unstamped:
+        agreement = CAP_AGREEMENT_UNKNOWN
+    else:
+        agreement = CAP_AGREEMENT_AGREE
+
     return {
-        'per_repo_max_slots': {'value': raw, 'in_effect': False},
-        'warnings': [per_repo_max_slots_warning(marshal_path, raw, cap)],
+        'cap_agreement': agreement,
+        'cap_compared_count': len(entries),
+        'cap_unstamped_count': unstamped,
+        'cap_disagreement': disagreeing,
+    }
+
+
+def _cap_disagreement_warning(cap: CapResolution, rows: list[dict[str, Any]]) -> dict[str, str]:
+    """Build the ``cap_disagreement`` warning naming both caps and the holders.
+
+    The message states the cap this build admits against (with its source, since
+    the value alone cannot distinguish a configured 5 from a fallback 5), the cap
+    each conflicting holder was admitted under, and which project that holder
+    came from — a warning naming only "the caps disagree" leaves the operator
+    with no way to find the other side of the conflict.
+
+    It also states that nothing was reconciled, because that is the deliverable's
+    contract rather than an implementation detail: the admitting caller applies
+    its own cap and no value is treated as authoritative. No remedy command is
+    offered, for the same reason — a per-caller cap over a shared queue has no
+    single correct winner, so there is no one-step fix to name.
+
+    Args:
+        cap: The caller's own machine-global resolution, in effect for THIS admit.
+        rows: The ``cap_disagreement`` rows from :func:`_classify_cap_agreement`
+            (non-empty; the caller only builds this warning on ``disagree``).
+
+    Returns:
+        ``{'code': ..., 'message': ...}`` — ``code`` is
+        :data:`WARNING_CAP_DISAGREEMENT`, the stable identity consumers
+        deduplicate on.
+    """
+    holders = '; '.join(
+        f'{row["id"]} (project={row["project_root"] or "unrecorded"}) '
+        f'admitted under max_slots={row[STAMP_ADMITTED_UNDER_MAX_SLOTS]}'
+        for row in rows
+    )
+    entries = 'entry' if len(rows) == 1 else 'entries'
+    return {
+        'code': WARNING_CAP_DISAGREEMENT,
+        'message': (
+            f'This build admits against max_slots={cap.value} '
+            f'(source={cap.source}, path={cap.path}), but the machine-global build queue '
+            f'already holds {len(rows)} {entries} admitted under a different cap: {holders}. '
+            f'The disagreement is reported, never reconciled: this caller applies its own cap, '
+            f'the existing stamps are left exactly as they were admitted, and neither value is '
+            f'treated as authoritative.'
+        ),
     }
 
 
@@ -449,6 +653,14 @@ def run_acquire(args: Namespace) -> dict[str, Any]:
     nothing applies — plus ``per_repo_max_slots`` when the caller's
     ``marshal.json`` still carries the inert key. That read never influences the
     admitted cap, which comes solely from the machine-global resolver.
+
+    Every result additionally reports the cap-disagreement verdict (see
+    :func:`_classify_cap_agreement`): ``cap_agreement`` with its population
+    (``cap_compared_count`` / ``cap_unstamped_count``) and ``cap_disagreement[]``,
+    plus a second ``warnings`` entry and ONE WARN ``[LOCK]``
+    ``cap-disagreement`` event on a ``disagree``. The verdict changes NOTHING
+    about the admission: this caller's cap is applied, existing stamps are left
+    untouched, and neither cap is picked as authoritative.
     """
     plan_id: str = args.plan_id
     queue_path = _resolve_queue_path()
@@ -478,6 +690,15 @@ def run_acquire(args: Namespace) -> dict[str, Any]:
         active = _prune_dead_active(_entry_list(state, 'active'))
         waiting = _entry_list(state, 'waiting')
         run_log = _entry_list(state, 'run_log')
+
+        # Cap-disagreement detection — after the reaper and the dead-holder prune
+        # (so a reclaimed entry's stamp raises no conflict nobody can act on) and
+        # BEFORE this caller's own entry is appended (so the reported population
+        # is the queue this admission decided against, not one that includes
+        # itself: an empty queue must report cap_compared_count 0). Inside the
+        # same rmw_json mutation as the admit, so there is no window between
+        # observing the disagreement and admitting. Pure computation — no I/O.
+        outcome.update(_classify_cap_agreement(max_slots, active, waiting))
 
         # Idempotent fast-path: a plan already holding an active slot keeps it.
         existing_active = next((e for e in active if e.get('plan_id') == plan_id), None)
@@ -513,8 +734,18 @@ def run_acquire(args: Namespace) -> dict[str, Any]:
         # active_since (the slot activation time used by the reaper); a queued
         # entry does not — it is not active yet. Every new entry is stamped with
         # project_root so the machine-global prune judges its liveness against the
-        # checkout it originated in.
-        entry = {'id': new_entry_id, 'plan_id': plan_id, 'ts': ts, 'project_root': project_root}
+        # checkout it originated in, and with admitted_under_max_slots — the cap
+        # it was ACTUALLY admitted under — so a later caller resolving a different
+        # cap can detect the disagreement. Both stamps are set before the
+        # admit/enqueue branch, so a waiting entry carries them from the moment it
+        # is queued and a promotion later moves this same dict unchanged.
+        entry = {
+            'id': new_entry_id,
+            'plan_id': plan_id,
+            'ts': ts,
+            'project_root': project_root,
+            STAMP_ADMITTED_UNDER_MAX_SLOTS: max_slots,
+        }
         if len(active) < max_slots:
             entry['active_since'] = ts
             active.append(entry)
@@ -540,6 +771,25 @@ def run_acquire(args: Namespace) -> dict[str, Any]:
             threshold=2 * upper_limit,
         )
 
+    # [LOCK] cap-disagreement emission — best-effort, AFTER rmw_json commits
+    # (never from inside _mutate). ONE WARN event per acquire, not one per
+    # disagreeing holder: the disagreement is a single property of this admission,
+    # and the holders it involves ride along as a field.
+    if outcome['cap_agreement'] == CAP_AGREEMENT_DISAGREE:
+        log_lock_event(
+            'build',
+            'cap-disagreement',
+            lock_id=outcome['id'],
+            caller_max_slots=max_slots,
+            caller_max_slots_source=cap.source,
+            disagreeing_count=len(outcome['cap_disagreement']),
+            compared_count=outcome['cap_compared_count'],
+            unstamped_count=outcome['cap_unstamped_count'],
+            disagreeing_holders='; '.join(
+                f'{row["id"]}@{row[STAMP_ADMITTED_UNDER_MAX_SLOTS]}' for row in outcome['cap_disagreement']
+            ),
+        )
+
     # [LOCK] emission — best-effort, AFTER rmw_json commits (never from inside
     # _mutate). `admitted` → `acquired`; `blocked` → `blocked` (waiter is self).
     if outcome['admission'] == 'admitted':
@@ -560,13 +810,26 @@ def run_acquire(args: Namespace) -> dict[str, Any]:
             waiting_count=outcome['waiting_count'],
         )
 
+    # The result's `warnings` list has TWO producers — the demoted per-repo key
+    # and the cap disagreement — so it is assembled here rather than owned by
+    # either helper, and it is ALWAYS present (empty when nothing applies) so a
+    # consumer iterates it unconditionally.
+    demotion_fields, warnings = _demotion_fields(cap)
+    if outcome['cap_agreement'] == CAP_AGREEMENT_DISAGREE:
+        warnings.append(_cap_disagreement_warning(cap, outcome['cap_disagreement']))
+
     return {
         'status': 'success',
         'plan_id': plan_id,
         'id': outcome['id'],
         'admission': outcome['admission'],
         **_cap_fields(cap),
-        **_demotion_fields(cap),
+        **demotion_fields,
+        'warnings': warnings,
+        'cap_agreement': outcome['cap_agreement'],
+        'cap_compared_count': outcome['cap_compared_count'],
+        'cap_unstamped_count': outcome['cap_unstamped_count'],
+        'cap_disagreement': outcome['cap_disagreement'],
         'active_count': outcome['active_count'],
         'waiting_count': outcome['waiting_count'],
         'queue_path': str(queue_path),

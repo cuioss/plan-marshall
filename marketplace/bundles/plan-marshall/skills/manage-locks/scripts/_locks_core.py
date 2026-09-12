@@ -23,7 +23,7 @@ pieces:
     slot/lock. A missing or corrupt state file is treated as empty (``{}``).
   * :func:`log_lock_event` — the single best-effort ``[LOCK]`` emission point both
     lock primitives call at each lifecycle point (acquire / blocked / release /
-    stale-reclaim). It appends a ``[LOCK]``-tagged line to the SINGLE
+    stale-reclaim / cap-disagreement). It appends a ``[LOCK]``-tagged line to the SINGLE
     main-anchored global lock-event log (resolved via the same
     ``resolve_main_anchored_path`` mechanism the lock files use), NEVER the
     per-worktree work-log — the locks are cross-session, main-anchored
@@ -411,6 +411,18 @@ def rmw_json(path: Path, mutate: Callable[[dict[str, Any]], dict[str, Any]]) -> 
 # ---------------------------------------------------------------------------
 
 
+_WARN_EVENTS = frozenset({'reaped-stale', 'cap-disagreement'})
+"""Lifecycle events emitted at ``WARNING``; every other event is ``INFO``.
+
+The set lives here because the level is a property of the EVENT, not of the
+calling primitive: :func:`log_lock_event` appends its ``**fields`` verbatim, so a
+caller cannot pass a level of its own, and a per-caller level would let one
+primitive log the same event at a different severity than another. Both members
+report state a build is proceeding despite — a reclaimed over-age slot, and a cap
+two sessions disagree on — so each is a warning rather than a lifecycle note.
+"""
+
+
 def _resolve_lock_log_path() -> Path:
     """Resolve the single main-anchored ``[LOCK]`` event log, cwd-independent.
 
@@ -431,7 +443,8 @@ def log_lock_event(lock: str, event: str, lock_id: str, **fields: Any) -> None:
 
     This is the single ``[LOCK]``-emission point both lock primitives call at
     each lifecycle point (``merge_lock``: acquired / reclaimed / blocked /
-    released; ``build_queue``: acquired / blocked / released / reaped-stale). The
+    released; ``build_queue``: acquired / blocked / released / reaped-stale /
+    cap-disagreement). The
     line is formatted via :func:`plan_logging.format_log_entry` so it carries the
     standard ``[ts] [LEVEL] [hash]`` header the retrospective
     ``_GLOBAL_LOG_LINE_RE`` / ``_TAG_RE`` already parse — the bracketed
@@ -442,14 +455,15 @@ def log_lock_event(lock: str, event: str, lock_id: str, **fields: Any) -> None:
     Args:
         lock: The lock family — ``merge`` or ``build``.
         event: The lifecycle event — ``acquired`` / ``blocked`` / ``released`` /
-            ``reclaimed`` / ``reaped-stale``.
+            ``reclaimed`` / ``reaped-stale`` / ``cap-disagreement``.
         lock_id: The lock identity (merge: holder ``plan_id``; build: admission
             ``{plan_id}:{uuid4}``).
         **fields: Correlation fields (e.g. ``holder`` / ``waiter`` on contention,
             ``active_count`` / ``waiting_count``, ``reclaimed_from``, ``held``,
-            ``threshold``) appended verbatim as indented lines. A ``WARNING``
-            level is used for the ``reaped-stale`` event; every other event is
-            ``INFO``.
+            ``threshold``, ``caller_max_slots``) appended verbatim as indented
+            lines. The level is derived from ``event`` via :data:`_WARN_EVENTS`,
+            never passed in — a level supplied here would be appended as just
+            another field line.
 
     The entire body is wrapped so ANY failure (resolution failure, unwritable
     dir, encoding error) is swallowed — the emission is an observability
@@ -458,7 +472,7 @@ def log_lock_event(lock: str, event: str, lock_id: str, **fields: Any) -> None:
     """
     try:
         log_path = _resolve_lock_log_path()
-        level = 'WARNING' if event == 'reaped-stale' else 'INFO'
+        level = 'WARNING' if event in _WARN_EVENTS else 'INFO'
         entry = format_log_entry(level, f'[LOCK] ({lock}:{event}) {lock_id}', **fields)
         log_path.parent.mkdir(parents=True, exist_ok=True)
         with open(log_path, 'a', encoding='utf-8') as f:
