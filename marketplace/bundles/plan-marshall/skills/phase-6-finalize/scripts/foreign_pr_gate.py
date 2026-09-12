@@ -88,7 +88,7 @@ import subprocess
 import sys
 from typing import NamedTuple
 
-from _plan_parsing import declares_change
+from _plan_parsing import DECLARATION_FIELDS, declares_change
 from ci_base import LANDING_STATES
 from file_ops import cwd_checkout_root, get_executor_path
 from toon_parser import parse_toon, serialize_toon
@@ -243,7 +243,10 @@ def _partition_foreign_paths(deliverables: list[dict]) -> _ForeignPopulation:
     for deliverable in deliverables:
         if not isinstance(deliverable, dict):
             continue
-        # All THREE declaration fields — a survey-scope deliverable declares
+        # Every declaration field the parser emits — the enumeration lives in
+        # `_plan_parsing.DECLARATION_FIELDS`, which the `foreign` column's
+        # per-entry stamp walks too, so neither selector can be left behind when
+        # a heading is added. A survey-scope deliverable declares
         # `Files expected to mutate:` instead of `Affected files:`, and its
         # foreign paths must reach this gate like any other. Reading one field
         # made the gate's population a strict subset of the declared surface.
@@ -251,7 +254,7 @@ def _partition_foreign_paths(deliverables: list[dict]) -> _ForeignPopulation:
         paths: list[str] = []
         read_seen: set[str] = set()
         read_paths: list[str] = []
-        for field in ('affected_files', 'mutation_scope', 'survey_scope'):
+        for field in DECLARATION_FIELDS:
             for entry in deliverable.get(field, []) or []:
                 if not isinstance(entry, dict) or not entry.get('foreign'):
                     continue

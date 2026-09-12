@@ -377,6 +377,31 @@ _DECLARATION_HEADINGS: tuple[tuple[str, str | None], ...] = (
     (_SURVEY_SCOPE_HEADING, STEP_INTENT_READ),
 )
 
+#: The record KEYS :func:`extract_deliverables` emits for a deliverable's declared
+#: file surface — the single enumeration every consumer that walks that WHOLE
+#: surface iterates, rather than each carrying a verbatim copy of the key set.
+#:
+#: Both foreign selectors read it: the per-entry ``foreign`` stamp
+#: ``manage-solution-outline list-deliverables`` applies, and the population walk of
+#: the phase-6 pre-archive foreign-PR landing gate. Sharing one object is what makes
+#: a heading addition reach BOTH by construction — the failure this constant exists
+#: to prevent is a new heading that reaches the declared-footprint derivation while
+#: each selector keeps walking its own stale copy, leaving that heading's foreign
+#: paths unstamped and outside the gate's population.
+#:
+#: Relationship to its two neighbours — the three are deliberately distinct:
+#:
+#: - :data:`_DECLARATION_HEADINGS` is heading TEXT plus default intent, consumed at
+#:   PARSE time; this tuple is the parsed RECORD KEYS, consumed at CONSUME time.
+#:   They describe the same declaration surface from opposite ends of the parse, so
+#:   a heading added to the standard means editing both, in step.
+#: - :func:`deliverable_write_set` deliberately walks the NARROWER
+#:   ``('affected_files', 'mutation_scope')`` and MUST NOT be switched to this
+#:   constant. ``survey_scope`` is the analysis-only candidate pool and is excluded
+#:   from the write-set by design; unifying the two would silently pull every
+#:   surveyed path into every deliverable's change footprint.
+DECLARATION_FIELDS: tuple[str, ...] = ('affected_files', 'mutation_scope', 'survey_scope')
+
 #: The bucket a bullet lands in when it declares no intent this parser recognises.
 #:
 #: Deliberately OUTSIDE the closed :data:`constants.VALID_STEP_INTENTS` enum, and
@@ -584,6 +609,8 @@ def deliverable_write_set(deliverable: dict[str, Any]) -> list[str]:
     """
     write_set: list[str] = []
     seen: set[str] = set()
+    # Deliberately NARROWER than :data:`DECLARATION_FIELDS` — see that constant's
+    # docstring for why ``survey_scope`` stays out of the write-set.
     for field in ('affected_files', 'mutation_scope'):
         for entry in deliverable.get(field, []) or []:
             if not isinstance(entry, dict):

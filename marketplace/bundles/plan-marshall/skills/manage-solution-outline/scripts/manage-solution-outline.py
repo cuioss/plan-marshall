@@ -36,6 +36,7 @@ from _architecture_core import (
     load_project_meta,
 )
 from _plan_parsing import (
+    DECLARATION_FIELDS,
     _slugify_section_name,
     declares_change,
     deliverable_write_set,
@@ -643,13 +644,15 @@ def _annotate_foreign(deliverables: list[dict[str, Any]]) -> None:
 
     for deliverable in deliverables:
         declares_foreign_change = False
-        # All THREE declaration fields, not `affected_files` alone. A
-        # survey-scope deliverable declares `Files to survey:` +
-        # `Files expected to mutate:` instead, so scanning only the flat field
-        # would leave its whole surface unstamped — and the phase-6 landing gate
-        # reads exactly these per-entry flags, so an unstamped foreign path is
-        # one the gate cannot see.
-        for field in ('affected_files', 'mutation_scope', 'survey_scope'):
+        # Every declaration field the parser emits, not `affected_files` alone —
+        # the enumeration lives in `_plan_parsing.DECLARATION_FIELDS`, which the
+        # phase-6 landing gate walks too, so neither selector can be left behind
+        # when a heading is added. A survey-scope deliverable declares
+        # `Files to survey:` + `Files expected to mutate:` instead of the flat
+        # field, so scanning one field would leave its whole surface unstamped —
+        # and the gate reads exactly these per-entry flags, so an unstamped
+        # foreign path is one the gate cannot see.
+        for field in DECLARATION_FIELDS:
             for entry in deliverable.get(field, []) or []:
                 if not isinstance(entry, dict):
                     continue
