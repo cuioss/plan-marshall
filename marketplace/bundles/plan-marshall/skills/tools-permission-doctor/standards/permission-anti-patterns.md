@@ -15,8 +15,8 @@ alongside the target-agnostic analysis engine in `permission_doctor.py`.
 ## Suspicious Permission Patterns
 
 ### System Temp Directories
-- `Read(//tmp/**)`, `Edit(//tmp/**)`
-- `Read(//private/tmp/**)`
+- `Read(/tmp/**)`, `Edit(/tmp/**)`
+- `Read(/private/tmp/**)`
 - Any permission accessing `/tmp` or `/private/tmp`
 
 ### Critical System Directories
@@ -29,7 +29,7 @@ alongside the target-agnostic analysis engine in `permission_doctor.py`.
 
 ### Overly Broad Wildcards
 - `Read(//Users/**)` - All user files
-- `Read(//\*\*)` - Entire filesystem
+- `Read(/\*\*)` - Entire filesystem
 - `Bash(*)` - All commands
 
 ### Dangerous Commands
@@ -90,11 +90,11 @@ def detect_system_directory_access(permission):
 
 ```python
 TEMP_DIRECTORY_PATTERNS = [
-    r'.*//tmp/.*',
-    r'.*//private/tmp/.*',
+    r'.*/tmp/.*',
+    r'.*/private/tmp/.*',
     r'.*/var/tmp/.*',
-    r'Read\(//tmp/\*\*\)',
-    r'Edit\(//tmp/\*\*\)',
+    r'Read\(/tmp/\*\*\)',
+    r'Edit\(/tmp/\*\*\)',
 ]
 
 
@@ -117,10 +117,10 @@ def detect_temp_directory_access(permission):
 
 ```python
 BROAD_WILDCARD_PATTERNS = [
-    (r'Read\(//\*\*\)', 'Entire filesystem'),
+    (r'Read\(/\*\*\)', 'Entire filesystem'),
     (r'Read\(//Users/\*\*\)', 'All user files'),
     (r'Read\(//home/\*\*\)', 'All user files (Linux)'),
-    (r'Edit\(//\*\*\)', 'Entire filesystem'),
+    (r'Edit\(/\*\*\)', 'Entire filesystem'),
     (r'Bash\(\*\)', 'All bash commands'),
 ]
 
