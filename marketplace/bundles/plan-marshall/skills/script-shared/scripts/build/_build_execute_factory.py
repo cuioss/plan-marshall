@@ -438,7 +438,6 @@ def _append_gate_build_row(
     command_args: str,
     command_str: str,
     result: DirectCommandResult,
-    project_dir: str,
     route: str,
 ) -> None:
     """Append one ``kind=build`` ledger row for a terminal gate route.
@@ -469,8 +468,6 @@ def _append_gate_build_row(
     try:
         from _ledger_core import append_entry, build_record
 
-        _ = project_dir  # retained for call-site compatibility; sha deliberately unresolved (see docstring).
-        worktree_sha = None
         raw_status = str((result or {}).get('status', ''))
         ledger_status = raw_status if raw_status in ('success', 'error', 'timeout', 'killed') else 'unknown'
         try:
@@ -492,7 +489,7 @@ def _append_gate_build_row(
             args=record_args,
             exit_code=exit_code,
             status=ledger_status,
-            worktree_sha=worktree_sha,
+            worktree_sha=None,
             log_file=log_file,
             command=command_str,
             duration_seconds=None,
@@ -1135,7 +1132,6 @@ def create_execute_handlers(
                     command_args=command_args,
                     command_str=str(routed.get('command', '')),
                     result=routed,
-                    project_dir=project_dir,
                     route='routed',
                 )
                 return cmd_run_common(
@@ -1208,7 +1204,6 @@ def create_execute_handlers(
                 command_args=command_args,
                 command_str=str(result.get('command', '')),
                 result=result,
-                project_dir=project_dir,
                 route='in_process',
             )
         except BuildQueueTimeout as exc:
