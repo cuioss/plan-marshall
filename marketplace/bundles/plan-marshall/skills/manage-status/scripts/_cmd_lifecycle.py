@@ -23,6 +23,7 @@ from _status_core import (
     _surface_drive,
     get_archive_dir,
     get_status_path,
+    in_progress_phases,
     log_entry,
     normalize_metadata,
     now_utc_iso,
@@ -473,11 +474,22 @@ def cmd_transition(args: argparse.Namespace) -> dict[str, Any] | None:
 def cmd_archive(args: argparse.Namespace) -> dict[str, Any] | None:
     """Archive a completed plan.
 
-    Atomically closes the active phase before moving the plan directory:
-    marks the active phase ``done``, and when every phase is done sets
-    ``current_phase = 'complete'``. Mirrors cmd_transition so an archived
-    status.json reflects a fully-closed plan instead of being frozen at the
-    last phase's in_progress state.
+    Atomically closes the plan's open phases before moving the plan directory, so the
+    archived ``status.json`` — the permanent record — never says a phase is still
+    running. The post-condition has three parts:
+
+    - EVERY phase recorded as ``in_progress`` is closed to ``done``, not just the first
+      one found;
+    - every phase in :data:`_status_core.UNTOUCHED_PHASE_STATUSES` (today exactly
+      ``pending``) is left ALONE — a phase that never started must not be recorded as
+      finished, which would write a fresh false record rather than close a real one;
+    - ``current_phase`` becomes ``'complete'`` once no phase remains ``in_progress``,
+      so a plan abandoned mid-lifecycle still reaches the post-finalize sentinel its
+      dormant consumers match on, while its unstarted phases stay ``pending``.
+
+    This is deliberately NOT identical to ``cmd_transition``: that verb advances one
+    phase at a time through a plan that is still running, whereas archive closes out
+    whatever state the plan was abandoned in.
     """
     require_valid_plan_id(args)
 
@@ -527,14 +539,26 @@ def cmd_archive(args: argparse.Namespace) -> dict[str, Any] | None:
         if findings_refusal is not None:
             return findings_refusal
 
-    phases = status.get('phases', [])
-    active_idx = next(
-        (i for i, p in enumerate(phases) if p.get('status') != PHASE_STATUS_DONE),
-        None,
-    )
-    if active_idx is not None:
-        phases[active_idx]['status'] = PHASE_STATUS_DONE
-    if all(p.get('status') == PHASE_STATUS_DONE for p in phases):
+    # Close EVERY open phase, not the first one found. The retired form took the first
+    # phase whose status was merely ``!= done`` and closed that one alone, which failed
+    # in both directions at once: a plan holding two ``in_progress`` phases kept the
+    # second one recorded as running forever (the permanent archived record then said a
+    # phase was still in flight), and a ``pending`` phase — one that never started —
+    # satisfied ``!= done`` and was written ``done``, fabricating a fresh false record
+    # of work that never happened. ``in_progress_phases`` reports only the closable
+    # status, so both halves are fixed by the same call.
+    for phase in in_progress_phases(status):
+        phase['status'] = PHASE_STATUS_DONE
+    # The completion gate is "no phase remains ``in_progress``", NOT "every phase is
+    # ``done``". The retired ``all(done)`` predicate could never fire for a plan
+    # abandoned mid-lifecycle — its untouched ``pending`` phases are not ``done`` and
+    # must stay that way — so such a plan was archived with ``current_phase`` frozen at
+    # its last phase and never reached the post-finalize sentinel its dormant consumers
+    # match on. Stated as the explicit post-condition rather than an unconditional
+    # write: the loop above has just closed every open phase, so the predicate holds by
+    # construction today, and keeping it means a future change that narrows the closure
+    # set cannot silently start claiming completion over a phase left running.
+    if not in_progress_phases(status):
         status['current_phase'] = 'complete'
     # Drop any in-flight terminal-title token (any TITLE_TOKEN_STATES value —
     # lock-waiting/lock-owned/build-busy) before archiving. An archived plan

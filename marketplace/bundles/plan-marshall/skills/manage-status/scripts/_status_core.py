@@ -14,7 +14,14 @@ from pathlib import Path
 from typing import Any, NotRequired, TypedDict, cast
 
 from _locks_core import rmw_json
-from constants import DIR_ARCHIVED, DIR_PLANS, FILE_STATUS
+from constants import (
+    DIR_ARCHIVED,
+    DIR_PLANS,
+    FILE_STATUS,
+    PHASE_STATUS_DONE,
+    PHASE_STATUS_IN_PROGRESS,
+    VALID_PHASE_STATUSES,
+)
 from file_ops import (
     base_path,
     get_executor_path,
@@ -176,6 +183,45 @@ def normalize_metadata(status: dict[Any, Any]) -> dict[Any, Any]:
         metadata = {}
         status['metadata'] = metadata
     return metadata
+
+
+# =============================================================================
+# Phase closure (the archive post-condition)
+# =============================================================================
+
+#: Phase statuses a closing write MUST NOT touch, derived by set DIFFERENCE from the
+#: declared vocabulary rather than spelled as the literal ``{'pending'}``. Today the
+#: difference is exactly ``{pending}``, but deriving it means a status added to
+#: ``VALID_PHASE_STATUSES`` later is untouched by default — it has to be named
+#: explicitly here to become closable, rather than silently joining the set a closure
+#: writes ``done`` onto. ``VALID_PHASE_STATUSES`` is a TUPLE, so the difference is taken
+#: over a ``frozenset`` of it.
+UNTOUCHED_PHASE_STATUSES = frozenset(VALID_PHASE_STATUSES) - {PHASE_STATUS_IN_PROGRESS, PHASE_STATUS_DONE}
+
+
+def in_progress_phases(status: dict[Any, Any]) -> list[dict[str, Any]]:
+    """Return EVERY phase record currently recorded as ``in_progress``.
+
+    ``in_progress`` is the only CLOSABLE status: it names a phase that really did
+    start, so recording it as ``done`` at archive time closes a genuine record. A
+    ``pending`` phase never ran, so writing ``done`` onto it would fabricate a fresh
+    false record — which is why the statuses this function does not report are held in
+    :data:`UNTOUCHED_PHASE_STATUSES`.
+
+    The single predicate for "which phases are still open", consumed by
+    ``_cmd_lifecycle.cmd_archive`` (which mutates the returned records in place — they
+    are the live dicts, not copies) and by the ``census`` verb's open-phase reporting.
+    Naming it once is what keeps the archive's closure set and the census's reported
+    population from drifting into two different answers to the same question.
+
+    A malformed ``phases`` value (absent, not a list, rows that are not dicts) reports
+    no open phase rather than raising: a caller archiving a structurally odd record
+    still has to be able to close it.
+    """
+    phases = status.get('phases')
+    if not isinstance(phases, list):
+        return []
+    return [phase for phase in phases if isinstance(phase, dict) and phase.get('status') == PHASE_STATUS_IN_PROGRESS]
 
 
 # =============================================================================
