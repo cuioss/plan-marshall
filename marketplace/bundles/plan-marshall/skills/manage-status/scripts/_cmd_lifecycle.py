@@ -44,12 +44,20 @@ from file_ops import get_plan_dir
 # ``manage_status.py`` main() treat the same situations as boundary refusals.
 # Single source of truth — both consumers import this name; do not duplicate
 # the literal set.
+#
+# ``worktree_dirty_at_boundary`` and ``worktree_unreadable_at_boundary`` are a PAIR:
+# one tree-state question, two structurally different answers (read-and-dirty vs
+# never-read). BOTH must be members. A new code split out of an existing one but left
+# out of this set silently degrades the boundary guard from fail-closed to fail-open —
+# ``verify_blocks_transition`` would return False for it, so the transition would
+# proceed and the CLI wrapper would exit 0 on a refusal the guard actually raised.
 VERIFY_REFUSAL_ERRORS = frozenset(
     {
         'worktree_unresolved',
         'worktree_metadata_drift',
         'main_checkout_dirtied_during_plan',
         'worktree_dirty_at_boundary',
+        'worktree_unreadable_at_boundary',
         'main_capture_read_the_worktree',
     }
 )
@@ -63,9 +71,23 @@ def _clean_tree_refusal(plan_id: str, status: dict[str, Any]) -> dict[str, Any] 
     before the transition into a blocking boundary is allowed: every
     per-deliverable commit belongs to the phase-5-execute envelope's Step 10a
     chain-tail, so uncommitted edits at the boundary mean a commit obligation
-    was skipped. Returns the structured refusal dict when the tree is dirty
-    (or when ``git status`` itself fails — the gate fails closed), and
-    ``None`` when the transition may proceed.
+    was skipped. Returns ``None`` when the transition may proceed.
+
+    Two structurally different conditions refuse here, and each reports its OWN
+    code:
+
+    - ``worktree_unreadable_at_boundary`` — ``git status`` itself failed, so the tree
+      was never read. The gate fails closed because an unreadable tree cannot be
+      PROVEN clean; that is not a claim the tree is dirty. No ``dirty_files`` key is
+      published, because nothing was enumerated.
+    - ``worktree_dirty_at_boundary`` — the tree WAS read and carries uncommitted
+      changes, enumerated in ``dirty_files``.
+
+    Both are members of :data:`VERIFY_REFUSAL_ERRORS`, so both block the transition
+    and both drive the CLI exit-1 wrapper; the split changes which condition is
+    NAMED, never whether it refuses. Reporting one code for both sent the reader to
+    the wrong remedy: a dirty tree needs the boundary settlement commit, whereas an
+    unreadable one needs the worktree itself repaired.
     """
     metadata = normalize_metadata(status)
     if not metadata.get('use_worktree'):
@@ -84,12 +106,16 @@ def _clean_tree_refusal(plan_id: str, status: dict[str, Any]) -> dict[str, Any] 
         check=False,
     )
     if proc.returncode != 0:
-        # Fail closed: an unreadable tree cannot be proven clean.
+        # Fail closed: an unreadable tree cannot be proven clean. Deliberately NOT the
+        # dirty code — nothing was read, so reporting this as "dirty" names a condition
+        # nobody observed and points the reader at the wrong remedy. ``dirty_files`` is
+        # OMITTED rather than sent as ``[]``: an empty list here would be a measured-zero
+        # claim about a tree that was never enumerated, byte-identical to what a
+        # genuinely clean read would have produced.
         return {
             'status': 'error',
             'plan_id': plan_id,
-            'error': 'worktree_dirty_at_boundary',
-            'dirty_files': [],
+            'error': 'worktree_unreadable_at_boundary',
             'message': (
                 f'git status failed in worktree {worktree_path} '
                 f'(exit {proc.returncode}): {proc.stderr.strip()} — '
@@ -138,8 +164,8 @@ def _loop_back_auto_override(
 
     Every other blocking result returns the refusal unchanged: drift WITHOUT
     the marker keeps today's blocking behavior, and the worktree-resolution /
-    dirty-boundary / main-dirtied / main-capture-misresolution refusals
-    (``VERIFY_REFUSAL_ERRORS``) are
+    dirty-boundary / unreadable-boundary / main-dirtied /
+    main-capture-misresolution refusals (``VERIFY_REFUSAL_ERRORS``) are
     NEVER bypassed by the marker — only invariant drift is auto-resolved.
     A failed re-capture also blocks (fail closed) by returning its error
     payload.
