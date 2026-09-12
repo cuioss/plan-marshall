@@ -488,8 +488,10 @@ def parse_stale_participation(raw: str | None, flag: str = '--stale-participatio
 
     **Why the filter must not run twice.** Admissibility answers *"is this evidence
     that the bot reviewed?"*, and the producer already answered it: a pair only
-    reaches ``stale_participation_bots[]`` because its ``evidence_kind`` matched a
-    declared publish shape and then FAILED the currency test. Re-testing
+    reaches ``stale_participation_bots[]`` because the producer admitted it — its
+    ``evidence_kind`` matched a declared publish shape AND carried that shape's
+    declared content marker where one is declared — and it then FAILED the
+    currency test. Re-testing
     admissibility here asks a question that was already settled and can only
     subtract — and when it does subtract, the observation vanishes and the bot
     falls through to ``absent``. That is the exact inversion this parse exists to
@@ -1035,8 +1037,10 @@ def check_completeness(
                            observed and steering the operator to wait on a notice no
                            layer could parse.
         stale_participation_bots:
-                           Bots whose observed comment matched a declared
-                           ``participation_evidence`` publish shape but failed the
+                           Bots whose observed comment was already admissible
+                           evidence — a declared ``participation_evidence`` publish
+                           shape, carrying that shape's declared content marker
+                           where one is declared — but failed the
                            ``participation_requires_update`` currency test, as
                            reported by ``github_pr fetch_findings``'s
                            ``stale_participation_bots[]``. They resolve to
@@ -1764,7 +1768,9 @@ def _add_bot_observation_flags(sub: argparse.ArgumentParser) -> None:
             'form as --participated-bots, and the exact shape github_pr '
             "fetch_findings emits in stale_participation_bots[], so the producer's "
             'output forwards here verbatim. Each names a bot whose observed comment '
-            'matched a declared participation_evidence publish shape but failed the '
+            'was already admissible evidence — a declared participation_evidence '
+            'publish shape carrying that shape declared content marker where one is '
+            'declared — but failed the '
             'participation_requires_update currency test; the classifier reads only '
             'the bot_kind. A required bot here is classified participated_stale and '
             'blocks — it published against an earlier HEAD, so nothing has reviewed '
