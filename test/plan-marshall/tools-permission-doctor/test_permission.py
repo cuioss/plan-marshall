@@ -16,6 +16,7 @@ import os
 
 import pytest
 from permission_doctor import (
+    check_permission,
     cmd_detect_missing_project_step_permissions,
     cmd_detect_redundant,
     cmd_detect_suspicious,
@@ -211,9 +212,9 @@ class TestDetectSuspicious:
         'permission',
         [
             'Bash(sudo:*)',
-            'Write(/etc/**)',
+            'Edit(/etc/**)',
             'Bash(dd:if=/dev/zero)',
-            'Write(//Users/**)',
+            'Edit(//Users/**)',
         ],
         ids=[
             'privilege-escalation-via-sudo',
@@ -223,7 +224,13 @@ class TestDetectSuspicious:
         ],
     )
     def test_flags_a_dangerous_permission_as_suspicious(self, tmp_path, permission):
-        """Each of these grants is reported, so the clean-settings control below discriminates."""
+        """Each of these grants is reported, so the clean-settings control below discriminates.
+
+        The two write-intent rows are spelled ``Edit(...)`` because that is the
+        rule Claude consults for a file write; the ``Write(...)`` spelling over the
+        same path grants nothing, and the matched control below pins that it is
+        therefore not reported.
+        """
         settings_file = tmp_path / 'settings.json'
         settings_file.write_text(json.dumps({'permissions': {'allow': [permission], 'deny': [], 'ask': []}}))
 
@@ -240,6 +247,40 @@ class TestDetectSuspicious:
 
         assert result['status'] == 'success'
         assert permission in [s['permission'] for s in result['suspicious']]
+
+    @pytest.mark.parametrize(
+        ('granting', 'severity', 'category', 'inert'),
+        [
+            ('Edit(/**)', 'high', 'root_access', 'Write(/**)'),
+            ('Edit(/etc/**)', 'high', 'system_directory', 'Write(/etc/**)'),
+            ('Edit(/tmp/**)', 'medium', 'temp_directory', 'Write(/tmp/**)'),
+            ('Edit(//Users/**)', 'high', 'broad_access', 'Write(//Users/**)'),
+        ],
+        ids=[
+            'root-access',
+            'system-directory',
+            'temp-directory',
+            'broad-access',
+        ],
+    )
+    def test_a_write_intent_row_scores_the_granting_spelling_only(self, granting, severity, category, inert) -> None:
+        """One row per re-keyed category: ``Edit(...)`` scores, ``Write(...)`` does not.
+
+        ``SUSPICIOUS_PATTERNS`` is reached directly through ``check_permission`` so
+        the table itself is under test rather than the subcommand around it. The
+        severity and category travel with the positive because a row re-keyed onto
+        the right tool but rescored would satisfy a bare "is flagged" assertion.
+
+        The four rows are one per category the re-key touched — root_access,
+        system_directory, temp_directory, broad_access — so no category can be
+        re-keyed back without a failure here.
+        """
+        hit = check_permission(granting)
+        assert hit is not None
+        assert hit['severity'] == severity
+        assert hit['category'] == category
+
+        assert check_permission(inert) is None
 
     def test_output_includes_severity(self, tmp_path):
         """Suspicious permissions should include severity."""

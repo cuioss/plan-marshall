@@ -73,6 +73,42 @@ _READ_PATH_IDS = [
     'a-directory-at-the-local-path-does-not-shadow-the-shared-file',
 ]
 
+#: The WRITE selector over the same input space, in the same ``(local, shared,
+#: expected)`` shape — the mirror image of ``_READ_PATH_CASES`` rather than a
+#: separate idea. The write path prefers the committed, team-visible file, so the
+#: rows where the shared file is real take it and the rest fall through to the
+#: local name, including the row where NEITHER exists. The last row is the
+#: is_file distinction in the other direction: a directory occupying the SHARED
+#: path is not a settings file, so the local one wins.
+#:
+#: Stating both selectors over one input space is what makes them a matched PAIR.
+#: A table for the read side alone leaves the preference it is supposedly opposite
+#: to unpinned, and a re-key of the write side would then break nothing.
+_WRITE_PATH_CASES = [
+    ('file', 'file', 'settings.json'),
+    ('file', None, 'settings.local.json'),
+    (None, 'file', 'settings.json'),
+    (None, None, 'settings.local.json'),
+    ('file', 'dir', 'settings.local.json'),
+]
+
+_WRITE_PATH_IDS = [
+    'both-present-shared-wins',
+    'only-local-present',
+    'only-shared-present',
+    'neither-present-resolves-the-local-name',
+    'a-directory-at-the-shared-path-does-not-capture-the-write',
+]
+
+
+def _claude_tree(tmp_path: Path, local: str | None, shared: str | None) -> Path:
+    """Build ``tmp_path/.claude`` with each candidate materialized as the row says."""
+    claude_dir = tmp_path / '.claude'
+    claude_dir.mkdir()
+    _materialize(claude_dir / 'settings.local.json', local)
+    _materialize(claude_dir / 'settings.json', shared)
+    return claude_dir
+
 
 class TestProjectSettingsReadPath:
     """The read preference is the runtime's, and it mirrors the write preference."""
@@ -82,30 +118,44 @@ class TestProjectSettingsReadPath:
         self, tmp_path: Path, local: str | None, shared: str | None, expected: str
     ) -> None:
         """The read path takes ``settings.local.json`` whenever it is a real file."""
-        claude_dir = tmp_path / '.claude'
-        claude_dir.mkdir()
-        _materialize(claude_dir / 'settings.local.json', local)
-        _materialize(claude_dir / 'settings.json', shared)
+        claude_dir = _claude_tree(tmp_path, local, shared)
 
         resolved = claude_runtime._claude_project_settings_read_path(str(tmp_path))
 
         assert resolved == claude_dir / expected
 
-    def test_a_directory_at_the_shared_path_does_not_capture_the_write(self, tmp_path: Path) -> None:
-        """The write selector makes the same distinction, in the other direction."""
-        claude_dir = tmp_path / '.claude'
-        claude_dir.mkdir()
-        (claude_dir / 'settings.json').mkdir()
-        assert claude_runtime._claude_project_settings_path(str(tmp_path)) == (claude_dir / 'settings.local.json')
+    @pytest.mark.parametrize(('local', 'shared', 'expected'), _WRITE_PATH_CASES, ids=_WRITE_PATH_IDS)
+    def test_the_write_selector_prefers_the_shared_file(
+        self, tmp_path: Path, local: str | None, shared: str | None, expected: str
+    ) -> None:
+        """The write path takes ``settings.json`` whenever it is a real file."""
+        claude_dir = _claude_tree(tmp_path, local, shared)
+
+        resolved = claude_runtime._claude_project_settings_path(str(tmp_path))
+
+        assert resolved == claude_dir / expected
 
     def test_read_and_write_preferences_are_opposites(self, tmp_path: Path) -> None:
-        """Both files present: the read path takes local, the write path takes shared."""
-        claude_dir = tmp_path / '.claude'
-        claude_dir.mkdir()
-        (claude_dir / 'settings.local.json').write_text('{}', encoding='utf-8')
-        (claude_dir / 'settings.json').write_text('{}', encoding='utf-8')
-        assert claude_runtime._claude_project_settings_read_path(str(tmp_path)).name == ('settings.local.json')
-        assert claude_runtime._claude_project_settings_path(str(tmp_path)).name == 'settings.json'
+        """Both files present, one tree: the read path takes local, the write path takes shared.
+
+        Full paths, not filenames. A selector that returned the right basename
+        under the wrong directory would satisfy a ``.name`` check while resolving
+        a file in neither the project nor the operator's configuration.
+
+        The inequality is asserted in its own right: "opposite" is a claim about
+        the two selectors DISAGREEING here, and collapsing them onto one file is
+        the specific regression this guards — one that both equality assertions
+        above would have to be edited to permit, but that a caller could reach by
+        re-pointing either selector at the other.
+        """
+        claude_dir = _claude_tree(tmp_path, 'file', 'file')
+
+        read_path = claude_runtime._claude_project_settings_read_path(str(tmp_path))
+        write_path = claude_runtime._claude_project_settings_path(str(tmp_path))
+
+        assert read_path == claude_dir / 'settings.local.json'
+        assert write_path == claude_dir / 'settings.json'
+        assert read_path != write_path
 
 
 class TestSettingsShapeIsMalformedToo:

@@ -19,6 +19,7 @@ sys.path manipulation.
 
 from __future__ import annotations  # noqa: I001
 
+import ast
 import json
 from pathlib import Path
 from typing import Any
@@ -48,6 +49,47 @@ from conftest import get_script_path, run_script
 
 def _parse(output: str) -> dict[str, Any]:
     return parse_toon(output)
+
+
+def _code_string_literals(source: str) -> list[str]:
+    """Return every string literal in ``source`` EXCEPT docstrings.
+
+    A delegation guard asks whether a module RESOLVES a path, and a raw substring
+    scan over the file text cannot answer that: it reads a docstring naming the
+    resolver a module delegates to exactly as it reads an inlined path the module
+    resolves itself. Narrowing the scan to non-docstring literals restores the
+    question the guard means to ask — code is still fully covered, and only prose
+    stops being mistaken for it.
+    """
+    tree = ast.parse(source)
+    docstring_nodes: set[int] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Module | ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef):
+            continue
+        first = node.body[0] if node.body else None
+        if isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant) and isinstance(first.value.value, str):
+            docstring_nodes.add(id(first.value))
+    return [
+        node.value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Constant) and isinstance(node.value, str) and id(node) not in docstring_nodes
+    ]
+
+
+def _inlines_a_claude_settings_path(literals: list[str]) -> bool:
+    """Whether ``literals`` spell out a ``.claude`` settings path in either form.
+
+    Two spellings reach the same place and both count: one literal carrying the
+    joined ``.claude/settings`` segment, or a bare ``.claude`` literal paired with
+    a ``settings*.json`` filename literal for a ``Path('.claude') / 'settings.json'``
+    style join. Keeping both arms is what stops the guard degrading into a check
+    that only one way of writing the defect can trip.
+    """
+    if any('.claude/settings' in literal for literal in literals):
+        return True
+    return '.claude' in literals and any(
+        literal.startswith('settings') and literal.endswith('.json') for literal in literals
+    )
 
 
 # =============================================================================
@@ -341,11 +383,36 @@ class TestScriptsDelegateToRuntime:
         It must not open-code a ``.claude/settings`` path-resolution of its own; the
         only ``.claude`` reference allowed is the plugin-cache permission VALUE it
         installs and the ``.claude-plugin`` manifest filename it scans.
+
+        The constraint is about CODE, so the scan is too. ``resolve_settings_arg``
+        documents which file the resolver it delegates to prefers, and naming that
+        file is the opposite of resolving it — a module that delegates has every
+        reason to say where the delegate lands. Scanning raw file text conflated
+        the two and made documenting the seam indistinguishable from breaching it.
         """
-        source = Path(permission_fix.__file__).read_text(encoding='utf-8')
-        # No literal settings-file path resolution rooted at .claude/settings.
-        assert '.claude/settings' not in source
-        assert ".claude' / 'settings" not in source
+        literals = _code_string_literals(Path(permission_fix.__file__).read_text(encoding='utf-8'))
+        assert not _inlines_a_claude_settings_path(literals)
+
+    @pytest.mark.parametrize(
+        ('body', 'inlines'),
+        [
+            ("def f():\n    return Path('.claude/settings.json')\n", True),
+            ("def f():\n    return Path('.claude') / 'settings.json'\n", True),
+            (
+                'def f():\n    """Delegates; the resolver prefers .claude/settings.local.json."""\n    return g()\n',
+                False,
+            ),
+        ],
+        ids=['joined-literal', 'segment-join', 'docstring-mention-only'],
+    )
+    def test_the_delegation_scan_separates_resolving_a_path_from_naming_one(self, body: str, inlines: bool) -> None:
+        """The guard above still catches both inlined spellings, and only those.
+
+        Without the two positive rows, narrowing the scan to code could silently
+        become a guard that passes on everything; without the negative row, the
+        prose false-positive it was narrowed to remove is not pinned as removed.
+        """
+        assert _inlines_a_claude_settings_path(_code_string_literals(body)) is inlines
 
     def test_permission_web_help_has_no_claude_settings_hardcode(self) -> None:
         """permission_web user-facing help no longer hardcodes ~/.claude/settings.json.
@@ -551,3 +618,76 @@ class TestFailClosedDispatchRegression:
         assert parsed['status'] == 'error'
         assert parsed['error'] == 'invalid_marshal'
         assert settings.read_bytes() == before
+
+
+# =============================================================================
+# 5. The suspicious audit scores the spelling that actually grants write access
+# =============================================================================
+
+
+#: The write-intent rows of ``permission analyze``'s suspicious audit, each as the
+#: spelling that GRANTS the access, the severity that spelling carries, and the
+#: spelling that does NOT grant it. Claude consults ``Edit(...)`` rules for file
+#: writes, so a ``Write(...)`` rule over the same path grants nothing — scoring it
+#: reported a risk no setting conferred while the rule that did confer it matched
+#: nothing. Each row therefore carries its own negative: the pair is the contract,
+#: and asserting either half alone would pass against the inverted table.
+_WRITE_INTENT_AUDIT_PAIRS = [
+    ('Edit(/**)', 'high', 'Write(/**)'),
+    ('Edit(/tmp/**)', 'medium', 'Write(/tmp/**)'),
+]
+
+_WRITE_INTENT_AUDIT_IDS = [
+    'entire-filesystem',
+    'system-temp-directory',
+]
+
+
+class TestSuspiciousAuditScoresTheGrantingSpelling:
+    """``permission analyze --checks suspicious`` over the two write-intent rows."""
+
+    def _analyze(self, tmp_path: Path, monkeypatch, capsys, allow: list[str]) -> dict[str, Any]:
+        """Audit a claude-target project whose project allow-list is exactly ``allow``."""
+        plan_dir = tmp_path / '.plan'
+        plan_dir.mkdir(parents=True, exist_ok=True)
+        (plan_dir / 'marshal.json').write_text(json.dumps({'runtime': {'target': 'claude'}}), encoding='utf-8')
+        claude_dir = tmp_path / '.claude'
+        claude_dir.mkdir(parents=True, exist_ok=True)
+        (claude_dir / 'settings.json').write_text(
+            json.dumps({'permissions': {'allow': allow, 'deny': [], 'ask': []}}), encoding='utf-8'
+        )
+        monkeypatch.chdir(tmp_path)
+
+        rc = platform_runtime.main(['permission', 'analyze', '--scope', 'project', '--checks', 'suspicious'])
+        assert rc == 0
+        return _parse(capsys.readouterr().out)
+
+    @pytest.mark.parametrize(('granting', 'severity', 'inert'), _WRITE_INTENT_AUDIT_PAIRS, ids=_WRITE_INTENT_AUDIT_IDS)
+    def test_the_granting_spelling_is_flagged_and_the_inert_one_is_not(
+        self, tmp_path, monkeypatch, capsys, granting: str, severity: str, inert: str
+    ) -> None:
+        """Positive and negative in one test, so the pair cannot drift apart.
+
+        Split across two tests, deleting the negative would leave a suite that is
+        still green against a table scoring BOTH spellings — which is the state
+        this asserts the audit is not in.
+        """
+        flagged = self._analyze(tmp_path, monkeypatch, capsys, [granting])
+        assert int(flagged['total_findings']) == 1
+        assert [f['severity'] for f in flagged['findings']] == [severity]
+
+        ignored = self._analyze(tmp_path, monkeypatch, capsys, [inert])
+        assert int(ignored['total_findings']) == 0
+
+    def test_an_unrelated_row_still_fires_so_the_audit_is_not_simply_silent(
+        self, tmp_path, monkeypatch, capsys
+    ) -> None:
+        """A non-write-intent row is flagged, discriminating a correct table from a dead one.
+
+        Every negative above is an empty finding list, and an audit that scored
+        nothing at all would satisfy them all. ``Bash(sudo:*)`` was untouched by
+        the re-key, so its finding proves the audit ran and reached a verdict.
+        """
+        parsed = self._analyze(tmp_path, monkeypatch, capsys, ['Bash(sudo:*)'])
+        assert int(parsed['total_findings']) == 1
+        assert [f['severity'] for f in parsed['findings']] == ['high']

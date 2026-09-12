@@ -142,17 +142,196 @@ class TestApplyFixesApplied:
 
 
 # =============================================================================
-# resolve_settings_arg — fall-through branch
+# resolve_settings_arg — the settings seam four subcommands share
 # =============================================================================
 
 
-def test_resolve_settings_arg_falls_through_to_project(tmp_path, monkeypatch):
-    """With neither --settings nor --scope, resolution defaults to the project path."""
-    monkeypatch.chdir(tmp_path)
+class TestResolveSettingsArg:
+    """``resolve_settings_arg`` resolves the project file whose entries take effect.
 
-    resolved = pf.resolve_settings_arg(Namespace(settings=None, scope=None))
+    Claude lets ``.claude/settings.local.json`` override ``.claude/settings.json``,
+    so when both exist a change written to the shared file is overridden and never
+    observed. Every subcommand sharing this helper MUTATES what it resolves, so the
+    helper resolves the read preference — the local file — on both the
+    ``--scope project`` arm and the no-flag fall-through.
 
-    assert '.claude' in resolved
+    Driven against a REAL ``.claude`` tree under a chdir'd ``tmp_path`` rather than
+    a stubbed resolver. The defect this seam was moved to fix IS a resolver
+    preference, and a test that monkeypatches the resolver away cannot observe
+    which preference the code asks for.
+    """
+
+    def _project(self, tmp_path, monkeypatch, *, local: bool):
+        """Build a project tree with a shared settings file and optionally a local one."""
+        claude = tmp_path / '.claude'
+        claude.mkdir(parents=True, exist_ok=True)
+        _write_settings(claude / 'settings.json', [])
+        if local:
+            _write_settings(claude / 'settings.local.json', [])
+        monkeypatch.chdir(tmp_path)
+        return claude
+
+    def test_both_arms_resolve_the_overriding_local_file(self, tmp_path, monkeypatch):
+        """``--scope project`` and the no-flag fall-through agree, and both pick the local file.
+
+        Asserting them together is the point: they are separate branches in the
+        helper, and letting them disagree is how one subcommand comes to edit a
+        different file from the next.
+        """
+        claude = self._project(tmp_path, monkeypatch, local=True)
+
+        assert pf.resolve_settings_arg(Namespace(settings=None, scope='project')) == str(claude / 'settings.local.json')
+        assert pf.resolve_settings_arg(Namespace(settings=None, scope=None)) == str(claude / 'settings.local.json')
+
+    def test_without_a_local_file_both_arms_fall_back_to_the_shared_one(self, tmp_path, monkeypatch):
+        """The control: the preference is a preference, not a hard-wired filename."""
+        claude = self._project(tmp_path, monkeypatch, local=False)
+
+        assert pf.resolve_settings_arg(Namespace(settings=None, scope='project')) == str(claude / 'settings.json')
+        assert pf.resolve_settings_arg(Namespace(settings=None, scope=None)) == str(claude / 'settings.json')
+
+    def test_an_explicit_settings_path_is_honoured_untouched(self, tmp_path, monkeypatch):
+        """``--settings`` outranks both arms — the operator named a file."""
+        self._project(tmp_path, monkeypatch, local=True)
+        explicit = tmp_path / 'elsewhere.json'
+
+        assert pf.resolve_settings_arg(Namespace(settings=explicit, scope=None)) == str(explicit)
+
+    def test_scope_global_still_resolves_outside_the_project(self, tmp_path, monkeypatch):
+        """Boundary: only the project arm moved; ``--scope global`` keeps ``get_settings_path``."""
+        claude = self._project(tmp_path, monkeypatch, local=True)
+
+        resolved = pf.resolve_settings_arg(Namespace(settings=None, scope='global'))
+
+        assert not resolved.startswith(str(claude))
+
+
+class TestSharedSeamCallSites:
+    """Each subcommand routed through ``resolve_settings_arg`` resolves the same file.
+
+    The helper is shared, so one call site could be re-pointed at a different
+    resolver without any helper-level test noticing. One row per call site is what
+    makes that divergence visible.
+    """
+
+    def _dual_file_project(self, tmp_path, monkeypatch):
+        """A project where BOTH settings files exist, so the preference is observable."""
+        claude = tmp_path / '.claude'
+        claude.mkdir(parents=True, exist_ok=True)
+        _write_settings(claude / 'settings.json', [])
+        _write_settings(claude / 'settings.local.json', [])
+        monkeypatch.chdir(tmp_path)
+        return claude / 'settings.local.json'
+
+    def test_apply_fixes_resolves_the_local_file(self, tmp_path, monkeypatch):
+        """apply-fixes — call site 1 of 4."""
+        local = self._dual_file_project(tmp_path, monkeypatch)
+
+        result = pf.cmd_apply_fixes(
+            parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'apply-fixes', '--scope', 'project')
+        )
+
+        assert result['settings_path'] == str(local)
+
+    def test_consolidate_resolves_the_local_file(self, tmp_path, monkeypatch):
+        """consolidate — call site 2 of 4."""
+        local = self._dual_file_project(tmp_path, monkeypatch)
+
+        result = pf.cmd_consolidate(
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'consolidate',
+                '--scope',
+                'project',
+                '--dry-run',
+            )
+        )
+
+        assert result['settings_path'] == str(local)
+
+    def test_ensure_wildcards_resolves_the_local_file_and_writes_through_it(self, tmp_path, monkeypatch):
+        """ensure-wildcards — call site 3 of 4.
+
+        This one also asserts the WRITE landed, because a ``--scope`` call must
+        never fall back to a ``None`` settings path for the save; resolving
+        correctly and then saving somewhere else would satisfy a path-only check.
+        """
+        local = self._dual_file_project(tmp_path, monkeypatch)
+        marketplace_file = tmp_path / 'marketplace.json'
+        marketplace_file.write_text(json.dumps({'bundles': {'foo': {'skills': ['s'], 'commands': ['c']}}}))
+
+        result = pf.cmd_ensure_wildcards(
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'ensure-wildcards',
+                '--scope',
+                'project',
+                '--marketplace-json',
+                str(marketplace_file),
+            )
+        )
+
+        assert result['status'] == 'success'
+        assert result['applied'] is True
+        assert result['settings_path'] == str(local)
+        assert 'Skill(foo:*)' in _read_allow(local)
+
+    def test_apply_project_step_permissions_resolves_the_local_file(self, tmp_path, monkeypatch):
+        """apply-project-step-permissions — call site 4 of 4."""
+        local = self._dual_file_project(tmp_path, monkeypatch)
+        marshal_file = tmp_path / 'marshal.json'
+        marshal_file.write_text(
+            json.dumps({'plan': {'phase-6-finalize': {'steps': ['project:finalize-step-plugin-doctor']}}})
+        )
+
+        result = pf.cmd_apply_project_step_permissions(
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'apply-project-step-permissions',
+                '--marshal',
+                str(marshal_file),
+                '--scope',
+                'project',
+                '--dry-run',
+            )
+        )
+
+        assert result['settings_path'] == str(local)
+
+    def test_target_project_on_add_still_resolves_the_shared_file(self, tmp_path, monkeypatch):
+        """Boundary control: ``--target`` was deliberately NOT moved to the read preference.
+
+        ``resolve_settings_arg`` serves these four subcommands; ``get_settings_path``
+        serves them plus six more reached through ``--target``. Only the first seam
+        moved, and that four-vs-ten line is the scope of the change — without this
+        row the switch could silently widen to all ten and every row above would
+        still pass.
+        """
+        local = self._dual_file_project(tmp_path, monkeypatch)
+        shared = local.parent / 'settings.json'
+        local_before = local.read_bytes()
+
+        pf.cmd_add(
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'add',
+                '--permission',
+                'Bash(npm:*)',
+                '--target',
+                'project',
+            )
+        )
+
+        assert 'Bash(npm:*)' in _read_allow(shared)
+        assert local.read_bytes() == local_before
 
 
 # =============================================================================
@@ -435,16 +614,23 @@ class TestEnsureWildcardsApplied:
         assert 'Invalid JSON' in result['error']
 
     def test_scope_project_resolves_settings_via_ops(self, tmp_path, monkeypatch):
-        """ensure-wildcards accepts --scope, resolves the path through the
-        permission ops, and WRITES through the resolved path — a --scope call
-        must never fall back to a None settings path for the save."""
-        import permission_common as pc_mod
+        """ensure-wildcards accepts --scope, resolves through the permission ops, and
+        WRITES through the resolved path — a --scope call must never fall back to a
+        None settings path for the save.
 
-        settings_file = tmp_path / 'settings.json'
+        The single-file arm: only ``.claude/settings.json`` exists, so the read
+        preference falls back to it. The dual-file arm — where the preference is
+        actually observable — is ``TestSharedSeamCallSites``; keeping this one
+        single-file is what makes the pair discriminate a preference from a
+        hard-wired filename.
+        """
+        claude = tmp_path / '.claude'
+        claude.mkdir(parents=True, exist_ok=True)
+        settings_file = claude / 'settings.json'
         _write_settings(settings_file, [])
         marketplace_file = tmp_path / 'marketplace.json'
         marketplace_file.write_text(json.dumps({'bundles': {'foo': {'skills': ['s'], 'commands': ['c']}}}))
-        monkeypatch.setattr(pc_mod, 'get_project_settings_path_for_write', lambda: settings_file)
+        monkeypatch.chdir(tmp_path)
 
         result = pf.cmd_ensure_wildcards(
             parse_ns(

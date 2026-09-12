@@ -1211,6 +1211,106 @@ class TestScopeOption:
 
 
 # =============================================================================
+# Tier 3: --scope project resolves the project file whose entries take effect
+# =============================================================================
+
+
+class TestScopeProjectResolvesTheOverridingFile:
+    """``--scope project`` must edit the file an operator's configuration actually reads.
+
+    Claude lets ``.claude/settings.local.json`` override ``.claude/settings.json``,
+    so when both exist the local one is the only place a change can land AND be
+    observed. Writing the shared file instead reports a change the operator never
+    sees — a silent no-op that looks like success.
+
+    The class drives the real script through a subprocess, so the resolution is
+    exercised end-to-end through argument parsing rather than against a
+    monkeypatched helper, and both files are checked so "wrote the right one" and
+    "left the other one alone" are separate, independently failing claims.
+    """
+
+    #: The retired default whose pruning gives every run below observable work.
+    #: Any run that resolves a file will strip it, so which file lost it is the
+    #: measurement — a seed with nothing to do could not tell the two apart.
+    _RETIRED = 'Write(.plan/**)'
+
+    def _seed(self, path) -> bytes:
+        """Write a settings file carrying the retired rule; return its bytes."""
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({'permissions': {'allow': [self._RETIRED], 'deny': [], 'ask': []}}))
+        return path.read_bytes()
+
+    def _allow(self, path) -> list[str]:
+        allow: list[str] = json.loads(path.read_text())['permissions']['allow']
+        return allow
+
+    def test_with_both_files_present_the_prune_lands_in_the_local_one(self, tmp_path):
+        """The overriding file is pruned and the shared file is left byte-identical.
+
+        Both halves are asserted because either alone is satisfiable by a
+        defect: "local was pruned" passes for an implementation that writes
+        both, and "shared is untouched" passes for one that writes neither.
+        Together they also establish that EXACTLY ONE of the two files was
+        written, which is the property the seam claims.
+        """
+        shared = tmp_path / '.claude' / 'settings.json'
+        local = tmp_path / '.claude' / 'settings.local.json'
+        shared_before = self._seed(shared)
+        self._seed(local)
+
+        result = run_script(SCRIPT_PATH, 'apply-fixes', '--scope', 'project', cwd=tmp_path)
+        assert result.success, f'Script failed: {result.stderr}'
+        data = result.toon()
+
+        assert str(local) in data['settings_path']
+        assert self._RETIRED not in self._allow(local)
+        # The shadowed file is untouched, down to its bytes — so the run wrote one
+        # file, not two, and did not merely happen to leave the same content.
+        assert shared.read_bytes() == shared_before
+        assert self._RETIRED in self._allow(shared)
+
+    def test_with_only_the_shared_file_present_it_falls_back_to_it(self, tmp_path):
+        """The fallback arm: no local file, so the shared file is the one edited.
+
+        This is the control that keeps the test above from passing for a
+        resolver hard-wired to ``settings.local.json`` — under that defect this
+        run would edit or create the wrong file.
+        """
+        shared = tmp_path / '.claude' / 'settings.json'
+        local = tmp_path / '.claude' / 'settings.local.json'
+        self._seed(shared)
+
+        result = run_script(SCRIPT_PATH, 'apply-fixes', '--scope', 'project', cwd=tmp_path)
+        assert result.success, f'Script failed: {result.stderr}'
+        data = result.toon()
+
+        assert str(shared) in data['settings_path']
+        assert self._RETIRED not in self._allow(shared)
+        # Preferring a file it did not find is not a reason to create it.
+        assert not local.exists()
+
+    def test_target_project_on_add_still_resolves_the_shared_file(self, tmp_path):
+        """Boundary control: ``--target`` was deliberately NOT switched.
+
+        ``resolve_settings_arg`` serves four subcommands; ``get_settings_path``
+        serves those plus six more reached by ``--target``. Only the first seam
+        moved to the read preference, and that four-vs-ten line is load-bearing
+        — without this row the switch could silently widen to all ten and every
+        other test here would still pass.
+        """
+        shared = tmp_path / '.claude' / 'settings.json'
+        local = tmp_path / '.claude' / 'settings.local.json'
+        self._seed(shared)
+        local_before = self._seed(local)
+
+        result = run_script(SCRIPT_PATH, 'add', '--permission', 'Bash(npm:*)', '--target', 'project', cwd=tmp_path)
+        assert result.success, f'Script failed: {result.stderr}'
+
+        assert 'Bash(npm:*)' in self._allow(shared)
+        assert local.read_bytes() == local_before
+
+
+# =============================================================================
 # Tier 3: Subprocess tests for executor pattern (need --target path resolution)
 # =============================================================================
 
