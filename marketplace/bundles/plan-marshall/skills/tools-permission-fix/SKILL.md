@@ -213,6 +213,14 @@ Ensuring is two-sided: the target also prunes rules it has **retired** as defaul
 
 The same two-sided ensure applies to `permission fix --operation normalize` in the platform-routed table above — it is the other surface that ensures this set, and it prunes the retired ids too. It reports the net effect as `changes_applied` rather than as semantic-id lists.
 
+**Bounded property — retired-rule pruning reaches `allow` only.** `apply-fixes` normalizes all three permission lists (`allow`, `deny`, `ask`), but the retirement above is part of ensuring the defaults, and that ensure acts on `permissions.allow` alone. The asymmetry is unreachable from this project's own emitters, which is what makes it harmless rather than a live gap, and each of the three grounds is separately checkable:
+
+- the only rule this project retires (`plan-dir-write`) is an `allow` rule;
+- the sole writer of `deny` is `permission fix --operation protect-path`, whose rendered guard rules are never retired;
+- nothing in this project writes `ask` at all — the list is normalized and seeded empty, never populated.
+
+**Precondition.** The property holds only while every retired rule is an `allow` rule. A retirement that ever targets a `deny` or an `ask` rule must extend the pruning side with it; otherwise that rule is normalized in place on every run and never removed, and the retirement silently does nothing.
+
 ### add
 
 ```bash
