@@ -23,6 +23,17 @@ CLI_AUTH_TYPES = load_script_module(
     'plan-marshall', 'manage-providers', 'credentials.py', register=False
 ).CLI_AUTH_TYPES
 
+#: Non-vacuity guard on the value just loaded. ``empty_parameter_set_mark`` is not
+#: overridden in pyproject.toml, so pytest's default of ``skip`` applies: were this
+#: attribute ever to resolve to an empty sequence, the parametrized test below would
+#: be silently SKIPPED and the suite would still report green while asserting nothing
+#: about the auth types the CLI offers. Failing here fails collection instead.
+assert len(CLI_AUTH_TYPES) > 0, (
+    'CLI_AUTH_TYPES resolved to an empty sequence: the auth-type parametrization '
+    'below would be skipped rather than fail, leaving the auth types the CLI offers '
+    'unasserted while the suite still reported green'
+)
+
 # Sonar provider declaration for tests that need marshal.json seeded
 _SONAR_PROVIDER = {
     'skill_name': 'plan-marshall:workflow-integration-sonar',
