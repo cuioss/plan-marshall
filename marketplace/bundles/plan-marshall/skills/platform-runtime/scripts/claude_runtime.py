@@ -2423,15 +2423,13 @@ def _claude_project_settings_path(project_dir: str | None = None) -> Path:
     settings-path resolution — the ``tools-permission-*`` scripts delegate here
     rather than owning the path-resolution logic themselves.
 
-    **The two preferences are asymmetric, and the mutating side is NOT this
-    one.** Preferring the shared file is right for a caller that wants the
-    committed, team-visible file; it is wrong for a caller whose effect has to
-    land where the operator's live entries are. When both project files exist
-    the local one overrides the shared one, so an operation resolving here
-    would edit a file the running configuration overrides and report a change
-    the operator never sees. ``permission_fix.resolve_settings_arg`` — and so
-    every subcommand sharing it — therefore resolves
-    ``_claude_project_settings_read_path`` instead.
+    **The two preferences are asymmetric.** Preferring the shared file is right
+    for a caller that wants the committed, team-visible file; it is wrong for a
+    caller whose effect has to land where the operator's live entries are, since
+    the local file overrides the shared one when both exist.
+    ``permission_fix.resolve_settings_arg`` resolves
+    ``_claude_project_settings_read_path`` for exactly that reason — read its
+    docstring for which callers it covers and which still resolve here.
     """
     settings_json = _claude_shared_settings_path(project_dir)
     if settings_json.is_file():
