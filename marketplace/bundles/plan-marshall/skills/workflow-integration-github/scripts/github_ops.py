@@ -1824,12 +1824,19 @@ def cmd_checks_pull_request_runs(args: argparse.Namespace) -> dict:
 # ---------------------------------------------------------------------------
 # Command handlers (bodies live in the co-located domain submodules)
 #
-# These imports sit at the bottom of the file, after every primitive above is
-# defined: each submodule does ``import github_ops`` and only ACCESSES the
-# primitives at call time, so importing them here (once this module is
-# partially initialized with all primitives present) is load-order safe. The
-# names are brought back so the dispatch table and external callers/tests can
-# resolve ``github_ops.cmd_*`` / ``github_ops.post_pr_comment`` etc.
+# ADJUDICATED — this entry-module/submodule import cycle is a reviewed and
+# ACCEPTED arrangement, not an oversight awaiting cleanup. This one comment
+# governs all three ``# noqa: E402`` sites below equally, and the reason it
+# records has TWO halves that only hold together: load order, and the
+# monkeypatch-interception contract.
+#
+# Half one — load order. These imports sit at the bottom of the file, after
+# every primitive above is defined: each submodule does ``import github_ops``
+# and only ACCESSES the primitives at call time, so importing them here (once
+# this module is partially initialized with all primitives present) is
+# load-order safe. The names are brought back so the dispatch table and
+# external callers/tests can resolve ``github_ops.cmd_*`` /
+# ``github_ops.post_pr_comment`` etc.
 #
 # When this file is executed directly (``python github_ops.py``) it is loaded
 # under the name ``__main__``. The domain submodules below do ``import
@@ -1837,6 +1844,27 @@ def cmd_checks_pull_request_runs(args: argparse.Namespace) -> dict:
 # live module under its real name FIRST so that import returns THIS partially
 # initialized module (whose primitives are all defined by now) instead of
 # triggering a second, circular load of the file.
+#
+# Half two — the monkeypatch-interception contract. Call-time ATTRIBUTE access
+# is not merely load-order hygiene; it is the seam the paired test suite
+# patches through. A test does ``monkeypatch.setattr(github_ops, '<name>',
+# ...)`` and every handler body in the submodules below picks the stub up,
+# because each resolves the primitive off the live module object at call time
+# instead of holding a binding copied at import time. The submodules state
+# their side of the same contract in their module docstrings — see
+# ``_github_ci.py``, ``_github_issue.py`` and ``_github_pr.py``; that side and
+# this comment are the two halves of one contract, so a change to either is a
+# change to both.
+#
+# Why the arrangement stands. Flattening the cycle has exactly two shapes and
+# both cost more than they buy: switching the submodules to ``from github_ops
+# import <name>`` COPIES the binding and silently defeats every one of those
+# patches (the failure is invisible at import time and surfaces as tests that
+# quietly exercise the real network primitives), and hoisting the shared
+# primitives into a fourth module restructures the whole entry-module surface,
+# which is out of scope here. The verdict is therefore to keep the imports,
+# keep the ``noqa`` markers, and record the reasoning at the site — revisit
+# this block before moving, adding or removing any import below.
 # ---------------------------------------------------------------------------
 
 sys.modules.setdefault('github_ops', sys.modules[__name__])
