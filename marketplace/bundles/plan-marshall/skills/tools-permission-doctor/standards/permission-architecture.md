@@ -34,8 +34,8 @@ path, so a later reader can re-derive the set rather than trust this table. The 
 the **escaped** form (`Write\(` / `Edit\(`), because permission matchers hold their patterns
 as regexes.
 
-| Path | Write-intent matcher sites |
-|------|---------------------------:|
+| Path | Sites with a matcher for write intent |
+|------|-------------------------------------:|
 | `tools-permission-doctor/scripts/permission_doctor.py` | 12 |
 | `platform-runtime/scripts/_claude_runtime_impl.py` | 2 |
 | `tools-permission-doctor/standards/permission-anti-patterns.md` | 2 |
