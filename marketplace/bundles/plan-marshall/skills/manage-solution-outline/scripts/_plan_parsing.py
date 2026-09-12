@@ -378,8 +378,7 @@ _DECLARATION_HEADINGS: tuple[tuple[str, str | None], ...] = (
 )
 
 #: The record KEYS :func:`extract_deliverables` emits for a deliverable's declared
-#: file surface — the single enumeration every consumer that walks that WHOLE
-#: surface iterates, rather than each carrying a verbatim copy of the key set.
+#: file surface.
 #:
 #: Both foreign selectors read it: the per-entry ``foreign`` stamp
 #: ``manage-solution-outline list-deliverables`` applies, and the population walk of
