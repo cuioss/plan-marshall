@@ -20,6 +20,7 @@ Tier 3 (subprocess) retained for CLI plumbing, --scope, and --target tests.
 """
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -1234,13 +1235,13 @@ class TestScopeProjectResolvesTheOverridingFile:
     #: measurement — a seed with nothing to do could not tell the two apart.
     _RETIRED = 'Write(.plan/**)'
 
-    def _seed(self, path) -> bytes:
+    def _seed(self, path: Path) -> bytes:
         """Write a settings file carrying the retired rule; return its bytes."""
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps({'permissions': {'allow': [self._RETIRED], 'deny': [], 'ask': []}}))
         return path.read_bytes()
 
-    def _allow(self, path) -> list[str]:
+    def _allow(self, path: Path) -> list[str]:
         allow: list[str] = json.loads(path.read_text())['permissions']['allow']
         return allow
 
