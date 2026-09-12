@@ -49,10 +49,9 @@ claim is bounded by that population — read the Coverage Split below for which 
 covers and how each was evaluated.
 
 **Why the escaped form is the matcher.** Sweeping the unescaped literal `Write(` instead
-returns a larger but wrong set — 39 files — and it **misses `permission_doctor.py` entirely**,
-the very file holding 12 of the 16 sites, because that file stores its patterns regex-escaped
-(`r'^Write\(\/etc\/.*\)$'`). The unescaped sweep is not a coarser version of this population;
-it is a different set that omits its largest member.
+returns a larger set that **omits `permission_doctor.py` entirely** — the very file holding 12 of
+the 16 sites — because permission matchers store their patterns regex-escaped. The unescaped sweep
+is not a coarser version of this population; it is a different set that omits its largest member.
 
 ### Coverage Split
 
@@ -62,7 +61,7 @@ such instead of being absorbed into the zero.
 
 | Substrate | How evaluated | Result |
 |-----------|---------------|--------|
-| Architecture inventory | `architecture search --content`, escaped form; no unreadable files, no elision, not truncated | 16 write-intent matcher sites across 3 files; 0 `Edit\(` matcher sites |
+| Architecture inventory | `architecture search --content`, escaped form; no unreadable files, no elision, not truncated | 16 write-intent matcher sites across 3 files |
 | `.claude/settings.json` | read directly | 0 `Write(...)` rules; its one file-mutation grant is spelled `Edit(.plan/**)` |
 | `.claude/**` remainder — `git ls-files .claude` less the row above | every member read as UTF-8 text; 46 of 46 read, 0 unread | 0 `Write(` sites; 0 `Edit(` sites |
 
