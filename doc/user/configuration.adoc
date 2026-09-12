@@ -36,10 +36,16 @@ Survey of every configuration surface a project author touches when running Plan
 | ✅ committed
 | The `.plan/*` block plus `!.plan/marshal.json` and `!.plan/project-architecture/` re-includes (the `.plan/*` exclusion also covers `.plan/local/worktrees/{plan-id}/` — no separate carve-out needed). See xref:getting-started.adoc#_where_things_live[Getting Started → Where things live].
 
+| `~/.plan-marshall/`
+| ❌ outside any repository
+| Machine-global state shared by *every* checkout on the host, not per-project: the build-slot cap in `marshalld/machine-config.json`, the build-slot queue and its reap threshold in `build-queue.json`, the daemon's registry and audit logs, and the provider credential store. The home root is overridable via `PLAN_MARSHALL_HOME`. Not git-tracked and not a `marshal.json` surface — see <<build-queue>>.
+
 | VS Code user settings
 | n/a
 | One-time opt-in for terminal-title integration. See xref:terminal-title.adoc[Terminal Title] § VS Code.
 |===
+
+NOTE: The first two rows are the per-project surfaces and the third is *host-wide*. A setting in the machine-global tier has one value per machine, so it is shared across every clone and cannot be configured per repository — which is why two build-queue settings that read like `marshal.json` keys are not (<<build-queue>>). The tier and its bounded membership are settled in xref:../adr/008-Machine-global_home-root_anchor_tier.adoc[ADR-008].
 
 [#marshal-json]
 == `.plan/marshal.json`
@@ -692,7 +698,33 @@ The canonical schema (the field table, the build-class enum source of truth, the
 [#build-queue]
 === Build queue
 
-`marshal.json` also carries a top-level `build.queue` block — the cross-session build-queue concurrency settings (`build.queue.max_slots`, `build.queue.max_retries`, and the adaptive `build.queue.upper_limit_seconds` stale-slot threshold) that govern how concurrent builds share the machine. Because they matter only when several plans build at once, they are documented with the concurrent-plan operator guide: see xref:parallelism-and-locking.adoc#build-concurrency[Parallelism and Locking → Build-concurrency settings].
+Three settings govern how concurrent builds share the machine, and only *one* of them is a `marshal.json` key. `marshal.json` carries a top-level `build.queue` block whose single member is `build.queue.max_retries` (default `10`) — how many times a waiting build's wrapper re-polls for a slot before giving up. It is legitimately per-repository: it bounds nothing but this caller's own wait loop and is never evaluated against another caller's entries.
+
+The other two are **machine-global** — one value per host, shared by every checkout that contends for the one machine-global `build-queue.json`. Both are applied to *every* repository's entries in that shared queue, so a per-repo value would be one two callers could hold different versions of while competing for the same slots. Neither is a `marshal.json` key and neither is seeded into one:
+
+[cols="2,2,2", options="header"]
+|===
+| Setting | Where it lives | Managed with
+
+| `build.queue.max_slots` — the build-slot cap (default `5`)
+| `~/.plan-marshall/marshalld/machine-config.json`
+| `manage_build_server config get` / `config set --max-slots N` / `config migrate`
+
+| `upper_limit_seconds` — the adaptive stale-slot threshold (default and floor `600` s, ceiling `3600` s)
+| A top-level field of `~/.plan-marshall/build-queue.json`
+| `build_queue limit get` / `limit set --value N`
+|===
+
+[IMPORTANT]
+====
+*A copy of either setting left in this repository is reported, never honoured.* Both once lived per-repository, so your config may still carry one — and it takes no effect at all.
+
+A `build.queue.max_slots` in `marshal.json` never reaches the admitted cap, which is resolved cwd-independently from the machine-global file alone. It is read only so it can be *reported*: `config get` returns it as `per_repo_max_slots: {value, in_effect: false}`, and every `build_queue acquire` carries a `per_repo_max_slots_not_in_effect` warning naming the value, the cap actually in effect, and the one-step fix. Clear it with `manage_build_server config migrate`, which copies the value machine-wide only when nothing is set there and then removes the per-repo key — and when the two differ, changes *neither* file and reports both rather than picking a winner.
+
+A `build.queue.upper_limit_seconds` in the git-ignored `run-configuration.json` is inert the same way: `build_queue limit get` reports it as `per_repo_value` with `in_effect: false`. The `manage-run-config build-queue-limit` verbs that once managed it no longer exist.
+====
+
+Because these settings matter only when several plans build at once, the operator-facing detail — the exact invocations and their flag sets, how every cap report names its source, the full `config migrate` outcome and refusal tables, and what a cap disagreement between two processes means — is documented with the concurrent-plan operator guide: see xref:parallelism-and-locking.adoc#build-concurrency[Parallelism and Locking → Build-concurrency settings].
 
 [#worktrees]
 === Branch strategy and worktrees

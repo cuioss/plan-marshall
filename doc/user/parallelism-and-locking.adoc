@@ -13,24 +13,118 @@ Operating Plan Marshall with several plans in flight at once. Concurrent plans c
 [#build-concurrency]
 == Build-concurrency settings
 
-Three settings govern build concurrency and stale-slot recovery.
+Three settings govern build concurrency and stale-slot recovery, and they live in three different places — only one of them is `marshal.json`.
 
-The build-queue concurrency settings live in `marshal.json`:
+[cols="2,1,3,3", options="header"]
+|===
+| Setting | Default | Where it lives | Managed with
 
-* `build.queue.max_slots` (default 5) — the maximum number of builds that may run concurrently across all sessions. A build that finds a free slot runs immediately; otherwise it is enqueued and promoted in FIFO order as slots free up.
-* `build.queue.max_retries` (default 10) — how many times a waiting build's wrapper retries acquiring a slot before giving up. Raise it on a busy machine where builds routinely wait through several promotions.
+| `build.queue.max_slots` — the build-slot cap
+| 5
+| `~/.plan-marshall/marshalld/machine-config.json`, beside the daemon's `registry.json`. Machine-global; the home root is overridable via `PLAN_MARSHALL_HOME`.
+| `manage_build_server config get` / `config set --max-slots N` / `config migrate`
 
-The stale-slot threshold lives in the main-anchored `run-configuration.json` and is managed with the `manage-run-config build-queue-limit` verbs from xref:../concepts/parallelism-and-locking.adoc[the self-healing reaper]:
+| `upper_limit_seconds` — the stale-slot threshold
+| 600 s (also the floor; ceiling 3600 s)
+| A top-level field of `~/.plan-marshall/build-queue.json` — the queue state whose entries it governs. Machine-global.
+| `build_queue limit get` / `limit set --value N`
 
-* `build.queue.upper_limit_seconds` (default and floor 600 s, ceiling 3600 s) — the adaptive estimate of the longest real build. The reaper treats an active slot older than `2 ×` this value as dead. The value is monotonic-up and clamped to `[600 s, 3600 s]`, so it grows toward the longest build observed but never ratchets past an hour. Read or set it explicitly:
+| `build.queue.max_retries`
+| 10
+| `marshal.json`, under the top-level `build.queue` block.
+| Edit the JSON directly
+|===
+
+Two of the three are *machine-global* — one value per host, shared by every checkout contending for the one machine-global `build-queue.json`. Both are applied to *every* repository's entries in that shared queue, so a per-repo copy is one two callers could hold different values of while competing for the same slots. Being host state, neither is git-tracked and neither is a `marshal.json` key. `max_retries` is the only per-repo one, and legitimately so: it bounds nothing but this caller's own re-poll loop.
+
+[#build-slot-cap]
+=== The build-slot cap
+
+`max_slots` is the maximum number of builds that may run concurrently across every session on the host. A build that finds a free slot runs immediately; otherwise it is enqueued and promoted in FIFO order as slots free up.
 
 [source,bash]
 ----
-python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config build-queue-limit get
-python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config build-queue-limit set --value 900
+python3 .plan/execute-script.py plan-marshall:manage-build-server:manage_build_server config get
+python3 .plan/execute-script.py plan-marshall:manage-build-server:manage_build_server config set --max-slots 8
 ----
 
-A `set` value below 600 is floored to 600; a value above 3600 is clamped to 3600; a non-positive value is rejected.
+`config get` takes no flags and writes nothing. `config set` takes `--max-slots` and nothing else; it is the unconditional writer, so it is also the only way to repair a machine-config file whose cap is unreadable or invalid. *No restart is needed* — a running daemon re-resolves the cap on every submit, so a `config set` takes effect on the next build submitted.
+
+Do not hand-edit `machine-config.json`. `config set` and `config migrate` are its only writers, and they serialize on a guard file so a concurrent writer cannot slip between `migrate`'s "is the cap unset?" check and its write.
+
+The cap is never reported as a bare number, because the value alone cannot tell a configured 5 from a fallback 5. Every report carries a `max_slots_source`, and a `max_slots_detail` whenever that source is not the nominal one:
+
+[cols="1,3", options="header"]
+|===
+| `max_slots_source` | What it means
+
+| `machine_config` | A positive integer is configured there. This is the nominal case, and the only one with nothing to explain.
+| `default` | Neither the file nor the key is present. Nothing is configured, which is a perfectly normal state; the cap is 5.
+| `invalid` | The key *is* present but holds something unusable — a non-integer, a boolean, or a non-positive number. The cap falls back to 5 and `max_slots_detail` names the offending value.
+| `unreadable` | The file exists but could not be read or parsed. The cap falls back to 5 and `max_slots_detail` names the error.
+|===
+
+`invalid` and `unreadable` are deliberately kept distinct from `default`: the file exists and holds *something*, so a cap may well be configured and merely mistyped or unreachable — which is a different problem from having configured nothing. Repair either with `config set`.
+
+`manage_build_server status` reports the cap the *running* daemon is applying, taken from its ping rather than resolved locally (a local resolve answers what a *fresh* daemon would apply — a different question). A daemon pinned to a copy predating the cap fields sends neither, and both then render `unknown` rather than a plausible substitute; a degraded source additionally gets a `max_slots_warning` naming the fallback being admitted against.
+
+[#stale-slot-threshold]
+=== The stale-slot threshold
+
+`upper_limit_seconds` is the adaptive estimate of the longest real build, and xref:../concepts/parallelism-and-locking.adoc[the self-healing reaper] treats an active slot older than `2 ×` this value as dead. It is monotonic-up and clamped to `[600 s, 3600 s]`, so it grows toward the longest build observed but never ratchets past an hour.
+
+[source,bash]
+----
+python3 .plan/execute-script.py plan-marshall:manage-locks:build_queue limit get
+python3 .plan/execute-script.py plan-marshall:manage-locks:build_queue limit set --value 900
+----
+
+Neither verb takes a `--plan-id`: they read and write machine-global state that belongs to no plan. `limit set` takes `--value` and nothing else. A value below 600 is floored to 600 and one above 3600 is clamped to 3600 — the result reports both `requested` and the `value` actually stored, plus a `clamped` flag, so a clamp is never silent; a non-positive value is rejected outright.
+
+CAUTION: `--value` belongs to `build_queue limit set`; `--max-slots` belongs to `manage_build_server config set`. They are different scripts managing different settings, and neither accepts the other's flag.
+
+`limit get` distinguishes a configured 600 from the fallback: its `source` reads `queue_state` when the field is actually stored in the queue and `default_floor` when it is not, because the fallback *is* the floor and the number alone could not tell them apart.
+
+[#per-repo-key-not-in-effect]
+=== A leftover per-repo setting is reported, never honoured
+
+Both machine-global settings once lived per-repository, so a repository may still carry a copy. A copy takes *no effect* — and rather than failing silently, Plan Marshall reports it:
+
+* A `build.queue.max_slots` in this repository's `marshal.json` is read for the sole purpose of reporting it. `config get` returns it as `per_repo_max_slots: {value, in_effect: false}`, and *every* `build_queue acquire` carries a `per_repo_max_slots_not_in_effect` warning naming the repository path and its value, the cap actually in effect with its source, and the one-step fix. The warning repeats on every queued build on purpose: a once-off notice is one that whoever inherits the repository never saw.
+* A `build.queue.upper_limit_seconds` in the main-anchored `run-configuration.json` is inert the same way. `build_queue limit get` reports it as `per_repo_value` with `in_effect: false`. The `manage-run-config build-queue-limit` verbs that used to manage it no longer exist.
+
+To clear a leftover cap, migrate it:
+
+[source,bash]
+----
+python3 .plan/execute-script.py plan-marshall:manage-build-server:manage_build_server config migrate
+----
+
+`config migrate` takes no flags. It copies the repository's value machine-wide *only when nothing is set there*, then removes the per-repo key. It writes the machine-global side first, deliberately: if the repository edit then fails, the recoverable state is "the value is machine-wide, the key is still present", which a re-run completes — whereas the reverse order would delete your only record of the value before it was stored anywhere.
+
+[cols="1,1,3", options="header"]
+|===
+| `outcome` | `status` | What changed
+
+| `nothing_to_migrate` | `success` | Nothing — this repository carries no per-repo key.
+| `migrated` | `success` | Nothing was set machine-wide, so the value was copied there and the per-repo key removed.
+| `removed_duplicate` | `success` | The machine-global side already held the *same* value, so only the per-repo key was removed; `machine-config.json` was left byte-identical.
+| `refused` | `error` | *Nothing, on either side* — both files byte-identical. Every refusal reports `machine_config_modified: false` and `marshal_json_modified: false`.
+| `partial` | `error` | The machine-global side is settled but the `marshal.json` edit did not commit. Re-run to converge via `removed_duplicate`.
+|===
+
+A refusal names one of six reasons. `values_differ` — the machine-global cap is set and differs from this repository's, and picking a winner is precisely what this verb declines to do, so it reports both values and both paths. `machine_config_invalid` and `machine_config_unreadable` — the machine-global file exists and is emphatically not "unset", so copying over it could discard a configured cap; repair it with `config set --max-slots N` first. `per_repo_value_invalid` — this repository's own value is not a positive integer, so copying it would install a broken cap machine-wide. `machine_config_write_failed` and `machine_config_unresolved` — the guarded write did not happen, or a concurrent writer won the race and the resulting state does not resolve to a configured cap, so the repository's key is never removed on the strength of a stale "unset".
+
+`marshal.json` is git-tracked, so a `migrated` or `removed_duplicate` leaves your working tree dirty; each says so in its `detail`. Commit the edit. Only the one key is removed — `max_retries` and the `build.queue` block itself survive.
+
+[#cap-disagreement]
+=== Cap disagreement is reported, never reconciled
+
+Because each process resolves the cap for itself while the queue is shared host-wide, two sessions can still admit against *different* caps — a daemon started before a `config set`, say, or a caller whose machine-config file became unreadable. Every queue entry is therefore stamped at admission with the cap it was admitted under, and each `acquire` compares its own cap against the existing stamps and reports a `cap_agreement` verdict: `agree`, `disagree`, or `unknown` (nothing disagreed, but at least one entry carried no usable stamp). The verdict always rides with the population it was computed over, so an `agree` over an empty queue is visible as such rather than reading like a clean bill of health. A `disagree` also emits one `cap-disagreement` `[LOCK]` event.
+
+Reporting is the whole of it: the admitting caller applies its own cap, existing stamps are left as admitted, and neither value is picked as authoritative — which is why the report names no remedy command. Choosing a winner is what a per-caller cap over a shared queue cannot do correctly, and the fix is to stop having two: set the cap machine-wide with `config set`, and let the daemon pick it up on its next submit.
+
+The queue-side result fields are tabled in full in the `manage-locks` skill contract, and the cap verbs in the `manage-build-server` one (see <<concept-crossover>>).
 
 == PR merge and the merge boundary
 
@@ -107,7 +201,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config plan p
 
 == The [LOCK] Log
 
-Both locks emit `[LOCK]` lifecycle events — acquire, blocked, release, and the reaper's stale-reclaim — but they do *not* write to a plan's per-worktree work-log. Lock contention spans sessions, so the events go to a *single main-anchored global log* shared by every session, alongside Plan Marshall's other global logs under the main checkout's `.plan/`. Each line carries the lock id and, on contention, the holder and the waiter, so you can reconstruct who held what and for how long.
+Both locks emit `[LOCK]` lifecycle events — acquire, blocked, release, the reaper's stale-reclaim, and the build queue's cap-disagreement report — but they do *not* write to a plan's per-worktree work-log. Lock contention spans sessions, so the events go to a *single main-anchored global log* shared by every session, alongside Plan Marshall's other global logs under the main checkout's `.plan/`. Each line carries the lock id and, on contention, the holder and the waiter, so you can reconstruct who held what and for how long.
 
 When two plans appear to serialize against each other — one waiting while another holds the merge mutex or a build slot — the main-anchored `[LOCK]` log is the place to look. Grep it for the waiting plan's id to find the `blocked` event and the `holder` it names.
 
@@ -119,11 +213,14 @@ When new builds stop being admitted, work through these steps in order:
 
 1. *Inspect the `[LOCK]` events.* Open the main-anchored global lock log and find the active build ids and their `acquired` timestamps. A slot held far longer than a real build takes is the likely culprit; the `held` duration on a later `reaped-stale` event confirms it.
 
-2. *Let the self-healing reaper clear it.* The reaper runs at the start of every acquire and every release, so the next queue operation auto-clears any active entry older than `2 ×` the adaptive `build.queue.upper_limit_seconds` and emits a `reaped-stale` `[LOCK]` event. In most cases simply triggering another build (or releasing one) frees the wedged slot without any manual action.
+2. *Let the self-healing reaper clear it.* The reaper runs at the start of every acquire and every release, so the next queue operation auto-clears any active entry older than `2 ×` the adaptive <<stale-slot-threshold,`upper_limit_seconds`>> and emits a `reaped-stale` `[LOCK]` event. In most cases simply triggering another build (or releasing one) frees the wedged slot without any manual action. Read the current threshold — and the exact reclaim age derived from it — with `build_queue limit get`, which reports `reap_threshold_seconds` alongside the value.
 
 3. *Edit `build-queue.json` as a last resort.* If a slot must be freed immediately and no queue operation is imminent, inspect the machine-global `~/.plan-marshall/build-queue.json` (the host-wide queue, overridable via `PLAN_MARSHALL_HOME`) to identify the stale active entry, then remove that entry from the `active` list. Do this only when you are certain the holding build is genuinely dead — removing a live build's entry lets a second build claim its slot.
 
+[#concept-crossover]
 == Concept Crossover
 
 * xref:../concepts/parallelism-and-locking.adoc[Parallelism and Locking] for the merge mutex, the build-queue limiter, the self-healing reaper, and the `[LOCK]` log.
 * xref:terminal-title.adoc[Terminal Title] for the ⏳/🔒 lock-coordination glyphs that show lock state in the session tab.
+* link:../../marketplace/bundles/plan-marshall/skills/manage-locks/SKILL.md[`manage-locks`] — the queue's full `acquire` / `release` result fields and the `limit get|set` flag sets. The cap reports and the disagreement verdict ride an *admission*: `warnings`, `per_repo_max_slots` and every `cap_*` field appear on `acquire` only, while `release` carries the three cap fields (`max_slots`, `max_slots_source`, `max_slots_detail`) and none of the rest.
+* link:../../marketplace/bundles/plan-marshall/skills/manage-build-server/SKILL.md[`manage-build-server`] — the `config get` / `set` / `migrate` contract, the complete accepted flag set per sub-verb, and the daemon-reported cap fields.
