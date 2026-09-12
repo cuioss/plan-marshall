@@ -222,9 +222,17 @@ def test_participation_evidence_marker_gates_only_coderabbits_issue_comment():
 def test_participation_evidence_marker_is_declared_only_on_a_declared_evidence_shape():
     """A marker can only NARROW a shape the bot already declares — it never admits a new one.
 
-    Population-derived over the live registry: every non-empty marker must sit on a
-    shape the same bot lists in ``participation_evidence``. A marker on an undeclared
-    shape would gate nothing and would read as a credited shape that is not one.
+    The BOT axis is population-derived (``bot_kinds()``); the SHAPE axis is the
+    three-name vocabulary below. ⛔ The sweep is therefore NOT population-derived over
+    the markers actually declared, and the difference is not academic: ``_parse_block``
+    validates no key, so a marker keyed on any other string — a typo, an invented
+    shape — is admitted, reads ``''`` for every member of the vocabulary (FAIL-OPEN,
+    so the intended gate silently never runs), and is unreachable by this sweep. That
+    is the very case this test's title warns about, and closing it needs an accessor
+    exposing the raw marker map so ITS keys can be swept.
+
+    What this sweep does establish: over the shapes the vocabulary names, every
+    non-empty marker sits on a shape the same bot lists in ``participation_evidence``.
 
     Non-vacuity: at least one shipped bot must declare a marker, or the sweep proves
     nothing.

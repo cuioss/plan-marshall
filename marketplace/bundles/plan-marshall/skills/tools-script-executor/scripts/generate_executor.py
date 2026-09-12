@@ -831,11 +831,12 @@ _DEFAULT_SURFACE_BUDGET_SECONDS = 180.0
 # deeper later widens no bound on its own. The deepest chain counted is four levels
 # beneath the script (``manage-config plan <phase> step <get|set>`` — plan=1,
 # phase=2, step=3, leaf verb=4), so the bound carries a margin of two. The
-# already-closed symbol is the fail-closed depth cap in ``argparse_surface``
-# (a capped node yields ``NotDerivable`` via ``is_derivable``, never a
-# narrowed accept-set), which makes an insufficient depth a skipped surface
-# rather than a false rejection. No derivation fix is owed; this account is
-# the deliverable.
+# already-closed symbol is the fail-closed depth cap in ``argparse_surface`` —
+# see its own fail-closed-on-uncertainty invariant for the mechanism, which is
+# deliberately not restated here. Its consequence is the one this account rests
+# on: an insufficient depth leaves a verb path UNVALIDATED rather than producing
+# a narrowed accept-set that would reject a real invocation. No derivation fix is
+# owed; this account is the deliverable.
 def _surface_derivation_config() -> surface_api.DerivationConfig:
     """Bounds for generation-time derivation, with an operator budget override.
 

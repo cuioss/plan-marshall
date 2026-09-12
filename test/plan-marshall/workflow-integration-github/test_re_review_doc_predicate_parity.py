@@ -97,14 +97,25 @@ _RETIRED_EQUALITY_RE = re.compile(
 #: bare-``comment`` arm cannot separate *comment arm ⇒ false* (retired) from
 #: *comment naming no commit ⇒ false* (shipped) and flags the corrected text.
 #:
-#: Arm (b) carries the widening instead, and it is where the recurrence actually
-#: escaped: the arm was keyed on the single inflection ``carries`` while the drifted
-#: site read ``carrying``, so a restatement two lines from a corrected one read as
-#: green.
+#: Arm (b) carries the widening instead, and it is where the recurrence escaped
+#: TWICE, on two independent boundaries. Both are now closed, and both are pinned by
+#: a control drawn verbatim from the text that escaped:
+#:
+#:   1. INFLECTION — the arm was keyed on ``carries`` alone while a drifted site read
+#:      ``carrying``, so a restatement two lines from a corrected one read as green.
+#:   2. INTERVENING TOKENS — the arm's window excluded newlines and did not tolerate
+#:      markdown emphasis, so ``a comment that carries **no reviewed-commit SHA**``
+#:      and a statement wrapped as ``a comment / carrying no reviewed-commit SHA``
+#:      both escaped. These are the shapes the scanned population actually uses:
+#:      prose that wraps, and contract docs that bold the operative clause.
+#:
+#: The window therefore spans newlines (``[^.]``) and admits emphasis around the
+#: negation. Keeping the sentence bound (``.``) is what stops it reaching across two
+#: unrelated sentences.
 _RETIRED_COMMENT_CONSTANT_RE = re.compile(
     r'(?i)('
     r'issue[ _]comment[^.\n]{0,80}head_sha_verified`?:\s*`?false'
-    r'|comment[^.\n]{0,40}carr(?:ies|ying|ied|y)\s+no\s+reviewed[\s\-]*commit\s+SHA'
+    r'|comment[^.]{0,40}carr(?:ies|ying|ied|y)\s+[*_`]*no[*_`]*\s+reviewed[\s\-]*commit\s+SHA'
     r')'
 )
 
@@ -315,6 +326,10 @@ class TestTheCommentArmDerivesItsVerdict:
             # content marker" sits inside the scanned population), so omitting it left
             # the class one inflection wide open while the comment asserted completeness.
             'a comment that carried no reviewed-commit SHA (`head_sha_verified: false`)',
+            # Drawn verbatim from the two shapes that escaped the line-bound window on
+            # main: markdown emphasis around the negation, and a mid-sentence wrap.
+            'the bot answers with a comment that carries **no reviewed-commit SHA**',
+            'an incremental-review decline: a comment\ncarrying no reviewed-commit SHA',
         ],
     )
     def test_planted_constant_is_detected(self, planted):
