@@ -101,6 +101,32 @@ def test_route_reaches_its_own_handler(cli, handler_calls, monkeypatch, argv, ta
     assert code == HANDLER_SENTINEL
 
 
+def test_published_subcommands_are_exactly_the_routing_chain(cli):
+    """Every subcommand the parser publishes is routed, and every route is published.
+
+    ``ROUTES`` is maintained by hand against ``main``'s delegating branches, so a
+    branch added to one and not the other drifts silently: the per-route test above
+    keeps passing while the new subcommand is neither stubbed nor exercised. The
+    parser ``build_parser`` returns is the authoritative route set — ``main`` parses
+    with that same object — and argparse exposes the declared subcommand names only
+    on the ``_SubParsersAction`` it stores internally, which is why that private
+    attribute is read here: there is no public equivalent to read instead.
+    """
+    subcommand_actions = [
+        action for action in cli.build_parser()._actions if isinstance(action, argparse._SubParsersAction)
+    ]
+    assert len(subcommand_actions) == 1, 'build_parser no longer declares exactly one subparser group'
+    published = set(subcommand_actions[0].choices)
+    # ``migrate-home`` is the one published route ``ROUTES`` deliberately omits — it
+    # delegates to no handler — so it is added back here rather than read as drift.
+    routed = {argv[0] for argv, _ in ROUTES} | {'migrate-home'}
+
+    assert published == routed, (
+        f'credentials.py routing drift — published with no ROUTES row: {sorted(published - routed)}; '
+        f'ROUTES row naming no published subcommand: {sorted(routed - published)}'
+    )
+
+
 def test_migrate_home_wraps_the_migration_helper(cli, handler_calls, monkeypatch):
     """``migrate-home`` calls the migration helper once, emits its result, and returns 0.
 
