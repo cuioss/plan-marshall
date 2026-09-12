@@ -252,6 +252,7 @@ from _machine_config import (
     CapResolution,
     per_repo_max_slots_warning,
     read_per_repo_max_slots,
+    report_safe,
     resolve_max_slots,
 )
 from file_ops import get_marshal_path
@@ -500,13 +501,21 @@ def _demotion_fields(cap: CapResolution) -> tuple[dict[str, Any], list[dict[str,
         owned the key would silently win or lose against the other on a dict
         merge. The always-present-``warnings`` invariant is a property of the
         RESULT payload, assembled by :func:`run_acquire`, not of this helper.
+
+    The reported ``value`` goes through :func:`_machine_config.report_safe`: the
+    raw read is foreign text from a config this process did not write, and an
+    unescaped newline in it would land in the emitted TOON at column zero, where
+    a consumer parses it as a sibling key of the envelope — an injected
+    ``admission: admitted`` line turning a blocked build's own result into an
+    admitted one. The value is still reported; only the bytes that cannot survive
+    a single-line field are removed.
     """
     marshal_path = get_marshal_path()
     raw = read_per_repo_max_slots(marshal_path)
     if raw is None:
         return {}, []
     return (
-        {'per_repo_max_slots': {'value': raw, 'in_effect': False}},
+        {'per_repo_max_slots': {'value': report_safe(raw), 'in_effect': False}},
         [per_repo_max_slots_warning(marshal_path, raw, cap)],
     )
 
@@ -570,11 +579,22 @@ def _classify_cap_agreement(
             unstamped += 1
             continue
         if stamp != caller_cap:
+            # `id` / `plan_id` / `project_root` were written by a DIFFERENT
+            # checkout's build session into the machine-global queue file, so they
+            # are foreign text on this caller's report path — emitted here as
+            # uniform-array cells and interpolated by
+            # `_cap_disagreement_warning` into a message that reaches the TOON
+            # envelope, stderr, and the plan work log. `report_safe` strips the
+            # control characters that would otherwise break the row out of its
+            # single line and be reparsed as envelope keys (an injected
+            # `admission: admitted` in another repo's plan_id rewriting THIS
+            # build's admission). The stamp needs none: `_stamped_cap` already
+            # guaranteed it is a positive int.
             disagreeing.append(
                 {
-                    'id': entry['id'],
-                    'plan_id': entry.get('plan_id'),
-                    'project_root': entry.get('project_root'),
+                    'id': report_safe(entry['id']),
+                    'plan_id': report_safe(entry.get('plan_id')),
+                    'project_root': report_safe(entry.get('project_root')),
                     STAMP_ADMITTED_UNDER_MAX_SLOTS: stamp,
                 }
             )
@@ -608,6 +628,15 @@ def _cap_disagreement_warning(cap: CapResolution, rows: list[dict[str, Any]]) ->
     its own cap and no value is treated as authoritative. No remedy command is
     offered, for the same reason — a per-caller cap over a shared queue has no
     single correct winner, so there is no one-step fix to name.
+
+    The holder fields interpolated here are foreign text — another checkout wrote
+    them into the shared queue file — and they arrive already sanitised, because
+    :func:`_classify_cap_agreement` routes each one through
+    :func:`_machine_config.report_safe` when it builds the row. That is why this
+    message can interpolate them bare: the row IS the boundary, so re-sanitising
+    at every consumer would put the same decision in two places. A future caller
+    that interpolates a queue-entry field it read directly must sanitise it
+    itself.
 
     Args:
         cap: The caller's own machine-global resolution, in effect for THIS admit.

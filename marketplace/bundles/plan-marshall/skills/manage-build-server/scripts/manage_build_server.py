@@ -111,6 +111,7 @@ from _machine_config import (
     SOURCE_UNREADABLE,
     CapResolution,
     read_per_repo_max_slots,
+    report_safe,
     resolve_max_slots,
     write_max_slots,
     write_max_slots_if_unset,
@@ -1079,9 +1080,15 @@ def _per_repo_report() -> dict[str, Any]:
     ``config migrate`` asks, and deliberately NOT the cwd-independent resolver
     the cap itself uses.
 
+    The reported ``value`` passes through :func:`_machine_config.report_safe`
+    first. The read is raw by contract — the report must echo what is actually
+    written — but the EMISSION is a single-line TOON field, and a newline in a
+    config this process did not write would land at column zero where a consumer
+    parses it as a sibling key of this very envelope.
+
     Returns:
         ``{'per_repo_max_slots': 'absent', ...}`` when no key is present, else
-        the raw ``value`` together with ``in_effect: False`` — stated explicitly
+        the ``value`` together with ``in_effect: False`` — stated explicitly
         rather than implied, so a reader of the report cannot mistake a reported
         value for an operative one.
     """
@@ -1090,7 +1097,7 @@ def _per_repo_report() -> dict[str, Any]:
     if raw is None:
         return {'per_repo_max_slots': 'absent', 'marshal_json_path': str(marshal_path)}
     return {
-        'per_repo_max_slots': {'value': raw, 'in_effect': False},
+        'per_repo_max_slots': {'value': report_safe(raw), 'in_effect': False},
         'marshal_json_path': str(marshal_path),
     }
 
@@ -1323,6 +1330,17 @@ def run_config_migrate(_args: Namespace) -> dict[str, Any]:
     # never be a cap would install a broken cap machine-wide, and reporting the
     # repository's own bad value is more useful than reporting a comparison
     # against it.
+    #
+    # This is the ONE branch a non-int value reaches, so it is also the one
+    # branch that echoes arbitrary foreign text back into the refusal payload.
+    # The reported field goes through `report_safe`: a newline in the
+    # repository's value would otherwise land at column zero of this refusal's
+    # own TOON, where a consumer reparses it as an envelope key — turning
+    # `status: error` / `outcome: refused` (with both files deliberately
+    # untouched) into a reported `status: success` / `outcome: migrated`. The
+    # message keeps its `!r`, which escapes the same characters. Every LATER
+    # refusal is reached only after this positive-int check, so their reported
+    # value is an int by construction.
     if isinstance(per_repo_raw, bool) or not isinstance(per_repo_raw, int) or per_repo_raw <= 0:
         return _migrate_refused(
             'per_repo_value_invalid',
@@ -1332,7 +1350,7 @@ def run_config_migrate(_args: Namespace) -> dict[str, Any]:
                 'config migrate.'
             ),
             marshal_json_path=marshal_path,
-            per_repo_max_slots=per_repo_raw,
+            per_repo_max_slots=report_safe(per_repo_raw),
         )
 
     cap = resolve_max_slots()

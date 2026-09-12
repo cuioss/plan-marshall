@@ -97,6 +97,7 @@ from __future__ import annotations
 import errno
 import json
 import os
+import re
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -357,6 +358,52 @@ _SET_COMMAND = (
 )
 
 
+_CONTROL_CHAR_PATTERN = re.compile(r'[\x00-\x1f\x7f]')
+"""C0 control characters plus DEL — the bytes that break a single-line envelope.
+
+Mirrors ``plan_logging._CONTROL_CHAR_PATTERN``: one character class, so the log
+sink and the TOON sink strip the same set rather than each drawing its own line.
+"""
+
+
+def report_safe(value: Any) -> Any:
+    """Render a foreign-sourced value safe to EMIT as a single-line TOON field.
+
+    Every value this module and its consumers report about a *foreign* config —
+    a repository's demoted ``build.queue.max_slots``, and a machine-global
+    ``build-queue.json`` entry written by a DIFFERENT checkout — is read raw so
+    the report can echo back what is actually written there. Raw is right for the
+    read and wrong for the emission: ``serialize_toon`` quotes a string
+    containing a newline but escapes nothing inside the quotes, so the value's
+    second and later lines land in the document at column zero, where
+    ``parse_toon`` reads them as SIBLING KEYS of the envelope. A value whose
+    second line reads ``status: success`` does not merely get lost — it
+    OVERWRITES the envelope's own ``status``, which is how a ``config migrate``
+    refusal (``status: error``, both files untouched) can be reparsed as a
+    completed migration, and a ``blocked`` admission as an ``admitted`` one.
+
+    Stripping the control characters at the emission boundary is the containment
+    move, not a validation one: the value is still reported, and nothing about it
+    is coerced into a different type or silently accepted as a cap. A caller that
+    must VALIDATE the value (``config migrate``, which copies it machine-wide)
+    still does so against the raw read — this function is for the report only.
+
+    Only a ``str`` needs it. Every other JSON type either cannot carry a control
+    character (``int`` / ``float`` / ``bool`` / ``None``) or reaches
+    ``_serialize_value``'s ``json.dumps`` path, which escapes one.
+
+    Args:
+        value: A value about to be placed in a reported TOON field.
+
+    Returns:
+        ``value`` unchanged for every non-``str`` type; the control-character-free
+        string otherwise.
+    """
+    if isinstance(value, str):
+        return _CONTROL_CHAR_PATTERN.sub('', value)
+    return value
+
+
 def read_per_repo_max_slots(marshal_path: str | Path) -> Any:
     """Return a repository's raw ``build.queue.max_slots``, or ``None`` if absent.
 
@@ -367,6 +414,13 @@ def read_per_repo_max_slots(marshal_path: str | Path) -> Any:
     including a value that could never have been a valid cap. Validation belongs
     to whichever caller would COPY the value (see
     :func:`write_max_slots_if_unset`'s callers), not to the act of reading it.
+
+    Raw means the value is foreign text until an emitter makes it safe. A caller
+    that places it in a reported TOON field MUST route it through
+    :func:`report_safe` first — a repository config is a file this process did
+    not write, and an unescaped newline in it rewrites the envelope reporting it.
+    A caller that VALIDATES the value (rather than reporting it) uses the raw
+    read, which is why the sanitiser is not applied here.
 
     Args:
         marshal_path: The repository's ``marshal.json`` path — supplied by the
@@ -414,6 +468,13 @@ def per_repo_max_slots_warning(
     exact commands that resolve it. A warning that named only "this key does
     nothing" would leave the operator to discover the machine-global home and its
     verbs on their own.
+
+    The ``!r`` on ``per_repo_value`` is load-bearing and not a formatting
+    preference: the value is foreign text from a repository config this process
+    did not write, and ``repr`` escapes the control characters that would
+    otherwise let it inject lines into the TOON envelope and the stderr stream
+    this message is emitted on. Do not "simplify" it to a bare ``{}`` — see
+    :func:`report_safe` for the sink this closes.
 
     Args:
         marshal_path: The repository config carrying the demoted key.

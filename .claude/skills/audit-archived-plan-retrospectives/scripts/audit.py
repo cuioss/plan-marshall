@@ -2813,6 +2813,17 @@ _LOG_BENIGN_PROBE_SUBCOMMANDS = frozenset({'exists', 'read', 'get', 'list', 'fin
 # the *slow* band, not the *impossible* one.
 _IMPOSSIBLE_DURATION_SECONDS = 600.0
 
+# Upper bound accepted from the machine-global build-queue reap threshold
+# (`upper_limit_seconds` in `build-queue.json`). It mirrors
+# `build_queue.UPPER_LIMIT_CEILING_SECONDS`, which is the owning definition —
+# this skill is an inline reader with no import path to that module, so the
+# constant is restated here rather than resolved. `build-queue.json` is
+# machine-global state every checkout on the host writes, so a value outside the
+# writers' clamped range is reachable by corruption or hand-edit; accepting it
+# verbatim would let one bad number retire the impossible-duration check
+# entirely. See `_ratcheted_ci_wait_ceiling`.
+_BUILD_QUEUE_UPPER_LIMIT_CEILING_SECONDS = 3600.0
+
 # Build / ci-wait / sonar-CE / merge-wait call classifier over the global-log
 # call key (`{notation} {subcommand}`). A call matching this pattern is bounded
 # by the ratcheted ci-wait ceiling rather than the flat deterministic ceiling.
@@ -2854,6 +2865,18 @@ def _ratcheted_ci_wait_ceiling(repo_root: Path) -> float:
     dispatch) per the skill's inline-reader rule, and each degrades to the flat
     ceiling independently — an absent or unreadable source contributes no
     ceiling of its own and never suppresses the other.
+
+    The build-queue contribution is CLAMPED to
+    `_BUILD_QUEUE_UPPER_LIMIT_CEILING_SECONDS` on the way in, matching the clamp
+    `build_queue._resolve_upper_limit` applies to the very same field. The two
+    readers of one field must agree on its range: `build-queue.json` is
+    machine-global shared state that other checkouts' build sessions and the
+    operator both write, so a value outside the writers' `[600, 3600]` range is
+    reachable by hand-edit or corruption — and read unclamped it would raise this
+    ceiling arbitrarily high, which does not merely widen the band but silently
+    RETIRES the impossible-duration check, reporting a clean result over a
+    population it stopped bounding. Clamping keeps a corrupt shared value from
+    turning a truthfulness check into a vacuous one.
     """
     ceilings: list[float] = [_IMPOSSIBLE_DURATION_SECONDS]
     config = read_json(repo_root / '.plan' / 'local' / 'run-configuration.json')
@@ -2872,7 +2895,7 @@ def _ratcheted_ci_wait_ceiling(repo_root: Path) -> float:
     if isinstance(queue_state, dict):
         secs = queue_state.get('upper_limit_seconds')
         if isinstance(secs, (int, float)) and secs > 0:
-            ceilings.append(float(secs))
+            ceilings.append(min(float(secs), _BUILD_QUEUE_UPPER_LIMIT_CEILING_SECONDS))
     return max(ceilings)
 
 
