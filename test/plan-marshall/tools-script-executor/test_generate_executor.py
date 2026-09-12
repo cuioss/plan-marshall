@@ -3034,5 +3034,5 @@ def test_surface_derivation_depth_covers_deepest_executor_verb_chain():
     )
 
     source = GENERATE_SCRIPT.read_text(encoding='utf-8')
-    assert 'Depth re-derivation account' in source
+    assert 'Depth account (D2 positive account)' in source
     assert 'manage-config plan <phase> step <get|set>' in source

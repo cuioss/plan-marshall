@@ -281,9 +281,10 @@ STATE_PARTICIPATED_BUT_EMPTY = 'participated_but_empty'
 # short name loses the distinction from a bot that never published at all.
 STATE_PARTICIPATED_STALE = 'participated_stale'
 # The bot was asked to review the merge candidate (a re-review was triggered) and
-# answered WITHOUT producing a review of it — an incremental-review DECLINE: a
-# comment carrying no reviewed-commit SHA (``head_sha_verified: false``) rather than
-# a review of this HEAD. Distinct from ``participated_stale`` (a review that exists
+# answered WITHOUT producing a review of it — an incremental-review DECLINE
+# (``head_sha_verified: false``). What that verdict rests on is stated once, in
+# ``bot-participation-contract.md`` § "Detecting a decline"; it is deliberately not
+# restated here. Distinct from ``participated_stale`` (a review that exists
 # but predates the merge candidate) and from the refusal members (an explicit
 # rate-limit / quota / size notice): the bot engaged but declined this commit, so
 # re-triggering it produces another decline rather than a review.
@@ -726,15 +727,18 @@ def classify_bot(
       overrides are per-refusal observations, so they outrank a class declared per bot.
       No bot-name literal.
     - **``declined``** — the bot was asked to review the merge candidate and answered
-      without producing a review of it (an incremental-review decline: a comment
-      carrying no reviewed-commit SHA). Checked after the refusal branches — a refusal
+      without producing a review of it (an incremental-review decline; what the
+      verdict rests on is stated once in ``bot-participation-contract.md``
+      § "Detecting a decline"). Checked after the refusal branches — a refusal
       is the more specific "will not review now" signal — and before ``participated_stale``,
       because a decline says the bot answered *this* re-review request without
       reviewing, which is a fresher and more actionable signal than a review that
       merely predates this HEAD. Unproven and blocking, but the remedy is to accept the
       decline, not to re-trigger a bot that already declined this commit.
-    - **``participated_stale``** — the bot published in a declared evidence shape,
-      but the currency test failed: the currency ledger — the sole source that test
+    - **``participated_stale``** — the producer admitted the bot's comment as
+      evidence (what admission requires is stated once in
+      ``bot-participation-contract.md`` § "A shape may be gated on a content
+      marker"), but the currency test failed: the currency ledger — the sole source that test
       reads — anchors the comment to a commit that is not the merge candidate, and its
       ``updated_at`` is unchanged from the value recorded at that credit, so the review
       it proves predates this HEAD. Unproven and therefore blocking, but the remedy is to
