@@ -35,6 +35,38 @@ create ──→ [phases 1-6] ──→ archive
 - Supports `--dry-run` preview
 - Archived plans subject to retention cleanup (default: 5 days)
 
+#### Phase-closure post-condition
+
+The archived `status.json` is the plan's **permanent record**, so `archive` closes the plan's open phases before moving the directory. The write happens while the live plan path still resolves — a follow-up `transition` call cannot do it, because the move has already invalidated that path. Three parts, and all three are load-bearing:
+
+1. **Every** phase recorded as `in_progress` is closed to `done` — not just the first one found. A plan holding more than one open phase (a loop-back re-entry is the ordinary way to get there) would otherwise keep the second one recorded as running in the permanent record, so the archive would assert that a phase is still in flight for a plan that has finished.
+2. Every phase whose status is in `UNTOUCHED_PHASE_STATUSES` — derived as `VALID_PHASE_STATUSES - {in_progress, done}`, today exactly `{pending}` — is **left alone**. `in_progress` is the only *closable* status: it names a phase that really did start, so recording it `done` closes a genuine record. Writing `done` onto a `pending` phase would instead fabricate a fresh false record of work that never happened, which is the opposite of the defect in (1) and equally a falsification. A never-started phase therefore stays `pending` in the archive.
+3. `current_phase` becomes `complete` once **no phase remains `in_progress`**. This is deliberately *not* "every phase is `done`": that predicate can never hold for a plan abandoned mid-lifecycle, whose untouched `pending` phases are not `done` and must stay that way, so such a plan was archived frozen at its last phase and never reached the post-finalize sentinel its dormant consumers match on (the phase-6-finalize `current_phase: complete` check, and `cleanup --filter complete`).
+
+A plan abandoned mid-lifecycle consequently archives as `current_phase: complete` with its started phases `done` and its unstarted phases still `pending` — a record that says what happened rather than one that claims the whole plan ran.
+
+The predicate behind (1) and (3) is `_status_core.in_progress_phases`, and the `census` verb's open-phase reporting consumes that same function. The set of phases archive closes and the set census reports as open are therefore one answer to one question, rather than two local re-spellings of `status == in_progress` free to drift apart.
+
+#### Deferred requirement: the phase record and the metrics ledger are not cross-checked
+
+Two independent accounts of the same phase lifecycle exist side by side, and **nothing currently reconciles them**:
+
+| Account | Owner | What it records |
+|---------|-------|-----------------|
+| The phase record — `status.json`'s `phases[]` plus `current_phase` | `manage-status` (this skill) | Which phase a plan is in, and each phase's `pending` / `in_progress` / `done` status |
+| The metrics ledger — the per-phase rows `manage-metrics` writes | `manage-metrics` | Per-phase `start_time` / `end_time` and token/duration figures for the same phases |
+
+Because the two are written by different verbs at different moments and are never compared, **a plan can complete with the two disagreeing** and no gate notices. The disagreement a future implementor must detect is a phase the two accounts describe incompatibly — a phase the status record reports `done` that the ledger never closed (no `end_time`), a phase the ledger closed that the status record still reports `in_progress`, and a phase present in one account and absent from the other altogether. The `archive` post-condition above narrows one source of this drift but does not close it: it corrects the *status* side only, and the ledger is not consulted.
+
+This reconciliation is **deliberately deferred**, and the reason is that the surface it must seam into does not exist yet. It needs two things:
+
+- a **verdict vocabulary** — the agreed value set a reconciliation result would be reported over, so a disagreement is reportable as a typed outcome rather than as prose;
+- a **statistics host** under `manage-metrics` — an existing aggregate-reporting surface for such a verdict to join.
+
+Neither is available today: `manage-metrics` owns exactly two scripts, `manage-metrics.py` and `_ledger_reconciliation.py`, and neither mentions statistics in any case, so there is no statistics host under that skill to seam into.
+
+⛔ **Do not build a private host here.** Standing up a reconciliation surface inside `manage-status` would put the cross-check on the side that owns only one of the two accounts, and would commit the project to a second, parallel statistics home that the eventual `manage-metrics` host would then have to absorb or contradict. The requirement is recorded so it is not lost, and it waits on the host rather than routing around it.
+
 ### Delete
 
 - Permanently removes the plan directory
