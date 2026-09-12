@@ -61,6 +61,11 @@ _AR_SKILL = _BUNDLES / 'plan-marshall' / 'skills' / 'automatic-review' / 'SKILL.
 _BRANCH_CLEANUP_REREVIEW = (
     _BUNDLES / 'plan-marshall' / 'skills' / 'phase-6-finalize' / 'standards' / 'branch-cleanup-rereview.md'
 )
+#: The known ``.py`` member of the population — the consumer whose docstrings state
+#: this contract in prose, and which an ``*.md``-only scan never read.
+_CONSUMER_SCRIPT = (
+    _BUNDLES / 'plan-marshall' / 'skills' / 'automatic-review' / 'scripts' / 'review_completeness.py'
+)
 
 #: The envelope field whose contract the predicate decides. A document that talks
 #: about this field is a document that can state the predicate wrongly.
@@ -192,7 +197,12 @@ class TestNoDocStatesTheRetiredEqualityPredicate:
             f'derived ZERO documents mentioning {_FIELD} under {_BUNDLES} — the scan '
             f'is misrooted, so a clean result here would be vacuous'
         )
-        for known in (_PRODUCER_DOC, _AR_SKILL, _BRANCH_CLEANUP_REREVIEW):
+        # _CONSUMER_SCRIPT is the .py member: the population globs *.py as well as
+        # *.md because three statements of the retired rule sat in this script's
+        # docstrings, outside an *.md-only scan. Asserting a known member of EACH
+        # half is what makes a revert to *.md-only fail loudly here rather than
+        # silently dropping the .py half back out of the scan.
+        for known in (_PRODUCER_DOC, _AR_SKILL, _BRANCH_CLEANUP_REREVIEW, _CONSUMER_SCRIPT):
             assert known in population, f'{known} missing from the derived population'
 
     def test_no_population_member_states_the_retired_predicate(self):
@@ -296,6 +306,11 @@ class TestTheCommentArmDerivesItsVerdict:
             '`matched_signal: issue_comment`, `matched_comment: {…}`, `head_sha_verified: false`',
             'the issue comment signal (`head_sha_verified: false`)',
             'an issue comment carries no reviewed-commit SHA, so it cannot verify',
+            # The inflection the recurrence actually escaped on: arm (b) was keyed on
+            # ``carries`` alone, so this live phrasing passed a guard written to catch it.
+            # Without this param, reverting arm (b) to that literal leaves every control green.
+            'answered the re-review with a comment carrying no reviewed-commit SHA '
+            '(`head_sha_verified: false`)',
         ],
     )
     def test_planted_constant_is_detected(self, planted):
