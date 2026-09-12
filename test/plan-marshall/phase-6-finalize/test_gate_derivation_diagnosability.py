@@ -32,8 +32,10 @@ instead of making the property vacuously green.
 
 from __future__ import annotations
 
+import ast
 import inspect
 import re
+import textwrap
 from collections.abc import Callable
 
 import pytest
@@ -232,15 +234,65 @@ def test_rule_four_sites_are_a_real_subset_of_the_declaring_sites():
 
 
 def test_the_fall_through_branch_reports_rather_than_drops():
-    source = inspect.getsource(_derive_module.derive_gate_bundles)
+    """Structural, indentation-independent: parse the shipped if/elif/else AST.
 
-    assert '\n        else:\n' in source, (
+    Replaces the byte-exact ``'\\n        else:\\n'`` pin — pure
+    reformatting no longer flickers the assertion while the structural
+    intent (terminal else exists and appends to ``unresolved``) is preserved.
+    """
+    tree = ast.parse(textwrap.dedent(inspect.getsource(_derive_module.derive_gate_bundles)))
+    function = tree.body[0]
+    loop = next(node for node in ast.iter_child_nodes(function) if isinstance(node, ast.For))
+
+    # The last top-level ast.If in the for body is the if/elif/else chain
+    # that implements rules 2–4.
+    chain = [node for node in loop.body if isinstance(node, ast.If)][-1]
+
+    # Matched control: the descent must have landed on the rule-2 chain.
+    # If the parse channel went insensitive (body refactored, wrong If
+    # selected), the terminal-else assertions below could pass vacuously on
+    # an unrelated branch; this pins the root condition to the genuine
+    # ``path.startswith(_BUNDLES_PREFIX)`` test the derivation rules name.
+    startswith_calls = [
+        node
+        for node in ast.walk(chain.test)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == 'startswith'
+    ]
+    assert any(
+        node.args
+        and isinstance(node.args[0], ast.Name)
+        and node.args[0].id == '_BUNDLES_PREFIX'
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == 'path'
+        for node in startswith_calls
+    ), (
+        'matched control: the parsed if/elif/else root does not branch on '
+        'path.startswith(_BUNDLES_PREFIX) — the descent examined the wrong '
+        'If statement, so the terminal-else assertions cannot claim the '
+        'rule-4 fall-through'
+    )
+
+    # Descend through elifs (each has a single-element orelse containing the
+    # next ast.If) until we reach the terminal else block.
+    while len(chain.orelse) == 1 and isinstance(chain.orelse[0], ast.If):
+        chain = chain.orelse[0]
+    terminal_else = chain.orelse
+
+    assert terminal_else, (
         'derive_gate_bundles() no longer carries a terminal `else:` branch, so '
         'a path matching none of the earlier shapes falls off the end of the '
         'chain contributing nothing — the silent drop the three sites deny'
     )
-    tail = source.rsplit('\n        else:\n', 1)[1]
-    assert 'unresolved.append' in tail, (
+    appends = any(
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == 'append'
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == 'unresolved'
+        for stmt in terminal_else
+        for node in ast.walk(stmt)
+    )
+    assert appends, (
         'The terminal `else:` branch of derive_gate_bundles() does not append '
         'to `unresolved`, so the documented rule-4 disposition and the shipped '
         'fall-through disagree'

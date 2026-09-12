@@ -19,7 +19,6 @@ sys.path manipulation.
 
 from __future__ import annotations  # noqa: I001
 
-import inspect
 import json
 from pathlib import Path
 from typing import Any
@@ -43,6 +42,8 @@ from claude_runtime import (
 )
 from opencode_runtime import OpenCodeRuntime
 from toon_parser import parse_toon
+
+from conftest import get_script_path, run_script
 
 
 def _parse(output: str) -> dict[str, Any]:
@@ -347,10 +348,26 @@ class TestScriptsDelegateToRuntime:
         assert ".claude' / 'settings" not in source
 
     def test_permission_web_help_has_no_claude_settings_hardcode(self) -> None:
-        """permission_web user-facing help no longer hardcodes ~/.claude/settings.json."""
-        source = inspect.getsource(permission_web)
-        assert '~/.claude/settings.json' not in source
-        assert '.claude/settings.local.json' not in source
+        """permission_web user-facing help no longer hardcodes ~/.claude/settings.json.
+
+        Behavioural: asserts on the rendered ``--help`` output the CLI actually
+        prints — the only channel through which a literal settings path can
+        reach a user — instead of byte-matching the module source (a source
+        comment that merely mentions the path cannot fail, and a help string
+        that genuinely carries it cannot pass).
+        """
+        script = get_script_path('plan-marshall', 'workflow-permission-web', 'permission_web.py')
+        result = run_script(script, '--help')
+
+        assert result.returncode == 0
+        # Matched control: the help-rendering channel is live. If the
+        # subprocess capture silently yielded no output (broken PYTHONPATH,
+        # argparse mis-route, harness failure), the absence assertions below
+        # would pass vacuously — this proves the rendered text the absence
+        # asserts are read from, so the negative result is meaningful.
+        assert 'categorize' in result.stdout
+        assert '~/.claude/settings.json' not in result.stdout
+        assert '.claude/settings.local.json' not in result.stdout
 
 
 # =============================================================================

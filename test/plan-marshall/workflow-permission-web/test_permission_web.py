@@ -185,3 +185,35 @@ def test_script_performs_no_settings_io():
     assert 'WebFetch(' not in source, 'script still renders WebFetch grammar'
     assert 'read_text' not in source, 'script still reads files directly'
     assert 'write_text' not in source, 'script still writes files directly'
+
+
+def test_running_the_cli_creates_no_settings_file(tmp_path):
+    """Behavioural complement to the source-level scan above (D1 routing).
+
+    The scan proves the module *looks* incapable of settings I/O; this asserts
+    the same claim runnable: drive the CLI in a scratch working directory and
+    confirm no ``.claude/settings*.json`` file materialises anywhere under it.
+    ``HOME`` is isolated to the scratch dir so a regression writing to the
+    global settings path is observed (and contained) rather than escaping it.
+    The isolation is live by construction: ``env_overrides`` is applied to the
+    subprocess environment inside ``run_script``, so the ``categorize`` run the
+    matched control below proves live is the run the ``HOME`` override covers.
+    """
+    result = run_script(
+        SCRIPT_PATH,
+        'categorize',
+        '--domains',
+        '["docs.oracle.com", "unknown-site.xyz"]',
+        cwd=str(tmp_path),
+        env_overrides={'HOME': str(tmp_path)},
+    )
+
+    assert result.returncode == 0, f'categorize failed: rc={result.returncode} stderr={result.stderr!r}'
+    # Matched control: the categorize path actually ran and emitted its
+    # payload. If the CLI silently no-opped or the harness swallowed the run,
+    # the no-settings-file assertions below would pass vacuously — this proves
+    # the run reached the handler and rendered output, so the absent files
+    # were observed on a live execution.
+    assert 'docs.oracle.com' in result.stdout
+    assert not list(tmp_path.rglob('settings.json')), 'CLI run created .claude/settings.json'
+    assert not list(tmp_path.rglob('settings.local.json')), 'CLI run created .claude/settings.local.json'
