@@ -243,13 +243,11 @@ def _partition_foreign_paths(deliverables: list[dict]) -> _ForeignPopulation:
     for deliverable in deliverables:
         if not isinstance(deliverable, dict):
             continue
-        # Every declaration field the parser emits — the enumeration lives in
-        # `_plan_parsing.DECLARATION_FIELDS`, which the `foreign` column's
-        # per-entry stamp walks too, so neither selector can be left behind when
-        # a heading is added. A survey-scope deliverable declares
-        # `Files expected to mutate:` instead of `Affected files:`, and its
-        # foreign paths must reach this gate like any other. Reading one field
-        # made the gate's population a strict subset of the declared surface.
+        # Every declaration field the parser emits. A survey-scope deliverable
+        # declares `Files expected to mutate:` instead of `Affected files:`, and
+        # its foreign paths must reach this gate like any other. Reading one
+        # field made the gate's population a strict subset of the declared
+        # surface.
         seen: set[str] = set()
         paths: list[str] = []
         read_seen: set[str] = set()
