@@ -446,10 +446,13 @@ def _append_gate_build_row(
     The shared routing seam runs each build on exactly one terminal route —
     ``in_process`` or ``routed`` — and each such run MUST leave a ``kind=build``
     row naming the route, the exit code, and the executed-test population, so a
-    green gate never reads as ungated failures. The executor dispatch boundary
-    stamps its own row for executor-level invocations; this seam-level row
-    covers direct ``cmd_run`` calls (including the red-first unit-test path)
-    that never cross that boundary.
+    green gate never reads as ungated failures. This append is UNCONDITIONAL on
+    both terminal routes, and the executor dispatch boundary stamps its own
+    sha-bearing row independently — so a build that crosses that boundary leaves
+    TWO ``kind=build`` rows, and only a direct ``cmd_run`` call (including the
+    red-first unit-test path) leaves this one alone. A consumer counting
+    ``kind=build`` rows to audit gate coverage MUST deduplicate rather than
+    assume one row per build.
 
     Best-effort and fail-open: any import, hash, or append failure is swallowed
     so a ledger outage never aborts a build. True daemon failure rows are NOT
