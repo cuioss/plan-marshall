@@ -221,6 +221,8 @@ The same two-sided ensure applies to `permission fix --operation normalize` in t
 
 **Precondition.** The property holds only while every retired rule is an `allow` rule. A retirement that ever targets a `deny` or an `ask` rule must extend the pruning side with it; otherwise that rule is normalized in place on every run and never removed, and the retirement silently does nothing.
 
+**Where each ground is checked.** `TestPermissionListOwnership` in `test/plan-marshall/platform-runtime/test_permission_ops.py` pins all three, plus the Precondition. The `deny` and `ask` grounds are swept over the published `PERMISSION_FIX_OPERATIONS` set — `protect-path` must populate `deny`, every other operation must leave it empty, and none may populate `ask`. The retirement ground drives every member of `_RETIRED_DEFAULT_RULES` with the same rule parked in all three lists, so a retirement that ever reaches `deny` or `ask` fails the guard instead of silently doing nothing.
+
 ### add
 
 ```bash
@@ -255,8 +257,10 @@ python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission_fi
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission_fix ensure-wildcards \
-  --settings SETTINGS --marketplace-json MARKETPLACE_JSON [--dry-run]
+  (--settings SETTINGS | --scope {global,project}) --marketplace-json MARKETPLACE_JSON [--dry-run]
 ```
+
+`--settings` and `--scope` are mutually exclusive.
 
 ### remove-redundant
 
@@ -272,8 +276,10 @@ python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission_fi
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission_fix apply-project-step-permissions \
-  --marshal MARSHAL --settings SETTINGS [--dry-run]
+  --marshal MARSHAL (--settings SETTINGS | --scope {global,project}) [--dry-run]
 ```
+
+`--settings` and `--scope` are mutually exclusive.
 
 ### generate-wildcards
 

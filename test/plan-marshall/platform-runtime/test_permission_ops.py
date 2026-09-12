@@ -42,6 +42,7 @@ from claude_runtime import (
     _skill_permission_covered,
 )
 from opencode_runtime import OpenCodeRuntime
+from runtime_base import PERMISSION_FIX_OPERATIONS
 from toon_parser import parse_toon
 
 from conftest import get_script_path, run_script
@@ -691,3 +692,135 @@ class TestSuspiciousAuditScoresTheGrantingSpelling:
         parsed = self._analyze(tmp_path, monkeypatch, capsys, ['Bash(sudo:*)'])
         assert int(parsed['total_findings']) == 1
         assert [f['severity'] for f in parsed['findings']] == ['high']
+
+
+# =============================================================================
+# 6. Permission-list ownership — the three grounds the bounded property rests on
+# =============================================================================
+# tools-permission-fix/SKILL.md states that retired-rule pruning reaches `allow`
+# only, calls each of its three grounds "separately checkable", and adds a
+# Precondition that the property holds only while every retired rule is an
+# `allow` rule. Nothing checked any of it. A document asserting its own
+# verifiability while the verification does not exist is the vacuous-authority
+# shape; the tests below are the checks that claim names.
+
+#: Which argument shape each `permission fix` operation takes. `protect-path`
+#: names a DIRECTORY to guard; every other operation takes permission
+#: descriptors. This map is hand-written, so it is CHECKED against the published
+#: operation set rather than trusted — see
+#: ``test_every_published_operation_is_swept``. Without that check an operation
+#: added to ``PERMISSION_FIX_OPERATIONS`` would simply not be swept, and the
+#: ownership claim would narrow silently while the suite stayed green.
+_OPERATION_ARGUMENT_KIND = {
+    'normalize': 'descriptor',
+    'add': 'descriptor',
+    'remove': 'descriptor',
+    'ensure': 'descriptor',
+    'consolidate': 'descriptor',
+    'protect-path': 'path',
+}
+
+
+class TestPermissionListOwnership:
+    """`deny` is written by `protect-path` alone, `ask` by nothing, retirement by `allow` only."""
+
+    def _seeded_settings(self, tmp_path: Path, monkeypatch) -> Path:
+        """An empty three-list settings file, pinned as the resolved scope path."""
+        monkeypatch.setattr(claude_runtime, 'resolve_home', lambda: tmp_path)
+        settings_path = tmp_path / 'settings.json'
+        settings_path.write_text(json.dumps({'permissions': {'allow': [], 'deny': [], 'ask': []}}), encoding='utf-8')
+        monkeypatch.setattr(claude_runtime, '_settings_path_for_scope', lambda scope: settings_path)
+        return settings_path
+
+    def _argument_for(self, tmp_path: Path, operation: str) -> list[Any]:
+        if _OPERATION_ARGUMENT_KIND[operation] == 'path':
+            return [str(tmp_path / 'creds')]
+        return [{'kind': 'path', 'tool': 'Read', 'path': '**'}]
+
+    def test_the_operation_population_is_not_empty(self) -> None:
+        """Non-vacuity: the per-operation sweep below needs a population to sweep.
+
+        Kept as its own test because a parametrized sweep over an EMPTY tuple
+        collects zero cases and reports green — the one failure a derived
+        population cannot report about itself.
+        """
+        assert PERMISSION_FIX_OPERATIONS
+
+    def test_every_published_operation_is_swept(self) -> None:
+        """The argument map covers the published set exactly, in both directions."""
+        assert set(_OPERATION_ARGUMENT_KIND) == set(PERMISSION_FIX_OPERATIONS), (
+            f'the ownership sweep and the published operation set disagree: '
+            f'unswept={sorted(set(PERMISSION_FIX_OPERATIONS) - set(_OPERATION_ARGUMENT_KIND))}, '
+            f'stale={sorted(set(_OPERATION_ARGUMENT_KIND) - set(PERMISSION_FIX_OPERATIONS))}. '
+            f'Population sizes: published={len(PERMISSION_FIX_OPERATIONS)}, '
+            f'swept={len(_OPERATION_ARGUMENT_KIND)}.'
+        )
+
+    @pytest.mark.parametrize('operation', PERMISSION_FIX_OPERATIONS, ids=PERMISSION_FIX_OPERATIONS)
+    def test_deny_is_written_by_protect_path_alone_and_ask_by_nothing(
+        self, tmp_path: Path, monkeypatch, operation: str
+    ) -> None:
+        """Grounds two and three, swept over the published operation set.
+
+        Both halves ride one test so the pair cannot drift apart: `protect-path`
+        carries the POSITIVE — it must actually populate `deny` — and every other
+        row carries the negative. Without the positive, an implementation that
+        wrote no deny rule at all would satisfy every negative and pass.
+        """
+        settings_path = self._seeded_settings(tmp_path, monkeypatch)
+
+        result = _parse(
+            claude_runtime.ClaudeRuntime().permission_fix(
+                'global', operation, self._argument_for(tmp_path, operation), False
+            )
+        )
+
+        # The operation must have RUN. An op that refused its argument writes no
+        # deny list either, so without this every negative row below would be
+        # satisfied by a broken call rather than by an observed ownership rule.
+        assert result['status'] == 'success', f'{operation} did not run: {result}'
+
+        written = json.loads(settings_path.read_text(encoding='utf-8'))
+        deny = written['permissions']['deny']
+        ask = written['permissions']['ask']
+
+        assert ask == [], f'{operation} populated permissions.ask with {ask} — nothing in this project writes ask'
+        if _OPERATION_ARGUMENT_KIND[operation] == 'path':
+            assert deny, f'{operation} is the sole deny writer but wrote none — the negative rows below prove nothing'
+        else:
+            assert deny == [], (
+                f'{operation} wrote permissions.deny ({deny}); protect-path is meant to be its sole writer'
+            )
+
+    def test_the_retired_rule_population_is_not_empty(self) -> None:
+        """Non-vacuity for the retirement sweep, for the same reason as above."""
+        assert claude_runtime._RETIRED_DEFAULT_RULES
+
+    @pytest.mark.parametrize(
+        ('rule_id', 'rule'),
+        claude_runtime._RETIRED_DEFAULT_RULES,
+        ids=[rule_id for rule_id, _rule in claude_runtime._RETIRED_DEFAULT_RULES],
+    )
+    def test_a_retired_rule_is_pruned_from_allow_and_only_from_allow(
+        self, tmp_path: Path, rule_id: str, rule: str
+    ) -> None:
+        """Ground one, and the Precondition the bounded property rests on.
+
+        The same rule is parked in all three lists. Pruning it out of `allow`
+        while leaving the `deny` and `ask` copies standing is precisely the
+        documented asymmetry — and it is what fails the moment a retirement
+        targets a `deny` or an `ask` rule without the pruning side being extended
+        to reach it, which is the silent no-op the Precondition warns about.
+        """
+        settings = {'permissions': {'allow': [rule], 'deny': [rule], 'ask': [rule]}}
+
+        result = claude_runtime.ensure_default_permissions(settings, tmp_path / 'settings.json')
+
+        assert rule_id in result['defaults_removed']
+        assert rule not in settings['permissions']['allow']
+        assert settings['permissions']['deny'] == [rule], (
+            f'retiring {rule_id} reached permissions.deny — the pruning side is documented as allow-only'
+        )
+        assert settings['permissions']['ask'] == [rule], (
+            f'retiring {rule_id} reached permissions.ask — the pruning side is documented as allow-only'
+        )
