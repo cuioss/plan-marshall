@@ -1286,9 +1286,13 @@ def run_config_migrate(_args: Namespace) -> dict[str, Any]:
     * ``removed_duplicate`` — the machine-global side already holds the SAME
       value; only the per-repo key is removed and ``machine-config.json`` is left
       byte-identical.
-    * ``refused`` (``status: error``) — ``values_differ``,
-      ``machine_config_invalid``, ``machine_config_unreadable``, or
-      ``per_repo_value_invalid``. Both files byte-identical.
+    * ``refused`` (``status: error``) — one of the ``reason`` values the
+      ``config migrate`` table in ``manage-build-server/SKILL.md`` enumerates,
+      which is the single authority for that set. Both files byte-identical on
+      every one of them. The set is deliberately NOT restated here: a
+      restatement drifts from the code the moment a refusal path is added, and
+      this docstring had already drifted to four members while the function
+      raised six.
     * ``partial`` (``status: error``) — the machine-global side is settled but
       the ``marshal.json`` edit did not commit. Re-running converges via
       ``removed_duplicate``.
