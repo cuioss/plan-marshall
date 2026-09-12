@@ -2422,6 +2422,16 @@ def _claude_project_settings_path(project_dir: str | None = None) -> Path:
     at the other candidate. This is the single home for Claude project
     settings-path resolution — the ``tools-permission-*`` scripts delegate here
     rather than owning the path-resolution logic themselves.
+
+    **The two preferences are asymmetric, and the mutating side is NOT this
+    one.** Preferring the shared file is right for a caller that wants the
+    committed, team-visible file; it is wrong for a caller whose effect has to
+    land where the operator's live entries are. When both project files exist
+    the local one overrides the shared one, so an operation resolving here
+    would edit a file the running configuration overrides and report a change
+    the operator never sees. ``permission_fix.resolve_settings_arg`` — and so
+    every subcommand sharing it — therefore resolves
+    ``_claude_project_settings_read_path`` instead.
     """
     settings_json = _claude_shared_settings_path(project_dir)
     if settings_json.is_file():
@@ -2444,6 +2454,16 @@ def _claude_project_settings_read_path(project_dir: str | None = None) -> Path:
     for the same reason: so ``tools-permission-*`` scripts delegate the whole
     settings-path question here instead of inlining the ``.claude`` segments on
     one path while delegating the other.
+
+    **This is also the side a MUTATION resolves**, despite the name — which is
+    why the two preferences are asymmetric rather than one being simply "for
+    reads". ``permission_fix.resolve_settings_arg`` resolves here for both
+    ``--scope project`` and its no-flag fall-through, so every subcommand
+    sharing that helper writes the file whose entries actually take effect. The
+    reasoning is the same one that makes this the read preference: when both
+    project files exist the operator-local one wins, so it is the only file a
+    change can land in and be observed. Resolving the write preference there
+    would edit the shadowed file instead.
     """
     settings_local = _claude_local_settings_path(project_dir)
     if settings_local.is_file():

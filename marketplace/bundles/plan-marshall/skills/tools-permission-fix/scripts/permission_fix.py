@@ -47,7 +47,7 @@ for _lib in ('ref-toon-format', 'tools-file-ops', 'tools-permission-doctor'):
 from permission_common import (  # noqa: E402
     EXIT_SUCCESS,
     ensure_default_permissions,
-    get_project_settings_path_for_write,
+    get_project_settings_path,
     get_settings_path,
     is_claude_target,
     load_settings,
@@ -157,12 +157,32 @@ def process_permission_list(perm_list: list[str]) -> tuple[list[str], int, int, 
 
 
 def resolve_settings_arg(args: argparse.Namespace) -> str:
-    """Resolve settings path from --settings or --scope argument."""
+    """Resolve settings path from --settings or --scope argument.
+
+    ``--scope project`` and the no-flag fall-through both resolve the READ
+    preference (``get_project_settings_path`` ->
+    ``permission_settings_path('project', write=False)``), which prefers
+    ``.claude/settings.local.json``. Every subcommand sharing this helper
+    MUTATES the file it resolves, and a mutation has to land where the
+    operator's live entries are: when both project files exist, the entries
+    that actually take effect are the local ones, so resolving the write
+    preference here would edit a file the running configuration overrides.
+    ``--scope global`` keeps ``get_settings_path`` and an explicit
+    ``--settings`` path is honoured untouched; exactly one resolved file is
+    written per invocation on every arm.
+
+    ``get_settings_path`` itself is deliberately left alone — it also resolves
+    ``--target project`` for subcommands outside this helper's reach, so
+    changing it there would widen the switch past the four subcommands that
+    share this seam.
+    """
     if hasattr(args, 'settings') and args.settings:
         return str(args.settings)
     if hasattr(args, 'scope') and args.scope:
+        if args.scope == 'project':
+            return str(get_project_settings_path())
         return str(get_settings_path(args.scope))
-    return str(get_project_settings_path_for_write())
+    return str(get_project_settings_path())
 
 
 def cmd_apply_fixes(args: argparse.Namespace) -> dict:
