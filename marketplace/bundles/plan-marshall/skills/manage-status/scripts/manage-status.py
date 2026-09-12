@@ -19,6 +19,7 @@ Usage:
     python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata --plan-id EXAMPLE-PLAN --set --append --field session_ids --value SESSION-ID
     python3 .plan/execute-script.py plan-marshall:manage-status:manage-status get-context --plan-id EXAMPLE-PLAN
     python3 .plan/execute-script.py plan-marshall:manage-status:manage-status list
+    python3 .plan/execute-script.py plan-marshall:manage-status:manage-status census
     python3 .plan/execute-script.py plan-marshall:manage-status:manage-status transition --plan-id EXAMPLE-PLAN --completed 1-init
     python3 .plan/execute-script.py plan-marshall:manage-status:manage-status archive --plan-id EXAMPLE-PLAN
     python3 .plan/execute-script.py plan-marshall:manage-status:manage-status route --phase 1-init
@@ -68,6 +69,7 @@ from _status_core import (
     cmd_orchestrator_update_field,
 )
 from _status_query import (
+    cmd_census,
     cmd_get_context,
     cmd_get_worktree_path,
     cmd_list,
@@ -309,6 +311,28 @@ def main() -> int:
         allow_abbrev=False,
     )
     list_orphans_parser.set_defaults(func=cmd_list_orphans)
+
+    # census
+    census_parser = subparsers.add_parser(
+        'census',
+        help='Per-cohort main-anchored plan census (read-only, store-wide — declares no --plan-id)',
+        description=(
+            'Count every plan store SEPARATELY from the main checkout, whatever the '
+            "caller's cwd, and name any store that could not be read. Resolves each "
+            'cohort — live (plans), worktree-resident (worktrees/{wt}/.plan/local/plans) '
+            'and archived (archived-plans) — through the main-anchored resolver, so a '
+            'phase-5+ caller pinned into a worktree gets the same answer a main-checkout '
+            'caller does. Each cohort row carries its own coverage '
+            '(complete | partial | unevaluated) and ONLY the counts that coverage '
+            'justifies: an unevaluated cohort publishes NO population, open_phase_count '
+            'or unreadable_count at all, because a zero from a store nobody looked at is '
+            'indistinguishable from a verified empty one. Store-wide by construction, so '
+            'it declares no --plan-id. Writes nothing.'
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        allow_abbrev=False,
+    )
+    census_parser.set_defaults(func=cmd_census)
 
     # transition
     transition_parser = subparsers.add_parser('transition', help='Transition to next phase', allow_abbrev=False)
