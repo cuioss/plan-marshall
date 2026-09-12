@@ -1932,9 +1932,7 @@ def _resolve_footprint_base(base_ref: str) -> dict[str, Any]:
     return result
 
 
-def _currency_compare(
-    footprint: frozenset[str], spec_paths: set[str]
-) -> dict[str, Any]:
+def _currency_compare(footprint: frozenset[str], spec_paths: set[str]) -> dict[str, Any]:
     """Compare one spec's declared paths against the landed footprint by symmetric difference.
 
     The ``_cmd_reconcile_scope._compare_pair`` pattern, consumed read-only:
@@ -1953,19 +1951,13 @@ def _currency_compare(
     though its sets differ.
     """
     overlapping = sorted(
-        path
-        for path in footprint
-        if any(entry == path or _contains(entry, path) for entry in spec_paths)
+        path for path in footprint if any(entry == path or _contains(entry, path) for entry in spec_paths)
     )
     footprint_not_spec = sorted(
-        path
-        for path in footprint
-        if not any(entry == path or _contains(entry, path) for entry in spec_paths)
+        path for path in footprint if not any(entry == path or _contains(entry, path) for entry in spec_paths)
     )
     spec_not_footprint = sorted(
-        entry
-        for entry in spec_paths
-        if not any(entry == path or _contains(entry, path) for path in footprint)
+        entry for entry in spec_paths if not any(entry == path or _contains(entry, path) for path in footprint)
     )
     symmetric_difference_count = len(footprint_not_spec) + len(spec_not_footprint)
     if not footprint and not spec_paths:

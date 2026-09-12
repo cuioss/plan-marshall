@@ -1119,9 +1119,7 @@ def _resolve_delta_base(base_ref: str) -> dict[str, Any]:
     return result
 
 
-def compute_surface_delta(
-    declared: set[str] | None, realized: set[str] | None
-) -> dict[str, Any]:
+def compute_surface_delta(declared: set[str] | None, realized: set[str] | None) -> dict[str, Any]:
     """Compare a landing's realized footprint against its declared surface.
 
     Both sides are sets, or ``None`` when that side could not be built. The
@@ -1139,11 +1137,7 @@ def compute_surface_delta(
     all, so a gate that compared nothing never renders as a pass.
     """
     if declared is None or realized is None:
-        missing_sides = sorted(
-            name
-            for name, side in (('declared', declared), ('realized', realized))
-            if side is None
-        )
+        missing_sides = sorted(name for name, side in (('declared', declared), ('realized', realized)) if side is None)
         return {
             'state': SURFACE_DELTA_UNMEASURED,
             'could_not_look': '_and_'.join(f'{name}_not_supplied' for name in missing_sides),

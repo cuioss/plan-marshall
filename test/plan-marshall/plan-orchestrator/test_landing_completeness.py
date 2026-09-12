@@ -1173,7 +1173,9 @@ class TestLandingCheckDeltaEndToEnd:
         _scaffold(plan_context)
         message = _write_landing(plan_context, tmp_path, _facts_landing(), 'facts.md')
 
-        result = _check_with_delta(plan_context, message, _DELTA_DECLARED_A, f'{_DELTA_DECLARED_A},{_DELTA_REALIZED_EXTRA}')
+        result = _check_with_delta(
+            plan_context, message, _DELTA_DECLARED_A, f'{_DELTA_DECLARED_A},{_DELTA_REALIZED_EXTRA}'
+        )
 
         assert result['status'] == 'success'
         assert result['complete'] is True
@@ -1185,17 +1187,13 @@ class TestLandingCheckDeltaEndToEnd:
         _scaffold(plan_context)
         message = _write_landing(plan_context, tmp_path, _facts_landing(), 'facts.md')
 
-        result = _check_with_delta(
-            plan_context, message, f'{_DELTA_DECLARED_A},{_DELTA_DECLARED_B}', _DELTA_DECLARED_A
-        )
+        result = _check_with_delta(plan_context, message, f'{_DELTA_DECLARED_A},{_DELTA_DECLARED_B}', _DELTA_DECLARED_A)
 
         delta = result['surface_delta']
         assert delta['state'] == SURFACE_DELTA_CLEAN
         assert delta['missing'] == [_DELTA_DECLARED_B]
 
-    def test_unsupplied_surfaces_report_unmeasured_without_touching_completeness(
-        self, plan_context, tmp_path
-    ):
+    def test_unsupplied_surfaces_report_unmeasured_without_touching_completeness(self, plan_context, tmp_path):
         _scaffold(plan_context)
         message = _write_landing(plan_context, tmp_path, _facts_landing(), 'facts.md')
 
@@ -1235,9 +1233,7 @@ class TestLandingCheckDeltaEndToEnd:
         delta = result['surface_delta']
         assert delta['state'] == SURFACE_DELTA_CLEAN
 
-    def test_landing_check_with_delta_leaves_the_tree_byte_identical(
-        self, plan_context, tmp_path
-    ):
+    def test_landing_check_with_delta_leaves_the_tree_byte_identical(self, plan_context, tmp_path):
         _scaffold(plan_context)
         message = _write_landing(plan_context, tmp_path, _facts_landing(), 'facts.md')
         root = Path(plan_context.fixture_dir) / 'orchestrator' / EPIC
