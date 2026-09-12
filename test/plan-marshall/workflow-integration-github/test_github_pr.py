@@ -3172,9 +3172,10 @@ def test_layer_three_is_consulted_only_after_layers_one_and_two_miss(monkeypatch
 # =============================================================================
 #
 # For a bot declaring ``participation_requires_update`` the movement guard denies
-# credit to a stale unchanged comment. At that point the comment's ``kind`` has
-# ALREADY matched a declared ``participation_evidence`` publish shape — only the
-# currency test failed — so silently discarding the observation collapsed a stale
+# credit to a stale unchanged comment. At that point the comment is ALREADY
+# admissible evidence — its ``kind`` matched a declared ``participation_evidence``
+# publish shape and it carried that shape's declared content marker where one is
+# declared — only the currency test failed, so silently discarding the observation collapsed a stale
 # review into ``absent``. The two states have OPPOSITE remedies (re-trigger a
 # re-review vs escalate a bot that never engaged), which is why the observation is
 # now emitted instead of dropped.

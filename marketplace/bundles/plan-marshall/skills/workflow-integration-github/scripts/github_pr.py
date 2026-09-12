@@ -1113,7 +1113,8 @@ def cmd_fetch_findings(args):
     outcome, for when the merge candidate itself could not be read.
     ``fetch_pr_head_sha`` returns '' on ANY failure path, so the flag reports only
     whether the read produced a SHA — never a verdict an operator can act on. A
-    currency-subject bot whose comment matched a declared publish shape on such a fetch
+    currency-subject bot whose comment was already admissible evidence — a declared
+    publish shape, carrying its content marker where one is declared — on such a fetch
     is reported in ``undecidable_participation_bots`` (same ``{bot_kind, evidence_kind}``
     shape, proven set subtracted) and in NEITHER other set: not credited, because
     nothing anchors the credit; and not stale, because stale prescribes re-triggering a
@@ -1333,8 +1334,9 @@ def cmd_fetch_findings(args):
     # shapes, their content markers, and the update requirement are registry data.
     participated: dict[str, str] = {}
     stale_participation: dict[str, str] = {}
-    # The THIRD outcome: a currency-subject bot whose comment matched a declared publish
-    # shape while the merge candidate itself could not be read. It is neither credited
+    # The THIRD outcome: a currency-subject bot whose comment was ALREADY admissible
+    # evidence — a declared publish shape carrying its content marker where one is
+    # declared — while the merge candidate itself could not be read. It is neither credited
     # (nothing anchors the credit) nor stale (stale's remedy is "re-trigger the review",
     # which cannot fix a failed head read), so it is carried in its own disjoint set.
     undecidable_participation: dict[str, str] = {}
