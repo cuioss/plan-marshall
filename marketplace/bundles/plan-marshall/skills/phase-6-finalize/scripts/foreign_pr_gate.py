@@ -18,13 +18,12 @@ The gate is a consumer of two deterministic signals, never of artifact prose:
   population it iterates: every declared path that is BOTH outside the project
   root (the per-entry ``foreign`` flag) AND declares a change. A foreign path
   declared ``read`` — including a marker-less ``Files to survey`` bullet, which
-  parses as ``read`` — names a file the deliverable only consults; no commit can
-  carry it, so no pull request could ever clear it, and it is kept out of the
-  population. It is never dropped silently: every such path is named on the
-  result (``excluded_read_only[]``). A foreign entry with no intent marker still
-  enters the population. The column's deliverable roll-up is decided by the
-  same predicate, so the column and the gate agree on what a foreign change is;
-  and
+  parses as ``read`` — names a file the deliverable only consults, and no commit
+  can carry it. A foreign entry with no intent marker still enters the
+  population. :func:`_partition_foreign_paths` is the single statement of which
+  read-only paths are kept out and which are reported. The column's deliverable
+  roll-up is decided by the same predicate, so the column and the gate agree on
+  what a foreign change is; and
 * the ``ci pr landing-state`` verb — the per-repository done-ness discriminator
   (``merged`` / ``pr_open`` / ``pushed_no_pr`` / ``unpushed``).
 
