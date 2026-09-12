@@ -63,9 +63,7 @@ _BRANCH_CLEANUP_REREVIEW = (
 )
 #: The known ``.py`` member of the population — the consumer whose docstrings state
 #: this contract in prose, and which an ``*.md``-only scan never read.
-_CONSUMER_SCRIPT = (
-    _BUNDLES / 'plan-marshall' / 'skills' / 'automatic-review' / 'scripts' / 'review_completeness.py'
-)
+_CONSUMER_SCRIPT = _BUNDLES / 'plan-marshall' / 'skills' / 'automatic-review' / 'scripts' / 'review_completeness.py'
 
 #: The envelope field whose contract the predicate decides. A document that talks
 #: about this field is a document that can state the predicate wrongly.
@@ -319,8 +317,7 @@ class TestTheCommentArmDerivesItsVerdict:
             # The inflection the recurrence actually escaped on: arm (b) was keyed on
             # ``carries`` alone, so this live phrasing passed a guard written to catch it.
             # Without this param, reverting arm (b) to that literal leaves every control green.
-            'answered the re-review with a comment carrying no reviewed-commit SHA '
-            '(`head_sha_verified: false`)',
+            'answered the re-review with a comment carrying no reviewed-commit SHA (`head_sha_verified: false`)',
             # The past tense completes the inflection set the arm claims to cover. It is
             # the register these docs actually use ("AND carried that shape's declared
             # content marker" sits inside the scanned population), so omitting it left
