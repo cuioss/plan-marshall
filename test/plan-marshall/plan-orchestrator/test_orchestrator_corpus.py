@@ -114,6 +114,7 @@ _surface_reader = load_script_module(_SURFACE_BUNDLE, _SURFACE_SKILL, _SURFACE_S
 cmd_corpus_enumerate = _orch.cmd_corpus_enumerate
 cmd_corpus_cross_check = _orch.cmd_corpus_cross_check
 cmd_corpus_surfaces = _orch.cmd_corpus_surfaces
+cmd_corpus_declaration_currency = _orch.cmd_corpus_declaration_currency
 SURFACE_STATES = _orch.SURFACE_STATES
 SURFACE_DECLARATIVE = _orch.SURFACE_DECLARATIVE
 SURFACE_DERIVED = _orch.SURFACE_DERIVED
@@ -121,6 +122,11 @@ SURFACE_PROSE = _orch.SURFACE_PROSE
 SURFACE_ABSENT = _orch.SURFACE_ABSENT
 SURFACE_UNREADABLE = _orch.SURFACE_UNREADABLE
 SURFACE_INDETERMINATE_STATES = _orch.SURFACE_INDETERMINATE_STATES
+CURRENCY_AGREE = _orch.CURRENCY_AGREE
+CURRENCY_DISAGREE = _orch.CURRENCY_DISAGREE
+CURRENCY_VACUOUS = _orch.CURRENCY_VACUOUS
+CURRENCY_UNEVALUATED = _orch.CURRENCY_UNEVALUATED
+CURRENCY_STATES = _orch.CURRENCY_STATES
 cmd_corpus_verdicts = _orch.cmd_corpus_verdicts
 cmd_corpus_set_verdict = _orch.cmd_corpus_set_verdict
 format_verdict_line = _orch._format_verdict_line
@@ -298,6 +304,19 @@ SHARED_LESSON = '.plan/local/lessons-learned/LESSON-001-shared-origin.md'
 #: section boundary must still exclude it once fenced lines stop truncating the
 #: body — widening the body past a fenced comment is not the same as unbounding it.
 OUTSIDE_PATH = 'marketplace/bundles/plan-marshall/skills/manage-files/scripts/manage-files.py'
+
+_CURRENCY_ARGS = parse_ns(
+    _ORCH_BUNDLE,
+    _ORCH_SKILL,
+    _ORCH_SCRIPT,
+    'corpus',
+    'declaration-currency',
+    '--slug',
+    SLUG,
+    '--footprint-paths',
+    SHARED_PATH,
+    register=False,
+)
 
 
 # =============================================================================
@@ -3635,3 +3654,287 @@ class TestCorpusCli:
         assert 'replaced: false' in stamped.stdout
         assert read_back.returncode == 0
         assert 'blocking_count: 1' in read_back.stdout
+
+
+# =============================================================================
+# corpus declaration-currency — cross-spec reconciliation read verb
+# =============================================================================
+#
+# The cross-spec direction the single-ledger verbs cannot perform: a landed
+# plan's realized footprint reconciled against OTHER staged specs' declared
+# ``## Expected Surface`` paths by symmetric difference in both directions,
+# with directory and recursive-glob claims resolved by containment. Every
+# detector carries a matched pair — the positive-account collision cases prove
+# an overlap reports, the untouched control proves disjointness stays silent —
+# and the guards confirm the expected surface against the tree first per
+# ADR-019 (each comparable spec asserts ``declarative`` before its comparison
+# is read).
+
+#: A real repo file beneath the ``test/plan-marshall/plan-orchestrator/``
+#: directory claim — the containment input for the directory-collision case.
+DIR_FOOTPRINT = 'test/plan-marshall/plan-orchestrator/test_orchestrator_corpus.py'
+
+#: A real repo file that shares the directory claim's PREFIX but not its
+#: ``/`` boundary — the negative control proving containment is not a bare
+#: substring match.
+DIR_PREFIX_NEAR_MISS = 'test/plan-marshall/plan-orchestrator-extra.py'
+
+
+def _currency(plan_context, footprint_csv: str, **overrides: Any) -> Any:
+    """Run the declaration-currency verb against the fixture epic.
+
+    Returns ``Any`` for the same ``load_script_module`` reason ``_surfaces``
+    states. ``footprint_csv`` is the landed realized footprint the caller
+    resolved upstream; the verb compares it, it never resolves it.
+    """
+    return cmd_corpus_declaration_currency(_variant(_CURRENCY_ARGS, footprint_paths=footprint_csv, **overrides))
+
+
+def _crow_for(result: Any, spec_name: str) -> Any:
+    """The single ``specs[]`` row for one spec, asserting it is single."""
+    match = [row for row in result['specs'] if row['spec'] == spec_name]
+    assert len(match) == 1, f'{spec_name} contributed {len(match)} rows, expected exactly 1'
+    return match[0]
+
+
+class TestDeclarationCurrencyUntouchedClean:
+    """The matched untouched control: disjointness reports clean, never a collision."""
+
+    def test_an_untouched_spec_reports_clean(self, plan_context):
+        _write_status(plan_context, [_row('PLAN-01'), _row('PLAN-02')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(OTHER_PATH))
+        _write_spec(plan_context, 'PLAN-02-beta.md', surface_lines=_surface(SHARED_PATH))
+
+        result = _currency(plan_context, DIR_FOOTPRINT)
+
+        assert result['status'] == 'success'
+        assert result['collision_detected'] is False
+        assert result['collision_count'] == 0
+        assert result['collisions'] == []
+        assert sorted(result['checked_and_clean']) == ['PLAN-01-alpha.md', 'PLAN-02-beta.md']
+        assert result['could_not_check'] == []
+
+    def test_the_clean_control_first_confirms_the_surface_against_the_tree(self, plan_context):
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(OTHER_PATH))
+
+        result = _currency(plan_context, DIR_FOOTPRINT)
+
+        row = _crow_for(result, 'PLAN-01-alpha.md')
+        assert row['derivation_status'] == SURFACE_DECLARATIVE
+        assert row['admits_check'] is True
+
+
+class TestDeclarationCurrencyFileCollision:
+    """Positive-account file collision: an overlapping footprint reports without a manual sweep."""
+
+    def test_a_landed_footprint_overlapping_another_spec_reports(self, plan_context):
+        _write_status(plan_context, [_row('PLAN-01'), _row('PLAN-02')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
+        _write_spec(plan_context, 'PLAN-02-beta.md', surface_lines=_surface(OTHER_PATH))
+
+        result = _currency(plan_context, SHARED_PATH)
+
+        assert result['collision_detected'] is True
+        assert result['collision_count'] == 1
+        assert [hit['spec'] for hit in result['collisions']] == ['PLAN-01-alpha.md']
+        assert result['collisions'][0]['overlapping_files'] == [SHARED_PATH]
+        assert result['checked_and_clean'] == ['PLAN-02-beta.md']
+
+    def test_the_colliding_row_publishes_both_difference_directions(self, plan_context):
+        _write_status(plan_context, [_row('PLAN-01'), _row('PLAN-02')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
+        _write_spec(plan_context, 'PLAN-02-beta.md', surface_lines=_surface(OTHER_PATH))
+
+        result = _currency(plan_context, SHARED_PATH)
+
+        hit = _crow_for(result, 'PLAN-01-alpha.md')
+        assert hit['footprint_count'] == 1
+        assert hit['spec_claimed_count'] == 1
+        assert hit['footprint_not_spec'] == []
+        assert hit['spec_not_footprint'] == []
+        assert hit['symmetric_difference_count'] == 0
+        assert hit['state'] == CURRENCY_AGREE
+        assert hit['collision'] is True
+        miss = _crow_for(result, 'PLAN-02-beta.md')
+        assert miss['footprint_not_spec'] == [SHARED_PATH]
+        assert miss['spec_not_footprint'] == [OTHER_PATH]
+        assert miss['symmetric_difference_count'] == 2
+        assert miss['state'] == CURRENCY_DISAGREE
+        assert miss['collision'] is False
+
+
+class TestDeclarationCurrencyDirectoryCollision:
+    """A directory-claiming spec is evaluated by containment, never dropped to silence."""
+
+    def test_a_file_beneath_a_directory_claim_collides(self, plan_context):
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(
+            plan_context,
+            'PLAN-01-alpha.md',
+            surface_lines=['- Adds `test/plan-marshall/plan-orchestrator/`'],
+        )
+
+        result = _currency(plan_context, DIR_FOOTPRINT)
+
+        assert result['collision_detected'] is True
+        row = _crow_for(result, 'PLAN-01-alpha.md')
+        assert row['derivation_status'] == SURFACE_DECLARATIVE
+        assert row['collision'] is True
+        assert row['overlapping_files'] == [DIR_FOOTPRINT]
+
+    def test_containment_requires_the_slash_boundary(self, plan_context):
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(
+            plan_context,
+            'PLAN-01-alpha.md',
+            surface_lines=['- Adds `test/plan-marshall/plan-orchestrator/`'],
+        )
+
+        result = _currency(plan_context, DIR_PREFIX_NEAR_MISS)
+
+        assert result['collision_detected'] is False
+        row = _crow_for(result, 'PLAN-01-alpha.md')
+        assert row['collision'] is False
+        assert result['checked_and_clean'] == ['PLAN-01-alpha.md']
+
+
+class TestDeclarationCurrencyUnevaluated:
+    """A spec whose surface cannot be evaluated reports unevaluated, never disjoint."""
+
+    def test_a_spec_with_no_surface_section_is_unevaluated_not_clean(self, plan_context):
+        _write_status(plan_context, [_row('PLAN-01'), _row('PLAN-02')])
+        _write_spec_without_surface_section(plan_context, 'PLAN-01-alpha.md')
+        _write_spec(plan_context, 'PLAN-02-beta.md', surface_lines=_surface(OTHER_PATH))
+
+        result = _currency(plan_context, SHARED_PATH)
+
+        row = _crow_for(result, 'PLAN-01-alpha.md')
+        assert row['state'] == CURRENCY_UNEVALUATED
+        assert row['admits_check'] is False
+        assert result['could_not_check'] == ['PLAN-01-alpha.md']
+        assert 'PLAN-01-alpha.md' not in result['checked_and_clean']
+        assert result['collision_detected'] is False
+
+    def test_the_state_tally_spans_the_whole_vocabulary(self, plan_context):
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec_without_surface_section(plan_context, 'PLAN-01-alpha.md')
+
+        result = _currency(plan_context, SHARED_PATH)
+
+        tallied = [row['state'] for row in result['state_tally']]
+        assert tallied == list(CURRENCY_STATES)
+        assert result['specs_unevaluated'] == 1
+        assert result['specs_compared'] == 0
+
+
+class TestDeclarationCurrencySymmetricDifference:
+    """Equal-size disjoint sets disagree — the verdict never rests on cardinality."""
+
+    def test_two_singletons_sharing_no_member_disagree(self, plan_context):
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(OTHER_PATH))
+
+        result = _currency(plan_context, SHARED_PATH)
+
+        row = _crow_for(result, 'PLAN-01-alpha.md')
+        assert row['footprint_not_spec_count'] == 1
+        assert row['spec_not_footprint_count'] == 1
+        assert row['symmetric_difference_count'] == 2
+        assert row['state'] == CURRENCY_DISAGREE
+
+    def test_an_empty_footprint_does_not_turn_prose_into_vacuous(self, plan_context):
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=list(_DEFAULT_SURFACE))
+
+        result = _currency(plan_context, '')
+
+        row = _crow_for(result, 'PLAN-01-alpha.md')
+        assert row['state'] == CURRENCY_UNEVALUATED
+
+
+class TestDeclarationCurrencyBaseAnchorAndScope:
+    def test_the_footprint_base_anchor_rides_with_the_counts(self, plan_context):
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
+
+        result = _currency(plan_context, SHARED_PATH)
+
+        assert result['footprint_count'] == 1
+        assert result['footprint_paths'] == [SHARED_PATH]
+        assert result['footprint_base_ref'] == 'origin/main'
+        assert result['footprint_base_kind'] == 'remote-tracking'
+        assert isinstance(result['footprint_base_sha'], str)
+
+    def test_the_landed_plans_own_spec_is_excluded(self, plan_context):
+        _write_status(plan_context, [_row('PLAN-01'), _row('PLAN-02')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
+        _write_spec(plan_context, 'PLAN-02-beta.md', surface_lines=_surface(OTHER_PATH))
+
+        result = _currency(plan_context, SHARED_PATH, exclude_spec='PLAN-01-alpha.md')
+
+        assert result['specs_total'] == 2
+        assert result['specs_excluded'] == 1
+        assert result['specs_scanned'] == 1
+        assert [row['spec'] for row in result['specs']] == ['PLAN-02-beta.md']
+        assert result['collision_detected'] is False
+
+    def test_the_payload_names_its_governing_authority(self, plan_context):
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
+
+        result = _currency(plan_context, SHARED_PATH)
+
+        assert 'ADR-019' in result['governing_authority']
+
+
+class TestDeclarationCurrencyRefusals:
+    def test_an_unsafe_slug_is_refused(self):
+        result = cmd_corpus_declaration_currency(_variant(_CURRENCY_ARGS, slug='../escape'))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'invalid_slug'
+
+    def test_an_epic_with_no_store_tree_is_refused(self, plan_context):
+        result = cmd_corpus_declaration_currency(_variant(_CURRENCY_ARGS, slug='no-such-epic'))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'not_found'
+
+
+class TestDeclarationCurrencyReadOnlyBoundary:
+    def test_declaration_currency_leaves_the_tree_byte_identical(self, plan_context):
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
+        root = _epic_dir(plan_context)
+        before = {path: path.read_bytes() for path in sorted(root.rglob('*')) if path.is_file()}
+        assert before, 'fixture tree did not materialize'
+
+        result = _currency(plan_context, SHARED_PATH)
+
+        after = {path: path.read_bytes() for path in sorted(root.rglob('*')) if path.is_file()}
+        assert after == before
+        assert result['collision_count'] == 1, (
+            'the read-only claim must be proven on a scan that actually COLLIDED '
+            '— a scan finding nothing would leave the tree untouched vacuously'
+        )
+
+    def test_declaration_currency_runs_through_cli(self, plan_context):
+        env = {'PLAN_BASE_DIR': str(plan_context.fixture_dir)}
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
+
+        result = run_script(
+            SCRIPT_PATH,
+            'corpus',
+            'declaration-currency',
+            '--slug',
+            SLUG,
+            '--footprint-paths',
+            SHARED_PATH,
+            env_overrides=env,
+        )
+
+        assert result.returncode == 0
+        assert 'status: success' in result.stdout
+        assert 'collision_detected: true' in result.stdout

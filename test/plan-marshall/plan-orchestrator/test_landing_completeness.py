@@ -39,14 +39,22 @@ from __future__ import annotations
 import re
 from contextlib import contextmanager
 from pathlib import Path
+from types import SimpleNamespace
 
 from conftest import MARKETPLACE_ROOT, get_script_path, load_script_module, run_script
 
 _inbox = load_script_module('plan-marshall', 'plan-orchestrator', '_orchestrator_inbox.py', 'orchestrator_inbox')
 check_landing_completeness = _inbox.check_landing_completeness
 parse_landing_facts = _inbox.parse_landing_facts
+compute_surface_delta = _inbox.compute_surface_delta
+parse_delta_paths = _inbox._parse_delta_paths
 LANDING_REQUIRED_KEYS = _inbox.LANDING_REQUIRED_KEYS
 LANDING_FACTS_SCHEMA = _inbox.LANDING_FACTS_SCHEMA
+SURFACE_DELTA_CLEAN = _inbox.SURFACE_DELTA_CLEAN
+SURFACE_DELTA_EXPANSION = _inbox.SURFACE_DELTA_EXPANSION
+SURFACE_DELTA_VACUOUS = _inbox.SURFACE_DELTA_VACUOUS
+SURFACE_DELTA_UNMEASURED = _inbox.SURFACE_DELTA_UNMEASURED
+SURFACE_DELTA_STATES = _inbox.SURFACE_DELTA_STATES
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'plan-orchestrator', 'orchestrator.py')
 
@@ -1034,3 +1042,237 @@ class TestPayloadSpecDoc:
         text = self._text()
 
         assert 'The empirical sample was not' in text
+
+
+# =============================================================================
+# The landing-time surface-expansion delta field (declaration currency D2)
+# =============================================================================
+#
+# The drain-time realized-vs-declared comparison rides `inbox landing-check`
+# as a first-class `surface_delta` field: the landing's realized footprint
+# (from the merged diff) against its declared surface, by symmetric difference
+# in both directions — never by cardinality. Every detector carries a matched
+# pair — the expansion cases prove growth reports, the clean cases prove a
+# subset landing stays silent — and an unmeasurable side reports `unmeasured`,
+# never clean.
+
+#: Declared surface members and realized footprint members. Real repo paths so
+#: a verbatim-comparison assertion proves no entry was silently dropped.
+_DELTA_DECLARED_A = 'marketplace/bundles/plan-marshall/skills/plan-orchestrator/scripts/orchestrator.py'
+_DELTA_DECLARED_B = 'marketplace/bundles/plan-marshall/skills/plan-orchestrator/scripts/_orchestrator_inbox.py'
+_DELTA_REALIZED_EXTRA = 'marketplace/bundles/plan-marshall/skills/manage-status/scripts/manage-status.py'
+
+
+def _delta_args(message: str, declared: str | None, realized: str | None) -> SimpleNamespace:
+    """One landing-check namespace carrying the delta surfaces under test."""
+    return SimpleNamespace(
+        slug=EPIC,
+        message=message,
+        declared_paths=declared,
+        realized_paths=realized,
+        footprint_base=None,
+    )
+
+
+def _check_with_delta(plan_context, message: str, declared: str | None, realized: str | None):
+    """Run the landing-check handler against the fixture epic, returning its dict."""
+    return _inbox.cmd_inbox_landing_check(_delta_args(message, declared, realized))
+
+
+class TestSurfaceDeltaExpansionDetected:
+    def test_added_paths_report_expansion(self):
+        delta = compute_surface_delta({_DELTA_DECLARED_A}, {_DELTA_DECLARED_A, _DELTA_REALIZED_EXTRA})
+
+        assert delta['state'] == SURFACE_DELTA_EXPANSION
+        assert delta['added'] == [_DELTA_REALIZED_EXTRA]
+        assert delta['added_count'] == 1
+        assert delta['missing'] == []
+        assert delta['declared_count'] == 1
+        assert delta['realized_count'] == 2
+
+    def test_added_and_missing_publish_both_directions(self):
+        delta = compute_surface_delta({_DELTA_DECLARED_A}, {_DELTA_DECLARED_B})
+
+        assert delta['state'] == SURFACE_DELTA_EXPANSION
+        assert delta['added'] == [_DELTA_DECLARED_B]
+        assert delta['missing'] == [_DELTA_DECLARED_A]
+        assert delta['symmetric_difference_count'] == 2
+
+    def test_equal_size_disjoint_sets_disagree_never_cardinality(self):
+        delta = compute_surface_delta({_DELTA_DECLARED_A}, {_DELTA_DECLARED_B})
+
+        assert delta['added_count'] == 1
+        assert delta['missing_count'] == 1
+        assert delta['symmetric_difference_count'] == 2
+        assert delta['state'] == SURFACE_DELTA_EXPANSION
+
+
+class TestSurfaceDeltaClean:
+    def test_a_subset_landing_reports_clean_with_missing_published(self):
+        delta = compute_surface_delta({_DELTA_DECLARED_A, _DELTA_DECLARED_B}, {_DELTA_DECLARED_A})
+
+        assert delta['state'] == SURFACE_DELTA_CLEAN
+        assert delta['added'] == []
+        assert delta['missing'] == [_DELTA_DECLARED_B]
+
+    def test_an_exact_match_reports_clean(self):
+        delta = compute_surface_delta({_DELTA_DECLARED_A}, {_DELTA_DECLARED_A})
+
+        assert delta['state'] == SURFACE_DELTA_CLEAN
+        assert delta['symmetric_difference_count'] == 0
+
+
+class TestSurfaceDeltaUnmeasured:
+    def test_a_missing_declared_side_is_unmeasured(self):
+        delta = compute_surface_delta(None, {_DELTA_DECLARED_A})
+
+        assert delta['state'] == SURFACE_DELTA_UNMEASURED
+        assert 'declared' in delta['could_not_look']
+        assert 'added' not in delta
+
+    def test_a_missing_realized_side_is_unmeasured(self):
+        delta = compute_surface_delta({_DELTA_DECLARED_A}, None)
+
+        assert delta['state'] == SURFACE_DELTA_UNMEASURED
+        assert 'realized' in delta['could_not_look']
+        assert 'missing' not in delta
+
+    def test_both_missing_sides_name_both(self):
+        delta = compute_surface_delta(None, None)
+
+        assert delta['state'] == SURFACE_DELTA_UNMEASURED
+        assert 'declared' in delta['could_not_look']
+        assert 'realized' in delta['could_not_look']
+
+    def test_both_empty_sides_are_vacuous_never_clean(self):
+        delta = compute_surface_delta(set(), set())
+
+        assert delta['state'] == SURFACE_DELTA_VACUOUS
+
+    def test_the_state_vocabulary_spans_all_four(self):
+        assert tuple(SURFACE_DELTA_STATES) == (
+            SURFACE_DELTA_CLEAN,
+            SURFACE_DELTA_EXPANSION,
+            SURFACE_DELTA_VACUOUS,
+            SURFACE_DELTA_UNMEASURED,
+        )
+
+    def test_csv_blanks_normalize_away_while_entries_survive_verbatim(self):
+        declared = parse_delta_paths(f'  {_DELTA_DECLARED_A}  ,,')
+        realized = parse_delta_paths(f'{_DELTA_DECLARED_A},  ,{_DELTA_REALIZED_EXTRA}')
+
+        assert declared == {_DELTA_DECLARED_A}
+        assert parse_delta_paths(None) is None
+        delta = compute_surface_delta(declared, realized)
+        assert delta['added'] == [_DELTA_REALIZED_EXTRA]
+        assert delta['missing'] == []
+
+
+class TestLandingCheckDeltaEndToEnd:
+    def test_expansion_detected_end_to_end(self, plan_context, tmp_path):
+        _scaffold(plan_context)
+        message = _write_landing(plan_context, tmp_path, _facts_landing(), 'facts.md')
+
+        result = _check_with_delta(plan_context, message, _DELTA_DECLARED_A, f'{_DELTA_DECLARED_A},{_DELTA_REALIZED_EXTRA}')
+
+        assert result['status'] == 'success'
+        assert result['complete'] is True
+        delta = result['surface_delta']
+        assert delta['state'] == SURFACE_DELTA_EXPANSION
+        assert delta['added'] == [_DELTA_REALIZED_EXTRA]
+
+    def test_no_expansion_reports_clean_end_to_end(self, plan_context, tmp_path):
+        _scaffold(plan_context)
+        message = _write_landing(plan_context, tmp_path, _facts_landing(), 'facts.md')
+
+        result = _check_with_delta(
+            plan_context, message, f'{_DELTA_DECLARED_A},{_DELTA_DECLARED_B}', _DELTA_DECLARED_A
+        )
+
+        delta = result['surface_delta']
+        assert delta['state'] == SURFACE_DELTA_CLEAN
+        assert delta['missing'] == [_DELTA_DECLARED_B]
+
+    def test_unsupplied_surfaces_report_unmeasured_without_touching_completeness(
+        self, plan_context, tmp_path
+    ):
+        _scaffold(plan_context)
+        message = _write_landing(plan_context, tmp_path, _facts_landing(), 'facts.md')
+
+        result = _check_with_delta(plan_context, message, None, None)
+
+        assert result['complete'] is True
+        delta = result['surface_delta']
+        assert delta['state'] == SURFACE_DELTA_UNMEASURED
+        assert 'added' not in delta
+
+    def test_completeness_and_delta_are_independent_verdicts(self, plan_context, tmp_path):
+        _scaffold(plan_context)
+        message = _write_landing(plan_context, tmp_path, _PRE_FIX_PROSE_LANDING, 'prose.md')
+
+        result = _check_with_delta(plan_context, message, _DELTA_DECLARED_A, _DELTA_REALIZED_EXTRA)
+
+        assert result['complete'] is False
+        assert result['surface_delta']['state'] == SURFACE_DELTA_EXPANSION
+
+    def test_the_base_anchor_rides_with_the_counts_end_to_end(self, plan_context, tmp_path):
+        _scaffold(plan_context)
+        message = _write_landing(plan_context, tmp_path, _facts_landing(), 'facts.md')
+
+        result = _check_with_delta(plan_context, message, _DELTA_DECLARED_A, _DELTA_DECLARED_A)
+
+        delta = result['surface_delta']
+        assert delta['footprint_base_ref'] == 'origin/main'
+        assert delta['footprint_base_kind'] == 'remote-tracking'
+        assert isinstance(delta['footprint_base_sha'], str)
+
+    def test_undeclared_tree_paths_compare_verbatim_never_dropped(self, plan_context, tmp_path):
+        _scaffold(plan_context)
+        message = _write_landing(plan_context, tmp_path, _facts_landing(), 'facts.md')
+
+        result = _check_with_delta(plan_context, message, 'does/not/exist.py', 'does/not/exist.py')
+
+        delta = result['surface_delta']
+        assert delta['state'] == SURFACE_DELTA_CLEAN
+
+    def test_landing_check_with_delta_leaves_the_tree_byte_identical(
+        self, plan_context, tmp_path
+    ):
+        _scaffold(plan_context)
+        message = _write_landing(plan_context, tmp_path, _facts_landing(), 'facts.md')
+        root = Path(plan_context.fixture_dir) / 'orchestrator' / EPIC
+        before = {path: path.read_bytes() for path in sorted(root.rglob('*')) if path.is_file()}
+        assert before, 'fixture tree did not materialize'
+
+        result = _check_with_delta(plan_context, message, _DELTA_DECLARED_A, _DELTA_REALIZED_EXTRA)
+
+        after = {path: path.read_bytes() for path in sorted(root.rglob('*')) if path.is_file()}
+        assert after == before
+        assert result['surface_delta']['state'] == SURFACE_DELTA_EXPANSION, (
+            'the read-only claim must be proven on a scan that actually DETECTED '
+            'an expansion — a scan finding nothing would leave the tree untouched vacuously'
+        )
+
+    def test_delta_runs_through_cli(self, plan_context, tmp_path):
+        _scaffold(plan_context)
+        message = _write_landing(plan_context, tmp_path, _facts_landing(), 'facts.md')
+
+        result = run_script(
+            SCRIPT_PATH,
+            'inbox',
+            'landing-check',
+            '--slug',
+            EPIC,
+            '--message',
+            message,
+            '--declared-paths',
+            _DELTA_DECLARED_A,
+            '--realized-paths',
+            f'{_DELTA_DECLARED_A},{_DELTA_REALIZED_EXTRA}',
+            env_overrides=_env(plan_context),
+        )
+
+        assert result.returncode == 0
+        assert 'status: success' in result.stdout
+        assert 'surface_delta' in result.stdout
+        assert 'expansion_detected' in result.stdout
