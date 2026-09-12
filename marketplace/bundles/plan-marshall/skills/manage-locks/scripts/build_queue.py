@@ -1035,9 +1035,7 @@ def run_release(args: Namespace) -> dict[str, Any]:
         outcome['reaped'] = validate_lock_queue(state, now, max_slots)
         # The threshold this release will recompute against, read from the state
         # already in hand rather than from a separate file.
-        upper_limit, upper_limit_source = _resolve_upper_limit(state)
-        outcome['upper_limit'] = upper_limit
-        outcome['upper_limit_source'] = upper_limit_source
+        upper_limit, _upper_limit_source = _resolve_upper_limit(state)
 
         active = _entry_list(state, 'active')
         waiting = _entry_list(state, 'waiting')
@@ -1105,7 +1103,6 @@ def run_release(args: Namespace) -> dict[str, Any]:
             # resolves to exactly this value.
             if new_limit != upper_limit:
                 next_state[UPPER_LIMIT_FIELD] = new_limit
-                outcome['upper_limit'] = new_limit
         return next_state
 
     rmw_json(queue_path, _mutate)
