@@ -15,9 +15,10 @@ directions, so a parser that matched nothing, or a branch added without a ruled
 value, can never read as a clean pass.
 
 The BLOCK population behind each label is published too, and pinned at exactly
-one. The facts of every block in a label's segment are merged into one dict, so
-without that pin a second block's facts could fill a gap its sibling has — and
-every detector below would report clean over a defective document.
+one. The facts of every block CARRYING a label are merged into one dict —
+across every segment bearing that label, not only the first — so without that
+pin a second block's facts could fill a gap its sibling has, and every detector
+below would report clean over a defective document.
 
 Each detector is a pure function over document text, and each is pinned by a
 mutation control: a fabricated pre-fix input fed to the SAME detector must be
@@ -86,6 +87,14 @@ def _labelled_mark_step_blocks(section: str) -> dict[str, list[str]]:
     A label's segment runs to the next label. A segment with no ``mark-step-done``
     block (Branch F's overview, which only introduces F1/F2/F3) is not a terminal
     call site and is left out.
+
+    A label appearing MORE THAN ONCE accumulates: every segment carrying it
+    contributes its blocks. Assigning instead would let the last such segment
+    REPLACE the earlier ones — the block count would read the last segment's alone,
+    :func:`labels_with_multiple_blocks` would report no duplicate, and an earlier
+    segment missing ``cleanup_owed`` would be invisible to every detector below.
+    That is the same masking channel the one-block-per-label pin closes, reached by
+    a different route, so it is closed here rather than assumed away.
     """
     labels = list(_BRANCH_LABEL.finditer(section))
     blocks_by_label: dict[str, list[str]] = {}
@@ -95,15 +104,16 @@ def _labelled_mark_step_blocks(section: str) -> dict[str, list[str]]:
         blocks = [block for block in _BASH_BLOCK.findall(segment) if 'mark-step-done' in block]
         if not blocks:
             continue
-        blocks_by_label[label.group(1)] = blocks
+        blocks_by_label.setdefault(label.group(1), []).extend(blocks)
     return blocks_by_label
 
 
 def terminal_call_sites(section: str) -> dict[str, dict[str, str]]:
     """Map each labelled branch that issues ``mark-step-done`` to the facts it records.
 
-    ⚠ Per-block granularity is LOST here: the facts of every block in a label's
-    segment are folded into one dict. That is faithful only while each label
+    ⚠ Per-block granularity is LOST here: the facts of every block carrying a
+    label are folded into one dict — across every segment bearing that label, not
+    only the first. That is faithful only while each label
     carries exactly one block — otherwise a sibling block's ``cleanup_owed``
     fills a gap the document actually has, and
     :func:`sites_missing_cleanup_owed` reads clean over a document that is
@@ -240,6 +250,44 @@ def test_mutation_pin_two_blocks_under_one_label_are_reported():
         'the merge no longer masks the incomplete sibling — this pin is aimed at the wrong channel'
     )
     assert labels_with_multiple_blocks(two_blocks) == ['F2']
+
+
+def test_mutation_pin_two_separate_segments_under_one_label_are_reported():
+    """Two SEPARATE segments carrying the SAME label must be reported.
+
+    The sibling pin above puts both blocks in ONE segment. This one puts them in
+    two, which reaches the segmentation by a different route: ``_BRANCH_LABEL``
+    yields two matches with the same group, so a per-label ASSIGNMENT would let
+    the second segment replace the first — the block count would read ``{'F2': 1}``,
+    ``labels_with_multiple_blocks`` would report no duplicate, and an earlier F2
+    segment missing ``cleanup_owed`` would read clean. The one-segment pin cannot
+    see that: it never produces a repeated label.
+    """
+    two_segments = (
+        '**F2 — dequeued without merging** (`state == closed`).\n\n'
+        '```bash\n'
+        'python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \\\n'
+        '  --plan-id {plan_id} --phase 6-finalize --step branch-cleanup --outcome done \\\n'
+        '  --fact merge_state=closed \\\n'
+        '  --fact cleanup_owed=true \\\n'
+        '  --display-detail "dequeued without merging, cleanup owed"\n'
+        '```\n\n'
+        '**F2 — dequeued without merging, restated in a second segment** (`state == closed`).\n\n'
+        '```bash\n'
+        'python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \\\n'
+        '  --plan-id {plan_id} --phase 6-finalize --step branch-cleanup --outcome done \\\n'
+        '  --fact merge_state=closed \\\n'
+        '  --display-detail "second segment, records no cleanup_owed"\n'
+        '```\n'
+    )
+
+    assert terminal_call_site_block_counts(two_segments) == {'F2': 2}, (
+        'the second segment was dropped rather than accumulated, so the repeated label is invisible'
+    )
+    assert sites_missing_cleanup_owed(terminal_call_sites(two_segments)) == [], (
+        'the merge no longer masks the incomplete segment — this pin is aimed at the wrong channel'
+    )
+    assert labels_with_multiple_blocks(two_segments) == ['F2']
 
 
 # --------------------------------------------------------------------------- #
