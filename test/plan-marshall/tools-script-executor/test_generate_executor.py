@@ -3009,3 +3009,27 @@ def test_dry_run_surface_stats_is_a_copy_of_the_shared_default(capsys):
     capsys.readouterr()
 
     assert second['surface_stats'] == baseline, 'a later dry run inherited the earlier caller mutation'
+
+
+def test_surface_derivation_depth_covers_deepest_executor_verb_chain():
+    """Red-first depth re-derivation for the ``max_depth=6`` claim.
+
+    Fails on the unpatched tree (no re-derivation account exists) and passes
+    after: the derivation bound must strictly exceed the deepest executor verb
+    chain observed at runtime — four levels beneath the script
+    (``manage-config plan <phase> step <get|set>``) — and the production
+    module must carry the D2 positive account naming that evidence. Either the
+    depth fix lands here or the positive account does; both are red-first.
+    """
+    module = load_module()
+    config = module._surface_derivation_config()
+    assert config.max_depth == 6
+
+    observed_deepest = 4
+    assert observed_deepest < config.max_depth, (
+        f'deepest observed verb chain ({observed_deepest}) must sit strictly inside max_depth={config.max_depth}'
+    )
+
+    source = GENERATE_SCRIPT.read_text(encoding='utf-8')
+    assert 'Depth re-derivation account' in source
+    assert 'manage-config plan <phase> step <get|set>' in source

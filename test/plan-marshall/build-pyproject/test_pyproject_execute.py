@@ -655,3 +655,93 @@ class TestPyprojectCmdRunPlanIdAbsentPassthrough:
         assert rc == 0
         assert len(exec_recorder.calls) == 1
         assert double.acquire_calls == []
+
+
+def _read_ledger_rows(base: Path) -> list[dict]:
+    """Parse the isolated change-ledger JSONL into dicts."""
+    import json as _json
+
+    ledger = base / 'work' / 'change-ledger.jsonl'
+    if not ledger.is_file():
+        return []
+    rows = []
+    for line in ledger.read_text().splitlines():
+        line = line.strip()
+        if line:
+            rows.append(_json.loads(line))
+    return rows
+
+
+class TestGateRouteLedgerRecord:
+    """Red-first: each terminal gate route leaves one kind=build ledger row.
+
+    The in-process leg is the regression anchor — on the unpatched seam it ran
+    without leaving any row, so a green gate read as ungated failures. The
+    daemon-route control asserts the routed leg leaves the same row shape, and
+    that a true daemon failure row is still recorded (never suppressed).
+    """
+
+    def test_in_process_run_leaves_ledger_row(self, monkeypatch, tmp_path):
+        monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path / '.plan'))
+        double = _QueueDouble([{'status': 'success', 'admission': 'admitted', 'id': 'P:uuid-ledger-1'}])
+        exec_recorder = _install_queue(monkeypatch, double)
+
+        rc = cmd_run(_variant(_RUN_ARGS, plan_id='ledger-plan', execution_mode='in_process'))
+
+        assert rc == 0
+        assert exec_recorder.ran is True
+        rows = [r for r in _read_ledger_rows(tmp_path / '.plan') if r.get('kind') == 'build']
+        assert len(rows) == 1
+        row = rows[0]
+        assert row['plan_id'] == 'ledger-plan'
+        assert row['status'] == 'success'
+        assert row['exit_code'] == 0
+        assert '[route=in_process]' in str(row.get('args', ''))
+        assert (row.get('outcome') or {}).get('route') == 'in_process'
+
+    def test_daemon_route_leaves_same_row_shape(self, monkeypatch, tmp_path):
+        monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path / '.plan'))
+        routed = {
+            'status': 'success',
+            'exit_code': 0,
+            'duration_seconds': 1,
+            'log_file': '',
+            'command': 'pw verify',
+            'routed_tests_run': 7,
+        }
+        monkeypatch.setattr(_factory, '_route_to_daemon', lambda *_a, **_k: (routed, ''))
+        monkeypatch.setattr(_factory, 'cmd_run_common', lambda **_kwargs: 0)
+        monkeypatch.setattr(_factory, 'log_entry', lambda *_args, **_kwargs: None)
+
+        rc = cmd_run(_variant(_RUN_ARGS, plan_id='ledger-plan', execution_mode='auto'))
+
+        assert rc == 0
+        rows = [r for r in _read_ledger_rows(tmp_path / '.plan') if r.get('kind') == 'build']
+        assert len(rows) == 1
+        row = rows[0]
+        assert row['plan_id'] == 'ledger-plan'
+        assert row['status'] == 'success'
+        assert '[route=routed]' in str(row.get('args', ''))
+        assert (row.get('outcome') or {}).get('route') == 'routed'
+        assert (row.get('outcome') or {}).get('tests_run') == 7
+
+    def test_daemon_failure_row_is_not_suppressed(self, monkeypatch, tmp_path):
+        monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path / '.plan'))
+        routed = {
+            'status': 'error',
+            'exit_code': 1,
+            'duration_seconds': 2,
+            'log_file': '',
+            'command': 'pw verify',
+        }
+        monkeypatch.setattr(_factory, '_route_to_daemon', lambda *_a, **_k: (routed, ''))
+        monkeypatch.setattr(_factory, 'cmd_run_common', lambda **_kwargs: 0)
+        monkeypatch.setattr(_factory, 'log_entry', lambda *_args, **_kwargs: None)
+
+        rc = cmd_run(_variant(_RUN_ARGS, plan_id='ledger-plan', execution_mode='auto'))
+
+        assert rc == 0
+        rows = [r for r in _read_ledger_rows(tmp_path / '.plan') if r.get('kind') == 'build']
+        assert len(rows) == 1
+        assert rows[0]['status'] == 'error'
+        assert rows[0]['exit_code'] == 1
