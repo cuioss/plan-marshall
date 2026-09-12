@@ -14,6 +14,11 @@ The count is published and asserted against the expected branch set in BOTH
 directions, so a parser that matched nothing, or a branch added without a ruled
 value, can never read as a clean pass.
 
+The BLOCK population behind each label is published too, and pinned at exactly
+one. The facts of every block in a label's segment are merged into one dict, so
+without that pin a second block's facts could fill a gap its sibling has — and
+every detector below would report clean over a defective document.
+
 Each detector is a pure function over document text, and each is pinned by a
 mutation control: a fabricated pre-fix input fed to the SAME detector must be
 reported as an offender, so a refactor that leaves the guard green over a defect
@@ -71,23 +76,66 @@ def _mark_step_section(text: str) -> str:
     return match.group(1)
 
 
-def terminal_call_sites(section: str) -> dict[str, dict[str, str]]:
-    """Map each labelled branch that issues ``mark-step-done`` to the facts it records.
+def _labelled_mark_step_blocks(section: str) -> dict[str, list[str]]:
+    """Map each labelled branch to the ``mark-step-done`` blocks in its segment.
+
+    The single segmentation pass behind both public detectors below, so the facts
+    and the block population those facts were merged from can never be derived
+    from different readings of the document.
 
     A label's segment runs to the next label. A segment with no ``mark-step-done``
     block (Branch F's overview, which only introduces F1/F2/F3) is not a terminal
     call site and is left out.
     """
     labels = list(_BRANCH_LABEL.finditer(section))
-    sites: dict[str, dict[str, str]] = {}
+    blocks_by_label: dict[str, list[str]] = {}
     for index, label in enumerate(labels):
         end = labels[index + 1].start() if index + 1 < len(labels) else len(section)
         segment = section[label.end() : end]
         blocks = [block for block in _BASH_BLOCK.findall(segment) if 'mark-step-done' in block]
         if not blocks:
             continue
-        sites[label.group(1)] = {key: value for block in blocks for key, value in _FACT.findall(block)}
-    return sites
+        blocks_by_label[label.group(1)] = blocks
+    return blocks_by_label
+
+
+def terminal_call_sites(section: str) -> dict[str, dict[str, str]]:
+    """Map each labelled branch that issues ``mark-step-done`` to the facts it records.
+
+    ⚠ Per-block granularity is LOST here: the facts of every block in a label's
+    segment are folded into one dict. That is faithful only while each label
+    carries exactly one block — otherwise a sibling block's ``cleanup_owed``
+    fills a gap the document actually has, and
+    :func:`sites_missing_cleanup_owed` reads clean over a document that is
+    missing the fact (a later block silently winning is the same channel for a
+    wrong value in :func:`sites_with_wrong_cleanup_owed`). The one-block-per-label
+    precondition is not assumed: :func:`terminal_call_site_block_counts` publishes
+    the population that was merged over and
+    ``test_every_terminal_call_site_is_backed_by_exactly_one_block`` asserts it,
+    so a second block turns the build red instead of being merged in silence.
+    """
+    return {
+        label: {key: value for block in blocks for key, value in _FACT.findall(block)}
+        for label, blocks in _labelled_mark_step_blocks(section).items()
+    }
+
+
+def terminal_call_site_block_counts(section: str) -> dict[str, int]:
+    """The block POPULATION each terminal call site's facts were merged from.
+
+    Published so :func:`terminal_call_sites`' merge is auditable rather than
+    assumed: its key set is that of :func:`terminal_call_sites` by construction
+    (both views onto :func:`_labelled_mark_step_blocks`), and each value is the
+    number of ``mark-step-done`` blocks folded into that label's fact dict. A
+    caller reading an empty offender list from :func:`labels_with_multiple_blocks`
+    reads this mapping to tell "nothing to report" from "nothing was parsed".
+    """
+    return {label: len(blocks) for label, blocks in _labelled_mark_step_blocks(section).items()}
+
+
+def labels_with_multiple_blocks(section: str) -> list[str]:
+    """The terminal call sites whose facts were merged from MORE THAN ONE block."""
+    return sorted(label for label, count in terminal_call_site_block_counts(section).items() if count > 1)
 
 
 def sites_missing_cleanup_owed(sites: dict[str, dict[str, str]]) -> list[str]:
@@ -135,6 +183,63 @@ def test_the_terminal_call_site_population_is_the_ruled_branch_set():
     assert len(sites) > 0, 'the parser found no terminal call site, so every assertion would pass vacuously'
     assert len(sites) == len(_EXPECTED_CLEANUP_OWED), f'parsed {len(sites)} terminal call sites: {sorted(sites)}'
     assert set(sites) == set(_EXPECTED_CLEANUP_OWED)
+
+
+def test_every_terminal_call_site_is_backed_by_exactly_one_block():
+    """One ``mark-step-done`` block per label, so the fact merge is an identity.
+
+    The assertion above pins the LABEL set; this one pins the BLOCK set behind
+    it, which nothing else publishes. ``terminal_call_sites`` folds every block
+    in a label's segment into one fact dict, so a second block under one label
+    lets a sibling's ``cleanup_owed`` fill a gap the document actually has — and
+    every downstream detector then reports clean over a defective document.
+    Failing loud here forces the author to split the label (exactly what
+    F1/F2/F3 already do under Branch F) or to upgrade the detector to per-block
+    granularity, instead of silently merging.
+    """
+    section = _mark_step_section(_BRANCH_CLEANUP_DOC.read_text(encoding='utf-8'))
+    counts = terminal_call_site_block_counts(section)
+
+    assert len(counts) > 0, 'the parser found no mark-step-done block, so the count assertion would pass vacuously'
+    assert set(counts) == set(terminal_call_sites(section)), (
+        f'the block population and the parsed facts disagree on the label set: {sorted(counts)}'
+    )
+    assert labels_with_multiple_blocks(section) == [], f'block counts per terminal call site: {counts}'
+
+
+def test_mutation_pin_two_blocks_under_one_label_are_reported():
+    """One complete and one incomplete block under the SAME label must be reported.
+
+    The masking channel in its live form: the complete block's ``cleanup_owed``
+    fills the incomplete sibling's gap at the merge, so
+    ``sites_missing_cleanup_owed`` returns ``[]`` over a document that IS missing
+    the fact. The middle assertion pins that masking rather than assuming it, and
+    the block-count detector is what still sees the second block.
+    """
+    two_blocks = (
+        '**F2 — dequeued without merging** (`state == closed`).\n\n'
+        '```bash\n'
+        'python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \\\n'
+        '  --plan-id {plan_id} --phase 6-finalize --step branch-cleanup --outcome done \\\n'
+        '  --fact merge_state=closed \\\n'
+        '  --fact cleanup_owed=true \\\n'
+        '  --display-detail "dequeued without merging, cleanup owed"\n'
+        '```\n\n'
+        '```bash\n'
+        'python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \\\n'
+        '  --plan-id {plan_id} --phase 6-finalize --step branch-cleanup --outcome done \\\n'
+        '  --fact merge_state=closed \\\n'
+        '  --display-detail "sibling block, records no cleanup_owed"\n'
+        '```\n'
+    )
+
+    assert terminal_call_site_block_counts(two_blocks) == {'F2': 2}, (
+        'the fabricated blocks were not parsed, so the pin proves nothing'
+    )
+    assert sites_missing_cleanup_owed(terminal_call_sites(two_blocks)) == [], (
+        'the merge no longer masks the incomplete sibling — this pin is aimed at the wrong channel'
+    )
+    assert labels_with_multiple_blocks(two_blocks) == ['F2']
 
 
 # --------------------------------------------------------------------------- #
