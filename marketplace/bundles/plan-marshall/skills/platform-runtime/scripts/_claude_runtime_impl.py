@@ -1085,13 +1085,13 @@ class ClaudeRuntime(Runtime):
         if 'suspicious' in expanded:
             suspicious_patterns = [
                 (
-                    r'Write\(/tmp/',
+                    r'Edit\(/tmp/',
                     'medium',
-                    'Write(/tmp/**) is a broad write permission; consider scoping to a specific path',
+                    'Edit(/tmp/**) is a broad write permission; consider scoping to a specific path',
                 ),
                 (r'Bash\(sudo:', 'high', 'Bash(sudo:*) grants unrestricted sudo; remove or restrict the pattern'),
                 (r'Bash\(\*\)', 'high', 'Bash(*) allows any bash command; this is dangerously broad'),
-                (r'Write\(/\*\*\)', 'high', 'Write(/**) grants write access to the entire filesystem'),
+                (r'Edit\(/\*\*\)', 'high', 'Edit(/**) grants write access to the entire filesystem'),
                 (r'Read\(/\*\*\)', 'medium', 'Read(/**) grants read access to the entire filesystem'),
             ]
             all_allow = (

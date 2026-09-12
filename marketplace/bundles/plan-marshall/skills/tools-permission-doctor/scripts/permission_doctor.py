@@ -219,45 +219,45 @@ def cmd_detect_redundant(args) -> dict:
 # =============================================================================
 # detect-suspicious subcommand — Claude rule-pack
 # =============================================================================
-# The patterns below encode the Claude permission grammar (Write/Read/Bash format).
+# The patterns below encode the Claude permission grammar (Edit/Read/Bash format).
 # They bind only on a Claude target; on a non-Claude target the permission format
 # may differ entirely and these patterns do not apply.
 
 SUSPICIOUS_PATTERNS = [
-    {'pattern': r'^Write\(\/\*\*\)$', 'reason': 'Root write access', 'severity': 'high', 'category': 'root_access'},
+    {'pattern': r'^Edit\(\/\*\*\)$', 'reason': 'Root write access', 'severity': 'high', 'category': 'root_access'},
     {'pattern': r'^Read\(\/\*\*\)$', 'reason': 'Root read access', 'severity': 'high', 'category': 'root_access'},
     {
-        'pattern': r'^Write\(\/etc\/.*\)$',
+        'pattern': r'^Edit\(\/etc\/.*\)$',
         'reason': 'System configuration write access',
         'severity': 'high',
         'category': 'system_directory',
     },
     {
-        'pattern': r'^Write\(\/dev\/.*\)$',
+        'pattern': r'^Edit\(\/dev\/.*\)$',
         'reason': 'Device file write access',
         'severity': 'high',
         'category': 'system_directory',
     },
     {
-        'pattern': r'^Write\(\/sys\/.*\)$',
+        'pattern': r'^Edit\(\/sys\/.*\)$',
         'reason': 'System kernel interface write access',
         'severity': 'high',
         'category': 'system_directory',
     },
     {
-        'pattern': r'^Write\(\/proc\/.*\)$',
+        'pattern': r'^Edit\(\/proc\/.*\)$',
         'reason': 'Process information write access',
         'severity': 'high',
         'category': 'system_directory',
     },
     {
-        'pattern': r'^Write\(\/boot\/.*\)$',
+        'pattern': r'^Edit\(\/boot\/.*\)$',
         'reason': 'Boot files write access',
         'severity': 'high',
         'category': 'system_directory',
     },
     {
-        'pattern': r'^Write\(\/root\/.*\)$',
+        'pattern': r'^Edit\(\/root\/.*\)$',
         'reason': 'Root user home directory write access',
         'severity': 'high',
         'category': 'system_directory',
@@ -295,19 +295,19 @@ SUSPICIOUS_PATTERNS = [
     {'pattern': r'.*\|\s*bash.*', 'reason': 'Piping to bash', 'severity': 'high', 'category': 'dangerous_command'},
     {'pattern': r'.*\|\s*sh.*', 'reason': 'Piping to sh', 'severity': 'high', 'category': 'dangerous_command'},
     {
-        'pattern': r'^Write\(\/tmp\/.*\)$',
+        'pattern': r'^Edit\(\/tmp\/.*\)$',
         'reason': 'System temp directory write access',
         'severity': 'medium',
         'category': 'temp_directory',
     },
     {
-        'pattern': r'^Write\(\/var\/tmp\/.*\)$',
+        'pattern': r'^Edit\(\/var\/tmp\/.*\)$',
         'reason': 'Persistent temp directory write access',
         'severity': 'medium',
         'category': 'temp_directory',
     },
     {
-        'pattern': r'^Write\(\/private\/tmp\/.*\)$',
+        'pattern': r'^Edit\(\/private\/tmp\/.*\)$',
         'reason': 'macOS private temp directory write access',
         'severity': 'medium',
         'category': 'temp_directory',
@@ -319,7 +319,7 @@ SUSPICIOUS_PATTERNS = [
         'category': 'broad_access',
     },
     {
-        'pattern': r'^Write\(\/\/Users\/\*\*\)$',
+        'pattern': r'^Edit\(\/\/Users\/\*\*\)$',
         'reason': 'All users write access',
         'severity': 'high',
         'category': 'broad_access',
@@ -331,7 +331,7 @@ SUSPICIOUS_PATTERNS = [
         'category': 'broad_access',
     },
     {
-        'pattern': r'^Write\(\/\/home\/\*\*\)$',
+        'pattern': r'^Edit\(\/\/home\/\*\*\)$',
         'reason': 'All home directories write access',
         'severity': 'high',
         'category': 'broad_access',
