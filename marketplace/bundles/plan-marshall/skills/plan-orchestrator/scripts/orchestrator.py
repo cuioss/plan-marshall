@@ -2632,18 +2632,13 @@ def cmd_corpus_cross_check(args: argparse.Namespace) -> dict[str, Any]:
     # ``live_indeterminate_plans`` and counted in ``live_could_not_check_count``,
     # never in the checked-and-clean count.
     live_plan_surfaces = [
-        {'plan': record['name'], 'comparable': bool(record.get('comparable', bool(record['paths'])))}
-        for record in live
+        {'plan': record['name'], 'comparable': bool(record.get('comparable', bool(record['paths'])))} for record in live
     ]
     live_indeterminate_plans = sorted(
         record['name'] for record in live if not record.get('comparable', bool(record['paths']))
     )
-    live_comparable_records = [
-        record for record in live if record.get('comparable', bool(record['paths']))
-    ]
-    live_matched_names = {
-        row['candidate'] for row in origin_matches if row.get('candidate_kind') == 'live_plan'
-    } | {
+    live_comparable_records = [record for record in live if record.get('comparable', bool(record['paths']))]
+    live_matched_names = {row['candidate'] for row in origin_matches if row.get('candidate_kind') == 'live_plan'} | {
         row['candidate'] for row in overlap_matches if row.get('candidate_kind') == 'live_plan'
     }
     live_checked_and_clean = sorted(
