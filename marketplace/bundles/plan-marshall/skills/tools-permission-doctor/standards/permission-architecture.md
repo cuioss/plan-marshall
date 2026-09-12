@@ -42,9 +42,11 @@ as regexes.
 | **Total (3 files)** | **16** |
 
 At the time this population was swept, all 16 sites were spelled `Write(...)` and **not one**
-was spelled `Edit(...)`: every regex in this repository that matched a permission rule for
+was spelled `Edit(...)`: every regex in the swept population that matched a permission rule for
 write intent matched the form that grants nothing, and none matched the form that grants.
-That is the false premise stated as a measurement, and it is what the correction re-keys.
+That is the false premise stated as a measurement, and it is what the correction re-keys. The
+claim is bounded by that population — read the Coverage Split below for which substrates it
+covers and how each was evaluated.
 
 **Why the escaped form is the matcher.** Sweeping the unescaped literal `Write(` instead
 returns a larger but wrong set — 39 files — and it **misses `permission_doctor.py` entirely**,
@@ -62,12 +64,17 @@ such instead of being absorbed into the zero.
 |-----------|---------------|--------|
 | Architecture inventory | `architecture search --content`, escaped form; no unreadable files, no elision, not truncated | 16 write-intent matcher sites across 3 files; 0 `Edit\(` matcher sites |
 | `.claude/settings.json` | read directly | 0 `Write(...)` rules; its one file-mutation grant is spelled `Edit(.plan/**)` |
-| `.claude/**` remainder (46 files) | enumerated via git — 47 tracked files, 0 ignored or untracked, less the one read above — but **not** content-swept | unevaluated |
+| `.claude/**` remainder — `git ls-files .claude` less the row above | every member read as UTF-8 text; 46 of 46 read, 0 unread | 0 `Write(` sites; 0 `Edit(` sites |
 
 `.claude/**` sits outside the architecture inventory (`architecture find --pattern '.claude/**'`
-returns 0), so it is reported on its own rows rather than folded into the inventory's zero. The
-remainder is recorded as unevaluated rather than as a zero: an unmeasured region published as a
-clean negative is the same class of false premise this section exists to correct.
+returns 0), so it is reported on its own rows rather than folded into the inventory's zero, and its
+substrate is stated as a reproducible rule rather than a bare count: re-run `git ls-files .claude`,
+drop the one file the row above covers, and the remainder is what this row's zero ranges over. The
+read count and the substrate are therefore drawn from one population, and a member that could not be
+read would appear as `unread` rather than silently narrowing the zero. Were any part of the
+remainder unread, this row would record that part as unevaluated rather than fold it into the zero —
+an unmeasured region published as a clean negative is the same class of false premise this section
+exists to correct.
 
 ## Settings File Hierarchy
 
