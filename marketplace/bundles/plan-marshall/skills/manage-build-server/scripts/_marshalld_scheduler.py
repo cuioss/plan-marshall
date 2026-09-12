@@ -15,7 +15,12 @@ properties the request demands:
   actual cross-process slot is coordinated against the single machine-global
   ``build-queue.json`` by the build-execute routing seam (D5), which owns the
   shared reader/writer. The scheduler tracks the daemon's own admitted set so it
-  never oversubscribes the budget it holds.
+  never oversubscribes the budget it holds. The cap is re-pointable while the
+  scheduler is live (:meth:`Scheduler.set_max_slots`), because the daemon
+  re-resolves the machine-global value on every submit — an operator's ``config
+  set`` therefore takes effect without restarting a daemon that may be serving
+  other projects' builds. A re-point governs future ADMISSION only and never
+  evicts a running job.
 * **Per-project round-robin fairness** — when several projects contend for the
   slot budget, admission rotates across projects rather than draining one
   project's queue before serving another. Within a project, order is FIFO.
@@ -91,7 +96,12 @@ class Scheduler:
         Args:
             max_slots: Maximum concurrently-running jobs (>= 1).
         """
-        self._max_slots = max(1, int(max_slots))
+        # Through set_max_slots() so the >= 1 floor is applied in exactly ONE
+        # place: the cap arrives here at startup and there on every re-resolve,
+        # and two copies of the clamp are two chances for the doors to disagree
+        # about what the lowest legal cap is.
+        self._max_slots = 1
+        self.set_max_slots(max_slots)
         self._queues: dict[str, deque[JobEntry]] = {}
         self._order: list[str] = []
         self._rotation = 0
@@ -124,6 +134,37 @@ class Scheduler:
         return fingerprint in self._by_fingerprint
 
     # -- mutation ----------------------------------------------------------
+
+    def set_max_slots(self, max_slots: int) -> int:
+        """Re-point the concurrency cap at a newly-resolved value.
+
+        The cap is machine-global state an operator can change under a running
+        daemon (``manage_build_server config set``), and the daemon re-resolves it
+        per submit — so the scheduler must be able to take a new cap without being
+        rebuilt, which would discard its queues, its running set, and the
+        idempotency fingerprints of jobs already in flight.
+
+        Applies to ADMISSION only, never retroactively to running jobs. LOWERING
+        the cap below the current running count therefore does not cancel or evict
+        anything: :meth:`available_slots` already floors at ``0``, so the
+        scheduler simply admits nothing new until enough jobs complete to bring
+        the running count back under the new cap. Killing a build an operator
+        never asked to kill would be a far worse answer to "the cap went down"
+        than waiting is.
+
+        Args:
+            max_slots: The newly-resolved cap. Clamped to ``>= 1`` on the same
+                floor the constructor applies — one shared clamp, so a caller
+                cannot reach a zero cap through this door that the constructor
+                would have rejected, and a cap of ``0`` can never wedge the
+                daemon into admitting nothing forever.
+
+        Returns:
+            The cap now in effect (post-clamp), so a caller reports what was
+            applied rather than what it asked for.
+        """
+        self._max_slots = max(1, int(max_slots))
+        return self._max_slots
 
     def submit(self, job_spec: Any, project_root: str) -> SubmitResult:
         """Enqueue a job, or attach to an identical in-flight one.

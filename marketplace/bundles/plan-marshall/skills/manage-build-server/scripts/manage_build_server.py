@@ -35,7 +35,10 @@ Verbs:
   truthfully rather than resuming them.
 * ``status`` — ping the daemon over its ``0600`` socket and report the running
   version, the daemon's in-flight / queued job counts (``unknown`` when the
-  daemon did not send them — never ``0``, which would read as idle), and the
+  daemon did not send them — never ``0``, which would read as idle), the
+  build-slot cap the RUNNING daemon is applying with its ``max_slots_source``
+  (``unknown`` for a daemon predating the cap fields; an ``invalid`` or
+  ``unreadable`` source also gets a ``max_slots_warning`` line), and the
   binary the RUNNING process is executing (``running_binary_path``, read from
   the live process)
   alongside the resolve-now path (``resolved_binary_path``); ``binary_diverges``
@@ -138,11 +141,22 @@ _UNKNOWN_PROVENANCE = 'unknown'
 determined from the live process. It is NEVER the resolved-now path — substituting
 that path for an undeterminable running provenance IS the drift-hiding defect."""
 
-_UNKNOWN_COUNT = 'unknown'
-"""Sentinel ``status`` reports for an in-flight / queued count the daemon did not
-send. A daemon pinned to a copy predating the counts extension omits both keys;
-coercing that absence to ``0`` would render it indistinguishable from a genuinely
-idle daemon, which is precisely what lets a reconcile drain a live build."""
+_UNREPORTED = 'unknown'
+"""Sentinel ``status`` reports for any field the RUNNING daemon did not send.
+
+A daemon pinned to an older copy answers ``ping`` with fewer keys than the
+current one does, and the running daemon's version is the only thing that decides
+which shape arrives. Every such absence renders as this sentinel rather than as a
+plausible substitute value, because the substitute is always indistinguishable
+from a real reading:
+
+* ``in_flight`` / ``queued`` — coercing an absent count to ``0`` makes a daemon
+  that said nothing indistinguishable from one that said it is idle, which is
+  precisely what once let a reconcile drain a live build.
+* ``max_slots`` / ``max_slots_source`` — filling these in from a local resolve
+  would report what a FRESH daemon would apply as though it were what the running
+  one is applying, the same substitution ``running_binary_path`` refuses to make
+  for provenance."""
 
 _DEFAULT_LOGS_LIMIT = 50
 """Default bounded tail size for the read-only ``logs`` audit-inspection verb."""
@@ -286,14 +300,19 @@ def _ping(timeout: float = _PING_TIMEOUT_SECONDS) -> dict[str, Any] | None:
 
     Returns:
         The decoded ping response, or ``None`` when the daemon is unreachable.
-        A current daemon answers with five keys — ``status`` (``'ok'``), ``pid``
-        (``int``), ``version`` (``str``), ``in_flight`` (``int``) and ``queued``
-        (``int``). ``in_flight`` and ``queued`` are NOT guaranteed: a daemon
-        pinned to a copy predating the counts extension answers without them,
-        and the running daemon's version is the only thing that decides which
-        shape arrives. Callers MUST treat an absent count as *unreported*
-        (see :func:`_reported_count`) rather than as zero — the two are
-        different facts, and conflating them reports a busy daemon as idle.
+        A current daemon answers with ``status`` (``'ok'``), ``pid`` (``int``),
+        ``version`` (``str``), ``in_flight`` (``int``), ``queued`` (``int``),
+        ``max_slots`` (``int``) and ``max_slots_source`` (``str``), plus
+        ``max_slots_detail`` when that source is not ``machine_config``.
+
+        Only ``status``, ``pid`` and ``version`` are guaranteed: a daemon pinned
+        to a copy predating the counts extension answers without the counts, and
+        one predating the cap-reporting extension answers without the cap fields.
+        The RUNNING daemon's version is the only thing that decides which shape
+        arrives. Callers MUST treat every absent field as *unreported* (see
+        :func:`_reported_int` / :func:`_reported_text`) rather than substituting a
+        plausible value — an absent count is not zero, and an absent cap is not
+        whatever a local resolve would return now.
     """
     sock_path = marshalld.socket_path()
     if not sock_path.exists():
@@ -310,30 +329,90 @@ def _ping(timeout: float = _PING_TIMEOUT_SECONDS) -> dict[str, Any] | None:
         sock.close()
 
 
-def _reported_count(response: dict[str, Any], key: str) -> int | str:
-    """Return a daemon-reported job count, or the ``unknown`` sentinel.
+def _reported_int(response: dict[str, Any], key: str) -> int | str:
+    """Return a daemon-reported integer field, or the ``unknown`` sentinel.
 
-    Reports the count ONLY when the ping response actually carries it. A daemon
-    older than the counts extension omits the key entirely, and that absence is
-    reported as :data:`_UNKNOWN_COUNT` rather than coerced to ``0`` — so "the
-    daemon did not tell us" stays distinguishable from "the daemon told us it is
-    idle". The two were once the same value, and a reconcile read the resulting
-    zero as idleness and drained a live build.
+    Reports the number ONLY when the ping response actually carries it. A daemon
+    older than the extension that added the key omits it entirely, and that
+    absence is reported as :data:`_UNREPORTED` rather than coerced to ``0`` — so
+    "the daemon did not tell us" stays distinguishable from "the daemon told us
+    zero". For the job counts the two were once the same value, and a reconcile
+    read the resulting zero as idleness and drained a live build; for the slot cap
+    a zero would read as a daemon that can admit nothing at all.
 
     Args:
         response: The decoded ping response.
-        key: The count key to read (``in_flight`` or ``queued``).
+        key: The integer key to read (``in_flight``, ``queued``, ``max_slots``).
 
     Returns:
-        The count as an ``int``, or :data:`_UNKNOWN_COUNT` when the key is
-        absent or its value is not an integer.
+        The value as an ``int``, or :data:`_UNREPORTED` when the key is absent or
+        its value is not an integer.
     """
     if key not in response:
-        return _UNKNOWN_COUNT
+        return _UNREPORTED
     try:
         return int(response[key])
     except (TypeError, ValueError):
-        return _UNKNOWN_COUNT
+        return _UNREPORTED
+
+
+def _reported_text(response: dict[str, Any], key: str) -> str:
+    """Return a daemon-reported string field, or the ``unknown`` sentinel.
+
+    The string counterpart of :func:`_reported_int`, for ``max_slots_source``.
+    The source is the field that makes the cap auditable — it is what separates a
+    configured cap from one that degraded to the default — so a daemon that did
+    not send it must render as :data:`_UNREPORTED` and never as a guessed source.
+    An empty string is treated as unreported too: a source is a named member of a
+    closed set, and the empty string is not one of them.
+
+    Args:
+        response: The decoded ping response.
+        key: The string key to read.
+
+    Returns:
+        The reported value, or :data:`_UNREPORTED` when the key is absent, not a
+        string, or empty.
+    """
+    value = response.get(key)
+    if not isinstance(value, str) or not value:
+        return _UNREPORTED
+    return value
+
+
+def _cap_source_warning(response: dict[str, Any]) -> str | None:
+    """Return a ``WARNING`` line for a degraded cap source, else ``None``.
+
+    The running daemon is admitting against :data:`_machine_config.DEFAULT_MAX_SLOTS`
+    while a cap it could not use sits in the machine-global config — either
+    mistyped (:data:`SOURCE_INVALID`) or unreachable (:data:`SOURCE_UNREADABLE`).
+    Reporting the value and the source is what makes that state VISIBLE, but an
+    operator scanning a status block reads a line that says WARNING long before
+    they read a source field, so the degradation gets one.
+
+    Only those two sources warn. :data:`SOURCE_MACHINE_CONFIG` is nominal, and
+    ``default`` is a legitimate unconfigured state, not a fault — warning on it
+    would train the operator to ignore the line. An unreported source warns
+    nothing either: nothing is known about it, and a warning would be a claim.
+
+    Args:
+        response: The decoded ping response.
+
+    Returns:
+        The warning line, carrying the daemon's ``max_slots_detail`` when it sent
+        one, or ``None`` when the source is nominal, absent, or unreported.
+    """
+    source = _reported_text(response, 'max_slots_source')
+    if source not in (SOURCE_INVALID, SOURCE_UNREADABLE):
+        return None
+    detail = response.get('max_slots_detail')
+    applied = _reported_int(response, 'max_slots')
+    suffix = f' ({detail})' if detail else ''
+    return (
+        f'WARNING: the running daemon could not use the configured build-slot cap '
+        f'(max_slots_source={source}){suffix}. It is admitting against the fallback '
+        f'{applied}. Repair it with `config set --max-slots N`.'
+    )
 
 
 def _wait_for_exit(pid: int, grace: float) -> bool:
@@ -752,7 +831,11 @@ def run_status(_args: Namespace) -> dict[str, Any]:
     ``running: true`` with the daemon-reported version + pid, the daemon's
     in-flight / queued job counts — reported as ``unknown`` when the daemon did
     not send them, so a daemon predating the counts extension is never rendered
-    as an idle one — and — this is the D4 truthfulness fix — the
+    as an idle one — the build-slot cap the RUNNING daemon is applying together
+    with ``max_slots_source``, the provenance that separates a configured cap from
+    one that degraded to the default (both ``unknown`` when the daemon predates
+    the cap-reporting extension, and a degraded source additionally gets a
+    ``max_slots_warning`` line) — and — this is the D4 truthfulness fix — the
     binary the RUNNING process is actually executing (``running_binary_path``,
     sourced from the live process, not a call-time re-resolution) ALONGSIDE the
     resolved-now path a fresh start would use (``resolved_binary_path``). When the
@@ -794,13 +877,22 @@ def run_status(_args: Namespace) -> dict[str, Any]:
             'resolved_binary_path': resolved_binary_path,
             'binary_diverges': diverges,
             # Reported only when the daemon actually sent them; an absent count
-            # is `unknown`, NEVER 0 — see `_reported_count`.
-            'in_flight': _reported_count(response, 'in_flight'),
-            'queued': _reported_count(response, 'queued'),
+            # is `unknown`, NEVER 0 — see `_reported_int`.
+            'in_flight': _reported_int(response, 'in_flight'),
+            'queued': _reported_int(response, 'queued'),
+            # The cap the RUNNING daemon is applying, and where it came from.
+            # Both from the ping — never re-resolved here, because a local
+            # resolve answers "what would a fresh daemon apply", a different
+            # question. An older daemon sends neither and both read `unknown`.
+            'max_slots': _reported_int(response, 'max_slots'),
+            'max_slots_source': _reported_text(response, 'max_slots_source'),
             'socket_path': str(marshalld.socket_path()),
             'caller_root': caller_root,
             'registered': registered,
         }
+        cap_warning = _cap_source_warning(response)
+        if cap_warning is not None:
+            result['max_slots_warning'] = cap_warning
         if diverges:
             result['note'] = (
                 f'running daemon is STALE: it is executing {running_binary_path}, but a fresh '
@@ -1418,8 +1510,9 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         'status',
         help=(
             'Report running version, in-flight/queued counts (unknown when the daemon did not '
-            'send them, never 0), and running-vs-resolved binary provenance (divergence flagged; '
-            'unknown never the resolved path).'
+            'send them, never 0), the applied build-slot cap with its source (unknown for a daemon '
+            'predating the fields; a degraded source is warned about), and running-vs-resolved '
+            'binary provenance (divergence flagged; unknown never the resolved path).'
         ),
         allow_abbrev=False,
     ).set_defaults(func=run_status)

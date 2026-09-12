@@ -32,6 +32,11 @@ from pathlib import Path
 from typing import Any
 
 import _build_server_registry as registry
+
+# PLAIN import, matching how ``manage_build_server`` itself imports it: the source
+# constants compared against the verb's output must be the SAME objects the verb
+# closed over, not a second loaded copy of them.
+import _machine_config as machine_config
 import pytest
 
 from conftest import load_script_module, parse_ns
@@ -408,15 +413,40 @@ def _resolved_binary() -> str:
     return str(Path(mbs.marshalld.__file__).resolve())
 
 
-def _fake_ping(*, in_flight: int = 0, queued: int = 0, pid: int = 4242):
-    """A verified-ping stand-in carrying the daemon's version + scheduler counts."""
-    return lambda timeout=mbs._PING_TIMEOUT_SECONDS: {
+def _fake_ping(
+    *,
+    in_flight: int = 0,
+    queued: int = 0,
+    pid: int = 4242,
+    max_slots: int = 5,
+    max_slots_source: str = machine_config.SOURCE_MACHINE_CONFIG,
+    max_slots_detail: str | None = None,
+):
+    """A verified-ping stand-in in the shape a CURRENT daemon answers with.
+
+    Carries the version, the scheduler counts, and the cap resolution the running
+    daemon is applying. It is deliberately the current shape rather than a
+    reduced one: a stand-in that no real daemon version produces would let a
+    status test pass against a payload the daemon never sends. The older shapes
+    are staged explicitly by the ``_fake_ping_without_*`` builders below, so
+    which daemon generation a test is about stays visible at the call site.
+
+    ``max_slots_detail`` is included only when supplied, mirroring the daemon:
+    it explains a non-nominal source and a ``machine_config`` resolution has
+    nothing to explain.
+    """
+    payload: dict[str, Any] = {
         'status': 'ok',
         'pid': pid,
         'version': mbs.marshalld.VERSION,
         'in_flight': in_flight,
         'queued': queued,
+        'max_slots': max_slots,
+        'max_slots_source': max_slots_source,
     }
+    if max_slots_detail is not None:
+        payload['max_slots_detail'] = max_slots_detail
+    return lambda timeout=mbs._PING_TIMEOUT_SECONDS: payload
 
 
 def _argv_for(binary_path: str) -> list[str]:
@@ -456,7 +486,13 @@ def test_status_reports_in_flight_and_queued_counts(home, monkeypatch):
 
 
 def _fake_ping_without_counts(pid: int = 4242):
-    """A ping from a daemon predating the counts extension — no count keys at all."""
+    """A ping from a daemon predating the counts extension — no count keys at all.
+
+    It predates the cap fields too: the counts extension came first, so a daemon
+    old enough to omit the counts is necessarily old enough to omit the cap. The
+    reduced shape is therefore the only guaranteed one — ``status``, ``pid``,
+    ``version`` — and both later extensions read as unreported against it.
+    """
     return lambda timeout=mbs._PING_TIMEOUT_SECONDS: {
         'status': 'ok',
         'pid': pid,
@@ -473,8 +509,8 @@ def test_status_reports_unknown_counts_when_the_daemon_sent_none(home, monkeypat
 
     result = mbs.run_status(_STATUS_ARGS)
 
-    assert result['in_flight'] == mbs._UNKNOWN_COUNT
-    assert result['queued'] == mbs._UNKNOWN_COUNT
+    assert result['in_flight'] == mbs._UNREPORTED
+    assert result['queued'] == mbs._UNREPORTED
     # The point of the sentinel: it is NOT the value that reads as idle.
     assert result['in_flight'] != 0
     assert result['queued'] != 0
@@ -491,6 +527,136 @@ def test_status_reports_a_genuine_zero_count_as_zero(home, monkeypatch):
 
     assert result['in_flight'] == 0
     assert result['queued'] == 0
+
+
+# =============================================================================
+# status — the build-slot cap the RUNNING daemon is applying
+# =============================================================================
+# The cap is reported from the PING, never re-resolved here. The two questions
+# differ: the ping answers "what is the running daemon admitting against", a
+# local resolve answers "what would a fresh daemon apply". Substituting the
+# second for the first is the same drift-hiding defect `running_binary_path`
+# already refuses to commit for the binary path, so the tests below stage a
+# machine-global config that DISAGREES with the daemon's report — a substituting
+# implementation then has a distinct, nameable wrong answer to be caught on.
+
+
+def test_status_reports_the_cap_and_source_the_daemon_sent(home, monkeypatch):
+    monkeypatch.setattr(mbs, '_ping', _fake_ping(max_slots=3, max_slots_source=machine_config.SOURCE_MACHINE_CONFIG))
+    monkeypatch.setattr(mbs, '_read_process_argv', lambda pid: _argv_for(_resolved_binary()))
+
+    result = mbs.run_status(_STATUS_ARGS)
+
+    assert result['max_slots'] == 3
+    assert result['max_slots_source'] == machine_config.SOURCE_MACHINE_CONFIG
+    # A nominal source is not a fault, so no warning line is added.
+    assert 'max_slots_warning' not in result
+
+
+def test_status_reports_the_running_cap_not_what_a_fresh_daemon_would_apply(home, monkeypatch):
+    # The host config says 11; the daemon running right now says 3. Status must
+    # report 3 — the cap actually admitting builds — and never 11.
+    _stage_machine_cap(home, 11)
+    monkeypatch.setattr(mbs, '_ping', _fake_ping(max_slots=3))
+    monkeypatch.setattr(mbs, '_read_process_argv', lambda pid: _argv_for(_resolved_binary()))
+
+    result = mbs.run_status(_STATUS_ARGS)
+
+    assert result['max_slots'] == 3
+    # The local resolve really does disagree, so the assertion above is a
+    # discrimination rather than a coincidence.
+    assert machine_config.resolve_max_slots().value == 11
+    assert result['max_slots'] != 11
+
+
+def test_status_reports_an_unreported_cap_as_unknown_never_a_local_resolve(home, monkeypatch):
+    # A daemon predating the cap fields sends neither key. Both read as the
+    # unreported sentinel — and specifically NOT as the value a local resolve
+    # would produce, which is the substitution this fails closed against.
+    _stage_machine_cap(home, 11)
+    monkeypatch.setattr(mbs, '_ping', _fake_ping_without_counts())
+    monkeypatch.setattr(mbs, '_read_process_argv', lambda pid: _argv_for(_resolved_binary()))
+
+    result = mbs.run_status(_STATUS_ARGS)
+
+    assert result['max_slots'] == mbs._UNREPORTED
+    assert result['max_slots_source'] == mbs._UNREPORTED
+    assert result['max_slots'] != 11
+    assert machine_config.resolve_max_slots().value == 11
+    # Nothing is known about the source, so no warning is claimed about it.
+    assert 'max_slots_warning' not in result
+
+
+@pytest.mark.parametrize(
+    ('source', 'detail'),
+    [
+        (machine_config.SOURCE_INVALID, 'build.queue.max_slots is not a positive integer: 0'),
+        (machine_config.SOURCE_UNREADABLE, 'cannot parse /host/machine-config.json: bad token'),
+    ],
+)
+def test_status_warns_when_the_running_daemon_could_not_use_the_configured_cap(home, monkeypatch, source, detail):
+    # A degraded cap source is VISIBLE in the source field, but an operator
+    # scanning a status block reads a line that says WARNING long before they
+    # read a provenance field — so the degradation gets one, carrying everything
+    # needed to act: which source, what is actually being admitted against, why,
+    # and the one command that repairs it.
+    fallback = machine_config.DEFAULT_MAX_SLOTS
+    monkeypatch.setattr(
+        mbs,
+        '_ping',
+        _fake_ping(max_slots=fallback, max_slots_source=source, max_slots_detail=detail),
+    )
+    monkeypatch.setattr(mbs, '_read_process_argv', lambda pid: _argv_for(_resolved_binary()))
+
+    result = mbs.run_status(_STATUS_ARGS)
+
+    warning = result['max_slots_warning']
+    assert 'WARNING' in warning
+    assert source in warning
+    assert str(fallback) in warning
+    assert detail in warning
+    assert 'config set --max-slots' in warning
+    # The structured fields still report the degraded state on their own; the
+    # warning is an addition to them, not a replacement.
+    assert result['max_slots'] == fallback
+    assert result['max_slots_source'] == source
+
+
+@pytest.mark.parametrize(
+    'source',
+    [machine_config.SOURCE_MACHINE_CONFIG, machine_config.SOURCE_DEFAULT],
+)
+def test_status_does_not_warn_about_a_source_that_is_not_a_fault(home, monkeypatch, source):
+    # The matched negative controls for the warning above, and the reason the
+    # warn-set is exactly two members rather than "anything but nominal":
+    # `machine_config` is nominal, and `default` is a legitimate unconfigured
+    # host. Warning on an unconfigured host would fire on every fresh machine and
+    # train the operator to ignore the line — which is how a real degradation
+    # then goes unread.
+    monkeypatch.setattr(mbs, '_ping', _fake_ping(max_slots=machine_config.DEFAULT_MAX_SLOTS, max_slots_source=source))
+    monkeypatch.setattr(mbs, '_read_process_argv', lambda pid: _argv_for(_resolved_binary()))
+
+    result = mbs.run_status(_STATUS_ARGS)
+
+    assert result['max_slots_source'] == source
+    assert 'max_slots_warning' not in result
+
+
+@pytest.mark.parametrize('sent', ['', 42, None, ['machine_config']])
+def test_a_source_that_is_not_a_non_empty_string_reads_as_unreported(sent):
+    # `max_slots_source` is a named member of a closed set. An empty string, a
+    # number, and a list are none of them, so each is unreported rather than
+    # rendered as itself — a status block showing `max_slots_source: 42` would
+    # read as a reading the daemon never made.
+    assert mbs._reported_text({'max_slots_source': sent}, 'max_slots_source') == mbs._UNREPORTED
+
+
+def test_a_non_integer_reported_number_reads_as_unreported():
+    # The integer counterpart: a present-but-unusable value is not a reading. The
+    # matched positive control sits beside it, so this cannot pass against an
+    # implementation that reports everything as unreported.
+    assert mbs._reported_int({'max_slots': 'lots'}, 'max_slots') == mbs._UNREPORTED
+    assert mbs._reported_int({'max_slots': 6}, 'max_slots') == 6
 
 
 def test_status_stale_daemon_shows_divergence(home, monkeypatch):
