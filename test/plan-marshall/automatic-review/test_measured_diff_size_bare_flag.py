@@ -41,7 +41,10 @@ Three layers, and the middle one is what keeps the outer two honest:
    invocation is stripped as the executor strips and parsed by the real parser —
    with a NON-VACUITY assertion that the strip genuinely produced a bare flag, so a
    doc that stopped interpolating the flag unconditionally fails here instead of
-   silently emptying the population this sweep runs over.
+   silently emptying the population this sweep runs over. A document the scan could
+   not READ is a HOLE in that population rather than an absence from it — it might
+   carry a `check` call and nothing looked — so it is recorded and fails the guard
+   by path, never skipped.
 """
 
 from __future__ import annotations
@@ -227,18 +230,35 @@ def _scan_docs() -> list:
     return sorted(_SKILLS.rglob('*.md'))
 
 
-def _documented_check_invocations() -> list[tuple[str, list[str]]]:
-    """`(relative_doc_path, executor_argv)` for every concrete documented `check` call.
+def _documented_check_invocations() -> tuple[list[tuple[str, list[str]]], list[tuple[str, str]]]:
+    """The scanned `check` calls, AND the documents the scan could not read.
 
-    Keyed on the repo-relative path rather than the basename: the scan now spans the
-    whole bundle tree, where `SKILL.md` is not unique, and a basename key would
-    silently merge two documents into one parametrize id and one floor-test member.
+    Returns `(found, unreadable)`:
+
+    - `found` — `(relative_doc_path, executor_argv)` per concrete documented `check`
+      call. Keyed on the repo-relative path rather than the basename: the scan spans
+      the whole bundle tree, where `SKILL.md` is not unique, and a basename key would
+      silently merge two documents into one parametrize id and one floor-test member.
+    - `unreadable` — `(relative_doc_path, reason)` per document whose read raised.
+
+    ⛔ An unreadable document is REPORTED, never skipped. Dropping it would shrink
+    this derived population by exactly the documents nothing looked at: a non-floor
+    doc carrying a `check` call would leave the sweep with every downstream
+    assertion — the import-time non-emptiness, the non-vacuity probe, the
+    parametrized sweep itself — still green, because each is computed over the
+    already-shrunken `found`. The floor does not rescue it either; the floor names
+    two KNOWN docs, and the case that matters here is the doc nobody named. `found`
+    stays the sweep's population and `unreadable` is asserted empty separately, so a
+    read failure surfaces as its own named test failure rather than a collection
+    error that takes the parser-contract tests down with it.
     """
     found: list[tuple[str, list[str]]] = []
+    unreadable: list[tuple[str, str]] = []
     for doc in _scan_docs():
         try:
             text = doc.read_text(encoding='utf-8')
-        except (OSError, UnicodeDecodeError):
+        except (OSError, UnicodeDecodeError) as exc:
+            unreadable.append((doc.relative_to(_SKILLS).as_posix(), f'{type(exc).__name__}: {exc}'))
             continue
         if not _EXEC_CALL.search(text):
             continue
@@ -248,20 +268,21 @@ def _documented_check_invocations() -> list[tuple[str, list[str]]]:
             argv = _executor_argv(block)
             if argv and argv[0] == 'check':
                 found.append((doc.relative_to(_SKILLS).as_posix(), argv))
-    return found
+    return found, unreadable
 
 
 SCANNED_DOC_COUNT = len(_scan_docs())
-_DOCUMENTED = _documented_check_invocations()
+_DOCUMENTED, _UNREADABLE = _documented_check_invocations()
 
 # Non-emptiness at IMPORT: an empty parametrize is a pytest SKIP, not a failure, so
 # a scan that matched nothing would report a clean sweep over nothing. The scanned
-# count rides along so an empty result names WHICH of the two zeros it is — a
-# misrooted scan that read nothing, or a real tree that documents no `check` call.
+# count and the unreadable count ride along so an empty result names WHICH of the
+# three zeros it is — a misrooted scan that read nothing, a tree whose documents
+# could not be read at all, or a real tree that documents no `check` call.
 assert _DOCUMENTED, (
     'no concrete `review_completeness check` invocation was scanned from the '
-    f'{SCANNED_DOC_COUNT} markdown documents under {_SKILLS} — the sweep below would '
-    'pass over an empty set'
+    f'{SCANNED_DOC_COUNT} markdown documents under {_SKILLS} '
+    f'({len(_UNREADABLE)} of them unreadable) — the sweep below would pass over an empty set'
 )
 
 #: Published on every run — passing included — by the root conftest's report header.
@@ -271,6 +292,32 @@ GUARD_POPULATION_SIZE = len(_DOCUMENTED)
 
 def _invocation_id(item: tuple[str, list[str]]) -> str:
     return re.sub(r'[^A-Za-z0-9]+', '-', item[0]).strip('-').lower()
+
+
+def test_no_scanned_document_was_unreadable():
+    """COVERAGE: a document the scan could not READ is a gap, never an absence.
+
+    The sweep's whole value is that its population is the bundle tree rather than a
+    hand-kept list, so a document silently leaving that population is the one failure
+    the derivation cannot absorb: an unreadable doc may carry a `review_completeness
+    check` call, and nothing looked.
+
+    Neither sibling guard sees it. `_KNOWN_CALL_SITE_DOCS` names two KNOWN docs and is
+    blind to any other; and `test_the_scan_population_is_larger_than_the_known_floor`
+    reads `SCANNED_DOC_COUNT`, which counts PATHS from `_scan_docs` without opening
+    one — so an unreadable document is counted as scanned there while contributing
+    nothing here. Every remaining assertion in this module is computed over the
+    already-shrunken `_DOCUMENTED` and would stay green.
+
+    The paths and their reasons are named, because "some document was unreadable" is
+    not something a reader can act on.
+    """
+    assert not _UNREADABLE, (
+        f'{len(_UNREADABLE)} of the {SCANNED_DOC_COUNT} documents under {_SKILLS} could not be '
+        f'read, so they never entered the derived population of {len(_DOCUMENTED)} `check` '
+        'invocations. An unreadable document is a hole in the sweep, not a document without a '
+        f'`check` call:\n  ' + '\n  '.join(f'{path} ({reason})' for path, reason in _UNREADABLE)
+    )
 
 
 def test_the_scan_population_is_larger_than_the_known_floor():
