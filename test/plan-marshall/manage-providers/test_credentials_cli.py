@@ -62,7 +62,7 @@ def cli():
 
 @pytest.fixture
 def handler_calls(monkeypatch):
-    """Replace EVERY delegating handler with a recorder; yield the call log.
+    """Replace EVERY delegating handler with a recorder; return the call log.
 
     All ten are stubbed for each test, not just the one under exercise: that is
     what makes "reached its own handler" an exclusive claim rather than a
