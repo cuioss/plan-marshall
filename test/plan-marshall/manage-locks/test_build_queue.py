@@ -7,6 +7,7 @@ concurrency limiter with a FIFO waiting queue.
 
 from __future__ import annotations
 
+import json
 from argparse import Namespace
 from pathlib import Path
 
@@ -49,7 +50,7 @@ class TestCorruptFileAsEmpty:
 
 class TestDeadHolderReclamation:
     def test_dead_active_holder_is_pruned_freeing_a_slot(self, isolated_base: dict) -> None:
-        _set_max_slots(isolated_base['base'], 1)
+        _set_max_slots(isolated_base['home'], 1)
         # plan-dead acquires the only slot but its plan dir is NEVER created → dead.
         build_queue.run_acquire(Namespace(plan_id='plan-dead'))
 
@@ -63,7 +64,7 @@ class TestDeadHolderReclamation:
         assert [e['plan_id'] for e in state['active']] == ['plan-live']
 
     def test_live_active_holder_is_not_pruned(self, isolated_base: dict) -> None:
-        _set_max_slots(isolated_base['base'], 1)
+        _set_max_slots(isolated_base['home'], 1)
         _make_live_plan(isolated_base['base'], 'plan-live')
         build_queue.run_acquire(Namespace(plan_id='plan-live'))
 
@@ -88,7 +89,7 @@ class TestForeignProjectHolderPrune:
         import time
 
         base = isolated_base['base']
-        _set_max_slots(base, 1)
+        _set_max_slots(isolated_base['home'], 1)
 
         # A holder recorded by project A, LIVE under A's checkout (a DIFFERENT
         # checkout than this session's isolated_base['main_repo']).
@@ -126,7 +127,7 @@ class TestForeignProjectHolderPrune:
         import time
 
         base = isolated_base['base']
-        _set_max_slots(base, 1)
+        _set_max_slots(isolated_base['home'], 1)
 
         # A holder recorded by project A but ABSENT under A's checkout → dead.
         foreign_root = tmp_path / 'foreign-project'
@@ -226,3 +227,66 @@ class TestMachineGlobalResolution:
         # The queue landed under the machine-global home root, not the worktree.
         assert (home / 'build-queue.json').is_file()
         assert not (worktree / '.plan' / 'local' / 'build-queue.json').exists()
+
+
+# =============================================================================
+# Machine-global CAP resolution — the per-repo key is not in effect
+# =============================================================================
+
+
+class TestMachineGlobalCap:
+    def test_per_repo_marshal_json_cap_does_not_change_the_admitted_cap(self, isolated_base: dict) -> None:
+        """A surviving per-repo ``build.queue.max_slots`` is not in effect.
+
+        The cap is machine-global, so a single repository cannot change how many
+        slots the SHARED queue admits. Staging the per-repo key at a DIFFERENT
+        value from the machine-global one is what makes this discriminating:
+        reading 1 here would prove the repo file is still consulted.
+        """
+        _set_max_slots(isolated_base['home'], 4)
+        (isolated_base['base'] / 'marshal.json').write_text(
+            json.dumps({'build': {'queue': {'max_slots': 1}}}), encoding='utf-8'
+        )
+
+        result = build_queue.run_acquire(Namespace(plan_id='plan-a'))
+
+        assert result['max_slots'] == 4
+        assert result['max_slots_source'] == 'machine_config'
+        # A nominal resolution has nothing to explain, so no detail rides along.
+        assert 'max_slots_detail' not in result
+
+    def test_release_reports_the_cap_source_too(self, isolated_base: dict) -> None:
+        """Both admission surfaces report provenance, not just acquire."""
+        _set_max_slots(isolated_base['home'], 3)
+        acquired = build_queue.run_acquire(Namespace(plan_id='plan-a'))
+
+        released = build_queue.run_release(Namespace(plan_id='plan-a', id=acquired['id']))
+
+        assert released['max_slots'] == 3
+        assert released['max_slots_source'] == 'machine_config'
+
+    def test_absent_machine_config_admits_the_default_and_says_it_fell_back(self, isolated_base: dict) -> None:
+        """An unconfigured host admits 5 and reports ``default``, not silence.
+
+        ``max_slots`` alone cannot carry this: a fallback 5 and a configured 5
+        are the same number, so only the reported source distinguishes them.
+        """
+        result = build_queue.run_acquire(Namespace(plan_id='plan-a'))
+
+        assert result['max_slots'] == 5
+        assert result['max_slots_source'] == 'default'
+        assert result['max_slots_detail'] is None
+
+    def test_unusable_machine_config_value_is_reported_as_invalid(self, isolated_base: dict) -> None:
+        """A broken cap still admits, but never reports itself as configured."""
+        config_dir = isolated_base['home'] / 'marshalld'
+        config_dir.mkdir(parents=True, exist_ok=True)
+        (config_dir / 'machine-config.json').write_text(
+            json.dumps({'build': {'queue': {'max_slots': -2}}}), encoding='utf-8'
+        )
+
+        result = build_queue.run_acquire(Namespace(plan_id='plan-a'))
+
+        assert result['max_slots'] == 5
+        assert result['max_slots_source'] == 'invalid'
+        assert result['max_slots_detail'] is not None

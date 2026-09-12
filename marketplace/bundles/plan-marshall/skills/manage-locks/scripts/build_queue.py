@@ -85,6 +85,17 @@ Because the queue records holders from multiple checkouts, each active/waiting
 entry is stamped at acquire with ``project_root = str(main_checkout_root())`` so
 its liveness is later judged against the checkout it originated in.
 
+**The cap is machine-global too.** ``max_slots`` is resolved through
+:func:`_machine_config.resolve_max_slots`, reading the machine-global
+``machine-config.json`` — NOT the calling repository's ``marshal.json``. A
+per-caller cap over a shared queue is a cap two callers can disagree on while
+contending for the same slots, and the shared resolver is cwd-independent, so a
+process that has moved its working directory can no longer degrade silently to
+the default. Every ``acquire`` / ``release`` result therefore reports
+``max_slots_source`` beside ``max_slots`` (plus ``max_slots_detail`` when that
+source is not ``machine_config``), because the value alone cannot distinguish a
+configured 5 from a fallback 5.
+
 **Concurrency correctness (TOCTOU / check-then-act):** the admit/release cycle is
 a read-modify-write (read the queue → decide admit/promote → write the queue) —
 a classic check-then-act window across concurrent build sessions. Every mutation
@@ -145,7 +156,7 @@ from pathlib import Path
 from typing import Any
 
 from _locks_core import holder_is_dead, log_lock_event, rmw_json
-from file_ops import get_marshal_path, read_json
+from _machine_config import SOURCE_MACHINE_CONFIG, CapResolution, resolve_max_slots
 from marketplace_paths import (
     ensure_home_root,
     main_checkout_root,
@@ -163,7 +174,6 @@ from triage_helpers import (
 )
 
 _QUEUE_FILENAME = 'build-queue.json'
-_DEFAULT_MAX_SLOTS = 5
 
 
 # ---------------------------------------------------------------------------
@@ -187,29 +197,27 @@ def _resolve_queue_path() -> Path:
     return ensure_home_root() / _QUEUE_FILENAME
 
 
-def _resolve_max_slots() -> int:
-    """Read ``build.queue.max_slots`` from marshal.json, defaulting to 5.
+def _cap_fields(cap: CapResolution) -> dict[str, Any]:
+    """Return the cap-reporting fields every admission/release result carries.
 
-    marshal.json is the cwd-relative tracked config (content-identical across
-    main and the pinned worktree, since it is git-tracked). A missing file,
-    missing ``build`` block, missing ``queue`` block, missing ``max_slots`` key,
-    or a non-positive / non-integer value all fall back to the conservative
-    default so a misconfigured queue still admits at a sane bound rather than
-    zero.
+    ``max_slots_source`` is reported unconditionally, because the cap VALUE
+    alone cannot distinguish a configured 5 from a fallback 5 — a consumer that
+    needs to know whether the cap was actually configured reads the source.
+    ``max_slots_detail`` rides along only when the source is not
+    :data:`_machine_config.SOURCE_MACHINE_CONFIG`, since a nominal resolution
+    has nothing to explain.
+
+    Args:
+        cap: The resolution returned by
+            :func:`_machine_config.resolve_max_slots`.
+
+    Returns:
+        The result fields to merge into an ``acquire`` / ``release`` payload.
     """
-    config = read_json(get_marshal_path(), default={})
-    if not isinstance(config, dict):
-        return _DEFAULT_MAX_SLOTS
-    build = config.get('build')
-    if not isinstance(build, dict):
-        return _DEFAULT_MAX_SLOTS
-    block = build.get('queue')
-    if not isinstance(block, dict):
-        return _DEFAULT_MAX_SLOTS
-    raw = block.get('max_slots')
-    if isinstance(raw, bool) or not isinstance(raw, int):
-        return _DEFAULT_MAX_SLOTS
-    return raw if raw > 0 else _DEFAULT_MAX_SLOTS
+    fields: dict[str, Any] = {'max_slots': cap.value, 'max_slots_source': cap.source}
+    if cap.source != SOURCE_MACHINE_CONFIG:
+        fields['max_slots_detail'] = cap.detail
+    return fields
 
 
 # ---------------------------------------------------------------------------
@@ -391,7 +399,8 @@ def run_acquire(args: Namespace) -> dict[str, Any]:
     except RuntimeError as exc:
         return make_error(str(exc), code=ErrorCode.NOT_FOUND, plan_id=plan_id)
 
-    max_slots = _resolve_max_slots()
+    cap = resolve_max_slots()
+    max_slots = cap.value
     upper_limit = _read_build_queue_upper_limit()
     new_entry_id = f'{plan_id}:{uuid.uuid4()}'
     ts = time.time()
@@ -495,7 +504,7 @@ def run_acquire(args: Namespace) -> dict[str, Any]:
         'plan_id': plan_id,
         'id': outcome['id'],
         'admission': outcome['admission'],
-        'max_slots': max_slots,
+        **_cap_fields(cap),
         'active_count': outcome['active_count'],
         'waiting_count': outcome['waiting_count'],
         'queue_path': str(queue_path),
@@ -523,7 +532,8 @@ def run_release(args: Namespace) -> dict[str, Any]:
     except RuntimeError as exc:
         return make_error(str(exc), code=ErrorCode.NOT_FOUND, plan_id=plan_id)
 
-    max_slots = _resolve_max_slots()
+    cap = resolve_max_slots()
+    max_slots = cap.value
     upper_limit = _read_build_queue_upper_limit()
     now = time.time()
     outcome: dict[str, Any] = {'reaped': [], 'held': None}
@@ -630,7 +640,7 @@ def run_release(args: Namespace) -> dict[str, Any]:
         'id': target_id,
         'action': outcome['action'],
         'promoted': outcome['promoted'],
-        'max_slots': max_slots,
+        **_cap_fields(cap),
         'active_count': outcome['active_count'],
         'waiting_count': outcome['waiting_count'],
         'queue_path': str(queue_path),

@@ -78,7 +78,7 @@ class TestLockEventEmission:
         assert 'waiting_count: 0' in content
 
     def test_blocked_acquire_emits_lock_blocked_with_waiter(self, isolated_base: dict) -> None:
-        _set_max_slots(isolated_base['base'], 1)
+        _set_max_slots(isolated_base['home'], 1)
         _make_live_plan(isolated_base['base'], 'plan-held')
         build_queue.run_acquire(Namespace(plan_id='plan-held'))
 
@@ -105,7 +105,7 @@ class TestLockEventEmission:
         """A release that frees a slot AND FIFO-promotes a waiter emits BOTH a
         ``released`` for the released id and an ``acquired`` for the promoted id —
         the promotion is recorded in the same main-anchored timeline."""
-        _set_max_slots(isolated_base['base'], 1)
+        _set_max_slots(isolated_base['home'], 1)
         for name in ('plan-held', 'plan-w1'):
             _make_live_plan(isolated_base['base'], name)
         held = build_queue.run_acquire(Namespace(plan_id='plan-held'))

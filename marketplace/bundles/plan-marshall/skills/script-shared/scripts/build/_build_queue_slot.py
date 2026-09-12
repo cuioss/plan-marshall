@@ -99,9 +99,9 @@ _build_queue_mod: Any = None
 
 # Sibling-skill ``scripts`` dirs that ``build_queue.py`` imports transitively
 # (``_locks_core`` from manage-locks, ``file_ops`` from tools-file-ops,
-# ``triage_helpers`` from script-shared/scripts/workflow; ``marketplace_paths``
-# lives in script-shared/scripts which is already this file's own dir). A
-# file-path import does not inherit the importing skill's PYTHONPATH for these
+# ``triage_helpers`` from script-shared/scripts/workflow, ``_machine_config``
+# from this file's OWN dir; ``marketplace_paths`` lives in script-shared/scripts).
+# A file-path import does not inherit the importing skill's PYTHONPATH for these
 # transitive imports, so they are ensured on ``sys.path`` before the exec —
 # the build subprocess's executor PYTHONPATH does not include manage-locks.
 _BUILD_QUEUE_DEP_DIRS: tuple[Path, ...] = (
@@ -109,6 +109,7 @@ _BUILD_QUEUE_DEP_DIRS: tuple[Path, ...] = (
     _THIS_DIR.parent.parent.parent / 'tools-file-ops' / 'scripts',  # file_ops
     _THIS_DIR.parent / 'workflow',  # triage_helpers
     _THIS_DIR.parent,  # marketplace_paths, toon_parser
+    _THIS_DIR,  # _machine_config (the machine-global cap resolver)
 )
 
 
@@ -154,10 +155,16 @@ class BuildQueueTimeout(RuntimeError):
 def _resolve_max_retries() -> int:
     """Read ``build.queue.max_retries`` from marshal.json, defaulting to 10.
 
-    Mirrors ``build_queue.py::_resolve_max_slots`` — a missing file, missing
-    ``build`` block, missing ``queue`` block, missing ``max_retries`` key, or a
-    non-positive / non-integer value all degrade to the conservative default so a
-    misconfigured queue still bounds the wait loop rather than spinning forever.
+    A missing file, missing ``build`` block, missing ``queue`` block, missing
+    ``max_retries`` key, or a non-positive / non-integer value all degrade to the
+    conservative default so a misconfigured queue still bounds the wait loop
+    rather than spinning forever. A ``bool`` is rejected although it is an
+    ``int`` subclass, so ``true`` never becomes a retry budget of 1.
+
+    Unlike the slot CAP — which is machine-global, because every caller contends
+    for one shared slot budget — ``max_retries`` stays a per-repo
+    ``marshal.json`` key: it bounds only THIS caller's own wait loop and is
+    never evaluated against another caller's entries.
     """
     config = read_json(get_marshal_path(), default={})
     if not isinstance(config, dict):

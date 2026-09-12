@@ -572,10 +572,10 @@ def _clamp_build_queue_upper_limit(value: int) -> int:
 def _read_build_queue_upper_limit() -> int:
     """Read ``build.queue.upper_limit_seconds``, clamped to ``[600, 3600]``.
 
-    Defaults to the 600 s floor when the section/key is absent. A non-integer or
-    boolean stored value (``bool`` is an ``int`` subclass) falls back to the
-    floor, mirroring the same guard :func:`_resolve_max_slots` uses in
-    ``build_queue.py``. The returned value is always within the clamp bounds.
+    Defaults to the 600 s floor when the section/key is absent. A non-integer
+    stored value falls back to the floor, and a ``bool`` is rejected although it
+    is an ``int`` subclass — so a stored ``true`` never becomes a one-second
+    threshold. The returned value is always within the clamp bounds.
     """
     config = read_run_config(get_run_config_path())
     build = config.get('build')

@@ -44,7 +44,7 @@ class TestAdmission:
         assert state['waiting'] == []
 
     def test_acquire_at_capacity_is_blocked_and_queued(self, isolated_base: dict) -> None:
-        _set_max_slots(isolated_base['base'], 2)
+        _set_max_slots(isolated_base['home'], 2)
         # Two live holders fill both slots.
         for name in ('plan-a', 'plan-b'):
             _make_live_plan(isolated_base['base'], name)
@@ -62,7 +62,7 @@ class TestAdmission:
         assert [e['id'] for e in state['waiting']] == [result['id']]
 
     def test_default_max_slots_is_five(self, isolated_base: dict) -> None:
-        # No marshal.json → default 5. Five admits, the sixth blocks.
+        # No machine-config.json → default 5. Five admits, the sixth blocks.
         for i in range(5):
             name = f'plan-{i}'
             _make_live_plan(isolated_base['base'], name)
@@ -75,8 +75,8 @@ class TestAdmission:
         assert sixth['admission'] == 'blocked'
         assert sixth['max_slots'] == 5
 
-    def test_configured_max_slots_override_is_honored(self, isolated_base: dict) -> None:
-        _set_max_slots(isolated_base['base'], 1)
+    def test_configured_machine_global_cap_is_honored(self, isolated_base: dict) -> None:
+        _set_max_slots(isolated_base['home'], 1)
         _make_live_plan(isolated_base['base'], 'plan-a')
         first = build_queue.run_acquire(Namespace(plan_id='plan-a'))
         assert first['admission'] == 'admitted'
@@ -115,7 +115,7 @@ class TestRelease:
         assert [e['id'] for e in state['run_log']] == [acq['id']]
 
     def test_release_fifo_promotes_oldest_waiting_entry(self, isolated_base: dict) -> None:
-        _set_max_slots(isolated_base['base'], 1)
+        _set_max_slots(isolated_base['home'], 1)
         # One LIVE holder fills the single slot; two more LIVE plans queue behind
         # it (live so the slot holder is never pruned as a dead holder).
         for name in ('plan-held', 'plan-w1', 'plan-w2'):
@@ -208,7 +208,7 @@ class TestIdempotentAcquire:
         """The FIFO-preservation guarantee: a blocked plan that re-polls acquire
         KEEPS its waiting entry in place (same id, same FIFO position) instead of
         being shuffled to the back of the queue on each poll."""
-        _set_max_slots(isolated_base['base'], 1)
+        _set_max_slots(isolated_base['home'], 1)
         # plan-held fills the single slot; plan-w1 then plan-w2 queue behind it.
         for name in ('plan-held', 'plan-w1', 'plan-w2'):
             _make_live_plan(isolated_base['base'], name)
@@ -232,7 +232,7 @@ class TestIdempotentAcquire:
         """Once the holder releases, the oldest waiting plan's next re-poll is
         admitted (reusing its existing id) — the re-poll promotes the FIFO head
         without a release-then-re-acquire round trip."""
-        _set_max_slots(isolated_base['base'], 1)
+        _set_max_slots(isolated_base['home'], 1)
         for name in ('plan-held', 'plan-w1', 'plan-w2'):
             _make_live_plan(isolated_base['base'], name)
         held = build_queue.run_acquire(Namespace(plan_id='plan-held'))
@@ -257,7 +257,7 @@ class TestIdempotentAcquire:
         """FIFO order is honoured when a single slot frees: only the oldest
         waiting plan is promotable. A non-head waiter that re-polls stays blocked
         even though a slot is free, because an earlier waiter holds priority."""
-        _set_max_slots(isolated_base['base'], 2)
+        _set_max_slots(isolated_base['home'], 2)
         for name in ('plan-h1', 'plan-h2', 'plan-w1', 'plan-w2'):
             _make_live_plan(isolated_base['base'], name)
         h1 = build_queue.run_acquire(Namespace(plan_id='plan-h1'))

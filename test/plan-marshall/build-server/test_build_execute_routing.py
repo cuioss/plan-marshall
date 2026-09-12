@@ -417,11 +417,21 @@ def test_fallback_acquires_exactly_one_slot_on_shared_file(isolated_queue, monke
     assert state['active'] == []
 
 
-def test_registered_and_unregistered_contend_on_one_file(isolated_queue, monkeypatch):
+def test_registered_and_unregistered_contend_on_one_file(isolated_queue):
     # Both the daemon-served (registered) path and the in-process fallback acquire
     # against the SAME machine-global file via the rmw_json serialization, sharing
     # ONE slot budget: with a 1-slot budget the second acquire blocks.
-    monkeypatch.setattr(bq, '_resolve_max_slots', lambda: 1)
+    #
+    # The cap is machine-global, so it is STAGED as the real
+    # machine-config.json under the isolated PLAN_MARSHALL_HOME rather than
+    # stubbed at the resolution seam. That keeps the shared-budget claim resting
+    # on the same resolver production uses — a stub would assert the budget is
+    # shared while bypassing the code that makes it shared.
+    config_dir = isolated_queue['home'] / 'marshalld'
+    config_dir.mkdir(parents=True, exist_ok=True)
+    (config_dir / 'machine-config.json').write_text(
+        json.dumps({'version': 1, 'build': {'queue': {'max_slots': 1}}}), encoding='utf-8'
+    )
     _make_live_plan(isolated_queue['main_repo'], 'registered-build')
     _make_live_plan(isolated_queue['main_repo'], 'unregistered-build')
 
@@ -431,6 +441,9 @@ def test_registered_and_unregistered_contend_on_one_file(isolated_queue, monkeyp
     assert first['admission'] == 'admitted'
     assert second['admission'] == 'blocked'  # one budget, shared across both paths
     assert first['queue_path'] == second['queue_path'] == str(isolated_queue['queue_path'])
+    # Both paths resolved the cap from the machine-global file, not per-caller.
+    assert first['max_slots'] == second['max_slots'] == 1
+    assert first['max_slots_source'] == second['max_slots_source'] == 'machine_config'
 
 
 # =============================================================================

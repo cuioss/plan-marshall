@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import _build_server_protocol as proto
+import _machine_config
 import _marshalld_scheduler as scheduler_mod
 
 
@@ -94,13 +95,30 @@ def test_available_slots_reporting():
     assert sched.available_slots() == 2
 
 
-def test_resolve_max_slots_defaults_and_overrides():
-    assert scheduler_mod.resolve_max_slots(None) == scheduler_mod.DEFAULT_MAX_SLOTS
-    assert scheduler_mod.resolve_max_slots({}) == scheduler_mod.DEFAULT_MAX_SLOTS
-    assert scheduler_mod.resolve_max_slots({'build': {'queue': {'max_slots': 7}}}) == 7
-    # Non-positive / non-int / bool degrade to the default.
-    assert scheduler_mod.resolve_max_slots({'build': {'queue': {'max_slots': 0}}}) == scheduler_mod.DEFAULT_MAX_SLOTS
-    assert scheduler_mod.resolve_max_slots({'build': {'queue': {'max_slots': True}}}) == scheduler_mod.DEFAULT_MAX_SLOTS
+def test_default_max_slots_agrees_with_the_shared_machine_global_default():
+    """The scheduler admits against the shared default, not a local copy.
+
+    Cap RESOLUTION is no longer this module's job — that contract lives in
+    ``test_machine_config.py``. What remains a scheduler contract is that its
+    constructor default is the same value the fallback queue falls back to, so
+    the daemon and the in-process path cannot disagree about what
+    "unconfigured" means while sharing one slot budget.
+
+    This pins the VALUE agreement. That the default is DEFINED in only one
+    place is a source-level property, checked by the deliverable's zero-hit
+    sweep for the removed per-consumer constants rather than at runtime.
+    """
+    assert scheduler_mod.DEFAULT_MAX_SLOTS == _machine_config.DEFAULT_MAX_SLOTS
+    assert scheduler_mod.Scheduler().max_slots == _machine_config.DEFAULT_MAX_SLOTS
+
+
+def test_scheduler_exposes_no_config_resolver_of_its_own():
+    """Cap resolution was removed from the scheduler, not merely bypassed.
+
+    The scheduler is a pure in-memory structure with no I/O; a resolver
+    reappearing here would be a second place the cap could be read from.
+    """
+    assert not hasattr(scheduler_mod, 'resolve_max_slots')
 
 
 def test_admit_next_empty_returns_none():

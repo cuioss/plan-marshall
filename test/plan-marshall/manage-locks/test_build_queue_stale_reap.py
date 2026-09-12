@@ -36,7 +36,7 @@ class TestStaleReap:
         import time
 
         base = isolated_base['base']
-        _set_max_slots(base, 1)
+        _set_max_slots(isolated_base['home'], 1)
         # The reaped holder's plan dir exists → it is LIVE (so the dead-holder
         # prune does NOT clear it; only the time-based reaper does).
         _make_live_plan(base, 'plan-stale')
@@ -96,7 +96,7 @@ class TestStaleReap:
         import time
 
         base = isolated_base['base']
-        _set_max_slots(base, 2)
+        _set_max_slots(isolated_base['home'], 2)
         _make_live_plan(base, 'plan-fresh')
         fresh_id = 'plan-fresh:fresh-uuid'
         _seed_active_entry(
@@ -119,7 +119,7 @@ class TestStaleReap:
         """An active entry written before D5 shipped (NO active_since key) is
         treated as `now` and is therefore never reaped on first contact."""
         base = isolated_base['base']
-        _set_max_slots(base, 2)
+        _set_max_slots(isolated_base['home'], 2)
         _make_live_plan(base, 'plan-legacy')
         legacy_id = 'plan-legacy:legacy-uuid'
         _seed_active_entry(
@@ -143,7 +143,7 @@ class TestStaleReap:
         import time
 
         base = isolated_base['base']
-        _set_max_slots(base, 1)
+        _set_max_slots(isolated_base['home'], 1)
         _make_live_plan(base, 'plan-stale')
         _make_live_plan(base, 'plan-wait')
         stale_id = 'plan-stale:stale-uuid'
@@ -194,7 +194,7 @@ class TestStaleReap:
         import time
 
         base = isolated_base['base']
-        _set_max_slots(base, 1)
+        _set_max_slots(isolated_base['home'], 1)
         for name in ('plan-held', 'plan-w1'):
             _make_live_plan(base, name)
         held = build_queue.run_acquire(Namespace(plan_id='plan-held'))
@@ -216,7 +216,7 @@ class TestStaleReap:
         import time
 
         base = isolated_base['base']
-        _set_max_slots(base, 1)
+        _set_max_slots(isolated_base['home'], 1)
         for name in ('plan-held', 'plan-w1'):
             _make_live_plan(base, name)
         held = build_queue.run_acquire(Namespace(plan_id='plan-held'))

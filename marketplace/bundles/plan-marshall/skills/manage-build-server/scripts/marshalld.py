@@ -56,12 +56,12 @@ from _build_server_protocol import (
     write_frame,
 )
 from _build_server_registry import canonicalize_root, read_registry
+from _machine_config import resolve_max_slots
 from _marshalld_audit import InteractionAudit
 from _marshalld_journal import Journal
-from _marshalld_scheduler import Scheduler, resolve_max_slots
+from _marshalld_scheduler import Scheduler
 from _marshalld_supervisor import JobProgress, run_job
 from _marshalld_verifier import git_common_dir_resolver, verify_submit
-from file_ops import get_marshal_path, read_json
 from marketplace_paths import ensure_home_root, home_root
 
 VERSION = '1'
@@ -656,9 +656,20 @@ def _command_key(spec_dict: dict[str, Any]) -> str:
 
 
 def build_daemon() -> Daemon:
-    """Construct a :class:`Daemon` with config-resolved slots, a journal, and an interaction audit."""
-    config = read_json(get_marshal_path(), default={})
-    scheduler = Scheduler(max_slots=resolve_max_slots(config))
+    """Construct a :class:`Daemon` with config-resolved slots, a journal, and an interaction audit.
+
+    The slot cap comes from the MACHINE-GLOBAL ``machine-config.json`` via
+    :func:`_machine_config.resolve_max_slots`, which consults no working
+    directory. That is load-bearing here rather than incidental: :func:`main`
+    calls :func:`double_fork` — which ``chdir('/')`` — BEFORE calling this
+    function, so the previous cwd-relative ``marshal.json`` read walked up from
+    ``/``, found no repository, and silently produced the default cap,
+    indistinguishable from a deliberately configured one. With the
+    machine-global resolver nothing in the daemon reads a cwd-relative path at
+    all, so the daemon's cap is the same value every other consumer on the host
+    resolves.
+    """
+    scheduler = Scheduler(max_slots=resolve_max_slots().value)
     journal = Journal()
     interaction_audit = InteractionAudit()
     return Daemon(scheduler=scheduler, journal=journal, interaction_audit=interaction_audit)

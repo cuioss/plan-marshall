@@ -5,12 +5,17 @@
 The scheduler decides WHICH accepted job runs NEXT and enforces three
 properties the request demands:
 
-* **Bounded concurrency** — at most ``max_slots`` jobs run at once
-  (``build.queue.max_slots``, default 5 — the machine-CPU cap). This is the
-  daemon-side admission count; the actual cross-process slot is coordinated
-  against the single machine-global ``build-queue.json`` by the build-execute
-  routing seam (D5), which owns the shared reader/writer. The scheduler tracks
-  the daemon's own admitted set so it never oversubscribes the budget it holds.
+* **Bounded concurrency** — at most ``max_slots`` jobs run at once. The cap is
+  the MACHINE-GLOBAL ``build.queue.max_slots`` (default
+  :data:`_machine_config.DEFAULT_MAX_SLOTS`, the machine-CPU cap), resolved by
+  :func:`_machine_config.resolve_max_slots` from ``machine-config.json`` — it is
+  NOT a per-repository ``marshal.json`` key, because the daemon serves every
+  registered project on the host and one shared slot budget cannot take a
+  different value per project. This is the daemon-side admission count; the
+  actual cross-process slot is coordinated against the single machine-global
+  ``build-queue.json`` by the build-execute routing seam (D5), which owns the
+  shared reader/writer. The scheduler tracks the daemon's own admitted set so it
+  never oversubscribes the budget it holds.
 * **Per-project round-robin fairness** — when several projects contend for the
   slot budget, admission rotates across projects rather than draining one
   project's queue before serving another. Within a project, order is FIFO.
@@ -40,8 +45,7 @@ from collections import deque
 from dataclasses import dataclass, field
 from typing import Any
 
-DEFAULT_MAX_SLOTS = 5
-"""Fallback machine-CPU concurrency cap when config is unavailable."""
+from _machine_config import DEFAULT_MAX_SLOTS
 
 
 @dataclass
@@ -192,31 +196,3 @@ class Scheduler:
         if entry.fingerprint and self._by_fingerprint.get(entry.fingerprint) == job_id:
             del self._by_fingerprint[entry.fingerprint]
         return entry
-
-
-def resolve_max_slots(config: dict[str, Any] | None) -> int:
-    """Resolve ``build.queue.max_slots`` from a config dict, defaulting to 5.
-
-    Mirrors the degradation policy of the build-queue primitive: a missing
-    ``build`` block, missing ``queue`` block, missing / non-positive /
-    non-integer ``max_slots`` all fall back to :data:`DEFAULT_MAX_SLOTS` so a
-    misconfigured cap still bounds concurrency.
-
-    Args:
-        config: A parsed ``marshal.json`` dict, or ``None``.
-
-    Returns:
-        The resolved positive slot count.
-    """
-    if not isinstance(config, dict):
-        return DEFAULT_MAX_SLOTS
-    build = config.get('build')
-    if not isinstance(build, dict):
-        return DEFAULT_MAX_SLOTS
-    queue = build.get('queue')
-    if not isinstance(queue, dict):
-        return DEFAULT_MAX_SLOTS
-    raw = queue.get('max_slots')
-    if isinstance(raw, bool) or not isinstance(raw, int):
-        return DEFAULT_MAX_SLOTS
-    return raw if raw > 0 else DEFAULT_MAX_SLOTS
