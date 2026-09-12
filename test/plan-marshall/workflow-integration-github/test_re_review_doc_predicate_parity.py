@@ -82,13 +82,24 @@ _RETIRED_EQUALITY_RE = re.compile(
 
 #: The retired comment-arm claim: the issue-comment signal ALWAYS publishes
 #: ``head_sha_verified: false``, because a comment carries no reviewed-commit SHA.
-#: Keyed on the two phrasings that restated it — the signal named beside a pinned
-#: ``false`` within one sentence, and the "carries no SHA" rationale — so the shipped
-#: wording, which derives the verdict from the body, does not trip it.
+#: Keyed on two arms: (a) the SIGNAL NAME beside a pinned ``false`` within one
+#: sentence, and (b) the "no reviewed-commit SHA" rationale in any inflection.
+#:
+#: Arm (a) deliberately keeps requiring the ``issue comment`` signal token rather
+#: than a bare ``comment``. Widening it there is unsound, not merely noisy: the
+#: SHIPPED rule's own correct phrasing puts "comment" a few tokens before the
+#: verdict ("a comment naming no reviewed commit … head_sha_verified: false"), so a
+#: bare-``comment`` arm cannot separate *comment arm ⇒ false* (retired) from
+#: *comment naming no commit ⇒ false* (shipped) and flags the corrected text.
+#:
+#: Arm (b) carries the widening instead, and it is where the recurrence actually
+#: escaped: the arm was keyed on the single inflection ``carries`` while the drifted
+#: site read ``carrying``, so a restatement two lines from a corrected one read as
+#: green.
 _RETIRED_COMMENT_CONSTANT_RE = re.compile(
     r'(?i)('
     r'issue[ _]comment[^.\n]{0,80}head_sha_verified`?:\s*`?false'
-    r'|comment carries no reviewed-commit SHA'
+    r'|comment[^.\n]{0,40}carr(?:ies|ying|y)\s+no\s+reviewed[\s\-]*commit\s+SHA'
     r')'
 )
 
@@ -104,15 +115,23 @@ def _states_retired_comment_constant(text: str) -> bool:
 
 
 def _doc_population() -> list[Path]:
-    """Every bundle document that discusses the ``head_sha_verified`` contract."""
+    """Every bundle file that discusses the ``head_sha_verified`` contract.
+
+    Scans ``*.py`` alongside ``*.md``: the contract prose that states this
+    predicate does not live only in documents. Three statements of the retired
+    comment-arm rule sat in ``review_completeness.py`` docstrings, outside an
+    ``*.md``-only population, so the guard reported green over a file it never
+    read.
+    """
     found = []
-    for path in _BUNDLES.rglob('*.md'):
-        try:
-            text = path.read_text(encoding='utf-8')
-        except (OSError, UnicodeDecodeError):
-            continue
-        if _FIELD in text:
-            found.append(path)
+    for pattern in ('*.md', '*.py'):
+        for path in _BUNDLES.rglob(pattern):
+            try:
+                text = path.read_text(encoding='utf-8')
+            except (OSError, UnicodeDecodeError):
+                continue
+            if _FIELD in text:
+                found.append(path)
     return sorted(found)
 
 
