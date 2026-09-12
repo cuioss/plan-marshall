@@ -1756,9 +1756,7 @@ def _add_bot_observation_flags(sub: argparse.ArgumentParser) -> None:
             'form as --participated-bots, and the exact shape github_pr '
             "fetch_findings emits in stale_participation_bots[], so the producer's "
             'output forwards here verbatim. Each names a bot whose observed comment '
-            'was already admissible evidence — a declared participation_evidence '
-            'publish shape carrying that shape declared content marker where one is '
-            'declared — but failed the '
+            'was already admissible evidence but failed the '
             'participation_requires_update currency test; the classifier reads only '
             'the bot_kind. A required bot here is classified participated_stale and '
             'blocks — it published against an earlier HEAD, so nothing has reviewed '
