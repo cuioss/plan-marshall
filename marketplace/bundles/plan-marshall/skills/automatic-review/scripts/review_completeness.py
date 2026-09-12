@@ -291,8 +291,10 @@ STATE_PARTICIPATED_BUT_EMPTY = 'participated_but_empty'
 STATE_PARTICIPATED_STALE = 'participated_stale'
 # The bot was asked to review the merge candidate (a re-review was triggered) and
 # answered WITHOUT producing a review of it — an incremental-review DECLINE: a
-# comment carrying no reviewed-commit SHA (``head_sha_verified: false``) rather than
-# a review of this HEAD. Distinct from ``participated_stale`` (a review that exists
+# comment that does not REFERENCE the merge candidate (``head_sha_verified: false``)
+# rather than a review of this HEAD. ``false`` covers BOTH shapes — a comment naming
+# no reviewed commit at all, and one naming a DIFFERENT commit — so neither may be
+# described as the whole of it. Distinct from ``participated_stale`` (a review that exists
 # but predates the merge candidate) and from the refusal members (an explicit
 # rate-limit / quota / size notice): the bot engaged but declined this commit, so
 # re-triggering it produces another decline rather than a review.
@@ -733,8 +735,9 @@ def classify_bot(
       overrides are per-refusal observations, so they outrank a class declared per bot.
       No bot-name literal.
     - **``declined``** — the bot was asked to review the merge candidate and answered
-      without producing a review of it (an incremental-review decline: a comment
-      carrying no reviewed-commit SHA). Checked after the refusal branches — a refusal
+      without producing a review of it (an incremental-review decline: a comment that
+      does not REFERENCE the merge candidate — naming no reviewed commit at all, or
+      naming a different one). Checked after the refusal branches — a refusal
       is the more specific "will not review now" signal — and before ``participated_stale``,
       because a decline says the bot answered *this* re-review request without
       reviewing, which is a fresher and more actionable signal than a review that

@@ -20,9 +20,14 @@ review/merge invocation against its real parser, and it passed throughout. It
 substitutes an unknown placeholder with `''` and then `shlex.split`s, which yields
 `['--measured-diff-size', '']` — an empty-string VALUE, which a value-required flag
 accepts. The executor does not deliver that: it DROPS the empty token, leaving a
-bare flag. The gap is therefore not a missing call site but a missing TRANSPORT
-step, so this module models the strip rather than re-deriving the call population
-for its own sake.
+bare flag. The gap that module misses is therefore a missing TRANSPORT step, which
+is what this module models.
+
+The call population it models the transport over is DERIVED from the bundle tree,
+never listed: a hand-named pair reports a known doc that stopped matching but is
+blind to a `check` call added in a third document, which would then sit outside the
+sweep with nothing saying so. A two-element floor is still asserted, because that
+blind spot runs both ways — see `_KNOWN_CALL_SITE_DOCS`.
 
 Three layers, and the middle one is what keeps the outer two honest:
 
@@ -31,11 +36,12 @@ Three layers, and the middle one is what keeps the outer two honest:
    parses" cannot pass while quietly meaning something else than unmeasured.
 2. **The relaxation did not make the flag greedy.** `nargs='?'` must not swallow a
    following flag as its value; asserted against a real sibling flag.
-3. **The documented calls survive the strip.** Derived from the docs, stripped as
-   the executor strips, parsed by the real parser — with a NON-VACUITY assertion
-   that the strip genuinely produced a bare flag, so a doc that stopped
-   interpolating the flag unconditionally fails here instead of silently emptying
-   the population this sweep runs over.
+3. **The documented calls survive the strip.** The population is derived by
+   scanning every Markdown document under the bundle's `skills/` tree; each
+   invocation is stripped as the executor strips and parsed by the real parser —
+   with a NON-VACUITY assertion that the strip genuinely produced a bare flag, so a
+   doc that stopped interpolating the flag unconditionally fails here instead of
+   silently emptying the population this sweep runs over.
 """
 
 from __future__ import annotations
@@ -121,13 +127,26 @@ def test_the_bare_flag_does_not_swallow_a_following_flag():
 # 3 — the documented call sites, transported as the executor transports them
 # =============================================================================
 
-#: Both documented `review_completeness check` call sites: the FIND step's
-#: participation guard, and the pre-merge review-completeness barrier. Named rather
-#: than derived — WHICH docs invoke the predicate is a semantic fact — while WHERE
-#: within them, and what the invocation says, is derived below.
-_CALL_SITE_DOCS = (
-    _SKILLS / 'automatic-review' / 'SKILL.md',
-    _SKILLS / 'phase-6-finalize' / 'standards' / 'branch-cleanup.md',
+#: The KNOWN call sites — the FIND step's participation guard and the pre-merge
+#: review-completeness barrier — held as repo-relative paths under :data:`_SKILLS`.
+#:
+#: ⛔ This is a FLOOR, not the scan population. The population is DERIVED from the
+#: bundle tree by :func:`_scan_docs` below, because a hand-named list answers only
+#: "did a doc we already knew about stop matching?" and is blind in the other
+#: direction: a `check` call added to a THIRD document would sit outside the sweep
+#: with nothing reporting the omission. That blindness is not hypothetical —
+#: `phase-6-finalize/workflow/create-pr.md` already carries a concrete
+#: `review_completeness` invocation (its `size-caps` advance disclosure), so the set
+#: of documents invoking this script is demonstrably larger than this pair and
+#: demonstrably growing.
+#:
+#: Deriving the population while KEEPING this floor preserves both directions: the
+#: derivation catches a new call site, and the floor assertion below still names a
+#: known site that silently stopped matching — which a derived-only population
+#: cannot see, since its members are by construction exactly the docs that matched.
+_KNOWN_CALL_SITE_DOCS: tuple[str, ...] = (
+    'automatic-review/SKILL.md',
+    'phase-6-finalize/standards/branch-cleanup.md',
 )
 
 _EXEC_CALL = re.compile(r'python3\s+\.plan/execute-script\.py\s+plan-marshall:automatic-review:review_completeness\b')
@@ -176,34 +195,73 @@ def _executor_argv(command: str) -> list[str]:
     the verb and its arguments. A block documenting more than one call is cut at the
     next ``python3``, so a following invocation's tokens are never read as this
     call's arguments.
+
+    Returns ``[]`` for a block this module cannot read as a runnable invocation —
+    one whose quoting ``shlex`` rejects, or whose notation survives the regex but not
+    the split (``…:review_completeness.py`` matches ``\\b`` yet is a different token).
+    Both are real boundaries now that the population is the whole bundle tree rather
+    than two curated documents: unguarded, either raises at IMPORT and takes every
+    test in this module down as a collection error. The caller already treats ``[]``
+    as "not a `check` call", so neither can be mistaken for one.
     """
     substituted = _PLACEHOLDER.sub(lambda m: _SUBSTITUTIONS.get(m.group(0)[1:-1], ''), command)
-    tokens = [token for token in shlex.split(substituted) if token]
+    try:
+        tokens = [token for token in shlex.split(substituted) if token]
+    except ValueError:
+        return []
     notation = 'plan-marshall:automatic-review:review_completeness'
+    if notation not in tokens:
+        return []
     tail = tokens[tokens.index(notation) + 1 :]
     return tail[: tail.index('python3')] if 'python3' in tail else tail
 
 
+def _scan_docs() -> list:
+    """Every Markdown document under ``_SKILLS``, in deterministic path order.
+
+    The population the sweep runs over is the bundle tree itself, not a list kept by
+    hand — the repository convention that a set-guarding detector derives its
+    population from the authoritative source rather than restating it, applied to the
+    one seam this module previously restated.
+    """
+    return sorted(_SKILLS.rglob('*.md'))
+
+
 def _documented_check_invocations() -> list[tuple[str, list[str]]]:
-    """`(doc_name, executor_argv)` for every concrete documented `check` call."""
+    """`(relative_doc_path, executor_argv)` for every concrete documented `check` call.
+
+    Keyed on the repo-relative path rather than the basename: the scan now spans the
+    whole bundle tree, where `SKILL.md` is not unique, and a basename key would
+    silently merge two documents into one parametrize id and one floor-test member.
+    """
     found: list[tuple[str, list[str]]] = []
-    for doc in _CALL_SITE_DOCS:
-        for block in _fenced_commands(doc.read_text(encoding='utf-8')):
+    for doc in _scan_docs():
+        try:
+            text = doc.read_text(encoding='utf-8')
+        except (OSError, UnicodeDecodeError):
+            continue
+        if not _EXEC_CALL.search(text):
+            continue
+        for block in _fenced_commands(text):
             if not _EXEC_CALL.search(block) or _ADVERTISED_FORM.search(block):
                 continue
             argv = _executor_argv(block)
             if argv and argv[0] == 'check':
-                found.append((doc.name, argv))
+                found.append((doc.relative_to(_SKILLS).as_posix(), argv))
     return found
 
 
+SCANNED_DOC_COUNT = len(_scan_docs())
 _DOCUMENTED = _documented_check_invocations()
 
 # Non-emptiness at IMPORT: an empty parametrize is a pytest SKIP, not a failure, so
-# a scan that matched nothing would report a clean sweep over nothing.
+# a scan that matched nothing would report a clean sweep over nothing. The scanned
+# count rides along so an empty result names WHICH of the two zeros it is — a
+# misrooted scan that read nothing, or a real tree that documents no `check` call.
 assert _DOCUMENTED, (
-    'no concrete `review_completeness check` invocation was scanned from '
-    f'{[d.name for d in _CALL_SITE_DOCS]} — the sweep below would pass over an empty set'
+    'no concrete `review_completeness check` invocation was scanned from the '
+    f'{SCANNED_DOC_COUNT} markdown documents under {_SKILLS} — the sweep below would '
+    'pass over an empty set'
 )
 
 #: Published on every run — passing included — by the root conftest's report header.
@@ -215,18 +273,36 @@ def _invocation_id(item: tuple[str, list[str]]) -> str:
     return re.sub(r'[^A-Za-z0-9]+', '-', item[0]).strip('-').lower()
 
 
-def test_every_call_site_doc_contributes_an_invocation():
-    """Each named doc yields at least one call — a doc that stopped matching is named.
+def test_the_scan_population_is_larger_than_the_known_floor():
+    """The sweep really scans the tree, not just the two docs named in the floor.
 
-    A total-only floor cannot see this: the other doc keeps the total non-zero while
-    one side silently drops out of the sweep.
+    Without this, every assertion below would still pass if :func:`_scan_docs`
+    silently degenerated to the floor — the exact hard-coded population this
+    derivation replaced, restored without anything reporting it.
     """
-    silent = sorted({doc.name for doc in _CALL_SITE_DOCS} - {name for name, _argv in _DOCUMENTED})
+    assert SCANNED_DOC_COUNT > len(_KNOWN_CALL_SITE_DOCS), (
+        f'the scan read {SCANNED_DOC_COUNT} document(s) under {_SKILLS}, which is not more '
+        f'than the {len(_KNOWN_CALL_SITE_DOCS)} floor entries — the derivation is not reading '
+        'the bundle tree'
+    )
+
+
+def test_every_known_call_site_doc_contributes_an_invocation():
+    """Each KNOWN doc yields at least one call — a doc that stopped matching is named.
+
+    This is the direction the derived population cannot see. Its members are exactly
+    the docs that matched, so a known site dropping out shrinks the population
+    silently; only a floor asserted against it reports the loss. A total-only check
+    cannot see it either — the other docs keep the total non-zero.
+    """
+    matched = {relative_path for relative_path, _argv in _DOCUMENTED}
+    silent = sorted(set(_KNOWN_CALL_SITE_DOCS) - matched)
 
     assert not silent, (
         f'{silent} contributed ZERO concrete `review_completeness check` invocations to a '
-        f'population of {len(_DOCUMENTED)}. The matcher stopped seeing that doc, so its call '
-        'site is no longer covered by the sweep below.'
+        f'derived population of {len(_DOCUMENTED)} (scanned {SCANNED_DOC_COUNT} documents). '
+        'The matcher stopped seeing that doc, so its call site is no longer covered by the '
+        'sweep below.'
     )
 
 
