@@ -134,10 +134,10 @@ not re-typed per finalize).
 `ci-verify` runs immediately AFTER `create-pr` and BEFORE
 `architecture-refresh`. Rationale: `create-pr` is the first moment at
 which a server-side CI run exists to consume; `architecture-refresh`,
-`automated-review`, and `sonar-roundtrip` all benefit from the CI
+`automatic-review`, and `sonar-roundtrip` all benefit from the CI
 verdict already being triaged when they run. Placing `ci-verify`
-between `automated-review` and `sonar-roundtrip` would be wrong —
-`automated-review` can itself depend on CI conclusions the reviewer-bot
+between `automatic-review` and `sonar-roundtrip` would be wrong —
+`automatic-review` can itself depend on CI conclusions the reviewer-bot
 observed, and waiting until then to surface CI failures delays the
 loop-back signal unnecessarily.
 
@@ -149,19 +149,18 @@ push
 create-pr
 ci-verify          ← here
 architecture-refresh
-automated-review
+automatic-review
 sonar-roundtrip
 record-metrics
 archive-plan
 branch-cleanup
-validation
 lessons-capture
 ```
 
 ## Precondition mode
 
 `ci-verify` declares `requires: [ci-complete]` in its frontmatter
-(same as `automated-review` and `sonar-roundtrip`), but unlike those
+(same as `automatic-review` and `sonar-roundtrip`), but unlike those
 two it is the *only* consumer that runs the precondition in
 `consume-failures` mode (Step 3 of [`../SKILL.md`](../SKILL.md) §
 "Precondition resolution"). In this mode the resolver runs the same

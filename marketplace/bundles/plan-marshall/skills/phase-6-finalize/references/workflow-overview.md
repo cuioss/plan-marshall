@@ -33,7 +33,7 @@ Phase 6 is a pure executor of the per-plan execution manifest. The manifest is c
 │   │       outcome=failed -> RETRY              │                     │
 │   │       (no record)    -> dispatch           │                     │
 │   │    b. Dispatch under per-agent timeout:    │                     │
-│   │       sonar / automated-review : 15 min    │                     │
+│   │       sonar / automatic-review : 15 min    │                     │
 │   │       lessons                  :  5 min    │                     │
 │   │       inline-only              : no wrap   │                     │
 │   │    c. On timeout: log ERROR,               │                     │
@@ -64,7 +64,7 @@ Agent-suitable steps (Task-dispatched) run under a per-agent budget enforced by 
 | Step | Budget | Rationale |
 |------|--------|-----------|
 | `sonar-roundtrip`    | 15 min (900 s) | Full Sonar gate roundtrip + optional fix-task creation |
-| `automated-review`   | 15 min (900 s) | CI wait + review-bot buffer + comment triage |
+| `automatic-review`   | 15 min (900 s) | CI wait + review-bot buffer + comment triage |
 | `lessons-capture`    |  5 min (300 s) | Bounded `manage-lessons add` + Write workflow |
 | All other steps      | none           | Inline-only or no explicit budget |
 
@@ -74,7 +74,7 @@ On timeout, the dispatcher logs an `[ERROR]` entry, records the step as `outcome
 
 ```text
 ┌────────────────────────────────────────────┐
-│            AUTOMATED REVIEW / SONAR        │
+│     automatic-review / sonar-roundtrip     │
 │                                            │
 │              [issues]    [no issues]       │
 │                 │             │            │
@@ -85,4 +85,4 @@ On timeout, the dispatcher logs an `[ERROR]` entry, records the step as `outcome
 └────────────────────────────────────────────┘
 ```
 
-A loop-back is initiated by `automated-review` or `sonar-roundtrip` only when their underlying workflow returns `loop_back_needed=true`. The loop-back is a phase transition, not a step skip — Phase 6 returns to Phase 5, which executes fix tasks, then re-enters Phase 6. Both paths respect the manifest unchanged on re-entry.
+A loop-back is initiated by `automatic-review` or `sonar-roundtrip` only when their underlying workflow returns `loop_back_needed=true`. The loop-back is a phase transition, not a step skip — Phase 6 returns to Phase 5, which executes fix tasks, then re-enters Phase 6. Both paths respect the manifest unchanged on re-entry.

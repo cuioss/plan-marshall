@@ -25,7 +25,7 @@ Deliverables ({N_done}/{N_total})
 Finalize steps ({N_done}/{N_total} done)
   [OK]  push                              pushed {branch} basis=ledger-verified
   [OK]  create-pr                         #{pr_number}
-  [OK]  automated-review                  {N} comment(s) resolved (no loop-back)
+  [OK]  automatic-review                  {N} comment(s) resolved (no loop-back)
   [OK]  sonar-roundtrip                   quality gate passed
   [OK]  lessons-capture                   {N} lesson(s) recorded ({lesson_ids})
   [OK]  branch-cleanup                    rebased onto base, merged directly, cleanup complete
@@ -51,7 +51,7 @@ Deliverables ({N_done}/{N_total})
 Finalize steps ({N_done}/{N_total} done)
   [OK]  push                              pushed {branch} basis=ledger-verified
   [OK]  create-pr                         #{pr_number}
-  [OK]  automated-review                  {N} comment(s) resolved (no loop-back)
+  [OK]  automatic-review                  {N} comment(s) resolved (no loop-back)
   [OK]  sonar-roundtrip                   quality gate passed
   [OK]  lessons-capture                   {N} lesson(s) recorded ({lesson_ids})
   [OK]  branch-cleanup                    rebased onto base, merged directly, cleanup complete
@@ -218,7 +218,7 @@ When EITHER condition fails, the supplement is inactive and emission proceeds wi
 
 **Append emission**: when the toggle is active, after the per-step iteration in Emission Procedure step 5 completes (every configured step row including `record-metrics` has emitted unchanged), the renderer appends an additional section consisting of a blank line, the literal one-line header `Phase Breakdown`, a blank line, then the verbatim captured content (which already begins with `## Phase Breakdown` and ends with a single trailing newline). The Repository trailer (step 6 emission) follows after the appended section, separated by a blank line.
 
-**Unchanged blocks**: the supplement mode does NOT alter any step row in the Finalize-steps block. Every step row (`push`, `create-pr`, `automated-review`, `sonar-roundtrip`, `lessons-capture`, `branch-cleanup`, `record-metrics`, `archive-plan`, etc.) emits identically to default mode. The Headline (step 1-2), Goal (step 3), Deliverables (step 4), and Repository trailer (step 6) blocks emit identically in both modes. The supplement adds a new section between the Finalize-steps block and the Repository trailer; it never replaces existing content.
+**Unchanged blocks**: the supplement mode does NOT alter any step row in the Finalize-steps block. Every step row (`push`, `create-pr`, `automatic-review`, `sonar-roundtrip`, `lessons-capture`, `branch-cleanup`, `record-metrics`, `archive-plan`, etc.) emits identically to default mode. The Headline (step 1-2), Goal (step 3), Deliverables (step 4), and Repository trailer (step 6) blocks emit identically in both modes. The supplement adds a new section between the Finalize-steps block and the Repository trailer; it never replaces existing content.
 
 ## Emission Procedure
 
@@ -410,9 +410,9 @@ Each row ILLUSTRATES the contract its own step doc declares; that doc, not this 
 | `create-pr` | New PR created | `#212` |
 | `create-pr` | Existing PR re-used | `existing PR #212` |
 | `create-pr` | Skipped — local-only run | `skipped: local-only run, no PR opened` |
-| `automated-review` | Bot comments resolved on first pass | `3 comment(s) resolved (no loop-back)` |
-| `automated-review` | Skipped — no PR to review | `skipped: no PR exists, nothing to review` |
-| `automated-review` | Loop-back fixes applied | `loop-back iteration 2` |
+| `automatic-review` | Bot comments resolved on first pass | `3 comment(s) resolved (no loop-back)` |
+| `automatic-review` | Skipped — no PR to review | `skipped: no PR exists, nothing to review` |
+| `automatic-review` | Loop-back fixes applied | `loop-back iteration 2` |
 | `sonar-roundtrip` | Quality gate passed | `quality gate passed` |
 | `sonar-roundtrip` | Quality gate failed | `quality gate failed: 3 new issue(s) on changed lines` |
 | `sonar-roundtrip` | Skipped — no Sonar configured | `skipped: no Sonar service configured for this project` |
@@ -425,8 +425,6 @@ Each row ILLUSTRATES the contract its own step doc declares; that doc, not this 
 | `branch-cleanup` | Declined by user | `declined by user` |
 | `record-metrics` | Metrics recorded | `{total_wall_formatted} / {total_tokens_formatted} tokens` (e.g. `1h46m / 599K tokens`) |
 | `archive-plan` | Archived successfully | `-> .plan/archived-plans/2026-04-17-jwt-auth/` |
-| `validation` | All required steps done | `all required steps done` |
-| `validation` | N checks passed | `{N} validation check(s) passed` |
 
 ## Repository Trailer Rules
 
