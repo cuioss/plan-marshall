@@ -33,7 +33,11 @@ call is therefore resolved against the import bindings actually in scope — plu
 the origin module ITSELF and nowhere else, its own top-level definitions, which is
 how the resolver module is a member. That third arm is gated on the candidate being
 the origin precisely so it cannot become the bare-name test the other two exist to
-replace. See :func:`_called_names` for the three admitting bindings.
+replace, and the gate compares full skill-relative PATHS: a bare stem is not a
+module identity under a glob that spans every bundle, so a same-named file in
+another skill would have satisfied a stem gate and had its own local definitions
+admitted — attributed to no real origin, which is the very thing the arm forbids.
+See :func:`_called_names` for the three admitting bindings.
 
 Every assertion publishes the derived population size. A closure or equality check
 over an empty population passes vacuously — it reports agreement while ranging over
@@ -112,9 +116,29 @@ _OWN_DEFINITION_MEMBER = f'script-shared/scripts/{_HOME_ROOT_ORIGIN}.py'
 #: would follow the audit table down if both were edited together.
 _HOME_ROOT_POPULATION_SIZE = 9
 
-#: A module name that is NOT either shape's origin — what every control that must
-#: NOT reach the own-definition arm passes as the candidate's own identity.
-_FOREIGN_MODULE_NAME = 'a_candidate_that_owns_neither_origin'
+#: Per-shape owner of the origin, in the skill-relative path space the candidates
+#: are normalised into — the value the own-definition arm gates on.
+#:
+#: Shape B's origin is a module UNDER the candidate glob, so it has an owner path:
+#: :data:`_OWN_DEFINITION_MEMBER`, itself derived from :data:`_HOME_ROOT_ORIGIN`
+#: so a resolver rename moves it rather than leaving a stale expectation. Shape
+#: A's origin is the stdlib ``os``, which no candidate owns, so its owner is
+#: ``None`` — the arm is then explicitly unreachable for that shape rather than
+#: incidentally so.
+_CHDIR_OWNER: str | None = None
+_HOME_ROOT_OWNER: str | None = _OWN_DEFINITION_MEMBER
+
+#: A candidate path that owns NEITHER origin — what every control that must not
+#: reach the own-definition arm passes as the candidate's own identity.
+_FOREIGN_CANDIDATE_PATH = 'a-skill/scripts/a_candidate_that_owns_neither_origin.py'
+
+#: A FOREIGN candidate whose file stem is identical to the authoritative
+#: resolver's. This is the identity gap the path comparison closes: under a glob
+#: spanning every bundle, this file's stem equals the origin name, so a stem gate
+#: admitted its own local definitions as the origin's. Derived from
+#: :data:`_HOME_ROOT_ORIGIN` for the same rename-safety reason, and deliberately
+#: NOT equal to :data:`_OWN_DEFINITION_MEMBER` — the skill segment is what differs.
+_SAME_STEM_FOREIGN_PATH = f'other-skill/scripts/{_HOME_ROOT_ORIGIN}.py'
 
 #: Negative-control anchor: the single file the audit places in BOTH shapes. Its
 #: presence in both derived sets is what makes the overlap a derived figure rather
@@ -134,7 +158,13 @@ def _skill_relative(path: Path) -> str:
     return '/'.join(path.parts[2:])
 
 
-def _called_names(tree: ast.AST, targets: frozenset[str], origin: str, module_name: str) -> bool:
+def _called_names(
+    tree: ast.AST,
+    targets: frozenset[str],
+    origin: str,
+    candidate_path: str,
+    owner_path: str | None,
+) -> bool:
     """Return whether the module invokes a ``targets`` member FROM ``origin``.
 
     Keeps only occurrences that are a call's own ``func`` — so a definition, an
@@ -161,8 +191,9 @@ def _called_names(tree: ast.AST, targets: frozenset[str], origin: str, module_na
       ``chdir()`` counts — but only because the ``from`` module is the origin.
     * A module that DEFINES a target at its own top level owns it, so a bare call
       there is a call to the real function with no import to resolve through —
-      **but only when that module IS the origin**, which is what ``module_name``
-      is for. ``marketplace_paths.py`` is in shape B's population on exactly this
+      **but only when that module IS the origin's owner**, which is what
+      ``candidate_path`` and ``owner_path`` are for.
+      ``marketplace_paths.py`` is in shape B's population on exactly this
       evidence: it holds the sole ``def`` of both entry points and
       ``ensure_home_root`` invokes ``home_root()`` directly. Dropping this arm
       would shrink that population from 9 to 8 while looking like a tightening,
@@ -173,23 +204,32 @@ def _called_names(tree: ast.AST, targets: frozenset[str], origin: str, module_na
       justification rests on, and it is a property of ``marketplace_paths.py``,
       not of every candidate. Unnarrowed, ANY candidate that both top-level-defines
       and bare-calls ``home_root`` / ``ensure_home_root`` / ``chdir`` joined the
-      population on its own LOCAL definition, attributed to no origin at all. The
-      authoritative module is derived by comparing ``module_name`` against
-      ``origin`` rather than matched against a filename literal, so renaming the
-      resolver cannot silently empty the arm — the rename moves the origin
-      constant with it, and a constant that did NOT move breaks the from-import
-      resolution loudly at the population equality checks instead.
+      population on its own LOCAL definition, attributed to no origin at all.
 
-      For the ``chdir`` shape the origin is the stdlib ``os``, which is not under
-      the candidate glob, so this arm is correctly unreachable there: no candidate
-      owns ``os.chdir``.
+      **The identity compared is the full skill-relative PATH, not the file
+      stem.** A stem is not a module identity under a candidate glob that spans
+      every bundle: a foreign ``marketplace_paths.py`` in any other skill has the
+      same stem as the authoritative resolver, so a stem gate admitted ITS local
+      definitions as the origin's — the identical attributed-to-no-origin
+      membership the gate exists to refuse, merely reached one level up. The
+      authoritative path is derived from ``origin`` by the caller
+      (:data:`_OWN_DEFINITION_MEMBER`, built from :data:`_HOME_ROOT_ORIGIN`) and
+      never written as a filename literal, so renaming the resolver moves it
+      instead of silently emptying the arm.
+
+      ``owner_path`` is ``None`` when the origin lives OUTSIDE the candidate tree,
+      which makes the arm unreachable by construction rather than by coincidence.
+      That is shape A's case: its origin is the stdlib ``os``, which no candidate
+      owns.
 
     Args:
         tree: The candidate's parsed module.
         targets: The shape's target function names.
         origin: The module a call must resolve THROUGH to count.
-        module_name: The candidate's own module name (its file stem), compared
-            against ``origin`` to decide whether the own-definition arm applies.
+        candidate_path: The candidate's own skill-relative path.
+        owner_path: The skill-relative path of the module that OWNS ``origin``,
+            or ``None`` when the origin is not under the candidate glob. The
+            own-definition arm fires only when the two paths are equal.
     """
     module_aliases: set[str] = set()  # local names bound to the ORIGIN MODULE
     direct_names: set[str] = set()  # local names bound to a TARGET from the origin
@@ -213,10 +253,13 @@ def _called_names(tree: ast.AST, targets: frozenset[str], origin: str, module_na
                 elif alias.name == origin:
                     module_aliases.add(alias.asname or alias.name)
 
-    # Gated on the candidate BEING the origin: a local definition is evidence of
-    # ownership only in the module the origin names.
+    # Gated on the candidate BEING the origin's owner, compared as a full
+    # skill-relative path: a local definition is evidence of ownership only in
+    # the one module the origin actually lives in. The `is not None` test is
+    # load-bearing — without it a shape whose origin is outside the candidate
+    # tree (owner_path None) would match any candidate whose path was also None.
     own_definitions: set[str] = set()
-    if module_name == origin:
+    if owner_path is not None and candidate_path == owner_path:
         own_definitions = {
             node.name
             for node in getattr(tree, 'body', [])
@@ -260,9 +303,9 @@ def _derive_populations() -> tuple[int, tuple[str, ...], tuple[str, ...]]:
             raise AssertionError(f'Could not scan candidate script {path}: {type(exc).__name__}: {exc}') from None
 
         relative = _skill_relative(path.relative_to(MARKETPLACE_ROOT))
-        if _called_names(tree, _CHDIR_TARGETS, _CHDIR_ORIGIN, path.stem):
+        if _called_names(tree, _CHDIR_TARGETS, _CHDIR_ORIGIN, relative, _CHDIR_OWNER):
             chdir_callers.add(relative)
-        if _called_names(tree, _HOME_ROOT_TARGETS, _HOME_ROOT_ORIGIN, path.stem):
+        if _called_names(tree, _HOME_ROOT_TARGETS, _HOME_ROOT_ORIGIN, relative, _HOME_ROOT_OWNER):
             home_root_callers.add(relative)
 
     return scanned, tuple(sorted(chdir_callers)), tuple(sorted(home_root_callers))
@@ -501,9 +544,9 @@ def test_the_classifier_admits_every_binding_that_resolves_to_the_origin():
     classifier that admitted nothing at all — which would empty both populations.
     """
     for label, source in _ADMITTED_SOURCES:
-        assert _called_names(ast.parse(source), _CHDIR_TARGETS, _CHDIR_ORIGIN, _FOREIGN_MODULE_NAME), (
-            f'{label} should resolve to {_CHDIR_ORIGIN}.chdir but was not admitted'
-        )
+        assert _called_names(
+            ast.parse(source), _CHDIR_TARGETS, _CHDIR_ORIGIN, _FOREIGN_CANDIDATE_PATH, _CHDIR_OWNER
+        ), f'{label} should resolve to {_CHDIR_ORIGIN}.chdir but was not admitted'
 
 
 def test_the_classifier_rejects_a_same_named_call_from_a_foreign_module():
@@ -516,9 +559,9 @@ def test_the_classifier_rejects_a_same_named_call_from_a_foreign_module():
     false population member and broke the audit's equality check.
     """
     for label, source in _FOREIGN_SOURCES:
-        assert not _called_names(ast.parse(source), _CHDIR_TARGETS, _CHDIR_ORIGIN, _FOREIGN_MODULE_NAME), (
-            f'{label} does not resolve to {_CHDIR_ORIGIN}.chdir but was admitted'
-        )
+        assert not _called_names(
+            ast.parse(source), _CHDIR_TARGETS, _CHDIR_ORIGIN, _FOREIGN_CANDIDATE_PATH, _CHDIR_OWNER
+        ), f'{label} does not resolve to {_CHDIR_ORIGIN}.chdir but was admitted'
 
 
 def test_the_classifier_still_excludes_every_non_call_occurrence():
@@ -529,16 +572,18 @@ def test_the_classifier_still_excludes_every_non_call_occurrence():
     prose, a never-called definition, or a bare non-call reference to the real
     attribute.
 
-    Each source is classified AS the origin module, which is the strongest form
-    of the claim: even in the module that owns the target, a definition nobody
-    calls is not a call site. Passing a foreign identity here would let the
-    own-definition gate do the excluding and leave the not-a-call property
-    itself untested.
+    Each source is classified AS the origin's owner — candidate path and owner
+    path equal, so the own-definition arm is REACHABLE — which is the strongest
+    form of the claim: even in the module that owns the target, a definition
+    nobody calls is not a call site. Passing a foreign identity, or shape A's
+    ``None`` owner, would let the own-definition gate do the excluding and leave
+    the not-a-call property itself untested. Which path the two share is
+    immaterial here; that they are EQUAL is the whole condition.
     """
     for label, source in _NON_CALL_SOURCES:
-        assert not _called_names(ast.parse(source), _CHDIR_TARGETS, _CHDIR_ORIGIN, _CHDIR_ORIGIN), (
-            f'{label} is not a call and must not be admitted'
-        )
+        assert not _called_names(
+            ast.parse(source), _CHDIR_TARGETS, _CHDIR_ORIGIN, _OWN_DEFINITION_MEMBER, _OWN_DEFINITION_MEMBER
+        ), f'{label} is not a call and must not be admitted'
 
 
 #: A module that both top-level-defines a shape B target and bare-calls it. Which
@@ -556,11 +601,18 @@ def test_the_classifier_admits_a_same_module_call_to_its_own_definition():
     would drop the resolver itself out of shape B, shrinking the published
     population from 9 to 8 while looking like a tightening.
 
-    The identity is passed as :data:`_HOME_ROOT_ORIGIN` rather than as the
-    resolver's filename, so this control derives its expectation from the same
-    constant the classifier does and no path literal is re-introduced.
+    The identity is passed as :data:`_OWN_DEFINITION_MEMBER` — the authoritative
+    skill-relative path, itself derived from :data:`_HOME_ROOT_ORIGIN` — rather
+    than as a filename literal, so this control derives its expectation from the
+    same constant the classifier's caller does.
     """
-    assert _called_names(ast.parse(_OWN_DEFINITION_SOURCE), _HOME_ROOT_TARGETS, _HOME_ROOT_ORIGIN, _HOME_ROOT_ORIGIN)
+    assert _called_names(
+        ast.parse(_OWN_DEFINITION_SOURCE),
+        _HOME_ROOT_TARGETS,
+        _HOME_ROOT_ORIGIN,
+        _OWN_DEFINITION_MEMBER,
+        _HOME_ROOT_OWNER,
+    )
 
 
 def test_a_foreign_module_defining_and_calling_a_target_is_not_admitted():
@@ -579,7 +631,64 @@ def test_a_foreign_module_defining_and_calling_a_target_is_not_admitted():
     ungated fails this one.
     """
     assert not _called_names(
-        ast.parse(_OWN_DEFINITION_SOURCE), _HOME_ROOT_TARGETS, _HOME_ROOT_ORIGIN, _FOREIGN_MODULE_NAME
+        ast.parse(_OWN_DEFINITION_SOURCE),
+        _HOME_ROOT_TARGETS,
+        _HOME_ROOT_ORIGIN,
+        _FOREIGN_CANDIDATE_PATH,
+        _HOME_ROOT_OWNER,
+    )
+
+
+def test_a_foreign_module_with_the_same_stem_is_not_admitted():
+    """The identity gap this closes: a same-STEM file in another skill is foreign.
+
+    The gate used to compare the candidate's file stem against the origin NAME.
+    Under a candidate glob that spans every bundle, that is not a module identity:
+    this source sits at a foreign path whose stem is identical to the
+    authoritative resolver's, so the stem gate fired and admitted its own LOCAL
+    definitions as the origin's — attributed to no real origin, the same
+    unsoundness the narrowing exists to remove, one level up.
+
+    Byte-identical source to the positive control above, and the candidate path
+    differs from the authoritative one ONLY in its skill segment. That is what
+    makes this a discrimination on identity rather than on content, and it fails
+    against the stem comparison.
+    """
+    assert _SAME_STEM_FOREIGN_PATH != _OWN_DEFINITION_MEMBER, (
+        f'the same-stem control must sit at a DIFFERENT path from the authoritative '
+        f'{_OWN_DEFINITION_MEMBER!r}, or it is a second positive control wearing a '
+        f'negative name'
+    )
+    assert _SAME_STEM_FOREIGN_PATH.rsplit('/', 1)[-1] == _OWN_DEFINITION_MEMBER.rsplit('/', 1)[-1], (
+        'the same-stem control must share the authoritative filename, or it does not '
+        'exercise the stem collision at all'
+    )
+    assert not _called_names(
+        ast.parse(_OWN_DEFINITION_SOURCE),
+        _HOME_ROOT_TARGETS,
+        _HOME_ROOT_ORIGIN,
+        _SAME_STEM_FOREIGN_PATH,
+        _HOME_ROOT_OWNER,
+    )
+
+
+def test_the_own_definition_arm_is_unreachable_when_the_origin_is_outside_the_tree():
+    """Shape A's arm is unreachable BY CONSTRUCTION, not by coincidence.
+
+    Its origin is the stdlib ``os``, which no candidate owns, so the caller passes
+    ``None`` as the owner path and no candidate can match it. Asserted with a
+    candidate that both top-level-defines and bare-calls the shape's target — the
+    exact shape the arm admits when it IS reachable — so this cannot pass merely
+    because the source was uninteresting.
+    """
+    source = 'def chdir(path):\n    return path\n\n\ndef f():\n    return chdir("/")\n'
+
+    assert _CHDIR_OWNER is None
+    assert not _called_names(ast.parse(source), _CHDIR_TARGETS, _CHDIR_ORIGIN, _FOREIGN_CANDIDATE_PATH, _CHDIR_OWNER)
+    # The matched positive for the same source: with a reachable owner it IS
+    # admitted, so the exclusion above is the owner being None and nothing else.
+    assert _called_names(
+        ast.parse(source), _CHDIR_TARGETS, _CHDIR_ORIGIN, _OWN_DEFINITION_MEMBER, _OWN_DEFINITION_MEMBER
     )
 
 
@@ -591,7 +700,9 @@ def test_a_foreign_home_root_call_is_not_admitted_into_shape_b():
     """
     source = 'import someother\ndef f():\n    someother.home_root()\n'
 
-    assert not _called_names(ast.parse(source), _HOME_ROOT_TARGETS, _HOME_ROOT_ORIGIN, _FOREIGN_MODULE_NAME)
+    assert not _called_names(
+        ast.parse(source), _HOME_ROOT_TARGETS, _HOME_ROOT_ORIGIN, _FOREIGN_CANDIDATE_PATH, _HOME_ROOT_OWNER
+    )
 
 
 def test_the_own_definition_member_survives_the_narrowing_at_its_pinned_size():
