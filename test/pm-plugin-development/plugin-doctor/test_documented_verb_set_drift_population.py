@@ -281,8 +281,7 @@ def test_the_derived_population_is_non_empty():
         f'The published population size disagrees with the walk it came from.\n{corpus_report()}'
     )
     assert not [f for f in corpus['findings'] if f.get('type') == TYPE_EMPTY_POPULATION], (
-        f'The empty-population guard fired, so this run is a derivation failure, '
-        f'not a measurement.\n{corpus_report()}'
+        f'The empty-population guard fired, so this run is a derivation failure, not a measurement.\n{corpus_report()}'
     )
 
 
@@ -349,7 +348,7 @@ def test_the_reached_skip_states_are_published_and_all_declared():
     reached = set(_skip_reasons(_corpus()['findings']))
 
     assert reached <= declared, (
-        f'Skip reason(s) {sorted(reached - declared)} are not in the rule\'s declared '
+        f"Skip reason(s) {sorted(reached - declared)} are not in the rule's declared "
         f'vocabulary {sorted(declared)}.\n{corpus_report()}'
     )
 
@@ -423,7 +422,7 @@ def test_the_rule_derives_without_a_help_cache():
     )
     assert 'argparse_surface' not in source, (
         'the drift analyzer now consumes argparse_surface (the shared live --help '
-        'derivation), so its figures sit behind the help cache and this module\'s '
+        "derivation), so its figures sit behind the help cache and this module's "
         'published counts can no longer be read as cache-independent.'
     )
     assert 'import ast' in source, 'the drift analyzer no longer AST-walks; the derivation contract changed.'
@@ -449,7 +448,9 @@ def test_a_deliberately_undocumented_verb_still_fails_the_rule(tmp_path):
 
     findings, population_size = analyze_with_population(tmp_path)
 
-    assert population_size == 1, f'the control fixture must contribute exactly one in-scope skill, got {population_size}'
+    assert population_size == 1, (
+        f'the control fixture must contribute exactly one in-scope skill, got {population_size}'
+    )
     assert [f['type'] for f in findings] == [TYPE_MISSING_FROM_DOCS], (
         f'the detector did not fire on a deliberately undocumented verb, so every '
         f'clean verdict above is unfalsifiable; got {[f["type"] for f in findings]}'

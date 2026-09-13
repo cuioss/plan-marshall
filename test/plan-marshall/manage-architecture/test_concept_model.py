@@ -1173,9 +1173,7 @@ def _seed_claimed_doc_corpus(tmpdir: str) -> None:
     )
 
 
-def _claiming_attributor(
-    path: str, _module_names: list[str], _project_dir: str
-) -> tuple[str | None, list[dict]]:
+def _claiming_attributor(path: str, _module_names: list[str], _project_dir: str) -> tuple[str | None, list[dict]]:
     """Stand in for the Axis-D seam, claiming the seeded corpus for its owner.
 
     ``project_dir`` is a third positional because the seam is keyed on it — the
@@ -1187,9 +1185,7 @@ def _claiming_attributor(
     return owner, [{'id': 'stub-doc-claim', 'notes': []}]
 
 
-def _no_claim_attributor(
-    _path: str, _module_names: list[str], _project_dir: str
-) -> tuple[None, list[dict]]:
+def _no_claim_attributor(_path: str, _module_names: list[str], _project_dir: str) -> tuple[None, list[dict]]:
     """The negative control: an attributor that runs and claims nothing."""
     return None, [{'id': 'stub-doc-claim', 'notes': []}]
 

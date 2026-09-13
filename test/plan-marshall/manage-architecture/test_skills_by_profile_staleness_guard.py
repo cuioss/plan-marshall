@@ -19,13 +19,20 @@ description of a three-signal guard is how the third stops being maintained:
 
 A FOURTH condition — a profile the project's configuration declares active for
 which the map carries no block at all — depends on a configuration-derived
-expected set, so it is covered next door in ``test_skills_by_profile.py``
-alongside the write-path, payload and rendering seams.
+expected set the emitter reads from a real ``.plan/marshal.json``. The autouse
+``neutral_expected_profiles`` fixture below answers "no expectation declared"
+for every test here, so no case inherits the running repository's own active
+profiles through the emitter's ``project_dir='.'`` default. The matched
+controls at the end of this file restore the genuine reader against an isolated
+tree, so that neutralisation cannot silently disable the condition's own
+coverage. The write-path, payload and rendering seams for the same condition
+live next door in ``test_skills_by_profile.py``.
 
 The pure ``detect_stale_skills_by_profile`` core takes an injected ``is_live``
 predicate so staleness detection is deterministic without a real bundle tree.
 """
 
+import json
 import sys
 import types
 from pathlib import Path
@@ -41,6 +48,35 @@ _cmd_client_query = load_script_module(
 detect_stale_skills_by_profile = _cmd_client_query.detect_stale_skills_by_profile
 _iter_skill_notations = _cmd_client_query._iter_skill_notations
 _emit_staleness_warning = _cmd_client_query._emit_skills_by_profile_staleness_warning
+
+
+#: The genuine configuration reader, captured before the autouse fixture below
+#: replaces it. The matched controls restore THIS object rather than a stand-in,
+#: so the condition they exercise runs through the same code the production read
+#: path uses.
+_real_configured_expected_profiles = _cmd_client_query._configured_expected_profiles
+
+
+@pytest.fixture(autouse=True)
+def neutral_expected_profiles(monkeypatch):
+    """Answer "no expectation declared" for the emitter's live configuration read.
+
+    ``_emit_skills_by_profile_staleness_warning`` defaults ``project_dir`` to
+    ``'.'`` and forwards it to ``_configured_expected_profiles``, which reads
+    ``skill_domains.active_profiles`` out of a real ``.plan/marshal.json``. Under
+    pytest ``'.'`` IS this repository, whose configuration genuinely declares
+    profiles no synthetic fixture map here carries a block for — so without this
+    fixture every emitter case inherits a real expected set it never arranged,
+    and the absent-profile condition fires for reasons belonging to the host
+    checkout rather than to the case.
+
+    ``None`` is the reader's own declared "nothing was expected" return, not a
+    suppression of the condition: the other three conditions never consult it,
+    and the matched controls at the end of this file re-arm the real reader
+    against an isolated tree so this neutralisation cannot hide a regression in
+    the fourth.
+    """
+    monkeypatch.setattr(_cmd_client_query, '_configured_expected_profiles', lambda _project_dir: None)
 
 
 # A retired ID that no longer resolves in the registry.
@@ -506,3 +542,69 @@ def test_no_exception_escapes_when_the_log_entry_import_fails(monkeypatch):
         'the emitter must have attempted to resolve the sink once per generated '
         'message — the swallowed failure was the sink, not an empty run'
     )
+
+
+# =============================================================================
+# Matched controls for the configuration-derived FOURTH condition
+# =============================================================================
+#
+# The autouse fixture answers "no expectation declared" for every other test in
+# this file, and that is exactly the input under which the absent-profile
+# condition is silent. Silence alone is therefore indistinguishable from a
+# condition that has been deleted, which is what these two arms exist to
+# separate. The positive arm restores the genuine reader against an isolated
+# tree carrying a real marshal.json and proves the condition still fires — and
+# fires through the configuration path it actually ships with, not through an
+# injected set that would bypass the reader entirely. The negative arm runs the
+# SAME map and the SAME tree under the fixture and proves the silence elsewhere
+# in this file is the neutralisation doing its job, rather than a map that could
+# never have triggered the condition anyway.
+
+
+def _write_marshal_json(root: Path, active_profiles: list[str]) -> None:
+    """Write a ``.plan/marshal.json`` under ``root`` declaring ``active_profiles``."""
+    plan_dir = root / '.plan'
+    plan_dir.mkdir(parents=True, exist_ok=True)
+    (plan_dir / 'marshal.json').write_text(
+        json.dumps({'skill_domains': {'active_profiles': active_profiles}}), encoding='utf-8'
+    )
+
+
+def test_emitter_reports_a_profile_the_configuration_declares_but_the_map_omits(recorded_log, monkeypatch, tmp_path):
+    """A declared-active profile with no block in the map reaches the sink by name.
+
+    Both halves of the declared set are asserted against the SAME map:
+    ``implementation`` is declared AND present, ``quality`` is declared and
+    absent. Requiring the absent one to be named and the present one not to be
+    is what separates this condition from "warn once per declared profile" — an
+    emitter doing the latter satisfies a bare "it warned" verdict and fails here.
+    """
+    _install_registry(monkeypatch, live={_LIVE_NOTATION})
+    monkeypatch.setattr(_cmd_client_query, '_configured_expected_profiles', _real_configured_expected_profiles)
+    _write_marshal_json(tmp_path, ['implementation', 'quality'])
+
+    _emit_staleness_warning('mod-j', {'skills_by_profile': _profile_map(_LIVE_NOTATION)}, str(tmp_path))
+
+    assert len(recorded_log.calls) == 1, recorded_log.messages
+    message = recorded_log.messages[0]
+    assert message.startswith('[STALENESS] ')
+    assert "module 'mod-j'" in message
+    assert "profile 'quality'" in message
+    assert 'declared active by skill_domains.active_profiles' in message
+    assert "profile 'implementation'" not in message
+
+
+def test_neutralised_reader_is_what_silences_the_absent_profile_condition(recorded_log, monkeypatch, tmp_path):
+    """The map and tree that warn above are silent while the autouse fixture is in force.
+
+    The negative arm, and the one that pins the fixture to the outcome: it uses
+    the identical map and the identical declared-active set as the arm above and
+    differs only in that the reader is not restored. A fixture that neutralised
+    nothing would let the ``quality`` message through and fail here.
+    """
+    _install_registry(monkeypatch, live={_LIVE_NOTATION})
+    _write_marshal_json(tmp_path, ['implementation', 'quality'])
+
+    _emit_staleness_warning('mod-k', {'skills_by_profile': _profile_map(_LIVE_NOTATION)}, str(tmp_path))
+
+    assert recorded_log.calls == []
