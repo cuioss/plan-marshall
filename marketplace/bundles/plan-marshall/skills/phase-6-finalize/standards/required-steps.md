@@ -42,7 +42,6 @@ otherwise a manifest pruning would deadlock the phase transition.
 - record-metrics
 - archive-plan
 - branch-cleanup
-- validation
 - lessons-capture
 - adr-propose
 
