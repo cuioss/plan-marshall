@@ -23,6 +23,7 @@ from _cmd_client_query import (
     STATUS_NOT_DISPATCHED,
     _build_internal_deps_map,
     _load_module_or_raise,
+    _profile_declares_minimal,
 )
 
 DEFAULT_OVERVIEW_BUDGET = 200
@@ -146,6 +147,34 @@ def _count_profile_skills(profile_data: Any) -> int:
     return 0
 
 
+def _profile_skills_line(profile: str, profile_data: Any) -> str:
+    """Render one profile's line, reading ``minimal`` rather than the count alone.
+
+    A zero count is two different facts about the store, and a bare
+    ``- {profile}: 0 skills`` printed them identically: a profile that positively
+    declares itself deliberately minimal has ANSWERED — the answer is "none" — and
+    a profile that is simply empty has answered nothing. The renderer is the
+    surface a reader actually looks at, so the distinction the store carries has
+    to survive to here; collapsing it made an un-enriched profile look like a
+    settled decision.
+
+    The declaration is read fail-closed through
+    :func:`_cmd_client_query._profile_declares_minimal` — the exact boolean
+    ``True``, never inferred from cardinality. A list-shaped block has nowhere to
+    carry the declaration, so an empty one is always the undeclared state.
+
+    Shared by BOTH call sites (the overview's Skills-by-Profile section and the
+    module deep-dive) so the two surfaces cannot describe the same profile
+    differently.
+    """
+    count = _count_profile_skills(profile_data)
+    if count:
+        return f'- {profile}: {count} skill{"s" if count != 1 else ""}'
+    if isinstance(profile_data, dict) and _profile_declares_minimal(profile_data):
+        return f'- {profile}: deliberately minimal (no skills)'
+    return f'- {profile}: unresolved (no skills, not declared minimal)'
+
+
 def _render_skills_by_profile_section(enriched_by_name: dict[str, dict[str, Any]]) -> list[str]:
     rows: list[tuple[str, dict[str, Any]]] = []
     for name in sorted(enriched_by_name.keys()):
@@ -160,8 +189,7 @@ def _render_skills_by_profile_section(enriched_by_name: dict[str, dict[str, Any]
         lines.append(f'### {name}')
         lines.append('')
         for profile in sorted(skills_by_profile.keys()):
-            count = _count_profile_skills(skills_by_profile[profile])
-            lines.append(f'- {profile}: {count} skill{"s" if count != 1 else ""}')
+            lines.append(_profile_skills_line(profile, skills_by_profile[profile]))
         lines.append('')
     return lines
 
@@ -317,8 +345,7 @@ def render_module_markdown(
     if skills_by_profile:
         skills_section = ['## Skills by Profile', '']
         for profile in sorted(skills_by_profile.keys()):
-            count = _count_profile_skills(skills_by_profile[profile])
-            skills_section.append(f'- {profile}: {count} skill{"s" if count != 1 else ""}')
+            skills_section.append(_profile_skills_line(profile, skills_by_profile[profile]))
         skills_section.append('')
 
     notes_section: list[str] = []

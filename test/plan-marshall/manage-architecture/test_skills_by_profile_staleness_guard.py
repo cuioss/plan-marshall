@@ -3,10 +3,9 @@
 """Tests for the skills_by_profile staleness guard in ``_cmd_client_query.py``.
 
 The guard is a non-blocking, read-path WARNING surface over a module's
-``skills_by_profile`` map. It never raises. THREE distinct conditions surface a
-warning, and this file covers all three — the docstring lists them because a
-two-signal description of a three-signal guard is how the third stops being
-maintained:
+``skills_by_profile`` map. It never raises. This file covers the three conditions
+that need no configuration — the docstring lists them because a two-signal
+description of a three-signal guard is how the third stops being maintained:
 
 1. **A notation absent from the live registry** — a retired or renamed skill id
    still referenced by the map.
@@ -17,6 +16,11 @@ maintained:
    non-empty and contributes no notations to (1), so neither of the other two
    signals fires. A block declaring ``"minimal": true`` is the escape hatch and
    is deliberately silent; the two states differ by exactly that declaration.
+
+A FOURTH condition — a profile the project's configuration declares active for
+which the map carries no block at all — depends on a configuration-derived
+expected set, so it is covered next door in ``test_skills_by_profile.py``
+alongside the write-path, payload and rendering seams.
 
 The pure ``detect_stale_skills_by_profile`` core takes an injected ``is_live``
 predicate so staleness detection is deterministic without a real bundle tree.
@@ -443,8 +447,11 @@ def test_unresolvable_registry_is_silent_on_a_clean_map(recorded_log, monkeypatc
 
 
 def test_no_exception_escapes_when_the_log_sink_raises(monkeypatch):
-    """A raising ``log_entry`` is swallowed per message and the emitter returns None.
+    """A raising ``log_entry`` is swallowed per message and the messages still return.
 
+    The emitter returns what it generated so ``get_module_info`` can carry it onto
+    the read payload, so a broken log sink must not cost the CALLER its warnings —
+    the sink and the payload are two independent destinations for one message set.
     The ``calls`` assertion is what keeps the verdict non-vacuous: without it, an
     emitter that produced no message at all would also "not raise".
     """
@@ -461,12 +468,13 @@ def test_no_exception_escapes_when_the_log_sink_raises(monkeypatch):
     sbp = _map_with_empty_profile(declared_minimal=False)
     sbp['implementation']['defaults'].append({'skill': _STALE_NOTATION})
 
-    assert _emit_staleness_warning('mod-g', {'skills_by_profile': sbp}) is None
+    messages = _emit_staleness_warning('mod-g', {'skills_by_profile': sbp})
+    assert len(messages) == 2, messages
     assert len(calls) == 2, 'both messages must have reached the raising sink'
 
 
 def test_no_exception_escapes_when_the_log_entry_import_fails(monkeypatch):
-    """A failing ``from plan_logging import log_entry`` is swallowed and the emitter returns None.
+    """A failing ``from plan_logging import log_entry`` is swallowed, messages still return.
 
     The ``attempts`` assertion is what keeps the verdict non-vacuous, and it must
     be measured at the SINK: the recording module makes the emitter's failed
@@ -493,7 +501,7 @@ def test_no_exception_escapes_when_the_log_entry_import_fails(monkeypatch):
     _install_registry(monkeypatch, live={_LIVE_NOTATION})
     sbp = _map_with_empty_profile(declared_minimal=False)
 
-    assert _emit_staleness_warning('mod-h', {'skills_by_profile': sbp}) is None
+    assert _emit_staleness_warning('mod-h', {'skills_by_profile': sbp}) != []
     assert attempts == ['log_entry'], (
         'the emitter must have attempted to resolve the sink once per generated '
         'message — the swallowed failure was the sink, not an empty run'

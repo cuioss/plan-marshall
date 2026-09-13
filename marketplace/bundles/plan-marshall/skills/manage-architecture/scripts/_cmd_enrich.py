@@ -302,6 +302,18 @@ def _validate_skills_by_profile_structure(skills_by_profile: dict[str, Any]) -> 
             warnings.append(
                 f"Profile '{profile_name}.minimal' must be a boolean, got {type(profile_data['minimal']).__name__}"
             )
+        # `minimal: true` asserts the profile is deliberately empty. A profile
+        # that carries entries contradicts its own declaration, so the pair is
+        # malformed rather than a judgement call about which half to believe:
+        # the read side would otherwise report "deliberately minimal" about a
+        # profile whose skills are right there in the same block.
+        if profile_data.get('minimal') is True and any(
+            isinstance(profile_data.get(section), list) and profile_data.get(section)
+            for section in ('defaults', 'optionals')
+        ):
+            warnings.append(
+                f"Profile '{profile_name}' declares 'minimal': true but carries defaults/optionals entries"
+            )
         for section in ['defaults', 'optionals']:
             entries = profile_data.get(section, [])
             if not isinstance(entries, list):
@@ -446,6 +458,15 @@ def enrich_add_domain(
                 merged['defaults'].append(entry)
                 existing_names.add(skill_name)
                 added_in_profile = True
+
+        if added_in_profile:
+            # The profile just received a skill, so it is no longer deliberately
+            # empty. Carrying a stale `minimal: true` through the write path is
+            # what let the persisted document declare "deliberately minimal"
+            # about a profile that now holds entries — the read side has no way
+            # to tell that apart from a genuine declaration, so the write path
+            # is where the contradiction has to be removed.
+            merged.pop('minimal', None)
 
         current[profile_name] = merged
         # Only report the profile as updated when at least one new skill was
