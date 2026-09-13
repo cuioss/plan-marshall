@@ -83,9 +83,10 @@ against the queue. See the TOCTOU / check-then-act menu in
 
 Usage:
     from _machine_config import (
-        CapResolution, DEFAULT_MAX_SLOTS, machine_config_path,
-        per_repo_max_slots_warning, read_per_repo_max_slots,
-        resolve_max_slots, write_max_slots, write_max_slots_if_unset,
+        CapResolution, DEFAULT_MAX_SLOTS, MachineConfigPostCommitError,
+        machine_config_path, per_repo_max_slots_warning,
+        read_per_repo_max_slots, resolve_max_slots, write_max_slots,
+        write_max_slots_if_unset,
     )
 
     resolution = resolve_max_slots()
@@ -556,6 +557,35 @@ def _release_guard(fd: int, guard_path: Path) -> None:
         pass
 
 
+class MachineConfigPostCommitError(OSError):
+    """The atomic replace COMMITTED; the post-commit housekeeping then failed.
+
+    This type IS the commit evidence, and it is the only thing that carries it.
+    A caller cannot infer whether the write landed from a plain ``OSError``: the
+    write guard is released in :func:`write_max_slots_if_unset`'s ``finally``
+    BEFORE the exception reaches the caller's ``except`` arm, so by the time the
+    caller re-reads the machine side, another writer may have installed the same
+    value — a concurrent ``config migrate``, or the ``config set --max-slots``
+    that :func:`per_repo_max_slots_warning` itself prescribes. An equal
+    post-state is therefore NOT proof of authorship, and a caller that reported
+    one as proof claimed a commit it had never made.
+
+    Only :func:`_write_cap_unguarded`'s post-replace housekeeping raises this,
+    and only AFTER :func:`file_ops.atomic_write_file` returned — so its presence
+    is positive, writer-provided evidence that the new cap is on disk. Every
+    failure point ahead of the replace (the state-dir ``mkdir``, the ``O_EXCL``
+    guard, the temp-file write inside ``atomic_write_file``) raises a plain
+    ``OSError``/``TimeoutError``, which carries no such claim. Do NOT widen the
+    wrapped region: a marker raised from a pre-replace point would assert a
+    commit that never happened, which is the same untrue signal in the other
+    direction.
+
+    It subclasses ``OSError`` so an existing ``except OSError`` arm keeps
+    catching it unchanged; a caller that needs the commit evidence tests for
+    THIS type ahead of the generic arm.
+    """
+
+
 def _write_cap_unguarded(value: int) -> None:
     """Persist ``value`` to the machine config. Caller MUST hold the write guard.
 
@@ -569,6 +599,12 @@ def _write_cap_unguarded(value: int) -> None:
     parsed is REPLACED rather than merged into — there is no readable prior state
     to preserve, and refusing here would leave a corrupt file unfixable through
     the only verb that writes it.
+
+    Raises:
+        MachineConfigPostCommitError: when the housekeeping AFTER the atomic
+            replace fails. The cap is already on disk at that point, so the
+            failure is re-raised under the marker type rather than as a bare
+            ``OSError`` a caller could not tell apart from a pre-replace one.
     """
     path = machine_config_path()
     payload, _unreadable_detail = _read_machine_config(path)
@@ -587,8 +623,19 @@ def _write_cap_unguarded(value: int) -> None:
     queue['max_slots'] = value
 
     atomic_write_file(path, json.dumps(payload, indent=2))
-    if (path.stat().st_mode & 0o777) != _FILE_MODE:
-        os.chmod(path, _FILE_MODE)
+    # Everything below this line runs AFTER the atomic replace committed, so the
+    # new cap is already on disk and a failure here is a DIFFERENT failure from
+    # one raised above it. The two calls are wrapped — and nothing before
+    # `atomic_write_file` is — so the marker type is raised if and only if the
+    # write landed.
+    try:
+        if (path.stat().st_mode & 0o777) != _FILE_MODE:
+            os.chmod(path, _FILE_MODE)
+    except OSError as exc:
+        raise MachineConfigPostCommitError(
+            f'build.queue.max_slots={value} was COMMITTED to {path}, but the post-commit '
+            f'housekeeping then failed: {exc}'
+        ) from exc
 
 
 def _validate_cap(value: int) -> None:
@@ -636,6 +683,13 @@ def write_max_slots_if_unset(value: int) -> tuple[CapResolution, bool]:
     Raises:
         ValueError: when ``value`` is not a positive, non-``bool`` ``int``.
         TimeoutError: when the write guard cannot be acquired.
+        MachineConfigPostCommitError: when the write COMMITTED and its
+            post-commit housekeeping then failed. It propagates unchanged — the
+            guard ``finally`` below only releases and never swallows — because
+            this type is the caller's only evidence that the cap landed. The
+            guard is gone by the time the caller sees it, so a caller that
+            re-read the machine side instead would be reading a state any other
+            writer may have reached first.
     """
     _validate_cap(value)
 
@@ -686,6 +740,8 @@ def write_max_slots(value: int) -> CapResolution:
     Raises:
         ValueError: when ``value`` is not a positive, non-``bool`` ``int``.
         TimeoutError: when the write guard cannot be acquired.
+        MachineConfigPostCommitError: when the write COMMITTED and its
+            post-commit housekeeping then failed.
     """
     _validate_cap(value)
 

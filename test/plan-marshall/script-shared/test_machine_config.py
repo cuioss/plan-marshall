@@ -43,6 +43,15 @@ lives. Contract under test:
   runs INSIDE the write guard, so a value committed by a racing writer is
   observed and preserved — the ordering assertion is what stops a caller
   deleting its repository key on a stale "unset".
+* **A committed-then-failed write is distinguishable from one that committed
+  nothing** — ``_write_cap_unguarded`` raises
+  ``MachineConfigPostCommitError`` if and only if the atomic replace already
+  returned, so the exception TYPE carries the commit evidence a caller cannot
+  recover afterwards (the write guard is released before the exception reaches
+  it, so any other writer may have installed the same value by the time it
+  looks). The positive is paired with a matched negative at each pre-replace
+  failure point, since a marker raised from one of those would assert a commit
+  that never happened.
 * **One guard serializes BOTH writers, and a stale guard is reclaimed** — tested
   over both entry points, since a guard only one writer respected would
   serialize nothing. Each blocking / reclaiming assertion is paired with its
@@ -56,6 +65,7 @@ import ast
 import json
 import os
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -515,6 +525,136 @@ def test_written_file_is_complete_json(home: Path) -> None:
     # atomic replace always does.
     payload = json.loads(_config_path(home).read_text(encoding='utf-8'))
     assert payload['build']['queue']['max_slots'] == 12
+
+
+# =============================================================================
+# The post-commit marker (writer-provided commit evidence)
+# =============================================================================
+# A caller cannot infer from a plain OSError whether the atomic replace already
+# committed, and it cannot recover that fact afterwards either: the write guard
+# is released in the writer's `finally`, which runs BEFORE the exception reaches
+# the caller's `except` arm, so any other writer may have installed the same
+# value by the time the caller re-reads. `MachineConfigPostCommitError` is
+# therefore the ONLY carrier of that evidence, and its value rests entirely on
+# being raised if and only if the replace returned. The positive and the
+# negatives below are what make that biconditional a pin rather than a claim.
+
+
+def _fail_the_post_replace_chmod(home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make the POST-REPLACE chmod raise, for the cap file's own path only.
+
+    Two patches, both needed:
+
+    * ``_FILE_MODE`` is redirected because the post-replace chmod is otherwise
+      never executed: ``atomic_write_file`` writes through ``tempfile.mkstemp``,
+      which creates the temp file ``0o600`` and whose mode ``os.replace`` carries
+      over — so the committed file already holds the target mode and the ``!=``
+      test skips the call. Pointing the target mode somewhere the fresh file is
+      NOT makes the real post-replace call run.
+    * ``os.chmod`` then raises, but ONLY for the cap file. The same write also
+      chmods the ``0o700`` state directory, and the guard file is created under
+      it, so a blanket failure would abort ahead of the replace — re-creating the
+      very nothing-committed state these tests exist to tell apart.
+    """
+    cap_path = _config_path(home)
+    real_chmod = machine_config.os.chmod
+
+    def _chmod(path, mode, *args, **kwargs):
+        if str(path) == str(cap_path):
+            raise OSError(13, 'Permission denied')
+        return real_chmod(path, mode, *args, **kwargs)
+
+    monkeypatch.setattr(machine_config, '_FILE_MODE', 0o640)
+    monkeypatch.setattr(machine_config.os, 'chmod', _chmod)
+
+
+@pytest.mark.parametrize(
+    'writer_name',
+    [
+        pytest.param('write_max_slots', id='unconditional-writer'),
+        pytest.param('write_max_slots_if_unset', id='migration-writer'),
+    ],
+)
+def test_a_post_replace_failure_raises_the_commit_marker_with_the_cap_on_disk(
+    home: Path, monkeypatch: pytest.MonkeyPatch, writer_name: str
+) -> None:
+    """The marker is raised on a post-commit failure, and the cap really is committed.
+
+    Both writers are covered because both share ``_write_cap_unguarded`` and
+    both must let the type out: the migration writer is the one whose caller
+    reports authorship, and its guard ``finally`` only releases — a ``finally``
+    that swallowed would destroy the only evidence the caller has.
+    """
+    _fail_the_post_replace_chmod(home, monkeypatch)
+    writer = getattr(machine_config, writer_name)
+
+    with pytest.raises(machine_config.MachineConfigPostCommitError) as caught:
+        writer(7)
+
+    # The evidence is TRUE: the replace committed before the housekeeping failed.
+    assert json.loads(_config_path(home).read_text(encoding='utf-8'))['build']['queue']['max_slots'] == 7
+    assert machine_config.resolve_max_slots().value == 7
+    # The originating error survives the re-raise rather than being replaced by it.
+    assert isinstance(caught.value.__cause__, OSError)
+    assert 'Permission denied' in str(caught.value.__cause__)
+    # And an existing `except OSError` arm keeps catching it unchanged.
+    assert isinstance(caught.value, OSError)
+
+
+def test_the_commit_marker_is_an_oserror_subclass() -> None:
+    """The marker widens no caller's except arm — it narrows inside one.
+
+    Every caller of these writers already handles ``OSError``. Had the marker
+    been a bare ``Exception``, adding it would have turned a reported envelope
+    into an uncaught traceback on the very path that used to be handled.
+    """
+    assert issubclass(machine_config.MachineConfigPostCommitError, OSError)
+
+
+def _raise_oserror(*_args: object, **_kwargs: object) -> None:
+    """Fail with a plain ``OSError`` — the shape every PRE-replace point raises."""
+    raise OSError(28, 'No space left on device')
+
+
+def _raise_timeout(*_args: object, **_kwargs: object) -> None:
+    """Fail with the guard's own ``TimeoutError``."""
+    raise TimeoutError('could not acquire machine-config write guard')
+
+
+@pytest.mark.parametrize(
+    ('seam', 'failure', 'expected'),
+    [
+        pytest.param('ensure_machine_config_dir', _raise_oserror, OSError, id='state-dir-mkdir'),
+        pytest.param('_acquire_guard', _raise_timeout, TimeoutError, id='guard-acquire'),
+        pytest.param('atomic_write_file', _raise_oserror, OSError, id='temp-file-write'),
+    ],
+)
+def test_a_pre_replace_failure_never_raises_the_commit_marker(
+    home: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    seam: str,
+    failure: Callable[..., None],
+    expected: type[BaseException],
+) -> None:
+    """The matched negatives: nothing ahead of the replace may claim a commit.
+
+    These are the three failure points that reach a caller's ``except`` arm
+    having committed NOTHING — the state-dir ``mkdir``, the ``O_EXCL`` guard, and
+    the temp-file write inside ``atomic_write_file``. A marker raised from any of
+    them would assert a commit that never happened, which is the same untrue
+    signal as the false authorship claim it exists to prevent, in the opposite
+    direction. Without this set the positive above would pass equally against a
+    ``try`` wrapped around the whole writer body.
+    """
+    monkeypatch.setattr(machine_config, seam, failure)
+
+    with pytest.raises(expected) as caught:
+        machine_config.write_max_slots_if_unset(7)
+
+    assert not isinstance(caught.value, machine_config.MachineConfigPostCommitError)
+    # Nothing committed, which is what makes the absence of the marker correct
+    # rather than merely a missing wrap.
+    assert not _config_path(home).exists()
 
 
 @pytest.mark.parametrize(

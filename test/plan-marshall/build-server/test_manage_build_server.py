@@ -1670,7 +1670,7 @@ def test_migrate_reports_undetermined_when_the_machine_state_cannot_be_establish
 
 
 def test_a_configured_but_different_cap_after_the_raise_is_undetermined_not_partial(home, monkeypatch):
-    """The matched control: ``partial`` is gated on the VALUE, not on "something is set".
+    """The matched control: ``partial`` is gated on COMMIT EVIDENCE, not on "something is set".
 
     A raise that leaves a cap which is not this repository's value did not land
     this migration, so reporting ``partial`` would trade the old false refusal
@@ -1690,6 +1690,112 @@ def test_a_configured_but_different_cap_after_the_raise_is_undetermined_not_part
 
     assert result['outcome'] == 'undetermined'
     assert 'machine_config_modified' not in result
+
+
+def test_an_equal_cap_installed_by_another_writer_after_a_pre_replace_raise_is_undetermined(home, monkeypatch):
+    """An EQUAL post-state is not commit evidence — with no marker it is ``undetermined``.
+
+    This is the inverse of the false refusal the ``partial`` branch above exists
+    to fix, in the same function, and it is the window the guard's own lifetime
+    opens: ``write_max_slots_if_unset`` releases the ``O_EXCL`` guard in its
+    ``finally``, which runs BEFORE the exception reaches the verb's ``except``
+    arm. Between the raise and the verb's re-read, another writer can therefore
+    install the SAME value — another checkout's ``config migrate``, or the very
+    ``config set --max-slots`` the not-in-effect warning prescribes.
+
+    The failure is injected at ``atomic_write_file``, i.e. at the temp-file
+    write BEFORE the replace, so the REAL ``write_max_slots_if_unset`` runs and
+    nothing this invocation did ever committed. The concurrent writer's value is
+    installed from inside that same injection, which is what makes the verb's
+    post-read see ``machine_config`` at exactly 12 — the state a value-gated
+    ``partial`` branch reads as "my write landed" and claims authorship of.
+
+    The injection deliberately does NOT patch ``path.stat`` / ``os.chmod``:
+    those are the COMMITTED side, and failing there is the matched positive
+    above, which must keep reporting ``partial``.
+    """
+    _stage_repo_marshal({'max_slots': 12, 'max_retries': 10})
+
+    def _another_writer_commits_the_same_value_then_raise(_path, _text):
+        _stage_machine_cap(home, 12)
+        raise OSError(28, 'No space left on device')
+
+    monkeypatch.setattr(machine_config, 'atomic_write_file', _another_writer_commits_the_same_value_then_raise)
+
+    result = mbs.run_config_migrate(_CONFIG_MIGRATE_ARGS)
+
+    # The post-state really is this repository's value, so the assertions below
+    # are a discrimination rather than a coincidence: a value-gated branch has a
+    # distinct, nameable wrong answer to be caught on here.
+    assert machine_config.resolve_max_slots().value == 12
+    assert machine_config.resolve_max_slots().source == machine_config.SOURCE_MACHINE_CONFIG
+    assert result['status'] == 'error'
+    assert result['outcome'] == 'undetermined'
+    assert result['reason'] == 'machine_config_state_undetermined'
+    # Neither key is present: a `false` reads as the refused both-files-untouched
+    # guarantee and a `true` reads as `partial`. The absence IS the report.
+    assert 'machine_config_modified' not in result
+    assert 'marshal_json_modified' not in result
+    # And the detail claims no landing — it says the opposite, naming the path.
+    assert 'LANDED' not in result['detail']
+    assert 'NO evidence' in result['detail']
+    assert str(_machine_config_path(home)) in result['detail']
+    # The recovery the detail prescribes is still the converging one.
+    assert 'config migrate' in result['detail']
+
+
+def _fail_the_cap_chmod_after_a_foreign_write(home: Path, patcher: pytest.MonkeyPatch) -> None:
+    """Fail the POST-REPLACE chmod, with another writer replacing the value first.
+
+    The same two patches as :func:`_fail_the_cap_chmod` (see there for why both
+    are needed), except the cap-path chmod ALSO installs a foreign value before
+    raising — the concurrent ``config set`` that can land the moment the write
+    guard is released. This invocation still committed, so the marker is still
+    raised; only what the machine side READS BACK has moved on.
+    """
+    cap_path = _machine_config_path(home)
+    real_chmod = machine_config.os.chmod
+
+    def _chmod(path, mode, *args, **kwargs):
+        if str(path) == str(cap_path):
+            _stage_machine_cap(home, 4)
+            raise OSError(13, 'Permission denied')
+        return real_chmod(path, mode, *args, **kwargs)
+
+    patcher.setattr(machine_config, '_FILE_MODE', 0o640)
+    patcher.setattr(machine_config.os, 'chmod', _chmod)
+
+
+def test_a_post_commit_failure_stays_partial_when_another_writer_moved_the_value_on(home, monkeypatch):
+    """``partial`` rests on the marker, so a moved-on post-state cannot erase the commit.
+
+    The mirror of the test above, and the reason the outcome is gated on the
+    marker ALONE rather than on the marker AND the value: this invocation
+    provably committed, so ``machine_config_modified: true`` is true no matter
+    what the machine side reads back afterwards. Falling through to
+    ``undetermined`` here would report "it is UNKNOWN whether the cap was
+    written" while holding the writer's own proof that it was.
+
+    What the re-read does still decide is the DETAIL: it must not name this
+    repository's value over a file that no longer holds it.
+    """
+    _stage_repo_marshal({'max_slots': 12, 'max_retries': 10})
+    _fail_the_cap_chmod_after_a_foreign_write(home, monkeypatch)
+
+    result = mbs.run_config_migrate(_CONFIG_MIGRATE_ARGS)
+
+    assert json.loads(_machine_config_path(home).read_text(encoding='utf-8'))['build']['queue']['max_slots'] == 4
+    assert result['status'] == 'error'
+    assert result['outcome'] == 'partial'
+    assert result['reason'] == 'machine_config_write_failed_after_commit'
+    assert result['machine_config_modified'] is True
+    assert result['marshal_json_modified'] is False
+    # The detail reports the commit AND the divergence, rather than asserting the
+    # machine side holds 12 — which it does not.
+    assert 'LANDED' in result['detail']
+    assert 'another writer has changed it since' in result['detail']
+    # The per-repo key is still there, so the re-run instruction is actionable.
+    assert json.loads(_repo_marshal_path().read_text(encoding='utf-8'))['build']['queue']['max_slots'] == 12
 
 
 # --- the reported per-repo value is TOON-injection safe -----------------------

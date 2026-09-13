@@ -259,8 +259,8 @@ anywhere.
 | `migrated` | `success` | The machine-global side was unset; the value was copied there and the per-repo key removed |
 | `removed_duplicate` | `success` | The machine-global side already held the SAME value; only the per-repo key was removed, and `machine-config.json` was left byte-identical |
 | `refused` | `error` | **Nothing, on either side** — both files byte-identical. See the reason table below |
-| `partial` | `error` | The machine-global side is settled but the `marshal.json` edit did not commit. Re-running converges via `removed_duplicate` |
-| `undetermined` | `error` | The machine-global write raised and the state it left could not be established afterwards. Claims **neither** that the migration partly landed **nor** that both files are untouched |
+| `partial` | `error` | The machine-global side is settled but the `marshal.json` edit did not commit. Re-running converges via `removed_duplicate`. On a RAISING machine-global write, "settled" rests on the writer's own post-commit marker, never on a re-read |
+| `undetermined` | `error` | The machine-global write raised **without** that commit marker, so the state it left is not this invocation's to claim. Claims **neither** that the migration partly landed **nor** that both files are untouched |
 
 Every `refused` payload reports `machine_config_modified: false` **and**
 `marshal_json_modified: false`: a migration that cannot pick a winner must not
@@ -269,13 +269,27 @@ leave the operator half-migrated, so it declines rather than choosing.
 `undetermined` is the one outcome that reports **neither** modification field.
 The machine-global write is not all-or-nothing from the caller's side — the cap
 file's `chmod` runs AFTER the atomic replace, so an `OSError` from it arrives
-with the migrated cap already on disk. Which side of the replace the failure fell
-on is therefore read back, not assumed: the machine side holding this
-repository's value is `partial`, a still-unset machine side is `refused`, and
-anything else (unreadable, invalid, or a configured cap that is not this
-repository's value) is `undetermined`. Sending `false` there would assert the
-`refused` both-files-untouched guarantee the caller cannot honour, and `true`
-would assert `partial` — so the keys are omitted and the absence is the report.
+with the migrated cap already on disk. **Which side of the replace the failure
+fell on is carried by the exception type, not read back from the file.** The
+writer raises a distinct post-commit marker if and only if the atomic replace
+already returned, and only that marker authorises `machine_config_modified:
+true`:
+
+- **Marker present** ⇒ `partial`. This invocation provably committed the cap; the
+  per-repo key did not go, which a re-run completes.
+- **Marker absent, machine side still unset** ⇒ `refused`, with both
+  modification fields `false`. Nothing committed and nothing is there.
+- **Marker absent, anything else** ⇒ `undetermined` — including a machine side
+  that holds exactly this repository's value. The write guard is released before
+  the exception reaches the caller, so between the raise and any re-read another
+  writer can install the same value (a concurrent `config migrate`, or the
+  `config set --max-slots` the not-in-effect warning itself prescribes). Equality
+  is therefore not authorship, and reporting it as `partial` claimed a commit
+  that never happened.
+
+Sending `false` on `undetermined` would assert the `refused`
+both-files-untouched guarantee the caller cannot honour, and `true` would assert
+`partial` — so the keys are omitted and the absence is the report.
 
 | `reason` | Why it refuses |
 |----------|----------------|
@@ -283,7 +297,7 @@ would assert `partial` — so the keys are omitted and the absence is the report
 | `machine_config_invalid` | The machine-global file holds an invalid cap. It exists and is emphatically not "unset", so copying over it could discard a configured cap — repair it with `config set --max-slots N` first |
 | `machine_config_unreadable` | The machine-global file exists but cannot be read or parsed. Same reasoning: not "unset" |
 | `per_repo_value_invalid` | The repository's own value is not a positive int (`bool` rejected), so copying it would install a broken cap machine-wide |
-| `machine_config_write_failed` | The guarded machine-global write raised AND the re-read shows the machine side still unset, so nothing committed. Its two siblings on the same raise are not refusals: `machine_config_write_failed_after_commit` carries `outcome: partial` (the cap landed, the per-repo key did not go) and `machine_config_state_undetermined` carries `outcome: undetermined` |
+| `machine_config_write_failed` | The guarded machine-global write raised without the post-commit marker AND the re-read shows the machine side still unset, so nothing committed. Its two siblings on the same raise are not refusals: `machine_config_write_failed_after_commit` carries `outcome: partial` (the marker proves the cap landed; the per-repo key did not go) and `machine_config_state_undetermined` carries `outcome: undetermined` |
 | `machine_config_unresolved` | A concurrent writer won the write race, yet the post-state does not resolve to a configured cap — so the repository's key is never removed on the strength of a stale "unset" |
 
 **A key removal leaves an uncommitted edit.** `marshal.json` is git-tracked, so

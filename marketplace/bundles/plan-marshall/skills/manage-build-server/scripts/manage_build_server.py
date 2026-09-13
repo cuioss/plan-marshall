@@ -111,6 +111,7 @@ from _machine_config import (
     SOURCE_MACHINE_CONFIG,
     SOURCE_UNREADABLE,
     CapResolution,
+    MachineConfigPostCommitError,
     read_per_repo_max_slots,
     report_safe,
     resolve_max_slots,
@@ -1233,70 +1234,80 @@ def _migrate_refused(reason: str, message: str, **extra: Any) -> dict[str, Any]:
     )
 
 
-def _migrate_write_failure_report(exc: BaseException, per_repo_value: int, marshal_path: str) -> dict[str, Any]:
-    """Report a raising machine-global write by RE-READING what actually landed.
+def _migrate_committed_report(
+    exc: BaseException, per_repo_value: int, marshal_path: str, post: CapResolution
+) -> dict[str, Any]:
+    """Report the COMMITTED-then-failed write as ``partial``, on the marker's evidence.
 
-    The write is NOT all-or-nothing from this caller's point of view.
-    :func:`_machine_config._write_cap_unguarded` commits the atomic replace and
-    THEN stats and chmods the committed file, so an ``OSError`` from either of
-    those two post-replace calls propagates with the migrated cap **already on
-    disk**. Reporting that as ``refused`` asserted "Neither file was changed"
-    over an already-migrated machine config — a false refusal, which is the same
-    untrue-signal class as a false success and worse than a bare traceback,
-    because it states a condition that does not hold.
+    Reached only with :class:`MachineConfigPostCommitError` in hand, so
+    ``machine_config_modified=True`` is a claim about THIS invocation backed by
+    the writer's own marker — not by a post-state that any other writer could
+    have produced. The per-repo key was not removed, which is exactly the
+    recoverable half-state a re-run completes through the equal-values
+    ``removed_duplicate`` branch.
 
-    Whether the value landed is not inferable from the exception, so it is READ
-    back rather than guessed:
+    The detail — not the outcome — is what branches on the re-read, because the
+    marker settles authorship while only the re-read can say what the machine
+    side holds NOW: the guard was released before this report ran, so a
+    concurrent writer may have replaced the just-committed value. Naming this
+    repository's value over such a state would be a second untrue claim riding
+    on a true one.
+    """
+    if post.source == SOURCE_MACHINE_CONFIG and post.value == per_repo_value:
+        detail = (
+            f'the machine-global write LANDED — {post.path} holds build.queue.max_slots={post.value} — but the '
+            f'call then failed, so build.queue.max_slots is STILL present in {marshal_path} and was NOT '
+            'removed. Re-run config migrate to complete the migration through the removed_duplicate branch.'
+        )
+    else:
+        detail = (
+            f'the machine-global write LANDED — this invocation committed build.queue.max_slots={per_repo_value} '
+            f'to {post.path} — but the call then failed, and the machine side no longer reads back as that value '
+            f'(source={post.source}, value={post.value}), so another writer has changed it since. '
+            f'build.queue.max_slots is STILL present in {marshal_path} and was NOT removed. Inspect {post.path}, '
+            'then re-run config migrate.'
+        )
+    return make_error(
+        str(exc),
+        action='config migrate',
+        outcome='partial',
+        reason='machine_config_write_failed_after_commit',
+        machine_config_modified=True,
+        marshal_json_modified=False,
+        detail=detail,
+        **_cap_report(post),
+        marshal_json_path=marshal_path,
+    )
 
-    * The machine side now holds THIS repository's value ⇒ ``partial``. The
-      machine-global write landed and the per-repo key was not removed, which is
-      exactly the recoverable half-state a re-run completes through the
-      equal-values ``removed_duplicate`` branch.
-    * The machine side is still unset (:data:`SOURCE_DEFAULT`) ⇒ today's
-      ``refused``, verbatim and with both modification fields ``False``. Nothing
-      committed, so the refusal is TRUE here and must not be weakened.
-    * Anything else — unreadable, invalid, or a configured cap that is NOT this
-      repository's value ⇒ ``undetermined``. The re-read could not establish
-      which side of the replace the failure fell on, so the report claims
-      neither ``partial`` nor untouched. Guessing either way would trade one
-      untrue signal for another, in the opposite direction; ADR-009's
-      evidence-absent-fails-closed rule is what forbids collapsing it into the
-      refusal. That branch OMITS ``machine_config_modified`` and
+
+def _migrate_uncommitted_report(
+    exc: BaseException, per_repo_value: int, marshal_path: str, post: CapResolution
+) -> dict[str, Any]:
+    """Report a write that raised with NO commit evidence — ``refused`` or ``undetermined``.
+
+    Reached when the raising write carried no
+    :class:`MachineConfigPostCommitError`, so every pre-replace failure point
+    lands here: the state-dir ``mkdir``, the ``O_EXCL`` guard's timeout, and the
+    temp-file write inside ``atomic_write_file``. None of them committed
+    anything, and this invocation therefore has nothing to claim authorship of.
+
+    * The machine side is still unset (:data:`SOURCE_DEFAULT`) ⇒ ``refused``,
+      verbatim and with both modification fields ``False``. Nothing committed and
+      nothing is there, so the refusal is TRUE here and must not be weakened.
+    * Any other post-state ⇒ ``undetermined`` — **including a
+      :data:`SOURCE_MACHINE_CONFIG` that equals this repository's value.** That
+      equality is not authorship: the guard is released in
+      :func:`write_max_slots_if_unset`'s ``finally`` before the exception reaches
+      the caller, so between the raise and this re-read another writer may have
+      installed the same value (a concurrent ``config migrate``, or the
+      ``config set --max-slots`` the not-in-effect warning prescribes). Claiming
+      ``partial`` on it reported a commit this invocation never made.
+    * ``undetermined`` OMITS ``machine_config_modified`` and
       ``marshal_json_modified`` entirely — a ``false`` there would read as the
       ``refused`` both-files-untouched guarantee and a ``true`` as ``partial``,
       so the absence of the keys is the report, exactly as the absent
       ``residual_count`` is on an unmeasurable scope-creep guard.
-
-    Args:
-        exc: The exception the guarded write raised, quoted into every branch's
-            detail so the operator sees the originating failure.
-        per_repo_value: The repository's validated cap — the value a landed write
-            must be holding for the ``partial`` branch to apply.
-        marshal_path: The repository config the per-repo key is still in.
-
-    Returns:
-        The ``partial`` / ``refused`` / ``undetermined`` payload for the state
-        the re-read established.
     """
-    post = resolve_max_slots()
-
-    if post.source == SOURCE_MACHINE_CONFIG and post.value == per_repo_value:
-        return make_error(
-            str(exc),
-            action='config migrate',
-            outcome='partial',
-            reason='machine_config_write_failed_after_commit',
-            machine_config_modified=True,
-            marshal_json_modified=False,
-            detail=(
-                f'the machine-global write LANDED — {post.path} holds build.queue.max_slots={post.value} — but the '
-                f'call then failed, so build.queue.max_slots is STILL present in {marshal_path} and was NOT '
-                'removed. Re-run config migrate to complete the migration through the removed_duplicate branch.'
-            ),
-            **_cap_report(post),
-            marshal_json_path=marshal_path,
-        )
-
     if post.source == SOURCE_DEFAULT:
         return _migrate_refused(
             'machine_config_write_failed',
@@ -1305,22 +1316,87 @@ def _migrate_write_failure_report(exc: BaseException, per_repo_value: int, marsh
             per_repo_max_slots=per_repo_value,
         )
 
-    return make_error(
-        str(exc),
-        action='config migrate',
-        outcome='undetermined',
-        reason='machine_config_state_undetermined',
-        detail=(
+    if post.source == SOURCE_MACHINE_CONFIG and post.value == per_repo_value:
+        detail = (
+            f'the machine-global write raised without committing, so this invocation has NO evidence that it wrote '
+            f'anything — yet {post.path} now holds build.queue.max_slots={post.value}, this repository\'s own '
+            f'value. Another writer may have installed it (a concurrent config migrate, or the '
+            f'`config set --max-slots` the not-in-effect warning prescribes), so this report claims NEITHER that '
+            f'this migration landed NOR that both files are untouched. build.queue.max_slots is still present in '
+            f'{marshal_path} — re-run config migrate, which converges through the removed_duplicate branch.'
+        )
+    else:
+        detail = (
             f'the machine-global write failed and the machine-global state at {post.path} could not be established '
             f'afterwards (source={post.source}, detail={post.detail}). It is therefore UNKNOWN whether the cap was '
             f'written: this report claims neither that the migration partly landed nor that both files are '
             f'untouched. Inspect {post.path}, then re-run config migrate — build.queue.max_slots is still present '
             f'in {marshal_path}.'
-        ),
+        )
+
+    return make_error(
+        str(exc),
+        action='config migrate',
+        outcome='undetermined',
+        reason='machine_config_state_undetermined',
+        detail=detail,
         **_cap_report(post),
         marshal_json_path=marshal_path,
         per_repo_max_slots=per_repo_value,
     )
+
+
+def _migrate_write_failure_report(
+    exc: BaseException, per_repo_value: int, marshal_path: str, *, committed: bool
+) -> dict[str, Any]:
+    """Report a raising machine-global write from the writer's own commit evidence.
+
+    The write is NOT all-or-nothing from this caller's point of view.
+    :func:`_machine_config._write_cap_unguarded` commits the atomic replace and
+    THEN stats and chmods the committed file, so an ``OSError`` from either of
+    those two post-replace calls arrives with the migrated cap **already on
+    disk**. Reporting that as ``refused`` asserted "Neither file was changed"
+    over an already-migrated machine config — a false refusal, which is the same
+    untrue-signal class as a false success and worse than a bare traceback,
+    because it states a condition that does not hold.
+
+    Whether the value landed is decided by ``committed`` — the caller's test for
+    :class:`MachineConfigPostCommitError`, which
+    :func:`_machine_config._write_cap_unguarded` raises if and only if the
+    atomic replace already returned. It is emphatically NOT decided by the
+    re-read: the write guard is released in
+    :func:`write_max_slots_if_unset`'s ``finally`` BEFORE the exception reaches
+    the caller's ``except`` arm, so between the raise and the re-read any other
+    writer may install the same value and make an equal post-state that this
+    invocation did not produce. Gating ``partial`` on that equality claimed
+    authorship of a commit that never happened — the inverse of the false
+    refusal above, in the same function.
+
+    The two halves live in :func:`_migrate_committed_report` (marker present ⇒
+    ``partial``) and :func:`_migrate_uncommitted_report` (marker absent ⇒
+    ``refused`` / ``undetermined``); each documents the branch it owns. The
+    re-read is still performed, and it is still what shapes every branch's
+    detail — what the machine side holds now is the operator's next question
+    either way — but it no longer decides the outcome.
+
+    Args:
+        exc: The exception the guarded write raised, quoted into every branch's
+            detail so the operator sees the originating failure.
+        per_repo_value: The repository's validated cap — the value this
+            invocation attempted to commit.
+        marshal_path: The repository config the per-repo key is still in.
+        committed: Whether the raising write carried the post-replace commit
+            marker. Keyword-only, because a positional bool at a call site
+            reads as nothing at all and this one decides an authorship claim.
+
+    Returns:
+        The ``partial`` / ``refused`` / ``undetermined`` payload for the state
+        the marker and the re-read together establish.
+    """
+    post = resolve_max_slots()
+    if committed:
+        return _migrate_committed_report(exc, per_repo_value, marshal_path, post)
+    return _migrate_uncommitted_report(exc, per_repo_value, marshal_path, post)
 
 
 def _classify_machine_side(cap: CapResolution, per_repo_value: int, marshal_path: str) -> dict[str, Any] | None:
@@ -1413,11 +1489,19 @@ def run_config_migrate(_args: Namespace) -> dict[str, Any]:
       raised six.
     * ``partial`` (``status: error``) — the machine-global side is settled but
       the ``marshal.json`` edit did not commit. Re-running converges via
-      ``removed_duplicate``.
-    * ``undetermined`` (``status: error``) — the machine-global write raised and
-      the state it left could not be established afterwards, so the report
-      claims NEITHER that the migration partly landed NOR that both files are
-      untouched. It deliberately omits ``machine_config_modified`` /
+      ``removed_duplicate``. When it is reached from a RAISING machine-global
+      write, the settled half is asserted only on the writer's own
+      post-replace commit marker
+      (:class:`_machine_config.MachineConfigPostCommitError`) — never on a
+      re-read that merely finds this repository's value there, which any other
+      writer could have put there once the write guard was released.
+    * ``undetermined`` (``status: error``) — the machine-global write raised
+      WITHOUT that commit marker and the state it left is not this invocation's
+      to claim, so the report claims NEITHER that the migration partly landed
+      NOR that both files are untouched. This covers an equal-valued
+      machine-global cap as well as an unreadable or foreign one: with no
+      marker, equality is a coincidence the report must not read as authorship.
+      It deliberately omits ``machine_config_modified`` /
       ``marshal_json_modified`` rather than sending either a ``false`` (which
       reads as the ``refused`` guarantee) or a ``true`` (which reads as
       ``partial``): the absence IS the report. See
@@ -1525,12 +1609,22 @@ def run_config_migrate(_args: Namespace) -> dict[str, Any]:
     # The envelope's CONTENT cannot be a flat refusal, because these failure
     # points do not all fall on the same side of the atomic replace: the chmod
     # runs AFTER it, so its ``OSError`` arrives with the migrated cap already
-    # committed. Which side the failure fell on is read back rather than assumed
-    # — see :func:`_migrate_write_failure_report`.
+    # committed. Which side the failure fell on is carried by the exception TYPE
+    # — ``MachineConfigPostCommitError`` is raised if and only if the replace
+    # committed — and is forwarded as the ``committed`` marker rather than
+    # re-derived from a post-read the guard no longer protects. See
+    # :func:`_migrate_write_failure_report`.
+    #
+    # The marker arm is FIRST because the type is an ``OSError`` subclass: the
+    # generic arm placed ahead of it would swallow every committed-then-failed
+    # write and report it as having no commit evidence — the exact false
+    # refusal this pair of arms exists to prevent.
     try:
         post, wrote = write_max_slots_if_unset(per_repo_raw)
+    except MachineConfigPostCommitError as exc:
+        return _migrate_write_failure_report(exc, per_repo_raw, marshal_path, committed=True)
     except (ValueError, TimeoutError, OSError) as exc:
-        return _migrate_write_failure_report(exc, per_repo_raw, marshal_path)
+        return _migrate_write_failure_report(exc, per_repo_raw, marshal_path, committed=False)
 
     if not wrote:
         # A concurrent writer won the race. Re-classify from the POST state — the
