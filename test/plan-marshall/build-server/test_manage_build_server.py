@@ -1516,11 +1516,18 @@ def test_config_set_still_reports_a_guard_timeout_under_its_own_code(home, monke
 
 
 def test_migrate_refuses_byte_identically_when_the_machine_write_raises_oserror(home, monkeypatch):
-    """A failed machine-global write refuses with BOTH files untouched.
+    """A write that raises BEFORE the replace refuses with BOTH files untouched.
 
     The refusal is the load-bearing part: it is what tells the operator nothing
     was half-migrated. An uncaught ``OSError`` here left them with a traceback and
     no statement about either file's state.
+
+    The "before the replace" half of that sentence is load-bearing since the
+    verb re-reads the machine side on this path: patching the writer raises
+    ahead of every filesystem operation, so nothing committed and the refusal is
+    TRUE. Its counterpart below injects the failure AFTER the replace, where the
+    same refusal would be false — this test is what keeps that correction from
+    weakening the genuine refusal into a blanket ``partial``.
     """
     _stage_repo_marshal({'max_slots': 12, 'max_retries': 10})
     before = _snapshot(*_both_files(home))
@@ -1538,6 +1545,151 @@ def test_migrate_refuses_byte_identically_when_the_machine_write_raises_oserror(
     assert result['machine_config_modified'] is False
     assert result['marshal_json_modified'] is False
     assert _snapshot(*_both_files(home)) == before
+
+
+# --- config migrate: the write raised AFTER the atomic replace ----------------
+#
+# The machine-global write is not all-or-nothing from this verb's point of view.
+# ``_write_cap_unguarded`` commits the atomic replace and THEN stats and chmods
+# the committed file, so an OSError from either of those arrives with the
+# migrated cap ALREADY on disk — where the refusal above ("Neither file was
+# changed") is simply false. Which side of the replace the failure fell on is
+# therefore read back rather than assumed.
+
+
+def _fail_the_cap_chmod(home: Path, patcher: pytest.MonkeyPatch) -> None:
+    """Make the POST-REPLACE chmod in ``_write_cap_unguarded`` raise.
+
+    Two patches, both inside ``_machine_config``'s own namespace, and both
+    needed:
+
+    * ``_FILE_MODE`` is redirected because the post-replace chmod is otherwise
+      never executed: ``atomic_write_file`` writes through
+      ``tempfile.mkstemp``, which creates the temp file ``0o600`` and whose mode
+      ``os.replace`` carries over — so the committed file already carries the
+      target mode and the ``!=`` test skips the call. Pointing the target mode
+      somewhere the fresh file is NOT makes the real post-replace call run.
+    * ``os.chmod`` then raises, but ONLY for the cap file's own path. The same
+      write also chmods the ``0o700`` state directory, and the guard file is
+      created under it, so a blanket failure would abort the write somewhere
+      ahead of the replace and re-create the very nothing-committed state these
+      tests exist to tell apart.
+
+    The failure is deliberately NOT injected by patching the writer: that raises
+    before any filesystem operation, which is exactly why the sibling refusal
+    test could never reach a committed-then-failed state.
+    """
+    cap_path = _machine_config_path(home)
+    real_chmod = machine_config.os.chmod
+
+    def _chmod(path, mode, *args, **kwargs):
+        if str(path) == str(cap_path):
+            raise OSError(13, 'Permission denied')
+        return real_chmod(path, mode, *args, **kwargs)
+
+    patcher.setattr(machine_config, '_FILE_MODE', 0o640)
+    patcher.setattr(machine_config.os, 'chmod', _chmod)
+
+
+def test_migrate_reports_partial_when_the_write_fails_after_the_atomic_replace(home, monkeypatch):
+    """A post-replace failure cannot report a refusal — the cap is on disk.
+
+    This is the inverse of the false-success class: the old report actively
+    asserted a state that did not hold, telling the operator both files were
+    untouched while ``machine-config.json`` already held the migrated cap. The
+    machine side landing is asserted FIRST, because it is the fact the report
+    then has to be consistent with.
+    """
+    _stage_repo_marshal({'max_slots': 12, 'max_retries': 10})
+    _fail_the_cap_chmod(home, monkeypatch)
+
+    result = mbs.run_config_migrate(_CONFIG_MIGRATE_ARGS)
+
+    assert json.loads(_machine_config_path(home).read_text(encoding='utf-8'))['build']['queue']['max_slots'] == 12
+    assert result['status'] == 'error'
+    assert result['outcome'] == 'partial'
+    assert result['reason'] == 'machine_config_write_failed_after_commit'
+    assert result['machine_config_modified'] is True
+    assert result['marshal_json_modified'] is False
+    assert 'Neither file was changed' not in result['detail']
+    # The per-repo key is still present — that is the half a re-run has to finish.
+    assert json.loads(_repo_marshal_path().read_text(encoding='utf-8'))['build']['queue']['max_slots'] == 12
+
+
+def test_a_re_run_after_a_post_replace_partial_converges_to_removed_duplicate(home):
+    """The recovery the ``partial`` detail names actually converges.
+
+    The report tells the operator to re-run, so the re-run has to complete the
+    migration — otherwise the correction would have replaced a false refusal
+    with an unverified instruction. The second run reaches the equal-values
+    branch and removes the now-redundant per-repo key.
+
+    The failure injection is scoped to its own ``MonkeyPatch`` context rather
+    than undone on the test's fixture-shared instance: ``home`` redirects
+    ``PLAN_MARSHALL_HOME`` through that same instance, so a blanket ``undo()``
+    would point the re-run at the developer's real ``~/.plan-marshall``.
+    """
+    _stage_repo_marshal({'max_slots': 12, 'max_retries': 10})
+    with pytest.MonkeyPatch.context() as failing:
+        _fail_the_cap_chmod(home, failing)
+        assert mbs.run_config_migrate(_CONFIG_MIGRATE_ARGS)['outcome'] == 'partial'
+
+    result = mbs.run_config_migrate(_CONFIG_MIGRATE_ARGS)
+
+    assert result['status'] == 'success'
+    assert result['outcome'] == 'removed_duplicate'
+    assert 'max_slots' not in json.loads(_repo_marshal_path().read_text(encoding='utf-8'))['build']['queue']
+
+
+def test_migrate_reports_undetermined_when_the_machine_state_cannot_be_established(home, monkeypatch):
+    """Fail-closed: an unreadable machine side claims NEITHER partial nor untouched.
+
+    The re-read is what distinguishes ``partial`` from ``refused``, so a re-read
+    that cannot classify must not pick either — asserting ``partial`` would claim
+    a migration that may never have happened, and asserting the refusal would
+    claim both files untouched over a file nobody can read. Both modification
+    fields are OMITTED rather than sent as ``false``: ``false`` there IS the
+    refusal's both-files-untouched guarantee.
+    """
+    _stage_repo_marshal({'max_slots': 12, 'max_retries': 10})
+
+    def _corrupt_then_raise(_value):
+        _stage_machine_raw(home, '{ not json')
+        raise OSError(5, 'Input/output error')
+
+    monkeypatch.setattr(mbs, 'write_max_slots_if_unset', _corrupt_then_raise)
+
+    result = mbs.run_config_migrate(_CONFIG_MIGRATE_ARGS)
+
+    assert result['status'] == 'error'
+    assert result['outcome'] == 'undetermined'
+    assert result['reason'] == 'machine_config_state_undetermined'
+    assert 'machine_config_modified' not in result
+    assert 'marshal_json_modified' not in result
+    assert 'Neither file was changed' not in result['detail']
+
+
+def test_a_configured_but_different_cap_after_the_raise_is_undetermined_not_partial(home, monkeypatch):
+    """The matched control: ``partial`` is gated on the VALUE, not on "something is set".
+
+    A raise that leaves a cap which is not this repository's value did not land
+    this migration, so reporting ``partial`` would trade the old false refusal
+    for a false partial in the other direction. Without this pair, the partial
+    test above would pass equally against a branch that fired on any configured
+    machine side at all.
+    """
+    _stage_repo_marshal({'max_slots': 12, 'max_retries': 10})
+
+    def _set_a_foreign_cap_then_raise(_value):
+        _stage_machine_cap(home, 4)
+        raise OSError(5, 'Input/output error')
+
+    monkeypatch.setattr(mbs, 'write_max_slots_if_unset', _set_a_foreign_cap_then_raise)
+
+    result = mbs.run_config_migrate(_CONFIG_MIGRATE_ARGS)
+
+    assert result['outcome'] == 'undetermined'
+    assert 'machine_config_modified' not in result
 
 
 # --- the reported per-repo value is TOON-injection safe -----------------------
