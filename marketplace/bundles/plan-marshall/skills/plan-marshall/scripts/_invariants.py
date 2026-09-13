@@ -214,10 +214,16 @@ class MainCaptureReadTheWorktree(Exception):
     """Raised by :func:`capture_all` when the ``main_*`` columns were read from
     the plan's own worktree instead of from main.
 
-    ``main_sha`` equals ``worktree_sha`` **and** the two columns resolved to the
-    same directory, so one tree is being reported under two names. That is a
-    capture bug, not a valid row, so ``cmd_capture`` surfaces a structured error
-    and refuses to persist.
+    ``main_sha`` equals ``worktree_sha`` **and** the main-scoped resolution
+    landed AT OR INSIDE the plan's worktree, so one tree is being reported under
+    two names. That is a capture bug, not a valid row, so ``cmd_capture``
+    surfaces a structured error and refuses to persist.
+
+    The containment half of that predicate is deliberate: a resolution that
+    lands on a *subdirectory* of the worktree describes the worktree just as
+    surely as one that lands on its root, and an exact-equality test would let
+    it through. See :func:`_assert_main_capture_read_main` for which resolver
+    branch makes the sub-path case reachable.
 
     ⚠ **The evidence is the resolved PATHS, not the row.** The comparison reads
     :func:`_main_repo_root` (a live git probe) and ``metadata.worktree_path``;
@@ -233,7 +239,8 @@ class MainCaptureReadTheWorktree(Exception):
     refusal on a value that IS main's HEAD. The defect being refused is the
     mis-resolution, not the commit.
 
-    ⛔ **Equal commits alone are NOT the trigger** — the same-tree resolution is.
+    ⛔ **Equal commits alone are NOT the trigger** — the containment of the
+    main-scoped resolution within the worktree is.
     Two DISTINCT trees can legitimately hold one commit: a worktree-backed plan
     whose feature branch carries no commit of its own yet still has its HEAD on
     the commit it branched from. That state is produced by the shipped phase-5
@@ -263,10 +270,11 @@ class MainCaptureReadTheWorktree(Exception):
         self.worktree_path = str(worktree_path)
         super().__init__(
             f'phase {phase}: the main-scoped capture read the plan worktree — '
-            f'main_sha == worktree_sha ({sha}) and both resolved to '
-            f'{main_root}. A column named for main must be read from main; '
-            f'repair the main-anchored resolution (_main_repo_root) before '
-            f're-entering the phase.'
+            f'main_sha == worktree_sha ({sha}) and the main-scoped resolution '
+            f'({main_root}) is at or inside the plan worktree '
+            f'({worktree_path}). A column named for main must be read from '
+            f'main; repair the main-anchored resolution (_main_repo_root) '
+            f'before re-entering the phase.'
         )
 
 
@@ -281,10 +289,10 @@ class TaskGraphInvalid(Exception):
     payload and refuse to persist the handshake row — thereby blocking the
     phase transition on a broken task graph.
 
-    ⚠ **No caller currently does.** ``cmd_capture`` handles its four sibling
-    capture-time exceptions and not this one, so the attributes are carried but
-    never rendered; see :func:`_capture_task_graph_valid` for what reaches the
-    operator instead.
+    Both ``cmd_capture`` and ``cmd_verify`` handle it, rendering the structured
+    fields through ``_handshake_commands._task_graph_invalid_payload`` as
+    ``error: task_graph_invalid``; under ``verify --strict`` that error code
+    exits non-zero alongside the other boundary refusals.
     """
 
     def __init__(
@@ -1015,15 +1023,14 @@ def _capture_task_graph_valid(plan_id: str, _metadata: dict[str, Any], _phase: s
     On failure raises :class:`TaskGraphInvalid`, which leaves no handshake row
     persisted and blocks the phase transition.
 
-    ⚠ **Unlike its sibling capture-time exceptions, this one has no handler in
-    either ``cmd_capture`` or ``cmd_verify``**, so it is not converted into a
-    structured ``status: error`` payload with its ``cycle`` / ``dangling``
-    fields — it propagates out of whichever verb raised it and
-    ``file_ops.safe_main`` renders it as ``error: internal_error`` with exit 1.
-    The boundary still fails closed at both verbs (no row is persisted; the exit
-    is non-zero), so the only loss is the structured diagnosis. Pre-existing;
-    noted here so the mechanism is not mistaken for the handled path the
-    siblings take.
+    Like its sibling capture-time exceptions, it is handled at both
+    ``cmd_capture`` and ``cmd_verify`` and converted into a structured
+    ``status: error`` / ``error: task_graph_invalid`` payload carrying its
+    ``cycle`` and ``dangling`` fields (see
+    ``_handshake_commands._task_graph_invalid_payload``). ``cmd_verify``
+    renders it as a REFUSAL rather than as drift: the raise aborts
+    :func:`capture_all` before an observed row exists, so there is no observed
+    value to diff against the baseline.
 
     Returns ``None`` if the tasks cannot be loaded (e.g. executor missing
     during a unit-test harness that doesn't provide the plan directory).
@@ -1888,9 +1895,20 @@ def _assert_main_capture_read_main(
     no ``worktree_sha`` and is never examined here.
 
     Equal commits are the *symptom*; the refusal condition is the *cause* —
-    both columns resolving to the same directory. Two distinct trees holding one
-    commit is a legitimate state (a feature branch with no commit of its own)
-    and is permitted; see :class:`MainCaptureReadTheWorktree`.
+    the main-scoped resolution landing AT OR INSIDE the plan's worktree. Two
+    distinct trees holding one commit is a legitimate state (a feature branch
+    with no commit of its own) and is permitted; see
+    :class:`MainCaptureReadTheWorktree`.
+
+    **Containment, not equality.** An exact-equality comparison recognises only
+    the case where ``_main_repo_root`` returns the worktree root itself, and
+    misses every resolution that lands on a directory *beneath* it. That gap is
+    reachable: ``_main_repo_root``'s override branch delegates to
+    :func:`_current_repo_root`, whose flat-override fallback returns
+    ``Path.cwd()`` — which under a pinned worktree is the worktree root or a
+    subdirectory of it. A ``main_*`` column filled from any path inside the
+    worktree describes the worktree, so containment is the correct predicate and
+    ``Path.is_relative_to`` (true for the equal case as well) is the test.
 
     Both early returns below the equality check are unreachable by
     construction — an unresolvable main checkout captures no ``main_sha``, and
@@ -1905,8 +1923,8 @@ def _assert_main_capture_read_main(
     persisted from ``git worktree add``.
 
     Raises:
-        MainCaptureReadTheWorktree: when the two commits are equal AND the two
-            columns resolved to the same directory.
+        MainCaptureReadTheWorktree: when the two commits are equal AND the
+            main-scoped resolution is at or inside ``worktree_path``.
     """
     main_sha = captured.get('main_sha')
     worktree_sha = captured.get('worktree_sha')
@@ -1918,7 +1936,7 @@ def _assert_main_capture_read_main(
         return
     worktree_path = Path(str(raw_worktree))
     try:
-        if main_root.resolve() != worktree_path.resolve():
+        if not main_root.resolve().is_relative_to(worktree_path.resolve()):
             return
     except OSError:
         return
@@ -1942,7 +1960,7 @@ def capture_all(plan_id: str, metadata: dict[str, Any], phase: str) -> dict[str,
         BlockingFindingsPresent: when an actionable finding is pending at a
             boundary that blocks on findings.
         TaskGraphInvalid: when the task graph carries a cycle or a dangling
-            reference. Unhandled by ``cmd_capture`` and ``cmd_verify`` alike —
+            reference. Handled at ``cmd_capture`` and ``cmd_verify`` alike —
             see :func:`_capture_task_graph_valid`.
         PrTitleMissing: when ``metadata.pr_title`` is absent from ``2-refine``
             onward.

@@ -37,8 +37,10 @@ Self-checking, atomic regeneration:
     paths carry more than one plugin-cache version dir for a single bundle (an
     internally version-split executor), no-opping in the version-less
     marketplace layout; (5) a **fail-open guard** refuses a regeneration that
-    emits zero surfaces where the previous executor carried some (a silently
-    stripped surface set would leave the pre-spawn validator inert). Guards 1-3
+    emits zero surfaces where the previous executor either carried some or could
+    not be read at all (a silently stripped surface set would leave the
+    pre-spawn validator inert, and an unreadable previous cannot prove none are
+    being stripped). Guards 1-3
     are shape checks on the content; guard 4 compares the emitted path families
     against each other; guard 5 is a semantic check on the derivation outcome.
     Only a content that passes all five is committed, and the
@@ -109,6 +111,7 @@ import subprocess
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import NamedTuple
 
 # Bootstrap sys.path — this script may run before the executor sets up PYTHONPATH
 # (called directly during wizard Step 4 to generate the executor).
@@ -1021,39 +1024,103 @@ def compute_surface_digest(script_path: str, shared_digest: str) -> str:
     return hasher.hexdigest()
 
 
-def read_previous_surfaces(executor: Path) -> dict[str, dict]:
+#: Closed vocabulary for :attr:`PreviousSurfaces.outcome`.
+#:
+#: The partition that matters is MEASURED vs NOT MEASURED, not empty vs
+#: non-empty. ``absent`` and ``no_block`` are measurements that legitimately
+#: yield no surfaces; ``unreadable`` is the absence of a measurement wearing the
+#: same empty mapping.
+#:
+#: - ``absent`` — no executor file exists (a fresh install / first build). It
+#:   verifiably carried no surfaces.
+#: - ``no_block`` — the file was read in full and carries no ``SCRIPT_SURFACES``
+#:   block at all (an executor generated before the map existed). It too
+#:   verifiably carried no surfaces.
+#: - ``read`` — the block was found and parsed. :attr:`PreviousSurfaces.surfaces`
+#:   is what it held, which is legitimately empty when the literal was ``{}``.
+#: - ``unreadable`` — the file EXISTS but its surfaces could not be established:
+#:   the read raised, or the block was found but its literal would not parse /
+#:   did not parse to a dict. Nothing was measured, so the empty mapping is not
+#:   evidence that the previous executor carried nothing.
+PREVIOUS_SURFACE_OUTCOMES: frozenset[str] = frozenset({'absent', 'no_block', 'read', 'unreadable'})
+
+
+class PreviousSurfaces(NamedTuple):
+    """What the previous executor's ``SCRIPT_SURFACES`` map was found to hold.
+
+    Replaces a bare ``dict[str, dict]`` return because that shape could not
+    express the one distinction its consumer depends on. The fail-open guard
+    (guard 5, :func:`generate_executor`) asks *"did the previous executor carry
+    surfaces this generation is about to strip?"* — and a bare ``{}`` answered
+    both "no, it verifiably carried none" and "unknown, it could not be read"
+    identically. The guard read the second as the first and passed an unreadable
+    previous straight through, writing a surfaces-less executor: precisely the
+    fail-open it exists to refuse, reintroduced through its own input.
+
+    Attributes:
+        surfaces: The parsed notation → entry map. Empty on every outcome except
+            a ``read`` that found entries.
+        outcome: One of :data:`PREVIOUS_SURFACE_OUTCOMES`.
+        detail: Human-readable provenance naming the file and the failure, for
+            the refusal message. Empty when nothing went wrong.
+    """
+
+    surfaces: dict[str, dict]
+    outcome: str
+    detail: str
+
+
+def read_previous_surfaces(executor: Path) -> PreviousSurfaces:
     """Read the ``SCRIPT_SURFACES`` map out of a previously generated executor.
 
     Text-scanned and ``ast.literal_eval``-ed rather than imported: the previous
     executor is an artifact to be read, not code to be run, and importing it
-    would execute its bootstrap. Any failure — absent file, absent block,
-    malformed literal, an executor generated before this map existed — returns
-    an empty dict, which simply means "nothing to reuse" and costs a full
-    re-derivation.
+    would execute its bootstrap.
+
+    Every return says WHICH state produced it (see
+    :data:`PREVIOUS_SURFACE_OUTCOMES`), because the failure modes and the
+    genuinely-empty ones are not interchangeable to the caller. For REUSE they
+    are — all four yield no entry to carry over and cost a full re-derivation —
+    but for the fail-open guard they are opposites: an unreadable previous
+    cannot be cited as proof that no surfaces are being stripped.
     """
     if not executor.is_file():
-        return {}
+        return PreviousSurfaces({}, 'absent', '')
     try:
         text = executor.read_text(encoding='utf-8')
-    except OSError:
-        return {}
+    except OSError as exc:
+        return PreviousSurfaces({}, 'unreadable', f'{executor} could not be read: {exc}')
     start = text.find(_SURFACES_BLOCK_START)
     if start < 0:
-        return {}
+        return PreviousSurfaces({}, 'no_block', '')
     open_brace = start + len(_SURFACES_BLOCK_START) - 1
     end = text.find('\n}', open_brace)
     if end < 0:
-        return {}
+        return PreviousSurfaces(
+            {},
+            'unreadable',
+            f'{executor} carries a {_SURFACES_BLOCK_START!r} marker with no terminating brace',
+        )
     literal = text[open_brace : end + 2]
     try:
         parsed = ast.literal_eval(literal)
-    except (ValueError, SyntaxError):
-        return {}
+    except (ValueError, SyntaxError) as exc:
+        return PreviousSurfaces({}, 'unreadable', f'{executor} SCRIPT_SURFACES literal would not parse: {exc}')
     if not isinstance(parsed, dict):
-        return {}
-    return {
-        notation: entry for notation, entry in parsed.items() if isinstance(notation, str) and isinstance(entry, dict)
-    }
+        return PreviousSurfaces(
+            {},
+            'unreadable',
+            f'{executor} SCRIPT_SURFACES parsed to {type(parsed).__name__}, not a dict',
+        )
+    return PreviousSurfaces(
+        {
+            notation: entry
+            for notation, entry in parsed.items()
+            if isinstance(notation, str) and isinstance(entry, dict)
+        },
+        'read',
+        '',
+    )
 
 
 def derive_script_surfaces(
@@ -1229,14 +1296,19 @@ def generate_executor(
        and ``os.replace``-d onto the real executor so a partial write can never
        leave a corrupt executor in place.
     5. **Fail-open guard** — a SEMANTIC check on the derivation outcome rather
-       than the content shape: when the previous executor carried surfaces but
-       this generation emits ZERO (neither derived nor reused), it returns a
-       ``status: error`` dict (carrying ``surface_stats``) and writes nothing,
-       leaving the still-validating previous executor in place. A surfaces-less
-       executor dispatches with no pre-spawn validation, so a green regeneration
-       that quietly stripped the whole set would leave the guard inert while
-       every signal reads healthy. A previous state that itself had no surfaces
-       (a fresh install) is not a regression and passes through.
+       than the content shape. When this generation emits ZERO surfaces (neither
+       derived nor reused) AND EITHER the previous executor carried some OR its
+       surfaces could not be established at all, it returns a ``status: error``
+       dict (carrying ``surface_stats`` and ``previous_surfaces_outcome``) and
+       writes nothing, leaving the still-validating previous executor in place. A
+       surfaces-less executor dispatches with no pre-spawn validation, so a green
+       regeneration that quietly stripped the whole set would leave the guard
+       inert while every signal reads healthy. The two refusing inputs are
+       distinct and BOTH are required: a previous that verifiably had no surfaces
+       (a fresh install, a pre-map executor — :data:`PREVIOUS_SURFACE_OUTCOMES`
+       ``absent`` / ``no_block``) is not a regression and passes through, whereas
+       an ``unreadable`` previous proves nothing and must not be read as that
+       same zero.
 
     Args:
         mappings: Script notation to path mappings
@@ -1365,8 +1437,12 @@ def generate_executor(
     # keep the count: the fail-open guard downstream compares "how many surfaces
     # the last executor carried" against "how many this generation emits", and
     # the previous executor is untouched until the atomic write at the very end,
-    # so this read sees the outgoing state whatever the derivation does.
-    previous_surfaces = read_previous_surfaces(real_executor)
+    # so this read sees the outgoing state whatever the derivation does. The
+    # read reports its OUTCOME alongside the map, because the guard must be able
+    # to tell a previous that verifiably carried nothing from one it could not
+    # read at all.
+    previous = read_previous_surfaces(real_executor)
+    previous_surfaces = previous.surfaces
 
     # Derive the argparse accept-sets against a PROBE executor — the very
     # content about to be written, minus its surfaces. The alternative,
@@ -1422,6 +1498,33 @@ def generate_executor(
     # that itself had no surfaces (a fresh install, a first build) is not a
     # regression and passes through with an all-zero stats line.
     emitted_surface_count = surface_stats['surfaces_derived'] + surface_stats['surfaces_reused']
+
+    # The unreadable-previous half of the same guard. An executor that EXISTS
+    # but whose surfaces could not be established is not evidence that no
+    # surfaces are being stripped — it is the absence of evidence either way, and
+    # reading it as the fresh-install zero is how a fail-open guard fails open
+    # through its own input. Refuse on the same terms as the counted case: only
+    # when this generation would emit zero, since a generation that DOES emit
+    # surfaces strips nothing regardless of what the previous held.
+    if previous.outcome == 'unreadable' and emitted_surface_count == 0:
+        return {
+            'status': 'error',
+            'error': (
+                f'Fail-open regeneration refused: this generation emitted 0 surfaces '
+                f'(neither derived nor reused) and the previous executor could not be read, '
+                f'so whether it carried surfaces this write would strip is UNKNOWN '
+                f'({previous.detail}). A surfaces-less executor dispatches with no pre-spawn '
+                f'validation, and an unreadable previous cannot be cited as proof that none '
+                f'are being lost. No executor was written and the previous one was left '
+                f'untouched. Remedy: repair or remove the unreadable executor, and resolve '
+                f'why this generation derived no surfaces — an exhausted '
+                f'{_SURFACE_DERIVATION_BUDGET_ENV}, a broken probe, or an unreadable/failing '
+                f'script set (see any warning above) — then re-run generate.'
+            ),
+            'surface_stats': surface_stats,
+            'previous_surfaces_outcome': previous.outcome,
+        }
+
     if previous_surfaces and emitted_surface_count == 0:
         return {
             'status': 'error',
@@ -1436,6 +1539,7 @@ def generate_executor(
                 f'script set (see any warning above) — then re-run generate.'
             ),
             'surface_stats': surface_stats,
+            'previous_surfaces_outcome': previous.outcome,
         }
 
     content = _substitute(generate_surfaces_code(surfaces))

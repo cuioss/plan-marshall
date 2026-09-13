@@ -2491,7 +2491,7 @@ def test_generated_executor_carries_populated_script_surfaces(tmp_path, monkeypa
     text = executor.read_text(encoding='utf-8')
     assert 'SCRIPT_SURFACES = {' in text, 'the executor must declare SCRIPT_SURFACES'
     assert notation in text
-    surfaces = module.read_previous_surfaces(executor)
+    surfaces = module.read_previous_surfaces(executor).surfaces
     assert notation in surfaces, f'expected a surface entry for {notation}: {surfaces!r}'
     assert surfaces[notation]['digest'], 'each entry must carry its source digest'
 
@@ -2505,7 +2505,7 @@ def test_surface_entry_accepts_both_alias_and_canonical_spelling(tmp_path, monke
     mappings = {notation: _write_surface_script(tmp_path, 'aliased', _ALIAS_SCRIPT)}
     assert _generate_with_surfaces(module, mappings)['status'] == 'success'
 
-    children = module.read_previous_surfaces(executor)[notation]['surface']['root']['children']
+    children = module.read_previous_surfaces(executor).surfaces[notation]['surface']['root']['children']
     assert 'read' in children
     assert 'get' in children, (
         'the alias spelling must be an accepted child — argparse renders it flat '
@@ -2524,7 +2524,7 @@ def test_surface_entry_present_for_parser_built_in_an_imported_module(tmp_path, 
     mappings = {notation: _write_surface_script(tmp_path, 'imported', _IMPORTED_PARSER_SCRIPT)}
     assert _generate_with_surfaces(module, mappings)['status'] == 'success'
 
-    surfaces = module.read_previous_surfaces(executor)
+    surfaces = module.read_previous_surfaces(executor).surfaces
     assert notation in surfaces, (
         'a parser assembled in an imported module must still yield a surface — '
         'this is the coverage a static AST walk cannot provide'
@@ -2552,7 +2552,7 @@ def test_non_derivable_notation_is_absent_not_present_and_empty(tmp_path, monkey
     assert result['surfaces_derived'] == 0
     assert result['surfaces_not_derivable'] == 1
 
-    assert notation not in module.read_previous_surfaces(executor)
+    assert notation not in module.read_previous_surfaces(executor).surfaces
 
 
 def test_counts_partition_the_registered_population(tmp_path, monkeypatch):
@@ -2620,7 +2620,7 @@ def test_editing_an_imported_sibling_module_invalidates_the_cached_surface(tmp_p
 
     first = _generate_with_surfaces(module, mappings)
     assert first['surfaces_derived'] == 1
-    before = module.read_previous_surfaces(executor)[notation]
+    before = module.read_previous_surfaces(executor).surfaces[notation]
     assert set(before['surface']['root']['children']) == {'pr', 'checks'}
 
     # Only the sibling module changes — the entry point is untouched.
@@ -2629,7 +2629,7 @@ def test_editing_an_imported_sibling_module_invalidates_the_cached_surface(tmp_p
     second = _generate_with_surfaces(module, mappings)
     assert second['surfaces_derived'] == 1, 'a sibling-module edit must invalidate the dependent surface, not reuse it'
     assert second['surfaces_reused'] == 0
-    after = module.read_previous_surfaces(executor)[notation]
+    after = module.read_previous_surfaces(executor).surfaces[notation]
     assert after['digest'] != before['digest']
     assert set(after['surface']['root']['children']) == {'pr', 'checks', 'issue'}
 
@@ -2774,7 +2774,7 @@ def test_failed_rederivation_drops_the_entry_rather_than_reusing_the_cached_one(
     }
 
     assert _generate_with_surfaces(module, mappings)['surfaces_derived'] == 2
-    populated = module.read_previous_surfaces(executor)
+    populated = module.read_previous_surfaces(executor).surfaces
     assert aliased in populated and sibling in populated
 
     # The aliased script's --help now exits non-zero; the sibling is unchanged
@@ -2785,7 +2785,7 @@ def test_failed_rederivation_drops_the_entry_rather_than_reusing_the_cached_one(
     assert result['status'] == 'success', result
     assert result['surfaces_not_derivable'] == 1, result
 
-    written = module.read_previous_surfaces(executor)
+    written = module.read_previous_surfaces(executor).surfaces
     assert aliased not in written, 'a failed re-derivation must DROP the entry, not fall back to the cached one'
     assert sibling in written, 'the unaffected sibling keeps its surface'
 
@@ -2877,7 +2877,7 @@ def test_zero_budget_disables_derivation_without_failing_generation(tmp_path, mo
     assert result['status'] == 'success', result
     assert result['surfaces_derived'] == 0
     assert result['surfaces_not_derivable'] == 1
-    assert notation not in module.read_previous_surfaces(executor)
+    assert notation not in module.read_previous_surfaces(executor).surfaces
     assert executor.is_file(), 'a zeroed budget must still write the executor'
 
 
@@ -2893,16 +2893,27 @@ def test_unparseable_budget_falls_back_to_the_default(monkeypatch):
 
 
 def test_read_previous_surfaces_is_empty_for_an_executor_without_the_block(tmp_path):
-    """A pre-SCRIPT_SURFACES executor yields "nothing to reuse", never an error."""
+    """A pre-SCRIPT_SURFACES executor yields "nothing to reuse", never an error.
+
+    The outcome is asserted alongside the empty mapping because the two together
+    are the claim: this executor was READ IN FULL and carries no surfaces, which
+    is a measurement — distinct from an executor whose surfaces could not be
+    established at all.
+    """
     module = load_module()
     legacy = tmp_path / 'execute-script.py'
     legacy.write_text('#!/usr/bin/env python3\nSCRIPTS = {\n}\n', encoding='utf-8')
-    assert module.read_previous_surfaces(legacy) == {}
+    previous = module.read_previous_surfaces(legacy)
+    assert previous.surfaces == {}
+    assert previous.outcome == 'no_block'
 
 
 def test_read_previous_surfaces_is_empty_for_a_missing_executor(tmp_path):
+    """No file at all — a fresh install, which verifiably carried no surfaces."""
     module = load_module()
-    assert module.read_previous_surfaces(tmp_path / 'absent.py') == {}
+    previous = module.read_previous_surfaces(tmp_path / 'absent.py')
+    assert previous.surfaces == {}
+    assert previous.outcome == 'absent'
 
 
 def test_surfaces_code_emission_is_sorted_and_deterministic():

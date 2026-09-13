@@ -127,18 +127,21 @@ def main() -> int:
             return 1
         # worktree_unresolved (metadata→disk),
         # main_checkout_dirtied_during_plan (layer-D filesystem leak into
-        # the main checkout during a worktree-routed plan) and
+        # the main checkout during a worktree-routed plan),
         # main_capture_read_the_worktree (the main-scoped columns resolved to
-        # the plan's own worktree) are all phase-boundary refusals. Under
-        # --strict they MUST surface as a non-zero exit so calling tooling that
-        # swallows TOON output still sees the failure (mirrors the drift
-        # contract). They share one severity: the operator must repair the
-        # disagreement — revert the leaked main-checkout changes, or fix the
-        # mis-resolution — before any phase advance is allowed.
+        # the plan's own worktree) and task_graph_invalid (a cycle or a
+        # dangling depends_on reference in the plan's task graph) are all
+        # phase-boundary refusals. Under --strict they MUST surface as a
+        # non-zero exit so calling tooling that swallows TOON output still sees
+        # the failure (mirrors the drift contract). They share one severity: the
+        # operator must repair the disagreement — revert the leaked
+        # main-checkout changes, fix the mis-resolution, or repair the task
+        # graph — before any phase advance is allowed.
         if result.get('error') in (
             'worktree_unresolved',
             'main_checkout_dirtied_during_plan',
             'main_capture_read_the_worktree',
+            'task_graph_invalid',
         ):
             return 1
     if result.get('status') == 'error':

@@ -53,6 +53,7 @@ from _invariants import (
     MainCheckoutDirtiedDuringPlan,
     PhaseStepsIncomplete,
     PrTitleMissing,
+    TaskGraphInvalid,
     _capture_pending_findings_blocking_count,
     _main_dirty_drift_diff,
     _worktree_materialized,
@@ -371,6 +372,37 @@ def _main_capture_read_the_worktree_payload(
     }
 
 
+def _task_graph_invalid_payload(
+    exc: TaskGraphInvalid,
+    plan_id: str,
+    phase: str,
+) -> dict[str, Any]:
+    """Structured refusal payload for a plan whose task graph is invalid.
+
+    Shared by ``cmd_capture`` and ``cmd_verify`` so the two envelopes cannot
+    drift apart — the operator sees one shape whichever verb hit the state,
+    exactly as :func:`_main_capture_read_the_worktree_payload` does for the
+    main-scoped mis-resolution refusal.
+
+    The ``cycle`` and ``dangling`` fields carry the diagnosis
+    :class:`TaskGraphInvalid` already computed. Without a handler the exception
+    propagated out of the verb and ``file_ops.safe_main`` rendered it as
+    ``error: internal_error``: the boundary still failed closed, but the
+    operator was told only that something broke internally, not that TASK-N
+    depends on a task that does not exist. Rendering the structured fields is
+    the whole point of the handler.
+    """
+    return {
+        'status': 'error',
+        'error': 'task_graph_invalid',
+        'plan_id': plan_id,
+        'phase': phase,
+        'cycle': exc.cycle,
+        'dangling': exc.dangling,
+        'message': str(exc),
+    }
+
+
 def _row_for_capture(
     _plan_id: str,
     phase: str,
@@ -442,6 +474,8 @@ def cmd_capture(args: Any) -> dict[str, Any]:
         }
     except MainCaptureReadTheWorktree as exc:
         return _main_capture_read_the_worktree_payload(exc, plan_id, phase)
+    except TaskGraphInvalid as exc:
+        return _task_graph_invalid_payload(exc, plan_id, phase)
     row = _row_for_capture(
         plan_id,
         phase,
@@ -561,6 +595,15 @@ def cmd_verify(args: Any) -> dict[str, Any]:
         # ``VERIFY_REFUSAL_ERRORS`` keeps it out of the loop-back
         # auto-override path.
         return _main_capture_read_the_worktree_payload(exc, plan_id, phase)
+    except TaskGraphInvalid as exc:
+        # An invalid task graph is a boundary REFUSAL, not drift. Unlike
+        # ``PhaseStepsIncomplete`` / ``BlockingFindingsPresent`` below — whose
+        # observed values ARE meaningful column readings and so are rendered as
+        # drift against the baseline — a cycle or a dangling ``depends_on``
+        # aborts ``capture_all`` before any observed row exists, so there is
+        # nothing to diff. It takes the same shape as the main-scoped refusal
+        # above.
+        return _task_graph_invalid_payload(exc, plan_id, phase)
     except BlockingFindingsPresent as exc:
         # Treat observed blocking findings as drift on the
         # ``pending_findings_blocking_count`` column so callers see a

@@ -51,7 +51,7 @@ import posixpath
 from pathlib import Path
 from typing import Any, NamedTuple
 
-from _plan_parsing import deliverable_write_set
+from _plan_parsing import deliverable_write_set, normalize_declared_path
 
 #: Glob metacharacters that make a declared bullet a PATTERN rather than a path.
 #: ``[`` is deliberately excluded: a character class is legal glob syntax but is
@@ -96,21 +96,6 @@ def _as_int(value: Any) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
-
-
-def normalize_declared_path(path: str) -> str:
-    """Return a declared path in the one spelling the closure comparison uses.
-
-    Declared paths and step targets are both repo-relative strings authored by
-    hand, so ``./x/y.py`` and ``x/y.py`` name the same file and must compare
-    equal. Only leading ``./`` segments and trailing separators are removed —
-    no resolution against the filesystem, since a closure comparison must work
-    for a ``write-new`` target that does not exist yet.
-    """
-    stripped = path.strip()
-    while stripped.startswith('./'):
-        stripped = stripped[2:]
-    return stripped.rstrip('/')
 
 
 def is_glob(path: str) -> bool:
@@ -299,7 +284,19 @@ def check_declared_set_closure(
     every Q-Gate payload while a reader can still tell a full list from a cut
     one.
     """
-    by_number = {int(d['number']): d for d in deliverables if str(d.get('number', '')).isdigit()}
+    # Keyed through :func:`_as_int`, DROPPING any deliverable whose number is
+    # unusable — the same guard every other number read in this module uses. The
+    # previous ``str(...).isdigit()`` pre-filter was a SECOND, differently-shaped
+    # guard over the same question, and two guards for one question drift: this
+    # one rejected a number ``_as_int`` accepts (and the module's own population
+    # accounting is written against ``_as_int``'s verdict), so a deliverable
+    # could be absent from ``by_number`` while the task pointing at it was
+    # counted as mapped. One guard, one answer.
+    by_number: dict[int, dict[str, Any]] = {}
+    for d in deliverables:
+        d_number = _as_int(d.get('number'))
+        if d_number is not None:
+            by_number[d_number] = d
     tasks_by_deliverable: dict[int, list[dict[str, Any]]] = {}
     unmapped_tasks: list[int] = []
     holistic_tasks: list[int] = []

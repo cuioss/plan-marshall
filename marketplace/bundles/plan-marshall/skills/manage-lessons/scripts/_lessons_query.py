@@ -29,7 +29,7 @@ from _lessons_io import (
     read_lesson,
     resolve_lesson_store,
 )
-from _plan_parsing import extract_deliverables, parse_document_sections
+from _plan_parsing import deliverable_write_set, extract_deliverables, parse_document_sections
 from file_ops import (
     atomic_write_file,
     parse_markdown_metadata,
@@ -143,7 +143,25 @@ _COMPONENT_PATH_REGEX = re.compile(r'^marketplace/bundles/([^/]+)/skills/([^/]+)
 
 
 def _derive_components(deliverables: list[dict]) -> tuple[list[str], list[str]]:
-    """Split every deliverable's affected-file paths into components and leftovers.
+    """Split every deliverable's declared WRITE paths into components and leftovers.
+
+    The source is :func:`_plan_parsing.deliverable_write_set` — the authoritative
+    declared write-set — not a direct read of ``affected_files``. The consult
+    surfaces lessons about components the plan is about to EDIT, and the direct
+    read answered a different question in both directions:
+
+    - it MISSED a survey-scope deliverable entirely. Such a deliverable declares
+      ``Files expected to mutate`` / ``Files to survey`` INSTEAD of a flat
+      ``Affected files`` list, so its ``affected_files`` is empty and every
+      component it was about to change derived to nothing — the consult reported
+      a confident ``surfaced_count: 0`` for a plan whose edits it never looked at;
+    - it COUNTED read-only references. An ``affected_files`` entry marked
+      ``(read)`` names a file the deliverable consults and leaves untouched, so
+      surfacing that component's lessons attributes an edit the plan never makes.
+
+    ``deliverable_write_set`` already applies :func:`_plan_parsing.declares_change`
+    across both write-bearing fields, so this function inherits one definition of
+    "does this path change?" rather than re-deriving a narrower one.
 
     Returns ``(components, unmapped_paths)`` — both deduplicated and sorted, so
     the derivation is deterministic regardless of document order.
@@ -152,8 +170,7 @@ def _derive_components(deliverables: list[dict]) -> tuple[list[str], list[str]]:
     unmapped: set[str] = set()
 
     for deliverable in deliverables:
-        for entry in deliverable.get('affected_files', []):
-            path = entry.get('path', '')
+        for path in deliverable_write_set(deliverable):
             if not path:
                 continue
             match = _COMPONENT_PATH_REGEX.match(path)
@@ -209,9 +226,11 @@ def cmd_consult(args: argparse.Namespace) -> dict:
 
     Read-only prospective query fired by ``phase-3-outline`` once the plan's
     ``solution_outline.md`` has been written and validated. It derives the
-    plan's ``{bundle}:{skill}`` component set from the deliverables' affected-file
-    paths, returns every active lesson whose ``component`` exactly equals one of
-    them, and writes the machine record to ``work/lessons-consult.toon``.
+    plan's ``{bundle}:{skill}`` component set from the deliverables' declared
+    WRITE paths (see :func:`_derive_components` for why the write-set, and not a
+    direct ``affected_files`` read, is the right source), returns every active
+    lesson whose ``component`` exactly equals one of them, and writes the machine
+    record to ``work/lessons-consult.toon``.
 
     The verb never mutates a lesson, never emits a Q-Gate finding, and never
     applies a surfaced lesson — the outline author judges the returned set and

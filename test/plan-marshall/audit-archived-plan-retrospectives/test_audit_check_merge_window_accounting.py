@@ -8,10 +8,13 @@ attributed, a reclaimed event is counted, and an absent substrate is reported
 The end-to-end cases drive the PRODUCTION emitter (``_locks_core.log_lock_event``)
 rather than synthesising ``[LOCK]`` text, because a suite that writes its own
 marker cannot detect the check reading a directory the emitter never writes to —
-which is exactly the state this check was in. ``log_lock_event`` resolves its path
-from the main-anchored base's PARENT (``.plan/logs/``) while the scan looked under
-``.plan/local/logs/``, so no real emission was ever in scan range and the check's
-zero was structural.
+which is exactly the state this check was in. ``log_lock_event`` used to resolve
+its path from the main-anchored base's PARENT (``.plan/logs/`` — the git-TRACKED
+config directory) while the scan looked under ``.plan/local/logs/``, so no real
+emission was ever in scan range and the check's zero was structural. The emitter
+now resolves ``.plan/local/logs/`` — the global-log directory every other
+global-log producer and consumer uses — so the two agree at the producer rather
+than by widening the scan.
 
 Raw-text staging is kept only for the parser cases below, where a hand-built line
 is the point (queue-depth placement, an out-of-corpus lock id).
@@ -36,10 +39,10 @@ def _emit_via_production(repo_root: Path, monkeypatch, events: list[tuple]) -> P
 
     Points ``PLAN_BASE_DIR`` at ``repo_root/.plan/local`` so
     ``_locks_core._resolve_lock_log_path`` resolves exactly as it does in
-    production — the main-anchored base's parent plus ``logs/`` — and returns the
-    path it actually wrote. The return value is asserted on rather than assumed,
-    so a future change to where the emitter writes surfaces here instead of
-    silently taking the check back out of scan range.
+    production — the main-anchored base plus ``logs/`` — and returns the path it
+    actually wrote. The return value is asserted on rather than assumed, so a
+    future change to where the emitter writes surfaces here instead of silently
+    taking the check back out of scan range.
 
     Each event is ``(event, lock_id, fields)``.
     """
@@ -191,8 +194,10 @@ def test_lock_log_present_with_no_merge_events_is_a_measured_zero(tmp_path, monk
 def test_production_emitter_output_is_in_scan_range(tmp_path, monkeypatch):
     """The end-to-end contract: what the lock primitive writes, the check reads.
 
-    Fails against a scan rooted only at `.plan/local/logs/`, which is where this
-    check looked while `log_lock_event` wrote to `.plan/logs/`.
+    The emitter writes to `.plan/local/logs/` — the global-log directory — and
+    the assertion pins that location rather than merely asserting scan-range
+    membership, so a move back out of the global-log tree fails HERE even if the
+    scan happens to be wide enough to still find it.
     """
     log_path = _emit_via_production(
         tmp_path,
@@ -204,7 +209,7 @@ def test_production_emitter_output_is_in_scan_range(tmp_path, monkeypatch):
         ],
     )
     # Pin WHERE production wrote, so a move out of scan range fails here.
-    assert log_path.parent == tmp_path / '.plan' / 'logs'
+    assert log_path.parent == tmp_path / '.plan' / 'local' / 'logs'
     assert log_path.parent in [tmp_path.joinpath(*parts) for parts in audit._LOCK_LOG_ROOTS]
 
     result = audit.cross_merge_window_accounting(_lock_inputs(tmp_path, 'planA'), tmp_path)

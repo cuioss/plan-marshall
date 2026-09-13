@@ -311,9 +311,12 @@ consumer. It exposes:
   (`merge_lock`: acquired / reclaimed / blocked / released; `build_queue`:
   acquired / blocked / released / reaped-stale / cap-disagreement). It appends a `[LOCK]`-tagged
   line to the single main-anchored global lock-event log (`lock-{date}.log`
-  under `.plan/logs/`) — never the per-worktree work-log — because locks are
-  cross-session, main-anchored coordination whose event timeline must be shared
-  across all sessions. Uses `WARNING` level for `reaped-stale` and
+  under `<main>/.plan/local/logs/`, the same global-log directory every other
+  global-log producer and consumer uses) — never the per-worktree work-log —
+  because locks are cross-session, main-anchored coordination whose event
+  timeline must be shared across all sessions. The directory is resolved
+  main-anchored rather than via the cwd-relative `get_base_dir()`, which would
+  fragment one shared timeline into one file per worktree. Uses `WARNING` level for `reaped-stale` and
   `cap-disagreement`; `INFO` for
   every other event. The entire body is best-effort: any failure (resolution,
   unwritable dir, encoding) is swallowed so a logging error can never affect

@@ -52,6 +52,7 @@ from _plan_parsing import (
     split_deliverable_blocks,
 )
 from _qgate_closure import (
+    _as_int,
     check_declared_scope_reconciliation,
     check_declared_set_closure,
 )
@@ -80,6 +81,23 @@ _PLANNING_KEYWORDS: tuple[str, ...] = (
 
 _SKILL_SHAPE_RE = re.compile(r'^[a-zA-Z0-9][a-zA-Z0-9_-]*:[a-zA-Z0-9][a-zA-Z0-9_.-]*$')
 _TASK_FILENAME_RE = re.compile(r'^TASK-(\d{3})\.json$')
+
+
+def _task_number(task: dict[str, Any]) -> int:
+    """Return a task's number for DISPLAY, falling back to ``0``.
+
+    Used only where the number is interpolated into a finding's title or detail
+    (``TASK-{n:03d}``). A raw ``task['number']`` there raises ``KeyError`` /
+    ``TypeError`` on a malformed record — and it does so on the branch that is
+    REPORTING a defect, so the whole mechanical Q-Gate would crash precisely
+    when it had a finding to emit and pass when it had none. That is the
+    fail-open shape these checks exist to prevent, committed against itself.
+
+    ``0`` renders as ``TASK-000``, which is not a real task id — the record is
+    malformed and the finding says so by naming an impossible number, rather
+    than silently attributing the defect to some other task.
+    """
+    return _as_int(task.get('number')) or 0
 
 
 def _emit_finding(
@@ -150,11 +168,22 @@ def _load_deliverables(plan_id: str) -> tuple[list[dict[str, Any]], dict[int, st
         return [], {}, False
     try:
         deliverables = extract_deliverables(deliverables_section)
-        prose_by_number = {
-            int(block['number']): str(block['content']) for block in split_deliverable_blocks(deliverables_section)
-        }
+        blocks = split_deliverable_blocks(deliverables_section)
     except (ValueError, AttributeError):
         return [], {}, False
+    # Key the prose map through ``_as_int``, DROPPING any block whose number is
+    # unusable. A raw ``int(block['number'])`` raises on a block whose number is
+    # absent, null, or non-numeric, and the resulting abort is indistinguishable
+    # to the caller from an unparseable outline — one malformed heading would
+    # take down the whole mechanical pass. Dropping the block instead costs only
+    # that block's prose from the keyword-drift haystack, and the deliverable
+    # itself is still checked.
+    prose_by_number: dict[int, str] = {}
+    for block in blocks:
+        number = _as_int(block.get('number'))
+        if number is None:
+            continue
+        prose_by_number[number] = str(block.get('content', ''))
     if not deliverables:
         # A Deliverables section that exists but carries no `### N. Title`
         # heading yields an empty list, and every check downstream then passes
@@ -180,8 +209,12 @@ def _check_coverage(
     failed = 0
     emitted = 0
 
-    deliverable_numbers = {int(d['number']) for d in deliverables}
-    task_deliverables: set[int] = {int(t.get('deliverable', 0)) for t in tasks if int(t.get('deliverable', 0)) > 0}
+    # Both sets are built through ``_as_int``, dropping records whose number is
+    # unusable rather than raising over them — see :func:`_task_number`.
+    deliverable_numbers = {n for n in (_as_int(d.get('number')) for d in deliverables) if n is not None}
+    task_deliverables: set[int] = {
+        n for n in (_as_int(t.get('deliverable', 0)) for t in tasks) if n is not None and n > 0
+    }
 
     for d in sorted(deliverable_numbers):
         if d not in task_deliverables:
@@ -199,7 +232,12 @@ def _check_coverage(
             )
 
     for t in tasks:
-        deliverable = int(t.get('deliverable', 0))
+        deliverable = _as_int(t.get('deliverable', 0))
+        # An unusable deliverable field is dropped rather than flagged here: the
+        # value is not a deliverable reference at all, so "references unknown
+        # deliverable None" would misreport a malformed record as an orphan.
+        if deliverable is None:
+            continue
         # deliverable=0 is the holistic-task sentinel; do not flag as orphan.
         if deliverable == 0:
             continue
@@ -207,9 +245,9 @@ def _check_coverage(
             failed += 1
             emitted += _emit_finding(
                 plan_id,
-                title=f'coverage: TASK-{t["number"]:03d} references unknown deliverable {deliverable}',
+                title=f'coverage: TASK-{_task_number(t):03d} references unknown deliverable {deliverable}',
                 detail=(
-                    f'TASK-{t["number"]:03d} {t.get("title", "?")!r} carries '
+                    f'TASK-{_task_number(t):03d} {t.get("title", "?")!r} carries '
                     f'deliverable={deliverable}, but the solution outline has no '
                     f"such deliverable. Either fix the task's deliverable field "
                     f'or add the missing deliverable to solution_outline.md.'
@@ -237,7 +275,7 @@ def _check_skill_resolution(
     emitted = 0
     for t in tasks:
         profile = (t.get('profile') or '').strip()
-        number = t['number']
+        number = _task_number(t)
         domain = (t.get('domain') or '').strip()
         if profile != 'verification' and not domain:
             failed += 1
@@ -288,24 +326,37 @@ def _check_acyclic(
     failed = 0
     emitted = 0
 
-    by_id: dict[str, dict[str, Any]] = {}
+    # Build the graph over the tasks whose number is USABLE, dropping the rest.
+    # A record with an absent / null / non-numeric number cannot be a node — it
+    # has no identity to be a node under — so it is excluded from the graph and
+    # from the completeness comparison below. Comparing ``visited`` against the
+    # raw ``len(tasks)`` after dropping records would report a phantom cycle for
+    # every dropped record, so the denominator is the numbered population.
+    numbered: list[tuple[int, dict[str, Any]]] = []
     for t in tasks:
-        n = int(t['number'])
+        n = _as_int(t.get('number'))
+        if n is not None:
+            numbered.append((n, t))
+
+    by_id: dict[str, dict[str, Any]] = {}
+    for n, t in numbered:
         by_id[f'TASK-{n}'] = t
         by_id[f'TASK-{n:03d}'] = t
 
-    in_degree: dict[int, int] = {int(t['number']): 0 for t in tasks}
+    in_degree: dict[int, int] = {n: 0 for n, _t in numbered}
     graph: dict[int, list[int]] = defaultdict(list)
-    for t in tasks:
+    for n, t in numbered:
         for dep in t.get('depends_on', []) or []:
             dep_task = by_id.get(dep)
             if dep_task is None:
                 # Missing dependency surfaces under coverage / other checks;
                 # do not double-report here.
                 continue
-            dep_n = int(dep_task['number'])
-            graph[dep_n].append(int(t['number']))
-            in_degree[int(t['number'])] += 1
+            dep_n = _as_int(dep_task.get('number'))
+            if dep_n is None:
+                continue
+            graph[dep_n].append(n)
+            in_degree[n] += 1
 
     queue = [n for n, d in in_degree.items() if d == 0]
     visited = 0
@@ -317,7 +368,7 @@ def _check_acyclic(
             if in_degree[m] == 0:
                 queue.append(m)
 
-    if visited < len(tasks):
+    if visited < len(numbered):
         cycle_members = sorted(n for n, d in in_degree.items() if d > 0)
         failed = 1
         emitted += _emit_finding(
@@ -365,7 +416,7 @@ def _check_files_exist(
     for t in tasks:
         if (t.get('profile') or '').strip() == 'verification':
             continue
-        number = t['number']
+        number = _task_number(t)
         for step in t.get('steps', []) or []:
             if not isinstance(step, dict):
                 continue
@@ -496,7 +547,12 @@ def _check_keyword_drift(
     """Keyword drift: planning-domain keywords appear in description but not in haystack."""
     failed = 0
     emitted = 0
-    by_number: dict[int, dict[str, Any]] = {int(d['number']): d for d in deliverables}
+    # Dropped rather than raised over — see :func:`_task_number`.
+    by_number: dict[int, dict[str, Any]] = {}
+    for d in deliverables:
+        d_number = _as_int(d.get('number'))
+        if d_number is not None:
+            by_number[d_number] = d
 
     # Pre-compile the keyword patterns once per call (independent of N tasks);
     # cache per-deliverable haystacks so two tasks under the same deliverable
@@ -510,7 +566,9 @@ def _check_keyword_drift(
         description = (t.get('description') or '').strip()
         if not description:
             continue
-        d_num = int(t.get('deliverable', 0))
+        d_num = _as_int(t.get('deliverable', 0))
+        if d_num is None:
+            continue
         deliverable = by_number.get(d_num)
         if deliverable is None:
             continue
@@ -525,7 +583,7 @@ def _check_keyword_drift(
                 emitted += _emit_finding(
                     plan_id,
                     title=(
-                        f'keyword_drift: TASK-{t["number"]:03d} uses {keyword!r} not present in deliverable outline'
+                        f'keyword_drift: TASK-{_task_number(t):03d} uses {keyword!r} not present in deliverable outline'
                     ),
                     detail=(f'{excerpt}; deliverable {d_num} outline does not mention {keyword!r}'),
                     persist_failures=persist_failures,

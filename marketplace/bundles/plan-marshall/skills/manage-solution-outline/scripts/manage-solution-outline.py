@@ -43,6 +43,7 @@ from _plan_parsing import (
     deliverable_write_set,
     extract_deliverables,
     is_foreign_path,
+    normalize_declared_path,
     parse_document_sections,
 )
 from constants import VALID_STEP_INTENTS
@@ -464,6 +465,11 @@ def validate_deliverable_contract(deliverable: dict[str, Any]) -> tuple[list[str
     # closure reconciliation that DOES read the survey pair (a declared glob
     # against the enumerated file list) lives in the phase-4-plan mechanical
     # Q-Gate, where it can compare the declaration against the tree.
+    #
+    # Check 3c below is the one exception: it reads BOTH survey fields, but only
+    # to compare them against each other for disjointness. It asserts nothing
+    # about markers or globs, so the two reasons 3a/3b stay off this pair do not
+    # apply to it.
     affected_files = deliverable.get('affected_files', [])
     survey_scope = deliverable.get('survey_scope', []) or []
     mutation_scope = deliverable.get('mutation_scope', []) or []
@@ -500,6 +506,41 @@ def validate_deliverable_contract(deliverable: dict[str, Any]) -> tuple[list[str
                     f"D{num}: Affected file '{path}' has invalid intent marker '{intent}' "
                     f'(must be one of: {", ".join(VALID_STEP_INTENTS)})'
                 )
+
+    # Check 3c: the survey pair must be DISJOINT — no path may be declared under
+    # BOTH **Files to survey:** and **Files expected to mutate:**.
+    #
+    # `deliverable_write_set` states the disjointness as a property of the
+    # standard and deduplicates defensively against it, but nothing ever checked
+    # it, so a doubly-declared path was silently resolved in one direction: the
+    # path lands in the write-set (mutation_scope is write-bearing) while the
+    # survey declaration that called it read-only stands unchallenged in the
+    # document. The deliverable then says two contradictory things about one
+    # path — "I only examine this" and "I will change this" — and every consumer
+    # believes whichever field it happens to read. That is a contract violation
+    # the author must resolve, not a preference a derivation should settle.
+    #
+    # Compared on the NORMALIZED spelling so `./x/y.py` under one heading and
+    # `x/y.py` under the other are caught as the one path they name.
+    survey_paths = {
+        normalize_declared_path(entry.get('path', ''))
+        for entry in survey_scope
+        if isinstance(entry, dict) and normalize_declared_path(entry.get('path', ''))
+    }
+    mutation_paths = {
+        normalize_declared_path(entry.get('path', ''))
+        for entry in mutation_scope
+        if isinstance(entry, dict) and normalize_declared_path(entry.get('path', ''))
+    }
+    for path in sorted(survey_paths & mutation_paths):
+        errors.append(
+            f"D{num}: Path '{path}' is declared under BOTH **Files to survey:** and "
+            f'**Files expected to mutate:** — the two fields must be disjoint. A survey '
+            f'entry declares a file the deliverable only examines, a mutation entry '
+            f'declares one it will change; declaring both makes the deliverable state '
+            f'two contradictory intents for one path. Keep it in **Files expected to '
+            f'mutate:** if it changes, otherwise in **Files to survey:**'
+        )
 
     # Check 4: Verification section
     verification = deliverable.get('verification', {})
