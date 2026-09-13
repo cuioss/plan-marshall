@@ -184,7 +184,11 @@
   },
   "orchestrator": {
     "auto_emit": false,
-    "effort": {},
+    "effort": {
+      "analyze": "level-5",
+      "decompose": "level-5",
+      "reader": "level-3"
+    },
     "parallelization_scope": 1
   },
   "build": {

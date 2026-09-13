@@ -2012,6 +2012,20 @@ def test_committed_marshal_json_top_level_keys_already_canonical():
     )
 
 
+#: Orchestrator knobs this project deliberately tunes away from the seeded default,
+#: mapped to the value each is tuned TO. Pinning the expected value — rather than
+#: exempting the knob — is what keeps the guard below able to fail: a blanket
+#: exemption would let any later edit to a tuned knob pass unnoticed, which is the
+#: same blindness the guard exists to prevent, moved one level up.
+#:
+#: ``effort``: all three orchestrator surfaces are pinned explicitly so none of them
+#: silently tracks ``plan.effort``. The decision and its consequence are recorded in
+#: ``plan-marshall/standards/effort-roles.md`` § Orchestrator role group.
+_PROJECT_TUNED_ORCHESTRATOR_KNOBS: dict[str, object] = {
+    'effort': {'analyze': 'level-5', 'decompose': 'level-5', 'reader': 'level-3'},
+}
+
+
 def test_committed_marshal_json_surfaces_every_orchestrator_knob():
     """The committed .plan/marshal.json must surface every settable orchestrator knob.
 
@@ -2022,6 +2036,14 @@ def test_committed_marshal_json_surfaces_every_orchestrator_knob():
     invisible in the shipped file. The expectation is derived from the
     authoritative key set, never transcribed, so a key added there fails this test
     until the committed file surfaces it too.
+
+    The value claim is scoped by ``_PROJECT_TUNED_ORCHESTRATOR_KNOBS``: a knob this
+    project deliberately tunes is asserted against its TUNED value, and every other
+    knob is still pinned to the seed. The distinction the guard exists to make —
+    a tuning change wearing a surfacing change's clothes — survives, because an
+    undeclared tuning still fails on the untuned comparison and a drifted value on a
+    tuned knob still fails on its own expectation. A blanket exemption would have
+    given up both halves.
     """
     assert _COMMITTED_MARSHAL_PATH.exists(), f'committed marshal.json must exist at {_COMMITTED_MARSHAL_PATH}'
     committed = json.loads(_COMMITTED_MARSHAL_PATH.read_text(encoding='utf-8'))
@@ -2037,12 +2059,27 @@ def test_committed_marshal_json_surfaces_every_orchestrator_knob():
         f'committed orchestrator block surfaces {sorted(block)}, expected every settable knob {sorted(known)}'
     )
     # The keys being present is not the claim — surfacing a knob must not CHANGE
-    # its effective default, so the committed values are pinned against the seed
-    # the surfacing rule is defined by.
+    # its effective default, so every committed value is pinned against the seed
+    # the surfacing rule is defined by, EXCEPT the knobs this project deliberately
+    # tunes, which are pinned against their tuned values instead.
     seeded = _config_defaults_mod.get_default_config()['orchestrator']
-    assert block == seeded, (
-        f'committed orchestrator block {block} must equal the seeded defaults {seeded}; '
-        "a differing value would be a tuning change wearing a surfacing change's clothes"
+
+    for knob, tuned_value in _PROJECT_TUNED_ORCHESTRATOR_KNOBS.items():
+        assert knob in block, f"deliberately-tuned orchestrator knob '{knob}' is absent from the committed block"
+        assert block[knob] == tuned_value, (
+            f"committed orchestrator knob '{knob}' is {block[knob]}, expected the project's "
+            f'recorded tuning {tuned_value}. The tuning is a recorded decision (see '
+            'effort-roles.md, Orchestrator role group) — a DIFFERENT value here is drift, '
+            'not the decision.'
+        )
+
+    untuned_committed = {k: v for k, v in block.items() if k not in _PROJECT_TUNED_ORCHESTRATOR_KNOBS}
+    untuned_seeded = {k: v for k, v in seeded.items() if k not in _PROJECT_TUNED_ORCHESTRATOR_KNOBS}
+    assert untuned_committed == untuned_seeded, (
+        f'committed orchestrator knobs {untuned_committed} must equal the seeded defaults '
+        f'{untuned_seeded} for every knob this project does not deliberately tune '
+        f'(tuned: {sorted(_PROJECT_TUNED_ORCHESTRATOR_KNOBS)}); a differing value would be a '
+        "tuning change wearing a surfacing change's clothes"
     )
 
 

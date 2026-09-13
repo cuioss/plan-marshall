@@ -570,3 +570,94 @@ def test_orchestrator_set_parallelization_scope_accepts_one(plan_context):
 
     assert result['status'] == 'success'
     assert result['value'] == 1
+
+
+# =============================================================================
+# Effort-pin independence: a pinned surface does not track plan.effort
+# =============================================================================
+#
+# The existing coverage above walks the precedence, the default slot, the
+# fall-through, the string shorthand, the `max` clamp, and the unset-equals-today
+# invariant — but NONE of it varies ``plan.effort`` while a pin is held, which is
+# the single property an explicit per-surface pin exists to provide.
+#
+# The two arms below are a MATCHED PAIR and neither stands alone. The positive arm
+# holds a pin while ``plan.effort`` moves and asserts the resolution does not move;
+# on its own that is satisfied by a resolver which ignores ``plan.effort``
+# altogether. The negative arm removes the pin, changes nothing else, and asserts
+# the resolution DOES move — which is what makes the positive arm evidence rather
+# than a tautology.
+
+#: Two distinct plan-wide fallbacks the pin is held against. Both differ from
+#: _PINNED_LEVEL, so a resolution that equals the pin cannot be a coincidental
+#: read of either fallback.
+_PLAN_EFFORT_ARM_A = 'level-2'
+_PLAN_EFFORT_ARM_B = 'level-4'
+
+#: The pinned per-surface level. Deliberately distinct from BOTH fallbacks above.
+_PINNED_LEVEL = 'level-6'
+
+
+def _resolve_under_plan_effort(fixture_dir: Path, orchestrator_block: dict, plan_effort: str, surface: str) -> tuple:
+    """Resolve one surface under one ``plan.effort`` value; return (level, source)."""
+    _write_marshal(
+        fixture_dir,
+        {'orchestrator': orchestrator_block, 'plan': {'effort': plan_effort}},
+    )
+    result = _read_role(f'orchestrator.{surface}')
+    assert result['status'] == 'success', f'{surface} failed to resolve: {result}'
+    return result['level'], result['source']
+
+
+def test_a_pinned_surface_does_not_move_when_plan_effort_moves(plan_context):
+    """Positive arm — a pinned surface is independent of the plan-wide fallback.
+
+    Asserted on the ``source`` as well as the ``level``, and that is not belt-and-
+    braces: a surface whose pinned level happens to EQUAL the inherited level
+    resolves to an identical ``level`` whether or not the pin landed, so ``level``
+    alone cannot witness the pin. ``source`` is the field that can.
+    """
+    for surface in ('analyze', 'decompose', 'reader'):
+        pinned = {'effort': {surface: _PINNED_LEVEL}}
+
+        arm_a = _resolve_under_plan_effort(plan_context.fixture_dir, pinned, _PLAN_EFFORT_ARM_A, surface)
+        arm_b = _resolve_under_plan_effort(plan_context.fixture_dir, pinned, _PLAN_EFFORT_ARM_B, surface)
+
+        assert arm_a == arm_b, (
+            f'pinned surface {surface} resolved differently across two plan.effort values: '
+            f'{_PLAN_EFFORT_ARM_A} -> {arm_a} versus {_PLAN_EFFORT_ARM_B} -> {arm_b}. '
+            'A pinned surface must not track the plan-wide fallback.'
+        )
+        assert arm_a == (_PINNED_LEVEL, f'orchestrator.effort.{surface}'), (
+            f'pinned surface {surface} resolved to {arm_a}, expected the pinned level '
+            f'{_PINNED_LEVEL} with source orchestrator.effort.{surface}. A returned source of '
+            'plan.effort means the pin is not in force at all.'
+        )
+
+
+def test_an_unpinned_surface_tracks_plan_effort(plan_context):
+    """Negative arm — with the pin removed and nothing else changed, the level MOVES.
+
+    Without this arm the positive arm above is a tautology: a resolver that never
+    consulted ``plan.effort`` would satisfy it. Here the same two fallback values
+    must produce two DIFFERENT resolutions, each sourced from ``plan.effort``.
+    """
+    for surface in ('analyze', 'decompose', 'reader'):
+        unpinned: dict = {'effort': {}}  # the pin removed; the block itself unchanged
+
+        arm_a = _resolve_under_plan_effort(plan_context.fixture_dir, unpinned, _PLAN_EFFORT_ARM_A, surface)
+        arm_b = _resolve_under_plan_effort(plan_context.fixture_dir, unpinned, _PLAN_EFFORT_ARM_B, surface)
+
+        assert arm_a == (_PLAN_EFFORT_ARM_A, 'plan.effort'), (
+            f'unpinned surface {surface} resolved to {arm_a} under plan.effort='
+            f'{_PLAN_EFFORT_ARM_A}, expected it to track the fallback'
+        )
+        assert arm_b == (_PLAN_EFFORT_ARM_B, 'plan.effort'), (
+            f'unpinned surface {surface} resolved to {arm_b} under plan.effort='
+            f'{_PLAN_EFFORT_ARM_B}, expected it to track the fallback'
+        )
+        assert arm_a != arm_b, (
+            f'unpinned surface {surface} resolved identically ({arm_a}) under two different '
+            'plan.effort values, so the resolver is not reading the fallback at all and the '
+            'pinned arm above proves nothing'
+        )
