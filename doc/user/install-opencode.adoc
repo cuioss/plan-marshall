@@ -1,0 +1,53 @@
+= Installation (OpenCode)
+:nofooter:
+:toc: left
+:toclevels: 3
+:toc-title: Table of Contents
+:sectnums:
+:source-highlighter: highlight.js
+
+xref:../../README.md[Plan Marshall] » xref:README.adoc[User Guide]
+
+Plan Marshall ships an OpenCode target tree alongside the Claude Code marketplace. Installs are `generate`-then-`deploy` operations performed against a local checkout: the multi-target generator emits the OpenCode tree, and the sync engine deploys that tree into the OpenCode config directory.
+
+== Prerequisites
+
+[IMPORTANT]
+====
+Python 3 must be available as `python3` in your PATH.
+
+[source,bash]
+----
+python3 --version
+----
+====
+
+=== Supported platforms
+
+The platform requirement is assistant-independent and stated once in xref:install-claude.adoc[Installation (Claude Code) › Supported platforms]: a single POSIX runtime, macOS and Linux native, Windows exclusively inside WSL2. On Windows, install OpenCode inside the WSL distro alongside the rest of the runtime.
+
+== Deploy (generate + sync)
+
+The pinned consumption path is a two-step flow (OBSERVED, on a live opencode 1.18.30 install):
+
+[source,bash]
+----
+python3 marketplace/targets/generate.py --target opencode --output target/opencode
+python3 .opencode/scripts/sync_opencode.py
+----
+
+**Step 1 — Generate** (OBSERVED): run the generator from the repository root. It emits skills, agents, commands, and `opencode.json` into `target/opencode/`.
+
+**Step 2 — Sync** (OBSERVED): run the sync engine from the repository root with no arguments. It deploys the emitted tree into `~/.config/opencode/` (singular → plural directory rename; only managed entries are pruned). Verified end-to-end: 399 entries deployed into a clean config dir; `opencode debug skill` then listed the `plan-marshall-*` skills from that directory.
+
+The deploy carries every bundle in the generated tree in one pass — there is no per-bundle install step. Additional bundles land by re-running both steps.
+
+Refresh later by re-running both steps after a `git pull`.
+
+== Next step
+
+Run xref:getting-started.adoc[`/marshall-steward`] to wire the planning system into your project.
+
+== Distribution contract
+
+Publish triggers, source-vs-dist tag semantics, the multi-target architecture, and what is explicitly *not* shipped (no tarballs, no GitHub Pages) are documented under xref:../developer/distribution.adoc[Developer Guide › Distribution].

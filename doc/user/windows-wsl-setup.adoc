@@ -71,7 +71,7 @@ All commands below run **inside the Ubuntu shell**.
 python3 --version
 ----
 
-Ubuntu ships `python3`. If it is missing, install it with `sudo apt update && sudo apt install python3 -y`. This is Plan Marshall's one hard prerequisite (see xref:installation.adoc[Installation]).
+Ubuntu ships `python3`. If it is missing, install it with `sudo apt update && sudo apt install python3 -y`. This is Plan Marshall's one hard prerequisite (see xref:install-claude.adoc[Installation (Claude Code)]).
 
 === Git
 
@@ -219,4 +219,4 @@ The WSL backend and your local IntelliJ versions differ. Update so they match.
 
 == Next step
 
-With WSL, `python3`, and Claude Code in place, install Plan Marshall and run the wizard: xref:installation.adoc[Installation] → xref:getting-started.adoc[Getting Started].
+With WSL, `python3`, and Claude Code in place, install Plan Marshall and run the wizard: xref:install-claude.adoc[Installation (Claude Code)] → xref:getting-started.adoc[Getting Started].

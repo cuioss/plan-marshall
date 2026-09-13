@@ -29,7 +29,7 @@ Plan Marshall is an orchestration layer for AI coding assistants (currently Clau
 
 Plan Marshall targets a POSIX runtime: **macOS** and **Linux** are supported natively. On **Windows**, Plan Marshall runs **exclusively inside WSL2**, with the entire runtime in-distro — the repositories, `python3`, and the plan-marshall state all live on the WSL distro filesystem, never under `/mnt/c`. Mixed native-Windows / WSL usage (editing on Windows, running plan-marshall in WSL against `/mnt/c` paths) is unsupported.
 
-See [User Guide › Windows / WSL Setup](doc/user/windows-wsl-setup.adoc) for the step-by-step Windows walkthrough, and [User Guide › Installation](doc/user/installation.adoc) for the full WSL2 prerequisite — the one-distro-equals-one-machine scoping, the `wsl --shutdown` lifecycle note, and the `/mnt/c` performance warning.
+See [User Guide › Windows / WSL Setup](doc/user/windows-wsl-setup.adoc) for the step-by-step Windows walkthrough, and [User Guide › Installation (Claude Code)](doc/user/install-claude.adoc) for the full WSL2 prerequisite — the one-distro-equals-one-machine scoping, the `wsl --shutdown` lifecycle note, and the `/mnt/c` performance warning.
 
 ## Installation (Claude Code)
 

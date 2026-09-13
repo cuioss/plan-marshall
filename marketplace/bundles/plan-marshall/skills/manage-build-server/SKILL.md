@@ -94,7 +94,7 @@ on Windows, plan-marshall runs exclusively inside WSL2 with the entire runtime
 in-distro. One distro is one machine: each distro has its own `~/.plan-marshall/`,
 registry, and daemon, and `wsl --shutdown` / reboot / idle timeout stops the
 daemon (a `down` status is routine on Windows — the init preflight re-asks). The
-full statement lives in `doc/user/installation.adoc` § Prerequisites — see there,
+full statement lives in `doc/user/install-claude.adoc` § Prerequisites — see there,
 not duplicated here.
 
 ## Daemon state layout

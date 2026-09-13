@@ -19,7 +19,7 @@ The install commands that follow are Claude-specific (`/plugin marketplace add`,
 /plugin install plan-marshall@plan-marshall
 ----
 
-Restart Claude Code or run `/reload-plugins`. Install additional bundles per xref:../user/installation.adoc[User Guide › Installation] as desired.
+Restart Claude Code or run `/reload-plugins`. Install additional bundles per xref:../user/install-claude.adoc[User Guide › Installation (Claude Code)] as desired.
 
 The `@dist-claude` ref tracks `main`: every push to `main` force-updates this branch to the freshly regenerated `target/claude/` tree.
 
@@ -113,5 +113,5 @@ the whole change.
 
 == See also
 
-* xref:../user/installation.adoc[User Guide › Installation] — operator-side install/update walkthrough
+* xref:../user/install-claude.adoc[User Guide › Installation (Claude Code)] — operator-side install/update walkthrough
 * xref:marketplace-build.adoc[Marketplace Build] — pipeline that produces the `target/claude/` tree this distribution publishes
