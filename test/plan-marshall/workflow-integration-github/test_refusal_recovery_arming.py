@@ -1351,6 +1351,17 @@ _AR_SKILL = (
 #: record — it names WHICH record list the refusal came from.
 _DISCLOSED = {'producer', 'layer', 'eta', 'body'}
 
+#: The subset the ARMED decision-log line carries. Derived by SUBTRACTION from
+#: :data:`_DISCLOSED` rather than restated, so a fact added to the disclosure joins
+#: the log expectation automatically instead of silently sitting outside it.
+#:
+#: ``body`` is the one excluded, and its exclusion is the contract: the excerpt is
+#: bot-authored text and ``--message`` is a shell argument, so an apostrophe in
+#: ordinary English closes the quoted string. Escaping it is prose an LLM would have
+#: to apply on every routine notice, so the excerpt is carried on the envelope row
+#: instead — where it needs no shell quoting at all.
+_LOGGED = _DISCLOSED - {'body'}
+
 
 def _section(heading_prefix: str) -> str:
     """Return the ``automatic-review`` SKILL.md section whose heading starts ``heading_prefix``.
@@ -1391,17 +1402,36 @@ class TestTheArmingDisclosureIsEmittedOnlyWhenAWaitIsArmed:
     """
 
     def test_the_armed_line_names_the_observation_that_armed_the_wait(self):
-        """EMIT: producer, layer, ETA and excerpt ride the ARMED decision-log line."""
+        """EMIT: producer, layer and ETA ride the ARMED decision-log line."""
         placeholders = dict(re.findall(r'(\w+)=\{(\w+)\}', _armed_line()))
 
-        assert _DISCLOSED <= set(placeholders), sorted(placeholders)
-        for fact in _DISCLOSED:
+        assert _LOGGED <= set(placeholders), sorted(placeholders)
+        for fact in _LOGGED:
             assert placeholders[fact] == fact
 
-    def test_the_armed_line_quotes_the_untrusted_excerpt_safely(self):
-        """The excerpt is bot text: the ``--message`` value must be single-quoted.
+    def test_the_untrusted_excerpt_is_never_interpolated_into_the_log_command(self):
+        """⛔ The excerpt is bot text and ``--message`` is a shell argument.
 
-        Inside double quotes a backtick or ``$`` in the notice is command
+        The matched negative half of the case above: the log line must name the
+        other disclosed facts AND must not carry this one. Pinned as its own
+        assertion because ``_LOGGED <= placeholders`` is satisfied by a line that
+        also interpolates the excerpt — a subset test cannot refuse an extra field,
+        so the exclusion has to be asserted rather than implied.
+
+        Escaping was the rejected alternative: an apostrophe is ordinary English
+        ("doesn't", "your plan's limit"), so a prose instruction to rewrite each one
+        fires on routine input rather than only on a crafted notice. The excerpt is
+        carried on the envelope row instead, which the next case pins.
+        """
+        placeholders = dict(re.findall(r'(\w+)=\{(\w+)\}', _armed_line()))
+
+        assert 'body' not in placeholders, _armed_line()
+
+    def test_the_armed_line_quotes_its_remaining_bot_supplied_field_safely(self):
+        """The ``--message`` value must be single-quoted even without the excerpt.
+
+        ``{eta}`` is still the reset time the NOTICE stated, so bot-supplied text
+        remains in the command. Inside double quotes a backtick or ``$`` is command
         substitution, and refusal notices quote the bot's own trigger command.
         """
         armed = _armed_line().strip()
@@ -1409,8 +1439,13 @@ class TestTheArmingDisclosureIsEmittedOnlyWhenAWaitIsArmed:
         assert armed.startswith("--message '"), armed
         assert armed.endswith("'"), armed
 
-    def test_the_envelope_declares_the_same_facts_the_log_names(self):
-        """EMIT: the same record rides the returned envelope, so it survives a resume."""
+    def test_the_envelope_declares_the_full_disclosure_including_the_excerpt(self):
+        """EMIT: the envelope row is the COMPLETE record, so it survives a resume.
+
+        It is a superset of what the log names — the excerpt is carried here and
+        nowhere else, which is what makes its removal from the log line a relocation
+        rather than a loss of the fact.
+        """
         output = _section('## Output')
         match = re.search(r'rate_window_arming\[N\]\{([^}]*)\}', output)
         assert match, 'Output declares no rate_window_arming[] field'
@@ -1418,6 +1453,7 @@ class TestTheArmingDisclosureIsEmittedOnlyWhenAWaitIsArmed:
         declared = {field.strip() for field in match.group(1).split(',')}
 
         assert declared == _DISCLOSED | {'bot_kind'}
+        assert _LOGGED < declared
 
     def test_every_disclosed_fact_but_the_producer_is_read_off_a_refusal_record(self):
         """Read, never re-derived: each disclosed fact is a field BOTH producers emit."""
