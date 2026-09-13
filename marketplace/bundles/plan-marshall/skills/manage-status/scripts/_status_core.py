@@ -9,12 +9,20 @@ import json
 import logging
 import subprocess
 import sys
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, NotRequired, TypedDict, cast
 
 from _locks_core import rmw_json
-from constants import DIR_ARCHIVED, DIR_PLANS, FILE_STATUS
+from constants import (
+    DIR_ARCHIVED,
+    DIR_PLANS,
+    FILE_STATUS,
+    PHASE_STATUS_DONE,
+    PHASE_STATUS_IN_PROGRESS,
+    VALID_PHASE_STATUSES,
+)
 from file_ops import (
     base_path,
     get_executor_path,
@@ -176,6 +184,133 @@ def normalize_metadata(status: dict[Any, Any]) -> dict[Any, Any]:
         metadata = {}
         status['metadata'] = metadata
     return metadata
+
+
+# =============================================================================
+# Phase closure (the archive post-condition)
+# =============================================================================
+
+#: Phase statuses a closing write MUST NOT touch, derived by set DIFFERENCE from the
+#: declared vocabulary rather than spelled as the literal ``{'pending'}``. Today the
+#: difference is exactly ``{pending}``, but deriving it means a status added to
+#: ``VALID_PHASE_STATUSES`` later is untouched by default — it has to be named
+#: explicitly here to become closable, rather than silently joining the set a closure
+#: writes ``done`` onto. ``VALID_PHASE_STATUSES`` is a TUPLE, so the difference is taken
+#: over a ``frozenset`` of it.
+UNTOUCHED_PHASE_STATUSES = frozenset(VALID_PHASE_STATUSES) - {PHASE_STATUS_IN_PROGRESS, PHASE_STATUS_DONE}
+
+
+@dataclass(frozen=True)
+class OpenPhaseScan:
+    """What one look at a status document's ``phases`` established — and what it did not.
+
+    Two facts, carried together and never collapsed into one another:
+
+    - :attr:`phases` — every phase record the scan POSITIVELY established as
+      ``in_progress``. These are the LIVE dicts out of ``status['phases']``, not
+      copies, so ``cmd_archive`` closes a phase by mutating one in place.
+    - :attr:`unexaminable` — one human-readable note per part of the structure the
+      scan could NOT classify. Empty is the ordinary case; non-empty means
+      :attr:`phases` is what was found rather than what is there.
+
+    An empty :attr:`phases` therefore no longer answers two different questions with
+    the same value. ``examinable=True`` with no phases is *"looked, nothing open"*;
+    ``examinable=False`` with no phases is *"could not look"*. Collapsing those into a
+    bare ``[]`` is exactly how an unexaminable record came to be archived as
+    ``complete`` and published as a clean ``open_phase_count: 0``.
+
+    ⛔ :meth:`__bool__` RAISES rather than answering. Both consumers previously wrote
+    ``if not in_progress_phases(status)``, and there is no truthiness rule this type
+    could adopt that answers that expression correctly for BOTH states — a falsy
+    unexaminable result reinstates the original defect at the first such guard, and a
+    truthy one silently inverts the completion gate. Raising turns the stale idiom
+    into a loud ``TypeError`` at the call site instead of a false claim in a permanent
+    record. Read :attr:`examinable` and :attr:`phases`; never the object itself.
+    """
+
+    phases: tuple[dict[str, Any], ...]
+    unexaminable: tuple[str, ...] = ()
+
+    @property
+    def examinable(self) -> bool:
+        """Whether the ``phases`` structure was read IN FULL.
+
+        DERIVED from :attr:`unexaminable` rather than stored beside it, so the flag
+        and the notes behind it cannot drift into disagreeing about the same scan.
+        """
+        return not self.unexaminable
+
+    def __bool__(self) -> bool:
+        raise TypeError(
+            'OpenPhaseScan has no truth value. Read .examinable to learn whether the '
+            'phases structure could be read in full, and .phases for the open phases '
+            'that were established: `if not scan:` cannot tell "nothing is open" from '
+            '"the phases could not be examined", which is the conflation this type exists '
+            'to remove.'
+        )
+
+
+def in_progress_phases(status: dict[Any, Any]) -> OpenPhaseScan:
+    """Report EVERY phase recorded as ``in_progress``, and whatever could not be read.
+
+    ``in_progress`` is the only CLOSABLE status: it names a phase that really did
+    start, so recording it as ``done`` at archive time closes a genuine record. A
+    ``pending`` phase never ran, so writing ``done`` onto it would fabricate a fresh
+    false record — which is why the statuses this function does not report are held in
+    :data:`UNTOUCHED_PHASE_STATUSES`.
+
+    The single predicate for "which phases are still open", consumed by
+    ``_cmd_lifecycle.cmd_archive`` (which mutates the reported records in place) and by
+    the ``census`` verb's open-phase reporting. Naming it once is what keeps the
+    archive's closure set and the census's reported population from drifting into two
+    different answers to the same question.
+
+    Malformed input is REPORTED, never absorbed. Four shapes cannot be classified and
+    each lands in :attr:`OpenPhaseScan.unexaminable`:
+
+    - ``phases`` absent, or present but not a list;
+    - a row that is not a mapping, so it carries no readable status;
+    - a row whose ``name`` is missing, empty, or not a string — the row cannot be
+      identified, so neither the archive (which closes phases BY name) nor the census
+      (which reports the names) can act on it, and the projection would otherwise
+      synthesise ``''`` as though it were a phase name;
+    - a row whose ``status`` is outside the declared :data:`VALID_PHASE_STATUSES`
+      vocabulary — it may or may not name a running phase, and guessing either way is
+      a claim the data does not support.
+
+    The name check applies to EVERY row, not only the ``in_progress`` ones, exactly as
+    the vocabulary check already does: ``examinable`` states that the structure was read
+    in full, and a row nobody can identify is a part of it that was not.
+
+    The scan still returns whatever it DID establish alongside those notes, so a caller
+    holding a structurally odd record can still act on the phases that are readable.
+    What it may no longer do is mistake the shortfall for a clean empty set — see
+    :class:`OpenPhaseScan`.
+    """
+    phases = status.get('phases')
+    if not isinstance(phases, list):
+        return OpenPhaseScan((), (f'phases is {type(phases).__name__}, not a list',))
+
+    open_phases: list[dict[str, Any]] = []
+    unexaminable: list[str] = []
+    for index, phase in enumerate(phases):
+        if not isinstance(phase, dict):
+            unexaminable.append(f'phases[{index}] is {type(phase).__name__}, not a phase record')
+            continue
+        # Checked BEFORE the status, so an unidentifiable row is reported as such rather
+        # than being classified open on the strength of a status attached to no name.
+        # One note per row: the first failure ends the row's classification.
+        name = phase.get('name')
+        if not isinstance(name, str) or not name:
+            unexaminable.append(f'phases[{index}] carries name {name!r}, not a non-empty string')
+            continue
+        phase_status = phase.get('status')
+        if phase_status not in VALID_PHASE_STATUSES:
+            unexaminable.append(f'phases[{index}] carries status {phase_status!r}, outside the declared vocabulary')
+            continue
+        if phase_status == PHASE_STATUS_IN_PROGRESS:
+            open_phases.append(phase)
+    return OpenPhaseScan(tuple(open_phases), tuple(unexaminable))
 
 
 # =============================================================================

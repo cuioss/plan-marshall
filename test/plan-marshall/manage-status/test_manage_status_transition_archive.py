@@ -8,7 +8,9 @@ from pathlib import Path
 
 from _manage_status_transition_fixtures import (
     SCRIPT_PATH,
+    _seed_early_archive_plan,
     _seed_finalize_phase_plan,
+    _seed_two_in_progress_plan,
     _stub_finding_queries,
     cmd_archive,
     cmd_transition,
@@ -39,11 +41,114 @@ def test_archive_marks_final_phase_done_and_sets_complete(plan_context):
         f'regressed: cmd_archive is not setting the post-finalize sentinel '
         f'before shutil.move runs.'
     )
-    assert archived_status['phases'][-1]['status'] == 'done', (
-        f"Expected archived phases[-1].status='done', got "
-        f'{archived_status["phases"][-1]["status"]!r}. Atomic-archive fix '
-        f'regressed: cmd_archive is not marking the active phase done '
-        f'before shutil.move runs.'
+    # Widened from ``phases[-1]`` to EVERY phase. The single-index assertion was
+    # precisely the blind spot that let the single-slot closure pass a green suite:
+    # it read the one phase the retired ``next()`` happened to close, so a second
+    # phase left ``in_progress`` was invisible to it.
+    still_open = [p['name'] for p in archived_status['phases'] if p['status'] == 'in_progress']
+    assert still_open == [], (
+        f'Archive left {still_open!r} recorded in_progress. cmd_archive must close '
+        f'EVERY open phase before shutil.move runs, not just the last one.'
+    )
+    observed = [(p['name'], p['status']) for p in archived_status['phases']]
+    assert all(status == 'done' for _name, status in observed), (
+        f'This seed started every phase, so archive must leave all of them done; got {observed!r}.'
+    )
+
+
+# =============================================================================
+# D2 — Archive closes EVERY in-progress phase and leaves pending phases pending.
+#
+# The retired closure took the first phase whose status was merely ``!= done`` and
+# closed that one alone, which failed in BOTH directions at once. The two controls
+# below are matched halves that pin the closure set to ``in_progress`` exactly: the
+# first fails if archive closes too FEW phases, the second if it closes too MANY.
+# Each seed's precondition is asserted before the act, so neither assertion can pass
+# vacuously against a state that never held the property under test.
+# =============================================================================
+
+
+def test_archive_closes_every_in_progress_phase_not_just_one(plan_context):
+    """NEGATIVE control: a plan holding TWO open phases has BOTH closed.
+
+    This is the defect itself. With the retired single-slot closure the second
+    ``in_progress`` phase stayed recorded as running in the permanent archived
+    record — so the archive asserted a phase was still in flight for a plan that
+    had finished. Fails against the pre-fix code; passes only once the closure
+    loops over every open phase.
+    """
+    plan_id = 'archive-two-in-progress'
+    _seed_two_in_progress_plan(plan_id)
+
+    live_status = json.loads((plan_context.plan_dir_for(plan_id) / 'status.json').read_text(encoding='utf-8'))
+    open_before = [p['name'] for p in live_status['phases'] if p['status'] == 'in_progress']
+    assert open_before == ['5-execute', '6-finalize'], (
+        f'Seed precondition: the plan must really hold TWO open phases before '
+        f'archive, otherwise the assertion below passes vacuously. Got {open_before!r}.'
+    )
+
+    result = cmd_archive(Namespace(plan_id=plan_id, dry_run=False, reason=None))
+    assert result['status'] == 'success', f'archive failed: {result}'
+
+    archived_status = json.loads((Path(result['archived_to']) / 'status.json').read_text(encoding='utf-8'))
+    still_open = [p['name'] for p in archived_status['phases'] if p['status'] == 'in_progress']
+    assert still_open == [], (
+        f'Archive left {still_open!r} recorded in_progress — the permanent record '
+        f'now says a phase is still running for a finished plan.'
+    )
+    by_name = {p['name']: p['status'] for p in archived_status['phases']}
+    for name in open_before:
+        assert by_name[name] == 'done', (
+            f'{name} was open before archive and must be closed after; got {by_name[name]!r}.'
+        )
+    assert archived_status['current_phase'] == 'complete', (
+        f'With no phase left in_progress the completion gate must fire; got {archived_status["current_phase"]!r}.'
+    )
+
+
+def test_archive_of_an_early_abandoned_plan_leaves_pending_phases_pending(plan_context):
+    """The matched other half: a phase that never started must NOT be closed.
+
+    The retired ``!= done`` predicate also failed in this direction — a ``pending``
+    phase satisfied it, so archive wrote ``done`` onto a phase that never ran,
+    fabricating a fresh false record instead of closing a real one.
+
+    ``current_phase`` must still reach ``complete`` here, because the gate is "no
+    phase remains in_progress" rather than "every phase is done" — the latter could
+    never hold for a plan whose pending tail must stay pending, which is why such a
+    plan used to archive frozen at its last phase and never reached the
+    post-finalize sentinel its dormant consumers match on.
+    """
+    plan_id = 'archive-early-abandoned'
+    _seed_early_archive_plan(plan_id)
+
+    live_status = json.loads((plan_context.plan_dir_for(plan_id) / 'status.json').read_text(encoding='utf-8'))
+    pending_before = [p['name'] for p in live_status['phases'] if p['status'] == 'pending']
+    assert pending_before == ['3-outline', '4-plan', '5-execute', '6-finalize'], (
+        f'Seed precondition: the plan must carry a real pending tail, otherwise the '
+        f'assertion below passes vacuously. Got {pending_before!r}.'
+    )
+
+    result = cmd_archive(Namespace(plan_id=plan_id, dry_run=False, reason=None))
+    assert result['status'] == 'success', f'archive failed: {result}'
+
+    archived_status = json.loads((Path(result['archived_to']) / 'status.json').read_text(encoding='utf-8'))
+    by_name = {p['name']: p['status'] for p in archived_status['phases']}
+
+    observed_tail = {name: by_name[name] for name in pending_before}
+    assert all(status == 'pending' for status in observed_tail.values()), (
+        f'Archive must leave every pending phase pending — writing done onto a phase '
+        f'that never started fabricates a record of work that never happened. '
+        f'Expected {pending_before!r} all still pending, got {observed_tail!r}.'
+    )
+    assert by_name['2-refine'] == 'done', (
+        f'2-refine really was in_progress, so it is the one phase archive must close here; got {by_name["2-refine"]!r}.'
+    )
+    assert by_name['1-init'] == 'done', f'An already-done phase must stay done; got {by_name["1-init"]!r}.'
+    assert archived_status['current_phase'] == 'complete', (
+        f'The completion gate is "no phase remains in_progress", so a plan abandoned '
+        f'mid-lifecycle must still reach the post-finalize sentinel; got '
+        f'{archived_status["current_phase"]!r}.'
     )
 
 
@@ -268,6 +373,98 @@ def test_archive_dry_run_does_not_fire_findings_gate(plan_context, monkeypatch):
     assert result['status'] == 'success'
     assert result.get('dry_run') is True
     assert 'would_archive_to' in result
+
+
+# =============================================================================
+# The findings gate reads the OPEN-PHASE SET, not `current_phase`.
+#
+# A backward `set-phase` from `6-finalize` to `5-execute` leaves BOTH phases
+# `in_progress` while moving `current_phase` to `5-execute`. A gate testing
+# `status['current_phase'] == '6-finalize'` therefore does not fire in exactly the
+# state a loop-back produces, so a no-reason archive could close both phases and
+# archive the plan with actionable findings still pending. That reachability is a
+# consequence of the close-every-open-phase change above, which is what makes it this
+# plan's to fix rather than pre-existing debt.
+#
+# The three cells below vary one axis each around the same seed, so each answers a
+# question the others cannot: does the gate fire when finalize is open but NOT
+# current (the defect), does `--reason` still exempt it (the intent discriminator),
+# and does it stay silent when the open phase is NOT finalize (the over-broad-gate
+# control).
+# =============================================================================
+
+
+def test_archive_gate_fires_when_finalize_is_open_but_not_current(plan_context, monkeypatch):
+    """NEGATIVE control: two phases open, `current_phase` is 5-execute ⇒ still refused.
+
+    The precondition assertions are what make this fail against the retired
+    `current_phase` equality: the plan really is NOT in `6-finalize` by that measure,
+    and finalize really IS still open.
+    """
+    _stub_finding_queries(monkeypatch, {'sonar-issue': 2})
+    plan_id = 'finalize-open-but-not-current'
+    _seed_two_in_progress_plan(plan_id)
+
+    live_status = json.loads((plan_context.plan_dir_for(plan_id) / 'status.json').read_text(encoding='utf-8'))
+    assert live_status['current_phase'] == '5-execute', (
+        f'Seed precondition: a current_phase equality test must NOT match here, or this '
+        f'cell passes against the retired gate. Got {live_status["current_phase"]!r}.'
+    )
+    open_before = [p['name'] for p in live_status['phases'] if p['status'] == 'in_progress']
+    assert open_before == ['5-execute', '6-finalize'], (
+        f'Seed precondition: 6-finalize must really still be open. Got {open_before!r}.'
+    )
+
+    result = cmd_archive(Namespace(plan_id=plan_id, dry_run=False, reason=None))
+
+    assert result['status'] == 'error', result
+    assert result['error'] == 'blocking_findings_present', result
+    assert result['blocking_count'] == 2, result
+    assert plan_context.plan_dir_for(plan_id).exists(), 'The refused archive must move nothing.'
+    assert 'archived_to' not in result, result
+
+
+def test_archive_of_the_same_two_open_state_proceeds_when_a_reason_is_supplied(plan_context, monkeypatch):
+    """POSITIVE control: the identical state with --reason is a deliberate abandonment.
+
+    Differs from the cell above along exactly one axis, so the refusal there is
+    attributable to the gate rather than to anything about the two-open seed itself.
+    """
+    _stub_finding_queries(monkeypatch, {'sonar-issue': 2})
+    plan_id = 'finalize-open-not-current-with-reason'
+    _seed_two_in_progress_plan(plan_id)
+
+    result = cmd_archive(Namespace(plan_id=plan_id, dry_run=False, reason='low_confidence'))
+
+    assert result['status'] == 'success', (
+        f'A --reason archive is a deliberate abandonment and must not be blocked by pending findings: {result!r}.'
+    )
+    assert 'archived_to' in result, result
+
+
+def test_archive_gate_stays_silent_when_the_open_phase_is_not_finalize(plan_context, monkeypatch):
+    """Matched control: an open phase that is NOT 6-finalize must not arm the gate.
+
+    Without this cell, the widened predicate is equally consistent with one that fires
+    on ANY open phase — which would block every mid-lifecycle abandonment behind
+    findings the plan never reached finalize to triage.
+    """
+    _stub_finding_queries(monkeypatch, {'sonar-issue': 2})
+    plan_id = 'finalize-not-open-early-abandon'
+    _seed_early_archive_plan(plan_id)
+
+    live_status = json.loads((plan_context.plan_dir_for(plan_id) / 'status.json').read_text(encoding='utf-8'))
+    open_before = [p['name'] for p in live_status['phases'] if p['status'] == 'in_progress']
+    assert open_before == ['2-refine'], (
+        f'Seed precondition: exactly one open phase, and it is not 6-finalize. Got {open_before!r}.'
+    )
+
+    result = cmd_archive(Namespace(plan_id=plan_id, dry_run=False, reason=None))
+
+    assert result['status'] == 'success', (
+        f'The gate is about finalize being open, not about any phase being open: {result!r}.'
+    )
+    assert 'archived_to' in result, result
 
 
 def test_archive_of_already_complete_plan_not_blocked_by_pending_finding(plan_context, monkeypatch):

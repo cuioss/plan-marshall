@@ -23,6 +23,7 @@ from _status_core import (
     _surface_drive,
     get_archive_dir,
     get_status_path,
+    in_progress_phases,
     log_entry,
     normalize_metadata,
     now_utc_iso,
@@ -43,12 +44,20 @@ from file_ops import get_plan_dir
 # ``manage_status.py`` main() treat the same situations as boundary refusals.
 # Single source of truth — both consumers import this name; do not duplicate
 # the literal set.
+#
+# ``worktree_dirty_at_boundary`` and ``worktree_unreadable_at_boundary`` are a PAIR:
+# one tree-state question, two structurally different answers (read-and-dirty vs
+# never-read). BOTH must be members. A new code split out of an existing one but left
+# out of this set silently degrades the boundary guard from fail-closed to fail-open —
+# ``verify_blocks_transition`` would return False for it, so the transition would
+# proceed and the CLI wrapper would exit 0 on a refusal the guard actually raised.
 VERIFY_REFUSAL_ERRORS = frozenset(
     {
         'worktree_unresolved',
         'worktree_metadata_drift',
         'main_checkout_dirtied_during_plan',
         'worktree_dirty_at_boundary',
+        'worktree_unreadable_at_boundary',
         'main_capture_read_the_worktree',
     }
 )
@@ -62,9 +71,23 @@ def _clean_tree_refusal(plan_id: str, status: dict[str, Any]) -> dict[str, Any] 
     before the transition into a blocking boundary is allowed: every
     per-deliverable commit belongs to the phase-5-execute envelope's Step 10a
     chain-tail, so uncommitted edits at the boundary mean a commit obligation
-    was skipped. Returns the structured refusal dict when the tree is dirty
-    (or when ``git status`` itself fails — the gate fails closed), and
-    ``None`` when the transition may proceed.
+    was skipped. Returns ``None`` when the transition may proceed.
+
+    Two structurally different conditions refuse here, and each reports its OWN
+    code:
+
+    - ``worktree_unreadable_at_boundary`` — ``git status`` itself failed, so the tree
+      was never read. The gate fails closed because an unreadable tree cannot be
+      PROVEN clean; that is not a claim the tree is dirty. No ``dirty_files`` key is
+      published, because nothing was enumerated.
+    - ``worktree_dirty_at_boundary`` — the tree WAS read and carries uncommitted
+      changes, enumerated in ``dirty_files``.
+
+    Both are members of :data:`VERIFY_REFUSAL_ERRORS`, so both block the transition
+    and both drive the CLI exit-1 wrapper; the split changes which condition is
+    NAMED, never whether it refuses. Reporting one code for both sent the reader to
+    the wrong remedy: a dirty tree needs the boundary settlement commit, whereas an
+    unreadable one needs the worktree itself repaired.
     """
     metadata = normalize_metadata(status)
     if not metadata.get('use_worktree'):
@@ -83,12 +106,16 @@ def _clean_tree_refusal(plan_id: str, status: dict[str, Any]) -> dict[str, Any] 
         check=False,
     )
     if proc.returncode != 0:
-        # Fail closed: an unreadable tree cannot be proven clean.
+        # Fail closed: an unreadable tree cannot be proven clean. Deliberately NOT the
+        # dirty code — nothing was read, so reporting this as "dirty" names a condition
+        # nobody observed and points the reader at the wrong remedy. ``dirty_files`` is
+        # OMITTED rather than sent as ``[]``: an empty list here would be a measured-zero
+        # claim about a tree that was never enumerated, byte-identical to what a
+        # genuinely clean read would have produced.
         return {
             'status': 'error',
             'plan_id': plan_id,
-            'error': 'worktree_dirty_at_boundary',
-            'dirty_files': [],
+            'error': 'worktree_unreadable_at_boundary',
             'message': (
                 f'git status failed in worktree {worktree_path} '
                 f'(exit {proc.returncode}): {proc.stderr.strip()} — '
@@ -137,8 +164,8 @@ def _loop_back_auto_override(
 
     Every other blocking result returns the refusal unchanged: drift WITHOUT
     the marker keeps today's blocking behavior, and the worktree-resolution /
-    dirty-boundary / main-dirtied / main-capture-misresolution refusals
-    (``VERIFY_REFUSAL_ERRORS``) are
+    dirty-boundary / unreadable-boundary / main-dirtied /
+    main-capture-misresolution refusals (``VERIFY_REFUSAL_ERRORS``) are
     NEVER bypassed by the marker — only invariant drift is auto-resolved.
     A failed re-capture also blocks (fail closed) by returning its error
     payload.
@@ -473,11 +500,40 @@ def cmd_transition(args: argparse.Namespace) -> dict[str, Any] | None:
 def cmd_archive(args: argparse.Namespace) -> dict[str, Any] | None:
     """Archive a completed plan.
 
-    Atomically closes the active phase before moving the plan directory:
-    marks the active phase ``done``, and when every phase is done sets
-    ``current_phase = 'complete'``. Mirrors cmd_transition so an archived
-    status.json reflects a fully-closed plan instead of being frozen at the
-    last phase's in_progress state.
+    Atomically closes the plan's open phases before moving the plan directory, so the
+    archived ``status.json`` — the permanent record — never says a phase is still
+    running. The post-condition has three parts:
+
+    - EVERY phase recorded as ``in_progress`` is closed to ``done``, not just the first
+      one found;
+    - every phase in :data:`_status_core.UNTOUCHED_PHASE_STATUSES` (today exactly
+      ``pending``) is left ALONE — a phase that never started must not be recorded as
+      finished, which would write a fresh false record rather than close a real one;
+    - ``current_phase`` becomes ``'complete'`` once the phase structure was read IN
+      FULL and no phase remains ``in_progress``, so a plan abandoned mid-lifecycle
+      still reaches the post-finalize sentinel its dormant consumers match on, while
+      its unstarted phases stay ``pending``.
+
+    A record whose ``phases`` could not be read in full is handled separately in both
+    directions, because an unknown open-phase set is not an empty one:
+
+    - a NO-REASON archive is REFUSED (``error: phases_unexaminable``) — the gate below
+      cannot establish that ``6-finalize`` is closed, and a guard whose job is to
+      refuse must fail closed rather than fall through;
+    - a DELIBERATE ``--reason`` archive still proceeds, but PRESERVES the existing
+      ``current_phase`` instead of writing ``complete``, and reports
+      ``phase_closure: partial`` with the reason.
+
+    This is deliberately NOT identical to ``cmd_transition``: that verb advances one
+    phase at a time through a plan that is still running, whereas archive closes out
+    whatever state the plan was abandoned in.
+
+    Archive is also the SECOND consumption point for ``metadata.loop_back_reentry``.
+    A plan archived while a re-entry is still open never reaches the guarded boundary
+    at which ``cmd_transition`` would consume that marker, so it is consumed here and
+    the archived record states that the re-entry ended without completing. Both the pop
+    and that outcome land in the same write that closes the phases — see
+    ``status-lifecycle.md`` § "Loop-back re-entry marker: two consumption points".
     """
     require_valid_plan_id(args)
 
@@ -522,20 +578,111 @@ def cmd_archive(args: argparse.Namespace) -> dict[str, Any] | None:
     #    (exactly the pre-D3 residue this plan fixes) would wedge cleanup. The
     #    gate therefore fires only while the plan is actively IN finalize.
     # On refusal, return before the phase-close write and the shutil.move.
-    if getattr(args, 'reason', None) is None and status.get('current_phase') == '6-finalize':
-        findings_refusal = _finalize_findings_refusal(args.plan_id, status)
-        if findings_refusal is not None:
-            return findings_refusal
+    #
+    # The gate reads the OPEN-PHASE SET, not ``current_phase``. A backward
+    # ``cmd_set_phase`` from ``6-finalize`` to ``5-execute`` leaves BOTH phases
+    # ``in_progress`` while moving ``current_phase`` to ``5-execute`` — so a
+    # ``current_phase`` equality test does not fire in exactly the state a loop-back
+    # produces, and a no-reason archive could close both phases and archive the plan
+    # with actionable findings still pending. Finalize being OPEN is the condition the
+    # gate is about; which phase is nominally current is not.
+    open_scan = in_progress_phases(status)
+    if getattr(args, 'reason', None) is None:
+        # Fail CLOSED on an unexaminable record. This guard's job is to refuse, and a
+        # scan that could not read the phase structure cannot establish that
+        # ``6-finalize`` is closed — falling through would let the archive proceed on
+        # the strength of a question nobody answered. The remedy is in the message: a
+        # deliberate ``--reason`` archive is the sanctioned way to close a structurally
+        # broken plan, and it takes the operator's decision on the record.
+        if not open_scan.examinable:
+            return {
+                'status': 'error',
+                'plan_id': args.plan_id,
+                'error': 'phases_unexaminable',
+                'unexaminable': list(open_scan.unexaminable),
+                'message': (
+                    f'Refusing a no-reason archive of {args.plan_id!r}: its phases could not be '
+                    f'read in full ({"; ".join(open_scan.unexaminable)}), so whether 6-finalize is '
+                    'still open — and therefore whether the blocking-findings gate applies — could '
+                    'not be established. Repair the phases, or archive deliberately with --reason.'
+                ),
+            }
+        if any(phase.get('name') == '6-finalize' for phase in open_scan.phases):
+            findings_refusal = _finalize_findings_refusal(args.plan_id, status)
+            if findings_refusal is not None:
+                return findings_refusal
 
-    phases = status.get('phases', [])
-    active_idx = next(
-        (i for i, p in enumerate(phases) if p.get('status') != PHASE_STATUS_DONE),
-        None,
-    )
-    if active_idx is not None:
-        phases[active_idx]['status'] = PHASE_STATUS_DONE
-    if all(p.get('status') == PHASE_STATUS_DONE for p in phases):
+    # Close EVERY open phase, not the first one found. The retired form took the first
+    # phase whose status was merely ``!= done`` and closed that one alone, which failed
+    # in both directions at once: a plan holding two ``in_progress`` phases kept the
+    # second one recorded as running forever (the permanent archived record then said a
+    # phase was still in flight), and a ``pending`` phase — one that never started —
+    # satisfied ``!= done`` and was written ``done``, fabricating a fresh false record
+    # of work that never happened. ``in_progress_phases`` reports only the closable
+    # status, so both halves are fixed by the same call.
+    for phase in open_scan.phases:
+        phase['status'] = PHASE_STATUS_DONE
+    # Re-scan AFTER the closure loop: the post-condition is a statement about the
+    # document as it now stands, not about the pre-closure snapshot.
+    closure_scan = in_progress_phases(status)
+    # The completion gate is "no phase remains ``in_progress``", NOT "every phase is
+    # ``done``". The retired ``all(done)`` predicate could never fire for a plan
+    # abandoned mid-lifecycle — its untouched ``pending`` phases are not ``done`` and
+    # must stay that way — so such a plan was archived with ``current_phase`` frozen at
+    # its last phase and never reached the post-finalize sentinel its dormant consumers
+    # match on. Stated as the explicit post-condition rather than an unconditional
+    # write: the loop above has just closed every open phase, so the predicate holds by
+    # construction today, and keeping it means a future change that narrows the closure
+    # set cannot silently start claiming completion over a phase left running.
+    #
+    # ``examinable`` is the other conjunct, and it is what stops this write from being
+    # the false claim it used to be. A record whose phases could not be read in full
+    # has an UNKNOWN open-phase set, so ``complete`` — the post-finalize sentinel
+    # dormant consumers match on — would assert a completion nothing established. Such
+    # a record keeps whatever lifecycle state it already carried; the archive still
+    # happens (a deliberate ``--reason`` close of a broken plan must not be stranded),
+    # and ``phase_closure`` on the result says which of the two paths ran.
+    if closure_scan.examinable and not closure_scan.phases:
         status['current_phase'] = 'complete'
+    # Consume the loop-back re-entry marker when one is still open. ``cmd_transition``
+    # consumes it at the next guarded boundary, but a plan archived while a re-entry is
+    # still open never REACHES that boundary — so without this the marker rode into the
+    # permanent record still asserting that a loop-back was in flight. Archive is
+    # therefore the SECOND consumption point for the ONE marker, never a second marker:
+    # what is recorded here is that the re-entry ENDED WITHOUT COMPLETING, which is what
+    # actually happened, rather than the marker being silently dropped.
+    #
+    # The pop and the outcome write both happen BEFORE the single ``write_status`` below,
+    # so they land in the SAME write that closes the phases. A follow-up write would be a
+    # second commit of the same document, and after ``shutil.move`` the live plan path no
+    # longer resolves — exactly the failure the atomic phase-close exists to avoid.
+    metadata = normalize_metadata(status)
+    loop_back_marker = metadata.pop('loop_back_reentry', None)
+    if loop_back_marker is not None:
+        # A structurally odd marker (not a dict) is still consumed rather than left
+        # behind: the record it would otherwise leave is the thing being corrected.
+        marker_fields = loop_back_marker if isinstance(loop_back_marker, dict) else {}
+        reentry_outcome: dict[str, Any] = {
+            'outcome': 'ended_without_completing',
+            'from_phase': marker_fields.get('from_phase', 'unknown'),
+            'to_phase': marker_fields.get('to_phase', 'unknown'),
+            'consumed_at': now_utc_iso(),
+            'consumed_by': 'archive',
+        }
+        scheduled_at = marker_fields.get('at')
+        if scheduled_at is not None:
+            reentry_outcome['scheduled_at'] = scheduled_at
+        metadata['loop_back_reentry_outcome'] = reentry_outcome
+        log_entry(
+            'decision',
+            args.plan_id,
+            'INFO',
+            f'(plan-marshall:manage-status) Loop-back re-entry marker consumed at archive '
+            f'(scheduled by {reentry_outcome["from_phase"]} loop_back to '
+            f'{reentry_outcome["to_phase"]}) — the plan was archived before the re-entry '
+            'reached a guarded boundary, so the archived record states that the re-entry '
+            'ended without completing',
+        )
     # Drop any in-flight terminal-title token (any TITLE_TOKEN_STATES value —
     # lock-waiting/lock-owned/build-busy) before archiving. An archived plan
     # holds no live coordination state worth arbitrating over, so this pop is
@@ -575,7 +722,26 @@ def cmd_archive(args: argparse.Namespace) -> dict[str, Any] | None:
     # exempts this slot from GC until the terminal state has actually been
     # delivered.
 
-    return {'status': 'success', 'plan_id': args.plan_id, 'archived_to': str(archive_path)}
+    # ``phase_closure`` mirrors the census cohort row's ``complete``/``partial`` pair:
+    # the verdict is published on every SUCCESSFUL archive response, and the ``reason``
+    # naming the shortfall accompanies only the degraded one. A caller therefore never
+    # has to infer from a bare ``success`` whether the phase closure it just triggered
+    # actually covered the whole record. It is scoped to the success payload rather than
+    # to every response because the refusals above return BEFORE the phase-close write —
+    # they report no closure because none was attempted.
+    result: dict[str, Any] = {
+        'status': 'success',
+        'plan_id': args.plan_id,
+        'archived_to': str(archive_path),
+        'phase_closure': 'complete' if closure_scan.examinable else 'partial',
+    }
+    if not closure_scan.examinable:
+        result['phase_closure_reason'] = (
+            f'the phases of {args.plan_id!r} could not be read in full, so the open-phase set is '
+            f'unknown and the existing current_phase was preserved rather than written complete: '
+            f'{"; ".join(closure_scan.unexaminable)}'
+        )
+    return result
 
 
 #: The closed vocabulary :attr:`LessonCarryBack.action` reports.

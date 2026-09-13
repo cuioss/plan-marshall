@@ -125,6 +125,53 @@ def _seed_finalize_phase_plan(plan_id: str) -> None:
     cmd_set_phase(Namespace(plan_id=plan_id, phase='6-finalize'))
 
 
+def _seed_two_in_progress_plan(plan_id: str) -> None:
+    """Create a plan holding TWO phases recorded ``in_progress`` at once.
+
+    Built with production verbs only. ``_seed_finalize_phase_plan`` leaves 1..5
+    ``done`` with ``6-finalize`` ``in_progress``; a backward ``cmd_set_phase`` then
+    re-opens ``5-execute``. ``cmd_set_phase`` stamps its target ``in_progress``
+    without clearing any LATER phase, so ``6-finalize`` stays open too. That is a
+    genuine loop-back re-entry — the ordinary way a plan comes to hold two open
+    phases — and it persists ``metadata.loop_back_reentry`` exactly as production
+    does, rather than hand-writing the state into ``status.json``.
+
+    ⛔ Deliberately NOT reached via ``cmd_transition(completed='5-execute')``.
+    ``6-finalize`` is a guarded boundary, so that call fires the inline
+    strict-verify guard and the clean-tree post-condition: the seed would then
+    depend on handshake-capture and worktree stubs that have nothing to do with the
+    archive post-condition under test, and would refuse outright in a fixture that
+    has no real worktree behind ``metadata.worktree_path``.
+    """
+    _seed_finalize_phase_plan(plan_id)
+    cmd_set_phase(Namespace(plan_id=plan_id, phase='5-execute'))
+
+
+def _seed_early_archive_plan(plan_id: str) -> None:
+    """Create a plan abandoned EARLY: one phase open, later phases never started.
+
+    ``1-init`` is ``done``, ``2-refine`` is ``in_progress``, and ``3-outline``
+    onward are still ``pending`` — the shape of a plan archived mid-lifecycle
+    rather than at the end of finalize.
+
+    The pending TAIL is the whole point of this seed: it is what separates closing
+    a phase that really ran from fabricating a finished record for phases that
+    never started. The ``cmd_set_phase`` here is a FORWARD move, so no
+    ``loop_back_reentry`` marker is written and this seed doubles as the
+    marker-free control.
+    """
+    cmd_create(
+        Namespace(
+            plan_id=plan_id,
+            title='Early Archive Test',
+            phases='1-init,2-refine,3-outline,4-plan,5-execute,6-finalize',
+            force=False,
+        )
+    )
+    cmd_update_phase(Namespace(plan_id=plan_id, phase='1-init', status='done'))
+    cmd_set_phase(Namespace(plan_id=plan_id, phase='2-refine'))
+
+
 # =============================================================================
 # Regression Tests: cmd_list discovers moved-in worktree plans (ADR-002)
 # =============================================================================

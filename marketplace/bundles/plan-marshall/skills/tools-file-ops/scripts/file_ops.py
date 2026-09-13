@@ -54,6 +54,7 @@ from typing import Any
 from marketplace_paths import (
     NO_PLAN_SENTINEL,
     PLAN_DIR_NAME,
+    WORKTREES_DIRNAME,
     _find_plan_root_from_cwd,
     resolve_main_anchored_path,
 )
@@ -176,7 +177,7 @@ def format_tokens_short(n: int) -> str:
 def get_worktree_root() -> Path:
     """Return the project-local worktree root for plan-marshall.
 
-    Resolves to ``<base_dir>/worktrees`` where ``<base_dir>`` is the
+    Resolves to ``<base_dir>/{WORKTREES_DIRNAME}`` where ``<base_dir>`` is the
     plan-local runtime-state root returned by :func:`get_base_dir`. In
     production this is ``<plan-root>/.plan/local/worktrees`` where
     ``<plan-root>`` is resolved by the uniform cwd rule (ADR-002) — worktrees
@@ -194,8 +195,14 @@ def get_worktree_root() -> Path:
             no ``PLAN_BASE_DIR``, and no ``.plan/local`` ancestor of the current
             working directory). Worktrees require a base directory to anchor
             against.
+
+    The trailing segment comes from the shared
+    :data:`marketplace_paths.WORKTREES_DIRNAME` rather than a local literal: the
+    ``census`` verb composes the same segment onto a MAIN-anchored base, and two
+    independently-spelled copies of one scalar are what let a re-spelling send
+    that verb scanning an absent path while it reported a confident zero.
     """
-    return get_base_dir() / 'worktrees'
+    return get_base_dir() / WORKTREES_DIRNAME
 
 
 def guard_worktree_cwd(plan_id: str) -> dict[str, Any] | None:
@@ -302,7 +309,7 @@ def _worktree_escape_origin(root: Path) -> Path | None:
     would invent an invalid ``PLAN_TRACKED_CONFIG_DIR`` override for it.
     """
     cwd = Path.cwd().resolve()
-    worktrees_root = (root / PLAN_DIR_NAME / 'local' / 'worktrees').resolve()
+    worktrees_root = (root / PLAN_DIR_NAME / 'local' / WORKTREES_DIRNAME).resolve()
     if not cwd.is_relative_to(worktrees_root):
         return None
     relative = cwd.relative_to(worktrees_root)
@@ -326,8 +333,8 @@ def _warn_on_worktree_escape(root: Path) -> None:
     cwd = Path.cwd().resolve()
     warnings.warn(
         'plan root resolution escape: the working directory '
-        f'{str(cwd)!r} is inside the worktrees/ subtree '
-        f'{str((root / PLAN_DIR_NAME / "local" / "worktrees").resolve())!r} of '
+        f'{str(cwd)!r} is inside the {WORKTREES_DIRNAME}/ subtree '
+        f'{str((root / PLAN_DIR_NAME / "local" / WORKTREES_DIRNAME).resolve())!r} of '
         f'the resolved plan root {str(root.resolve())!r}, and the originating '
         f'worktree {str(escaped)!r} carries no {PLAN_DIR_NAME}/local of its own. '
         'Plan-root-relative state would be written into the MAIN checkout, not '

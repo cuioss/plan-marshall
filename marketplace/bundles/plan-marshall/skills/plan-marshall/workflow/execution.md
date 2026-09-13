@@ -420,14 +420,28 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status transi
   --plan-id {plan_id} --completed 5-execute
 ```
 
-**Recovery branch — `worktree_dirty_at_boundary`**: the transition's inline
-clean-tree post-condition refuses to advance when the worktree still carries
-uncommitted changes at the `5-execute → 6-finalize` boundary (a phase-5
-Step 10a commit obligation was skipped; the refusal TOON carries
-`dirty_files[]`). The recovery is deterministic **per-deliverable settlement
-bookkeeping** — in a multi-deliverable plan the dirty files may span several
-deliverables, so a single blanket commit attributed to "the residual
-deliverable" would be wrong or ambiguous:
+The transition's inline clean-tree post-condition refuses to advance on either of
+**two distinct tree-state codes**, and they take **different recovery paths** — read
+which code the refusal carries before acting:
+
+| Refusal | Condition it reports | Recovery |
+|---|---|---|
+| `worktree_dirty_at_boundary` | The tree WAS read and carries uncommitted changes at the `5-execute → 6-finalize` boundary — a phase-5 Step 10a commit obligation was skipped. The refusal TOON carries `dirty_files[]`. | The per-deliverable settlement bookkeeping below. |
+| `worktree_unreadable_at_boundary` | `git status` itself failed, so the tree was NEVER read. The refusal is "cannot be proven clean", not "is dirty", and carries **no** `dirty_files` key. | Repair the worktree, then retry — there is nothing to attribute and nothing to commit. |
+
+**Recovery branch — `worktree_unreadable_at_boundary`**: no settlement commit is
+owed, and none may be cut. The porcelain read failed, so the plan's dirty set is
+**unknown rather than empty** — treating the absent `dirty_files` as an empty list
+and advancing would transition on a tree nobody examined. Emit an `[ERROR]`
+work-log line carrying the refusal's `message` (it names the worktree path and
+git's own stderr), repair the worktree — most often a `metadata.worktree_path`
+pointing at a removed or non-git directory — then retry the transition exactly
+once. Do NOT cut a commit, and do NOT bypass the guard.
+
+**Recovery branch — `worktree_dirty_at_boundary`**: the recovery is deterministic
+**per-deliverable settlement bookkeeping** — in a multi-deliverable plan the dirty
+files may span several deliverables, so a single blanket commit attributed to "the
+residual deliverable" would be wrong or ambiguous:
 
 1. **Build the attribution map.** Map each path in the refusal's
    `dirty_files[]` back to the deliverable that claims it: match against
