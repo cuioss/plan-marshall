@@ -196,6 +196,49 @@ def test_every_derived_bound_is_positive():
     )
 
 
+#: The arm a degraded module-tests run reports on, named by ARM rather than by the
+#: variant's whole literal so ordinary rewording of the rest of the string does not
+#: pin it here.
+_DEGRADED_MODULE_TESTS_MARKER = 'module-tests DEGRADED'
+
+
+def test_the_module_tests_degraded_variant_reached_the_derived_population():
+    """A degradation variant the derivation never picked up is measured by nothing.
+
+    This is a REACHABILITY floor for the derivation, not a hand-written roster: it
+    enumerates no population and pins no other variant. The gap it closes is the one
+    the derived sweep is structurally blind to — a variant the gate document carries
+    in a shape ``_DISPLAY_DETAIL`` cannot match drops out of ``_VARIANTS`` silently,
+    and every per-variant sweep then reports a clean measurement over a string it
+    never saw. A degradation variant is exactly where that matters: the whole point
+    of it is that a degraded arm reports itself in the step record, so a variant
+    nobody sizes is a variant nobody can be sure is emittable.
+
+    The worst-case expansion is re-checked here rather than left to the parametrized
+    sweep alone, so this test states the property it is named for on its own.
+    """
+    matching = [variant for variant in _VARIANTS if _DEGRADED_MODULE_TESTS_MARKER in variant]
+
+    assert matching, (
+        f'No derived variant names {_DEGRADED_MODULE_TESTS_MARKER!r}. Either the '
+        f'module-tests degradation path carries no detail variant at all, or it '
+        f'carries one in a shape the payload detector cannot see — and in both cases '
+        f'the sweep measured {len(_VARIANTS)} variant(s), none of them the one a '
+        f'degraded module-tests arm is instructed to emit.'
+    )
+
+    for variant in matching:
+        expanded, unbudgeted = _expand(variant)
+        assert not unbudgeted, (
+            f'Degradation variant {variant!r} interpolates placeholder(s) '
+            f'{sorted(set(unbudgeted))} in no declared size class, so it ships unmeasured'
+        )
+        assert len(expanded) <= CEILING, (
+            f'Degradation variant {variant!r} expands to {len(expanded)} characters '
+            f'at its worst case, over the {CEILING}-character ceiling. Expanded: {expanded!r}'
+        )
+
+
 # ---------------------------------------------------------------------------
 # Per-variant sweeps
 # ---------------------------------------------------------------------------

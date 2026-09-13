@@ -342,7 +342,7 @@ The guards above run mypy + ruff over production sources and mypy over `test/` �
      resolve --command module-tests --audit-plan-id {plan_id}
    ```
 
-   Capture `executable`, `execution_tier` and `bash_timeout_seconds`. The captured `executable` IS branch 4's whole-tree invocation, used verbatim. It is NOT the source of branch 6's scoped invocation — branch 6 re-resolves module-scoped, for the reason stated there. What this resolve additionally yields is the **build-skill notation** (the `{bundle}:{skill}:{script}` prefix of the executable), which is the notation branch 1 calls `resolve-test-scope` on. A project whose build skill exposes no `resolve-test-scope` verb cannot answer the divergence question at all — branch 1 defines the exact response shape that proves this, and it is the only shape that reaches the WARNING below. That case does NOT route to branch 3: branch 3's mandatory WARNING interpolates `{scoped_modules}`, which only branch 1's seam call produces and this path never makes, so borrowing it would prescribe an instruction the path structurally cannot satisfy. Emit its own WARNING instead — naming the un-gated dimension without a footprint it cannot know — and proceed to **Mark Step Complete (Success)** under § "Mark Step Complete"'s governing rule, which requires the `display_detail` to name module-tests as un-gated:
+   Capture `executable`, `execution_tier` and `bash_timeout_seconds`. The captured `executable` IS branch 4's whole-tree invocation, used verbatim. It is NOT the source of branch 6's scoped invocation — branch 6 re-resolves module-scoped, for the reason stated there. What this resolve additionally yields is the **build-skill notation** (the `{bundle}:{skill}:{script}` prefix of the executable), which is the notation branch 1 calls `resolve-test-scope` on. A project whose build skill exposes no `resolve-test-scope` verb cannot answer the divergence question at all — branch 1 defines the exact response shape that proves this, and it is the only shape that reaches the WARNING below. That case does NOT route to branch 3: branch 3's mandatory WARNING interpolates `{scoped_modules}`, which only branch 1's seam call produces and this path never makes, so borrowing it would prescribe an instruction the path structurally cannot satisfy. Emit its own WARNING instead — naming the un-gated dimension without a footprint it cannot know — and proceed to **Mark Step Complete (Success)** using the **module-tests DEGRADED** detail variant under § "Mark Step Complete", which names this arm as degraded in the recorded verdict rather than leaving it to a work-log warning no consumer of the step record reads:
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -358,7 +358,7 @@ The guards above run mypy + ruff over production sources and mypy over `test/` �
      --message "[WARNING] (plan-marshall:pre-push-quality-gate) No module-tests canonical resolves in this project, so no pytest could be run and the divergence question cannot be answered — the scoped-green / whole-tree-red divergence class (PLAN-08) is UN-GATED at finalize for this push. Proceeding on honest degradation."
    ```
 
-   Then proceed to **Mark Step Complete (Success)** under the same governing rule, which requires the `display_detail` to name module-tests as un-gated. Any other error shape did not answer, so STOP the step.
+   Then proceed to **Mark Step Complete (Success)** using the same **module-tests DEGRADED** detail variant — the causes differ, the recorded verdict does not, and § "Mark Step Complete" states why one variant serves both. Any other error shape did not answer, so STOP the step.
 
    **The rule both cases instantiate**, stated once so a third unanswerable case does not borrow either message: a degradation WARNING names the cause ITS OWN path actually has. Borrowing a sibling branch's message is prohibited for the same reason borrowing its routing is — the borrowed text asserts something untrue of the path that emitted it.
 
@@ -372,7 +372,7 @@ The guards above run mypy + ruff over production sources and mypy over `test/` �
    Branch on this call with the same exact-shape discipline the whole-tree `quality-gate` availability probe uses — and for the same reason: exactly one response proves the verb does not exist, and every other one merely failed to answer.
 
    - **`status: success`** → parse `scoped_modules`, `divergence_possible`, `recommended_target`, `unresolved_paths`, and `whole_tree_available` from the TOON output, and continue to the routing branches below. For this repository the notation resolves to `plan-marshall:build-pyproject:pyproject_build`; see [`build-pyproject/SKILL.md`](../../build-pyproject/SKILL.md) § "Canonical invocations" → `resolve-test-scope` for that seam's argument surface and output contract, and the corresponding section of whichever `build-{tool}` skill a different project resolves to.
-   - **A rejection carrying ALL FOUR of `error: invalid_invocation`, `reason: unknown_verb`, `rejected: resolve-test-scope`, and an `accepted` list that OMITS `resolve-test-scope`** → this exact shape, and only this shape, proves the resolved build skill exposes no `resolve-test-scope` verb. This is the response that reaches **branch 0's missing-verb WARNING**: emit it and proceed to **Mark Step Complete (Success)** under § "Mark Step Complete"'s governing rule. The fourth conjunct is deliberately **"`accepted` omits the verb"** rather than "`accepted` is non-empty", for the same reason the resolver probe phrases its third conjunct that way — a degenerate empty list is a legitimate instance of the shape, not grounds to reject it.
+   - **A rejection carrying ALL FOUR of `error: invalid_invocation`, `reason: unknown_verb`, `rejected: resolve-test-scope`, and an `accepted` list that OMITS `resolve-test-scope`** → this exact shape, and only this shape, proves the resolved build skill exposes no `resolve-test-scope` verb. This is the response that reaches **branch 0's missing-verb WARNING**: emit it and proceed to **Mark Step Complete (Success)** with the **module-tests DEGRADED** detail variant under § "Mark Step Complete". The fourth conjunct is deliberately **"`accepted` omits the verb"** rather than "`accepted` is non-empty", for the same reason the resolver probe phrases its third conjunct that way — a degenerate empty list is a legitimate instance of the shape, not grounds to reject it.
    - **ANY other response** → the call did not establish that the verb is absent; it failed to answer. An unreadable response is not evidence of unavailability, so do NOT degrade — STOP the step per § "Exit-code convention for every script call", preserving the response envelope verbatim.
 
    **Why this shape is spelled out here rather than inherited.** The unavailability response arrives on the `exit_code != 0` path — the executor refuses an unregistered verb *before* spawning and exits 2 — and § "Exit-code convention for every script call" routes every non-zero exit to STOP without qualification. Branch 0's WARNING is therefore reachable ONLY through an explicit carve-out, and this is it — narrow to the four-conjunct shape above, exactly as the honest-degradation branches elsewhere in this document are narrow carve-outs from the zero-exit clause. Left undeclared, the WARNING is prose describing a path no execution can take. That the refusal is structured rather than raw argparse output is what makes the carve-out safely narrow: the envelope names the rejected verb and the registered set as parseable fields, so "this verb does not exist" is read from named fields rather than pattern-matched out of a usage string.
@@ -456,8 +456,8 @@ The condition is stated **positively**, and that is load-bearing rather than sty
 2. the per-bundle sweep over an EMPTY bundle set — `derive_gate_bundles` returned no bundle (every footprint path landed in `unresolved`), so the loop iterated nothing. The arm attempted its scope and found nothing in it, which is the "attempted, nothing in scope" row of § "A gate states what its green does not evaluate", not a pass; the default detail's `{N}` renders `0`, which states the count rather than claiming coverage, and no wording may upgrade it to one;
 3. the whole-tree `quality-gate` honest-degradation branch (§ "Whole-tree quality-gate arm");
 4. the `test-compile` both-scopes-unavailable branch (§ "Whole-tree test-compile gate", the module-scoped fallback's unavailability shape);
-5. the module-tests branch-0 path where the resolved build skill exposes no `resolve-test-scope` verb;
-6. the module-tests branch-0 path where no `module-tests` canonical resolves at all;
+5. the module-tests branch-0 path where the resolved build skill exposes no `resolve-test-scope` verb — its detail is the **module-tests DEGRADED** variant below;
+6. the module-tests branch-0 path where no `module-tests` canonical resolves at all — its detail is that same **module-tests DEGRADED** variant;
 7. the module-tests `whole_tree_available == false` branch (branch 3);
 8. the module-tests zero-scoped-modules skip (branch 5).
 
@@ -526,6 +526,30 @@ below, which contains the word "green" for no dimension it did not gate:
 Its worst-case expansion is 67 characters at `{N}` = one digit and 68 at two — measured from the
 expanded string, not from the literal — so it stays inside the ceiling for any bundle count this gate
 can produce, exactly as the two variants above do.
+
+**Detail variant — module-tests DEGRADED (branch 0 could not answer the question).** The
+module-tests gate has TWO branch-0 paths that run no pytest at all: the resolved build skill
+exposes no `resolve-test-scope` verb, and no `module-tests` canonical resolves in this project.
+Each emits its own cause-naming WARNING and routes to **Mark Step Complete (Success)** — so each
+arrives at Branch A, whose default detail ends `test-compile + module-tests green`, asserting an
+arm that never ran. That is the same misreport the two variants above exist to prevent, on the
+third degradation path. **Branch A's default string is inapplicable on either path**; use the
+variant below, which says "green" for no arm it did not gate:
+
+```text
+--display-detail "{N} bundles + whole-tree gates green, module-tests DEGRADED"
+```
+
+ONE variant serves both paths, and that is this section's existing division of labour rather than
+a shortcut: the bounded field reports THAT the arm degraded, and the unbounded `[WARNING]` each
+branch-0 path already emits reports WHICH cause degraded it — the same split the skipped-bundle
+variant below states for its own set. Naming the cause here instead would make the field's width
+depend on which of the two fired, and neither cause is a value this field can be sized against.
+
+Its worst-case expansion is 59 characters — a count placeholder is no wider than the literal
+`{N}` it replaces, so the expanded string is the literal's own length — measured from the expanded
+string, not from the literal, exactly as the three variants above are. It therefore stays inside
+the ceiling for any bundle count this gate can produce.
 
 **Detail variant — bundles skipped (no `quality-gate` target).** The per-bundle loop skips a bundle
 whose `quality-gate` canonical does not resolve (§ "Run quality-gate per bundle"). That bundle was
