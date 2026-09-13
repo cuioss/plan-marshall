@@ -12,6 +12,7 @@ stub extension modules (no dependency on the live marketplace tree) so error
 paths and skip branches are deterministic.
 """
 
+import re
 import types
 
 import file_ops
@@ -609,3 +610,131 @@ def test_get_marketplace_bundles_path_falls_back_when_no_source(monkeypatch):
     monkeypatch.setattr(_disc, 'find_marketplace_path', lambda: None)
     result = _disc.get_marketplace_bundles_path()
     assert result.is_dir()
+
+
+# =============================================================================
+# Declaration surface == read surface (ext-point-finalize-step)
+# =============================================================================
+#
+# The ext-point document is the DECLARATION and ``find_implementors()``'s record
+# is the READ. Both directions are asserted, and both are DERIVED — from the live
+# discovered population and from the document's own tables — never from a
+# hand-written key list here. A field added later is therefore covered with no
+# edit to this module, which is the whole point: a literal list in the test would
+# reintroduce exactly the hand-maintained enumeration the ext-point exists to
+# remove. Per ADR-017 each assertion resolves its contract from the target's own
+# declaration and FAILS CLOSED when it cannot resolve it, so an unparseable doc
+# or an empty population is a failure rather than a vacuous pass.
+
+_IDENT_RE = re.compile(r'`([A-Za-z_][A-Za-z0-9_]*)`')
+
+
+def _ext_point_doc_text() -> str:
+    """The finalize-step ext-point document's text, via the module's own resolver.
+
+    Fails closed: an unresolvable document is a failure, not an empty contract.
+    """
+    doc = (
+        _disc.get_marketplace_bundles_path()
+        / 'plan-marshall'
+        / 'skills'
+        / 'extension-api'
+        / 'standards'
+        / 'ext-point-finalize-step.md'
+    )
+    assert doc.is_file(), f'ext-point doc unresolvable at {doc}; declaration surface cannot be derived'
+    # ``_disc`` is loaded dynamically, so the path chain above is untyped; str()
+    # pins the declared return rather than leaking Any into every caller.
+    return str(doc.read_text(encoding='utf-8'))
+
+
+def _markdown_table_rows(text: str, header_first_cell: str) -> list[list[str]]:
+    """Every body row of the first markdown table whose first header cell matches.
+
+    Returns each row as its list of stripped cells. Selecting the table by its
+    first HEADER cell — not by the presence of some column — is what keeps this
+    pointed at one table in a document that carries several.
+    """
+    lines = text.splitlines()
+    for index, line in enumerate(lines):
+        if not line.startswith('|'):
+            continue
+        cells = [cell.strip() for cell in line.strip().strip('|').split('|')]
+        if not cells or cells[0].lower() != header_first_cell.lower():
+            continue
+        rows: list[list[str]] = []
+        for raw in lines[index + 2 :]:  # +2 skips the header separator row
+            if not raw.startswith('|'):
+                break
+            rows.append([cell.strip() for cell in raw.strip().strip('|').split('|')])
+        return rows
+    return []
+
+
+def test_every_record_key_is_declared_in_the_ext_point_document():
+    """No undeclared read: every key the live record carries is declared.
+
+    The record key set is the UNION over the discovered population rather than
+    one record's keys, because ``verification_profile`` is surfaced only when a
+    doc declares it — reading a single record would miss a conditionally-present
+    key entirely. Fails when a key is added to the record without a matching row
+    in either the Implementor-Frontmatter table or the record-key provenance
+    table.
+    """
+    records = _disc.find_implementors(_FINALIZE_STEP_EXT_POINT)
+    assert records, 'no finalize-step implementors discovered; the population is unresolvable, so nothing is asserted'
+
+    record_keys: set[str] = set()
+    for record in records:
+        record_keys.update(record)
+
+    text = _ext_point_doc_text()
+    frontmatter_keys = {
+        ident for row in _markdown_table_rows(text, 'Field') for ident in _IDENT_RE.findall(row[0])
+    }
+    provenance_keys = {
+        ident for row in _markdown_table_rows(text, 'Record key') for ident in _IDENT_RE.findall(row[0])
+    }
+    assert frontmatter_keys, 'Implementor-Frontmatter table not found; declaration surface unresolvable'
+    assert provenance_keys, 'record-key provenance table not found; derived-key declarations unresolvable'
+
+    undeclared = record_keys - (frontmatter_keys | provenance_keys)
+    assert not undeclared, (
+        f'record keys carried but never declared in ext-point-finalize-step.md: {sorted(undeclared)}. '
+        'Add a row declaring each, or stop emitting it.'
+    )
+
+
+def test_every_declared_field_has_a_reader():
+    """No unread declaration: every declared field is resolved by some consumer.
+
+    A field is read either because the scanner parses it into the record
+    (``_IMPLEMENTOR_FRONTMATTER_KEYS``) or because the document marks it
+    ``Conditional`` / ``Optional`` / ``Never``, which is its own statement that a
+    consumer reads it from the step doc's frontmatter directly rather than off
+    the record. A row that is neither is a declaration nothing resolves. Both
+    operands are derived — the parsed set from the code, the obligation from the
+    document's own Required column.
+    """
+    text = _ext_point_doc_text()
+    rows = _markdown_table_rows(text, 'Field')
+    assert rows, 'Implementor-Frontmatter table not found; declaration surface unresolvable'
+
+    parsed_keys = set(_disc._IMPLEMENTOR_FRONTMATTER_KEYS)
+    unread: list[str] = []
+    for row in rows:
+        idents = _IDENT_RE.findall(row[0])
+        if not idents:
+            continue
+        key = idents[0]
+        required = row[2] if len(row) > 2 else ''
+        if key in parsed_keys:
+            continue
+        if any(marker in required for marker in ('Conditional', 'Optional', 'Never')):
+            continue
+        unread.append(key)
+
+    assert not unread, (
+        f'fields declared in ext-point-finalize-step.md that no consumer resolves: {unread}. '
+        'Either wire a reader, or drop the row.'
+    )
