@@ -167,7 +167,8 @@ def _is_rate_limit_notice(body: str) -> bool:
     ``automatic-review/standards/bot-participation-contract.md``.
 
     Every refusal-recognition site (``_is_refusal_notice``, which
-    ``github_pr.cmd_fetch_findings`` and :func:`_detect_rate_limited_bots` both read,
+    ``github_pr.cmd_fetch_findings`` reads, and :func:`refusal_layers`, which
+    :func:`_detect_rate_limited_bots` reads and that boolean is derived from,
     plus ``github_re_review._match_bot_comment`` and
     ``github_re_review._match_review``) is expected to consult this structural arm
     ALONGSIDE the registry data arm and the other arms of the stack — see
@@ -245,11 +246,12 @@ def _is_refusal_notice(body: str, bot_kind: str | None = None) -> bool:
 # ---------------------------------------------------------------------------
 #
 # ``github_re_review._refusal_record`` reports the arm that fired so a reader can
-# tell a registry-declared refusal from one recognised by shape alone, and
-# ``github_pr.cmd_fetch_findings`` reports the same vocabulary on the record it
-# emits for a refusal no earlier arm matched. Both read these names from here, so
-# the two records are directly comparable and there is exactly one place a new arm
-# is named.
+# tell a registry-declared refusal from one recognised by shape alone,
+# :func:`_detect_rate_limited_bots` reports it on every ``rate_limited_bots[]``
+# record, and ``github_pr.cmd_fetch_findings`` reports the same vocabulary on the
+# record it emits for a refusal no earlier arm matched. All three read these names
+# from here, so the records are directly comparable and there is exactly one place
+# a new arm is named.
 #
 # The two pre-existing spellings are preserved BYTE-IDENTICALLY from when they were
 # inline literals in ``github_re_review``: every stored envelope and every existing
@@ -633,14 +635,17 @@ def _detect_rate_limited_bots(comments: list[dict]) -> list[dict]:
     bot set, each bot's login, its refusal markers, its rate-limit class, and its ETA
     phrasings are all registry data.
 
-    Classification goes through the shared :func:`_is_refusal_notice` seam, so this
-    detector and the ``fetch_findings`` producer's pre-noise-filter stage recognize a
-    refusal identically, from one place. See that function for why no single arm
+    Classification goes through the shared :func:`refusal_layers` seam — the one
+    :func:`_is_refusal_notice` is derived from — so this detector and the
+    ``fetch_findings`` producer's pre-noise-filter stage recognize a refusal
+    identically, from one place, while this detector can still report WHICH arm
+    fired. See :func:`_is_refusal_notice` for why no single arm
     suffices on its own, and this module's docstring for the arms the stack
     currently defines — including the enumerative arm, which sits after the noise
     filter and so is deliberately outside this seam.
 
-    Each detected bot yields ``{bot_kind, rate_limit_class, eta, cause, cap}``:
+    Each detected bot yields ``{bot_kind, rate_limit_class, eta, cause, cap, layer,
+    body}``:
 
     - ``rate_limit_class`` distinguishes a window the caller can usefully await
       from a quota it cannot; it is registry data and fails closed to ``unknown``
@@ -658,10 +663,21 @@ def _detect_rate_limited_bots(comments: list[dict]) -> list[dict]:
       (:func:`refusal_size_cap`), or ``''`` when it stated none. An empty cap is
       reported as UNKNOWN and never defaulted: a figure nobody observed would make
       the recorded coverage gap look audited when it was not.
+    - ``layer`` is the recognition arm that read the notice — the first member of
+      :func:`refusal_layers` in consult order, so a registry-declared refusal
+      reports ``registry_refusal_patterns`` even when the structural arm also
+      fired, exactly as ``github_re_review._refusal_record`` resolves it.
+    - ``body`` is the notice itself as a whitespace-collapsed, truncated excerpt
+      (``github_re_review._body_excerpt``), the same excerpt ``refusals[]`` carries.
 
-    Both fields are emitted for EVERY detected refusal rather than only a size one,
-    so every consumer reads ONE record shape whatever the cause; on a quota refusal
-    ``cause`` is ``quota`` and ``cap`` is ``''``.
+    ``layer`` and ``body`` are what make this record the SAME shape as
+    ``github_re_review``'s ``refusals[]`` record, so a consumer that arms a wait on
+    either producer's refusal can state which arm read the notice and what the
+    notice said, instead of re-deriving it after the fact.
+
+    ``cause`` and ``cap`` are emitted for EVERY detected refusal rather than only a
+    size one, so every consumer reads ONE record shape whatever the cause; on a
+    quota refusal ``cause`` is ``quota`` and ``cap`` is ``''``.
 
     Bots that are NOT rate-limited are simply absent from the list, so an empty
     list means "no registered bot is rate-limited" — the same signal the removed
@@ -671,9 +687,10 @@ def _detect_rate_limited_bots(comments: list[dict]) -> list[dict]:
     """
     # Deferred import: ``github_re_review`` imports ``_is_rate_limit_notice``
     # from this module at import time, so a module-level import here would close
-    # a cycle. Resolving the login map through ``bot_kind_for_author`` (rather
-    # than re-deriving it locally) keeps the single source of truth for the
-    # login -> bot_kind correspondence.
+    # a cycle. Resolving the login map through ``bot_kind_for_author`` and the
+    # excerpt through ``_body_excerpt`` (rather than re-deriving either locally)
+    # keeps one source of truth for the login -> bot_kind correspondence and for
+    # the refusal excerpt both producers carry.
     import github_re_review
 
     detected: list[dict] = []
@@ -687,7 +704,8 @@ def _detect_rate_limited_bots(comments: list[dict]) -> list[dict]:
             continue
         newest = max(bot_comments, key=lambda c: str(c.get('created_at') or ''))
         body = str(newest.get('body') or '')
-        if not _is_refusal_notice(body, bot_kind):
+        layers = refusal_layers(body, bot_kind)
+        if not layers:
             continue
         detected.append(
             {
@@ -696,6 +714,8 @@ def _detect_rate_limited_bots(comments: list[dict]) -> list[dict]:
                 'eta': _extract_rate_limit_eta(body, bot_kind),
                 'cause': refusal_cause(body, bot_kind),
                 'cap': refusal_size_cap(body, bot_kind),
+                'layer': layers[0],
+                'body': github_re_review._body_excerpt(body),
             }
         )
     return detected

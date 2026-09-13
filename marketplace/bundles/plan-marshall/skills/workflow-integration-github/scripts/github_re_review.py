@@ -40,9 +40,9 @@ two completion signals, checked in that order of strength:
    SAME :func:`_references_head_sha` predicate the review path uses, run over the
    comment BODY.
 
-   ⛔ **"An issue comment carries no reviewed-commit SHA" was a premise, not an
-   observation, and it is false for a bot whose only declared publish shape is an
-   issue comment.** ``cuioss-review-bot`` declares ``participation_evidence:
+   ⛔ **The retired claim — that this signal never names the commit it reviewed —
+   was a premise, not an observation, and it is false for a bot whose only declared
+   publish shape is a comment.** ``cuioss-review-bot`` declares ``participation_evidence:
    issue_comment`` and an empty ``completion_check_name`` — it submits no review
    object at all — and it names the commit it reviewed INSIDE that comment, as a
    ``…/commit/{sha}`` permalink: the exact URL-embedded form
@@ -60,6 +60,14 @@ two completion signals, checked in that order of strength:
    the genuine decline. The signal ORDER is unchanged — a review still wins when
    both are present — because a review object remains the stronger artifact even
    when a comment verifies the same commit.
+
+   When SEVERAL of the bot's comments are eligible, the one whose body names
+   ``head_sha`` is SELECTED over one that names no commit. Returning the first
+   eligible comment outright let an earlier comment naming no commit hide a later
+   one naming the current HEAD, so the envelope published
+   ``head_sha_verified: false`` for a review that DID verify it — the same
+   manufactured decline the review arm's reference recogniser exists to prevent,
+   one arm over.
 
 BOTH discriminators additionally reject a **refusal notice** — a comment or a
 review body a bot posts to say it could NOT review — running the same
@@ -751,6 +759,10 @@ class _ReReviewStrategy:
         See the module docstring's signal-2 entry for the incident and the taxonomy
         consequence.
 
+        Where several of the bot's comments are eligible,
+        :meth:`_match_bot_comment` prefers one whose body names ``head_sha``, so an
+        earlier non-verifying comment cannot mask a later verifying one.
+
         Args:
             pr_number: PR to poll.
             head_sha: Commit the fresh review must have reviewed. Gates the review
@@ -784,7 +796,7 @@ class _ReReviewStrategy:
             review = self._match_review(data.get('reviews') or [], head_sha, trigger_dt, bot_kind, refusals)
             if review is not None:
                 return 'review', review, refusals
-            comment = self._match_bot_comment(data.get('comments') or [], bot_kind, trigger_dt, refusals)
+            comment = self._match_bot_comment(data.get('comments') or [], head_sha, bot_kind, trigger_dt, refusals)
             if comment is not None:
                 return 'issue_comment', comment, refusals
             return '', None, refusals
@@ -1009,13 +1021,14 @@ class _ReReviewStrategy:
     @staticmethod
     def _match_bot_comment(
         comments: list[dict],
+        head_sha: str,
         bot_kind: str | None,
         trigger_dt: datetime | None,
         refusals: list[dict],
     ) -> dict | None:
-        """Return the first comment from ``bot_kind`` post-dating ``trigger_dt``.
+        """Return the eligible ``bot_kind`` comment that best evidences ``head_sha``.
 
-        A comment matches when ALL of the following hold:
+        A comment is ELIGIBLE when ALL of the following hold:
 
         - ``bot_kind`` is set and the comment's author resolves through
           :func:`bot_kind_for_author` to exactly that kind — a human author, or a
@@ -1028,23 +1041,44 @@ class _ReReviewStrategy:
           not review" comment is the bot talking about itself, not a completed
           review.
 
+        Among the eligible comments the one whose BODY references ``head_sha``
+        (:func:`_references_head_sha`) is PREFERRED; the first eligible comment is
+        the fallback when none does. Returning the first eligible comment outright
+        let an earlier comment naming no commit hide a later one naming the
+        current HEAD, so ``await_fresh_review`` published
+        ``head_sha_verified: false`` for a review that DID verify it. That is the
+        same manufactured decline :meth:`_match_review`'s reference recogniser
+        exists to prevent — and the one failure on this path that blocks a merge —
+        so the two arms guard it alike. The preference decides only WHICH eligible
+        comment is returned: every eligibility gate above is unchanged, and a
+        refusal is still never selected.
+
         Fail-closed on every missing input: no ``bot_kind``, no ``trigger_dt``,
-        or an unparseable timestamp yields no match. Every refusal this path skips
-        is APPENDED to ``refusals`` for the caller to surface, exactly as
-        :meth:`_match_review` does.
+        or an unparseable timestamp yields no match. An empty or absent
+        ``head_sha`` references nothing (:func:`_references_head_sha` fails closed
+        on it), so the preference simply never fires and the first eligible
+        comment is returned.
+
+        Every refusal this path skips is APPENDED to ``refusals`` for the caller
+        to surface, exactly as :meth:`_match_review` does. Because the preference
+        has to see every eligible comment, the scan no longer stops at the first
+        one — so a refusal sitting AFTER the selected comment is now recorded too,
+        which is strictly more of what ``refusals`` already carried.
 
         **This matcher decides WHETHER the bot answered; it does not decide whether
         the answer verified the HEAD.** Unlike :meth:`_match_review` — where the SHA
-        reference is a MATCH condition — a comment's reviewed-commit reference is
-        read afterwards, by :func:`_verifies_head_sha`, off the matched record's
-        body. The asymmetry is deliberate and load-bearing: making the reference a
-        match condition here would turn a genuine incremental-review DECLINE (the bot
+        reference is a MATCH condition — the comment arm's VERDICT is settled
+        afterwards, by :func:`_verifies_head_sha`, off the matched record's body; the
+        preference above only chooses among comments that are already eligible. The
+        asymmetry is deliberate and load-bearing: making the reference a match
+        condition here would turn a genuine incremental-review DECLINE (the bot
         answered, naming no commit) back into a bare timeout, erasing the one
         observation the ``declined`` member exists to record. So the await still
         completes on the answer, and the envelope reports how strong that answer was.
         """
         if not bot_kind or trigger_dt is None:
             return None
+        eligible: list[dict] = []
         for comment in comments:
             if bot_kind_for_author(comment.get('author')) != bot_kind:
                 continue
@@ -1060,8 +1094,13 @@ class _ReReviewStrategy:
             if not stamps:
                 continue
             if max(stamps) > trigger_dt:
-                return comment
-        return None
+                eligible.append(comment)
+        if not eligible:
+            return None
+        return next(
+            (c for c in eligible if _references_head_sha(str(c.get('body') or ''), head_sha)),
+            eligible[0],
+        )
 
 
 # One generic strategy instance per registered bot_kind, each parameterized by

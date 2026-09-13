@@ -370,9 +370,10 @@ def test_derived_document_set_is_non_empty_and_reaches_the_sub_standard():
 # ---------------------------------------------------------------------------
 #
 # ``github_re_review await_fresh_review`` matches on EITHER a review that named the
-# merge candidate's SHA (``head_sha_verified: true``) OR a bare comment that merely
-# post-dates the trigger (``false``). A consumer reading ``matched`` alone credits a
-# review that never named the commit it matched.
+# merge candidate's SHA OR a comment that post-dates the trigger, and publishes
+# ``head_sha_verified: true`` only when the matched evidence names that SHA — a
+# comment whose body names no such commit publishes ``false``. A consumer reading
+# ``matched`` alone credits a review that never named the commit it matched.
 #
 # ⛔ Substring presence cannot express that. The previous form of this guard asserted
 # that the words ``head_sha_verified``, ``declined`` and ``{declined_bots}`` each

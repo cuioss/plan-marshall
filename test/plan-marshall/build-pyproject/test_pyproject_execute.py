@@ -673,12 +673,19 @@ def _read_ledger_rows(base: Path) -> list[dict]:
 
 
 class TestGateRouteLedgerRecord:
-    """Red-first: each terminal gate route leaves one kind=build ledger row.
+    """Red-first: each terminal gate route leaves its own kind=build ledger row.
 
     The in-process leg is the regression anchor — on the unpatched seam it ran
     without leaving any row, so a green gate read as ungated failures. The
     daemon-route control asserts the routed leg leaves the same row shape, and
     that a true daemon failure row is still recorded (never suppressed).
+
+    ⛔ The single-row assertions below hold because these tests call ``cmd_run``
+    DIRECTLY. A build that crosses the executor dispatch boundary leaves TWO
+    kind=build rows — this seam's route-bearing row, plus the sha-bearing row
+    ``execute-script.py.template`` stamps for any build-class notation — and
+    that doubled case is not exercised here. Anything auditing gate coverage by
+    counting kind=build rows must deduplicate rather than assume one per build.
     """
 
     def test_in_process_run_leaves_ledger_row(self, monkeypatch, tmp_path):

@@ -5,7 +5,8 @@
 The producer-side dedup keys on ``(bot_kind, comment_id)`` for every bot kind,
 thread-bearing and thread_id-less alike. Covered here: re-fetch idempotence, the
 ``(bot_kind, comment_id)`` collision boundary, the contentless-boilerplate
-pre-filter layer, and the ``stale_participation_bots[]`` currency observation.
+pre-filter layer, the per-shape evidence content gate, and the
+``stale_participation_bots[]`` currency observation.
 
 The findings store is REAL (isolated via the autouse ``plan_context``
 ``PLAN_BASE_DIR`` sandbox); only the GitHub provider surface (``check_auth``,
@@ -25,6 +26,10 @@ from _github_pr_fixtures import (
     CURRENCY_BLIND_BOTS,
     CURRENCY_SUBJECT_BOT_COUNT,
     CURRENCY_SUBJECT_BOTS,
+    MARKER_GATED_EVIDENCE,
+    MARKER_GATED_EVIDENCE_COUNT,
+    UNGATED_EVIDENCE,
+    UNGATED_EVIDENCE_COUNT,
     VacuousPopulationError,
     guard_non_empty,
 )
@@ -38,6 +43,9 @@ PLAN_IDS: tuple[str, ...] = (
     'gh-pr-bare-flags',
     'gh-pr-bare-warn-but-ingest',
     'gh-pr-barrier-noise',
+    'gh-pr-clean-verdict-credited',
+    'gh-pr-clean-verdict-edited-in',
+    'gh-pr-clean-verdict-walkthrough-only',
     'gh-pr-classification-empty',
     'gh-pr-classification-union',
     'gh-pr-dedup-collision',
@@ -86,6 +94,21 @@ PLAN_IDS: tuple[str, ...] = (
 #: iterates rather than transcribed — a bot added to the registry seeds its plan
 #: id too, instead of failing with an unreached store.
 PLAN_IDS += tuple(f'gh-pr-preupgrade-dedup-{bot_kind}' for bot_kind in CURRENCY_SUBJECT_BOTS)
+
+
+def _evidence_plan_id(prefix: str, bot_kind: str, shape: str) -> str:
+    """The kebab-case plan id a per-(bot, shape) evidence-gate case files against."""
+    return f'gh-pr-evidence-{prefix}-{bot_kind}-{shape.replace("_", "-")}'
+
+
+#: The evidence-gate cases are parametrized over registry-derived populations, so their
+#: plan ids are derived from the SAME populations rather than transcribed.
+PLAN_IDS += tuple(
+    _evidence_plan_id(prefix, bot_kind, shape)
+    for bot_kind, shape, _marker in MARKER_GATED_EVIDENCE
+    for prefix in ('gated-marked', 'gated-bare')
+)
+PLAN_IDS += tuple(_evidence_plan_id('ungated', bot_kind, shape) for bot_kind, shape in UNGATED_EVIDENCE)
 
 github_pr = load_script_module('plan-marshall', 'workflow-integration-github', 'github_pr.py', 'github_pr')
 _findings_core = load_script_module('plan-marshall', 'manage-findings', '_findings_core.py', '_findings_core')
@@ -1425,6 +1448,215 @@ def test_fetch_findings_splits_a_refusing_bot_from_a_participating_one(plan_cont
     assert result['refused_bots'] == ['coderabbit']
     # ...and is NOT laundered into the participation set by its publish shape.
     assert result['participated_bots'] == [{'bot_kind': 'sourcery', 'evidence_kind': 'review_body'}]
+
+
+# =============================================================================
+# The evidence CONTENT gate — participation_evidence_markers
+# =============================================================================
+#
+# A bot can publish two artifacts in ONE declared shape: one proving a review STARTED
+# (a walkthrough posted before any review completes) and one proving it FINISHED (the
+# verdict). The shape alone credited both, so a walkthrough satisfied the quorum for a
+# review that had not happened. A per-shape content marker in the registry now gates
+# the shape: only the marker-bearing comment is evidence. The gate is FAIL-OPEN, so
+# every shape a bot declares no marker for credits exactly as before.
+#
+# The gated and ungated pairings are REGISTRY-DERIVED (``_github_pr_fixtures``), and so
+# is every marker below — no marker literal and no hand-listed bot roster is restated.
+
+#: ``bot_kind`` -> the author login its comments arrive under.
+_LOGIN_FOR_KIND: dict[str, str] = {kind: login for login, kind in bot_registry.login_to_bot_kind().items()}
+
+#: A review verdict CodeRabbit publishes as a standalone ``issue_comment`` — the shape
+#: first observed as its ONLY comment on ``cuioss/cui-http#194``. The marker is read from
+#: the registry rather than restated, so this body tracks the declaration.
+_CODERABBIT_CLEAN_VERDICT = (
+    f'{bot_registry.participation_evidence_marker("coderabbit", "issue_comment")}  '
+    'No actionable comments were generated in the recent review. 🎉'
+)
+
+#: CodeRabbit's walkthrough / summary ``issue_comment`` — posted BEFORE any review
+#: completes, in the SAME shape as the verdict above, and carrying no verdict marker.
+_CODERABBIT_WALKTHROUGH = (
+    '<!-- This is an auto-generated comment: summarize by coderabbit.ai -->\n'
+    '## Walkthrough\n'
+    'The change gates participation credit on a per-shape content marker.'
+)
+
+
+def _evidence_comment(bot_kind, shape, comment_id, body, **extra):
+    """One comment authored by ``bot_kind`` in publish shape ``shape``."""
+    comment = {
+        'id': comment_id,
+        'author': _LOGIN_FOR_KIND[bot_kind],
+        'thread_id': f'PRRT_{comment_id}' if shape == 'inline' else '',
+        'kind': shape,
+        'body': body,
+        'resolved': False,
+    }
+    comment.update(extra)
+    return comment
+
+
+def test_the_gate_populations_are_non_empty_and_disjoint():
+    """Both halves of the partition carry members, and no declared pairing is in both.
+
+    The two parametrized sweeps below would SKIP rather than fail over an empty
+    population, so their sizes are asserted here; disjointness is what makes the pair a
+    partition rather than two overlapping lists.
+    """
+    gated_pairs = {(bot_kind, shape) for bot_kind, shape, _marker in MARKER_GATED_EVIDENCE}
+    assert MARKER_GATED_EVIDENCE_COUNT == len(gated_pairs) > 0
+    assert UNGATED_EVIDENCE_COUNT == len(set(UNGATED_EVIDENCE)) > 0
+    assert gated_pairs.isdisjoint(UNGATED_EVIDENCE)
+
+
+@pytest.mark.parametrize(
+    ('bot_kind', 'shape', 'marker'),
+    MARKER_GATED_EVIDENCE,
+    ids=[f'{bot_kind}-{shape}' for bot_kind, shape, _marker in MARKER_GATED_EVIDENCE],
+)
+def test_a_gated_shape_credits_the_marker_bearing_comment(plan_context, monkeypatch, bot_kind, shape, marker):
+    """A comment in a gated shape that CARRIES the declared marker is participation evidence."""
+    body = f'{marker}\nReviewed the change; the retry bound and its guard are both correct.'
+    _patch_provider(monkeypatch, [_evidence_comment(bot_kind, shape, 'gated-marked', body)])
+
+    result = _run_fetch(190, _evidence_plan_id('gated-marked', bot_kind, shape))
+
+    assert result['status'] == 'success'
+    assert result['participated_bots'] == [{'bot_kind': bot_kind, 'evidence_kind': shape}]
+
+
+@pytest.mark.parametrize(
+    ('bot_kind', 'shape', 'marker'),
+    MARKER_GATED_EVIDENCE,
+    ids=[f'{bot_kind}-{shape}' for bot_kind, shape, _marker in MARKER_GATED_EVIDENCE],
+)
+def test_a_gated_shape_without_the_marker_credits_nothing(plan_context, monkeypatch, bot_kind, shape, marker):
+    """⛔ MATCHED NEGATIVE CONTROL: the same shape WITHOUT the marker is not evidence at all.
+
+    Same bot, same shape, same head — only the marker is missing. Pre-fix this comment
+    credited the bot on its shape alone. It is now neither a participant NOR a stale or
+    undecidable publisher: a comment the gate rejects is not a review artifact, so it
+    must not reach any participation set.
+    """
+    body = 'Summary of the change: the retry helper is reworked. Review in progress.'
+    assert marker not in body
+    _patch_provider(monkeypatch, [_evidence_comment(bot_kind, shape, 'gated-bare', body)])
+
+    result = _run_fetch(191, _evidence_plan_id('gated-bare', bot_kind, shape))
+
+    assert result['status'] == 'success'
+    assert result['participated_bots'] == []
+    assert result['stale_participation_bots'] == []
+    assert result['undecidable_participation_bots'] == []
+
+
+@pytest.mark.parametrize(
+    ('bot_kind', 'shape'),
+    UNGATED_EVIDENCE,
+    ids=[f'{bot_kind}-{shape}' for bot_kind, shape in UNGATED_EVIDENCE],
+)
+def test_an_ungated_shape_credits_on_the_shape_alone(plan_context, monkeypatch, bot_kind, shape):
+    """The gate is FAIL-OPEN: a shape with no declared marker credits exactly as before.
+
+    This is the guard against the gate regressing a bot to ``absent``. The body carries
+    no marker of any bot, so a gate that failed CLOSED on an absent declaration — or
+    that leaked one bot's marker onto another bot's shape — would deny the credit here.
+    """
+    body = 'The retry loop has no ceiling; a persistent 500 will spin forever.'
+    assert not any(marker in body for _bot, _shape, marker in MARKER_GATED_EVIDENCE)
+    _patch_provider(monkeypatch, [_evidence_comment(bot_kind, shape, 'ungated', body)])
+
+    result = _run_fetch(192, _evidence_plan_id('ungated', bot_kind, shape))
+
+    assert result['status'] == 'success'
+    assert result['participated_bots'] == [{'bot_kind': bot_kind, 'evidence_kind': shape}]
+
+
+def test_a_coderabbit_clean_verdict_comment_credits_participation(plan_context, monkeypatch):
+    """CodeRabbit's clean verdict, published as its ONLY comment, credits it — and files nothing.
+
+    The observed ``cui-http#194`` shape: one ``issue_comment`` carrying the verdict marker.
+    It is dropped as noise (its clean text is one of CodeRabbit's ``ignore_patterns``), so
+    nothing is filed — yet the bot is credited, because participation is derived before
+    the noise filter. That pairing is what lets the classifier resolve a clean review to
+    ``participated_but_empty`` instead of ``absent``.
+    """
+    plan_id = 'gh-pr-clean-verdict-credited'
+    assert 'issue_comment' in bot_registry.participation_evidence('coderabbit')
+    _patch_provider(
+        monkeypatch, [_evidence_comment('coderabbit', 'issue_comment', 'cr-verdict', _CODERABBIT_CLEAN_VERDICT)]
+    )
+
+    result = _run_fetch(193, plan_id)
+
+    assert result['status'] == 'success'
+    assert result['participated_bots'] == [{'bot_kind': 'coderabbit', 'evidence_kind': 'issue_comment'}]
+    assert result['count_stored'] == 0
+    assert result['count_skipped_noise'] == 1
+    assert result['producer_mismatch_hash_id'] is None
+
+
+def test_a_coderabbit_walkthrough_alone_credits_nothing(plan_context, monkeypatch):
+    """⛔ MATCHED NEGATIVE CONTROL: the pre-review walkthrough is the same shape and credits nothing.
+
+    The defect this deliverable closes. The walkthrough is posted before any review
+    completes, in the SAME ``issue_comment`` shape as the verdict above, so on shape and
+    currency alone it earned the credit a finished review earns. It now credits nothing
+    and is reported in no participation set, while still being dropped as noise exactly
+    as before.
+    """
+    plan_id = 'gh-pr-clean-verdict-walkthrough-only'
+    _patch_provider(
+        monkeypatch, [_evidence_comment('coderabbit', 'issue_comment', 'cr-walkthrough', _CODERABBIT_WALKTHROUGH)]
+    )
+
+    result = _run_fetch(194, plan_id)
+
+    assert result['status'] == 'success'
+    assert result['participated_bots'] == []
+    assert result['stale_participation_bots'] == []
+    assert result['undecidable_participation_bots'] == []
+    assert result['count_skipped_noise'] == 1
+
+
+def test_a_rejected_comment_stages_no_currency_row_so_its_later_verdict_edit_is_credited(plan_context, monkeypatch):
+    """The gate runs BEFORE the currency test, so a rejected walkthrough anchors nothing.
+
+    CodeRabbit edits its summary comment IN PLACE. Fetch 1 sees it as a walkthrough: no
+    credit, and — because the gate rejected it before the currency test — no currency
+    ledger row. Fetch 2 sees the SAME comment id edited to carry the verdict at the same
+    head: with no row recorded it takes the first-observation arm and is credited.
+
+    Had the rejected walkthrough staged a row, the verdict edit would instead be
+    measured against an anchor a non-review had set.
+    """
+    plan_id = 'gh-pr-clean-verdict-edited-in'
+    walkthrough = _evidence_comment(
+        'coderabbit',
+        'issue_comment',
+        'cr-summary',
+        _CODERABBIT_WALKTHROUGH,
+        created_at='2026-09-01T10:00:00Z',
+        updated_at='2026-09-01T10:00:00Z',
+    )
+    _patch_provider(monkeypatch, [walkthrough])
+
+    first = _run_fetch(195, plan_id)
+
+    assert first['participated_bots'] == []
+    assert github_pr._recorded_currency_records(plan_id) == {}
+
+    verdict = {**walkthrough, 'body': _CODERABBIT_CLEAN_VERDICT, 'updated_at': '2026-09-01T10:20:00Z'}
+    _patch_provider(monkeypatch, [verdict])
+
+    second = _run_fetch(195, plan_id)
+
+    assert second['participated_bots'] == [{'bot_kind': 'coderabbit', 'evidence_kind': 'issue_comment'}]
+    assert github_pr._recorded_currency_records(plan_id) == {
+        ('coderabbit', 'cr-summary'): ('deadbeef', '2026-09-01T10:20:00Z'),
+    }
 
 
 # =============================================================================
@@ -2940,9 +3172,10 @@ def test_layer_three_is_consulted_only_after_layers_one_and_two_miss(monkeypatch
 # =============================================================================
 #
 # For a bot declaring ``participation_requires_update`` the movement guard denies
-# credit to a stale unchanged comment. At that point the comment's ``kind`` has
-# ALREADY matched a declared ``participation_evidence`` publish shape — only the
-# currency test failed — so silently discarding the observation collapsed a stale
+# credit to a stale unchanged comment. At that point the comment is ALREADY
+# admissible evidence — its ``kind`` matched a declared ``participation_evidence``
+# publish shape and it carried that shape's declared content marker where one is
+# declared — only the currency test failed, so silently discarding the observation collapsed a stale
 # review into ``absent``. The two states have OPPOSITE remedies (re-trigger a
 # re-review vs escalate a bot that never engaged), which is why the observation is
 # now emitted instead of dropped.

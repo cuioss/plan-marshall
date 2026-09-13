@@ -20,6 +20,13 @@ sizes are published as :data:`CURRENCY_SUBJECT_BOT_COUNT` and
 :data:`CURRENCY_BLIND_BOT_COUNT`. A parametrize over an empty tuple produces a skip
 rather than a failure, so an unguarded empty population would let a whole sweep report
 clean while covering nothing.
+
+A second partition lives here for the same reason — the **evidence content gate**
+(``bot_registry.participation_evidence_marker``). Every declared ``(bot_kind, shape)``
+evidence pairing is either GATED on a content marker (:data:`MARKER_GATED_EVIDENCE`)
+or credited on the shape alone (:data:`UNGATED_EVIDENCE`). Both halves are derived from
+one registry read, guarded non-empty, and sized, so a marker newly declared by a bot
+moves its pairing from one half to the other with no test edit.
 """
 
 from __future__ import annotations
@@ -31,8 +38,11 @@ class VacuousPopulationError(AssertionError):
     """A derived population is empty, so every verdict over it is vacuous."""
 
 
-def guard_non_empty(population: tuple[str, ...], name: str, derivation: str) -> tuple[str, ...]:
+def guard_non_empty[T](population: tuple[T, ...], name: str, derivation: str) -> tuple[T, ...]:
     """Return ``population``, or raise when it is empty.
+
+    Generic over the member type, so a population of ``(bot_kind, shape)`` pairs is
+    guarded exactly as a population of bot kinds is.
 
     Args:
         population: The derived population.
@@ -83,3 +93,38 @@ CURRENCY_BLIND_BOTS: tuple[str, ...] = guard_non_empty(
 
 #: The published size of the currency-blind bot population.
 CURRENCY_BLIND_BOT_COUNT: int = len(CURRENCY_BLIND_BOTS)
+
+#: Every declared ``(bot_kind, shape)`` evidence pairing, in registry order — the
+#: population the content-gate partition below splits.
+_DECLARED_EVIDENCE: tuple[tuple[str, str], ...] = tuple(
+    (bot, shape) for bot in bot_registry.bot_kinds() for shape in bot_registry.participation_evidence(bot)
+)
+
+#: ``(bot_kind, shape, marker)`` for every declared evidence shape the bot GATES on a
+#: content marker: a comment in that shape credits only when its body carries ``marker``.
+MARKER_GATED_EVIDENCE: tuple[tuple[str, str, str], ...] = guard_non_empty(
+    tuple(
+        (bot, shape, marker)
+        for bot, shape in _DECLARED_EVIDENCE
+        if (marker := bot_registry.participation_evidence_marker(bot, shape))
+    ),
+    'MARKER_GATED_EVIDENCE',
+    'declared (bot_kind, shape) evidence pairings with a bot_registry.participation_evidence_marker',
+)
+
+#: The published size of the marker-gated evidence population.
+MARKER_GATED_EVIDENCE_COUNT: int = len(MARKER_GATED_EVIDENCE)
+
+#: ``(bot_kind, shape)`` for every declared evidence shape with NO content marker — the
+#: FAIL-OPEN half, credited on the shape alone exactly as before the gate existed. The
+#: complement of :data:`MARKER_GATED_EVIDENCE` over the same registry read.
+UNGATED_EVIDENCE: tuple[tuple[str, str], ...] = guard_non_empty(
+    tuple(
+        (bot, shape) for bot, shape in _DECLARED_EVIDENCE if not bot_registry.participation_evidence_marker(bot, shape)
+    ),
+    'UNGATED_EVIDENCE',
+    'declared (bot_kind, shape) evidence pairings with no bot_registry.participation_evidence_marker',
+)
+
+#: The published size of the ungated evidence population.
+UNGATED_EVIDENCE_COUNT: int = len(UNGATED_EVIDENCE)

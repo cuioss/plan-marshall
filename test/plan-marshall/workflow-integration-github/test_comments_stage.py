@@ -1458,7 +1458,8 @@ class TestRefusalNoticeProducerFilter:
         absent because its newest comment is real feedback, while Sourcery appears
         with the class its own registry record declares.
         """
-        from _github_pr import _detect_rate_limited_bots
+        import github_re_review
+        from _github_pr import REFUSAL_LAYER_STRUCTURAL, _detect_rate_limited_bots
 
         comments = [
             {
@@ -1476,6 +1477,10 @@ class TestRefusalNoticeProducerFilter:
         # The record carries BOTH axes: the declared awaitability class and the
         # per-refusal cause. This body is structurally shaped rather than a declared
         # size marker, so its cause is the ``quota`` default and it states no cap.
+        # It also discloses the observation itself: the arm that read the notice
+        # (the structural one — no Sourcery registry marker matches this phrasing)
+        # and the notice as the producer excerpts it, derived through the same
+        # ``_body_excerpt`` the producer calls rather than restated as a literal.
         assert _detect_rate_limited_bots(comments) == [
             {
                 'bot_kind': 'sourcery',
@@ -1483,6 +1488,8 @@ class TestRefusalNoticeProducerFilter:
                 'eta': '',
                 'cause': 'quota',
                 'cap': '',
+                'layer': REFUSAL_LAYER_STRUCTURAL,
+                'body': github_re_review._body_excerpt(_SOURCERY_SHAPED_REFUSAL),
             }
         ]
 
