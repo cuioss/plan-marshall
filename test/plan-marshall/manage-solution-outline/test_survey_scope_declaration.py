@@ -197,7 +197,7 @@ def test_a_path_declared_under_both_fields_yields_one_write_set_member():
     are disjoint by the authoring standard's requirement and the union is
     defended rather than assumed. Nothing pinned it: removing the dedupe left
     every suite green, while the identical defensive dedupe in
-    ``foreign_pr_gate._foreign_paths_by_deliverable`` did carry its own guard.
+    ``foreign_pr_gate._partition_foreign_paths`` did carry its own guard.
 
     Asserted as the exact list, not as a length or a membership test: a
     concatenating regression yields ``['src/dup.py', 'src/dup.py']``, which a
