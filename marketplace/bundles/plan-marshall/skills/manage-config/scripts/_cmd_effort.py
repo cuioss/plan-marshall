@@ -274,6 +274,13 @@ def _resolve_orchestrator_level(
 ) -> tuple[str, str, str | None]:
     """Walk the sibling ``orchestrator.effort`` block to a single level keyword.
 
+    Provisioning seam (settled, comment-only): the level returned here is the
+    input to target-local post-resolve provisioning per ADR-021 — a
+    machine-local effort-to-model map may satisfy the exact resolved level and
+    otherwise falls through to inherit. This function itself is unchanged and
+    stays target-neutral; the provisioning hook lives downstream of this
+    return, outside the resolver.
+
     Returns:
         (level, source, error). When ``error`` is set, ``level`` and ``source``
         are empty strings.
