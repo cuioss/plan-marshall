@@ -49,6 +49,7 @@ schema itself is documented in
 
 import os
 import re
+import subprocess
 from pathlib import Path
 from typing import Any, NamedTuple
 
@@ -1010,6 +1011,219 @@ def check_landing_completeness(payload_body: str) -> tuple[bool, list[str]]:
         return False, ['schema']
     missing = [key for key in LANDING_REQUIRED_KEYS if _is_unsupplied(key, facts)]
     return (not missing), missing
+
+
+# --- landing-time surface-expansion delta field ---------------------------
+#
+# The drain-time realized-vs-declared comparison the inbox landing-check
+# carries beside its completeness verdict. The landing's realized footprint
+# (from the merged diff) is compared against the plan's declared surface as a
+# first-class field: the ADDED paths (realized but never declared — the
+# in-flight expansion) and the MISSING paths (declared but untouched), each
+# with its count naming the population it was computed over. Either side that
+# could not be built reports the UNMEASURED third state with the
+# could-not-look discriminator naming which side — never a silent clean.
+
+#: No expansion: the landing touched nothing outside its declared surface.
+SURFACE_DELTA_CLEAN = 'clean'
+
+#: The landing realized paths the declaration never named — the in-flight growth.
+SURFACE_DELTA_EXPANSION = 'expansion_detected'
+
+#: Both sides established but both empty — nothing was compared, never a clean pass.
+SURFACE_DELTA_VACUOUS = 'vacuous'
+
+#: Either side could not be built, so no comparison was made. The missing
+#: side(s) ride ``could_not_look``; no difference keys are published.
+SURFACE_DELTA_UNMEASURED = 'unmeasured'
+
+#: The whole delta vocabulary, in reporting order.
+SURFACE_DELTA_STATES: tuple[str, ...] = (
+    SURFACE_DELTA_CLEAN,
+    SURFACE_DELTA_EXPANSION,
+    SURFACE_DELTA_VACUOUS,
+    SURFACE_DELTA_UNMEASURED,
+)
+
+#: The default footprint base anchor: the remote-tracking ref the realized
+#: side is resolved against so a stale local base never silently inflates it.
+DELTA_DEFAULT_BASE = 'origin/main'
+
+#: A base ref is caller-supplied text that reaches ``git rev-parse``. Only this
+#: closed shape is accepted — letters, digits and the ref punctuation — so no
+#: shell metacharacter, option flag or command substitution can ride into argv.
+_DELTA_BASE_RE = re.compile(r'^[A-Za-z0-9_./-]+$')
+
+#: Wall-clock budget for the read-only base-anchor probe. A hung git degrades
+#: the anchor to an unresolved-but-reported ref rather than stalling the verb.
+_DELTA_GIT_TIMEOUT_SECONDS = 30
+
+
+def _parse_delta_paths(raw: str | None) -> set[str] | None:
+    """Normalize one delta side's CSV into a comparable set, or ``None``.
+
+    ``None`` (the flag was never supplied) means the side could not be built
+    and the delta reports :data:`SURFACE_DELTA_UNMEASURED`. An empty string
+    establishes an EMPTY side — a measured landing that touched nothing, or a
+    plan that declared nothing — which compares meaningfully. Entries are
+    stripped and blanks dropped so the comparison is not defeated by
+    whitespace, mirroring the three-way reconciliation's normalization.
+    """
+    if raw is None:
+        return None
+    return {text for text in (part.strip() for part in raw.split(',')) if text}
+
+
+def _resolve_delta_base(base_ref: str) -> dict[str, Any]:
+    """Resolve the delta's footprint base anchor to a reported sha.
+
+    The inbox-side counterpart of the corpus declaration-currency anchor: the
+    base defaults to the remote-tracking :data:`DELTA_DEFAULT_BASE`, and a
+    local ref whose ``origin/`` counterpart exists at a different sha is stale
+    — reported with both shas, never silently trusted. The ref shape is
+    validated before it reaches ``git rev-parse``, which resolves it
+    ``--verify --end-of-options`` with a ``^{commit}`` suffix so the reported
+    sha is exactly one commit object — a revision range, an option-like ref,
+    or a non-commit object reports an error rather than
+    multi-line output; an unresolvable ref reports
+    an empty sha rather than failing the verb.
+    """
+    result: dict[str, Any] = {
+        'footprint_base_ref': base_ref,
+        'footprint_base_sha': '',
+        'footprint_base_kind': 'remote-tracking' if base_ref.startswith('origin/') else 'local',
+        'footprint_base_stale': False,
+    }
+    if not _DELTA_BASE_RE.match(base_ref):
+        result['footprint_base_error'] = f'invalid base ref shape: {base_ref!r}'
+        return result
+    try:
+        completed = subprocess.run(
+            ['git', 'rev-parse', '--verify', '--end-of-options', f'{base_ref}^{{commit}}'],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=_DELTA_GIT_TIMEOUT_SECONDS,
+        )
+    except (subprocess.TimeoutExpired, OSError) as exc:
+        result['footprint_base_error'] = f'base ref unresolvable: {exc.__class__.__name__}'
+        return result
+    if completed.returncode != 0:
+        result['footprint_base_error'] = f'git rev-parse {base_ref} exited {completed.returncode}'
+        return result
+    sha = completed.stdout.strip()
+    if not _DELTA_SHA_RE.match(sha):
+        result['footprint_base_error'] = f'base ref did not resolve to a single commit SHA: {base_ref!r}'
+        return result
+    result['footprint_base_sha'] = sha
+    if not base_ref.startswith('origin/'):
+        counterpart = f'origin/{base_ref}'
+        try:
+            other = subprocess.run(
+                ['git', 'rev-parse', '--verify', '--end-of-options', f'{counterpart}^{{commit}}'],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=_DELTA_GIT_TIMEOUT_SECONDS,
+            )
+        except (subprocess.TimeoutExpired, OSError):
+            return result
+        if other.returncode == 0:
+            other_sha = other.stdout.strip()
+            if _DELTA_SHA_RE.match(other_sha) and other_sha != sha:
+                result['footprint_base_stale'] = True
+                result['footprint_base_remote_sha'] = other_sha
+                result['footprint_base_remote_ref'] = counterpart
+    return result
+
+
+#: A resolved base must be exactly one commit SHA — full hex, single line —
+#: so a revision range or option-like ref can never ride into the reported
+#: ``footprint_base_sha`` as multi-line output.
+_DELTA_SHA_RE = re.compile(r'^[0-9a-f]{40,64}$')
+
+
+def _delta_covers(declared_entry: str, realized_path: str) -> bool:
+    """Whether a declared delta entry covers a realized path by containment.
+
+    The landing-check counterpart of ``orchestrator._contains``, consumed
+    read-only: a ``recursive_glob`` entry (path ending in ``**``) covers a
+    realized path that equals the glob stem or starts with ``stem + '/'``; a
+    ``directory`` entry (path ending in ``'/'``) covers a realized path that
+    equals the directory or starts with it. Every other kind never covers, and
+    a match without a ``'/'`` boundary never counts. Exact equality is handled
+    by the caller, never here.
+    """
+    if not declared_entry or not realized_path or declared_entry == realized_path:
+        return False
+    if declared_entry.endswith('**'):
+        stem = declared_entry[:-2].rstrip('/')
+        if not stem:
+            return True
+        if realized_path.endswith('**'):
+            other = realized_path[:-2].rstrip('/')
+        elif realized_path.endswith('/'):
+            other = realized_path.rstrip('/')
+        else:
+            other = realized_path
+        return other == stem or other.startswith(stem + '/')
+    if declared_entry.endswith('/'):
+        if realized_path.rstrip('/') == declared_entry.rstrip('/'):
+            return True
+        return realized_path.startswith(declared_entry)
+    return False
+
+
+def compute_surface_delta(declared: set[str] | None, realized: set[str] | None) -> dict[str, Any]:
+    """Compare a landing's realized footprint against its declared surface.
+
+    Both sides are sets, or ``None`` when that side could not be built. The
+    verdict is computed from the set difference in BOTH directions and never
+    from cardinality, publishing ``added`` (realized but never declared — the
+    expansion) and ``missing`` (declared but untouched) as named lists with
+    their own sizes alongside the pair's ``symmetric_difference_count``.
+
+    Directory and recursive-glob declarations resolve by containment with a
+    ``/`` boundary via :func:`_delta_covers` — a ``test/`` declaration covers
+    every realized file beneath it — so a directory-claiming plan is evaluated,
+    never reported as an expansion for files its declaration already covers.
+
+    ``expansion_detected`` fires on a non-empty ``added`` list alone: a landing
+    that touched only a subset of its declaration reports ``clean`` — no
+    growth happened — while still publishing the untouched ``missing`` paths.
+    Both sides established but both empty is ``vacuous`` (nothing was
+    compared, never an agreement). Either side ``None`` is ``unmeasured`` with
+    ``could_not_look`` naming the missing side(s) and no difference keys at
+    all, so a gate that compared nothing never renders as a pass.
+    """
+    if declared is None or realized is None:
+        missing_sides = sorted(name for name, side in (('declared', declared), ('realized', realized)) if side is None)
+        return {
+            'state': SURFACE_DELTA_UNMEASURED,
+            'could_not_look': '_and_'.join(f'{name}_not_supplied' for name in missing_sides),
+        }
+    added = sorted(
+        path for path in realized if not any(entry == path or _delta_covers(entry, path) for entry in declared)
+    )
+    missing = sorted(
+        entry for entry in declared if not any(entry == path or _delta_covers(entry, path) for path in realized)
+    )
+    report: dict[str, Any] = {
+        'declared_count': len(declared),
+        'realized_count': len(realized),
+        'added_count': len(added),
+        'missing_count': len(missing),
+        'symmetric_difference_count': len(added) + len(missing),
+        'added': added,
+        'missing': missing,
+    }
+    if not declared and not realized:
+        report['state'] = SURFACE_DELTA_VACUOUS
+    elif added:
+        report['state'] = SURFACE_DELTA_EXPANSION
+    else:
+        report['state'] = SURFACE_DELTA_CLEAN
+    return report
 
 
 def find_stream_end_marker(inbox_dir: Path, epic: str, sender_id: str) -> str | None:
@@ -2032,6 +2246,16 @@ def cmd_inbox_landing_check(args: Any) -> dict[str, Any]:
     ``complete: false`` is a VERDICT, not a fault: the verb stays ``status:
     success`` and rides the completeness on the payload, so a drain is never
     aborted by an incomplete landing — it is recorded and surfaced.
+
+    The landing-time surface-expansion delta rides the same payload as a
+    first-class ``surface_delta`` field. The drain supplies the landing's
+    realized footprint (``--realized-paths``, from the merged diff) and the
+    plan's declared surface (``--declared-paths``); the verb compares them via
+    :func:`compute_surface_delta` and reports the baseline anchor beside the
+    counts. Either flag absent leaves the delta
+    :data:`SURFACE_DELTA_UNMEASURED` with the could-not-look discriminator
+    naming the missing side — the completeness verdict is unaffected either
+    way, and the verb stays read-only: no store file is written.
     """
     invalid = _validate_identifier(args.slug)
     if invalid:
@@ -2057,6 +2281,12 @@ def cmd_inbox_landing_check(args: Any) -> dict[str, Any]:
         )
     _, body = _split_message(text)
     complete, missing = check_landing_completeness(body)
+    base = getattr(args, 'footprint_base', None) or DELTA_DEFAULT_BASE
+    delta = compute_surface_delta(
+        _parse_delta_paths(getattr(args, 'declared_paths', None)),
+        _parse_delta_paths(getattr(args, 'realized_paths', None)),
+    )
+    delta.update(_resolve_delta_base(str(base)))
     return {
         'status': 'success',
         'operation': 'inbox-landing-check',
@@ -2066,4 +2296,5 @@ def cmd_inbox_landing_check(args: Any) -> dict[str, Any]:
         'location': location,
         'complete': complete,
         'missing_keys': missing,
+        'surface_delta': delta,
     }

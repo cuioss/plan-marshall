@@ -218,6 +218,15 @@ One row per spec carrying `plan_id`, `spec`, `derivation_status`, `admits_disjoi
 
 ⛔ `admits_disjointness_check` is `true` ONLY for a `declarative` surface. Every other status leaves the candidate with no comparable path set, so it contributes no row to the overlap matcher and its clean reading is SILENCE, not a checked negative — `indeterminate_count` states how many candidates are in that state. `absent` and `unreadable` are kept apart because they are different facts and only the first is a spec-authoring gap. The payload names its own governing authority in `governing_authority` (ADR-019). Refuses an unsafe slug (`invalid_slug`) and an epic with no store tree (`not_found`).
 
+### corpus declaration-currency
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator corpus declaration-currency \
+  --slug SLUG --footprint-paths PATHS [--exclude-spec SPEC] [--footprint-base REF]
+```
+
+Reconciles a landed plan's realized footprint against OTHER staged specs' declared `## Expected Surface` paths — the cross-spec direction the single-ledger verbs cannot perform — read-only. The footprint is supplied via `--footprint-paths` (comma-separated repo-relative paths, resolved upstream through the shared footprint resolver); the verb compares it, it never resolves it. Each OTHER spec is compared by symmetric difference in BOTH directions — never by cardinality — with directory and recursive-glob claims resolved by containment with a `/` boundary (a `test/` claim overlaps everything beneath it), publishing per-spec differences with the named populations they were computed over (`footprint_count`, `spec_claimed_count`, both direction lists with their sizes, and `symmetric_difference_count`, per ADR-019). A spec whose surface cannot be evaluated reports the distinct `unevaluated` state — no difference keys, named in `could_not_check[]` and counted apart — which never reads as disjointness; `checked_and_clean[]` carries only the compared specs with no overlap. The landed plan's own spec is excluded via `--exclude-spec` so the verb compares against OTHER specs only. The footprint base anchor (`--footprint-base`, default `origin/main`) is resolved and reported alongside the counts (`footprint_base_ref`, `footprint_base_sha`, `footprint_base_kind`); a stale local base is flagged (`footprint_base_stale`), never silently trusted. The comparison half mirrors `plan-marshall:manage-references`' three-way reconciliation read-only without extending its CLI surface. Refuses an unsafe slug (`invalid_slug`) and an epic with no store tree (`not_found`).
+
 ### corpus verdicts
 
 ```bash
@@ -408,7 +417,7 @@ Every negative verdict returns `orchestrated: false` with empty `epic` / `plan_s
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator inbox landing-check \
-  --slug SLUG --message NAME
+  --slug SLUG --message NAME [--declared-paths PATHS --realized-paths PATHS [--footprint-base REF]]
 ```
 
 The drain-completeness check. Resolves a `kind: landing` message (`--message`, a bare filename; queued or archived) and reports whether its payload carries the machine-readable facts a complete landing must carry. Returns `complete` (bool), `missing_keys` (the required keys the payload lacks), and `location`.
@@ -421,6 +430,8 @@ A landing carries a fenced `landing-facts` block specified by [`standards/landin
 | **Could-not-read** — asserts only that nothing was observed | `unknown` | EVERY key, with no allow-list — `pr`, `merge_state` and `cleanup_owed` included |
 
 So `merge_state=n/a` leaves a landing complete while `merge_state=unknown` does not: the first records "no PR exists", the second records a read that failed, and the drain must not reconcile against a failed read. The two classes are separate vocabularies precisely because one gated set cannot express both. A PRE-FIX prose-only landing has no block at all, so `missing_keys` is the whole required set — this is the known-incomplete input the check is SEEN to fail on. `complete: false` is a VERDICT (`status: success`), never a fault: the drain records it as an Open Defect and continues. This is what lets the orchestrator turn "the queue is empty" into "every REQUIRED fact drained" — the two coincide only when every drained landing was complete. It does not reach the OPTIONAL keys, so it never establishes that nothing whatsoever is outstanding. Consumed by [`workflow/analyze.md`](workflow/analyze.md) Step 4.
+
+The same payload carries the landing-time surface-expansion delta as a first-class `surface_delta` field: the landing's realized footprint (`--realized-paths`, from the merged diff) reconciled against its declared surface (`--declared-paths`) by symmetric difference in both directions — never by cardinality — with directory and recursive-glob declarations resolved by containment with a `/` boundary (a `test/` declaration covers every realized file beneath it), publishing `added` (realized but never declared: the in-flight expansion) and `missing` (declared but untouched) as named lists with their own counts alongside `symmetric_difference_count`. `expansion_detected` fires on a non-empty `added` list alone, so a landing that touched only a subset of its declaration still reports `clean`; both sides established but both empty is `vacuous`, never an agreement; either side unsupplied is `unmeasured` with the could-not-look discriminator naming the missing side, never a silent clean. The footprint base anchor (`--footprint-base`, default `origin/main`) is resolved and reported beside the counts, and a stale local base is flagged rather than silently trusted. The completeness verdict is unaffected either way. No prose-rule remedy: the field is deterministic code the drain reads, not a rule the drain remembers.
 
 ## Status Vocabulary
 

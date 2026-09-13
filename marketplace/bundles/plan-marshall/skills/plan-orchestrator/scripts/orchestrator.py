@@ -42,7 +42,7 @@ operation groups against the main-anchored orchestrator store
   second run finds every block ``unchanged`` and writes nothing. Refuses a
   closed epic (``refused_closed``): compaction is a live-epic operation only.
   The narrative-versus-settled RELOCATION judgement is NOT here; it stays LLM.
-- ``corpus {epics,enumerate,cross-check,surfaces,verdicts,set-verdict}`` — the
+- ``corpus {epics,enumerate,cross-check,surfaces,declaration-currency,verdicts,set-verdict}`` — the
   epic population and the epic's staged
   spec corpus: enumerate every epic slug in the store (``epics`` — the one
   slug-free verb, partitioned into active and archived, publishing the roots it
@@ -55,7 +55,10 @@ operation groups against the main-anchored orchestrator store
   ``## Expected Surface`` with its derivation status and the population the
   comparison was drawn from (``surfaces`` — the read verb the disjointness gate
   decides on, so that verdict is a parser decision rather than a reader's
-  judgement over a rendered cell), and read/write the re-grounding
+  judgement over a rendered cell), reconcile a landed footprint against OTHER
+  staged specs' declared surfaces by symmetric difference with containment
+  (``declaration-currency`` — the cross-spec direction with its own unevaluated
+  state and reported footprint base anchor), and read/write the re-grounding
   verdict field defined once in
   ``persona-plan-orchestrator/standards/orchestration-model.md``
   § Re-Grounding Verdict Field. ``set-verdict`` is the group's single write
@@ -80,7 +83,12 @@ operation groups against the main-anchored orchestrator store
   carries its required machine-readable facts (``landing-check``). Backed by
   :mod:`_orchestrator_inbox`;
   the write boundary is enforced by construction there (no caller-supplied
-  output path exists).
+  output path exists). ``landing-check`` additionally carries the drain-time
+  surface-expansion delta as a first-class field: the landing's realized
+  footprint (``--realized-paths``, from the merged diff) reconciled against
+  its declared surface (``--declared-paths``) with the footprint base anchor
+  reported beside the counts, so an in-flight expansion is detectable at
+  drain time with no manual diff.
 
 The ``kind=orchestrator`` ``status.json`` schema is owned by
 ``manage-status/standards/status-lifecycle.md``; ``status.json`` is created
@@ -353,6 +361,52 @@ SURFACE_INDETERMINATE_STATES = frozenset(SURFACE_STATES) - {SURFACE_DECLARATIVE}
 SURFACE_GOVERNING_AUTHORITY = (
     'ADR-019 — an absent or unresolvable declaration resolves to indeterminate, never to disjoint'
 )
+
+# --- declaration-currency (cross-spec reconciliation) -----------------------
+#
+# The per-spec comparison states for ``corpus declaration-currency``. They mirror
+# the three-way ``_cmd_reconcile_scope`` pair vocabulary (agree / disagree /
+# vacuous) plus the distinct unevaluated state a spec whose surface cannot be
+# evaluated reports. An unevaluated spec never reads as disjointness — it is
+# named in ``could_not_check`` and counted apart from the checked-and-clean set,
+# per ADR-019. Consumed read-only as the comparison-half pattern; the
+# manage-references CLI surface is untouched.
+
+#: Both sides established, at least one non-empty, neither difference carries a member.
+CURRENCY_AGREE = 'agree'
+
+#: Both sides established and at least one difference carries a member.
+CURRENCY_DISAGREE = 'disagree'
+
+#: Both sides established and both empty — nothing was compared, never an agreement.
+CURRENCY_VACUOUS = 'vacuous'
+
+#: The spec side could not be evaluated (any SURFACE_INDETERMINATE_STATES member
+#: or an unreadable spec file). No comparison was made; no difference keys are
+#: published for the pair beyond the state marker.
+CURRENCY_UNEVALUATED = 'unevaluated'
+
+#: The whole per-spec state vocabulary, in reporting order.
+CURRENCY_STATES: tuple[str, ...] = (
+    CURRENCY_AGREE,
+    CURRENCY_DISAGREE,
+    CURRENCY_VACUOUS,
+    CURRENCY_UNEVALUATED,
+)
+
+#: The default footprint base anchor: the remote-tracking ref the footprint is
+#: resolved against so a stale local base never silently inflates it.
+CURRENCY_DEFAULT_BASE = 'origin/main'
+
+#: A base ref is caller-supplied text that reaches ``git rev-parse``. Only this
+#: closed shape is accepted — letters, digits and the ref punctuation — so no
+#: shell metacharacter, option flag or command substitution can ride into argv.
+_CURRENCY_BASE_RE = re.compile(r'^[A-Za-z0-9_./-]+$')
+
+#: A resolved base must be exactly one commit SHA — full hex, single line —
+#: so a revision range or option-like ref can never ride into the reported
+#: ``footprint_base_sha`` as multi-line output.
+_CURRENCY_SHA_RE = re.compile(r'^[0-9a-f]{40,64}$')
 
 #: What one verdict row is ADDRESSED BY. A ``claim``-scoped row carries its real
 #: zero-based ordinal; a ``section``-scoped row settles the section as a whole and
@@ -1806,6 +1860,259 @@ def cmd_corpus_surfaces(args: argparse.Namespace) -> dict[str, Any]:
         'unresolved_count': len(unresolved),
         'unresolved': unresolved,
     }
+
+
+def _parse_footprint_paths(raw: str | None) -> frozenset[str]:
+    """Normalize the ``--footprint-paths`` CSV into a comparable set.
+
+    Entries are stripped and blank entries are dropped, mirroring
+    ``_cmd_reconcile_scope._path_set`` so the two halves of the comparison
+    cannot disagree about what a declaration means. A ``None`` or blank input
+    establishes an EMPTY footprint — a measured landing that touched nothing —
+    never an unmeasured one.
+    """
+    if not raw:
+        return frozenset()
+    return frozenset(text for text in (part.strip() for part in raw.split(',')) if text)
+
+
+def _resolve_footprint_base(base_ref: str) -> dict[str, Any]:
+    """Resolve the footprint base anchor to a reported sha without trusting a stale local.
+
+    The base is a remote-tracking ref by default (:data:`CURRENCY_DEFAULT_BASE`).
+    A local ref whose ``origin/`` counterpart exists at a different sha is stale:
+    the local tip lags the remote, so a footprint diffed against it would silently
+    inflate with upstream files. That case reports ``stale: True`` and publishes
+    both shas so the caller sees which anchor the counts ride on.
+
+    The ref shape is validated against :data:`_CURRENCY_BASE_RE` before it
+    reaches ``git rev-parse`` — resolved ``--verify --end-of-options`` with a
+    ``^{commit}`` suffix so the reported sha is exactly one commit object: a
+    revision range, an option-like ref, or a non-commit object (such as an
+    annotated tag) reports an error rather than multi-line or tag-object
+    output. The argv is read-only
+    (``rev-parse`` of one or two refs) and never caller-composed beyond the
+    validated ref token.
+    An unresolvable ref reports an empty sha rather than failing the verb: a
+    base that could not be observed is reported, never substituted silently.
+    """
+    result: dict[str, Any] = {
+        'footprint_base_ref': base_ref,
+        'footprint_base_sha': '',
+        'footprint_base_kind': 'remote-tracking' if base_ref.startswith('origin/') else 'local',
+        'footprint_base_stale': False,
+    }
+    if not _CURRENCY_BASE_RE.match(base_ref):
+        result['footprint_base_error'] = f'invalid base ref shape: {base_ref!r}'
+        return result
+    try:
+        completed = subprocess.run(
+            ['git', 'rev-parse', '--verify', '--end-of-options', f'{base_ref}^{{commit}}'],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=_GIT_READ_TIMEOUT_SECONDS,
+        )
+    except (subprocess.TimeoutExpired, OSError) as exc:
+        result['footprint_base_error'] = f'base ref unresolvable: {exc.__class__.__name__}'
+        return result
+    if completed.returncode != 0:
+        result['footprint_base_error'] = f'git rev-parse {base_ref} exited {completed.returncode}'
+        return result
+    sha = completed.stdout.strip()
+    if not _CURRENCY_SHA_RE.match(sha):
+        result['footprint_base_error'] = f'base ref did not resolve to a single commit SHA: {base_ref!r}'
+        return result
+    result['footprint_base_sha'] = sha
+    if not base_ref.startswith('origin/'):
+        counterpart = f'origin/{base_ref}'
+        try:
+            other = subprocess.run(
+                ['git', 'rev-parse', '--verify', '--end-of-options', f'{counterpart}^{{commit}}'],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=_GIT_READ_TIMEOUT_SECONDS,
+            )
+        except (subprocess.TimeoutExpired, OSError):
+            return result
+        if other.returncode == 0:
+            other_sha = other.stdout.strip()
+            if _CURRENCY_SHA_RE.match(other_sha) and other_sha != sha:
+                result['footprint_base_stale'] = True
+                result['footprint_base_remote_sha'] = other_sha
+                result['footprint_base_remote_ref'] = counterpart
+    return result
+
+
+def _currency_compare(footprint: frozenset[str], spec_paths: set[str]) -> dict[str, Any]:
+    """Compare one spec's declared paths against the landed footprint by symmetric difference.
+
+    The ``_cmd_reconcile_scope._compare_pair`` pattern, consumed read-only:
+    both difference directions are published as named lists with their own
+    sizes alongside the pair's symmetric-difference size, and the verdict is
+    never inferred from cardinality. Directory and recursive-glob entries
+    resolve by containment with a ``/`` boundary via :func:`_contains` — a
+    ``test/`` claim overlaps everything beneath it — so a directory-claiming
+    spec is evaluated, never dropped to silence.
+
+    Overlap (the collision signal) is published beside the differences: the
+    footprint files the spec covers, by exact match or containment. A landed
+    footprint overlapping another spec's declaration reports a collision even
+    when the entry-level differences are empty (a footprint file inside a
+    directory claim), and an untouched spec reports no overlap (clean) even
+    though its sets differ.
+    """
+    overlapping = sorted(
+        path for path in footprint if any(entry == path or _contains(entry, path) for entry in spec_paths)
+    )
+    footprint_not_spec = sorted(
+        path for path in footprint if not any(entry == path or _contains(entry, path) for entry in spec_paths)
+    )
+    spec_not_footprint = sorted(
+        entry for entry in spec_paths if not any(entry == path or _contains(entry, path) for path in footprint)
+    )
+    symmetric_difference_count = len(footprint_not_spec) + len(spec_not_footprint)
+    if not footprint and not spec_paths:
+        state = CURRENCY_VACUOUS
+    elif symmetric_difference_count == 0:
+        state = CURRENCY_AGREE
+    else:
+        state = CURRENCY_DISAGREE
+    return {
+        'state': state,
+        'footprint_not_spec_count': len(footprint_not_spec),
+        'spec_not_footprint_count': len(spec_not_footprint),
+        'symmetric_difference_count': symmetric_difference_count,
+        'footprint_not_spec': footprint_not_spec,
+        'spec_not_footprint': spec_not_footprint,
+        'overlap_count': len(overlapping),
+        'overlapping_files': overlapping,
+        'collision': bool(overlapping),
+    }
+
+
+def cmd_corpus_declaration_currency(args: argparse.Namespace) -> dict[str, Any]:
+    """Reconcile a landed footprint against OTHER staged specs' declared surfaces.
+
+    The cross-spec direction the single-ledger verbs cannot perform: the landed
+    plan's realized footprint (supplied via ``--footprint-paths``, resolved
+    upstream through the shared footprint resolver) is compared against every
+    OTHER staged spec's declared ``## Expected Surface`` paths by symmetric
+    difference in both directions — never by cardinality — with directory and
+    recursive-glob claims resolved by containment. Per-spec differences are
+    published with the named populations they were computed over (ADR-019).
+
+    A spec whose surface cannot be evaluated (any
+    :data:`SURFACE_INDETERMINATE_STATES` member, or an unreadable spec file)
+    reports :data:`CURRENCY_UNEVALUATED`: no difference keys and no overlap
+    keys are published for it, so it never reads as disjointness. The landed
+    plan's own spec is excluded via ``--exclude-spec`` so the verb compares
+    against OTHER specs only. The footprint base anchor
+    (``--footprint-base``, default :data:`CURRENCY_DEFAULT_BASE`) is resolved
+    and reported alongside the counts; a stale local base is flagged, never
+    silently trusted.
+
+    Read-only: no spec is written, no verdict is stamped, and the
+    manage-references CLI surface is untouched — the comparison half mirrors
+    ``_cmd_reconcile_scope`` without calling it.
+    """
+    invalid = _validate_slug(args.slug)
+    if invalid:
+        return _error(args.slug, 'invalid_slug', invalid)
+    root = _epic_root(args.slug, allow_archived=True)
+    if not root.is_dir():
+        return _error(args.slug, 'not_found', f'epic {args.slug!r} has no store tree')
+    footprint = _parse_footprint_paths(getattr(args, 'footprint_paths', None))
+    base = getattr(args, 'footprint_base', None) or CURRENCY_DEFAULT_BASE
+    base_report = _resolve_footprint_base(str(base))
+    repo_root = Path(cwd_checkout_root())
+    spec_paths = _spec_paths(root)
+    exclude = (getattr(args, 'exclude_spec', None) or '').strip()
+    rows: list[dict[str, Any]] = []
+    collisions: list[dict[str, Any]] = []
+    checked_and_clean: list[str] = []
+    could_not_check: list[str] = []
+    tally = dict.fromkeys(CURRENCY_STATES, 0)
+    specs_excluded_count = 0
+    for path in spec_paths:
+        if exclude and path.name == exclude:
+            specs_excluded_count += 1
+            continue
+        state, claim = _surface_state(path, repo_root)
+        plan_id = claim.plan_id if claim is not None else path.name
+        if claim is None or state in SURFACE_INDETERMINATE_STATES:
+            tally[CURRENCY_UNEVALUATED] += 1
+            could_not_check.append(path.name)
+            rows.append(
+                {
+                    'spec': path.name,
+                    'plan_id': plan_id,
+                    'derivation_status': state,
+                    'state': CURRENCY_UNEVALUATED,
+                    'admits_check': False,
+                    'footprint_count': len(footprint),
+                    'spec_claimed_count': 0,
+                }
+            )
+            continue
+        declared = {entry.path for entry in claim.claimed}
+        compared = _currency_compare(footprint, declared)
+        tally[compared['state']] += 1
+        row: dict[str, Any] = {
+            'spec': path.name,
+            'plan_id': plan_id,
+            'derivation_status': state,
+            'state': compared['state'],
+            'admits_check': True,
+            'footprint_count': len(footprint),
+            'spec_claimed_count': len(declared),
+            'footprint_not_spec_count': compared['footprint_not_spec_count'],
+            'spec_not_footprint_count': compared['spec_not_footprint_count'],
+            'symmetric_difference_count': compared['symmetric_difference_count'],
+            'footprint_not_spec': compared['footprint_not_spec'],
+            'spec_not_footprint': compared['spec_not_footprint'],
+            'overlap_count': compared['overlap_count'],
+            'overlapping_files': compared['overlapping_files'],
+            'collision': compared['collision'],
+        }
+        rows.append(row)
+        if compared['collision']:
+            collisions.append(
+                {
+                    'spec': path.name,
+                    'overlap_count': compared['overlap_count'],
+                    'overlapping_files': compared['overlapping_files'],
+                }
+            )
+        else:
+            checked_and_clean.append(path.name)
+    compared_count = sum(tally[s] for s in (CURRENCY_AGREE, CURRENCY_DISAGREE, CURRENCY_VACUOUS))
+    result: dict[str, Any] = {
+        'status': 'success',
+        'operation': 'corpus-declaration-currency',
+        'slug': args.slug,
+        'store': ORCHESTRATOR_STORE,
+        'governing_authority': SURFACE_GOVERNING_AUTHORITY,
+        'footprint_count': len(footprint),
+        'footprint_paths': sorted(footprint),
+        'specs_total': len(spec_paths),
+        'specs_excluded': specs_excluded_count,
+        'specs_scanned': len(rows),
+        'specs_compared': compared_count,
+        'specs_unevaluated': tally[CURRENCY_UNEVALUATED],
+        'state_tally': [{'state': s, 'count': tally[s]} for s in CURRENCY_STATES],
+        'specs': rows,
+        'collision_detected': bool(collisions),
+        'collision_count': len(collisions),
+        'collisions': collisions,
+        'checked_and_clean_count': len(checked_and_clean),
+        'checked_and_clean': sorted(checked_and_clean),
+        'could_not_check_count': len(could_not_check),
+        'could_not_check': sorted(could_not_check),
+    }
+    result.update(base_report)
+    return result
 
 
 def _spec_pointers(text: str) -> set[str]:
@@ -3678,7 +3985,8 @@ def _add_corpus_group(subparsers: Any) -> None:
     """Register the ``corpus`` verb group.
 
     Sub-verbs: ``epics``, ``enumerate``, ``cross-check``, ``surfaces``,
-    ``verdicts``, ``set-verdict``. The first five are read-only; ``set-verdict``
+    ``declaration-currency``, ``verdicts``, ``set-verdict``. The first six are
+    read-only; ``set-verdict``
     is the group's single write action, and the only surface in the tree that
     formats a ``verdict:`` line. ``epics`` is the only one that takes no
     ``--slug``: its subject is the whole store rather than one epic in it.
@@ -3739,6 +4047,35 @@ def _add_corpus_group(subparsers: Any) -> None:
     )
     _add_slug_arg(surfaces)
     surfaces.set_defaults(handler=cmd_corpus_surfaces)
+
+    currency = actions.add_parser(
+        'declaration-currency',
+        help=(
+            "Reconcile a landed footprint against OTHER staged specs' declared "
+            'surfaces by symmetric difference with containment, reporting the '
+            'footprint base anchor (read-only).'
+        ),
+        allow_abbrev=False,
+    )
+    _add_slug_arg(currency)
+    currency.add_argument(
+        '--footprint-paths',
+        required=True,
+        help='Comma-separated repo-relative paths of the landed realized footprint.',
+    )
+    currency.add_argument(
+        '--exclude-spec',
+        required=False,
+        default=None,
+        help='Bare spec filename to exclude as the landed plans own spec (OTHER specs only).',
+    )
+    currency.add_argument(
+        '--footprint-base',
+        required=False,
+        default=CURRENCY_DEFAULT_BASE,
+        help=f'Footprint base anchor ref (default {CURRENCY_DEFAULT_BASE}).',
+    )
+    currency.set_defaults(handler=cmd_corpus_declaration_currency)
 
     verdicts = actions.add_parser(
         'verdicts',
@@ -4026,6 +4363,24 @@ def _add_inbox_group(subparsers: Any) -> None:
         required=True,
         metavar='NAME',
         help='Bare landing message filename inside the epic inbox/ directory.',
+    )
+    landing_check.add_argument(
+        '--declared-paths',
+        required=False,
+        default=None,
+        help='Comma-separated repo-relative paths of the plan declared surface.',
+    )
+    landing_check.add_argument(
+        '--realized-paths',
+        required=False,
+        default=None,
+        help='Comma-separated repo-relative paths of the landing realized footprint.',
+    )
+    landing_check.add_argument(
+        '--footprint-base',
+        required=False,
+        default=None,
+        help='Footprint base anchor ref (defaults to the remote-tracking origin/main).',
     )
     landing_check.set_defaults(handler=cmd_inbox_landing_check)
 
