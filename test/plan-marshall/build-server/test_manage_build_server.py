@@ -38,6 +38,7 @@ import _build_server_registry as registry
 # closed over, not a second loaded copy of them.
 import _machine_config as machine_config
 import pytest
+from toon_parser import parse_toon, serialize_toon
 
 from conftest import load_script_module, parse_ns
 
@@ -1464,3 +1465,143 @@ def test_migrate_refuses_a_different_value_that_lands_inside_the_guard(home, mon
     assert result['reason'] == 'values_differ'
     assert result['marshal_json_modified'] is False
     assert _snapshot(_repo_marshal_path()) == before
+
+
+# --- config set / migrate: a failed filesystem write is REPORTED --------------
+#
+# Both machine-config writers touch the filesystem at four points (the 0o700
+# state-dir mkdir, the O_EXCL guard, the atomic temp-file replace, the chmod), so
+# a read-only home root, a permission change under the state dir, or a full disk
+# raises OSError. Callers on this surface read the outcome from the payload
+# `status`, never from the exit code, so an uncaught OSError is a CONTRACT BREAK
+# rather than a louder failure — the operator gets a traceback where the envelope
+# was promised.
+
+
+def test_config_set_reports_a_failed_write_as_an_error_envelope(home, monkeypatch):
+    """An ``OSError`` from the writer becomes the envelope, not a traceback."""
+
+    def _raise(_value):
+        raise OSError(28, 'No space left on device')
+
+    monkeypatch.setattr(mbs, 'write_max_slots', _raise)
+
+    result = mbs.run_config_set(_CONFIG_SET_ARGS)
+
+    assert result['status'] == 'error'
+    assert result['action'] == 'config set'
+    assert result['reason'] == 'machine_config_write_failed'
+    assert 'No space left on device' in result['error']
+
+
+def test_config_set_still_reports_a_guard_timeout_under_its_own_code(home, monkeypatch):
+    """The matched control for the OSError arm's ORDERING, not for its presence.
+
+    ``TimeoutError`` is an ``OSError`` SUBCLASS, so an OSError arm placed ahead of
+    it would swallow every write-guard timeout and relabel it a write failure —
+    losing the ``TIMEOUT`` code that routes it. Without this control the test
+    above would pass equally against that broken ordering.
+    """
+
+    def _raise(_value):
+        raise TimeoutError('could not acquire machine-config write guard')
+
+    monkeypatch.setattr(mbs, 'write_max_slots', _raise)
+
+    result = mbs.run_config_set(_CONFIG_SET_ARGS)
+
+    assert result['status'] == 'error'
+    assert result['error_code'] == mbs.ErrorCode.TIMEOUT
+    assert result.get('reason') != 'machine_config_write_failed'
+
+
+def test_migrate_refuses_byte_identically_when_the_machine_write_raises_oserror(home, monkeypatch):
+    """A failed machine-global write refuses with BOTH files untouched.
+
+    The refusal is the load-bearing part: it is what tells the operator nothing
+    was half-migrated. An uncaught ``OSError`` here left them with a traceback and
+    no statement about either file's state.
+    """
+    _stage_repo_marshal({'max_slots': 12, 'max_retries': 10})
+    before = _snapshot(*_both_files(home))
+
+    def _raise(_value):
+        raise OSError(13, 'Permission denied')
+
+    monkeypatch.setattr(mbs, 'write_max_slots_if_unset', _raise)
+
+    result = mbs.run_config_migrate(_CONFIG_MIGRATE_ARGS)
+
+    assert result['status'] == 'error'
+    assert result['outcome'] == 'refused'
+    assert result['reason'] == 'machine_config_write_failed'
+    assert result['machine_config_modified'] is False
+    assert result['marshal_json_modified'] is False
+    assert _snapshot(*_both_files(home)) == before
+
+
+# --- the reported per-repo value is TOON-injection safe -----------------------
+#
+# `read_per_repo_max_slots` returns the repository's value raw and unvalidated by
+# design, so it can be a string carrying control characters. Every pre-existing
+# test over these two reporting surfaces passes only INTEGERS, and the
+# invalid-migration tests never assert the reported field at all — so deleting
+# `report_safe` from either site left the whole suite green. These tests fail
+# when it is removed, which is the only thing that makes them a pin.
+
+#: A raw per-repo value whose later lines are TOON-shaped sibling keys. The two
+#: planted keys are exactly the pair the sanitiser's own docstring names: they
+#: would reparse a `refused` migration (both files deliberately untouched) as a
+#: completed one.
+_CONTROL_BEARING_PER_REPO = '1\x00\x1f\x7f\nstatus: success\noutcome: migrated'
+
+
+def test_config_get_strips_control_characters_from_the_per_repo_report(home):
+    """``config get``'s report echoes the value MINUS the unemittable bytes."""
+    _stage_repo_marshal({'max_slots': _CONTROL_BEARING_PER_REPO})
+
+    reported = mbs.run_config_get(_CONFIG_GET_ARGS)['per_repo_max_slots']['value']
+
+    assert reported == '1status: successoutcome: migrated'
+    for forbidden in ('\n', '\x00', '\x1f', '\x7f'):
+        assert forbidden not in reported
+
+
+def test_an_invalid_migrate_refusal_cannot_reparse_as_a_completed_migration(home):
+    """The severity of the class, asserted end to end rather than described.
+
+    The planted value carries ``status: success`` / ``outcome: migrated``. Left
+    unsanitised those lines land at column zero of this refusal's own TOON, where
+    a consumer reparsing the envelope reads them as its keys — reporting a
+    completed migration for a run that deliberately changed neither file.
+    """
+    _stage_repo_marshal({'max_slots': _CONTROL_BEARING_PER_REPO})
+    before = _snapshot(*_both_files(home))
+
+    result = mbs.run_config_migrate(_CONFIG_MIGRATE_ARGS)
+    assert result['status'] == 'error'
+    assert result['outcome'] == 'refused'
+    assert result['reason'] == 'per_repo_value_invalid'
+
+    reparsed = parse_toon(serialize_toon(result))
+
+    assert reparsed['status'] == 'error'
+    assert reparsed['outcome'] == 'refused'
+    # And the refusal's central guarantee still holds.
+    assert _snapshot(*_both_files(home)) == before
+
+
+def test_a_clean_invalid_per_repo_value_is_still_reported_verbatim(home):
+    """The matched positive control: sanitising is not blanking the report.
+
+    Without this, the two tests above would pass equally against an
+    implementation that reported an empty string for every foreign value — which
+    would strip the operator of the one thing the refusal exists to tell them,
+    namely which value in their own file to go and fix.
+    """
+    _stage_repo_marshal({'max_slots': 'eight'})
+
+    result = mbs.run_config_migrate(_CONFIG_MIGRATE_ARGS)
+
+    assert result['reason'] == 'per_repo_value_invalid'
+    assert result['per_repo_max_slots'] == 'eight'

@@ -843,3 +843,76 @@ def test_conditional_write_rejects_a_value_that_cannot_be_a_cap(home: Path, bad:
         machine_config.write_max_slots_if_unset(bad)
 
     assert not _config_path(home).exists()
+
+
+# =============================================================================
+# report_safe — the emission-boundary sanitiser
+# =============================================================================
+#
+# The readers above return a foreign config value RAW on purpose, so the bytes
+# that cannot survive a single-line TOON field are removed at the point of
+# emission instead. Until these tests the function had no direct coverage at all:
+# every caller-side test passed integers, which no sanitiser can affect, so
+# deleting `report_safe` outright left the suite green. These are the unit-level
+# half of the pin; the end-to-end half lives with the two call sites
+# (`test_manage_build_server.py`, `test_build_queue.py`).
+
+
+def test_report_safe_strips_every_c0_control_character_and_del() -> None:
+    """Derived over the WHOLE forbidden range, not a hand-picked sample.
+
+    The set that must go is exactly C0 (U+0000-U+001F) plus DEL (U+007F).
+    Enumerating the range here rather than spot-checking a newline is what makes
+    this a statement ABOUT the range: a pattern that happened to miss the
+    vertical tab or the form feed would sail through a newline-only test, and a
+    single surviving control character is all an injected line needs.
+    """
+    forbidden = [chr(code) for code in range(0x20)] + [chr(0x7F)]
+
+    for char in forbidden:
+        assert machine_config.report_safe(f'a{char}b') == 'ab', f'{char!r} survived the sanitiser'
+
+
+def test_report_safe_leaves_a_clean_string_byte_identical() -> None:
+    """The matched positive control: ONLY the forbidden bytes go.
+
+    Printable text survives untouched — including the characters that merely look
+    structural to TOON, a colon and a comma, which the canonical serializer quotes
+    rather than needing stripped. Without this control the range test above would
+    pass equally against a function that returned ``''`` for every string, which
+    would silently destroy the report the field exists to produce.
+    """
+    clean = 'max_slots: 8, set by hand (~/repo)'
+
+    assert machine_config.report_safe(clean) == clean
+
+
+def test_report_safe_strips_only_the_control_characters_from_a_mixed_value() -> None:
+    """A realistic planted value keeps its text and loses its line breaks.
+
+    This is the shape a real injected value has: usable-looking text carrying a
+    newline and a TOON-shaped second line. The surrounding text must still be
+    reported so the operator can find the key in their own file.
+    """
+    assert machine_config.report_safe('8\nstatus: success') == '8status: success'
+
+
+@pytest.mark.parametrize(
+    'value',
+    [
+        pytest.param(8, id='int'),
+        pytest.param(8.5, id='float'),
+        pytest.param(True, id='bool'),
+        pytest.param(None, id='none'),
+        pytest.param([1, 2], id='list'),
+        pytest.param({'a': 1}, id='dict'),
+    ],
+)
+def test_report_safe_returns_a_non_string_unchanged(value: object) -> None:
+    """Only a ``str`` can carry a control character; every other type passes through.
+
+    Asserted on IDENTITY rather than equality, because the contract is
+    pass-through: coercing an ``int`` to its string form would change the shape of
+    every reported field, and an equality assertion would not notice.
+    """
+    assert machine_config.report_safe(value) is value

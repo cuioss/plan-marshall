@@ -1137,6 +1137,26 @@ def run_config_set(args: Namespace) -> dict[str, Any]:
         return make_error(str(exc), code=ErrorCode.INVALID_INPUT, action='config set')
     except TimeoutError as exc:
         return make_error(str(exc), code=ErrorCode.TIMEOUT, action='config set')
+    except OSError as exc:
+        # The write touches the filesystem at four points — the ``0o700`` state-dir
+        # mkdir, the ``O_EXCL`` guard, the atomic temp-file replace, and the
+        # ``chmod`` — so a read-only home root, a permission change under the
+        # state dir, or a full disk surfaces HERE rather than as one of the two
+        # arms above. Callers read the outcome from the payload ``status``, never
+        # from the exit code, so letting this propagate as a traceback would break
+        # the TOON envelope contract every verb on this surface is held to; a
+        # louder failure is not the same thing as a reported one.
+        #
+        # No ``ErrorCode`` member names "the write itself failed" and borrowing
+        # one that means something else would misroute it, so the named ``reason``
+        # is the routing key — the same choice :func:`_remove_per_repo_max_slots`
+        # makes for its guard refusal, and the same ``reason`` value the migrate
+        # path already reports for a failed machine-global write.
+        #
+        # Ordered AFTER ``TimeoutError``, which is an ``OSError`` subclass: the
+        # specific arm must be reachable, or every guard timeout would be
+        # reclassified as a write failure and lose its ``TIMEOUT`` code.
+        return make_error(str(exc), action='config set', reason='machine_config_write_failed')
     return {
         'status': 'success',
         'action': 'config set',
@@ -1395,9 +1415,17 @@ def run_config_migrate(_args: Namespace) -> dict[str, Any]:
     # The machine side is unset. Copy the value there under the write guard, which
     # re-resolves INSIDE the guard — so a concurrent set/migrate that landed since
     # the resolve above is observed and preserved rather than overwritten.
+    # ``OSError`` covers the write's filesystem points (the state-dir mkdir, the
+    # ``O_EXCL`` guard, the atomic replace, the chmod). Without it a read-only
+    # home root or a permission change propagated out as a traceback instead of
+    # this refusal — and the refusal is the load-bearing part here, because it is
+    # what tells the operator BOTH files are still untouched. ``TimeoutError`` is
+    # an ``OSError`` subclass and so is now redundant in the tuple; it is kept
+    # named because the guard timeout is a distinct, expected failure and a
+    # reader should not have to know the exception hierarchy to see it handled.
     try:
         post, wrote = write_max_slots_if_unset(per_repo_raw)
-    except (ValueError, TimeoutError) as exc:
+    except (ValueError, TimeoutError, OSError) as exc:
         return _migrate_refused(
             'machine_config_write_failed',
             f'refusing to migrate: the machine-global write did not happen ({exc}). Neither file was changed.',
