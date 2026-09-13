@@ -414,6 +414,130 @@ class TestPerRepoDemotionReport:
 
 
 # =============================================================================
+# `limit get` is a NON-COMMITTING read — a read verb cannot erase the queue
+# =============================================================================
+
+
+class TestLimitGetIsANonCommittingRead:
+    """``limit get`` reports the threshold and writes NOTHING to the queue file.
+
+    It previously ran an identity mutator through ``rmw_json``, which commits
+    unconditionally. Because that path reports a corrupt, truncated or non-dict
+    ``build-queue.json`` as ``{}``, a caller merely ASKING for the threshold
+    committed that ``{}`` back — destroying every active and waiting entry. The
+    next admission then started from an empty queue and over-admitted past the
+    cap, which is the over-admission class this plan characterises.
+
+    Every assertion below is on the FILE, not on the returned envelope: the
+    return was already correct, and the defect was entirely in what the read
+    left behind.
+    """
+
+    #: A queue state holding one real active holder and one real waiting entry.
+    #: Both are needed: the commit erased BOTH lists, so an active-only fixture
+    #: would leave half the loss unobserved.
+    _STATE: dict[str, Any] = {
+        'active': [{'id': 'plan-a:uuid-a', 'plan_id': 'plan-a', 'ts': 1.0, 'active_since': 1.0}],
+        'waiting': [{'id': 'plan-b:uuid-b', 'plan_id': 'plan-b', 'ts': 2.0}],
+        'run_log': [],
+        build_queue.UPPER_LIMIT_FIELD: 1800,
+    }
+
+    @classmethod
+    def _corrupt_bodies(cls) -> dict[str, str]:
+        """Two corruptions of a file that DOES hold real entries.
+
+        The corruption has to be applied to populated state rather than invented
+        as an empty malformed file, or "the entries survive" would have nothing
+        to survive. Both forms keep the entry text in the file, so the loss is
+        observable as the ids disappearing.
+        """
+        body = json.dumps(cls._STATE, indent=2)
+        return {
+            # Valid-JSON prefix with the closing brace removed — the shape a
+            # crash mid-write leaves behind.
+            'invalid-json': body[:-1],
+            # Parses fine, but the top level is a list, which the shared reader
+            # also reports as empty.
+            'top-level-list': f'[{body}]',
+        }
+
+    @pytest.mark.parametrize('corruption', ['invalid-json', 'top-level-list'])
+    def test_limit_get_leaves_a_corrupt_queue_file_byte_identical(self, isolated_base: dict, corruption: str) -> None:
+        """The file the verb could not parse is the file it must not rewrite."""
+        queue_path: Path = isolated_base['queue_path']
+        queue_path.write_text(self._corrupt_bodies()[corruption], encoding='utf-8')
+        before = queue_path.read_bytes()
+
+        result = build_queue.run_limit_get(Namespace())
+
+        assert result['status'] == 'success'
+        assert queue_path.read_bytes() == before
+        # Stated separately from the byte comparison because it is the
+        # consequence that matters: the holders are still there to be released
+        # and promoted. Against the rmw_json implementation the file reads `{}`
+        # and both ids are gone.
+        surviving = queue_path.read_text(encoding='utf-8')
+        assert 'plan-a:uuid-a' in surviving
+        assert 'plan-b:uuid-b' in surviving
+
+    def test_limit_get_leaves_a_well_formed_queue_file_byte_identical(self, isolated_base: dict) -> None:
+        """A read writes nothing on the happy path either.
+
+        The corrupt-file cases above are where the loss was observable, but the
+        contract is "this verb does not write", not "this verb does not write
+        when it cannot parse" — a reformat-on-read would still churn the file
+        under every concurrent holder.
+        """
+        queue_path: Path = isolated_base['queue_path']
+        _write_queue(queue_path, self._STATE)
+        before = queue_path.read_bytes()
+
+        build_queue.run_limit_get(Namespace())
+
+        assert queue_path.read_bytes() == before
+
+    def test_limit_get_still_reports_the_full_contract_on_a_well_formed_file(
+        self, isolated_base: dict, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The read-path correction changes nothing the verb REPORTS.
+
+        Every field the operator surface is documented to carry is asserted
+        together, including the retired per-repo value with ``in_effect: false``
+        — so a fix that quietly narrowed the envelope while satisfying the
+        "wrote nothing" assertions above would fail here.
+        """
+        _write_queue(isolated_base['queue_path'], self._STATE)
+        per_repo = tmp_path / 'run-configuration.json'
+        per_repo.write_text(json.dumps({'build': {'queue': {build_queue.UPPER_LIMIT_FIELD: 900}}}), encoding='utf-8')
+        monkeypatch.setattr(build_queue, 'get_run_config_path', lambda: per_repo)
+
+        result = build_queue.run_limit_get(Namespace())
+
+        assert result['field'] == build_queue.UPPER_LIMIT_FIELD
+        assert result['value'] == 1800
+        assert result['source'] == build_queue.SOURCE_QUEUE_STATE
+        assert result['floor_seconds'] == build_queue.UPPER_LIMIT_FLOOR_SECONDS
+        assert result['ceiling_seconds'] == build_queue.UPPER_LIMIT_CEILING_SECONDS
+        assert result['reap_threshold_seconds'] == 3600
+        assert result['queue_path'] == str(isolated_base['queue_path'])
+        assert result['per_repo_value'] == {'value': 900, 'in_effect': False}
+
+    def test_limit_set_still_commits_through_the_queue_mutation(self, isolated_base: dict) -> None:
+        """The matched control: only the READ verb lost its commit.
+
+        ``limit set`` is contracted to CHANGE the state and stays on
+        ``rmw_json``. Without this pair, the assertions above would pass equally
+        against a change that had stopped the threshold surface writing at all.
+        """
+        _write_queue(isolated_base['queue_path'], self._STATE)
+
+        build_queue.run_limit_set(Namespace(value=2400))
+
+        assert _read_queue(isolated_base['queue_path'])[build_queue.UPPER_LIMIT_FIELD] == 2400
+
+
+# =============================================================================
 # Foreign-config reports are TOON-injection safe AT THE EMISSION BOUNDARY
 # =============================================================================
 

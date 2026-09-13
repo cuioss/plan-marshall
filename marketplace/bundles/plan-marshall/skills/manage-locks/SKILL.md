@@ -597,9 +597,13 @@ Accepted flags: **none** — it takes no `--plan-id`, because it reads machine-g
 state belonging to no plan and the queue path resolves under the home root without
 any plan resolution.
 
-Read-only, but it opens the queue through the same `rmw_json` serialization every
-other access uses (committing the state unchanged), so the reported value can never
-be a torn read taken mid-write. Fields: `field` (`upper_limit_seconds`), `value`,
+Read-only, and it writes nothing: it reads the queue through
+`_locks_core.read_json_guarded`, which takes the same `O_EXCL` guard every other
+access to this file takes — so the reported value can never be a torn read taken
+mid-write — and returns without committing. It deliberately does NOT pass an identity
+mutator to `rmw_json`: that call commits unconditionally and reports a corrupt queue
+file as `{}`, so a caller merely asking for the threshold would write that `{}` back
+and erase every active and waiting entry. Fields: `field` (`upper_limit_seconds`), `value`,
 `source` (`queue_state` / `default_floor`), `floor_seconds` (`600`),
 `ceiling_seconds` (`3600`), `reap_threshold_seconds` (`2 × value` — the age at which
 the reaper reclaims an active entry), `queue_path`, plus `per_repo_value`

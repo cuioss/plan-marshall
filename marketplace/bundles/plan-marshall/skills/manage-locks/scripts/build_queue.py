@@ -246,7 +246,7 @@ from argparse import Namespace
 from pathlib import Path
 from typing import Any
 
-from _locks_core import holder_is_dead, log_lock_event, rmw_json
+from _locks_core import holder_is_dead, log_lock_event, read_json_guarded, rmw_json
 from _machine_config import (
     SOURCE_MACHINE_CONFIG,
     CapResolution,
@@ -1193,9 +1193,19 @@ def run_release(args: Namespace) -> dict[str, Any]:
 def run_limit_get(args: Namespace) -> dict[str, Any]:
     """Report the reap threshold in effect, its source, and any retired per-repo value.
 
-    Read-only: it opens the queue file through the same ``rmw_json`` serialization
-    every other access uses, committing the state unchanged, so the reported value
-    cannot be a torn read taken mid-write.
+    Read-only, and read-only in the literal sense: it reads the queue file
+    through :func:`_locks_core.read_json_guarded`, which takes the SAME
+    ``O_EXCL`` guard every other access to this file takes — so the reported
+    value cannot be a torn read taken mid-write — and then writes NOTHING.
+
+    It deliberately does NOT go through ``rmw_json`` with an identity mutator.
+    That call commits unconditionally, and its read reports a corrupt,
+    truncated, or non-dict queue file as ``{}``: committing that ``{}`` back
+    would erase every active and waiting entry, so a caller merely ASKING for
+    the threshold would empty the queue and the next admission would over-admit
+    past the cap. The guarded read keeps the serialization and drops the commit.
+    Its committing sibling :func:`run_limit_set` stays on ``rmw_json``, which is
+    correct there — it is contracted to change the state.
 
     ``per_repo_value`` is reported ONLY when the caller's own
     ``run-configuration.json`` still carries the retired
@@ -1213,24 +1223,16 @@ def run_limit_get(args: Namespace) -> dict[str, Any]:
     except RuntimeError as exc:
         return make_error(str(exc), code=ErrorCode.NOT_FOUND)
 
-    resolved: dict[str, Any] = {}
-
-    def _mutate(state: dict[str, Any]) -> dict[str, Any]:
-        value, source = _resolve_upper_limit(state)
-        resolved['value'] = value
-        resolved['source'] = source
-        return state
-
-    rmw_json(queue_path, _mutate)
+    value, source = _resolve_upper_limit(read_json_guarded(queue_path))
 
     result: dict[str, Any] = {
         'status': 'success',
         'field': UPPER_LIMIT_FIELD,
-        'value': resolved['value'],
-        'source': resolved['source'],
+        'value': value,
+        'source': source,
         'floor_seconds': UPPER_LIMIT_FLOOR_SECONDS,
         'ceiling_seconds': UPPER_LIMIT_CEILING_SECONDS,
-        'reap_threshold_seconds': 2 * resolved['value'],
+        'reap_threshold_seconds': 2 * value,
         'queue_path': str(queue_path),
     }
     per_repo = _read_per_repo_upper_limit()

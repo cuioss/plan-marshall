@@ -8,7 +8,7 @@ holder_is_dead, rmw_json``. NOT an executor entry point.
 This module is the single TOCTOU-safe coordination surface that BOTH the unified
 merge mutex (``merge_lock.py``, D3) and the build-queue limiter
 (``build_queue.py``, D5) build on, so the two primitives do not each
-re-implement holder-liveness or shared-file serialization. It exposes three
+re-implement holder-liveness or shared-file serialization. It exposes four
 pieces:
 
   * :func:`holder_is_dead` — the plan-liveness predicate (lifted from the prior
@@ -21,6 +21,13 @@ pieces:
     guard-file mutex and commits via an atomic temp-file replace, so two
     concurrent sessions cannot both observe the same pre-state and both claim a
     slot/lock. A missing or corrupt state file is treated as empty (``{}``).
+  * :func:`read_json_guarded` — the READ-ONLY counterpart to :func:`rmw_json`,
+    for a verb contracted to REPORT state rather than change it. It takes the
+    same ``O_EXCL`` guard on the same guard path, so the read cannot land
+    mid-mutation, and returns without writing anything. It exists because
+    :func:`rmw_json` commits unconditionally: routing a read through it with an
+    identity mutator writes the ``{}`` a corrupt file reads as straight back over
+    that file, so a read verb would destroy the state it was asked to describe.
   * :func:`log_lock_event` — the single best-effort ``[LOCK]`` emission point both
     lock primitives call at each lifecycle point (acquire / blocked / release /
     stale-reclaim / cap-disagreement). It appends a ``[LOCK]``-tagged line to the SINGLE
@@ -398,6 +405,53 @@ def rmw_json(path: Path, mutate: Callable[[dict[str, Any]], dict[str, Any]]) -> 
         next_state = mutate(current)
         _atomic_write_json(path, next_state)
         return next_state
+    finally:
+        os.close(fd)
+        try:
+            os.unlink(str(guard_path))
+        except OSError:
+            pass
+
+
+def read_json_guarded(path: Path) -> dict[str, Any]:
+    """Serialized READ of the JSON state file at ``path`` — commits nothing.
+
+    The read-only counterpart to :func:`rmw_json`, for a verb whose contract is
+    to REPORT the coordination state rather than change it. It takes the SAME
+    ``O_EXCL`` guard-file mutex on the SAME guard path, so the read cannot land
+    in the middle of another session's mutation, and then returns without
+    writing anything at all.
+
+    The guard is why this is a helper rather than a bare
+    :func:`_read_json_or_empty` call at the call site: dropping it would trade a
+    committing read for a torn one, and the torn read is exactly what routing
+    through :func:`rmw_json` was chosen to avoid. The guard is the part worth
+    keeping; the commit is the part that had to go.
+
+    ⛔ **Never implement a read as :func:`rmw_json` with an identity mutator.**
+    That function commits unconditionally, and its read reports a missing,
+    truncated, or non-dict file as ``{}`` — so an identity mutator over a corrupt
+    file writes that ``{}`` back and DESTROYS every entry the file held. A read
+    verb that erases the state it was asked to describe is the failure this
+    function exists to make unavailable.
+
+    Args:
+        path: The JSON state file (resolve via ``resolve_main_anchored_path`` at
+            the call site so it is main-anchored).
+
+    Returns:
+        The state as read, with a missing or corrupt file reported as an empty
+        mapping — deliberately the SAME interpretation :func:`rmw_json` hands its
+        mutator, so a reader and a mutator never disagree about what an
+        unreadable file means. The file is left byte-identical either way.
+
+    Raises:
+        TimeoutError: when the guard cannot be acquired within the budget.
+    """
+    guard_path = path.with_name(f'{path.name}{_GUARD_SUFFIX}')
+    fd = _acquire_guard(guard_path)
+    try:
+        return _read_json_or_empty(path)
     finally:
         os.close(fd)
         try:
