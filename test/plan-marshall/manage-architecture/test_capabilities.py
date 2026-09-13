@@ -284,7 +284,11 @@ def test_every_entry_uses_the_same_two_status_values():
         _seed(bare, {'bare-a': _module('bare-a')})
         _seed(inventoried, {'inv-a': _module('inv-a', files={'source': ['inv-a/x.py']})})
 
-        emitted = {entry['status'] for result in (_capabilities(bare), _capabilities(inventoried)) for entry in result['capabilities']}
+        emitted = {
+            entry['status']
+            for result in (_capabilities(bare), _capabilities(inventoried))
+            for entry in result['capabilities']
+        }
 
         assert emitted <= {'derivable', 'not_derivable'}
         # Both members are actually reachable, so the assertion above is not
@@ -584,7 +588,9 @@ def test_module_docstring_names_every_cmd_handler_it_defines():
     size, and every handler's CLI verb spelling must appear in the prose. A
     handler added without a docstring entry reddens this.
     """
-    verbs = sorted(name[len('cmd_') :].replace('_', '-') for name in dir(_cmd_client_handlers) if name.startswith('cmd_'))
+    verbs = sorted(
+        name[len('cmd_') :].replace('_', '-') for name in dir(_cmd_client_handlers) if name.startswith('cmd_')
+    )
     doc = _cmd_client_handlers.__doc__ or ''
 
     assert verbs, 'no cmd_* handlers were discovered — the population is empty'

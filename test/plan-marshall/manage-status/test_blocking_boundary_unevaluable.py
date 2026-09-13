@@ -125,9 +125,7 @@ def test_transition_completing_finalize_proceeds_when_findings_unevaluable(
     )
 
 
-def test_archive_proceeds_when_findings_unevaluable(
-    plan_context, _unevaluable_finding_queries, _captured_log_entries
-):
+def test_archive_proceeds_when_findings_unevaluable(plan_context, _unevaluable_finding_queries, _captured_log_entries):
     """PIN: a normal-completion archive (no --reason, still in 6-finalize) proceeds
     (fail-OPEN) when the findings state could not be evaluated, emitting exactly
     one WARNING decision envelope.
@@ -157,9 +155,7 @@ def test_archive_proceeds_when_findings_unevaluable(
 
 
 @pytest.mark.parametrize('verb', ['transition', 'archive'])
-def test_clean_findings_proceed_without_the_unevaluable_warning(
-    plan_context, _captured_log_entries, monkeypatch, verb
-):
+def test_clean_findings_proceed_without_the_unevaluable_warning(plan_context, _captured_log_entries, monkeypatch, verb):
     """NEGATIVE control: a CLEAN plan proceeds through both completion verbs too —
     so "it proceeded" does NOT identify the unevaluable branch.
 

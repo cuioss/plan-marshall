@@ -489,8 +489,7 @@ def test_info_reports_unknown_and_blank_description_when_no_document_exists(monk
 
         assert row['freshness'] == 'unknown'
         assert row['description'] == '', (
-            'the row carried the surviving index description for a document that '
-            'does not exist on disk'
+            'the row carried the surviving index description for a document that does not exist on disk'
         )
 
 
@@ -684,8 +683,7 @@ def test_migrate_key_packages_reports_a_bridge_collision_without_losing_a_descri
 
         assert migrated['src/pkg']['description'] == 'FIRST'
         assert migrated['com.example.two']['description'] == 'SECOND', (
-            'the colliding key was rewritten over its predecessor — a curated '
-            'description was lost by the migration'
+            'the colliding key was rewritten over its predecessor — a curated description was lost by the migration'
         )
         assert unresolved == ['com.example.two']
         # Anti-vacuity: every description that went in came back out.
@@ -813,8 +811,7 @@ def test_outline_module_context_survives_absent_derived_data(monkeypatch):
         context = _outline._read_module_context(tmpdir)
 
         assert context['status'] == 'success', (
-            'an absent derived.json failed the whole context read instead of '
-            'degrading to the empty derived shape'
+            'an absent derived.json failed the whole context read instead of degrading to the empty derived shape'
         )
         row = next(m for m in context['modules'] if m['name'] == 'mod')
         assert row['key_packages'] == ['com.example.pkg']

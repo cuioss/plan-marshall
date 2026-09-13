@@ -311,9 +311,7 @@ def _validate_skills_by_profile_structure(skills_by_profile: dict[str, Any]) -> 
             isinstance(profile_data.get(section), list) and profile_data.get(section)
             for section in ('defaults', 'optionals')
         ):
-            warnings.append(
-                f"Profile '{profile_name}' declares 'minimal': true but carries defaults/optionals entries"
-            )
+            warnings.append(f"Profile '{profile_name}' declares 'minimal': true but carries defaults/optionals entries")
         for section in ['defaults', 'optionals']:
             entries = profile_data.get(section, [])
             if not isinstance(entries, list):
