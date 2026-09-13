@@ -406,7 +406,9 @@ def test_the_default_cap_is_defined_in_exactly_one_module() -> None:
     carriers, scanned = _default_cap_carriers()
 
     assert scanned > 0, 'the candidate glob matched no production module — the sweep proves nothing'
-    expected = {(MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'script-shared' / 'scripts' / 'build' / '_machine_config.py')}
+    expected = {
+        (MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'script-shared' / 'scripts' / 'build' / '_machine_config.py')
+    }
     assert carriers == expected, (
         f'the default build-slot cap must be defined in exactly one module; '
         f'derived carriers={sorted(str(p) for p in carriers)} over {scanned} scanned module(s)'
