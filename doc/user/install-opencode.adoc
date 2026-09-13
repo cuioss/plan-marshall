@@ -32,7 +32,7 @@ The pinned consumption path is a two-step flow (OBSERVED, on a live opencode 1.1
 
 [source,bash]
 ----
-python3 marketplace/targets/generate.py --target opencode --output target/opencode
+./pw generate --target opencode --output target/opencode
 python3 .opencode/scripts/sync_opencode.py
 ----
 

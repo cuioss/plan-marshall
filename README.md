@@ -52,7 +52,7 @@ Plan Marshall ships an OpenCode target tree alongside the Claude Code marketplac
 ### Deploy (OBSERVED)
 
 ```bash
-python3 marketplace/targets/generate.py --target opencode --output target/opencode
+./pw generate --target opencode --output target/opencode
 python3 .opencode/scripts/sync_opencode.py
 ```
 
