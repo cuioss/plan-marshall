@@ -36,6 +36,22 @@ from input_validation import (
 # =============================================================================
 # Fixture data — sample IDs sourced from real `manage-lessons list` output.
 # Hand-typed shapes go in BAD_TOKENS only.
+#
+# ⛔ SAMPLE SHAPES, NOT A MIRROR — do NOT derive these from the live inventory.
+#
+# These read like a hand-kept copy of a set defined elsewhere, but there is no
+# live source to derive from AT ASSERT TIME: every test below replaces
+# ``_list_live_lesson_ids`` (or ``subprocess.run``) with a stub, so the inventory
+# under test is the one the test supplies. What these values carry is SHAPE — the
+# five-segment form the canonical regex must match — and their provenance (copied
+# from real output rather than invented) is what keeps that shape honest.
+#
+# Deriving them from the live store would couple this suite to
+# ``.plan/local/lessons-learned/``, which is git-ignored and absent from a fresh
+# clone, turning deterministic unit tests into environment-dependent ones and
+# making the regex assertions vary with whatever lessons happen to exist. The
+# live-data anchor is a RUNTIME concern and is tested as one, through
+# ``verify_lesson_id_regex_against_inventory`` with the inventory injected.
 # =============================================================================
 
 REAL_LESSON_IDS = (

@@ -19,6 +19,10 @@ import json
 from pathlib import Path
 from typing import Any
 
+# Cross-skill import — the root conftest puts every skill ``scripts/`` dir on
+# PYTHONPATH, so the live phase vocabulary is importable here.
+from constants import PHASES
+
 # Real lesson IDs — copy-pasted from production ``manage-lessons list`` so
 # the inventory anchor (LESSON_ID_RE vs live data) keeps validating against
 # real shapes and these tests fail loudly if either side drifts.
@@ -29,19 +33,25 @@ REAL_LESSON_IDS: tuple[str, ...] = (
     '2026-05-03-21-002',
 )
 
-# Canonical phase shape used by every status.json fixture below. The order
-# mirrors the production six-phase plan lifecycle (init → refine → outline →
-# plan → execute → finalize), and the `name` keys match what
-# plan_doctor._all_post_refine_pending() looks for. Tests opt into specific
-# per-phase statuses by passing overrides to ``make_status_json``.
-CANONICAL_PHASES: tuple[str, ...] = (
-    '1-init',
-    '2-refine',
-    '3-outline',
-    '4-plan',
-    '5-execute',
-    '6-finalize',
-)
+# Canonical phase shape used by every status.json fixture below — DERIVED from
+# the live source, never transcribed. ``constants.PHASES`` is the ordered
+# single source of truth for the plan lifecycle, and the `name` keys it yields
+# are what ``plan_doctor._all_post_refine_pending()`` looks for.
+#
+# This used to be a hand-kept copy of that tuple, and the copy was the defect:
+# a phase added, removed or renamed in production left every status.json
+# fixture here building the OLD shape, so the plan-doctor rules kept passing
+# against a lifecycle the product no longer has — green for a shape nothing
+# ships. Deriving removes that drift by construction.
+#
+# Deriving alone would make both sides move together, so it cannot on its own
+# detect a rename. ``test_plan_doctor`` carries the independent half: it pins
+# this live tuple against ``plan_doctor``'s OWN ``REFINE_PHASE`` literal, which
+# is declared separately and does not follow a rename here.
+#
+# Tests opt into specific per-phase statuses by passing overrides to
+# ``make_status_json``.
+CANONICAL_PHASES: tuple[str, ...] = PHASES
 
 
 def make_plan_with_tasks(plan_dir: Path, tasks: list[dict[str, Any]]) -> list[Path]:
