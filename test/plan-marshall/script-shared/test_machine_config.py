@@ -52,6 +52,7 @@ lives. Contract under test:
 
 from __future__ import annotations
 
+import ast
 import json
 import os
 import time
@@ -59,7 +60,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import load_script_module
+from conftest import MARKETPLACE_ROOT, load_script_module
 
 # The loader-contract guard enumerates the arguments this call is made with
 # across the test tree statically, so the three resolution arguments are
@@ -339,6 +340,92 @@ def test_absent_machine_config_defaults_even_when_the_cwd_repo_configures_a_cap(
 def test_default_cap_is_five(home: Path) -> None:
     """The default is pinned: the interim operator guidance is 5."""
     assert machine_config.DEFAULT_MAX_SLOTS == 5
+
+
+# =============================================================================
+# Single-definition guard for the default cap
+# =============================================================================
+
+
+def _default_cap_carriers() -> tuple[set[Path], int]:
+    """Return every production module that DEFINES a default build-slot cap.
+
+    A carrier is a module-level assignment whose target name ends in
+    ``MAX_SLOTS`` and whose value is an integer literal — the shape all three
+    historical carriers had. The derivation is AST-based rather than textual
+    for the reason the sibling audit records at length: a regex over these
+    names matches a docstring, a comment and a ``def`` line exactly as it
+    matches a definition, and this module's own docstring discusses
+    ``DEFAULT_MAX_SLOTS`` repeatedly. Reading a *usage* or a *stamp key* as a
+    definition is what would make this guard pass while the duplication it
+    exists to forbid is present.
+
+    ``bool`` is excluded explicitly: ``True`` is an ``int`` subclass, so a
+    ``FLAG_MAX_SLOTS = True`` would otherwise read as a cap definition.
+
+    Returns the carrier set and the number of modules scanned, so the caller
+    can publish the population the verdict was computed over.
+    """
+    scanned = 0
+    carriers: set[Path] = set()
+    unreadable: list[str] = []
+    for path in sorted(MARKETPLACE_ROOT.glob('*/skills/*/scripts/**/*.py')):
+        scanned += 1
+        try:
+            tree = ast.parse(path.read_text(encoding='utf-8'))
+        except (OSError, SyntaxError) as exc:  # pragma: no cover - coverage gap, not absence
+            unreadable.append(f'{path}: {exc}')
+            continue
+        for node in tree.body:
+            if not isinstance(node, ast.Assign):
+                continue
+            names = [t.id for t in node.targets if isinstance(t, ast.Name)]
+            if not any(name.endswith('MAX_SLOTS') for name in names):
+                continue
+            value = node.value
+            if isinstance(value, ast.Constant) and isinstance(value.value, int) and not isinstance(value.value, bool):
+                carriers.add(path)
+    assert not unreadable, f'modules that could not be parsed are a coverage gap, not an absence: {unreadable}'
+    return carriers, scanned
+
+
+def test_the_default_cap_is_defined_in_exactly_one_module() -> None:
+    """Re-duplicating the default must fail the suite, not pass it.
+
+    The cap's default previously existed in THREE modules at once — the
+    scheduler's ``DEFAULT_MAX_SLOTS``, ``build_queue``'s ``_DEFAULT_MAX_SLOTS``
+    and ``_config_defaults``' seeded ``DEFAULT_BUILD_QUEUE['max_slots']`` — and
+    the suite was silent about it, because a test that pins the VALUE cannot
+    see how many places carry it. Pinning the definition COUNT is what makes a
+    fourth carrier a failure here rather than a discovery later.
+
+    The population is published with the verdict: an equality check over an
+    empty carrier set would pass vacuously, reporting agreement while ranging
+    over nothing.
+    """
+    carriers, scanned = _default_cap_carriers()
+
+    assert scanned > 0, 'the candidate glob matched no production module — the sweep proves nothing'
+    expected = {(MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'script-shared' / 'scripts' / 'build' / '_machine_config.py')}
+    assert carriers == expected, (
+        f'the default build-slot cap must be defined in exactly one module; '
+        f'derived carriers={sorted(str(p) for p in carriers)} over {scanned} scanned module(s)'
+    )
+
+
+def test_the_single_carrier_is_the_module_under_test() -> None:
+    """The one carrier is the module this suite exercises.
+
+    Without this the guard above would pass if the definition moved to any
+    single other module, leaving the resolver importing a constant its own
+    tests never cover.
+    """
+    carriers, _ = _default_cap_carriers()
+
+    assert len(carriers) == 1
+    assert next(iter(carriers)).name == '_machine_config.py'
+    assert isinstance(machine_config.DEFAULT_MAX_SLOTS, int)
+    assert not isinstance(machine_config.DEFAULT_MAX_SLOTS, bool)
 
 
 # =============================================================================
