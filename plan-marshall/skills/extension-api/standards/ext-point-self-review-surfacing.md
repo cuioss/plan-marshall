@@ -1,0 +1,282 @@
+# Extension Point: Self-Review Surfacing
+
+> **Type**: Domain-Aware Script | **Hook Method**: standalone implementor skill | **Implementations**: 1 | **Status**: Active
+
+## Overview
+
+Self-review surfacing extensions provide the deterministic candidate-surface phase of the `default:pre-submission-self-review` finalize step. Each implementor inspects the worktree's staged diff in a domain-appropriate way (regex literals in `.py`/`.md`, Java imports + JavaDoc strings, JSX template literals, AsciiDoc include directives, etc.) and emits a TOON envelope carrying one candidate sub-list per registry entry for the LLM cognitive review pass to consume.
+
+The plan-marshall-domain implementor is the `ext-self-review-plan-marshall` skill, homed in the `pm-plugin-development` bundle; its script notation is `pm-plugin-development:ext-self-review-plan-marshall:self_review`. Consumer projects (Java, frontend, application code) MAY contribute their own implementor by following the contract below.
+
+This document is a unifying reference; the consumer-side dispatch lives in [`../../phase-6-finalize/workflow/pre-submission-self-review.md`](../../phase-6-finalize/workflow/pre-submission-self-review.md) Step 1.
+
+## Implementor Requirements
+
+### Implementation Pattern
+
+To create a new self-review surfacing implementor:
+
+1. Create `skills/ext-self-review-{domain}/` under your bundle.
+2. Implement a `self_review.py` script exposing the `surface` subcommand (see CLI Contract below).
+3. Add `implements: plan-marshall:extension-api/standards/ext-point-self-review-surfacing` to the skill's `SKILL.md` frontmatter.
+4. Register the script via the standard executor mapping (`{bundle}:ext-self-review-{domain}:self_review`).
+
+The consumer dispatch ([`pre-submission-self-review.md`](../../phase-6-finalize/workflow/pre-submission-self-review.md) Step 1) discovers surfacing implementors via `find_implementors(ext-point-self-review-surfacing)` (`extension_discovery implementors --ext-point plan-marshall:extension-api/standards/ext-point-self-review-surfacing`) and invokes the first implementor whose `self_review` script notation resolves in the current executor. For the plan-marshall domain the resolvable implementor notation is `pm-plugin-development:ext-self-review-plan-marshall:self_review`, preserving current behavior bit-for-bit. When NO implementor resolves — a consumer project shipping no domain self-review surfacer — the consumer takes the **zero-generator fallback**: an empty candidate envelope, no LLM cognitive dispatch, and a `done` outcome carrying the **not-run** verdict `"self-review not run: no surfacer implementor resolved"`.
+
+**The fallback's outcome is `done`; its verdict is not "clean".** Nothing ran on this path — no diff was read, no candidate was constructed, no check executed — so the record states that no analysis was performed rather than that none was needed. The `done` outcome exists to keep a consumer without a domain surfacer from being blocked at push, and that is the whole of what it means. A distinct verdict string is what keeps the two apart in the record: an un-run analysis and an analysis that ran and observed nothing are different facts, and one string covering both turns absence of analysis into absence of defects at the exact surface an operator reads. See [`../../phase-6-finalize/workflow/pre-submission-self-review.md`](../../phase-6-finalize/workflow/pre-submission-self-review.md) § "Dispatched-envelope output" for the full verdict set and the predicate selecting each. This discovery-routing + zero-generator fallback is what lets the promoted `default_on: true` step ship safely to consumers without a domain surfacer.
+
+**Recorded, not invented — the shared gated/un-gated verdict vocabulary has NOT landed.** The verdict strings above are this step's own, and no cross-step vocabulary exists for them to conform to. That is an observation, not an assumption: a first-party content sweep over the inventoried tree for such a vocabulary returned **zero hits**, with a clean coverage report (no unreadable files, no elision, no truncation) — 5335 files at the time the requirement was recorded, re-verified at 5338 files with the same zero result. The requirement is therefore **deferred with its evidence attached**, not silently dropped: introducing a shared vocabulary is a cross-step change, and inventing one here would create the second, drifting definition this ext-point's own contract-drift checks exist to catch. Whoever lands the shared vocabulary reconciles these strings to it then.
+
+### Implementor Frontmatter
+
+```yaml
+implements: plan-marshall:extension-api/standards/ext-point-self-review-surfacing
+```
+
+### CLI Contract
+
+| Subcommand | Required | Description |
+|------------|:--------:|-------------|
+| `surface` | Yes | Emit one candidate sub-list per registry entry from the worktree diff as TOON. |
+| `scan-worked-examples` | No | Run the `worked_example_pairs` adjudication over a supplied file population (`--paths-glob`) instead of the diff, reporting the population size the verdict was drawn against. Implemented by the plan-marshall-domain implementor; a consumer-domain implementor MAY omit it, and no consumer of this ext-point dispatches it. |
+
+## Runtime Invocation Contract
+
+### Parameters
+
+| Argument | Type | Required | Description |
+|----------|------|----------|-------------|
+| `--plan-id` | string | Yes | Plan identifier (kebab-case). Drives both the on-demand footprint derivation (`{base}...HEAD` ∪ porcelain, computed live from the worktree) and worktree resolution via `manage-status get-worktree-path`. |
+| `--project-dir` | path | No | Absolute path to the active git worktree (escape hatch). When omitted, the path is auto-resolved from `--plan-id`. |
+| `--base-branch` | string | No | Base branch for diff computation (default: `main`). |
+| `--since-ref` | string | No | The previous review round's recorded `head_at_completion` SHA. When supplied, the surfaced FILE SET is the footprint intersected with the paths changed since that ref, so a follow-up round re-examines only what the preceding loop-back actually changed. Omitted on round 1 and on the closing full-surface confirmation pass. |
+
+**`--since-ref` narrows the file set, never the examination of a file.** Hunks stay anchored on `--base-branch`, so every file that survives the intersection is still reviewed against its FULL plan diff rather than against only its incremental hunks. An implementor that narrowed the hunk basis instead would be cutting review depth, which this argument does not authorize.
+
+**A delta-scoped round cannot close the step.** The narrowed round is a cheap filter whose clean verdict covers only the files it looked at. The consumer re-runs the surface call once WITHOUT `--since-ref` before recording a terminal `done`, so the step can still only close on a full-surface clean pass — see [`../../phase-6-finalize/workflow/pre-submission-self-review.md`](../../phase-6-finalize/workflow/pre-submission-self-review.md) Step 1 and Step 4 Branch A. An implementor supplies the narrowing; it does not decide termination.
+
+### Pre-Conditions
+
+- `--plan-id` resolves to an active plan whose `references.json` carries `base_branch` (used as the footprint diff anchor).
+- The resolved worktree is a valid git working tree.
+- The base branch ref resolves inside the worktree.
+- When `--since-ref` is supplied, it resolves to a commit inside the worktree. An unresolvable value is a diagnosable error — an implementor MUST NOT fall through to the full sweep, because a silent widening would report a full-surface verdict a caller would read as delta-scoped, and vice versa.
+
+### Post-Conditions
+
+- TOON to stdout carrying one candidate sub-list per registry entry, as enumerated below (some MAY be empty).
+- The echo fields `since_ref`, `surface_scope`, `files_in_scope`, `scope_statement`, `structural_limit`, and `delta_coverage` state which round variant produced the payload, the file set it searched, what the analysis cannot evaluate at all, and what the round actually observed over that file set, so a consumer never has to reconstruct any of it. `scope_statement` is emitted on every surface — including an empty one — so an absence/residual claim a consumer derives from the round can never be made without the scope it was drawn against.
+- `structural_limit` states what this analysis CLASS cannot evaluate, on **every** surface. It is a second, orthogonal claim to `scope_statement` and MUST NOT be merged with it: `scope_statement` names the file set and is cured by widening it, whereas `structural_limit` names a defect class the analysis cannot reach however wide the sweep — the behaviour of the code under inputs the diff does not contain. An implementor emits both as distinct fields, so a consumer reading either one cannot believe it has both. A clean full-scope round is the verdict most likely to be misread as whole-diff assurance, which is why the limit is unconditional rather than reserved for degraded rounds.
+- `delta_coverage` reports, on **every** surface, what the round OBSERVED over the files it searched — per-round and per-content-class coverage counts. It is the third unconditional field and the only one computed from the round's own RESULT rather than from its inputs: `scope_statement` names the file set and `structural_limit` names the analysis class's reach, but neither says whether the round surfaced anything over the files it did search. Every declared content class is emitted, seeded to zero, so a MISSING key reads as "not measured" while a ZERO reads as "measured, none found" — only the second is true of a class the round genuinely saw no candidate in. ⛔ That zero-versus-missing reading holds **only for a class whose own `files > 0`**. Because every DECLARED class is emitted whether or not the round saw a file of it, a class with `files: 0` carries `files_with_candidates: 0` over an empty population — nothing of that class was searched, so its zero is an absence of measurement, not a measurement of absence. Read `files` first, exactly as `files_with_candidates` itself must be read against `files_in_scope`.
+- An empty intersection surfaces NOTHING. A delta round whose intersection is empty genuinely has no files to review, so the implementor MUST emit empty candidate lists rather than falling back to the unfiltered diff.
+- Non-zero exit on git-unavailable, base-branch-missing, worktree-resolution, or since-ref-resolution failure.
+
+### Output Schema
+
+```toon
+status: success
+plan_id: {plan_id}
+project_dir: {project_dir}
+base_branch: {base_branch}
+since_ref: {sha or empty when the round was not delta-scoped}
+surface_scope: delta | full
+files_in_scope: N
+scope_statement: {human-readable statement of the file set this round searched — published on every surface, empty ones included, so an absence claim can never be made without it}
+structural_limit: {human-readable statement of what this analysis CLASS cannot evaluate at all — orthogonal to scope_statement and never merged with it; published on every surface, clean ones especially}
+delta_coverage:
+  files_in_scope: {the same file set files_in_scope reports, restated as this block's denominator}
+  files_with_candidates: {files in scope this round surfaced at least one candidate for}
+  files_without_candidates: {files in scope this round surfaced nothing for}
+  classes_present: {content classes holding at least one file in scope}
+  classes_present_without_candidates: {of those, how many surfaced nothing at all}
+  candidates_unattributed: {candidate entries naming neither a file nor a files path — counted, never dropped}
+  statement: {human-readable reading of this block — published on every surface, clean ones especially}
+  by_class[C]{content_class,files,files_with_candidates,files_without_candidates}:
+    ...
+counts:
+  by_family:
+    structural: {sum of the in_total structural lists}
+    prose_contract: {sum of the in_total prose_contract lists}
+  regexes: N1
+  user_facing_strings: N2
+  markdown_sections: N3
+  symmetric_pairs: N4
+  flag_guard_pairs: N5
+  contract_sources: N6
+  schema_bearing_files: N7
+  keep_markers: N8
+  protected_identifiers: N9
+  producer_consumer: N10
+  source_of_truth: N11
+  same_document_consistency: N12
+  description_vs_body: N13
+  unguarded_boundaries: N14
+  count_prose: N15
+  touched_claims: N16
+  advertised_form_help_strings: N17
+  ordinal_references: N18
+  scan_derived_keys: N19
+  worked_example_pairs: N20
+  duplicate_claimable_keys: N21
+  discard_without_report: N22
+  total: the sum of every registry entry whose in_total flag is set
+
+regexes[N1]{file,line,pattern}:
+  ...
+
+user_facing_strings[N2]{file,line,context,text}:
+  ...
+
+markdown_sections[N3]{file,line,heading,siblings}:
+  ...
+
+symmetric_pairs[N4]{file,line,name,partner,test_present}:
+  ...
+
+flag_guard_pairs[N5]{file,line,flag,forms_covered}:
+  ...
+
+contract_sources[N6]{file,sources}:
+  ...
+
+schema_bearing_files[N7]{file,format}:
+  ...
+
+keep_markers[N8]{file,line,identifier,kind}:
+  ...
+
+protected_identifiers[N9]:
+  - <identifier>
+  - ...
+
+producer_consumer[N10]{file,line,key,consumed}:
+  ...
+
+source_of_truth[N11]{name,files,values}:
+  ...
+
+same_document_consistency[N12]{file,line,keyword,text}:
+  ...
+
+description_vs_body[N13]{file,line,key,description}:
+  ...
+
+unguarded_boundaries[N14]{file,line,boundary,guarded}:
+  ...
+
+count_prose[N15]{file,line,text}:
+  ...
+
+touched_claims[N16]{file,line,text}:
+  ...
+
+advertised_form_help_strings[N17]{file,line,arg,help_text,raw_pass_line}:
+  ...
+
+ordinal_references[N18]{file,line,text,list_line}:
+  ...
+
+scan_derived_keys[N19]{file,line,name,sequence,key_consumed}:
+  ...
+
+worked_example_pairs[N20]{file,line,clause,required_predicate,example_predicate,agrees}:
+  ...
+
+duplicate_claimable_keys[N21]{file,line,collection,key,form}:
+  ...
+
+discard_without_report[N22]{file,line,channel,discard}:
+  ...
+```
+
+The `total` count covers the line-level heuristic lists only. `contract_sources`, `schema_bearing_files`, `count_prose`, and `advertised_form_help_strings` are review-anchor categories not summed into `total`; `protected_identifiers` is a derived index over `keep_markers` entries with `kind: keep_protected` and likewise does not contribute. The authoritative membership is the implementor's `CANDIDATE_LISTS` registry `in_total` field, from which both the emitted key set and the `total` formula are derived — a consumer reads the emitted `counts` block rather than re-deriving the sum from a hand-maintained name list.
+
+### `counts.by_family` — the per-round detector mix
+
+`counts.by_family` partitions the SAME `in_total` population that `total` sums, by each registry entry's `family`, over a closed two-member vocabulary:
+
+| Family | Reads |
+|--------|-------|
+| `structural` | Code SHAPE — a pattern, a pair of names, a guard, a call site |
+| `prose_contract` | PROSE or contract consistency — a heading, a description, a count claim, a documented schema |
+
+Contract obligations on an implementor:
+
+- **The two family counts MUST sum exactly to `counts.total`.** Both are derived from one traversal of the same `in_total` population, so the mix cannot drift from the total it decomposes.
+- **BOTH families are always reported, including a zero.** A round that surfaced only prose candidates is a detector-mix signal about the change under review; an omitted key would read as "not measured" rather than "none found", which is the distinction the block exists to preserve.
+- **Every registry entry carries exactly one family.** The field is required with no default, so the partition is total by construction rather than by convention.
+
+The mix is reported HERE, in the return TOON, rather than in `display_detail`: this block is the authoritative contract surface and is unbudgeted, while `display_detail` is capped at 80 characters and its no-check-matched verdict (`"self-review clean: {N} candidates examined, no check matched"`) already renders to 61 characters at `{N}=9999` — 19 characters of headroom, too narrow to carry a two-family mix in any readable form. Consumers read `counts.by_family` for the mix.
+
+### `delta_coverage` — what the round observed over what it searched
+
+`delta_coverage` partitions the round's OWN file set by the content class of each file and reports, per class, how many of those files this round surfaced at least one candidate for. It closes a specific fail-open: a delta whose whole content is of a kind the pass surfaces nothing for re-surfaces the previous round's candidates unchanged and returns clean, and in the input-derived fields alone that round is indistinguishable from one that looked and found nothing. Here they separate — the first reports `files_with_candidates: 0`, the second does not.
+
+Contract obligations on an implementor:
+
+- **The block is emitted on EVERY surface, empty ones included** — for the same reason `scope_statement` and `structural_limit` are: the round most likely to be over-read is the clean one. A zero-file scope reports `files_in_scope: 0` and says so in `statement`, because no search at all is not a clean result.
+- **Every declared content class is emitted, seeded to zero.** A class with no files in scope reports zeros rather than being omitted, exactly as `counts.by_family` seeds its families: a missing key reads as "not measured" and a zero reads as "measured, none found", and only the second is true of a class the round genuinely saw no candidate in. ⛔ That reading is conditional on the class's own `files > 0`. Seeding means a class the round saw NO file of is emitted too, and its `files_with_candidates: 0` is then a zero over an empty population — an absence of measurement, not a measurement of absence. A consumer reads `files` before reading either candidate count, the same way it reads `files_in_scope` before reading the block-level ones.
+- **The class partition is total over the scope.** Each class's `files` count sums exactly to `files_in_scope`, and each class's `files_with_candidates` + `files_without_candidates` equals its own `files`. The class vocabulary itself is the implementor's — the plan-marshall implementor's is declared in its `CONTENT_CLASSES` registry — so a consumer reads the emitted rows rather than a name list restated here.
+- **Every path-bearing entry shape is attributed.** A candidate naming its site under the singular `file` key and one naming several declaring paths under a `; `-joined `files` key BOTH credit every path they name; an entry naming neither is counted in `candidates_unattributed` rather than absorbed, so an entry that did surface something is never filed under "produced nothing".
+
+⛔ **A zero `files_with_candidates` is NOT a verdict of soundness and NOT proof that no detector covers the class.** A covered class legitimately surfaces nothing when there is nothing to surface. The block states only what the round can support — *this round produced no candidate over those files* — and leaves both readings open deliberately: separating them would need a per-detector reach map no implementor can derive, and publishing one would be a stronger claim than the evidence carries.
+
+Like `counts.by_family`, this block rides the return TOON rather than `display_detail`, for the reason given in the section above: the 80-character verdict budget carries none of it. Its consumer contract is [`../../phase-6-finalize/workflow/pre-submission-self-review.md`](../../phase-6-finalize/workflow/pre-submission-self-review.md) § "A clean verdict states what the round observed".
+
+### Required Candidate Sub-Lists
+
+Every registry key MUST appear in the output (possibly with empty payloads) — a consumer-domain implementor whose language or format carries no equivalent signal for a given key MUST still emit that key with an empty payload rather than omitting it. This applies to `scan_derived_keys` exactly as it does to every other key: a domain with no scan-versus-anchor derivation shape emits `scan_derived_keys` empty, and the consumer's `total` formula stays well-defined. It applies equally to `worked_example_pairs`: a domain whose documentation carries no BAD/GOOD worked-example convention emits that key empty. Every registry key is listed below with the check that consumes it — every `in_total` key now has one, tied to the check list by the population-derived coverage test in `test/pm-plugin-development/ext-self-review-plan-marshall/test_self_review_check_coverage.py`:
+
+| Sub-list | Purpose | Consumed By |
+|----------|---------|-------------|
+| `regexes` | Regex/glob over-fit boundary check | Check 2 (regex over-fit) |
+| `user_facing_strings` | Wording disambiguation | Check 3 (ambiguous wording) |
+| `markdown_sections` | Duplicate prose scan | Check 4 (duplication) |
+| `symmetric_pairs` | Symmetric pair test coverage | Check 1 (symmetric pair) |
+| `flag_guard_pairs` | Flag-form-coverage comparison across symmetric guards | Check 1 (symmetric pair / flag-form coverage) |
+| `contract_sources` | Contract cross-reference anchor | Step 2a (cross-reference setup) and Check 5 (contract drift) |
+| `schema_bearing_files` | Contract drift detection anchor | Step 2a (cross-reference setup) and Check 5 (contract drift) |
+| `keep_markers` | Identifiers flagged as load-bearing by `self-review: keep <id>` HTML-comment markers (the literal `keep`-marker syntax is specified verbatim in the implementor's § Keep-Identifier Markers) in the post-image; their values are mirrored into the top-level `protected_identifiers` set so the cognitive review can refuse consolidations that drop the token. | Check 4 (duplication) refuses to drop any protected identifier |
+| `producer_consumer` | Dangling producers (a value emitted into an output slot with no consumer anywhere in the diff) | Check 6 (producer-without-consumer) |
+| `source_of_truth` | The same UPPER_SNAKE_CASE constant bound to divergent literals across two declared SoT files | Check 7 (source-of-truth drift) |
+| `same_document_consistency` | Added RFC-2119 normative directives, surfaced for sibling-contradiction review (Mode-2: an added normative line MUST surface a candidate, never an empty surface) | Check 8 (same-document contradiction) |
+| `description_vs_body` | A modified `.md` whose frontmatter `description`/`summary` may describe a model the changed body no longer implements | Check 9 (description-vs-body drift) |
+| `unguarded_boundaries` | Added `subprocess.*` / file-I/O calls with no `check=True` and no enclosing `try/except` in the same function | Check 10 (lone unguarded boundary) |
+| `count_prose` | Count-prose (a digit or number word adjacent to a cardinality noun) in every contract source (`SKILL.md` and every `standards/*.md`) of a modified file's skill directory, for count-correctness re-check | Check 11 (stale count-prose) |
+| `touched_claims` | The `+` line of a `-`/`+` hunk pair differing by exactly one token, surfaced for whole-line claim re-verification | Check 12 (touched-claim re-check) |
+| `advertised_form_help_strings` | A multi-form argparse `help=` string paired with a raw `args.<dest>` pass-through that does no normalization — advertised-input-form normalization cross-check | Check 5 (contract drift) |
+| `ordinal_references` | Added same-document ordinal references (`item N` / `step N` / bare `(N)`) pointing into an ordered-list block the same diff touched, surfaced so the reviewer confirms each ordinal still resolves to its intended item after the renumber | Check 13 (same-document ordinal-reference re-check) |
+| `scan_derived_keys` | A key derived by first-match of a compiled pattern over a decomposed sequence rather than by indexing that decomposition at a position anchored on a known root — the scan-versus-anchor shape that collapses distinct inputs to one key and leaves a downstream guard unreachable | Check 14 (unreachable guard behind a scan-derived key) |
+| `worked_example_pairs` | A clause section's GOOD worked example whose branch predicate disagrees with the predicate the clause's own normative prose requires — the contrast silently demonstrates the shape its clause forbids, one field over. Only the disagreeing case is surfaced and no denominator is published (agreeing and unadjudicable pairs are both dropped, uncounted), so an empty list states only that no adjudicable disagreement was surfaced in the diff scope — not that every pair agrees, and not a population-level clean verdict; the implementor's `scan-worked-examples` verb publishes the denominator that claim requires | Check 15 (worked-example clause mismatch) |
+| `protected_identifiers` | Derived index over `keep_markers` entries with `kind: keep_protected` — the flat identifier set the duplication check refuses to drop | Check 4 (duplication), as the refusal set |
+| `duplicate_claimable_keys` | An insertion site that claims a caller-supplied identity into a new keyed collection while validating it but omitting any duplicate-key disposition | Check 16 (duplicate-claimable key) |
+| `discard_without_report` | A bare guarded `continue`/`break` that drops an item inside a function owning a suppression report channel without recording the drop | Check 17 (discard without report) |
+
+**Closed coverage gap — every summed key is now examined.** `duplicate_claimable_keys` and `discard_without_report` both carry `in_total: true`, so they raise `counts.total`, the Step 1b dispatch gate, and the `"{N} candidates examined"` verdict. They previously had no consuming check while the check list stopped at check 15 — a candidate inflating the examined-count without being examined, the volume-read-as-coverage shape this ext-point exists to detect, reproduced inside its own contract. That gap is now closed by ADDING the two consuming checks (16 and 17), not by clearing the `in_total` flags: dropping the entries from the total would shrink the published count without examining anything more (the improve-the-metric-by-examining-less shape this project rejects), whereas adding the checks keeps the total, the dispatch gate, and the verdict at their current magnitude and makes them honest. The tie between a counted registry entry and a consuming check is now enforced by a population-derived contract test over the registry (see the Detection Rules reference below), so a future `in_total` entry added without a check fails that test rather than silently re-opening this gap.
+
+A line-level entry carries `file` (repo-relative path) AND `line` (1-based line number in the post-diff file content) — the primary navigation fields the LLM cognitive review consumes. Not every key uses that pair: a payload that is a file-level reference, a derived index, or a different coordinate tuple deviates from it. **The per-key field tuples in the Output Schema above are the authoritative statement of which keys deviate and how — read them there.** This paragraph names no key and counts no deviation. Additional per-domain sub-lists beyond the canonical registry keys are allowed and ignored by the seventeen canonical checks.
+
+### Detection Rules (Plan-Marshall Domain Reference)
+
+The `ext-self-review-plan-marshall` implementor's detection heuristics are documented in [`../../../../pm-plugin-development/skills/ext-self-review-plan-marshall/SKILL.md`](../../../../pm-plugin-development/skills/ext-self-review-plan-marshall/SKILL.md) § Detection Rules, which is the authoritative enumeration. No count, range, endpoint, or per-key correspondence is stated here — read the rule set at its source. Consumer-domain implementors MAY adapt these rules for their language/format but MUST keep the output schema identical so the LLM cognitive review remains domain-agnostic.
+
+## Failure Mode Contract
+
+| Condition | Output |
+|-----------|--------|
+| No domain implementor resolved (consumer dispatch, no surfacer in the executor) | **The no-implementor outcome, reported as its own condition.** The consumer step succeeds without dispatching the LLM cognitive phase (`outcome=done`, empty candidate envelope) — but it records the **not-run** verdict `"self-review not run: no surfacer implementor resolved"`, NOT a clean-run verdict. No surfacer executed, so no file was searched and no candidate was adjudicated: the outcome is a statement about the executor, not about the diff. ⛔ It MUST NOT be reported under the same verdict as a round that ran and surfaced zero candidates — that round searched a real file set, and collapsing the two reports an un-run analysis as a clean review |
+| Live footprint empty (no `{base}...HEAD` ∪ porcelain changes) | `status: success` with empty candidate lists (no diff scope) |
+| `--since-ref` supplied and the intersection is empty | `status: success` with empty candidate lists (`surface_scope: delta`) — nothing changed since the previous round, which is a real answer, NOT a signal to widen |
+| Git unavailable or wrong cwd | `status: error\nerror: git_unavailable\nmessage: ...` (exit 1) |
+| Base branch not found | `status: error\nerror: base_branch_not_found\nbase_branch: {base}` (exit 1) |
+| `--since-ref` does not resolve to a commit | `status: error\nerror: since_ref_unresolvable\nmessage: ...` (exit 1) — the round is refused, never silently widened to a full sweep |
+| `--plan-id` worktree resolution fails | `status: error\nerror: worktree_resolution_failed\nmessage: ...` (exit 2) |
+
+The consumer dispatcher (`phase-6-finalize/workflow/pre-submission-self-review.md` Step 1) translates non-zero exits into `outcome=failed` on the manifest step without dispatching the LLM cognitive phase.
+
+## Related
+
+- [`../../phase-6-finalize/workflow/pre-submission-self-review.md`](../../phase-6-finalize/workflow/pre-submission-self-review.md) — sole consumer of this ext-point's output
+- [`../../manage-execution-manifest/standards/decision-rules.md`](../../manage-execution-manifest/standards/decision-rules.md) — the `commit_push_disabled` and `scope_gated_finalize` pre-filters, among the compose-time subtractions that can drop the consumer step — see that document for the authoritative set, and do not treat the two named here as exhaustive
+- [`../../tools-script-executor/standards/cwd-policy.md`](../../tools-script-executor/standards/cwd-policy.md) — Bucket B cwd contract every implementor obeys
+- [`ext-point-triage.md`](ext-point-triage.md) — sibling ext-point pattern (domain-aware finding triage)

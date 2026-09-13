@@ -1,0 +1,59 @@
+= {{GUIDE_TITLE}}
+:toc: left
+:toclevels: 2
+
+== Introduction
+
+{{PURPOSE}}
+
+== Prerequisites
+
+// What you need before starting
+
+* Prerequisite 1
+* Prerequisite 2
+
+== Steps
+
+=== Step 1: {{STEP_TITLE}}
+
+// First step description
+
+[source,bash]
+----
+# Commands for step 1
+----
+
+=== Step 2: {{STEP_TITLE}}
+
+// Second step description
+
+=== Step 3: {{STEP_TITLE}}
+
+// Third step description
+
+== Verification
+
+// How to verify success
+
+== Troubleshooting
+
+=== Common Issue 1
+
+**Problem**: Description of the problem
+
+**Solution**: How to resolve it
+
+=== Common Issue 2
+
+**Problem**: Description of the problem
+
+**Solution**: How to resolve it
+
+== Next Steps
+
+// What to do after completing this guide
+
+== References
+
+// Related documentation and resources

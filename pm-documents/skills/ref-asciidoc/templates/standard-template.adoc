@@ -1,0 +1,41 @@
+= {{TITLE}}
+:toc: left
+:toclevels: 3
+:sectnums:
+
+== Overview
+
+{{DESCRIPTION}}
+
+== Requirements
+
+// Define prerequisites and requirements
+
+== Implementation
+
+// Describe implementation details
+
+=== Configuration
+
+// Configuration options
+
+=== Usage
+
+// Usage examples and patterns
+
+== Examples
+
+// Concrete code examples
+
+[source,java]
+----
+// Example code here
+----
+
+== Best Practices
+
+// Recommended practices
+
+== References
+
+// Links to related documentation
