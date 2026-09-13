@@ -7,9 +7,9 @@ xref:../../README.md[Plan Marshall] » xref:README.adoc[Developer Guide]
 
 == Overview
 
-`plan-marshall` publishes each of its distribution targets to refs on `cuioss/plan-marshall`. The `claude` target publishes to two refs: the `dist-claude` orphan branch (snapshot, force-updated on every push to `main`) and the immutable dist tag `claude/v{x.y.z}` (per-release). Each ref's root holds a `.claude-plugin/marketplace.json` and the expanded bundle tree, so Claude Code's `/plugin marketplace add` against the ref registers the marketplace directly — no intermediate fetch, no asset extraction. The `opencode` target publishes the same way under `dist-opencode` / `opencode/v*` (see _Multi-target architecture_ below); its consumption path is unverified on a live client.
+`plan-marshall` publishes each of its distribution targets to refs on `cuioss/plan-marshall`. The `claude` target publishes to two refs: the `dist-claude` orphan branch (snapshot, force-updated on every push to `main`) and the immutable dist tag `claude/v{x.y.z}` (per-release). Each ref's root holds a `.claude-plugin/marketplace.json` and the expanded bundle tree, so Claude Code's `/plugin marketplace add` against the ref registers the marketplace directly — no intermediate fetch, no asset extraction. The `opencode` target publishes the same way under `dist-opencode` / `opencode/v*` (see _Multi-target architecture_ below); its refs-based install path is unverified on a live client, and the supported consumption path is the local generate-and-sync deploy (xref:../user/install-opencode.adoc[Installation (OpenCode)]), not a refs-based install.
 
-The install commands that follow are Claude-specific (`/plugin marketplace add`, `/reload-plugins`). The OpenCode target's refs exist and publish, but no OpenCode client has consumed them end-to-end — see _Multi-target architecture_ for the verification status.
+The install commands that follow are Claude-specific (`/plugin marketplace add`, `/reload-plugins`), with the full walkthrough at xref:../user/install-claude.adoc[Installation (Claude Code)]. The OpenCode target's consumption path is the local generate-and-sync deploy against a checkout — verified end-to-end, while no OpenCode client has consumed the distribution refs — see _Multi-target architecture_ for the verification status.
 
 == Installing — snapshot (bleeding edge)
 
@@ -19,7 +19,7 @@ The install commands that follow are Claude-specific (`/plugin marketplace add`,
 /plugin install plan-marshall@plan-marshall
 ----
 
-Restart Claude Code or run `/reload-plugins`. Install additional bundles per xref:../user/installation.adoc[User Guide › Installation] as desired.
+Restart Claude Code or run `/reload-plugins`. Install additional bundles per xref:../user/install-claude.adoc[User Guide › Installation (Claude Code)] as desired.
 
 The `@dist-claude` ref tracks `main`: every push to `main` force-updates this branch to the freshly regenerated `target/claude/` tree.
 
@@ -97,12 +97,16 @@ The publish workflow is target-parametrized via a GitHub Actions `strategy.matri
 | `--target opencode`
 |===
 
-The `opencode` entry is **unverified on a live client**: the workflow publishes
+The `opencode` entry's **refs-based install path** is unverified on a live client: the workflow publishes
 its `dist-opencode` branch and `opencode/v*` tags from the generator output, but
-no live OpenCode client has consumed those refs end-to-end. Validation is
-pending (see `marketplace-build.adoc` → _OpenCode inner loop_ → deploy option
-(c)); until the validation protocol runs, treat the OpenCode consumption path
-against these refs as unconfirmed, not as a supported install route.
+no live OpenCode client has consumed those refs end-to-end. Validation of that
+refs path is pending (see `marketplace-build.adoc` → _OpenCode inner loop_ →
+deploy option (c)); until the validation protocol runs, treat the OpenCode
+distribution refs as unconfirmed install sources. The supported OpenCode
+consumption path — deploy options (a) and (b) in `marketplace-build.adoc` — is
+the local generate-and-sync deploy against a checkout
+(xref:../user/install-opencode.adoc[Installation (OpenCode)]), which is
+verified end-to-end on a live client.
 
 The single source `v{x.y.z}` tag drives all targets; versioning stays unified
 across the marketplace. Adding another future target is not a config-only
@@ -113,5 +117,5 @@ the whole change.
 
 == See also
 
-* xref:../user/installation.adoc[User Guide › Installation] — operator-side install/update walkthrough
+* xref:../user/install-claude.adoc[User Guide › Installation (Claude Code)] — operator-side install/update walkthrough
 * xref:marketplace-build.adoc[Marketplace Build] — pipeline that produces the `target/claude/` tree this distribution publishes

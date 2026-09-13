@@ -204,7 +204,7 @@ The design leaves several things intentionally unbuilt. They are recorded here s
 
 * xref:../concepts/build-server.adoc[Concepts › Build Server] — the what/why companion: the wait/work split, the scope criterion, registration-as-enablement, and the status-TOON guarantees, at concept altitude.
 * xref:../concepts/parallelism-and-locking.adoc[Concepts › Parallelism and Locking] — the machine-global build-queue limiter that both the daemon and the F6 fallback consume as one slot substrate.
-* xref:../user/installation.adoc[User Guide › Installation] — the POSIX / WSL2 platform requirement and the per-distro daemon lifecycle.
+* xref:../user/install-claude.adoc[User Guide › Installation (Claude Code)] — the POSIX / WSL2 platform requirement and the per-distro daemon lifecycle.
 * link:../../marketplace/bundles/plan-marshall/skills/manage-build-server/SKILL.md[`manage-build-server/SKILL.md`] — the operator control-surface contract (register / lifecycle / the `config get|set|migrate` cap verbs), including every `config migrate` outcome and all six refusal reasons.
 * link:../../marketplace/bundles/plan-marshall/skills/build-server-client/SKILL.md[`build-server-client/SKILL.md`] — the submit / wait / ping / preflight client contract.
 * link:../../marketplace/bundles/plan-marshall/skills/manage-locks/SKILL.md[`manage-locks/SKILL.md`] — the queue side of the shared cap: the `acquire` / `release` result fields (the cap reports and the disagreement verdict ride an admission, not a release), the `admitted_under_max_slots` stamp, and the `limit get|set` threshold verbs.

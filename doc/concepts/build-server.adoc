@@ -59,7 +59,7 @@ The daemon is a trust boundary. It VERIFIES every submit positionally against th
 
 == Platform
 
-The build server is a POSIX daemon (a Unix domain socket, a double-forked process re-parented to init). It runs natively on macOS and Linux. On Windows it runs only inside WSL2, scoped per distro — each distro is its own machine with its own registry and daemon, and a `wsl --shutdown` or idle timeout tears the daemon down (a `down` status is routine there, and the init preflight re-asks). The full platform requirement lives in xref:../user/installation.adoc[User Guide › Installation] and is not duplicated here.
+The build server is a POSIX daemon (a Unix domain socket, a double-forked process re-parented to init). It runs natively on macOS and Linux. On Windows it runs only inside WSL2, scoped per distro — each distro is its own machine with its own registry and daemon, and a `wsl --shutdown` or idle timeout tears the daemon down (a `down` status is routine there, and the init preflight re-asks). The full platform requirement lives in xref:../user/install-claude.adoc[User Guide › Installation (Claude Code)] and is not duplicated here.
 
 == Related
 
@@ -68,4 +68,4 @@ The build server is a POSIX daemon (a Unix domain socket, a double-forked proces
 * xref:build-management.adoc[Concepts › Build Management] — the canonical-command build abstraction the build server runs; the daemon changes *where* a build runs, not the command vocabulary.
 * xref:parallelism-and-locking.adoc[Concepts › Parallelism and Locking] — the machine-global build-queue limiter that is the single slot substrate on both the daemon and fallback paths.
 * xref:../developer/build-architecture.adoc[Developer Guide › Build Architecture] — the as-built interaction architecture (component map, flows F1–F8, job state machine, deliberate-absences table) at developer altitude.
-* xref:../user/installation.adoc[User Guide › Installation] — the POSIX / WSL2 platform requirement.
+* xref:../user/install-claude.adoc[User Guide › Installation (Claude Code)] — the POSIX / WSL2 platform requirement.

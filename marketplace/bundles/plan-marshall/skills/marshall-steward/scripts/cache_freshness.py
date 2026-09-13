@@ -89,7 +89,7 @@ _VERSION_DIR_RE = re.compile(r'^\d+\.\d+')
 # running session SEEING the update: the plugin registry is pinned at session
 # start, so a session that updates and carries on keeps reading the pre-update
 # cache and the operator concludes the update did not work. Three in-tree
-# surfaces state that requirement independently (`doc/user/installation.adoc`,
+# surfaces state that requirement independently (`doc/user/install-claude.adoc`,
 # `platform-runtime/standards/contract.md`,
 # `extension-api/standards/ext-point-dynamic-level-executor.md`); omitting it
 # here made this remediation the one that stopped a step short of the outcome.

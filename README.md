@@ -10,7 +10,7 @@
 
 ### What is it?
 
-Plan Marshall is an orchestration layer for AI coding assistants (currently Claude Code) that enforces consistency, reliability, and more predictable outputs. It packages a phase-driven planning workflow, a library of domain skills, and a marketplace of ten production bundles covering Java, JavaScript, Python, OCI containers, requirements, and plugin development.
+Plan Marshall is an orchestration layer for AI coding assistants (Claude Code and OpenCode) that enforces consistency, reliability, and more predictable outputs. It packages a phase-driven planning workflow, a library of domain skills, and a marketplace of ten production bundles covering Java, JavaScript, Python, OCI containers, requirements, and plugin development.
 
 ## Prerequisites
 
@@ -29,7 +29,7 @@ Plan Marshall is an orchestration layer for AI coding assistants (currently Clau
 
 Plan Marshall targets a POSIX runtime: **macOS** and **Linux** are supported natively. On **Windows**, Plan Marshall runs **exclusively inside WSL2**, with the entire runtime in-distro — the repositories, `python3`, and the plan-marshall state all live on the WSL distro filesystem, never under `/mnt/c`. Mixed native-Windows / WSL usage (editing on Windows, running plan-marshall in WSL against `/mnt/c` paths) is unsupported.
 
-See [User Guide › Windows / WSL Setup](doc/user/windows-wsl-setup.adoc) for the step-by-step Windows walkthrough, and [User Guide › Installation](doc/user/installation.adoc) for the full WSL2 prerequisite — the one-distro-equals-one-machine scoping, the `wsl --shutdown` lifecycle note, and the `/mnt/c` performance warning.
+See [User Guide › Windows / WSL Setup](doc/user/windows-wsl-setup.adoc) for the step-by-step Windows walkthrough, and [User Guide › Installation (Claude Code)](doc/user/install-claude.adoc) for the full WSL2 prerequisite — the one-distro-equals-one-machine scoping, the `wsl --shutdown` lifecycle note, and the `/mnt/c` performance warning.
 
 ## Installation (Claude Code)
 
@@ -44,6 +44,27 @@ Plan Marshall is distributed via a `dist-claude` orphan branch that tracks `main
 ```
 
 Refresh later with `/plugin marketplace update plan-marshall` followed by `/reload-plugins`.
+
+## Installation (OpenCode)
+
+Plan Marshall ships an OpenCode target tree alongside the Claude Code marketplace. The pinned consumption path is a generate-then-deploy flow: generate the tree from this repository, then sync it into the OpenCode config directory. Full walkthrough: [User Guide › OpenCode Installation](doc/user/install-opencode.adoc).
+
+### Deploy (OBSERVED)
+
+```bash
+./pw generate --target opencode --output target/opencode
+python3 .opencode/scripts/sync_opencode.py
+```
+
+**Step 1 — Generate** (OBSERVED): Run the generator from the repository root. It emits skills, agents, commands, and `opencode.json` into `target/opencode/`. Verified on opencode 1.18.30.
+
+**Step 2 — Sync** (OBSERVED): Run the sync engine from the repository root with no arguments. It deploys the emitted tree into `~/.config/opencode/` (singular → plural directory rename; only managed entries are pruned). Verified end-to-end: 399 entries deployed into a clean config dir; `opencode debug skill` then lists the `plan-marshall-*` skills from that directory.
+
+Refresh later by re-running both steps after a `git pull`.
+
+### Tried and rejected (OBSERVED)
+
+- `opencode plugin plan-marshall` — npm 404 Not Found. The bundle is not published as an npm package. (HYPOTHESIS: works once the bundle is published; tried-and-rejected today.)
 
 ## Getting Started
 
