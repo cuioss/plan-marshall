@@ -45,7 +45,7 @@ Survey of every configuration surface a project author touches when running Plan
 | One-time opt-in for terminal-title integration. See xref:terminal-title.adoc[Terminal Title] § VS Code.
 |===
 
-NOTE: The first two rows are the per-project surfaces and the third is *host-wide*. A setting in the machine-global tier has one value per machine, so it is shared across every clone and cannot be configured per repository — which is why two build-queue settings that read like `marshal.json` keys are not (<<build-queue>>). The tier and its bounded membership are settled in xref:../adr/008-Machine-global_home-root_anchor_tier.adoc[ADR-008].
+NOTE: The `~/.plan-marshall/` row is the *host-wide* surface. A setting in the machine-global tier has one value per machine, so it is shared across every clone and cannot be configured per repository — which is why two build-queue settings that read like `marshal.json` keys are not (<<build-queue>>). The tier and its bounded membership are settled in xref:../adr/008-Machine-global_home-root_anchor_tier.adoc[ADR-008].
 
 [#marshal-json]
 == `.plan/marshal.json`
