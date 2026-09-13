@@ -4,7 +4,7 @@
 
 The suspicious patterns, detection algorithms, severity scoring, and remediation
 guidance in this document encode the **Claude** permission model's format
-(`Write(path)`, `Read(path)`, `Bash(command:*)`). They bind only when the target is
+(`Edit(path)`, `Read(path)`, `Bash(command:*)`). They bind only when the target is
 Claude. On a non-Claude target the permission format, severity model, and remediation
 path may differ entirely; a reader should not assume these rules apply without
 confirming the target's permission model first.
@@ -15,8 +15,8 @@ alongside the target-agnostic analysis engine in `permission_doctor.py`.
 ## Suspicious Permission Patterns
 
 ### System Temp Directories
-- `Read(//tmp/**)`, `Write(//tmp/**)`
-- `Read(//private/tmp/**)`
+- `Read(/tmp/**)`, `Edit(/tmp/**)`
+- `Read(/private/tmp/**)`
 - Any permission accessing `/tmp` or `/private/tmp`
 
 ### Critical System Directories
@@ -29,7 +29,7 @@ alongside the target-agnostic analysis engine in `permission_doctor.py`.
 
 ### Overly Broad Wildcards
 - `Read(//Users/**)` - All user files
-- `Read(//\*\*)` - Entire filesystem
+- `Read(/\*\*)` - Entire filesystem
 - `Bash(*)` - All commands
 
 ### Dangerous Commands
@@ -90,11 +90,11 @@ def detect_system_directory_access(permission):
 
 ```python
 TEMP_DIRECTORY_PATTERNS = [
-    r'.*//tmp/.*',
-    r'.*//private/tmp/.*',
+    r'.*/tmp/.*',
+    r'.*/private/tmp/.*',
     r'.*/var/tmp/.*',
-    r'Read\(//tmp/\*\*\)',
-    r'Write\(//tmp/\*\*\)',
+    r'Read\(/tmp/\*\*\)',
+    r'Edit\(/tmp/\*\*\)',
 ]
 
 
@@ -117,10 +117,10 @@ def detect_temp_directory_access(permission):
 
 ```python
 BROAD_WILDCARD_PATTERNS = [
-    (r'Read\(//\*\*\)', 'Entire filesystem'),
+    (r'Read\(/\*\*\)', 'Entire filesystem'),
     (r'Read\(//Users/\*\*\)', 'All user files'),
     (r'Read\(//home/\*\*\)', 'All user files (Linux)'),
-    (r'Write\(//\*\*\)', 'Entire filesystem'),
+    (r'Edit\(/\*\*\)', 'Entire filesystem'),
     (r'Bash\(\*\)', 'All bash commands'),
 ]
 
@@ -270,8 +270,8 @@ def calculate_severity_score(violation):
     score = base_scores.get(violation['violation'], 0)
 
     # Adjust for context
-    if 'Write' in violation.get('permission', ''):
-        score += 10  # Write is more dangerous than Read
+    if 'Edit' in violation.get('permission', ''):
+        score += 10  # Edit is more dangerous than Read
 
     if 'global' in violation.get('scope', ''):
         score += 15  # Global permissions are riskier
@@ -346,10 +346,10 @@ Read(//~/git/project/**)
 
 ```text
 BEFORE:
-Write(//tmp/**)
+Edit(//tmp/**)
 
 AFTER:
-Write(//~/git/project/target/temp/**)
+Edit(//~/git/project/target/temp/**)
 ```
 
 ### Fix Strategy 6: Add Path Restrictions to Commands
@@ -413,7 +413,7 @@ def validate_permissions(permissions):
 - System directory access (`/etc`, `/dev`, `/sys`, `/proc`, `/boot`, `/root`)
 - Dangerous commands without restrictions (`sudo`, `dd`, `mkfs`, `fdisk`)
 - Overly broad wildcards (entire filesystem, all users)
-- Write access to system paths
+- `Edit(...)` write access to system paths
 
 **Action**: Block or require security team approval
 

@@ -19,6 +19,7 @@ sys.path manipulation.
 
 from __future__ import annotations  # noqa: I001
 
+import ast
 import json
 from pathlib import Path
 from typing import Any
@@ -41,6 +42,7 @@ from claude_runtime import (
     _skill_permission_covered,
 )
 from opencode_runtime import OpenCodeRuntime
+from runtime_base import PERMISSION_FIX_OPERATIONS
 from toon_parser import parse_toon
 
 from conftest import get_script_path, run_script
@@ -48,6 +50,47 @@ from conftest import get_script_path, run_script
 
 def _parse(output: str) -> dict[str, Any]:
     return parse_toon(output)
+
+
+def _code_string_literals(source: str) -> list[str]:
+    """Return every string literal in ``source`` EXCEPT docstrings.
+
+    A delegation guard asks whether a module RESOLVES a path, and a raw substring
+    scan over the file text cannot answer that: it reads a docstring naming the
+    resolver a module delegates to exactly as it reads an inlined path the module
+    resolves itself. Narrowing the scan to non-docstring literals restores the
+    question the guard means to ask — code is still fully covered, and only prose
+    stops being mistaken for it.
+    """
+    tree = ast.parse(source)
+    docstring_nodes: set[int] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Module | ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef):
+            continue
+        first = node.body[0] if node.body else None
+        if isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant) and isinstance(first.value.value, str):
+            docstring_nodes.add(id(first.value))
+    return [
+        node.value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Constant) and isinstance(node.value, str) and id(node) not in docstring_nodes
+    ]
+
+
+def _inlines_a_claude_settings_path(literals: list[str]) -> bool:
+    """Whether ``literals`` spell out a ``.claude`` settings path in either form.
+
+    Two spellings reach the same place and both count: one literal carrying the
+    joined ``.claude/settings`` segment, or a bare ``.claude`` literal paired with
+    a ``settings*.json`` filename literal for a ``Path('.claude') / 'settings.json'``
+    style join. Keeping both arms is what stops the guard degrading into a check
+    that only one way of writing the defect can trip.
+    """
+    if any('.claude/settings' in literal for literal in literals):
+        return True
+    return '.claude' in literals and any(
+        literal.startswith('settings') and literal.endswith('.json') for literal in literals
+    )
 
 
 # =============================================================================
@@ -341,11 +384,36 @@ class TestScriptsDelegateToRuntime:
         It must not open-code a ``.claude/settings`` path-resolution of its own; the
         only ``.claude`` reference allowed is the plugin-cache permission VALUE it
         installs and the ``.claude-plugin`` manifest filename it scans.
+
+        The constraint is about CODE, so the scan is too. ``resolve_settings_arg``
+        documents which file the resolver it delegates to prefers, and naming that
+        file is the opposite of resolving it — a module that delegates has every
+        reason to say where the delegate lands. Scanning raw file text conflated
+        the two and made documenting the seam indistinguishable from breaching it.
         """
-        source = Path(permission_fix.__file__).read_text(encoding='utf-8')
-        # No literal settings-file path resolution rooted at .claude/settings.
-        assert '.claude/settings' not in source
-        assert ".claude' / 'settings" not in source
+        literals = _code_string_literals(Path(permission_fix.__file__).read_text(encoding='utf-8'))
+        assert not _inlines_a_claude_settings_path(literals)
+
+    @pytest.mark.parametrize(
+        ('body', 'inlines'),
+        [
+            ("def f():\n    return Path('.claude/settings.json')\n", True),
+            ("def f():\n    return Path('.claude') / 'settings.json'\n", True),
+            (
+                'def f():\n    """Delegates; the resolver prefers .claude/settings.local.json."""\n    return g()\n',
+                False,
+            ),
+        ],
+        ids=['joined-literal', 'segment-join', 'docstring-mention-only'],
+    )
+    def test_the_delegation_scan_separates_resolving_a_path_from_naming_one(self, body: str, inlines: bool) -> None:
+        """The guard above still catches both inlined spellings, and only those.
+
+        Without the two positive rows, narrowing the scan to code could silently
+        become a guard that passes on everything; without the negative row, the
+        prose false-positive it was narrowed to remove is not pinned as removed.
+        """
+        assert _inlines_a_claude_settings_path(_code_string_literals(body)) is inlines
 
     def test_permission_web_help_has_no_claude_settings_hardcode(self) -> None:
         """permission_web user-facing help no longer hardcodes ~/.claude/settings.json.
@@ -551,3 +619,196 @@ class TestFailClosedDispatchRegression:
         assert parsed['status'] == 'error'
         assert parsed['error'] == 'invalid_marshal'
         assert settings.read_bytes() == before
+
+
+# =============================================================================
+# 5. The suspicious audit scores the spelling that actually grants write access
+# =============================================================================
+
+
+#: The write-intent rows of ``permission analyze``'s suspicious audit, each as the
+#: spelling that GRANTS the access, the severity that spelling carries, and the
+#: spelling that does NOT grant it. Claude consults ``Edit(...)`` rules for file
+#: writes, so a ``Write(...)`` rule over the same path grants nothing — scoring it
+#: reported a risk no setting conferred while the rule that did confer it matched
+#: nothing. Each row therefore carries its own negative: the pair is the contract,
+#: and asserting either half alone would pass against the inverted table.
+_WRITE_INTENT_AUDIT_PAIRS = [
+    ('Edit(/**)', 'high', 'Write(/**)'),
+    ('Edit(/tmp/**)', 'medium', 'Write(/tmp/**)'),
+]
+
+_WRITE_INTENT_AUDIT_IDS = [
+    'entire-filesystem',
+    'system-temp-directory',
+]
+
+
+class TestSuspiciousAuditScoresTheGrantingSpelling:
+    """``permission analyze --checks suspicious`` over the two write-intent rows."""
+
+    def _analyze(self, tmp_path: Path, monkeypatch, capsys, allow: list[str]) -> dict[str, Any]:
+        """Audit a claude-target project whose project allow-list is exactly ``allow``."""
+        plan_dir = tmp_path / '.plan'
+        plan_dir.mkdir(parents=True, exist_ok=True)
+        (plan_dir / 'marshal.json').write_text(json.dumps({'runtime': {'target': 'claude'}}), encoding='utf-8')
+        claude_dir = tmp_path / '.claude'
+        claude_dir.mkdir(parents=True, exist_ok=True)
+        (claude_dir / 'settings.json').write_text(
+            json.dumps({'permissions': {'allow': allow, 'deny': [], 'ask': []}}), encoding='utf-8'
+        )
+        monkeypatch.chdir(tmp_path)
+
+        rc = platform_runtime.main(['permission', 'analyze', '--scope', 'project', '--checks', 'suspicious'])
+        assert rc == 0
+        return _parse(capsys.readouterr().out)
+
+    @pytest.mark.parametrize(('granting', 'severity', 'inert'), _WRITE_INTENT_AUDIT_PAIRS, ids=_WRITE_INTENT_AUDIT_IDS)
+    def test_the_granting_spelling_is_flagged_and_the_inert_one_is_not(
+        self, tmp_path, monkeypatch, capsys, granting: str, severity: str, inert: str
+    ) -> None:
+        """Positive and negative in one test, so the pair cannot drift apart.
+
+        Split across two tests, deleting the negative would leave a suite that is
+        still green against a table scoring BOTH spellings — which is the state
+        this asserts the audit is not in.
+        """
+        flagged = self._analyze(tmp_path, monkeypatch, capsys, [granting])
+        assert int(flagged['total_findings']) == 1
+        assert [f['severity'] for f in flagged['findings']] == [severity]
+
+        ignored = self._analyze(tmp_path, monkeypatch, capsys, [inert])
+        assert int(ignored['total_findings']) == 0
+
+    def test_an_unrelated_row_still_fires_so_the_audit_is_not_simply_silent(
+        self, tmp_path, monkeypatch, capsys
+    ) -> None:
+        """A non-write-intent row is flagged, discriminating a correct table from a dead one.
+
+        Every negative above is an empty finding list, and an audit that scored
+        nothing at all would satisfy them all. ``Bash(sudo:*)`` was untouched by
+        the re-key, so its finding proves the audit ran and reached a verdict.
+        """
+        parsed = self._analyze(tmp_path, monkeypatch, capsys, ['Bash(sudo:*)'])
+        assert int(parsed['total_findings']) == 1
+        assert [f['severity'] for f in parsed['findings']] == ['high']
+
+
+# =============================================================================
+# 6. Permission-list ownership — the three grounds the bounded property rests on
+# =============================================================================
+# tools-permission-fix/SKILL.md states that retired-rule pruning reaches `allow`
+# only, calls each of its three grounds "separately checkable", and adds a
+# Precondition that the property holds only while every retired rule is an
+# `allow` rule. Nothing checked any of it. A document asserting its own
+# verifiability while the verification does not exist is the vacuous-authority
+# shape; the tests below are the checks that claim names.
+
+_DENY_WRITING_OPERATION = 'protect-path'
+"""The one `permission fix` operation taking a directory path rather than a permission descriptor."""
+
+
+class TestPermissionListOwnership:
+    """`deny` is written by `protect-path` alone, `ask` by nothing, retirement by `allow` only."""
+
+    def _seeded_settings(self, tmp_path: Path, monkeypatch) -> Path:
+        """An empty three-list settings file, pinned as the resolved scope path."""
+        monkeypatch.setattr(claude_runtime, 'resolve_home', lambda: tmp_path)
+        settings_path = tmp_path / 'settings.json'
+        settings_path.write_text(json.dumps({'permissions': {'allow': [], 'deny': [], 'ask': []}}), encoding='utf-8')
+        monkeypatch.setattr(claude_runtime, '_settings_path_for_scope', lambda scope: settings_path)
+        return settings_path
+
+    def _argument_for(self, tmp_path: Path, operation: str) -> list[Any]:
+        if operation == _DENY_WRITING_OPERATION:
+            return [str(tmp_path / 'creds')]
+        return [{'kind': 'path', 'tool': 'Read', 'path': '**'}]
+
+    def test_the_operation_population_is_not_empty_and_holds_the_deny_writer(self) -> None:
+        """Non-vacuity for the sweep below, plus the membership its POSITIVE row rests on.
+
+        Kept as its own test because a parametrized sweep over an EMPTY tuple
+        collects zero cases and reports green — the one failure a derived
+        population cannot report about itself.
+
+        The membership half guards the other way a green sweep can prove nothing:
+        only the `_DENY_WRITING_OPERATION` row carries the positive assertion, so
+        were that operation renamed or retired, every remaining row would silently
+        become a negative and an implementation writing no deny rule at all would
+        pass. Asserting membership queries the published set rather than mirroring
+        it, so it cannot itself fall out of date.
+        """
+        assert PERMISSION_FIX_OPERATIONS
+        assert _DENY_WRITING_OPERATION in PERMISSION_FIX_OPERATIONS, (
+            f'{_DENY_WRITING_OPERATION} is absent from the published operation set '
+            f'{sorted(PERMISSION_FIX_OPERATIONS)} — the sweep below would carry no positive row'
+        )
+
+    @pytest.mark.parametrize('operation', PERMISSION_FIX_OPERATIONS, ids=PERMISSION_FIX_OPERATIONS)
+    def test_deny_is_written_by_protect_path_alone_and_ask_by_nothing(
+        self, tmp_path: Path, monkeypatch, operation: str
+    ) -> None:
+        """Grounds two and three, swept over the published operation set.
+
+        Both halves ride one test so the pair cannot drift apart: `protect-path`
+        carries the POSITIVE — it must actually populate `deny` — and every other
+        row carries the negative. Without the positive, an implementation that
+        wrote no deny rule at all would satisfy every negative and pass.
+        """
+        settings_path = self._seeded_settings(tmp_path, monkeypatch)
+
+        result = _parse(
+            claude_runtime.ClaudeRuntime().permission_fix(
+                'global', operation, self._argument_for(tmp_path, operation), False
+            )
+        )
+
+        # The operation must have RUN. An op that refused its argument writes no
+        # deny list either, so without this every negative row below would be
+        # satisfied by a broken call rather than by an observed ownership rule.
+        assert result['status'] == 'success', f'{operation} did not run: {result}'
+
+        written = json.loads(settings_path.read_text(encoding='utf-8'))
+        deny = written['permissions']['deny']
+        ask = written['permissions']['ask']
+
+        assert ask == [], f'{operation} populated permissions.ask with {ask} — nothing in this project writes ask'
+        if operation == _DENY_WRITING_OPERATION:
+            assert deny, f'{operation} is the sole deny writer but wrote none — the negative rows below prove nothing'
+        else:
+            assert deny == [], (
+                f'{operation} wrote permissions.deny ({deny}); protect-path is meant to be its sole writer'
+            )
+
+    def test_the_retired_rule_population_is_not_empty(self) -> None:
+        """Non-vacuity for the retirement sweep, for the same reason as above."""
+        assert claude_runtime._RETIRED_DEFAULT_RULES
+
+    @pytest.mark.parametrize(
+        ('rule_id', 'rule'),
+        claude_runtime._RETIRED_DEFAULT_RULES,
+        ids=[rule_id for rule_id, _rule in claude_runtime._RETIRED_DEFAULT_RULES],
+    )
+    def test_a_retired_rule_is_pruned_from_allow_and_only_from_allow(
+        self, tmp_path: Path, rule_id: str, rule: str
+    ) -> None:
+        """Ground one, and the Precondition the bounded property rests on.
+
+        The same rule is parked in all three lists. Pruning it out of `allow`
+        while leaving the `deny` and `ask` copies standing is precisely the
+        documented asymmetry — and it is what fails the moment a retirement
+        targets a `deny` or an `ask` rule without the pruning side being extended
+        to reach it, which is the silent no-op the Precondition warns about.
+        """
+        settings = {'permissions': {'allow': [rule], 'deny': [rule], 'ask': [rule]}}
+
+        result = claude_runtime.ensure_default_permissions(settings, tmp_path / 'settings.json')
+
+        assert rule_id in result['defaults_removed']
+        assert rule not in settings['permissions']['allow']
+        assert settings['permissions']['deny'] == [rule], (
+            f'retiring {rule_id} reached permissions.deny — the pruning side is documented as allow-only'
+        )
+        assert settings['permissions']['ask'] == [rule], (
+            f'retiring {rule_id} reached permissions.ask — the pruning side is documented as allow-only'
+        )

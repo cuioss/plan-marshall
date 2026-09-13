@@ -103,7 +103,7 @@ python3 .plan/execute-script.py plan-marshall:tools-permission-doctor:permission
 **Output (TOON)**:
 ```text
 suspicious[1]{permission,reason,severity}:
-Write(/tmp/**)	System temp access	medium
+Edit(/tmp/**)	System temp directory write access	medium
 already_approved[1]:
 - Bash(sudo:*)
 summary:
