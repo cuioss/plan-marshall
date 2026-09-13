@@ -144,7 +144,14 @@ def test_archive_proceeds_when_findings_unevaluable(plan_context, _unevaluable_f
     )
     assert 'archived_to' in result, f'the plan directory must have been moved: {result!r}'
     assert (Path(result['archived_to']) / 'status.json').exists()
-    assert not plan_context.plan_dir_for(plan_id).exists(), 'the live plan directory must be gone after the move'
+    # ⛔ The absence probe is built from ``plans_dir`` directly, NEVER from
+    # ``plan_context.plan_dir_for(plan_id)``. That helper CREATES the directory it
+    # returns (``mkdir(parents=True, exist_ok=True)``), so ``not
+    # plan_dir_for(...).exists()`` is false by construction — it materializes the
+    # very path it is about to test for absence, and fails whether or not the
+    # archive moved anything. A plain path join reads the filesystem without
+    # touching it, which is what an absence claim requires.
+    assert not (plan_context.plans_dir / plan_id).exists(), 'the live plan directory must be gone after the move'
 
     warnings = _unevaluable_warnings(_captured_log_entries)
     assert len(warnings) == 1, (
