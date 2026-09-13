@@ -689,12 +689,8 @@ def test_every_record_key_is_declared_in_the_ext_point_document():
         record_keys.update(record)
 
     text = _ext_point_doc_text()
-    frontmatter_keys = {
-        ident for row in _markdown_table_rows(text, 'Field') for ident in _IDENT_RE.findall(row[0])
-    }
-    provenance_keys = {
-        ident for row in _markdown_table_rows(text, 'Record key') for ident in _IDENT_RE.findall(row[0])
-    }
+    frontmatter_keys = {ident for row in _markdown_table_rows(text, 'Field') for ident in _IDENT_RE.findall(row[0])}
+    provenance_keys = {ident for row in _markdown_table_rows(text, 'Record key') for ident in _IDENT_RE.findall(row[0])}
     assert frontmatter_keys, 'Implementor-Frontmatter table not found; declaration surface unresolvable'
     assert provenance_keys, 'record-key provenance table not found; derived-key declarations unresolvable'
 
