@@ -3,10 +3,11 @@
 """Argparse ``cmd_*`` handlers for the architecture client commands.
 
 Extracted verbatim from ``_cmd_client``; the facade re-exports every public
-name here. Covers the CLI handlers (info, modules, graph, module, overview,
-commands, resolve, derive-verification, profiles, siblings, path, neighbors,
-impact, files, which-module, find, search, diff-modules,
-descriptor-regression-check) and their private helpers, including the Bucket B
+name here. Covers all 20 CLI handlers this file defines — one per ``def
+cmd_*`` — namely info, modules, graph, capabilities, module, overview, commands,
+resolve, derive-verification, profiles, siblings, path, neighbors, impact,
+files, which-module, find, search, diff-modules and
+descriptor-regression-check, plus their private helpers, including the Bucket B
 execution-tier augmentation, the files-inventory readers, the snapshot diff, and
 the descriptor regression gate.
 
@@ -36,6 +37,7 @@ from _architecture_core import (
     error_result_command_not_found,
     error_result_module_not_found,
     get_root_module,
+    invalidate_path_claim_cache,
     iter_modules,
     load_merged_build_map,
     load_module_derived,
@@ -159,27 +161,61 @@ def cmd_capabilities(args: argparse.Namespace) -> dict[str, Any]:
       that returned claims, a crawl that yielded an inventory. A registered-but-
       unrun producer contributes nothing here; the report never promises a
       capability on the strength of a declaration alone.
-    * **Uncached, recomputed per call.** The answer is derived fresh on every
-      invocation from ``args.project_dir``. Nothing is memoised across calls, so a
-      capability present on one dispatch is never assumed present on the next —
-      "probe once then branch" is exactly the unsound fallback this verb refuses
-      to enable.
+    * **Recomputed per call; no memo survives into the answer.** The answer is
+      derived fresh on every invocation from ``args.project_dir``, and the
+      process-lifetime Axis-D attribution memo is DROPPED at entry (see
+      :func:`invalidate_path_claim_cache`), so a second call in one process
+      re-runs attributor discovery rather than replaying the population the
+      first call happened to see. A capability present on one dispatch is
+      therefore never assumed present on the next — "probe once then branch" is
+      exactly the unsound fallback this verb refuses to enable.
     * **Envelope-scoped.** The answer is for the executing envelope's
       ``project_dir`` only. Run in the orchestrator and run in a dispatched leaf,
       it answers for each independently; it never reports the orchestrator's state
       to a leaf.
 
-    Each capability entry carries ``status`` plus the producer evidence, so the
-    three states stay distinct: ``not_derivable`` (``producer_count: 0`` — no
-    producer ran, an absence of capability); ``derivable`` with ``derived_count:
-    0`` (producers ran and found nothing); ``derivable`` with ``derived_count: N``
-    (producers ran and found N).
+    Every entry carries ``status`` plus the evidence that status was computed
+    from, and all three share ONE status vocabulary — ``derivable`` /
+    ``not_derivable`` — so no entry needs a per-row exception. What differs per
+    entry is which evidence decides the verdict:
+
+    * ``module_edges`` — decided by the FULL producer population that reached
+      this response: the dispatched resolvers PLUS the reserved non-resolver
+      producers (``declared``, ``sibling-cross-link``) stamped on the returned
+      edges, reported together as ``edge_producers``. ``producer_count`` stays
+      RESOLVER-scoped, so ``derivable`` with ``producer_count: 0`` is a real and
+      reachable state: no resolver ran, yet declared edges still reached the
+      graph. ⛔ Never decide the verdict from ``producer_count`` alone — it
+      under-counts the producers that can put an edge in the graph, and pairs
+      ``not_derivable`` with a non-zero ``derived_count``.
+    * ``path_attribution`` — ``derivable`` iff at least one attributor ran.
+      ``derived_count`` is the SUM of every report's ``claim_count``, so it
+      counts CLAIMS REPORTED rather than paths attributed: two attributors
+      corroborating one prefix contribute 2, not 1.
+    * ``content_search`` — ``derivable`` iff at least one module descriptor could
+      be READ. That keeps a never-crawled envelope (``not_derivable``) distinct
+      from a crawled-but-file-less one (``derivable`` with
+      ``modules_inventoried: 0``); ``modules_inventoried`` alone does not tell
+      the two apart, so ``status`` is the discriminator. ``modules_total`` names
+      the population ``modules_inventoried`` is counted over.
+
+    ``derived_count: 0`` beside a ``derivable`` status therefore always means
+    "producers ran and found nothing", never "nothing could run".
     """
     # The whole capability evaluation runs under one error boundary, so a failure
     # in any downstream reader (a corrupt descriptor, an unexpected resolver or
     # attributor error) returns a structured error payload rather than crashing —
     # the same fail-closed contract every other handler in this file honours.
     try:
+        # Drop the process-lifetime Axis-D attribution memo HERE AND NOWHERE
+        # ELSE. This verb reports what ran in THIS envelope, so replaying a
+        # population an earlier call in the same process happened to see would
+        # contradict its own contract. The memo is not merely an optimisation on
+        # the hot path — ``resolve_module_for_path`` consults the seam once per
+        # changed path, so clearing it there would re-run full extension
+        # discovery per path.
+        invalidate_path_claim_cache()
+
         module_names = iter_modules(args.project_dir)
 
         # Edge derivation (graph / path / neighbors / impact) — read the resolver
@@ -196,20 +232,37 @@ def cmd_capabilities(args: argparse.Namespace) -> dict[str, Any]:
         resolver_count = graph_result.get('resolver_count', 0)
         dispatched_producers = [report['id'] for report in resolvers if report.get('status') != STATUS_NOT_DISPATCHED]
         edge_count = graph_result.get('graph', {}).get('edge_count', 0)
+        # Every producer that actually stamped an edge on THIS response,
+        # including the two reserved non-resolver sources. A declared
+        # ``internal_dependencies`` edge reaches the graph with no resolver
+        # dispatched at all, so a verdict read off ``resolver_count`` alone
+        # reports ``not_derivable`` beside a non-zero ``derived_count``.
+        edge_producers = sorted(
+            {producer for edge in graph_result.get('edges') or [] for producer in edge.get('producers') or []}
+        )
 
         # Path attribution (which-module rung 3). The probe path is immaterial: an
         # attributor reports whether it RAN regardless of whether it claims the path.
-        _owner, attributor_reports = resolve_path_attribution('__capability_probe__', module_names)
+        _owner, attributor_reports = resolve_path_attribution('__capability_probe__', module_names, args.project_dir)
         attributor_count = len(attributor_reports)
+        # Claims REPORTED, not paths attributed: two attributors that corroborate
+        # one prefix each report that claim, so the sum counts it twice.
+        claims_reported = sum(int(report.get('claim_count', 0)) for report in attributor_reports)
 
-        # Content search / file inventory (files / find / search). Available iff the
-        # crawl produced at least one module carrying a non-empty inventory.
+        # Content search / file inventory (files / find / search). The verdict
+        # turns on whether any descriptor could be READ, not on whether one
+        # carried files: a crawled module with an empty inventory is a positive
+        # "searched, found nothing", while zero readable descriptors is the
+        # absence of the capability itself.
+        modules_total = len(module_names)
+        modules_with_descriptor = 0
         modules_inventoried = 0
         for name in module_names:
             try:
                 derived = load_module_derived(name, args.project_dir)
             except DataNotFoundError:
                 continue
+            modules_with_descriptor += 1
             if derived.get('files'):
                 modules_inventoried += 1
     except DataNotFoundError:
@@ -224,9 +277,10 @@ def cmd_capabilities(args: argparse.Namespace) -> dict[str, Any]:
             {
                 'capability': 'module_edges',
                 'verbs': ['graph', 'path', 'neighbors', 'impact'],
-                'status': 'derivable' if resolver_count else 'not_derivable',
+                'status': 'derivable' if (resolver_count or edge_producers) else 'not_derivable',
                 'producers': dispatched_producers,
                 'producer_count': resolver_count,
+                'edge_producers': edge_producers,
                 'derived_count': edge_count,
             },
             {
@@ -235,12 +289,14 @@ def cmd_capabilities(args: argparse.Namespace) -> dict[str, Any]:
                 'status': 'derivable' if attributor_count else 'not_derivable',
                 'producers': [report['id'] for report in attributor_reports],
                 'producer_count': attributor_count,
+                'derived_count': claims_reported,
             },
             {
                 'capability': 'content_search',
                 'verbs': ['files', 'find', 'search'],
-                'status': 'available' if modules_inventoried else 'unavailable',
+                'status': 'derivable' if modules_with_descriptor else 'not_derivable',
                 'modules_inventoried': modules_inventoried,
+                'modules_total': modules_total,
             },
         ],
     }
@@ -850,7 +906,9 @@ def cmd_files(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
-def _collapse_claimed_duplicate_rows(results: list[dict[str, Any]], module_names: list[str]) -> list[dict[str, Any]]:
+def _collapse_claimed_duplicate_rows(
+    results: list[dict[str, Any]], module_names: list[str], project_dir: str
+) -> list[dict[str, Any]]:
     """Collapse duplicate inventory rows for a claimed path onto its owner's row.
 
     The reader-side de-duplication precedence for the Axis-D ownership seam. One
@@ -893,7 +951,7 @@ def _collapse_claimed_duplicate_rows(results: list[dict[str, Any]], module_names
         if len(rows) < 2:
             collapsed.extend(rows)
             continue
-        owner, _reports = resolve_path_attribution(path, module_names)
+        owner, _reports = resolve_path_attribution(path, module_names, project_dir)
         if owner is None:
             collapsed.extend(rows)
             continue
@@ -1005,7 +1063,7 @@ def cmd_which_module(args: argparse.Namespace) -> dict[str, Any]:
     # provenance pair below is present on every response shape, and an
     # ``attributor_count`` reported only when rung 3 happened to be reached would
     # read as "no attributor ran" on every path rungs 1-2 already resolved.
-    attribution_owner, attributor_reports = resolve_path_attribution(target, module_names)
+    attribution_owner, attributor_reports = resolve_path_attribution(target, module_names, args.project_dir)
 
     # 1. Exact-inventory match more specific than the root.
     if inventory_best is not None and inventory_best[0] > 0:
@@ -1081,7 +1139,7 @@ def cmd_find(args: argparse.Namespace) -> dict[str, Any]:
             if fnmatch.fnmatchcase(path, pattern):
                 results.append({'module': name, 'category': category, 'path': path})
 
-    results = _collapse_claimed_duplicate_rows(results, module_names)
+    results = _collapse_claimed_duplicate_rows(results, module_names, args.project_dir)
     results.sort(key=lambda item: (item['module'], item['category'], item['path']))
 
     return {
@@ -1232,7 +1290,7 @@ def cmd_search(args: argparse.Namespace) -> dict[str, Any]:
             if match_count:
                 results.append({'module': name, 'category': category, 'path': path, 'match_count': match_count})
 
-    results = _collapse_claimed_duplicate_rows(results, module_names)
+    results = _collapse_claimed_duplicate_rows(results, module_names, args.project_dir)
     results.sort(key=lambda item: (item['module'], item['category'], item['path']))
 
     return {

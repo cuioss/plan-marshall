@@ -11,21 +11,30 @@ none). It is the query-surface-wide counterpart to the per-verb
 The properties pinned here:
 
 * **cannot-derive vs derived-nothing vs derived-N** — the three states stay
-  distinct on the ``module_edges`` capability: ``not_derivable``
-  (producer_count 0), ``derivable`` with ``derived_count 0``, and ``derivable``
-  with ``derived_count N``.
+  distinct on the ``module_edges`` capability.
+* **One status vocabulary** — all three entries emit exactly ``derivable`` /
+  ``not_derivable``, with no per-entry exception.
+* **The verdict comes from the FULL producer population** — dispatched resolvers
+  PLUS the reserved ``declared`` / ``sibling-cross-link`` producers stamped on
+  the returned edges. ``producer_count`` stays resolver-scoped, so ``derivable``
+  beside ``producer_count: 0`` is a reachable state rather than a contradiction.
 * **actual grant, not the declaration** — the report reads the resolvers that
   actually RAN (monkeypatched here exactly as the graph seam is), never a
   registered-but-unrun class.
 * **envelope-scoped** — the same call against two different project dirs answers
   for each independently, which is the property that makes the report correct in
   a dispatched leaf rather than only in the orchestrator.
-* **content-search availability** tracks whether the crawl produced an inventory.
+* **content_search separates never-crawled from crawled-and-file-less** — the
+  two states previously returned byte-identical payloads.
+* **no memo survives into the answer** — the Axis-D attribution memo is dropped
+  at entry, and it is keyed per project so two envelopes are never conflated.
 """
 
 import argparse
 import copy
+import re
 import tempfile
+from pathlib import Path
 from typing import Any
 
 import extension_discovery
@@ -37,9 +46,14 @@ _architecture_core = load_script_module(
     'plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core'
 )
 _cmd_client = load_script_module('plan-marshall', 'manage-architecture', '_cmd_client.py', '_cmd_client')
+_cmd_client_handlers = load_script_module(
+    'plan-marshall', 'manage-architecture', '_cmd_client_handlers.py', '_cmd_client_handlers'
+)
 
 save_project_meta = _architecture_core.save_project_meta
 save_module_derived = _architecture_core.save_module_derived
+resolve_path_attribution = _architecture_core.resolve_path_attribution
+invalidate_path_claim_cache = _architecture_core.invalidate_path_claim_cache
 cmd_capabilities = _cmd_client.cmd_capabilities
 
 #: The architecture script's address, as module-level string constants so the
@@ -47,6 +61,11 @@ cmd_capabilities = _cmd_client.cmd_capabilities
 _ARCH_BUNDLE = 'plan-marshall'
 _ARCH_SKILL = 'manage-architecture'
 _ARCH_SCRIPT = 'architecture.py'
+
+#: The client contract whose entry-shape table is the authority for the payload
+#: key set. Resolved from the loaded module's own location so the test follows
+#: the bundle rather than hard-coding a repo-relative path.
+_CLIENT_API_MD = Path(_architecture_core.__file__).resolve().parent.parent / 'standards' / 'client-api.md'
 
 
 def _variant(base: argparse.Namespace, **overrides: Any) -> argparse.Namespace:
@@ -94,9 +113,63 @@ class _StubResolver:
         return self._edges, []
 
 
+class _StubAttributor:
+    """A path attributor returning a canned ``(claims, notes)`` pair."""
+
+    def __init__(self, attributor_id: str, claims=None):
+        self.attributor_id = attributor_id
+        self._claims = claims or []
+
+    def path_attributor_id(self) -> str:
+        return self.attributor_id
+
+    def claim_paths(self):
+        return self._claims, []
+
+
+class _SequencedAttributor:
+    """An attributor whose claim set CHANGES between successive merges.
+
+    The mutation-sensitive input for the memo-key tests: a memo that replays an
+    earlier merge returns the FIRST claim set, while a correctly-keyed lookup
+    runs the merge again and returns the second. Without a changing input, a
+    stale memo and a live re-merge are indistinguishable.
+    """
+
+    def __init__(self, attributor_id: str, claim_sequence: list[list[tuple[str, str]]]):
+        self.attributor_id = attributor_id
+        self._sequence = claim_sequence
+        self.calls = 0
+
+    def path_attributor_id(self) -> str:
+        return self.attributor_id
+
+    def claim_paths(self):
+        index = min(self.calls, len(self._sequence) - 1)
+        self.calls += 1
+        return self._sequence[index], []
+
+
+def _records(*producers: Any) -> list[dict[str, Any]]:
+    """Wrap stub producers in the ``{origin, id, module}`` discovery record shape."""
+    return [
+        {
+            'origin': f'stub-{getattr(p, "resolver_id", None) or p.attributor_id}',
+            'id': getattr(p, 'resolver_id', None) or p.attributor_id,
+            'module': p,
+        }
+        for p in producers
+    ]
+
+
 def _register_resolvers(monkeypatch, *resolvers: _StubResolver) -> None:
-    records = [{'origin': f'stub-{r.resolver_id}', 'id': r.resolver_id, 'module': r} for r in resolvers]
+    records = _records(*resolvers)
     monkeypatch.setattr(extension_discovery, 'discover_derivation_resolvers', lambda: records)
+
+
+def _register_attributors(monkeypatch, *attributors: Any) -> None:
+    records = _records(*attributors)
+    monkeypatch.setattr(extension_discovery, 'discover_path_attributors', lambda: records)
 
 
 @pytest.fixture(autouse=True)
@@ -110,6 +183,18 @@ def _controlled_producers(monkeypatch):
     """
     monkeypatch.setattr(extension_discovery, 'discover_derivation_resolvers', lambda: [])
     monkeypatch.setattr(extension_discovery, 'discover_path_attributors', lambda: [])
+
+
+@pytest.fixture(autouse=True)
+def _clean_attribution_memo():
+    """Drop the process-lifetime Axis-D memo around every test.
+
+    The memo outlives a single test, so a claim set merged under one test's
+    stub population would otherwise be replayed into the next test's assertion.
+    """
+    invalidate_path_claim_cache()
+    yield
+    invalidate_path_claim_cache()
 
 
 def _seed(tmpdir: str, modules: dict[str, dict]) -> None:
@@ -154,13 +239,30 @@ def _cap(result: dict, name: str) -> dict:
     return entry
 
 
+def _documented_entry_fields() -> dict[str, set[str]]:
+    """Parse client-api.md's capabilities entry-shape table into ``entry -> fields``.
+
+    DERIVED from the document rather than restated here, so a payload key added
+    or removed on one side without the other reddens this test instead of
+    silently drifting. The table's first column is the entry name and its second
+    column is the backtick-quoted field list.
+    """
+    text = _CLIENT_API_MD.read_text(encoding='utf-8')
+    documented: dict[str, set[str]] = {}
+    for entry in ('module_edges', 'path_attribution', 'content_search'):
+        match = re.search(rf'^\|\s*`{entry}`\s*\|([^|]*)\|', text, re.MULTILINE)
+        assert match is not None, f'client-api.md has no entry-shape row for {entry}'
+        documented[entry] = set(re.findall(r'`([a-z_]+)`', match.group(1)))
+    return documented
+
+
 def test_empty_envelope_reports_no_capabilities_not_false_ones():
     """An envelope with no architecture data reports every capability as absent.
 
     The crawl-based readers treat a greenfield/empty project as an empty module
     set (not an error), so the capability report answers truthfully: nothing is
-    derivable or available here — never a false positive on an envelope that
-    carries no substrate.
+    derivable here — never a false positive on an envelope that carries no
+    substrate.
     """
     with tempfile.TemporaryDirectory() as tmpdir:
         result = _capabilities(tmpdir)
@@ -168,32 +270,46 @@ def test_empty_envelope_reports_no_capabilities_not_false_ones():
         assert result['status'] == 'success'
         assert _cap(result, 'module_edges')['status'] == 'not_derivable'
         assert _cap(result, 'path_attribution')['status'] == 'not_derivable'
-        assert _cap(result, 'content_search')['status'] == 'unavailable'
+        assert _cap(result, 'content_search')['status'] == 'not_derivable'
 
 
-def test_report_lists_the_three_capabilities_with_producer_evidence():
-    """The report names exactly the three capabilities, each with producer evidence."""
+def test_every_entry_uses_the_same_two_status_values():
+    """All three entries emit one vocabulary — no entry carries an exception.
+
+    Pins the clean break: ``content_search`` shares ``derivable`` /
+    ``not_derivable`` with the two derivation entries, so a consumer branches on
+    one pair of literals for every entry it reads.
+    """
+    with tempfile.TemporaryDirectory() as bare, tempfile.TemporaryDirectory() as inventoried:
+        _seed(bare, {'bare-a': _module('bare-a')})
+        _seed(inventoried, {'inv-a': _module('inv-a', files={'source': ['inv-a/x.py']})})
+
+        emitted = {entry['status'] for result in (_capabilities(bare), _capabilities(inventoried)) for entry in result['capabilities']}
+
+        assert emitted <= {'derivable', 'not_derivable'}
+        # Both members are actually reachable, so the assertion above is not
+        # vacuously satisfied by a single-valued population.
+        assert emitted == {'derivable', 'not_derivable'}
+
+
+def test_entry_payload_keys_match_the_documented_entry_shape():
+    """Each entry carries exactly the fields client-api.md's table names.
+
+    The documented shape is PARSED, not restated, so the contract and the
+    payload cannot drift apart without this test noticing.
+    """
+    documented = _documented_entry_fields()
     with tempfile.TemporaryDirectory() as tmpdir:
-        _seed(tmpdir, {'struct-a': _module('struct-a')})
+        _seed(tmpdir, {'keys-a': _module('keys-a', files={'source': ['keys-a/x.py']})})
 
         result = _capabilities(tmpdir)
 
-        assert result['status'] == 'success'
-        assert result['project_dir'] == tmpdir
-        assert [entry['capability'] for entry in result['capabilities']] == [
-            'module_edges',
-            'path_attribution',
-            'content_search',
-        ]
         for entry in result['capabilities']:
-            assert 'status' in entry
-            if 'producer_count' in entry:
-                # The producer list and its count can never disagree.
-                assert entry['producer_count'] == len(entry['producers'])
+            assert set(entry) == documented[entry['capability']], entry['capability']
 
 
-def test_module_edges_not_derivable_when_no_resolver_ran():
-    """No resolver ran → ``not_derivable`` with ``producer_count: 0`` (an absence)."""
+def test_module_edges_not_derivable_when_no_producer_reached_the_response():
+    """No resolver ran AND no edge reached the graph → ``not_derivable``."""
     with tempfile.TemporaryDirectory() as tmpdir:
         _seed(tmpdir, {'noedge-a': _module('noedge-a'), 'noedge-b': _module('noedge-b')})
 
@@ -202,6 +318,8 @@ def test_module_edges_not_derivable_when_no_resolver_ran():
         assert edges['status'] == 'not_derivable'
         assert edges['producer_count'] == 0
         assert edges['producers'] == []
+        assert edges['edge_producers'] == []
+        assert edges['derived_count'] == 0
 
 
 def test_module_edges_derivable_but_empty_is_distinct_from_not_derivable(monkeypatch):
@@ -236,6 +354,36 @@ def test_module_edges_derivable_with_edges_reports_the_count(monkeypatch):
         assert edges['derived_count'] == 1
 
 
+def test_declared_edge_with_no_resolver_is_derivable_not_a_contradiction():
+    """A declared edge reaches the graph with no resolver, and the report says so.
+
+    The state the handler's own docstring once enumerated as impossible:
+    ``derived_count`` above zero beside ``producer_count: 0``. The verdict is
+    computed from the FULL producer population, so the reserved ``declared``
+    producer carries it — ``not_derivable`` alongside a derived edge is the
+    combination this asserts can no longer be emitted.
+    """
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed(
+            tmpdir,
+            {
+                'app': _module('app', internal_dependencies=['core']),
+                'core': _module('core'),
+            },
+        )
+
+        edges = _cap(_capabilities(tmpdir), 'module_edges')
+
+        assert edges['derived_count'] > 0
+        assert edges['status'] == 'derivable'
+        # producer_count stays RESOLVER-scoped — widening it would break the
+        # feasibility guard that derives "underivable" from resolver_count > 0.
+        assert edges['producer_count'] == 0
+        assert edges['producers'] == []
+        # The evidence the verdict was computed from is published on the payload.
+        assert edges['edge_producers'] == ['declared']
+
+
 def test_path_attribution_not_derivable_when_no_attributor_ran():
     """No attributor ran → ``path_attribution`` is ``not_derivable``."""
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -245,28 +393,143 @@ def test_path_attribution_not_derivable_when_no_attributor_ran():
 
         assert pa['status'] == 'not_derivable'
         assert pa['producer_count'] == 0
+        assert pa['derived_count'] == 0
 
 
-def test_content_search_available_when_inventory_present():
-    """A module carrying a non-empty inventory makes content search ``available``."""
+def test_path_attribution_derived_count_sums_claims_reported(monkeypatch):
+    """``derived_count`` counts CLAIMS REPORTED, not paths attributed.
+
+    Two attributors corroborating one prefix each report that claim, so the sum
+    is 2 while only ONE path is attributed. The field is named for the
+    population it actually counts rather than the one a reader might assume.
+    """
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed(tmpdir, {'shared': _module('shared')})
+        _register_attributors(
+            monkeypatch,
+            _StubAttributor('attr-a', claims=[('shared/sub', 'shared')]),
+            _StubAttributor('attr-b', claims=[('shared/sub', 'shared')]),
+        )
+
+        pa = _cap(_capabilities(tmpdir), 'path_attribution')
+
+        assert pa['status'] == 'derivable'
+        assert pa['producer_count'] == 2
+        # One prefix is claimed; both attributors reported it.
+        assert pa['derived_count'] == 2
+
+
+def test_content_search_derivable_when_inventory_present():
+    """A module carrying a non-empty inventory makes content search derivable."""
     with tempfile.TemporaryDirectory() as tmpdir:
         _seed(tmpdir, {'inv-a': _module('inv-a', files={'source': ['inv-a/x.py']})})
 
         cs = _cap(_capabilities(tmpdir), 'content_search')
 
-        assert cs['status'] == 'available'
+        assert cs['status'] == 'derivable'
         assert cs['modules_inventoried'] == 1
+        assert cs['modules_total'] == 1
 
 
-def test_content_search_unavailable_when_no_inventory():
-    """No module carries an inventory → content search is ``unavailable``."""
+def test_content_search_separates_never_crawled_from_crawled_and_file_less():
+    """The two zero-inventory states stop returning byte-identical payloads.
+
+    (a) an envelope with no descriptors at all — nothing could be read, so the
+    capability is absent; (b) N crawled modules that carry no files — the crawl
+    answered, and the answer is empty. ``modules_inventoried: 0`` holds in both,
+    so ``status`` is what tells them apart.
+    """
+    with tempfile.TemporaryDirectory() as no_descriptors, tempfile.TemporaryDirectory() as file_less:
+        _seed(file_less, {'bare-a': _module('bare-a'), 'bare-b': _module('bare-b')})
+
+        absent = _cap(_capabilities(no_descriptors), 'content_search')
+        empty = _cap(_capabilities(file_less), 'content_search')
+
+        assert absent != empty
+
+        assert absent['status'] == 'not_derivable'
+        assert absent['modules_inventoried'] == 0
+        assert absent['modules_total'] == 0
+
+        assert empty['status'] == 'derivable'
+        assert empty['modules_inventoried'] == 0
+        assert empty['modules_total'] == 2
+
+
+def test_capabilities_reflects_an_attributor_population_changed_mid_process(monkeypatch):
+    """A second call in one process re-runs attributor discovery.
+
+    ``cmd_capabilities`` drops the process-lifetime Axis-D memo at entry, so it
+    reports the population that exists NOW rather than replaying the one the
+    first call happened to see.
+    """
     with tempfile.TemporaryDirectory() as tmpdir:
-        _seed(tmpdir, {'bare-a': _module('bare-a'), 'bare-b': _module('bare-b')})
+        _seed(tmpdir, {'pop-a': _module('pop-a')})
 
-        cs = _cap(_capabilities(tmpdir), 'content_search')
+        _register_attributors(monkeypatch, _StubAttributor('attr-a'))
+        first = _cap(_capabilities(tmpdir), 'path_attribution')
 
-        assert cs['status'] == 'unavailable'
-        assert cs['modules_inventoried'] == 0
+        _register_attributors(monkeypatch, _StubAttributor('attr-a'), _StubAttributor('attr-b'))
+        second = _cap(_capabilities(tmpdir), 'path_attribution')
+
+        assert first['producer_count'] == 1
+        assert second['producer_count'] == 2
+        assert second['producers'] == ['attr-a', 'attr-b']
+
+
+def test_explicit_memo_clear_is_the_positive_control(monkeypatch):
+    """Clearing the memo by hand reaches the same answer the verb reaches itself.
+
+    The matched positive control for the test above: it shows the second answer
+    follows from the memo being dropped, not from some other difference between
+    the two calls.
+    """
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed(tmpdir, {'ctl-a': _module('ctl-a')})
+        module_names = ['ctl-a']
+
+        _register_attributors(monkeypatch, _StubAttributor('attr-a'))
+        _owner, first = resolve_path_attribution('ctl-a/x.py', module_names, tmpdir)
+
+        _register_attributors(monkeypatch, _StubAttributor('attr-a'), _StubAttributor('attr-b'))
+        invalidate_path_claim_cache()
+        _owner, second = resolve_path_attribution('ctl-a/x.py', module_names, tmpdir)
+
+        assert [report['id'] for report in first] == ['attr-a']
+        assert [report['id'] for report in second] == ['attr-a', 'attr-b']
+
+
+def test_attribution_memo_does_not_conflate_two_project_dirs(monkeypatch):
+    """Identical module names in two projects get two independent answers.
+
+    The memo is keyed on ``(project_dir, module_names)``. Keyed on the module
+    tuple alone, the second project would be served the first project's merged
+    claim set — a per-project answer silently becoming a per-module-name-set
+    one. The attributor's claim set changes between merges, so a replayed memo
+    and a live re-merge are distinguishable.
+    """
+    with tempfile.TemporaryDirectory() as project_a, tempfile.TemporaryDirectory() as project_b:
+        # Identical module names in both projects — the discriminator must be
+        # the project dir, since the module tuple cannot tell them apart.
+        module_names = ['twin']
+        _seed(project_a, {'twin': _module('twin')})
+        _seed(project_b, {'twin': _module('twin')})
+
+        _register_attributors(
+            monkeypatch,
+            _SequencedAttributor('attr-seq', [[('twin/first', 'twin')], [('twin/second', 'twin')]]),
+        )
+
+        owner_a, _reports_a = resolve_path_attribution('twin/first', module_names, project_a)
+        owner_b_first, _reports = resolve_path_attribution('twin/first', module_names, project_b)
+        owner_b_second, _reports = resolve_path_attribution('twin/second', module_names, project_b)
+
+        # Project A saw the first claim set.
+        assert owner_a == 'twin'
+        # Project B re-merged and saw the SECOND claim set: the first prefix is
+        # no longer claimed there, the second one is.
+        assert owner_b_first is None
+        assert owner_b_second == 'twin'
 
 
 def test_downstream_exception_returns_structured_error_not_a_crash(monkeypatch):
@@ -307,5 +570,25 @@ def test_report_is_envelope_scoped_to_project_dir():
         cs_with = _cap(_capabilities(with_inv), 'content_search')
         cs_without = _cap(_capabilities(without_inv), 'content_search')
 
-        assert cs_with['status'] == 'available'
-        assert cs_without['status'] == 'unavailable'
+        assert cs_with['status'] == 'derivable'
+        assert cs_with['modules_inventoried'] == 1
+        assert cs_without['status'] == 'derivable'
+        assert cs_without['modules_inventoried'] == 0
+
+
+def test_module_docstring_names_every_cmd_handler_it_defines():
+    """The module docstring's handler list is complete, and its count matches.
+
+    Both numbers are RE-DERIVED from the module's own ``def cmd_*`` population
+    rather than trusted: the stated count is checked against that population's
+    size, and every handler's CLI verb spelling must appear in the prose. A
+    handler added without a docstring entry reddens this.
+    """
+    verbs = sorted(name[len('cmd_') :].replace('_', '-') for name in dir(_cmd_client_handlers) if name.startswith('cmd_'))
+    doc = _cmd_client_handlers.__doc__ or ''
+
+    assert verbs, 'no cmd_* handlers were discovered — the population is empty'
+    assert str(len(verbs)) in doc, f'docstring does not state the re-derived handler count {len(verbs)}'
+
+    missing = [verb for verb in verbs if not re.search(rf'\b{re.escape(verb)}\b', doc)]
+    assert missing == [], f'docstring omits handler(s): {missing}'

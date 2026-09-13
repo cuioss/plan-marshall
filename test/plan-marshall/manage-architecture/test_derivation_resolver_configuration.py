@@ -158,6 +158,30 @@ def _seed_triple(tmpdir: str) -> None:
         save_module_derived(name, data, tmpdir)
 
 
+def _seed_declared_edge(tmpdir: str) -> None:
+    """Three modules where ``app`` DECLARES a dependency on ``core``.
+
+    The counterpart to :func:`_seed_triple`: an edge reaches the graph through
+    the reserved ``declared`` producer, with no resolver involved. This is the
+    precondition that separates "no resolver ran" from "nothing can derive
+    edges here".
+    """
+    modules = {name: _module(name) for name in ('api', 'core', 'app')}
+    modules['app']['internal_dependencies'] = ['core']
+    save_project_meta(
+        {
+            'name': 'declared-edge-fixture',
+            'description': '',
+            'description_reasoning': '',
+            'extensions_used': [],
+            'modules': {name: {} for name in modules},
+        },
+        tmpdir,
+    )
+    for name, data in modules.items():
+        save_module_derived(name, data, tmpdir)
+
+
 class _StubResolver:
     """A resolver returning canned ``(edges, notes)``."""
 
@@ -301,13 +325,19 @@ def test_resolver_count_excludes_only_the_disabled_ones(plan_context, two_resolv
     assert reports['beta']['status'] == 'not_dispatched'
 
 
-def test_capabilities_reports_not_derivable_when_every_resolver_is_disabled(plan_context, two_resolvers):
-    """⛔ A registered-but-unrun producer is never reported as a capability.
+def test_capabilities_not_derivable_when_resolvers_disabled_and_nothing_is_declared(plan_context, two_resolvers):
+    """⛔ Scoped to the NO-DECLARED-EDGES precondition ``_seed_triple`` establishes.
 
-    Disabling every resolver leaves the envelope genuinely unable to derive
-    edges. Reporting ``derivable`` would promise a capability the envelope does
-    not have — the precise invariant ``doc/concepts/code-intelligence.adoc``
-    states for this report.
+    A registered-but-unrun producer is never reported as a capability — but that
+    is not the same claim as "disabling every resolver always yields
+    ``not_derivable``". The verdict is computed from the full producer
+    population, and a declared ``internal_dependencies`` edge reaches the graph
+    with no resolver at all. This fixture seeds three modules carrying NO
+    declared edges, so with both resolvers withheld nothing reached the response
+    and the absence is real.
+
+    The sibling test below covers the declared-edge case, where the same
+    configuration legitimately answers ``derivable``.
     """
     for resolver_id in ('alpha', 'beta'):
         run_config.cmd_derivation_resolver_set(_variant(_RESOLVER_SET_ARGS, resolver=resolver_id))
@@ -320,6 +350,42 @@ def test_capabilities_reports_not_derivable_when_every_resolver_is_disabled(plan
     assert edges['status'] == 'not_derivable'
     assert edges['producer_count'] == 0
     assert edges['producers'] == []
+    # The precondition this test is scoped to, asserted rather than assumed:
+    # nothing — resolver or reserved producer — put an edge in the graph.
+    assert edges['edge_producers'] == []
+    assert edges['derived_count'] == 0
+
+
+def test_capabilities_derivable_from_a_declared_edge_with_every_resolver_disabled(plan_context, two_resolvers):
+    """The same configuration answers ``derivable`` when a declared edge exists.
+
+    The state the handler's docstring once called impossible: ``derived_count``
+    above zero beside ``producer_count: 0``. Both halves are accurate — no
+    resolver ran, and the reserved ``declared`` producer put an edge in the
+    graph — so the verdict follows the full producer population rather than the
+    resolver count alone.
+
+    ⛔ ``resolver_count`` is NOT widened to absorb the reserved producers: the
+    feasibility guard in ``test_feasibility_underivable_guard.py`` derives
+    "underivable" from ``resolver_count > 0``, so the reserved producers reach
+    the verdict through ``edge_producers`` instead.
+    """
+    for resolver_id in ('alpha', 'beta'):
+        run_config.cmd_derivation_resolver_set(_variant(_RESOLVER_SET_ARGS, resolver=resolver_id))
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed_declared_edge(tmpdir)
+        report = _cmd_client.cmd_capabilities(_variant(_CAPABILITIES_ARGS, project_dir=tmpdir))
+        graph = get_module_graph(tmpdir)
+
+    edges = next(c for c in report['capabilities'] if c['capability'] == 'module_edges')
+    assert edges['derived_count'] > 0
+    assert edges['status'] == 'derivable'
+    assert edges['producer_count'] == 0
+    assert edges['producers'] == []
+    assert edges['edge_producers'] == ['declared']
+    # The resolver-scoped count the feasibility guard reads is untouched.
+    assert graph['resolver_count'] == 0
 
 
 def test_capabilities_reports_only_dispatched_producers(plan_context, two_resolvers):
@@ -462,9 +528,50 @@ def test_overview_footer_states_the_cause_when_every_resolver_is_disabled(plan_c
         rendered = _cmd_client.render_overview(tmpdir)
 
     assert 'switched off by the machine-local configuration' in rendered
-    assert 'No edges were derived' in rendered
+    assert 'no edges were derived by a resolver' in rendered
     # NOT the "no resolver is registered" wording — two ARE registered.
     assert 'no derivation resolver is registered' not in rendered
+
+
+def test_overview_footer_does_not_deny_a_declared_edge_it_just_rendered(plan_context, two_resolvers):
+    """The footer's claim is scoped to resolvers, so it cannot contradict the table above it.
+
+    With every resolver switched off and a DECLARED edge in the graph, the
+    adjacency table lists that dependency. An unqualified "No edges were
+    derived" printed underneath would deny the very row above it. The footer
+    therefore scopes the claim to what it can support — that no RESOLVER derived
+    anything — and says where the listed dependency came from.
+    """
+    for resolver_id in ('alpha', 'beta'):
+        run_config.cmd_derivation_resolver_set(_variant(_RESOLVER_SET_ARGS, resolver=resolver_id))
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed_declared_edge(tmpdir)
+        rendered = _cmd_client.render_overview(tmpdir)
+
+    # The table really does list the declared dependency — without this the
+    # footer assertion below would hold vacuously.
+    assert 'core' in rendered
+    assert 'no edges were derived by a resolver' in rendered
+    assert 'any dependency listed above is declared' in rendered
+
+
+def test_no_registered_resolver_footer_is_qualified_the_same_way(plan_context, monkeypatch):
+    """The zero-registered branch carries the identical qualification.
+
+    Both no-resolver branches are scoped symmetrically; a reader must not get a
+    bare "no edges were derived" from one branch and a qualified one from the
+    other.
+    """
+    _register(monkeypatch)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed_declared_edge(tmpdir)
+        rendered = _cmd_client.render_overview(tmpdir)
+
+    assert 'no derivation resolver is registered' in rendered
+    assert 'no edges were derived by a resolver' in rendered
+    assert 'any dependency listed above is declared' in rendered
 
 
 # =============================================================================

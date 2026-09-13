@@ -1377,55 +1377,97 @@ Three binding properties, each from a recorded failure:
   set (or errored), a discovered path attributor that returned claims, a crawl
   that yielded an inventory. A registered-but-unrun producer never promises a
   capability here.
-- **Uncached, recomputed per call.** The answer is derived fresh on every
-  invocation from the executing `--project-dir`; nothing is memoised across
-  calls, so a capability present on one dispatch is never assumed present on the
-  next. "Probe once then branch" is exactly the unsound fallback this refuses to
-  enable.
+- **Recomputed per call; no memo survives into the answer.** The answer is
+  derived fresh on every invocation from the executing `--project-dir`, and the
+  process-lifetime path-attribution memo is dropped on entry, so a second call
+  in one process re-runs attributor discovery instead of replaying the
+  population the first call happened to see. A capability present on one
+  dispatch is therefore never assumed present on the next. "Probe once then
+  branch" is exactly the unsound fallback this refuses to enable.
 - **Envelope-scoped.** The answer is for the executing envelope only. Run in the
   orchestrator and run in a dispatched leaf, it answers for each independently.
 
-Each capability entry carries `status` plus the producer evidence, so three
-states stay distinct:
+**One status vocabulary across all three entries.** Every entry emits exactly
+`derivable` or `not_derivable`. There is no per-entry exception and no second
+spelling: a consumer branches on those two values for every entry it reads.
 
-| Entry shape | Meaning |
-|-------------|---------|
-| `status: not_derivable`, `producer_count: 0` | **No producer ran.** An absence of capability, not an empty finding. |
-| `status: derivable`, `derived_count: 0` | A producer ran and found nothing — a real, positive answer. |
-| `status: derivable`, `derived_count: N` | A producer ran and derived N. |
+`not_derivable` means *no producer of this capability ran at all* — an absence of
+capability, not an empty finding. `derivable` with `derived_count: 0` means
+*producers ran and found nothing*, which is a real, positive answer.
 
-The `content_search` entry uses `available` / `unavailable` (a crawl either
-produced an inventory or did not) with a `modules_inventoried` count.
+**Entry shape.** Each entry carries exactly the fields its row names below, and
+nothing else:
+
+| Entry | Fields | What decides `status` |
+|-------|--------|-----------------------|
+| `module_edges` | `capability`, `verbs`, `status`, `producers`, `producer_count`, `edge_producers`, `derived_count` | The **full** producer population that reached this response: the dispatched resolvers PLUS the reserved non-resolver producers stamped on the returned edges. |
+| `path_attribution` | `capability`, `verbs`, `status`, `producers`, `producer_count`, `derived_count` | Whether at least one attributor ran. |
+| `content_search` | `capability`, `verbs`, `status`, `modules_inventoried`, `modules_total` | Whether at least one module descriptor could be READ. |
+
+Per-field meaning, where the name alone does not carry it:
+
+| Field | Population it counts |
+|-------|----------------------|
+| `producer_count` | **Resolvers/attributors only.** For `module_edges` this is `resolver_count` — it deliberately excludes the reserved `declared` and `sibling-cross-link` producers, so `derivable` with `producer_count: 0` is a REAL state: no resolver ran, yet declared edges still reached the graph. ⛔ Never derive the verdict from this field alone — it under-counts the producers that can put an edge in the graph, and pairs `not_derivable` with a non-zero `derived_count`. |
+| `edge_producers` | Every producer id stamped on the returned edges, reserved ids included. This is the evidence `module_edges.status` was computed from, published so the verdict is checkable against the payload rather than asserted. |
+| `derived_count` (`module_edges`) | Edges in the graph. |
+| `derived_count` (`path_attribution`) | **Claims reported, not paths attributed** — the sum of every attributor report's `claim_count`. Two attributors corroborating one prefix contribute 2, because each of them reported that claim. |
+| `modules_inventoried` | Modules whose descriptor was read AND carried a non-empty file inventory. |
+| `modules_total` | The population `modules_inventoried` is counted over: every module the crawl surfaced. |
 
 **Output** (TOON, a project with a Maven resolver and an inventory):
 
 ```toon
 status: success
 project_dir: .
-capabilities[3]{capability,status,producer_count,derived_count,modules_inventoried}:
-  module_edges,derivable,1,7,
-  path_attribution,derivable,1,,
-  content_search,available,,,42
+capabilities[3]{capability,status,producer_count,derived_count,modules_inventoried,modules_total}:
+  module_edges,derivable,1,7,,
+  path_attribution,derivable,1,3,,
+  content_search,derivable,,,42,44
 ```
+
+**Output** (TOON, every resolver switched off, but a declared edge in the graph):
+
+```toon
+status: success
+project_dir: .
+capabilities[3]{capability,status,producer_count,derived_count,modules_inventoried,modules_total}:
+  module_edges,derivable,0,1,,
+  path_attribution,derivable,1,3,,
+  content_search,derivable,,,42,44
+```
+
+Both halves of that row are accurate together: `producer_count: 0` because no
+resolver ran, and `derivable` because the `declared` producer put an edge in the
+graph. `edge_producers` (elided from the flat table, see below) carries
+`['declared']`, which is the evidence for both. Read the pair this way rather
+than treating `producer_count: 0` as a synonym for `not_derivable`.
 
 **Output** (TOON, a greenfield envelope — nothing answerable, truthfully):
 
 ```toon
 status: success
 project_dir: .
-capabilities[3]{capability,status,producer_count,derived_count,modules_inventoried}:
-  module_edges,not_derivable,0,0,
-  path_attribution,not_derivable,0,,
-  content_search,unavailable,,,0
+capabilities[3]{capability,status,producer_count,derived_count,modules_inventoried,modules_total}:
+  module_edges,not_derivable,0,0,,
+  path_attribution,not_derivable,0,0,,
+  content_search,not_derivable,,,0,0
 ```
+
+**`content_search` distinguishes never-crawled from crawled-and-file-less.** The
+greenfield row above reads `not_derivable` because no descriptor could be read.
+A project whose modules WERE crawled but carry no inventoried files answers
+`derivable` with `modules_inventoried: 0` and `modules_total: N` — a positive
+"searched, found nothing". `status` is the discriminator between the two;
+`modules_inventoried: 0` alone does not tell them apart.
 
 Each entry also carries a `verbs` list naming the verbs it governs
 (`module_edges` → `graph` / `path` / `neighbors` / `impact`; `path_attribution`
-→ `which-module`; `content_search` → `files` / `find` / `search`) and, for the
-two derivation capabilities, a `producers` list of the ids that ran. Those two
-per-entry **list** fields are elided from the flat tabular examples above (a
-row-per-entry TOON table cannot nest a list inside a cell); the real payload
-carries them on every entry.
+→ `which-module`; `content_search` → `files` / `find` / `search`); the two
+derivation entries additionally carry `producers`, and `module_edges` carries
+`edge_producers`. Those per-entry **list** fields are elided from the flat
+tabular examples above (a row-per-entry TOON table cannot nest a list inside a
+cell); the real payload carries them on every entry the table names.
 
 **Why the leaf answer is not a weaker answer.** *Envelope-scoped* is easy to read
 as an admission that a dispatched leaf gets a degraded report, because a leaf's

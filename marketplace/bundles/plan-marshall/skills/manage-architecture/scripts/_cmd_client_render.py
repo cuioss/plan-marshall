@@ -82,9 +82,21 @@ def _resolver_provenance_line(resolver_reports: list[dict[str, Any]]) -> str:
     reader who wonders why the graph looks sparse is told the cause rather than
     left to guess. Both branches use one wording for that cause, so the two
     surfaces cannot drift into describing the same state differently.
+
+    **The two no-resolver branches are QUALIFIED, and symmetrically.** A
+    resolver is not the only edge source: a module's declared
+    ``internal_dependencies`` reaches the graph stamped ``declared``, and virtual
+    siblings are cross-linked as ``sibling-cross-link`` — neither needs a
+    resolver. An unqualified "No edges were derived" printed directly beneath a
+    table that lists those very dependencies contradicts the table above it. Both
+    branches therefore scope the claim to what it can actually support — that no
+    RESOLVER derived anything — and say where a listed dependency came from
+    instead of implying there is none.
     """
+    declared_note = 'no edges were derived by a resolver; any dependency listed above is declared'
+
     if not resolver_reports:
-        return '_Edge provenance: no derivation resolver is registered — no edges were derived._'
+        return f'_Edge provenance: no derivation resolver is registered — {declared_note}._'
 
     def _ids(records: list[dict[str, Any]]) -> str:
         return ', '.join(sorted(str(rec.get('id', '')) for rec in records))
@@ -95,7 +107,7 @@ def _resolver_provenance_line(resolver_reports: list[dict[str, Any]]) -> str:
     if not dispatched:
         return (
             f'_Edge provenance: {len(withheld)} resolver(s) discovered but switched off by the '
-            f'machine-local configuration — {_ids(withheld)}. No edges were derived._'
+            f'machine-local configuration — {_ids(withheld)}; {declared_note}._'
         )
 
     line = f'_Edge provenance: derived by {len(dispatched)} resolver(s) — {_ids(dispatched)}'

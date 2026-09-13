@@ -520,11 +520,12 @@ _CRAWL_CACHE: dict[str, dict[str, dict[str, Any]]] = {}
 def invalidate_crawl_cache(project_dir: str | None = None) -> None:
     """Clear the ``crawl_all_modules`` memo for one project, or the whole cache.
 
-    The Axis-D path-claim memo (:data:`_PATH_CLAIM_CACHE`) is dropped WHOLESALE
-    on every call, regardless of ``project_dir``. It is keyed by the known-module
-    tuple rather than by project path, so there is no per-project entry to
-    target — and a refresh that changes the module set must not leave a claim set
-    merged against the old one.
+    The Axis-D path-claim memo is dropped WHOLESALE on every call, regardless of
+    ``project_dir``, via :func:`invalidate_path_claim_cache`. Its key now carries
+    the project path, so a per-project drop WOULD be expressible — it is still
+    not what this wants: a refresh that changes the module set must not leave any
+    project's claim set merged against the old population, and an attributor
+    installed or removed between calls is not scoped to one project either.
 
     Args:
         project_dir: When given, only the crawl entry for this project's resolved
@@ -533,7 +534,7 @@ def invalidate_crawl_cache(project_dir: str | None = None) -> None:
             path) calls this so a forced refresh re-crawls instead of returning
             stale memoized data.
     """
-    _PATH_CLAIM_CACHE.clear()
+    invalidate_path_claim_cache()
     # The worktree-sha memo is dropped WHOLESALE: it is keyed by resolved
     # project_dir, but a refresh anywhere means the tree may have moved, and a
     # stale sha would silently mis-report freshness.
@@ -1178,21 +1179,51 @@ def _load_path_attribution_seam():
     return discover_path_attributors, merge_path_claims, lookup_claim
 
 
-# Process-lifetime memo for the merged Axis-D attribution, keyed by the sorted
-# known-module tuple (the only input the merge validates claims against;
-# attributor discovery itself is process-global). Each value is the
-# ``(claims, attributor_reports)`` pair the merge returned.
+# Process-lifetime memo for the merged Axis-D attribution, keyed by the
+# ``(resolved project_dir, sorted known-module tuple)`` pair.
+#
+# BOTH halves of the key are load-bearing. The module tuple is what the merge
+# validates claims against, but it does not identify the PROJECT: two checkouts
+# of the same repository — a worktree and its main checkout, or two fixture
+# projects built from one template — present identical module names while being
+# different trees. Keyed on the module tuple alone, the first project's merged
+# claim set is served to the second, so a per-project answer silently becomes a
+# per-module-name-set one. The resolved absolute path discriminates them, exactly
+# as it does for :data:`_CRAWL_CACHE`.
 #
 # The memo is REQUIRED, not an optimisation. The retired hardcoded prefix map was
 # an O(1) tuple scan, and :func:`resolve_module_for_path` calls the helper below
 # once per changed path — so an unmemoized seam would run full extension
 # discovery (loading every bundle's ``extension.py`` from disk) plus the merge N
 # times for an N-path footprint, silently widening a lazy contract into an eager
-# one. :func:`invalidate_crawl_cache` drops this memo alongside the crawl memo.
-_PATH_CLAIM_CACHE: dict[tuple[str, ...], tuple[list[dict[str, Any]], list[dict[str, Any]]]] = {}
+# one. :func:`invalidate_path_claim_cache` drops it, and
+# :func:`invalidate_crawl_cache` calls that alongside dropping the crawl memo.
+_PATH_CLAIM_CACHE: dict[tuple[str, tuple[str, ...]], tuple[list[dict[str, Any]], list[dict[str, Any]]]] = {}
 
 
-def resolve_path_attribution(path: str, module_names: list[str]) -> tuple[str | None, list[dict[str, Any]]]:
+def invalidate_path_claim_cache() -> None:
+    """Drop the whole Axis-D path-claim memo (:data:`_PATH_CLAIM_CACHE`).
+
+    Cleared WHOLESALE rather than per project. A caller invalidates because the
+    population the merge ran against may have moved — a refreshed module set, or
+    a newly-installed attributor, neither of which is scoped to one project — so
+    dropping only one entry would leave every other project's claim set merged
+    against the stale population it was computed from.
+
+    Two callers, for two different reasons: :func:`invalidate_crawl_cache` calls
+    it because a refresh that changes the module set must not leave a claim set
+    merged against the old one, and ``cmd_capabilities`` calls it because that
+    verb reports what ran in the CURRENT envelope and must not replay an earlier
+    call's attributor population. It is deliberately NOT called from
+    :func:`resolve_module_for_path`'s per-path loop — the memo exists for that
+    loop, and clearing it there would re-run full extension discovery per path.
+    """
+    _PATH_CLAIM_CACHE.clear()
+
+
+def resolve_path_attribution(
+    path: str, module_names: list[str], project_dir: str = '.'
+) -> tuple[str | None, list[dict[str, Any]]]:
     """Resolve ``path`` through the Axis-D seam and return the attributor reports.
 
     The full-fidelity seam reader: it returns BOTH the resolved owner and the
@@ -1215,6 +1246,11 @@ def resolve_path_attribution(path: str, module_names: list[str]) -> tuple[str | 
         path: A repo-relative path.
         module_names: The list of modules known to the project — the
             authoritative set every claim's module is validated against.
+        project_dir: The project the answer is for. It does not reach the merge;
+            it is the other half of the memo key, so two checkouts presenting the
+            same module names are not served each other's claim set. Callers that
+            hold a project dir MUST pass it — the ``'.'`` default is for the
+            single-project caller, not a licence to omit a known value.
 
     Returns:
         An ``(owner, attributor_reports)`` pair. ``owner`` is the claimed module
@@ -1241,7 +1277,7 @@ def resolve_path_attribution(path: str, module_names: list[str]) -> tuple[str | 
     except ImportError:
         return None, []
 
-    cache_key = tuple(sorted(module_names))
+    cache_key = (str(Path(project_dir).resolve()), tuple(sorted(module_names)))
     merged = _PATH_CLAIM_CACHE.get(cache_key)
     if merged is None:
         merged = merge_path_claims(discover_path_attributors(), module_names)
@@ -1253,7 +1289,7 @@ def resolve_path_attribution(path: str, module_names: list[str]) -> tuple[str | 
     return owner, reports
 
 
-def project_local_module_for_path(path: str, module_names: list[str]) -> str | None:
+def project_local_module_for_path(path: str, module_names: list[str], project_dir: str = '.') -> str | None:
     """Resolve ``path`` to its owning module through the path-attribution seam.
 
     Rung 3 of the ``which-module`` ladder: handles paths that sit outside every
@@ -1269,12 +1305,14 @@ def project_local_module_for_path(path: str, module_names: list[str]) -> str | N
     Args:
         path: A repo-relative path.
         module_names: The list of modules known to the project.
+        project_dir: The project the answer is for; forwarded to
+            :func:`resolve_path_attribution` as the other half of its memo key.
 
     Returns:
         The owning module name when a claimed prefix contains ``path`` and that
         module exists, else ``None``.
     """
-    owner, _reports = resolve_path_attribution(path, module_names)
+    owner, _reports = resolve_path_attribution(path, module_names, project_dir)
     return owner
 
 
@@ -1411,7 +1449,7 @@ def resolve_module_for_path(path: str, project_dir: str = '.', preferred_domain:
             if affine:
                 return affine[0]
         return best[0][0]
-    project_local = project_local_module_for_path(path, module_names)
+    project_local = project_local_module_for_path(path, module_names, project_dir)
     if project_local is not None:
         return project_local
     return root_fallback
