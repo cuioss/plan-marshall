@@ -14,14 +14,19 @@ Coverage:
 
 1. Shipped-standards contract — the real ``standards/*.md`` docs parse into the
    expected bot set, login map, triggers, skip-label flags, ignore patterns,
-   contentless-review / actionable-content markers, rate-limit classes,
-   rate-limit ETA patterns, and severity maps.
+   contentless-review / actionable-content markers, per-shape
+   participation-evidence content markers, rate-limit classes, rate-limit ETA
+   patterns, and severity maps.
 2. Derived ``BOT_KINDS`` — ``_findings_core.BOT_KINDS`` equals the registry's
    ``bot_kinds()`` (proving it is derived, not a literal).
 3. Constrained-YAML reader units — the scalar/comment/block parsers over
    synthetic blocks, including quoted values carrying ``#`` and ``:``.
 4. Robustness — a missing or empty standards directory yields an empty registry
    rather than raising; unknown bot kinds return empty defaults.
+5. Load-time record validation — a ``participation_evidence_markers`` key outside
+   the record's own ``participation_evidence`` raises ``BotRegistryError``. The one
+   place the permissive reader is checked rather than tolerated, because that key
+   is the one whose malformation disables a gate SILENTLY.
 
 Module import resolves via the root conftest's marketplace PYTHONPATH setup
 (``import bot_registry``).
@@ -30,6 +35,7 @@ Module import resolves via the root conftest's marketplace PYTHONPATH setup
 import re
 
 import bot_registry
+import pytest
 
 # The bots shipped as standards docs in this skill.
 _SHIPPED_BOTS = ['coderabbit', 'cuioss-review-bot', 'sourcery']
@@ -193,6 +199,228 @@ def test_contentless_markers_survive_inline_comment_stripping():
     # The quoted-``#`` case specifically: the heading keeps its markdown prefix.
     assert '## PR Reviewer Guide' in markers
     assert bot_registry.actionable_content_markers('cuioss-review-bot') == ['<details>']
+
+
+def test_participation_evidence_marker_gates_only_coderabbits_issue_comment():
+    """CodeRabbit gates its ``issue_comment`` shape on the review-verdict wrapper; nothing else is gated.
+
+    CodeRabbit publishes two artifacts in the ``issue_comment`` shape — the
+    walkthrough posted before any review completes, and the review verdict wrapped
+    in ``<!-- recent_review_start -->`` — so that one shape carries the marker. Its
+    other two shapes declare none and credit on the shape alone.
+
+    Sourcery declares no ``issue_comment`` shape, so it has nothing to gate. PR-Agent
+    is DELIBERATELY left undeclared: its Guide ``issue_comment`` is its only
+    unconditional evidence shape, and a gate there is a change the contract records as
+    not taken. Asserted exactly, shape by shape, so a marker added to either bot turns
+    this red at the data boundary rather than silently narrowing its credit.
+
+    The non-CodeRabbit population is DERIVED as ``bot_kinds()`` minus CodeRabbit, not
+    listed: the title claims only CodeRabbit is gated, and a hand-written pair keeps
+    that claim passing while a newly registered bot declares a marker outside it. The
+    exact per-shape assertion is unchanged — deriving the population widens WHO is
+    swept without loosening WHAT is asserted about each one.
+    """
+    assert bot_registry.participation_evidence_marker('coderabbit', 'issue_comment') == ('<!-- recent_review_start -->')
+    assert bot_registry.participation_evidence_marker('coderabbit', 'review_body') == ''
+    assert bot_registry.participation_evidence_marker('coderabbit', 'inline') == ''
+
+    others = [bot for bot in bot_registry.bot_kinds() if bot != 'coderabbit']
+    assert others, 'no non-CodeRabbit bot is registered — the sweep below would be vacuous'
+    for bot_kind in others:
+        for shape in ('issue_comment', 'review_body', 'inline'):
+            assert bot_registry.participation_evidence_marker(bot_kind, shape) == '', (bot_kind, shape)
+
+
+def test_participation_evidence_marker_is_declared_only_on_a_declared_evidence_shape():
+    """A marker can only NARROW a shape the bot already declares — it never admits a new one.
+
+    BOTH axes are population-derived: the bots from ``bot_kinds()``, and the shapes
+    from each bot's OWN declared key set via ``participation_evidence_markers`` —
+    never from a shape vocabulary written here. That is what closes the gap this
+    test's title warns about. A vocabulary-driven sweep can only ask about names it
+    already knows, so a marker keyed on a typo'd or invented shape read ``''`` for
+    every name it asked about (FAIL-OPEN, the intended gate silently never running)
+    and was unreachable by the sweep entirely. Reading the declared keys makes that
+    key the first thing the sweep sees.
+
+    The sweep is no longer the only line of defence either:
+    ``bot_registry._validate_participation_evidence_markers`` now rejects such a key
+    at LOAD time, which is pinned separately below. Both are kept — the loader fails
+    a bad edit loudly for any doc, and this states what the shipped records declare.
+
+    Non-vacuity: at least one shipped bot must declare a marker, or the sweep proves
+    nothing.
+    """
+    declared = 0
+    for bot_kind in bot_registry.bot_kinds():
+        for shape, marker in bot_registry.participation_evidence_markers(bot_kind).items():
+            assert shape in bot_registry.participation_evidence(bot_kind), (bot_kind, shape)
+            if marker:
+                declared += 1
+    assert declared > 0, 'no shipped bot declares an evidence marker — the sweep above is vacuous'
+
+
+def test_participation_evidence_markers_exposes_the_declared_key_set(tmp_path):
+    """The plural accessor's whole point: keys raw, values normalised through the singular.
+
+    The KEY set must survive verbatim — that is what makes a key nobody asked about
+    enumerable. The VALUES are routed through ``participation_evidence_marker`` so
+    the two accessors cannot disagree about what a shape is gated on.
+
+    The discriminating case is a DECLARED-but-blank entry: the singular accessor
+    reads ``''`` for it and for an undeclared shape alike, so only the plural map can
+    tell "declared, gating nothing" from "never declared".
+    """
+    (tmp_path / 'demo.md').write_text(
+        '```yaml\n'
+        'bot_kind: demo\n'
+        'author_login: demo-bot\n'
+        'participation_evidence:\n'
+        '  - issue_comment\n'
+        '  - review_body\n'
+        'participation_evidence_markers:\n'
+        '  issue_comment: "  <!-- demo_verdict -->  "\n'
+        '  review_body: "   "\n'
+        '```\n',
+        encoding='utf-8',
+    )
+    reg = bot_registry.BotRegistry(standards_dir=tmp_path)
+
+    markers = reg.participation_evidence_markers('demo')
+
+    assert markers == {'issue_comment': '<!-- demo_verdict -->', 'review_body': ''}
+    # Every value agrees with the singular accessor, shape for shape.
+    for shape, marker in markers.items():
+        assert marker == reg.participation_evidence_marker('demo', shape)
+    # The blank entry is DECLARED — visible here, invisible to the singular accessor,
+    # which reads '' for it exactly as it does for the shape below that is absent.
+    assert 'review_body' in markers
+    assert 'inline' not in markers
+    assert reg.participation_evidence_marker('demo', 'review_body') == ''
+    assert reg.participation_evidence_marker('demo', 'inline') == ''
+    # A bot with no map at all, and an unregistered kind, both read as no declaration.
+    assert reg.participation_evidence_markers('not-registered') == {}
+
+
+def test_a_marker_keyed_on_an_undeclared_shape_is_rejected_at_load(tmp_path):
+    """⛔ The typo case fails LOUD at load, instead of silently disabling the gate.
+
+    ``issue_comments`` for ``issue_comment`` is one character, and the accessor's
+    fail-open default turns it into no gate at all: the shape keeps crediting on
+    shape alone while the doc reads as though it were gated. For CodeRabbit that is
+    live — its pre-review walkthrough publishes in the very shape the marker gates,
+    so an ungated ``issue_comment`` credits participation off a comment posted before
+    any review completed.
+
+    Paired with its matched positive control — the SAME record with the key spelled
+    correctly — because without it this would also pass on a loader that had simply
+    started rejecting every record carrying the field.
+    """
+    doc = tmp_path / 'typo.md'
+    header = '```yaml\nbot_kind: typo\nauthor_login: typo-bot\nparticipation_evidence:\n  - issue_comment\n'
+    doc.write_text(
+        f'{header}participation_evidence_markers:\n  issue_comments: "<!-- verdict -->"\n```\n',
+        encoding='utf-8',
+    )
+
+    with pytest.raises(bot_registry.BotRegistryError, match='issue_comments'):
+        bot_registry.BotRegistry(standards_dir=tmp_path)
+
+    doc.write_text(
+        f'{header}participation_evidence_markers:\n  issue_comment: "<!-- verdict -->"\n```\n',
+        encoding='utf-8',
+    )
+    reg = bot_registry.BotRegistry(standards_dir=tmp_path)
+
+    assert reg.participation_evidence_marker('typo', 'issue_comment') == '<!-- verdict -->'
+
+
+def test_a_marker_on_a_record_declaring_no_evidence_shape_is_rejected_at_load(tmp_path):
+    """A marker NARROWS a declared shape; with none declared there is nothing to narrow.
+
+    The empty-``participation_evidence`` boundary of the same rule. It is the one an
+    author reaches by adding the gate map and forgetting the shape list, and admitting
+    it would leave a record whose every marker is inert.
+    """
+    (tmp_path / 'noshapes.md').write_text(
+        '```yaml\n'
+        'bot_kind: noshapes\n'
+        'author_login: noshapes-bot\n'
+        'participation_evidence_markers:\n'
+        '  issue_comment: "<!-- verdict -->"\n'
+        '```\n',
+        encoding='utf-8',
+    )
+
+    with pytest.raises(bot_registry.BotRegistryError, match='participation_evidence'):
+        bot_registry.BotRegistry(standards_dir=tmp_path)
+
+
+def test_participation_evidence_marker_is_fail_open_on_every_absent_or_malformed_declaration(tmp_path):
+    """No map, an empty map, a missing shape, a blank value, or a non-string value all read ``''``.
+
+    ``''`` is the FAIL-OPEN value — the producer reads it as "no gate on this shape",
+    so the shape credits exactly as it did before the field existed. Failing closed
+    instead would turn every undeclared shape into non-evidence and regress a bot
+    whose unconditional evidence shape carries no marker to ``absent``.
+
+    ⛔ Fail-open governs the VALUE, never the KEY. Each fixture below therefore
+    declares its marker keys in ``participation_evidence``, because a key outside
+    that list is rejected at load and could never reach the accessor this test is
+    about. The two rules are complements, not a contradiction: a shape the doc never
+    mentioned reads as ungated, and a shape the doc mis-keys stops the load.
+    """
+    (tmp_path / 'nomap.md').write_text(
+        '```yaml\nbot_kind: nomap\nauthor_login: nomap-bot\nparticipation_evidence:\n  - issue_comment\n```\n',
+        encoding='utf-8',
+    )
+    (tmp_path / 'emptymap.md').write_text(
+        '```yaml\nbot_kind: emptymap\nauthor_login: emptymap-bot\nparticipation_evidence_markers:\n```\n',
+        encoding='utf-8',
+    )
+    (tmp_path / 'odd.md').write_text(
+        '```yaml\n'
+        'bot_kind: odd\n'
+        'author_login: odd-bot\n'
+        'participation_evidence:\n'
+        '  - issue_comment\n'
+        '  - review_body\n'
+        'participation_evidence_markers:\n'
+        '  issue_comment: "   "\n'
+        '  review_body: true\n'
+        '```\n',
+        encoding='utf-8',
+    )
+    reg = bot_registry.BotRegistry(standards_dir=tmp_path)
+
+    assert reg.participation_evidence_marker('nomap', 'issue_comment') == ''
+    assert reg.participation_evidence_marker('emptymap', 'issue_comment') == ''
+    # A declared map that simply names a different shape leaves this one ungated.
+    assert reg.participation_evidence_marker('odd', 'inline') == ''
+    # A blank literal is no gate at all, never a gate on the empty string.
+    assert reg.participation_evidence_marker('odd', 'issue_comment') == ''
+    # A non-string value (the reader coerces ``true`` to a bool) is ignored, not stringified.
+    assert reg.participation_evidence_marker('odd', 'review_body') == ''
+    assert reg.participation_evidence_marker('not-registered', 'issue_comment') == ''
+
+
+def test_participation_evidence_marker_is_whitespace_stripped(tmp_path):
+    """A declared literal is normalised, so a stray space cannot gate on a string no body carries."""
+    (tmp_path / 'demo.md').write_text(
+        '```yaml\n'
+        'bot_kind: demo\n'
+        'author_login: demo-bot\n'
+        'participation_evidence:\n'
+        '  - issue_comment\n'
+        'participation_evidence_markers:   # the gate map\n'
+        '  issue_comment: "  <!-- demo_verdict -->  "   # a quoted HTML comment survives the comment strip\n'
+        '```\n',
+        encoding='utf-8',
+    )
+    reg = bot_registry.BotRegistry(standards_dir=tmp_path)
+
+    assert reg.participation_evidence_marker('demo', 'issue_comment') == '<!-- demo_verdict -->'
 
 
 def test_severity_map_per_bot():
@@ -373,6 +601,10 @@ def test_module_functions_match_registry_singleton():
         assert bot_registry.actionable_content_markers(bot_kind) == (
             bot_registry.REGISTRY.actionable_content_markers(bot_kind)
         )
+        for shape in ('review_body', 'inline', 'issue_comment'):
+            assert bot_registry.participation_evidence_marker(bot_kind, shape) == (
+                bot_registry.REGISTRY.participation_evidence_marker(bot_kind, shape)
+            )
         assert bot_registry.rate_limit_class(bot_kind) == bot_registry.REGISTRY.rate_limit_class(bot_kind)
         assert bot_registry.rate_limit_eta_patterns(bot_kind) == bot_registry.REGISTRY.rate_limit_eta_patterns(bot_kind)
 
@@ -521,6 +753,8 @@ def test_unknown_bot_kind_returns_empty_defaults():
     # an empty required list is what stops the producer's layer 3 from ever firing.
     assert bot_registry.contentless_review_markers('nope') == []
     assert bot_registry.actionable_content_markers('nope') == []
+    # The evidence content gate fails OPEN — no gate — for an unregistered kind.
+    assert bot_registry.participation_evidence_marker('nope', 'issue_comment') == ''
     # The rate-limit accessors fail closed for an unregistered kind too.
     assert bot_registry.rate_limit_class('nope') == 'unknown'
     assert bot_registry.rate_limit_eta_patterns('nope') == []

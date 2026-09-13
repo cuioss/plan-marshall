@@ -11,7 +11,9 @@ Cross-cutting counterpart to the co-located suites: ``test_comments_stage.py``
 owns the producer's noise filters and ``test_re_review_strategy.py`` owns the
 discriminators' match/no-match behaviour and the trigger-chokepoint guard. This
 suite pins the ARMING — the recovery a detected refusal selects — with no
-bot-name literal in the path.
+bot-name literal in the path, and the DISCLOSURE of what armed it: both producers'
+refusal records carry one observation shape, and the ``automatic-review`` step
+discloses that observation only when a wait was actually armed.
 
 ⛔ **The arming rule has exactly ONE definition, and it is the shipped selector.**
 Every case below reaches it through :func:`github_re_review.resolve_recovery_action`;
@@ -37,6 +39,7 @@ automatically.
 from __future__ import annotations
 
 import importlib
+import re
 
 # ``github_ops`` MUST be resolved FIRST: importing ``_github_pr`` before it fails
 # outright with a partially-initialised-module ImportError, because the two close
@@ -60,6 +63,8 @@ from _github_pr import (  # noqa: E402
     _is_refusal_notice,
     refusal_layers,
 )
+
+from conftest import get_script_path  # noqa: E402
 
 # A positive attempt budget, deliberately off the exhausted boundary — that arm
 # has its own case, so a shared default sitting on it would make every other
@@ -1266,3 +1271,224 @@ class TestUnreadRefusalNeverReportsAnAwaitableClass:
     def test_an_unattributable_refusal_fails_closed_to_unknown(self):
         """No bot_kind means no declared class to read — never an awaitable guess."""
         assert github_re_review._resolve_refusal_class(None, [self._registry('')]) == 'unknown'
+
+
+#: The one field each producer carries that the other does not. Everything else is
+#: the shared observation shape: ``rate_limited_bots[]`` states the bot's declared
+#: awaitability, ``refusals[]`` states which discriminator saw the notice.
+_PRODUCER_ONLY_FIELDS = {'rate_limited_bots': {'rate_limit_class'}, 'refusals': {'source'}}
+
+
+class TestBothProducersCarryOneObservationShape:
+    """``rate_limited_bots[]`` and ``refusals[]`` record a refusal in ONE shape.
+
+    A wait can be armed off either producer's record, so the arming disclosure can
+    name the layer that read the notice and what the notice said only if BOTH
+    records carry them. Before the widening only ``refusals[]`` did, and a wait
+    armed off ``rate_limited_bots[]`` could not say what it was waiting on.
+    """
+
+    @staticmethod
+    def _both(bot_kind: str, body: str) -> tuple[dict, dict]:
+        [detected] = _detect_rate_limited_bots([_comment(bot_kind, body)])
+        refusal = github_re_review._ReReviewStrategy._refusal_record(body, bot_kind, 'issue_comment')
+        assert refusal is not None, bot_kind
+        return detected, refusal
+
+    @pytest.mark.parametrize('bot_kind', _registered_bots())
+    def test_the_records_differ_only_in_their_producer_specific_field(self, bot_kind):
+        """Swept over the whole population — one shape whatever the bot."""
+        detected, refusal = self._both(bot_kind, _refusal_body(bot_kind))
+
+        assert set(detected) - _PRODUCER_ONLY_FIELDS['rate_limited_bots'] == (
+            set(refusal) - _PRODUCER_ONLY_FIELDS['refusals']
+        )
+        assert {'layer', 'body'} <= set(detected)
+
+    @pytest.mark.parametrize('bot_kind', _registered_bots())
+    @pytest.mark.parametrize('body_kind', ['declared_or_shape', 'shape_only'])
+    def test_the_two_producers_name_one_observation_for_one_notice(self, bot_kind, body_kind):
+        """Same notice, same bot: the same layer, excerpt, ETA, cause and cap.
+
+        Swept over a body the bot's own wording reads (where it declares any) AND
+        the shape-only notice, so both pre-filter arms are exercised — a producer
+        resolving the layer precedence differently would disagree on the first.
+        """
+        body = _refusal_body(bot_kind) if body_kind == 'declared_or_shape' else _STRUCTURAL_NOTICE_BODY
+        detected, refusal = self._both(bot_kind, body)
+
+        shared = set(detected) - _PRODUCER_ONLY_FIELDS['rate_limited_bots']
+        for field in sorted(shared):
+            assert detected[field] == refusal[field], (bot_kind, body_kind, field)
+
+    def test_the_excerpt_is_one_line_and_bounded_on_both_producers(self):
+        """A multi-line notice never reaches either record raw."""
+        bot = _registered_bots()[0]
+        raw = _STRUCTURAL_NOTICE_BODY + '\n\n' + '\n'.join(['Reviews will resume after the limit resets.'] * 20)
+
+        detected, refusal = self._both(bot, raw)
+
+        for record in (detected, refusal):
+            assert '\n' not in record['body']
+            assert record['body'].endswith('...')
+        assert detected['body'] == refusal['body']
+
+
+# ---------------------------------------------------------------------------
+# The arming disclosure — emitted when a wait is armed, and ONLY then
+# ---------------------------------------------------------------------------
+
+#: scripts/ -> workflow-integration-github/ -> skills/ -> plan-marshall/ -> bundles/
+_AR_SKILL = (
+    get_script_path('plan-marshall', 'workflow-integration-github', '_github_pr.py').parents[4]
+    / 'plan-marshall'
+    / 'skills'
+    / 'automatic-review'
+    / 'SKILL.md'
+)
+
+#: The facts the disclosure names. ``producer`` is the one not read off a refusal
+#: record — it names WHICH record list the refusal came from.
+_DISCLOSED = {'producer', 'layer', 'eta', 'body'}
+
+#: The subset the ARMED decision-log line carries. Derived by SUBTRACTION from
+#: :data:`_DISCLOSED` rather than restated, so a fact added to the disclosure joins
+#: the log expectation automatically instead of silently sitting outside it.
+#:
+#: ``body`` is the one excluded, and its exclusion is the contract: the excerpt is
+#: bot-authored text and ``--message`` is a shell argument, so an apostrophe in
+#: ordinary English closes the quoted string. Escaping it is prose an LLM would have
+#: to apply on every routine notice, so the excerpt is carried on the envelope row
+#: instead — where it needs no shell quoting at all.
+_LOGGED = _DISCLOSED - {'body'}
+
+
+def _section(heading_prefix: str) -> str:
+    """Return the ``automatic-review`` SKILL.md section whose heading starts ``heading_prefix``.
+
+    The section runs to the next heading at the same or a shallower level, with
+    fenced code skipped so a ``#`` inside a block never ends it early.
+    """
+    lines = _AR_SKILL.read_text(encoding='utf-8').splitlines()
+    starts = [i for i, line in enumerate(lines) if line.startswith(heading_prefix)]
+    assert len(starts) == 1, f'expected one heading starting {heading_prefix!r}, found {len(starts)}'
+    start = starts[0]
+    level = len(heading_prefix) - len(heading_prefix.lstrip('#'))
+    in_fence = False
+    for end in range(start + 1, len(lines)):
+        line = lines[end]
+        if line.lstrip().startswith('```'):
+            in_fence = not in_fence
+            continue
+        if not in_fence and re.match(rf'#{{1,{level}}} ', line):
+            return '\n'.join(lines[start:end])
+    return '\n'.join(lines[start:])
+
+
+def _armed_line() -> str:
+    """The ARMED decision-log ``--message`` line in Branch 2."""
+    matches = [line for line in _section('#### Branch 2').splitlines() if 'refusal recovery ARMED' in line]
+    assert len(matches) == 1, f'expected one ARMED message line in Branch 2, found {len(matches)}'
+    return matches[0]
+
+
+class TestTheArmingDisclosureIsEmittedOnlyWhenAWaitIsArmed:
+    """The emit / no-emit control pair over the ``automatic-review`` step contract.
+
+    The disclosure is workflow prose executed by the step, so its contract is the
+    document: the arming branch must name the observation on the decision log AND
+    declare it on the envelope, and the branches that escalate WITHOUT arming must
+    carry no arming record at all — not an empty one.
+    """
+
+    def test_the_armed_line_names_the_observation_that_armed_the_wait(self):
+        """EMIT: producer, layer and ETA ride the ARMED decision-log line."""
+        placeholders = dict(re.findall(r'(\w+)=\{(\w+)\}', _armed_line()))
+
+        assert _LOGGED <= set(placeholders), sorted(placeholders)
+        for fact in _LOGGED:
+            assert placeholders[fact] == fact
+
+    def test_the_untrusted_excerpt_is_never_interpolated_into_the_log_command(self):
+        """⛔ The excerpt is bot text and ``--message`` is a shell argument.
+
+        The matched negative half of the case above: the log line must name the
+        other disclosed facts AND must not carry this one. Pinned as its own
+        assertion because ``_LOGGED <= placeholders`` is satisfied by a line that
+        also interpolates the excerpt — a subset test cannot refuse an extra field,
+        so the exclusion has to be asserted rather than implied.
+
+        Escaping was the rejected alternative: an apostrophe is ordinary English
+        ("doesn't", "your plan's limit"), so a prose instruction to rewrite each one
+        fires on routine input rather than only on a crafted notice. The excerpt is
+        carried on the envelope row instead, which the next case pins.
+        """
+        placeholders = dict(re.findall(r'(\w+)=\{(\w+)\}', _armed_line()))
+
+        assert 'body' not in placeholders, _armed_line()
+
+    def test_the_armed_line_quotes_its_remaining_bot_supplied_field_safely(self):
+        """The ``--message`` value must be single-quoted even without the excerpt.
+
+        ``{eta}`` is still the reset time the NOTICE stated, so bot-supplied text
+        remains in the command. Inside double quotes a backtick or ``$`` is command
+        substitution, and refusal notices quote the bot's own trigger command.
+        """
+        armed = _armed_line().strip()
+
+        assert armed.startswith("--message '"), armed
+        assert armed.endswith("'"), armed
+
+    def test_the_envelope_declares_the_full_disclosure_including_the_excerpt(self):
+        """EMIT: the envelope row is the COMPLETE record, so it survives a resume.
+
+        It is a superset of what the log names — the excerpt is carried here and
+        nowhere else, which is what makes its removal from the log line a relocation
+        rather than a loss of the fact.
+        """
+        output = _section('## Output')
+        match = re.search(r'rate_window_arming\[N\]\{([^}]*)\}', output)
+        assert match, 'Output declares no rate_window_arming[] field'
+
+        declared = {field.strip() for field in match.group(1).split(',')}
+
+        assert declared == _DISCLOSED | {'bot_kind'}
+        assert _LOGGED < declared
+
+    def test_every_disclosed_fact_but_the_producer_is_read_off_a_refusal_record(self):
+        """Read, never re-derived: each disclosed fact is a field BOTH producers emit."""
+        bot = _registered_bots()[0]
+        [detected] = _detect_rate_limited_bots([_comment(bot, _STRUCTURAL_NOTICE_BODY)])
+        refusal = github_re_review._ReReviewStrategy._refusal_record(_STRUCTURAL_NOTICE_BODY, bot, 'issue_comment')
+
+        record_facts = _DISCLOSED - {'producer'}
+
+        assert record_facts <= set(detected)
+        assert record_facts <= set(refusal)
+
+    @pytest.mark.parametrize(
+        'heading',
+        [
+            pytest.param('#### Branch 0', id='branch-0-structural'),
+            pytest.param('#### Branch 1', id='branch-1-not-awaitable'),
+        ],
+    )
+    def test_a_branch_that_escalates_without_arming_discloses_no_arming_record(self, heading):
+        """NO-EMIT — the matched negative control.
+
+        Branches 0 and 1 escalate without claiming a window, so they arm nothing and
+        must disclose nothing: no ARMED line, no arming placeholders, and no envelope
+        field. An empty or defaulted record would read as a wait armed on nothing.
+        """
+        branch = _section(heading)
+
+        assert 'refusal recovery ARMED' not in branch
+        assert 'rate_window_arming' not in branch
+        assert not {fact for fact in _DISCLOSED if f'{fact}={{{fact}}}' in branch}
+
+    def test_the_output_contract_states_the_field_is_absent_when_nothing_was_armed(self):
+        """The absence is the contract, stated where the field is declared."""
+        output = _section('## Output')
+
+        assert 'ABSENT' in output
+        assert 'Branch 0 and Branch 1' in output

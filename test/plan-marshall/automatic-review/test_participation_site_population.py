@@ -43,13 +43,26 @@ import pytest
 
 from conftest import get_script_path, get_skill_dir
 
-#: The symbol family a participation site is recognised by. Copied verbatim from
-#: the deliverable's specification — these are the names the credit-granting and
-#: new-information decisions are written in.
+#: The symbol family a participation site is recognised by — the names the
+#: credit-granting and new-information decisions are written in. The admissibility
+#: gate (``_is_participation_evidence``) and the per-shape content-marker accessor it
+#: reads (``participation_evidence_marker``) decide whether a comment can grant a
+#: credit at all, so they are members of the family.
+#:
+#: Two members answer that same question about the gate ITSELF rather than about one
+#: comment, and are seeded for that reason: ``participation_evidence_markers`` exposes
+#: the declared key set, and ``_validate_participation_evidence_markers`` rejects a key
+#: outside the record's declared shapes at load. A marker keyed on a typo gates
+#: nothing and credits on shape alone, so what enforces the keys decides whether the
+#: gate runs at all.
 SEED_SYMBOLS: tuple[str, ...] = (
     '_reviewed_at_merge_candidate',
     'participation_requires_update',
     'participation_evidence',
+    'participation_evidence_marker',
+    'participation_evidence_markers',
+    '_validate_participation_evidence_markers',
+    '_is_participation_evidence',
     'head_sha_verified',
     'stale_participation',
     'existing_comment_keys',
@@ -156,8 +169,12 @@ SITE_EXPECTATIONS: dict[str, SiteExpectation] = {
         'registry_data',
         'none',
         'yes',
-        'Declares each bot’s participation_evidence and participation_requires_update. A pure '
-        'read over the parsed standards docs — it observes nothing, so it anchors on nothing.',
+        'Declares each bot’s participation_evidence, the per-shape participation_evidence_markers '
+        'content gate, and participation_requires_update. A pure read over the parsed standards '
+        'docs — it observes nothing, so it anchors on nothing. It does REJECT one malformation at '
+        'load: a marker keyed outside the record’s own participation_evidence raises '
+        'BotRegistryError, because that key gates nothing and the shape would keep crediting on '
+        'shape alone. Validation of the data it serves, not an observation of the PR.',
     ),
     f'{_SKILLS}/automatic-review/scripts/review_completeness.py': SiteExpectation(
         'producer_sets',
@@ -265,8 +282,10 @@ SITE_EXPECTATIONS: dict[str, SiteExpectation] = {
         'BOTH by one predicate over whichever field carries the reviewed-commit claim: the '
         'review’s commit_sha, or the comment’s BODY. Pinning the comment path to false was a '
         'premise, not an observation, and it manufactured a decline for every bot whose only '
-        'declared publish shape is a comment naming its reviewed commit. Its verdict depends '
-        'on when it is asked, so it is not idempotent.',
+        'declared publish shape is a comment naming its reviewed commit. Where several of the '
+        'bot’s comments are eligible it selects one whose body names that HEAD, so list order '
+        'cannot manufacture a decline either. Its verdict depends on when it is asked, so it '
+        'is not idempotent.',
     ),
     f'{_SKILLS}/workflow-pr-doctor/standards/automated-review-lifecycle.md': SiteExpectation(
         'normative_text',

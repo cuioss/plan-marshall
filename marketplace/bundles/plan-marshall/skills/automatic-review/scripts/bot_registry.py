@@ -11,9 +11,10 @@ need (the bot-kind set, the login->bot_kind map, each bot's re-review trigger
 comment, its trigger semantics, its completion check-run name, its
 skip-label-honoring flag, its ignore patterns, its refusal patterns, its
 contentless-review markers, its actionable-content markers, its
-participation-evidence publish shapes, its severity map, its rate-limit class,
-and its rate-limit ETA patterns) instead of hard-coding three bots across
-several code files.
+participation-evidence publish shapes and the content marker each of those
+shapes must carry to count, its severity map, its rate-limit class, and its
+rate-limit ETA patterns) instead of hard-coding three bots across several code
+files.
 
 The loader is deliberately generic — there is no per-bot branch anywhere in it.
 Adding, removing, or re-configuring a bot is a pure data edit to a
@@ -32,6 +33,8 @@ Data-block shape (one per ``standards/{bot_kind}.md``)::
       - review_body
       - inline
       - issue_comment
+    participation_evidence_markers:   # per publish shape, the literal a credited comment carries
+      issue_comment: "<!-- recent_review_start -->"
     participation_requires_update: true
     ignore_patterns:
       - "## Walkthrough"
@@ -61,9 +64,17 @@ scalars, lists (``ignore_patterns``, ``review_body_summary_patterns``,
 ``refusal_patterns``, ``refusal_size_patterns``, ``refusal_size_cap_patterns``,
 ``contentless_review_markers``,
 ``actionable_content_markers``, ``participation_evidence``,
-``rate_limit_eta_patterns``), and one nested map
-(``severity_map``) — parsed by a small deterministic reader below. Load order is the sorted
+``rate_limit_eta_patterns``), and two nested maps
+(``participation_evidence_markers``, ``severity_map``) — parsed by a small
+deterministic reader below. Load order is the sorted
 ``standards/*.md`` filename order, so ``bot_kinds()`` is stable across runs.
+
+The reader is permissive by design, so the one place a malformed record would
+disable a gate SILENTLY is checked explicitly at load:
+``participation_evidence_markers`` may only key shapes the same record lists in
+``participation_evidence``, and a record breaking that raises
+:class:`BotRegistryError`. See :func:`_validate_participation_evidence_markers`
+for why this single field fails loud while the accessors fail open or closed.
 """
 
 import re
@@ -194,6 +205,61 @@ def _parse_block(block: str) -> dict[str, Any]:
     return data
 
 
+class BotRegistryError(ValueError):
+    """A registry record is malformed in a way that would silently disable a gate.
+
+    Raised at LOAD time — which is import time for :data:`REGISTRY` — so a bad
+    ``standards/{bot_kind}.md`` edit fails loudly for every consumer at once
+    instead of degrading one gate into a no-op nobody observes.
+    """
+
+
+def _validate_participation_evidence_markers(bot_kind: str, record: dict[str, Any]) -> None:
+    """Reject a marker keyed on a shape ``bot_kind`` does not declare as evidence.
+
+    ``participation_evidence_markers`` can only NARROW a shape the bot already
+    lists in ``participation_evidence``; it never admits a new one. A key outside
+    that list therefore gates nothing, and the failure is SILENT in the worst
+    direction: :meth:`BotRegistry.participation_evidence_marker` looks the
+    requested shape up by name and returns ``''`` when absent, which the producer
+    reads as *ungated*. So a single typo — ``issue_comments:`` for
+    ``issue_comment:`` — leaves the shape crediting on shape alone, and the gate
+    the doc was edited to add never runs. For CodeRabbit that is the live case
+    this guard exists for: its pre-review walkthrough is published in the very
+    shape the marker gates, so an ungated ``issue_comment`` credits participation
+    off a walkthrough posted before any review completed.
+
+    Fail-loud is the only honest posture here, and deliberately unlike the
+    accessor's fail-OPEN default: the accessor answers "is this shape gated?" for
+    a shape the doc never mentioned, where *no* is the pre-gate behaviour. This
+    validator answers "does this doc say what its author thinks it says?", where
+    the only safe answer to *no* is to stop.
+
+    Args:
+        bot_kind: The record's declared bot kind, for the failure message.
+        record: The parsed registry record.
+
+    Raises:
+        BotRegistryError: when the record declares a marker key that is not one
+            of its own ``participation_evidence`` shapes.
+    """
+    markers = record.get('participation_evidence_markers')
+    if not isinstance(markers, dict):
+        # An absent field, or a block key that opened and gathered no children
+        # (normalised to ``[]`` by :func:`_parse_block`). No keys to validate.
+        return
+    declared = record.get('participation_evidence')
+    shapes = [shape for shape in declared if isinstance(shape, str)] if isinstance(declared, list) else []
+    unknown = sorted(key for key in markers if key not in shapes)
+    if unknown:
+        raise BotRegistryError(
+            f'{bot_kind}: participation_evidence_markers declares key(s) {unknown} that are not in '
+            f'its own participation_evidence {shapes}. A marker can only NARROW a declared evidence '
+            f'shape — one keyed on any other string gates nothing and leaves the shape crediting on '
+            f'shape alone. Fix the key, or add the shape to participation_evidence.'
+        )
+
+
 def _extract_registry_block(md_text: str) -> str | None:
     """Return the body of the first fenced ``yaml`` block declaring ``bot_kind:``."""
     lines = md_text.splitlines()
@@ -266,6 +332,7 @@ class BotRegistry:
             record = _parse_block(block)
             bot_kind = record.get('bot_kind')
             if isinstance(bot_kind, str) and bot_kind:
+                _validate_participation_evidence_markers(bot_kind, record)
                 self._by_kind[bot_kind] = record
 
     def bot_kinds(self) -> list[str]:
@@ -527,6 +594,8 @@ class BotRegistry:
         is recorded as a participant only when an observed comment's kind is in
         this list — participation is grounded in the bot's real publish shape
         rather than in the mere existence of some comment resolving to its login.
+        A shape the bot additionally gates on a content marker counts only when the
+        comment carries it; see :meth:`participation_evidence_marker`.
 
         The admissible vocabulary is CLOSED to publish shapes, and that closure is
         the structural guard behind the diff-derived-evidence rule: a publish shape
@@ -541,6 +610,65 @@ class BotRegistry:
         """
         value = self._by_kind.get(bot_kind, {}).get('participation_evidence', [])
         return list(value) if isinstance(value, list) else []
+
+    def participation_evidence_marker(self, bot_kind: str, evidence_kind: str) -> str:
+        """Return the literal an ``evidence_kind`` comment must carry to COUNT (``''`` = ungated).
+
+        A CONTENT gate layered on :meth:`participation_evidence`'s SHAPE test, keyed
+        per publish shape. A bot can publish two different artifacts in one shape —
+        one proving a review STARTED (a walkthrough posted before any review
+        completes) and one proving it FINISHED (the review verdict) — and the shape
+        alone cannot tell them apart. Declaring the literal the finished artifact
+        carries makes only that artifact evidence; a comment in the same shape
+        without it credits nothing.
+
+        The gate reaches exactly the shapes a bot declares an entry for. Every other
+        shape — including every shape of a bot that declares no map at all — credits
+        on the shape alone, exactly as it did before this field existed.
+
+        An absent, empty, non-string, or blank declaration is FAIL-OPEN: ``''``, which
+        the producer reads as "no gate on this shape". Open rather than closed
+        because failing closed would turn every undeclared shape into non-evidence,
+        regressing a bot whose unconditional evidence shape carries no marker to
+        ``absent`` — the same inert-by-default posture
+        :meth:`contentless_review_markers` takes, so a bot that has not opted in
+        behaves exactly as it did before the gate existed.
+
+        The value is whitespace-stripped, matching the normalise-both-sides rule every
+        registry-sourced literal comparison follows, so a doc with a stray trailing
+        space cannot silently gate a shape on a literal no body carries.
+        """
+        value = self._by_kind.get(bot_kind, {}).get('participation_evidence_markers', {})
+        if not isinstance(value, dict):
+            return ''
+        marker = value.get(evidence_kind, '')
+        return marker.strip() if isinstance(marker, str) else ''
+
+    def participation_evidence_markers(self, bot_kind: str) -> dict[str, str]:
+        """Return the whole per-shape marker map as DECLARED (``{}`` if unknown/absent).
+
+        The plural companion to :meth:`participation_evidence_marker`, and the
+        reason it exists is the KEY set: the singular accessor can only be asked
+        about a shape the caller already names, so a sweep built on it can never
+        see a key nobody thought to ask for. That is precisely the key a typo
+        produces. Reading the map whole is what makes the declared keys
+        enumerable — by :func:`_validate_participation_evidence_markers`'s
+        counterpart in the test tree, and by any consumer auditing what a doc
+        actually declares.
+
+        The KEYS are raw, exactly as the doc declares them. Each VALUE is routed
+        through :meth:`participation_evidence_marker`, so the two accessors cannot
+        disagree about what any one shape is gated on: ``markers[shape]`` is
+        always the literal the producer would compare against, with a blank or
+        non-string declaration normalised to the same fail-open ``''``. A key
+        whose value is ``''`` is therefore a DECLARED-but-ungating entry, which is
+        a distinction the singular accessor alone cannot express — it reads ``''``
+        for a declared-blank shape and for an undeclared one alike.
+        """
+        value = self._by_kind.get(bot_kind, {}).get('participation_evidence_markers', {})
+        if not isinstance(value, dict):
+            return {}
+        return {key: self.participation_evidence_marker(bot_kind, key) for key in value}
 
     def participation_requires_update(self, bot_kind: str) -> bool:
         """Return whether ``bot_kind``'s evidence additionally requires update movement.
@@ -714,6 +842,16 @@ def bot_kind_for_login(author_login: str | None) -> str:
 def participation_evidence(bot_kind: str) -> list[str]:
     """The publish shapes that are evidence ``bot_kind`` participated (``[]`` = fail-closed)."""
     return REGISTRY.participation_evidence(bot_kind)
+
+
+def participation_evidence_marker(bot_kind: str, evidence_kind: str) -> str:
+    """The literal a ``bot_kind`` comment of ``evidence_kind`` must carry to count (``''`` = ungated)."""
+    return REGISTRY.participation_evidence_marker(bot_kind, evidence_kind)
+
+
+def participation_evidence_markers(bot_kind: str) -> dict[str, str]:
+    """``bot_kind``'s whole per-shape marker map, declared keys included (``{}`` if absent)."""
+    return REGISTRY.participation_evidence_markers(bot_kind)
 
 
 def participation_requires_update(bot_kind: str) -> bool:

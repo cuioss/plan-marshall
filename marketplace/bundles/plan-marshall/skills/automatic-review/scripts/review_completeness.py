@@ -290,11 +290,10 @@ STATE_PARTICIPATED_BUT_EMPTY = 'participated_but_empty'
 # short name loses the distinction from a bot that never published at all.
 STATE_PARTICIPATED_STALE = 'participated_stale'
 # The bot was asked to review the merge candidate (a re-review was triggered) and
-# answered WITHOUT producing a review of it — an incremental-review DECLINE: a
-# comment that does not REFERENCE the merge candidate (``head_sha_verified: false``)
-# rather than a review of this HEAD. ``false`` covers BOTH shapes — a comment naming
-# no reviewed commit at all, and one naming a DIFFERENT commit — so neither may be
-# described as the whole of it. Distinct from ``participated_stale`` (a review that exists
+# answered WITHOUT producing a review of it — an incremental-review DECLINE
+# (``head_sha_verified: false``). What that verdict rests on is stated once, in
+# ``bot-participation-contract.md`` § "Detecting a decline"; it is deliberately not
+# restated here. Distinct from ``participated_stale`` (a review that exists
 # but predates the merge candidate) and from the refusal members (an explicit
 # rate-limit / quota / size notice): the bot engaged but declined this commit, so
 # re-triggering it produces another decline rather than a review.
@@ -488,8 +487,10 @@ def parse_stale_participation(raw: str | None, flag: str = '--stale-participatio
 
     **Why the filter must not run twice.** Admissibility answers *"is this evidence
     that the bot reviewed?"*, and the producer already answered it: a pair only
-    reaches ``stale_participation_bots[]`` because its ``evidence_kind`` matched a
-    declared publish shape and then FAILED the currency test. Re-testing
+    reaches ``stale_participation_bots[]`` because the producer admitted it — its
+    ``evidence_kind`` matched a declared publish shape AND carried that shape's
+    declared content marker where one is declared — and it then FAILED the
+    currency test. Re-testing
     admissibility here asks a question that was already settled and can only
     subtract — and when it does subtract, the observation vanishes and the bot
     falls through to ``absent``. That is the exact inversion this parse exists to
@@ -735,16 +736,19 @@ def classify_bot(
       overrides are per-refusal observations, so they outrank a class declared per bot.
       No bot-name literal.
     - **``declined``** — the bot was asked to review the merge candidate and answered
-      without producing a review of it (an incremental-review decline: a comment that
-      does not REFERENCE the merge candidate — naming no reviewed commit at all, or
-      naming a different one). Checked after the refusal branches — a refusal
+      without producing a review of it (an incremental-review decline; what the
+      verdict rests on is stated once in ``bot-participation-contract.md``
+      § "Detecting a decline"). Checked after the refusal branches — a refusal
       is the more specific "will not review now" signal — and before ``participated_stale``,
       because a decline says the bot answered *this* re-review request without
       reviewing, which is a fresher and more actionable signal than a review that
       merely predates this HEAD. Unproven and blocking, but the remedy is to accept the
       decline, not to re-trigger a bot that already declined this commit.
-    - **``participated_stale``** — the bot published in a declared evidence shape,
-      but the currency test failed: the currency ledger — the sole source that test
+    - **``participated_stale``** — the producer admitted the bot's comment as
+      evidence (what admission requires is stated once in
+      ``bot-participation-contract.md`` § "Evidence taxonomy", which carries both
+      conjuncts — the declared publish shape and, where gated, that shape's content
+      marker), but the currency test failed: the currency ledger — the sole source that test
       reads — anchors the comment to a commit that is not the merge candidate, and its
       ``updated_at`` is unchanged from the value recorded at that credit, so the review
       it proves predates this HEAD. Unproven and therefore blocking, but the remedy is to
@@ -1035,8 +1039,10 @@ def check_completeness(
                            observed and steering the operator to wait on a notice no
                            layer could parse.
         stale_participation_bots:
-                           Bots whose observed comment matched a declared
-                           ``participation_evidence`` publish shape but failed the
+                           Bots whose observed comment was already admissible
+                           evidence — a declared ``participation_evidence`` publish
+                           shape, carrying that shape's declared content marker
+                           where one is declared — but failed the
                            ``participation_requires_update`` currency test, as
                            reported by ``github_pr fetch_findings``'s
                            ``stale_participation_bots[]``. They resolve to
@@ -1764,7 +1770,7 @@ def _add_bot_observation_flags(sub: argparse.ArgumentParser) -> None:
             'form as --participated-bots, and the exact shape github_pr '
             "fetch_findings emits in stale_participation_bots[], so the producer's "
             'output forwards here verbatim. Each names a bot whose observed comment '
-            'matched a declared participation_evidence publish shape but failed the '
+            'was already admissible evidence but failed the '
             'participation_requires_update currency test; the classifier reads only '
             'the bot_kind. A required bot here is classified participated_stale and '
             'blocks — it published against an earlier HEAD, so nothing has reviewed '

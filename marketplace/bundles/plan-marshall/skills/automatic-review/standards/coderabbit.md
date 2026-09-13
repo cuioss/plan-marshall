@@ -15,7 +15,7 @@ bot appears in neither list, with a warning recorded. See
 The fenced-YAML block below is the machine-readable per-bot record. It is data, not frontmatter —
 a fenced code block that plugin-doctor treats as an example, not an executable directive. Consumers
 read `bot_kind`, `author_login`, `trigger_comment`, `completion_check_name`, `honors_skip_label`,
-`participation_evidence`, `participation_requires_update`, `ignore_patterns`,
+`participation_evidence`, `participation_evidence_markers`, `participation_requires_update`, `ignore_patterns`,
 `review_body_summary_patterns`, `refusal_patterns`, `contentless_review_markers`,
 `actionable_content_markers`, `rate_limit_class`, `rate_limit_eta_patterns`, and `severity_map` from
 it; the prose sections that follow carry the rationale. CodeRabbit declares neither
@@ -47,6 +47,8 @@ participation_evidence:          # the publish shapes that prove THIS bot review
   - review_body                  # its review summary comment
   - inline                       # its per-line review comments
   - issue_comment                # its standalone summary comment, edited in place on re-review
+participation_evidence_markers:  # per publish shape, the literal a comment must carry to COUNT
+  issue_comment: "<!-- recent_review_start -->"   # the review-verdict wrapper; the walkthrough / summary issue_comment posted BEFORE the review completes carries none, so it credits nothing
 participation_requires_update: true    # the summary comment is EDITED in place on re-review, so
                                  # continued presence proves only that it reviewed at some earlier
                                  # commit. Evidence therefore has to clear the currency test. Its
@@ -169,6 +171,32 @@ the distinction. See [`bot-participation-contract.md`](bot-participation-contrac
 
 CodeRabbit publishes a review summary, per-line comments, and a standalone summary comment, so any
 one of those three shapes is evidence it reviewed this diff.
+
+**The `issue_comment` shape counts only when it carries the review-verdict marker.** CodeRabbit
+publishes TWO different artifacts in that one shape: the walkthrough / summary comment, posted
+**before** any review completes, and the review verdict, which it wraps in its own
+`<!-- recent_review_start -->` machine marker. The shape cannot tell them apart, so crediting it
+bare would count a comment proving a review *started* as one proving it *finished* — a false positive
+that fails toward merging. `participation_evidence_markers` therefore gates that one shape on the
+marker: a CodeRabbit `issue_comment` carrying it is evidence, and one without it — the walkthrough
+alone — credits nothing, and is reported neither as participation nor as a stale publish. The
+`review_body` and `inline` shapes declare no marker and credit on the shape alone, as before. The
+field's reach, and why an absent declaration is fail-open, are stated once in
+[`bot-participation-contract.md`](bot-participation-contract.md) § "A shape may be gated on a content
+marker".
+
+**A clean review's credit rides the marker-bearing `issue_comment`.** When CodeRabbit finds nothing,
+it publishes no `review_body` and no `inline` comment: its whole output is the review-verdict
+`issue_comment` — the marker above followed by `No actionable comments were generated in the recent
+review` — observed as its only comment on `cuioss/cui-http#194`. That text is one of the
+`ignore_patterns`, so the comment files no finding, yet it still earns the participation credit,
+because participation is derived from the raw comment list before the noise filter runs. The marker
+is therefore load-bearing twice over: it is what keeps the walkthrough from crediting a review that
+has not happened, and it is the only thing crediting a clean review that has. A verdict comment that
+stopped carrying it would resolve a clean review `absent`. Which taxonomy member a credited clean
+review lands on is the cross-bot contract's to state, not this doc's — see
+[`bot-participation-contract.md`](bot-participation-contract.md) § "A credited clean review resolves
+`participated_but_empty`".
 
 **Presence alone is not enough — the update must move.** CodeRabbit **edits its summary comment in
 place** on re-review rather than appending a fresh one, so the comment's continued

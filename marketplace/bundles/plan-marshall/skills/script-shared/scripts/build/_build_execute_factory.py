@@ -438,7 +438,6 @@ def _append_gate_build_row(
     command_args: str,
     command_str: str,
     result: DirectCommandResult,
-    project_dir: str,
     route: str,
 ) -> None:
     """Append one ``kind=build`` ledger row for a terminal gate route.
@@ -446,10 +445,13 @@ def _append_gate_build_row(
     The shared routing seam runs each build on exactly one terminal route —
     ``in_process`` or ``routed`` — and each such run MUST leave a ``kind=build``
     row naming the route, the exit code, and the executed-test population, so a
-    green gate never reads as ungated failures. The executor dispatch boundary
-    stamps its own row for executor-level invocations; this seam-level row
-    covers direct ``cmd_run`` calls (including the red-first unit-test path)
-    that never cross that boundary.
+    green gate never reads as ungated failures. This append is UNCONDITIONAL on
+    both terminal routes, and the executor dispatch boundary stamps its own
+    sha-bearing row independently — so a build that crosses that boundary leaves
+    TWO ``kind=build`` rows, and only a direct ``cmd_run`` call (including the
+    red-first unit-test path) leaves this one alone. A consumer counting
+    ``kind=build`` rows to audit gate coverage MUST deduplicate rather than
+    assume one row per build.
 
     Best-effort and fail-open: any import, hash, or append failure is swallowed
     so a ledger outage never aborts a build. True daemon failure rows are NOT
@@ -466,8 +468,6 @@ def _append_gate_build_row(
     try:
         from _ledger_core import append_entry, build_record
 
-        _ = project_dir  # retained for call-site compatibility; sha deliberately unresolved (see docstring).
-        worktree_sha = None
         raw_status = str((result or {}).get('status', ''))
         ledger_status = raw_status if raw_status in ('success', 'error', 'timeout', 'killed') else 'unknown'
         try:
@@ -489,7 +489,7 @@ def _append_gate_build_row(
             args=record_args,
             exit_code=exit_code,
             status=ledger_status,
-            worktree_sha=worktree_sha,
+            worktree_sha=None,
             log_file=log_file,
             command=command_str,
             duration_seconds=None,
@@ -1132,7 +1132,6 @@ def create_execute_handlers(
                     command_args=command_args,
                     command_str=str(routed.get('command', '')),
                     result=routed,
-                    project_dir=project_dir,
                     route='routed',
                 )
                 return cmd_run_common(
@@ -1205,7 +1204,6 @@ def create_execute_handlers(
                 command_args=command_args,
                 command_str=str(result.get('command', '')),
                 result=result,
-                project_dir=project_dir,
                 route='in_process',
             )
         except BuildQueueTimeout as exc:

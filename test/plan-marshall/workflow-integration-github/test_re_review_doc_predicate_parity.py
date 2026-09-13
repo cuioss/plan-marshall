@@ -26,12 +26,20 @@ Two guards, both derived rather than asserted:
     Membership of the three known consumers is asserted so an empty or misrooted
     scan fails loudly instead of passing vacuously.
 
-⛔ **What (b) does NOT do.** It recognises the retired predicate by its PHRASING,
-so a restatement worded differently escapes it. It is a recurrence guard for this
-specific refuted claim, not a proof that no doc contradicts the code. The
-structural remedy is the one applied to the consumer docs themselves: cross-
-reference the producer's signal table rather than restate the predicate, so there
-is one statement site to keep true instead of three.
+(c) **The comment arm decides with the SAME predicate, and no document states the
+    retired comment-arm constant.** ``head_sha_verified`` on the issue-comment arm
+    was the structural constant ``matched_signal == 'review'`` — ``false`` for every
+    comment, including one whose body names the awaited HEAD. The call is derived by
+    AST out of ``await_fresh_review`` (the envelope builder must hand ``head_sha`` to
+    the predicate derived in (a)), and the doc population from (b) is swept for the
+    two phrasings that restated the constant.
+
+⛔ **What (b) and (c) do NOT do.** They recognise the retired claims by their
+PHRASING, so a restatement worded differently escapes them. They are recurrence
+guards for these specific refuted claims, not a proof that no doc contradicts the
+code. The structural remedy is the one applied to the consumer docs themselves:
+cross-reference the producer's signal table rather than restate the predicate, so
+there is one statement site to keep true instead of three.
 """
 
 from __future__ import annotations
@@ -53,6 +61,9 @@ _AR_SKILL = _BUNDLES / 'plan-marshall' / 'skills' / 'automatic-review' / 'SKILL.
 _BRANCH_CLEANUP_REREVIEW = (
     _BUNDLES / 'plan-marshall' / 'skills' / 'phase-6-finalize' / 'standards' / 'branch-cleanup-rereview.md'
 )
+#: The known ``.py`` member of the population — the consumer whose docstrings state
+#: this contract in prose, and which an ``*.md``-only scan never read.
+_CONSUMER_SCRIPT = _BUNDLES / 'plan-marshall' / 'skills' / 'automatic-review' / 'scripts' / 'review_completeness.py'
 
 #: The envelope field whose contract the predicate decides. A document that talks
 #: about this field is a document that can state the predicate wrongly.
@@ -72,21 +83,69 @@ _RETIRED_EQUALITY_RE = re.compile(
 )
 
 
+#: The retired comment-arm claim: the issue-comment signal ALWAYS publishes
+#: ``head_sha_verified: false``, because a comment carries no reviewed-commit SHA.
+#: Keyed on two arms: (a) the SIGNAL NAME beside a pinned ``false`` within one
+#: sentence, and (b) the "no reviewed-commit SHA" rationale in any inflection.
+#:
+#: Arm (a) deliberately keeps requiring the ``issue comment`` signal token rather
+#: than a bare ``comment``. Widening it there is unsound, not merely noisy: the
+#: SHIPPED rule's own correct phrasing puts "comment" a few tokens before the
+#: verdict ("a comment naming no reviewed commit … head_sha_verified: false"), so a
+#: bare-``comment`` arm cannot separate *comment arm ⇒ false* (retired) from
+#: *comment naming no commit ⇒ false* (shipped) and flags the corrected text.
+#:
+#: Arm (b) carries the widening instead, and it is where the recurrence escaped
+#: TWICE, on two independent boundaries. Both are now closed, and both are pinned by
+#: a control drawn verbatim from the text that escaped:
+#:
+#:   1. INFLECTION — the arm was keyed on ``carries`` alone while a drifted site read
+#:      ``carrying``, so a restatement two lines from a corrected one read as green.
+#:   2. INTERVENING TOKENS — the arm's window excluded newlines and did not tolerate
+#:      markdown emphasis, so ``a comment that carries **no reviewed-commit SHA**``
+#:      and a statement wrapped as ``a comment / carrying no reviewed-commit SHA``
+#:      both escaped. These are the shapes the scanned population actually uses:
+#:      prose that wraps, and contract docs that bold the operative clause.
+#:
+#: The window therefore spans newlines (``[^.]``) and admits emphasis around the
+#: negation. Keeping the sentence bound (``.``) is what stops it reaching across two
+#: unrelated sentences.
+_RETIRED_COMMENT_CONSTANT_RE = re.compile(
+    r'(?i)('
+    r'issue[ _]comment[^.\n]{0,80}head_sha_verified`?:\s*`?false'
+    r'|comment[^.]{0,40}carr(?:ies|ying|ied|y)\s+[*_`]*no[*_`]*\s+reviewed[\s\-]*commit\s+SHA'
+    r')'
+)
+
+
 def _states_retired_equality(text: str) -> bool:
     """Return True when ``text`` asserts whole-field SHA equality as the predicate."""
     return _RETIRED_EQUALITY_RE.search(text) is not None
 
 
+def _states_retired_comment_constant(text: str) -> bool:
+    """Return True when ``text`` pins the comment arm's verdict to a constant ``false``."""
+    return _RETIRED_COMMENT_CONSTANT_RE.search(text) is not None
+
+
 def _doc_population() -> list[Path]:
-    """Every bundle document that discusses the ``head_sha_verified`` contract."""
+    """Every bundle file that discusses the ``head_sha_verified`` contract.
+
+    Scans ``*.py`` alongside ``*.md``: the contract prose that states this
+    predicate does not live only in documents. Three statements of the retired
+    comment-arm rule sat in ``review_completeness.py`` docstrings, outside an
+    ``*.md``-only population, so the guard reported green over a file it never
+    read.
+    """
     found = []
-    for path in _BUNDLES.rglob('*.md'):
-        try:
-            text = path.read_text(encoding='utf-8')
-        except (OSError, UnicodeDecodeError):
-            continue
-        if _FIELD in text:
-            found.append(path)
+    for pattern in ('*.md', '*.py'):
+        for path in _BUNDLES.rglob(pattern):
+            try:
+                text = path.read_text(encoding='utf-8')
+            except (OSError, UnicodeDecodeError):
+                continue
+            if _FIELD in text:
+                found.append(path)
     return sorted(found)
 
 
@@ -147,7 +206,11 @@ class TestNoDocStatesTheRetiredEqualityPredicate:
             f'derived ZERO documents mentioning {_FIELD} under {_BUNDLES} — the scan '
             f'is misrooted, so a clean result here would be vacuous'
         )
-        for known in (_PRODUCER_DOC, _AR_SKILL, _BRANCH_CLEANUP_REREVIEW):
+        # Asserting a known member of EACH half of the population is what makes a
+        # revert to an *.md-only scan fail loudly here rather than silently dropping
+        # the .py half back out. Why the population globs *.py at all is stated once,
+        # in _doc_population()'s own docstring.
+        for known in (_PRODUCER_DOC, _AR_SKILL, _BRANCH_CLEANUP_REREVIEW, _CONSUMER_SCRIPT):
             assert known in population, f'{known} missing from the derived population'
 
     def test_no_population_member_states_the_retired_predicate(self):
@@ -190,3 +253,115 @@ class TestNoDocStatesTheRetiredEqualityPredicate:
     def test_shipped_wording_is_not_flagged(self, shipped):
         """Matched negative control — correct wording must NOT trip the detector."""
         assert not _states_retired_equality(shipped)
+
+
+def _function_node(name: str) -> ast.FunctionDef:
+    """The (possibly nested) function definition ``name`` in the producer module."""
+    tree = ast.parse(SCRIPT_PATH.read_text(encoding='utf-8'))
+    node = next(
+        (node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef) and node.name == name),
+        None,
+    )
+    assert node is not None, f'{name} not found — the derivation anchor moved'
+    return node
+
+
+def _functions_reached_with_head_sha(entry: str) -> set[str]:
+    """Every module function ``entry`` hands ``head_sha`` to, transitively.
+
+    Derived over the call CHAIN rather than pinned to one call site, because the
+    envelope builder may decide the verdict inline or delegate it to a named helper
+    and both are the same contract — ``head_sha`` reaching the predicate. Following
+    the chain keeps the guard true across that refactor while still failing when the
+    chain is severed, which is the regression it exists to catch. The visited set
+    bounds the walk against recursion.
+    """
+    tree = ast.parse(SCRIPT_PATH.read_text(encoding='utf-8'))
+    module_functions = {node.name for node in tree.body if isinstance(node, ast.FunctionDef)}
+    reached: set[str] = set()
+    pending = [entry]
+    while pending:
+        node = _function_node(pending.pop())
+        for call in ast.walk(node):
+            if not (isinstance(call, ast.Call) and isinstance(call.func, ast.Name)):
+                continue
+            if call.func.id not in module_functions or call.func.id in reached:
+                continue
+            if not any(isinstance(arg, ast.Name) and arg.id == 'head_sha' for arg in call.args):
+                continue
+            reached.add(call.func.id)
+            pending.append(call.func.id)
+    return reached
+
+
+class TestTheCommentArmDerivesItsVerdict:
+    """(c) The comment arm reads the body through the derived predicate, and no doc pins it."""
+
+    def test_the_envelope_builder_hands_head_sha_to_the_derived_predicate(self):
+        """``await_fresh_review`` reaches the SAME predicate ``_match_review`` does.
+
+        The review arm's verdict is implied by its match (which already required the
+        SHA), so the envelope builder reaching the predicate with ``head_sha`` at all —
+        directly, or through the one helper it delegates the verdict to — is what the
+        comment arm's body-derived verdict consists of. A regression to the structural
+        constant severs that chain and fails here.
+        """
+        predicate = _head_sha_predicate_name()
+        reached = _functions_reached_with_head_sha('await_fresh_review')
+
+        assert predicate in reached, (
+            f'await_fresh_review reaches no call of {predicate} with head_sha (reached '
+            f'{sorted(reached)}) — the comment arm publishes head_sha_verified without '
+            f'reading the comment body'
+        )
+
+    def test_no_population_member_states_the_retired_comment_constant(self):
+        population = _doc_population()
+        offenders = [
+            str(path.relative_to(_BUNDLES))
+            for path in population
+            if _states_retired_comment_constant(path.read_text(encoding='utf-8'))
+        ]
+
+        assert not offenders, (
+            f'{len(offenders)} of {len(population)} documents pin the issue-comment arm to '
+            f'head_sha_verified: false: {offenders}. The shipped verdict is DERIVED from '
+            f'the comment body; cross-reference the producer signal table instead.'
+        )
+
+    @pytest.mark.parametrize(
+        'planted',
+        [
+            '`matched_signal: issue_comment`, `matched_comment: {…}`, `head_sha_verified: false`',
+            'the issue comment signal (`head_sha_verified: false`)',
+            'an issue comment carries no reviewed-commit SHA, so it cannot verify',
+            # The inflection the recurrence actually escaped on: arm (b) was keyed on
+            # ``carries`` alone, so this live phrasing passed a guard written to catch it.
+            # Without this param, reverting arm (b) to that literal leaves every control green.
+            'answered the re-review with a comment carrying no reviewed-commit SHA (`head_sha_verified: false`)',
+            # The past tense completes the inflection set the arm claims to cover. It is
+            # the register these docs actually use ("AND carried that shape's declared
+            # content marker" sits inside the scanned population), so omitting it left
+            # the class one inflection wide open while the comment asserted completeness.
+            'a comment that carried no reviewed-commit SHA (`head_sha_verified: false`)',
+            # Drawn verbatim from the two shapes that escaped the line-bound window on
+            # main: markdown emphasis around the negation, and a mid-sentence wrap.
+            'the bot answers with a comment that carries **no reviewed-commit SHA**',
+            'an incremental-review decline: a comment\ncarrying no reviewed-commit SHA',
+        ],
+    )
+    def test_planted_constant_is_detected(self, planted):
+        """Positive control — each retired comment-arm phrasing must trip the detector."""
+        assert _states_retired_comment_constant(planted)
+
+    @pytest.mark.parametrize(
+        'shipped',
+        [
+            '`matched_signal: issue_comment`, `head_sha_verified` derived from the comment body',
+            'returning `matched_signal: issue_comment`. On that arm the verdict is derived',
+            '`matched: true` AND `head_sha_verified: false` — the incremental-review decline',
+        ],
+    )
+    def test_shipped_comment_wording_is_not_flagged(self, shipped):
+        """Matched negative control — the derived-verdict wording must NOT trip the detector."""
+        assert not _states_retired_comment_constant(shipped)
