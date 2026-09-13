@@ -48,11 +48,20 @@ from conftest import get_script_path, get_skill_dir
 #: gate (``_is_participation_evidence``) and the per-shape content-marker accessor it
 #: reads (``participation_evidence_marker``) decide whether a comment can grant a
 #: credit at all, so they are members of the family.
+#:
+#: Two members answer that same question about the gate ITSELF rather than about one
+#: comment, and are seeded for that reason: ``participation_evidence_markers`` exposes
+#: the declared key set, and ``_validate_participation_evidence_markers`` rejects a key
+#: outside the record's declared shapes at load. A marker keyed on a typo gates
+#: nothing and credits on shape alone, so what enforces the keys decides whether the
+#: gate runs at all.
 SEED_SYMBOLS: tuple[str, ...] = (
     '_reviewed_at_merge_candidate',
     'participation_requires_update',
     'participation_evidence',
     'participation_evidence_marker',
+    'participation_evidence_markers',
+    '_validate_participation_evidence_markers',
     '_is_participation_evidence',
     'head_sha_verified',
     'stale_participation',
@@ -162,7 +171,10 @@ SITE_EXPECTATIONS: dict[str, SiteExpectation] = {
         'yes',
         'Declares each bot’s participation_evidence, the per-shape participation_evidence_markers '
         'content gate, and participation_requires_update. A pure read over the parsed standards '
-        'docs — it observes nothing, so it anchors on nothing.',
+        'docs — it observes nothing, so it anchors on nothing. It does REJECT one malformation at '
+        'load: a marker keyed outside the record’s own participation_evidence raises '
+        'BotRegistryError, because that key gates nothing and the shape would keep crediting on '
+        'shape alone. Validation of the data it serves, not an observation of the PR.',
     ),
     f'{_SKILLS}/automatic-review/scripts/review_completeness.py': SiteExpectation(
         'producer_sets',
