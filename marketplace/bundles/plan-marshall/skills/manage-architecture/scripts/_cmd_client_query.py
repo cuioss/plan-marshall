@@ -830,14 +830,21 @@ def resolve_project_build_notations(project_dir: str = '.') -> frozenset[str]:
 
     **Cost.** This runs the same live crawl ``architecture resolve`` runs
     (memoized per process, but the first call pays for it). That crawl is the
-    CHEAP one: it parses each module's build file with stdlib XML, walks the
-    worktree filesystem to build the per-module file inventories, and shells out
-    to ``git`` once for the working-tree currency hash. It does **not** run a
-    build tool per module — the lazy Maven enrich path
-    (``help:all-profiles dependency:tree``) is reached only by
-    :func:`resolve_command` for a profile-derived canonical and by the
-    dependency-graph path, and a command-map sweep triggers neither. Call it once
-    per process and reuse the result; do not call it per candidate.
+    CHEAP one: it parses each module's build file with stdlib XML and walks the
+    worktree filesystem to build the per-module file inventories, and the
+    filesystem walk is the dominant cost. It does **not** run the per-module
+    Maven enrich (``help:all-profiles dependency:tree``) — that path is reached
+    only by :func:`resolve_command` for a profile-derived canonical and by the
+    dependency-graph path, and a command-map sweep triggers neither.
+
+    This sweep also does **not** shell out to ``git``. The working-tree currency
+    hash is produced by ``current_worktree_sha``, which only the freshness
+    surfaces call (:func:`get_project_info` and ``build_generation``); the crawl
+    itself never reaches it, and neither does the command-map walk below. Naming
+    that subprocess here would attribute to this function a cost it does not
+    cause.
+
+    Call it once per process and reuse the result; do not call it per candidate.
 
     Args:
         project_dir: Project root to crawl. Defaults to the current directory.

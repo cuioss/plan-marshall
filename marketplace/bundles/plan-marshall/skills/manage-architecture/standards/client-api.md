@@ -802,8 +802,10 @@ elided[0]:
 - Path matches no module: `module: null` with `status: success` — and, when no
   in-scope category was elided, `truncated: false`, so the negative is
   trustworthy rather than a bare unqualified miss.
-- **Unclaimed attribution residue**: `attributor_count` separates two states a
-  bare `module: null` collapses. The two MUST be distinguishable without
+- **Unclaimed attribution residue**: a path is *claimed* when some Axis-D
+  attributor named an owning module for it — the resolved case above; it is
+  *unclaimed* when none did. `attributor_count` separates the two states a bare
+  `module: null` collapses. The two MUST be distinguishable without
   inspecting `module` or the claim list — the same fail-closed discipline the
   `graph` family applies via `resolver_count`:
 
@@ -861,6 +863,46 @@ category names and true counts. Both `truncated` (bool) and `elided`
 are ALWAYS present, so callers branch without a `KeyError` (ADR-009 fail-closed
 reporting).
 
+**`count` and `file_count` name two different populations.** One physical file
+can be inventoried by more than one module, so a row is not a file:
+
+| Field | Population |
+|-------|------------|
+| `count` | Result **ROWS** — one per `(module, category, path)` hit. A file two modules inventory contributes two rows. |
+| `file_count` | **DISTINCT paths** in `results`. That same file counts once. |
+
+A caller asking *"how many files match this glob?"* reads `file_count`; a caller
+ranking module-attributed hits reads the `results` rows. Neither is wrong — they
+answer different questions, and both are named so the population is never left
+implicit. Publishing `count` alone left it hybrid: after the ownership collapse
+below it is neither a stable row count nor a file count.
+
+**An Axis-D ownership claim outranks the root crawl.** When several modules
+inventory one path, the reader collapses those duplicate rows onto the single row
+of the module that OWNS the path through an Axis-D claim — the root module's
+whole-tree crawl yields to the explicit claim. Three boundaries make the rule
+total:
+
+- A **claimed** path's duplicate rows collapse to the owner's row.
+- An **unclaimed** duplicate is left untouched — both rows survive, and `count`
+  exceeds `file_count` by the duplication. The collapse fixes exactly the corpus a
+  bundle has claimed and nothing else.
+- A path with a **single row is never dropped**, claimed or not. A claimed file
+  the owner does not itself inventory (a repo-root prose doc the documentation
+  module claims but does not walk) keeps its lone crawled row.
+
+The consequence a caller must not misread: **`module` names the INVENTORYING
+module, not the owner.** The collapse picks the owner's row only when the owner
+inventoried the path; where it did not, the surviving row still names whichever
+module crawled the file, and that row's `module` is never rewritten to the owner.
+`README.md` is the worked example — the `documentation` module claims it but does
+not walk it, so `find` reports it under the module whose crawl saw it.
+[`which-module`](#which-module) is the authoritative ownership answer; a caller
+that needs the owner asks that verb rather than reading `module` off a `find` row.
+The merge semantics behind the claim are contracted in
+[ext-point-path-attribution.md](../../extension-api/standards/ext-point-path-attribution.md)
+and are not restated here.
+
 **Output** (TOON, self-scanned / clean):
 
 ```toon
@@ -868,6 +910,7 @@ status: success
 pattern: "*SKILL.md"
 category: null
 count: 3
+file_count: 3
 results[3]{module,category,path}:
   pm-dev-java,skill,marketplace/bundles/pm-dev-java/skills/junit-core/SKILL.md
   pm-dev-java,skill,marketplace/bundles/pm-dev-java/skills/lombok/SKILL.md
@@ -876,6 +919,10 @@ truncated: false
 elided[0]:
 ```
 
+Here `count` and `file_count` coincide because each hit is a different file. They
+**diverge** on an unclaimed cross-module duplicate: one file inventoried by two
+modules is two rows and one path, so `count: 2` rides with `file_count: 1`.
+
 **Output** (TOON, truthful truncation — self-scan impossible):
 
 ```toon
@@ -883,6 +930,7 @@ status: success
 pattern: "test/plan-marshall/manage-status/*"
 category: null
 count: 0
+file_count: 0
 results[0]:
 truncated: true
 elided[1]{module,category,elided_count,sample_size}:
@@ -897,8 +945,8 @@ elided[1]{module,category,elided_count,sample_size}:
   caveat that still governs `files`. When the self-scan is impossible the
   result carries `truncated: true` with the elided category names and their
   true counts instead of a bare `count: 0`.
-- No matches: `count: 0`, `results: []`, `status: success`, and — when no
-  in-scope category was elided — `truncated: false`, so the negative is
+- No matches: `count: 0`, `file_count: 0`, `results: []`, `status: success`, and
+  — when no in-scope category was elided — `truncated: false`, so the negative is
   trustworthy.
 - Unrecognised category (not a member of `FILE_CATEGORIES`): returns
   `status: error`, `error: unknown_category`, and the sorted
@@ -1037,11 +1085,24 @@ elided[0]:
 
 Here `count` (rows) and `file_count` (distinct paths) coincide because each hit
 is a different file. They **diverge** when one physical file is inventoried by
-more than one module (an unclaimed cross-module duplicate `search` leaves intact):
-that file is one row per attributing module, so `count` exceeds `file_count`. A
-caller asking "how many files contain this?" reads `file_count`; a caller ranking
-module-attributed hits reads the `results` rows. Both populations are named so
-neither is left implicit.
+more than one module and no Axis-D claim owns it — an *unclaimed* cross-module
+duplicate, which `search` leaves intact: that file is one row per attributing
+module, so `count` exceeds `file_count`. A *claimed* duplicate is the other case:
+an Axis-D ownership claim outranks the root crawl, so its duplicate rows collapse
+onto the owning module's single row, while a single-rowed claimed path is never
+dropped. `search` applies exactly the precedence [`find`](#find) documents — see
+§ find for the three boundaries, for why `module` names the **inventorying**
+module rather than the owner, and for `which-module` being the authoritative
+ownership answer. A caller asking "how many files contain this?" reads
+`file_count`; a caller ranking module-attributed hits reads the `results` rows.
+Both populations are named so neither is left implicit.
+
+Ownership is resolved **before** the body scan, not after it, so a claimed path is
+opened and matched once rather than once per attributing module. That is what
+makes `files_scanned` a count of files OPENED rather than of inventory rows
+walked, and it is why a multiply-inventoried unreadable file yields exactly one
+`unreadable` entry instead of one per module — repeats collapse, a path is never
+dropped.
 
 **Output** (TOON, genuinely-absent token — a trustworthy negative):
 

@@ -164,8 +164,11 @@ Each element is an object:
 | `target_bundle` | string | The referenced module's name, projected from whatever granularity the detecting analysis used |
 | `dep_type` | string | Reference kind: one of `script`, `skill`, `import`, `path`, `implements`, `lsp`. The first five come from the marketplace dependency-detection engine; `lsp` comes from the discovery-time language-server harvest and is present only when that harvest ran |
 | `resolved` | bool | `false` when the referenced target does not exist. Unresolved references are **stamped, not dropped**, so a resolver can suppress and report them rather than silently losing them |
+| `occurrences` | int \| absent | **Optional, default `1`.** How many source references collapsed onto this one deduplicated element. Absent means `1`, so a materializer that does not track the multiplicity renders correctly and a consumer never has to distinguish absent from one |
 
 Entries are deduplicated on the `(target_bundle, dep_type, resolved)` triple, keeping the field proportional to the module count rather than to the raw reference count. A module with no outbound references carries an empty array, not a missing key.
+
+That deduplication is why `occurrences` exists. The element count measures **distinct triples**; the raw reference count is recoverable only by summing `occurrences` across them. A consumer that reports the element count under a reference-shaped name — "N reference(s)" — states a number of one population under the name of another, and the two agree only when every element stands for exactly one reference. `DerivationResolverBase._aggregate_notes` is the shared consumer that observes the split: it reports the summed reference total while drawing its bounded sample from the distinct elements. A materializer that omits the field contributes `1` per element, which is exactly the pre-existing behaviour.
 
 This field is **not** part of the shared required field set: it is populated only by extensions whose Axis-C resolver joins over cross-reference data, and more than one resolver may join over the same module's entries. See [ext-point-derivation-resolver.md](ext-point-derivation-resolver.md) § Current implementations for which resolvers ship.
 
@@ -349,7 +352,7 @@ Extensions providing module discovery must:
 - Use the technology-native dependency format for the ecosystem — see § [Dependency Format](#dependency-format) for the per-ecosystem string shape and scope vocabulary
 - Include `commands` with resolved canonical command strings (not nested)
 - All paths project-relative (not absolute)
-- Populate `component_refs` **only** when the extension ships an Axis-C derivation resolver that joins over it. It is optional and extension-specific, never part of the shared required field set. When populated, every element must carry all three of `target_bundle`, `dep_type` (one of `script` / `skill` / `import` / `path` / `implements`), and `resolved`; unresolved references must be stamped `resolved: false` rather than dropped, and a module with no outbound references must carry an empty array rather than omit the key
+- Populate `component_refs` **only** when the extension ships an Axis-C derivation resolver that joins over it. It is optional and extension-specific, never part of the shared required field set. When populated, every element must carry all three of `target_bundle`, `dep_type` (drawn from the kind vocabulary the [`component_refs` element table](#component_refs-optional-extension-specific) declares — that table is the source of truth for the accepted set) and `resolved`; `occurrences` is optional and defaults to `1`, and a materializer that collapses several references onto one triple SHOULD populate it so the reference total stays recoverable. Unresolved references must be stamped `resolved: false` rather than dropped, and a module with no outbound references must carry an empty array rather than omit the key
 
 ---
 

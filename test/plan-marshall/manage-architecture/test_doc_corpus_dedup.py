@@ -45,8 +45,23 @@ def test_claimed_duplicate_collapses_to_owner(monkeypatch):
 
 
 def test_single_row_claimed_path_unchanged(monkeypatch):
-    # A claimed file the owner does not itself inventory (a repo-root prose doc)
-    # keeps its lone crawled row rather than vanishing.
+    """A claimed path with one row keeps it — and that row still names the CRAWLER.
+
+    ``README.md`` is the worked example, and the consequence is the one a caller
+    most easily misreads. The ``documentation`` module CLAIMS the repo-root prose
+    docs but does not walk them, so the only inventory row for ``README.md`` comes
+    from the project-root crawl. The collapse picks the owner's row **only when
+    the owner inventoried the path**; here it did not, so there is nothing to
+    collapse onto and the lone crawled row survives unchanged — it is never
+    rewritten to name the owner.
+
+    Therefore a ``find`` / ``search`` row's ``module`` names the **inventorying**
+    module, NOT the owner, and a caller that needs ownership must ask
+    ``which-module`` — the authoritative answer — rather than reading ``module``
+    off a result row. Dropping the row instead (the alternative to leaving it
+    intact) would lose the path from the inventory altogether, which is why the
+    single-row case is guarded separately from the duplicate case above.
+    """
     monkeypatch.setattr(_handlers, 'resolve_path_attribution', _stub_attribution({'README.md': 'documentation'}))
     rows = _rows(('default', 'doc', 'README.md'))
     out = _handlers._collapse_claimed_duplicate_rows(rows, ['default', 'documentation'])

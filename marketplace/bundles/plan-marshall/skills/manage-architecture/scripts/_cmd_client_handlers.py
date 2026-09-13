@@ -1106,6 +1106,19 @@ def cmd_find(args: argparse.Namespace) -> dict[str, Any]:
     instead of a bare negative. The result always carries ``truncated: bool`` and
     ``elided: list[dict]`` (empty when clean) per ADR-009 fail-closed reporting.
 
+    **The count's population is explicit**, exactly as it is on
+    :func:`cmd_search`. ``count`` is the number of result ROWS — one per
+    ``(module, category, path)`` hit — so a single physical file inventoried by
+    two modules (an unclaimed cross-module duplicate that
+    :func:`_collapse_claimed_duplicate_rows` leaves intact, because no Axis-D
+    claim owns it) contributes two rows and a ``count`` of 2. ``file_count`` is
+    the number of DISTINCT paths in ``results``, so that same file counts once.
+    A caller asking "how many files match this glob?" reads ``file_count``; a
+    caller ranking module-attributed hits reads the ``results`` rows. Publishing
+    only ``count`` left the population implicit and the number hybrid — after the
+    claimed-duplicate collapse it is neither a file count nor a stable row count
+    — so both are named.
+
     An unrecognised ``--category`` is an ``unknown_category`` error rather than a
     confident ``count: 0`` — the same two-way split ``cmd_files`` applies, and
     for the same reason. A recognised category that no module populates still
@@ -1147,6 +1160,7 @@ def cmd_find(args: argparse.Namespace) -> dict[str, Any]:
         'pattern': pattern,
         'category': category_filter,
         'count': len(results),
+        'file_count': len({row['path'] for row in results}),
         'results': results,
         'truncated': bool(truncation_entries),
         'elided': truncation_entries,
@@ -1217,13 +1231,20 @@ def cmd_search(args: argparse.Namespace) -> dict[str, Any]:
     pair, for the same fail-closed reason the sibling verbs carry
     ``resolver_count`` / ``attributor_count``:
 
-    * ``files_scanned`` (int) — ``count: 0`` with ``files_scanned: 0`` means
-      *nothing was searched*; ``count: 0`` with ``files_scanned: N`` means *N
-      files were searched and the pattern is genuinely absent*. The two are never
-      the same observable condition.
+    * ``files_scanned`` (int) — the number of DISTINCT files opened and scanned,
+      which is the population its name claims. It is not a count of inventory
+      rows walked: a file two modules inventory is read once and counted once,
+      because ownership is resolved before the scan and the scan is memoized on
+      the path. ``count: 0`` with ``files_scanned: 0`` means *nothing was
+      searched*; ``count: 0`` with ``files_scanned: N`` means *N files were
+      searched and the pattern is genuinely absent*. The two are never the same
+      observable condition.
     * ``unreadable`` (list of ``{path, reason}``, empty when clean) — a file
       skipped for a decode or OS error is REPORTED, never silently suppressed
-      (ADR-014). Binary and undecodable files land here.
+      (ADR-014). Binary and undecodable files land here. There is at most ONE
+      entry per path: a multiply-inventoried file that cannot be read is
+      collapsed to a single report rather than repeated once per attributing
+      module. Repeats collapse; a path is never dropped.
 
     Deliberately NOT echoed: a ``mode`` field. ``--content`` is the only mode
     today, so echoing it would be a constant-valued response key — vacuous now,
@@ -1262,10 +1283,8 @@ def cmd_search(args: argparse.Namespace) -> dict[str, Any]:
         return {'status': 'error', 'error': str(e)}
 
     project_path = Path(args.project_dir)
-    results: list[dict[str, Any]] = []
+    candidates: list[dict[str, Any]] = []
     truncation_entries: list[dict[str, Any]] = []
-    unreadable: list[dict[str, str]] = []
-    files_scanned = 0
 
     for name in module_names:
         try:
@@ -1277,20 +1296,41 @@ def cmd_search(args: argparse.Namespace) -> dict[str, Any]:
         for category, path in pairs:
             if category_filter and category != category_filter:
                 continue
+            candidates.append({'module': name, 'category': category, 'path': path})
+
+    # Ownership is resolved BEFORE the scan rather than after it. A claimed path
+    # keeps only its owner's row here, so the loop below opens and regex-scans it
+    # once instead of once per attributing module. The collapse is keyed on the
+    # path alone, so running it on candidates rather than on hits yields the same
+    # rows — a path that matches nothing contributes no row either way — while
+    # moving the saved reads off the hot path.
+    candidates = _collapse_claimed_duplicate_rows(candidates, module_names, args.project_dir)
+
+    # An unclaimed cross-module duplicate legitimately keeps a row per module, so
+    # collapsing is not on its own enough to open each file once. Memoizing the
+    # scan on the path is what makes ``files_scanned`` a count of FILES OPENED —
+    # the population its name claims — rather than of inventory rows walked.
+    match_counts: dict[str, int] = {}
+    unreadable_by_path: dict[str, str] = {}
+    results: list[dict[str, Any]] = []
+    for candidate in candidates:
+        path = candidate['path']
+        if path not in match_counts and path not in unreadable_by_path:
             try:
                 text = (project_path / path).read_text(encoding='utf-8')
             except UnicodeDecodeError:
-                unreadable.append({'path': path, 'reason': 'decode_error'})
-                continue
+                unreadable_by_path[path] = 'decode_error'
             except OSError:
-                unreadable.append({'path': path, 'reason': 'os_error'})
-                continue
-            files_scanned += 1
-            match_count = sum(1 for _ in compiled.finditer(text))
-            if match_count:
-                results.append({'module': name, 'category': category, 'path': path, 'match_count': match_count})
+                unreadable_by_path[path] = 'os_error'
+            else:
+                match_counts[path] = sum(1 for _ in compiled.finditer(text))
+        match_count = match_counts.get(path)
+        if match_count:
+            results.append({**candidate, 'match_count': match_count})
 
-    results = _collapse_claimed_duplicate_rows(results, module_names, args.project_dir)
+    files_scanned = len(match_counts)
+    unreadable = [{'path': path, 'reason': reason} for path, reason in unreadable_by_path.items()]
+
     results.sort(key=lambda item: (item['module'], item['category'], item['path']))
 
     return {
