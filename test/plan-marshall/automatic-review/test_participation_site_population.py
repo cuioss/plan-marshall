@@ -171,10 +171,11 @@ SITE_EXPECTATIONS: dict[str, SiteExpectation] = {
         'yes',
         'Declares each bot’s participation_evidence, the per-shape participation_evidence_markers '
         'content gate, and participation_requires_update. A pure read over the parsed standards '
-        'docs — it observes nothing, so it anchors on nothing. It does REJECT one malformation at '
-        'load: a marker keyed outside the record’s own participation_evidence raises '
-        'BotRegistryError, because that key gates nothing and the shape would keep crediting on '
-        'shape alone. Validation of the data it serves, not an observation of the PR.',
+        'docs — it observes nothing, so it anchors on nothing. It does REJECT three malformations '
+        'of that gate map at load, each raising BotRegistryError: a non-map declaration, a key '
+        'outside the record’s own participation_evidence, and a blank or non-string marker value. '
+        'All three leave the shape crediting on shape alone while the doc reads as gated. '
+        'Validation of the data it serves, not an observation of the PR.',
     ),
     f'{_SKILLS}/automatic-review/scripts/review_completeness.py': SiteExpectation(
         'producer_sets',
