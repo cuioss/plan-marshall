@@ -56,9 +56,21 @@ The archived `status.json` is the plan's **permanent record**, so `archive` clos
 
 1. **Every** phase recorded as `in_progress` is closed to `done` — not just the first one found. A plan holding more than one open phase (a loop-back re-entry is the ordinary way to get there) would otherwise keep the second one recorded as running in the permanent record, so the archive would assert that a phase is still in flight for a plan that has finished.
 2. Every phase whose status is in `UNTOUCHED_PHASE_STATUSES` — derived as `VALID_PHASE_STATUSES - {in_progress, done}`, today exactly `{pending}` — is **left alone**. `in_progress` is the only *closable* status: it names a phase that really did start, so recording it `done` closes a genuine record. Writing `done` onto a `pending` phase would instead fabricate a fresh false record of work that never happened, which is the opposite of the defect in (1) and equally a falsification. A never-started phase therefore stays `pending` in the archive.
-3. `current_phase` becomes `complete` once **no phase remains `in_progress`**. This is deliberately *not* "every phase is `done`": that predicate can never hold for a plan abandoned mid-lifecycle, whose untouched `pending` phases are not `done` and must stay that way, so such a plan was archived frozen at its last phase and never reached the post-finalize sentinel its dormant consumers match on (the phase-6-finalize `current_phase: complete` check, and `cleanup --filter complete`).
+3. `current_phase` becomes `complete` once the phase structure was **read in full** and **no phase remains `in_progress`**. The second conjunct is deliberately *not* "every phase is `done`": that predicate can never hold for a plan abandoned mid-lifecycle, whose untouched `pending` phases are not `done` and must stay that way, so such a plan was archived frozen at its last phase and never reached the post-finalize sentinel its dormant consumers match on (the phase-6-finalize `current_phase: complete` check, and `cleanup --filter complete`).
 
 A plan abandoned mid-lifecycle consequently archives as `current_phase: complete` with its started phases `done` and its unstarted phases still `pending` — a record that says what happened rather than one that claims the whole plan ran.
+
+#### An unexaminable `phases` structure is not an empty one
+
+`_status_core.in_progress_phases` returns an `OpenPhaseScan`, not a list: the phases it positively established as `in_progress`, plus a note per part of the structure it could **not** classify (`phases` absent or not a list, a row that is not a mapping, a row whose `status` is outside `VALID_PHASE_STATUSES`). An empty result therefore no longer answers two questions with one value — `examinable` says whether the answer is complete. The type raises on `bool()` for the same reason: `if not scan:` cannot tell "nothing is open" from "could not look", and that conflation is what let an unreadable record be archived as `complete` and counted as a clean zero.
+
+The two consumers handle the unexaminable result separately, each in the direction its own job demands:
+
+| Consumer | On an unexaminable `phases` structure |
+|---|---|
+| `archive`, **no** `--reason` | **Refuses** with `error: phases_unexaminable`. The gate below cannot establish that `6-finalize` is closed, and a guard whose job is to refuse fails closed rather than falling through. A deliberate `--reason` archive is the recorded way past it. |
+| `archive`, **with** `--reason` | Proceeds, but **preserves** the existing `current_phase` instead of writing `complete`, and reports `phase_closure: partial` with a reason naming the shortfall. |
+| `census` | Counts the plan in `population` (its `status.json` parsed, so it is a member), reports any open phase it did establish, and degrades the cohort to `coverage: partial` with the plan named in `reason` — the same shortfall machinery an unprobeable directory entry already used. |
 
 The predicate behind (1) and (3) is `_status_core.in_progress_phases`, and the `census` verb's open-phase reporting consumes that same function. The set of phases archive closes and the set census reports as open are therefore one answer to one question, rather than two local re-spellings of `status == in_progress` free to drift apart.
 

@@ -13,6 +13,7 @@ from _status_core import (
     TITLE_TOKEN_OWNER_CLI,
     TITLE_TOKEN_OWNERS,
     TITLE_TOKEN_STATES,
+    OpenPhaseScan,
     _surface_drive,
     _try_read_status_json,
     get_plans_dir,
@@ -41,7 +42,12 @@ from file_ops import (
     get_worktree_root,
     now_utc_iso,
 )
-from marketplace_paths import PLAN_DIR_NAME, base_dir_override_active, resolve_main_anchored_path
+from marketplace_paths import (
+    PLAN_DIR_NAME,
+    WORKTREES_DIRNAME,
+    base_dir_override_active,
+    resolve_main_anchored_path,
+)
 
 # Metadata fields that are semantically boolean. The ``metadata --set`` CLI
 # receives every value as a raw string; for these keys the raw string is
@@ -875,13 +881,6 @@ CENSUS_COVERAGE_UNEVALUATED = 'unevaluated'
 CENSUS_ANCHOR_MAIN = 'main'
 CENSUS_ANCHOR_OVERRIDE = 'override'
 
-#: Trailing segment of the main-anchored worktree container. ``constants.py``
-#: deliberately exports no name for it ("the worktree root is intentionally NOT
-#: a constant here"), and ``file_ops`` spells the same literal inline where it
-#: composes ``<plan-root>/.plan/local/worktrees``; this is that segment, joined
-#: onto the main-anchored base rather than onto a cwd-resolved one.
-CENSUS_WORKTREES_DIRNAME = 'worktrees'
-
 #: Outcome of one attempt to list a directory of plan directories.
 _SCAN_SCANNED = 'scanned'
 _SCAN_ABSENT = 'absent'
@@ -897,11 +896,13 @@ class _ContainerScan(NamedTuple):
     The caller converts them into the published row, which is where the
     never-a-bare-zero rule is enforced.
 
-    The two shortfalls are carried SEPARATELY rather than summed here, because
-    they are different facts: an unreadable ``status.json`` belongs to a
-    directory already established to be a plan, while an unexaminable entry is
-    one whose membership could not be established at all. The caller sums them
-    into the published ``unreadable_count`` and names each in the ``reason``.
+    The three shortfalls are carried SEPARATELY rather than summed here, because
+    they are different facts and send a reader to different places: an unreadable
+    ``status.json`` belongs to a directory already established to be a plan; an
+    unexaminable ENTRY is one whose membership could not be established at all;
+    an unexaminable PHASES structure belongs to an established member whose
+    open-phase set is nonetheless unknown. The caller sums them into the
+    published ``unreadable_count`` and names each in the ``reason``.
 
     Attributes:
         state: ``scanned`` | ``absent`` | ``unlistable``.
@@ -913,6 +914,12 @@ class _ContainerScan(NamedTuple):
         unexaminable_ids: Names of entries that could not be examined at all, so
             their membership is unknown. NOT counted in ``population`` — nothing
             established they are plans — but never dropped either.
+        unexaminable_phase_ids: Names of plans whose ``status.json`` parsed but
+            whose ``phases`` could not be read in full, so their open-phase set
+            is unknown. These ARE counted in ``population`` — the ``status.json``
+            established them as members — and any open phase the scan did
+            establish is still reported in ``records``; what is unknown is
+            whether that set is complete.
     """
 
     state: str
@@ -921,16 +928,22 @@ class _ContainerScan(NamedTuple):
     records: list[dict[str, Any]]
     unreadable_ids: list[str]
     unexaminable_ids: list[str]
+    unexaminable_phase_ids: list[str]
 
 
-def _open_phase_names(status: dict[Any, Any]) -> list[str]:
-    """Return the NAMES of every phase recorded as ``in_progress``.
+def _open_phase_names(scan: OpenPhaseScan) -> list[str]:
+    """Return the NAMES of the phases one scan established as ``in_progress``.
 
     A thin naming projection over :func:`_status_core.in_progress_phases`, which owns
     the predicate. The census and ``cmd_archive``'s closure loop therefore ask the same
     question through the same function: the set of phases the archive closes and the set
     this verb reports as open cannot drift into two different answers, which they would
     the moment either side re-spelled ``status == in_progress`` locally.
+
+    The projection covers ``scan.phases`` only — the phases positively ESTABLISHED as
+    open. Whether the scan managed to read the whole structure is a separate fact,
+    carried by ``scan.examinable`` and reported by the caller as a coverage shortfall;
+    folding it in here would produce a name list that silently means two things.
 
     The predicate is the ``phases[]`` status and nothing else — deliberately NOT
     ``metadata.loop_back_reentry``. That marker records that a loop-back was SCHEDULED,
@@ -939,7 +952,7 @@ def _open_phase_names(status: dict[Any, Any]) -> list[str]:
     an ``in_progress`` phase, which is exactly the population this census exists to
     find.
     """
-    return [str(phase.get('name', '')) for phase in in_progress_phases(status)]
+    return [str(phase.get('name', '')) for phase in scan.phases]
 
 
 def _scan_plan_container(container: Path, cohort: str) -> _ContainerScan:
@@ -963,21 +976,30 @@ def _scan_plan_container(container: Path, cohort: str) -> _ContainerScan:
     and it is CREDITED rather than skipped: it lands in ``unexaminable_ids``, so
     the cohort reports ``partial`` over what it did read instead of publishing
     ``complete`` over an enumeration it knows fell short.
+
+    A member whose ``status.json`` parsed but whose ``phases`` structure could
+    not be read in full is the fourth, one level further in. It is a member and
+    is counted as one, and whatever open phase the scan DID establish is still
+    reported — but ``in_progress_phases`` says the set may be incomplete, so the
+    plan lands in ``unexaminable_phase_ids`` and degrades the cohort exactly as
+    the other shortfalls do. Publishing ``open_phase_count`` over it as though
+    the record had been read is the false zero this verb exists to refuse.
     """
     try:
         entries = sorted(container.iterdir())
     except FileNotFoundError:
-        return _ContainerScan(_SCAN_ABSENT, 0, 0, [], [], [])
+        return _ContainerScan(_SCAN_ABSENT, 0, 0, [], [], [], [])
     except OSError:
         # Present but unreadable (a file where a directory was expected, a
         # permission denial, an unreadable mount). Nothing was enumerated.
-        return _ContainerScan(_SCAN_UNLISTABLE, 0, 0, [], [], [])
+        return _ContainerScan(_SCAN_UNLISTABLE, 0, 0, [], [], [], [])
 
     population = 0
     unreadable = 0
     records: list[dict[str, Any]] = []
     unreadable_ids: list[str] = []
     unexaminable_ids: list[str] = []
+    unexaminable_phase_ids: list[str] = []
 
     for entry in entries:
         try:
@@ -1003,11 +1025,22 @@ def _scan_plan_container(container: Path, cohort: str) -> _ContainerScan:
             unreadable += 1
             unreadable_ids.append(entry.name)
             continue
-        open_phases = _open_phase_names(status)
+        phase_scan = in_progress_phases(status)
+        if not phase_scan.examinable:
+            unexaminable_phase_ids.append(entry.name)
+        open_phases = _open_phase_names(phase_scan)
         if open_phases:
             records.append({'cohort': cohort, 'id': entry.name, 'open_phases': open_phases})
 
-    return _ContainerScan(_SCAN_SCANNED, population, unreadable, records, unreadable_ids, unexaminable_ids)
+    return _ContainerScan(
+        _SCAN_SCANNED,
+        population,
+        unreadable,
+        records,
+        unreadable_ids,
+        unexaminable_ids,
+        unexaminable_phase_ids,
+    )
 
 
 #: Reason fragment naming entries whose membership could not be established. The
@@ -1016,15 +1049,26 @@ def _scan_plan_container(container: Path, cohort: str) -> _ContainerScan:
 #: needs to go and look.
 _UNEXAMINABLE_REASON = 'directory entries that could not be examined, so their membership is unknown'
 
+#: Reason fragment naming MEMBERS whose ``phases`` could not be read in full.
+#: Distinct from ``_UNEXAMINABLE_REASON`` one line up: that one is about entries
+#: whose membership is unknown, this one about established members whose
+#: open-phase SET is unknown. Collapsing the two wordings would send a reader
+#: looking for a directory-permission problem when the actual fault is inside a
+#: ``status.json`` that parsed perfectly well.
+_UNEXAMINABLE_PHASES_REASON = (
+    'plan(s) whose phases could not be read in full, so any open phase reported for them may be incomplete'
+)
+
 
 def _scan_shortfall_reason(scan: _ContainerScan) -> str:
     """Name every shortfall one container scan hit, as one ``;``-joined reason.
 
-    Both shortfalls feed the single published ``unreadable_count`` — each is a
-    part of the cohort that went unread — but they are named separately, because
-    an unparseable ``status.json`` and an entry nobody could examine send a
-    reader to different places. Returns ``''`` when the scan hit neither, which
-    is exactly the ``complete`` case where there is no shortfall to name.
+    All three shortfalls feed the single published ``unreadable_count`` — each is
+    a part of the cohort that went unread — but they are named separately,
+    because an unparseable ``status.json``, an entry nobody could examine and a
+    member whose phases would not read send a reader to three different places.
+    Returns ``''`` when the scan hit none, which is exactly the ``complete`` case
+    where there is no shortfall to name.
     """
     parts: list[str] = []
     if scan.unreadable:
@@ -1034,6 +1078,8 @@ def _scan_shortfall_reason(scan: _ContainerScan) -> str:
         )
     if scan.unexaminable_ids:
         parts.append(f'{_UNEXAMINABLE_REASON}: {", ".join(scan.unexaminable_ids)}')
+    if scan.unexaminable_phase_ids:
+        parts.append(f'{_UNEXAMINABLE_PHASES_REASON}: {", ".join(scan.unexaminable_phase_ids)}')
     return '; '.join(parts)
 
 
@@ -1072,12 +1118,14 @@ def _census_row(
 def _census_single_container(cohort: str, container: Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     """Build the cohort row for a store held in ONE directory (live, archived).
 
-    ``complete`` is reserved for a scan with NO shortfall of either kind: the
-    published ``unreadable_count`` sums the unparseable members and the entries
-    whose membership could not be established, and any non-zero sum degrades the
-    cohort to ``partial``. A cohort that reported ``complete`` while knowing it
-    had skipped an entry would be asserting a count over a population it had
-    failed to enumerate in full.
+    ``complete`` is reserved for a scan with NO shortfall of any kind: the
+    published ``unreadable_count`` sums the unparseable members, the entries
+    whose membership could not be established and the members whose phases could
+    not be read in full, and any non-zero sum degrades the cohort to ``partial``.
+    A cohort that reported ``complete`` while knowing it had skipped an entry —
+    or had published an ``open_phase_count`` over a record whose phases it failed
+    to read — would be asserting a count over a population it had not fully
+    enumerated.
     """
     scan = _scan_plan_container(container, cohort)
 
@@ -1097,7 +1145,7 @@ def _census_single_container(cohort: str, container: Path) -> tuple[dict[str, An
             [],
         )
 
-    shortfall = scan.unreadable + len(scan.unexaminable_ids)
+    shortfall = scan.unreadable + len(scan.unexaminable_ids) + len(scan.unexaminable_phase_ids)
     if shortfall:
         return (
             _census_row(
@@ -1144,6 +1192,10 @@ def _census_worktree_cohort(worktrees_root: Path) -> tuple[dict[str, Any], list[
     whether it holds a plan store is unknown too. It counts as one unreadable
     unit and is named, rather than skipped: a silent skip is what would let this
     cohort publish ``complete`` over a worktree nobody looked inside.
+
+    A moved-in plan whose ``phases`` could not be read in full carries the same
+    credit as it does in the single-container cohorts, qualified by the holding
+    worktree so the name stays unambiguous across them.
     """
     try:
         worktrees = sorted(worktrees_root.iterdir())
@@ -1177,6 +1229,7 @@ def _census_worktree_cohort(worktrees_root: Path) -> tuple[dict[str, Any], list[
     unreadable_ids: list[str] = []
     unlistable_stores: list[str] = []
     unexaminable: list[str] = []
+    unexaminable_phases: list[str] = []
 
     for worktree_dir in worktrees:
         try:
@@ -1197,12 +1250,13 @@ def _census_worktree_cohort(worktrees_root: Path) -> tuple[dict[str, Any], list[
             unlistable_stores.append(worktree_dir.name)
             continue
         population += scan.population
-        unreadable += scan.unreadable + len(scan.unexaminable_ids)
+        unreadable += scan.unreadable + len(scan.unexaminable_ids) + len(scan.unexaminable_phase_ids)
         records.extend(scan.records)
         unreadable_ids.extend(scan.unreadable_ids)
         # Qualified by the holding worktree: a bare entry name would be ambiguous
         # across worktrees, and this cohort's members live one level deeper.
         unexaminable.extend(f'{worktree_dir.name}/{name}' for name in scan.unexaminable_ids)
+        unexaminable_phases.extend(f'{worktree_dir.name}/{name}' for name in scan.unexaminable_phase_ids)
 
     if unreadable:
         reason_parts: list[str] = []
@@ -1215,6 +1269,8 @@ def _census_worktree_cohort(worktrees_root: Path) -> tuple[dict[str, Any], list[
             )
         if unexaminable:
             reason_parts.append(f'{_UNEXAMINABLE_REASON}: {", ".join(unexaminable)}')
+        if unexaminable_phases:
+            reason_parts.append(f'{_UNEXAMINABLE_PHASES_REASON}: {", ".join(unexaminable_phases)}')
         return (
             _census_row(
                 CENSUS_COHORT_WORKTREE,
@@ -1273,7 +1329,13 @@ def cmd_census(args: argparse.Namespace) -> dict[str, Any]:  # args unused: the 
     anchor = CENSUS_ANCHOR_OVERRIDE if base_dir_override_active() else CENSUS_ANCHOR_MAIN
 
     live_row, live_records = _census_single_container(CENSUS_COHORT_LIVE, anchor_base / DIR_PLANS)
-    worktree_row, worktree_records = _census_worktree_cohort(anchor_base / CENSUS_WORKTREES_DIRNAME)
+    # The worktree container segment is the SHARED ``WORKTREES_DIRNAME``, joined onto
+    # the main-anchored base rather than onto the cwd-resolved one
+    # ``file_ops.get_worktree_root`` uses. The two anchors differ by design and must
+    # not be collapsed; the SEGMENT is what they share, and holding one copy of it is
+    # what stops this cohort from scanning an absent path and reporting a confident
+    # ``coverage: complete`` with ``population: 0``.
+    worktree_row, worktree_records = _census_worktree_cohort(anchor_base / WORKTREES_DIRNAME)
     archived_row, archived_records = _census_single_container(CENSUS_COHORT_ARCHIVED, anchor_base / DIR_ARCHIVED)
 
     return {

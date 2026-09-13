@@ -798,7 +798,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status census
 | `coverage` | Meaning | Keys present |
 |------------|---------|--------------|
 | `complete` | The cohort was enumerated in full; every member was read. An absent cohort directory under a resolved anchor is `complete` with `population: 0` — the anchor was reachable and the store demonstrably holds nothing. | `population`, `open_phase_count`, `unreadable_count` (0). `reason` **omitted** — there is no shortfall to name. |
-| `partial` | The cohort was enumerated, but at least one entry went unread — either a member whose `status.json` would not parse, or an entry the census could not examine at all, so its membership was never established. Both count toward the shortfall; an entry of the second kind is never silently skipped, because skipping it would leave the cohort claiming `complete` over an enumeration it knows fell short. | `population` (established members only — an unexaminable entry is not counted as one), `open_phase_count`, `unreadable_count` (**non-zero**, summing both kinds), `reason` naming each. |
+| `partial` | The cohort was enumerated, but something in it went unread. Three kinds: a member whose `status.json` would not parse; an entry the census could not examine at all, so its membership was never established; and a member whose `status.json` parsed but whose `phases` could not be read in full, so its open-phase set is unknown. All three count toward the shortfall, and none is silently skipped — skipping any would leave the cohort claiming `complete` over an enumeration it knows fell short. | `population` (established members — an unexaminable *entry* is not one; a member with unreadable *phases* is), `open_phase_count` (over the open phases that WERE established), `unreadable_count` (**non-zero**, summing all three kinds), `reason` naming each kind separately. |
 | `unevaluated` | The cohort was **not enumerated at all** (its directory exists but could not be listed). | **`population`, `open_phase_count` and `unreadable_count` are ABSENT** — not zero. `reason` names the condition. |
 
 ⛔ **`unevaluated` is not zero.** The count keys are omitted rather than set to `0` because a zero published by a cohort nobody looked at is byte-identical to a verified empty store, and no reader can recover the difference. A consumer branching on `population` finds **no key** and must handle the absence; it must never substitute `0`. The rule covers `unreadable_count` for the same reason it covers the other two — on a store that was never enumerated, "zero unreadable members" is a claim about members nobody examined. Read `coverage` **first**.
@@ -806,6 +806,8 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status census
 A worktree whose plan store exists but cannot be listed may hold any number of plans, none of which were seen. Such a store counts as **one unreadable unit** (its true member count is unknowable) and degrades the cohort to `partial` with that worktree named in the `reason`, so the shortfall is reported with its real shape instead of passing as a single unreadable plan.
 
 **The open-phase predicate** is `phase['status'] == 'in_progress'` over `phases[]`, and nothing else. It is deliberately **not** keyed on `metadata.loop_back_reentry`: that marker records that a loop-back was *scheduled*, which is neither necessary nor sufficient for a phase actually being left open — a plan can carry the marker with every phase closed, and a plan with no marker can still hold an `in_progress` phase, which is exactly the population this verb exists to find.
+
+A member whose `phases` is malformed — absent, not a list, holding a row that is not a mapping, or holding a row whose `status` is outside the declared vocabulary — does **not** silently contribute `0` open phases. It stays in `population` (its `status.json` established it as a plan), any open phase that WAS established is still reported, and the cohort degrades to `partial` with the plan named in `reason`. See [status-lifecycle.md](standards/status-lifecycle.md) § "An unexaminable `phases` structure is not an empty one" for the shared predicate this and `archive` both read.
 
 **`anchor`** is `main` when the cohorts resolved through the production git-common-dir branch, or `override` when a `PLAN_BASE_DIR` / `set_base_dir()` override stood in for the main-checkout store (the branch every fixture-driven caller takes). `anchor_path` is the resolved base. Reporting both is what lets a reader tell a census of a real checkout from a census of a redirected one.
 
@@ -874,11 +876,37 @@ rule `stuck-low-confidence-archive` as the canonical remediation flag so a
 retrospective audit can distinguish intentional abandonment from neglect.
 Example values: `low_confidence`, `scope_changed`, `superseded_by_<plan_id>`.
 
+**Phase closure and the unexaminable record.** Archive closes every phase recorded `in_progress`, leaves every `pending` phase alone, and writes `current_phase: complete` once the phase structure was read IN FULL and nothing remains open — see [status-lifecycle.md](standards/status-lifecycle.md) § "Phase-closure post-condition". `phase_closure` publishes which of those two paths ran, always, in the same tri-state shape the `census` cohort row uses: `complete`, or `partial` with a `phase_closure_reason` naming the shortfall. A record whose `phases` could not be read in full keeps the `current_phase` it already had rather than being written `complete` — an unknown open-phase set is not an empty one.
+
+**A no-reason archive of such a record is REFUSED.** Without `--reason` the archive runs the blocking-findings gate, and that gate cannot establish whether `6-finalize` is still open when the phases will not read; it fails closed with `error: phases_unexaminable` and moves nothing. A deliberate `--reason` archive still proceeds, so an operator is never blocked from closing a structurally broken plan — the decision just goes on the record.
+
+**The findings gate reads the OPEN-PHASE SET, not `current_phase`.** A loop-back from `6-finalize` to `5-execute` leaves both phases `in_progress` while `current_phase` moves to `5-execute`, so a `current_phase` equality test would not fire in exactly the state a loop-back produces — and a no-reason archive could close both phases with actionable findings still pending.
+
 **Output** (TOON):
 ```toon
 status: success
 plan_id: my-feature
 archived_to: .plan/archived-plans/2026-04-02-my-feature
+phase_closure: complete
+```
+
+**Output — phases unreadable, archived deliberately with `--reason`** (TOON):
+```toon
+status: success
+plan_id: my-feature
+archived_to: .plan/archived-plans/2026-04-02-my-feature
+phase_closure: partial
+phase_closure_reason: "the phases of 'my-feature' could not be read in full, so the open-phase set is unknown and the existing current_phase was preserved rather than written complete: phases[1] is str, not a phase record"
+```
+
+**Output — phases unreadable, no `--reason`** (TOON, fail-closed, nothing moved):
+```toon
+status: error
+plan_id: my-feature
+error: phases_unexaminable
+unexaminable[1]:
+  - "phases[1] is str, not a phase record"
+message: "Refusing a no-reason archive of 'my-feature': its phases could not be read in full ..."
 ```
 
 ### delete-plan

@@ -509,9 +509,20 @@ def cmd_archive(args: argparse.Namespace) -> dict[str, Any] | None:
     - every phase in :data:`_status_core.UNTOUCHED_PHASE_STATUSES` (today exactly
       ``pending``) is left ALONE — a phase that never started must not be recorded as
       finished, which would write a fresh false record rather than close a real one;
-    - ``current_phase`` becomes ``'complete'`` once no phase remains ``in_progress``,
-      so a plan abandoned mid-lifecycle still reaches the post-finalize sentinel its
-      dormant consumers match on, while its unstarted phases stay ``pending``.
+    - ``current_phase`` becomes ``'complete'`` once the phase structure was read IN
+      FULL and no phase remains ``in_progress``, so a plan abandoned mid-lifecycle
+      still reaches the post-finalize sentinel its dormant consumers match on, while
+      its unstarted phases stay ``pending``.
+
+    A record whose ``phases`` could not be read in full is handled separately in both
+    directions, because an unknown open-phase set is not an empty one:
+
+    - a NO-REASON archive is REFUSED (``error: phases_unexaminable``) — the gate below
+      cannot establish that ``6-finalize`` is closed, and a guard whose job is to
+      refuse must fail closed rather than fall through;
+    - a DELIBERATE ``--reason`` archive still proceeds, but PRESERVES the existing
+      ``current_phase`` instead of writing ``complete``, and reports
+      ``phase_closure: partial`` with the reason.
 
     This is deliberately NOT identical to ``cmd_transition``: that verb advances one
     phase at a time through a plan that is still running, whereas archive closes out
@@ -567,10 +578,39 @@ def cmd_archive(args: argparse.Namespace) -> dict[str, Any] | None:
     #    (exactly the pre-D3 residue this plan fixes) would wedge cleanup. The
     #    gate therefore fires only while the plan is actively IN finalize.
     # On refusal, return before the phase-close write and the shutil.move.
-    if getattr(args, 'reason', None) is None and status.get('current_phase') == '6-finalize':
-        findings_refusal = _finalize_findings_refusal(args.plan_id, status)
-        if findings_refusal is not None:
-            return findings_refusal
+    #
+    # The gate reads the OPEN-PHASE SET, not ``current_phase``. A backward
+    # ``cmd_set_phase`` from ``6-finalize`` to ``5-execute`` leaves BOTH phases
+    # ``in_progress`` while moving ``current_phase`` to ``5-execute`` — so a
+    # ``current_phase`` equality test does not fire in exactly the state a loop-back
+    # produces, and a no-reason archive could close both phases and archive the plan
+    # with actionable findings still pending. Finalize being OPEN is the condition the
+    # gate is about; which phase is nominally current is not.
+    open_scan = in_progress_phases(status)
+    if getattr(args, 'reason', None) is None:
+        # Fail CLOSED on an unexaminable record. This guard's job is to refuse, and a
+        # scan that could not read the phase structure cannot establish that
+        # ``6-finalize`` is closed — falling through would let the archive proceed on
+        # the strength of a question nobody answered. The remedy is in the message: a
+        # deliberate ``--reason`` archive is the sanctioned way to close a structurally
+        # broken plan, and it takes the operator's decision on the record.
+        if not open_scan.examinable:
+            return {
+                'status': 'error',
+                'plan_id': args.plan_id,
+                'error': 'phases_unexaminable',
+                'unexaminable': list(open_scan.unexaminable),
+                'message': (
+                    f'Refusing a no-reason archive of {args.plan_id!r}: its phases could not be '
+                    f'read in full ({"; ".join(open_scan.unexaminable)}), so whether 6-finalize is '
+                    'still open — and therefore whether the blocking-findings gate applies — could '
+                    'not be established. Repair the phases, or archive deliberately with --reason.'
+                ),
+            }
+        if any(phase.get('name') == '6-finalize' for phase in open_scan.phases):
+            findings_refusal = _finalize_findings_refusal(args.plan_id, status)
+            if findings_refusal is not None:
+                return findings_refusal
 
     # Close EVERY open phase, not the first one found. The retired form took the first
     # phase whose status was merely ``!= done`` and closed that one alone, which failed
@@ -580,8 +620,11 @@ def cmd_archive(args: argparse.Namespace) -> dict[str, Any] | None:
     # satisfied ``!= done`` and was written ``done``, fabricating a fresh false record
     # of work that never happened. ``in_progress_phases`` reports only the closable
     # status, so both halves are fixed by the same call.
-    for phase in in_progress_phases(status):
+    for phase in open_scan.phases:
         phase['status'] = PHASE_STATUS_DONE
+    # Re-scan AFTER the closure loop: the post-condition is a statement about the
+    # document as it now stands, not about the pre-closure snapshot.
+    closure_scan = in_progress_phases(status)
     # The completion gate is "no phase remains ``in_progress``", NOT "every phase is
     # ``done``". The retired ``all(done)`` predicate could never fire for a plan
     # abandoned mid-lifecycle — its untouched ``pending`` phases are not ``done`` and
@@ -591,7 +634,15 @@ def cmd_archive(args: argparse.Namespace) -> dict[str, Any] | None:
     # write: the loop above has just closed every open phase, so the predicate holds by
     # construction today, and keeping it means a future change that narrows the closure
     # set cannot silently start claiming completion over a phase left running.
-    if not in_progress_phases(status):
+    #
+    # ``examinable`` is the other conjunct, and it is what stops this write from being
+    # the false claim it used to be. A record whose phases could not be read in full
+    # has an UNKNOWN open-phase set, so ``complete`` — the post-finalize sentinel
+    # dormant consumers match on — would assert a completion nothing established. Such
+    # a record keeps whatever lifecycle state it already carried; the archive still
+    # happens (a deliberate ``--reason`` close of a broken plan must not be stranded),
+    # and ``phase_closure`` on the result says which of the two paths ran.
+    if closure_scan.examinable and not closure_scan.phases:
         status['current_phase'] = 'complete'
     # Consume the loop-back re-entry marker when one is still open. ``cmd_transition``
     # consumes it at the next guarded boundary, but a plan archived while a re-entry is
@@ -671,7 +722,23 @@ def cmd_archive(args: argparse.Namespace) -> dict[str, Any] | None:
     # exempts this slot from GC until the terminal state has actually been
     # delivered.
 
-    return {'status': 'success', 'plan_id': args.plan_id, 'archived_to': str(archive_path)}
+    # ``phase_closure`` mirrors the census cohort row's tri-state shape: the verdict is
+    # always published, and the ``reason`` naming the shortfall accompanies only the
+    # degraded one. A caller therefore never has to infer from a bare ``success``
+    # whether the phase closure it just triggered actually covered the whole record.
+    result: dict[str, Any] = {
+        'status': 'success',
+        'plan_id': args.plan_id,
+        'archived_to': str(archive_path),
+        'phase_closure': 'complete' if closure_scan.examinable else 'partial',
+    }
+    if not closure_scan.examinable:
+        result['phase_closure_reason'] = (
+            f'the phases of {args.plan_id!r} could not be read in full, so the open-phase set is '
+            f'unknown and the existing current_phase was preserved rather than written complete: '
+            f'{"; ".join(closure_scan.unexaminable)}'
+        )
+    return result
 
 
 #: The closed vocabulary :attr:`LessonCarryBack.action` reports.

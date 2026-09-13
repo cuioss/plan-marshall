@@ -203,10 +203,12 @@ VALID_PROFILES = (
 # ---------------------------------------------------------------------------
 # Plan directory structure
 # ---------------------------------------------------------------------------
-# Note: the worktree root is intentionally NOT a constant here. It is computed
+# Note: the worktree ROOT is intentionally NOT a constant here. It is computed
 # in file_ops.get_worktree_root() as `<plan-root>/.plan/local/worktrees`, where
 # `<plan-root>` is resolved by the uniform cwd rule (ADR-002), rather than a
-# hard-coded literal.
+# hard-coded literal. Its trailing SEGMENT is a different thing and does have one
+# home: `marketplace_paths.WORKTREES_DIRNAME`, shared by every builder that
+# composes the container path onto its own anchor.
 DIR_PLANS = 'plans'
 DIR_ARTIFACTS = 'artifacts'
 DIR_ARCHIVED = 'archived-plans'

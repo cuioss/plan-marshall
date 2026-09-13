@@ -62,6 +62,26 @@ unexaminable entry, which must still report ``complete`` with ``unreadable_count
 The control is what gives the positives their meaning: without it they pass equally
 against a verb that degrades every cohort it is ever handed to ``partial``.
 
+A member whose phases will not read is a member, and a shortfall
+----------------------------------------------------------------
+``TestUnexaminablePhasesDegradeTheCohort`` covers the third shortfall kind, one level
+in from the other two: the ``status.json`` parsed — so the directory IS an established
+plan and belongs in ``population`` — but a phase row is unreadable, so the open-phase
+SET could not be determined. Publishing ``open_phase_count`` over such a record as
+though it had been read is the same false zero in miniature. Both cohorts that
+accumulate counts (single-container and worktree) get their own cell, because they
+sum independently, and the matched control is the identical tree minus the affected
+member.
+
+``worktrees`` is one scalar with two consumers
+----------------------------------------------
+``TestTheWorktreeSegmentHasOneDefinition`` pins the single definition by identity and
+then pins that the census actually keys on it — an identity assertion alone would pass
+against a builder that imported the name and ignored it. Its second behavioural cell
+deliberately asserts a CORRECT zero over a store placed outside the composed path: the
+point is that that zero is byte-identical to the one a divergent spelling would
+produce, which is the whole reason the scalar has a single home.
+
 Cohorts are counted separately, never blended
 ---------------------------------------------
 ``TestCohortsAreCountedSeparately`` gives the three stores deliberately DIFFERENT
@@ -127,6 +147,26 @@ def _write_plan(plan_dir: Path, phases: dict[str, str], metadata: dict[str, Any]
     }
     if metadata is not None:
         document['metadata'] = metadata
+    (plan_dir / 'status.json').write_text(f'{json.dumps(document)}\n')
+    return plan_dir
+
+
+def _write_unreadable_phases_plan(plan_dir: Path) -> Path:
+    """Seed a plan whose ``status.json`` PARSES but whose ``phases`` will not read in full.
+
+    Deliberately distinct from the unparseable member ``TestPartialCoverage`` uses:
+    that one fails at the JSON layer, so nothing about it is known. This one parses
+    cleanly and is established as a plan — one of its phase rows simply is not a phase
+    record, so the open-phase SET is what could not be determined. One readable
+    ``in_progress`` row is included so a census that reported this plan's open phases
+    while claiming full coverage would be visibly wrong rather than merely silent.
+    """
+    plan_dir.mkdir(parents=True)
+    document: dict[str, Any] = {
+        'title': plan_dir.name,
+        'current_phase': '5-execute',
+        'phases': [{'name': '1-init', 'status': 'done'}, 'not-a-phase-record'],
+    }
     (plan_dir / 'status.json').write_text(f'{json.dumps(document)}\n')
     return plan_dir
 
@@ -592,6 +632,136 @@ class TestAnUnexaminableEntryIsCredited:
         assert live['unreadable_count'] == 0, live
         assert live['population'] == 1, live
         assert 'reason' not in live, f'A complete cohort has no shortfall to name; got {live!r}.'
+
+
+class TestUnexaminablePhasesDegradeTheCohort:
+    """A member whose ``phases`` will not read is still a member — and still a shortfall.
+
+    This is the third shortfall kind, one level in from the other two. The
+    ``status.json`` parsed, so the directory IS established as a plan and belongs in
+    ``population``; what could not be established is its open-phase SET. Reporting
+    ``open_phase_count`` over it as though the record had been read is the false zero
+    at the heart of this cohort's honesty property, so the cohort degrades instead.
+    """
+
+    def test_a_member_whose_phases_will_not_read_degrades_its_cohort(self, store: Path) -> None:
+        """``partial``, the member counted, the shortfall credited and the plan named."""
+        _write_plan(store / 'plans' / 'readable-plan', {'1-init': 'done', '5-execute': 'in_progress'})
+        _write_unreadable_phases_plan(store / 'plans' / 'unreadable-phases-plan')
+
+        result = _census()
+
+        live = _cohort(result, 'live')
+        assert live['coverage'] == 'partial', live
+        assert live['population'] == 2, f'Its status.json parsed, so the plan IS an established member; got {live!r}.'
+        assert live['unreadable_count'] == 1, f'The unread open-phase set must be credited; got {live!r}.'
+        assert 'unreadable-phases-plan' in live['reason'], live
+        assert live['open_phase_count'] == 1, (
+            f'Only the readable plan contributes an established open phase; got {live!r}.'
+        )
+
+    def test_the_same_shortfall_one_level_deeper_degrades_the_worktree_cohort(self, store: Path) -> None:
+        """The worktree cohort accumulates its own counts, so it needs its own cell.
+
+        A fix applied to the single-container path alone leaves this cohort reporting
+        ``complete`` over a moved-in plan whose phases nobody could read.
+        """
+        worktree_plans = store / 'worktrees' / 'wt-0' / '.plan' / 'local' / 'plans'
+        _write_plan(worktree_plans / 'wt-plan-0', {'1-init': 'done', '5-execute': 'in_progress'})
+        _write_unreadable_phases_plan(worktree_plans / 'wt-plan-broken')
+
+        result = _census()
+
+        worktree = _cohort(result, 'worktree')
+        assert worktree['coverage'] == 'partial', worktree
+        assert worktree['population'] == 2, worktree
+        assert worktree['unreadable_count'] == 1, worktree
+        assert 'wt-0/wt-plan-broken' in worktree['reason'], (
+            f'A bare plan name would be ambiguous across worktrees; got {worktree!r}.'
+        )
+
+    def test_a_member_whose_phases_read_cleanly_keeps_the_cohort_complete(self, store: Path) -> None:
+        """Matched control: the identical tree MINUS the unreadable-phases member.
+
+        The load-bearing half. Without it both cells above pass equally against a
+        census that degrades every cohort it is handed — which would make ``partial``
+        as uninformative as the false zero it replaced.
+        """
+        _write_plan(store / 'plans' / 'readable-plan', {'1-init': 'done', '5-execute': 'in_progress'})
+        _write_plan(store / 'plans' / 'second-readable-plan', {'1-init': 'done', '5-execute': 'done'})
+
+        result = _census()
+
+        live = _cohort(result, 'live')
+        assert live['coverage'] == 'complete', live
+        assert live['population'] == 2, live
+        assert live['unreadable_count'] == 0, live
+        assert live['open_phase_count'] == 1, live
+        assert 'reason' not in live, f'A complete cohort has no shortfall to name; got {live!r}.'
+
+
+class TestTheWorktreeSegmentHasOneDefinition:
+    """``worktrees`` is one scalar, consumed by both builders that compose the container path.
+
+    ``file_ops.get_worktree_root()`` and this verb anchor on DIFFERENT bases by design
+    — cwd-relative versus main-anchored — so they cannot be collapsed into one
+    function, and substituting one for the other would be wrong. The SEGMENT is the
+    only thing they genuinely share. Two independently-spelled copies of it is what
+    would let a re-spelling send this cohort scanning an absent path while it published
+    ``coverage: complete`` with ``population: 0``.
+
+    The identity cell pins the single definition; the behavioural pair pins that the
+    census really keys on it, because an identity assertion alone would pass against a
+    builder that imported the name and then ignored it.
+    """
+
+    def test_both_builders_read_the_same_definition(self) -> None:
+        """One object, reached by identity from both consumers and from its home."""
+        import file_ops
+        import marketplace_paths
+
+        assert file_ops.WORKTREES_DIRNAME is marketplace_paths.WORKTREES_DIRNAME, (
+            'file_ops must consume the shared segment, not a local copy of the literal.'
+        )
+        assert status_query.WORKTREES_DIRNAME is marketplace_paths.WORKTREES_DIRNAME, (
+            'The census must consume the shared segment, not a local copy of the literal.'
+        )
+
+    def test_the_census_finds_a_store_placed_under_the_shared_segment(self, store: Path) -> None:
+        """The cohort path is composed from the shared name, so a store there is seen."""
+        import marketplace_paths
+
+        plans = store / marketplace_paths.WORKTREES_DIRNAME / 'wt-0' / '.plan' / 'local' / 'plans'
+        _write_plan(plans / 'wt-plan-0', {'1-init': 'done', '5-execute': 'in_progress'})
+
+        worktree = _cohort(_census(), 'worktree')
+
+        assert worktree['coverage'] == 'complete', worktree
+        assert worktree['population'] == 1, f'A store under the shared segment must be enumerated; got {worktree!r}.'
+
+    def test_a_store_under_a_different_segment_reads_as_a_confident_zero(self, store: Path) -> None:
+        """Matched control: the shape a divergent spelling would produce.
+
+        Deliberately NOT an assertion that the census is wrong — it is right to report
+        an empty store here. The cell exists to make the FAILURE MODE visible: this
+        ``population: 0`` is byte-identical to the one the cell above would produce if
+        the two builders ever spelled the segment differently, which is exactly why the
+        scalar has a single home.
+        """
+        import marketplace_paths
+
+        divergent = f'{marketplace_paths.WORKTREES_DIRNAME}-renamed'
+        assert divergent != marketplace_paths.WORKTREES_DIRNAME
+        plans = store / divergent / 'wt-0' / '.plan' / 'local' / 'plans'
+        _write_plan(plans / 'wt-plan-0', {'1-init': 'done', '5-execute': 'in_progress'})
+
+        worktree = _cohort(_census(), 'worktree')
+
+        assert worktree['coverage'] == 'complete', worktree
+        assert worktree['population'] == 0, (
+            f'A store outside the composed path is invisible AND indistinguishable from '
+            f'an empty machine; got {worktree!r}.'
+        )
 
 
 class TestAnchorUnresolvedFailsClosed:

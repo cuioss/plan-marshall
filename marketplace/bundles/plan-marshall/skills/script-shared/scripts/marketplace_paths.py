@@ -58,6 +58,21 @@ def resolve_home() -> Path:
 # Central configuration
 PLAN_DIR_NAME = os.environ.get('PLAN_DIR_NAME', '.plan')
 
+# Trailing segment of the worktree container, ``<base>/worktrees``. The SINGLE
+# definition, imported by every builder that composes that path rather than
+# re-spelled at each one.
+#
+# The builders anchor on DIFFERENT bases by design — ``file_ops.get_worktree_root``
+# on the cwd-relative ``get_base_dir()`` (ADR-002), the ``census`` verb on the
+# main-anchored root — so they cannot be collapsed into one function. The SEGMENT
+# is the only thing they genuinely share, and duplicating a scalar across two
+# anchors is what makes a re-spelling silently divergent: the census would then
+# scan a path nothing writes to and publish ``coverage: complete`` with
+# ``population: 0``, a false zero indistinguishable from a machine holding no
+# worktree-resident plan. Naming it once means a change to the spelling moves both
+# builders or neither.
+WORKTREES_DIRNAME = 'worktrees'
+
 # The plan-less sentinel — the single canonical definition. Its literal
 # uppercase spelling is deliberate: it is visually unmistakable against real
 # kebab-case plan ids, and it CANNOT be produced by ``PLAN_ID_RE``, so no real
