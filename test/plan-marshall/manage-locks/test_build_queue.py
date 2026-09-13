@@ -445,9 +445,7 @@ class TestForeignValueReportsAreInjectionSafe:
     #: into a different result, which is the severity of this class.
     _INJECTING_STATUS = '2400\nstatus: error\nin_effect: true'
 
-    def _report_via_limit_get(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, raw: object
-    ) -> dict[str, Any]:
+    def _report_via_limit_get(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, raw: object) -> dict[str, Any]:
         """Run ``limit get`` against a planted per-repo ``run-configuration.json``."""
         per_repo = tmp_path / 'run-configuration.json'
         per_repo.write_text(
