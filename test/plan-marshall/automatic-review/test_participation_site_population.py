@@ -282,8 +282,10 @@ SITE_EXPECTATIONS: dict[str, SiteExpectation] = {
         'BOTH by one predicate over whichever field carries the reviewed-commit claim: the '
         'review’s commit_sha, or the comment’s BODY. Pinning the comment path to false was a '
         'premise, not an observation, and it manufactured a decline for every bot whose only '
-        'declared publish shape is a comment naming its reviewed commit. Its verdict depends '
-        'on when it is asked, so it is not idempotent.',
+        'declared publish shape is a comment naming its reviewed commit. Where several of the '
+        'bot’s comments are eligible it selects one whose body names that HEAD, so list order '
+        'cannot manufacture a decline either. Its verdict depends on when it is asked, so it '
+        'is not idempotent.',
     ),
     f'{_SKILLS}/workflow-pr-doctor/standards/automated-review-lifecycle.md': SiteExpectation(
         'normative_text',
