@@ -24,6 +24,15 @@ binds the target to a local name that no longer contains the target substring, s
 any classifier matching on the name alone, textual **or** AST, under-counts callers
 by exactly the aliased sites.
 
+**Membership is resolved by ORIGIN, not by the name at the call site.** A bare name
+cannot say which function a call reaches, so matching it admits ``other.chdir()``
+and ``from unrelated import chdir`` alongside the real ``os.chdir``. The candidate
+glob bounds only WHERE files are looked for, never what a match MEANS, so an
+unrelated call inside a candidate file would become a false population member. Each
+call is therefore resolved against the import bindings actually in scope — plus the
+module's own top-level definitions, which is how the resolver module itself is a
+member. See :func:`_called_names` for the three admitting bindings.
+
 Every assertion publishes the derived population size. A closure or equality check
 over an empty population passes vacuously — it reports agreement while ranging over
 nothing — and publishing the size is what makes that failure visible rather than
@@ -67,6 +76,13 @@ _CHDIR_TARGETS = frozenset({'chdir'})
 #: both reach the machine-global tier, so both count as a call into it.
 _HOME_ROOT_TARGETS = frozenset({'home_root', 'ensure_home_root'})
 
+#: The module each shape's targets must resolve THROUGH for a call to count.
+#: Membership is a property of the function actually invoked, not of the name at
+#: the call site, so the origin is what the classifier resolves against — see
+#: :func:`_called_names`.
+_CHDIR_ORIGIN = 'os'
+_HOME_ROOT_ORIGIN = 'marketplace_paths'
+
 #: Candidate scope, relative to ``marketplace/bundles``. A superset of both
 #: populations by construction: every call site lives in a skill's ``scripts/`` tree.
 _CANDIDATE_GLOB = '*/skills/*/scripts/**/*.py'
@@ -100,36 +116,74 @@ def _skill_relative(path: Path) -> str:
     return '/'.join(path.parts[2:])
 
 
-def _called_names(tree: ast.AST, targets: frozenset[str]) -> bool:
-    """Return whether the module invokes any name in ``targets``.
+def _called_names(tree: ast.AST, targets: frozenset[str], origin: str) -> bool:
+    """Return whether the module invokes a ``targets`` member FROM ``origin``.
 
-    Resolves ``import … as`` aliases to their target BEFORE counting, then keeps
-    only occurrences that are a call's own ``func`` — so a definition, an import
-    binding, a bare non-call reference and textual residue in comments, docstrings
-    and string literals are all excluded.
+    Keeps only occurrences that are a call's own ``func`` — so a definition, an
+    import binding, a bare non-call reference and textual residue in comments,
+    docstrings and string literals are all excluded.
+
+    **Resolution is by ORIGIN, not by bare name, and that is the membership test.**
+    A name alone cannot say which function a call reaches: matching ``func.attr``
+    admitted ``other.chdir()`` as readily as ``os.chdir()``, and matching an
+    imported name admitted ``from unrelated import chdir`` because it recorded the
+    binding without checking which module it came from. The candidate glob
+    constrains only WHERE files are looked for, never what a match MEANS, so an
+    unrelated call in a candidate file became a false population member and broke
+    the audit's equality check. The failure direction is a false RED rather than a
+    false green — but this is a population DERIVER, and one that admits members it
+    cannot attribute is unsound on its own terms.
+
+    Three bindings resolve to the origin, and a call is admitted through exactly
+    one of them:
+
+    * ``import os`` / ``import os as _os`` / ``import pkg.marketplace_paths as mp``
+      bind the MODULE to a local name, so ``<bound>.chdir()`` counts.
+    * ``from os import chdir [as cd]`` binds the TARGET directly, so a bare
+      ``chdir()`` counts — but only because the ``from`` module is the origin.
+    * A module that DEFINES a target at its own top level owns it, so a bare call
+      there is a call to the real function with no import to resolve through.
+      ``marketplace_paths.py`` is in shape B's population on exactly this
+      evidence: it holds the sole ``def`` of both entry points and
+      ``ensure_home_root`` invokes ``home_root()`` directly. Dropping this arm
+      would shrink that population from 9 to 8 while looking like a tightening.
     """
-    aliases: dict[str, str] = {}
+    module_aliases: set[str] = set()  # local names bound to the ORIGIN MODULE
+    direct_names: set[str] = set()  # local names bound to a TARGET from the origin
+
     for node in ast.walk(tree):
-        if isinstance(node, ast.ImportFrom):
+        if isinstance(node, ast.Import):
             for alias in node.names:
-                if alias.name in targets:
-                    aliases[alias.asname or alias.name] = alias.name
-        elif isinstance(node, ast.Import):
+                if alias.name == origin:
+                    module_aliases.add(alias.asname or origin)
+                elif alias.asname and alias.name.rsplit('.', 1)[-1] == origin:
+                    # A dotted import resolves only when it is aliased: the
+                    # unaliased form binds the PACKAGE head and the call reads
+                    # `pkg.mod.target()` — an Attribute of an Attribute, which no
+                    # single local name identifies. Excluded rather than guessed.
+                    module_aliases.add(alias.asname)
+        elif isinstance(node, ast.ImportFrom) and node.module is not None:
+            from_origin = node.module.rsplit('.', 1)[-1] == origin
             for alias in node.names:
-                if alias.asname:
-                    aliases[alias.asname] = alias.name.rsplit('.', 1)[-1]
+                if from_origin and alias.name in targets:
+                    direct_names.add(alias.asname or alias.name)
+                elif alias.name == origin:
+                    module_aliases.add(alias.asname or alias.name)
+
+    own_definitions = {
+        node.name
+        for node in getattr(tree, 'body', [])
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef) and node.name in targets
+    }
 
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
             continue
         func = node.func
         if isinstance(func, ast.Attribute):
-            name = func.attr
-        elif isinstance(func, ast.Name):
-            name = func.id
-        else:
-            continue
-        if name in targets or aliases.get(name) in targets:
+            if func.attr in targets and isinstance(func.value, ast.Name) and func.value.id in module_aliases:
+                return True
+        elif isinstance(func, ast.Name) and (func.id in direct_names or func.id in own_definitions):
             return True
     return False
 
@@ -159,9 +213,9 @@ def _derive_populations() -> tuple[int, tuple[str, ...], tuple[str, ...]]:
             raise AssertionError(f'Could not scan candidate script {path}: {type(exc).__name__}: {exc}') from None
 
         relative = _skill_relative(path.relative_to(MARKETPLACE_ROOT))
-        if _called_names(tree, _CHDIR_TARGETS):
+        if _called_names(tree, _CHDIR_TARGETS, _CHDIR_ORIGIN):
             chdir_callers.add(relative)
-        if _called_names(tree, _HOME_ROOT_TARGETS):
+        if _called_names(tree, _HOME_ROOT_TARGETS, _HOME_ROOT_ORIGIN):
             home_root_callers.add(relative)
 
     return scanned, tuple(sorted(chdir_callers)), tuple(sorted(home_root_callers))
@@ -357,3 +411,103 @@ def test_the_overlap_member_is_derived_in_both_shapes():
         f"candidate(s) — the two shapes no longer meet, so the audit's overlap figure "
         f'is no longer derived from the tree.'
     )
+
+
+# =============================================================================
+# The classifier's own controls — membership resolves by origin, not by name
+# =============================================================================
+#
+# The equality checks above range over the real tree, so they can only report that
+# the derived sets agree with the audit — they cannot show WHY a call was admitted.
+# These controls parse synthetic sources instead, so each exercises the membership
+# test directly: a positive for every admitting binding, and a matched negative for
+# the same-named call from a foreign module that the bare-name classifier accepted.
+
+#: Calls that really do reach ``os.chdir`` — one per admitting binding.
+_ADMITTED_SOURCES = (
+    ('module import', 'import os\ndef f():\n    os.chdir("/")\n'),
+    ('aliased module import', 'import os as _os\ndef f():\n    _os.chdir("/")\n'),
+    ('from-import', 'from os import chdir\ndef f():\n    chdir("/")\n'),
+    ('aliased from-import', 'from os import chdir as cd\ndef f():\n    cd("/")\n'),
+)
+
+#: Calls that do NOT reach ``os.chdir`` but share its name. These are the defect:
+#: the bare-attribute classifier admitted both.
+_FOREIGN_SOURCES = (
+    ('foreign attribute', 'import other\ndef f():\n    other.chdir("/")\n'),
+    ('foreign from-import', 'from unrelated import chdir\ndef f():\n    chdir("/")\n'),
+)
+
+#: Occurrences that are not calls at all — the exclusions that predate the origin
+#: guard and must survive it.
+_NON_CALL_SOURCES = (
+    ('docstring prose', '"""Prose naming os.chdir() and a bare chdir reference."""\n'),
+    ('definition only', 'def chdir(path):\n    return path\n'),
+    ('bare reference', 'import os\nhandler = os.chdir\n'),
+)
+
+
+def test_the_classifier_admits_every_binding_that_resolves_to_the_origin():
+    """The positive controls: each admitting binding really is admitted.
+
+    Without these the negative controls below would pass equally against a
+    classifier that admitted nothing at all — which would empty both populations.
+    """
+    for label, source in _ADMITTED_SOURCES:
+        assert _called_names(ast.parse(source), _CHDIR_TARGETS, _CHDIR_ORIGIN), (
+            f'{label} should resolve to {_CHDIR_ORIGIN}.chdir but was not admitted'
+        )
+
+
+def test_the_classifier_rejects_a_same_named_call_from_a_foreign_module():
+    """The matched negative control — and the defect this closes.
+
+    ``_called_names`` recorded a call by its bare attribute name, so it matched
+    ``other.chdir()`` as readily as ``os.chdir()``, and it accepted
+    ``from unrelated import chdir`` because it stored the imported name without
+    checking which module it came from. Either one inside a candidate file became a
+    false population member and broke the audit's equality check.
+    """
+    for label, source in _FOREIGN_SOURCES:
+        assert not _called_names(ast.parse(source), _CHDIR_TARGETS, _CHDIR_ORIGIN), (
+            f'{label} does not resolve to {_CHDIR_ORIGIN}.chdir but was admitted'
+        )
+
+
+def test_the_classifier_still_excludes_every_non_call_occurrence():
+    """The pre-existing exclusions survive the origin guard.
+
+    The audit's method-deciding counter-example is a module whose ``chdir``
+    occurrences are all docstring prose, so the origin guard must not re-admit
+    prose, a never-called definition, or a bare non-call reference to the real
+    attribute.
+    """
+    for label, source in _NON_CALL_SOURCES:
+        assert not _called_names(ast.parse(source), _CHDIR_TARGETS, _CHDIR_ORIGIN), (
+            f'{label} is not a call and must not be admitted'
+        )
+
+
+def test_the_classifier_admits_a_same_module_call_to_its_own_definition():
+    """The resolver module is a member on exactly this evidence.
+
+    ``marketplace_paths.py`` holds the sole ``def`` of both shape B entry points,
+    and ``ensure_home_root`` invokes ``home_root()`` directly — a bare call with no
+    import to resolve through. An origin guard accepting only imported bindings
+    would drop the resolver itself out of shape B, shrinking the published
+    population from 9 to 8 while looking like a tightening.
+    """
+    source = 'def home_root():\n    return 1\n\n\ndef ensure_home_root():\n    return home_root()\n'
+
+    assert _called_names(ast.parse(source), _HOME_ROOT_TARGETS, _HOME_ROOT_ORIGIN)
+
+
+def test_a_foreign_home_root_call_is_not_admitted_into_shape_b():
+    """The origin guard applies to shape B too, not only to the ``chdir`` shape.
+
+    Asserted separately because the two shapes pass different origins, and a guard
+    wired for one of them would leave the other matching on the bare name.
+    """
+    source = 'import someother\ndef f():\n    someother.home_root()\n'
+
+    assert not _called_names(ast.parse(source), _HOME_ROOT_TARGETS, _HOME_ROOT_ORIGIN)
