@@ -336,6 +336,55 @@ Each test must be independent:
 * Each test creates its own test data
 * Each test cleans up its own resources (or uses framework lifecycle hooks)
 
+### Restore Captured State on Both Arms, Never Under a Presence Check
+
+**Trigger**: A test or fixture captures a piece of process-wide state — an environment variable, a
+dictionary entry, an object attribute — mutates it, and puts it back in a `finally` block or in a
+generator fixture's post-yield teardown half, **under a condition that consults whether the captured
+value was present or truthy**. The shape reads as careful (`if saved:` before restoring looks like
+defensive coding) and is the opposite.
+
+A presence-keyed restore covers only one of the two states the capture can land in. When the value
+was absent, empty, or otherwise falsy, the branch does nothing and the deletion stands: the key stays
+removed for **every later test in the session**. The conflation of *absent* with *empty* is the whole
+defect — an empty-string environment variable is captured, deleted, and never put back.
+
+**Durable rule**: a teardown restores the state on **every** arm the capture can land in.
+
+* **The defect is the missing arm, not the condition.** A branch that restores the captured value on
+  one side *and removes the key on the other* covers the whole dichotomy, leaks nothing, and is
+  correct however it is spelled. A rule that flagged the condition would forbid a correct restore and
+  turn a guard into churn.
+* **Prefer the framework's own unconditional restore where it is reachable.** pytest's `monkeypatch`
+  already owns a restore that never consults the prior value's truthiness, so a hand-rolled dichotomy
+  is a fallback, not the first choice.
+* **A teardown must not delete a key it may not have created.** A `monkeypatch.delenv` / `delitem`
+  call in the *post-yield* half is the same defect wearing different clothes: it removes a key whose
+  prior presence the fixture never established. A **setup-time** `monkeypatch.delenv(..., raising=False)`
+  is a different thing and is the correct idiom — it clears the key *before* the test with
+  `monkeypatch`'s own unconditional restore still in force, so it is explicitly **not** an instance of
+  this defect.
+
+**Detection signal — the failing names are downstream of the cause.** A state leak never names itself:
+the test that leaked has already passed, and what fails is whichever unrelated test the deleted key
+reaches first. **A failure set that moves with collection order is a state defect**, not a defect in
+the tests it names. Two concrete symptoms:
+
+* mass setup-time `FileNotFoundError` across unrelated modules — a resolver reading a key that is no
+  longer there and falling back to a path that does not exist;
+* a failure **count** that differs between two runs of the same tree.
+
+The standing check that exposes the class is a reverse-order run: set `PM_TEST_ORDER=reverse` and pair
+it with `--no-parallel`. The pairing is load-bearing — the default `-n auto --dist=loadgroup` run
+distributes a module's items across workers, so it neither establishes nor tests a fixed order.
+
+**Concrete instance in this repository** (a discoverability pointer, not the rule): the shape is armed
+by the `r4_presence_keyed_restores` predicate in `test/_shared/_test_shape_scan.py` — reporting a
+one-armed restore in a `finally` block or a fixture teardown half, plus `delenv`/`delitem` in a
+teardown half — and asserted whole-tree in `test/test_harness_shape_guards.py`, with a matched negative
+control (a one-armed restore is caught) and a matched positive control (a complete two-armed
+dichotomy is *not* reported).
+
 ### Compose Isolation, Don't Impose It
 
 **Trigger**: An isolation fixture mutates *global resolution state* — config roots, environment variables, module-search paths, the working directory, or any other process-wide lookup that decides which file/resource the code under test resolves to. The seductive shortcut is to make such a fixture **auto-applied to every test in scope** (e.g. `autouse=True` in pytest, a global `beforeEach`, a base-class setup every test inherits) so isolation becomes the default and no test has to opt in.
@@ -398,6 +447,49 @@ to that contract, and the second assertion catches nothing the first did not.
 A collapse must name the in-process test that now carries the contract. Without that, a reviewer
 cannot distinguish a collapse (coverage preserved at a better layer) from a deletion (coverage gone) —
 and the two look identical in a diff that only removes lines.
+
+## Express a Guard's Population by Role, Not by Another Slice's Filename
+
+**Trigger**: A test module carries a **path literal naming a test module another slice owns** — a
+guard that enumerates the files it sweeps by writing their paths out, a control that pins one concrete
+example by spelling its path, a roster that lists its members as strings.
+
+The literal couples this module to a filename it does not own. The unrelated slice renaming *its own*
+file then reds **this** module, and the failure reports a filename rather than the contract under
+test — so the person who reads the red is the one person with no context for it. The population a
+guard actually cares about is **the role the named module plays**; the filename is an accident of
+where that role currently lives.
+
+**Durable rule**: derive the population from the tree by the property that makes a module a member,
+and read the concrete paths off that derivation at runtime.
+
+* **Derive by a property, not by a list.** The membership signal is something a member *declares* or
+  *is*: a marker constant the module publishes, the directory it lives in, a symbol it defines. A
+  module that gains the property joins the population with no roster to update, and one that loses it
+  leaves.
+* **Where a test needs one concrete example, read it off the tree.** A negative control needs a real
+  instance to pin, and writing that instance as a literal reintroduces the shape inside the very
+  check that guards it.
+* **A hand-listed roster may supply order or display names, never membership.** The moment the list
+  decides *who is swept*, an omission is silent — a green run over a shrunken population is
+  indistinguishable from a green run over the whole one.
+
+Two shapes are **not** this defect, and the distinction is what keeps the rule usable:
+
+* **A literal naming a file in the module's own directory.** A slice may refer to its own files; the
+  boundary the rule keys on is the directory, not the mere presence of a path literal.
+* **A literal that resolves to no file on disk** — a stale string, an illustrative path in a
+  docstring, the name of a synthetic fixture a test writes itself. It is not a live coupling to
+  another slice's filename.
+
+**Concrete instance in this repository** (a discoverability pointer, not the rule): the shape is armed
+by the `r1_cross_slice_filename_pins` predicate in `test/_shared/_test_shape_scan.py` and asserted
+whole-tree in `test/test_harness_shape_guards.py`, whose own negative control reads the path it pins
+off the walked tree rather than writing one — because a literal there would both be an instance of the
+shape the module guards and go stale the moment the module it named was renamed. The derivation form
+the rule asks for is the routing-guard population header in `test/conftest.py`, which discovers its
+publishers by the `GUARD_POPULATION_LABEL` constant each one declares and reports a publisher its
+hand-listed tuple omits rather than dropping it.
 
 ## Enumerate Existing Test Consumers Before Changing a Default / Constant / Enum Value
 
@@ -475,6 +567,49 @@ for all list in generateLists():
 ```
 
 Consult your language-specific testing skill for framework APIs (e.g., Hypothesis for Python, jqwik for Java, fast-check for JavaScript).
+
+## Guard a Runtime-Derived Parametrization at the Binding Site
+
+**Trigger**: A parametrized test's argvalues are **computed** rather than displayed — a helper call, a
+comprehension over a scanned tree, a filter over a registry, anything whose cardinality is decided at
+collection time instead of written out at the binding site.
+
+An empty parameter set is invisible exactly where a reader looks for it. The framework reports it as a
+skip by default — one more `s` in a suite that already prints thousands — or, once configured to do
+so, as a collection failure. Either way **every case the derivation was meant to produce disappears
+and the run stays green**, because the emptiness is a property of the derivation and the binding site
+displays none of it.
+
+**Durable rule**: a runtime-derived parametrization carries a **non-vacuity assertion that runs at
+collection time and names the population**. Three sites qualify, because all three run at collection
+time and all three name what came back empty:
+
+1. the helper that builds the argvalues asserting its own result before returning it;
+2. a module-level assertion naming the bound name;
+3. a separate, non-parametrized test pinning the population's cardinality.
+
+⛔ **An assertion inside the parametrized test's own body is NOT a guard.** That body never runs when
+the parameter set is empty, so the assertion is exactly as vacuous as the binding it was meant to
+protect — it is the one placement that looks like compliance and provides none.
+
+A binding that **cannot be empty by construction** needs no guard: a non-empty literal display, a name
+bound to one, or a shape-preserving wrapper over one (`sorted`, `list`, `tuple`, `set`, `frozenset`,
+`reversed`) is as non-empty as what it wraps. A wrapper that *can* yield nothing from a non-empty
+input — `filter`, `zip`, `range` — leaves the binding runtime-derived however literal its argument
+looks.
+
+**A whole-tree backstop does not replace the assertion.** Configuring the framework to fail collection
+on an empty parameter set (in this repository, `empty_parameter_set_mark = "fail_at_collect"` in
+`pyproject.toml`) reports **that** a parameter set was empty; the assertion beside the derivation
+reports **why** the population it was built from came back empty. The two are complementary and both
+are kept.
+
+**Concrete instance in this repository** (a discoverability pointer, not the rule): the shape is armed
+by the `r5_unguarded_runtime_parametrize` predicate in `test/_shared/_test_shape_scan.py` and asserted
+whole-tree in `test/test_harness_shape_guards.py`, with a matched negative control (an unguarded
+derivation is caught) and a matched positive control (a derivation carrying a module-level non-vacuity
+guard is *not* flagged) — the pair being what keeps the rule satisfiable rather than a ban on every
+computed argvalues expression.
 
 ## Test Doubles
 
