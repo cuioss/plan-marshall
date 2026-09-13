@@ -652,7 +652,6 @@ The defaults template contains only `system` domain. Technical domains (java, ja
   },
   "build": {
     "queue": {
-      "max_slots": 5,
       "max_retries": 10
     }
   },
@@ -774,14 +773,24 @@ The lane mechanism's per-element vocabulary (the closed `lane.class` enum, the c
 
 ### Build-Queue Settings
 
-The `build.queue` block lives under the top-level `build` block in marshal.json (peer to `build.map`, not under `plan.*`) because the build queue is a project-wide, cross-plan resource — every session bounds its concurrent builds against the same shared queue. Both keys are seeded into a fresh marshal.json by `init` and back-filled into existing projects by `sync-defaults`.
+The `build.queue` block lives under the top-level `build` block in marshal.json (peer to `build.map`, not under `plan.*`) because the build queue is a project-wide, cross-plan resource — every session bounds its concurrent builds against the same shared queue. `max_retries` is its one key, seeded into a fresh marshal.json by `init` and back-filled into existing projects by `sync-defaults`.
 
 | Field | Default | Meaning |
 |-------|---------|---------|
-| `max_slots` | `5` | Number of concurrent build admissions the cross-session build queue grants before further requests are enqueued FIFO. Read by the build-queue admission primitive (`plan-marshall:manage-locks:build_queue`) via `build.queue.max_slots`; a missing block, missing key, or non-positive value falls back to `5`. |
-| `max_retries` | `10` | Number of times the build wrapper re-polls a `blocked` admission before giving up. |
+| `max_retries` | `10` | Number of times the build wrapper re-polls a `blocked` admission before giving up. Legitimately per-repo: it bounds only THIS caller's own wait loop and is never evaluated against another caller's entries. |
 
-Edit both keys directly in marshal.json — they are operator-visible JSON integers at the top level.
+Edit it directly in marshal.json — it is an operator-visible JSON integer at the top level.
+
+**The slot cap and the reap threshold are NOT `marshal.json` keys.** Both are machine-global — one value per host, shared by every checkout contending for the one machine-global `build-queue.json` — so neither is seeded here, and a copy sitting in `marshal.json` takes no effect:
+
+| Setting | Home | Managed with |
+|---------|------|--------------|
+| `build.queue.max_slots` (the build-slot cap, default `5`) | `~/.plan-marshall/marshalld/machine-config.json`, beside `registry.json` | `manage_build_server config get` / `config set --max-slots N` / `config migrate` |
+| `upper_limit_seconds` (the adaptive stale-reclaim threshold) | a top-level field of `~/.plan-marshall/build-queue.json` — the queue state whose entries it governs | `build_queue limit get` / `limit set --value N` |
+
+A `build.queue.max_slots` key present in a repository's `marshal.json` **is not in effect**: the admitted cap is resolved cwd-independently from the machine-global file alone. Every `build_queue acquire` instead reports the key as `per_repo_max_slots: {value, in_effect: false}` and carries a `per_repo_max_slots_not_in_effect` warning, so a repository that still configures it learns so on every queued build. `manage_build_server config migrate` moves it in one step — it copies the value machine-wide **only when nothing is set there**, then removes the per-repo key, and when the two values differ it changes **neither** file and reports both. A `build.queue.upper_limit_seconds` key present in the main-anchored `run-configuration.json` is inert in the same way: `build_queue limit get` reports it as `per_repo_value` with `in_effect: false`.
+
+Full contracts live where each script is documented — [`manage-build-server/SKILL.md`](../manage-build-server/SKILL.md) for the cap verbs and the daemon-reported cap, [`manage-locks/SKILL.md`](../manage-locks/SKILL.md) for the queue result fields and `limit get|set`.
 
 ---
 

@@ -23,6 +23,23 @@ These tests cover:
   ``_set_title_token`` / ``_clear_title_token`` / ``_push_title_token`` symbols.
 * **max_retries resolution** — read from marshal.json with a 10 fallback.
 * **_emit_queue_timeout** — renders a structured ``queue_saturated`` error.
+* **Queue warnings reach BOTH sinks, exactly once per invocation** — each
+  ``acquire`` warning is surfaced to stderr AND the plan work log, deduplicated
+  by ``code`` across the blocked re-polls, so a build that waits does not repeat
+  the identical warning once per poll. Two distinct codes are both surfaced (the
+  matched control proving the collapse is per-code, not "at most one"), an empty
+  or absent ``warnings`` key surfaces nothing, a plan-less build writes no
+  work-log line, a malformed entry is skipped rather than raised on, and a
+  warning never blocks the build.
+* **A raising stderr sink cannot leak an admitted slot** — the sink is
+  best-effort by the emitter's own stated contract, asserted against the REAL
+  machine-global queue (staged under ``tmp_path``) because the leak is a state
+  leak in ``build-queue.json`` that a mocked acquire/release seam cannot see. The
+  guard is ``Exception``-scoped, so a ``KeyboardInterrupt`` from the same sink
+  still propagates and aborts the build — and it still leaves NO entry behind,
+  because the cleanup scope releases and re-raises rather than swallowing. The
+  in-loop call site is covered too: both surfacing sites sit inside that scope,
+  so which one raises no longer decides whether the entry leaks.
 
 The queue acquire/release seam (``_acquire`` / ``_release_raw``) is mocked
 directly, so the tests are independent of whether the queue is reached by a
@@ -39,6 +56,8 @@ would route the build away before ``build_queue_slot`` is ever reached.
 from __future__ import annotations
 
 import argparse
+import json
+from pathlib import Path
 
 import pytest
 
@@ -303,6 +322,389 @@ def test_release_failure_is_logged_not_raised(monkeypatch):
     # the slot without an exception is the assertion.
     with build_queue_slot('P'):
         pass
+
+
+# =============================================================================
+# Queue warnings reach BOTH sinks, exactly once per invocation
+# =============================================================================
+
+#: The demoted-key warning the queue attaches to every acquire result while the
+#: caller's marshal.json still carries the inert key.
+_DEMOTION_WARNING = {
+    'code': 'per_repo_max_slots_not_in_effect',
+    'message': 'marshal.json sets build.queue.max_slots=1, which is NOT in effect',
+}
+
+_OTHER_WARNING = {'code': 'some_other_condition', 'message': 'a different condition entirely'}
+
+
+def _admitted(warnings: list[dict] | None = None, entry_id: str = 'P:uuid-1') -> dict:
+    """Build an ``admitted`` acquire result, optionally carrying ``warnings``."""
+    result: dict = {'status': 'success', 'admission': 'admitted', 'id': entry_id}
+    if warnings is not None:
+        result['warnings'] = warnings
+    return result
+
+
+def _blocked(warnings: list[dict] | None = None, entry_id: str = 'P:uuid-1') -> dict:
+    """Build a ``blocked`` acquire result, optionally carrying ``warnings``."""
+    result: dict = {'status': 'success', 'admission': 'blocked', 'id': entry_id}
+    if warnings is not None:
+        result['warnings'] = warnings
+    return result
+
+
+@pytest.fixture
+def work_log(monkeypatch: pytest.MonkeyPatch) -> list[tuple]:
+    """Capture ``log_entry`` calls instead of writing to a real plan work log."""
+    calls: list[tuple] = []
+    monkeypatch.setattr(bqs, 'log_entry', lambda *args: calls.append(args))
+    return calls
+
+
+def test_a_warning_reaches_stderr_and_the_work_log(monkeypatch, capsys, work_log):
+    """Both sinks, because neither alone is sufficient.
+
+    stderr is the only sink a build subprocess has without a configured logging
+    handler; the work log is the PERSISTENT record a later "why was my cap
+    ignored?" scan reads. Emitting to one only would either lose the warning
+    from the live run or lose it from the audit trail.
+    """
+    _install_queue(monkeypatch, _QueueDouble([_admitted([_DEMOTION_WARNING])]))
+
+    with build_queue_slot('P'):
+        pass
+
+    assert _DEMOTION_WARNING['message'] in capsys.readouterr().err
+    assert len(work_log) == 1
+    assert work_log[0][0] == 'work'
+    assert work_log[0][1] == 'P'
+    assert work_log[0][2] == 'WARNING'
+    assert _DEMOTION_WARNING['message'] in work_log[0][3]
+
+
+def test_a_warning_is_surfaced_exactly_once_across_blocked_re_polls(monkeypatch, capsys, work_log):
+    """Four acquires carrying the SAME warning produce ONE line in each sink.
+
+    This is the deduplication assertion and the reason it is keyed on ``code``:
+    a blocked build re-polls once per wait interval, so a per-acquire emission
+    would repeat the identical warning for the whole wait and bury the rest of
+    the build output under it.
+    """
+    monkeypatch.setattr(bqs, '_resolve_max_retries', lambda: 5)
+    _install_queue(
+        monkeypatch,
+        _QueueDouble(
+            [
+                _blocked([_DEMOTION_WARNING]),
+                _blocked([_DEMOTION_WARNING]),
+                _blocked([_DEMOTION_WARNING]),
+                _admitted([_DEMOTION_WARNING]),
+            ]
+        ),
+    )
+
+    with build_queue_slot('P'):
+        pass
+
+    assert capsys.readouterr().err.count(_DEMOTION_WARNING['message']) == 1
+    assert len(work_log) == 1
+
+
+def test_two_distinct_codes_are_both_surfaced(monkeypatch, capsys, work_log):
+    """The matched control for the dedup test: it collapses by CODE, not to one.
+
+    Without this, the assertion above would pass equally against an
+    implementation that emitted at most one warning ever — which would silently
+    swallow every condition after the first.
+    """
+    _install_queue(monkeypatch, _QueueDouble([_admitted([_DEMOTION_WARNING, _OTHER_WARNING])]))
+
+    with build_queue_slot('P'):
+        pass
+
+    err = capsys.readouterr().err
+    assert _DEMOTION_WARNING['message'] in err
+    assert _OTHER_WARNING['message'] in err
+    assert len(work_log) == 2
+
+
+def test_an_empty_warnings_list_surfaces_nothing(monkeypatch, capsys, work_log):
+    """A migrated repository gets no noise — the common case must stay silent."""
+    _install_queue(monkeypatch, _QueueDouble([_admitted([])]))
+
+    with build_queue_slot('P'):
+        pass
+
+    assert capsys.readouterr().err == ''
+    assert work_log == []
+
+
+def test_an_absent_warnings_key_surfaces_nothing(monkeypatch, capsys, work_log):
+    """A result predating the ``warnings`` field must not crash the build.
+
+    The queue always sends the key now, so this is the defensive boundary for a
+    stale in-process copy — a warning is a report, and failing a legitimately
+    admitted build over a missing report field would be the wrong trade.
+    """
+    _install_queue(monkeypatch, _QueueDouble([_admitted()]))
+
+    with build_queue_slot('P'):
+        pass
+
+    assert capsys.readouterr().err == ''
+    assert work_log == []
+
+
+@pytest.mark.parametrize('plan_id', _PLAN_LESS_PLAN_IDS, ids=_PLAN_LESS_PLAN_ID_IDS)
+def test_a_plan_less_build_writes_no_work_log_line(monkeypatch, capsys, work_log, plan_id):
+    """A plan-less build has no plan work log to write to, and writes none.
+
+    It never reaches the queue at all (the no-op passthrough), so there is no
+    acquire result to carry a warning — the backward-compatibility guarantee
+    covers the reporting surface too, not just the slot.
+    """
+    _install_queue(monkeypatch, _QueueDouble([_admitted([_DEMOTION_WARNING])]))
+
+    with build_queue_slot(plan_id):
+        pass
+
+    assert work_log == []
+    assert capsys.readouterr().err == ''
+
+
+def test_a_warning_never_blocks_the_build(monkeypatch, work_log):
+    """Reporting is not gating: the body still runs and the slot still releases."""
+    double = _QueueDouble([_admitted([_DEMOTION_WARNING])])
+    _install_queue(monkeypatch, double)
+
+    ran = False
+    with build_queue_slot('P'):
+        ran = True
+
+    assert ran is True
+    assert double.released_ids == ['P:uuid-1']
+
+
+@pytest.mark.parametrize(
+    'malformed',
+    [
+        pytest.param(['not-a-dict'], id='entry-is-not-a-mapping'),
+        pytest.param([{'message': 'no code'}], id='entry-has-no-code'),
+        pytest.param([{'code': 'no_message'}], id='entry-has-no-message'),
+        pytest.param([{'code': 1, 'message': 2}], id='entry-fields-are-not-strings'),
+    ],
+)
+def test_a_malformed_warning_entry_is_skipped_not_raised(monkeypatch, capsys, work_log, malformed):
+    """A queue result that fails to describe itself must not fail the build."""
+    _install_queue(monkeypatch, _QueueDouble([_admitted(malformed)]))
+
+    ran = False
+    with build_queue_slot('P'):
+        ran = True
+
+    assert ran is True
+    assert work_log == []
+
+
+# =============================================================================
+# A raising stderr sink cannot leak an admitted slot
+# =============================================================================
+
+#: A valid kebab-case plan id for the real-queue tests. It must satisfy
+#: ``input_validation.is_valid_plan_id`` because the queue's liveness predicates
+#: reject anything else before they look at the filesystem.
+_REAL_QUEUE_PLAN_ID = 'build-queue-slot-sink-probe'
+
+
+def _print_raising_oserror(*_args, **_kwargs) -> None:
+    """Stand in for ``print`` and fail the way a closed or full stderr fails."""
+    raise OSError('stderr is gone')
+
+
+def _print_raising_keyboard_interrupt(*_args, **_kwargs) -> None:
+    """Stand in for ``print`` and fail the way an interrupt mid-write fails."""
+    raise KeyboardInterrupt
+
+
+@pytest.fixture
+def real_queue(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Drive the REAL ``build_queue`` against an isolated machine-global home.
+
+    The ``_QueueDouble`` used everywhere above replaces the acquire/release seam,
+    so it can observe the CALLS but not the persisted state — and the leak these
+    tests pin is a leaked ``active`` entry in ``build-queue.json``. Asserting that
+    the file holds no surviving entry therefore needs the real reader/writer.
+
+    Every path the queue resolves is redirected under ``tmp_path`` so the suite
+    never touches the developer's real ``~/.plan-marshall/build-queue.json`` and
+    stays safe under ``-n auto``: ``PLAN_MARSHALL_HOME`` moves the queue file and
+    the machine-global cap, ``PLAN_BASE_DIR`` moves holder liveness, the
+    ``main_checkout_root`` pin moves the stamped ``project_root``, and the staged
+    ``marshal.json`` replaces the caller's own repository config. The plan dir is
+    created so the holder reads as ALIVE — without it the dead-holder prune would
+    reclaim the entry and the release would report a no-op, which would satisfy
+    the "nothing survives" assertion for the wrong reason.
+
+    That staged ``marshal.json`` carries the demoted ``build.queue.max_slots``
+    key deliberately: it is what makes the acquire result arrive WITH a warning.
+    Without one, ``_surface_warnings`` never reaches the sink at all and the
+    guard under test is never executed.
+
+    Returns:
+        The path to the isolated ``build-queue.json``.
+    """
+    main_repo = tmp_path / 'main'
+    base = main_repo / '.plan' / 'local'
+    (base / 'plans' / _REAL_QUEUE_PLAN_ID).mkdir(parents=True)
+    home = tmp_path / 'home'
+    home.mkdir()
+    monkeypatch.setenv('PLAN_MARSHALL_HOME', str(home))
+    monkeypatch.setenv('PLAN_BASE_DIR', str(base))
+
+    marshal_path = tmp_path / 'marshal.json'
+    marshal_path.write_text(json.dumps({'build': {'queue': {'max_slots': 1}}}), encoding='utf-8')
+
+    build_queue = bqs._load_build_queue()
+    monkeypatch.setattr(build_queue, 'main_checkout_root', lambda: main_repo)
+    monkeypatch.setattr(build_queue, 'get_marshal_path', lambda: marshal_path)
+
+    return home / 'build-queue.json'
+
+
+def test_a_raising_stderr_sink_does_not_leak_the_admitted_slot(monkeypatch, real_queue, work_log):
+    """A report that cannot be written must not take down an admitted build.
+
+    The exposure is the FIRST ``_surface_warnings`` call, before the wait loop:
+    it runs outside ``_wait_for_admission``'s own ``except BaseException`` arm AND
+    outside ``build_queue_slot``'s release ``finally``, so an unguarded raise
+    there escapes with the slot already ADMITTED and no release path in scope —
+    leaking an active entry on the machine-global queue every other checkout on
+    the host contends for.
+
+    ``print`` is replaced through the module namespace rather than by swapping
+    ``sys.stderr`` for a raising stream: the module global shadows the builtin at
+    exactly the guarded call site and nowhere else, whereas ``sys.stderr`` is
+    process-wide and logging's last-resort handler writes to it, so a raising
+    stream would also blow up an unrelated release-failure log line and the test
+    could no longer say which write it had broken.
+    """
+    monkeypatch.setattr(bqs, 'print', _print_raising_oserror, raising=False)
+
+    ran = False
+    with build_queue_slot(_REAL_QUEUE_PLAN_ID):
+        ran = True
+
+    assert ran is True
+    state = json.loads(real_queue.read_text(encoding='utf-8'))
+    # No leaked slot: neither an active holder nor a waiting entry survives.
+    assert state['active'] == []
+    assert state['waiting'] == []
+    # Released exactly once — the run_log gets one entry per REAL release, so a
+    # single row is both "it was released" and "it was released once".
+    assert [row['plan_id'] for row in state['run_log']] == [_REAL_QUEUE_PLAN_ID]
+    # The matched control: the guard covers the stderr sink ONLY. The work-log
+    # sink still received the warning, so the guard did not swallow the whole
+    # emission — and its presence also proves a warning was there to surface,
+    # without which this test would pass vacuously.
+    assert len(work_log) == 1
+
+
+def test_a_keyboardinterrupt_from_the_sink_still_propagates(monkeypatch, real_queue, work_log):
+    """An interrupt still aborts the build AND still leaves no slot behind.
+
+    Two claims, and the pairing is the whole point. The sink guard stays
+    ``Exception``-scoped, so a ``Ctrl-C`` landing during warning output
+    propagates: swallowing it there would make an interrupt silently unkillable
+    and the build would carry on as though the operator had never asked it to
+    stop. But propagating is not the same as leaking — the interrupt travels out
+    through ``_wait_for_admission``'s ``except BaseException`` arm, which
+    RELEASES the admitted entry and RE-RAISES.
+
+    The queue-state assertions are what make that second claim testable. This
+    test previously asserted the propagation and nothing about the queue, so the
+    leak it now pins was invisible to the suite: the entry survived on the
+    machine-global ``build-queue.json``, where nothing ever reclaims it, and
+    every other checkout on the host contended for one slot fewer.
+
+    Releasing-and-re-raising is distinguished from a swallow by the body
+    assertion: a swallow would have let the wrapped build RUN.
+    """
+    monkeypatch.setattr(bqs, 'print', _print_raising_keyboard_interrupt, raising=False)
+
+    ran = False
+    with pytest.raises(KeyboardInterrupt):
+        with build_queue_slot(_REAL_QUEUE_PLAN_ID):
+            ran = True
+
+    # The interrupt fired before the yield, so the build never started. This is
+    # the matched control against a swallow, which would have run the body.
+    assert ran is False
+    state = json.loads(real_queue.read_text(encoding='utf-8'))
+    # No leaked entry: neither an active holder nor a waiting entry survives.
+    assert state['active'] == []
+    assert state['waiting'] == []
+    # Released exactly once — one run_log row per REAL release, so a single row
+    # is both "it was released" and "it was released once".
+    assert [row['plan_id'] for row in state['run_log']] == [_REAL_QUEUE_PLAN_ID]
+    # Nothing reached the work-log sink: ``print`` raises ahead of it, and unlike
+    # the Exception case above the guard does not swallow, so the emission stops
+    # there. The raise itself is what proves a warning was present to surface —
+    # without one the sink is never reached and this test could not fail.
+    assert work_log == []
+
+
+def test_a_baseexception_from_an_in_loop_repoll_releases_the_queued_entry(monkeypatch, work_log):
+    """The in-loop call site gets the same cleanup — the asymmetry is closed.
+
+    The pre-loop and in-loop ``_surface_warnings`` calls are the same call on the
+    same data; only where the ``try`` happened to start ever made one of them
+    safe. This covers the second site: a ``BaseException`` from a re-poll's
+    warning surfacing releases the QUEUED waiting entry rather than abandoning it
+    on the machine-global queue.
+
+    Two DISTINCT warning codes are scripted because the surfacing is deduplicated
+    by ``code`` across re-polls — with one code the in-loop call would skip the
+    sink entirely, no interrupt would ever be raised, and the test would pass
+    while exercising nothing.
+
+    Both blocked responses carry the SAME id, mirroring the real queue: a
+    re-acquire for an already-waiting plan reuses its entry in place (that is what
+    preserves FIFO), so the id read before the poll is the id that must be
+    released.
+    """
+    double = _QueueDouble(
+        [
+            _blocked([_DEMOTION_WARNING], entry_id='P:uuid-waiting'),
+            _blocked([_OTHER_WARNING], entry_id='P:uuid-waiting'),
+        ]
+    )
+    _install_queue(monkeypatch, double)
+    printed: list[str] = []
+
+    def _print_raising_on_the_second_line(line: object = None, *_args, **_kwargs) -> None:
+        printed.append(str(line))
+        if len(printed) > 1:
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr(bqs, 'print', _print_raising_on_the_second_line, raising=False)
+
+    ran = False
+    with pytest.raises(KeyboardInterrupt):
+        with build_queue_slot('P'):
+            ran = True
+
+    assert ran is False
+    # The raise really did come from the IN-LOOP call: two lines were attempted,
+    # so the pre-loop surfacing completed and the re-poll's is what failed.
+    assert len(printed) == 2
+    assert _DEMOTION_WARNING['message'] in printed[0]
+    assert _OTHER_WARNING['message'] in printed[1]
+    # The queued entry is released rather than abandoned on the shared queue.
+    assert double.released_ids == ['P:uuid-waiting']
+    # Only the first warning reached the work log: the interrupt stopped the
+    # second emission at its stderr sink, before the log call.
+    assert len(work_log) == 1
 
 
 #: ``(the marshal.json body ``read_json`` returns, resolved max_retries)``. Only

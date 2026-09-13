@@ -82,7 +82,7 @@ class TestFifoFrontIsListPositionNotMinTs:
         import time
 
         base = isolated_base['base']
-        _set_max_slots(base, 1)
+        _set_max_slots(isolated_base['home'], 1)
         _make_live_plan(base, 'plan-held')
         held_id = 'plan-held:held-uuid'
         first_id, second_id = self._seed_inverted_ts_queue(
@@ -108,9 +108,8 @@ class TestFifoFrontIsListPositionNotMinTs:
         ``admitted`` while ``plan-second`` (smaller ts, later in append order)
         re-polls to ``blocked``.
         """
-        base = isolated_base['base']
         # max_slots 1 with an EMPTY active list → exactly one free slot.
-        _set_max_slots(base, 1)
+        _set_max_slots(isolated_base['home'], 1)
         first_id, second_id = self._seed_inverted_ts_queue(isolated_base, active=[])
 
         # plan-second re-polls first: it is NOT the list front, so it stays blocked
@@ -139,7 +138,7 @@ class TestFifoFrontIsListPositionNotMinTs:
         import time
 
         base = isolated_base['base']
-        _set_max_slots(base, 1)
+        _set_max_slots(isolated_base['home'], 1)
         _make_live_plan(base, 'plan-stale')
         stale_id = 'plan-stale:stale-uuid'
         first_id, second_id = self._seed_inverted_ts_queue(

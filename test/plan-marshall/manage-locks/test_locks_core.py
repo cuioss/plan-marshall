@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 import os
 
+import pytest
 from _locks_core_fixtures import (
     _acquire_guard,
     _atomic_write_json,
@@ -14,6 +15,7 @@ from _locks_core_fixtures import (
     _read_json_or_empty,
     holder_has_live_worktree,
     holder_is_dead,
+    read_json_guarded,
 )
 
 
@@ -193,3 +195,98 @@ def test_acquire_guard_times_out_when_held(tmp_path, monkeypatch):
     finally:
         os.close(held_fd)
         guard.unlink()
+
+
+# =============================================================================
+# read_json_guarded — the guarded, NON-COMMITTING read
+# =============================================================================
+
+
+def test_read_json_guarded_returns_the_state_without_writing(tmp_path):
+    """The read-only counterpart to ``rmw_json``: same answer, no commit."""
+    path = tmp_path / 'state.json'
+    path.write_text(json.dumps({'active': [{'id': 'plan-a:1'}]}), encoding='utf-8')
+    before = path.read_bytes()
+
+    assert read_json_guarded(path) == {'active': [{'id': 'plan-a:1'}]}
+    assert path.read_bytes() == before
+
+
+@pytest.mark.parametrize(
+    'body',
+    [
+        pytest.param('{ not json', id='invalid-json'),
+        pytest.param('[{"id": "plan-a:1"}]', id='top-level-list'),
+        pytest.param('42', id='top-level-scalar'),
+    ],
+)
+def test_read_json_guarded_leaves_an_unreadable_file_byte_identical(tmp_path, body):
+    """A file the read could not interpret is a file the read must not rewrite.
+
+    This is the whole reason the helper exists. ``rmw_json`` reports a corrupt,
+    truncated or non-dict file as ``{}`` and then COMMITS whatever its mutator
+    returns — so a read expressed as an identity mutator writes that ``{}`` back
+    and destroys every entry the file held. The empty mapping is still the
+    reported interpretation here (a reader and a mutator must not disagree about
+    what an unreadable file means); what changes is that nothing is written.
+    """
+    path = tmp_path / 'state.json'
+    path.write_text(body, encoding='utf-8')
+    before = path.read_bytes()
+
+    assert read_json_guarded(path) == {}
+    assert path.read_bytes() == before
+
+
+def test_read_json_guarded_does_not_create_a_missing_file(tmp_path):
+    """A read of an absent state file reports empty and creates nothing.
+
+    ``rmw_json`` materialises the file on its commit, so a read routed through
+    it turned "nothing has coordinated yet" into a committed empty state.
+    """
+    path = tmp_path / 'state.json'
+
+    assert read_json_guarded(path) == {}
+    assert not path.exists()
+
+
+def test_read_json_guarded_takes_the_guard_so_it_cannot_read_mid_mutation(tmp_path, monkeypatch):
+    """The guard is kept, not traded away: a held guard blocks the read.
+
+    Dropping to a bare unguarded read would swap this defect for the torn read
+    the ``rmw_json`` call was chosen to avoid, so the guarded-ness is pinned
+    rather than assumed. Its matched control is
+    :func:`test_read_json_guarded_returns_the_state_without_writing` above, which
+    reads successfully against a FREE guard — without that pair, this assertion
+    would pass equally against a helper that never acquired anything and simply
+    always raised.
+    """
+    monkeypatch.setattr(_mod, '_GUARD_STALE_SECONDS', 10_000.0)
+    monkeypatch.setattr(_mod, '_GUARD_TIMEOUT_SECONDS', 0.05)
+    monkeypatch.setattr(_mod, '_GUARD_BACKOFF_SECONDS', 0.005)
+    path = tmp_path / 'state.json'
+    path.write_text(json.dumps({'v': 1}), encoding='utf-8')
+
+    held_fd = _acquire_guard(tmp_path / 'state.json.lock')
+    try:
+        with pytest.raises(TimeoutError):
+            read_json_guarded(path)
+    finally:
+        os.close(held_fd)
+        (tmp_path / 'state.json.lock').unlink()
+
+
+def test_read_json_guarded_releases_the_guard_it_took(tmp_path):
+    """A read must not wedge the file for the next caller.
+
+    The guard is removed in a ``finally``, so a second read — and any subsequent
+    mutation — succeeds. Without this, one ``limit get`` would block every later
+    acquire until the stale-reclaim threshold elapsed.
+    """
+    path = tmp_path / 'state.json'
+    path.write_text(json.dumps({'v': 1}), encoding='utf-8')
+
+    read_json_guarded(path)
+
+    assert not (tmp_path / 'state.json.lock').exists()
+    assert read_json_guarded(path) == {'v': 1}

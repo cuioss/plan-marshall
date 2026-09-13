@@ -175,6 +175,21 @@ Project-level settings under the `project.*` block — persist across plans, see
 | `commands.{tool}:{cmd}.timeout_seconds` | Timeout learning | Build execution | [ext-point-build.md](ext-point-build.md) |
 | `{tool}.acceptable_warnings` | User config | check-warnings | [ext-point-build.md](ext-point-build.md) |
 
+## Machine-global build configuration (not `marshal.json`)
+
+Two build-queue settings are **machine-global** — one value per host, shared by every checkout that contends for the one machine-global `build-queue.json` — so neither is a `marshal.json` key and neither is seeded into one. `build.queue.max_retries` is the single per-repo build-queue key: it bounds only THIS caller's own re-poll loop and is never evaluated against another caller's entries.
+
+| Setting | Home | Read / written by |
+|---------|------|-------------------|
+| `build.queue.max_slots` (the build-slot cap) | `~/.plan-marshall/marshalld/machine-config.json`, beside `registry.json` (the home root is overridable via `PLAN_MARSHALL_HOME`) | `manage_build_server config get` / `config set --max-slots N` / `config migrate` |
+| `upper_limit_seconds` (the adaptive stale-reclaim threshold) | a top-level field of `~/.plan-marshall/build-queue.json` — the queue state whose entries it governs | `build_queue limit get` / `limit set --value N` |
+
+A `build.queue.max_slots` key present in a repository's `marshal.json` **is not in effect**: it never reaches the admitted cap, which is resolved cwd-independently from the machine-global file alone. Every `build_queue acquire` instead reports the key as `per_repo_max_slots: {value, in_effect: false}` and carries a `per_repo_max_slots_not_in_effect` warning. `manage_build_server config migrate` moves it in one step — it copies the value machine-wide **only when nothing is set there**, then removes the per-repo key, and when the two values differ it changes **neither** file and reports both.
+
+A `build.queue.upper_limit_seconds` key present in a repository's main-anchored `run-configuration.json` is inert in the same way: `build_queue limit get` reports it as `per_repo_value` with `in_effect: false`, and it never reaches the applied threshold.
+
+Each surface is documented where its script is — [`manage-build-server/SKILL.md`](../../manage-build-server/SKILL.md) for the cap verbs and the daemon's reported cap, [`manage-locks/SKILL.md`](../../manage-locks/SKILL.md) for the queue result fields and `limit get|set`.
+
 ## Project Architecture (per-module layout under `.plan/architecture/`)
 
 The architecture cache is split: a top-level `_project.json` declares the canonical
@@ -223,7 +238,7 @@ Classification key:
 | `DEFAULT_PLAN_EXECUTE.per_deliverable_build` (`_config_defaults.py`) | list of `default:verify:{canonical}` ids + prefix validator | **adopt-later** | Has a self-describing validator (`validate_per_deliverable_build`), but the value is a phase-level verify-step list, not a step-owned param object; revisit if verify steps gain owned params. |
 | Verify-step registry | `verification_steps` keyed-map seed | **adopted** | Verify-step membership, order, and per-step description are declared in the parameterized `canonical_verify.md` step doc's frontmatter (`canonicals:` enumerates the canonical set) and discovered via `extension_discovery.find_implementors` ([`ext-point-build-verify-step.md`](ext-point-build-verify-step.md)). The seed and `_discover_all_verify_steps()` both expand each implementor's `canonicals` list into `default:verify:{canonical}` ids. Verify steps are param-less; the per-step `configurable` contract becomes worthwhile only once a verify step declares owned params. |
 | Finalize-step registry | keyed-map serial form | **adopted** | Finalize-step membership, order, default-seed inclusion, preset membership, and per-step description are all declared in each step doc's frontmatter and discovered via `extension_discovery.find_implementors` ([`ext-point-finalize-step.md`](ext-point-finalize-step.md)). |
-| `DEFAULT_BUILD_QUEUE` — `max_slots`, `max_retries`, `upper_limit_seconds` (`_config_defaults.py`) | flat `build.queue` block | **not-a-fit** | Project-wide, cross-plan build-queue resource under top-level `build.*` (peer to `build.map`); not a plan step param. |
+| `DEFAULT_BUILD_QUEUE` — `max_retries` (`_config_defaults.py`) | flat `build.queue` block | **not-a-fit** | Project-wide, cross-plan build-queue resource under top-level `build.*` (peer to `build.map`); not a plan step param. `max_retries` is its only member — the slot cap and the reap threshold are machine-global and are not `marshal.json` keys at all (see [Machine-global build configuration](#machine-global-build-configuration-not-marshaljson)). |
 | `build.map` (`classify_globs()` / `classify_build_class()`) | seeded write-once glob→build-class map | **not-a-fit** | Project architecture data, not a step-owned param; consumed by architecture derive-verification. |
 | `DEFAULT_SYSTEM_RETENTION` / `DEFAULT_PROJECT` / `DEFAULT_SYSTEM_DOMAIN` (`_config_defaults.py`) | system/project config blocks | **not-a-fit** | Project- and system-scoped config (skill domains, retention, base branch); no step owner. |
 | `BUILD_SYSTEM_DEFAULTS` (`_config_defaults.py`) | build-system detection defaults | **not-a-fit** | Build-system abstraction defaults, not plan step params. |

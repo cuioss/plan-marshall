@@ -63,7 +63,14 @@ Two primitives live here:
   never stacked; a build routed to the daemon takes no fallback slot. The
   byte-identical-unregistered guarantee holds through this shared file: an
   unregistered build still touches no daemon or socket, yet acquires its slot
-  against the same global file exactly as before.
+  against the same global file exactly as before. It exposes **four** actions —
+  two slot actions (`acquire` / `release`) and two threshold actions (`limit get`
+  / `limit set`). Both of the values it admits against are machine-global too: the
+  slot cap `max_slots` resolves from `machine-config.json` through the shared
+  cwd-independent resolver (NOT the calling repository's `marshal.json`), and the
+  adaptive stale-reclaim threshold `upper_limit_seconds` is a top-level field of
+  `build-queue.json` itself — see **The cap and the reap threshold are
+  machine-global** below.
 
 ## Enforcement
 
@@ -95,7 +102,8 @@ cwd. The build-queue file is machine-global — it lives under the home root
 ```text
 <main>/.plan/local/merge.lock          # the unified merge mutex (one-line holder plan_id)
 <main>/.plan/local/merge-queue.json    # the merge-lock store: `waiting` (FIFO admission) + `rate_windows` (per-bot claims)
-~/.plan-marshall/build-queue.json      # the machine-global build-queue active + waiting + run-log state
+~/.plan-marshall/build-queue.json      # the machine-global build-queue active + waiting + run-log state, plus the top-level `upper_limit_seconds` reap threshold
+~/.plan-marshall/marshalld/machine-config.json  # the machine-global build-slot cap `max_slots` (read here, written only by manage-build-server `config set` / `config migrate`)
 ```
 
 ## The rate window shares the STORE, never the MUTEX
@@ -142,6 +150,92 @@ coordination files are the deliberate exceptions, but they split across two tier
 
 See ADR-002 (`doc/adr/002-Plan-scoped_operations_move_into_a_cwd-pinned_hermetic_worktree.adoc`)
 and ADR-008 (`doc/adr/008-machine-global-home-root-anchor-tier.adoc`).
+
+## The cap and the reap threshold are machine-global
+
+Both values the build queue admits and reaps against are machine-global, for the
+same reason the queue file itself is: they are applied to EVERY repository's
+entries in the one shared queue, so a per-repo value is one a caller can hold while
+contending against a caller holding a different one.
+
+**The cap.** `max_slots` resolves through the shared
+`_machine_config.resolve_max_slots()` from `~/.plan-marshall/marshalld/machine-config.json`
+— never the calling repository's `marshal.json`. The resolver is cwd-independent, so
+a process that has moved its working directory (the daemon's post-`double_fork`
+`chdir('/')`) can no longer degrade silently to the default. Every `acquire` /
+`release` result therefore reports `max_slots_source` beside `max_slots`. The
+source vocabulary and the operator verbs that write the file are documented where
+that script is — [`manage-build-server/SKILL.md`](../manage-build-server/SKILL.md)
+§ "The machine-global build-slot cap".
+
+**The reap threshold.** `upper_limit_seconds` is a TOP-LEVEL field of
+`build-queue.json` — the same file whose entries it governs — rather than a per-repo
+key in the main-anchored `run-configuration.json`. Under a per-repo value, a repo
+that had never seen a long build could reap another repo's live long build early,
+while each repo's releases ratcheted only its own copy; living in the queue's own
+state makes it single-valued host-wide by construction. It is read and written
+INSIDE the queue's own `rmw_json` critical section on every path: the reaper reads
+it from the state it is already mutating, `release` recomputes `max(current, held)`
+clamped to `[600, 3600]` there too, and `limit set` writes through the same
+mutation. The reaper's threshold is `2 ×` that value. A release persists the
+recomputed value ONLY when it actually moves — writing back an unchanged floor would
+materialise the field and destroy the `default_floor` / `queue_state` distinction.
+
+**A surviving per-repo value is reported, never honoured.** A `build.queue.max_slots`
+in the caller's `marshal.json` is read by `acquire` for the SOLE purpose of reporting
+it (`per_repo_max_slots` + a `per_repo_max_slots_not_in_effect` warning); a
+`build.queue.upper_limit_seconds` in the caller's `run-configuration.json` is read by
+`limit get` for the SOLE purpose of reporting it (`per_repo_value`). Neither value
+ever reaches the applied cap or threshold.
+
+### Cap disagreement is reported, never reconciled
+
+Because the cap is resolved per process while the queue is shared host-wide, two
+sessions can still admit against different caps — a daemon started before a `config
+set`, or a caller whose machine-global file became unreadable. Every new entry is
+therefore stamped at admission with **`admitted_under_max_slots`**, the cap it was
+actually admitted under. The stamp is written once and never rewritten: a promotion
+moves the entry dict from `waiting` to `active` and carries the original stamp with
+it.
+
+`acquire` compares its own resolved cap against the stamps of every pre-existing
+active and waiting entry and reports `cap_agreement`:
+
+| Verdict | When |
+|---------|------|
+| `disagree` | At least one stamped entry was admitted under a different cap |
+| `unknown` | Nothing disagreed, but at least one entry carries no usable stamp |
+| `agree` | Every entry carries a stamp equal to this caller's cap |
+
+`disagree` outranks `unknown`, because a proven disagreement is not made less true
+by a second entry that could not be compared. An entry whose stamp is absent, or is
+not a positive `int` (a `bool` is rejected despite being an `int` subclass), counts
+as unstamped and is **never** counted as agreement — a missing measurement treated
+as a match is what would let a real disagreement report as `agree`. See
+[scope-limited-negative-is-unknown.md](standards/scope-limited-negative-is-unknown.md).
+
+The verdict always rides with its population (`cap_compared_count` /
+`cap_unstamped_count`), so an `agree` can never be read off a comparison that never
+happened: publishing the population is what makes an `agree` over an EMPTY queue
+visible as such rather than reading like a clean bill of health. The comparison runs
+after the reaper and the dead-holder prune — so a reclaimed entry's stamp raises no
+conflict nobody can act on — and BEFORE the caller's own entry is appended, so an
+empty queue reports `cap_compared_count: 0` rather than counting the entry this very
+call is about to create. Both the comparison and the stamp happen inside the SAME
+serialized `rmw_json` mutation that admits, so the verdict describes exactly the
+queue state the admission decided against.
+
+On a `disagree`, `acquire` emits **one** WARN-level `cap-disagreement` `[LOCK]`
+event — one per acquire, not one per disagreeing holder, because the disagreement is
+a single property of this admission and the holders ride along as fields
+(`caller_max_slots`, `caller_max_slots_source`, `disagreeing_count`,
+`compared_count`, `unstamped_count`, `disagreeing_holders`).
+
+**Reporting is the whole of it.** Admission logic is unchanged: the admitting caller
+applies ITS OWN cap, existing stamps are left exactly as they were admitted, and
+neither value is picked as authoritative. Reconciling the two is deliberately out of
+scope, because choosing a winner is what a per-caller cap over a shared queue cannot
+do correctly — which is also why the warning names no remedy command.
 
 ## Shared Core (`scripts/_locks_core.py`)
 
@@ -215,11 +309,12 @@ consumer. It exposes:
 - `log_lock_event(lock, event, lock_id, **fields)` — the single best-effort
   `[LOCK]` emission point both lock primitives call at each lifecycle point
   (`merge_lock`: acquired / reclaimed / blocked / released; `build_queue`:
-  acquired / blocked / released / reaped-stale). It appends a `[LOCK]`-tagged
+  acquired / blocked / released / reaped-stale / cap-disagreement). It appends a `[LOCK]`-tagged
   line to the single main-anchored global lock-event log (`lock-{date}.log`
   under `.plan/logs/`) — never the per-worktree work-log — because locks are
   cross-session, main-anchored coordination whose event timeline must be shared
-  across all sessions. Uses `WARNING` level for `reaped-stale`; `INFO` for
+  across all sessions. Uses `WARNING` level for `reaped-stale` and
+  `cap-disagreement`; `INFO` for
   every other event. The entire body is best-effort: any failure (resolution,
   unwritable dir, encoding) is swallowed so a logging error can never affect
   lock correctness.
@@ -454,12 +549,88 @@ python3 .plan/execute-script.py plan-marshall:manage-locks:build_queue acquire \
   --plan-id PLAN_ID
 ```
 
+Accepted flags: `--plan-id` (**required**).
+
+Beyond `id` / `admission` / `active_count` / `waiting_count` / `queue_path`, every
+result reports the cap it admitted under and the two cap reports:
+
+| Field | Present | Meaning |
+|-------|---------|---------|
+| `max_slots` | always | The cap this call admitted against |
+| `max_slots_source` | always | Where that cap came from (`machine_config` / `default` / `invalid` / `unreadable`) — reported unconditionally, because the value alone cannot distinguish a configured `5` from a fallback `5` |
+| `max_slots_detail` | when `max_slots_source != machine_config` | Why a non-nominal source was reached; a nominal resolution has nothing to explain |
+| `warnings` | **always** (empty when nothing applies) | Each entry is `{code, message}`. Consumers deduplicate on `code`, never on the message text. Two producers: `per_repo_max_slots_not_in_effect` and `cap_disagreement` |
+| `per_repo_max_slots` | only when the caller's `marshal.json` carries the demoted key | `{value, in_effect: false}` — `in_effect` is stated explicitly so a reported value cannot be misread as an operative one |
+| `cap_agreement` | always | `agree` / `disagree` / `unknown` — see the verdict rules below |
+| `cap_compared_count` | always | The examined POPULATION (pre-existing active + waiting entries), `0` for an empty queue |
+| `cap_unstamped_count` | always | How many of that population carried no usable stamp and so could not be compared |
+| `cap_disagreement` | always (empty list when none) | One row per disagreeing holder: `id`, `plan_id`, `project_root`, `admitted_under_max_slots` |
+
+`warnings` is always present so a consumer iterates it unconditionally and never
+branches on whether a key is there — an optional-key shape is what makes a consumer
+forget to look.
+
 ### build_queue — release
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-locks:build_queue release \
   --plan-id PLAN_ID --id ID
 ```
+
+Accepted flags: `--plan-id` (**required**), `--id` (**required** — the admission id
+returned by `acquire`).
+
+Reports `action` (`released` / `noop`), `promoted` (the FIFO-promoted waiter's id, or
+null), `active_count`, `waiting_count`, `queue_path`, and the same `max_slots` /
+`max_slots_source` / `max_slots_detail` cap fields as `acquire`. It does **not**
+carry `warnings`, `per_repo_max_slots`, or any `cap_*` field: the demotion report and
+the disagreement verdict are properties of an ADMISSION decision, and a release makes
+none.
+
+### build_queue — limit get
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-locks:build_queue limit get
+```
+
+Accepted flags: **none** — it takes no `--plan-id`, because it reads machine-global
+state belonging to no plan and the queue path resolves under the home root without
+any plan resolution.
+
+Read-only, and it writes nothing: it reads the queue through
+`_locks_core.read_json_guarded`, which takes the same `O_EXCL` guard every other
+access to this file takes — so the reported value can never be a torn read taken
+mid-write — and returns without committing. It deliberately does NOT pass an identity
+mutator to `rmw_json`: that call commits unconditionally and reports a corrupt queue
+file as `{}`, so a caller merely asking for the threshold would write that `{}` back
+and erase every active and waiting entry. Fields: `field` (`upper_limit_seconds`), `value`,
+`source` (`queue_state` / `default_floor`), `floor_seconds` (`600`),
+`ceiling_seconds` (`3600`), `reap_threshold_seconds` (`2 × value` — the age at which
+the reaper reclaims an active entry), `queue_path`, plus `per_repo_value`
+(`{value, in_effect: false}`) only when the caller's main-anchored
+`run-configuration.json` still carries the retired `build.queue.upper_limit_seconds`.
+
+`default_floor` is reported distinctly from `queue_state` because the fallback IS the
+floor: a returned `600` could not otherwise be told apart from a configured `600`.
+
+### build_queue — limit set
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-locks:build_queue limit set \
+  --value VALUE
+```
+
+Accepted flags: `--value` (**required**, a positive int in seconds, clamped to
+`[600, 3600]`). It takes no `--plan-id`, for the same reason `limit get` does not.
+The `--value` spelling is deliberate, so an operator who learned the retired
+run-config setter's flag does not mispredict this one.
+
+Written through the same serialized `rmw_json` mutation the admit/release cycle uses,
+so a set cannot interleave with a release's own recompute of the same field and the
+committed value is never a lost update. Fields: `field`, `value` (the clamped value
+actually stored), `requested` (what was asked for), `clamped` (bool — whether the two
+differ), `source` (`queue_state`), `floor_seconds`, `ceiling_seconds`,
+`reap_threshold_seconds`, `queue_path`.
 
 ## Integration
 
@@ -471,12 +642,14 @@ python3 .plan/execute-script.py plan-marshall:manage-locks:build_queue release \
 | `manage-build-server:_marshalld_scheduler` (via the D5 routing seam) | consumes | the same machine-global `build-queue.json` — the registered path (daemon-served builds) |
 | `automatic-review/SKILL.md` rate-limit recovery sequence | consumes | `merge_lock rate-window claim`/`check`/`release` |
 | `automatic-review/SKILL.md` Branch 3 → trigger-arm boundary | consumes | `merge_lock poll-delay` — awaits the returned `delay_seconds` once before the boundary's selector re-consult routes |
+| `manage-build-server:manage_build_server config set` / `config migrate` | produces | `machine-config.json` — the machine-global `max_slots` that `build_queue acquire`/`release` resolve and report the source of; this skill only READS it |
 | `_locks_core.rmw_json` | consumed by | both `build_queue` (`build-queue.json`) and `merge_lock` (`merge-queue.json` FIFO layer AND `rate_windows` claims) |
 
 ## Standards
 
 - [scope-limited-negative-is-unknown.md](standards/scope-limited-negative-is-unknown.md) — the structural encoding of the invariant "an empty result from a scope that could not have observed the subject is `unknown`, not `absent`", the scope-limited-enumeration generalization of ADR-009 that `holder_staleness` + `release --require-stale` realize in code.
 - [cwd-keyed-store-resolution-audit.md](standards/cwd-keyed-store-resolution-audit.md) — the fix-or-justify enumeration of every CWD-keyed store-resolution site against that invariant.
+- [machine-global-config-scope-audit.md](standards/machine-global-config-scope-audit.md) — the derived enumeration of the sites where a config key and the state it governs sit in different anchoring tiers: a key read after a process moved its cwd away from the key's resolution root, and a key read per caller yet applied to machine-global shared state. Publishes both populations with the sweeps and the `ast` classification that re-derive them, the supplementary sweep covering the trees the inventory does not walk, and a current-state disposition for `build.queue.max_slots` and `build.queue.upper_limit_seconds`.
 
 ## Related
 

@@ -19,7 +19,6 @@ Run configuration handling for persistent command configuration storage.
 - Timeout and warning operations use the noun-verb pattern (e.g., `timeout get`, `warning add`)
 - Cleanup operations use `cleanup` and `cleanup-status` subcommands
 - Architecture-refresh operations use the noun-verb pattern (`architecture-refresh get-tier-0`, `architecture-refresh set-tier-0`, etc.)
-- Build-queue-limit operations use the noun-verb pattern (`build-queue-limit get`, `build-queue-limit set`)
 - CI-duration operations use the noun-verb pattern (`ci-duration record`, `ci-duration p50`)
 - Commit-trailer operations use the noun-verb pattern (`commit-trailer get`, `commit-trailer set`)
 
@@ -45,11 +44,6 @@ Run configuration handling for persistent command configuration storage.
   "architecture_refresh": {
     "tier_0": "enabled",
     "tier_1": "prompt"
-  },
-  "build": {
-    "queue": {
-      "upper_limit_seconds": 600
-    }
   },
   "ci_durations": {
     "<command-name>": [420, 380, 455]
@@ -88,8 +82,6 @@ See [standards/run-config-standard.md](standards/run-config-standard.md) for com
 | architecture-refresh set-tier-0 | `plan-marshall:manage-run-config:run_config architecture-refresh set-tier-0` |
 | architecture-refresh get-tier-1 | `plan-marshall:manage-run-config:run_config architecture-refresh get-tier-1` |
 | architecture-refresh set-tier-1 | `plan-marshall:manage-run-config:run_config architecture-refresh set-tier-1` |
-| build-queue-limit get | `plan-marshall:manage-run-config:run_config build-queue-limit get` |
-| build-queue-limit set | `plan-marshall:manage-run-config:run_config build-queue-limit set` |
 | ci-duration record | `plan-marshall:manage-run-config:run_config ci-duration record` |
 | ci-duration p50 | `plan-marshall:manage-run-config:run_config ci-duration p50` |
 | commit-trailer get | `plan-marshall:manage-run-config:run_config commit-trailer get` |
@@ -207,20 +199,11 @@ Allowed values:
 
 Invalid values surface the standard `status: error, error: invalid_value, allowed: [...]` contract.
 
-### build-queue-limit get / set
+### The build-queue reap threshold is not a run-config knob
 
-Manage the adaptive `build.queue.upper_limit_seconds` knob consumed by `build_queue.validate_lock_queue` — the self-healing build-queue stale reaper. The limit is the per-build held-duration ceiling the reaper measures against: an active slot is reaped once its age exceeds `2 ×` this limit. It defaults to and floors at 600 s (10 min), is capped at a 3600 s (1 h) ceiling, and is monotonic-up but clamped — `build_queue` `release` grows it toward the longest observed real build held-duration so a legitimately long build is never falsely reaped, while the ceiling prevents a single anomalously long hold from ratcheting it beyond an hour. The knob lives under the `build.queue` block in the main-anchored `run-configuration.json`, so reads/writes resolve against the main checkout regardless of caller cwd.
+The adaptive stale-reclaim threshold the self-healing build-queue reaper measures an active slot against is **machine-global**, so this surface does not manage it. It is the top-level `upper_limit_seconds` field of `~/.plan-marshall/build-queue.json` — the same file whose entries it governs — read and recomputed inside that queue's own critical section, and managed with `plan-marshall:manage-locks:build_queue limit get` / `limit set --value N`. The threshold applies to EVERY repository's entries in the one shared queue, which is why it belongs to the queue rather than to any one caller's repository; see [`manage-locks/SKILL.md`](../manage-locks/SKILL.md) § "The cap and the reap threshold are machine-global".
 
-```bash
-# Read the current limit (default/floor 600 s, always clamped to [600, 3600])
-python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config build-queue-limit get
-
-# Set the limit explicitly (positive int seconds; clamped to [600, 3600])
-python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config build-queue-limit set \
-  --value 1800
-```
-
-A non-positive `--value` surfaces the standard `status: error, error: invalid_value` contract; a value outside `[600, 3600]` is clamped (not rejected) on write.
+A `build.queue.upper_limit_seconds` key sitting in a repository's `run-configuration.json` has no effect on the applied threshold: `build_queue limit get` reports it as `per_repo_value` with `in_effect: false`.
 
 ### ci-duration record / p50
 
@@ -363,7 +346,6 @@ See [`manage-config` data-model.md](../manage-config/standards/data-model.md) §
 | `marshall-steward` | architecture-refresh set-tier-0/1 | Persist user-selected tier knobs from setup/maintenance wizard |
 | Build skills | timeout set | Update timeouts after command execution |
 | Build skills | warning add | Register acceptable warning patterns |
-| `manage-locks` `build_queue` release | build-queue-limit set | Persist the clamped adaptive upper limit from the released entry's held duration |
 | CI-wait handlers (`_github_ci`, `gitlab_ops`) | ci-duration record | Record an observed successful CI-run duration into the p50 window on natural completion |
 
 ### Consumers
@@ -374,7 +356,7 @@ See [`manage-config` data-model.md](../manage-config/standards/data-model.md) §
 | `manage-architecture` `_lookup_bash_timeout` | timeout measured | Read measured-ness for the `execution_tier` fail-closed rule (unmeasured → `orchestrator`) |
 | Build skills | warning list | Filter build warnings against accepted patterns |
 | `phase-6-finalize` architecture-refresh step | architecture-refresh get-tier-0/1 | Read tier knobs to decide deterministic refresh / LLM re-enrichment behaviour |
-| `manage-locks` `build_queue` acquire/release | build-queue-limit get | Read the adaptive upper limit to compute the `2 ×` stale-reclaim threshold |
+| `manage-locks` `build_queue limit get` | (reads the file directly) | Report a surviving per-repo `build.queue.upper_limit_seconds` as `per_repo_value` with `in_effect: false` — a report only; it never resolves the applied threshold from here |
 | CI-wait handlers (`_github_ci`, `gitlab_ops`) | ci-duration p50 | Read the p50 seed for the adaptive CI-wait first-sleep (skip on a null window) |
 | `workflow-integration-git` commit workflow | commit-trailer get | Resolve the `Co-Authored-By` line appended at `git commit` time |
 
@@ -444,17 +426,6 @@ python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config archi
 
 python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config architecture-refresh set-tier-1 \
   --value {prompt,auto,disabled}
-```
-
-### build-queue-limit
-
-`build-queue-limit` carries the nested sub-verbs `get` and `set`:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config build-queue-limit get
-
-python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config build-queue-limit set \
-  --value VALUE
 ```
 
 ### ci-duration

@@ -8,7 +8,7 @@ holder_is_dead, rmw_json``. NOT an executor entry point.
 This module is the single TOCTOU-safe coordination surface that BOTH the unified
 merge mutex (``merge_lock.py``, D3) and the build-queue limiter
 (``build_queue.py``, D5) build on, so the two primitives do not each
-re-implement holder-liveness or shared-file serialization. It exposes three
+re-implement holder-liveness or shared-file serialization. It exposes four
 pieces:
 
   * :func:`holder_is_dead` — the plan-liveness predicate (lifted from the prior
@@ -21,9 +21,16 @@ pieces:
     guard-file mutex and commits via an atomic temp-file replace, so two
     concurrent sessions cannot both observe the same pre-state and both claim a
     slot/lock. A missing or corrupt state file is treated as empty (``{}``).
+  * :func:`read_json_guarded` — the READ-ONLY counterpart to :func:`rmw_json`,
+    for a verb contracted to REPORT state rather than change it. It takes the
+    same ``O_EXCL`` guard on the same guard path, so the read cannot land
+    mid-mutation, and returns without writing anything. It exists because
+    :func:`rmw_json` commits unconditionally: routing a read through it with an
+    identity mutator writes the ``{}`` a corrupt file reads as straight back over
+    that file, so a read verb would destroy the state it was asked to describe.
   * :func:`log_lock_event` — the single best-effort ``[LOCK]`` emission point both
     lock primitives call at each lifecycle point (acquire / blocked / release /
-    stale-reclaim). It appends a ``[LOCK]``-tagged line to the SINGLE
+    stale-reclaim / cap-disagreement). It appends a ``[LOCK]``-tagged line to the SINGLE
     main-anchored global lock-event log (resolved via the same
     ``resolve_main_anchored_path`` mechanism the lock files use), NEVER the
     per-worktree work-log — the locks are cross-session, main-anchored
@@ -406,9 +413,68 @@ def rmw_json(path: Path, mutate: Callable[[dict[str, Any]], dict[str, Any]]) -> 
             pass
 
 
+def read_json_guarded(path: Path) -> dict[str, Any]:
+    """Serialized READ of the JSON state file at ``path`` — commits nothing.
+
+    The read-only counterpart to :func:`rmw_json`, for a verb whose contract is
+    to REPORT the coordination state rather than change it. It takes the SAME
+    ``O_EXCL`` guard-file mutex on the SAME guard path, so the read cannot land
+    in the middle of another session's mutation, and then returns without
+    writing anything at all.
+
+    The guard is why this is a helper rather than a bare
+    :func:`_read_json_or_empty` call at the call site: dropping it would trade a
+    committing read for a torn one, and the torn read is exactly what routing
+    through :func:`rmw_json` was chosen to avoid. The guard is the part worth
+    keeping; the commit is the part that had to go.
+
+    ⛔ **Never implement a read as :func:`rmw_json` with an identity mutator.**
+    That function commits unconditionally, and its read reports a missing,
+    truncated, or non-dict file as ``{}`` — so an identity mutator over a corrupt
+    file writes that ``{}`` back and DESTROYS every entry the file held. A read
+    verb that erases the state it was asked to describe is the failure this
+    function exists to make unavailable.
+
+    Args:
+        path: The JSON state file (resolve via ``resolve_main_anchored_path`` at
+            the call site so it is main-anchored).
+
+    Returns:
+        The state as read, with a missing or corrupt file reported as an empty
+        mapping — deliberately the SAME interpretation :func:`rmw_json` hands its
+        mutator, so a reader and a mutator never disagree about what an
+        unreadable file means. The file is left byte-identical either way.
+
+    Raises:
+        TimeoutError: when the guard cannot be acquired within the budget.
+    """
+    guard_path = path.with_name(f'{path.name}{_GUARD_SUFFIX}')
+    fd = _acquire_guard(guard_path)
+    try:
+        return _read_json_or_empty(path)
+    finally:
+        os.close(fd)
+        try:
+            os.unlink(str(guard_path))
+        except OSError:
+            pass
+
+
 # ---------------------------------------------------------------------------
 # Best-effort [LOCK] event emission to the single main-anchored global log
 # ---------------------------------------------------------------------------
+
+
+_WARN_EVENTS = frozenset({'reaped-stale', 'cap-disagreement'})
+"""Lifecycle events emitted at ``WARNING``; every other event is ``INFO``.
+
+The set lives here because the level is a property of the EVENT, not of the
+calling primitive: :func:`log_lock_event` appends its ``**fields`` verbatim, so a
+caller cannot pass a level of its own, and a per-caller level would let one
+primitive log the same event at a different severity than another. Both members
+report state a build is proceeding despite — a reclaimed over-age slot, and a cap
+two sessions disagree on — so each is a warning rather than a lifecycle note.
+"""
 
 
 def _resolve_lock_log_path() -> Path:
@@ -431,7 +497,8 @@ def log_lock_event(lock: str, event: str, lock_id: str, **fields: Any) -> None:
 
     This is the single ``[LOCK]``-emission point both lock primitives call at
     each lifecycle point (``merge_lock``: acquired / reclaimed / blocked /
-    released; ``build_queue``: acquired / blocked / released / reaped-stale). The
+    released; ``build_queue``: acquired / blocked / released / reaped-stale /
+    cap-disagreement). The
     line is formatted via :func:`plan_logging.format_log_entry` so it carries the
     standard ``[ts] [LEVEL] [hash]`` header the retrospective
     ``_GLOBAL_LOG_LINE_RE`` / ``_TAG_RE`` already parse — the bracketed
@@ -442,14 +509,15 @@ def log_lock_event(lock: str, event: str, lock_id: str, **fields: Any) -> None:
     Args:
         lock: The lock family — ``merge`` or ``build``.
         event: The lifecycle event — ``acquired`` / ``blocked`` / ``released`` /
-            ``reclaimed`` / ``reaped-stale``.
+            ``reclaimed`` / ``reaped-stale`` / ``cap-disagreement``.
         lock_id: The lock identity (merge: holder ``plan_id``; build: admission
             ``{plan_id}:{uuid4}``).
         **fields: Correlation fields (e.g. ``holder`` / ``waiter`` on contention,
             ``active_count`` / ``waiting_count``, ``reclaimed_from``, ``held``,
-            ``threshold``) appended verbatim as indented lines. A ``WARNING``
-            level is used for the ``reaped-stale`` event; every other event is
-            ``INFO``.
+            ``threshold``, ``caller_max_slots``) appended verbatim as indented
+            lines. The level is derived from ``event`` via :data:`_WARN_EVENTS`,
+            never passed in — a level supplied here would be appended as just
+            another field line.
 
     The entire body is wrapped so ANY failure (resolution failure, unwritable
     dir, encoding error) is swallowed — the emission is an observability
@@ -458,7 +526,7 @@ def log_lock_event(lock: str, event: str, lock_id: str, **fields: Any) -> None:
     """
     try:
         log_path = _resolve_lock_log_path()
-        level = 'WARNING' if event == 'reaped-stale' else 'INFO'
+        level = 'WARNING' if event in _WARN_EVENTS else 'INFO'
         entry = format_log_entry(level, f'[LOCK] ({lock}:{event}) {lock_id}', **fields)
         log_path.parent.mkdir(parents=True, exist_ok=True)
         with open(log_path, 'a', encoding='utf-8') as f:

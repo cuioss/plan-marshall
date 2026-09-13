@@ -145,10 +145,19 @@ def _clear_reentrancy(monkeypatch):
 def isolated_queue(tmp_path, monkeypatch) -> dict:
     """Isolate the machine-global build-queue file and its main-anchored side effects.
 
-    The queue file resolves under an isolated ``PLAN_MARSHALL_HOME``; the
-    ``project_root`` stamp, the [LOCK] event log, and the adaptive-limit run-config
-    writes are pinned/stubbed so a real acquire touches ONLY the isolated queue
-    file (never the developer's real ``~/.plan-marshall`` or main-anchored state).
+    The queue file resolves under an isolated ``PLAN_MARSHALL_HOME``, and only two
+    things are still pinned or stubbed: the ``project_root`` stamp (so holder
+    liveness resolves under the fixture's own checkout) and the [LOCK] event log
+    (so no emission reaches the developer's main-anchored log). A real acquire
+    therefore touches ONLY the isolated queue file.
+
+    The adaptive reap threshold needs no stub at all any more: it is a top-level
+    ``upper_limit_seconds`` field of the isolated queue file itself, so seeding it
+    at the floor below pins the reaper's threshold in the shape ``build_queue``
+    actually reads. The two run-config helpers this fixture used to monkeypatch
+    onto ``bq`` no longer exist on the module, and ``monkeypatch.setattr``
+    defaults to ``raising=True`` — so leaving them would have errored every slot
+    test using this fixture rather than merely over-stubbing.
     """
     home = tmp_path / 'home'
     home.mkdir()
@@ -157,9 +166,21 @@ def isolated_queue(tmp_path, monkeypatch) -> dict:
     monkeypatch.setenv('PLAN_MARSHALL_HOME', str(home))
     monkeypatch.setattr(bq, 'main_checkout_root', lambda: main_repo)
     monkeypatch.setattr(bq, 'log_lock_event', lambda *a, **k: None)
-    monkeypatch.setattr(bq, '_read_build_queue_upper_limit', lambda: 600)
-    monkeypatch.setattr(bq, '_write_build_queue_upper_limit', lambda *a, **k: None)
-    return {'home': home, 'main_repo': main_repo, 'queue_path': home / 'build-queue.json'}
+    queue_path = home / 'build-queue.json'
+    # Seed the threshold in the queue's OWN state, at the floor, so the reaper's
+    # threshold is pinned without stubbing anything on the module under test.
+    queue_path.write_text(
+        json.dumps(
+            {
+                'active': [],
+                'waiting': [],
+                'run_log': [],
+                bq.UPPER_LIMIT_FIELD: bq.UPPER_LIMIT_FLOOR_SECONDS,
+            }
+        ),
+        encoding='utf-8',
+    )
+    return {'home': home, 'main_repo': main_repo, 'queue_path': queue_path}
 
 
 def _make_live_plan(main_repo: Path, plan_id: str) -> None:
@@ -417,11 +438,21 @@ def test_fallback_acquires_exactly_one_slot_on_shared_file(isolated_queue, monke
     assert state['active'] == []
 
 
-def test_registered_and_unregistered_contend_on_one_file(isolated_queue, monkeypatch):
+def test_registered_and_unregistered_contend_on_one_file(isolated_queue):
     # Both the daemon-served (registered) path and the in-process fallback acquire
     # against the SAME machine-global file via the rmw_json serialization, sharing
     # ONE slot budget: with a 1-slot budget the second acquire blocks.
-    monkeypatch.setattr(bq, '_resolve_max_slots', lambda: 1)
+    #
+    # The cap is machine-global, so it is STAGED as the real
+    # machine-config.json under the isolated PLAN_MARSHALL_HOME rather than
+    # stubbed at the resolution seam. That keeps the shared-budget claim resting
+    # on the same resolver production uses — a stub would assert the budget is
+    # shared while bypassing the code that makes it shared.
+    config_dir = isolated_queue['home'] / 'marshalld'
+    config_dir.mkdir(parents=True, exist_ok=True)
+    (config_dir / 'machine-config.json').write_text(
+        json.dumps({'version': 1, 'build': {'queue': {'max_slots': 1}}}), encoding='utf-8'
+    )
     _make_live_plan(isolated_queue['main_repo'], 'registered-build')
     _make_live_plan(isolated_queue['main_repo'], 'unregistered-build')
 
@@ -431,6 +462,9 @@ def test_registered_and_unregistered_contend_on_one_file(isolated_queue, monkeyp
     assert first['admission'] == 'admitted'
     assert second['admission'] == 'blocked'  # one budget, shared across both paths
     assert first['queue_path'] == second['queue_path'] == str(isolated_queue['queue_path'])
+    # Both paths resolved the cap from the machine-global file, not per-caller.
+    assert first['max_slots'] == second['max_slots'] == 1
+    assert first['max_slots_source'] == second['max_slots_source'] == 'machine_config'
 
 
 # =============================================================================

@@ -9,8 +9,12 @@ operator drives to enrol a project and manage the machine-global build-server
 daemon. It is the **operator-interactivity wall** (S1) — ``register`` /
 ``unregister`` write the machine-global ``registry.json`` and live ONLY here,
 never in a dispatch's ``skills[]``, so a plan can never launder itself onto the
-served set. The daemon is strictly opt-in: registration IS the enable signal
-(there is no config knob and nothing git-tracked).
+served set. The daemon is strictly opt-in: registration IS the enable signal —
+there is no config knob that turns the daemon on and nothing git-tracked that
+does. That statement is about the ENABLE signal specifically; the build-slot cap
+does have a machine-wide setting, reached through the ``config`` verbs below and
+stored in the machine-global ``machine-config.json`` (host state, still nothing
+git-tracked).
 
 Verbs:
 
@@ -31,7 +35,10 @@ Verbs:
   truthfully rather than resuming them.
 * ``status`` — ping the daemon over its ``0600`` socket and report the running
   version, the daemon's in-flight / queued job counts (``unknown`` when the
-  daemon did not send them — never ``0``, which would read as idle), and the
+  daemon did not send them — never ``0``, which would read as idle), the
+  build-slot cap the RUNNING daemon is applying with its ``max_slots_source``
+  (``unknown`` for a daemon predating the cap fields; an ``invalid`` or
+  ``unreadable`` source also gets a ``max_slots_warning`` line), and the
   binary the RUNNING process is executing (``running_binary_path``, read from
   the live process)
   alongside the resolve-now path (``resolved_binary_path``); ``binary_diverges``
@@ -49,6 +56,18 @@ Verbs:
   Each row is rendered with an explicit ``kind`` label, and an interaction row
   carries its request-scoped ``request_status`` and the job's ``fate`` as two
   separate columns, so a per-request row can never be misread as a job record.
+* ``config get`` — report the machine-global build-slot cap with its source and
+  path, plus the caller project's per-repo ``build.queue.max_slots``: ``absent``,
+  or its value together with ``in_effect: false``. Read-only.
+* ``config set --max-slots N`` — set the machine-global cap. The unconditional
+  writer, and therefore the only verb that can repair an invalid or unreadable
+  machine-config value. A running daemon applies it on its next submit.
+* ``config migrate`` — move the caller repository's ``build.queue.max_slots`` to
+  its machine-global home in one step. It copies the value ONLY when nothing is
+  set machine-wide, then removes the per-repo key; when the two values differ it
+  changes NEITHER file and reports both. It never picks a winner — a per-caller
+  cap over one shared queue is a disagreement to surface, not to silently
+  resolve.
 
 Every lifecycle verb appends one JSON-lines entry to the append-only lifecycle
 audit log (``lifecycle-audit.log`` under the daemon state dir) so the daemon's
@@ -86,13 +105,26 @@ from _build_server_registry import (
     register_project,
     unregister_project,
 )
+from _machine_config import (
+    SOURCE_DEFAULT,
+    SOURCE_INVALID,
+    SOURCE_MACHINE_CONFIG,
+    SOURCE_UNREADABLE,
+    CapResolution,
+    MachineConfigPostCommitError,
+    read_per_repo_max_slots,
+    report_safe,
+    resolve_max_slots,
+    write_max_slots,
+    write_max_slots_if_unset,
+)
 from _marshalld_audit import (
     FATE_UNKNOWN,
     KIND_INTERACTION,
     KIND_JOB_FATE,
     InteractionAudit,
 )
-from file_ops import now_utc_iso
+from file_ops import get_marshal_path, now_utc_iso
 from marketplace_paths import main_checkout_root
 from triage_helpers import ErrorCode, make_error, print_toon, safe_main
 
@@ -112,11 +144,22 @@ _UNKNOWN_PROVENANCE = 'unknown'
 determined from the live process. It is NEVER the resolved-now path — substituting
 that path for an undeterminable running provenance IS the drift-hiding defect."""
 
-_UNKNOWN_COUNT = 'unknown'
-"""Sentinel ``status`` reports for an in-flight / queued count the daemon did not
-send. A daemon pinned to a copy predating the counts extension omits both keys;
-coercing that absence to ``0`` would render it indistinguishable from a genuinely
-idle daemon, which is precisely what lets a reconcile drain a live build."""
+_UNREPORTED = 'unknown'
+"""Sentinel ``status`` reports for any field the RUNNING daemon did not send.
+
+A daemon pinned to an older copy answers ``ping`` with fewer keys than the
+current one does, and the running daemon's version is the only thing that decides
+which shape arrives. Every such absence renders as this sentinel rather than as a
+plausible substitute value, because the substitute is always indistinguishable
+from a real reading:
+
+* ``in_flight`` / ``queued`` — coercing an absent count to ``0`` makes a daemon
+  that said nothing indistinguishable from one that said it is idle, which is
+  precisely what once let a reconcile drain a live build.
+* ``max_slots`` / ``max_slots_source`` — filling these in from a local resolve
+  would report what a FRESH daemon would apply as though it were what the running
+  one is applying, the same substitution ``running_binary_path`` refuses to make
+  for provenance."""
 
 _DEFAULT_LOGS_LIMIT = 50
 """Default bounded tail size for the read-only ``logs`` audit-inspection verb."""
@@ -260,14 +303,19 @@ def _ping(timeout: float = _PING_TIMEOUT_SECONDS) -> dict[str, Any] | None:
 
     Returns:
         The decoded ping response, or ``None`` when the daemon is unreachable.
-        A current daemon answers with five keys — ``status`` (``'ok'``), ``pid``
-        (``int``), ``version`` (``str``), ``in_flight`` (``int``) and ``queued``
-        (``int``). ``in_flight`` and ``queued`` are NOT guaranteed: a daemon
-        pinned to a copy predating the counts extension answers without them,
-        and the running daemon's version is the only thing that decides which
-        shape arrives. Callers MUST treat an absent count as *unreported*
-        (see :func:`_reported_count`) rather than as zero — the two are
-        different facts, and conflating them reports a busy daemon as idle.
+        A current daemon answers with ``status`` (``'ok'``), ``pid`` (``int``),
+        ``version`` (``str``), ``in_flight`` (``int``), ``queued`` (``int``),
+        ``max_slots`` (``int``) and ``max_slots_source`` (``str``), plus
+        ``max_slots_detail`` when that source is not ``machine_config``.
+
+        Only ``status``, ``pid`` and ``version`` are guaranteed: a daemon pinned
+        to a copy predating the counts extension answers without the counts, and
+        one predating the cap-reporting extension answers without the cap fields.
+        The RUNNING daemon's version is the only thing that decides which shape
+        arrives. Callers MUST treat every absent field as *unreported* (see
+        :func:`_reported_int` / :func:`_reported_text`) rather than substituting a
+        plausible value — an absent count is not zero, and an absent cap is not
+        whatever a local resolve would return now.
     """
     sock_path = marshalld.socket_path()
     if not sock_path.exists():
@@ -284,30 +332,90 @@ def _ping(timeout: float = _PING_TIMEOUT_SECONDS) -> dict[str, Any] | None:
         sock.close()
 
 
-def _reported_count(response: dict[str, Any], key: str) -> int | str:
-    """Return a daemon-reported job count, or the ``unknown`` sentinel.
+def _reported_int(response: dict[str, Any], key: str) -> int | str:
+    """Return a daemon-reported integer field, or the ``unknown`` sentinel.
 
-    Reports the count ONLY when the ping response actually carries it. A daemon
-    older than the counts extension omits the key entirely, and that absence is
-    reported as :data:`_UNKNOWN_COUNT` rather than coerced to ``0`` — so "the
-    daemon did not tell us" stays distinguishable from "the daemon told us it is
-    idle". The two were once the same value, and a reconcile read the resulting
-    zero as idleness and drained a live build.
+    Reports the number ONLY when the ping response actually carries it. A daemon
+    older than the extension that added the key omits it entirely, and that
+    absence is reported as :data:`_UNREPORTED` rather than coerced to ``0`` — so
+    "the daemon did not tell us" stays distinguishable from "the daemon told us
+    zero". For the job counts the two were once the same value, and a reconcile
+    read the resulting zero as idleness and drained a live build; for the slot cap
+    a zero would read as a daemon that can admit nothing at all.
 
     Args:
         response: The decoded ping response.
-        key: The count key to read (``in_flight`` or ``queued``).
+        key: The integer key to read (``in_flight``, ``queued``, ``max_slots``).
 
     Returns:
-        The count as an ``int``, or :data:`_UNKNOWN_COUNT` when the key is
-        absent or its value is not an integer.
+        The value as an ``int``, or :data:`_UNREPORTED` when the key is absent or
+        its value is not an integer.
     """
     if key not in response:
-        return _UNKNOWN_COUNT
+        return _UNREPORTED
     try:
         return int(response[key])
     except (TypeError, ValueError):
-        return _UNKNOWN_COUNT
+        return _UNREPORTED
+
+
+def _reported_text(response: dict[str, Any], key: str) -> str:
+    """Return a daemon-reported string field, or the ``unknown`` sentinel.
+
+    The string counterpart of :func:`_reported_int`, for ``max_slots_source``.
+    The source is the field that makes the cap auditable — it is what separates a
+    configured cap from one that degraded to the default — so a daemon that did
+    not send it must render as :data:`_UNREPORTED` and never as a guessed source.
+    An empty string is treated as unreported too: a source is a named member of a
+    closed set, and the empty string is not one of them.
+
+    Args:
+        response: The decoded ping response.
+        key: The string key to read.
+
+    Returns:
+        The reported value, or :data:`_UNREPORTED` when the key is absent, not a
+        string, or empty.
+    """
+    value = response.get(key)
+    if not isinstance(value, str) or not value:
+        return _UNREPORTED
+    return value
+
+
+def _cap_source_warning(response: dict[str, Any]) -> str | None:
+    """Return a ``WARNING`` line for a degraded cap source, else ``None``.
+
+    The running daemon is admitting against :data:`_machine_config.DEFAULT_MAX_SLOTS`
+    while a cap it could not use sits in the machine-global config — either
+    mistyped (:data:`SOURCE_INVALID`) or unreachable (:data:`SOURCE_UNREADABLE`).
+    Reporting the value and the source is what makes that state VISIBLE, but an
+    operator scanning a status block reads a line that says WARNING long before
+    they read a source field, so the degradation gets one.
+
+    Only those two sources warn. :data:`SOURCE_MACHINE_CONFIG` is nominal, and
+    ``default`` is a legitimate unconfigured state, not a fault — warning on it
+    would train the operator to ignore the line. An unreported source warns
+    nothing either: nothing is known about it, and a warning would be a claim.
+
+    Args:
+        response: The decoded ping response.
+
+    Returns:
+        The warning line, carrying the daemon's ``max_slots_detail`` when it sent
+        one, or ``None`` when the source is nominal, absent, or unreported.
+    """
+    source = _reported_text(response, 'max_slots_source')
+    if source not in (SOURCE_INVALID, SOURCE_UNREADABLE):
+        return None
+    detail = response.get('max_slots_detail')
+    applied = _reported_int(response, 'max_slots')
+    suffix = f' ({detail})' if detail else ''
+    return (
+        f'WARNING: the running daemon could not use the configured build-slot cap '
+        f'(max_slots_source={source}){suffix}. It is admitting against the fallback '
+        f'{applied}. Repair it with `config set --max-slots N`.'
+    )
 
 
 def _wait_for_exit(pid: int, grace: float) -> bool:
@@ -726,7 +834,11 @@ def run_status(_args: Namespace) -> dict[str, Any]:
     ``running: true`` with the daemon-reported version + pid, the daemon's
     in-flight / queued job counts — reported as ``unknown`` when the daemon did
     not send them, so a daemon predating the counts extension is never rendered
-    as an idle one — and — this is the D4 truthfulness fix — the
+    as an idle one — the build-slot cap the RUNNING daemon is applying together
+    with ``max_slots_source``, the provenance that separates a configured cap from
+    one that degraded to the default (both ``unknown`` when the daemon predates
+    the cap-reporting extension, and a degraded source additionally gets a
+    ``max_slots_warning`` line) — and — this is the D4 truthfulness fix — the
     binary the RUNNING process is actually executing (``running_binary_path``,
     sourced from the live process, not a call-time re-resolution) ALONGSIDE the
     resolved-now path a fresh start would use (``resolved_binary_path``). When the
@@ -768,13 +880,22 @@ def run_status(_args: Namespace) -> dict[str, Any]:
             'resolved_binary_path': resolved_binary_path,
             'binary_diverges': diverges,
             # Reported only when the daemon actually sent them; an absent count
-            # is `unknown`, NEVER 0 — see `_reported_count`.
-            'in_flight': _reported_count(response, 'in_flight'),
-            'queued': _reported_count(response, 'queued'),
+            # is `unknown`, NEVER 0 — see `_reported_int`.
+            'in_flight': _reported_int(response, 'in_flight'),
+            'queued': _reported_int(response, 'queued'),
+            # The cap the RUNNING daemon is applying, and where it came from.
+            # Both from the ping — never re-resolved here, because a local
+            # resolve answers "what would a fresh daemon apply", a different
+            # question. An older daemon sends neither and both read `unknown`.
+            'max_slots': _reported_int(response, 'max_slots'),
+            'max_slots_source': _reported_text(response, 'max_slots_source'),
             'socket_path': str(marshalld.socket_path()),
             'caller_root': caller_root,
             'registered': registered,
         }
+        cap_warning = _cap_source_warning(response)
+        if cap_warning is not None:
+            result['max_slots_warning'] = cap_warning
         if diverges:
             result['note'] = (
                 f'running daemon is STALE: it is executing {running_binary_path}, but a fresh '
@@ -932,6 +1053,662 @@ def run_logs(args: Namespace) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# Machine-global build-slot cap (config get / set / migrate)
+# ---------------------------------------------------------------------------
+
+
+def _cap_report(cap: CapResolution) -> dict[str, Any]:
+    """Render a :class:`CapResolution` as the machine-global cap report fields.
+
+    ``max_slots_source`` and ``max_slots_detail`` ride along unconditionally,
+    including a ``None`` detail on a nominal resolution: the operator surface is
+    a report, and a key that appears only sometimes is one a reader learns to
+    stop looking for. The VALUE alone can never distinguish a configured 5 from
+    a fallback 5, which is why the source is not optional here.
+    """
+    return {
+        'max_slots': cap.value,
+        'max_slots_source': cap.source,
+        'max_slots_detail': cap.detail,
+        'path': cap.path,
+    }
+
+
+def _per_repo_report() -> dict[str, Any]:
+    """Report the caller project's per-repo cap key, which never takes effect.
+
+    Reads the CALLER's own ``marshal.json`` through the cwd-relative
+    :func:`file_ops.get_marshal_path` — the same "the caller's repo" question
+    ``config migrate`` asks, and deliberately NOT the cwd-independent resolver
+    the cap itself uses.
+
+    The reported ``value`` passes through :func:`_machine_config.report_safe`
+    first. The read is raw by contract — the report must echo what is actually
+    written — but the EMISSION is a single-line TOON field, and a newline in a
+    config this process did not write would land at column zero where a consumer
+    parses it as a sibling key of this very envelope.
+
+    Returns:
+        ``{'per_repo_max_slots': 'absent', ...}`` when no key is present, else
+        the ``value`` together with ``in_effect: False`` — stated explicitly
+        rather than implied, so a reader of the report cannot mistake a reported
+        value for an operative one.
+    """
+    marshal_path = get_marshal_path()
+    raw = read_per_repo_max_slots(marshal_path)
+    if raw is None:
+        return {'per_repo_max_slots': 'absent', 'marshal_json_path': str(marshal_path)}
+    return {
+        'per_repo_max_slots': {'value': report_safe(raw), 'in_effect': False},
+        'marshal_json_path': str(marshal_path),
+    }
+
+
+def run_config_get(_args: Namespace) -> dict[str, Any]:
+    """Report the machine-global build-slot cap and the caller's demoted key.
+
+    Read-only: it writes neither file. The two halves are reported together
+    because that pairing IS the operator's question — "what cap am I running
+    under, and is the key in my repository doing anything?" — and answering only
+    one half is what leaves an operator editing an inert key.
+    """
+    return {
+        'status': 'success',
+        'action': 'config get',
+        **_cap_report(resolve_max_slots()),
+        **_per_repo_report(),
+    }
+
+
+def run_config_set(args: Namespace) -> dict[str, Any]:
+    """Set the machine-global build-slot cap to ``--max-slots N``.
+
+    Rejects anything that cannot be a cap — a non-positive int, a non-int, and a
+    ``bool`` (argparse ``type=int`` already excludes the latter two from the CLI,
+    but the validation lives in the writer so an in-process caller is held to the
+    same contract). This is the UNCONDITIONAL writer: it replaces whatever is
+    there, which is also what makes it the only verb that can repair an invalid
+    or unreadable machine-config value.
+
+    The reported resolution is re-read from disk after the write, so the operator
+    sees what was actually persisted rather than what was requested.
+    """
+    try:
+        cap = write_max_slots(args.max_slots)
+    except ValueError as exc:
+        return make_error(str(exc), code=ErrorCode.INVALID_INPUT, action='config set')
+    except TimeoutError as exc:
+        return make_error(str(exc), code=ErrorCode.TIMEOUT, action='config set')
+    except OSError as exc:
+        # The write touches the filesystem at four points — the ``0o700`` state-dir
+        # mkdir, the ``O_EXCL`` guard, the atomic temp-file replace, and the
+        # ``chmod`` — so a read-only home root, a permission change under the
+        # state dir, or a full disk surfaces HERE rather than as one of the two
+        # arms above. Callers read the outcome from the payload ``status``, never
+        # from the exit code, so letting this propagate as a traceback would break
+        # the TOON envelope contract every verb on this surface is held to; a
+        # louder failure is not the same thing as a reported one.
+        #
+        # No ``ErrorCode`` member names "the write itself failed" and borrowing
+        # one that means something else would misroute it, so the named ``reason``
+        # is the routing key — the same choice :func:`_remove_per_repo_max_slots`
+        # makes for its guard refusal, and the same ``reason`` value the migrate
+        # path already reports for a failed machine-global write.
+        #
+        # Ordered AFTER ``TimeoutError``, which is an ``OSError`` subclass: the
+        # specific arm must be reachable, or every guard timeout would be
+        # reclassified as a write failure and lose its ``TIMEOUT`` code.
+        return make_error(str(exc), action='config set', reason='machine_config_write_failed')
+    return {
+        'status': 'success',
+        'action': 'config set',
+        **_cap_report(cap),
+        'note': (
+            'A running daemon applies the new cap on its next submit — it re-resolves '
+            'the cap per submit, so no restart is required.'
+        ),
+    }
+
+
+def _remove_per_repo_max_slots() -> dict[str, Any]:
+    """Delete ONLY ``build.queue.max_slots`` from the caller's ``marshal.json``.
+
+    Writes through :mod:`_config_core`'s own :func:`load_config` /
+    :func:`save_config` — the writer ``manage-providers`` and ``marshall-steward
+    upgrade`` already use from outside ``manage-config`` — so the canonical
+    top-level key order and the concurrent-modification fingerprint guard both
+    apply and NO second ``marshal.json`` writer is introduced.
+
+    The import is deliberately deferred into this function: ``_config_core``
+    binds ``MARSHAL_PATH`` at import time, so importing it at module scope would
+    make every OTHER verb in this script depend on a resolvable ``marshal.json``
+    — and ``register`` / ``start`` / ``status`` must keep working in a checkout
+    that has none.
+
+    ``max_retries`` and every other key in the ``build.queue`` block survive, as
+    does the block itself: the demotion is of ONE key, not of the queue's config.
+
+    Returns:
+        ``{'status': 'success'}`` on a committed removal, else an error payload
+        naming ``concurrent_modification`` — the guard refusing to clobber a
+        concurrent writer, which is recoverable by re-running, not a crash.
+    """
+    from _config_core import (
+        ConcurrentConfigModificationError,
+        load_config,
+        save_config,
+    )
+
+    config = load_config()
+    queue = config.get('build', {}).get('queue')
+    if isinstance(queue, dict):
+        queue.pop('max_slots', None)
+    try:
+        save_config(config)
+    except ConcurrentConfigModificationError as exc:
+        # No ErrorCode member names "a guard declined to clobber a concurrent
+        # writer", and borrowing a member that means something else would route
+        # this to the wrong handler. The named `reason` IS the routing key here.
+        return make_error(str(exc), reason='concurrent_modification')
+    return {'status': 'success'}
+
+
+def _migrate_refused(reason: str, message: str, **extra: Any) -> dict[str, Any]:
+    """Build a ``refused`` payload — nothing was mutated on either side.
+
+    Every refusal is reported with BOTH files untouched, which is the verb's
+    central guarantee: a migration that cannot pick a winner must not leave the
+    operator half-migrated, so it declines rather than choosing.
+    """
+    # No `code=`: a refusal is a well-typed outcome of this verb, not a generic
+    # failure, and the `outcome` / `reason` pair is what a caller branches on.
+    # Borrowing an ErrorCode member that means something else would misroute it.
+    return make_error(
+        message,
+        action='config migrate',
+        outcome='refused',
+        reason=reason,
+        machine_config_modified=False,
+        marshal_json_modified=False,
+        **extra,
+    )
+
+
+def _migrate_committed_report(
+    exc: BaseException, per_repo_value: int, marshal_path: str, post: CapResolution
+) -> dict[str, Any]:
+    """Report the COMMITTED-then-failed write as ``partial``, on the marker's evidence.
+
+    Reached only with :class:`MachineConfigPostCommitError` in hand, so
+    ``machine_config_modified=True`` is a claim about THIS invocation backed by
+    the writer's own marker — not by a post-state that any other writer could
+    have produced. The per-repo key was not removed, which is exactly the
+    recoverable half-state a re-run completes through the equal-values
+    ``removed_duplicate`` branch.
+
+    The detail — not the outcome — is what branches on the re-read, because the
+    marker settles authorship while only the re-read can say what the machine
+    side holds NOW: the guard was released before this report ran, so a
+    concurrent writer may have replaced the just-committed value. Naming this
+    repository's value over such a state would be a second untrue claim riding
+    on a true one.
+    """
+    if post.source == SOURCE_MACHINE_CONFIG and post.value == per_repo_value:
+        detail = (
+            f'the machine-global write LANDED — {post.path} holds build.queue.max_slots={post.value} — but the '
+            f'call then failed, so build.queue.max_slots is STILL present in {marshal_path} and was NOT '
+            'removed. Re-run config migrate to complete the migration through the removed_duplicate branch.'
+        )
+    else:
+        detail = (
+            f'the machine-global write LANDED — this invocation committed build.queue.max_slots={per_repo_value} '
+            f'to {post.path} — but the call then failed, and the machine side no longer reads back as that value '
+            f'(source={post.source}, value={post.value}), so another writer has changed it since. '
+            f'build.queue.max_slots is STILL present in {marshal_path} and was NOT removed. Inspect {post.path}, '
+            'then re-run config migrate.'
+        )
+    return make_error(
+        str(exc),
+        action='config migrate',
+        outcome='partial',
+        reason='machine_config_write_failed_after_commit',
+        machine_config_modified=True,
+        marshal_json_modified=False,
+        detail=detail,
+        **_cap_report(post),
+        marshal_json_path=marshal_path,
+    )
+
+
+def _migrate_uncommitted_report(
+    exc: BaseException, per_repo_value: int, marshal_path: str, post: CapResolution
+) -> dict[str, Any]:
+    """Report a write that raised with NO commit evidence — ``refused`` or ``undetermined``.
+
+    Reached when the raising write carried no
+    :class:`MachineConfigPostCommitError`, so every pre-replace failure point
+    lands here: the state-dir ``mkdir``, the ``O_EXCL`` guard's timeout, and the
+    temp-file write inside ``atomic_write_file``. None of them committed
+    anything, and this invocation therefore has nothing to claim authorship of.
+
+    * The machine side is still unset (:data:`SOURCE_DEFAULT`) ⇒ ``refused``,
+      verbatim and with both modification fields ``False``. Nothing committed and
+      nothing is there, so the refusal is TRUE here and must not be weakened.
+    * Any other post-state ⇒ ``undetermined`` — **including a
+      :data:`SOURCE_MACHINE_CONFIG` that equals this repository's value.** That
+      equality is not authorship: the guard is released in
+      :func:`write_max_slots_if_unset`'s ``finally`` before the exception reaches
+      the caller, so between the raise and this re-read another writer may have
+      installed the same value (a concurrent ``config migrate``, or the
+      ``config set --max-slots`` the not-in-effect warning prescribes). Claiming
+      ``partial`` on it reported a commit this invocation never made.
+    * ``undetermined`` OMITS ``machine_config_modified`` and
+      ``marshal_json_modified`` entirely — a ``false`` there would read as the
+      ``refused`` both-files-untouched guarantee and a ``true`` as ``partial``,
+      so the absence of the keys is the report, exactly as the absent
+      ``residual_count`` is on an unmeasurable scope-creep guard.
+    """
+    if post.source == SOURCE_DEFAULT:
+        return _migrate_refused(
+            'machine_config_write_failed',
+            f'refusing to migrate: the machine-global write did not happen ({exc}). Neither file was changed.',
+            marshal_json_path=marshal_path,
+            per_repo_max_slots=per_repo_value,
+        )
+
+    if post.source == SOURCE_MACHINE_CONFIG and post.value == per_repo_value:
+        detail = (
+            f'the machine-global write raised without committing, so this invocation has NO evidence that it wrote '
+            f"anything — yet {post.path} now holds build.queue.max_slots={post.value}, this repository's own "
+            f'value. Another writer may have installed it (a concurrent config migrate, or the '
+            f'`config set --max-slots` the not-in-effect warning prescribes), so this report claims NEITHER that '
+            f'this migration landed NOR that both files are untouched. build.queue.max_slots is still present in '
+            f'{marshal_path} — re-run config migrate, which converges through the removed_duplicate branch.'
+        )
+    else:
+        detail = (
+            f'the machine-global write failed and the machine-global state at {post.path} could not be established '
+            f'afterwards (source={post.source}, detail={post.detail}). It is therefore UNKNOWN whether the cap was '
+            f'written: this report claims neither that the migration partly landed nor that both files are '
+            f'untouched. Inspect {post.path}, then re-run config migrate — build.queue.max_slots is still present '
+            f'in {marshal_path}.'
+        )
+
+    return make_error(
+        str(exc),
+        action='config migrate',
+        outcome='undetermined',
+        reason='machine_config_state_undetermined',
+        detail=detail,
+        **_cap_report(post),
+        marshal_json_path=marshal_path,
+        per_repo_max_slots=per_repo_value,
+    )
+
+
+def _migrate_write_failure_report(
+    exc: BaseException, per_repo_value: int, marshal_path: str, *, committed: bool
+) -> dict[str, Any]:
+    """Report a raising machine-global write from the writer's own commit evidence.
+
+    The write is NOT all-or-nothing from this caller's point of view.
+    :func:`_machine_config._write_cap_unguarded` commits the atomic replace and
+    THEN stats and chmods the committed file, so an ``OSError`` from either of
+    those two post-replace calls arrives with the migrated cap **already on
+    disk**. Reporting that as ``refused`` asserted "Neither file was changed"
+    over an already-migrated machine config — a false refusal, which is the same
+    untrue-signal class as a false success and worse than a bare traceback,
+    because it states a condition that does not hold.
+
+    Whether the value landed is decided by ``committed`` — the caller's test for
+    :class:`MachineConfigPostCommitError`, which
+    :func:`_machine_config._write_cap_unguarded` raises if and only if the
+    atomic replace already returned. It is emphatically NOT decided by the
+    re-read: the write guard is released in
+    :func:`write_max_slots_if_unset`'s ``finally`` BEFORE the exception reaches
+    the caller's ``except`` arm, so between the raise and the re-read any other
+    writer may install the same value and make an equal post-state that this
+    invocation did not produce. Gating ``partial`` on that equality claimed
+    authorship of a commit that never happened — the inverse of the false
+    refusal above, in the same function.
+
+    The two halves live in :func:`_migrate_committed_report` (marker present ⇒
+    ``partial``) and :func:`_migrate_uncommitted_report` (marker absent ⇒
+    ``refused`` / ``undetermined``); each documents the branch it owns. The
+    re-read is still performed, and it is still what shapes every branch's
+    detail — what the machine side holds now is the operator's next question
+    either way — but it no longer decides the outcome.
+
+    Args:
+        exc: The exception the guarded write raised, quoted into every branch's
+            detail so the operator sees the originating failure.
+        per_repo_value: The repository's validated cap — the value this
+            invocation attempted to commit.
+        marshal_path: The repository config the per-repo key is still in.
+        committed: Whether the raising write carried the post-replace commit
+            marker. Keyword-only, because a positional bool at a call site
+            reads as nothing at all and this one decides an authorship claim.
+
+    Returns:
+        The ``partial`` / ``refused`` / ``undetermined`` payload for the state
+        the marker and the re-read together establish.
+    """
+    post = resolve_max_slots()
+    if committed:
+        return _migrate_committed_report(exc, per_repo_value, marshal_path, post)
+    return _migrate_uncommitted_report(exc, per_repo_value, marshal_path, post)
+
+
+def _classify_machine_side(cap: CapResolution, per_repo_value: int, marshal_path: str) -> dict[str, Any] | None:
+    """Refuse when the machine-global side is not safely writable, else ``None``.
+
+    The three refusals share one shape and one reason: something IS on the
+    machine-global side, so copying over it would destroy it.
+
+    * :data:`SOURCE_UNREADABLE` / :data:`SOURCE_INVALID` — the file exists and
+      holds something. It is emphatically NOT "unset": a cap may well be
+      configured there and merely unreachable or mistyped, and overwriting it
+      would silently discard an operator's setting. ``config set`` is the verb
+      that repairs those; migrate is not.
+    * :data:`SOURCE_MACHINE_CONFIG` with a DIFFERENT value — the disagreement
+      deliverable 4 reports at the queue is the same disagreement here, and
+      picking a winner is precisely what this verb declines to do.
+
+    :data:`SOURCE_MACHINE_CONFIG` with an EQUAL value is not a refusal (it is
+    ``removed_duplicate``), and :data:`SOURCE_DEFAULT` is the migratable state;
+    both return ``None``.
+    """
+    if cap.source == SOURCE_UNREADABLE:
+        return _migrate_refused(
+            'machine_config_unreadable',
+            (
+                f'refusing to migrate: the machine-global config at {cap.path} exists but cannot be read '
+                f'({cap.detail}). It is not unset, so copying build.queue.max_slots={per_repo_value!r} over it '
+                f'could discard a configured cap. Repair or remove {cap.path}, then re-run config migrate.'
+            ),
+            machine_config_path=cap.path,
+            marshal_json_path=marshal_path,
+            per_repo_max_slots=per_repo_value,
+        )
+    if cap.source == SOURCE_INVALID:
+        return _migrate_refused(
+            'machine_config_invalid',
+            (
+                f'refusing to migrate: the machine-global config at {cap.path} holds an invalid '
+                f'build.queue.max_slots ({cap.detail}). It is not unset, so copying '
+                f'build.queue.max_slots={per_repo_value!r} over it could discard a configured cap. '
+                f'Fix it with `config set --max-slots N`, then re-run config migrate.'
+            ),
+            machine_config_path=cap.path,
+            marshal_json_path=marshal_path,
+            per_repo_max_slots=per_repo_value,
+        )
+    if cap.source == SOURCE_MACHINE_CONFIG and cap.value != per_repo_value:
+        return _migrate_refused(
+            'values_differ',
+            (
+                f'refusing to migrate: {marshal_path} sets build.queue.max_slots={per_repo_value!r} while the '
+                f'machine-global cap at {cap.path} is {cap.value}. Neither file was changed. Either accept the '
+                f'repository value machine-wide with `config set --max-slots {per_repo_value}` and re-run '
+                f'config migrate, or accept the machine-global {cap.value} by deleting '
+                f'build.queue.max_slots from {marshal_path}.'
+            ),
+            machine_config_path=cap.path,
+            marshal_json_path=marshal_path,
+            per_repo_max_slots=per_repo_value,
+            machine_max_slots=cap.value,
+        )
+    return None
+
+
+def run_config_migrate(_args: Namespace) -> dict[str, Any]:
+    """Move this repository's build-slot cap to its machine-global home, in one step.
+
+    The whole verb is defined by what it refuses to do: it copies the repository
+    value machine-wide ONLY when nothing is configured there, and when the two
+    sides disagree it changes NEITHER file and reports both values. Picking a
+    winner is not a convenience here — a per-caller cap over one shared queue is
+    the disagreement the queue itself reports, so silently resolving it would
+    install a cap the operator never chose.
+
+    Outcomes:
+
+    * ``nothing_to_migrate`` — no per-repo key (or no ``marshal.json``). Nothing
+      written.
+    * ``migrated`` — the machine-global side is unset; the value is copied there
+      and the per-repo key removed.
+    * ``removed_duplicate`` — the machine-global side already holds the SAME
+      value; only the per-repo key is removed and ``machine-config.json`` is left
+      byte-identical.
+    * ``refused`` (``status: error``) — one of the ``reason`` values the
+      ``config migrate`` table in ``manage-build-server/SKILL.md`` enumerates,
+      which is the single authority for that set. Both files byte-identical on
+      every one of them. The set is deliberately NOT restated here: a
+      restatement drifts from the code the moment a refusal path is added, and
+      this docstring had already drifted to four members while the function
+      raised six.
+    * ``partial`` (``status: error``) — the machine-global side is settled but
+      the ``marshal.json`` edit did not commit. Re-running converges via
+      ``removed_duplicate``. When it is reached from a RAISING machine-global
+      write, the settled half is asserted only on the writer's own
+      post-replace commit marker
+      (:class:`_machine_config.MachineConfigPostCommitError`) — never on a
+      re-read that merely finds this repository's value there, which any other
+      writer could have put there once the write guard was released.
+    * ``undetermined`` (``status: error``) — the machine-global write raised
+      WITHOUT that commit marker and the state it left is not this invocation's
+      to claim, so the report claims NEITHER that the migration partly landed
+      NOR that both files are untouched. This covers an equal-valued
+      machine-global cap as well as an unreadable or foreign one: with no
+      marker, equality is a coincidence the report must not read as authorship.
+      It deliberately omits ``machine_config_modified`` /
+      ``marshal_json_modified`` rather than sending either a ``false`` (which
+      reads as the ``refused`` guarantee) or a ``true`` (which reads as
+      ``partial``): the absence IS the report. See
+      :func:`_migrate_write_failure_report`.
+
+    The machine-global write happens FIRST and is ordered that way deliberately:
+    if the repository edit then fails, the recoverable state is "value is
+    machine-wide, key still present", which a re-run completes. The reverse order
+    would delete the operator's only record of the value before it was stored
+    anywhere.
+    """
+    marshal_path = str(get_marshal_path())
+    per_repo_raw = read_per_repo_max_slots(marshal_path)
+    if per_repo_raw is None:
+        return {
+            'status': 'success',
+            'action': 'config migrate',
+            'outcome': 'nothing_to_migrate',
+            'detail': (
+                f'{marshal_path} carries no build.queue.max_slots (the file may not exist) — '
+                'there is nothing to migrate.'
+            ),
+            'machine_config_modified': False,
+            'marshal_json_modified': False,
+            'marshal_json_path': marshal_path,
+        }
+
+    # Validate BEFORE consulting the machine side: copying a value that could
+    # never be a cap would install a broken cap machine-wide, and reporting the
+    # repository's own bad value is more useful than reporting a comparison
+    # against it.
+    #
+    # This is the ONE branch a non-int value reaches, so it is also the one
+    # branch that echoes arbitrary foreign text back into the refusal payload.
+    # The reported field goes through `report_safe`: a newline in the
+    # repository's value would otherwise land at column zero of this refusal's
+    # own TOON, where a consumer reparses it as an envelope key — turning
+    # `status: error` / `outcome: refused` (with both files deliberately
+    # untouched) into a reported `status: success` / `outcome: migrated`. The
+    # message keeps its `!r`, which escapes the same characters. Every LATER
+    # refusal is reached only after this positive-int check, so their reported
+    # value is an int by construction.
+    if isinstance(per_repo_raw, bool) or not isinstance(per_repo_raw, int) or per_repo_raw <= 0:
+        return _migrate_refused(
+            'per_repo_value_invalid',
+            (
+                f'refusing to migrate: {marshal_path} sets build.queue.max_slots={per_repo_raw!r}, which is not a '
+                'positive integer and could not be a valid cap. Correct or delete the key, then re-run '
+                'config migrate.'
+            ),
+            marshal_json_path=marshal_path,
+            per_repo_max_slots=report_safe(per_repo_raw),
+        )
+
+    cap = resolve_max_slots()
+    refusal = _classify_machine_side(cap, per_repo_raw, marshal_path)
+    if refusal is not None:
+        return refusal
+
+    if cap.source == SOURCE_MACHINE_CONFIG:
+        # Equal values — the machine side is already correct, so ONLY the
+        # redundant per-repo key goes and machine-config.json is not touched.
+        removal = _remove_per_repo_max_slots()
+        if removal.get('status') != 'success':
+            return {
+                **removal,
+                'action': 'config migrate',
+                'outcome': 'partial',
+                'machine_config_modified': False,
+                'marshal_json_modified': False,
+                'detail': (
+                    f'the machine-global cap at {cap.path} already holds {cap.value}, but removing '
+                    f'build.queue.max_slots from {marshal_path} did not commit. Nothing was changed on either '
+                    'side; re-run config migrate to complete it.'
+                ),
+                'machine_config_path': cap.path,
+                'marshal_json_path': marshal_path,
+            }
+        return {
+            'status': 'success',
+            'action': 'config migrate',
+            'outcome': 'removed_duplicate',
+            'machine_config_modified': False,
+            'marshal_json_modified': True,
+            'detail': (
+                f'the machine-global cap at {cap.path} already held {cap.value}; removed the redundant '
+                f'build.queue.max_slots from {marshal_path} and left machine-config.json untouched. '
+                'marshal.json is git-tracked — commit the edit.'
+            ),
+            **_cap_report(cap),
+            'marshal_json_path': marshal_path,
+        }
+
+    # The machine side is unset. Copy the value there under the write guard, which
+    # re-resolves INSIDE the guard — so a concurrent set/migrate that landed since
+    # the resolve above is observed and preserved rather than overwritten.
+    # ``OSError`` covers the write's filesystem points (the state-dir mkdir, the
+    # ``O_EXCL`` guard, the atomic replace, the chmod). Without it a read-only
+    # home root or a permission change propagated out as a traceback instead of
+    # a structured envelope. ``TimeoutError`` is an ``OSError`` subclass and so is
+    # now redundant in the tuple; it is kept named because the guard timeout is a
+    # distinct, expected failure and a reader should not have to know the
+    # exception hierarchy to see it handled.
+    #
+    # The envelope's CONTENT cannot be a flat refusal, because these failure
+    # points do not all fall on the same side of the atomic replace: the chmod
+    # runs AFTER it, so its ``OSError`` arrives with the migrated cap already
+    # committed. Which side the failure fell on is carried by the exception TYPE
+    # — ``MachineConfigPostCommitError`` is raised if and only if the replace
+    # committed — and is forwarded as the ``committed`` marker rather than
+    # re-derived from a post-read the guard no longer protects. See
+    # :func:`_migrate_write_failure_report`.
+    #
+    # The marker arm is FIRST because the type is an ``OSError`` subclass: the
+    # generic arm placed ahead of it would swallow every committed-then-failed
+    # write and report it as having no commit evidence — the exact false
+    # refusal this pair of arms exists to prevent.
+    try:
+        post, wrote = write_max_slots_if_unset(per_repo_raw)
+    except MachineConfigPostCommitError as exc:
+        return _migrate_write_failure_report(exc, per_repo_raw, marshal_path, committed=True)
+    except (ValueError, TimeoutError, OSError) as exc:
+        return _migrate_write_failure_report(exc, per_repo_raw, marshal_path, committed=False)
+
+    if not wrote:
+        # A concurrent writer won the race. Re-classify from the POST state — the
+        # repository's key is never removed on the strength of a stale "unset".
+        refusal = _classify_machine_side(post, per_repo_raw, marshal_path)
+        if refusal is not None:
+            return refusal
+        if post.source != SOURCE_MACHINE_CONFIG:
+            return _migrate_refused(
+                'machine_config_unresolved',
+                (
+                    f'refusing to migrate: the machine-global write was skipped but {post.path} did not resolve '
+                    f'to a configured cap (source={post.source}). Neither file was changed.'
+                ),
+                machine_config_path=post.path,
+                marshal_json_path=marshal_path,
+                per_repo_max_slots=per_repo_raw,
+            )
+        # Equal value landed concurrently — this is removed_duplicate, reached by
+        # the race path rather than by the check above.
+        removal = _remove_per_repo_max_slots()
+        if removal.get('status') != 'success':
+            return {
+                **removal,
+                'action': 'config migrate',
+                'outcome': 'partial',
+                'machine_config_modified': False,
+                'marshal_json_modified': False,
+                'detail': (
+                    f'a concurrent writer set the machine-global cap at {post.path} to {post.value}, matching this '
+                    f'repository, but removing build.queue.max_slots from {marshal_path} did not commit. '
+                    'Re-run config migrate to complete it.'
+                ),
+                'machine_config_path': post.path,
+                'marshal_json_path': marshal_path,
+            }
+        return {
+            'status': 'success',
+            'action': 'config migrate',
+            'outcome': 'removed_duplicate',
+            'machine_config_modified': False,
+            'marshal_json_modified': True,
+            'detail': (
+                f'a concurrent writer had already set the machine-global cap at {post.path} to {post.value}, '
+                f'matching this repository; removed the redundant build.queue.max_slots from {marshal_path}. '
+                'marshal.json is git-tracked — commit the edit.'
+            ),
+            **_cap_report(post),
+            'marshal_json_path': marshal_path,
+        }
+
+    removal = _remove_per_repo_max_slots()
+    if removal.get('status') != 'success':
+        return {
+            **removal,
+            'action': 'config migrate',
+            'outcome': 'partial',
+            'machine_config_modified': True,
+            'marshal_json_modified': False,
+            'detail': (
+                f'the machine-global cap at {post.path} was written as {post.value}, but build.queue.max_slots is '
+                f'STILL present in {marshal_path} — its removal did not commit. Re-run config migrate to '
+                'complete the migration through the removed_duplicate branch.'
+            ),
+            **_cap_report(post),
+            'marshal_json_path': marshal_path,
+        }
+
+    return {
+        'status': 'success',
+        'action': 'config migrate',
+        'outcome': 'migrated',
+        'machine_config_modified': True,
+        'marshal_json_modified': True,
+        'detail': (
+            f'moved build.queue.max_slots={per_repo_raw} from {marshal_path} to the machine-global '
+            f'{post.path}. marshal.json is git-tracked — commit the edit.'
+        ),
+        **_cap_report(post),
+        'marshal_json_path': marshal_path,
+    }
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -976,8 +1753,9 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         'status',
         help=(
             'Report running version, in-flight/queued counts (unknown when the daemon did not '
-            'send them, never 0), and running-vs-resolved binary provenance (divergence flagged; '
-            'unknown never the resolved path).'
+            'send them, never 0), the applied build-slot cap with its source (unknown for a daemon '
+            'predating the fields; a degraded source is warned about), and running-vs-resolved '
+            'binary provenance (divergence flagged; unknown never the resolved path).'
         ),
         allow_abbrev=False,
     ).set_defaults(func=run_status)
@@ -1003,6 +1781,42 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         ),
     )
     logs.set_defaults(func=run_logs)
+
+    config = sub.add_parser(
+        'config',
+        help='Read, set, or migrate the machine-global build-slot cap.',
+        allow_abbrev=False,
+    )
+    config_sub = config.add_subparsers(dest='config_command', required=True)
+    config_sub.add_parser(
+        'get',
+        help=(
+            'Report the machine-global max_slots with its source and path, plus this '
+            "project's per-repo key (absent, or its value with in_effect: false)."
+        ),
+        allow_abbrev=False,
+    ).set_defaults(func=run_config_get)
+    config_set = config_sub.add_parser(
+        'set',
+        help='Set the machine-global max_slots (a running daemon applies it on its next submit).',
+        allow_abbrev=False,
+    )
+    config_set.add_argument(
+        '--max-slots',
+        type=int,
+        required=True,
+        help='The machine-global build-slot cap — a positive integer.',
+    )
+    config_set.set_defaults(func=run_config_set)
+    config_sub.add_parser(
+        'migrate',
+        help=(
+            "Move this repository's build.queue.max_slots machine-wide in one step: copied only "
+            'when nothing is set machine-wide, per-repo key removed, and refused with neither file '
+            'changed when the two values differ.'
+        ),
+        allow_abbrev=False,
+    ).set_defaults(func=run_config_migrate)
     return parser
 
 

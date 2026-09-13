@@ -893,71 +893,67 @@ class TestRunConfigMainAnchoring:
 
 
 # =============================================================================
-# Build-queue-limit knob — main-anchored round-trip
+# Build-queue reap threshold — the surface is GONE from run_config
 # =============================================================================
 
 
-class TestBuildQueueLimitMainAnchoring:
-    """The build.queue.upper_limit_seconds knob round-trips MAIN-anchored: the
-    adaptive stale-reclaim limit is a cross-session corpus, so a write/read issued
-    from a worktree cwd must land on (and read from) the MAIN checkout's
-    run-configuration.json — never the worktree-relative copy.
+class TestBuildQueueLimitSurfaceRemoved:
+    """The adaptive reap threshold no longer lives here, and nothing here reads it.
 
-    The reaper in build_queue.py reads this limit, and the release-time
-    adaptive-limit recompute writes it; both run with cwd pinned to a worktree
-    under ADR-002, so the main-anchored round-trip is the load-bearing property.
+    The threshold was a per-repo ``build.queue.upper_limit_seconds`` key in the
+    main-anchored ``run-configuration.json``, applied by the reaper to EVERY
+    repository's entries in the one machine-global build queue. It moved into that
+    queue's own state (``build-queue.json``), where it is single-valued host-wide
+    by construction and read/written inside the queue's critical section. Its
+    contract is pinned by
+    ``test/plan-marshall/manage-locks/test_build_queue_stale_reap.py``; what is
+    pinned HERE is only that this module no longer carries the retired half.
+
+    The class is a REMOVAL guard, and it earns its place because a partial removal
+    is silent: a surviving helper still reads and writes a key nothing honours, so
+    an operator setting it sees a value persist and believes it took effect.
     """
 
-    def test_build_queue_limit_round_trips_main_anchored_from_worktree_cwd(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        # PLAN_BASE_DIR is the main stand-in; cwd is pinned into a worktree dir
-        # with its own .plan/local — the main-anchored resolver must win over cwd.
-        main_base = tmp_path / 'main' / '.plan' / 'local'
-        main_base.mkdir(parents=True)
-        monkeypatch.setenv('PLAN_BASE_DIR', str(main_base))
-        import file_ops
+    def test_no_build_queue_symbol_survives_on_the_module(self) -> None:
+        """DERIVED, not enumerated: no name in the module mentions the queue.
 
-        monkeypatch.setattr(file_ops, '_BASE_DIR_OVERRIDE', None)
-        worktree = tmp_path / 'worktrees' / 'some-plan'
-        (worktree / '.plan' / 'local').mkdir(parents=True)
-        monkeypatch.chdir(worktree)
+        The predicate sweeps the module's OWN namespace rather than asserting a
+        hand-written list of the removed names — a list is one forgotten symbol
+        away from passing over the very leftover it was written to catch, and the
+        removal spanned helpers, constants and CLI handlers alike.
+        """
+        survivors = sorted(name for name in dir(run_config) if 'build_queue' in name.lower())
 
-        # Write the limit from the worktree cwd, then read it back.
-        run_config._write_build_queue_upper_limit(1800)
-        read_back = run_config._read_build_queue_upper_limit()
+        assert survivors == [], f'retired build-queue surface still on run_config: {survivors}'
 
-        # The write landed on MAIN's run-configuration.json (NOT the
-        # worktree-relative copy) and the read resolves the same main-anchored file.
-        assert read_back == 1800
-        main_config = main_base / 'run-configuration.json'
-        assert main_config.is_file()
-        assert json.loads(main_config.read_text())['build']['queue']['upper_limit_seconds'] == 1800
-        assert not (worktree / '.plan' / 'local' / 'run-configuration.json').exists()
+    def test_no_build_queue_key_is_seeded_into_the_default_structure(self) -> None:
+        """``init`` seeds no ``build`` block, so no threshold copy is written."""
+        assert 'build' not in run_config.DEFAULT_STRUCTURE
 
-    def test_build_queue_limit_write_clamps_then_round_trips_main_anchored(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        # Same worktree-cwd / main-anchored setup as above.
-        main_base = tmp_path / 'main' / '.plan' / 'local'
-        main_base.mkdir(parents=True)
-        monkeypatch.setenv('PLAN_BASE_DIR', str(main_base))
-        import file_ops
+    def test_build_queue_limit_verb_is_rejected(self) -> None:
+        """The retired ``build-queue-limit`` verb is no longer an accepted command.
 
-        monkeypatch.setattr(file_ops, '_BASE_DIR_OVERRIDE', None)
-        worktree = tmp_path / 'worktrees' / 'some-plan'
-        (worktree / '.plan' / 'local').mkdir(parents=True)
-        monkeypatch.chdir(worktree)
+        Asserted through the CLI entry point, because the verb is what an operator
+        (or a stale doc) would actually type: a module-level symbol sweep cannot
+        see an argparse subparser that is still registered.
+        """
+        for argv in (('build-queue-limit', 'get'), ('build-queue-limit', 'set', '--value', '1800')):
+            result = run_script(SCRIPT_PATH, *argv)
 
-        # Write an above-ceiling value — the clamp pins it to 3600 on main.
-        run_config._write_build_queue_upper_limit(99999)
+            assert result.returncode != 0, f'{argv} should be rejected, got: {result.stdout}'
 
-        # The persisted (and read-back) value is the 3600 s ceiling, stored on
-        # MAIN, never higher.
-        assert run_config._read_build_queue_upper_limit() == 3600
-        main_config = main_base / 'run-configuration.json'
-        assert json.loads(main_config.read_text())['build']['queue']['upper_limit_seconds'] == 3600
-        assert not (worktree / '.plan' / 'local' / 'run-configuration.json').exists()
+    def test_surviving_verbs_are_untouched(self) -> None:
+        """A control: the sibling verbs the removal must NOT have taken with it.
+
+        Without this the rejection above is satisfiable by a module that rejects
+        everything — including by a parser that failed to build at all.
+        """
+        result = run_script(SCRIPT_PATH, '--help')
+
+        assert result.success, f'Should succeed: {result.stderr}'
+        for verb in ('init', 'validate', 'timeout', 'warning', 'cleanup', 'ci-duration'):
+            assert verb in result.stdout, f'{verb} should survive the removal'
+        assert 'build-queue-limit' not in result.stdout
 
 
 # =============================================================================

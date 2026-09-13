@@ -9,7 +9,7 @@ Tests for manage-locks ``_locks_core.py`` shared coordination primitives.
 
 ``_locks_core`` is the single TOCTOU-safe coordination surface that both the
 merge mutex and the build-queue limiter build on. It is imported as a module
-(never an executor entry point) and exposes two public pieces plus the private
+(never an executor entry point) and exposes three public pieces plus the private
 helpers they compose:
 
   * :func:`holder_is_dead` — the plan-liveness predicate. A recorded holder is
@@ -18,6 +18,10 @@ helpers they compose:
   * :func:`rmw_json` — a serialized, main-anchored read-modify-write for JSON
     state files, guarded by an ``O_EXCL`` guard-file mutex and committed via an
     atomic temp-file replace.
+  * :func:`read_json_guarded` — the read-only counterpart: the SAME guard, no
+    commit. It exists because ``rmw_json`` commits unconditionally, so a read
+    expressed as an identity mutator writes the ``{}`` a corrupt file reads as
+    straight back over that file.
 
 Isolation: under the autouse ``_plan_base_dir_sandbox`` fixture, ``PLAN_BASE_DIR``
 is redirected into a per-test tmp dir; ``resolve_main_anchored_path`` (which
@@ -47,6 +51,9 @@ holder_staleness = _mod.holder_staleness
 
 
 rmw_json = _mod.rmw_json
+
+
+read_json_guarded = _mod.read_json_guarded
 
 
 _read_json_or_empty = _mod._read_json_or_empty

@@ -77,13 +77,19 @@ For each parsed line the script:
    adaptive ci-wait ratchet grows the ci-wait budget as observed durations rise,
    so a legitimately-long ratcheted ci-wait used to false-positive against the flat
    600s ceiling; it now lands in the *slow* band, not the *impossible* one. The
-   ratcheted ceiling is read INLINE from `.plan/run-configuration.json`
-   (`commands.{key}.timeout_seconds` and `build.queue.upper_limit_seconds`, taking
-   the max, never below the 600s floor) — consistent with the skill's
-   inline-reader rule (no `manage-*` dispatch for deterministic work), degrading to
-   the flat ceiling when the config or the ratcheted values are absent. Reported
-   separately from *slow* because for a deterministic call the **recording itself**
-   is suspect, not merely the cost.
+   ratcheted ceiling is read INLINE from **two separate homes**, taking the max and
+   never dropping below the 600s floor: the per-command `commands.{key}.timeout_seconds`
+   values come from the main-anchored `.plan/local/run-configuration.json` (the path
+   `get_run_config_path()` resolves to, and the only one that file sits at), and the
+   build-queue reap threshold comes from the top-level `upper_limit_seconds` of the
+   machine-global `build-queue.json` under the home root (`PLAN_MARSHALL_HOME` when
+   set, otherwise `~/.plan-marshall`) — it lives there because it is applied to every
+   repo's entries in the one host-wide build queue, not per repo. Both reads are
+   consistent with the skill's inline-reader rule (no `manage-*` dispatch for
+   deterministic work), and each degrades to the flat ceiling on its own: an absent
+   or unreadable source contributes no ceiling and never suppresses the other.
+   Reported separately from *slow* because for a deterministic call the **recording
+   itself** is suspect, not merely the cost.
 6. **Flags high-frequency callers** — a `notation subcommand` key called
    `>= high_frequency_calls` times across the whole corpus. This is a
    **frequency** instrument: it answers *"who is called most often?"*, ranks by
@@ -129,7 +135,7 @@ no magic number is re-declared in the check body:
 | High-frequency caller | `THRESHOLDS["high_frequency_calls"]` | `50` calls |
 | Cost roll-up depth | `THRESHOLDS["cost_rollup_top_n"]` | `10` keys |
 | Impossible / hang duration (deterministic per-plan-op call) | module constant `_IMPOSSIBLE_DURATION_SECONDS` | `600.0` s |
-| Impossible / hang duration (build / ci-wait class call, #849) | `_ratcheted_ci_wait_ceiling()` — inline read of `run-configuration.json`, `max(_IMPOSSIBLE_DURATION_SECONDS, ratcheted timeouts)` | ≥ `600.0` s |
+| Impossible / hang duration (build / ci-wait class call, #849) | `_ratcheted_ci_wait_ceiling()` — inline read of `.plan/local/run-configuration.json` (`commands.{key}.timeout_seconds`) plus the machine-global `build-queue.json` (top-level `upper_limit_seconds`), `max(_IMPOSSIBLE_DURATION_SECONDS, ratcheted timeouts)` | ≥ `600.0` s |
 | Build / ci-wait call classifier | `_BUILD_CI_WAIT_KEY_RE` over the `{notation} {subcommand}` key | any match |
 | Fixture leak | `_FIXTURE_LEAK_RE` (no numeric threshold) | any match |
 

@@ -16,10 +16,13 @@ project on the host. It ties together the four cores:
   bounded retention and restart replay.
 
 The daemon answers three ops over length-prefixed JSON frames: ``ping`` (identity
-handshake), ``submit`` (verify → schedule → journal), and ``wait`` (server-side
-bounded long-poll returning a terminal result OR a live running-status TOON on
-bound expiry). The socket is ``0600`` inside a ``0700`` directory; a stale socket
-is taken over only after liveness-probing the previous pidfile.
+handshake, which also reports the slot cap the daemon is applying AND where that
+value came from), ``submit`` (verify → schedule → journal, re-resolving the cap so
+an operator's ``config set`` takes effect without a restart), and ``wait``
+(server-side bounded long-poll returning a terminal result OR a live
+running-status TOON on bound expiry). The socket is ``0600`` inside a ``0700``
+directory; a stale socket is taken over only after liveness-probing the previous
+pidfile.
 
 The OS-level helpers (:func:`double_fork`, :func:`pid_alive`,
 :func:`stale_socket_takeover`, :func:`rotate_log`) and the request dispatch
@@ -56,12 +59,12 @@ from _build_server_protocol import (
     write_frame,
 )
 from _build_server_registry import canonicalize_root, read_registry
+from _machine_config import SOURCE_MACHINE_CONFIG, CapResolution, resolve_max_slots
 from _marshalld_audit import InteractionAudit
 from _marshalld_journal import Journal
-from _marshalld_scheduler import Scheduler, resolve_max_slots
+from _marshalld_scheduler import Scheduler
 from _marshalld_supervisor import JobProgress, run_job
 from _marshalld_verifier import git_common_dir_resolver, verify_submit
-from file_ops import get_marshal_path, read_json
 from marketplace_paths import ensure_home_root, home_root
 
 VERSION = '1'
@@ -263,6 +266,7 @@ class Daemon:
         job_timeout: int = _DEFAULT_JOB_TIMEOUT,
         log_dir: Path | None = None,
         poll_interval: float = _POLL_INTERVAL_SECONDS,
+        cap_resolution: CapResolution | None = None,
     ) -> None:
         """Initialise the daemon.
 
@@ -286,10 +290,23 @@ class Daemon:
                 when it does (see :meth:`_resolve_job_timeout`).
             log_dir: Per-job build-log directory.
             poll_interval: Wait long-poll interval in seconds.
+            cap_resolution: The slot-cap resolution this daemon is applying —
+                the value AND the source it came from, which ``ping`` reports so
+                an operator can tell a configured cap from a fallback (the cap
+                value alone cannot: a fallback 5 is byte-identical to a
+                configured 5). :func:`build_daemon` passes the SAME resolution it
+                sized ``scheduler`` from, so the held resolution and the
+                scheduler's cap start in lock-step and :meth:`_apply_current_cap`
+                keeps them there on every submit. Left unset it is resolved here,
+                which keeps a hand-constructed daemon's report sourced from a real
+                resolution rather than a fabricated one; a caller that asserts on
+                the reported cap should inject the resolution matching the
+                ``scheduler`` it passed.
         """
         self._scheduler = scheduler
         self._journal = journal
         self._interaction_audit = interaction_audit or InteractionAudit()
+        self._cap = cap_resolution if cap_resolution is not None else resolve_max_slots()
         self._baseline_interpreter = baseline_interpreter
         self._common_dir_resolver = common_dir_resolver or git_common_dir_resolver
         self._job_timeout = job_timeout
@@ -329,13 +346,28 @@ class Daemon:
         # signal is the one outcome the reconcile gate exists to prevent. Adding
         # them here is backward-compatible: the client handshake reads only
         # `status` and `version`.
-        return {
+        #
+        # The cap rides along for the same reason, and `max_slots_source` rides
+        # with it because the VALUE alone is not a reportable fact: a cap that
+        # degraded to the default is indistinguishable from one an operator set
+        # to the same number, which is exactly how the daemon's post-`chdir('/')`
+        # degradation stayed invisible. The source is what makes the resolution
+        # auditable, so it is never omitted (ADR-009, ADR-014).
+        payload: dict[str, Any] = {
             'status': 'ok',
             'pid': os.getpid(),
             'version': VERSION,
             'in_flight': self._scheduler.running_count,
             'queued': self._scheduler.queued_count,
+            'max_slots': self._cap.value,
+            'max_slots_source': self._cap.source,
         }
+        # `detail` exists only to explain a non-nominal source (which value was
+        # rejected, which error was hit), so it is sent only when there is a
+        # source to explain — a `machine_config` resolution needs none.
+        if self._cap.source != SOURCE_MACHINE_CONFIG:
+            payload['max_slots_detail'] = self._cap.detail
+        return payload
 
     # -- interaction audit -------------------------------------------------
 
@@ -458,6 +490,7 @@ class Daemon:
         result = self._scheduler.submit(spec, outcome.record.get('canonical_root', ''))
         if not result.attached:
             self._journal.record_spec(result.job_id, spec.to_dict())
+        self._apply_current_cap()
         self._admit_ready()
         return {'status': STATUS_QUEUED, 'job_id': result.job_id, 'attached': result.attached}
 
@@ -518,6 +551,32 @@ class Daemon:
         if not isinstance(entry, dict):
             return False
         return str(entry.get('status', '')) in TERMINAL_STATUSES
+
+    def _apply_current_cap(self) -> CapResolution:
+        """Re-resolve the machine-global cap and apply it to the scheduler.
+
+        Called on every submit, immediately before :meth:`_admit_ready`, for two
+        reasons that are really one: an operator's ``config set`` must take effect
+        without restarting a machine-global daemon that may be serving other
+        projects' builds, and a long-lived daemon must not admit against a cap the
+        host stopped agreeing with hours ago. Resolving once at startup gave both
+        problems the same shape — a stale cap nobody could see.
+
+        Storing and applying happen HERE, together, which is what keeps the
+        resolution ``ping`` reports and the cap admission actually uses the same
+        fact. Splitting them would let the daemon report one cap and admit against
+        another, which is the class of divergence this deliverable exists to close.
+
+        Cheap enough to run per submit: it is a single small read of one
+        machine-global file, on a path that is already about to start a build
+        subprocess, and :func:`_machine_config.resolve_max_slots` never raises.
+
+        Returns:
+            The resolution now in effect.
+        """
+        self._cap = resolve_max_slots()
+        self._scheduler.set_max_slots(self._cap.value)
+        return self._cap
 
     def _admit_ready(self) -> None:
         while self._scheduler.available_slots() > 0:
@@ -656,12 +715,36 @@ def _command_key(spec_dict: dict[str, Any]) -> str:
 
 
 def build_daemon() -> Daemon:
-    """Construct a :class:`Daemon` with config-resolved slots, a journal, and an interaction audit."""
-    config = read_json(get_marshal_path(), default={})
-    scheduler = Scheduler(max_slots=resolve_max_slots(config))
+    """Construct a :class:`Daemon` with config-resolved slots, a journal, and an interaction audit.
+
+    The slot cap comes from the MACHINE-GLOBAL ``machine-config.json`` via
+    :func:`_machine_config.resolve_max_slots`, which consults no working
+    directory. That is load-bearing here rather than incidental: :func:`main`
+    calls :func:`double_fork` — which ``chdir('/')`` — BEFORE calling this
+    function, so the previous cwd-relative ``marshal.json`` read walked up from
+    ``/``, found no repository, and silently produced the default cap,
+    indistinguishable from a deliberately configured one. With the
+    machine-global resolver nothing in the daemon reads a cwd-relative path at
+    all, so the daemon's cap is the same value every other consumer on the host
+    resolves.
+
+    The resolution is seeded into the :class:`Daemon` as well as sized into the
+    :class:`Scheduler` — ONE resolution feeding both, so the cap ``ping`` reports
+    and the cap admission applies cannot start out disagreeing. It is a seed, not
+    the daemon's final answer: :meth:`Daemon._apply_current_cap` re-resolves on
+    every submit, so the reportable fact is whether a resolution reached its
+    source, never the order of calls in :func:`main`.
+    """
+    cap = resolve_max_slots()
+    scheduler = Scheduler(max_slots=cap.value)
     journal = Journal()
     interaction_audit = InteractionAudit()
-    return Daemon(scheduler=scheduler, journal=journal, interaction_audit=interaction_audit)
+    return Daemon(
+        scheduler=scheduler,
+        journal=journal,
+        interaction_audit=interaction_audit,
+        cap_resolution=cap,
+    )
 
 
 def _build_arg_parser() -> argparse.ArgumentParser:
