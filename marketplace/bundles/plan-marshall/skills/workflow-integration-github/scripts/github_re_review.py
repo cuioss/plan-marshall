@@ -40,9 +40,9 @@ two completion signals, checked in that order of strength:
    SAME :func:`_references_head_sha` predicate the review path uses, run over the
    comment BODY.
 
-   ⛔ **"An issue comment carries no reviewed-commit SHA" was a premise, not an
-   observation, and it is false for a bot whose only declared publish shape is an
-   issue comment.** ``cuioss-review-bot`` declares ``participation_evidence:
+   ⛔ **The retired claim — that this signal never names the commit it reviewed —
+   was a premise, not an observation, and it is false for a bot whose only declared
+   publish shape is a comment.** ``cuioss-review-bot`` declares ``participation_evidence:
    issue_comment`` and an empty ``completion_check_name`` — it submits no review
    object at all — and it names the commit it reviewed INSIDE that comment, as a
    ``…/commit/{sha}`` permalink: the exact URL-embedded form
