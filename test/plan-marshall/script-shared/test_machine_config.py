@@ -357,21 +357,77 @@ def test_default_cap_is_five(home: Path) -> None:
 # =============================================================================
 
 
+def _is_int_literal(node: ast.expr) -> bool:
+    """Is ``node`` an integer literal that is not a ``bool``?
+
+    ``bool`` is excluded explicitly on every arm that uses this: ``True`` is an
+    ``int`` subclass, so a ``FLAG_MAX_SLOTS = True`` or a
+    ``{'max_slots': True}`` would otherwise read as a cap definition.
+
+    A non-literal value — ``{'max_slots': DEFAULT_MAX_SLOTS}`` — is deliberately
+    NOT a literal here: a mapping that seeds itself from the single definition
+    is a CONSUMER of it, and flagging consumers would make the guard fire on
+    exactly the structure it wants callers to use.
+    """
+    return isinstance(node, ast.Constant) and isinstance(node.value, int) and not isinstance(node.value, bool)
+
+
+def _dict_carries_an_int_max_slots(node: ast.Dict) -> bool:
+    """Does this dict literal bind the ``'max_slots'`` key to an integer literal?
+
+    A ``**mapping`` entry carries ``None`` in ``keys``, which fails the
+    ``ast.Constant`` test and is skipped — its contents are not visible to a
+    literal read, and guessing at them would be inventing a carrier.
+    """
+    return any(
+        isinstance(key, ast.Constant) and key.value == 'max_slots' and _is_int_literal(value)
+        for key, value in zip(node.keys, node.values, strict=True)
+    )
+
+
+def _defines_a_default_cap(node: ast.stmt) -> bool:
+    """Is ``node`` a module-level definition of a default build-slot cap?
+
+    TWO shapes are admitted, because the cap's historical carriers took both —
+    and the second is exactly the one a name-only derivation could not see:
+
+    * **A named constant** — an assignment whose target name ends in
+      ``MAX_SLOTS`` bound to an integer literal (the scheduler's
+      ``DEFAULT_MAX_SLOTS`` and ``build_queue``'s ``_DEFAULT_MAX_SLOTS``).
+    * **A seeded mapping** — an assignment whose value is a dict literal
+      carrying an integer-literal ``'max_slots'`` key, **whatever the target is
+      named** (``_config_defaults``' ``DEFAULT_BUILD_QUEUE = {'max_slots': 5,
+      ...}``, the carrier that actually seeded the key into every project's
+      ``marshal.json``). The target name is deliberately not consulted on this
+      arm: requiring it is what made the derivation blind here, since
+      ``DEFAULT_BUILD_QUEUE`` does not end in ``MAX_SLOTS`` and its value is a
+      dict rather than an int.
+
+    ``ast.AnnAssign`` is deliberately NOT admitted: no consumer and no
+    historical carrier uses that form, and admitting an unexercised shape would
+    add a branch no control covers.
+
+    The derivation is AST-based rather than textual for the reason the sibling
+    audit records at length: a regex over these names matches a docstring, a
+    comment and a ``def`` line exactly as it matches a definition, and this
+    module's own docstring discusses ``DEFAULT_MAX_SLOTS`` repeatedly. Reading a
+    *usage* or a *stamp key* as a definition is what would make this guard pass
+    while the duplication it exists to forbid is present.
+    """
+    if not isinstance(node, ast.Assign):
+        return False
+    names = [t.id for t in node.targets if isinstance(t, ast.Name)]
+    if any(name.endswith('MAX_SLOTS') for name in names) and _is_int_literal(node.value):
+        return True
+    return isinstance(node.value, ast.Dict) and _dict_carries_an_int_max_slots(node.value)
+
+
 def _default_cap_carriers() -> tuple[set[Path], int]:
     """Return every production module that DEFINES a default build-slot cap.
 
-    A carrier is a module-level assignment whose target name ends in
-    ``MAX_SLOTS`` and whose value is an integer literal — the shape all three
-    historical carriers had. The derivation is AST-based rather than textual
-    for the reason the sibling audit records at length: a regex over these
-    names matches a docstring, a comment and a ``def`` line exactly as it
-    matches a definition, and this module's own docstring discusses
-    ``DEFAULT_MAX_SLOTS`` repeatedly. Reading a *usage* or a *stamp key* as a
-    definition is what would make this guard pass while the duplication it
-    exists to forbid is present.
-
-    ``bool`` is excluded explicitly: ``True`` is an ``int`` subclass, so a
-    ``FLAG_MAX_SLOTS = True`` would otherwise read as a cap definition.
+    A carrier is a module whose top level holds a node
+    :func:`_defines_a_default_cap` admits — either of the two shapes documented
+    there.
 
     Returns the carrier set and the number of modules scanned, so the caller
     can publish the population the verdict was computed over.
@@ -386,17 +442,73 @@ def _default_cap_carriers() -> tuple[set[Path], int]:
         except (OSError, SyntaxError) as exc:  # pragma: no cover - coverage gap, not absence
             unreadable.append(f'{path}: {exc}')
             continue
-        for node in tree.body:
-            if not isinstance(node, ast.Assign):
-                continue
-            names = [t.id for t in node.targets if isinstance(t, ast.Name)]
-            if not any(name.endswith('MAX_SLOTS') for name in names):
-                continue
-            value = node.value
-            if isinstance(value, ast.Constant) and isinstance(value.value, int) and not isinstance(value.value, bool):
-                carriers.add(path)
+        if any(_defines_a_default_cap(node) for node in tree.body):
+            carriers.add(path)
     assert not unreadable, f'modules that could not be parsed are a coverage gap, not an absence: {unreadable}'
     return carriers, scanned
+
+
+def _admits_any_module_level_node(source: str) -> bool:
+    """Whether the carrier predicate admits any top-level node of ``source``.
+
+    The synthetic controls below go through the SAME predicate the live-tree
+    derivation uses, so a control cannot pass against a predicate the sweep does
+    not actually apply.
+    """
+    return any(_defines_a_default_cap(node) for node in ast.parse(source).body)
+
+
+@pytest.mark.parametrize(
+    'source',
+    [
+        pytest.param("DEFAULT_BUILD_QUEUE = {'max_slots': 5, 'max_retries': 10}", id='historical-dict-carrier'),
+        pytest.param('QUEUE_DEFAULTS = {"max_slots": 5}', id='double-quoted-key'),
+        pytest.param('DEFAULT_MAX_SLOTS = 5', id='named-int-constant'),
+        pytest.param('_DEFAULT_MAX_SLOTS = 5', id='private-named-int-constant'),
+    ],
+)
+def test_the_carrier_predicate_admits_every_historical_carrier_shape(source: str) -> None:
+    """Both carrier shapes are admitted — the dict one is the blindness this closes.
+
+    ``DEFAULT_BUILD_QUEUE = {'max_slots': 5, ...}`` is not a hypothetical: it is
+    the third historical carrier, the one that seeded ``build.queue.max_slots``
+    into every project's ``marshal.json``, and it failed BOTH conjuncts of the
+    name-plus-int-literal derivation — its target does not end in ``MAX_SLOTS``
+    and its value is a dict. Restoring it would have left the single-definition
+    guard below green, which is the vacuous-guard shape the guard exists to
+    forbid. This control fails against that narrower predicate, which is what
+    makes the blindness established rather than asserted.
+
+    The two named-constant rows are the matched positives for the arm that was
+    already there: they keep this parametrization from passing against a
+    predicate that traded one blind spot for another.
+    """
+    assert _admits_any_module_level_node(source)
+
+
+@pytest.mark.parametrize(
+    'source',
+    [
+        pytest.param("DEFAULT_BUILD_QUEUE = {'max_slots': True}", id='dict-bool-value'),
+        pytest.param("DEFAULT_BUILD_QUEUE = {'max_retries': 10}", id='dict-without-the-key'),
+        pytest.param("DEFAULT_BUILD_QUEUE = {'max_slots': DEFAULT_MAX_SLOTS}", id='dict-seeded-from-the-definition'),
+        pytest.param("DEFAULT_BUILD_QUEUE = {'max_slots': '5'}", id='dict-string-value'),
+        pytest.param('FLAG_MAX_SLOTS = True', id='named-bool'),
+        pytest.param("MAX_SLOTS_DOC = 'five'", id='named-string'),
+        pytest.param('QUEUE_DEFAULTS = {}', id='empty-dict'),
+        pytest.param("def f():\n    d = {'max_slots': 5}\n    return d", id='dict-inside-a-function'),
+    ],
+)
+def test_the_carrier_predicate_rejects_what_is_not_a_carrier(source: str) -> None:
+    """The matched negatives, one per way the widened arm could over-admit.
+
+    Without them the widening would be indistinguishable from "admit any
+    mapping": a dict seeded FROM the single definition is a consumer (and
+    flagging it would fire on the very structure callers are told to use), a
+    ``bool`` is not a cap although it is an ``int`` subclass, and a dict inside a
+    function body is not a module-level definition at all.
+    """
+    assert not _admits_any_module_level_node(source)
 
 
 def test_the_default_cap_is_defined_in_exactly_one_module() -> None:
