@@ -316,6 +316,18 @@ A leaf module (nothing depends on it) returns an empty `impact` list — and the
 
 ---
 
+## Commands (module, inventory and capability queries)
+
+The remaining verbs, resumed from [§ Commands](#commands) above. The four
+graph-family verbs keep their own H2 rather than moving here: that heading exists
+to state the `resolvers[]` / `resolver_count` provenance contract *all four* of
+them carry, and the zero-edge disambiguation rule is only readable next to the
+verbs it governs. Moving them under this heading would replace that adjacency
+with a cross-reference — the contract would still be stated once, but each verb
+would no longer be read beside it, which is the property the grouping buys. The
+verbs below carry no shared contract of that kind, so they group by catalogue
+rather than by provenance.
+
 ### module
 
 Get module information including description, paths, and commands.
@@ -560,58 +572,6 @@ npm,python3 .plan/execute-script.py plan-marshall:build-npm:npm run --command-ar
 ```
 
 ---
-
-## Command Summary
-
-| Command | Purpose | Output |
-|---------|---------|--------|
-| `info` | Project overview | Project metadata + module list |
-| `modules` | List modules | Module names, optionally filtered by `--command` |
-| `graph` | Module dependency graph | Dependency tree for ordering |
-| `path` | Shortest dependency path between two modules | TOON path list (or `null`) |
-| `neighbors` | N-hop neighborhood of a module | TOON sorted module list |
-| `impact` | Reverse-dependency closure | TOON sorted module list |
-| `module` | Module details | Condensed (default), full (`--full`), or markdown (`--full --budget N`) |
-| `overview` | Project architecture summary | Deterministic markdown |
-| `commands` | Module commands | Command names with descriptions |
-| `resolve` | Executable command | Full python3 invocation |
-| `files` | Module file inventory | Categorised paths, optionally filtered by `--category` |
-| `which-module` | Reverse path lookup | Owning module for a given path |
-| `find` | Glob inventory search (PATH) | Cross-module path matches |
-| `search` | Content inventory search (BODY) | Cross-module file hits with `match_count` and `file_count`, plus `files_scanned` / `unreadable[]`; `--ignore-case` composes with `--literal` |
-| `capabilities` | Envelope capability report | Per-capability `derivable`/`not_derivable` (module edges, path attribution, content search) |
-| `diff-modules` | Snapshot diff | `added`/`removed`/`changed`/`unchanged` module buckets |
-| `descriptor-regression-check` | Commit-gate regression predicate | `regressive` (bool) + `violations` list |
-
-**Default vs Full**:
-- Default: Key packages, key dependencies, proposed skill domains (no reasoning)
-- `--full`: All packages, all dependencies, all reasoning fields
-
-## Error Handling
-
-**Module not found**:
-```toon
-error: Module not found
-module: unknown-module
-available[4]:
-  - oauth-sheriff-parent
-  - oauth-sheriff-core
-  - oauth-sheriff-quarkus
-  - oauth-sheriff-quarkus-deployment
-```
-
-**Command not found**:
-```toon
-error: Command not found
-module: oauth-sheriff-core
-command: unknown-command
-available[5]:
-  - module-tests
-  - verify
-  - quality-gate
-  - clean
-  - install
-```
 
 ### files
 
@@ -1579,6 +1539,62 @@ you are asking about; that is the whole point of it being uncached.
   empty graph as a clean dependency-direction pass (see
   [`phase-2-refine:refine-workflow-detail.md`](../../phase-2-refine/standards/refine-workflow-detail.md)
   § "Feasibility Check").
+
+---
+
+## Command Summary
+
+| Command | Purpose | Output |
+|---------|---------|--------|
+| `info` | Project overview | Project metadata + module list |
+| `modules` | List modules | Module names, optionally filtered by `--command` |
+| `graph` | Module dependency graph | Dependency tree for ordering |
+| `path` | Shortest dependency path between two modules | TOON path list (or `null`) |
+| `neighbors` | N-hop neighborhood of a module | TOON sorted module list |
+| `impact` | Reverse-dependency closure | TOON sorted module list |
+| `module` | Module details | Condensed (default), full (`--full`), or markdown (`--full --budget N`) |
+| `overview` | Project architecture summary | Deterministic markdown |
+| `commands` | Module commands | Command names with descriptions |
+| `resolve` | Executable command | Full python3 invocation |
+| `files` | Module file inventory | Categorised paths, optionally filtered by `--category` |
+| `which-module` | Reverse path lookup | Owning module for a given path |
+| `find` | Glob inventory search (PATH) | Cross-module path matches |
+| `search` | Content inventory search (BODY) | Cross-module file hits with `match_count` and `file_count`, plus `files_scanned` / `unreadable[]`; `--ignore-case` composes with `--literal` |
+| `capabilities` | Envelope capability report | Per-capability `derivable`/`not_derivable` (module edges, path attribution, content search) |
+| `diff-modules` | Snapshot diff | `added`/`removed`/`changed`/`unchanged` module buckets |
+| `descriptor-regression-check` | Commit-gate regression predicate | `regressive` (bool) + `violations` list |
+
+**Default vs Full**:
+- Default: Key packages, key dependencies, proposed skill domains (no reasoning)
+- `--full`: All packages, all dependencies, all reasoning fields
+
+---
+
+## Error Handling
+
+**Module not found**:
+```toon
+error: Module not found
+module: unknown-module
+available[4]:
+  - oauth-sheriff-parent
+  - oauth-sheriff-core
+  - oauth-sheriff-quarkus
+  - oauth-sheriff-quarkus-deployment
+```
+
+**Command not found**:
+```toon
+error: Command not found
+module: oauth-sheriff-core
+command: unknown-command
+available[5]:
+  - module-tests
+  - verify
+  - quality-gate
+  - clean
+  - install
+```
 
 ---
 
