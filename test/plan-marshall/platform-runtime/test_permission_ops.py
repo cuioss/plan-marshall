@@ -704,21 +704,8 @@ class TestSuspiciousAuditScoresTheGrantingSpelling:
 # verifiability while the verification does not exist is the vacuous-authority
 # shape; the tests below are the checks that claim names.
 
-#: Which argument shape each `permission fix` operation takes. `protect-path`
-#: names a DIRECTORY to guard; every other operation takes permission
-#: descriptors. This map is hand-written, so it is CHECKED against the published
-#: operation set rather than trusted — see
-#: ``test_every_published_operation_is_swept``. Without that check an operation
-#: added to ``PERMISSION_FIX_OPERATIONS`` would simply not be swept, and the
-#: ownership claim would narrow silently while the suite stayed green.
-_OPERATION_ARGUMENT_KIND = {
-    'normalize': 'descriptor',
-    'add': 'descriptor',
-    'remove': 'descriptor',
-    'ensure': 'descriptor',
-    'consolidate': 'descriptor',
-    'protect-path': 'path',
-}
+_DENY_WRITING_OPERATION = 'protect-path'
+"""The one `permission fix` operation taking a directory path rather than a permission descriptor."""
 
 
 class TestPermissionListOwnership:
@@ -733,27 +720,28 @@ class TestPermissionListOwnership:
         return settings_path
 
     def _argument_for(self, tmp_path: Path, operation: str) -> list[Any]:
-        if _OPERATION_ARGUMENT_KIND[operation] == 'path':
+        if operation == _DENY_WRITING_OPERATION:
             return [str(tmp_path / 'creds')]
         return [{'kind': 'path', 'tool': 'Read', 'path': '**'}]
 
-    def test_the_operation_population_is_not_empty(self) -> None:
-        """Non-vacuity: the per-operation sweep below needs a population to sweep.
+    def test_the_operation_population_is_not_empty_and_holds_the_deny_writer(self) -> None:
+        """Non-vacuity for the sweep below, plus the membership its POSITIVE row rests on.
 
         Kept as its own test because a parametrized sweep over an EMPTY tuple
         collects zero cases and reports green — the one failure a derived
         population cannot report about itself.
+
+        The membership half guards the other way a green sweep can prove nothing:
+        only the `_DENY_WRITING_OPERATION` row carries the positive assertion, so
+        were that operation renamed or retired, every remaining row would silently
+        become a negative and an implementation writing no deny rule at all would
+        pass. Asserting membership queries the published set rather than mirroring
+        it, so it cannot itself fall out of date.
         """
         assert PERMISSION_FIX_OPERATIONS
-
-    def test_every_published_operation_is_swept(self) -> None:
-        """The argument map covers the published set exactly, in both directions."""
-        assert set(_OPERATION_ARGUMENT_KIND) == set(PERMISSION_FIX_OPERATIONS), (
-            f'the ownership sweep and the published operation set disagree: '
-            f'unswept={sorted(set(PERMISSION_FIX_OPERATIONS) - set(_OPERATION_ARGUMENT_KIND))}, '
-            f'stale={sorted(set(_OPERATION_ARGUMENT_KIND) - set(PERMISSION_FIX_OPERATIONS))}. '
-            f'Population sizes: published={len(PERMISSION_FIX_OPERATIONS)}, '
-            f'swept={len(_OPERATION_ARGUMENT_KIND)}.'
+        assert _DENY_WRITING_OPERATION in PERMISSION_FIX_OPERATIONS, (
+            f'{_DENY_WRITING_OPERATION} is absent from the published operation set '
+            f'{sorted(PERMISSION_FIX_OPERATIONS)} — the sweep below would carry no positive row'
         )
 
     @pytest.mark.parametrize('operation', PERMISSION_FIX_OPERATIONS, ids=PERMISSION_FIX_OPERATIONS)
@@ -785,7 +773,7 @@ class TestPermissionListOwnership:
         ask = written['permissions']['ask']
 
         assert ask == [], f'{operation} populated permissions.ask with {ask} — nothing in this project writes ask'
-        if _OPERATION_ARGUMENT_KIND[operation] == 'path':
+        if operation == _DENY_WRITING_OPERATION:
             assert deny, f'{operation} is the sole deny writer but wrote none — the negative rows below prove nothing'
         else:
             assert deny == [], (
