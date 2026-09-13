@@ -20,6 +20,7 @@ These tests exercise the fixed behaviour at both sites.
 
 from __future__ import annotations
 
+import sys
 from argparse import Namespace
 from pathlib import Path
 
@@ -30,13 +31,21 @@ from conftest import load_script_module
 status_query = load_script_module(
     'plan-marshall', 'manage-status', '_status_query.py', '_status_query_cwd_scope_under_test'
 )
+# ``_resolution_scope`` is DEFINED in ``_status_core`` and imported by
+# ``_status_query`` (both the enumeration verb and the single-plan read gate must
+# ask one predicate). Patching its resolver therefore has to target the module the
+# function actually closes over. ``sys.modules`` is the handle for exactly that
+# instance: executing ``_status_query`` above ran its ``from _status_core import
+# ...``, which cached the core module under its own name — a second
+# ``load_script_module`` alias would be a DIFFERENT object the function never reads.
+status_core = sys.modules['_status_core']
 git_workflow = load_script_module(
     'plan-marshall', 'workflow-integration-git', 'git-workflow.py', 'git_workflow_cwd_scope_under_test'
 )
 
 
 # =============================================================================
-# _status_query._resolution_scope — main / worktree_local / unknown
+# _resolution_scope — main / worktree_local / unknown
 # =============================================================================
 
 
@@ -63,7 +72,7 @@ class TestResolutionScope:
         monkeypatch.setenv('PLAN_BASE_DIR', str(base))
         worktree_base = base / 'worktrees' / 'wt-x' / '.plan' / 'local'
 
-        monkeypatch.setattr(status_query, 'get_base_dir', lambda: worktree_base)
+        monkeypatch.setattr(status_core, 'get_base_dir', lambda: worktree_base)
 
         assert status_query._resolution_scope() == 'worktree_local'
 
@@ -77,7 +86,7 @@ class TestResolutionScope:
         def _boom() -> Path:
             raise RuntimeError('base unresolvable')
 
-        monkeypatch.setattr(status_query, 'get_base_dir', _boom)
+        monkeypatch.setattr(status_core, 'get_base_dir', _boom)
 
         assert status_query._resolution_scope() == 'unknown'
 

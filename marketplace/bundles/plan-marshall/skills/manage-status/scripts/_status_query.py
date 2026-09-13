@@ -16,6 +16,7 @@ from _status_core import (
     TITLE_TOKEN_OWNERS,
     TITLE_TOKEN_STATES,
     OpenPhaseScan,
+    _resolution_scope,
     _surface_drive,
     _try_read_status_json,
     get_plans_dir,
@@ -23,8 +24,10 @@ from _status_core import (
     in_progress_phases,
     log_entry,
     normalize_metadata,
+    plan_resolution_fields,
     read_title_token,
     require_status,
+    require_status_resolved,
     title_token_is_stale,
     write_status,
 )
@@ -40,7 +43,6 @@ from file_ops import (
     WORKTREE_STATE_MATERIALIZED,
     WORKTREE_STATE_PENDING,
     derive_worktree_state,
-    get_base_dir,
     get_worktree_root,
     now_utc_iso,
 )
@@ -78,12 +80,25 @@ def _coerce_metadata_value(field: str, raw_value: Any) -> Any:
 
 
 def cmd_read(args: argparse.Namespace) -> dict[str, Any] | None:
-    """Read plan status."""
-    status = require_status(args)
-    if status is None:
+    """Read plan status, from the sibling worktree that holds it when it has moved.
+
+    A READ verb, so it opts into the widened resolution: a phase-5+ plan whose
+    directory MOVED into its own worktree (ADR-002) is absent from every other
+    checkout by design, and answering that with a bare absence is what let a live
+    plan be read as dead. The payload names which checkout answered
+    (``resolved_from`` / ``resolved_checkout``) so a caller can tell a local read
+    from a sibling-worktree one.
+    """
+    resolution = require_status_resolved(args, any_checkout=True)
+    if resolution is None:
         return None
 
-    return {'status': 'success', 'plan_id': args.plan_id, 'plan': status}
+    return {
+        'status': 'success',
+        'plan_id': args.plan_id,
+        'plan': resolution.status,
+        **plan_resolution_fields(resolution),
+    }
 
 
 def cmd_set_phase(args: argparse.Namespace) -> dict[str, Any] | None:
@@ -177,10 +192,11 @@ def cmd_update_phase(args: argparse.Namespace) -> dict[str, Any] | None:
 
 
 def cmd_progress(args: argparse.Namespace) -> dict[str, Any] | None:
-    """Calculate plan progress."""
-    status = require_status(args)
-    if status is None:
+    """Calculate plan progress. A READ verb — resolves a sibling-worktree plan too."""
+    resolution = require_status_resolved(args, any_checkout=True)
+    if resolution is None:
         return None
+    status = resolution.status or {}
 
     phases = status.get('phases', [])
     total = len(phases)
@@ -196,6 +212,7 @@ def cmd_progress(args: argparse.Namespace) -> dict[str, Any] | None:
             'current_phase': status.get('current_phase'),
             'percent': percent,
         },
+        **plan_resolution_fields(resolution),
     }
 
 
@@ -281,7 +298,14 @@ def _cmd_metadata_append(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def cmd_metadata(args: argparse.Namespace) -> dict[str, Any] | None:
-    """Get, set, or append to a metadata field in status.json."""
+    """Get, set, or append to a metadata field in status.json.
+
+    ⛔ Only the ``--get`` branch opts into the sibling-worktree resolution. The
+    ``--set`` / ``--append`` branches commit through ``write_status`` →
+    ``get_status_path``, which resolves LOCALLY: reading a sibling plan and then
+    writing it into the local tree would be strictly worse than the absence this
+    deliverable fixes. They keep the strict gate.
+    """
     if args.set and getattr(args, 'append', False):
         if args.value is None:
             return {
@@ -295,6 +319,36 @@ def cmd_metadata(args: argparse.Namespace) -> dict[str, Any] | None:
         if require_status(args) is None:
             return None
         return _cmd_metadata_append(args)
+
+    # The READ branch, taken only when --get is the sole operation — which is
+    # exactly the combination the fall-through below would route to the get
+    # handler anyway. Evaluated here so the widened resolution reaches --get
+    # without the strict gate below refusing a sibling-worktree plan first; every
+    # other combination (--get with --append, --get with --set, neither flag)
+    # falls through untouched and keeps its existing refusal order.
+    if args.get and not args.set and not getattr(args, 'append', False):
+        resolution = require_status_resolved(args, any_checkout=True)
+        if resolution is None:
+            return None
+        metadata = (resolution.status or {}).get('metadata', {})
+        value = metadata.get(args.field)
+        provenance = plan_resolution_fields(resolution)
+        if value is None:
+            return {
+                'status': 'not_found',
+                'plan_id': args.plan_id,
+                'field': args.field,
+                'message': f"Metadata field '{args.field}' not found",
+                'available_fields': list(metadata.keys()),
+                **provenance,
+            }
+        return {
+            'status': 'success',
+            'plan_id': args.plan_id,
+            'field': args.field,
+            'value': value,
+            **provenance,
+        }
 
     status = require_status(args)
     if status is None:
@@ -330,34 +384,18 @@ def cmd_metadata(args: argparse.Namespace) -> dict[str, Any] | None:
             result['previous_value'] = previous_value
         return result
 
-    elif args.get:
-        # Get metadata
-        metadata = status.get('metadata', {})
-        value = metadata.get(args.field)
-
-        if value is None:
-            return {
-                'status': 'not_found',
-                'plan_id': args.plan_id,
-                'field': args.field,
-                'message': f"Metadata field '{args.field}' not found",
-                'available_fields': list(metadata.keys()),
-            }
-
-        return {
-            'status': 'success',
-            'plan_id': args.plan_id,
-            'field': args.field,
-            'value': value,
-        }
-
-    else:
-        return {
-            'status': 'error',
-            'plan_id': args.plan_id,
-            'error': 'missing_operation',
-            'message': 'Either --get or --set is required',
-        }
+    # No ``elif args.get`` arm survives here: every combination carrying --get is
+    # answered before this point — --get alone by the widened READ branch above,
+    # --get with --append by the ``append_without_set`` refusal, and --get with
+    # --set by the write branch directly above (--set has always won that
+    # collision). An arm here would be unreachable, and an unreachable arm is a
+    # second, silently-diverging copy of the get contract.
+    return {
+        'status': 'error',
+        'plan_id': args.plan_id,
+        'error': 'missing_operation',
+        'message': 'Either --get or --set is required',
+    }
 
 
 def cmd_title_token(args: argparse.Namespace) -> dict[str, Any] | None:
@@ -509,10 +547,14 @@ def cmd_title_token(args: argparse.Namespace) -> dict[str, Any] | None:
 
 
 def cmd_get_context(args: argparse.Namespace) -> dict[str, Any] | None:
-    """Get combined status context (phase, progress, metadata)."""
-    status = require_status(args)
-    if status is None:
+    """Get combined status context (phase, progress, metadata).
+
+    A READ verb — resolves a sibling-worktree plan too.
+    """
+    resolution = require_status_resolved(args, any_checkout=True)
+    if resolution is None:
         return None
+    status = resolution.status or {}
 
     phases = status.get('phases', [])
     total = len(phases)
@@ -532,6 +574,10 @@ def cmd_get_context(args: argparse.Namespace) -> dict[str, Any] | None:
     metadata = status.get('metadata', {})
     for key, value in metadata.items():
         context[key] = value
+
+    # Merged AFTER the metadata spread so the provenance of the read cannot be
+    # shadowed by a metadata field that happens to share its name.
+    context.update(plan_resolution_fields(resolution))
 
     return context
 
@@ -558,6 +604,13 @@ def cmd_get_worktree_path(args: argparse.Namespace) -> dict[str, Any] | None:
     - ``use_worktree == true`` and ``worktree_path`` is set →
       ``worktree_state: materialized``, ``worktree_path: <abs>``. The
       worktree is materialized and the path is authoritative.
+
+    ⛔ This read verb deliberately keeps the STRICT gate. ``git-workflow
+    locate-plan-checkout`` — the verb the sibling-worktree fallback consults —
+    calls straight back into this one, so opting it into that fallback would make
+    the consult call itself. Every verb on the locator's own call path stays
+    strict; ``locate-plan-checkout``'s structural probe already covers the
+    moved-in-from-main case this verb would otherwise have to resolve.
     """
     status = require_status(args)
     if status is None:
@@ -617,44 +670,6 @@ def _passes_phase_filter(current_phase: str, filter_arg: str | None) -> bool:
         return True
     filter_phases = [p.strip() for p in filter_arg.split(',')]
     return current_phase in filter_phases
-
-
-def _resolution_scope() -> str:
-    """Classify ``cmd_list``'s enumeration scope: ``main`` vs ``worktree_local``.
-
-    ``cmd_list`` resolves ``get_plans_dir()`` / ``get_worktree_root()``
-    cwd-relatively under the uniform resolver (ADR-002). The resolved scope is NOT
-    the same in every checkout, and a consumer that reads the enumeration as an
-    authoritative census MUST know which:
-
-      * ``main`` — the current base IS the main-anchored ``.plan/local``. The scan
-        observes main's plans AND every sibling worktree
-        (``get_worktree_root()`` == ``<main>/.plan/local/worktrees``), so an absent
-        plan is authoritative absence.
-      * ``worktree_local`` — the current base is a pinned worktree's own
-        ``.plan/local``. ``get_plans_dir()`` / ``get_worktree_root()`` anchor THERE,
-        so the scan observes only this worktree's own moved-in plan and is
-        structurally BLIND to sibling worktrees. An absent plan under this scope is
-        ``unknown`` (not-observed-from-this-scope), NOT authoritative absence — the
-        sibling-worktree shape. A destructive/authority-bearing consumer MUST
-        NOT treat a ``worktree_local`` empty as proof of absence; route the decision
-        through a main-anchored verdict (e.g. ``merge_lock check`` staleness). See
-        ``manage-locks/standards/cwd-keyed-store-resolution-audit.md``.
-      * ``unknown`` — the base (or the main-anchored base) could not be resolved
-        (outside a git repo, no override). Fail-closed: neither authoritative.
-
-    The verdict is surfaced on the ``cmd_list`` output as a first-class ``scope``
-    field so consumers cannot silently mistake a cwd-scoped census for a global one.
-    """
-    try:
-        main_base = resolve_main_anchored_path('')
-        current_base = get_base_dir()
-    except (RuntimeError, OSError):
-        return 'unknown'
-    try:
-        return 'main' if current_base.resolve() == main_base.resolve() else 'worktree_local'
-    except OSError:
-        return 'main' if str(current_base) == str(main_base) else 'worktree_local'
 
 
 def cmd_list(args: argparse.Namespace) -> dict[str, Any]:

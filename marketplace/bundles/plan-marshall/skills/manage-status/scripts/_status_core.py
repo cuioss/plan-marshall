@@ -12,7 +12,7 @@ import sys
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, NotRequired, TypedDict, cast
+from typing import Any, NamedTuple, NotRequired, TypedDict, cast
 
 from _locks_core import rmw_json
 from constants import (
@@ -25,15 +25,18 @@ from constants import (
 )
 from file_ops import (
     base_path,
+    get_base_dir,
     get_executor_path,
     get_plan_dir,
     get_store_dir,
+    get_worktree_root,
     now_utc_iso,
     output_toon,
     read_json,
     write_json,
 )
 from input_validation import require_valid_plan_id
+from marketplace_paths import PLAN_DIR_NAME, resolve_main_anchored_path
 from plan_logging import log_entry  # noqa: F401 - re-exported
 
 logger = logging.getLogger(__name__)
@@ -817,13 +820,362 @@ def _try_read_status_json(plan_dir: Path) -> dict[Any, Any] | None:
     return None
 
 
-def require_status(args: argparse.Namespace) -> dict[Any, Any] | None:
-    """Validate plan_id and read status, returning None with TOON error if missing."""
-    require_valid_plan_id(args)
-    status = read_status(args.plan_id)
-    if not status:
-        output_toon(
-            {'status': 'error', 'plan_id': args.plan_id, 'error': 'file_not_found', 'message': 'status.json not found'}
+# =============================================================================
+# Plan-status resolution (the read-verb sibling-worktree fallback)
+# =============================================================================
+#
+# Under ADR-002 a phase-5+ plan's directory MOVES into its own worktree, so it is
+# absent from every OTHER checkout by design. A gate that answers that absence
+# with a bare ``file_not_found`` is structurally incapable of returning presence
+# for such a plan, so its refusal is evidence of nothing — and reading it as "the
+# plan is dead" has already destroyed live coordination state.
+#
+# The fallback below is a copy of the shipped resolution shape in
+# ``manage-findings/_findings_store_state.py``: consult ``git-workflow
+# locate-plan-checkout`` (never a raw plans-directory walk) and adopt the plan
+# the holding checkout carries. A second spelling of that contract is how the two
+# surfaces drift apart later.
+
+#: Where a plan's ``status.json`` was read from. The vocabulary is
+#: ``locate-plan-checkout``'s own ``location`` field, quoted rather than
+#: re-invented so the consulting surface and the consulted verb name the same
+#: three states.
+PLAN_LOCATION_CURRENT = 'current'
+PLAN_LOCATION_WORKTREE = 'worktree'
+PLAN_LOCATION_NOT_FOUND = 'not_found'
+PLAN_LOCATIONS = frozenset({PLAN_LOCATION_CURRENT, PLAN_LOCATION_WORKTREE, PLAN_LOCATION_NOT_FOUND})
+
+#: The closed vocabulary a refusal publishes as ``plan_visibility``.
+#:
+#: - ``absent_anywhere`` — the widened resolution ran, the locator RENDERED a
+#:   verdict, and the enumeration scope was ``main`` (so it observes main's plans
+#:   AND every sibling worktree). Only this conjunction substantiates absence.
+#: - ``not_visible_from_this_scope`` — everything else: a strict gate that never
+#:   consulted the locator, a locator that could not answer, or a scope that is
+#:   structurally blind to sibling worktrees. The plan was not found HERE, which
+#:   is not evidence that it does not exist.
+PLAN_ABSENT_ANYWHERE = 'absent_anywhere'
+PLAN_NOT_VISIBLE_FROM_SCOPE = 'not_visible_from_this_scope'
+PLAN_VISIBILITY_STATES = frozenset({PLAN_ABSENT_ANYWHERE, PLAN_NOT_VISIBLE_FROM_SCOPE})
+
+#: The closed vocabulary :func:`_resolution_scope` reports, shared verbatim with
+#: ``cmd_list``'s first-class ``scope`` field so the enumeration verb and the
+#: single-plan read answer "how wide was the look" the same way.
+RESOLUTION_SCOPE_MAIN = 'main'
+RESOLUTION_SCOPE_WORKTREE_LOCAL = 'worktree_local'
+RESOLUTION_SCOPE_UNKNOWN = 'unknown'
+RESOLUTION_SCOPES = frozenset({RESOLUTION_SCOPE_MAIN, RESOLUTION_SCOPE_WORKTREE_LOCAL, RESOLUTION_SCOPE_UNKNOWN})
+
+#: Wall-clock budget for the ``locate-plan-checkout`` consult (seconds). Matches
+#: the sibling budget in ``_findings_store_state``, which consults the same verb.
+_LOCATE_TIMEOUT_SECONDS = 20
+
+
+class _CheckoutLookup(NamedTuple):
+    """What one ``locate-plan-checkout`` consult established.
+
+    ``answered`` is the discriminator and MUST be read first. It is ``True`` only
+    when the locator rendered a verdict — including the verdict "no checkout holds
+    this plan". Every degraded outcome (no resolvable executor, a non-zero exit, an
+    unparsable payload, a ``location`` outside :data:`PLAN_LOCATIONS`) is ``False``:
+    nothing was established, so the caller must not upgrade the miss into a claim
+    about every checkout.
+
+    ``worktree_path`` is non-``None`` only for a ``worktree`` verdict.
+    """
+
+    answered: bool
+    worktree_path: Path | None
+
+
+#: The locator could not be consulted, or could not be understood. Nothing known.
+_LOOKUP_UNANSWERED = _CheckoutLookup(False, None)
+#: The locator answered, and no checkout other than this one holds the plan.
+_LOOKUP_NO_HOLDER = _CheckoutLookup(True, None)
+
+
+def _locate_plan_checkout(plan_id: str) -> _CheckoutLookup:
+    """Ask ``git-workflow locate-plan-checkout`` which checkout holds ``plan_id``.
+
+    Routes through the EXISTING verb rather than re-deriving a locator here: it
+    already layers the canonical ``manage-status`` channel over the structural
+    ``get_worktree_root() / {plan_id}`` probe, which is precisely the
+    moved-in-from-main case this fallback exists to resolve. A raw
+    plans-directory walk is the re-implementation that caused the incident behind
+    this deliverable and is never the answer.
+
+    One cheap gate runs before the subprocess: every locatable worktree is
+    materialized at ``get_worktree_root() / {plan_id}`` — the layout
+    ``worktree-create`` writes and the exact path the verb's own structural probe
+    reads — so an absent slot means the verb has nothing to find and its answer is
+    known in advance. The gate is therefore an ANSWER (``_LOOKUP_NO_HOLDER``),
+    never a degraded consult, because it cannot be narrower than the verb it gates.
+
+    ⛔ The consult spawns ``git-workflow``, which spawns ``manage-status
+    worktree-path``. That verb resolves through the STRICT gate and never opts
+    into this fallback, which is what keeps the consult one level deep. Any verb
+    reachable from the locator's own call path MUST stay strict.
+    """
+    try:
+        slot = get_worktree_root() / plan_id
+        if not slot.is_dir():
+            return _LOOKUP_NO_HOLDER
+    except (RuntimeError, OSError):
+        # Outside a git repo, or the slot probe itself could not complete: no
+        # worktree root was examined, so nothing is known.
+        return _LOOKUP_UNANSWERED
+    return _run_locator(plan_id)
+
+
+def _run_locator(plan_id: str) -> _CheckoutLookup:
+    """Spawn the ``locate-plan-checkout`` consult and read its verdict.
+
+    Held apart from :func:`_locate_plan_checkout` so the process hop is one named
+    seam: the gate, the foreign-store join and the payload read are all exercisable
+    against a real worktree without a subprocess standing between the test and the
+    behaviour it is checking.
+    """
+    try:
+        executor = get_executor_path()
+    except RuntimeError:
+        return _LOOKUP_UNANSWERED
+    if not executor.is_file():
+        return _LOOKUP_UNANSWERED
+
+    try:
+        completed = subprocess.run(  # fixed argv, no shell, no caller-supplied executable
+            [
+                sys.executable,
+                str(executor),
+                'plan-marshall:workflow-integration-git:git-workflow',
+                'locate-plan-checkout',
+                '--plan-id',
+                plan_id,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=_LOCATE_TIMEOUT_SECONDS,
+            check=False,
         )
+    except (OSError, subprocess.SubprocessError):
+        return _LOOKUP_UNANSWERED
+    if completed.returncode != 0:
+        return _LOOKUP_UNANSWERED
+
+    try:
+        from toon_parser import parse_toon  # deferred: keeps import cost off the happy path
+
+        parsed = parse_toon(completed.stdout)
+    except Exception:  # a malformed consult establishes nothing
+        return _LOOKUP_UNANSWERED
+
+    if not isinstance(parsed, dict):
+        return _LOOKUP_UNANSWERED
+    location = parsed.get('location')
+    if location not in PLAN_LOCATIONS:
+        return _LOOKUP_UNANSWERED
+    if location != PLAN_LOCATION_WORKTREE:
+        # ``not_found`` is a verdict; so is ``current``, which at this point means
+        # the locator's cwd walk-up saw a plan dir this gate's resolver did not
+        # (an active PLAN_BASE_DIR override). Neither names a foreign holder.
+        return _LOOKUP_NO_HOLDER
+    worktree_path = parsed.get('worktree_path')
+    if not worktree_path:
+        return _LOOKUP_UNANSWERED
+    return _CheckoutLookup(True, Path(str(worktree_path)))
+
+
+def _resolution_scope() -> str:
+    """Classify how wide a cwd-relative plan enumeration reaches: ``main`` vs ``worktree_local``.
+
+    ``cmd_list`` and this module's plan read both resolve ``get_plans_dir()`` /
+    ``get_worktree_root()`` cwd-relatively under the uniform resolver (ADR-002). The
+    resolved scope is NOT the same in every checkout, and a consumer that reads an
+    absence as authoritative MUST know which:
+
+      * ``main`` — the current base IS the main-anchored ``.plan/local``. The scan
+        observes main's plans AND every sibling worktree
+        (``get_worktree_root()`` == ``<main>/.plan/local/worktrees``), so an absent
+        plan is authoritative absence.
+      * ``worktree_local`` — the current base is a pinned worktree's own
+        ``.plan/local``. ``get_plans_dir()`` / ``get_worktree_root()`` anchor THERE,
+        so the scan observes only this worktree's own moved-in plan and is
+        structurally BLIND to sibling worktrees. An absent plan under this scope is
+        ``unknown`` (not-observed-from-this-scope), NOT authoritative absence — the
+        sibling-worktree shape. A destructive/authority-bearing consumer MUST
+        NOT treat a ``worktree_local`` empty as proof of absence; route the decision
+        through a main-anchored verdict (e.g. ``merge_lock check`` staleness). See
+        ``manage-locks/standards/cwd-keyed-store-resolution-audit.md``.
+      * ``unknown`` — the base (or the main-anchored base) could not be resolved
+        (outside a git repo, no override). Fail-closed: neither authoritative.
+
+    The verdict is surfaced on the ``cmd_list`` output as a first-class ``scope``
+    field, and on a plan read's refusal as the basis of its ``plan_visibility``
+    discriminator, so neither surface can silently mistake a cwd-scoped look for a
+    global one. Held HERE rather than beside ``cmd_list`` because both consumers
+    must ask one predicate; two copies would drift into two answers.
+    """
+    try:
+        main_base = resolve_main_anchored_path('')
+        current_base = get_base_dir()
+    except (RuntimeError, OSError):
+        return RESOLUTION_SCOPE_UNKNOWN
+    try:
+        return (
+            RESOLUTION_SCOPE_MAIN if current_base.resolve() == main_base.resolve() else RESOLUTION_SCOPE_WORKTREE_LOCAL
+        )
+    except OSError:
+        return RESOLUTION_SCOPE_MAIN if str(current_base) == str(main_base) else RESOLUTION_SCOPE_WORKTREE_LOCAL
+
+
+class PlanStatusResolution(NamedTuple):
+    """A plan's status document together with the checkout that answered for it.
+
+    ``status`` is ``None`` exactly when no checkout in reach held the plan; the
+    other fields then say how far the look reached rather than asserting absence.
+
+    ``scope`` is resolved ONLY on the miss path and is ``None`` after a local hit.
+    That is deliberate: resolving it costs a main-anchor resolution (a ``git
+    rev-parse`` in production), and a read answered by the local tree never had to
+    ask how wide the alternative scan would have been. A ``None`` scope therefore
+    means "the question did not arise", never "the scan was global".
+
+    Attributes:
+        status: The plan's ``status.json`` document, or ``None``.
+        location: One of :data:`PLAN_LOCATIONS`.
+        checkout_path: The holding checkout, present only for
+            ``location == 'worktree'``.
+        scope: One of :data:`RESOLUTION_SCOPES` on a miss; ``None`` on a hit.
+        visibility: One of :data:`PLAN_VISIBILITY_STATES` on a miss; ``None`` on a
+            hit.
+    """
+
+    status: dict[Any, Any] | None
+    location: str
+    checkout_path: str | None
+    scope: str | None
+    visibility: str | None
+
+
+def resolve_plan_status(plan_id: str, any_checkout: bool = False) -> PlanStatusResolution:
+    """Read a plan's status, optionally from the sibling worktree that holds it.
+
+    Args:
+        plan_id: Plan identifier whose ``status.json`` is being read.
+        any_checkout: When ``True`` and the plan is absent from the locally
+            resolved tree, adopt the document of the checkout that actually holds
+            it (resolved through ``locate-plan-checkout``).
+
+            ⛔ READ-ONLY by construction at the call sites. ``require_status``
+            gates WRITE verbs too (``set-phase``, ``metadata --set``,
+            ``transition``), and every one of them commits through
+            ``write_status`` → ``get_status_path``, which resolves the path
+            LOCALLY. A write verb that read a sibling plan through this fallback
+            would then write the document into the wrong tree — strictly worse
+            than the absence being fixed. Only read verbs opt in.
+
+    Returns:
+        A :class:`PlanStatusResolution`. A miss is returned as ``status=None``
+        with a ``visibility`` that says what the look established, never as a bare
+        absence.
+    """
+    status = read_status(plan_id)
+    if status:
+        return PlanStatusResolution(status, PLAN_LOCATION_CURRENT, None, None, None)
+
+    lookup = _locate_plan_checkout(plan_id) if any_checkout else _LOOKUP_UNANSWERED
+    if lookup.worktree_path is not None:
+        foreign = read_json(lookup.worktree_path / PLAN_DIR_NAME / 'local' / DIR_PLANS / plan_id / FILE_STATUS)
+        if isinstance(foreign, dict) and foreign:
+            return PlanStatusResolution(
+                foreign,
+                PLAN_LOCATION_WORKTREE,
+                str(lookup.worktree_path),
+                None,
+                None,
+            )
+
+    # Absence is claimed only on the conjunction that substantiates it: the
+    # locator rendered a verdict AND the enumeration scope observes every sibling
+    # worktree. A strict gate (which never consulted) and a degraded consult both
+    # fall to the weaker, honest claim.
+    scope = _resolution_scope()
+    visibility = (
+        PLAN_ABSENT_ANYWHERE if lookup.answered and scope == RESOLUTION_SCOPE_MAIN else PLAN_NOT_VISIBLE_FROM_SCOPE
+    )
+    return PlanStatusResolution(None, PLAN_LOCATION_NOT_FOUND, None, scope, visibility)
+
+
+def plan_resolution_fields(resolution: PlanStatusResolution) -> dict[str, Any]:
+    """Return the payload fragment a read verb merges in, naming which checkout answered.
+
+    Published on EVERY read, not only the sibling-worktree one: a caller that can
+    see ``resolved_from`` on the local case too can tell the two apart, whereas a
+    field that appears only on the foreign case is indistinguishable from a caller
+    that forgot to look for it.
+    """
+    fields: dict[str, Any] = {'resolved_from': resolution.location}
+    if resolution.checkout_path is not None:
+        fields['resolved_checkout'] = resolution.checkout_path
+    return fields
+
+
+def plan_unresolved_error(plan_id: str, resolution: PlanStatusResolution) -> dict[str, Any]:
+    """Build the refusal payload for a plan no reachable checkout held.
+
+    ``error: file_not_found`` is preserved verbatim — it is the code every
+    existing consumer branches on, and this deliverable widens the refusal rather
+    than renaming it. What is added is the discriminator: ``scope`` names how wide
+    the look was and ``plan_visibility`` says whether that look substantiates
+    absence.
+    """
+    if resolution.visibility == PLAN_ABSENT_ANYWHERE:
+        message = (
+            f'status.json not found: no checkout holds plan {plan_id!r}. The look ran from the '
+            f'main-anchored scope, which observes main and every sibling worktree, so this '
+            f'absence is authoritative.'
+        )
+    else:
+        message = (
+            f'status.json not found: plan {plan_id!r} is not visible from this scope '
+            f'(scope={resolution.scope}). The look was anchored at this checkout and did not '
+            f'establish that the plan is absent elsewhere — read this as "not visible from here", '
+            f'never as "does not exist".'
+        )
+    return {
+        'status': 'error',
+        'plan_id': plan_id,
+        'error': 'file_not_found',
+        'message': message,
+        'scope': resolution.scope,
+        'plan_visibility': resolution.visibility,
+    }
+
+
+def require_status_resolved(args: argparse.Namespace, any_checkout: bool = False) -> PlanStatusResolution | None:
+    """Validate plan_id and resolve the plan's status, TOON refusal when unresolvable.
+
+    The provenance-bearing gate: read verbs call it with ``any_checkout=True`` so
+    they can publish which checkout answered (:func:`plan_resolution_fields`).
+    :func:`require_status` is the thin dict-returning projection over it that every
+    other verb keeps using.
+    """
+    require_valid_plan_id(args)
+    resolution = resolve_plan_status(args.plan_id, any_checkout=any_checkout)
+    if resolution.status is None:
+        output_toon(plan_unresolved_error(args.plan_id, resolution))
         return None
-    return status
+    return resolution
+
+
+def require_status(args: argparse.Namespace, any_checkout: bool = False) -> dict[Any, Any] | None:
+    """Validate plan_id and read status, returning None with TOON error if missing.
+
+    ``any_checkout`` opts into the sibling-worktree fallback and defaults to
+    ``False`` — the same read-widening opt-in shape ``read_store_status`` /
+    ``_require_orchestrator_status`` already use for ``allow_archived``. It MUST
+    stay default-off: this is the shared gate for WRITE verbs, which commit
+    through a LOCALLY resolved path (see :func:`resolve_plan_status`).
+    """
+    resolution = require_status_resolved(args, any_checkout=any_checkout)
+    return None if resolution is None else resolution.status
