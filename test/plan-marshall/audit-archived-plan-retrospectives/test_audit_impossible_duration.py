@@ -30,6 +30,13 @@ from pathlib import Path
 import pytest
 from _audit_fixtures import PROBE_LOG_NAME, _write_log, audit
 
+from conftest import load_script_module
+
+#: The module owning the build-queue reap-threshold ceiling that ``audit.py``
+#: restates. Loaded so the drift guard below compares the two LIVE values rather
+#: than re-stating either number a third time in this file.
+build_queue = load_script_module('plan-marshall', 'manage-locks', 'build_queue.py', 'build_queue_ceiling_probe')
+
 #: A call key the build / ci-wait classifier matches, so it is bounded by the
 #: ratcheted ceiling rather than the flat deterministic one.
 _CI_WAIT_KEY = 'ci:wait'
@@ -240,3 +247,37 @@ def test_is_build_or_ci_wait_call_classifier():
     assert audit._is_build_or_ci_wait_call('plan-marshall:build-pyproject:pyproject_build run')
     assert audit._is_build_or_ci_wait_call('plan-marshall:tools-integration-ci:ci checks')
     assert not audit._is_build_or_ci_wait_call('plan-marshall:manage-tasks:manage-tasks read')
+
+
+class TestRestatedBuildQueueCeilingDoesNotDrift:
+    """The restated build-queue ceiling still equals the definition it mirrors.
+
+    ``audit._BUILD_QUEUE_UPPER_LIMIT_CEILING_SECONDS`` deliberately RESTATES
+    ``build_queue.UPPER_LIMIT_CEILING_SECONDS`` instead of importing it: this
+    skill is project-local under ``.claude/skills/`` and has no import path to a
+    marketplace-bundle module, as its own comment at the constant records. This
+    test does NOT reverse that decision — it GUARDS it, which is the sanctioned
+    form for a deliberate restatement: the restatement stays, and a drift between
+    the two becomes a failure instead of a silence.
+
+    The guard is needed because nothing else binds the pair. Every ceiling test
+    above seeds its own threshold (1200 / 1500 / 2400) and binds only the
+    reader's constant, so raising or lowering the OWNING definition in
+    ``build_queue`` leaves all of them green while the audit goes on clamping
+    machine-global thresholds against a bound the queue's own writers no longer
+    use — the audit would then flag a legitimately-ratcheted ci-wait as
+    impossible, or accept one the writers could never have stored.
+    """
+
+    def test_the_restated_ceiling_equals_the_owning_definition(self):
+        assert audit._BUILD_QUEUE_UPPER_LIMIT_CEILING_SECONDS == build_queue.UPPER_LIMIT_CEILING_SECONDS
+
+    def test_the_restated_ceiling_is_a_usable_positive_bound(self):
+        """A matched control: equality alone would also hold if both were 0.
+
+        Pinning equality against a degenerate pair would let the guard pass while
+        the ceiling retired the check it bounds, so the shared value is asserted
+        to be a positive number in its own right.
+        """
+        assert audit._BUILD_QUEUE_UPPER_LIMIT_CEILING_SECONDS > 0
+        assert audit._BUILD_QUEUE_UPPER_LIMIT_CEILING_SECONDS > audit._IMPOSSIBLE_DURATION_SECONDS

@@ -421,8 +421,17 @@ def _read_per_repo_upper_limit() -> Any:
     is actually written there, including a value that could never have been
     usable.
 
+    Raw means the value is foreign text until an emitter makes it safe. A caller
+    that places it in a reported TOON field MUST route it through
+    :func:`_machine_config.report_safe` first — a ``run-configuration.json`` is a
+    file this process did not write, and an unescaped newline in it rewrites the
+    envelope reporting it. A caller that VALIDATES the value (rather than
+    reporting it) uses the raw read, which is why the sanitiser is not applied
+    here.
+
     Mirrors :func:`_machine_config.read_per_repo_max_slots` deliberately: the two
-    answer the same question about two retired keys, so they have the same shape.
+    answer the same question about two retired keys, so they have the same shape —
+    including that report-at-the-emission-boundary split.
 
     Returns:
         The raw value, or ``None`` when the file is absent, unreadable,
@@ -1226,7 +1235,7 @@ def run_limit_get(args: Namespace) -> dict[str, Any]:
     }
     per_repo = _read_per_repo_upper_limit()
     if per_repo is not None:
-        result['per_repo_value'] = {'value': per_repo, 'in_effect': False}
+        result['per_repo_value'] = {'value': report_safe(per_repo), 'in_effect': False}
     return result
 
 

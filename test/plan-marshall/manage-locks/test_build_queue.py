@@ -22,6 +22,7 @@ from _build_queue_fixtures import (
     build_queue,
     isolated_base,
 )
+from toon_parser import parse_toon, serialize_toon
 
 # =============================================================================
 # Corrupt / missing file resilience
@@ -409,3 +410,116 @@ class TestPerRepoDemotionReport:
 
         assert result['warnings'] == []
         assert 'per_repo_max_slots' not in result
+
+
+# =============================================================================
+# Foreign-config reports are TOON-injection safe AT THE EMISSION BOUNDARY
+# =============================================================================
+
+
+class TestForeignValueReportsAreInjectionSafe:
+    """Every foreign-sourced value this module REPORTS is sanitised as it is emitted.
+
+    Two readers return a foreign config value raw and unvalidated by design —
+    ``_read_per_repo_upper_limit`` (a ``run-configuration.json``) and
+    ``_machine_config.read_per_repo_max_slots`` (a ``marshal.json``) — because a
+    report saying "your config sets this and it does nothing" must echo back what
+    is actually written there. Raw is right for the READ and wrong for the
+    EMISSION: ``serialize_toon`` quotes a string containing a newline but escapes
+    nothing inside the quotes, so the value's second and later lines land in the
+    document at column zero, where ``parse_toon`` reads them as SIBLING KEYS of
+    the envelope. A planted ``status:`` line does not merely get lost — it
+    OVERWRITES the envelope's own status.
+
+    These tests drive the REAL emission path end to end (resolve → serialize →
+    reparse) rather than asserting on ``report_safe`` in isolation, because the
+    whole point is that they FAIL if the sanitiser is dropped from a call site.
+    A test that would pass with the sanitiser removed does not pin it, and every
+    pre-existing test over these two surfaces passes only integers — so until
+    these, the guard was revertible in silence.
+    """
+
+    #: A raw value whose later lines are TOON-shaped sibling keys. The displaced
+    #: key is the load-bearing part: overwriting an outcome field turns a report
+    #: into a different result, which is the severity of this class.
+    _INJECTING_STATUS = '2400\nstatus: error\nin_effect: true'
+
+    def _report_via_limit_get(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, raw: object) -> dict:
+        """Run ``limit get`` against a planted per-repo ``run-configuration.json``."""
+        per_repo = tmp_path / 'run-configuration.json'
+        per_repo.write_text(
+            json.dumps({'build': {'queue': {build_queue.UPPER_LIMIT_FIELD: raw}}}),
+            encoding='utf-8',
+        )
+        monkeypatch.setattr(build_queue, 'get_run_config_path', lambda: per_repo)
+        return build_queue.run_limit_get(Namespace())
+
+    def test_limit_get_strips_control_characters_from_the_reported_value(
+        self, isolated_base: dict, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The C0/DEL bytes that cannot survive a single-line field are removed."""
+        reported = self._report_via_limit_get(tmp_path, monkeypatch, '24\x0000\x1f\x7f\nstatus: error')[
+            'per_repo_value'
+        ]['value']
+
+        assert reported == '2400status: error'
+        for forbidden in ('\n', '\x00', '\x1f', '\x7f'):
+            assert forbidden not in reported
+
+    def test_limit_get_report_cannot_displace_the_envelope_status(
+        self, isolated_base: dict, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A planted ``status: error`` line never reparses as the envelope's status."""
+        result = self._report_via_limit_get(tmp_path, monkeypatch, self._INJECTING_STATUS)
+        assert result['status'] == 'success'
+
+        reparsed = parse_toon(serialize_toon(result))
+
+        assert reparsed['status'] == 'success'
+
+    def test_acquire_per_repo_report_cannot_displace_the_admission(self, isolated_base: dict) -> None:
+        """The same guard on this module's OTHER foreign-value emission boundary.
+
+        ``_demotion_fields`` reads the caller's own ``marshal.json`` raw, so it is
+        fed by foreign text exactly as ``limit get`` is. The planted line names
+        ``blocked`` while the real admission is ``admitted``, so an unsanitised
+        emission is observable as a CHANGED OUTCOME rather than as noise.
+        """
+        (isolated_base['base'] / 'marshal.json').write_text(
+            json.dumps({'build': {'queue': {'max_slots': '1\nadmission: blocked'}}}),
+            encoding='utf-8',
+        )
+
+        result = build_queue.run_acquire(Namespace(plan_id='plan-a'))
+        assert result['admission'] == 'admitted'
+        assert '\n' not in result['per_repo_max_slots']['value']
+
+        reparsed = parse_toon(serialize_toon(result))
+
+        assert reparsed['admission'] == 'admitted'
+
+    def test_a_clean_foreign_value_is_still_reported_verbatim(
+        self, isolated_base: dict, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The matched positive control: sanitising is not silently blanking.
+
+        Without this, the assertions above would pass equally against an
+        implementation that reported an empty string for every foreign value —
+        which would destroy the report the field exists to produce.
+        """
+        result = self._report_via_limit_get(tmp_path, monkeypatch, 'nonsense')
+
+        assert result['per_repo_value'] == {'value': 'nonsense', 'in_effect': False}
+
+    def test_a_non_string_foreign_value_is_reported_unchanged(
+        self, isolated_base: dict, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Only a ``str`` can carry a control character; every other type passes through.
+
+        Pins the type-preservation half: an ``int`` must stay an ``int`` rather
+        than arrive as its string form, or the sanitiser would be changing the
+        shape of what the operator reads.
+        """
+        result = self._report_via_limit_get(tmp_path, monkeypatch, 2400)
+
+        assert result['per_repo_value'] == {'value': 2400, 'in_effect': False}
