@@ -31,6 +31,12 @@ These tests cover:
   or absent ``warnings`` key surfaces nothing, a plan-less build writes no
   work-log line, a malformed entry is skipped rather than raised on, and a
   warning never blocks the build.
+* **A raising stderr sink cannot leak an admitted slot** — the sink is
+  best-effort by the emitter's own stated contract, asserted against the REAL
+  machine-global queue (staged under ``tmp_path``) because the leak is a state
+  leak in ``build-queue.json`` that a mocked acquire/release seam cannot see. The
+  guard is ``Exception``-scoped, so a ``KeyboardInterrupt`` from the same sink
+  still propagates and aborts the build.
 
 The queue acquire/release seam (``_acquire`` / ``_release_raw``) is mocked
 directly, so the tests are independent of whether the queue is reached by a
@@ -47,6 +53,8 @@ would route the build away before ``build_queue_slot`` is ever reached.
 from __future__ import annotations
 
 import argparse
+import json
+from pathlib import Path
 
 import pytest
 
@@ -494,6 +502,124 @@ def test_a_malformed_warning_entry_is_skipped_not_raised(monkeypatch, capsys, wo
 
     assert ran is True
     assert work_log == []
+
+
+# =============================================================================
+# A raising stderr sink cannot leak an admitted slot
+# =============================================================================
+
+#: A valid kebab-case plan id for the real-queue tests. It must satisfy
+#: ``input_validation.is_valid_plan_id`` because the queue's liveness predicates
+#: reject anything else before they look at the filesystem.
+_REAL_QUEUE_PLAN_ID = 'build-queue-slot-sink-probe'
+
+
+def _print_raising_oserror(*_args, **_kwargs) -> None:
+    """Stand in for ``print`` and fail the way a closed or full stderr fails."""
+    raise OSError('stderr is gone')
+
+
+def _print_raising_keyboard_interrupt(*_args, **_kwargs) -> None:
+    """Stand in for ``print`` and fail the way an interrupt mid-write fails."""
+    raise KeyboardInterrupt
+
+
+@pytest.fixture
+def real_queue(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Drive the REAL ``build_queue`` against an isolated machine-global home.
+
+    The ``_QueueDouble`` used everywhere above replaces the acquire/release seam,
+    so it can observe the CALLS but not the persisted state — and the leak these
+    tests pin is a leaked ``active`` entry in ``build-queue.json``. Asserting that
+    the file holds no surviving entry therefore needs the real reader/writer.
+
+    Every path the queue resolves is redirected under ``tmp_path`` so the suite
+    never touches the developer's real ``~/.plan-marshall/build-queue.json`` and
+    stays safe under ``-n auto``: ``PLAN_MARSHALL_HOME`` moves the queue file and
+    the machine-global cap, ``PLAN_BASE_DIR`` moves holder liveness, the
+    ``main_checkout_root`` pin moves the stamped ``project_root``, and the staged
+    ``marshal.json`` replaces the caller's own repository config. The plan dir is
+    created so the holder reads as ALIVE — without it the dead-holder prune would
+    reclaim the entry and the release would report a no-op, which would satisfy
+    the "nothing survives" assertion for the wrong reason.
+
+    That staged ``marshal.json`` carries the demoted ``build.queue.max_slots``
+    key deliberately: it is what makes the acquire result arrive WITH a warning.
+    Without one, ``_surface_warnings`` never reaches the sink at all and the
+    guard under test is never executed.
+
+    Returns:
+        The path to the isolated ``build-queue.json``.
+    """
+    main_repo = tmp_path / 'main'
+    base = main_repo / '.plan' / 'local'
+    (base / 'plans' / _REAL_QUEUE_PLAN_ID).mkdir(parents=True)
+    home = tmp_path / 'home'
+    home.mkdir()
+    monkeypatch.setenv('PLAN_MARSHALL_HOME', str(home))
+    monkeypatch.setenv('PLAN_BASE_DIR', str(base))
+
+    marshal_path = tmp_path / 'marshal.json'
+    marshal_path.write_text(json.dumps({'build': {'queue': {'max_slots': 1}}}), encoding='utf-8')
+
+    build_queue = bqs._load_build_queue()
+    monkeypatch.setattr(build_queue, 'main_checkout_root', lambda: main_repo)
+    monkeypatch.setattr(build_queue, 'get_marshal_path', lambda: marshal_path)
+
+    return home / 'build-queue.json'
+
+
+def test_a_raising_stderr_sink_does_not_leak_the_admitted_slot(monkeypatch, real_queue, work_log):
+    """A report that cannot be written must not take down an admitted build.
+
+    The exposure is the FIRST ``_surface_warnings`` call, before the wait loop:
+    it runs outside ``_wait_for_admission``'s own ``except BaseException`` arm AND
+    outside ``build_queue_slot``'s release ``finally``, so an unguarded raise
+    there escapes with the slot already ADMITTED and no release path in scope —
+    leaking an active entry on the machine-global queue every other checkout on
+    the host contends for.
+
+    ``print`` is replaced through the module namespace rather than by swapping
+    ``sys.stderr`` for a raising stream: the module global shadows the builtin at
+    exactly the guarded call site and nowhere else, whereas ``sys.stderr`` is
+    process-wide and logging's last-resort handler writes to it, so a raising
+    stream would also blow up an unrelated release-failure log line and the test
+    could no longer say which write it had broken.
+    """
+    monkeypatch.setattr(bqs, 'print', _print_raising_oserror, raising=False)
+
+    ran = False
+    with build_queue_slot(_REAL_QUEUE_PLAN_ID):
+        ran = True
+
+    assert ran is True
+    state = json.loads(real_queue.read_text(encoding='utf-8'))
+    # No leaked slot: neither an active holder nor a waiting entry survives.
+    assert state['active'] == []
+    assert state['waiting'] == []
+    # Released exactly once — the run_log gets one entry per REAL release, so a
+    # single row is both "it was released" and "it was released once".
+    assert [row['plan_id'] for row in state['run_log']] == [_REAL_QUEUE_PLAN_ID]
+    # The matched control: the guard covers the stderr sink ONLY. The work-log
+    # sink still received the warning, so the guard did not swallow the whole
+    # emission — and its presence also proves a warning was there to surface,
+    # without which this test would pass vacuously.
+    assert len(work_log) == 1
+
+
+def test_a_keyboardinterrupt_from_the_sink_still_propagates(monkeypatch, real_queue, work_log):
+    """The guard is ``Exception``-scoped, so an interrupt still aborts the build.
+
+    Widening it to ``BaseException`` would make a ``Ctrl-C`` landing during
+    warning output silently unkillable — the build would carry on as though the
+    operator had never asked it to stop. This is the counter-case that keeps the
+    scope narrow rather than letting the leak fix grow into an interrupt swallow.
+    """
+    monkeypatch.setattr(bqs, 'print', _print_raising_keyboard_interrupt, raising=False)
+
+    with pytest.raises(KeyboardInterrupt):
+        with build_queue_slot(_REAL_QUEUE_PLAN_ID):
+            pass
 
 
 #: ``(the marshal.json body ``read_json`` returns, resolved max_retries)``. Only

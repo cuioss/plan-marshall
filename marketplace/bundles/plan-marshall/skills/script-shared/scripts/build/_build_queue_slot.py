@@ -242,7 +242,30 @@ def _surface_warnings(result: dict[str, Any], plan_id: str, seen: set[str]) -> N
             continue
         seen.add(code)
         line = f'[BUILD-QUEUE] {message}'
-        print(line, file=sys.stderr)
+        # The stderr sink is best-effort BY CONTRACT (see the docstring above): a
+        # report must never take down a build that was legitimately admitted. The
+        # guard is load-bearing at the FIRST call site, ``_wait_for_admission``'s
+        # pre-loop call, which runs before that function's own ``except
+        # BaseException`` cleanup arm exists AND before ``build_queue_slot``
+        # establishes its release ``finally`` — so a raising ``print`` there
+        # (closed/full stderr, a broken pipe) would propagate out with the slot
+        # already ADMITTED and no release path in scope, leaking an active entry
+        # on the machine-global build-queue.json and permanently shrinking every
+        # caller's admission capacity.
+        #
+        # Scoped to ``Exception``, deliberately NOT ``BaseException``: a
+        # ``KeyboardInterrupt`` raised while writing a warning must still abort
+        # the build, and swallowing it here would make an interrupt during
+        # warning output silently unkillable.
+        #
+        # The asymmetry with the ``log_entry`` call below is intentional and must
+        # not be "tidied" into a shared wrapper: ``plan_logging.log_entry``
+        # already swallows its own exceptions internally, so a second guard round
+        # it would be dead code.
+        try:
+            print(line, file=sys.stderr)
+        except Exception:
+            pass
         if names_real_plan(plan_id):
             log_entry('work', plan_id, 'WARNING', line)
 
