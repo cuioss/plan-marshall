@@ -50,7 +50,7 @@ Author every per-plan carry — claim labels, expected surface, re-grounding ins
 
 ### Step 5: Populate the status.json queue
 
-Write the queue into the machine authority — one `plans[]` entry per staged spec (`{id, slug, workstream, status: staged, plan_marshall_plan_id: "", pr: "", landing: ""}`), plus the `workstreams[]` list:
+Write the queue into the machine authority — one `plans[]` entry per staged spec (`{id, slug, workstream, status: staged, plan_marshall_plan_id: "", pr: "", landing: ""}`), plus the `workstreams[]` list. The `slug` field carries the plan's own short slug, unique within the queue, never the epic slug:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status update-field \
