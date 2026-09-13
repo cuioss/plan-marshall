@@ -36,7 +36,10 @@ These tests cover:
   machine-global queue (staged under ``tmp_path``) because the leak is a state
   leak in ``build-queue.json`` that a mocked acquire/release seam cannot see. The
   guard is ``Exception``-scoped, so a ``KeyboardInterrupt`` from the same sink
-  still propagates and aborts the build.
+  still propagates and aborts the build — and it still leaves NO entry behind,
+  because the cleanup scope releases and re-raises rather than swallowing. The
+  in-loop call site is covered too: both surfacing sites sit inside that scope,
+  so which one raises no longer decides whether the entry leaks.
 
 The queue acquire/release seam (``_acquire`` / ``_release_raw``) is mocked
 directly, so the tests are independent of whether the queue is reached by a
@@ -608,18 +611,100 @@ def test_a_raising_stderr_sink_does_not_leak_the_admitted_slot(monkeypatch, real
 
 
 def test_a_keyboardinterrupt_from_the_sink_still_propagates(monkeypatch, real_queue, work_log):
-    """The guard is ``Exception``-scoped, so an interrupt still aborts the build.
+    """An interrupt still aborts the build AND still leaves no slot behind.
 
-    Widening it to ``BaseException`` would make a ``Ctrl-C`` landing during
-    warning output silently unkillable — the build would carry on as though the
-    operator had never asked it to stop. This is the counter-case that keeps the
-    scope narrow rather than letting the leak fix grow into an interrupt swallow.
+    Two claims, and the pairing is the whole point. The sink guard stays
+    ``Exception``-scoped, so a ``Ctrl-C`` landing during warning output
+    propagates: swallowing it there would make an interrupt silently unkillable
+    and the build would carry on as though the operator had never asked it to
+    stop. But propagating is not the same as leaking — the interrupt travels out
+    through ``_wait_for_admission``'s ``except BaseException`` arm, which
+    RELEASES the admitted entry and RE-RAISES.
+
+    The queue-state assertions are what make that second claim testable. This
+    test previously asserted the propagation and nothing about the queue, so the
+    leak it now pins was invisible to the suite: the entry survived on the
+    machine-global ``build-queue.json``, where nothing ever reclaims it, and
+    every other checkout on the host contended for one slot fewer.
+
+    Releasing-and-re-raising is distinguished from a swallow by the body
+    assertion: a swallow would have let the wrapped build RUN.
     """
     monkeypatch.setattr(bqs, 'print', _print_raising_keyboard_interrupt, raising=False)
 
+    ran = False
     with pytest.raises(KeyboardInterrupt):
         with build_queue_slot(_REAL_QUEUE_PLAN_ID):
-            pass
+            ran = True
+
+    # The interrupt fired before the yield, so the build never started. This is
+    # the matched control against a swallow, which would have run the body.
+    assert ran is False
+    state = json.loads(real_queue.read_text(encoding='utf-8'))
+    # No leaked entry: neither an active holder nor a waiting entry survives.
+    assert state['active'] == []
+    assert state['waiting'] == []
+    # Released exactly once — one run_log row per REAL release, so a single row
+    # is both "it was released" and "it was released once".
+    assert [row['plan_id'] for row in state['run_log']] == [_REAL_QUEUE_PLAN_ID]
+    # Nothing reached the work-log sink: ``print`` raises ahead of it, and unlike
+    # the Exception case above the guard does not swallow, so the emission stops
+    # there. The raise itself is what proves a warning was present to surface —
+    # without one the sink is never reached and this test could not fail.
+    assert work_log == []
+
+
+def test_a_baseexception_from_an_in_loop_repoll_releases_the_queued_entry(monkeypatch, work_log):
+    """The in-loop call site gets the same cleanup — the asymmetry is closed.
+
+    The pre-loop and in-loop ``_surface_warnings`` calls are the same call on the
+    same data; only where the ``try`` happened to start ever made one of them
+    safe. This covers the second site: a ``BaseException`` from a re-poll's
+    warning surfacing releases the QUEUED waiting entry rather than abandoning it
+    on the machine-global queue.
+
+    Two DISTINCT warning codes are scripted because the surfacing is deduplicated
+    by ``code`` across re-polls — with one code the in-loop call would skip the
+    sink entirely, no interrupt would ever be raised, and the test would pass
+    while exercising nothing.
+
+    Both blocked responses carry the SAME id, mirroring the real queue: a
+    re-acquire for an already-waiting plan reuses its entry in place (that is what
+    preserves FIFO), so the id read before the poll is the id that must be
+    released.
+    """
+    double = _QueueDouble(
+        [
+            _blocked([_DEMOTION_WARNING], entry_id='P:uuid-waiting'),
+            _blocked([_OTHER_WARNING], entry_id='P:uuid-waiting'),
+        ]
+    )
+    _install_queue(monkeypatch, double)
+    printed: list[str] = []
+
+    def _print_raising_on_the_second_line(line: object = None, *_args, **_kwargs) -> None:
+        printed.append(str(line))
+        if len(printed) > 1:
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr(bqs, 'print', _print_raising_on_the_second_line, raising=False)
+
+    ran = False
+    with pytest.raises(KeyboardInterrupt):
+        with build_queue_slot('P'):
+            ran = True
+
+    assert ran is False
+    # The raise really did come from the IN-LOOP call: two lines were attempted,
+    # so the pre-loop surfacing completed and the re-poll's is what failed.
+    assert len(printed) == 2
+    assert _DEMOTION_WARNING['message'] in printed[0]
+    assert _OTHER_WARNING['message'] in printed[1]
+    # The queued entry is released rather than abandoned on the shared queue.
+    assert double.released_ids == ['P:uuid-waiting']
+    # Only the first warning reached the work log: the interrupt stopped the
+    # second emission at its stderr sink, before the log call.
+    assert len(work_log) == 1
 
 
 #: ``(the marshal.json body ``read_json`` returns, resolved max_retries)``. Only

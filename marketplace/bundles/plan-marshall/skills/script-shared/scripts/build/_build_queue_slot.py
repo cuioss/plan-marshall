@@ -244,19 +244,24 @@ def _surface_warnings(result: dict[str, Any], plan_id: str, seen: set[str]) -> N
         line = f'[BUILD-QUEUE] {message}'
         # The stderr sink is best-effort BY CONTRACT (see the docstring above): a
         # report must never take down a build that was legitimately admitted. The
-        # guard is load-bearing at the FIRST call site, ``_wait_for_admission``'s
-        # pre-loop call, which runs before that function's own ``except
-        # BaseException`` cleanup arm exists AND before ``build_queue_slot``
-        # establishes its release ``finally`` — so a raising ``print`` there
-        # (closed/full stderr, a broken pipe) would propagate out with the slot
-        # already ADMITTED and no release path in scope, leaking an active entry
-        # on the machine-global build-queue.json and permanently shrinking every
-        # caller's admission capacity.
+        # guard is load-bearing at BOTH ``_wait_for_admission`` call sites, which
+        # run with an entry already on the machine-global build-queue.json: a
+        # raising ``print`` (closed/full stderr, a broken pipe) must not turn a
+        # legitimate admission into a failed build.
         #
         # Scoped to ``Exception``, deliberately NOT ``BaseException``: a
         # ``KeyboardInterrupt`` raised while writing a warning must still abort
         # the build, and swallowing it here would make an interrupt during
         # warning output silently unkillable.
+        #
+        # That scope does NOT leave the slot leaking, and the two concerns are
+        # distinct: a ``BaseException`` from here propagates into
+        # ``_wait_for_admission``'s ``except BaseException`` arm, which RELEASES
+        # the admitted-or-queued id and RE-RAISES. Releasing is not swallowing —
+        # the interrupt stays fatal, and the host's shared slot budget stays
+        # whole. Do NOT widen this guard to ``BaseException`` to "also handle"
+        # the leak: that swallow is what would make an interrupt unkillable, and
+        # the cleanup scope already covers it.
         #
         # The asymmetry with the ``log_entry`` call below is intentional and must
         # not be "tidied" into a shared wrapper: ``plan_logging.log_entry``
@@ -315,6 +320,13 @@ def _wait_for_admission(plan_id: str, max_retries: int) -> str:
     :func:`_surface_warnings`, deduplicated by ``code`` across every re-poll via
     the ``seen`` set created here — so the whole wait reports a given condition
     once, not once per poll.
+
+    From the moment the first ``acquire`` commits an entry, EVERY non-return exit
+    releases that entry and re-raises — the pre-loop warning surfacing included,
+    since it runs before :func:`build_queue_slot` establishes its release
+    ``finally`` and a leaked machine-global entry never self-heals. Releasing is
+    not swallowing: a ``KeyboardInterrupt`` still propagates and still aborts the
+    build.
     """
     seen: set[str] = set()
     result = _acquire(plan_id)
@@ -322,20 +334,37 @@ def _wait_for_admission(plan_id: str, max_retries: int) -> str:
         # acquire is NOT best-effort: a queue we cannot reach is a hard failure.
         raise RuntimeError(f'build_queue acquire failed for {plan_id!r}: {result.get("error")}')
 
-    _surface_warnings(result, plan_id, seen)
+    # Read the id FIRST, before anything else can raise. The acquire above has
+    # already committed an entry to the machine-global queue, so from this point
+    # every non-return exit needs an id to release — and the read itself is the
+    # one step that cannot be covered, because a result carrying no ``id`` leaves
+    # nothing to release in the first place.
     admission_id = str(result['id'])
-    if result.get('admission') == 'admitted':
-        return admission_id
 
-    # From here ``admission_id`` is a QUEUED waiting entry, not yet a held slot,
-    # and the whole wait runs OUTSIDE ``build_queue_slot``'s ``try/finally`` — so
-    # any non-return exit from the poll loop (a hard acquire failure, retry
-    # exhaustion, or an interrupt during ``time.sleep``) must release the queued
-    # id itself or the waiting entry leaks. Catch ``BaseException`` so cleanup
-    # also runs on ``KeyboardInterrupt`` / ``SystemExit``; the admitted-slot
-    # ``return`` below bypasses the handler, so a live held slot is never
+    # The cleanup scope opens HERE, not after the admitted-return decision, and
+    # that placement is the whole point: ``_surface_warnings`` and the
+    # ``admission`` read below run with an entry already on the machine-global
+    # ``build-queue.json``, outside ``build_queue_slot``'s release ``finally``
+    # (which is only established once this function has RETURNED). A
+    # ``BaseException`` escaping either of them with the scope opened later left
+    # an ADMITTED entry with no release path in scope — permanently shrinking
+    # every caller's admission capacity on the host, since nothing self-heals it.
+    #
+    # The same scope covers the poll loop below, where ``admission_id`` is a
+    # QUEUED waiting entry rather than a held slot: a hard acquire failure, retry
+    # exhaustion, or an interrupt during ``time.sleep`` must release the queued
+    # id or the waiting entry leaks. ``BaseException`` so cleanup also runs on
+    # ``KeyboardInterrupt`` / ``SystemExit`` — the handler RELEASES and RE-RAISES
+    # and never swallows, so an interrupt stays fatal.
+    #
+    # Both ``return admission_id`` statements are INSIDE this try deliberately: a
+    # ``return`` bypasses the handler, so a live held slot is still never
     # released here (its release is owned by ``build_queue_slot``'s ``finally``).
     try:
+        _surface_warnings(result, plan_id, seen)
+        if result.get('admission') == 'admitted':
+            return admission_id
+
         for _ in range(max_retries):
             time.sleep(_WAIT_SECONDS)
             # Re-poll WITHOUT releasing — run_acquire is idempotent for an
