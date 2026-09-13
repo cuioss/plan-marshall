@@ -221,8 +221,13 @@ _DOC_BRANCHING_CONSUMERS = (
 #: drift legible — a consumer appearing in a new slice, or leaving one, moves a
 #: count here, while a rename inside a slice moves nothing. A filename list would
 #: instead red this module for a rename that has nothing to do with the gate.
+#: The slice that owns the gate. Its members drive ``cmd_pre_commit_verify_freshness``
+#: directly and build the verdict themselves; every member outside it is a CONSUMER
+#: pinning the gate's behaviour from another slice.
+_GATE_OWNING_SLICE = 'test/plan-marshall/manage-tasks'
+
 _CODE_CONSUMER_SLICES = {
-    'test/plan-marshall/manage-tasks': 6,
+    _GATE_OWNING_SLICE: 6,
     'test/plan-marshall/manage-execution-manifest': 1,
     'test/plan-marshall/tools-script-executor': 1,
 }
@@ -372,35 +377,45 @@ def test_no_code_consumer_enumerates_a_vocabulary_missing_a_permitting_member() 
     )
 
 
-def test_the_verified_route_positive_control_reads_its_evidence() -> None:
-    """The one ``== 'fresh'`` pass predicate in the class reads what was examined.
+def test_every_cross_slice_positive_control_reads_its_evidence() -> None:
+    """A consumer outside the gate's slice that PASSES on the token reads what was examined.
 
-    The subject is selected by BEHAVIOUR — the member of the derived class whose
-    pass predicate compares positively against the token — not by file name, so a
-    rename inside the slice that owns it does not red this module. Such a control
-    bypasses the exempt short-circuit deliberately, so its token comparison would
-    pass unchanged, which is exactly why the predicate had to move anyway. A
-    positive control that can be satisfied without reading what the gate examined
+    The subjects are selected by their structural role — a member of the derived
+    class that lives outside the slice owning the gate, and whose predicate
+    compares positively against the token — rather than by file name, so a rename
+    in the slice that owns one does not red this module over code that has nothing
+    to do with the gate. The distinction is load-bearing: the owning slice's
+    members construct the verdict themselves, while a cross-slice consumer reaches
+    the verified route through the real gate and so bypasses the exempt
+    short-circuit, which is exactly why its token comparison would pass unchanged.
+    A positive control that can be satisfied without reading what the gate examined
     is the defect this plan removes, and leaving one inside the plan that removes
     it is not acceptable.
-    """
-    controls = [path for path in _CODE_BRANCHING_CONSUMERS if _VERIFIED_ROUTE_PASS_PREDICATE in _read(path)]
 
-    assert len(controls) == 1, (
-        f'expected exactly one verified-route positive control in the branching class of '
-        f'{len(_CODE_BRANCHING_CONSUMERS)} code member(s); found {len(controls)}: {controls}. '
-        f'With none there is no subject for this assertion; with several the class has '
-        f'grown a second pass predicate that this guard was never written to cover.'
+    The non-emptiness assertion is not decoration: with no cross-slice positive
+    control the per-member loop below would iterate nothing and pass while
+    examining no consumer at all.
+    """
+    controls = [
+        path
+        for path in _CODE_BRANCHING_CONSUMERS
+        if not path.startswith(f'{_GATE_OWNING_SLICE}/') and _VERIFIED_ROUTE_PASS_PREDICATE in _read(path)
+    ]
+
+    assert controls, (
+        f'no member of the branching class of {len(_CODE_BRANCHING_CONSUMERS)} lives outside '
+        f'{_GATE_OWNING_SLICE} AND passes positively on the token, so this assertion has no '
+        f'subject and the verified route is pinned from inside the gate alone'
     )
-    text = _read(controls[0])
 
     required = ('matched_notation', 'matched_entry_index', 'worktree_sha')
-    missing = [key for key in required if key not in text]
+    shortfalls = {path: [key for key in required if key not in _read(path)] for path in controls}
+    offenders = {path: missing for path, missing in shortfalls.items() if missing}
 
-    assert not missing, (
-        f'the verified-route positive control reads {len(required) - len(missing)} of '
-        f'{len(required)} evidence key(s); missing {missing}. Without them the control '
-        f'passes on the bare token alone.'
+    assert not offenders, (
+        f'{len(offenders)} of {len(controls)} cross-slice positive control(s) do not read the '
+        f'{len(required)} evidence key(s) the gate examined: {offenders}. Without them the '
+        f'control passes on the bare token alone.'
     )
 
 

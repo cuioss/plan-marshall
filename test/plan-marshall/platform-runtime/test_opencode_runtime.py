@@ -9,7 +9,7 @@ no wait channel), the success/no-op paths for metrics operations, and error path
 for invalid arguments across all 26 operations defined in the Runtime ABC.
 """
 
-import json  # noqa: I001
+import json
 import pathlib
 
 import pytest
