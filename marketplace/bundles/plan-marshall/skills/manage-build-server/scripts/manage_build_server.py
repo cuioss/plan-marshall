@@ -1319,7 +1319,7 @@ def _migrate_uncommitted_report(
     if post.source == SOURCE_MACHINE_CONFIG and post.value == per_repo_value:
         detail = (
             f'the machine-global write raised without committing, so this invocation has NO evidence that it wrote '
-            f'anything — yet {post.path} now holds build.queue.max_slots={post.value}, this repository\'s own '
+            f"anything — yet {post.path} now holds build.queue.max_slots={post.value}, this repository's own "
             f'value. Another writer may have installed it (a concurrent config migrate, or the '
             f'`config set --max-slots` the not-in-effect warning prescribes), so this report claims NEITHER that '
             f'this migration landed NOR that both files are untouched. build.queue.max_slots is still present in '

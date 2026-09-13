@@ -544,9 +544,9 @@ def test_the_classifier_admits_every_binding_that_resolves_to_the_origin():
     classifier that admitted nothing at all — which would empty both populations.
     """
     for label, source in _ADMITTED_SOURCES:
-        assert _called_names(
-            ast.parse(source), _CHDIR_TARGETS, _CHDIR_ORIGIN, _FOREIGN_CANDIDATE_PATH, _CHDIR_OWNER
-        ), f'{label} should resolve to {_CHDIR_ORIGIN}.chdir but was not admitted'
+        assert _called_names(ast.parse(source), _CHDIR_TARGETS, _CHDIR_ORIGIN, _FOREIGN_CANDIDATE_PATH, _CHDIR_OWNER), (
+            f'{label} should resolve to {_CHDIR_ORIGIN}.chdir but was not admitted'
+        )
 
 
 def test_the_classifier_rejects_a_same_named_call_from_a_foreign_module():
@@ -660,8 +660,7 @@ def test_a_foreign_module_with_the_same_stem_is_not_admitted():
         f'negative name'
     )
     assert _SAME_STEM_FOREIGN_PATH.rsplit('/', 1)[-1] == _OWN_DEFINITION_MEMBER.rsplit('/', 1)[-1], (
-        'the same-stem control must share the authoritative filename, or it does not '
-        'exercise the stem collision at all'
+        'the same-stem control must share the authoritative filename, or it does not exercise the stem collision at all'
     )
     assert not _called_names(
         ast.parse(_OWN_DEFINITION_SOURCE),
