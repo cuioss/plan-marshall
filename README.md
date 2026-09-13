@@ -10,7 +10,7 @@
 
 ### What is it?
 
-Plan Marshall is an orchestration layer for AI coding assistants (currently Claude Code) that enforces consistency, reliability, and more predictable outputs. It packages a phase-driven planning workflow, a library of domain skills, and a marketplace of ten production bundles covering Java, JavaScript, Python, OCI containers, requirements, and plugin development.
+Plan Marshall is an orchestration layer for AI coding assistants (Claude Code and OpenCode) that enforces consistency, reliability, and more predictable outputs. It packages a phase-driven planning workflow, a library of domain skills, and a marketplace of ten production bundles covering Java, JavaScript, Python, OCI containers, requirements, and plugin development.
 
 ## Prerequisites
 
