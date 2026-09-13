@@ -38,10 +38,12 @@ Two primitives live here:
   (plan-dir-dead but its worktree still genuinely live — a git-worktree marker or
   live plan dir present, not a bare orphaned shell), returning a
   `stale_holder_live_worktree` blocked signal for operator confirmation instead of
-  force-releasing it; a `blocked` + `blocking_plan_id` admission payload (distinct
-  from a hard error) drives the Pre-Merge Gate's poll loop and last-resort
-  orchestrator escalation. The same entry point also carries the **rate-window
-  claim** (`rate-window claim` / `check` / `release`) — a cross-plan claim on ONE
+  force-releasing it; a `blocked` + `blocked_reason` + `blocking_plan_id` admission
+  payload (distinct from a hard error) drives the Pre-Merge Gate's poll loop and
+  last-resort orchestrator escalation. **`queue-list`** is the read-only inspection
+  of that FIFO queue — ordered entries with each holder's liveness, mutating
+  nothing — so diagnosing a `blocked` never requires opening `merge-queue.json` by
+  hand. The same entry point also carries the **rate-window claim** (`rate-window claim` / `check` / `release`) — a cross-plan claim on ONE
   review bot's rate window that shares the merge-lock STORE but never the merge
   MUTEX (see below) — and the **`poll-delay`** computation, a bounded jittered
   delay for a caller about to wake from an elapsed rate window. `poll-delay` shares
@@ -79,7 +81,7 @@ Two primitives live here:
 **Execution mode**: Run scripts via the executor; parse TOON output for `status` and route accordingly.
 
 **Prohibited actions:**
-- Do not read, write, or mutate the lock file (`merge.lock`) or either state file (`merge-queue.json`, `build-queue.json`) directly — every mutation goes through the script API so the atomic `O_EXCL` / serialized read-modify-write invariant holds.
+- Do not read, write, or mutate the lock file (`merge.lock`) or either state file (`merge-queue.json`, `build-queue.json`) directly — every mutation goes through the script API so the atomic `O_EXCL` / serialized read-modify-write invariant holds. Reading is covered too, and the verbs are the way: `check` for the mutex, `queue-list` for the FIFO queue. A hand-read has to re-derive the queue's semantics including holder liveness, which is how a live sibling plan's slot came to be pruned.
 - Do not couple the rate-window claim to the merge mutex — a `rate-window` action must never acquire, contend for, or release `merge.lock`, and must never read or mutate the `waiting` FIFO list. The two claims share the store, not the mutex.
 - Do not return a freshly-constructed state dict from an `rmw_json` mutator — merge into the state handed in, so a co-tenant top-level key is never silently erased.
 - Do not invent script arguments not listed in the **Canonical invocations** section below.
@@ -358,10 +360,24 @@ call-site compatibility but no longer drives an internal wait. Output carries an
   `waiting_count`.
 - **`status: blocked`, `admission: blocked`** — this plan is NOT the FIFO front,
   or is the front but a FOREIGN live holder holds the lock. A structured re-poll
-  signal (NOT a hard error). Fields: `blocking_plan_id`, `lock_path`,
-  `waiting_count`. The consumer re-polls (preserving FIFO position) until
-  `admission: admitted` or its wait budget is exhausted, then fires the last-resort
-  `AskUserQuestion`.
+  signal (NOT a hard error). Fields: `blocked_reason`, `blocking_plan_id`,
+  `lock_path`, `waiting_count`. The consumer re-polls (preserving FIFO position)
+  until `admission: admitted` or its wait budget is exhausted, then fires the
+  last-resort `AskUserQuestion`.
+  - **`blocked_reason`** names WHICH of the two causes produced the block, and is
+    present on every blocked payload. Two causes hid behind the one `blocked`
+    label, and only one of them has a blocking plan to name:
+
+    | `blocked_reason` | Meaning | `blocking_plan_id` |
+    |------------------|---------|--------------------|
+    | `not_fifo_front` | This plan is not the queue front, so it never attempted the `O_EXCL` create. What blocks it is its own queue position, not a holder. | `null` **by construction** whenever no lock happens to be held |
+    | `lock_held_by_live_holder` | This plan IS the front and lost the `O_EXCL` race (or its stale reclaim) to a live foreign holder. | the holder |
+    | `stale_holder_live_worktree` | The front met a plan-dir-dead holder whose worktree is still live, so auto-reclaim was refused (see below). | the holder |
+
+    ⛔ `blocking_plan_id: null` beside `waiting_count > 0` is **not** a
+    contradiction — it is the ordinary shape of `not_fifo_front`, and reading it
+    as one is what sent an operator to open `merge-queue.json` by hand. Read
+    `blocked_reason` first; use `queue-list` when you need the queue itself.
   - **`stale_holder_live_worktree: true`** — a distinct blocked sub-case (present
     ONLY on this path; the ordinary non-front / foreign-live-holder blocked payload
     omits the field). It is the refuse-auto-reclaim signal a
@@ -395,6 +411,47 @@ surfaces a `staleness` field (`fresh` / `stale` / `unknown`, from
 `holder_staleness`) — the authoritative main-anchored verdict the manual-release
 recovery recipe consults instead of a cwd-scoped `manage-status list` /
 `worktree-list` enumeration.
+
+### merge_lock — queue-list
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock queue-list
+```
+
+The read-only inspection of the FIFO admission queue `check` deliberately does not
+touch. It declares **no `--plan-id`** — it asks about the queue, not about one
+plan, so appending one is an `unrecognized arguments` rejection.
+
+**It mutates nothing, under any input.** The store is read non-mutatingly (never
+through `rmw_json`, which always commits a state back), and EVERY entry is
+reported — including one whose holder is not live. Reporting a dead front entry is
+the answer; removing it belongs to `acquire` / `release` under their own
+serialization. This verb exists because the alternative was opening
+`merge-queue.json` by hand, and that hand-read re-implemented the queue's
+semantics including holder liveness, got it wrong, and pruned a live sibling
+plan's slot.
+
+Fields: `snapshot`, `queue_path`, `lock_path`, `lock_held`, `lock_holder`,
+`waiting_count`, `entries[]`. Each entry carries `position`, `plan_id`, `ts`,
+`liveness` and `location`.
+
+- **Order is arrival order.** `entries[]` is the stored `waiting` list order,
+  which IS the FIFO order, and is NOT re-sorted by `ts`, `plan_id`, or liveness.
+  `position` is the 0-based index, so position `0` is the front and the only
+  admission-eligible entry.
+- **`liveness`** is resolved through `git-workflow locate-plan-checkout` — the
+  same seam the `manage-status` read verbs consult, so there is one resolution
+  contract rather than two. `live` (the verb found the plan on a checkout or in
+  its worktree), `not_live` (the verb rendered a verdict and no checkout holds
+  it), or `unknown` (the verb could not be consulted or answered outside its
+  vocabulary). ⛔ `unknown` is **not** a synonym for `not_live`: reading an
+  unanswerable consult as "dead" is precisely the inference that pruned a live
+  slot. `location` carries the verb's own verdict (`current` / `worktree` /
+  `not_found`), or `null` when it did not answer.
+- **`snapshot: point_in_time`** says so in the payload: the read is deliberately
+  unguarded, so a caller acting on an entry it saw is acting on a snapshot the
+  front may already have moved past. The mitigation menu for the general shape is
+  [`ref-code-quality/standards/code-organization.md`](../ref-code-quality/standards/code-organization.md#toctou--check-then-act-hazards) § "TOCTOU / Check-Then-Act Hazards".
 
 ### merge_lock — release
 
