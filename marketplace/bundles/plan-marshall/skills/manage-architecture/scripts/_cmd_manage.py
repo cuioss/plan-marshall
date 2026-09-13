@@ -25,7 +25,6 @@ from _architecture_core import (
     DataNotFoundError,
     ModuleNotFoundInProjectError,
     _write_json,
-    build_generation,
     crawl_all_modules,
     error_result_module_not_found,
     get_data_dir,
@@ -36,10 +35,13 @@ from _architecture_core import (
     load_module_enriched,
     load_module_enriched_or_empty,
     load_project_meta,
+    migrate_key_packages,
     require_project_meta_result,
     save_module_enriched,
     save_project_meta,
+    stamp_concept_document,
     swap_data_dir,
+    unknown_generation,
 )
 from constants import (
     DIR_PER_MODULE_ENRICHED,
@@ -575,6 +577,67 @@ def _resolve_repo_root_name(project_path: Path) -> str:
     return repo_root_name or project_path.name
 
 
+def _migrated_key_packages(
+    document: dict[str, Any],
+    module_name: str,
+    modules: dict[str, dict[str, Any]],
+    project_dir: str,
+) -> dict[str, Any]:
+    """Return ``document`` with its ``key_packages`` keys migrated to repo-relative paths.
+
+    ``discover`` is where the dotted→path migration can actually run: it holds
+    both the concept document and the freshly-crawled derived data carrying the
+    ``packages`` bridge, which is the only mapping from a legacy dotted
+    identifier to a real path. :func:`migrate_key_packages` had no writer calling
+    it before, so the migration never reached disk.
+
+    An unavailable bridge is TOLERATED, never fatal. A module whose crawl carries
+    no ``packages`` map (or a key the bridge does not cover) keeps its dotted key
+    exactly as it was — the migration is an improvement to apply where the
+    evidence supports it, and failing the whole discover write over a key that
+    cannot be resolved would trade a cosmetic identity defect for a broken store.
+    Unresolved keys come back on the reported list and are logged as a WARNING.
+
+    Never mutates the caller's dict.
+    """
+    key_packages = document.get('key_packages')
+    if not isinstance(key_packages, dict) or not key_packages:
+        return document
+
+    derived_packages = (modules.get(module_name) or {}).get('packages')
+    if not isinstance(derived_packages, dict):
+        derived_packages = {}
+
+    migrated, unresolved = migrate_key_packages(key_packages, derived_packages, project_dir)
+    if unresolved:
+        _log_unresolved_key_packages(module_name, unresolved)
+
+    result = dict(document)
+    result['key_packages'] = migrated
+    return result
+
+
+def _log_unresolved_key_packages(module_name: str, unresolved: list[str]) -> None:
+    """Report package keys the dotted→path migration could not resolve.
+
+    Non-blocking by construction: the keys were KEPT under their original names,
+    so the store is intact and the discover write proceeds. The WARNING exists so
+    the retained legacy key is visible rather than silently permanent.
+    """
+    try:
+        from plan_logging import log_entry
+
+        log_entry(
+            'script',
+            None,
+            'WARNING',
+            f"[MIGRATION] module '{module_name}': key_packages entries kept under their "
+            f'original non-resolving keys: {", ".join(sorted(unresolved))}',
+        )
+    except Exception:
+        pass
+
+
 def api_discover(project_dir: str = '.', force: bool = False, regenerate_description: bool = False) -> dict[str, Any]:
     """Run extension API discovery and persist non-derived results per-module.
 
@@ -661,20 +724,38 @@ def api_discover(project_dir: str = '.', force: bool = False, regenerate_descrip
         resolved_description_reasoning = reasoning_raw if isinstance(reasoning_raw, str) else ''
 
     # Resolve each module's concept document, then derive its index entry from it.
-    # Preserve any prior enrichment (already migrated to the concept model on read)
-    # VERBATIM — including its original ``generation`` header, so preserved content
-    # is never falsely restamped as generated against the current tree. A fresh
-    # (first-seen) module gets the empty stub stamped with generation provenance
-    # against the current tree.
+    #
+    # Every document goes through ``stamp_concept_document`` — the same invariant
+    # gate ``save_module_enriched`` applies — so a document written here and one
+    # written by the live-path writer carry an identical concept-model field set.
+    # This path stages into the tmp tree it later swaps, so it places the returned
+    # document itself rather than calling the live-path writer.
+    #
+    # The generation header is supplied rather than freshly stamped, because this
+    # writer persists content it did not author:
+    #
+    #   * an existing document keeps its OWN header — preserved content must never
+    #     be restamped as generated against the current tree;
+    #   * an existing document with NO header is back-filled with
+    #     ``unknown_generation()``. Its content is of unrecorded vintage, so the
+    #     honest verdict is ``unknown``; stamping the current tree sha would
+    #     manufacture a ``fresh`` verdict nothing established;
+    #   * a fresh (first-seen) module IS authored here, so its empty stub takes a
+    #     real current-tree stamp.
     module_documents: dict[str, dict[str, Any]] = {}
     module_index: dict[str, dict[str, Any]] = {}
     for module_name in sorted(modules.keys()):
         existing = load_module_enriched_or_empty(module_name, project_dir)
         if existing:
-            document = existing
+            preserved = existing.get(GENERATION_FIELD)
+            generation = preserved if isinstance(preserved, dict) and preserved else unknown_generation()
+            document = stamp_concept_document(
+                _migrated_key_packages(existing, module_name, modules, project_dir),
+                project_dir,
+                generation=generation,
+            )
         else:
-            document = _empty_module_enrichment()
-            document[GENERATION_FIELD] = build_generation(project_dir)
+            document = stamp_concept_document(_empty_module_enrichment(), project_dir)
         module_documents[module_name] = document
         # The index entry is a read-side pre-flight surface: a consumer reads
         # _project.json alone to see each module's description and generation

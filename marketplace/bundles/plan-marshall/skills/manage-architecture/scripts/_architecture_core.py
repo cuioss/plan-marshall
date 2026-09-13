@@ -386,8 +386,12 @@ def package_key_resolves(key: str, project_dir: str = '.') -> bool:
     candidate = (root / normalized).resolve()
     # Anything that escaped the project root — a drive-letter component, or a
     # symlink resolving outside the tree — is not a repo-relative location.
-    # ``candidate == root`` is the key that names the root itself.
-    if candidate != root and root not in candidate.parents:
+    #
+    # ``candidate == root`` is refused too: it is what ``.`` and ``./`` resolve
+    # to, and the project root is not a package. Accepting it would make those
+    # two strings valid package keys that "resolve" for every project, which is
+    # the dotted-pseudo-identifier escape hatch path-is-identity exists to close.
+    if candidate == root or root not in candidate.parents:
         return False
     return candidate.exists()
 
@@ -418,9 +422,20 @@ def migrate_key_packages(
 
     * a key that already resolves to a path is kept as-is;
     * a dotted key found in ``derived_packages`` is rewritten to that entry's
-      ``path``;
+      ``path`` — but only when that bridge ``path`` itself resolves. A bridge
+      pointing at a location that does not exist is not a migration, it is a
+      second non-resolving key, so the original is kept and reported;
     * a key that resolves to neither is kept under its original key AND reported in
-      the returned ``unresolved`` list — a named outcome, never a silent drop.
+      the returned ``unresolved`` list — a named outcome, never a silent drop;
+    * a rewrite whose target key is ALREADY present — two dotted keys bridging to
+      one path, or a dotted key bridging onto a path key the document already
+      carries — would overwrite a curated description with another. The incoming
+      key is kept under its original name and reported instead, so the collision
+      surfaces through the same channel rather than costing a caller its data.
+
+    The return signature is a two-tuple that every caller destructures, so all
+    three reportable outcomes share the one ``unresolved`` list; each entry names
+    the key that did not migrate.
 
     Returns:
         A ``(migrated, unresolved)`` pair.
@@ -433,7 +448,9 @@ def migrate_key_packages(
             continue
         derived_entry = derived_packages.get(key)
         path = derived_entry.get('path') if isinstance(derived_entry, dict) else None
-        if path:
+        # A bridge is only usable when its target is a real repo-relative
+        # location AND that location is not already spoken for in this document.
+        if path and package_key_resolves(path, project_dir) and path not in migrated and path not in key_packages:
             migrated[path] = value
         else:
             migrated[key] = value
@@ -487,11 +504,14 @@ def save_project_meta(meta: dict[str, Any], project_dir: str = '.') -> Path:
 # module map for that project; callers receive a deep copy so a mutation by one
 # caller never corrupts the cached object another caller will read.
 #
-# The crawl shells out to the build tools (e.g. Maven runs ``help:all-profiles
-# dependency:tree`` per module), so a single ``architecture resolve`` against a
-# multi-module repo would otherwise pay that cost once per ``load_module_derived``
-# call — O(N²) subprocess invocations. Memoizing the crawl collapses that to one
-# crawl per project per process. The cache is invalidated by
+# The crawl parses every module's build file and walks the worktree filesystem to
+# build the per-module file inventories. It does NOT run a build tool — that cost
+# belongs to the lazy per-module Maven enrich, which only the graph path and a
+# profile-derived ``resolve`` reach. The walk is still the expensive part, and a
+# single ``architecture resolve`` against a multi-module repo would otherwise
+# repeat it once per ``load_module_derived`` call — O(N²) full-tree walks.
+# Memoizing the crawl collapses that to one crawl per project per process. The
+# cache is invalidated by
 # :func:`invalidate_crawl_cache`, which ``swap_data_dir`` (the ``discover
 # --force`` path) calls so a forced refresh re-crawls.
 _CRAWL_CACHE: dict[str, dict[str, dict[str, Any]]] = {}
@@ -538,8 +558,12 @@ def crawl_all_modules(project_dir: str = '.') -> dict[str, dict[str, Any]]:
     ``Path.cwd()`` or ``git rev-parse --show-toplevel``. This is what gives
     ``--project-dir <worktree>`` callers worktree-correct results.
 
-    Memoization: the crawl is expensive (it shells out to the build tools — e.g.
-    Maven runs ``help:all-profiles dependency:tree`` per module). The result is
+    Memoization: the crawl is expensive, but not because it runs a build tool —
+    it does not. It parses each module's build file with stdlib XML and walks the
+    worktree filesystem for the file inventories; the per-module
+    ``help:all-profiles dependency:tree`` belongs to the LAZY Maven enrich, which
+    only the dependency-graph path and a profile-derived ``resolve`` reach. The
+    full-tree walk is the cost being avoided. The result is
     memoized in :data:`_CRAWL_CACHE` keyed by the resolved absolute
     ``project_dir`` so repeated calls within one process — the common case for a
     single ``architecture resolve`` that touches several modules — crawl only
@@ -738,28 +762,80 @@ def load_module_enriched_or_empty(module_name: str, project_dir: str = '.') -> d
     return migrate_concept_document(_read_json(path))
 
 
-def save_module_enriched(
-    module_name: str, data: dict[str, Any], project_dir: str = '.', generated_by: str = GENERATED_BY
-) -> Path:
-    """Save one module's ``enriched.json`` — the single concept-document writer.
+def unknown_generation(by: str = GENERATED_BY) -> dict[str, Any]:
+    """Provenance header for a document whose generating tree is not known.
 
-    Two concept-model constructs are enforced here so every persisted document
-    carries them regardless of which caller wrote it:
+    Records WHO the document is attributed to while stating that the tree it was
+    written against is unrecorded (``tree_sha: None``), which
+    :func:`derive_freshness` maps to :data:`FRESHNESS_UNKNOWN`.
+
+    This is the header to back-fill onto a document that reaches a writer with no
+    provenance of its own. Stamping the CURRENT tree sha there instead would
+    assert that the document's content was generated against this tree, which
+    nothing established — it would manufacture a ``fresh`` verdict for a body of
+    unknown vintage, the precise false-confidence the generation header exists to
+    prevent.
+    """
+    return {'by': by, 'tree_sha': None}
+
+
+def stamp_concept_document(
+    data: dict[str, Any],
+    project_dir: str = '.',
+    generated_by: str = GENERATED_BY,
+    generation: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Return ``data`` carrying the concept-model invariants, ready to be written.
+
+    The single place the two write-time invariants are applied:
 
     * ``type`` is migrated/validated via :func:`migrate_concept_document` — an
       absent type is filled with the module default, an **unknown** type is
-      REFUSED (:class:`InvalidConceptTypeError`) at write time;
-    * a fresh ``generation`` header is stamped, recording ``generated_by`` and the
-      current working-tree sha — the document is being written against *this* tree
-      now, so its provenance is refreshed on every write.
+      REFUSED (:class:`InvalidConceptTypeError`);
+    * the document carries a ``generation`` header. By default a FRESH one is
+      stamped, recording ``generated_by`` and the current working-tree sha — the
+      content is being authored against *this* tree now.
+
+    Pass ``generation`` to supply the header instead of building one. That is for
+    a writer that persists content it did not author: ``discover`` re-writes every
+    module's existing document verbatim, and a fresh stamp there would claim
+    preserved content was generated against the current tree. Such a caller
+    forwards the document's own header, or :func:`unknown_generation` when it has
+    none.
+
+    It RETURNS the document rather than writing it, so a caller that owns its own
+    write placement can still be held to the invariants. That matters because the
+    writers do not share a destination: :func:`save_module_enriched` resolves the
+    live path from ``project_dir``, while ``discover --force`` stages every
+    document under the tmp directory it later swaps into place. Redirecting the
+    staging writer through the live-path writer would break that atomicity, so
+    the invariants are what is shared, not the write.
+
+    Never mutates the caller's dict.
+
+    Raises:
+        InvalidConceptTypeError: If ``data`` declares an unknown ``type``.
+    """
+    document = migrate_concept_document(data)
+    document[GENERATION_FIELD] = generation if generation is not None else build_generation(project_dir, generated_by)
+    return document
+
+
+def save_module_enriched(
+    module_name: str, data: dict[str, Any], project_dir: str = '.', generated_by: str = GENERATED_BY
+) -> Path:
+    """Save one module's ``enriched.json`` — the live-path concept-document writer.
+
+    Stamps the concept-model invariants via :func:`stamp_concept_document`, then
+    writes to the module's live ``enriched.json``. A caller that stages its write
+    elsewhere (``discover --force``'s tmp+swap) calls that helper directly and
+    places the returned document itself.
 
     Raises:
         InvalidConceptTypeError: If ``data`` declares an unknown ``type``.
     """
     path = get_module_enriched_path(module_name, project_dir)
-    document = migrate_concept_document(data)
-    document[GENERATION_FIELD] = build_generation(project_dir, generated_by)
-    _write_json(path, document)
+    _write_json(path, stamp_concept_document(data, project_dir, generated_by))
     return path
 
 

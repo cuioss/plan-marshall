@@ -11,10 +11,13 @@ touched module's ``enriched.json``.
 """
 
 import argparse
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
 from _architecture_core import (
+    GENERATION_FIELD,
     DataNotFoundError,
     ModuleNotFoundInProjectError,
     NonResolvingPathKeyError,
@@ -31,6 +34,106 @@ from _architecture_core import (
     save_project_meta,
     validate_package_key,
 )
+
+# =============================================================================
+# Concept document writer + root-index write-through
+# =============================================================================
+#
+# ``_project.json``'s ``modules`` block is the read-side pre-flight surface: a
+# consumer reads it alone to see each module's description and generation header
+# and decide which concept documents are worth opening. Only ``discover`` used to
+# refresh it, while every enrich verb rewrote the document — so the index went
+# stale against its own store on the first enrich after a discover, and reported
+# a description and a provenance the documents no longer carried.
+#
+# Every enrich write therefore goes through :func:`_save_module_document`, which
+# persists the document through the single writer and then carries the module's
+# current ``responsibility`` and ``generation`` into the index.
+
+#: Deferred index-sync buffer. ``None`` means not batching — each save writes
+#: ``_project.json`` through immediately. A set means a batch is open and holds
+#: the module names whose index entries are owed at flush.
+_INDEX_SYNC_BATCH: set[str] | None = None
+
+
+@contextmanager
+def _batched_index_sync(project_dir: str) -> Iterator[None]:
+    """Collect index write-throughs and apply them in ONE ``_project.json`` write.
+
+    ``enrich all`` saves a document per (module × domain) pair, so writing the
+    root index through on every save would rewrite the whole file O(pairs) times
+    for an index that only needs to reflect the final state. Inside this context
+    each save records its module name; on exit the owed entries are read once per
+    module and written in a single pass.
+
+    The flush runs on the way out even when the body raised, so a partially
+    completed enrich still leaves the index describing the documents that DID get
+    written — an index left behind by an aborted run is the staleness this
+    write-through exists to remove.
+    """
+    global _INDEX_SYNC_BATCH
+    previous = _INDEX_SYNC_BATCH
+    _INDEX_SYNC_BATCH = set()
+    try:
+        yield
+    finally:
+        owed = _INDEX_SYNC_BATCH
+        _INDEX_SYNC_BATCH = previous
+        if owed:
+            _sync_module_index(sorted(owed), project_dir)
+
+
+def _save_module_document(module_name: str, document: dict[str, Any], project_dir: str) -> None:
+    """Persist a module's concept document and carry its header into the root index.
+
+    The single enrich-side write path: :func:`save_module_enriched` stamps the
+    concept-model invariants and writes the document, then the module's current
+    ``responsibility`` and freshly-stamped ``generation`` are written through to
+    ``_project.json``'s ``modules`` entry so the pre-flight surface keeps
+    describing the store it indexes.
+    """
+    save_module_enriched(module_name, document, project_dir)
+    if _INDEX_SYNC_BATCH is not None:
+        _INDEX_SYNC_BATCH.add(module_name)
+        return
+    _sync_module_index([module_name], project_dir)
+
+
+def _sync_module_index(module_names: list[str], project_dir: str) -> None:
+    """Refresh ``_project.json``'s index entry for each named module, in one write.
+
+    Each entry is rebuilt from what is ON DISK — the document is re-read so the
+    index records the provenance header that was actually persisted, rather than
+    a header recomputed here that could differ from it.
+
+    **A missing or unreadable ``_project.json`` is tolerated as a no-op.** The
+    index is a derived pre-flight surface, not the store: enrich verbs are
+    reachable before ``discover`` has ever run, and failing a document write's
+    follow-up because the index does not exist would make enrichment depend on an
+    artifact it does not need. ``discover`` rebuilds the index from the documents
+    when it next runs.
+    """
+    try:
+        meta = load_project_meta(project_dir)
+    except (DataNotFoundError, OSError, ValueError):
+        return
+
+    index = meta.get('modules')
+    if not isinstance(index, dict):
+        index = {}
+
+    for module_name in module_names:
+        document = load_module_enriched_or_empty(module_name, project_dir)
+        if not document:
+            continue
+        index[module_name] = {
+            'description': document.get('responsibility', '') or '',
+            GENERATION_FIELD: document.get(GENERATION_FIELD, {}),
+        }
+
+    meta['modules'] = index
+    save_project_meta(meta, project_dir)
+
 
 # =============================================================================
 # API Functions
@@ -115,7 +218,7 @@ def enrich_module(
         if purp_reason is not None:
             enriched['purpose_reasoning'] = purp_reason
 
-    save_module_enriched(module_name, enriched, project_dir)
+    _save_module_document(module_name, enriched, project_dir)
 
     return {'status': 'success', 'module': module_name, 'updated': updated}
 
@@ -156,7 +259,7 @@ def enrich_package(
 
     enriched['key_packages'][package_name] = pkg_data
 
-    save_module_enriched(module_name, enriched, project_dir)
+    _save_module_document(module_name, enriched, project_dir)
 
     result: dict[str, Any] = {'status': 'success', 'module': module_name, 'package': package_name, 'action': action}
 
@@ -360,7 +463,7 @@ def enrich_add_domain(
         else:
             enriched['skills_by_profile_reasoning'] = reasoning
 
-    save_module_enriched(module_name, enriched, project_dir)
+    _save_module_document(module_name, enriched, project_dir)
 
     return {
         'status': 'success',
@@ -419,43 +522,46 @@ def enrich_all(project_dir: str = '.', include_optionals: bool = False, reasonin
             continue
         ext_domains.append((bundle, all_domains))
 
-    for module_name in module_names:
-        # Apply shared reasoning only once per module to avoid duplicate
-        # concatenation into skills_by_profile_reasoning.
-        reasoning_to_apply = reasoning
-        for _bundle, all_domains in ext_domains:
-            for domain_info in all_domains:
-                domain_key = domain_info.get('domain', {}).get('key')
-                if not domain_key or domain_key == 'system':
-                    continue
-                try:
-                    result = enrich_add_domain(
-                        module_name,
-                        domain_key,
-                        project_dir=project_dir,
-                        include_optionals=include_optionals,
-                        reasoning=reasoning_to_apply,
-                        crawled_modules=crawled_modules,
-                    )
-                except ModuleNotFoundInProjectError as e:
-                    summary['errors'].append(f'{module_name}/{domain_key}: {e}')
-                    continue
-                except ValueError:
-                    # Domain not present in extensions (shouldn't happen here); skip
-                    summary['pairs_skipped'] += 1
-                    continue
-                except Exception as e:
-                    summary['errors'].append(f'{module_name}/{domain_key}: {e}')
-                    continue
-                if reasoning_to_apply:
-                    reasoning_to_apply = None
-                if result.get('profiles_updated'):
-                    summary['pairs_applied'] += 1
-                    if module_name not in enriched_set:
-                        enriched_set.add(module_name)
-                        summary['modules_enriched'].append(module_name)
-                else:
-                    summary['pairs_skipped'] += 1
+    # One root-index write for the whole run. Each save records the module it
+    # touched; the batch flushes a single `_project.json` write on exit.
+    with _batched_index_sync(project_dir):
+        for module_name in module_names:
+            # Apply shared reasoning only once per module to avoid duplicate
+            # concatenation into skills_by_profile_reasoning.
+            reasoning_to_apply = reasoning
+            for _bundle, all_domains in ext_domains:
+                for domain_info in all_domains:
+                    domain_key = domain_info.get('domain', {}).get('key')
+                    if not domain_key or domain_key == 'system':
+                        continue
+                    try:
+                        result = enrich_add_domain(
+                            module_name,
+                            domain_key,
+                            project_dir=project_dir,
+                            include_optionals=include_optionals,
+                            reasoning=reasoning_to_apply,
+                            crawled_modules=crawled_modules,
+                        )
+                    except ModuleNotFoundInProjectError as e:
+                        summary['errors'].append(f'{module_name}/{domain_key}: {e}')
+                        continue
+                    except ValueError:
+                        # Domain not present in extensions (shouldn't happen here); skip
+                        summary['pairs_skipped'] += 1
+                        continue
+                    except Exception as e:
+                        summary['errors'].append(f'{module_name}/{domain_key}: {e}')
+                        continue
+                    if reasoning_to_apply:
+                        reasoning_to_apply = None
+                    if result.get('profiles_updated'):
+                        summary['pairs_applied'] += 1
+                        if module_name not in enriched_set:
+                            enriched_set.add(module_name)
+                            summary['modules_enriched'].append(module_name)
+                    else:
+                        summary['pairs_skipped'] += 1
     return summary
 
 
@@ -474,7 +580,7 @@ def enrich_skills_by_profile(
     if reasoning is not None:
         enriched['skills_by_profile_reasoning'] = reasoning
 
-    save_module_enriched(module_name, enriched, project_dir)
+    _save_module_document(module_name, enriched, project_dir)
 
     result: dict[str, Any] = {'status': 'success', 'module': module_name, 'skills_by_profile': skills_by_profile}
 
@@ -517,7 +623,7 @@ def enrich_dependencies(
     if reasoning is not None:
         enriched['key_dependencies_reasoning'] = reasoning
 
-    save_module_enriched(module_name, enriched, project_dir)
+    _save_module_document(module_name, enriched, project_dir)
 
     return result
 
@@ -549,7 +655,7 @@ def _append_to_list(module_name: str, field: str, value: str, project_dir: str =
     if value not in enriched[field]:
         enriched[field].append(value)
 
-    save_module_enriched(module_name, enriched, project_dir)
+    _save_module_document(module_name, enriched, project_dir)
 
     return {'status': 'success', 'module': module_name, field: enriched[field]}
 

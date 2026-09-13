@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from _architecture_core import (
+    FRESHNESS_UNKNOWN,
     GENERATION_FIELD,
     DataNotFoundError,
     ModuleNotFoundInProjectError,
@@ -172,12 +173,25 @@ def _enriched_dependencies(module_name: str, derived: dict[str, Any], project_di
 def get_project_info(project_dir: str = '.') -> dict[str, Any]:
     """Get project summary with metadata and module overview.
 
-    Each module row carries a ``description`` and a ``freshness`` verdict read
-    from the root index's per-module header (``_project.json``'s ``modules``
-    entry) — the description a consumer uses to decide which concept documents to
-    open, and the staleness verdict derived from the index's ``generation.tree_sha``
-    against the current working tree. Both come from the index header, NOT from
-    parsing any concept body, so a consumer can filter before loading.
+    Each module row carries a ``description`` and a ``freshness`` verdict — the
+    description a consumer uses to decide which concept documents to open, and
+    the staleness verdict that says whether opening it is worth it.
+
+    **The verdict is derived from the concept document's OWN ``generation``
+    header, not from the root index's per-module header.** The two headers are
+    written by different paths: only ``discover`` refreshes the
+    ``_project.json`` index, while every enrich verb rewrites the document. They
+    therefore separate on the first enrich after a discover, and the index-derived
+    verdict would then describe a tree the document was never written against.
+    The document is already loaded here to read ``purpose``, so reading its
+    header costs no extra I/O.
+
+    A module with **no document on disk** has no provenance to derive from, so
+    its row is forced to :data:`FRESHNESS_UNKNOWN` with a blank ``description``
+    rather than inheriting the index's — an index header outliving its document
+    would otherwise report ``fresh`` for a concept body that does not exist.
+    Neither field parses any concept body, so a consumer can still filter before
+    loading.
     """
     meta = load_project_meta(project_dir)
     index = meta.get('modules') or {}
@@ -200,13 +214,22 @@ def get_project_info(project_dir: str = '.') -> dict[str, Any]:
         enriched = load_module_enriched_or_empty(name, project_dir)
         paths = derived.get('paths', {})
         index_entry = index.get(name) or {}
+        if enriched:
+            description = index_entry.get('description', '')
+            freshness = derive_freshness(enriched.get(GENERATION_FIELD), tree_sha)
+        else:
+            # No document on disk: nothing wrote a provenance header, so there is
+            # no tree to compare against. Report the absence rather than letting a
+            # surviving index entry describe a document that is not there.
+            description = ''
+            freshness = FRESHNESS_UNKNOWN
         module_overview.append(
             {
                 'name': name,
                 'path': paths.get('module', ''),
                 'purpose': enriched.get('purpose', ''),
-                'description': index_entry.get('description', ''),
-                'freshness': derive_freshness(index_entry.get(GENERATION_FIELD), tree_sha),
+                'description': description,
+                'freshness': freshness,
             }
         )
 
@@ -806,9 +829,15 @@ def resolve_project_build_notations(project_dir: str = '.') -> frozenset[str]:
     exactly the unrelated-evidence case.
 
     **Cost.** This runs the same live crawl ``architecture resolve`` runs
-    (memoized per process, but the first call pays for it, and for Maven that
-    means a per-module ``help:all-profiles dependency:tree``). Call it once per
-    process and reuse the result; do not call it per candidate.
+    (memoized per process, but the first call pays for it). That crawl is the
+    CHEAP one: it parses each module's build file with stdlib XML, walks the
+    worktree filesystem to build the per-module file inventories, and shells out
+    to ``git`` once for the working-tree currency hash. It does **not** run a
+    build tool per module — the lazy Maven enrich path
+    (``help:all-profiles dependency:tree``) is reached only by
+    :func:`resolve_command` for a profile-derived canonical and by the
+    dependency-graph path, and a command-map sweep triggers neither. Call it once
+    per process and reuse the result; do not call it per candidate.
 
     Args:
         project_dir: Project root to crawl. Defaults to the current directory.

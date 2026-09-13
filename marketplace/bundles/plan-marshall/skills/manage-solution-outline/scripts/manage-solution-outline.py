@@ -34,6 +34,7 @@ from _architecture_core import (
     load_module_derived,
     load_module_enriched_or_empty,
     load_project_meta,
+    migrate_key_packages,
 )
 from _plan_parsing import (
     DECLARATION_FIELDS,
@@ -1040,7 +1041,23 @@ def _read_module_context(project_dir: str) -> dict[str, Any]:
             'responsibility': enriched.get('responsibility', ''),
         }
         if enriched.get('key_packages'):
-            module_info['key_packages'] = list(enriched['key_packages'].keys())
+            # Report package keys as repo-relative PATHS (path is identity). A
+            # document may still carry legacy dotted identifiers, and the derived
+            # ``packages`` map already loaded above is the dotted→path bridge, so
+            # the migration is applied on read here. A key the bridge does not
+            # cover comes back unchanged and is reported as-is — the placement
+            # context is more useful with the keys it has than with none.
+            #
+            # The migration is applied to a local copy rather than by routing
+            # through ``merge_module_data``: that helper raises
+            # ``DataNotFoundError`` when ``derived.json`` is absent, which would
+            # forfeit the missing-derived tolerance established above (``derived``
+            # falls back to ``{}``) and turn a degraded-but-readable module into a
+            # hard failure of the whole context read.
+            migrated, _unresolved = migrate_key_packages(
+                enriched['key_packages'], derived.get('packages') or {}, project_dir
+            )
+            module_info['key_packages'] = list(migrated.keys())
         if enriched.get('tips'):
             module_info['tips'] = enriched['tips']
         if enriched.get('insights'):
