@@ -37,6 +37,10 @@ from conftest import get_script_path, run_script
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'tools-integration-ci', 'ci.py')
 
+# ⛔ Vacuity guard — the axis populations are imported, so an emptied one collects
+# zero cases at the parametrize sites below and still reports green.
+assert MALFORMED_AXES['plan_id'], 'MALFORMED_AXES["plan_id"] is empty'
+
 
 def _seed_github_marshal(tmp_path: Path) -> Path:
     """Create a minimal marshal.json that resolves to the github provider.

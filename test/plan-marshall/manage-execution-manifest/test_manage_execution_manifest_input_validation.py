@@ -19,6 +19,10 @@ from conftest import get_script_path, run_script
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-execution-manifest', 'manage-execution-manifest.py')
 
+# ⛔ Vacuity guard — the axis populations are imported, so an emptied one collects
+# zero cases at the parametrize sites below and still reports green.
+assert MALFORMED_AXES['plan_id'], 'MALFORMED_AXES["plan_id"] is empty'
+
 
 @pytest.mark.parametrize('axis,bad_value', MALFORMED_AXES['plan_id'])
 def test_read_rejects_invalid_plan_id(axis, bad_value):

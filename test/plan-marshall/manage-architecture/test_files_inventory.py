@@ -670,7 +670,11 @@ def test_is_marketplace_bundle_module_rejects_non_bundle_path():
 # understands Claude Code plugin artifacts. See
 # ``extension-api/standards/ext-point-path-attribution.md``.
 
-_TEST_PATH = 'test/plan-marshall/tools-script-executor/test_generate_executor_behavior.py'
+#: A path under the seeded ``plan-marshall`` module's ``paths.tests`` root. It names
+#: no real file on purpose: what is under test is the containment fallback, which
+#: reasons about the path's PREFIX, so pinning a real module another slice owns
+#: would couple this fixture to a filename that has nothing to do with resolution.
+_TEST_PATH = 'test/plan-marshall/tools-script-executor/test_containment_fallback_subject.py'
 _CLAUDE_SKILLS_PATH = '.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py'
 
 

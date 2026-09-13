@@ -14,6 +14,10 @@ from pathlib import Path
 import pytest
 from _build_extension_fixtures import COVERAGE_REPORT_CASES, run_coverage_report_case
 
+# ⛔ Vacuity guard — the case table is imported, so an emptied one collects zero cases
+# at the parametrize below and still reports green.
+assert COVERAGE_REPORT_CASES, 'COVERAGE_REPORT_CASES is empty'
+
 from conftest import get_script_path
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'build-gradle', 'gradle.py')

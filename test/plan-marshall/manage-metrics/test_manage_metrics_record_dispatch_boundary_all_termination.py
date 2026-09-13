@@ -28,6 +28,10 @@ from toon_parser import parse_toon
 
 from conftest import run_script
 
+# ⛔ Vacuity guard — the cause population is imported, so an emptied one collects zero
+# cases at the parametrize below and still reports green.
+assert DISPATCH_TERMINATION_CAUSES, 'DISPATCH_TERMINATION_CAUSES is empty'
+
 # =============================================================================
 # (c) Every documented --termination-cause value is accepted
 # =============================================================================

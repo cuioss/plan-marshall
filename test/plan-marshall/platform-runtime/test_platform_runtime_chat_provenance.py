@@ -26,6 +26,10 @@ from _chat_signal_fixtures import (
     WAKE_ENVELOPE,
 )
 
+# ⛔ Vacuity guard — the prefix population is production's, so emptying it there collects
+# zero cases at the two sweeps below and still reports green.
+assert _mod.HARNESS_NOTICE_PREFIXES, '_chat_provenance.HARNESS_NOTICE_PREFIXES is empty'
+
 #: ``{harness-notice prefix: the short id naming it}``. The prefixes are long
 #: sentences, so a pytest-generated id built from one is unreadable in a report
 #: and the two sweeps below name each row instead.

@@ -18,6 +18,11 @@ from _manage_metrics_fixtures import SCRIPT_PATH
 
 from conftest import run_script
 
+# ⛔ Vacuity guard — the axis populations are imported, so an emptied one collects
+# zero cases at the parametrize sites below and still reports green.
+assert MALFORMED_AXES['plan_id'], 'MALFORMED_AXES["plan_id"] is empty'
+assert MALFORMED_AXES['session_id'], 'MALFORMED_AXES["session_id"] is empty'
+
 # =============================================================================
 # --plan-id (start-phase, end-phase, generate, phase-boundary, accumulate-agent-usage, enrich)
 # =============================================================================

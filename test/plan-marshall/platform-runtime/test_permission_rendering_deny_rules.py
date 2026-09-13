@@ -22,6 +22,10 @@ from pathlib import Path
 import claude_runtime
 import pytest
 
+# ⛔ Vacuity guard — the vector set is production's, so emptying it there collects zero
+# cases at the parametrize below and still reports green.
+assert claude_runtime._EXFILTRATION_BASH_VECTORS, 'claude_runtime._EXFILTRATION_BASH_VECTORS is empty'
+
 # =============================================================================
 # The credential-protection deny rules
 # =============================================================================

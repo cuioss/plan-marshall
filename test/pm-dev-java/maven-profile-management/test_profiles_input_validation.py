@@ -45,6 +45,10 @@ from conftest import get_script_path, run_script
 
 SCRIPT_PATH = get_script_path('pm-dev-java', 'manage-maven-profiles', 'profiles.py')
 
+# ⛔ Vacuity guard — the axis populations are imported, so an emptied one collects
+# zero cases at the parametrize sites below and still reports green.
+assert MALFORMED_AXES['module'], 'MALFORMED_AXES["module"] is empty'
+
 
 def _validate_module_inprocess(value: str) -> tuple[int, dict]:
     """Run the ``--module`` validation chain in-process.

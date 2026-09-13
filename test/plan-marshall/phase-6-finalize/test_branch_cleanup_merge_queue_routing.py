@@ -466,6 +466,10 @@ def _decline_routing_defects(text: str) -> list[str]:
 #: arm joins this population and is then held to the polarity contract below.
 _RE_REVIEW_CONSUMERS: list[Path] = [doc for doc in _re_review_dispatchers() if _matched_arms(_read(doc))]
 
+# ⛔ Vacuity guard — the consumers are discovered and filtered, so a scan that matched
+# nothing collects zero cases at the parametrize below and still reports green.
+assert _RE_REVIEW_CONSUMERS, 'no re-review dispatcher document carried a matched arm'
+
 
 def test_the_re_review_consumer_set_is_derived_and_plural():
     """The polarity sweep below runs over a NON-EMPTY, multi-document population.
@@ -751,6 +755,10 @@ def _merge_shaped_registry_keys(provider: str) -> list[tuple[str, ...]]:
 
 _REGISTRY_SIZES: dict[str, int] = {p: len(_registry_keys(p)) for p in _PROVIDER_MODULES}
 _MERGE_SHAPED: dict[str, list[tuple[str, ...]]] = {p: _merge_shaped_registry_keys(p) for p in _PROVIDER_MODULES}
+
+# ⛔ Vacuity guard — the pairs are derived per provider, so a provider whose registry
+# yielded nothing collects zero cases at the parametrize below and still reports green.
+assert all(_MERGE_SHAPED.values()), f'a provider contributed no merge-shaped keys: {_MERGE_SHAPED}'
 _MERGE_SHAPED_TOTAL: int = sum(len(v) for v in _MERGE_SHAPED.values())
 
 #: Published on EVERY run — passing included — by the root conftest's

@@ -29,6 +29,10 @@ from _classification_validation_gate_fixtures import (
     run_classification_validation,
 )
 
+# ⛔ Vacuity guard — the row population is imported, so an emptied one collects zero
+# cases at the parametrize below and still reports green.
+assert _SCALE_BAND_ROW_BODIES, '_SCALE_BAND_ROW_BODIES is empty'
+
 # =============================================================================
 # Mismatch class 3 — a narrow persisted band over a multi-module-sized body
 # =============================================================================

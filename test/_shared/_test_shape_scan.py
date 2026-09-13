@@ -15,10 +15,14 @@ where that role currently lives.
 **R4 -- a presence-keyed restore.** A teardown that restores captured state only
 when the captured value is truthy leaks on the falsy branch: an empty-string
 environment variable is captured, deleted, and never put back, so its absence
-carries into every later test in the session. The same defect appears in a
-fixture's post-yield half as a ``monkeypatch.delenv``/``delitem`` call, which
-deletes a key the fixture may not have created. ``monkeypatch`` already owns an
-unconditional restore that does not consult the prior value's truthiness.
+carries into every later test in the session. The leak is the MISSING arm, not
+the condition: a branch that both restores a captured value and removes the key
+when there was none covers the whole dichotomy and is a correct restore however
+it is spelled, so only the one-armed form is reported. The same defect appears
+in a fixture's post-yield half as a ``monkeypatch.delenv``/``delitem`` call,
+which deletes a key the fixture may not have created. ``monkeypatch`` already
+owns an unconditional restore that does not consult the prior value's
+truthiness.
 
 **R5 -- an unguarded runtime-derived parametrize.** A parametrize whose
 argvalues are COMPUTED rather than displayed reports an empty parameter set as a
@@ -170,15 +174,30 @@ def _is_restoring(body: list[ast.stmt]) -> bool:
 def _is_presence_keyed(test: ast.expr) -> bool:
     """True when the branch condition consults whether a captured value is present.
 
-    Both spellings count: a bare truthiness test (``if old_value:``), which is
-    the leaking form, and an explicit ``is not None`` comparison, which is
-    correct about None but still hand-rolled.
+    Both spellings count: a bare truthiness test (``if old_value:``) and an
+    explicit ``is None`` comparison. Which of the two is used does not decide
+    whether the shape leaks -- whether the other arm exists does, which
+    :func:`_is_leaking_restore` applies on top of this.
     """
     if isinstance(test, (ast.Name, ast.Attribute)):
         return True
     if isinstance(test, ast.Compare):
         return any(isinstance(c, ast.Constant) and c.value is None for c in test.comparators)
     return False
+
+
+def _is_leaking_restore(node: ast.If) -> bool:
+    """True when this teardown branch puts state back on ONE arm only.
+
+    The defect is the arm that is missing, not the condition that selects it. A
+    branch that restores the captured value on one side and removes the key on
+    the other covers both states the capture can be in, so it leaks nothing and
+    is not reported -- ``monkeypatch`` is preferable where it is reachable, but a
+    complete hand-rolled dichotomy is correct. A branch that acts on one side and
+    falls through on the other leaves the mutated state in place for every later
+    test in the session, which is the shape worth failing over.
+    """
+    return _is_presence_keyed(node.test) and _is_restoring(node.body) and not _is_restoring(node.orelse)
 
 
 def _delenv_delitem_calls(body: list[ast.stmt]) -> list[int]:
@@ -219,7 +238,7 @@ def r4_presence_keyed_restores(paths: list[Path] | None = None) -> ScanResult:
             if isinstance(node, ast.Try):
                 for stmt in node.finalbody:
                     for sub in ast.walk(stmt):
-                        if isinstance(sub, ast.If) and _is_presence_keyed(sub.test) and _is_restoring(sub.body):
+                        if isinstance(sub, ast.If) and _is_leaking_restore(sub):
                             result.hits.append(f'{_rel(path)}:{sub.lineno}: presence-keyed restore in a finally block')
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 teardown = _post_yield_statements(node)
@@ -227,7 +246,7 @@ def r4_presence_keyed_restores(paths: list[Path] | None = None) -> ScanResult:
                     continue
                 for stmt in teardown:
                     for sub in ast.walk(stmt):
-                        if isinstance(sub, ast.If) and _is_presence_keyed(sub.test) and _is_restoring(sub.body):
+                        if isinstance(sub, ast.If) and _is_leaking_restore(sub):
                             result.hits.append(
                                 f'{_rel(path)}:{sub.lineno}: presence-keyed restore in a fixture teardown'
                             )
@@ -288,6 +307,15 @@ def _is_non_empty_by_construction(node: ast.expr, bindings: dict[str, ast.expr],
         return bool(node.keys)
     if isinstance(node, ast.Constant):
         return isinstance(node.value, str) and bool(node.value.strip())
+    if isinstance(node, (ast.ListComp, ast.SetComp, ast.GeneratorExp, ast.DictComp)):
+        # A comprehension with no filter clause emits one element per element of
+        # what it iterates, so it is exactly as non-empty as its sources. Every
+        # generator must qualify: a nested `for` whose inner iterable is derived
+        # from the outer loop variable is not resolvable here and stays a hit.
+        return bool(node.generators) and all(
+            not gen.ifs and not gen.is_async and _is_non_empty_by_construction(gen.iter, bindings, depth + 1)
+            for gen in node.generators
+        )
     if isinstance(node, ast.Name):
         target = bindings.get(node.id)
         return target is not None and _is_non_empty_by_construction(target, bindings, depth + 1)

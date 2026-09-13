@@ -27,6 +27,12 @@ from toon_parser import parse_toon
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-architecture', 'architecture.py')
 
+# ⛔ Vacuity guard — the axis populations are imported, so an emptied one collects
+# zero cases at the parametrize sites below and still reports green.
+assert MALFORMED_AXES['module'], 'MALFORMED_AXES["module"] is empty'
+assert MALFORMED_AXES['name'], 'MALFORMED_AXES["name"] is empty'
+assert MALFORMED_AXES['domain'], 'MALFORMED_AXES["domain"] is empty'
+
 
 # =============================================================================
 # --module (used by `module`, `commands`, `resolve`, `siblings`,

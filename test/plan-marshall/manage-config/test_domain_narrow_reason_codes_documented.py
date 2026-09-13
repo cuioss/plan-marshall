@@ -101,11 +101,15 @@ def _discover_mirror_docs() -> list[str]:
     than when someone remembers to register it.
     """
     declared = set(_declared_codes())
-    return sorted(
+    mirrors = sorted(
         str(path.relative_to(MARKETPLACE_ROOT))
         for path in MARKETPLACE_ROOT.rglob('*.md')
         if len(declared & set(_BACKTICKED_TOKEN_RE.findall(path.read_text(encoding='utf-8')))) >= _MIRROR_THRESHOLD
     )
+    # ⛔ Vacuity guard — a scan that found no mirror collects zero cases at the
+    # parametrize that binds this helper, reporting green while checking nothing.
+    assert mirrors, 'no document mirroring the declared reason codes was discovered'
+    return mirrors
 
 
 def _extractor_for(document: str, text: str):

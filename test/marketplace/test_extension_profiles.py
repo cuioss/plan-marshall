@@ -41,6 +41,10 @@ _PROFILE_ROWS: tuple[tuple[str, str, str, str | None], ...] = (
 
 _SKILL_BEARING_ROWS = tuple(row for row in _PROFILE_ROWS if row[3] is not None)
 
+# ⛔ Vacuity guard — the filter could select nothing, which collects zero cases at
+# the parametrize below and still reports green.
+assert _SKILL_BEARING_ROWS, 'no skill-bearing profile rows survived the filter'
+
 # pm-documents behavioural expectations (the documentation-module skill alias).
 CORE_DOC_SKILLS = {
     'pm-documents:ref-asciidoc',

@@ -60,6 +60,10 @@ _manifest_core = load_script_module(
 #: together.
 DECLARED_BUCKET_VOCABULARY = _manifest_core.CLASSIFICATION_BUCKETS
 
+# ⛔ Vacuity guard — the vocabulary belongs to the loaded production module, so emptying
+# it there collects zero cases at the parametrize below and still reports green.
+assert DECLARED_BUCKET_VOCABULARY, '_manifest_core.CLASSIFICATION_BUCKETS is empty'
+
 #: A documentation path and a code path, used as the two sides of every
 #: disagreement below.
 _DOC_PATH = 'doc/developer/build.adoc'

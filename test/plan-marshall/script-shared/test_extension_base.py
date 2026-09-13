@@ -109,6 +109,10 @@ def test_canonical_commands_expected_keys():
 #: together they assert the flattening is total and carries nothing else.
 _PROFILE_ALIAS_CASES = [(meta['aliases'], cmd) for cmd, meta in CANONICAL_COMMANDS.items()]
 
+# ⛔ Vacuity guard — the cases are derived from production's CANONICAL_COMMANDS, so
+# emptying it there collects zero cases at the parametrize below and reports green.
+assert _PROFILE_ALIAS_CASES, 'CANONICAL_COMMANDS is empty'
+
 #: Ids derived from the same canonical keys, so they stay in lock-step with the rows.
 _PROFILE_ALIAS_IDS = list(CANONICAL_COMMANDS)
 

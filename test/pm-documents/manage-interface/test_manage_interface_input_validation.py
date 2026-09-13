@@ -44,6 +44,10 @@ from conftest import get_script_path, run_script
 
 SCRIPT_PATH = get_script_path('pm-documents', 'manage-interface', 'manage-interface.py')
 
+# ⛔ Vacuity guard — the axis populations are imported, so an emptied one collects
+# zero cases at the parametrize sites below and still reports green.
+assert MALFORMED_AXES['field'], 'MALFORMED_AXES["field"] is empty'
+
 
 def _validate_field_inprocess(value: str) -> tuple[int, dict]:
     """Run the ``--field`` validation chain in-process.

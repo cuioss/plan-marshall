@@ -32,6 +32,11 @@ from conftest import get_script_path, run_script
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'plan-marshall', 'phase_handshake.py')
 
+# ⛔ Vacuity guard — the axis populations are imported, so an emptied one collects
+# zero cases at the parametrize sites below and still reports green.
+assert MALFORMED_AXES['plan_id'], 'MALFORMED_AXES["plan_id"] is empty'
+assert MALFORMED_AXES['phase'], 'MALFORMED_AXES["phase"] is empty'
+
 # Subcommands that declare ``--plan-id`` (all four).
 _PLAN_ID_SUBCOMMANDS = ('capture', 'verify', 'list', 'clear')
 

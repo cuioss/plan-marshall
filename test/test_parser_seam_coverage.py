@@ -171,6 +171,10 @@ NON_CLI_LIBRARY: dict[str, str] = {
 LIVE_PROBED = frozenset(label for label, row in SEAM_EXEMPT.items() if row.probe == PROBE_LIVE)
 STRUCTURALLY_PINNED = frozenset(label for label, row in SEAM_EXEMPT.items() if row.probe == PROBE_STRUCTURAL)
 
+# ⛔ Vacuity guard — the set is a filter over the exemption table, so a filter that
+# selected nothing collects zero cases at the two parametrize sites below.
+assert STRUCTURALLY_PINNED, 'no SEAM_EXEMPT row carries the structural probe'
+
 #: Published on EVERY run — passing included — by the root conftest's
 #: ``pytest_report_header``, which reads this pair rather than re-deriving anything.
 #: Both derived sizes are carried, so a silent shrink in EITHER sweep shows up on a

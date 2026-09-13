@@ -113,6 +113,10 @@ DRIVERS_BY_SKILL = {
 #: omitted, which is what a hard-coded table did.
 PROVIDER_DRIVERS, UNDRIVEN_PROVIDERS, DISCOVERY_FAILURE = build_provider_arms(DRIVERS_BY_SKILL)
 
+# ⛔ Vacuity guard — stated at the binding site as well as by the coverage test below,
+# because a test body never runs when its parameter set is empty.
+assert PROVIDER_DRIVERS, f'provider discovery produced no arms: {DISCOVERY_FAILURE}'
+
 
 # =============================================================================
 # Presence

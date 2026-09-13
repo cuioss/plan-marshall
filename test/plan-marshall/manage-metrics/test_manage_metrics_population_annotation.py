@@ -27,6 +27,10 @@ from _manage_metrics_module_fixtures import (
     manage_metrics,
 )
 
+# ⛔ Vacuity guard — the population table belongs to the production module, so emptying
+# it there collects zero cases at the parametrize sites below and still reports green.
+assert manage_metrics.TOKEN_POPULATIONS, 'manage_metrics.TOKEN_POPULATIONS is empty'
+
 
 @pytest.mark.parametrize(
     'raw',

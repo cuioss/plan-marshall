@@ -1083,6 +1083,14 @@ _BUCKETED_STATUSES = [
     (status, partition_mod.LIFECYCLE_TERMINAL) for status in sorted(partition_mod.TERMINAL_STATUSES)
 ] + [(status, partition_mod.LIFECYCLE_ACTIVE) for status in sorted(partition_mod.ACTIVE_STATUSES)]
 
+# ⛔ Vacuity guard — both status sets are production's, so emptying either there shrinks
+# or erases the cases at the parametrize below while it still reports green. Each half is
+# asserted separately from the concatenation, because a non-empty total says nothing about
+# whether BOTH lifecycle sides are still represented.
+assert partition_mod.TERMINAL_STATUSES, 'partition.TERMINAL_STATUSES is empty'
+assert partition_mod.ACTIVE_STATUSES, 'partition.ACTIVE_STATUSES is empty'
+assert _BUCKETED_STATUSES, 'the bucketed-status population is empty'
+
 
 @pytest.mark.parametrize(('status', 'bucket'), _BUCKETED_STATUSES)
 def test_every_known_status_resolves_to_its_bucket(status: str, bucket: str) -> None:

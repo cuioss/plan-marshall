@@ -88,6 +88,10 @@ SPINE_ARTIFACT: str = ARTIFACTS.get(SPINE_STEM, '')
 DOMAIN_ARTIFACTS: dict[str, str] = {stem: body for stem, body in ARTIFACTS.items() if stem != SPINE_STEM}
 DOMAIN_ARTIFACT_IDS: list[str] = sorted(DOMAIN_ARTIFACTS)
 
+# ⛔ Vacuity guard — the population is derived, so an empty one collects zero cases
+# at the parametrize below and still reports green.
+assert DOMAIN_ARTIFACT_IDS, 'DOMAIN_ARTIFACTS is empty'
+
 # ---------------------------------------------------------------------------
 # Expectations — literals, copied from the org charter. Never imported.
 # ---------------------------------------------------------------------------

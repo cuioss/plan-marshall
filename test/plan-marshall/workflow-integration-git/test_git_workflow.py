@@ -27,6 +27,10 @@ _SKIP_DIRS = git_workflow._SKIP_DIRS
 SAFE_ARTIFACT_PATTERNS = git_workflow.SAFE_ARTIFACT_PATTERNS
 UNCERTAIN_ARTIFACT_PATTERNS = git_workflow.UNCERTAIN_ARTIFACT_PATTERNS
 VALID_TYPES = git_workflow.VALID_TYPES
+
+# ⛔ Vacuity guard — the vocabulary is production's, so emptying it there collects zero
+# cases at the parametrize below and still reports green.
+assert VALID_TYPES, 'git_workflow.VALID_TYPES is empty'
 analyze_diff = git_workflow.analyze_diff
 cmd_detect_artifacts = git_workflow.cmd_detect_artifacts
 cmd_format_commit = git_workflow.cmd_format_commit

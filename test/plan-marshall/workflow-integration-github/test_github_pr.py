@@ -2855,6 +2855,10 @@ _CLASSIFICATION_FLAGS = derive_bot_flags(
     'fetch_findings',
 )
 
+# ⛔ Vacuity guard — the flags are derived from the live parser, so a derivation that
+# came back empty collects zero cases at every parametrize below and reports green.
+assert _CLASSIFICATION_FLAGS, 'derive_bot_flags found no classification flags on fetch_findings'
+
 
 def _parsed_fetch_args(monkeypatch, argv):
     """Return the ``argparse.Namespace`` ``github_pr.main`` built for ``argv``.
@@ -3029,6 +3033,10 @@ class TestBareClassificationFlags:
 # short of the real one.
 
 _PR_AGENT_REQUIRED_MARKERS = bot_registry.contentless_review_markers('cuioss-review-bot')
+
+# ⛔ Vacuity guard — the markers are read off the live registry, so a bot whose entry
+# lost them collects zero cases at the parametrize below and still reports green.
+assert _PR_AGENT_REQUIRED_MARKERS, 'bot_registry declares no contentless review markers for cuioss-review-bot'
 
 # Both Guide bodies come from ``test/_shared/_pr_agent_guide_bodies.py`` — the
 # CLEAN one is a verbatim observed body (an HTML ``<table>`` of

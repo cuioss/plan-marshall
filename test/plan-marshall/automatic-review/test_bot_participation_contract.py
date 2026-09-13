@@ -838,6 +838,10 @@ _MARKETPLACE_DOCS = PROJECT_ROOT / 'marketplace' / 'bundles'
 #: has no value to quote.
 _ALL_LIST_FLAGS = tuple(flag for flag, _dest in derive_bot_flags(_RC_SCRIPT, 'check'))
 
+# ⛔ Vacuity guard — the flags are derived from the live parser, so a derivation that
+# came back empty collects zero cases at every parametrize below and reports green.
+assert _ALL_LIST_FLAGS, 'derive_bot_flags found no list-shaped bot flags on the check parser'
+
 #: The FULL declared optional-flag surface of ``review_completeness check``, derived
 #: from the same live parser by the wider entry point. This is the POPULATION the
 #: coverage ledger below is asserted total over, and the reason a valueless flag can

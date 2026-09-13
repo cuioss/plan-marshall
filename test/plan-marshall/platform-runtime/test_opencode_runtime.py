@@ -19,6 +19,10 @@ from opencode_runtime import OpenCodeRuntime
 from runtime_base import PERMISSION_FIX_OPERATIONS
 from toon_parser import parse_toon
 
+# ⛔ Vacuity guard — the operation set is production's, so emptying it there collects
+# zero cases at the parametrize below and still reports green.
+assert PERMISSION_FIX_OPERATIONS, 'runtime_base.PERMISSION_FIX_OPERATIONS is empty'
+
 
 # =============================================================================
 # Shared fixture
