@@ -668,9 +668,22 @@ The trailing lookahead is `(?:\\\n|[^\n])*`, not `.*`, and the pattern is single
 
 This step is a **narrowing only**: it can turn an emitted finding into a suppressed one, never the reverse, and it changes nothing about WL-A or WL-B.
 
-**Suppression rule**: A match in `{affected_path}` is suppressed (no finding emitted) when EITHER:
-- `{affected_path}` is the centralized `marketplace/bundles/plan-marshall/skills/workflow-integration-git/standards/worktree-handling.md` itself (the standard quotes the forbidden patterns to define them), OR
-- The match line contains a fenced-off "Anti-pattern" / "Forbidden" / "Do NOT" marker on the same line or the immediately preceding line (the standard quotes the pattern to forbid it).
+**Suppression rule**: A match in `{affected_path}` is suppressed (no finding emitted) when ANY of the following holds:
+
+- **Self-reference** — `{affected_path}` is a **definition source** for the pattern that matched, and the match lies inside that pattern's own definition region. A document cannot define a forbidden pattern without quoting it, so flagging its catalogue would guarantee a finding on every plan that touches it while telling the reader nothing. The exemption is keyed on the *(document, region)* pair, never on the document alone, so a stale pattern introduced anywhere else in the same file is still a violation. Two definition sources exist, each with its own region:
+
+  | Definition source | Exempt region | Patterns it defines |
+  |-------------------|---------------|---------------------|
+  | `marketplace/bundles/plan-marshall/skills/workflow-integration-git/standards/worktree-handling.md` | the whole file | WL-A, WL-B, WL-C — the standard exists to state these rules, so there is no smaller region to name |
+  | `marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/q-gate-validation.md` (this file) | § 2.15 only — the heading `#### 2.15 Worktree-Linter Validator` through the next `###` heading | WL-A, WL-B, WL-C — the pattern catalogue, the sweep invocations, the `{pattern_explanation}` table, the worked examples, and this rule |
+
+  The two regions differ on purpose rather than by oversight. `worktree-handling.md` is a document *about* the patterns end to end, so every part of it is definition; this file defines them in **one section** of a workflow that is otherwise ordinary prose, and a whole-file exemption here would silently absorb a real violation introduced in any of its other sixteen validator sections. Narrow the region to the section that actually defines the pattern, never to the file that happens to contain it.
+
+  Narrowing costs this file nothing today, and that is checked rather than asserted: every WL-A / WL-B literal it carries outside § 2.15 sits on a line the explicit-marker arm already suppresses. `test_q_gate_validation_worktree_linter.py` enforces that whole-file, so a future edit that drops a pattern literal into another section fails there instead of being absorbed by an over-wide exemption.
+
+- **Explicit marker** — the match line contains a fenced-off "Anti-pattern" / "Forbidden" / "Do NOT" marker on the same line or the immediately preceding line (the text quotes the pattern in order to forbid it). This arm is unchanged and remains available inside and outside a definition source alike.
+
+⛔ **The self-reference arm is not a licence to add a third entry to that table when a new document starts tripping the linter.** A document trips WL-A/WL-B because it carries a stale pattern; it earns the exemption only when quoting the pattern is what the document is *for*. The remedy for anything else is to fix the line or mark it, exactly as the finding-emission template already instructs.
 
 Apply the suppression rule per match, not per file. Unsuppressed matches are violations.
 
