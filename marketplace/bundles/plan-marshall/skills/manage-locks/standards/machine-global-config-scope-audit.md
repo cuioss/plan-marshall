@@ -320,7 +320,7 @@ is empty or singular is exactly the kind that passes unexamined.
 | H1 — the fallback queue's state file is machine-global | **VERIFIED** | `build_queue._resolve_queue_path` returns `ensure_home_root() / 'build-queue.json'`, i.e. `~/.plan-marshall/build-queue.json`, overridable via `PLAN_MARSHALL_HOME`. |
 | H2 — the home-root tier holds no config knob | **NO LONGER HOLDS** | It held of a tree whose home-root tier carried only credentials, the build queue and the daemon's own state. `machine-config.json` is now that tier's config member, in the slot ADR-008 reserves for the daemon, so no new tier class was introduced to add it. |
 | H3 — the cap is the only key of this shape | **REFUTED** | `build.queue.upper_limit_seconds` is a second member: a per-repo threshold that was applied to every repository's entries in the host-wide queue. The key-level union is 2, not 1. |
-| H4 — concurrent over-admission occurs in practice | **UNMEASURED** | Two over-admission paths are demonstrable by reading the code — disagreeing caps, and a low threshold in one repository freeing a slot another repository's long build still holds. Occurrence is a different claim, and no available log can carry it: the `[LOCK]` event log is per-repo and main-anchored, so no single log shows cross-repo interleaving. Per ADR-019 this is reported as unmeasured, **not** as absence. The `cap_disagreement` event now emitted on the machine-global queue is the signal that would make it measurable. |
+| H4 — concurrent over-admission occurs in practice | **UNMEASURED** | An over-admission path is demonstrable by reading the code: disagreeing caps. Occurrence is a different claim, and no available log can carry it: the `[LOCK]` event log is per-repo and main-anchored, so no single log shows cross-repo interleaving. Per ADR-019 this is reported as unmeasured, **not** as absence. The `cap_disagreement` event now emitted on the machine-global queue is the signal that would make it measurable. |
 
 ## Out of universe
 
@@ -347,8 +347,14 @@ by comparing per-file classifications rather than totals.
 3. **Classify both.** Parse each candidate with `ast.parse`, build the
    `asname → target` alias map first, then keep only occurrences that are a call's
    own `func`. Treat definitions, imports, bare references and textual residue as
-   exclusions. The classifier is a few dozen lines of stdlib `ast`, fully specified
-   by stage 2 above.
+   exclusions. Resolve each surviving call by ORIGIN rather than by the bare name
+   at the call site — the candidate glob bounds where files are looked for, never
+   what a match means, so `other.chdir()` and `from unrelated import chdir` are
+   not members. A module's own top-level definition admits a bare call to it only
+   in the module the origin names: ungated, that arm becomes the bare-name test
+   the other two exist to replace, and admits any candidate that happens to
+   define and call the same name on no attribution at all. The classifier is a
+   few dozen lines of stdlib `ast`, fully specified by stage 2 above.
 4. **Close the inventory gap.** Run the pickaxe with its positive control over
    `.claude` and `.github`, and scan both trees at HEAD, reporting the files
    scanned and every file that could not be read.

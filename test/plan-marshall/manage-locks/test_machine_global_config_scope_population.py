@@ -29,9 +29,11 @@ cannot say which function a call reaches, so matching it admits ``other.chdir()`
 and ``from unrelated import chdir`` alongside the real ``os.chdir``. The candidate
 glob bounds only WHERE files are looked for, never what a match MEANS, so an
 unrelated call inside a candidate file would become a false population member. Each
-call is therefore resolved against the import bindings actually in scope — plus the
-module's own top-level definitions, which is how the resolver module itself is a
-member. See :func:`_called_names` for the three admitting bindings.
+call is therefore resolved against the import bindings actually in scope — plus, in
+the origin module ITSELF and nowhere else, its own top-level definitions, which is
+how the resolver module is a member. That third arm is gated on the candidate being
+the origin precisely so it cannot become the bare-name test the other two exist to
+replace. See :func:`_called_names` for the three admitting bindings.
 
 Every assertion publishes the derived population size. A closure or equality check
 over an empty population passes vacuously — it reports agreement while ranging over
@@ -98,6 +100,22 @@ _PATH_CELL = re.compile(r'`([^`]+\.py)`')
 #: carry a parenthetical gloss after the number (``1 (`double_fork`)``).
 _LEADING_INT = re.compile(r'(\d+)')
 
+#: The shape-B member that is a member on the own-definition arm ALONE — the
+#: resolver module itself. Derived from :data:`_HOME_ROOT_ORIGIN` rather than
+#: written as a path literal, so a rename of the resolver moves this with it
+#: instead of leaving a stale expectation behind.
+_OWN_DEFINITION_MEMBER = f'script-shared/scripts/{_HOME_ROOT_ORIGIN}.py'
+
+#: The shape-B population size the audit dispositions, pinned as a NUMBER. The
+#: own-definition arm's narrowing is exactly the kind of change that can shrink a
+#: population while reading as a tightening, and the set-equality checks below
+#: would follow the audit table down if both were edited together.
+_HOME_ROOT_POPULATION_SIZE = 9
+
+#: A module name that is NOT either shape's origin — what every control that must
+#: NOT reach the own-definition arm passes as the candidate's own identity.
+_FOREIGN_MODULE_NAME = 'a_candidate_that_owns_neither_origin'
+
 #: Negative-control anchor: the single file the audit places in BOTH shapes. Its
 #: presence in both derived sets is what makes the overlap a derived figure rather
 #: than a claim, and it is the site whose cwd move and whose tier access are the
@@ -116,7 +134,7 @@ def _skill_relative(path: Path) -> str:
     return '/'.join(path.parts[2:])
 
 
-def _called_names(tree: ast.AST, targets: frozenset[str], origin: str) -> bool:
+def _called_names(tree: ast.AST, targets: frozenset[str], origin: str, module_name: str) -> bool:
     """Return whether the module invokes a ``targets`` member FROM ``origin``.
 
     Keeps only occurrences that are a call's own ``func`` — so a definition, an
@@ -142,11 +160,36 @@ def _called_names(tree: ast.AST, targets: frozenset[str], origin: str) -> bool:
     * ``from os import chdir [as cd]`` binds the TARGET directly, so a bare
       ``chdir()`` counts — but only because the ``from`` module is the origin.
     * A module that DEFINES a target at its own top level owns it, so a bare call
-      there is a call to the real function with no import to resolve through.
-      ``marketplace_paths.py`` is in shape B's population on exactly this
+      there is a call to the real function with no import to resolve through —
+      **but only when that module IS the origin**, which is what ``module_name``
+      is for. ``marketplace_paths.py`` is in shape B's population on exactly this
       evidence: it holds the sole ``def`` of both entry points and
       ``ensure_home_root`` invokes ``home_root()`` directly. Dropping this arm
-      would shrink that population from 9 to 8 while looking like a tightening.
+      would shrink that population from 9 to 8 while looking like a tightening,
+      so it is NARROWED rather than removed.
+
+      The narrowing is the one place this function could resolve by bare name and
+      so contradict its own contract: soleness is the property the arm's
+      justification rests on, and it is a property of ``marketplace_paths.py``,
+      not of every candidate. Unnarrowed, ANY candidate that both top-level-defines
+      and bare-calls ``home_root`` / ``ensure_home_root`` / ``chdir`` joined the
+      population on its own LOCAL definition, attributed to no origin at all. The
+      authoritative module is derived by comparing ``module_name`` against
+      ``origin`` rather than matched against a filename literal, so renaming the
+      resolver cannot silently empty the arm — the rename moves the origin
+      constant with it, and a constant that did NOT move breaks the from-import
+      resolution loudly at the population equality checks instead.
+
+      For the ``chdir`` shape the origin is the stdlib ``os``, which is not under
+      the candidate glob, so this arm is correctly unreachable there: no candidate
+      owns ``os.chdir``.
+
+    Args:
+        tree: The candidate's parsed module.
+        targets: The shape's target function names.
+        origin: The module a call must resolve THROUGH to count.
+        module_name: The candidate's own module name (its file stem), compared
+            against ``origin`` to decide whether the own-definition arm applies.
     """
     module_aliases: set[str] = set()  # local names bound to the ORIGIN MODULE
     direct_names: set[str] = set()  # local names bound to a TARGET from the origin
@@ -170,11 +213,15 @@ def _called_names(tree: ast.AST, targets: frozenset[str], origin: str) -> bool:
                 elif alias.name == origin:
                     module_aliases.add(alias.asname or alias.name)
 
-    own_definitions = {
-        node.name
-        for node in getattr(tree, 'body', [])
-        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef) and node.name in targets
-    }
+    # Gated on the candidate BEING the origin: a local definition is evidence of
+    # ownership only in the module the origin names.
+    own_definitions: set[str] = set()
+    if module_name == origin:
+        own_definitions = {
+            node.name
+            for node in getattr(tree, 'body', [])
+            if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef) and node.name in targets
+        }
 
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
@@ -213,9 +260,9 @@ def _derive_populations() -> tuple[int, tuple[str, ...], tuple[str, ...]]:
             raise AssertionError(f'Could not scan candidate script {path}: {type(exc).__name__}: {exc}') from None
 
         relative = _skill_relative(path.relative_to(MARKETPLACE_ROOT))
-        if _called_names(tree, _CHDIR_TARGETS, _CHDIR_ORIGIN):
+        if _called_names(tree, _CHDIR_TARGETS, _CHDIR_ORIGIN, path.stem):
             chdir_callers.add(relative)
-        if _called_names(tree, _HOME_ROOT_TARGETS, _HOME_ROOT_ORIGIN):
+        if _called_names(tree, _HOME_ROOT_TARGETS, _HOME_ROOT_ORIGIN, path.stem):
             home_root_callers.add(relative)
 
     return scanned, tuple(sorted(chdir_callers)), tuple(sorted(home_root_callers))
@@ -454,7 +501,7 @@ def test_the_classifier_admits_every_binding_that_resolves_to_the_origin():
     classifier that admitted nothing at all — which would empty both populations.
     """
     for label, source in _ADMITTED_SOURCES:
-        assert _called_names(ast.parse(source), _CHDIR_TARGETS, _CHDIR_ORIGIN), (
+        assert _called_names(ast.parse(source), _CHDIR_TARGETS, _CHDIR_ORIGIN, _FOREIGN_MODULE_NAME), (
             f'{label} should resolve to {_CHDIR_ORIGIN}.chdir but was not admitted'
         )
 
@@ -469,7 +516,7 @@ def test_the_classifier_rejects_a_same_named_call_from_a_foreign_module():
     false population member and broke the audit's equality check.
     """
     for label, source in _FOREIGN_SOURCES:
-        assert not _called_names(ast.parse(source), _CHDIR_TARGETS, _CHDIR_ORIGIN), (
+        assert not _called_names(ast.parse(source), _CHDIR_TARGETS, _CHDIR_ORIGIN, _FOREIGN_MODULE_NAME), (
             f'{label} does not resolve to {_CHDIR_ORIGIN}.chdir but was admitted'
         )
 
@@ -481,25 +528,59 @@ def test_the_classifier_still_excludes_every_non_call_occurrence():
     occurrences are all docstring prose, so the origin guard must not re-admit
     prose, a never-called definition, or a bare non-call reference to the real
     attribute.
+
+    Each source is classified AS the origin module, which is the strongest form
+    of the claim: even in the module that owns the target, a definition nobody
+    calls is not a call site. Passing a foreign identity here would let the
+    own-definition gate do the excluding and leave the not-a-call property
+    itself untested.
     """
     for label, source in _NON_CALL_SOURCES:
-        assert not _called_names(ast.parse(source), _CHDIR_TARGETS, _CHDIR_ORIGIN), (
+        assert not _called_names(ast.parse(source), _CHDIR_TARGETS, _CHDIR_ORIGIN, _CHDIR_ORIGIN), (
             f'{label} is not a call and must not be admitted'
         )
 
 
+#: A module that both top-level-defines a shape B target and bare-calls it. Which
+#: population it belongs to is decided ENTIRELY by whose module it is, so the two
+#: controls below feed this one source with two different identities.
+_OWN_DEFINITION_SOURCE = 'def home_root():\n    return 1\n\n\ndef ensure_home_root():\n    return home_root()\n'
+
+
 def test_the_classifier_admits_a_same_module_call_to_its_own_definition():
-    """The resolver module is a member on exactly this evidence.
+    """The resolver module is a member on exactly this evidence — the POSITIVE half.
 
     ``marketplace_paths.py`` holds the sole ``def`` of both shape B entry points,
     and ``ensure_home_root`` invokes ``home_root()`` directly — a bare call with no
     import to resolve through. An origin guard accepting only imported bindings
     would drop the resolver itself out of shape B, shrinking the published
     population from 9 to 8 while looking like a tightening.
-    """
-    source = 'def home_root():\n    return 1\n\n\ndef ensure_home_root():\n    return home_root()\n'
 
-    assert _called_names(ast.parse(source), _HOME_ROOT_TARGETS, _HOME_ROOT_ORIGIN)
+    The identity is passed as :data:`_HOME_ROOT_ORIGIN` rather than as the
+    resolver's filename, so this control derives its expectation from the same
+    constant the classifier does and no path literal is re-introduced.
+    """
+    assert _called_names(ast.parse(_OWN_DEFINITION_SOURCE), _HOME_ROOT_TARGETS, _HOME_ROOT_ORIGIN, _HOME_ROOT_ORIGIN)
+
+
+def test_a_foreign_module_defining_and_calling_a_target_is_not_admitted():
+    """The matched NEGATIVE half — and the defect this closes.
+
+    The own-definition arm resolved by bare name, which is the one thing this
+    classifier's contract says it never does. Ungated, ANY candidate that both
+    top-level-defined and bare-called ``home_root`` joined shape B's population on
+    its own LOCAL definition, attributed to no origin at all — a member the
+    deriver cannot say anything about, which is unsound on the deriver's own
+    terms even though the failure direction is a false red.
+
+    Byte-identical source to the positive control above; only the candidate's own
+    module identity differs. That pairing is what shows the arm was NARROWED
+    rather than removed: removing it would fail the positive, and leaving it
+    ungated fails this one.
+    """
+    assert not _called_names(
+        ast.parse(_OWN_DEFINITION_SOURCE), _HOME_ROOT_TARGETS, _HOME_ROOT_ORIGIN, _FOREIGN_MODULE_NAME
+    )
 
 
 def test_a_foreign_home_root_call_is_not_admitted_into_shape_b():
@@ -510,4 +591,29 @@ def test_a_foreign_home_root_call_is_not_admitted_into_shape_b():
     """
     source = 'import someother\ndef f():\n    someother.home_root()\n'
 
-    assert not _called_names(ast.parse(source), _HOME_ROOT_TARGETS, _HOME_ROOT_ORIGIN)
+    assert not _called_names(ast.parse(source), _HOME_ROOT_TARGETS, _HOME_ROOT_ORIGIN, _FOREIGN_MODULE_NAME)
+
+
+def test_the_own_definition_member_survives_the_narrowing_at_its_pinned_size():
+    """The narrowing did not shrink shape B — 9 members, the resolver among them.
+
+    The set-equality checks above compare the derived population against the
+    audit's table, so editing both together would keep them agreeing at ANY size.
+    This pins the CARDINALITY independently and names the one member that is a
+    member on the own-definition arm alone, which is precisely the member a
+    too-broad narrowing would drop.
+    """
+    scanned, _chdir, home_root_callers = _derive_populations()
+
+    assert _OWN_DEFINITION_MEMBER in home_root_callers, (
+        f'{_OWN_DEFINITION_MEMBER!r} is absent from the derived tier-reaching population of '
+        f'{len(home_root_callers)}: {sorted(home_root_callers)}. It is a member on the '
+        f'own-definition arm alone, so the arm has been narrowed past the module it exists for.'
+    )
+    assert len(home_root_callers) == _HOME_ROOT_POPULATION_SIZE, (
+        f'Derived tier-reaching population is {len(home_root_callers)}, pinned at '
+        f'{_HOME_ROOT_POPULATION_SIZE}, over {scanned} candidate(s): {sorted(home_root_callers)}. '
+        f'A DROP means the classifier stopped attributing a real caller; a RISE means a new '
+        f'consumer of the machine-global tier arrived — disposition it in the audit and move '
+        f'this pin in the same change.'
+    )
