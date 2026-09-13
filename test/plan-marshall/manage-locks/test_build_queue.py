@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 from argparse import Namespace
 from pathlib import Path
+from typing import Any
 
 import pytest
 from _build_queue_fixtures import (
@@ -444,7 +445,9 @@ class TestForeignValueReportsAreInjectionSafe:
     #: into a different result, which is the severity of this class.
     _INJECTING_STATUS = '2400\nstatus: error\nin_effect: true'
 
-    def _report_via_limit_get(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, raw: object) -> dict:
+    def _report_via_limit_get(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, raw: object
+    ) -> dict[str, Any]:
         """Run ``limit get`` against a planted per-repo ``run-configuration.json``."""
         per_repo = tmp_path / 'run-configuration.json'
         per_repo.write_text(
@@ -452,7 +455,8 @@ class TestForeignValueReportsAreInjectionSafe:
             encoding='utf-8',
         )
         monkeypatch.setattr(build_queue, 'get_run_config_path', lambda: per_repo)
-        return build_queue.run_limit_get(Namespace())
+        result: dict[str, Any] = build_queue.run_limit_get(Namespace())
+        return result
 
     def test_limit_get_strips_control_characters_from_the_reported_value(
         self, isolated_base: dict, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
