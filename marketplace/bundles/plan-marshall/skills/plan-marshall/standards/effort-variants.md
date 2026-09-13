@@ -20,6 +20,23 @@ For a dispatch with `--phase phase-N-{suffix} [--role <subkey>]`, the resolver r
 
 `--default` (no `--phase`, no `--role`) short-circuits to step 4. This is the resolution path standalone `/research` outside any plan takes.
 
+## Local-Map Provisioning Slot (Settled)
+
+The five-step order above ends at a *level*. What a provisioning target does
+with that level afterwards is a separate, post-resolve decision governed by
+`doc/adr/021-machine-local-effort-to-model-map-and-resolve-chain-slot.adoc`,
+which is the single source for the schema and is not restated here:
+
+- A machine-local, target-owned effort-to-model map may provision a concrete
+  model for the exact resolved level; anything it does not provision —
+  including a resolved `inherit` — dispatches on the session model.
+- Provisioning is narrow (an entry serves only its own level) and never
+  escalates (a provisioned model never exceeds the resolved rung).
+- The inherit fallback is universal and is never removed.
+
+No step of the resolution order consults the map; the resolver output is
+identical whether or not a map exists.
+
 ## Accepted Lookup Forms
 
 All four forms produce the same resolution:
