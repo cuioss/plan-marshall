@@ -25,6 +25,19 @@ import sys
 
 from file_ops import safe_main
 
+#: The auth types this CLI offers a user, and the single definition both the
+#: ``configure`` and the ``edit`` parser draw their ``choices`` from.
+#:
+#: It is the SUBSET of ``_providers_core.VALID_AUTH_TYPES`` — the superset of
+#: every auth type the system accepts — that a user may choose on the command
+#: line, leaving out ``system``, the provider-declared value no command line ever
+#: supplies. The two are deliberately SEPARATE definitions with different
+#: meanings, not a duplication to merge: deriving this one by filtering
+#: ``system`` out of that one would encode an implicit "everything except
+#: system" rule, and that rule silently changes meaning the moment a further
+#: member is added to the superset.
+CLI_AUTH_TYPES = ('none', 'token', 'basic')
+
 
 def build_parser() -> argparse.ArgumentParser:
     """Construct the credential-management CLI parser.
@@ -56,9 +69,7 @@ def build_parser() -> argparse.ArgumentParser:
         '--scope', choices=['global', 'project'], default='global', help='Credential scope (default: global)'
     )
     configure_parser.add_argument('--url', help='Base URL (skips URL prompt)')
-    configure_parser.add_argument(
-        '--auth-type', choices=['none', 'token', 'basic'], help='Auth type (skips auth type prompt)'
-    )
+    configure_parser.add_argument('--auth-type', choices=CLI_AUTH_TYPES, help='Auth type (skips auth type prompt)')
     configure_parser.add_argument(
         '--extra',
         nargs='*',
@@ -73,9 +84,7 @@ def build_parser() -> argparse.ArgumentParser:
         '--scope', choices=['global', 'project'], default='global', help='Credential scope (default: global)'
     )
     edit_parser.add_argument('--url', help='New base URL (skips URL prompt)')
-    edit_parser.add_argument(
-        '--auth-type', choices=['none', 'token', 'basic'], help='New auth type (skips auth type prompt)'
-    )
+    edit_parser.add_argument('--auth-type', choices=CLI_AUTH_TYPES, help='New auth type (skips auth type prompt)')
     edit_parser.add_argument(
         '--extra',
         nargs='*',

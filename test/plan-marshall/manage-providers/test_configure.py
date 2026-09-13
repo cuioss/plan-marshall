@@ -10,9 +10,29 @@ import pytest
 from _providers_core import SECRET_PLACEHOLDERS
 from _providers_fixtures import stage_marshal
 
-from conftest import get_script_path, run_script
+from conftest import get_script_path, load_script_module, run_script
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-providers', 'credentials.py')
+
+#: The CLI's own definition of the auth types it offers, read from the module that
+#: declares it rather than copied into this file. It is reached through the
+#: conftest loader WITHOUT registering the module: a plain ``import credentials``
+#: would make that name both file-loaded and plainly imported, which is the
+#: reload-order collision the loader contract refuses.
+CLI_AUTH_TYPES = load_script_module(
+    'plan-marshall', 'manage-providers', 'credentials.py', register=False
+).CLI_AUTH_TYPES
+
+#: Non-vacuity guard on the value just loaded. ``empty_parameter_set_mark`` is not
+#: overridden in pyproject.toml, so pytest's default of ``skip`` applies: were this
+#: attribute ever to resolve to an empty sequence, the parametrized test below would
+#: be silently SKIPPED and the suite would still report green while asserting nothing
+#: about the auth types the CLI offers. Failing here fails collection instead.
+assert len(CLI_AUTH_TYPES) > 0, (
+    'CLI_AUTH_TYPES resolved to an empty sequence: the auth-type parametrization '
+    'below would be skipped rather than fail, leaving the auth types the CLI offers '
+    'unasserted while the suite still reported green'
+)
 
 # Sonar provider declaration for tests that need marshal.json seeded
 _SONAR_PROVIDER = {
@@ -240,19 +260,17 @@ class TestConfigureAuthTypeValidation:
         self._creds_env = {'PLAN_MARSHALL_CREDENTIALS_DIR': str(creds_dir)}
         yield
 
-    #: Every ``auth_type`` the wizard accepts, offered to a provider whose own
-    #: declaration names none. The rows differ only in the value, so the ids are
-    #: derived from THIS list rather than written out beside it: a parallel id
-    #: list is only correct while the two orders agree, and one of its entries had
-    #: already drifted into claiming the value ``matches the declaration`` — a
-    #: match no row here can make, because ``_SONAR_PROVIDER`` declares no
-    #: ``auth_type`` at all.
-    _ACCEPTED_AUTH_TYPES = ['none', 'token', 'basic']
-
+    # Every ``auth_type`` the wizard accepts, offered to a provider whose own
+    # declaration names none. The rows come from ``credentials.CLI_AUTH_TYPES``
+    # — the CLI's own single definition of what it offers — so this file keeps no
+    # second copy of that list to drift from it. The ids are derived from that
+    # same tuple rather than written out beside it: a parallel id list is correct
+    # only while the two orders agree, and an id here can claim nothing about the
+    # declaration, because ``_SONAR_PROVIDER`` declares no ``auth_type`` at all.
     @pytest.mark.parametrize(
         'auth_type',
-        _ACCEPTED_AUTH_TYPES,
-        ids=[f'offered-auth-type-{value}' for value in _ACCEPTED_AUTH_TYPES],
+        CLI_AUTH_TYPES,
+        ids=[f'offered-auth-type-{value}' for value in CLI_AUTH_TYPES],
     )
     def test_configure_accepts_the_auth_type_it_was_given(self, auth_type):
         """A provider declaring no auth_type accepts every auth_type offered to it."""
