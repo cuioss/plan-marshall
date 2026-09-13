@@ -26,6 +26,12 @@ These tests pin four invariants:
    That step reviews the plan's DIFF, so a ``done`` carried across a
    loop-back would stand as green for a diff no check ever ran against —
    the defect that motivated deriving membership in the first place.
+6. A self-review round the VERIFIER declined to close records ``loop_back``
+   with ``loop_back_target: 6-finalize`` — never ``done`` and never
+   ``failed``. The close decision belongs to the party that did not write
+   the verdict, so this pins the other side of that decision: ``done``
+   there would close a review a second party declined to close, and
+   ``failed`` would grade a working independence check as a broken step.
 
 The tests use unique ``plan_id`` values per test to avoid cross-test
 contamination (per MEMORY.md "Test Isolation Pattern").
@@ -61,6 +67,36 @@ _PRE_SUBMISSION_SELF_REVIEW_MD = _PHASE_6_DIR / 'workflow' / 'pre-submission-sel
 #: The removed hand-maintained literal. Its ABSENCE from SKILL.md is what makes
 #: membership derived rather than listed, so it is asserted absent by name.
 _RETIRED_LITERAL = 'HEAD_DEPENDENT_STEPS'
+
+#: The self-review section where the verifier's two answers are collected and
+#: routed. Test 6 reads it for the states that do NOT close the round.
+_VERIFIER_STEP_HEADING = '### Step 3b: Independent verification (dispatch)'
+
+#: The state names the verifier's non-closing outcomes are filed under. Their
+#: presence in the section is a population FLOOR, not a roster: the assertion
+#: below derives what each one must record from the section's own text, and a
+#: fourth state added later joins the sweep by being named there.
+_NON_CLOSE_STATES = ('verdict_refused', 'further_round_owed', 'verifier_unavailable')
+
+
+def _section_after(text: str, heading: str, stop_prefix: str = '### ') -> str:
+    """Return the text between ``heading`` and the next ``stop_prefix`` line.
+
+    Deliberately local and tiny: this module reads whole documents everywhere
+    else, and the one section it needs is bounded by a heading it can name. An
+    absent heading yields the empty string, which every caller asserts against —
+    a relocated section then fails loudly instead of sweeping nothing.
+    """
+    lines = text.splitlines()
+    start = next((index for index, line in enumerate(lines) if line.strip() == heading), None)
+    if start is None:
+        return ''
+    body: list[str] = []
+    for line in lines[start + 1 :]:
+        if line.startswith(stop_prefix):
+            break
+        body.append(line)
+    return '\n'.join(body)
 
 
 def _declares_head_dependent(doc_path: Path) -> bool:
@@ -402,4 +438,98 @@ def test_loop_back_commit_re_fires_pre_submission_self_review():
         'pre-submission-self-review must declare head_dependent: true. Its verdict '
         'is a function of the plan diff, so without the declaration a loop-back '
         'commit leaves a stale done record standing as green for an unreviewed diff.'
+    )
+
+
+# =============================================================================
+# Test 6: a round the VERIFIER did not close records loop_back, not done/failed.
+# =============================================================================
+#
+# The self-review's close decision belongs to the verifier, not to the author
+# that wrote the verdict. This file owns the loop_back outcome contract, so what
+# belongs here is the OTHER side of that decision: when the verifier does not
+# close the round, the round must land on the loop-back path rather than on
+# either terminal one. Recording `done` there would close a review a second party
+# declined to close; recording `failed` would grade a working independence check
+# as a broken step, which is the mis-classification this whole outcome value
+# exists to prevent.
+
+
+def test_verifier_non_close_states_route_to_the_loop_back_branch():
+    """Every documented non-close state lands on loop_back, not done or failed.
+
+    The three states are a population FLOOR — the assertion fails if the section
+    stops naming one, which is how a state would quietly lose its routing. What
+    each one must record is read from the section's own text rather than pinned
+    as a sentence, so rewording the routing prose does not break the test while
+    changing the outcome it names does.
+    """
+    doc = _PRE_SUBMISSION_SELF_REVIEW_MD.read_text(encoding='utf-8')
+    section = _section_after(doc, _VERIFIER_STEP_HEADING)
+
+    assert section.strip(), (
+        f'{_VERIFIER_STEP_HEADING!r} is absent from the self-review workflow, so '
+        f'the verifier that takes the close decision is undocumented and every '
+        f'assertion below would sweep nothing.'
+    )
+
+    missing = [state for state in _NON_CLOSE_STATES if state not in section]
+    assert not missing, (
+        f'The verifier section no longer names these non-close state(s): {missing}. '
+        f'A state that loses its name loses its documented routing with it, and '
+        f'nothing then says where a round in that state lands.'
+    )
+
+    assert 'loop_back' in section, (
+        'The verifier section never names `loop_back`, so a round the verifier '
+        'declined to close has no documented outcome to record.'
+    )
+    assert '--outcome done' not in section, (
+        'The verifier section documents a `--outcome done` call. A round the '
+        'verifier did not close must not record the closing outcome — that is the '
+        'author closing a review a second party declined to close.'
+    )
+
+
+def test_a_verifier_declined_round_persists_as_an_inline_fixable_loop_back(plan_context):
+    """Driving the declined-round path records loop_back with the 6-finalize target.
+
+    The behavioural half, in this module's established shape: invoke the same
+    ``mark-step-done`` arguments Step 4 Branch B documents for a round the
+    verifier declined, and assert the persisted record. The target is
+    ``6-finalize`` rather than ``5-execute`` because a declined round is resolved
+    by amending the diff in hand — no fix task is allocated, so rolling back to
+    phase-5-execute would send the round somewhere it has no work to do.
+    """
+    plan_id = 'loopback-verifier-declined'
+    _make_plan(plan_id)
+
+    result = cmd_mark_step_done(
+        _args(
+            plan_id,
+            '6-finalize',
+            'pre-submission-self-review',
+            'loop_back',
+            display_detail='self-review found 1 issues in 1 classes',
+            loop_back_target='6-finalize',
+        )
+    )
+
+    assert result['status'] == 'success'
+    assert result['outcome'] == 'loop_back'
+
+    persisted = read_status(plan_id)
+    entry = persisted['metadata']['phase_steps']['6-finalize']['pre-submission-self-review']
+
+    assert entry['outcome'] == 'loop_back', (
+        f'A round the verifier declined to close must record loop_back; got {entry["outcome"]!r}'
+    )
+    assert entry['outcome'] not in ('done', 'failed'), (
+        'Neither terminal outcome is correct for a declined round: `done` closes a '
+        'review the verifier did not close, and `failed` grades a working '
+        'independence check as a broken step.'
+    )
+    assert entry['loop_back_target'] == '6-finalize', (
+        'A declined round is resolved by amending the diff in hand, so it re-enters '
+        'the finalize step loop rather than rolling back to phase-5-execute.'
     )

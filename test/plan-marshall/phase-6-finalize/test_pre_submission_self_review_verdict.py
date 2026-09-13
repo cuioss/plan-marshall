@@ -820,8 +820,263 @@ def test_an_absent_or_refused_acceptance_does_not_close_the_round():
 
 
 # ---------------------------------------------------------------------------
+# (i) the STOP QUESTION — no path records `done` on an unanswered one
+# ---------------------------------------------------------------------------
+#
+# (h) established that a second party exists and accepts the verdict. (i) pins
+# the decision (h) made possible: *may this round record done?* is put TO that
+# party, and the author records the answer. Branch A used to be selected by the
+# author's own reading of the findings list it had just produced, which is the
+# state both deliverables exist to leave behind.
+#
+# The branch set is DERIVED from the document — every `**Branch X — …**` label
+# Step 4 declares — rather than pinned as {A, B, C} here. A branch added later
+# is swept without editing this file, which is what keeps "no path records done
+# without an answered stop question" a claim about the document rather than
+# about the three branches someone remembered.
+
+#: The affirmative stop answer, as the closing branch must require it.
+_STOP_ANSWER_YES = 'may_close: yes'
+
+#: The pre-fix selector — the author's own reading of the list it just produced.
+#: A done-recording branch labelled with this is selected by its author.
+_AUTHOR_PREDICATE = 'findings list is empty'
+
+#: A Step 4 branch label, as the document writes one.
+_BRANCH_LABEL = re.compile(r'^\*\*Branch ([A-Z]) — (.+?)\*\*', re.MULTILINE)
+
+#: The outcome a branch records, read off the `--outcome` flag of the
+#: `mark-step-done` call(s) inside that branch's own text.
+_RECORDED_OUTCOME = re.compile(r'--outcome\s+([a-z_]+)')
+
+#: The one path that reaches `done` without a stop answer, and the reason it is
+#: not a hole: it ran no surfacer, so there is no round for a stop question to be
+#: about. Matched on the label the document gives it, not on a sentence.
+_CARVE_OUT_MARKER = 'zero-generator fallback'
+
+
+def _slice_branches(section: str) -> dict[str, str]:
+    """Map each branch letter to the text between its label and the next label.
+
+    Pure over ``section`` so the real document and the mutation guard's synthetic
+    prose go through ONE slicing rather than two that can drift. The final branch
+    runs to the end of the section — a walk that stopped at the last label would
+    silently drop it, which is the branch most likely to be added later.
+    """
+    matches = list(_BRANCH_LABEL.finditer(section))
+    bodies: dict[str, str] = {}
+    for position, match in enumerate(matches):
+        end = matches[position + 1].start() if position + 1 < len(matches) else len(section)
+        bodies[match.group(1)] = section[match.start() : end]
+    return bodies
+
+
+def _branch_label(body: str) -> str:
+    """The label line of a branch body — the line its selector is written on."""
+    return body.split('\n', 1)[0]
+
+
+def _branch_bodies() -> dict[str, str]:
+    """The Step 4 branch bodies of the real workflow document."""
+    return _slice_branches(_optional_section(_doc_text(), _BRANCH_A_SECTION_HEADING))
+
+
+def _branches_recording(bodies: dict[str, str], outcome: str) -> dict[str, str]:
+    """The branches whose own text records ``--outcome {outcome}``."""
+    return {letter: body for letter, body in bodies.items() if outcome in _RECORDED_OUTCOME.findall(body)}
+
+
+def _branches_recording_done() -> dict[str, str]:
+    """The Step 4 branches whose own text records `--outcome done`."""
+    return _branches_recording(_branch_bodies(), 'done')
+
+
+def test_the_step_4_branch_set_is_derivable_and_non_trivial():
+    """Vacuity guard for (i): the branch walk must find the real branches.
+
+    Every assertion below quantifies over this derivation, so a parser that
+    matched nothing would make each of them pass over an empty set — the exact
+    shape that lets a contract guard certify nothing.
+    """
+    bodies = _branch_bodies()
+
+    assert len(bodies) >= 2, (
+        f'The Step 4 branch walk found {len(bodies)} branch(es) ({sorted(bodies)}). '
+        f'The section declares several, so either the label shape changed or the '
+        f'section resolved empty — and every (i) assertion would then sweep nothing.'
+    )
+    assert _branches_recording_done(), (
+        f'No derived Step 4 branch records `--outcome done` ({sorted(bodies)}), so '
+        f'the assertion that a closing branch requires a stop answer has no branch '
+        f'to check.'
+    )
+
+
+def test_the_closing_branch_is_selected_by_the_stop_answer_not_by_the_author():
+    """Branch A's SELECTOR is the verifier's answer, not the findings list.
+
+    The label is the selector: a branch labelled *findings list is empty* is
+    selected by the author's own reading of its own output, however much prose
+    elsewhere describes a verifier. Reading the label is what keeps this an
+    assertion about the decision rather than about the documentation around it.
+    """
+    closing = _branches_recording_done()
+    assert closing, f'No branch records done; derived branches: {sorted(_branch_bodies())}'
+
+    author_selected = [letter for letter, body in closing.items() if _AUTHOR_PREDICATE in _branch_label(body)]
+
+    assert not author_selected, (
+        f'Branch(es) {author_selected} record `done` and are labelled by the bare '
+        f'{_AUTHOR_PREDICATE!r} predicate — the author reading the list it just '
+        f'produced. The stop question exists so that decision belongs to the party '
+        f'that did not write the verdict.'
+    )
+
+
+def test_no_branch_records_done_without_an_answered_stop_question():
+    """The load-bearing assertion: every done-recording branch requires the answer.
+
+    Quantified over the DERIVED branch set, so a branch added later that records
+    `done` is swept without editing this file. There is NO per-branch carve-out
+    here on purpose: the zero-generator fallback reaches `done` through this same
+    closing branch, and the branch carves it out in its own prose — which the
+    next assertion checks separately. Skipping a whole branch because it mentions
+    the carve-out would let a branch that LOST the stop answer pass on the
+    strength of a sentence about a different path.
+    """
+    doc = _doc_text()
+    if not _independence_is_implemented(doc):
+        return
+
+    offenders = [letter for letter, body in _branches_recording_done().items() if _STOP_ANSWER_YES not in body]
+
+    assert not offenders, (
+        f'Step 4 branch(es) {offenders} record `--outcome done` without requiring '
+        f'{_STOP_ANSWER_YES!r}. A `done` recorded on an unanswered stop question is '
+        f'the author closing the review on its own verdict, which is the '
+        f'arrangement this deliverable replaced.'
+    )
+
+
+def test_the_one_path_that_closes_without_a_stop_answer_is_named_where_it_closes():
+    """The carve-out is stated in the branch that carries it, not left implicit.
+
+    The zero-generator fallback reaches `done` having run no surfacer, so there is
+    no round for a stop question to be about. That is a real exception, and the
+    only honest form of it is one the closing branch NAMES — an unexplained
+    silence is indistinguishable from a branch that simply forgot the gate.
+    """
+    doc = _doc_text()
+    if not _independence_is_implemented(doc):
+        return
+
+    closing = _branches_recording_done()
+    assert closing, 'No branch records done — the carve-out assertion would be vacuous'
+
+    unnamed = [letter for letter, body in closing.items() if _CARVE_OUT_MARKER not in body.lower()]
+
+    assert not unnamed, (
+        f'Branch(es) {unnamed} record `done` but never name the '
+        f'{_CARVE_OUT_MARKER!r} path, which reaches `done` without a stop answer. '
+        f'A reader of the branch cannot then tell an intended exception from a '
+        f'missing gate.'
+    )
+
+
+def test_the_two_verifier_questions_are_not_collapsed_into_one():
+    """`acceptance` and `may_close` answer different questions and both are read.
+
+    Collapsing them is the near-miss: a verdict can be accurately worded about a
+    round that should still be followed by another, so reading question (1)'s
+    answer as question (2)'s closes a review the verifier did not close. Both
+    tokens must appear in the verifier section AND in the closing branch.
+    """
+    doc = _doc_text()
+    if not _independence_is_implemented(doc):
+        return
+
+    verifier_section = _optional_section(doc, _VERIFIER_STEP_HEADING)
+    closing = _optional_section(doc, _BRANCH_A_SECTION_HEADING)
+
+    for token in (_ACCEPTANCE_TOKEN, _STOP_ANSWER_YES):
+        assert token in verifier_section, (
+            f'{_VERIFIER_STEP_HEADING!r} does not declare {token!r}, so the verifier '
+            f'is not asked for it and the closing branch has nothing to read.'
+        )
+        assert token in closing, (
+            f'{_BRANCH_A_SECTION_HEADING!r} does not require {token!r}. Both answers '
+            f'gate the close: one judges the verdict wording, the other judges '
+            f'whether another round is owed, and neither substitutes for the other.'
+        )
+
+
+# ---------------------------------------------------------------------------
 # Mutation guards for (h) — each detector must fire on the shape it targets
 # ---------------------------------------------------------------------------
+
+
+def test_branch_walk_and_stop_answer_detectors_fire_on_the_pre_fix_shape():
+    """Mutation guard for (i): the pre-fix Step 4 must be flagged.
+
+    Reproduces the shape this deliverable replaced — Branch A labelled by the
+    author's own predicate and recording `done` with no stop answer anywhere —
+    and a matched control in the post-fix shape, so neither detector is
+    unconditionally positive or unconditionally negative.
+    """
+    pre_fix = (
+        f'{_BRANCH_A_SECTION_HEADING}\n\n'
+        '**Branch A — findings list is empty**: read the display_detail verbatim.\n\n'
+        '```bash\n'
+        'mark-step-done --outcome done --force\n'
+        '```\n\n'
+        '**Branch B — findings list is non-empty**: persist every finding.\n\n'
+        '```bash\n'
+        'mark-step-done --outcome loop_back --force\n'
+        '```\n'
+    )
+    post_fix = pre_fix.replace(
+        '**Branch A — findings list is empty**: read the display_detail verbatim.',
+        f'**Branch A — the verifier answered the stop question `{_STOP_ANSWER_YES}`**: '
+        f'confirm `{_ACCEPTANCE_TOKEN}` and `{_STOP_ANSWER_YES}` first.',
+    )
+
+    # The walk finds both branches in both shapes — otherwise the split below is
+    # caused by the parser rather than by the selector.
+    for shape, label in ((pre_fix, 'pre-fix'), (post_fix, 'post-fix')):
+        matches = {match.group(1) for match in _BRANCH_LABEL.finditer(shape)}
+        assert matches == {'A', 'B'}, f'The branch walk read {sorted(matches)} in the {label} shape, not A and B'
+
+    pre_done = [
+        letter
+        for letter, body in _branches_recording(_slice_branches(pre_fix), 'done').items()
+        if _STOP_ANSWER_YES not in body
+    ]
+    assert pre_done == ['A'], (
+        f'The unanswered-stop-question detector did not flag the pre-fix Branch A; '
+        f'got {pre_done}. It records done with no stop answer anywhere, which is '
+        f'exactly the state (i) exists to reject.'
+    )
+
+    post_done = [
+        letter
+        for letter, body in _branches_recording(_slice_branches(post_fix), 'done').items()
+        if _STOP_ANSWER_YES not in body
+    ]
+    assert post_done == [], (
+        f'The detector flagged the post-fix shape, whose closing branch DOES require '
+        f'the stop answer; got {post_done}. A guard that fires on the fix is a false '
+        f'positive and would have to be suppressed.'
+    )
+
+    # And the author-selector detector separates the two labels, so the label
+    # read is what distinguishes them rather than something incidental.
+    pre_labels = {letter: _branch_label(body) for letter, body in _slice_branches(pre_fix).items()}
+    post_labels = {letter: _branch_label(body) for letter, body in _slice_branches(post_fix).items()}
+    assert _AUTHOR_PREDICATE in pre_labels['A'], 'Fixture drift: the pre-fix Branch A must carry the author predicate'
+    assert _AUTHOR_PREDICATE not in post_labels['A'], (
+        'The post-fix Branch A still carries the author predicate in its label, so '
+        'the selector assertion could not tell the two shapes apart'
+    )
 
 
 def test_arrangement_detectors_fire_on_the_pre_fix_and_alternative_shapes():
