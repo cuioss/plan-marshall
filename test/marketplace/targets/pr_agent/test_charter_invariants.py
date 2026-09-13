@@ -88,8 +88,11 @@ SPINE_ARTIFACT: str = ARTIFACTS.get(SPINE_STEM, '')
 DOMAIN_ARTIFACTS: dict[str, str] = {stem: body for stem, body in ARTIFACTS.items() if stem != SPINE_STEM}
 DOMAIN_ARTIFACT_IDS: list[str] = sorted(DOMAIN_ARTIFACTS)
 
-# ⛔ Vacuity guard — the population is derived, so an empty one collects zero cases
-# at the parametrize below and still reports green.
+# ⛔ Vacuity guard — both populations are derived, so an empty one collects zero
+# cases at the parametrize below and still reports green. The whole set and the
+# domain partition are asserted separately because each is parametrized over on
+# its own, and a guard on one says nothing about the other.
+assert ARTIFACT_IDS, 'ARTIFACTS is empty'
 assert DOMAIN_ARTIFACT_IDS, 'DOMAIN_ARTIFACTS is empty'
 
 # ---------------------------------------------------------------------------

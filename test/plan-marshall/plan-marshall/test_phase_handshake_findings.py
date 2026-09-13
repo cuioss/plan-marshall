@@ -728,7 +728,16 @@ def test_a_repeat_capture_clears_once_the_finding_stops_being_pending(
 # =============================================================================
 
 
-@pytest.mark.parametrize('finding_type', sorted(inv._ACTIONABLE_FINDING_TYPES))
+#: The actionable partition, read from the production module so a type added
+#: there inherits the round-trip case instead of escaping it.
+_ACTIONABLE_TYPES = sorted(inv._ACTIONABLE_FINDING_TYPES)
+
+# ⛔ Vacuity guard — the population is read at collection time, so an emptied
+# partition would collect zero cases and still report green.
+assert _ACTIONABLE_TYPES, 'inv._ACTIONABLE_FINDING_TYPES is empty'
+
+
+@pytest.mark.parametrize('finding_type', _ACTIONABLE_TYPES)
 def test_actionable_type_roundtrip_queried_matches_produced(
     finding_type: str,
     only_pending_findings_invariants,

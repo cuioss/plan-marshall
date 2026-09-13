@@ -3209,7 +3209,7 @@ def test_the_currency_subject_population_guard_is_exercised():
     nothing about what it rejects.
     """
     assert CURRENCY_SUBJECT_BOT_COUNT == len(CURRENCY_SUBJECT_BOTS)
-    assert CURRENCY_SUBJECT_BOT_COUNT > 0
+    assert len(CURRENCY_SUBJECT_BOTS) > 0
     assert guard_non_empty(CURRENCY_SUBJECT_BOTS, 'CURRENCY_SUBJECT_BOTS', 'the registry')
     with pytest.raises(VacuousPopulationError, match='reporting clean while covering nothing'):
         guard_non_empty((), 'CURRENCY_SUBJECT_BOTS', 'a registry declaring no such bot')
@@ -3988,7 +3988,7 @@ def test_the_currency_blind_population_is_derived_and_guarded():
     both, would make one of the two sweeps quietly wrong about which rule governs it.
     """
     assert CURRENCY_BLIND_BOT_COUNT == len(CURRENCY_BLIND_BOTS)
-    assert CURRENCY_BLIND_BOT_COUNT > 0
+    assert len(CURRENCY_BLIND_BOTS) > 0
     assert guard_non_empty(CURRENCY_BLIND_BOTS, 'CURRENCY_BLIND_BOTS', 'the registry')
     with pytest.raises(VacuousPopulationError, match='reporting clean while covering nothing'):
         guard_non_empty((), 'CURRENCY_BLIND_BOTS', 'a registry declaring no such bot')

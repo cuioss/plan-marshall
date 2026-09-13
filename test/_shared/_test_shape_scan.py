@@ -136,7 +136,11 @@ def r1_cross_slice_filename_pins(paths: list[Path] | None = None) -> ScanResult:
             result.unparseable.append(_rel(path))
             continue
         result.modules_examined += 1
-        own_dir = path.parent
+        # Resolved on both sides of the comparison below: ``candidate`` is built
+        # absolute-and-resolved, so comparing it against an unresolved parent
+        # would never match for a caller that handed in a relative path, and
+        # every same-directory reference would read as a cross-slice pin.
+        own_dir = path.resolve().parent
         for node in ast.walk(tree):
             if not isinstance(node, ast.Constant) or not isinstance(node.value, str):
                 continue
@@ -207,8 +211,14 @@ def _is_leaking_restore(node: ast.If) -> bool:
     complete hand-rolled dichotomy is correct. A branch that acts on one side and
     falls through on the other leaves the mutated state in place for every later
     test in the session, which is the shape worth failing over.
+
+    Which arm is the acting one does not matter, so the two arms are compared
+    rather than read in a fixed order: ``if saved is None: pass / else:
+    restore`` leaks exactly what ``if saved: restore`` leaks, and a predicate
+    that only looked at the ``if`` body would report the first spelling and miss
+    its mirror.
     """
-    return _is_presence_keyed(node.test) and _is_restoring(node.body) and not _is_restoring(node.orelse)
+    return _is_presence_keyed(node.test) and _is_restoring(node.body) != _is_restoring(node.orelse)
 
 
 def _delenv_delitem_calls(body: list[ast.stmt]) -> list[int]:
@@ -222,11 +232,39 @@ def _delenv_delitem_calls(body: list[ast.stmt]) -> list[int]:
     return lines
 
 
-def _post_yield_statements(fn: ast.FunctionDef | ast.AsyncFunctionDef) -> list[ast.stmt]:
-    """The teardown half of a generator fixture -- statements after its yield."""
-    for index, stmt in enumerate(fn.body):
+def _contains_yield(body: list[ast.stmt]) -> bool:
+    """True when these statements yield, not counting a nested function's yields.
+
+    A generator fixture defined inside the one being examined owns its own
+    teardown, so attributing its yield to the enclosing function would classify
+    the wrong ``finally`` as this fixture's teardown half.
+    """
+    stack: list[ast.AST] = list(body)
+    while stack:
+        node = stack.pop()
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)):
+            continue
+        if isinstance(node, ast.Yield):
+            return True
+        stack.extend(ast.iter_child_nodes(node))
+    return False
+
+
+def _post_yield_statements(body: list[ast.stmt]) -> list[ast.stmt]:
+    """The teardown half of a generator fixture -- what runs after its yield.
+
+    A fixture commonly protects its yield with a ``try`` and puts the teardown in
+    the matching ``finally``; that ``finally`` is the teardown half exactly as
+    the statements after a bare yield are. Reading only a direct ``Expr(Yield)``
+    statement in the function body would report such a fixture as having no
+    teardown at all, which is how an unsafe deletion in it goes unexamined. The
+    recursion covers a yield nested one or more ``try`` levels deep.
+    """
+    for index, stmt in enumerate(body):
         if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Yield):
-            return fn.body[index + 1 :]
+            return body[index + 1 :]
+        if isinstance(stmt, ast.Try) and _contains_yield(stmt.body):
+            return [*stmt.finalbody, *_post_yield_statements(stmt.body), *body[index + 1 :]]
     return []
 
 
@@ -245,24 +283,33 @@ def r4_presence_keyed_restores(paths: list[Path] | None = None) -> ScanResult:
             continue
         result.modules_examined += 1
 
+        # Keyed by line so one defect is reported once. A fixture's teardown half
+        # is now reachable through its ``finally`` as well as through the fixture,
+        # and a leak sitting in both would otherwise be counted twice. The fixture
+        # pass runs first so the more specific wording wins.
+        found: dict[int, str] = {}
+
         for node in ast.walk(tree):
-            if isinstance(node, ast.Try):
-                for stmt in node.finalbody:
-                    for sub in ast.walk(stmt):
-                        if isinstance(sub, ast.If) and _is_leaking_restore(sub):
-                            result.hits.append(f'{_rel(path)}:{sub.lineno}: presence-keyed restore in a finally block')
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                teardown = _post_yield_statements(node)
-                if not teardown:
-                    continue
-                for stmt in teardown:
-                    for sub in ast.walk(stmt):
-                        if isinstance(sub, ast.If) and _is_leaking_restore(sub):
-                            result.hits.append(
-                                f'{_rel(path)}:{sub.lineno}: presence-keyed restore in a fixture teardown'
-                            )
-                for line in _delenv_delitem_calls(teardown):
-                    result.hits.append(f'{_rel(path)}:{line}: delenv/delitem in a fixture teardown half')
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            teardown = _post_yield_statements(node.body)
+            for stmt in teardown:
+                for sub in ast.walk(stmt):
+                    if isinstance(sub, ast.If) and _is_leaking_restore(sub):
+                        found.setdefault(sub.lineno, 'presence-keyed restore in a fixture teardown')
+            for line in _delenv_delitem_calls(teardown):
+                found.setdefault(line, 'delenv/delitem in a fixture teardown half')
+
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Try):
+                continue
+            for stmt in node.finalbody:
+                for sub in ast.walk(stmt):
+                    if isinstance(sub, ast.If) and _is_leaking_restore(sub):
+                        found.setdefault(sub.lineno, 'presence-keyed restore in a finally block')
+
+        for line, what in sorted(found.items()):
+            result.hits.append(f'{_rel(path)}:{line}: {what}')
     return result
 
 
@@ -315,7 +362,10 @@ def _is_non_empty_by_construction(node: ast.expr, bindings: dict[str, ast.expr],
     if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
         return bool(node.elts) and not all(isinstance(e, ast.Starred) for e in node.elts)
     if isinstance(node, ast.Dict):
-        return bool(node.keys)
+        # ``{**derived}`` parses as a Dict with a ``None`` key, so a display made
+        # entirely of unpackings is exactly as empty as what it unpacks. This is
+        # the Dict counterpart of the ``Starred`` exclusion one arm above.
+        return any(key is not None for key in node.keys)
     if isinstance(node, ast.Constant):
         return isinstance(node.value, str) and bool(node.value.strip())
     if isinstance(node, (ast.ListComp, ast.SetComp, ast.GeneratorExp, ast.DictComp)):
@@ -346,13 +396,72 @@ def _is_non_empty_by_construction(node: ast.expr, bindings: dict[str, ast.expr],
     return False
 
 
-def _guards_its_result(fn: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
-    """True when the helper asserts the emptiness of what it returns.
+def _is_len_call(node: ast.expr) -> bool:
+    """True when this expression is a ``len(...)`` call."""
+    return isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == 'len' and bool(node.args)
 
-    Only a non-vacuity assertion counts -- a bare truthiness assert, or one
-    involving ``len()``. An equality assert about something unrelated is not a
-    guard, and counting it as one would let an unguarded derivation through.
+
+def _named_in(node: ast.expr) -> set[str]:
+    """Every name an expression reads, including the names of what it calls."""
+    names = {sub.id for sub in ast.walk(node) if isinstance(sub, ast.Name)}
+    names |= {
+        sub.func.id if isinstance(sub.func, ast.Name) else sub.func.attr
+        for sub in ast.walk(node)
+        if isinstance(sub, ast.Call) and isinstance(sub.func, (ast.Name, ast.Attribute))
+    }
+    return names - {'len'}
+
+
+def _len_comparison_names(node: ast.Compare) -> set[str]:
+    """Names a ``len()`` comparison proves non-empty -- empty when it proves nothing.
+
+    ``len(cases) > 0``, ``>= 1`` and ``== 3`` can only hold for a non-empty
+    population. ``>= 0``, ``== 0`` and ``len(a) == len(b)`` are every bit as true
+    of an empty one, so they name nothing.
     """
+    operands = [node.left, *node.comparators]
+    for index, op in enumerate(node.ops):
+        left, right = operands[index], operands[index + 1]
+        if _is_len_call(left) and isinstance(right, ast.Constant) and isinstance(right.value, int):
+            if (isinstance(op, ast.Gt) and right.value >= 0) or (
+                isinstance(op, (ast.GtE, ast.Eq)) and right.value >= 1
+            ):
+                return _named_in(left.args[0])
+        if _is_len_call(right) and isinstance(left, ast.Constant) and isinstance(left.value, int):
+            if (isinstance(op, ast.Lt) and left.value >= 0) or (isinstance(op, (ast.LtE, ast.Eq)) and left.value >= 1):
+                return _named_in(right.args[0])
+    return set()
+
+
+def _positive_cardinality_names(test: ast.expr) -> set[str]:
+    """The names an assertion proves non-empty -- empty when it proves nothing.
+
+    The single predicate all three R5 guard sites consult, so what counts as a
+    non-vacuity guarantee cannot drift between the helper guard, the module-level
+    guard and the cardinality-pinning test.
+
+    Each accepted form names only what it actually proves. A bare value
+    (``assert cases``) proves that value non-empty. A call's truthiness (``assert
+    derive()``) proves its RESULT non-empty and says nothing about its arguments
+    -- which is why ``assert isinstance(cases, list)`` names ``isinstance``
+    rather than ``cases``, and so cannot suppress a hit on ``cases``. ``len()``
+    is the one call whose truthiness is about its argument. Everything else names
+    nothing: ``assert len(cases) >= 0`` holds for an empty derivation, so reading
+    it as a guard would suppress exactly the hit this shape exists to report.
+    """
+    if isinstance(test, ast.BoolOp) and isinstance(test.op, ast.And):
+        return set().union(*(_positive_cardinality_names(value) for value in test.values))
+    if isinstance(test, (ast.Name, ast.Attribute, ast.Subscript)):
+        return _named_in(test)
+    if isinstance(test, ast.Call):
+        return _named_in(test.args[0]) if _is_len_call(test) else _named_in(test.func)
+    if isinstance(test, ast.Compare):
+        return _len_comparison_names(test)
+    return set()
+
+
+def _guards_its_result(fn: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    """True when the helper asserts that what it returns is non-empty."""
     returned = {
         sub.id
         for node in ast.walk(fn)
@@ -363,14 +472,9 @@ def _guards_its_result(fn: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
     for node in ast.walk(fn):
         if not isinstance(node, ast.Assert):
             continue
-        test = node.test
-        is_non_vacuity = isinstance(test, (ast.Name, ast.Call, ast.Attribute)) or (
-            isinstance(test, ast.Compare)
-            and any(isinstance(s, ast.Call) and getattr(s.func, 'id', '') == 'len' for s in ast.walk(test))
-        )
-        if not is_non_vacuity:
+        names = _positive_cardinality_names(node.test)
+        if not names:
             continue
-        names = {s.id for s in ast.walk(test) if isinstance(s, ast.Name)}
         if not returned or names & returned:
             return True
     return False
@@ -397,11 +501,10 @@ def r5_unguarded_runtime_parametrize(paths: list[Path] | None = None) -> ScanRes
         module_bindings = _bindings(tree.body)
         functions = {s.name: s for s in tree.body if isinstance(s, (ast.FunctionDef, ast.AsyncFunctionDef))}
         module_guarded = {
-            sub.id
+            name
             for stmt in tree.body
             if isinstance(stmt, ast.Assert)
-            for sub in ast.walk(stmt.test)
-            if isinstance(sub, ast.Name)
+            for name in _positive_cardinality_names(stmt.test)
         }
         cardinality_pinned = _cardinality_pinned_names(tree)
 
@@ -458,7 +561,7 @@ def _parametrize_sites(tree: ast.Module, module_bindings: dict[str, ast.expr]):
 
 
 def _cardinality_pinned_names(tree: ast.Module) -> set[str]:
-    """Names a non-parametrized test pins the cardinality of via ``len()``."""
+    """Names a non-parametrized test proves non-empty."""
     pinned: set[str] = set()
     for node in ast.walk(tree):
         if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
@@ -468,13 +571,6 @@ def _cardinality_pinned_names(tree: ast.Module) -> set[str]:
         if any(_is_parametrize(d) for d in node.decorator_list):
             continue
         for sub in ast.walk(node):
-            if not isinstance(sub, ast.Assert):
-                continue
-            if not any(isinstance(s, ast.Call) and getattr(s.func, 'id', '') == 'len' for s in ast.walk(sub.test)):
-                continue
-            for s in ast.walk(sub.test):
-                if isinstance(s, ast.Name):
-                    pinned.add(s.id)
-                elif isinstance(s, ast.Call) and isinstance(s.func, ast.Name):
-                    pinned.add(s.func.id)
+            if isinstance(sub, ast.Assert):
+                pinned |= _positive_cardinality_names(sub.test)
     return pinned

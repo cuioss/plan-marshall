@@ -462,6 +462,11 @@ def _census_rows() -> tuple[_CensusRow, ...]:
 
 _CENSUS_ROWS = _census_rows()
 
+# ⛔ Vacuity guard — stated at the derivation so it fires at import, naming the
+# population, rather than surfacing later as an empty parameter set at the
+# parametrize below. The row-count floor and the anchor check stay in the test.
+assert _CENSUS_ROWS, f'the pause-gate census in {_ANCHOR_DOC} parsed no rows'
+
 
 def test_the_census_parse_is_not_vacuous():
     """The census table still parses, so the row parity below covers real rows.

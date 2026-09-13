@@ -1024,6 +1024,11 @@ def _classify_invocation(command: str) -> str:
 
 _INVOCATION_SITES = _scan_invocation_sites()
 
+# ⛔ Vacuity guard — the sites are scanned out of the documents, so a scan that
+# came back empty would collect zero cases at the parametrizations below and
+# still report green.
+assert _INVOCATION_SITES, 'the invocation-site scan found no fenced command — every sweep over it would cover nothing'
+
 
 def _site_id(site: tuple[str, str, str, str]) -> str:
     """Human-readable, stable nodeid fragment naming the site.

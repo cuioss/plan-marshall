@@ -396,7 +396,7 @@ guard_every_site_recorded(PARTICIPATION_SITES, SITE_EXPECTATIONS)
 def test_the_site_population_publishes_a_non_zero_size():
     """The population is non-empty and its size is published, not merely asserted."""
     assert PARTICIPATION_SITE_COUNT == len(PARTICIPATION_SITES)
-    assert PARTICIPATION_SITE_COUNT > 0
+    assert len(PARTICIPATION_SITES) > 0
     assert SCANNED_FILE_COUNT > PARTICIPATION_SITE_COUNT
 
 

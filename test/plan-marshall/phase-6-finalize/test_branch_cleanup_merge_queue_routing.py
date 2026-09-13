@@ -758,7 +758,9 @@ _MERGE_SHAPED: dict[str, list[tuple[str, ...]]] = {p: _merge_shaped_registry_key
 
 # ⛔ Vacuity guard — the pairs are derived per provider, so a provider whose registry
 # yielded nothing collects zero cases at the parametrize below and still reports green.
-assert all(_MERGE_SHAPED.values()), f'a provider contributed no merge-shaped keys: {_MERGE_SHAPED}'
+# ``all`` alone does not carry that: it is True of an empty mapping, so a run that
+# discovered no provider at all would satisfy it while parametrizing nothing.
+assert _MERGE_SHAPED and all(_MERGE_SHAPED.values()), f'a provider contributed no merge-shaped keys: {_MERGE_SHAPED}'
 _MERGE_SHAPED_TOTAL: int = sum(len(v) for v in _MERGE_SHAPED.values())
 
 #: Published on EVERY run — passing included — by the root conftest's
