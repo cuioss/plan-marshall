@@ -24,11 +24,13 @@ operation groups against the main-anchored orchestrator store
   paste between their generated-block markers: the ``summary`` (START-HERE) block
   and the ``ordered_queue`` (Ordered Queue table) block. This is the lightweight
   render path a reconciling verb calls after a queue change; ``compact`` rewrites
-  the SAME two blocks in place at ``cleanup``, sharing these renderers. Two
+  the SAME two blocks in place at ``cleanup``, sharing these renderers. Four
   detectors run on the RENDERED START-HERE block and ride the same payload:
-  ``count_divergences[]`` (a claimed count that does not match its derivation)
-  and ``contradictions[]`` (two mutually-exclusive claims inside one rendering).
-  Both report and neither rewrites.
+  ``count_divergences[]`` (a claimed count that does not match its derivation),
+  ``contradictions[]`` (two mutually-exclusive claims inside one rendering),
+  ``shared_slugs[]`` (N queued rows sharing one slug), and
+  ``epic_slug_matches[]`` (any queued row whose slug equals the epic slug).
+  All four report and none rewrites.
 - ``archive --slug S`` — relocate a *closed* epic tree to
   ``.plan/local/archived-orchestrators/{slug}/`` (a mechanical, post-close
   directory move that requires no judgement; refuses a non-closed epic).
@@ -1405,6 +1407,40 @@ def _claim_key(noun: str) -> str:
     return lowered
 
 
+def _shared_slug_rows(status_doc: dict[str, Any]) -> tuple[list[dict[str, Any]], int, str]:
+    """Report queued rows sharing one slug, by exact string equality.
+
+    Scans every queued row with no shape filter and groups by the ``slug``
+    value using the same exact-equality comparison the queue-write
+    duplicate-slug lint uses — no second divergent comparison lives here.
+    Each finding names the shared value plus the row identities carrying it
+    (``{slug, plans, count}``), so a future slug mis-fill is reported rather
+    than rendered into agreement.
+
+    Returns ``(findings, slugs_scanned, state)`` so a zero states which zero
+    it is. An unscannable queue (a present-but-non-list ``plans`` value)
+    resolves to ``indeterminate``, never to a checked negative, per ADR-019.
+    REPORTS only — the caller never rewrites the block.
+    """
+    plans = status_doc.get('plans', [])
+    if not isinstance(plans, list):
+        return [], 0, 'indeterminate'
+    by_slug: dict[Any, list[str]] = {}
+    scanned = 0
+    for row in plans:
+        if not isinstance(row, dict):
+            continue
+        scanned += 1
+        slug_value = row.get('slug', '')
+        by_slug.setdefault(slug_value, []).append(str(row.get('id', '')))
+    findings = [
+        {'slug': slug_value, 'plans': ids, 'count': len(ids)}
+        for slug_value, ids in sorted(by_slug.items(), key=lambda item: str(item[0]))
+        if len(ids) > 1
+    ]
+    return findings, scanned, 'measured'
+
+
 def _count_divergences(summary: str, status_doc: dict[str, Any]) -> tuple[list[dict[str, Any]], int]:
     """Compare every count the RENDERED block claims against its derivation.
 
@@ -1464,6 +1500,135 @@ def _rendering_contradictions(summary: str) -> tuple[list[dict[str, Any]], int]:
     return contradictions, len(claims)
 
 
+# --- bypass-enforcement registry (PLAN-08 D4) ---------------------------------
+
+#: Where a bypass's enforcement point lives. ``in_epic`` means this epic's own
+#: queue/instrumentation machinery — the row ships a working gate here.
+#: ``out_of_epic`` means plan-lifecycle core — the row ships a specified
+#: proposal routed to its owner, never a wording.
+BYPASS_SCOPE_IN_EPIC = 'in_epic'
+BYPASS_SCOPE_OUT_OF_EPIC = 'out_of_epic'
+BYPASS_SCOPES = (BYPASS_SCOPE_IN_EPIC, BYPASS_SCOPE_OUT_OF_EPIC)
+
+#: What the enforcement point does to the bypass shape. In-epic rows refuse
+#: (at the write path), redirect (report at the render path), or both; an
+#: out-of-epic row proposes (the owner's fix is specified, not shipped).
+BYPASS_BEHAVIOR_REFUSE = 'refuse'
+BYPASS_BEHAVIOR_REDIRECT = 'redirect'
+BYPASS_BEHAVIOR_REFUSE_AND_REDIRECT = 'refuse+redirect'
+BYPASS_BEHAVIOR_PROPOSE = 'propose'
+BYPASS_BEHAVIORS = (
+    BYPASS_BEHAVIOR_REFUSE,
+    BYPASS_BEHAVIOR_REDIRECT,
+    BYPASS_BEHAVIOR_REFUSE_AND_REDIRECT,
+    BYPASS_BEHAVIOR_PROPOSE,
+)
+
+#: Every recorded Muse plan-lifecycle bypass mapped to its named enforcement
+#: point. Each row carries ``bypass_id``, the recorded ``occurrence`` (with
+#: its decision-log anchor, so the row is traceable rather than asserted),
+#: ``scope``, the enforcing ``gates`` (function names resolvable in this
+#: module for in-epic rows, empty for out-of-epic ones), the ``seam``,
+#: ``behavior``, the owning ``owner``, and a ``test_predicate`` stating what
+#: test at what seam would fail before the fix and pass after. An in-epic row
+#: with no resolvable gate, or an out-of-epic row with no owner plus concrete
+#: predicate, is a prose-only row — the shape the epic's mechanism-only bar
+#: refuses — and the registry's shape tests reject it as such.
+BYPASS_ENFORCEMENT_POINTS = (
+    {
+        'bypass_id': 'lifecycle-skip-01',
+        'occurrence': (
+            'First self-reported plan-lifecycle skip by a Muse Spark 1.3 agent; '
+            'recorded as the prior occurrence behind tooling-truthfulness decision '
+            'abe498 (2026-09-11T20:50:30Z), which counts the PLAN-04 report as the '
+            '2nd occurrence. Cost-benefit shortcut shape, self-reported on challenge.'
+        ),
+        'scope': BYPASS_SCOPE_OUT_OF_EPIC,
+        'gates': (),
+        'seam': 'plan-lifecycle core: phase_handshake verify --strict',
+        'behavior': BYPASS_BEHAVIOR_PROPOSE,
+        'owner': 'plan-marshall:plan-marshall',
+        'test_predicate': (
+            'phase_handshake verify --phase 5-execute --strict run against a plan '
+            'directory advanced without its 4-plan artifacts must refuse; '
+            'red = the handshake admits, green = it refuses.'
+        ),
+    },
+    {
+        'bypass_id': 'lifecycle-skip-02',
+        'occurrence': (
+            'PLAN-04 agent self-reported skipping the plan lifecycle '
+            '(tooling-truthfulness decision abe498, 2026-09-11T20:50:30Z); the '
+            'prevention analysis folded into the process-compliance Watch as items '
+            '1-3, fail-closed gates owned by lifecycle machinery (decision 9678cd). '
+            'Cost-benefit shortcut shape, self-reported on challenge.'
+        ),
+        'scope': BYPASS_SCOPE_OUT_OF_EPIC,
+        'gates': (),
+        'seam': 'plan-lifecycle core: manage-status transition guard (loop-exit-guard + pre-commit-verify-freshness)',
+        'behavior': BYPASS_BEHAVIOR_PROPOSE,
+        'owner': 'plan-marshall:plan-marshall',
+        'test_predicate': (
+            'manage-status transition --completed 5-execute run with pending tasks '
+            'or an unverified tree must refuse with the pending/freshness cause '
+            'named; red = the transition proceeds, green = it refuses.'
+        ),
+    },
+    {
+        'bypass_id': 'epic-slug-fill-03',
+        'occurrence': (
+            'model-provisioning decompose filled every plan-row slug with the epic '
+            'slug; all writes succeeded and every structural check agreed (inbox '
+            'model-provisioning-001.md; tooling-truthfulness decision d40c56, '
+            '2026-09-13T17:24:53Z, third-occurrence finding absorbed as Open Defect); '
+            'caught only by human reading.'
+        ),
+        'scope': BYPASS_SCOPE_IN_EPIC,
+        'gates': ('_append_plan_row', '_shared_slug_rows', '_epic_slug_rows'),
+        'seam': 'plan-orchestrator queue --add-row + resume-summary',
+        'behavior': BYPASS_BEHAVIOR_REFUSE_AND_REDIRECT,
+        'owner': 'plan-marshall:plan-orchestrator',
+        'test_predicate': (
+            'test_bypass_instrumentation.py::TestEpicSlugGate: a row whose slug '
+            'equals the epic slug is refused at queue-write with NOTHING written '
+            'and reported at resume-summary; the matched control with plan-short '
+            'slugs admits and stays silent; red = admits/silent, green = '
+            'refuses/reports.'
+        ),
+    },
+)
+
+
+def _epic_slug_rows(status_doc: dict[str, Any], epic_slug: str) -> tuple[list[dict[str, Any]], int, str]:
+    """Report queued rows whose slug equals the epic slug.
+
+    The case the N-sharing :func:`_shared_slug_rows` check misses: a single
+    epic-slug row in an otherwise distinct queue shares nothing yet is exactly
+    the model-provisioning mis-fill shape (every row filled with the epic slug
+    starts as one such row). Scans every queued row with no shape filter using
+    the same exact-equality slug comparison the queue-write lint uses — no
+    second divergent comparison lives here. Each finding names the row identity
+    plus the shared value.
+
+    Returns ``(findings, slugs_scanned, state)`` so a zero states which zero
+    it is. An unscannable queue (a present-but-non-list ``plans`` value)
+    resolves to ``indeterminate``, never to a checked negative, per ADR-019.
+    REPORTS only — the caller never rewrites the block.
+    """
+    plans = status_doc.get('plans', [])
+    if not isinstance(plans, list):
+        return [], 0, 'indeterminate'
+    findings: list[dict[str, Any]] = []
+    scanned = 0
+    for row in plans:
+        if not isinstance(row, dict):
+            continue
+        scanned += 1
+        if row.get('slug', '') == epic_slug:
+            findings.append({'id': str(row.get('id', '')), 'slug': row.get('slug', '')})
+    return findings, scanned, 'measured'
+
+
 def cmd_resume_summary(args: argparse.Namespace) -> dict[str, Any]:
     """Generate the two derivable ``epic.md`` blocks from status.json.
 
@@ -1485,13 +1650,18 @@ def cmd_resume_summary(args: argparse.Namespace) -> dict[str, Any]:
     ride the payload as top-level fields so a caller can reconcile them against
     ``inbox list`` without parsing the markdown block.
 
-    Two detectors run on the RENDERED START-HERE block and ride the same payload
+    Four detectors run on the RENDERED START-HERE block and ride the same payload
     beside ``summary``: ``count_divergences[]`` (a count the block claims that
-    does not match its derivation from ``status.json``) and ``contradictions[]``
-    (two mutually-exclusive claims inside one rendering). Both REPORT and neither
-    mutates — the block is never silently rewritten, which preserves the
+    does not match its derivation from ``status.json``), ``contradictions[]``
+    (two mutually-exclusive claims inside one rendering), ``shared_slugs[]``
+    (N queued rows sharing one slug, with row identities plus the shared value),
+    and ``epic_slug_matches[]`` (any queued row whose slug equals the epic slug —
+    the single-row mis-fill the N-sharing check misses). All four REPORT and
+    none mutates — the block is never silently rewritten, which preserves the
     existing derivation-beside-the-prose rule. Each list rides with the
-    population it was computed over, so a zero states which zero it is.
+    population it was computed over, so a zero states which zero it is. An
+    unscannable queue resolves each slug arm to ``indeterminate``, never
+    to a checked negative.
     """
     invalid = _validate_slug(args.slug)
     if invalid:
@@ -1505,6 +1675,8 @@ def cmd_resume_summary(args: argparse.Namespace) -> dict[str, Any]:
     ordered_queue = _build_ordered_queue(status_doc, root)
     divergences, count_claims_scanned = _count_divergences(summary, status_doc)
     contradictions, ratio_claims_scanned = _rendering_contradictions(summary)
+    shared_slugs, slugs_scanned, slug_scan_state = _shared_slug_rows(status_doc)
+    epic_slug_matches, epic_slug_scanned, epic_slug_scan_state = _epic_slug_rows(status_doc, args.slug)
     return {
         'status': 'success',
         'operation': 'resume-summary',
@@ -1519,6 +1691,14 @@ def cmd_resume_summary(args: argparse.Namespace) -> dict[str, Any]:
         'ratio_claims_scanned': ratio_claims_scanned,
         'contradictions_count': len(contradictions),
         'contradictions': contradictions,
+        'slugs_scanned': slugs_scanned,
+        'slug_scan_state': slug_scan_state,
+        'shared_slugs_count': len(shared_slugs),
+        'shared_slugs': shared_slugs,
+        'epic_slug_scanned': epic_slug_scanned,
+        'epic_slug_scan_state': epic_slug_scan_state,
+        'epic_slug_matches_count': len(epic_slug_matches),
+        'epic_slug_matches': epic_slug_matches,
         'summary': summary,
         'ordered_queue': ordered_queue,
     }

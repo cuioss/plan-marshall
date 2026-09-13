@@ -799,9 +799,7 @@ class TestQueueAddRow:
     def test_should_reject_a_slug_equal_to_the_epic_slug_without_writing(self, plan_context):
         status_path = _write_status(plan_context, 'add-epic-slug-epic', plans=[])
 
-        result = cmd_queue(
-            _add_row_args('add-epic-slug-epic', add_row='PLAN-07', slug_value='add-epic-slug-epic')
-        )
+        result = cmd_queue(_add_row_args('add-epic-slug-epic', add_row='PLAN-07', slug_value='add-epic-slug-epic'))
 
         assert result['status'] == 'error'
         assert result['error'] == 'invalid_field'
@@ -812,9 +810,7 @@ class TestQueueAddRow:
         queued['slug'] = 'alpha-slug'
         status_path = _write_status(plan_context, 'add-distinct-slug-epic', plans=[queued])
 
-        result = cmd_queue(
-            _add_row_args('add-distinct-slug-epic', add_row='PLAN-07', slug_value='beta-slug')
-        )
+        result = cmd_queue(_add_row_args('add-distinct-slug-epic', add_row='PLAN-07', slug_value='beta-slug'))
 
         assert result['status'] == 'success'
         assert result['operation'] == 'queue-add-row'

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for ``resume-summary``'s two self-validation detectors.
+"""Tests for ``resume-summary``'s three self-validation detectors.
 
 Both detectors run on the RENDERED START-HERE block rather than on its inputs,
 because in every recorded divergence the inputs were individually fine and the
@@ -20,6 +20,12 @@ each individually valid, rendered into a block that is not.
   Matched pair: the recorded ``AT CAP`` / ``genuinely free`` shape, and a
   rendering whose repeated claim agrees with itself. Plus a near-miss where the
   two claims are over different denominators and so do not conflict.
+- **Shared-slug queue check** (``shared_slugs[]``) — N queued rows sharing one
+  slug, with row identities plus the shared value. Matched pair: a shared-slug
+  queue the detector fires on, and a clean queue with distinct slugs it stays
+  silent on. Plus the pre-existing detectors staying green on both fixtures, so
+  the finding is proven to come from the new arm and not from cross-talk. An
+  unscannable queue resolves to ``indeterminate``, never to a checked negative.
 
 Every negative control runs over a NON-EMPTY claim population, and each list's
 scanned count is asserted alongside it — a detector that scanned nothing would
@@ -148,7 +154,7 @@ def _run() -> dict:
 
 
 class TestSelfValidationPayload:
-    def test_both_detector_fields_ride_beside_the_summary(self, plan_context):
+    def test_all_detector_fields_ride_beside_the_summary(self, plan_context):
         _write_status(plan_context, THREE_ROWS, 'Epic total: 3 rows and 2 shipped.')
 
         result = _run()
@@ -158,11 +164,14 @@ class TestSelfValidationPayload:
         for count_field, population_field in (
             ('count_divergences_count', 'count_claims_scanned'),
             ('contradictions_count', 'ratio_claims_scanned'),
+            ('shared_slugs_count', 'slugs_scanned'),
         ):
             assert count_field in result
             assert population_field in result
         assert result['count_divergences_count'] == len(result['count_divergences'])
         assert result['contradictions_count'] == len(result['contradictions'])
+        assert result['shared_slugs_count'] == len(result['shared_slugs'])
+        assert result['slug_scan_state'] == 'measured'
 
     def test_should_error_when_status_json_is_absent(self, plan_context):
         result = cmd_resume_summary(_variant(_RESUME_SUMMARY_ARGS, slug='absent-selfvalidation-epic'))
@@ -319,3 +328,71 @@ class TestSelfValidationIsReportOnly:
         assert result['contradictions_count'] == 1, (
             'the report-only claim must be proven on a run that actually DETECTED something'
         )
+
+
+# =============================================================================
+# Detector (c) — shared-slug queue check
+# =============================================================================
+
+
+def _shared_row(plan_id: str, slug: str, status: str = 'staged') -> dict:
+    row = _row(plan_id, status)
+    row['slug'] = slug
+    return row
+
+
+class TestSharedSlugDetector:
+    def test_should_fire_on_a_shared_slug_queue(self, plan_context):
+        rows = [
+            _shared_row('PLAN-01', 'shared-slug'),
+            _shared_row('PLAN-02', 'shared-slug'),
+            _shared_row('PLAN-03', 'lone-slug'),
+        ]
+        _write_status(plan_context, rows, 'Ledger check: 3 rows total and 3 staged.')
+
+        result = _run()
+
+        assert result['slug_scan_state'] == 'measured'
+        assert result['slugs_scanned'] == 3
+        assert result['shared_slugs_count'] == 1
+        finding = result['shared_slugs'][0]
+        assert finding['slug'] == 'shared-slug'
+        assert finding['count'] == 2
+        assert sorted(finding['plans']) == ['PLAN-01', 'PLAN-02']
+
+    def test_should_stay_silent_on_a_clean_queue(self, plan_context):
+        _write_status(plan_context, THREE_ROWS, 'Ledger check: 3 rows total and 2 shipped.')
+
+        result = _run()
+
+        assert result['shared_slugs'] == []
+        assert result['shared_slugs_count'] == 0
+        assert result['slugs_scanned'] == 3, 'the scanned population must be non-empty'
+        assert result['slug_scan_state'] == 'measured'
+
+    def test_pre_existing_detectors_stay_green_on_both_fixtures(self, plan_context):
+        shared_rows = [
+            _shared_row('PLAN-01', 'shared-slug'),
+            _shared_row('PLAN-02', 'shared-slug'),
+            _shared_row('PLAN-03', 'lone-slug'),
+        ]
+        _write_status(plan_context, shared_rows, 'Ledger check: 3 rows total and 3 staged.')
+
+        shared_result = _run()
+
+        assert shared_result['count_divergences'] == []
+        assert shared_result['contradictions'] == []
+
+        _write_status(plan_context, THREE_ROWS, 'Ledger check: 3 rows total and 2 shipped.')
+
+        clean_result = _run()
+
+        assert clean_result['count_divergences'] == []
+        assert clean_result['contradictions'] == []
+
+    def test_unscannable_queue_resolves_to_indeterminate(self):
+        findings, scanned, state = _orch._shared_slug_rows({'plans': 'not-a-list'})
+
+        assert state == 'indeterminate'
+        assert findings == []
+        assert scanned == 0
