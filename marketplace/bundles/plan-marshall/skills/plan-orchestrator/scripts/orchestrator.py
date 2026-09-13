@@ -1886,9 +1886,11 @@ def _resolve_footprint_base(base_ref: str) -> dict[str, Any]:
     both shas so the caller sees which anchor the counts ride on.
 
     The ref shape is validated against :data:`_CURRENCY_BASE_RE` before it
-    reaches ``git rev-parse`` — resolved ``--verify --end-of-options`` so the
-    reported sha is exactly one commit: a revision range or option-like ref
-    reports an error rather than multi-line output. The argv is read-only
+    reaches ``git rev-parse`` — resolved ``--verify --end-of-options`` with a
+    ``^{commit}`` suffix so the reported sha is exactly one commit object: a
+    revision range, an option-like ref, or a non-commit object (such as an
+    annotated tag) reports an error rather than multi-line or tag-object
+    output. The argv is read-only
     (``rev-parse`` of one or two refs) and never caller-composed beyond the
     validated ref token.
     An unresolvable ref reports an empty sha rather than failing the verb: a
@@ -1905,7 +1907,7 @@ def _resolve_footprint_base(base_ref: str) -> dict[str, Any]:
         return result
     try:
         completed = subprocess.run(
-            ['git', 'rev-parse', '--verify', '--end-of-options', base_ref],
+            ['git', 'rev-parse', '--verify', '--end-of-options', f'{base_ref}^{{commit}}'],
             capture_output=True,
             text=True,
             check=False,
@@ -1926,7 +1928,7 @@ def _resolve_footprint_base(base_ref: str) -> dict[str, Any]:
         counterpart = f'origin/{base_ref}'
         try:
             other = subprocess.run(
-                ['git', 'rev-parse', '--verify', '--end-of-options', counterpart],
+                ['git', 'rev-parse', '--verify', '--end-of-options', f'{counterpart}^{{commit}}'],
                 capture_output=True,
                 text=True,
                 check=False,

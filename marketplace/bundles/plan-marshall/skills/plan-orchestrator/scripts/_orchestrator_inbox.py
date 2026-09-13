@@ -1071,8 +1071,9 @@ def _resolve_delta_base(base_ref: str) -> dict[str, Any]:
     local ref whose ``origin/`` counterpart exists at a different sha is stale
     — reported with both shas, never silently trusted. The ref shape is
     validated before it reaches ``git rev-parse``, which resolves it
-    ``--verify --end-of-options`` so the reported sha is exactly one commit —
-    a revision range or option-like ref reports an error rather than
+    ``--verify --end-of-options`` with a ``^{commit}`` suffix so the reported
+    sha is exactly one commit object — a revision range, an option-like ref,
+    or a non-commit object reports an error rather than
     multi-line output; an unresolvable ref reports
     an empty sha rather than failing the verb.
     """
@@ -1087,7 +1088,7 @@ def _resolve_delta_base(base_ref: str) -> dict[str, Any]:
         return result
     try:
         completed = subprocess.run(
-            ['git', 'rev-parse', '--verify', '--end-of-options', base_ref],
+            ['git', 'rev-parse', '--verify', '--end-of-options', f'{base_ref}^{{commit}}'],
             capture_output=True,
             text=True,
             check=False,
@@ -1108,7 +1109,7 @@ def _resolve_delta_base(base_ref: str) -> dict[str, Any]:
         counterpart = f'origin/{base_ref}'
         try:
             other = subprocess.run(
-                ['git', 'rev-parse', '--verify', '--end-of-options', counterpart],
+                ['git', 'rev-parse', '--verify', '--end-of-options', f'{counterpart}^{{commit}}'],
                 capture_output=True,
                 text=True,
                 check=False,
