@@ -3816,6 +3816,16 @@ class TestDeclarationCurrencyUnevaluated:
         assert 'PLAN-01-alpha.md' not in result['checked_and_clean']
         assert result['collision_detected'] is False
 
+    def test_an_absent_surface_reports_absent_not_unreadable(self, plan_context):
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec_without_surface_section(plan_context, 'PLAN-01-alpha.md')
+
+        result = _currency(plan_context, SHARED_PATH)
+
+        row = _crow_for(result, 'PLAN-01-alpha.md')
+        assert row['state'] == CURRENCY_UNEVALUATED
+        assert row['derivation_status'] == SURFACE_ABSENT
+
     def test_the_state_tally_spans_the_whole_vocabulary(self, plan_context):
         _write_status(plan_context, [_row('PLAN-01')])
         _write_spec_without_surface_section(plan_context, 'PLAN-01-alpha.md')
@@ -3878,6 +3888,28 @@ class TestDeclarationCurrencyBaseAnchorAndScope:
         assert result['specs_scanned'] == 1
         assert [row['spec'] for row in result['specs']] == ['PLAN-02-beta.md']
         assert result['collision_detected'] is False
+
+    def test_a_non_matching_exclude_spec_reports_zero_excluded(self, plan_context):
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
+
+        result = _currency(plan_context, SHARED_PATH, exclude_spec='PLAN-99-missing.md')
+
+        assert result['specs_total'] == 1
+        assert result['specs_excluded'] == 0
+        assert result['specs_scanned'] == 1
+
+    def test_an_option_like_base_ref_reports_an_error_never_a_sha(self):
+        result = _orch._resolve_footprint_base('--help')
+
+        assert result['footprint_base_sha'] == ''
+        assert 'footprint_base_error' in result
+
+    def test_a_revision_range_never_reports_a_sha(self):
+        result = _orch._resolve_footprint_base('HEAD..HEAD')
+
+        assert result['footprint_base_sha'] == ''
+        assert 'footprint_base_error' in result
 
     def test_the_payload_names_its_governing_authority(self, plan_context):
         _write_status(plan_context, [_row('PLAN-01')])

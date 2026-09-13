@@ -1122,6 +1122,53 @@ class TestSurfaceDeltaClean:
         assert delta['symmetric_difference_count'] == 0
 
 
+class TestSurfaceDeltaContainment:
+    """A directory- or glob-claiming declaration covers realized files beneath it."""
+
+    def test_a_file_beneath_a_directory_declaration_is_not_an_expansion(self):
+        delta = compute_surface_delta({'test/'}, {'test/unit/test_api.py'})
+
+        assert delta['state'] == SURFACE_DELTA_CLEAN
+        assert delta['added'] == []
+        assert delta['missing'] == []
+
+    def test_a_file_beneath_a_recursive_glob_declaration_is_not_an_expansion(self):
+        delta = compute_surface_delta({'test/**'}, {'test/unit/test_api.py'})
+
+        assert delta['state'] == SURFACE_DELTA_CLEAN
+        assert delta['added'] == []
+
+    def test_containment_requires_the_slash_boundary(self):
+        delta = compute_surface_delta({'test/'}, {'testing/unit/test_api.py'})
+
+        assert delta['state'] == SURFACE_DELTA_EXPANSION
+        assert delta['added'] == ['testing/unit/test_api.py']
+        assert delta['missing'] == ['test/']
+
+    def test_an_uncovered_file_still_reports_expansion(self):
+        delta = compute_surface_delta({'test/'}, {'test/unit/test_api.py', 'other.py'})
+
+        assert delta['state'] == SURFACE_DELTA_EXPANSION
+        assert delta['added'] == ['other.py']
+        assert delta['missing'] == []
+
+
+class TestDeltaBaseAnchorHardening:
+    """The base anchor resolves to exactly one commit SHA — never option or range output."""
+
+    def test_an_option_like_base_ref_reports_an_error_never_a_sha(self):
+        result = _inbox._resolve_delta_base('--help')
+
+        assert result['footprint_base_sha'] == ''
+        assert 'footprint_base_error' in result
+
+    def test_a_revision_range_never_reports_a_sha(self):
+        result = _inbox._resolve_delta_base('HEAD..HEAD')
+
+        assert result['footprint_base_sha'] == ''
+        assert 'footprint_base_error' in result
+
+
 class TestSurfaceDeltaUnmeasured:
     def test_a_missing_declared_side_is_unmeasured(self):
         delta = compute_surface_delta(None, {_DELTA_DECLARED_A})

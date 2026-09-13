@@ -1070,7 +1070,10 @@ def _resolve_delta_base(base_ref: str) -> dict[str, Any]:
     base defaults to the remote-tracking :data:`DELTA_DEFAULT_BASE`, and a
     local ref whose ``origin/`` counterpart exists at a different sha is stale
     — reported with both shas, never silently trusted. The ref shape is
-    validated before it reaches ``git rev-parse``; an unresolvable ref reports
+    validated before it reaches ``git rev-parse``, which resolves it
+    ``--verify --end-of-options`` so the reported sha is exactly one commit —
+    a revision range or option-like ref reports an error rather than
+    multi-line output; an unresolvable ref reports
     an empty sha rather than failing the verb.
     """
     result: dict[str, Any] = {
@@ -1084,7 +1087,7 @@ def _resolve_delta_base(base_ref: str) -> dict[str, Any]:
         return result
     try:
         completed = subprocess.run(
-            ['git', 'rev-parse', base_ref],
+            ['git', 'rev-parse', '--verify', '--end-of-options', base_ref],
             capture_output=True,
             text=True,
             check=False,
@@ -1097,12 +1100,15 @@ def _resolve_delta_base(base_ref: str) -> dict[str, Any]:
         result['footprint_base_error'] = f'git rev-parse {base_ref} exited {completed.returncode}'
         return result
     sha = completed.stdout.strip()
+    if not _DELTA_SHA_RE.match(sha):
+        result['footprint_base_error'] = f'base ref did not resolve to a single commit SHA: {base_ref!r}'
+        return result
     result['footprint_base_sha'] = sha
     if not base_ref.startswith('origin/'):
         counterpart = f'origin/{base_ref}'
         try:
             other = subprocess.run(
-                ['git', 'rev-parse', counterpart],
+                ['git', 'rev-parse', '--verify', '--end-of-options', counterpart],
                 capture_output=True,
                 text=True,
                 check=False,
@@ -1112,11 +1118,48 @@ def _resolve_delta_base(base_ref: str) -> dict[str, Any]:
             return result
         if other.returncode == 0:
             other_sha = other.stdout.strip()
-            if other_sha and other_sha != sha:
+            if _DELTA_SHA_RE.match(other_sha) and other_sha != sha:
                 result['footprint_base_stale'] = True
                 result['footprint_base_remote_sha'] = other_sha
                 result['footprint_base_remote_ref'] = counterpart
     return result
+
+
+#: A resolved base must be exactly one commit SHA — full hex, single line —
+#: so a revision range or option-like ref can never ride into the reported
+#: ``footprint_base_sha`` as multi-line output.
+_DELTA_SHA_RE = re.compile(r'^[0-9a-f]{40,64}$')
+
+
+def _delta_covers(declared_entry: str, realized_path: str) -> bool:
+    """Whether a declared delta entry covers a realized path by containment.
+
+    The landing-check counterpart of ``orchestrator._contains``, consumed
+    read-only: a ``recursive_glob`` entry (path ending in ``**``) covers a
+    realized path that equals the glob stem or starts with ``stem + '/'``; a
+    ``directory`` entry (path ending in ``'/'``) covers a realized path that
+    equals the directory or starts with it. Every other kind never covers, and
+    a match without a ``'/'`` boundary never counts. Exact equality is handled
+    by the caller, never here.
+    """
+    if not declared_entry or not realized_path or declared_entry == realized_path:
+        return False
+    if declared_entry.endswith('**'):
+        stem = declared_entry[:-2].rstrip('/')
+        if not stem:
+            return True
+        if realized_path.endswith('**'):
+            other = realized_path[:-2].rstrip('/')
+        elif realized_path.endswith('/'):
+            other = realized_path.rstrip('/')
+        else:
+            other = realized_path
+        return other == stem or other.startswith(stem + '/')
+    if declared_entry.endswith('/'):
+        if realized_path.rstrip('/') == declared_entry.rstrip('/'):
+            return True
+        return realized_path.startswith(declared_entry)
+    return False
 
 
 def compute_surface_delta(declared: set[str] | None, realized: set[str] | None) -> dict[str, Any]:
@@ -1127,6 +1170,11 @@ def compute_surface_delta(declared: set[str] | None, realized: set[str] | None) 
     from cardinality, publishing ``added`` (realized but never declared — the
     expansion) and ``missing`` (declared but untouched) as named lists with
     their own sizes alongside the pair's ``symmetric_difference_count``.
+
+    Directory and recursive-glob declarations resolve by containment with a
+    ``/`` boundary via :func:`_delta_covers` — a ``test/`` declaration covers
+    every realized file beneath it — so a directory-claiming plan is evaluated,
+    never reported as an expansion for files its declaration already covers.
 
     ``expansion_detected`` fires on a non-empty ``added`` list alone: a landing
     that touched only a subset of its declaration reports ``clean`` — no
@@ -1142,8 +1190,12 @@ def compute_surface_delta(declared: set[str] | None, realized: set[str] | None) 
             'state': SURFACE_DELTA_UNMEASURED,
             'could_not_look': '_and_'.join(f'{name}_not_supplied' for name in missing_sides),
         }
-    added = sorted(realized - declared)
-    missing = sorted(declared - realized)
+    added = sorted(
+        path for path in realized if not any(entry == path or _delta_covers(entry, path) for entry in declared)
+    )
+    missing = sorted(
+        entry for entry in declared if not any(entry == path or _delta_covers(entry, path) for path in realized)
+    )
     report: dict[str, Any] = {
         'declared_count': len(declared),
         'realized_count': len(realized),

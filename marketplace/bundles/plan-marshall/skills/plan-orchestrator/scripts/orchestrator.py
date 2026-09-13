@@ -403,6 +403,11 @@ CURRENCY_DEFAULT_BASE = 'origin/main'
 #: shell metacharacter, option flag or command substitution can ride into argv.
 _CURRENCY_BASE_RE = re.compile(r'^[A-Za-z0-9_./-]+$')
 
+#: A resolved base must be exactly one commit SHA — full hex, single line —
+#: so a revision range or option-like ref can never ride into the reported
+#: ``footprint_base_sha`` as multi-line output.
+_CURRENCY_SHA_RE = re.compile(r'^[0-9a-f]{40,64}$')
+
 #: What one verdict row is ADDRESSED BY. A ``claim``-scoped row carries its real
 #: zero-based ordinal; a ``section``-scoped row settles the section as a whole and
 #: carries ``claim_index: -1``, this module's not-applicable marker (mirroring
@@ -1881,8 +1886,11 @@ def _resolve_footprint_base(base_ref: str) -> dict[str, Any]:
     both shas so the caller sees which anchor the counts ride on.
 
     The ref shape is validated against :data:`_CURRENCY_BASE_RE` before it
-    reaches ``git rev-parse`` — the argv is read-only (``rev-parse`` of one or
-    two refs) and never caller-composed beyond the validated ref token.
+    reaches ``git rev-parse`` — resolved ``--verify --end-of-options`` so the
+    reported sha is exactly one commit: a revision range or option-like ref
+    reports an error rather than multi-line output. The argv is read-only
+    (``rev-parse`` of one or two refs) and never caller-composed beyond the
+    validated ref token.
     An unresolvable ref reports an empty sha rather than failing the verb: a
     base that could not be observed is reported, never substituted silently.
     """
@@ -1897,7 +1905,7 @@ def _resolve_footprint_base(base_ref: str) -> dict[str, Any]:
         return result
     try:
         completed = subprocess.run(
-            ['git', 'rev-parse', base_ref],
+            ['git', 'rev-parse', '--verify', '--end-of-options', base_ref],
             capture_output=True,
             text=True,
             check=False,
@@ -1910,12 +1918,15 @@ def _resolve_footprint_base(base_ref: str) -> dict[str, Any]:
         result['footprint_base_error'] = f'git rev-parse {base_ref} exited {completed.returncode}'
         return result
     sha = completed.stdout.strip()
+    if not _CURRENCY_SHA_RE.match(sha):
+        result['footprint_base_error'] = f'base ref did not resolve to a single commit SHA: {base_ref!r}'
+        return result
     result['footprint_base_sha'] = sha
     if not base_ref.startswith('origin/'):
         counterpart = f'origin/{base_ref}'
         try:
             other = subprocess.run(
-                ['git', 'rev-parse', counterpart],
+                ['git', 'rev-parse', '--verify', '--end-of-options', counterpart],
                 capture_output=True,
                 text=True,
                 check=False,
@@ -1925,7 +1936,7 @@ def _resolve_footprint_base(base_ref: str) -> dict[str, Any]:
             return result
         if other.returncode == 0:
             other_sha = other.stdout.strip()
-            if other_sha and other_sha != sha:
+            if _CURRENCY_SHA_RE.match(other_sha) and other_sha != sha:
                 result['footprint_base_stale'] = True
                 result['footprint_base_remote_sha'] = other_sha
                 result['footprint_base_remote_ref'] = counterpart
@@ -2035,7 +2046,7 @@ def cmd_corpus_declaration_currency(args: argparse.Namespace) -> dict[str, Any]:
                 {
                     'spec': path.name,
                     'plan_id': plan_id,
-                    'derivation_status': state if claim is not None else SURFACE_UNREADABLE,
+                    'derivation_status': state,
                     'state': CURRENCY_UNEVALUATED,
                     'admits_check': False,
                     'footprint_count': len(footprint),
