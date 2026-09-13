@@ -59,6 +59,7 @@ from __future__ import annotations
 import ast
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TypeGuard
 
 #: The test tree this scan walks. ``_shared`` sits one level below it.
 TEST_ROOT = Path(__file__).resolve().parents[1]
@@ -396,8 +397,14 @@ def _is_non_empty_by_construction(node: ast.expr, bindings: dict[str, ast.expr],
     return False
 
 
-def _is_len_call(node: ast.expr) -> bool:
-    """True when this expression is a ``len(...)`` call."""
+def _is_len_call(node: ast.expr) -> TypeGuard[ast.Call]:
+    """True when this expression is a ``len(...)`` call.
+
+    The ``TypeGuard`` return keeps this predicate the single authority on what a
+    ``len()`` call is: every call site narrows the operand to ``ast.Call`` from
+    this one check, rather than restating an ``isinstance`` conjunct of its own
+    that could drift from what the predicate actually accepts.
+    """
     return isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == 'len' and bool(node.args)
 
 

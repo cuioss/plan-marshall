@@ -267,6 +267,20 @@ def _read(rel_path: str) -> str:
     return text
 
 
+def _encloses(outer: ast.FunctionDef | ast.AsyncFunctionDef, inner: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    """True when ``outer``'s source span contains ``inner``'s.
+
+    ``end_lineno`` is ``int | None`` on every AST node, and an absent end is not
+    evidence of containment in either direction: a node whose span is unknown
+    must neither swallow a sibling nor be swallowed by one. Such a pair is
+    therefore reported as non-enclosing, so both survive the innermost-wins
+    filter rather than one silently disappearing on a span nobody could read.
+    """
+    if outer.end_lineno is None or inner.end_lineno is None:
+        return False
+    return outer.lineno <= inner.lineno and inner.end_lineno <= outer.end_lineno
+
+
 def _functions_carrying(text: str, needle: str) -> list[tuple[str, str]]:
     """``(name, source)`` for the INNERMOST function whose source carries ``needle``.
 
@@ -286,10 +300,7 @@ def _functions_carrying(text: str, needle: str) -> list[tuple[str, str]]:
     return [
         (node.name, ast.get_source_segment(text, node) or '')
         for node in matches
-        if not any(
-            other is not node and node.lineno <= other.lineno and other.end_lineno <= node.end_lineno
-            for other in matches
-        )
+        if not any(other is not node and _encloses(node, other) for other in matches)
     ]
 
 
