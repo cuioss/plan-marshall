@@ -17,9 +17,15 @@ architecture.py {verb} [options]
 ```
 
 **Invocation**:
-```bash
+```text
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture {verb} [options]
 ```
+
+`{verb}` is a placeholder, so this block is fenced `text` rather than `bash`: a
+`bash` fence declares a copyable invocation, and `documented-verb-set-drift`
+reads every such fence as naming a real verb — a placeholder in one is reported
+as a `phantom_documented_verb`, because no script registers a subcommand called
+`{verb}`. The per-verb blocks below are the runnable ones.
 
 ## Commands
 
@@ -1358,7 +1364,8 @@ regenerated descriptor and refuses to commit when the delta is regressive
 § 3c.5).
 
 ```bash
-architecture.py descriptor-regression-check --pre PATH
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture descriptor-regression-check \
+  --pre PATH
 ```
 
 **Options**:

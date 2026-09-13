@@ -17,9 +17,16 @@ and the atomic tmp+swap protocol used by `discover --force`, see
 
 ## Script Pattern
 
-```bash
+```text
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture {verb} [options]
 ```
+
+`{verb}` is a placeholder, so this block is fenced `text` rather than `bash`: a
+`bash` fence declares a copyable invocation, and `documented-verb-set-drift`
+reads every such fence as naming a real verb — a placeholder in one is reported
+as a `phantom_documented_verb`, because no script registers a subcommand called
+`{verb}`. See [../SKILL.md](../SKILL.md) § Canonical invocations for the
+runnable per-verb blocks.
 
 ---
 
