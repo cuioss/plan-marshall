@@ -137,8 +137,17 @@ class TestCoverageDropsUnusableRecords:
 
         Reporting "references unknown deliverable None" would misattribute a
         malformed record as a real coverage defect.
+
+        ``_check_coverage`` counts BOTH directions into one ``failed`` total —
+        uncovered deliverables and orphan tasks — so the well-formed task
+        covering deliverable 1 is load-bearing, not scenery: without it the
+        deliverable would go uncovered and contribute a finding of its own,
+        and the resulting ``failed == 1`` could not distinguish that from the
+        malformed record being flagged as an orphan. Covering it isolates the
+        one direction under test, so ``failed == 0`` means exactly "the dropped
+        record produced no finding".
         """
-        tasks = [_task(1, deliverable=value)]
+        tasks = [_task(1, deliverable=1), _task(2, deliverable=value)]
         deliverables = [_deliverable(1)]
 
         failed, emitted = _check_coverage('p', tasks, deliverables, _no_emit(), emit=False)
@@ -166,8 +175,14 @@ class TestCoverageDropsUnusableRecords:
         assert failed == 1
 
     def test_an_orphan_task_is_still_reported_with_a_usable_number(self):
-        """Positive control for the other direction."""
-        tasks = [_task(3, deliverable=99)]
+        """Positive control for the other direction.
+
+        TASK-001 covers deliverable 1 so the only finding this can produce is
+        the orphan one — see the isolation note on the dropped-record case
+        above. Without it the uncovered deliverable would contribute a second
+        finding and ``failed`` would no longer identify WHICH direction fired.
+        """
+        tasks = [_task(1, deliverable=1), _task(3, deliverable=99)]
         deliverables = [_deliverable(1)]
 
         failed, _emitted = _check_coverage('p', tasks, deliverables, _no_emit(), emit=False)

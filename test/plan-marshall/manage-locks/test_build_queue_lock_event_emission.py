@@ -64,7 +64,8 @@ class TestLockEventEmission:
     swallowed and cannot affect admission/release.
 
     The ``isolated_base`` fixture stages PLAN_BASE_DIR at ``<tmp>/main/.plan/local``
-    so the lock-event log resolves to the per-test ``<tmp>/main/.plan/logs`` dir."""
+    so the lock-event log resolves to the per-test ``<tmp>/main/.plan/local/logs``
+    dir."""
 
     def test_admitted_acquire_emits_lock_acquired(self, isolated_base: dict) -> None:
         acq = build_queue.run_acquire(Namespace(plan_id='plan-a'))

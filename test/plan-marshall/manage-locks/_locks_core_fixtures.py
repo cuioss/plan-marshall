@@ -78,8 +78,8 @@ _resolve_lock_log_path = _mod._resolve_lock_log_path
 # These tests stage their OWN isolated main-anchored base under tmp_path (the
 # same `tmp_path/main/.plan/local` PLAN_BASE_DIR pattern the merge_lock /
 # build_queue suites use). The autouse `plan_context` redirect points
-# PLAN_BASE_DIR at the shared `tmp_path`, whose `.parent/logs` dir would be
-# shared across tests — so a per-test isolated base is required for the
+# PLAN_BASE_DIR at the shared `tmp_path`, whose `logs` dir would be shared
+# across tests — so a per-test isolated base is required for the
 # exact-content assertions in the sibling modules to be deterministic
 # under `-n auto`.
 
@@ -88,7 +88,7 @@ def _lock_log_base(tmp_path, monkeypatch):
     """Stage an isolated PLAN_BASE_DIR; return (base, lock_log_path).
 
     Under PLAN_BASE_DIR the [LOCK] log resolves to
-    ``<base>.parent / logs / lock-{date}.log`` (i.e. ``<tmp>/main/.plan/logs``),
+    ``<base> / logs / lock-{date}.log`` (i.e. ``<tmp>/main/.plan/local/logs``),
     unique per test so the append/content assertions are deterministic.
     """
     base = tmp_path / 'main' / '.plan' / 'local'

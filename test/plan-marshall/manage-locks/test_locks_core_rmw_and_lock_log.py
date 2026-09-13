@@ -193,18 +193,23 @@ def test_rmw_json_blocks_until_guard_released(tmp_path, monkeypatch):
 
 
 def test_resolve_lock_log_path_is_main_anchored(tmp_path, monkeypatch):
-    # The lock-event log lives under the MAIN-anchored .plan/logs dir, derived
-    # from <PLAN_BASE_DIR>.parent / logs / lock-{date}.log — NOT a worktree path.
+    # The lock-event log lives in the MAIN-anchored GLOBAL-log dir, derived as
+    # <PLAN_BASE_DIR> / logs / lock-{date}.log — NOT a worktree path, and
+    # deliberately NOT the base's parent: <PLAN_BASE_DIR>.parent is the
+    # git-TRACKED .plan/ config dir, one level above where global logs live, and
+    # no global-log consumer scans it.
     base, log_path = _lock_log_base(tmp_path, monkeypatch)
 
-    assert log_path.parent == base.parent / 'logs'
+    assert log_path.parent == base / 'logs'
     assert log_path.name.startswith('lock-')
     assert log_path.name.endswith('.log')
 
 
 def test_resolve_lock_log_path_ignores_worktree_cwd(tmp_path, monkeypatch):
     # Pinning cwd into a worktree fixture does NOT redirect the lock-event log to
-    # a worktree-relative path — it stays the single main-anchored timeline.
+    # a worktree-relative path — it stays the single main-anchored timeline. A
+    # cwd-relative resolver would answer <worktree>/.plan/local/logs here, which
+    # is the per-worktree fragmentation the main anchoring exists to prevent.
     base, _ = _lock_log_base(tmp_path, monkeypatch)
     worktree = tmp_path / 'worktrees' / 'some-plan'
     (worktree / '.plan' / 'local').mkdir(parents=True)
@@ -212,8 +217,7 @@ def test_resolve_lock_log_path_ignores_worktree_cwd(tmp_path, monkeypatch):
 
     log_path = _resolve_lock_log_path()
 
-    assert log_path.parent == base.parent / 'logs'
-    assert (worktree / '.plan' / 'logs') != log_path.parent
+    assert log_path.parent == base / 'logs'
 
 
 def test_log_lock_event_appends_lock_tagged_line(tmp_path, monkeypatch):
