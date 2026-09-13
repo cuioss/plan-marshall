@@ -43,6 +43,14 @@ two completion signals, checked in that order of strength:
    different one. A comment that names no commit establishes that the bot
    responded, NOT that it reviewed the new HEAD.
 
+   When SEVERAL of the bot's comments are eligible, the one whose body names
+   ``head_sha`` is SELECTED over one that names no commit. Returning the first
+   eligible comment outright let an earlier comment naming no commit hide a later
+   one naming the current HEAD, so the envelope published
+   ``head_sha_verified: false`` for a review that DID verify it — the same
+   manufactured decline the review arm's reference recogniser exists to prevent,
+   one arm over.
+
 BOTH discriminators additionally reject a **refusal notice** — a comment or a
 review body a bot posts to say it could NOT review — running the same
 refusal-recognition STACK the producer applies, arm for arm: the awaited bot's
@@ -692,7 +700,10 @@ class _ReReviewStrategy:
         unmatched), the matched record, and ``head_sha_verified`` — always
         ``true`` on the review path (its match already required the SHA), and
         on the comment path ``true`` only when the comment body names
-        ``head_sha`` (:func:`_references_head_sha`).
+        ``head_sha`` (:func:`_references_head_sha`). Where several of the bot's
+        comments are eligible, :meth:`_match_bot_comment` prefers one whose body
+        names ``head_sha``, so an earlier non-verifying comment cannot mask a
+        later verifying one.
 
         Args:
             pr_number: PR to poll.
@@ -725,7 +736,7 @@ class _ReReviewStrategy:
             review = self._match_review(data.get('reviews') or [], head_sha, trigger_dt, bot_kind, refusals)
             if review is not None:
                 return 'review', review, refusals
-            comment = self._match_bot_comment(data.get('comments') or [], bot_kind, trigger_dt, refusals)
+            comment = self._match_bot_comment(data.get('comments') or [], head_sha, bot_kind, trigger_dt, refusals)
             if comment is not None:
                 return 'issue_comment', comment, refusals
             return '', None, refusals
@@ -958,13 +969,14 @@ class _ReReviewStrategy:
     @staticmethod
     def _match_bot_comment(
         comments: list[dict],
+        head_sha: str,
         bot_kind: str | None,
         trigger_dt: datetime | None,
         refusals: list[dict],
     ) -> dict | None:
-        """Return the first comment from ``bot_kind`` post-dating ``trigger_dt``.
+        """Return the eligible ``bot_kind`` comment that best evidences ``head_sha``.
 
-        A comment matches when ALL of the following hold:
+        A comment is ELIGIBLE when ALL of the following hold:
 
         - ``bot_kind`` is set and the comment's author resolves through
           :func:`bot_kind_for_author` to exactly that kind — a human author, or a
@@ -977,13 +989,33 @@ class _ReReviewStrategy:
           not review" comment is the bot talking about itself, not a completed
           review.
 
+        Among the eligible comments the one whose BODY references ``head_sha``
+        (:func:`_references_head_sha`) is PREFERRED; the first eligible comment is
+        the fallback when none does. Returning the first eligible comment outright
+        let an earlier comment naming no commit hide a later one naming the
+        current HEAD, so ``await_fresh_review`` published
+        ``head_sha_verified: false`` for a review that DID verify it. That is the
+        same manufactured decline :meth:`_match_review`'s reference recogniser
+        exists to prevent — and the one failure on this path that blocks a merge —
+        so the two arms guard it alike. The preference decides only WHICH eligible
+        comment is returned: every eligibility gate above is unchanged, and a
+        refusal is still never selected.
+
         Fail-closed on every missing input: no ``bot_kind``, no ``trigger_dt``,
-        or an unparseable timestamp yields no match. Every refusal this path skips
-        is APPENDED to ``refusals`` for the caller to surface, exactly as
-        :meth:`_match_review` does.
+        or an unparseable timestamp yields no match. An empty or absent
+        ``head_sha`` references nothing (:func:`_references_head_sha` fails closed
+        on it), so the preference simply never fires and the first eligible
+        comment is returned.
+
+        Every refusal this path skips is APPENDED to ``refusals`` for the caller
+        to surface, exactly as :meth:`_match_review` does. Because the preference
+        has to see every eligible comment, the scan no longer stops at the first
+        one — so a refusal sitting AFTER the selected comment is now recorded too,
+        which is strictly more of what ``refusals`` already carried.
         """
         if not bot_kind or trigger_dt is None:
             return None
+        eligible: list[dict] = []
         for comment in comments:
             if bot_kind_for_author(comment.get('author')) != bot_kind:
                 continue
@@ -999,8 +1031,13 @@ class _ReReviewStrategy:
             if not stamps:
                 continue
             if max(stamps) > trigger_dt:
-                return comment
-        return None
+                eligible.append(comment)
+        if not eligible:
+            return None
+        return next(
+            (c for c in eligible if _references_head_sha(str(c.get('body') or ''), head_sha)),
+            eligible[0],
+        )
 
 
 # One generic strategy instance per registered bot_kind, each parameterized by

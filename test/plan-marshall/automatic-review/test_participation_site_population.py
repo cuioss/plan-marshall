@@ -278,8 +278,11 @@ SITE_EXPECTATIONS: dict[str, SiteExpectation] = {
         'both',
         'no',
         'The re-review awaiter: a review matched by reviewed-commit SHA yields '
-        'head_sha_verified: true, a comment matched by timestamp yields false. Its verdict '
-        'depends on when it is asked, so it is not idempotent.',
+        'head_sha_verified: true; a comment is matched by timestamp and its verdict is read '
+        'from the body — true when the body names the awaited HEAD, false when it names no '
+        'commit or a different one. Where several of the bot’s comments are eligible it '
+        'selects one whose body names that HEAD, so list order cannot manufacture a decline. '
+        'Its verdict depends on when it is asked, so it is not idempotent.',
     ),
     f'{_SKILLS}/workflow-pr-doctor/standards/automated-review-lifecycle.md': SiteExpectation(
         'normative_text',

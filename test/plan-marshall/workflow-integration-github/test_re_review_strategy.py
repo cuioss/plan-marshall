@@ -22,7 +22,9 @@ Covers the three concerns of the post-merge re-review registry:
        ``head_sha_verified`` DERIVED from the comment body by the same
        ``_references_head_sha`` — ``true`` only when the body names the pushed
        HEAD, ``false`` for a body naming no commit, a different commit, or an
-       abbreviation). BOTH paths run the same refusal-recognition
+       abbreviation. Where SEVERAL of the bot's comments are eligible, the one
+       whose body names the pushed HEAD is SELECTED, so list order cannot
+       manufacture a decline). BOTH paths run the same refusal-recognition
        STACK as the producer — the arms are named once in
        ``_github_pr.REFUSAL_LAYERS`` and the list is open — so a bot that answers
        the trigger by declining to review is never a completed review, however
@@ -741,10 +743,15 @@ def _match_review(reviews, head_sha, trigger_dt, bot_kind, refusals=None):
     )
 
 
-def _match_bot_comment(comments, bot_kind, trigger_dt, refusals=None):
-    """Call ``_match_bot_comment`` with a throwaway refusal accumulator."""
+def _match_bot_comment(comments, head_sha, bot_kind, trigger_dt, refusals=None):
+    """Call ``_match_bot_comment`` with a throwaway refusal accumulator.
+
+    ``head_sha`` sits where :meth:`_match_review`'s does, because the comment arm
+    now reads it too: among the eligible comments it prefers one whose body names
+    that SHA.
+    """
     return github_re_review._ReReviewStrategy._match_bot_comment(
-        comments, bot_kind, trigger_dt, [] if refusals is None else refusals
+        comments, head_sha, bot_kind, trigger_dt, [] if refusals is None else refusals
     )
 
 
@@ -1033,14 +1040,14 @@ def test_match_bot_comment_fail_closed_on_unparseable_timestamps():
     trigger_dt = _parse(_TRIGGER)
     comments = [_comment(_PR_AGENT_LOGIN, created_at='not-a-timestamp', updated_at='')]
 
-    assert _match_bot_comment(comments, 'cuioss-review-bot', trigger_dt) is None
+    assert _match_bot_comment(comments, 'headsha', 'cuioss-review-bot', trigger_dt) is None
 
 
 def test_match_bot_comment_fail_closed_on_missing_trigger_time():
     """An unparseable trigger time yields no comment match (fail-closed)."""
     comments = [_comment(_PR_AGENT_LOGIN, created_at='2026-01-01T00:05:00Z')]
 
-    assert _match_bot_comment(comments, 'cuioss-review-bot', None) is None
+    assert _match_bot_comment(comments, 'headsha', 'cuioss-review-bot', None) is None
 
 
 # =============================================================================
@@ -1214,12 +1221,33 @@ def test_await_does_not_verify_a_review_naming_a_different_commit(monkeypatch):
 # body carries: the awaited HEAD verifies; no commit, a different commit, and an
 # abbreviation of the awaited one do not. Each negative still MATCHES — the bot did
 # answer — which is exactly the decline a consumer routes on ``head_sha_verified``.
+#
+# ⛔ Reading the reference off the matched comment is only half the contract: WHICH
+# eligible comment is matched decides which body gets read. Taking the first one let an
+# earlier comment naming no commit hide a later one naming the awaited HEAD, so the
+# envelope published ``head_sha_verified: false`` for a review that had verified it —
+# the same manufactured decline the review arm's recogniser exists to prevent, one arm
+# over. The selection cases below are therefore run in BOTH list orders, because a
+# first-match implementation passes the verifying-comment-first order by accident.
 
 
-def _republished_comment(reference):
-    """A CodeRabbit in-place-republished summary naming ``reference`` in its body."""
+def _republished_comment(reference, *, created_at='2026-01-01T00:00:00Z', updated_at='2026-01-01T00:05:00Z'):
+    """A CodeRabbit in-place-republished summary naming ``reference`` in its body.
+
+    The timestamps are overridable so the selection cases can build TWO eligible
+    comments from this one builder — keeping the only difference between them the
+    reference their bodies carry, plus the order they arrive in.
+    """
     body = f'Review updated until commit {reference}. No actionable comments were generated.'
-    return _comment(_CODERABBIT_LOGIN, created_at='2026-01-01T00:00:00Z', updated_at='2026-01-01T00:05:00Z', body=body)
+    return _comment(_CODERABBIT_LOGIN, created_at=created_at, updated_at=updated_at, body=body)
+
+
+#: A body reference that VERIFIES the awaited HEAD — the full SHA behind an
+#: abbreviated label, the shape CodeRabbit republishes.
+_VERIFYING_REFERENCE = f'[{_HEAD_SHA[:7]}]({_HEAD_SHA_URL})'
+
+#: A body reference that verifies NOTHING — the bot answered, but named no commit.
+_NON_VERIFYING_REFERENCE = 'the latest push'
 
 
 def test_await_verifies_a_republished_comment_naming_the_awaited_head(monkeypatch):
@@ -1231,10 +1259,8 @@ def test_await_verifies_a_republished_comment_naming_the_awaited_head(monkeypatc
     is supplied, so only the comment arm can match and the verdict is attributable
     to the body alone.
     """
-    reference = f'[{_HEAD_SHA[:7]}]({_HEAD_SHA_URL})'
-
     result = _await_with_comments(
-        monkeypatch, [_republished_comment(reference)], bot_kind='coderabbit', head_sha=_HEAD_SHA
+        monkeypatch, [_republished_comment(_VERIFYING_REFERENCE)], bot_kind='coderabbit', head_sha=_HEAD_SHA
     )
 
     assert result['matched'] is True
@@ -1247,7 +1273,7 @@ def test_await_verifies_a_republished_comment_naming_the_awaited_head(monkeypatc
 @pytest.mark.parametrize(
     'reference',
     [
-        pytest.param('the latest push', id='names-no-commit'),
+        pytest.param(_NON_VERIFYING_REFERENCE, id='names-no-commit'),
         pytest.param(f'[{_OTHER_SHA[:7]}]({_OTHER_SHA_URL})', id='names-a-different-commit'),
         pytest.param(_HEAD_SHA[:12], id='abbreviates-the-awaited-commit'),
     ],
@@ -1269,6 +1295,63 @@ def test_await_does_not_verify_a_republished_comment_not_naming_the_awaited_head
     assert result['matched'] is True
     assert result['matched_signal'] == 'issue_comment'
     assert result['head_sha_verified'] is False
+
+
+@pytest.mark.parametrize(
+    'verifying_first',
+    [
+        pytest.param(True, id='verifying-comment-first'),
+        pytest.param(False, id='non-verifying-comment-first'),
+    ],
+)
+def test_await_selects_the_head_verifying_comment_whatever_the_list_order(verifying_first, monkeypatch):
+    """⛔ BOTH orders, because a first-match matcher passes one of them by accident.
+
+    Two comments from the awaited bot, both clearing every eligibility gate — same
+    author, same builder, both post-dating the trigger, neither a refusal — so the
+    ONLY thing that can decide between them is the reference their bodies carry.
+    Under a first-match matcher the non-verifying-comment-first order published
+    ``head_sha_verified: false`` while a comment naming the current HEAD sat later
+    in the same list: a manufactured decline that blocks a merge and steers the
+    operator toward accepting it.
+
+    Running only the verifying-comment-first order would certify nothing — the
+    first-match implementation returns the verifying comment there too.
+    """
+    verifying = _republished_comment(_VERIFYING_REFERENCE, updated_at='2026-01-01T00:06:00Z')
+    non_verifying = _republished_comment(_NON_VERIFYING_REFERENCE, updated_at='2026-01-01T00:05:00Z')
+    comments = [verifying, non_verifying] if verifying_first else [non_verifying, verifying]
+
+    result = _await_with_comments(monkeypatch, comments, bot_kind='coderabbit', head_sha=_HEAD_SHA)
+
+    assert result['matched'] is True
+    assert result['matched_signal'] == 'issue_comment'
+    assert result['head_sha_verified'] is True
+    # The SELECTED record is the verifying one, not merely a true verdict computed
+    # off some other comment — the envelope hands this record to the caller.
+    assert result['matched_comment']['body'] == verifying['body']
+
+
+def test_await_still_matches_when_no_eligible_comment_names_the_awaited_head(monkeypatch):
+    """MATCHED CONTROL — the preference reorders eligible comments, it does not filter them.
+
+    Two eligible comments, neither naming a commit. Without this control the
+    selection cases above would pass just as happily against a matcher that only
+    ever returned a HEAD-verifying comment — which would convert the ordinary
+    "the bot answered without naming a commit" case into a permanent timeout for
+    every bot whose summary names no commit at all.
+    """
+    first = _republished_comment(_NON_VERIFYING_REFERENCE, updated_at='2026-01-01T00:05:00Z')
+    second = _republished_comment(f'[{_OTHER_SHA[:7]}]({_OTHER_SHA_URL})', updated_at='2026-01-01T00:06:00Z')
+
+    result = _await_with_comments(monkeypatch, [first, second], bot_kind='coderabbit', head_sha=_HEAD_SHA)
+
+    assert result['matched'] is True
+    assert result['matched_signal'] == 'issue_comment'
+    assert result['head_sha_verified'] is False
+    # The fallback is the FIRST eligible comment — the pre-existing behaviour, kept
+    # intact for the case where the preference finds nothing to prefer.
+    assert result['matched_comment']['body'] == first['body']
 
 
 # =============================================================================
@@ -1372,6 +1455,43 @@ def test_await_does_not_credit_the_coderabbit_command_reply_as_a_review(monkeypa
     # which is the discriminator: this body reaches no other arm.
     assert result['refusal_detected'] is True
     assert result['refusals'][0]['bot_kind'] == 'coderabbit'
+    assert result['refusals'][0]['source'] == 'issue_comment'
+    assert result['refusals'][0]['layer'] == _github_pr.REFUSAL_LAYER_REGISTRY
+
+
+def test_a_refusal_naming_the_awaited_head_is_still_never_selected(monkeypatch):
+    """⛔ The HEAD-verifying preference reorders ELIGIBLE comments; it re-admits no refusal.
+
+    The sharpest probe of that boundary: this refusal body NAMES the awaited HEAD,
+    so a preference applied ahead of the refusal gate would select it and report
+    ``head_sha_verified: true`` for a review CodeRabbit explicitly declined — the
+    false-green the refusal exclusion exists to prevent, reintroduced through the
+    selection rather than through the gate.
+
+    The genuine comment beside it names no commit, so the correct outcome is a
+    match on THAT comment with ``head_sha_verified: false``, and the refusal
+    recorded rather than swallowed.
+    """
+    refusal_naming_head = _comment(
+        _CODERABBIT_LOGIN,
+        created_at='2026-01-01T00:05:00Z',
+        body=f'{_CODERABBIT_COMMAND_REPLY_REFUSAL} Review updated until commit {_HEAD_SHA}.',
+    )
+    genuine = _republished_comment(_NON_VERIFYING_REFERENCE, updated_at='2026-01-01T00:06:00Z')
+
+    result = _await_with_comments(
+        monkeypatch, [refusal_naming_head, genuine], bot_kind='coderabbit', head_sha=_HEAD_SHA
+    )
+
+    # The fixture is only a probe of the SELECTION if the refusal genuinely names
+    # the awaited HEAD — otherwise the preference had nothing to be tempted by.
+    assert github_re_review._references_head_sha(refusal_naming_head['body'], _HEAD_SHA) is True
+
+    assert result['matched'] is True
+    assert result['matched_signal'] == 'issue_comment'
+    assert result['head_sha_verified'] is False
+    assert result['matched_comment']['body'] == genuine['body']
+    assert result['refusal_detected'] is True
     assert result['refusals'][0]['source'] == 'issue_comment'
     assert result['refusals'][0]['layer'] == _github_pr.REFUSAL_LAYER_REGISTRY
 
