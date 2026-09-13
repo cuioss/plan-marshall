@@ -714,7 +714,9 @@ def test_the_live_phase_vocabulary_is_ordered_and_non_empty():
     assertion below by having nothing to disagree with, and every status.json
     fixture would build a phase-less plan that no rule can fire on.
     """
-    assert len(CANONICAL_PHASES) >= 2, f'the live phase vocabulary is too short to model a lifecycle: {CANONICAL_PHASES}'
+    assert len(CANONICAL_PHASES) >= 2, (
+        f'the live phase vocabulary is too short to model a lifecycle: {CANONICAL_PHASES}'
+    )
     assert len(set(CANONICAL_PHASES)) == len(CANONICAL_PHASES), f'duplicate phase names: {CANONICAL_PHASES}'
 
 
