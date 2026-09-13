@@ -101,7 +101,18 @@ def _parse(path: Path) -> ast.Module | None:
 
 
 def _rel(path: Path) -> str:
-    return str(path.relative_to(REPO_ROOT))
+    """Repo-relative where that is meaningful, absolute otherwise.
+
+    A caller may hand a predicate a path outside the repository — the matched
+    negative controls feed each shape a synthetic module written to a temporary
+    directory. Reporting such a path whole is right; raising on it would make the
+    predicates unfalsifiable, since the only way to prove one fires is to give it
+    an instance that is not in the tree it guards.
+    """
+    try:
+        return str(path.relative_to(REPO_ROOT))
+    except ValueError:
+        return str(path)
 
 
 # =============================================================================
