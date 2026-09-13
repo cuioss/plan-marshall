@@ -781,11 +781,11 @@ def cmd_list(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def cmd_list_orphans(args: argparse.Namespace) -> dict[str, Any]:  # args unused: the uniform cmd_* handler signature
-    """Discover orphan plan directories (directories without a readable status.json).
+    """Discover orphan plan directories (directories with no status.json file).
 
     Inverse of ``cmd_list``: walks ``plans_dir.iterdir()`` and collects directory
-    entries that do NOT have a readable ``status.json`` file. Plans with a
-    readable status.json are skipped. The ``archived-plans`` directory (if
+    entries that have no ``status.json`` file. Plans carrying a status.json file
+    are skipped. The ``archived-plans`` directory (if
     present as a sibling) is excluded — orphan scanning operates only on the
     active plans directory returned by ``get_plans_dir()``.
 
