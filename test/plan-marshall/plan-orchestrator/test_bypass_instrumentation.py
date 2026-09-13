@@ -229,9 +229,7 @@ class TestRegistryShape:
             assert row['occurrence'], row['bypass_id']
 
     def test_in_epic_rows_name_working_gates(self):
-        in_epic = [
-            row for row in BYPASS_ENFORCEMENT_POINTS if row['scope'] == BYPASS_SCOPE_IN_EPIC
-        ]
+        in_epic = [row for row in BYPASS_ENFORCEMENT_POINTS if row['scope'] == BYPASS_SCOPE_IN_EPIC]
 
         assert in_epic, 'at least one in-epic enforcement point must ship'
         for row in in_epic:
@@ -241,9 +239,7 @@ class TestRegistryShape:
                 assert callable(resolved), (row['bypass_id'], gate)
 
     def test_out_of_epic_rows_name_an_owner_and_a_concrete_predicate(self):
-        out_of_epic = [
-            row for row in BYPASS_ENFORCEMENT_POINTS if row['scope'] == BYPASS_SCOPE_OUT_OF_EPIC
-        ]
+        out_of_epic = [row for row in BYPASS_ENFORCEMENT_POINTS if row['scope'] == BYPASS_SCOPE_OUT_OF_EPIC]
 
         assert out_of_epic, 'the lifecycle-owned bypasses must be specified, not dropped'
         for row in out_of_epic:
