@@ -265,14 +265,22 @@ def in_progress_phases(status: dict[Any, Any]) -> OpenPhaseScan:
     archive's closure set and the census's reported population from drifting into two
     different answers to the same question.
 
-    Malformed input is REPORTED, never absorbed. Three shapes cannot be classified and
+    Malformed input is REPORTED, never absorbed. Four shapes cannot be classified and
     each lands in :attr:`OpenPhaseScan.unexaminable`:
 
     - ``phases`` absent, or present but not a list;
     - a row that is not a mapping, so it carries no readable status;
+    - a row whose ``name`` is missing, empty, or not a string — the row cannot be
+      identified, so neither the archive (which closes phases BY name) nor the census
+      (which reports the names) can act on it, and the projection would otherwise
+      synthesise ``''`` as though it were a phase name;
     - a row whose ``status`` is outside the declared :data:`VALID_PHASE_STATUSES`
       vocabulary — it may or may not name a running phase, and guessing either way is
       a claim the data does not support.
+
+    The name check applies to EVERY row, not only the ``in_progress`` ones, exactly as
+    the vocabulary check already does: ``examinable`` states that the structure was read
+    in full, and a row nobody can identify is a part of it that was not.
 
     The scan still returns whatever it DID establish alongside those notes, so a caller
     holding a structurally odd record can still act on the phases that are readable.
@@ -288,6 +296,13 @@ def in_progress_phases(status: dict[Any, Any]) -> OpenPhaseScan:
     for index, phase in enumerate(phases):
         if not isinstance(phase, dict):
             unexaminable.append(f'phases[{index}] is {type(phase).__name__}, not a phase record')
+            continue
+        # Checked BEFORE the status, so an unidentifiable row is reported as such rather
+        # than being classified open on the strength of a status attached to no name.
+        # One note per row: the first failure ends the row's classification.
+        name = phase.get('name')
+        if not isinstance(name, str) or not name:
+            unexaminable.append(f'phases[{index}] carries name {name!r}, not a non-empty string')
             continue
         phase_status = phase.get('status')
         if phase_status not in VALID_PHASE_STATUSES:

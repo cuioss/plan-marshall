@@ -24,6 +24,17 @@ input reports ``examinable: False`` would pass equally against a scan that repor
 it for EVERYTHING — which would degrade every cohort and refuse every archive, the
 same conflation in the opposite direction.
 
+Why the valid cases are DERIVED rather than listed
+--------------------------------------------------
+The examinable population is built from ``constants.VALID_PHASE_STATUSES`` — one shape
+per declared status — its expected size is computed from that set, and the invalid
+sentinel is constructed to sit outside it. A hand-written roster of statuses is the
+same weakness one level down: a status added to the vocabulary would enter the codebase
+with no case here, and the sweep would report no failures over a population that had
+quietly stopped covering the declared set. ``test_both_populations_are_non_trivial_and_disjoint``
+additionally asserts that every declared status is exercised by some shape, so the
+coverage claim is derived from the vocabulary rather than asserted about it.
+
 Why the type refuses ``bool()``
 -------------------------------
 ``test_the_scan_has_no_truth_value`` pins the raise for BOTH an examinable and an
@@ -54,33 +65,87 @@ from typing import Any
 import _status_core
 import pytest
 from _manage_status_transition_fixtures import cmd_archive, cmd_create, cmd_update_phase
+from constants import PHASE_STATUS_DONE, PHASE_STATUS_IN_PROGRESS, VALID_PHASE_STATUSES
 
 #: Stands for "the ``phases`` key is not present at all", which no value can express.
 _ABSENT = object()
 
+#: The declared phase-status vocabulary, read from ``constants`` rather than spelled as
+#: a literal triple. Every population below is derived from it, so a status ADDED to the
+#: vocabulary widens this module automatically instead of entering the codebase with no
+#: case here — a fixed roster is exactly how a sweep silently loses coverage while still
+#: reporting no failures.
+_VOCABULARY: tuple[str, ...] = tuple(sorted(VALID_PHASE_STATUSES))
+
+#: A status value guaranteed OUTSIDE the vocabulary, CONSTRUCTED from it rather than
+#: picked as a plausible-looking literal. A hand-picked sentinel (``paused``) is one
+#: ``VALID_PHASE_STATUSES`` addition away from becoming valid, at which point the shape
+#: it stands for quietly stops being malformed and the sweep loses a case without
+#: failing. This spelling cannot collide by construction, and the assertion in
+#: ``test_both_populations_are_non_trivial_and_disjoint`` states that as a fact.
+_OUTSIDE_THE_VOCABULARY = 'not-' + '-nor-'.join(_VOCABULARY)
+
+
+def _row(name: str, status: str) -> dict[str, str]:
+    """One well-formed phase record — the shape every production writer emits."""
+    return {'name': name, 'status': status}
+
+
 #: The shapes whose open-phase set cannot be established. Each is a whole ``phases``
 #: value, and each fails for its own structural reason, so a fix that handles only
-#: one of them leaves the others reporting a confident empty set.
+#: one of them leaves the others reporting a confident empty set. Three of them are the
+#: name shapes: a row nobody can identify is a part of the structure that was not read,
+#: and without the check the projection renders it as the phase named ``''``.
 _UNEXAMINABLE_SHAPES: dict[str, Any] = {
     'key_absent': _ABSENT,
     'explicit_null': None,
-    'a_mapping_not_a_list': {'1-init': 'in_progress'},
-    'a_bare_string': 'in_progress',
-    'a_row_that_is_a_string': [{'name': '1-init', 'status': 'done'}, 'not-a-phase-record'],
-    'a_row_that_is_null': [{'name': '1-init', 'status': 'done'}, None],
-    'a_row_with_no_status': [{'name': '1-init', 'status': 'done'}, {'name': '2-refine'}],
-    'a_row_outside_the_vocabulary': [{'name': '1-init', 'status': 'done'}, {'name': '2-refine', 'status': 'paused'}],
+    'a_mapping_not_a_list': {'1-init': PHASE_STATUS_IN_PROGRESS},
+    'a_bare_string': PHASE_STATUS_IN_PROGRESS,
+    'a_row_that_is_a_string': [_row('1-init', PHASE_STATUS_DONE), 'not-a-phase-record'],
+    'a_row_that_is_null': [_row('1-init', PHASE_STATUS_DONE), None],
+    'a_row_with_no_status': [_row('1-init', PHASE_STATUS_DONE), {'name': '2-refine'}],
+    'a_row_outside_the_vocabulary': [
+        _row('1-init', PHASE_STATUS_DONE),
+        {'name': '2-refine', 'status': _OUTSIDE_THE_VOCABULARY},
+    ],
+    'a_row_with_no_name': [_row('1-init', PHASE_STATUS_DONE), {'status': PHASE_STATUS_IN_PROGRESS}],
+    'a_row_with_an_empty_name': [_row('1-init', PHASE_STATUS_DONE), {'name': '', 'status': PHASE_STATUS_IN_PROGRESS}],
+    'a_row_with_a_non_string_name': [
+        _row('1-init', PHASE_STATUS_DONE),
+        {'name': 5, 'status': PHASE_STATUS_IN_PROGRESS},
+    ],
 }
 
-#: The matched control population: shapes that CAN be classified in full. The empty
-#: list is the load-bearing member — it is the one legitimate way to reach an empty
-#: open-phase set, and the state the malformed shapes above used to be
-#: indistinguishable from.
-_EXAMINABLE_SHAPES: dict[str, list[dict[str, str]]] = {
+#: Hand-maintained count of the structural classes above, kept as a literal BECAUSE it
+#: is not vocabulary-derived: these shapes are ways a ``phases`` structure can be
+#: malformed, and adding one is a deliberate act. Deriving it from ``len()`` of the dict
+#: it guards would be vacuous; its job is to fail when a member is silently dropped.
+_EXPECTED_UNEXAMINABLE_SIZE = 11
+
+#: The matched control population: shapes that CAN be classified in full. One
+#: single-status shape per DECLARED status, so every value in the vocabulary is swept,
+#: plus the empty list and a two-open shape. The empty list is the load-bearing member —
+#: it is the one legitimate way to reach an empty open-phase set, and the state the
+#: malformed shapes above used to be indistinguishable from.
+_EXAMINABLE_SHAPES: dict[str, list[dict[str, Any]]] = {
     'no_phases_at_all': [],
-    'nothing_open': [{'name': '1-init', 'status': 'done'}, {'name': '2-refine', 'status': 'pending'}],
-    'one_open': [{'name': '1-init', 'status': 'done'}, {'name': '2-refine', 'status': 'in_progress'}],
-    'two_open': [{'name': '5-execute', 'status': 'in_progress'}, {'name': '6-finalize', 'status': 'in_progress'}],
+    **{f'only_{status}': [_row('1-init', status)] for status in _VOCABULARY},
+    'two_open': [_row('5-execute', PHASE_STATUS_IN_PROGRESS), _row('6-finalize', PHASE_STATUS_IN_PROGRESS)],
+}
+
+#: DERIVED from the vocabulary: one shape per declared status, plus the two shapes that
+#: are about structure rather than about a status value. A status added to
+#: ``VALID_PHASE_STATUSES`` moves this number and the population together.
+_EXPECTED_EXAMINABLE_SIZE = len(_VOCABULARY) + 2
+
+#: What each examinable shape must report as OPEN. Derived alongside the population from
+#: the same vocabulary, but stating independently which status means "open" — that is
+#: the production predicate, and asserting it here is what stops the control population
+#: from being a shape sweep that never checks the answer.
+_EXPECTED_OPEN_NAMES: dict[str, list[str]] = {
+    'no_phases_at_all': [],
+    **{f'only_{status}': (['1-init'] if status == PHASE_STATUS_IN_PROGRESS else []) for status in _VOCABULARY},
+    'two_open': ['5-execute', '6-finalize'],
 }
 
 
@@ -126,12 +191,28 @@ class TestTheScanDiscriminates:
         """Pins the sizes the sweeps below draw from, before they draw from them.
 
         A sweep over an empty (or silently shrunken) population reports zero failures
-        and is indistinguishable from a clean one.
+        and is indistinguishable from a clean one. The examinable size is DERIVED from
+        the declared vocabulary, and every declared status is asserted to be exercised
+        by some shape — a status added to ``VALID_PHASE_STATUSES`` therefore fails here
+        rather than joining the codebase with no case anywhere.
         """
-        assert len(_UNEXAMINABLE_SHAPES) == 8, sorted(_UNEXAMINABLE_SHAPES)
-        assert len(_EXAMINABLE_SHAPES) == 4, sorted(_EXAMINABLE_SHAPES)
+        assert _VOCABULARY, 'the declared status vocabulary is empty'
+        assert len(_UNEXAMINABLE_SHAPES) == _EXPECTED_UNEXAMINABLE_SIZE, sorted(_UNEXAMINABLE_SHAPES)
+        assert len(_EXAMINABLE_SHAPES) == _EXPECTED_EXAMINABLE_SIZE, sorted(_EXAMINABLE_SHAPES)
         assert not set(_UNEXAMINABLE_SHAPES) & set(_EXAMINABLE_SHAPES), (
             'A shape named in both populations would be asserted to hold two opposite verdicts.'
+        )
+        swept_statuses = {row['status'] for shape in _EXAMINABLE_SHAPES.values() for row in shape}
+        assert swept_statuses == set(VALID_PHASE_STATUSES), (
+            'Every declared phase status must appear in the examinable population; '
+            f'declared {sorted(VALID_PHASE_STATUSES)!r}, swept {sorted(swept_statuses)!r}.'
+        )
+        assert _OUTSIDE_THE_VOCABULARY not in VALID_PHASE_STATUSES, (
+            f'The invalid sentinel must sit outside the declared set; got {_OUTSIDE_THE_VOCABULARY!r}.'
+        )
+        assert set(_EXPECTED_OPEN_NAMES) == set(_EXAMINABLE_SHAPES), (
+            'Every examinable shape must carry an expected open-phase answer, or the '
+            'sweep below silently skips the ones it has no expectation for.'
         )
 
     def test_every_malformed_shape_reports_that_it_could_not_be_examined(self) -> None:
@@ -178,12 +259,7 @@ class TestTheScanDiscriminates:
             for name, phases in _EXAMINABLE_SHAPES.items()
         }
 
-        assert observed == {
-            'no_phases_at_all': [],
-            'nothing_open': [],
-            'one_open': ['2-refine'],
-            'two_open': ['5-execute', '6-finalize'],
-        }, observed
+        assert observed == _EXPECTED_OPEN_NAMES, observed
 
     def test_a_partially_malformed_structure_still_reports_the_phases_it_established(self) -> None:
         """One unreadable row does not discard the rows that read cleanly.
@@ -207,6 +283,29 @@ class TestTheScanDiscriminates:
         assert len(scan.unexaminable) == 1, scan.unexaminable
         assert 'phases[1]' in scan.unexaminable[0], scan.unexaminable
 
+    @pytest.mark.parametrize(
+        'shape',
+        ['a_row_with_no_name', 'a_row_with_an_empty_name', 'a_row_with_a_non_string_name'],
+        ids=['absent', 'empty', 'non_string'],
+    )
+    def test_an_unidentifiable_row_is_never_reported_as_an_open_phase(self, shape: str) -> None:
+        """A row without a usable ``name`` is a shortfall, not the phase named ``''``.
+
+        Each of the three rows carries ``status: in_progress``, so a scan that skipped
+        the name check would ADMIT it — and the census projection would then publish
+        ``open_phases: ['']`` on a cohort still reading ``coverage: complete``. The
+        assertion is therefore two-sided: the row must be absent from ``phases`` AND
+        named in ``unexaminable``, because either half alone is satisfiable by a scan
+        that simply discards what it cannot classify.
+        """
+        scan = _status_core.in_progress_phases(_status_document(_UNEXAMINABLE_SHAPES[shape]))
+
+        assert scan.examinable is False, scan
+        assert [phase['name'] for phase in scan.phases] == [], (
+            f'An unidentifiable row must not reach the reported open-phase set; got {scan.phases!r}.'
+        )
+        assert any('phases[1]' in note and 'name' in note for note in scan.unexaminable), scan.unexaminable
+
     def test_the_reported_phases_are_the_live_records_not_copies(self) -> None:
         """``cmd_archive`` closes a phase by mutating what the scan handed it.
 
@@ -220,7 +319,11 @@ class TestTheScanDiscriminates:
 
         assert document['phases'][0]['status'] == 'done', document
 
-    @pytest.mark.parametrize('shape', ['nothing_open', 'a_row_that_is_a_string'], ids=['examinable', 'unexaminable'])
+    @pytest.mark.parametrize(
+        'shape',
+        [f'only_{PHASE_STATUS_DONE}', 'a_row_that_is_a_string'],
+        ids=['examinable', 'unexaminable'],
+    )
     def test_the_scan_has_no_truth_value(self, shape: str) -> None:
         """``bool()`` raises for BOTH states, so the retired idiom cannot survive.
 

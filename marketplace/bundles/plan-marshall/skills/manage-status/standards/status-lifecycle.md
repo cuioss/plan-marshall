@@ -62,7 +62,7 @@ A plan abandoned mid-lifecycle consequently archives as `current_phase: complete
 
 #### An unexaminable `phases` structure is not an empty one
 
-`_status_core.in_progress_phases` returns an `OpenPhaseScan`, not a list: the phases it positively established as `in_progress`, plus a note per part of the structure it could **not** classify (`phases` absent or not a list, a row that is not a mapping, a row whose `status` is outside `VALID_PHASE_STATUSES`). An empty result therefore no longer answers two questions with one value — `examinable` says whether the answer is complete. The type raises on `bool()` for the same reason: `if not scan:` cannot tell "nothing is open" from "could not look", and that conflation is what let an unreadable record be archived as `complete` and counted as a clean zero.
+`_status_core.in_progress_phases` returns an `OpenPhaseScan`, not a list: the phases it positively established as `in_progress`, plus a note per part of the structure it could **not** classify (`phases` absent or not a list, a row that is not a mapping, a row whose `name` is missing / empty / not a string, a row whose `status` is outside `VALID_PHASE_STATUSES`). An empty result therefore no longer answers two questions with one value — `examinable` says whether the answer is complete. The type raises on `bool()` for the same reason: `if not scan:` cannot tell "nothing is open" from "could not look", and that conflation is what let an unreadable record be archived as `complete` and counted as a clean zero.
 
 The two consumers handle the unexaminable result separately, each in the direction its own job demands:
 

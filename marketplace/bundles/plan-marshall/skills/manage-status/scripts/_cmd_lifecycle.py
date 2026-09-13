@@ -722,10 +722,13 @@ def cmd_archive(args: argparse.Namespace) -> dict[str, Any] | None:
     # exempts this slot from GC until the terminal state has actually been
     # delivered.
 
-    # ``phase_closure`` mirrors the census cohort row's tri-state shape: the verdict is
-    # always published, and the ``reason`` naming the shortfall accompanies only the
-    # degraded one. A caller therefore never has to infer from a bare ``success``
-    # whether the phase closure it just triggered actually covered the whole record.
+    # ``phase_closure`` mirrors the census cohort row's ``complete``/``partial`` pair:
+    # the verdict is published on every SUCCESSFUL archive response, and the ``reason``
+    # naming the shortfall accompanies only the degraded one. A caller therefore never
+    # has to infer from a bare ``success`` whether the phase closure it just triggered
+    # actually covered the whole record. It is scoped to the success payload rather than
+    # to every response because the refusals above return BEFORE the phase-close write —
+    # they report no closure because none was attempted.
     result: dict[str, Any] = {
         'status': 'success',
         'plan_id': args.plan_id,

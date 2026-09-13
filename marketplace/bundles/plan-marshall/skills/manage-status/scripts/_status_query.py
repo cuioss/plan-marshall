@@ -5,6 +5,8 @@ Query command handlers for manage-status: read, progress, metadata, get-context,
 """
 
 import argparse
+import errno
+import stat
 from pathlib import Path
 from typing import Any, NamedTuple
 
@@ -951,8 +953,81 @@ def _open_phase_names(scan: OpenPhaseScan) -> list[str]:
     carry the marker with every phase closed, and a plan with no marker can still hold
     an ``in_progress`` phase, which is exactly the population this census exists to
     find.
+
+    The subscript below is deliberate. ``in_progress_phases`` reports a row whose
+    ``name`` is missing, empty or non-string as UNEXAMINABLE and never admits it to
+    ``scan.phases``, so every reported phase carries a non-empty string name. A
+    ``.get('name', '')`` default here would re-open exactly the hole that validation
+    closes: it would render an unusable row as the phase named ``''`` while the scan
+    still read ``examinable``, and the cohort would publish ``coverage: complete`` over
+    an open-phase record nobody can act on.
     """
-    return [str(phase.get('name', '')) for phase in scan.phases]
+    return [phase['name'] for phase in scan.phases]
+
+
+def _open_phase_total(records: list[dict[str, Any]]) -> int:
+    """Sum the open PHASES across ``records``, which hold one row per PLAN.
+
+    ``open_phase_count`` names phases, not plans, and a plan can hold several: a
+    loop-back from ``6-finalize`` to ``5-execute`` leaves BOTH ``in_progress``, and that
+    two-open-phase state is precisely the population this census exists to surface.
+    Publishing ``len(records)`` under-reports it by exactly the plans that matter most —
+    a plan with two open phases would be published as one.
+
+    A record with an empty ``open_phases`` list contributes nothing, so the sum is also
+    the safe form: ``_scan_plan_container`` only appends a record when the list is
+    non-empty, and a future caller that stops filtering cannot inflate the count.
+    """
+    return sum(len(record['open_phases']) for record in records)
+
+
+#: The errno values ``Path.is_dir`` / ``Path.is_file`` absorb as a genuine "no": the
+#: path is established not to be a directory / file, so the probe DID answer. Every
+#: other errno — ``EACCES`` above all — means the probe could not be completed, and the
+#: two must not collapse. Mirrors ``pathlib``'s own ignored set.
+_BENIGN_PROBE_ERRNOS = frozenset({errno.ENOENT, errno.ENOTDIR, errno.ELOOP, errno.EBADF})
+
+
+def _probe_mode(path: Path) -> int | None:
+    """Return ``path``'s ``st_mode``, ``None`` when it verifiably has none, else RAISE.
+
+    ⛔ Deliberately ``Path.stat()`` rather than ``Path.is_dir()`` / ``Path.is_file()``.
+    Those predicates return ``False`` for an operating-system error — INCLUDING a
+    permission denial — from Python 3.14 on, and this project's ``requires-python`` puts
+    3.14 in range. A denied entry would therefore read as a plain "not a directory" and
+    be skipped, letting the cohort publish ``coverage: complete`` over an entry nobody
+    managed to look at: the exact false zero the ``unexaminable_ids`` credit exists to
+    remove, reinstated by a runtime upgrade rather than by a code change.
+
+    ``stat`` raises for every failure, so this helper decides which failures are
+    ANSWERS. The benign set — an absent path, a non-directory component, a symlink loop,
+    a bad descriptor, and the ``ValueError`` an unrepresentable path name raises — is
+    the set the pathlib predicates absorb; those return ``None``, meaning "verifiably
+    nothing here". Everything else propagates as ``OSError`` for the caller to credit as
+    a shortfall. ``ValueError`` is folded in rather than left to escape because it is
+    not an ``OSError``: the scan's handler would not catch it, so an unrepresentable
+    name would abort the whole census instead of skipping one entry.
+    """
+    try:
+        return path.stat().st_mode
+    except ValueError:
+        return None
+    except OSError as exc:
+        if exc.errno in _BENIGN_PROBE_ERRNOS:
+            return None
+        raise
+
+
+def _probe_is_dir(path: Path) -> bool:
+    """Whether ``path`` is a directory. Raises ``OSError`` when that cannot be decided."""
+    mode = _probe_mode(path)
+    return mode is not None and stat.S_ISDIR(mode)
+
+
+def _probe_is_file(path: Path) -> bool:
+    """Whether ``path`` is a regular file. Raises ``OSError`` when that cannot be decided."""
+    mode = _probe_mode(path)
+    return mode is not None and stat.S_ISREG(mode)
 
 
 def _scan_plan_container(container: Path, cohort: str) -> _ContainerScan:
@@ -1003,11 +1078,11 @@ def _scan_plan_container(container: Path, cohort: str) -> _ContainerScan:
 
     for entry in entries:
         try:
-            if not entry.is_dir() or not (entry / FILE_STATUS).is_file():
+            if not _probe_is_dir(entry) or not _probe_is_file(entry / FILE_STATUS):
                 continue
         except OSError:
-            # The probe could not be completed (``is_dir`` already absorbs the
-            # benign races — ENOENT, ENOTDIR, a symlink loop — and returns
+            # The probe could not be completed (``_probe_is_dir`` already absorbs
+            # the benign races — ENOENT, ENOTDIR, a symlink loop — and returns
             # False, so reaching here means a genuine denial such as EACCES).
             # Whether this entry is a plan is therefore UNKNOWN, not "no": it is
             # credited as a shortfall rather than dropped, and deliberately NOT
@@ -1152,7 +1227,7 @@ def _census_single_container(cohort: str, container: Path) -> tuple[dict[str, An
                 cohort,
                 CENSUS_COVERAGE_PARTIAL,
                 population=scan.population,
-                open_phase_count=len(scan.records),
+                open_phase_count=_open_phase_total(scan.records),
                 unreadable_count=shortfall,
                 reason=_scan_shortfall_reason(scan),
             ),
@@ -1164,7 +1239,7 @@ def _census_single_container(cohort: str, container: Path) -> tuple[dict[str, An
             cohort,
             CENSUS_COVERAGE_COMPLETE,
             population=scan.population,
-            open_phase_count=len(scan.records),
+            open_phase_count=_open_phase_total(scan.records),
             unreadable_count=0,
         ),
         scan.records,
@@ -1233,7 +1308,7 @@ def _census_worktree_cohort(worktrees_root: Path) -> tuple[dict[str, Any], list[
 
     for worktree_dir in worktrees:
         try:
-            if not worktree_dir.is_dir():
+            if not _probe_is_dir(worktree_dir):
                 continue
         except OSError:
             # The entry could not be examined, so it may hold a plan store of any
@@ -1276,7 +1351,7 @@ def _census_worktree_cohort(worktrees_root: Path) -> tuple[dict[str, Any], list[
                 CENSUS_COHORT_WORKTREE,
                 CENSUS_COVERAGE_PARTIAL,
                 population=population,
-                open_phase_count=len(records),
+                open_phase_count=_open_phase_total(records),
                 unreadable_count=unreadable,
                 reason='; '.join(reason_parts),
             ),
@@ -1288,7 +1363,7 @@ def _census_worktree_cohort(worktrees_root: Path) -> tuple[dict[str, Any], list[
             CENSUS_COHORT_WORKTREE,
             CENSUS_COVERAGE_COMPLETE,
             population=population,
-            open_phase_count=len(records),
+            open_phase_count=_open_phase_total(records),
             unreadable_count=0,
         ),
         records,
@@ -1304,10 +1379,12 @@ def cmd_census(args: argparse.Namespace) -> dict[str, Any]:  # args unused: the 
     Returns ``status: success`` with ``anchor`` / ``anchor_path``, one
     ``cohorts[]`` row per store (live, worktree-resident, archived) and one
     ``open_phase_records[]`` row per plan still recording an ``in_progress``
-    phase. Each cohort row publishes its own ``coverage`` and only the counts
-    that coverage justifies — an ``unevaluated`` cohort carries no count keys at
-    all, so "nothing is known about this store" can never be misread as "this
-    store is empty".
+    phase. ``open_phase_count`` counts those PHASES, not those rows: a plan
+    holding two open phases contributes ONE record and TWO to the count. Each
+    cohort row publishes its own ``coverage`` and only the counts that coverage
+    justifies — an ``unevaluated`` cohort carries no count keys at all, so
+    "nothing is known about this store" can never be misread as "this store is
+    empty".
 
     When the main anchor itself cannot be resolved the verb FAILS CLOSED with
     ``error: anchor_unresolved`` and NO cohort rows: without an anchor there is

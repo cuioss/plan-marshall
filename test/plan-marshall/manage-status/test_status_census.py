@@ -62,6 +62,22 @@ unexaminable entry, which must still report ``complete`` with ``unreadable_count
 The control is what gives the positives their meaning: without it they pass equally
 against a verb that degrades every cohort it is ever handed to ``partial``.
 
+Its ``deny_probe`` fixture emulates **Python 3.14**: ``Path.stat`` raises ``EACCES`` for
+the named entry while ``is_dir`` / ``is_file`` return ``False`` for it, which is the
+3.14 predicate contract. The injection has to sit where production probes, or the cells
+pass while testing nothing — and pinning the predicates to their 3.14 answer is what
+makes the class fail on today's interpreter too if production ever reverts to them.
+
+``open_phase_count`` names phases, not plans
+--------------------------------------------
+``_scan_plan_container`` emits one record per PLAN, so a count taken over the records
+reads correctly for every single-open-phase plan and under-reports exactly the
+multi-open-phase ones — the loop-back state (``5-execute`` and ``6-finalize`` both
+``in_progress``) this verb exists to surface. ``TestOpenPhaseCountNamesPhasesNotPlans``
+holds the plan count fixed at one and varies only the open phases inside it, so a
+passing verdict cannot come from the two figures coinciding, and covers both
+accumulators — the single-container cohorts and the worktree cohort sum independently.
+
 A member whose phases will not read is a member, and a shortfall
 ----------------------------------------------------------------
 ``TestUnexaminablePhasesDegradeTheCohort`` covers the third shortfall kind, one level
@@ -72,6 +88,15 @@ though it had been read is the same false zero in miniature. Both cohorts that
 accumulate counts (single-container and worktree) get their own cell, because they
 sum independently, and the matched control is the identical tree minus the affected
 member.
+
+The affected member's readable row is ``in_progress``, so the cells also exercise the
+RETENTION path: an open phase the scan positively established survives an unexaminable
+phase list, and the assertion locates that record by the broken plan's own id rather
+than counting — a ``done`` row would leave the count satisfiable by the readable
+sibling alone, and the retention would go untested. The class additionally carries a
+row whose ``name`` is missing: such a row would be classified open on its status alone
+and rendered as the phase named ``''`` on a cohort still claiming ``complete``, so it
+must degrade the cohort and appear in no record at all.
 
 ``worktrees`` is one scalar with two consumers
 ----------------------------------------------
@@ -132,6 +157,13 @@ _ARCHIVE_DATE = '2026-01-15'
 #: injected denial to a single axis.
 _UNEXAMINABLE = 'denied-entry'
 
+#: The phase left ``in_progress`` on the member whose phase LIST is unexaminable. The
+#: scan establishes it positively and RETAINS it, so it is the name the retained record
+#: must carry. The cells below reach that record by the plan's id rather than by this
+#: name, because a sibling plan in the same fixture legitimately holds the same phase
+#: open — a name-only lookup would be satisfied by the wrong record.
+_RETAINED_OPEN_PHASE = '5-execute'
+
 
 def _write_plan(plan_dir: Path, phases: dict[str, str], metadata: dict[str, Any] | None = None) -> Path:
     """Seed one plan directory carrying a readable ``status.json``.
@@ -157,15 +189,38 @@ def _write_unreadable_phases_plan(plan_dir: Path) -> Path:
     Deliberately distinct from the unparseable member ``TestPartialCoverage`` uses:
     that one fails at the JSON layer, so nothing about it is known. This one parses
     cleanly and is established as a plan — one of its phase rows simply is not a phase
-    record, so the open-phase SET is what could not be determined. One readable
-    ``in_progress`` row is included so a census that reported this plan's open phases
-    while claiming full coverage would be visibly wrong rather than merely silent.
+    record, so the open-phase SET is what could not be determined.
+
+    The readable row is deliberately ``in_progress``, not ``done``. ``_scan_plan_container``
+    RETAINS a positively-established open phase even when the phase list is unexaminable,
+    and that retention is the behaviour the cells below are about; a ``done`` row leaves
+    the plan contributing nothing, so the fixture would exercise the shortfall path while
+    never reaching the retained-record path at all — and the ``open_phase_count``
+    assertion would be satisfied by the readable sibling plan alone.
+    """
+    plan_dir.mkdir(parents=True)
+    document: dict[str, Any] = {
+        'title': plan_dir.name,
+        'current_phase': _RETAINED_OPEN_PHASE,
+        'phases': [{'name': _RETAINED_OPEN_PHASE, 'status': 'in_progress'}, 'not-a-phase-record'],
+    }
+    (plan_dir / 'status.json').write_text(f'{json.dumps(document)}\n')
+    return plan_dir
+
+
+def _write_unnamed_phase_plan(plan_dir: Path) -> Path:
+    """Seed a plan carrying an ``in_progress`` row whose ``name`` is missing.
+
+    The row is otherwise well-formed and would be classified OPEN on its status alone,
+    so without the name validation the projection renders it as the phase named ``''``
+    — a record no consumer can act on — while the scan still reads examinable and the
+    cohort publishes ``coverage: complete`` over it.
     """
     plan_dir.mkdir(parents=True)
     document: dict[str, Any] = {
         'title': plan_dir.name,
         'current_phase': '5-execute',
-        'phases': [{'name': '1-init', 'status': 'done'}, 'not-a-phase-record'],
+        'phases': [{'name': '1-init', 'status': 'done'}, {'status': 'in_progress'}],
     }
     (plan_dir / 'status.json').write_text(f'{json.dumps(document)}\n')
     return plan_dir
@@ -407,9 +462,9 @@ class TestOpenPhaseRecords:
         open_records = [record for record in records if record['id'] == archived_pair['open_id']]
         assert len(open_records) == 1, f'Expected one record for the open plan, got {records!r}.'
         assert set(open_records[0]['open_phases']) == {'5-execute', '6-finalize'}, open_records[0]
-        assert _cohort(result, 'archived')['open_phase_count'] == 1, (
-            'One of the two archived records holds open phases, and the per-cohort '
-            'count is derived from the records rather than asserted independently.'
+        assert _cohort(result, 'archived')['open_phase_count'] == 2, (
+            'One archived record holds TWO open phases and the cohort count names '
+            'phases, not plans, so it reports 2 over a single record.'
         )
 
     def test_a_closed_record_carrying_the_loop_back_marker_is_not_reported(self, archived_pair: dict[str, str]) -> None:
@@ -441,6 +496,77 @@ class TestOpenPhaseRecords:
         assert 'still-open' not in reported, (
             'The archived cohort is keyed by the dated directory name, not by the bare plan id.'
         )
+
+
+class TestOpenPhaseCountNamesPhasesNotPlans:
+    """``open_phase_count`` is a phase total, and each cohort sums it independently.
+
+    ``_scan_plan_container`` emits one record per PLAN, so a count taken as
+    ``len(records)`` reads correctly for every single-open-phase plan and under-reports
+    exactly the multi-open-phase ones — the loop-back state this verb exists to surface.
+    Every cell here therefore holds the PLAN count fixed at one and varies only the
+    number of open phases inside it, so a passing verdict cannot come from the two
+    figures happening to coincide.
+    """
+
+    def test_one_plan_with_two_open_phases_counts_two(self, store: Path) -> None:
+        """Population 1, one record, count 2 — the three figures are asserted together.
+
+        Asserting the count alone would not distinguish a phase total from a plan total
+        that happened to be wrong in the other direction; pinning ``population`` and the
+        record count beside it makes the axis unambiguous.
+        """
+        _write_plan(
+            store / 'plans' / 'two-open-plan',
+            {'1-init': 'done', '5-execute': 'in_progress', '6-finalize': 'in_progress'},
+        )
+
+        result = _census()
+
+        live = _cohort(result, 'live')
+        assert live['coverage'] == 'complete', live
+        assert live['population'] == 1, live
+        assert len(_records_for(result, 'live')) == 1, 'One plan yields one record however many phases it holds.'
+        assert live['open_phase_count'] == 2, (
+            f'The field counts established open PHASES; a per-plan count reports 1 here. Got {live!r}.'
+        )
+
+    def test_one_plan_with_one_open_phase_counts_one(self, store: Path) -> None:
+        """Matched control: the same single-plan shape with one phase open reports 1.
+
+        The load-bearing half. Without it the cell above is equally consistent with a
+        count that is simply inflated — a verb reporting the length of ``phases[]``, say
+        — and the reader could not tell a phase total from a wrong number.
+        """
+        _write_plan(store / 'plans' / 'one-open-plan', {'1-init': 'done', '5-execute': 'in_progress'})
+
+        result = _census()
+
+        live = _cohort(result, 'live')
+        assert live['coverage'] == 'complete', live
+        assert live['population'] == 1, live
+        assert live['open_phase_count'] == 1, live
+
+    def test_the_worktree_cohort_sums_phases_too(self, store: Path) -> None:
+        """The second accumulator, which sums independently and can miss the fix alone.
+
+        ``_census_worktree_cohort`` builds its own row rather than delegating to
+        ``_census_single_container``, so a correction applied to one leaves the other
+        publishing a plan count under a phase name.
+        """
+        worktree_plans = store / 'worktrees' / 'wt-0' / '.plan' / 'local' / 'plans'
+        _write_plan(
+            worktree_plans / 'wt-two-open',
+            {'1-init': 'done', '5-execute': 'in_progress', '6-finalize': 'in_progress'},
+        )
+
+        result = _census()
+
+        worktree = _cohort(result, 'worktree')
+        assert worktree['coverage'] == 'complete', worktree
+        assert worktree['population'] == 1, worktree
+        assert len(_records_for(result, 'worktree')) == 1, worktree
+        assert worktree['open_phase_count'] == 2, worktree
 
 
 class TestCohortsAreCountedSeparately:
@@ -555,23 +681,48 @@ class TestAnUnexaminableEntryIsCredited:
 
     @pytest.fixture
     def deny_probe(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Make the membership probe RAISE for the single entry named ``_UNEXAMINABLE``.
+        """Deny ``stat`` for the single entry named ``_UNEXAMINABLE``, Python-3.14 style.
 
         The production condition is a search-bit denial on the containing directory:
         ``iterdir`` still lists the names (that needs read) while stat-ing each child
         fails with ``EACCES`` (that needs search). Staging it with ``chmod`` would make
         the verdict depend on the uid running the suite — root bypasses the permission
         check outright and the entry would probe cleanly — so the denial is injected at
-        the probe, narrowed by name. Every other entry keeps the real ``is_dir``.
-        """
-        real_is_dir = Path.is_dir
+        the syscall, narrowed by name. Every other entry keeps the real ``stat``.
 
-        def denying_is_dir(path: Path, *args: Any, **kwargs: Any) -> bool:
+        ⛔ The injection sits at ``Path.stat`` AND the two predicates are pinned to
+        ``False`` for the same entry, which is exactly the Python 3.14 contract: from
+        3.14 ``is_dir`` / ``is_file`` return ``False`` for an operating-system error,
+        permission denials included, instead of raising. Under that runtime a
+        predicate-based membership probe reads a denied entry as a plain "not a
+        directory", skips it, and lets the cohort publish ``coverage: complete`` over an
+        entry nobody looked at. Emulating both halves here makes these cells pass only
+        against a scan that consults ``stat`` — on every supported Python, rather than
+        only on the interpreter the suite happens to run under.
+        """
+        real_stat = Path.stat
+
+        def denying_stat(path: Path, *args: Any, **kwargs: Any) -> Any:
             if path.name == _UNEXAMINABLE:
                 raise PermissionError(13, 'Permission denied')
+            return real_stat(path, *args, **kwargs)
+
+        real_is_dir = Path.is_dir
+        real_is_file = Path.is_file
+
+        def py314_is_dir(path: Path, *args: Any, **kwargs: Any) -> bool:
+            if path.name == _UNEXAMINABLE:
+                return False
             return bool(real_is_dir(path, *args, **kwargs))
 
-        monkeypatch.setattr(Path, 'is_dir', denying_is_dir)
+        def py314_is_file(path: Path, *args: Any, **kwargs: Any) -> bool:
+            if path.name == _UNEXAMINABLE:
+                return False
+            return bool(real_is_file(path, *args, **kwargs))
+
+        monkeypatch.setattr(Path, 'stat', denying_stat)
+        monkeypatch.setattr(Path, 'is_dir', py314_is_dir)
+        monkeypatch.setattr(Path, 'is_file', py314_is_file)
 
     def test_an_unexaminable_cohort_entry_degrades_the_cohort(self, store: Path, deny_probe: None) -> None:
         """``partial`` plus a non-zero ``unreadable_count``, with the entry named.
@@ -645,7 +796,12 @@ class TestUnexaminablePhasesDegradeTheCohort:
     """
 
     def test_a_member_whose_phases_will_not_read_degrades_its_cohort(self, store: Path) -> None:
-        """``partial``, the member counted, the shortfall credited and the plan named."""
+        """``partial``, the member counted, the shortfall credited and the plan named.
+
+        The retained open phase is asserted on the RECORD, located by the broken plan's
+        own id: the count alone would be satisfied by the readable sibling contributing
+        both, which is precisely the reading a ``done`` fixture row used to permit.
+        """
         _write_plan(store / 'plans' / 'readable-plan', {'1-init': 'done', '5-execute': 'in_progress'})
         _write_unreadable_phases_plan(store / 'plans' / 'unreadable-phases-plan')
 
@@ -656,15 +812,23 @@ class TestUnexaminablePhasesDegradeTheCohort:
         assert live['population'] == 2, f'Its status.json parsed, so the plan IS an established member; got {live!r}.'
         assert live['unreadable_count'] == 1, f'The unread open-phase set must be credited; got {live!r}.'
         assert 'unreadable-phases-plan' in live['reason'], live
-        assert live['open_phase_count'] == 1, (
-            f'Only the readable plan contributes an established open phase; got {live!r}.'
+
+        retained = [record for record in _records_for(result, 'live') if record['id'] == 'unreadable-phases-plan']
+        assert len(retained) == 1, (
+            f'A positively-established open phase survives an unexaminable phase list; got {retained!r}.'
+        )
+        assert retained[0]['open_phases'] == [_RETAINED_OPEN_PHASE], retained[0]
+        assert live['open_phase_count'] == 2, (
+            'Both established open phases stay visible under partial coverage — the '
+            f'readable plan and the retained one; got {live!r}.'
         )
 
     def test_the_same_shortfall_one_level_deeper_degrades_the_worktree_cohort(self, store: Path) -> None:
         """The worktree cohort accumulates its own counts, so it needs its own cell.
 
         A fix applied to the single-container path alone leaves this cohort reporting
-        ``complete`` over a moved-in plan whose phases nobody could read.
+        ``complete`` over a moved-in plan whose phases nobody could read — and counting
+        the retained open phase is a second accumulator that can independently miss it.
         """
         worktree_plans = store / 'worktrees' / 'wt-0' / '.plan' / 'local' / 'plans'
         _write_plan(worktree_plans / 'wt-plan-0', {'1-init': 'done', '5-execute': 'in_progress'})
@@ -678,6 +842,43 @@ class TestUnexaminablePhasesDegradeTheCohort:
         assert worktree['unreadable_count'] == 1, worktree
         assert 'wt-0/wt-plan-broken' in worktree['reason'], (
             f'A bare plan name would be ambiguous across worktrees; got {worktree!r}.'
+        )
+
+        retained = [record for record in _records_for(result, 'worktree') if record['id'] == 'wt-plan-broken']
+        assert len(retained) == 1, f'The retained open phase must survive one level deeper too; got {retained!r}.'
+        assert retained[0]['open_phases'] == [_RETAINED_OPEN_PHASE], retained[0]
+        assert worktree['open_phase_count'] == 2, worktree
+
+    def test_a_row_with_no_usable_name_degrades_the_cohort_instead_of_reporting_an_empty_name(
+        self, store: Path
+    ) -> None:
+        """An unidentifiable ``in_progress`` row is a shortfall, never ``open_phases: ['']``.
+
+        The row is well-formed apart from its missing ``name``, so it would be
+        classified OPEN on its status alone — and the projection would then render it as
+        the phase named ``''`` on a cohort still claiming ``coverage: complete``. Both
+        halves are asserted: the cohort degrades, AND no record anywhere carries an
+        empty name. Asserting only the coverage would pass against a scan that degraded
+        the cohort and still published the unusable record.
+        """
+        _write_plan(store / 'plans' / 'readable-plan', {'1-init': 'done', '5-execute': 'in_progress'})
+        _write_unnamed_phase_plan(store / 'plans' / 'unnamed-phase-plan')
+
+        result = _census()
+
+        live = _cohort(result, 'live')
+        assert live['coverage'] == 'partial', f'A row nobody can identify is a part that went unread; got {live!r}.'
+        assert live['population'] == 2, live
+        assert live['unreadable_count'] == 1, live
+        assert 'unnamed-phase-plan' in live['reason'], live
+        assert live['open_phase_count'] == 1, f'Only the readable plan contributes an open phase; got {live!r}.'
+
+        reported_names = [name for record in result['open_phase_records'] for name in record['open_phases']]
+        assert '' not in reported_names, (
+            f'A synthesised empty phase name is an unusable open-phase record; got {reported_names!r}.'
+        )
+        assert 'unnamed-phase-plan' not in [record['id'] for record in _records_for(result, 'live')], (
+            'The plan established no readable open phase, so it contributes no record.'
         )
 
     def test_a_member_whose_phases_read_cleanly_keeps_the_cohort_complete(self, store: Path) -> None:
