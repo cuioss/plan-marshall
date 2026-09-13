@@ -574,11 +574,13 @@ Consult your language-specific testing skill for framework APIs (e.g., Hypothesi
 comprehension over a scanned tree, a filter over a registry, anything whose cardinality is decided at
 collection time instead of written out at the binding site.
 
-An empty parameter set is invisible exactly where a reader looks for it. The framework reports it as a
-skip by default — one more `s` in a suite that already prints thousands — or, once configured to do
-so, as a collection failure. Either way **every case the derivation was meant to produce disappears
-and the run stays green**, because the emptiness is a property of the derivation and the binding site
-displays none of it.
+An empty parameter set is invisible exactly where a reader looks for it, because the emptiness is a
+property of the derivation and the binding site displays none of it. The framework's two modes differ
+in what they report, and the difference matters. By default it is a skip — one more `s` in a suite
+that already prints thousands — so **the run stays green**. Configured to fail collection, the run
+reds. **In both modes every case the derivation was meant to produce disappears**, and that, not the
+run colour, is why the assertion below is required either way: a collection failure names the
+parametrization that came back empty, never the population it was built from.
 
 **Durable rule**: a runtime-derived parametrization carries a **non-vacuity assertion that runs at
 collection time and names the population**. Three sites qualify, because all three run at collection
