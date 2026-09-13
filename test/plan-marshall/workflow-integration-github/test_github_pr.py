@@ -1505,9 +1505,10 @@ def test_the_gate_populations_are_non_empty_and_disjoint():
     population, so their sizes are asserted here; disjointness is what makes the pair a
     partition rather than two overlapping lists.
     """
+    assert MARKER_GATED_EVIDENCE and UNGATED_EVIDENCE, 'a half with no members makes its sweep vacuous'
     gated_pairs = {(bot_kind, shape) for bot_kind, shape, _marker in MARKER_GATED_EVIDENCE}
-    assert MARKER_GATED_EVIDENCE_COUNT == len(gated_pairs) > 0
-    assert UNGATED_EVIDENCE_COUNT == len(set(UNGATED_EVIDENCE)) > 0
+    assert MARKER_GATED_EVIDENCE_COUNT == len(gated_pairs)
+    assert UNGATED_EVIDENCE_COUNT == len(set(UNGATED_EVIDENCE))
     assert gated_pairs.isdisjoint(UNGATED_EVIDENCE)
 
 
