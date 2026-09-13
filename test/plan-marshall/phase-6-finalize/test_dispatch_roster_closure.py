@@ -896,6 +896,15 @@ def _coverage_line(coverage: _RosterCoverage) -> str:
     )
 
 
+#: The separator joining the two clauses ``GUARD_POPULATION_SIZE`` publishes — the
+#: (f) coverage line and the (h) dispatch-site roster line. Named once, and used by
+#: BOTH the join below and the assertion that reads the header back apart, so the
+#: two cannot drift: a hardcoded separator at the reading end would go stale the
+#: moment the join changed, and the read would then compare a clause against the
+#: whole string again — the exact shape that made the equality unsatisfiable when
+#: the (h) clause was appended.
+_GUARD_CLAUSE_SEPARATOR = '; '
+
 #: Published on EVERY run — passing included — by the root conftest's
 #: ``pytest_report_header``. See the module docstring's "Published coverage"
 #: section for why this channel and not a ``print``, and for what it does and does
@@ -903,8 +912,15 @@ def _coverage_line(coverage: _RosterCoverage) -> str:
 #: figure that matters is a RATIO: a bare "1" would report the comparison count as
 #: if it were the coverage, which is the over-crediting this publication exists to
 #: stop.
+#:
+#: TWO clauses ride it, in this order: (f)'s coverage line, then (h)'s dispatch-site
+#: roster line. Each is guarded against the live derivation SEPARATELY below — a
+#: second clause must not leave the first unchecked, and it must not leave itself
+#: unchecked either.
 GUARD_POPULATION_LABEL = 'finalize roster self-classification coverage + dispatch-site roster'
-GUARD_POPULATION_SIZE = f'{_coverage_line(_roster_correctness_coverage())}; {_dispatch_site_roster_line()}'
+GUARD_POPULATION_SIZE = _GUARD_CLAUSE_SEPARATOR.join(
+    (_coverage_line(_roster_correctness_coverage()), _dispatch_site_roster_line())
+)
 
 
 def _classification_mismatches(
@@ -1560,8 +1576,19 @@ def test_roster_correctness_coverage_is_reported_not_asserted_shut():
 
     So this test deliberately does NOT assert ``compared == registered_steps``. It
     asserts the figure is real (non-vacuous, and bounded by the registry), and that
-    the line the report header publishes is the line the live derivation renders — so
-    the published coverage cannot drift away from what the sweep actually did.
+    each clause the report header publishes is the clause the live derivation renders
+    — so the published coverage cannot drift away from what the sweep actually did.
+
+    ⛔ **The header carries TWO clauses, and each is compared on its own.** The
+    equality used to be taken over the WHOLE published string against
+    ``_coverage_line`` alone, which became unsatisfiable the moment the (h)
+    dispatch-site roster clause was appended — the header could then never equal one
+    of its own halves. The header is split on the separator it was joined with and
+    each half is compared to its own live renderer. That is deliberately NOT a
+    substring containment: ``_coverage_line(coverage) in GUARD_POPULATION_SIZE``
+    would pass on a header whose coverage clause is merely a PREFIX of the live one
+    (a stale "1 of 26 …" sitting inside a live "1 of 26 … (2 findings)"), which is
+    the anti-drift property the assertion exists for.
     """
     coverage = _roster_correctness_coverage()
 
@@ -1577,9 +1604,28 @@ def test_roster_correctness_coverage_is_reported_not_asserted_shut():
         f'more comparisons than discovered docs ({_coverage_line(coverage)}) — every '
         'comparison comes from a discovered doc, so this is a derivation defect'
     )
-    assert GUARD_POPULATION_SIZE == _coverage_line(coverage), (
-        'the coverage line published on the report header disagrees with the live '
-        f'derivation: header={GUARD_POPULATION_SIZE!r} live={_coverage_line(coverage)!r}'
+    published = GUARD_POPULATION_SIZE.split(_GUARD_CLAUSE_SEPARATOR)
+
+    assert len(published) == 2, (
+        f'the report header splits into {len(published)} clause(s) on '
+        f'{_GUARD_CLAUSE_SEPARATOR!r}, expected exactly 2 (the (f) coverage line then '
+        f'the (h) dispatch-site roster line): {GUARD_POPULATION_SIZE!r}. Either a '
+        'clause was added or removed without extending this guard, or a renderer now '
+        'emits the separator inside its own text — in both cases the per-clause '
+        'comparisons below would be reading the wrong halves.'
+    )
+    coverage_clause, roster_clause = published
+
+    assert coverage_clause == _coverage_line(coverage), (
+        'the coverage clause published on the report header disagrees with the live '
+        f'derivation: header={coverage_clause!r} live={_coverage_line(coverage)!r}'
+    )
+    assert roster_clause == _dispatch_site_roster_line(), (
+        'the dispatch-site roster clause published on the report header disagrees '
+        f'with the live derivation: header={roster_clause!r} '
+        f'live={_dispatch_site_roster_line()!r}. Widening the guard to admit this '
+        'clause must not leave it unguarded — an unchecked clause is a published '
+        'figure nothing re-derives.'
     )
 
 
