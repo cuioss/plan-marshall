@@ -48,6 +48,15 @@ These tests pin the closure invariant and the count-free rewrite:
     on the ``record-dispatch-boundary`` command string and on the cause ORDER, never on
     a heading: no test in this directory read that table, so editing it back to the
     pre-fix four-cause routing reverted the deliverable with every test green.
+(h) **The dispatch-site roster is corpus-wide and DERIVED.** Every markdown document
+    under the ``plan-marshall`` skills tree that carries a ``Task: plan-marshall:``
+    spawn IS a dispatch site, and that set must EQUAL the set of documents emitting
+    through the resolve seam (one carrying an ``effort resolve-target`` invocation that
+    itself passes ``--workflow``). The roster's size rides the session report header on
+    every run, passing included. (e) above is the per-spawn form of the same property
+    and stays scoped to the finalize skill directory; (h) is per-DOCUMENT, and the
+    difference is load-bearing rather than stylistic — see "Why (h) is per-document and
+    (e) is per-spawn" below.
 
 Steps are named in the roster by their exact registry key (``default:`` /
 ``project:`` / ``bundle:skill`` prefix included), so the comparison is a plain
@@ -142,6 +151,31 @@ nothing asserts that it stays that way. The assertion this replaced was dormant 
 the same reason — the unregistered doc of the day did not self-classify — and would
 have fired, with a message about the wrong condition, the moment it did.
 
+Why (h) is per-document and (e) is per-spawn
+--------------------------------------------
+(e) pairs each spawn with a seam resolve inside a 25-line lookback, which is what lets
+it name WHICH branch lost its resolve. That window is calibrated to a dispatch branch
+written as a procedure — resolve, extract the target, dispatch. It is NOT calibrated to
+a narrated worked example: ``dispatch-walkthrough.md`` § Example A puts its resolve 36
+lines above its spawn, with the returned TOON, the emitted log line and the prompt body
+narrated in between. Widening the window to reach that would erode the property that one
+branch's resolve can never satisfy another branch's spawn, and naming the document in an
+exclusion list would be the hand-maintained mirror of a derived set this module exists to
+prevent.
+
+So the corpus-wide direction is asserted per DOCUMENT: a document that dispatches must
+also resolve with the dispatch context. That is strictly weaker than (e) — it cannot say
+which spawn — and it is the strongest form that holds over narrated prose without a
+suppression list. Both are kept, and neither subsumes the other: (e) keeps its precision
+where its window is calibrated, (h) keeps the reach.
+
+⛔ **The roster is spawns spelled ``Task: plan-marshall:``** — the execution-context
+dispatch surface ``dispatch-logging.md`` governs. ``phase-5-execute/standards/operations.md``
+carries three line-start ``Task:`` spawns naming ``subagent_type: pm-dev-builder:*``
+agents instead. Those are not execution-context dispatches, so the seam contract does not
+reach them and this roster does not claim to cover them — stated here so the boundary is
+legible rather than inferred from a regex.
+
 Published coverage
 ------------------
 The (f) coverage figures ride the session report header
@@ -154,12 +188,14 @@ a capture-suspended write is swallowed at the worker boundary. The header is ren
 by the CONTROLLER before collection and is the one channel a pass surfaces.
 
 ⛔ **Stated rather than left implied**: the (e) sweep's per-document spawn counts do
-NOT ride that channel. The header carries the (f) coverage line only; (e)'s
-population floors are asserted by their own tests, whose messages carry the counts.
+NOT ride that channel. The header carries the (f) coverage line and the (h) dispatch-site
+roster size; (e)'s population floors are asserted by their own tests, whose messages carry
+the counts.
 """
 
 from __future__ import annotations
 
+import functools
 import json
 import re
 from pathlib import Path
@@ -170,6 +206,13 @@ from conftest import MARKETPLACE_ROOT, PROJECT_ROOT
 from extension_discovery import find_implementors
 
 _SKILL_DIR = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-6-finalize'
+
+#: The (h) corpus root — the WHOLE plan-marshall skills tree. (e) reads one skill
+#: directory inside it; (h) reads all of it, because "is a dispatch site" is not a
+#: property of the finalize skill, and a roster bounded to that directory reports
+#: clean over every dispatch site outside it without saying so.
+_PLAN_MARSHALL_SKILLS = MARKETPLACE_ROOT / 'plan-marshall' / 'skills'
+
 _ROSTER_DOC = _SKILL_DIR / 'standards' / 'dispatch-inline-split.md'
 _SKILL_DOC = _SKILL_DIR / 'SKILL.md'
 _MARSHAL_JSON = PROJECT_ROOT / '.plan' / 'marshal.json'
@@ -639,6 +682,65 @@ def _hand_written_dispatch_emits(text: str) -> list[str]:
     ]
 
 
+# ---------------------------------------------------------------------------
+# (h) the corpus-wide DERIVED dispatch-site roster
+# ---------------------------------------------------------------------------
+
+
+@functools.cache
+def _plan_marshall_markdown_docs() -> tuple[Path, ...]:
+    """Every markdown document under the plan-marshall skills tree — (h)'s INPUT.
+
+    Published by the assertions below rather than assumed: everything (h) claims is
+    derived from this walk, so a root that resolved wrong would shrink the roster
+    while every later assertion stayed green.
+    """
+    return tuple(sorted(_PLAN_MARSHALL_SKILLS.rglob('*.md')))
+
+
+@functools.cache
+def _dispatch_site_roster() -> tuple[Path, ...]:
+    """The DERIVED dispatch-site roster: docs carrying a ``Task: plan-marshall:`` spawn.
+
+    Walked, never listed. A hardcoded roster passes vacuously the moment a dispatch
+    site is added to a document nobody enumerated — which is the single-file blind
+    spot (e) already had to grow out of once, at one directory's scale.
+    """
+    return tuple(doc for doc in _plan_marshall_markdown_docs() if _TASK_SPAWN.search(doc.read_text(encoding='utf-8')))
+
+
+def _emits_through_the_seam(text: str) -> bool:
+    """Whether a document carries a seam-emitting resolve.
+
+    ``--workflow`` is read off the resolve's OWN continued command block via
+    :func:`_seam_resolve_sites`, never off the document as a whole — the same
+    same-invocation rule (e) enforces. Searched document-wide, a bare resolve would
+    pass on the strength of an unrelated ``--workflow``-bearing command elsewhere in
+    the file, which is the weaker property wearing the stronger one's name.
+    """
+    return any(_WORKFLOW_FLAG.search(invocation) for _index, invocation in _seam_resolve_sites(text.splitlines()))
+
+
+def _seam_emitting_dispatch_sites() -> tuple[Path, ...]:
+    """The roster members that emit through the seam — the set (h) compares against."""
+    return tuple(doc for doc in _dispatch_site_roster() if _emits_through_the_seam(doc.read_text(encoding='utf-8')))
+
+
+def _dispatch_site_roster_line() -> str:
+    """Render (h)'s population figures as the report-header clause.
+
+    A ratio, not a bare count: "0 of 0" and "11 of 11" are the same green to a
+    count alone, and only the first means the walk found nothing to check.
+    """
+    roster = _dispatch_site_roster()
+    emitting = _seam_emitting_dispatch_sites()
+    return (
+        f'{len(emitting)} of {len(roster)} derived dispatch-site document(s) emit '
+        f'through the resolve seam ({len(_plan_marshall_markdown_docs())} markdown '
+        'document(s) walked)'
+    )
+
+
 def _frontmatter_name(text: str) -> str | None:
     """Return the ``name:`` value from a doc's YAML frontmatter block, if present."""
     if not text.startswith('---'):
@@ -801,8 +903,8 @@ def _coverage_line(coverage: _RosterCoverage) -> str:
 #: figure that matters is a RATIO: a bare "1" would report the comparison count as
 #: if it were the coverage, which is the over-crediting this publication exists to
 #: stop.
-GUARD_POPULATION_LABEL = 'finalize roster self-classification coverage'
-GUARD_POPULATION_SIZE = _coverage_line(_roster_correctness_coverage())
+GUARD_POPULATION_LABEL = 'finalize roster self-classification coverage + dispatch-site roster'
+GUARD_POPULATION_SIZE = f'{_coverage_line(_roster_correctness_coverage())}; {_dispatch_site_roster_line()}'
 
 
 def _classification_mismatches(
@@ -1064,6 +1166,181 @@ def test_no_hand_written_dispatch_emit_survives():
         f'— the resolve seam owns the emission now, so a hand-written line '
         f'double-emits and reintroduces the per-role blind spot: {hand_written}'
     )
+
+
+# ---------------------------------------------------------------------------
+# (h) corpus-wide roster-vs-seam equality — population derived from the tree
+# ---------------------------------------------------------------------------
+
+
+def test_the_dispatch_site_roster_is_derived_from_a_real_tree():
+    """(h)'s INPUT is published, not assumed.
+
+    Every figure below is derived from this walk, so a root that resolved to the
+    wrong place would make the roster a shrunken one while the equality assertion
+    stayed green over it.
+    """
+    assert _PLAN_MARSHALL_SKILLS.is_dir(), f'the plan-marshall skills tree root does not exist: {_PLAN_MARSHALL_SKILLS}'
+
+    walked = _plan_marshall_markdown_docs()
+
+    assert len(walked) > 50, (
+        f'the (h) walk over {_PLAN_MARSHALL_SKILLS} opened {len(walked)} markdown '
+        'document(s). The plan-marshall skills tree carries far more, so the walk is '
+        'reading the wrong root and the derived roster below is not the real one.'
+    )
+
+
+def test_the_dispatch_site_roster_is_not_vacuous():
+    """A roster that matched nothing would make the equality below assert nothing."""
+    walked = _plan_marshall_markdown_docs()
+    roster = _dispatch_site_roster()
+
+    assert roster, (
+        f'The dispatch-site derivation matched NO `Task: plan-marshall:` spawn across '
+        f'{len(walked)} markdown document(s) under {_PLAN_MARSHALL_SKILLS}. The equality '
+        'assertion would then hold over two empty sets, so the roster is reported as '
+        'broken rather than clean.'
+    )
+
+
+def test_the_roster_reaches_past_the_finalize_skill_directory():
+    """The floor: (h) must cover dispatch sites (e) structurally cannot see.
+
+    (e) is bounded to the finalize skill directory. If the roster ever collapsed back
+    inside that boundary, (h) would be a more expensive restatement of (e) and the
+    orchestrator dispatch sites — which live in `plan-marshall/workflow/` — would be
+    covered by nothing here.
+    """
+    roster = _dispatch_site_roster()
+    beyond = [doc for doc in roster if _SKILL_DIR not in doc.parents]
+
+    assert beyond, (
+        f'Every one of the {len(roster)} derived dispatch-site document(s) lies inside '
+        f'{_SKILL_DIR}, so (h) reaches nothing (e) does not already cover. Either the '
+        'walk collapsed to that directory, or the spawn detector stopped matching the '
+        'orchestrator workflow docs.'
+    )
+
+
+def test_the_dispatch_site_roster_equals_the_seam_emitting_set():
+    """(h) The two sets are EQUAL — every document that dispatches also emits.
+
+    A roster member that carries no ``--workflow``-bearing resolve dispatches with no
+    audit trail at all: the seam emits the ``[DISPATCH]`` line as a side effect of the
+    resolve, so a bare resolve leaves the firing unrecorded and the retrospective audit
+    cannot say which variant ran (`dispatch-logging.md` § Placement contract).
+    """
+    roster = set(_dispatch_site_roster())
+    emitting = set(_seam_emitting_dispatch_sites())
+
+    silent = sorted(str(doc.relative_to(_PLAN_MARSHALL_SKILLS)) for doc in roster - emitting)
+
+    assert not silent, (
+        f'{len(silent)} of {len(roster)} derived dispatch-site document(s) carry a '
+        f'`Task: plan-marshall:` spawn but no `effort resolve-target … --workflow` '
+        f'resolve of their own, so every dispatch they document leaves no [DISPATCH] '
+        f'record: {silent}'
+    )
+    assert roster == emitting
+
+
+def test_no_hand_written_dispatch_emit_survives_across_the_roster():
+    """(h) The forbidden hand-written emission is absent corpus-wide, not just in one skill.
+
+    The resolve seam owns the emission; a hand-written
+    ``manage-logging work "[DISPATCH]"`` step double-emits AND, placed once per role,
+    reintroduces the per-role blind spot the seam closes.
+    """
+    hand_written = [
+        f'{doc.relative_to(_PLAN_MARSHALL_SKILLS)}: {hit}'
+        for doc in _dispatch_site_roster()
+        for hit in _hand_written_dispatch_emits(doc.read_text(encoding='utf-8'))
+    ]
+
+    assert not hand_written, (
+        f'Hand-written `--message "[DISPATCH] …"` emit(s) at a derived dispatch site — '
+        f'the resolve seam owns the emission, so a hand-written line double-emits and '
+        f'reintroduces the per-role blind spot: {hand_written}'
+    )
+
+
+def test_the_roster_and_seam_detectors_fire_on_the_pre_seam_shape(tmp_path):
+    """Matched control pair for (h): a bare-resolve site is detected, a seam one is not.
+
+    Both fixtures are dispatch sites by the roster detector — that is what makes the
+    split attributable to the seam detector alone. The bare fixture additionally puts a
+    ``--workflow``-bearing command immediately BEFORE its bare resolve: read
+    document-wide instead of per-invocation, that neighbour would make the bare resolve
+    pass, which is the weaker property this control forbids.
+    """
+    bare = tmp_path / 'bare_resolve.md'
+    bare.write_text(
+        'Unrelated neighbour:\n\n'
+        '```bash\n'
+        'python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \\\n'
+        '  effort read --workflow plan-marshall:phase-2-refine/SKILL.md\n'
+        '```\n\n'
+        'Resolve:\n\n'
+        '```bash\n'
+        'python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \\\n'
+        '  effort resolve-target --role phase-2-refine\n'
+        '```\n\n'
+        '```text\n'
+        'Task: plan-marshall:{target}\n'
+        '```\n',
+        encoding='utf-8',
+    )
+    seam = tmp_path / 'seam_resolve.md'
+    seam.write_text(
+        'Resolve:\n\n'
+        '```bash\n'
+        'python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \\\n'
+        '  effort resolve-target --role phase-2-refine \\\n'
+        '  --workflow plan-marshall:phase-2-refine/SKILL.md --plan-id {plan_id} \\\n'
+        '  --caller plan-marshall:plan-marshall\n'
+        '```\n\n'
+        '```text\n'
+        'Task: plan-marshall:{target}\n'
+        '```\n',
+        encoding='utf-8',
+    )
+
+    for fixture in (bare, seam):
+        assert _TASK_SPAWN.search(fixture.read_text(encoding='utf-8')), (
+            f'{fixture.name} was not read as a dispatch site, so the split below would '
+            'not be attributable to the seam detector.'
+        )
+
+    assert not _emits_through_the_seam(bare.read_text(encoding='utf-8')), (
+        'The seam detector accepted a BARE resolve. Either it reads `--workflow` '
+        'document-wide instead of off the continued command block the resolve itself '
+        'belongs to, or it no longer fires at all — in both cases (h) reports clean '
+        'over the exact regression it exists to catch.'
+    )
+    assert _emits_through_the_seam(seam.read_text(encoding='utf-8')), (
+        'The seam detector rejected a resolve that DOES carry `--workflow`. A detector '
+        'that fires on a conformant site is a false positive, and (h) would have to be '
+        'suppressed to stay green.'
+    )
+
+
+def test_the_roster_detector_ignores_a_non_execution_context_spawn(tmp_path):
+    """Negative control for the roster detector's documented boundary.
+
+    A ``Task:`` naming a non-plan-marshall ``subagent_type`` is not an
+    execution-context dispatch, so ``dispatch-logging.md`` does not govern it and it
+    must not enter the roster — otherwise (h) would demand a seam resolve from a
+    document the seam contract never reached, and the only way back to green would be
+    an exclusion list.
+    """
+    foreign = tmp_path / 'builder_dispatch.md'
+    foreign.write_text(
+        '```text\nTask:\n  subagent_type: pm-dev-builder:maven-builder\n  prompt: |\n    Execute mvn verify\n```\n',
+        encoding='utf-8',
+    )
+
+    assert not _TASK_SPAWN.search(foreign.read_text(encoding='utf-8'))
 
 
 # ---------------------------------------------------------------------------
