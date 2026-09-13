@@ -903,11 +903,13 @@ def _append_plan_row(slug: str, row: dict[str, Any]) -> dict[str, Any]:
     :func:`_read_status`'s coercion is a READ returning an empty view — so the
     malformed case is REFUSED here rather than normalized away.
 
-    Returns a dict carrying exactly one of three outcomes: ``row`` (the appended
-    row), ``duplicate`` (the already-queued row bearing that id), or
+    Returns a dict carrying exactly one of five outcomes: ``row`` (the appended
+    row), ``duplicate`` (the already-queued row bearing that id),
+    ``duplicate_slug`` (the already-queued row bearing that slug),
+    ``epic_slug`` (the epic slug the row slug must never equal), or
     ``invalid_plans`` (the type name of the present-but-non-list ``plans``
-    value). ``updated`` is re-stamped only on a real append, so both a rejected
-    duplicate and a refused malformed ledger leave the document byte-identical.
+    value). ``updated`` is re-stamped only on a real append, so every refusal
+    leaves the document byte-identical.
     """
     outcome: dict[str, Any] = {}
 
@@ -932,6 +934,19 @@ def _append_plan_row(slug: str, row: dict[str, Any]) -> dict[str, Any]:
             if isinstance(existing, dict) and existing.get('id') == row['id']:
                 outcome['duplicate'] = existing
                 return state
+        # Duplicate-slug lint: exact-equality over every queued row with no
+        # path-shape filter, plus refusal when the row slug equals the epic
+        # slug. Runs against the FRESH in-lock queue so a concurrent append
+        # cannot evade it. Shares its exact-equality slug comparison
+        # vocabulary with the resume-summary shared-slug detector — no second
+        # divergent comparison lives here.
+        for existing in plans:
+            if isinstance(existing, dict) and existing.get('slug') == row.get('slug'):
+                outcome['duplicate_slug'] = existing
+                return state
+        if row.get('slug') == slug:
+            outcome['epic_slug'] = slug
+            return state
         plans.append(row)
         state['updated'] = now_utc_iso()
         outcome['row'] = row
@@ -1064,10 +1079,12 @@ def _queue_add_row(args: argparse.Namespace) -> dict[str, Any]:
     decided from a pre-lock snapshot could be overtaken by a competing session
     between the read and the write.
 
-    :func:`_append_plan_row`'s outcome is three-way and is discriminated as
-    three: ``invalid_plans`` (a malformed ``plans`` value, refused with nothing
+    :func:`_append_plan_row`'s outcome is five-way and is discriminated as
+    five: ``invalid_plans`` (a malformed ``plans`` value, refused with nothing
     written) is separated from ``duplicate`` before the ``'row' not in outcome``
-    test, which would otherwise read a refusal as a duplicate and raise.
+    test, which would otherwise read a refusal as a duplicate and raise. The
+    slug refusals (``duplicate_slug``, ``epic_slug``) use the ``invalid_field``
+    family and are likewise refused with NOTHING written.
     """
     probe = _probe_status_document(args.slug)
     if probe['state'] == STATUS_DOC_ABSENT:
@@ -1099,6 +1116,26 @@ def _queue_add_row(args: argparse.Namespace) -> dict[str, Any]:
             'was refused and NOTHING was written — repair the malformed value '
             'before staging, so whatever it holds is not silently discarded',
             observed_type=observed,
+        )
+    if 'duplicate_slug' in outcome:
+        duplicate = outcome['duplicate_slug']
+        return _error(
+            args.slug,
+            'invalid_field',
+            f'plan slug {args.slug_value!r} duplicates queued plan '
+            f'{duplicate.get("id", "")!r}; the row was refused and NOTHING was written — '
+            'use a plan-short slug unique within the queue, never the epic slug',
+            existing_plan=str(duplicate.get('id', '')),
+            existing_status=str(duplicate.get('status', '')),
+        )
+    if 'epic_slug' in outcome:
+        return _error(
+            args.slug,
+            'invalid_field',
+            f'plan slug {args.slug_value!r} equals the epic slug; the row was refused and '
+            'NOTHING was written — the slug field carries the plan short slug, '
+            'unique within the queue, never the epic slug',
+            epic_slug=str(outcome['epic_slug']),
         )
     if 'row' not in outcome:
         duplicate = outcome['duplicate']

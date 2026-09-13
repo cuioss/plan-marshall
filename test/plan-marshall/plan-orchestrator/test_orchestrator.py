@@ -783,6 +783,44 @@ class TestQueueAddRow:
         # including its ``updated`` stamp.
         assert _read_status_file(status_path) == before
 
+    def test_should_reject_a_duplicate_slug_leaving_the_queue_unchanged(self, plan_context):
+        queued = _make_plan('PLAN-01')
+        queued['slug'] = 'shared-slug'
+        status_path = _write_status(plan_context, 'add-dup-slug-epic', plans=[queued])
+        before = _read_status_file(status_path)
+
+        result = cmd_queue(_add_row_args('add-dup-slug-epic', add_row='PLAN-07', slug_value='shared-slug'))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'invalid_field'
+        assert result['existing_plan'] == 'PLAN-01'
+        assert _read_status_file(status_path) == before
+
+    def test_should_reject_a_slug_equal_to_the_epic_slug_without_writing(self, plan_context):
+        status_path = _write_status(plan_context, 'add-epic-slug-epic', plans=[])
+
+        result = cmd_queue(
+            _add_row_args('add-epic-slug-epic', add_row='PLAN-07', slug_value='add-epic-slug-epic')
+        )
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'invalid_field'
+        assert _read_status_file(status_path)['plans'] == []
+
+    def test_should_admit_distinct_slugs_cleanly(self, plan_context):
+        queued = _make_plan('PLAN-01')
+        queued['slug'] = 'alpha-slug'
+        status_path = _write_status(plan_context, 'add-distinct-slug-epic', plans=[queued])
+
+        result = cmd_queue(
+            _add_row_args('add-distinct-slug-epic', add_row='PLAN-07', slug_value='beta-slug')
+        )
+
+        assert result['status'] == 'success'
+        assert result['operation'] == 'queue-add-row'
+        on_disk = _read_status_file(status_path)['plans']
+        assert [row['slug'] for row in on_disk] == ['alpha-slug', 'beta-slug']
+
     def test_should_stamp_updated_only_on_a_real_append(self, plan_context):
         status_path = _write_status(plan_context, 'add-stamp-epic', plans=[_make_plan('PLAN-07')])
 
