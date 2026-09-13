@@ -42,6 +42,7 @@ verbatim, so this module would pass its own rules even without the exclusion.
 
 from __future__ import annotations
 
+import ast
 import re
 from argparse import Namespace
 from collections import Counter
@@ -266,6 +267,32 @@ def _read(rel_path: str) -> str:
     return text
 
 
+def _functions_carrying(text: str, needle: str) -> list[tuple[str, str]]:
+    """``(name, source)`` for the INNERMOST function whose source carries ``needle``.
+
+    Whole-file containment is the wrong unit for a positive control: any unrelated
+    test, comment or string elsewhere in the same module satisfies it, so a control
+    that reads nothing the gate examined still passes. The unit that makes the
+    comparison is the unit that must carry the evidence, and the innermost one is
+    taken so an enclosing function does not inherit a nested one's evidence.
+    """
+    tree = ast.parse(text)
+    matches = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and needle in (ast.get_source_segment(text, node) or '')
+    ]
+    return [
+        (node.name, ast.get_source_segment(text, node) or '')
+        for node in matches
+        if not any(
+            other is not node and node.lineno <= other.lineno and other.end_lineno <= node.end_lineno
+            for other in matches
+        )
+    ]
+
+
 def _derive_code_branching_population() -> list[str]:
     """Derive, from the tree, every code file that BRANCHES on the gate's status.
 
@@ -395,12 +422,20 @@ def test_every_cross_slice_positive_control_reads_its_evidence() -> None:
     The non-emptiness assertion is not decoration: with no cross-slice positive
     control the per-member loop below would iterate nothing and pass while
     examining no consumer at all.
+
+    Both the selection and the evidence check are scoped to the FUNCTION making the
+    comparison, not to the whole file. Selecting and checking by the same unit is
+    what closes the gap: over a whole file, a control satisfied the evidence
+    requirement whenever any unrelated test in the same module happened to mention
+    one of the keys.
     """
-    controls = [
-        path
-        for path in _CODE_BRANCHING_CONSUMERS
-        if not path.startswith(f'{_GATE_OWNING_SLICE}/') and _VERIFIED_ROUTE_PASS_PREDICATE in _read(path)
-    ]
+    controls = {}
+    for path in _CODE_BRANCHING_CONSUMERS:
+        if path.startswith(f'{_GATE_OWNING_SLICE}/'):
+            continue
+        units = _functions_carrying(_read(path), _VERIFIED_ROUTE_PASS_PREDICATE)
+        if units:
+            controls[path] = units
 
     assert controls, (
         f'no member of the branching class of {len(_CODE_BRANCHING_CONSUMERS)} lives outside '
@@ -409,11 +444,16 @@ def test_every_cross_slice_positive_control_reads_its_evidence() -> None:
     )
 
     required = ('matched_notation', 'matched_entry_index', 'worktree_sha')
-    shortfalls = {path: [key for key in required if key not in _read(path)] for path in controls}
-    offenders = {path: missing for path, missing in shortfalls.items() if missing}
+    unit_count = sum(len(units) for units in controls.values())
+    offenders = {
+        f'{path}::{name}': missing
+        for path, units in controls.items()
+        for name, source in units
+        if (missing := [key for key in required if key not in source])
+    }
 
     assert not offenders, (
-        f'{len(offenders)} of {len(controls)} cross-slice positive control(s) do not read the '
+        f'{len(offenders)} of {unit_count} cross-slice positive control unit(s) do not read the '
         f'{len(required)} evidence key(s) the gate examined: {offenders}. Without them the '
         f'control passes on the bare token alone.'
     )
