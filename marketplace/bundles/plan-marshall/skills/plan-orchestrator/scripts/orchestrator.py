@@ -2021,8 +2021,10 @@ def cmd_corpus_declaration_currency(args: argparse.Namespace) -> dict[str, Any]:
     checked_and_clean: list[str] = []
     could_not_check: list[str] = []
     tally = dict.fromkeys(CURRENCY_STATES, 0)
+    specs_excluded_count = 0
     for path in spec_paths:
         if exclude and path.name == exclude:
+            specs_excluded_count += 1
             continue
         state, claim = _surface_state(path, repo_root)
         plan_id = claim.plan_id if claim is not None else path.name
@@ -2082,7 +2084,7 @@ def cmd_corpus_declaration_currency(args: argparse.Namespace) -> dict[str, Any]:
         'footprint_count': len(footprint),
         'footprint_paths': sorted(footprint),
         'specs_total': len(spec_paths),
-        'specs_excluded': 1 if exclude else 0,
+        'specs_excluded': specs_excluded_count,
         'specs_scanned': len(rows),
         'specs_compared': compared_count,
         'specs_unevaluated': tally[CURRENCY_UNEVALUATED],
