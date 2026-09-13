@@ -120,7 +120,16 @@ def test_an_unparseable_module_is_reported_as_unmeasured_not_as_clean(tmp_path: 
     for label, predicate in _PREDICATES:
         result = predicate([broken])
 
-        assert result.unparseable == [str(broken)], f'{label} did not report the unparseable module: {result}'
+        assert len(result.unparseable) == 1, f'{label} did not report exactly one unparseable module: {result}'
+        # Pins the module's IDENTITY rather than one of the two spellings _rel may
+        # legitimately return: it reports a path under the repository root
+        # relative, and any other path whole. Joining REPO_ROOT back on holds under
+        # both arms, because `/` yields an absolute right-hand operand unchanged —
+        # so this control stays correct whether or not pytest's basetemp (here
+        # .plan/temp/pytest-basetemp/) sits inside the repository.
+        assert (shape_scan.REPO_ROOT / result.unparseable[0]).resolve() == broken.resolve(), (
+            f'{label} did not report the unparseable module: {result}'
+        )
         assert result.modules_examined == 0, f'{label} counted an unparseable module as examined'
         assert not result.clean, f'{label} reported a scan that read nothing as clean'
 
