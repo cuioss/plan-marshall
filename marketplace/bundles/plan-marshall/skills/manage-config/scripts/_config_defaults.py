@@ -1159,21 +1159,36 @@ BUILD_SYSTEM_DEFAULTS = {
 
 # Build-queue defaults (`build.queue.*` in marshal.json — under the top-level
 # `build` block, peer to `build.map`).
-# `max_slots` is the number of concurrent build admissions the cross-session
-# build queue grants before enqueuing further requests; the build-queue
-# admission primitive (`plan-marshall:manage-locks:build_queue`) reads it via
-# `build.queue.max_slots`, falling back to 5 when the block or key is absent.
-# `max_retries` is the number of times the build wrapper re-polls a `blocked`
-# admission before giving up. `upper_limit_seconds` is the adaptive stale-reclaim
-# ceiling — the per-build held-duration bound the self-healing reaper measures
-# against; it is seeded at the 600 s floor (the same value
-# `manage-run-config._read_build_queue_upper_limit` falls back to) inside the
-# clamped `[600, 3600]` range, so the key is operator-visible instead of
-# fallback-only. All three keys live under the marshal.json top-level `build`
-# block (not under `plan.*`) because the build queue is a project-wide,
-# cross-plan resource. Registering them here makes the queue bounds
+#
+# The slot CAP is deliberately NOT seeded here, and is not a marshal.json key at
+# all. The build queue is machine-global — every checkout on the host contends
+# for one `build-queue.json` — so a per-repo cap is a cap two callers can
+# disagree on while admitting against the same slots. It therefore lives in the
+# machine-global `machine-config.json`, is read through
+# `_machine_config.resolve_max_slots` (cwd-independent, and it states its
+# source), and is set with
+# `manage_build_server config set --max-slots N`. A project whose marshal.json
+# still carries a `build.queue.max_slots` gets it REPORTED as not in effect on
+# every queued build, never honoured; `manage_build_server config migrate` is
+# the one-step way to act on that warning. `sync-defaults` is non-destructive,
+# so an existing project keeps its stale key and is warned rather than silently
+# edited — the warning is the audible signal, and migrate is the fix. Seeding a
+# key here that could never take effect is what this omission prevents.
+#
+# `max_retries` is the one per-repo build-queue key: the number of times the
+# build wrapper re-polls a `blocked` admission before giving up. Unlike the cap
+# it is legitimately per-repo — it bounds only THIS caller's own wait loop and is
+# never evaluated against another caller's entries. The adaptive stale-reclaim
+# ceiling is not seeded here either. It is the reap threshold the self-healing
+# reaper measures a held build against, and it is applied to every repo's entries
+# in the one machine-global queue, so it lives as the top-level
+# `upper_limit_seconds` field of that queue's own state, `build-queue.json`,
+# where it is read and recomputed inside the queue's critical section and managed
+# with `build_queue limit get|set`. `max_retries` lives under the marshal.json
+# top-level `build` block (not under `plan.*`) because the build queue is a
+# project-wide, cross-plan resource. Registering it here makes that bound
 # operator-visible and editable directly in marshal.json.
-DEFAULT_BUILD_QUEUE = {'max_slots': 5, 'max_retries': 10, 'upper_limit_seconds': 600}
+DEFAULT_BUILD_QUEUE = {'max_retries': 10}
 
 # The top-level `orchestrator` block default is `DEFAULT_ORCHESTRATOR`, defined
 # earlier in this module, where every knob is materialised with its effective

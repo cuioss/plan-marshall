@@ -137,7 +137,7 @@ JSON structure and field definitions for project configuration.
         { "glob": "test/plan-marshall/manage-config/*.py", "role": "test", "build_class": "module-tests" }
       ]
     },
-    "queue": { "max_slots": 5, "max_retries": 10 }
+    "queue": { "max_retries": 10 }
   },
   "code_intelligence": {
     "corpus_language_server": { "enabled": false }
@@ -512,6 +512,41 @@ Managed via:
 - `build-map seed` (re-seed `build.map` from applicable extensions — write-once)
 - `build-map seed --force` (clear any existing block and re-derive a clean one — bypasses the write-once guard)
 - `build-map read` (return the effective map from `build.map`; fail-closed when absent)
+
+## Section: build.queue
+
+The per-repo half of the build-queue configuration, at the top-level `build.queue` block (peer to `build.map`, not under `plan.*`) because the build queue is a project-wide, cross-plan resource. It carries exactly one key.
+
+### Structure
+
+```json
+{
+  "build": {
+    "queue": { "max_retries": 10 }
+  }
+}
+```
+
+### Fields
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `max_retries` | int | 10 | Number of times the build wrapper re-polls a `blocked` admission before giving up. Legitimately per-repo: it bounds only THIS caller's own wait loop and is never evaluated against another caller's entries. Seeded by `init` and back-filled by `sync-defaults` (`DEFAULT_BUILD_QUEUE`). |
+
+### The slot cap and the reap threshold are not `marshal.json` keys
+
+Both are **machine-global** — one value per host, shared by every checkout contending for the one machine-global `build-queue.json` — so neither is seeded into `marshal.json`, and a copy sitting there takes no effect. A per-caller value over a shared queue is a value two callers can disagree on while competing for the same slots, which is why it does not live here.
+
+| Setting | Home | Managed with |
+|---------|------|--------------|
+| `build.queue.max_slots` (the build-slot cap, default `5`) | `~/.plan-marshall/marshalld/machine-config.json`, beside `registry.json` (home root overridable via `PLAN_MARSHALL_HOME`) | `manage_build_server config get` / `config set --max-slots N` / `config migrate` |
+| `upper_limit_seconds` (the adaptive stale-reclaim threshold) | a top-level field of `~/.plan-marshall/build-queue.json` — the queue state whose entries it governs | `build_queue limit get` / `limit set --value N` |
+
+A `build.queue.max_slots` key present in a repository's `marshal.json` **is not in effect**: the admitted cap is resolved cwd-independently from the machine-global file alone, and the resolution names its own source (`machine_config` / `default` / `invalid` / `unreadable`) so a configured value is never confused with a fallback. Every `build_queue acquire` reports the per-repo key as `per_repo_max_slots: {value, in_effect: false}` and carries a `per_repo_max_slots_not_in_effect` warning. `manage_build_server config migrate` moves it in one step — copying the value machine-wide **only when nothing is set there**, then removing the per-repo key, and changing **neither** file when the two values differ.
+
+A `build.queue.upper_limit_seconds` key present in the main-anchored `run-configuration.json` is inert in the same way: `build_queue limit get` reports it as `per_repo_value` with `in_effect: false`.
+
+Each contract is documented where its script is — [`manage-build-server/SKILL.md`](../../manage-build-server/SKILL.md) for the cap verbs and the daemon-reported cap, [`manage-locks/SKILL.md`](../../manage-locks/SKILL.md) for the queue result fields and `limit get|set`.
 
 ## Section: system
 

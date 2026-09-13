@@ -22,6 +22,12 @@ ever called) enforce the no-stacking invariant.
 This module is a **pure concurrency limiter**: it admits, waits, and releases
 build-queue slots and does nothing else. It writes no terminal-title state.
 
+The one thing it additionally *reports* is the queue's own ``warnings`` — today,
+a surviving per-repo ``build.queue.max_slots`` that no longer takes effect. Each
+is surfaced once per invocation, deduplicated by ``code`` across the blocked
+re-polls (see :func:`_surface_warnings`), to stderr and to the plan work log. A
+warning never blocks, delays, or aborts the build; reporting is not gating.
+
 Behaviour:
 
 * **routed → NO-OP passthrough.** When ``routed`` is true the build already ran
@@ -76,6 +82,7 @@ from typing import Any
 
 from file_ops import get_marshal_path, read_json
 from marketplace_paths import names_real_plan
+from plan_logging import log_entry
 
 logger = logging.getLogger(__name__)
 
@@ -99,9 +106,9 @@ _build_queue_mod: Any = None
 
 # Sibling-skill ``scripts`` dirs that ``build_queue.py`` imports transitively
 # (``_locks_core`` from manage-locks, ``file_ops`` from tools-file-ops,
-# ``triage_helpers`` from script-shared/scripts/workflow; ``marketplace_paths``
-# lives in script-shared/scripts which is already this file's own dir). A
-# file-path import does not inherit the importing skill's PYTHONPATH for these
+# ``triage_helpers`` from script-shared/scripts/workflow, ``_machine_config``
+# from this file's OWN dir; ``marketplace_paths`` lives in script-shared/scripts).
+# A file-path import does not inherit the importing skill's PYTHONPATH for these
 # transitive imports, so they are ensured on ``sys.path`` before the exec —
 # the build subprocess's executor PYTHONPATH does not include manage-locks.
 _BUILD_QUEUE_DEP_DIRS: tuple[Path, ...] = (
@@ -109,6 +116,7 @@ _BUILD_QUEUE_DEP_DIRS: tuple[Path, ...] = (
     _THIS_DIR.parent.parent.parent / 'tools-file-ops' / 'scripts',  # file_ops
     _THIS_DIR.parent / 'workflow',  # triage_helpers
     _THIS_DIR.parent,  # marketplace_paths, toon_parser
+    _THIS_DIR,  # _machine_config (the machine-global cap resolver)
 )
 
 
@@ -154,10 +162,16 @@ class BuildQueueTimeout(RuntimeError):
 def _resolve_max_retries() -> int:
     """Read ``build.queue.max_retries`` from marshal.json, defaulting to 10.
 
-    Mirrors ``build_queue.py::_resolve_max_slots`` — a missing file, missing
-    ``build`` block, missing ``queue`` block, missing ``max_retries`` key, or a
-    non-positive / non-integer value all degrade to the conservative default so a
-    misconfigured queue still bounds the wait loop rather than spinning forever.
+    A missing file, missing ``build`` block, missing ``queue`` block, missing
+    ``max_retries`` key, or a non-positive / non-integer value all degrade to the
+    conservative default so a misconfigured queue still bounds the wait loop
+    rather than spinning forever. A ``bool`` is rejected although it is an
+    ``int`` subclass, so ``true`` never becomes a retry budget of 1.
+
+    Unlike the slot CAP — which is machine-global, because every caller contends
+    for one shared slot budget — ``max_retries`` stays a per-repo
+    ``marshal.json`` key: it bounds only THIS caller's own wait loop and is
+    never evaluated against another caller's entries.
     """
     config = read_json(get_marshal_path(), default={})
     if not isinstance(config, dict):
@@ -188,6 +202,77 @@ def _acquire(plan_id: str) -> dict[str, Any]:
     except Exception as exc:  # surface as a structured error dict
         return {'status': 'error', 'error': f'acquire failed: {exc}'}
     return result if isinstance(result, dict) else {'status': 'error', 'error': 'non-dict acquire result'}
+
+
+def _surface_warnings(result: dict[str, Any], plan_id: str, seen: set[str]) -> None:
+    """Surface each new ``acquire`` warning to stderr and the plan work log.
+
+    Emission mirrors ``_build_execute_factory._record_resolution``: stderr
+    unconditionally (the only sink a build subprocess has without a configured
+    logging handler — a ``logger.warning`` call here would be discarded), and the
+    plan's captured work log at ``WARNING`` when ``plan_id`` names a real plan.
+
+    **Deduplicated by ``code``, not by message.** ``seen`` is created once per
+    :func:`build_queue_slot` invocation and threaded through every re-poll, so a
+    build that blocks and re-polls N times reports the demoted-key warning ONCE
+    rather than N+1 times. The code is the stable identity for this: a message
+    embeds the live cap resolution, so two messages for one condition can differ
+    in text while naming the same problem, and deduplicating on text would let
+    the queue spam a blocked build.
+
+    A warning is a report, never a verdict: nothing here blocks, delays, or
+    aborts the build. Malformed entries are skipped rather than raised on,
+    because a queue result that fails to describe itself must not take down a
+    build that was legitimately admitted.
+
+    Args:
+        result: The ``acquire`` result dict.
+        plan_id: The acquiring plan. The ``names_real_plan`` test below is
+            redundant at the sole call site — :func:`build_queue_slot` already
+            returned early for a plan-less build — and is kept so the emitter
+            owns its own precondition rather than inheriting it from a caller.
+        seen: Codes already surfaced during this invocation; mutated in place.
+    """
+    for warning in result.get('warnings') or []:
+        if not isinstance(warning, dict):
+            continue
+        code = warning.get('code')
+        message = warning.get('message')
+        if not isinstance(code, str) or not isinstance(message, str) or code in seen:
+            continue
+        seen.add(code)
+        line = f'[BUILD-QUEUE] {message}'
+        # The stderr sink is best-effort BY CONTRACT (see the docstring above): a
+        # report must never take down a build that was legitimately admitted. The
+        # guard is load-bearing at BOTH ``_wait_for_admission`` call sites, which
+        # run with an entry already on the machine-global build-queue.json: a
+        # raising ``print`` (closed/full stderr, a broken pipe) must not turn a
+        # legitimate admission into a failed build.
+        #
+        # Scoped to ``Exception``, deliberately NOT ``BaseException``: a
+        # ``KeyboardInterrupt`` raised while writing a warning must still abort
+        # the build, and swallowing it here would make an interrupt during
+        # warning output silently unkillable.
+        #
+        # That scope does NOT leave the slot leaking, and the two concerns are
+        # distinct: a ``BaseException`` from here propagates into
+        # ``_wait_for_admission``'s ``except BaseException`` arm, which RELEASES
+        # the admitted-or-queued id and RE-RAISES. Releasing is not swallowing —
+        # the interrupt stays fatal, and the host's shared slot budget stays
+        # whole. Do NOT widen this guard to ``BaseException`` to "also handle"
+        # the leak: that swallow is what would make an interrupt unkillable, and
+        # the cleanup scope already covers it.
+        #
+        # The asymmetry with the ``log_entry`` call below is intentional and must
+        # not be "tidied" into a shared wrapper: ``plan_logging.log_entry``
+        # already swallows its own exceptions internally, so a second guard round
+        # it would be dead code.
+        try:
+            print(line, file=sys.stderr)
+        except Exception:
+            pass
+        if names_real_plan(plan_id):
+            log_entry('work', plan_id, 'WARNING', line)
 
 
 def _release(plan_id: str, admission_id: str) -> None:
@@ -230,25 +315,56 @@ def _wait_for_admission(plan_id: str, max_retries: int) -> str:
     :class:`BuildQueueTimeout` when still blocked after ``max_retries`` re-polls
     (the final queued id IS released first, as cleanup, so an exhausted plan does
     not leak a waiting entry).
+
+    Each ``acquire`` result's ``warnings`` are surfaced through
+    :func:`_surface_warnings`, deduplicated by ``code`` across every re-poll via
+    the ``seen`` set created here — so the whole wait reports a given condition
+    once, not once per poll.
+
+    From the moment the first ``acquire`` commits an entry, EVERY non-return exit
+    releases that entry and re-raises — the pre-loop warning surfacing included,
+    since it runs before :func:`build_queue_slot` establishes its release
+    ``finally`` and a leaked machine-global entry never self-heals. Releasing is
+    not swallowing: a ``KeyboardInterrupt`` still propagates and still aborts the
+    build.
     """
+    seen: set[str] = set()
     result = _acquire(plan_id)
     if result.get('status') != 'success':
         # acquire is NOT best-effort: a queue we cannot reach is a hard failure.
         raise RuntimeError(f'build_queue acquire failed for {plan_id!r}: {result.get("error")}')
 
+    # Read the id FIRST, before anything else can raise. The acquire above has
+    # already committed an entry to the machine-global queue, so from this point
+    # every non-return exit needs an id to release — and the read itself is the
+    # one step that cannot be covered, because a result carrying no ``id`` leaves
+    # nothing to release in the first place.
     admission_id = str(result['id'])
-    if result.get('admission') == 'admitted':
-        return admission_id
 
-    # From here ``admission_id`` is a QUEUED waiting entry, not yet a held slot,
-    # and the whole wait runs OUTSIDE ``build_queue_slot``'s ``try/finally`` — so
-    # any non-return exit from the poll loop (a hard acquire failure, retry
-    # exhaustion, or an interrupt during ``time.sleep``) must release the queued
-    # id itself or the waiting entry leaks. Catch ``BaseException`` so cleanup
-    # also runs on ``KeyboardInterrupt`` / ``SystemExit``; the admitted-slot
-    # ``return`` below bypasses the handler, so a live held slot is never
+    # The cleanup scope opens HERE, not after the admitted-return decision, and
+    # that placement is the whole point: ``_surface_warnings`` and the
+    # ``admission`` read below run with an entry already on the machine-global
+    # ``build-queue.json``, outside ``build_queue_slot``'s release ``finally``
+    # (which is only established once this function has RETURNED). A
+    # ``BaseException`` escaping either of them with the scope opened later left
+    # an ADMITTED entry with no release path in scope — permanently shrinking
+    # every caller's admission capacity on the host, since nothing self-heals it.
+    #
+    # The same scope covers the poll loop below, where ``admission_id`` is a
+    # QUEUED waiting entry rather than a held slot: a hard acquire failure, retry
+    # exhaustion, or an interrupt during ``time.sleep`` must release the queued
+    # id or the waiting entry leaks. ``BaseException`` so cleanup also runs on
+    # ``KeyboardInterrupt`` / ``SystemExit`` — the handler RELEASES and RE-RAISES
+    # and never swallows, so an interrupt stays fatal.
+    #
+    # Both ``return admission_id`` statements are INSIDE this try deliberately: a
+    # ``return`` bypasses the handler, so a live held slot is still never
     # released here (its release is owned by ``build_queue_slot``'s ``finally``).
     try:
+        _surface_warnings(result, plan_id, seen)
+        if result.get('admission') == 'admitted':
+            return admission_id
+
         for _ in range(max_retries):
             time.sleep(_WAIT_SECONDS)
             # Re-poll WITHOUT releasing — run_acquire is idempotent for an
@@ -258,6 +374,7 @@ def _wait_for_admission(plan_id: str, max_retries: int) -> str:
             result = _acquire(plan_id)
             if result.get('status') != 'success':
                 raise RuntimeError(f'build_queue acquire failed for {plan_id!r}: {result.get("error")}')
+            _surface_warnings(result, plan_id, seen)
             admission_id = str(result['id'])
             if result.get('admission') == 'admitted':
                 return admission_id

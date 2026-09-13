@@ -2092,50 +2092,90 @@ def test_save_config_orders_build_after_plan(tmp_path, monkeypatch):
 #
 # DEFAULT_BUILD_QUEUE seeds the cross-session build-queue admission bounds under
 # the marshal.json top-level `build` block (peer to build.map, not under plan.*)
-# because the build queue is a project-wide, cross-plan resource. `max_slots`
-# defaults to 5 (concurrent build admissions before enqueue) and `max_retries`
-# defaults to 10 (blocked-admission re-polls). These tests pin the defaults
-# surfaced by get_default_config() and prove that an explicit marshal.json value
-# overrides each default via load_config().
+# because the build queue is a project-wide, cross-plan resource. `max_retries`
+# defaults to 10 (blocked-admission re-polls).
+#
+# TWO keys are deliberately NOT among them, both for the same reason — the build
+# queue is machine-global, so anything applied across its entries cannot live in
+# one caller's repository:
+#
+#   * the slot CAP, which a per-repo key would let two callers disagree on while
+#     admitting against the same shared queue. It lives in the machine-global
+#     `machine-config.json` and is set through `manage_build_server config set`.
+#   * the adaptive REAP THRESHOLD, which is applied to every repository's entries
+#     in the one queue — so a per-repo value let a repo that had never seen a long
+#     build reap another repo's live long build early, while each repo's releases
+#     ratcheted only its own copy. It lives as a top-level `upper_limit_seconds`
+#     field of `build-queue.json` itself and is managed through
+#     `build_queue limit get|set`. The seeded copy additionally had NO reader at
+#     all: the reaper took its threshold from elsewhere, so the key was
+#     operator-visible and inert.
+#
+# These tests pin BOTH absences from the seed — seeding a key that could never
+# take effect is what the two demotions remove — while the `max_retries`
+# assertions stand unchanged, because that key legitimately remains per-repo: it
+# bounds only its own caller's wait loop and is never evaluated against another
+# caller's entries.
 
 
-def test_default_build_queue_declares_max_slots_5_and_max_retries_10():
-    """DEFAULT_BUILD_QUEUE must declare max_slots=5 and max_retries=10."""
+def test_default_build_queue_omits_max_slots_and_declares_max_retries_10():
+    """DEFAULT_BUILD_QUEUE must NOT carry max_slots, and must keep max_retries=10.
+
+    The two halves are asserted together on purpose: the absence alone would
+    also pass against a `DEFAULT_BUILD_QUEUE` that had lost the whole block, so
+    the surviving `max_retries` is what pins this as a one-key demotion rather
+    than a wider deletion.
+    """
     build_queue = _config_defaults_mod.DEFAULT_BUILD_QUEUE
 
-    assert 'max_slots' in build_queue, 'max_slots must be schema-registered in DEFAULT_BUILD_QUEUE'
-    assert build_queue['max_slots'] == 5, 'build_queue.max_slots default must be 5 (concurrent build admissions)'
+    assert 'max_slots' not in build_queue, (
+        'max_slots must NOT be seeded — the cap is machine-global, so a per-repo '
+        'key would never take effect and is reported as not in effect instead'
+    )
     assert 'max_retries' in build_queue, 'max_retries must be schema-registered in DEFAULT_BUILD_QUEUE'
     assert build_queue['max_retries'] == 10, 'build_queue.max_retries default must be 10 (blocked-admission re-polls)'
 
 
-def test_default_build_queue_declares_upper_limit_seconds_600():
-    """DEFAULT_BUILD_QUEUE must seed upper_limit_seconds=600 (the clamp floor).
+def test_default_build_queue_seeds_exactly_max_retries():
+    """DEFAULT_BUILD_QUEUE must carry max_retries and NOTHING else.
 
-    Seeding the key makes the adaptive stale-reclaim ceiling operator-visible in a
-    freshly-seeded config instead of fallback-only; 600 is the floor of the
-    clamped [600, 3600] range manage-run-config enforces.
+    The reap threshold is gone from the seed: it is applied to every repository's
+    entries in the one machine-global queue, so it now lives as a top-level field
+    of ``build-queue.json`` and is managed through ``build_queue limit get|set``.
+    The seeded copy never had a reader in the first place — the reaper took its
+    threshold from elsewhere — so the key was operator-visible and inert.
+
+    The key SET is asserted rather than the two absences, and that is the point:
+    an absence pair is satisfied by a block that lost everything, and it says
+    nothing about a third key seeded later. Comparing the whole set pins the
+    demotion as exactly-one-key-remaining, and fails loud on a re-introduction of
+    either retired key OR on a new one arriving unreviewed.
     """
     build_queue = _config_defaults_mod.DEFAULT_BUILD_QUEUE
 
-    assert 'upper_limit_seconds' in build_queue, 'upper_limit_seconds must be schema-registered in DEFAULT_BUILD_QUEUE'
-    assert build_queue['upper_limit_seconds'] == 600, (
-        'build_queue.upper_limit_seconds default must be 600 (the clamp floor)'
+    assert set(build_queue) == {'max_retries'}, (
+        'DEFAULT_BUILD_QUEUE must seed exactly max_retries — the cap lives in '
+        'machine-config.json and the reap threshold in build-queue.json'
     )
+    assert build_queue['max_retries'] == 10
 
 
-def test_get_default_config_surfaces_build_queue_max_slots_default_5():
-    """get_default_config() must surface build.queue.max_slots == 5 when unconfigured.
+def test_get_default_config_seeds_no_build_queue_max_slots():
+    """get_default_config() must seed NO build.queue.max_slots.
 
-    The build.queue block lives under the marshal.json top-level `build` block
-    (cross-plan resource), not under plan.*.
+    The build.queue block still lives under the marshal.json top-level `build`
+    block (cross-plan resource), and is still seeded — only the cap key is gone,
+    because a per-repo cap over a machine-global queue can never take effect.
+    Membership is tested with ``in`` rather than by reading the value: a
+    ``.get()`` comparison would pass equally against a key seeded as ``None``,
+    which is still a seeded key.
     """
     config = _config_defaults_mod.get_default_config()
 
     assert 'queue' in config.get('build', {}), (
         'build.queue must live under the top-level build block in get_default_config()'
     )
-    assert config['build']['queue'].get('max_slots') == 5
+    assert 'max_slots' not in config['build']['queue']
 
 
 def test_get_default_config_surfaces_build_queue_max_retries_default_10():
@@ -2148,14 +2188,22 @@ def test_get_default_config_surfaces_build_queue_max_retries_default_10():
     assert config['build']['queue'].get('max_retries') == 10
 
 
-def test_get_default_config_surfaces_build_queue_upper_limit_seconds_default_600():
-    """get_default_config() must surface build.queue.upper_limit_seconds == 600."""
+def test_get_default_config_seeds_no_build_queue_upper_limit_seconds():
+    """get_default_config() must seed NO build.queue.upper_limit_seconds.
+
+    The build.queue block is still seeded under the top-level `build` block — only
+    the reap-threshold key is gone, because it governs the whole machine-global
+    queue rather than this one repository. Membership is tested with ``in`` rather
+    than by reading the value, for the same reason the sibling max_slots test
+    gives: a ``.get()`` comparison passes equally against a key seeded as
+    ``None``, which is still a seeded key.
+    """
     config = _config_defaults_mod.get_default_config()
 
     assert 'queue' in config.get('build', {}), (
         'build.queue must live under the top-level build block in get_default_config()'
     )
-    assert config['build']['queue'].get('upper_limit_seconds') == 600
+    assert 'upper_limit_seconds' not in config['build']['queue']
 
 
 def test_default_config_seeds_no_require_wrapper():
@@ -2194,31 +2242,31 @@ def test_config_defaults_module_drops_require_wrapper_seed_constant():
     )
 
 
-def test_marshal_build_queue_max_slots_override_wins(plan_context, monkeypatch):
-    """An explicit marshal.json build.queue.max_slots overrides the default of 5.
+def test_a_freshly_initialised_marshal_json_carries_no_demoted_build_queue_keys(plan_context, monkeypatch):
+    """A fresh `init` must write NEITHER demoted build.queue key into marshal.json.
 
-    Seeds a fresh marshal.json (which carries the default build.queue block),
-    rewrites build.queue.max_slots to a custom value, and proves load_config()
-    reads the override back rather than the 5 default. The directly-loaded
-    `_config_core_mod` is a distinct module object from the conftest-imported
-    `_config_core` that plan_context monkeypatches, so MARSHAL_PATH must be
-    redirected on `_config_core_mod` itself for its load_config() to resolve the
-    fixture marshal.json.
+    This replaces the former "an explicit marshal.json max_slots override wins"
+    test, whose premise is now false in BOTH halves: the key is no longer seeded,
+    and a per-repo value no longer overrides anything — the cap is machine-global
+    and a surviving key is reported as not in effect. Keeping that test would
+    have pinned the exact behaviour the demotion removes. The reap threshold joins
+    it for the same reason, having moved into the queue's own state.
+
+    Asserted at the `init` boundary as the whole persisted key SET, not as two
+    absences: this is the surface an operator actually reads, and the set is what
+    fails loud on either retired key returning OR on a new one being seeded
+    unreviewed. The `build.queue` block itself is still asserted present, so this
+    cannot pass by way of the whole block disappearing.
     """
-    # fresh marshal.json with the seeded default block
     _cmd_init_mod.cmd_init(Namespace(force=False))
     marshal_path = plan_context.fixture_dir / 'marshal.json'
     monkeypatch.setattr(_config_core_mod, 'MARSHAL_PATH', marshal_path)
+
     config = json.loads(marshal_path.read_text(encoding='utf-8'))
-    assert config['build']['queue']['max_slots'] == 5  # precondition: seeded default
 
-    # write a custom max_slots override into the persisted config
-    config['build']['queue']['max_slots'] = 12
-    marshal_path.write_text(json.dumps(config, indent=2), encoding='utf-8')
-    reloaded = _config_core_mod.load_config()
-
-    # load_config surfaces the override, not the 5 default
-    assert reloaded['build']['queue']['max_slots'] == 12
+    assert 'queue' in config['build']
+    assert set(config['build']['queue']) == {'max_retries'}
+    assert config['build']['queue']['max_retries'] == 10
 
 
 def test_marshal_build_queue_max_retries_override_wins(plan_context, monkeypatch):

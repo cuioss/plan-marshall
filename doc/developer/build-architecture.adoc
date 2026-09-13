@@ -38,8 +38,11 @@ The build server is three skills plus a shared protocol library, over a machine-
                                       ▼ child: python3 {tree}/.plan/execute-script.py {notation} …
 
  ~/.plan-marshall/  marshalld/{socket, daemon.pid, daemon.log, registry.json,
-                              registry-audit.log, journal/, job-logs/}
-                    build-queue.json  (the single machine-global slot substrate)
+                              machine-config.json, registry-audit.log,
+                              journal/, job-logs/}
+                    build-queue.json  (the single machine-global slot substrate,
+                                       + the top-level upper_limit_seconds reap
+                                       threshold its own entries are reaped by)
 ....
 
 The shared protocol library `_build_server_protocol` is imported by both sides: it owns the length-prefixed JSON frame codec (a 4-byte big-endian length prefix + a UTF-8 JSON body, so nested/multi-line error payloads round-trip losslessly), the `JobSpec` struct, and the status-schema helpers that map to and from the shared `_build_result` shape. Neither the client nor the daemon re-declares the wire contract.
@@ -59,13 +62,15 @@ The interaction architecture is eight flows. F1–F2 are the operator/session se
 
 === F1 — Registration (the enable signal)
 
-The operator runs `manage-build-server register` (user-invocable only). It upserts the project — keyed by its canonical, symlink-resolved root — into the machine-global `registry.json` via the `_build_server_registry` module, recording the worktree containers and the notation allowlist, and appends one line to the append-only registration audit log. Registration is the ONLY enablement; there is no config knob and nothing git-tracked.
+The operator runs `manage-build-server register` (user-invocable only). It upserts the project — keyed by its canonical, symlink-resolved root — into the machine-global `registry.json` via the `_build_server_registry` module, recording the worktree containers and the notation allowlist, and appends one line to the append-only registration audit log. Registration is the ONLY enablement; no config knob turns the daemon on and nothing git-tracked does.
+
+That claim is about the *enable signal* specifically. The build-slot cap the scheduler admits under (F4) *does* have a machine-wide setting, reached through `manage-build-server config set --max-slots N` — but it is host state, so still nothing git-tracked, and it governs how many builds run at once, never whether the daemon serves a project.
 
 === F2 — Preflight (session readiness)
 
 At phase-1-init the session makes one deterministic `build_server preflight` call. The client reads the registry for the project root: an unregistered project returns `disabled` with NO daemon round-trip (an unregistered project never touches the socket). A registered project completes the S3 identity handshake and returns `ready` (the daemon answered with the expected version) or `down` + a named reason. The init step branches on the one TOON — `disabled`/`ready` proceed silently, `down` asks the operator — and the daemon is never auto-started.
 
-Preflight readiness is only ONE of the two inputs to the build-execute routing decision (see xref:execution-modes[Execution modes]). The other is the caller's explicit `--execution-mode` (`auto` | `in_process` | `daemon`). Preflight answers *can this build be routed*; the requested execution_mode answers *should it be — and what happens when it cannot*. The routing is therefore no longer "route whenever registered-and-ready"; readiness is necessary but not sufficient, and a not-ready preflight resolves differently per requested mode.
+Preflight readiness is only ONE of the two inputs to the build-execute routing decision (see <<execution-modes,Execution modes>>). The other is the caller's explicit `--execution-mode` (`auto` | `in_process` | `daemon`). Preflight answers *can this build be routed*; the requested execution_mode answers *should it be — and what happens when it cannot*. The routing is therefore no longer "route whenever registered-and-ready"; readiness is necessary but not sufficient, and a not-ready preflight resolves differently per requested mode.
 
 === F3 — Submit
 
@@ -73,7 +78,11 @@ A submit happens only when the routing decision resolves to *routed*: the reques
 
 === F4 — Schedule and execute
 
-Admission is bounded by `max_slots` (`build.queue.max_slots`, default 5). When a slot is free the scheduler admits the next job under per-project round-robin fairness (FIFO within a project), and the supervisor spawns one `asyncio` child in the submitted tree with a clean server-side baseline env — the client's environment is never forwarded and no provider secret reaches the build. The child's combined output streams to a per-job log as it is produced (durable even if the wait is reaped), each chunk marks liveness, and on exit the supervisor classifies the terminal status and the journal records the result and updates the command's ETA history.
+Admission is bounded by `max_slots` (default 5), and the cap has exactly one home: the machine-global `machine-config.json` in the daemon state dir, beside `registry.json`. It is *not* a `marshal.json` key. Both consumers that must agree — this scheduler and the F6 in-process fallback's `build_queue` admission — resolve it through one shared, cwd-independent resolver, because both admit against the ONE machine-global `build-queue.json`. Cwd independence is load-bearing rather than incidental: the daemon double-forks and `chdir`s to `/` (F8), so a cwd-relative walk-up would find no repository at all and degrade silently to the default — indistinguishable from a deliberately configured 5.
+
+The cap is re-resolved *per submit*, not only at daemon start, so a `config set` takes effect on the next submitted build with no restart. Every resolution carries a `max_slots_source` — `machine_config`, `default`, `invalid`, or `unreadable` — plus a `max_slots_detail` for any non-nominal one, because the value alone cannot distinguish a configured 5 from a fallback 5; `ping` reports both so `status` renders the cap the *running* daemon is applying rather than re-resolving locally. Two processes can nonetheless admit against different caps — an entry admitted before a `config set` keeps the cap it was admitted under while a later caller resolves the new one, and a resolution that comes back `invalid` or `unreadable` admits under the default while its neighbour admits under the configured value — so every queue entry is stamped with the cap it was admitted under and each `acquire` reports a `cap_agreement` verdict with the population it compared. That disagreement is *reported, never reconciled* — choosing a winner is what a per-caller cap over a shared queue cannot do correctly.
+
+When a slot is free the scheduler admits the next job under per-project round-robin fairness (FIFO within a project), and the supervisor spawns one `asyncio` child in the submitted tree with a clean server-side baseline env — the client's environment is never forwarded and no provider secret reaches the build. The child's combined output streams to a per-job log as it is produced (durable even if the wait is reaped), each chunk marks liveness, and on exit the supervisor classifies the terminal status and the journal records the result and updates the command's ETA history.
 
 === F5 — Wait (server-side bounded long-poll)
 
@@ -170,7 +179,10 @@ The design leaves several things intentionally unbuilt. They are recorded here s
 | Not built | Why
 
 | A config knob or git-tracked flag to enable the build server
-| Registration IS the enable signal (F1). An always-available knob would erode the operator-interactivity wall and make the daemon a silent default.
+| Registration IS the enable signal (F1). An always-available knob would erode the operator-interactivity wall and make the daemon a silent default. This absence is about *enablement* only — the build-slot cap does have a machine-wide setting (`config set --max-slots N`, F4), which is host state rather than anything git-tracked and decides concurrency, not service.
+
+| Reconciliation of two processes that admitted under different caps
+| Reported, never reconciled (F4). The admitting caller applies its own cap and existing stamps are left as admitted, because picking a winner between two callers contending over one shared queue is exactly what a per-caller cap cannot do correctly — which is why the report names no remedy command.
 
 | A retry-on-`killed` path
 | A kill is not flakiness. The `killed` status is surfaced verbatim ("do not blind-retry"); the caller decides, and the daemon never re-dispatches an identical killed job on its own.
@@ -193,5 +205,7 @@ The design leaves several things intentionally unbuilt. They are recorded here s
 * xref:../concepts/build-server.adoc[Concepts › Build Server] — the what/why companion: the wait/work split, the scope criterion, registration-as-enablement, and the status-TOON guarantees, at concept altitude.
 * xref:../concepts/parallelism-and-locking.adoc[Concepts › Parallelism and Locking] — the machine-global build-queue limiter that both the daemon and the F6 fallback consume as one slot substrate.
 * xref:../user/installation.adoc[User Guide › Installation] — the POSIX / WSL2 platform requirement and the per-distro daemon lifecycle.
-* link:../../marketplace/bundles/plan-marshall/skills/manage-build-server/SKILL.md[`manage-build-server/SKILL.md`] — the operator control-surface contract (register / lifecycle).
+* link:../../marketplace/bundles/plan-marshall/skills/manage-build-server/SKILL.md[`manage-build-server/SKILL.md`] — the operator control-surface contract (register / lifecycle / the `config get|set|migrate` cap verbs), including every `config migrate` outcome and all six refusal reasons.
 * link:../../marketplace/bundles/plan-marshall/skills/build-server-client/SKILL.md[`build-server-client/SKILL.md`] — the submit / wait / ping / preflight client contract.
+* link:../../marketplace/bundles/plan-marshall/skills/manage-locks/SKILL.md[`manage-locks/SKILL.md`] — the queue side of the shared cap: the `acquire` / `release` result fields (the cap reports and the disagreement verdict ride an admission, not a release), the `admitted_under_max_slots` stamp, and the `limit get|set` threshold verbs.
+* xref:../user/parallelism-and-locking.adoc[User Guide › Parallelism and Locking] — the operator-facing view of the same two machine-global settings and the leftover-per-repo-key migration.

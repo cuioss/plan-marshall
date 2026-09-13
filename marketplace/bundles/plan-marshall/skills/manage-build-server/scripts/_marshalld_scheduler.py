@@ -5,12 +5,22 @@
 The scheduler decides WHICH accepted job runs NEXT and enforces three
 properties the request demands:
 
-* **Bounded concurrency** — at most ``max_slots`` jobs run at once
-  (``build.queue.max_slots``, default 5 — the machine-CPU cap). This is the
-  daemon-side admission count; the actual cross-process slot is coordinated
-  against the single machine-global ``build-queue.json`` by the build-execute
-  routing seam (D5), which owns the shared reader/writer. The scheduler tracks
-  the daemon's own admitted set so it never oversubscribes the budget it holds.
+* **Bounded concurrency** — at most ``max_slots`` jobs run at once. The cap is
+  the MACHINE-GLOBAL ``build.queue.max_slots`` (default
+  :data:`_machine_config.DEFAULT_MAX_SLOTS`, the machine-CPU cap), resolved by
+  :func:`_machine_config.resolve_max_slots` from ``machine-config.json`` — it is
+  NOT a per-repository ``marshal.json`` key, because the daemon serves every
+  registered project on the host and one shared slot budget cannot take a
+  different value per project. This is the daemon-side admission count; the
+  actual cross-process slot is coordinated against the single machine-global
+  ``build-queue.json`` by the build-execute routing seam (D5), which owns the
+  shared reader/writer. The scheduler tracks the daemon's own admitted set so it
+  never oversubscribes the budget it holds. The cap is re-pointable while the
+  scheduler is live (:meth:`Scheduler.set_max_slots`), because the daemon
+  re-resolves the machine-global value on every submit — an operator's ``config
+  set`` therefore takes effect without restarting a daemon that may be serving
+  other projects' builds. A re-point governs future ADMISSION only and never
+  evicts a running job.
 * **Per-project round-robin fairness** — when several projects contend for the
   slot budget, admission rotates across projects rather than draining one
   project's queue before serving another. Within a project, order is FIFO.
@@ -40,8 +50,7 @@ from collections import deque
 from dataclasses import dataclass, field
 from typing import Any
 
-DEFAULT_MAX_SLOTS = 5
-"""Fallback machine-CPU concurrency cap when config is unavailable."""
+from _machine_config import DEFAULT_MAX_SLOTS
 
 
 @dataclass
@@ -87,7 +96,12 @@ class Scheduler:
         Args:
             max_slots: Maximum concurrently-running jobs (>= 1).
         """
-        self._max_slots = max(1, int(max_slots))
+        # Through set_max_slots() so the >= 1 floor is applied in exactly ONE
+        # place: the cap arrives here at startup and there on every re-resolve,
+        # and two copies of the clamp are two chances for the doors to disagree
+        # about what the lowest legal cap is.
+        self._max_slots = 1
+        self.set_max_slots(max_slots)
         self._queues: dict[str, deque[JobEntry]] = {}
         self._order: list[str] = []
         self._rotation = 0
@@ -120,6 +134,37 @@ class Scheduler:
         return fingerprint in self._by_fingerprint
 
     # -- mutation ----------------------------------------------------------
+
+    def set_max_slots(self, max_slots: int) -> int:
+        """Re-point the concurrency cap at a newly-resolved value.
+
+        The cap is machine-global state an operator can change under a running
+        daemon (``manage_build_server config set``), and the daemon re-resolves it
+        per submit — so the scheduler must be able to take a new cap without being
+        rebuilt, which would discard its queues, its running set, and the
+        idempotency fingerprints of jobs already in flight.
+
+        Applies to ADMISSION only, never retroactively to running jobs. LOWERING
+        the cap below the current running count therefore does not cancel or evict
+        anything: :meth:`available_slots` already floors at ``0``, so the
+        scheduler simply admits nothing new until enough jobs complete to bring
+        the running count back under the new cap. Killing a build an operator
+        never asked to kill would be a far worse answer to "the cap went down"
+        than waiting is.
+
+        Args:
+            max_slots: The newly-resolved cap. Clamped to ``>= 1`` on the same
+                floor the constructor applies — one shared clamp, so a caller
+                cannot reach a zero cap through this door that the constructor
+                would have rejected, and a cap of ``0`` can never wedge the
+                daemon into admitting nothing forever.
+
+        Returns:
+            The cap now in effect (post-clamp), so a caller reports what was
+            applied rather than what it asked for.
+        """
+        self._max_slots = max(1, int(max_slots))
+        return self._max_slots
 
     def submit(self, job_spec: Any, project_root: str) -> SubmitResult:
         """Enqueue a job, or attach to an identical in-flight one.
@@ -192,31 +237,3 @@ class Scheduler:
         if entry.fingerprint and self._by_fingerprint.get(entry.fingerprint) == job_id:
             del self._by_fingerprint[entry.fingerprint]
         return entry
-
-
-def resolve_max_slots(config: dict[str, Any] | None) -> int:
-    """Resolve ``build.queue.max_slots`` from a config dict, defaulting to 5.
-
-    Mirrors the degradation policy of the build-queue primitive: a missing
-    ``build`` block, missing ``queue`` block, missing / non-positive /
-    non-integer ``max_slots`` all fall back to :data:`DEFAULT_MAX_SLOTS` so a
-    misconfigured cap still bounds concurrency.
-
-    Args:
-        config: A parsed ``marshal.json`` dict, or ``None``.
-
-    Returns:
-        The resolved positive slot count.
-    """
-    if not isinstance(config, dict):
-        return DEFAULT_MAX_SLOTS
-    build = config.get('build')
-    if not isinstance(build, dict):
-        return DEFAULT_MAX_SLOTS
-    queue = build.get('queue')
-    if not isinstance(queue, dict):
-        return DEFAULT_MAX_SLOTS
-    raw = queue.get('max_slots')
-    if isinstance(raw, bool) or not isinstance(raw, int):
-        return DEFAULT_MAX_SLOTS
-    return raw if raw > 0 else DEFAULT_MAX_SLOTS

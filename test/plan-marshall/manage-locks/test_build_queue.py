@@ -7,8 +7,10 @@ concurrency limiter with a FIFO waiting queue.
 
 from __future__ import annotations
 
+import json
 from argparse import Namespace
 from pathlib import Path
+from typing import Any
 
 import pytest
 from _build_queue_fixtures import (
@@ -21,6 +23,7 @@ from _build_queue_fixtures import (
     build_queue,
     isolated_base,
 )
+from toon_parser import parse_toon, serialize_toon
 
 # =============================================================================
 # Corrupt / missing file resilience
@@ -49,7 +52,7 @@ class TestCorruptFileAsEmpty:
 
 class TestDeadHolderReclamation:
     def test_dead_active_holder_is_pruned_freeing_a_slot(self, isolated_base: dict) -> None:
-        _set_max_slots(isolated_base['base'], 1)
+        _set_max_slots(isolated_base['home'], 1)
         # plan-dead acquires the only slot but its plan dir is NEVER created → dead.
         build_queue.run_acquire(Namespace(plan_id='plan-dead'))
 
@@ -63,7 +66,7 @@ class TestDeadHolderReclamation:
         assert [e['plan_id'] for e in state['active']] == ['plan-live']
 
     def test_live_active_holder_is_not_pruned(self, isolated_base: dict) -> None:
-        _set_max_slots(isolated_base['base'], 1)
+        _set_max_slots(isolated_base['home'], 1)
         _make_live_plan(isolated_base['base'], 'plan-live')
         build_queue.run_acquire(Namespace(plan_id='plan-live'))
 
@@ -88,7 +91,7 @@ class TestForeignProjectHolderPrune:
         import time
 
         base = isolated_base['base']
-        _set_max_slots(base, 1)
+        _set_max_slots(isolated_base['home'], 1)
 
         # A holder recorded by project A, LIVE under A's checkout (a DIFFERENT
         # checkout than this session's isolated_base['main_repo']).
@@ -126,7 +129,7 @@ class TestForeignProjectHolderPrune:
         import time
 
         base = isolated_base['base']
-        _set_max_slots(base, 1)
+        _set_max_slots(isolated_base['home'], 1)
 
         # A holder recorded by project A but ABSENT under A's checkout → dead.
         foreign_root = tmp_path / 'foreign-project'
@@ -226,3 +229,423 @@ class TestMachineGlobalResolution:
         # The queue landed under the machine-global home root, not the worktree.
         assert (home / 'build-queue.json').is_file()
         assert not (worktree / '.plan' / 'local' / 'build-queue.json').exists()
+
+
+# =============================================================================
+# Machine-global CAP resolution — the per-repo key is not in effect
+# =============================================================================
+
+
+class TestMachineGlobalCap:
+    def test_per_repo_marshal_json_cap_does_not_change_the_admitted_cap(self, isolated_base: dict) -> None:
+        """A surviving per-repo ``build.queue.max_slots`` is not in effect.
+
+        The cap is machine-global, so a single repository cannot change how many
+        slots the SHARED queue admits. Staging the per-repo key at a DIFFERENT
+        value from the machine-global one is what makes this discriminating:
+        reading 1 here would prove the repo file is still consulted.
+        """
+        _set_max_slots(isolated_base['home'], 4)
+        (isolated_base['base'] / 'marshal.json').write_text(
+            json.dumps({'build': {'queue': {'max_slots': 1}}}), encoding='utf-8'
+        )
+
+        result = build_queue.run_acquire(Namespace(plan_id='plan-a'))
+
+        assert result['max_slots'] == 4
+        assert result['max_slots_source'] == 'machine_config'
+        # A nominal resolution has nothing to explain, so no detail rides along.
+        assert 'max_slots_detail' not in result
+
+    def test_release_reports_the_cap_source_too(self, isolated_base: dict) -> None:
+        """Both admission surfaces report provenance, not just acquire."""
+        _set_max_slots(isolated_base['home'], 3)
+        acquired = build_queue.run_acquire(Namespace(plan_id='plan-a'))
+
+        released = build_queue.run_release(Namespace(plan_id='plan-a', id=acquired['id']))
+
+        assert released['max_slots'] == 3
+        assert released['max_slots_source'] == 'machine_config'
+
+    def test_absent_machine_config_admits_the_default_and_says_it_fell_back(self, isolated_base: dict) -> None:
+        """An unconfigured host admits 5 and reports ``default``, not silence.
+
+        ``max_slots`` alone cannot carry this: a fallback 5 and a configured 5
+        are the same number, so only the reported source distinguishes them.
+        """
+        result = build_queue.run_acquire(Namespace(plan_id='plan-a'))
+
+        assert result['max_slots'] == 5
+        assert result['max_slots_source'] == 'default'
+        assert result['max_slots_detail'] is None
+
+    def test_unusable_machine_config_value_is_reported_as_invalid(self, isolated_base: dict) -> None:
+        """A broken cap still admits, but never reports itself as configured."""
+        config_dir = isolated_base['home'] / 'marshalld'
+        config_dir.mkdir(parents=True, exist_ok=True)
+        (config_dir / 'machine-config.json').write_text(
+            json.dumps({'build': {'queue': {'max_slots': -2}}}), encoding='utf-8'
+        )
+
+        result = build_queue.run_acquire(Namespace(plan_id='plan-a'))
+
+        assert result['max_slots'] == 5
+        assert result['max_slots_source'] == 'invalid'
+        assert result['max_slots_detail'] is not None
+
+
+# =============================================================================
+# The demoted per-repo key is REPORTED on every queued build
+# =============================================================================
+
+
+class TestPerRepoDemotionReport:
+    """The audible half of the demotion: the key does nothing AND says so.
+
+    The cap-is-unchanged half is asserted by :class:`TestMachineGlobalCap`
+    above. These tests assert the reporting half — without it the demotion is
+    silent, and an operator whose repository still sets the key would keep
+    believing a cap they do not have.
+    """
+
+    def _write_per_repo_cap(self, isolated_base: dict, value: object) -> None:
+        """Stage a per-repo ``build.queue.max_slots`` where the caller resolves it.
+
+        ``PLAN_BASE_DIR`` is what ``file_ops.get_tracked_config_dir`` returns
+        under this fixture, so this is the exact path ``run_acquire``'s
+        cwd-relative ``get_marshal_path()`` reads.
+        """
+        (isolated_base['base'] / 'marshal.json').write_text(
+            json.dumps({'build': {'queue': {'max_slots': value, 'max_retries': 10}}}), encoding='utf-8'
+        )
+
+    def test_a_present_per_repo_key_is_reported_as_not_in_effect(self, isolated_base: dict) -> None:
+        """The value is echoed back, explicitly flagged as inoperative."""
+        _set_max_slots(isolated_base['home'], 4)
+        self._write_per_repo_cap(isolated_base, 1)
+
+        result = build_queue.run_acquire(Namespace(plan_id='plan-a'))
+
+        assert result['per_repo_max_slots'] == {'value': 1, 'in_effect': False}
+
+    def test_a_present_per_repo_key_yields_exactly_one_warning(self, isolated_base: dict) -> None:
+        """One warning, not zero and not several.
+
+        The cardinality is the assertion: the wrapper deduplicates by ``code``
+        across re-polls, so a queue emitting the same condition twice per
+        acquire would make that deduplication load-bearing for correctness
+        rather than for noise.
+        """
+        _set_max_slots(isolated_base['home'], 4)
+        self._write_per_repo_cap(isolated_base, 1)
+
+        result = build_queue.run_acquire(Namespace(plan_id='plan-a'))
+
+        assert len(result['warnings']) == 1
+        assert result['warnings'][0]['code'] == 'per_repo_max_slots_not_in_effect'
+
+    def test_the_warning_names_the_repo_value_and_the_cap_in_effect(self, isolated_base: dict) -> None:
+        """Both numbers appear, so the operator can see which one won."""
+        _set_max_slots(isolated_base['home'], 4)
+        self._write_per_repo_cap(isolated_base, 1)
+
+        message = build_queue.run_acquire(Namespace(plan_id='plan-a'))['warnings'][0]['message']
+
+        assert str(isolated_base['base'] / 'marshal.json') in message
+        assert 'config migrate' in message
+
+    def test_no_per_repo_key_yields_an_empty_warnings_list(self, isolated_base: dict) -> None:
+        """``warnings`` is ALWAYS present — absent means nothing to say, not no key.
+
+        An optional key would let a consumer branch on presence and forget to
+        look; an always-present empty list is iterated unconditionally.
+        """
+        _set_max_slots(isolated_base['home'], 4)
+
+        result = build_queue.run_acquire(Namespace(plan_id='plan-a'))
+
+        assert result['warnings'] == []
+        assert 'per_repo_max_slots' not in result
+
+    def test_a_per_repo_key_is_reported_even_with_no_machine_config_at_all(self, isolated_base: dict) -> None:
+        """The commonest real case: a legacy repo key on an unconfigured host.
+
+        The cap in effect is the fallback 5, and the warning must still fire —
+        reporting only when a machine-global value happens to be set would leave
+        exactly the repositories that never migrated in silence.
+        """
+        self._write_per_repo_cap(isolated_base, 1)
+
+        result = build_queue.run_acquire(Namespace(plan_id='plan-a'))
+
+        assert result['max_slots'] == 5
+        assert result['max_slots_source'] == 'default'
+        assert result['per_repo_max_slots'] == {'value': 1, 'in_effect': False}
+        assert len(result['warnings']) == 1
+
+    def test_an_unusable_per_repo_value_is_still_reported_verbatim(self, isolated_base: dict) -> None:
+        """A value that could never be a cap is echoed as written, not corrected.
+
+        The report has to name what is in the operator's own file, or they
+        cannot find the key it is telling them about.
+        """
+        self._write_per_repo_cap(isolated_base, 0)
+
+        result = build_queue.run_acquire(Namespace(plan_id='plan-a'))
+
+        assert result['per_repo_max_slots'] == {'value': 0, 'in_effect': False}
+        assert len(result['warnings']) == 1
+
+    def test_a_repo_carrying_only_max_retries_yields_no_warning(self, isolated_base: dict) -> None:
+        """The matched negative control: ``max_retries`` is a LEGITIMATE per-repo key.
+
+        Without this, the tests above would pass equally against an
+        implementation that warned about any ``build.queue`` block at all — which
+        would fire on every correctly-migrated repository.
+        """
+        (isolated_base['base'] / 'marshal.json').write_text(
+            json.dumps({'build': {'queue': {'max_retries': 10, 'upper_limit_seconds': 600}}}), encoding='utf-8'
+        )
+
+        result = build_queue.run_acquire(Namespace(plan_id='plan-a'))
+
+        assert result['warnings'] == []
+        assert 'per_repo_max_slots' not in result
+
+
+# =============================================================================
+# `limit get` is a NON-COMMITTING read — a read verb cannot erase the queue
+# =============================================================================
+
+
+class TestLimitGetIsANonCommittingRead:
+    """``limit get`` reports the threshold and writes NOTHING to the queue file.
+
+    It previously ran an identity mutator through ``rmw_json``, which commits
+    unconditionally. Because that path reports a corrupt, truncated or non-dict
+    ``build-queue.json`` as ``{}``, a caller merely ASKING for the threshold
+    committed that ``{}`` back — destroying every active and waiting entry. The
+    next admission then started from an empty queue and over-admitted past the
+    cap, which is the over-admission class this plan characterises.
+
+    Every assertion below is on the FILE, not on the returned envelope: the
+    return was already correct, and the defect was entirely in what the read
+    left behind.
+    """
+
+    #: A queue state holding one real active holder and one real waiting entry.
+    #: Both are needed: the commit erased BOTH lists, so an active-only fixture
+    #: would leave half the loss unobserved.
+    _STATE: dict[str, Any] = {
+        'active': [{'id': 'plan-a:uuid-a', 'plan_id': 'plan-a', 'ts': 1.0, 'active_since': 1.0}],
+        'waiting': [{'id': 'plan-b:uuid-b', 'plan_id': 'plan-b', 'ts': 2.0}],
+        'run_log': [],
+        build_queue.UPPER_LIMIT_FIELD: 1800,
+    }
+
+    @classmethod
+    def _corrupt_bodies(cls) -> dict[str, str]:
+        """Two corruptions of a file that DOES hold real entries.
+
+        The corruption has to be applied to populated state rather than invented
+        as an empty malformed file, or "the entries survive" would have nothing
+        to survive. Both forms keep the entry text in the file, so the loss is
+        observable as the ids disappearing.
+        """
+        body = json.dumps(cls._STATE, indent=2)
+        return {
+            # Valid-JSON prefix with the closing brace removed — the shape a
+            # crash mid-write leaves behind.
+            'invalid-json': body[:-1],
+            # Parses fine, but the top level is a list, which the shared reader
+            # also reports as empty.
+            'top-level-list': f'[{body}]',
+        }
+
+    @pytest.mark.parametrize('corruption', ['invalid-json', 'top-level-list'])
+    def test_limit_get_leaves_a_corrupt_queue_file_byte_identical(self, isolated_base: dict, corruption: str) -> None:
+        """The file the verb could not parse is the file it must not rewrite."""
+        queue_path: Path = isolated_base['queue_path']
+        queue_path.write_text(self._corrupt_bodies()[corruption], encoding='utf-8')
+        before = queue_path.read_bytes()
+
+        result = build_queue.run_limit_get(Namespace())
+
+        assert result['status'] == 'success'
+        assert queue_path.read_bytes() == before
+        # Stated separately from the byte comparison because it is the
+        # consequence that matters: the holders are still there to be released
+        # and promoted. Against the rmw_json implementation the file reads `{}`
+        # and both ids are gone.
+        surviving = queue_path.read_text(encoding='utf-8')
+        assert 'plan-a:uuid-a' in surviving
+        assert 'plan-b:uuid-b' in surviving
+
+    def test_limit_get_leaves_a_well_formed_queue_file_byte_identical(self, isolated_base: dict) -> None:
+        """A read writes nothing on the happy path either.
+
+        The corrupt-file cases above are where the loss was observable, but the
+        contract is "this verb does not write", not "this verb does not write
+        when it cannot parse" — a reformat-on-read would still churn the file
+        under every concurrent holder.
+        """
+        queue_path: Path = isolated_base['queue_path']
+        _write_queue(queue_path, self._STATE)
+        before = queue_path.read_bytes()
+
+        build_queue.run_limit_get(Namespace())
+
+        assert queue_path.read_bytes() == before
+
+    def test_limit_get_still_reports_the_full_contract_on_a_well_formed_file(
+        self, isolated_base: dict, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The read-path correction changes nothing the verb REPORTS.
+
+        Every field the operator surface is documented to carry is asserted
+        together, including the retired per-repo value with ``in_effect: false``
+        — so a fix that quietly narrowed the envelope while satisfying the
+        "wrote nothing" assertions above would fail here.
+        """
+        _write_queue(isolated_base['queue_path'], self._STATE)
+        per_repo = tmp_path / 'run-configuration.json'
+        per_repo.write_text(json.dumps({'build': {'queue': {build_queue.UPPER_LIMIT_FIELD: 900}}}), encoding='utf-8')
+        monkeypatch.setattr(build_queue, 'get_run_config_path', lambda: per_repo)
+
+        result = build_queue.run_limit_get(Namespace())
+
+        assert result['field'] == build_queue.UPPER_LIMIT_FIELD
+        assert result['value'] == 1800
+        assert result['source'] == build_queue.SOURCE_QUEUE_STATE
+        assert result['floor_seconds'] == build_queue.UPPER_LIMIT_FLOOR_SECONDS
+        assert result['ceiling_seconds'] == build_queue.UPPER_LIMIT_CEILING_SECONDS
+        assert result['reap_threshold_seconds'] == 3600
+        assert result['queue_path'] == str(isolated_base['queue_path'])
+        assert result['per_repo_value'] == {'value': 900, 'in_effect': False}
+
+    def test_limit_set_still_commits_through_the_queue_mutation(self, isolated_base: dict) -> None:
+        """The matched control: only the READ verb lost its commit.
+
+        ``limit set`` is contracted to CHANGE the state and stays on
+        ``rmw_json``. Without this pair, the assertions above would pass equally
+        against a change that had stopped the threshold surface writing at all.
+        """
+        _write_queue(isolated_base['queue_path'], self._STATE)
+
+        build_queue.run_limit_set(Namespace(value=2400))
+
+        assert _read_queue(isolated_base['queue_path'])[build_queue.UPPER_LIMIT_FIELD] == 2400
+
+
+# =============================================================================
+# Foreign-config reports are TOON-injection safe AT THE EMISSION BOUNDARY
+# =============================================================================
+
+
+class TestForeignValueReportsAreInjectionSafe:
+    """Every foreign-sourced value this module REPORTS is sanitised as it is emitted.
+
+    Two readers return a foreign config value raw and unvalidated by design —
+    ``_read_per_repo_upper_limit`` (a ``run-configuration.json``) and
+    ``_machine_config.read_per_repo_max_slots`` (a ``marshal.json``) — because a
+    report saying "your config sets this and it does nothing" must echo back what
+    is actually written there. Raw is right for the READ and wrong for the
+    EMISSION: ``serialize_toon`` quotes a string containing a newline but escapes
+    nothing inside the quotes, so the value's second and later lines land in the
+    document at column zero, where ``parse_toon`` reads them as SIBLING KEYS of
+    the envelope. A planted ``status:`` line does not merely get lost — it
+    OVERWRITES the envelope's own status.
+
+    These tests drive the REAL emission path end to end (resolve → serialize →
+    reparse) rather than asserting on ``report_safe`` in isolation, because the
+    whole point is that they FAIL if the sanitiser is dropped from a call site.
+    A test that would pass with the sanitiser removed does not pin it, and every
+    pre-existing test over these two surfaces passes only integers — so until
+    these, the guard was revertible in silence.
+    """
+
+    #: A raw value whose later lines are TOON-shaped sibling keys. The displaced
+    #: key is the load-bearing part: overwriting an outcome field turns a report
+    #: into a different result, which is the severity of this class.
+    _INJECTING_STATUS = '2400\nstatus: error\nin_effect: true'
+
+    def _report_via_limit_get(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, raw: object) -> dict[str, Any]:
+        """Run ``limit get`` against a planted per-repo ``run-configuration.json``."""
+        per_repo = tmp_path / 'run-configuration.json'
+        per_repo.write_text(
+            json.dumps({'build': {'queue': {build_queue.UPPER_LIMIT_FIELD: raw}}}),
+            encoding='utf-8',
+        )
+        monkeypatch.setattr(build_queue, 'get_run_config_path', lambda: per_repo)
+        result: dict[str, Any] = build_queue.run_limit_get(Namespace())
+        return result
+
+    def test_limit_get_strips_control_characters_from_the_reported_value(
+        self, isolated_base: dict, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The C0/DEL bytes that cannot survive a single-line field are removed."""
+        reported = self._report_via_limit_get(tmp_path, monkeypatch, '24\x0000\x1f\x7f\nstatus: error')[
+            'per_repo_value'
+        ]['value']
+
+        assert reported == '2400status: error'
+        for forbidden in ('\n', '\x00', '\x1f', '\x7f'):
+            assert forbidden not in reported
+
+    def test_limit_get_report_cannot_displace_the_envelope_status(
+        self, isolated_base: dict, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A planted ``status: error`` line never reparses as the envelope's status."""
+        result = self._report_via_limit_get(tmp_path, monkeypatch, self._INJECTING_STATUS)
+        assert result['status'] == 'success'
+
+        reparsed = parse_toon(serialize_toon(result))
+
+        assert reparsed['status'] == 'success'
+
+    def test_acquire_per_repo_report_cannot_displace_the_admission(self, isolated_base: dict) -> None:
+        """The same guard on this module's OTHER foreign-value emission boundary.
+
+        ``_demotion_fields`` reads the caller's own ``marshal.json`` raw, so it is
+        fed by foreign text exactly as ``limit get`` is. The planted line names
+        ``blocked`` while the real admission is ``admitted``, so an unsanitised
+        emission is observable as a CHANGED OUTCOME rather than as noise.
+        """
+        (isolated_base['base'] / 'marshal.json').write_text(
+            json.dumps({'build': {'queue': {'max_slots': '1\nadmission: blocked'}}}),
+            encoding='utf-8',
+        )
+
+        result = build_queue.run_acquire(Namespace(plan_id='plan-a'))
+        assert result['admission'] == 'admitted'
+        assert '\n' not in result['per_repo_max_slots']['value']
+
+        reparsed = parse_toon(serialize_toon(result))
+
+        assert reparsed['admission'] == 'admitted'
+
+    def test_a_clean_foreign_value_is_still_reported_verbatim(
+        self, isolated_base: dict, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The matched positive control: sanitising is not silently blanking.
+
+        Without this, the assertions above would pass equally against an
+        implementation that reported an empty string for every foreign value —
+        which would destroy the report the field exists to produce.
+        """
+        result = self._report_via_limit_get(tmp_path, monkeypatch, 'nonsense')
+
+        assert result['per_repo_value'] == {'value': 'nonsense', 'in_effect': False}
+
+    def test_a_non_string_foreign_value_is_reported_unchanged(
+        self, isolated_base: dict, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Only a ``str`` can carry a control character; every other type passes through.
+
+        Pins the type-preservation half: an ``int`` must stay an ``int`` rather
+        than arrive as its string form, or the sanitiser would be changing the
+        shape of what the operator reads.
+        """
+        result = self._report_via_limit_get(tmp_path, monkeypatch, 2400)
+
+        assert result['per_repo_value'] == {'value': 2400, 'in_effect': False}

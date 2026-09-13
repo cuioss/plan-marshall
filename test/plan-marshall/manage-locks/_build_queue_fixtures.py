@@ -29,8 +29,13 @@ massive-parallel-concurrency invariants (i) + (iii) + (iv); ADR-002):
   fixture pins that a ``min(ts)`` selector cannot creep back in.
 * **Id collision-resistance** — the admission id is ``{plan_id}:{uuid4}`` so two
   acquires by the SAME plan never collide.
-* **Default + configured ``max_slots``** — absent config defaults to 5; a
-  ``build_queue.max_slots`` override in marshal.json is honored.
+* **Default + configured ``max_slots``** — absent config defaults to 5; the cap
+  is read from the MACHINE-GLOBAL ``machine-config.json``
+  (``<PLAN_MARSHALL_HOME>/marshalld/machine-config.json``), never from the
+  caller's per-repo marshal.json, so a surviving per-repo
+  ``build.queue.max_slots`` does NOT change the admitted cap. Every
+  acquire/release result reports ``max_slots_source`` beside ``max_slots``,
+  because the value alone cannot distinguish a configured 5 from a fallback 5.
 * **Corrupt/missing file as empty** — a missing or malformed ``build-queue.json``
   is treated as empty state, not a crash.
 * **Machine-global resolution** — ``build-queue.json`` resolves under the
@@ -58,8 +63,9 @@ Isolation: every test runs against an isolated home root and ``PLAN_BASE_DIR``
 staged under ``tmp_path`` so the suite never contends for the real
 ``~/.plan-marshall/build-queue.json`` under ``-n auto``. The queue resolves to
 ``<PLAN_MARSHALL_HOME>/build-queue.json``; holder plan dirs resolve to
-``<PLAN_BASE_DIR>/plans/{holder}``; marshal.json resolves to
-``<PLAN_BASE_DIR>/marshal.json``. The ``main`` fixture dir is a real git repo so
+``<PLAN_BASE_DIR>/plans/{holder}``; the machine-global cap resolves to
+``<PLAN_MARSHALL_HOME>/marshalld/machine-config.json``. The ``main`` fixture dir
+is a real git repo so
 subprocess ``main_checkout_root()`` resolves to it, and the in-process fixture
 pins ``build_queue.main_checkout_root`` to that same root so stamped
 ``project_root`` liveness resolves under ``<PLAN_BASE_DIR>``.
@@ -117,9 +123,20 @@ def _init_git_repo(repo: Path) -> None:
     subprocess.run(['git', 'init', '-q', str(repo)], check=True)
 
 
-def _set_max_slots(base: Path, max_slots: int) -> None:
-    """Write a marshal.json with the configured ``build.queue.max_slots``."""
-    (base / 'marshal.json').write_text(json.dumps({'build': {'queue': {'max_slots': max_slots}}}), encoding='utf-8')
+def _set_max_slots(home: Path, max_slots: int) -> None:
+    """Stage the MACHINE-GLOBAL cap under ``<home>/marshalld/machine-config.json``.
+
+    Takes the ``home`` path (``PLAN_MARSHALL_HOME``) the :func:`isolated_base`
+    fixture exposes, NOT ``PLAN_BASE_DIR``: the cap is machine-global state
+    beside the marshalld registry, so staging it in a repo's marshal.json would
+    stage a key the queue no longer reads.
+    """
+    config_dir = home / 'marshalld'
+    config_dir.mkdir(parents=True, exist_ok=True)
+    (config_dir / 'machine-config.json').write_text(
+        json.dumps({'version': 1, 'build': {'queue': {'max_slots': max_slots}}}),
+        encoding='utf-8',
+    )
 
 
 def _read_queue(queue_path: Path) -> dict:
@@ -176,9 +193,9 @@ def isolated_base(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict:
         tmp_path/main/                              (a real git repo → project_root)
         tmp_path/main/.plan/local/                  (PLAN_BASE_DIR — holder liveness)
         tmp_path/main/.plan/local/plans/            (holder plan dirs resolve here)
-        tmp_path/main/.plan/local/marshal.json      (max_slots config resolves here)
         tmp_path/home/                              (PLAN_MARSHALL_HOME — home root)
         tmp_path/home/build-queue.json              (queue resolves here)
+        tmp_path/home/marshalld/machine-config.json (machine-global max_slots)
 
     ``main`` is a real git repo so a spawned subprocess's ``main_checkout_root()``
     resolves to it (run subprocesses with ``cwd=main_repo`` +

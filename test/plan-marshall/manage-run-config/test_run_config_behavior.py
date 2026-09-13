@@ -497,73 +497,13 @@ def test_read_architecture_refresh_value_ignores_non_string(rc_env):
     assert value == 'enabled'
 
 
-# =============================================================================
-# build-queue-limit knob
-# =============================================================================
-
-
-def test_clamp_build_queue_upper_limit_bounds():
-    """_clamp_build_queue_upper_limit pins values into the [600, 3600] range."""
-    assert run_config._clamp_build_queue_upper_limit(100) == 600
-    assert run_config._clamp_build_queue_upper_limit(99999) == 3600
-    assert run_config._clamp_build_queue_upper_limit(1800) == 1800
-
-
-def test_read_build_queue_upper_limit_default_when_absent(rc_env):
-    """_read_build_queue_upper_limit returns the 600 s floor when unset."""
-    assert run_config._read_build_queue_upper_limit() == 600
-
-
-def test_read_build_queue_upper_limit_non_dict_build(rc_env):
-    """_read_build_queue_upper_limit floors when 'build' is not a mapping."""
-    _write_config({'version': 1, 'commands': {}, 'build': 'oops'})
-
-    assert run_config._read_build_queue_upper_limit() == 600
-
-
-def test_read_build_queue_upper_limit_non_dict_queue(rc_env):
-    """_read_build_queue_upper_limit floors when 'build.queue' is not a mapping."""
-    _write_config({'version': 1, 'commands': {}, 'build': {'queue': 5}})
-
-    assert run_config._read_build_queue_upper_limit() == 600
-
-
-def test_read_build_queue_upper_limit_rejects_bool(rc_env):
-    """_read_build_queue_upper_limit floors when the stored value is a bool."""
-    _write_config({'version': 1, 'commands': {}, 'build': {'queue': {'upper_limit_seconds': True}}})
-
-    assert run_config._read_build_queue_upper_limit() == 600
-
-
-def test_read_build_queue_upper_limit_clamps_stored_value(rc_env):
-    """_read_build_queue_upper_limit clamps an out-of-range stored value."""
-    _write_config({'version': 1, 'commands': {}, 'build': {'queue': {'upper_limit_seconds': 99999}}})
-
-    assert run_config._read_build_queue_upper_limit() == 3600
-
-
-def test_cmd_build_queue_limit_get_default(rc_env):
-    """cmd_build_queue_limit_get returns the floor default in a success envelope."""
-    result = run_config.cmd_build_queue_limit_get(argparse.Namespace())
-
-    assert result['field'] == 'build_queue_upper_limit'
-    assert result['value'] == 600
-
-
-def test_cmd_build_queue_limit_set_clamps_and_persists(rc_env):
-    """cmd_build_queue_limit_set stores a clamped value and reports it."""
-    result = run_config.cmd_build_queue_limit_set(argparse.Namespace(value=1800))
-
-    assert result['value'] == 1800
-    stored = json.loads(_config_path().read_text())
-    assert stored['build']['queue']['upper_limit_seconds'] == 1800
-
-
-def test_cmd_build_queue_limit_set_rejects_non_positive(rc_env):
-    """cmd_build_queue_limit_set rejects a value <= 0 with invalid_value."""
-    result = run_config.cmd_build_queue_limit_set(argparse.Namespace(value=0))
-
-    assert result['error'] == 'invalid_value'
+# The build-queue reap threshold has NO section here. It is no longer a per-repo
+# `build.queue.upper_limit_seconds` key this module reads or writes: it moved into
+# the machine-global `build-queue.json`, where the queue that applies it owns it.
+# Its behaviour is covered by
+# `test/plan-marshall/manage-locks/test_build_queue_stale_reap.py`, and that this
+# module no longer carries the retired half is pinned by
+# `TestBuildQueueLimitSurfaceRemoved` in `test_run_config.py`.
 
 
 # =============================================================================
@@ -623,13 +563,3 @@ def test_main_timeout_get_accepts_explicit_flag(rc_env, monkeypatch, capsys):
 
     assert rc == 0
     assert 'timeout_seconds: 1800' in capsys.readouterr().out
-
-
-def test_main_build_queue_limit_get_dispatch(rc_env, monkeypatch, capsys):
-    """main() routes the nested 'build-queue-limit get' subcommand."""
-    monkeypatch.setattr(sys, 'argv', ['run_config', 'build-queue-limit', 'get'])
-
-    rc = run_config.main()
-
-    assert rc == 0
-    assert 'build_queue_upper_limit' in capsys.readouterr().out

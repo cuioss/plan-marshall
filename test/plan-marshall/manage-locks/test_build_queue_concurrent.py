@@ -46,7 +46,7 @@ class TestConcurrentAdmissionBoundary:
         base = isolated_base['base']
         k = 3
         total = 8  # k admitted + (total - k) blocked
-        _set_max_slots(base, k)
+        _set_max_slots(isolated_base['home'], k)
         for i in range(total):
             _make_live_plan(base, f'race-{i}')
 
@@ -92,7 +92,7 @@ class TestConcurrentAdmissionBoundary:
         base = isolated_base['base']
         n = 5
         total = n + 1
-        _set_max_slots(base, n)
+        _set_max_slots(isolated_base['home'], n)
         for i in range(total):
             _make_live_plan(base, f'edge-{i}')
 
@@ -146,7 +146,7 @@ class TestConcurrentAdmissionBoundary:
         base = isolated_base['base']
         k = 5
         total = 24  # k admitted + (total - k) blocked, heavy oversubscription
-        _set_max_slots(base, k)
+        _set_max_slots(isolated_base['home'], k)
         for i in range(total):
             _make_live_plan(base, f'mass-{i}')
 
@@ -209,7 +209,7 @@ class TestConcurrentReleaseFifoPromote:
         read-modify-write guarantees the FIFO promote is race-free."""
         base = isolated_base['base']
         k = 4
-        _set_max_slots(base, k)
+        _set_max_slots(isolated_base['home'], k)
 
         # Fill k active slots (live holders so they are never pruned).
         active_ids = []
