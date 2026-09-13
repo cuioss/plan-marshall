@@ -45,6 +45,27 @@ Plan Marshall is distributed via a `dist-claude` orphan branch that tracks `main
 
 Refresh later with `/plugin marketplace update plan-marshall` followed by `/reload-plugins`.
 
+## Installation (OpenCode)
+
+Plan Marshall ships an OpenCode target tree alongside the Claude Code marketplace. The pinned consumption path is a generate-then-deploy flow: generate the tree from this repository, then sync it into the OpenCode config directory. Full walkthrough: [User Guide › OpenCode Installation](doc/user/install-opencode.adoc).
+
+### Deploy (OBSERVED)
+
+```bash
+python3 marketplace/targets/generate.py --target opencode --output target/opencode
+python3 .opencode/scripts/sync_opencode.py
+```
+
+**Step 1 — Generate** (OBSERVED): Run the generator from the repository root. It emits skills, agents, commands, and `opencode.json` into `target/opencode/`. Verified on opencode 1.18.30.
+
+**Step 2 — Sync** (OBSERVED): Run the sync engine from the repository root with no arguments. It deploys the emitted tree into `~/.config/opencode/` (singular → plural directory rename; only managed entries are pruned). Verified end-to-end: 399 entries deployed into a clean config dir; `opencode debug skill` then lists the `plan-marshall-*` skills from that directory.
+
+Refresh later by re-running both steps after a `git pull`.
+
+### Tried and rejected (OBSERVED)
+
+- `opencode plugin plan-marshall` — npm 404 Not Found. The bundle is not published as an npm package. (HYPOTHESIS: works once the bundle is published; tried-and-rejected today.)
+
 ## Getting Started
 
 ### 1. Configure the project
