@@ -582,9 +582,8 @@ reds. **In both modes every case the derivation was meant to produce disappears*
 run colour, is why the assertion below is required either way: a collection failure names the
 parametrization that came back empty, never the population it was built from.
 
-**Durable rule**: a runtime-derived parametrization carries a **non-vacuity assertion that runs at
-collection time and names the population**. Three sites qualify, because all three run at collection
-time and all three name what came back empty:
+**Durable rule**: a runtime-derived parametrization carries a **non-vacuity assertion that names the
+population**. Three sites qualify:
 
 1. the helper that builds the argvalues asserting its own result before returning it;
 2. a module-level assertion naming the bound name;

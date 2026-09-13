@@ -490,8 +490,7 @@ def _guards_its_result(fn: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
 def r5_unguarded_runtime_parametrize(paths: list[Path] | None = None) -> ScanResult:
     """Runtime-derived parametrize bindings carrying no non-vacuity guard.
 
-    A guard counts at any of three sites, because all three run at collection
-    time and all three name the population: the helper that builds the argvalues
+    A guard counts at any of three sites: the helper that builds the argvalues
     asserting its own result, a module-level assert naming the bound name, or a
     separate non-parametrized test pinning the population's cardinality. An
     assertion inside the parametrized test's own body is NOT a guard -- that body

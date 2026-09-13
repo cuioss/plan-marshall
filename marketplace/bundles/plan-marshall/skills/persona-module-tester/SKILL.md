@@ -73,7 +73,7 @@ def test_discount_applied_for_premium_user():
 | One layer per contract | In-process test is authoritative; subprocess collapses to one CLI-plumbing smoke, with two exceptions | testing-methodology.md § "One Layer Per Contract" |
 | Guard population by role | Derive the swept set from a declared property; never pin another slice's filename as a path literal | testing-methodology.md § "Express a Guard's Population by Role, Not by Another Slice's Filename" |
 | Both-arm state restore | A teardown restores on every arm the capture can land in; never under a presence or truthiness check | testing-methodology.md § "Restore Captured State on Both Arms, Never Under a Presence Check" |
-| Binding-site non-vacuity guard | A runtime-derived parametrization asserts its population at collection time, never inside the test body | testing-methodology.md § "Guard a Runtime-Derived Parametrization at the Binding Site" |
+| Binding-site non-vacuity guard | A runtime-derived parametrization asserts its population, never inside the test body | testing-methodology.md § "Guard a Runtime-Derived Parametrization at the Binding Site" |
 
 **Who enforces these rules depends on the project.** In the plan-marshall
 marketplace repository — and only there — the structural half is enforced by the
