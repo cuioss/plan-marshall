@@ -408,31 +408,13 @@ row written by an older daemon that predates these field names — renders an
 explicit `unknown` rather than a silently missing field, the same fail-closed
 discipline as `log_absent` / `log_unreadable`.
 
-### config get / set / migrate
+### config — not exposed
 
-`config` is a two-token verb: the operation is a sub-verb of `config`. Each
-sub-verb's **complete** accepted flag set is printed beside it, so a caller never
-borrows a sibling's flag — in particular, neither `get` nor `migrate` accepts
-`--value`, which belongs to `build_queue limit set`, a different script.
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-build-server:manage_build_server config get
-```
-
-Accepted flags: **none**.
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-build-server:manage_build_server config set \
-  --max-slots MAX_SLOTS
-```
-
-Accepted flags: `--max-slots` (**required**, a positive integer).
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-build-server:manage_build_server config migrate
-```
-
-Accepted flags: **none**.
+This script exposes no `config` verb. The accepted verbs are exactly
+`register`, `unregister`, `start`, `stop`, `drain`, `status`, `install`,
+`upgrade`, `logs` (see `--help`). Machine-global configuration is read by
+consumers from their own resolution paths; it is not written through this
+script.
 
 ## Related
 

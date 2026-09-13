@@ -587,50 +587,12 @@ carry `warnings`, `per_repo_max_slots`, or any `cap_*` field: the demotion repor
 the disagreement verdict are properties of an ADMISSION decision, and a release makes
 none.
 
-### build_queue — limit get
+### build_queue — limit verbs not exposed
 
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-locks:build_queue limit get
-```
-
-Accepted flags: **none** — it takes no `--plan-id`, because it reads machine-global
-state belonging to no plan and the queue path resolves under the home root without
-any plan resolution.
-
-Read-only, and it writes nothing: it reads the queue through
-`_locks_core.read_json_guarded`, which takes the same `O_EXCL` guard every other
-access to this file takes — so the reported value can never be a torn read taken
-mid-write — and returns without committing. It deliberately does NOT pass an identity
-mutator to `rmw_json`: that call commits unconditionally and reports a corrupt queue
-file as `{}`, so a caller merely asking for the threshold would write that `{}` back
-and erase every active and waiting entry. Fields: `field` (`upper_limit_seconds`), `value`,
-`source` (`queue_state` / `default_floor`), `floor_seconds` (`600`),
-`ceiling_seconds` (`3600`), `reap_threshold_seconds` (`2 × value` — the age at which
-the reaper reclaims an active entry), `queue_path`, plus `per_repo_value`
-(`{value, in_effect: false}`) only when the caller's main-anchored
-`run-configuration.json` still carries the retired `build.queue.upper_limit_seconds`.
-
-`default_floor` is reported distinctly from `queue_state` because the fallback IS the
-floor: a returned `600` could not otherwise be told apart from a configured `600`.
-
-### build_queue — limit set
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-locks:build_queue limit set \
-  --value VALUE
-```
-
-Accepted flags: `--value` (**required**, a positive int in seconds, clamped to
-`[600, 3600]`). It takes no `--plan-id`, for the same reason `limit get` does not.
-The `--value` spelling is deliberate, so an operator who learned the retired
-run-config setter's flag does not mispredict this one.
-
-Written through the same serialized `rmw_json` mutation the admit/release cycle uses,
-so a set cannot interleave with a release's own recompute of the same field and the
-committed value is never a lost update. Fields: `field`, `value` (the clamped value
-actually stored), `requested` (what was asked for), `clamped` (bool — whether the two
-differ), `source` (`queue_state`), `floor_seconds`, `ceiling_seconds`,
-`reap_threshold_seconds`, `queue_path`.
+This script exposes no `limit` verb. The accepted verbs are exactly `acquire`
+and `release` (see `--help`). Queue thresholds resolve from the machine-global
+configuration paths the implementation reads; they are not set through this
+script.
 
 ## Integration
 
@@ -642,7 +604,7 @@ differ), `source` (`queue_state`), `floor_seconds`, `ceiling_seconds`,
 | `manage-build-server:_marshalld_scheduler` (via the D5 routing seam) | consumes | the same machine-global `build-queue.json` — the registered path (daemon-served builds) |
 | `automatic-review/SKILL.md` rate-limit recovery sequence | consumes | `merge_lock rate-window claim`/`check`/`release` |
 | `automatic-review/SKILL.md` Branch 3 → trigger-arm boundary | consumes | `merge_lock poll-delay` — awaits the returned `delay_seconds` once before the boundary's selector re-consult routes |
-| `manage-build-server:manage_build_server config set` / `config migrate` | produces | `machine-config.json` — the machine-global `max_slots` that `build_queue acquire`/`release` resolve and report the source of; this skill only READS it |
+| machine-global `machine-config.json` | produces | the machine-global `max_slots` that `build_queue acquire`/`release` resolve and report the source of; this skill only READS it |
 | `_locks_core.rmw_json` | consumed by | both `build_queue` (`build-queue.json`) and `merge_lock` (`merge-queue.json` FIFO layer AND `rate_windows` claims) |
 
 ## Standards
