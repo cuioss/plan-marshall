@@ -1,0 +1,26 @@
+{
+  "_note": "PR Doctor configuration. Externalized as JSON for consistency with other workflow skills' data-driven pattern. build_step_severity maps CI step names to issue severity — compile/test failures block everything (high), lint/style are less urgent (medium). Unknown steps default to high.",
+  "build_step_severity": {
+    "compile": "high",
+    "build": "high",
+    "test": "high",
+    "check": "high",
+    "verify": "high",
+    "integration-test": "high",
+    "e2e": "high",
+    "type-check": "high",
+    "security-scan": "high",
+    "dependency-check": "high",
+    "deploy": "high",
+    "package": "medium",
+    "lint": "medium",
+    "style": "medium",
+    "format": "medium",
+    "analyze": "medium",
+    "scan": "medium",
+    "codegen": "medium",
+    "migration": "medium"
+  },
+  "valid_checks": ["build", "reviews", "sonar", "all"],
+  "default_max_fix_attempts": 3
+}
