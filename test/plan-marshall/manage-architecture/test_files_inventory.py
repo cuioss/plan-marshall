@@ -796,19 +796,28 @@ def test_bare_claude_claim_covers_the_former_unclaimed_sibling():
 
 
 def test_attribution_seam_memoizes_the_merged_claim_set():
-    """The discovery-plus-merge result is memoized at process lifetime.
+    """The discovery-plus-merge result is memoized at process lifetime, PER PROJECT.
 
     The retired constant was an O(1) tuple scan and ``resolve_module_for_path``
     calls this helper once per changed path, so an unmemoized seam would run full
     extension discovery N times for an N-path footprint — a lazy contract
     silently widened into an eager one by the centralizing refactor.
+
+    The memo key is the ``(resolved project_dir, sorted module-name tuple)``
+    pair, and BOTH halves are pinned here by asserting the whole key rather than
+    only its module-name component. Keyed on the module tuple alone, two
+    checkouts of one repository — a worktree and its main checkout — present
+    identical module names and would be served each other's claim set; an
+    assertion that only looked for the bare tuple would stay green through
+    exactly that regression.
     """
-    _architecture_core.invalidate_crawl_cache()
-    assert _architecture_core._PATH_CLAIM_CACHE == {}
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _architecture_core.invalidate_crawl_cache()
+        assert _architecture_core._PATH_CLAIM_CACHE == {}
 
-    _architecture_core.project_local_module_for_path(_CLAUDE_SKILLS_PATH, ['plan-marshall'])
+        _architecture_core.project_local_module_for_path(_CLAUDE_SKILLS_PATH, ['plan-marshall'], tmpdir)
 
-    assert ('plan-marshall',) in _architecture_core._PATH_CLAIM_CACHE
+        assert (str(Path(tmpdir).resolve()), ('plan-marshall',)) in _architecture_core._PATH_CLAIM_CACHE
 
 
 def test_invalidate_crawl_cache_drops_the_attribution_memo():

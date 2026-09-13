@@ -1038,11 +1038,19 @@ def _report(attributor_id: str, *, notes: list[str] | None = None, claim_count: 
 
 
 def _patch_attribution(monkeypatch, owner, reports):
-    """Point ``cmd_which_module``'s seam call at a fixed ``(owner, reports)``."""
+    """Point ``cmd_which_module``'s seam call at a fixed ``(owner, reports)``.
+
+    The stub takes ``project_dir`` as a third positional because the seam is
+    keyed on it — the path-attribution memo is per ``(project_dir,
+    module_names)``, so two project dirs with identical module names no longer
+    share a cache entry. These tests assert on attributor provenance and the
+    residue distinction, not on which project dir reached the seam, so the
+    argument is accepted and ignored here.
+    """
     monkeypatch.setattr(
         _cmd_client_handlers,
         'resolve_path_attribution',
-        lambda path, module_names: (owner, reports),
+        lambda path, module_names, project_dir: (owner, reports),
     )
 
 

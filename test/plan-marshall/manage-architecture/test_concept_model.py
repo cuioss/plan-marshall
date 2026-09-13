@@ -640,14 +640,16 @@ def test_validate_package_key_returns_key_when_resolving():
 
 def test_migrate_key_packages_rewrites_dotted_to_path():
     """A legacy dotted key is rewritten to its path via the derived packages bridge."""
-    key_packages = {'com.example.pkg': {'description': 'D'}}
-    derived_packages = {'com.example.pkg': {'path': 'src/pkg'}}
+    with tempfile.TemporaryDirectory() as tmpdir:
+        (Path(tmpdir) / 'src' / 'pkg').mkdir(parents=True)
+        key_packages = {'com.example.pkg': {'description': 'D'}}
+        derived_packages = {'com.example.pkg': {'path': 'src/pkg'}}
 
-    migrated, unresolved = migrate_key_packages(key_packages, derived_packages, '.')
+        migrated, unresolved = migrate_key_packages(key_packages, derived_packages, tmpdir)
 
-    assert 'src/pkg' in migrated
-    assert 'com.example.pkg' not in migrated
-    assert unresolved == []
+        assert 'src/pkg' in migrated
+        assert 'com.example.pkg' not in migrated
+        assert unresolved == []
 
 
 def test_migrate_key_packages_reports_unresolved_without_dropping():
@@ -728,6 +730,7 @@ def test_package_key_resolves_rejects_the_project_root_itself():
 def test_merge_module_data_migrates_dotted_key_packages():
     """merge_module_data rewrites legacy dotted key_packages keys to path identity on read."""
     with tempfile.TemporaryDirectory() as tmpdir:
+        (Path(tmpdir) / 'mod' / 'src' / 'pkg').mkdir(parents=True)
         invalidate_crawl_cache()
         save_module_derived(
             'mod',
@@ -962,11 +965,20 @@ def test_enrich_writes_description_and_generation_through_to_the_index():
 
 
 def _persistence_standard_text() -> str:
+    """The standard's prose with runs of whitespace collapsed to single spaces.
+
+    The phrases below are asserted as contract statements, not as typography: a
+    sentence that happens to wrap mid-phrase carries the statement just as much
+    as one that does not. Reading the raw text would pin the assertions to the
+    current line breaks, so reflowing a paragraph — an editorial change that
+    alters no contract — would fail the pin. Normalising here keeps the phrase
+    the subject and the wrapping irrelevant.
+    """
     # Bound through an annotated local: ``MARKETPLACE_ROOT`` is untyped at this
     # boundary, so the read would otherwise propagate ``Any`` out of a function
     # declared to return ``str``.
     text: str = _PERSISTENCE_STANDARD.read_text(encoding='utf-8')
-    return text
+    return ' '.join(text.split())
 
 
 def test_standard_records_the_deliberate_absence_of_a_timestamp():
@@ -1161,13 +1173,23 @@ def _seed_claimed_doc_corpus(tmpdir: str) -> None:
     )
 
 
-def _claiming_attributor(path: str, _module_names: list[str]) -> tuple[str | None, list[dict]]:
-    """Stand in for the Axis-D seam, claiming the seeded corpus for its owner."""
+def _claiming_attributor(
+    path: str, _module_names: list[str], _project_dir: str
+) -> tuple[str | None, list[dict]]:
+    """Stand in for the Axis-D seam, claiming the seeded corpus for its owner.
+
+    ``project_dir`` is a third positional because the seam is keyed on it — the
+    path-attribution memo is per ``(project_dir, module_names)``. These tests
+    assert on the reader-side collapse, not on which project dir reached the
+    seam, so the argument is accepted and ignored.
+    """
     owner = _DOC_OWNER if path in _CLAIMED_DOCS else None
     return owner, [{'id': 'stub-doc-claim', 'notes': []}]
 
 
-def _no_claim_attributor(_path: str, _module_names: list[str]) -> tuple[None, list[dict]]:
+def _no_claim_attributor(
+    _path: str, _module_names: list[str], _project_dir: str
+) -> tuple[None, list[dict]]:
     """The negative control: an attributor that runs and claims nothing."""
     return None, [{'id': 'stub-doc-claim', 'notes': []}]
 
