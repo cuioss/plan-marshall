@@ -122,7 +122,7 @@ state — the quorum is vacuously satisfied and ``participation_complete`` is
 ``true``.
 
 Usage:
-    review_completeness.py check --plan-id <id> [--required-bots [<csv>]] [--optional-bots [<csv>]] [--participated-bots [<csv>]] [--in-progress-bots [<csv>]] [--refused-bots [<csv>]] [--stale-participation-bots [<csv>]] [--declined-bots [<csv>]] [--unrecognised-refusal-bots [<csv>]] [--not-triggered] [--triage-ran] [--refused-causes [<csv>]] [--refusal-size-caps [<csv>]] [--measured-diff-size <s>]
+    review_completeness.py check --plan-id <id> [--required-bots [<csv>]] [--optional-bots [<csv>]] [--participated-bots [<csv>]] [--in-progress-bots [<csv>]] [--refused-bots [<csv>]] [--stale-participation-bots [<csv>]] [--declined-bots [<csv>]] [--unrecognised-refusal-bots [<csv>]] [--not-triggered] [--triage-ran] [--refused-causes [<csv>]] [--refusal-size-caps [<csv>]] [--measured-diff-size [<s>]]
     review_completeness.py deficit --plan-id <id> [--required-bots [<csv>]] [--optional-bots [<csv>]] [--participated-bots [<csv>]] [--in-progress-bots [<csv>]] [--refused-bots [<csv>]] [--stale-participation-bots [<csv>]] [--declined-bots [<csv>]] [--unrecognised-refusal-bots [<csv>]] [--not-triggered] [--refused-causes [<csv>]] [--refusal-size-caps [<csv>]] [--min-deficit <n>]
     review_completeness.py size-caps
     review_completeness.py --help
@@ -134,6 +134,15 @@ therefore produces the empty-list reading rather than an argparse rejection. The
 relaxation is a parser-robustness change ONLY: an empty required-bots list is
 still the vacuously-satisfied quorum, and no empty list ever launders an
 unproven bot into a pass.
+
+``--measured-diff-size`` takes an optional value for the SAME transport reason,
+and it is NOT a list flag — it is a single scalar, parsed by nobody and echoed
+onto the return. What it shares with the list flags is the caller: both
+documented call sites interpolate it unconditionally into one command block, and
+the executor strips every empty-string argument, so an unmeasured diff delivers a
+BARE flag. Bare reads as ``''``, exactly as omitting it does, so the value
+contract is unchanged — an unmeasured size is reported as unknown and never as
+``0``, which would read as an empty diff refused for being too big.
 
 **THE PAIR-FORM SET IS DECLARED HERE, ONCE.** This module's ``_parse_bot_observations``
 is the single source of the form partition; every other site cross-references this
@@ -282,8 +291,10 @@ STATE_PARTICIPATED_BUT_EMPTY = 'participated_but_empty'
 STATE_PARTICIPATED_STALE = 'participated_stale'
 # The bot was asked to review the merge candidate (a re-review was triggered) and
 # answered WITHOUT producing a review of it — an incremental-review DECLINE: a
-# comment carrying no reviewed-commit SHA (``head_sha_verified: false``) rather than
-# a review of this HEAD. Distinct from ``participated_stale`` (a review that exists
+# comment that does not REFERENCE the merge candidate (``head_sha_verified: false``)
+# rather than a review of this HEAD. ``false`` covers BOTH shapes — a comment naming
+# no reviewed commit at all, and one naming a DIFFERENT commit — so neither may be
+# described as the whole of it. Distinct from ``participated_stale`` (a review that exists
 # but predates the merge candidate) and from the refusal members (an explicit
 # rate-limit / quota / size notice): the bot engaged but declined this commit, so
 # re-triggering it produces another decline rather than a review.
@@ -724,8 +735,9 @@ def classify_bot(
       overrides are per-refusal observations, so they outrank a class declared per bot.
       No bot-name literal.
     - **``declined``** — the bot was asked to review the merge candidate and answered
-      without producing a review of it (an incremental-review decline: a comment
-      carrying no reviewed-commit SHA). Checked after the refusal branches — a refusal
+      without producing a review of it (an incremental-review decline: a comment that
+      does not REFERENCE the merge candidate — naming no reviewed commit at all, or
+      naming a different one). Checked after the refusal branches — a refusal
       is the more specific "will not review now" signal — and before ``participated_stale``,
       because a decline says the bot answered *this* re-review request without
       reviewing, which is a fresher and more actionable signal than a review that
@@ -1889,6 +1901,21 @@ def main(argv: list[str] | None = None) -> int:
     )
     check_parser.add_argument(
         '--measured-diff-size',
+        # ``nargs='?'`` + ``const=''`` for the SAME reason every list flag on
+        # ``_add_bot_observation_flags`` carries it, and the reason is the caller's
+        # transport rather than this flag's type. Both documented call sites (the FIND
+        # step's participation guard and the pre-merge barrier) interpolate this flag
+        # UNCONDITIONALLY into one command block, and the generated executor strips every
+        # empty-string argument before argparse sees it — so on the COMMON path, where no
+        # size refusal occurred and the producer measured nothing, the documented call
+        # arrives as a BARE ``--measured-diff-size``. Without the optional value that is an
+        # argparse rejection (exit 2), which both call sites route to their UNKNOWN verdict
+        # — the one verdict where the force-done hatch is explicitly unavailable — so the
+        # documented happy path deadlocked the step. The relaxation changes no verdict: the
+        # bare form reads as ``''``, byte-identical to omitting the flag, so "unmeasured is
+        # reported as unknown, never as zero" holds exactly as before.
+        nargs='?',
+        const='',
         default='',
         help=(
             "How big the refused diff actually was, as github_pr fetch_findings' "
@@ -1898,8 +1925,9 @@ def main(argv: list[str] | None = None) -> int:
             'scalar, not a per-bot list: it is a property of the PR, identical for '
             'every reviewer that refused it. Its unit rides inside the value and is '
             "deliberately not the reviewer's unit, so the two figures are an "
-            'order-of-magnitude comparison rather than an equality check. Omit it (the '
-            'default) when unmeasured — reported as unknown, never as zero.'
+            'order-of-magnitude comparison rather than an equality check. May be '
+            'supplied bare (no value), which reads exactly as omitting it — unmeasured, '
+            'reported as unknown, never as zero.'
         ),
     )
     check_parser.set_defaults(func=cmd_check)

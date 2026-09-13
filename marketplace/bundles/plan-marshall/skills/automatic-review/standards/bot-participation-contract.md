@@ -71,7 +71,7 @@ restates it.
 | `refused_structural` | The bot posted a refusal whose **cause is a ceiling on the diff itself** — the PR is over a per-PR size budget (an observed `cause: size`). Decided by the cause axis, whatever the bot's `rate_limit_class` declares. | **The only member whose refusal is not temporal.** The other three say *not now*; this one says *not this diff*, and the same request never succeeds while the diff is this size. Remedies: **split**, **accept the gap**, or **disable this reviewer for this PR** — ⛔ **never await.** The finding carries the **cap** the notice stated, so the gap is auditable against the measured diff size. |
 | `participated_but_empty` | The bot posted at least one comment, but every comment was filtered out (noise) so it stored zero findings. | **Accounted-for, not a failure.** The bot did its pass and had nothing actionable to say. |
 | `participated_stale` | The bot's comment matched a declared `participation_evidence` publish shape but failed the `participation_requires_update` currency test — the currency ledger anchors the comment to a commit that is **not** the merge candidate, and its `updated_at` is unchanged from the value recorded at that credit. | The bot reviewed an **earlier** commit, so nothing has reviewed the current diff. Blocking, but the remedy is a re-review trigger. |
-| `declined` | The bot was asked to review the merge candidate (a re-review was triggered) and answered without producing a review of it — an **incremental-review decline**: it responded with a comment carrying no reviewed-commit SHA (`head_sha_verified: false`) rather than a review of this HEAD. | The bot engaged but **declined** to review this commit. Blocking, but re-triggering is futile — the productive action is to accept the decline (move the bot to `optional`, or record a merge-authorization), not to trigger again. |
+| `declined` | The bot was asked to review the merge candidate (a re-review was triggered) and answered without producing a review of it — an **incremental-review decline**: it responded with a comment that does not REFERENCE the merge candidate (`head_sha_verified: false`) rather than a review of this HEAD. `false` covers BOTH shapes — a comment naming no reviewed commit at all, and one naming a DIFFERENT commit — so neither may be described as the whole of it. | The bot engaged but **declined** to review this commit. Blocking, but re-triggering is futile — the productive action is to accept the decline (move the bot to `optional`, or record a merge-authorization), not to trigger again. |
 
 `participated_but_empty` is the member most often misread. A bot that reviewed and found nothing is a
 *successful* review, not a silent one — it must never be treated as an incompleteness, or a clean PR
@@ -418,9 +418,12 @@ exactly that distinction and prescribe escalating a reviewer whose review only n
 
 `participated_stale` catches *a review anchored to a commit that is not the merge candidate*; it
 cannot catch *no review at all, answered as engagement*. Those are disjoint. When a re-review is triggered for the merge
-candidate and the bot answers with a comment that carries **no reviewed-commit SHA**
+candidate and the bot answers with a comment that does **not reference the merge candidate**
 (`head_sha_verified: false` from the re-review await), the bot **declined** to review this commit — an
-**incremental-review decline**. A refusal at first pass leaves no reviewed-SHA to compare, so there is
+**incremental-review decline**. ⛔ `head_sha_verified: false` covers **both** shapes — a comment naming
+no reviewed commit at all, and one naming a **different** commit — so describing every `false` as
+*a comment with no reviewed-commit SHA* states only half the predicate and misreports the other half's
+audit context. A refusal at first pass leaves no reviewed-SHA to compare, so there is
 nothing stale to detect; the currency rule has nothing to work with, and the decline must be recorded
 in its own right.
 
@@ -430,12 +433,12 @@ bot that already declined produces another decline, not a review, so the product
 accept the decline (move the bot to `optional`, or record an operator merge-authorization) rather than
 to trigger again. `declined` is distinct from the four refusal members, which name an explicit
 rate-limit / quota / size **refusal notice**; the decline is the quieter shape — the bot answered, but
-its answer named no commit.
+its answer did not reference the commit being merged.
 
 The deciding bit — whether the re-review produced a review of the new HEAD (`head_sha_verified: true`)
 or only a comment (`head_sha_verified: false`) — is **computed and must be consumed**: a `matched:
 true` with `head_sha_verified: false` is a decline, never a completed re-review, and a consumer that
-reads `matched` alone credits a review that never named the commit it matched.
+reads `matched` alone credits a review that never referenced the commit it was awaited for.
 
 #### The reviewed-commit reference is recognised wherever it sits, and compared for EQUALITY
 

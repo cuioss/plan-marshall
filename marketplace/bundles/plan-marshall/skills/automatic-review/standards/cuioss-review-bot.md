@@ -403,12 +403,31 @@ persistent comment of kind `issue_comment`, and submits no GitHub *review* objec
    thread-reply path on exactly the same rule that sends the Guide down the batched route — and a
    thread-bearing comment that merely lost its `thread_id` is still reported as untransmitted rather
    than batched here.
-2. **No review object to await.** Because the bot submits no review, `github_re_review
-   await_fresh_review` cannot match one. It matches the bot's **issue-comment** completion signal
-   instead, returning `matched_signal: issue_comment` with `head_sha_verified: false` — the comment
-   carries no reviewed-commit SHA, so completion is established by authorship plus post-dating the
-   trigger. That is weaker evidence than a review match, and the envelope says so rather than
-   implying the new HEAD was reviewed.
+2. **No review object to await — but the comment DOES name the reviewed commit.** Because the bot
+   submits no review, `github_re_review await_fresh_review` cannot match one. It matches the bot's
+   **issue-comment** completion signal instead, returning `matched_signal: issue_comment`.
+
+   ⛔ **`head_sha_verified` is NOT pinned to `false` on that signal, and pinning it there was a live
+   merge-blocking defect.** CONFIRMED on `plan-marshall#1473` at HEAD `4d6738e2d`: the bot answered a
+   `/review` trigger in 68 seconds by editing its Guide comment in place, and the edited body read
+   `(Review updated until commit https://github.com/cuioss/plan-marshall/commit/4d6738e2d96150706cda6b682109336c5c0c383b)`
+   — the reviewed commit, as a permalink, which is the URL-embedded form the matcher's own
+   `_references_head_sha` predicate already recognised on the review path. While the field was
+   hard-coded the matcher never inspected the body, so that verified re-review was published as
+   `matched: true` / `head_sha_verified: false` and routed as an incremental-review **decline**. This
+   bot is the motivating case for the whole class: `participation_evidence` declares `issue_comment`
+   as the unconditional shape and `completion_check_name` is empty, so the comment is the ONLY place
+   it can ever name a reviewed commit — a required `cuioss-review-bot` could therefore never verify,
+   and `declined`'s documented remedy is to demote it to `optional_bots` or take a merge-authorization
+   waiver.
+
+   The verdict is now read off the body by that same predicate. A comment naming this HEAD verifies;
+   one naming a different commit, or none, still reports `false` — the genuine decline. The signal is
+   still the WEAKER artifact and still resolves second, and the envelope names which one fired, so a
+   caller reads the strength of the evidence rather than inferring it from the verdict. The producer's
+   signal table is the authoritative statement — see
+   [`workflow-integration-github` SKILL.md](../../workflow-integration-github/SKILL.md) § Workflow 3;
+   it is not restated here.
 
 ## Participation evidence — `issue_comment` and `inline`, plus update movement
 

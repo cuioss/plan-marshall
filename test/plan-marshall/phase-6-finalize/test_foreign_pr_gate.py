@@ -12,9 +12,16 @@ orchestration be driven without a live outline, a live foreign checkout, or a
 live CI provider.
 """
 
+import pytest
+from _plan_parsing import extract_deliverables
+from toon_parser import parse_toon, serialize_toon
+
 from conftest import load_script_module
 
 gate = load_script_module('plan-marshall', 'phase-6-finalize', 'foreign_pr_gate.py', 'foreign_pr_gate')
+mso = load_script_module(
+    'plan-marshall', 'manage-solution-outline', 'manage-solution-outline.py', 'manage_solution_outline_foreign_gate'
+)
 
 
 # --------------------------------------------------------------------------- #
@@ -26,20 +33,26 @@ def _listed(deliverables):
     return {'status': 'success', 'plan_id': 'p', 'deliverable_count': len(deliverables), 'deliverables': deliverables}
 
 
-def _deliverable(number, *, foreign, paths):
+def _deliverable(number, *, foreign, paths, intent='write-replace'):
+    """One deliverable whose every ``affected_files`` entry carries ``intent``.
+
+    The default is a write intent, so a test that does not name an intent is
+    asserting about a declared CHANGE — the population the gate exists to guard.
+    """
     return {
         'number': number,
         'foreign': foreign,
-        'affected_files': [{'path': p, 'foreign': foreign} for p in paths],
+        'affected_files': [{'path': p, 'intent': intent, 'foreign': foreign} for p in paths],
     }
 
 
-def _run(deliverables, *, roots=None, landings=None):
+def _run(deliverables, *, roots=None, landings=None, resolved_paths=None):
     """Drive gate.check with fully in-memory seams.
 
-    ``roots`` maps a declared path to its resolved repo root (default: the path's
-    parent stands in as the root). ``landings`` maps a repo root to a landing
-    state string.
+    ``roots`` maps a declared path to its resolved repo root. ``landings`` maps a
+    repo root to a landing state string. ``resolved_paths``, when given, is a list
+    the root resolver appends every path it is asked about to — the observable
+    that a path did or did not enter the population.
     """
     roots = roots or {}
     landings = landings or {}
@@ -48,6 +61,8 @@ def _run(deliverables, *, roots=None, landings=None):
         return _listed(deliverables)
 
     def root_resolver(path):
+        if resolved_paths is not None:
+            resolved_paths.append(path)
         return roots.get(path)
 
     def landing_resolver(root):
@@ -222,17 +237,20 @@ def test_foreign_paths_by_deliverable_reads_the_survey_scope_pair():
 
     The fixture gives the deliverable an empty ``affected_files``, so a
     regression to the flat-field-only read reaches the opposite verdict (no
-    foreign paths at all) rather than a shorter list.
+    foreign paths at all) rather than a shorter list. Every entry declares a
+    change — the survey bullet through an explicit write marker — so both
+    fields' paths belong to the population and the assertion still pins that
+    the survey field is traversed at all.
     """
     deliverables = [
         {
             'number': 1,
             'foreign': True,
             'affected_files': [],
-            'survey_scope': [{'path': '/foreign/surveyed.py', 'foreign': True}],
+            'survey_scope': [{'path': '/foreign/surveyed.py', 'intent': 'write-new', 'foreign': True}],
             'mutation_scope': [
-                {'path': 'host.py', 'foreign': False},
-                {'path': '/foreign/mutated.py', 'foreign': True},
+                {'path': 'host.py', 'intent': 'write-replace', 'foreign': False},
+                {'path': '/foreign/mutated.py', 'intent': 'write-replace', 'foreign': True},
             ],
         },
     ]
@@ -264,11 +282,323 @@ def test_a_doubly_declared_foreign_path_is_named_once():
             'number': 1,
             'foreign': True,
             'affected_files': [],
-            'survey_scope': [{'path': '/foreign/both.py', 'foreign': True}],
-            'mutation_scope': [{'path': '/foreign/both.py', 'foreign': True}],
+            'survey_scope': [{'path': '/foreign/both.py', 'intent': 'write-new', 'foreign': True}],
+            'mutation_scope': [{'path': '/foreign/both.py', 'intent': 'write-replace', 'foreign': True}],
         },
     ]
 
     extracted = gate._foreign_paths_by_deliverable(deliverables)
 
     assert extracted == [(1, ['/foreign/both.py'])]
+
+
+# --------------------------------------------------------------------------- #
+# The population is foreign AND declares a change
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize(
+    'intent',
+    ['write-new', 'write-replace', 'delete', None],
+    ids=['write-new', 'write-replace', 'delete', 'no-marker'],
+)
+def test_every_change_intent_on_a_pushed_no_pr_foreign_path_blocks(intent):
+    deliverables = [_deliverable(1, foreign=True, paths=['/foreign/repo/a.py'], intent=intent)]
+
+    result = _run(
+        deliverables, roots={'/foreign/repo/a.py': '/foreign/repo'}, landings={'/foreign/repo': 'pushed_no_pr'}
+    )
+
+    assert result['status'] == 'blocked'
+    assert result['blocking'] == [{'repo_root': '/foreign/repo', 'deliverables': [1]}]
+
+
+def test_a_read_foreign_path_does_not_enter_the_population():
+    """A consulted foreign file has no commit, so no PR could ever clear it.
+
+    Its repository is ``pushed_no_pr``, so had the path entered the population
+    the verdict would be ``blocked``. The resolver log pins the mechanism: the
+    path was never even resolved.
+    """
+    resolved: list[str] = []
+    deliverables = [_deliverable(1, foreign=True, paths=['/foreign/repo/ref.py'], intent='read')]
+
+    result = _run(
+        deliverables,
+        roots={'/foreign/repo/ref.py': '/foreign/repo'},
+        landings={'/foreign/repo': 'pushed_no_pr'},
+        resolved_paths=resolved,
+    )
+
+    assert result['status'] == 'clear'
+    assert result['foreign_deliverable_count'] == 0
+    assert 'blocking' not in result
+    assert resolved == []
+    assert result['excluded_read_only'] == [{'deliverable': 1, 'path': '/foreign/repo/ref.py'}]
+
+
+def test_a_marker_less_survey_path_is_excluded_while_its_mutation_sibling_blocks():
+    """The survey pool parses as ``read``; the mutation subset is the change.
+
+    Both paths sit in the SAME ``pushed_no_pr`` repository, so the blocking row
+    is produced by the mutation path alone — and the survey path is named as an
+    exclusion rather than dropped.
+    """
+    resolved: list[str] = []
+    deliverables = [
+        {
+            'number': 1,
+            'foreign': True,
+            'affected_files': [],
+            'survey_scope': [{'path': '/foreign/repo/pool.py', 'intent': 'read', 'foreign': True}],
+            'mutation_scope': [{'path': '/foreign/repo/mutated.py', 'intent': None, 'foreign': True}],
+        }
+    ]
+
+    result = _run(
+        deliverables,
+        roots={'/foreign/repo/pool.py': '/foreign/repo', '/foreign/repo/mutated.py': '/foreign/repo'},
+        landings={'/foreign/repo': 'pushed_no_pr'},
+        resolved_paths=resolved,
+    )
+
+    assert result['status'] == 'blocked'
+    assert resolved == ['/foreign/repo/mutated.py']
+    assert result['excluded_read_only'] == [{'deliverable': 1, 'path': '/foreign/repo/pool.py'}]
+
+
+def test_a_survey_path_with_an_explicit_write_marker_blocks():
+    """The exclusion is decided by the parsed intent, never by the field name."""
+    deliverables = [
+        {
+            'number': 1,
+            'foreign': True,
+            'affected_files': [],
+            'survey_scope': [{'path': '/foreign/repo/pool.py', 'intent': 'write-new', 'foreign': True}],
+            'mutation_scope': [],
+        }
+    ]
+
+    result = _run(
+        deliverables,
+        roots={'/foreign/repo/pool.py': '/foreign/repo'},
+        landings={'/foreign/repo': 'pushed_no_pr'},
+    )
+
+    assert result['status'] == 'blocked'
+    assert result['excluded_read_only_count'] == 0
+
+
+def test_an_entry_with_no_intent_marker_still_blocks():
+    """The conservative direction, pinned against a "filter everything unmarked" regression.
+
+    The entry carries no ``intent`` key at all. An unmarked foreign change is the
+    hidden-foreign-commit case this gate exists for, so it must stay in the
+    population.
+    """
+    deliverables = [{'number': 1, 'foreign': True, 'affected_files': [{'path': '/foreign/repo/a.py', 'foreign': True}]}]
+
+    result = _run(
+        deliverables, roots={'/foreign/repo/a.py': '/foreign/repo'}, landings={'/foreign/repo': 'pushed_no_pr'}
+    )
+
+    assert result['status'] == 'blocked'
+
+
+def test_a_path_declared_read_and_write_is_gated_not_excluded():
+    """A path one field declares as a change is in the population, not an exclusion.
+
+    Reporting it as excluded would tell the operator the gate skipped a path it
+    in fact evaluated.
+    """
+    deliverables = [
+        {
+            'number': 1,
+            'foreign': True,
+            'affected_files': [],
+            'survey_scope': [{'path': '/foreign/repo/both.py', 'intent': 'read', 'foreign': True}],
+            'mutation_scope': [{'path': '/foreign/repo/both.py', 'intent': 'write-replace', 'foreign': True}],
+        }
+    ]
+
+    result = _run(deliverables, roots={'/foreign/repo/both.py': '/foreign/repo'}, landings={'/foreign/repo': 'merged'})
+
+    assert result['status'] == 'clear'
+    assert result['foreign_deliverable_count'] == 1
+    assert result['excluded_read_only_count'] == 0
+    assert result['excluded_read_only'] == []
+
+
+def test_a_path_gated_through_one_deliverable_is_not_excluded_through_another():
+    """The exclusion test spans the whole population, not one deliverable's slice.
+
+    Deliverable 1 only reads the path; deliverable 2 changes it. The gate
+    evaluates it through deliverable 2, so an exclusion row naming it through
+    deliverable 1 would tell the operator the gate skipped a path it evaluated.
+    """
+    deliverables = [
+        _deliverable(1, foreign=True, paths=['/foreign/repo/shared.py'], intent='read'),
+        _deliverable(2, foreign=True, paths=['/foreign/repo/shared.py']),
+    ]
+    resolved: list[str] = []
+
+    result = _run(
+        deliverables,
+        roots={'/foreign/repo/shared.py': '/foreign/repo'},
+        landings={'/foreign/repo': 'merged'},
+        resolved_paths=resolved,
+    )
+
+    assert result['status'] == 'clear'
+    assert resolved == ['/foreign/repo/shared.py']
+    assert result['excluded_read_only_count'] == 0
+    assert result['excluded_read_only'] == []
+
+
+def test_the_population_consumes_the_shared_predicate(monkeypatch):
+    """The gate routes through ``declares_change`` rather than a local copy of the rule.
+
+    Replacing the imported predicate with one that accepts everything must pull a
+    ``read`` path into the population. A gate that re-derived the rule inline
+    would keep excluding it and drift from the column.
+    """
+    monkeypatch.setattr(gate, 'declares_change', lambda _entry: True)
+    deliverables = [_deliverable(1, foreign=True, paths=['/foreign/repo/ref.py'], intent='read')]
+
+    result = _run(
+        deliverables, roots={'/foreign/repo/ref.py': '/foreign/repo'}, landings={'/foreign/repo': 'pushed_no_pr'}
+    )
+
+    assert result['status'] == 'blocked'
+
+
+# --------------------------------------------------------------------------- #
+# Exclusions are named on the result — a filtered clear is not an empty clear
+# --------------------------------------------------------------------------- #
+
+
+def test_a_clear_reached_after_exclusions_names_the_excluded_paths():
+    """Rows are keyed by (deliverable, path): ref.py, read by both, appears twice."""
+    deliverables = [
+        _deliverable(1, foreign=True, paths=['/foreign/repo/ref.py'], intent='read'),
+        _deliverable(2, foreign=True, paths=['/foreign/repo/other.py', '/foreign/repo/ref.py'], intent='read'),
+    ]
+
+    result = _run(deliverables)
+
+    assert result['status'] == 'clear'
+    assert result['foreign_deliverable_count'] == 0
+    assert result['excluded_read_only_count'] == 3
+    assert result['excluded_read_only'] == [
+        {'deliverable': 1, 'path': '/foreign/repo/ref.py'},
+        {'deliverable': 2, 'path': '/foreign/repo/other.py'},
+        {'deliverable': 2, 'path': '/foreign/repo/ref.py'},
+    ]
+
+
+def test_a_clear_over_a_genuinely_empty_foreign_population_names_none():
+    """The negative control: the same clear verdict, with nothing excluded to name."""
+    deliverables = [_deliverable(1, foreign=False, paths=['src/host.py'], intent='read')]
+
+    result = _run(deliverables)
+
+    assert result['status'] == 'clear'
+    assert result['foreign_deliverable_count'] == 0
+    assert result['excluded_read_only_count'] == 0
+    assert result['excluded_read_only'] == []
+
+
+def test_exclusions_ride_on_a_blocked_result_too():
+    deliverables = [
+        {
+            'number': 1,
+            'foreign': True,
+            'affected_files': [
+                {'path': '/foreign/repo/changed.py', 'intent': 'write-replace', 'foreign': True},
+                {'path': '/foreign/repo/ref.py', 'intent': 'read', 'foreign': True},
+            ],
+        }
+    ]
+
+    result = _run(
+        deliverables,
+        roots={'/foreign/repo/changed.py': '/foreign/repo'},
+        landings={'/foreign/repo': 'pushed_no_pr'},
+    )
+
+    assert result['status'] == 'blocked'
+    assert result['excluded_read_only'] == [{'deliverable': 1, 'path': '/foreign/repo/ref.py'}]
+
+
+def test_the_pre_walk_errors_carry_no_exclusion_fields():
+    """Nothing was evaluated before the walk, so no exclusion count is published.
+
+    A zero there would read as "walked, and excluded nothing".
+    """
+
+    def loader(_plan_id):
+        return {'status': 'error', 'error': 'document_not_found'}
+
+    result = gate.check('p', deliverables_loader=loader, root_resolver=lambda p: None, landing_resolver=lambda r: {})
+
+    assert result['status'] == 'error'
+    assert 'excluded_read_only_count' not in result
+    assert 'excluded_read_only' not in result
+
+
+# --------------------------------------------------------------------------- #
+# End to end: outline markdown → parser → foreign column → TOON → gate
+# --------------------------------------------------------------------------- #
+
+_FOREIGN_OUTLINE_DELIVERABLES = """### 1. Change a foreign repository
+
+**Affected files:**
+- `/foreign/repo/src/Changed.java` (write-replace)
+- `/foreign/repo/src/Reference.java` (read)
+
+### 2. Survey a foreign repository
+
+**Files to survey:**
+- `/foreign/pool/Surveyed.java`
+
+**Files expected to mutate:**
+- `/foreign/other/Mutated.java`
+"""
+
+
+def test_the_real_parser_and_column_feed_the_gate_the_narrowed_population(monkeypatch):
+    """The intents the gate reads are the ones the parser produced, after a TOON round trip.
+
+    The fixture-level tests above hand the gate hand-built intents. This one
+    derives them from outline markdown — including the ``read`` default a
+    marker-less survey bullet receives at parse time — stamps the column, and
+    passes the payload through the same serialize/parse boundary the CLI uses, so
+    a regression anywhere on that path (a lost default, a flag that stops
+    round-tripping) reaches a different verdict.
+    """
+    monkeypatch.setattr(mso, 'cwd_checkout_root', lambda: '/repo')
+    deliverables = extract_deliverables(_FOREIGN_OUTLINE_DELIVERABLES)
+    mso._annotate_foreign(deliverables)
+    payload = parse_toon(serialize_toon(_listed(deliverables)))
+    roots = {'/foreign/repo/src/Changed.java': '/foreign/repo', '/foreign/other/Mutated.java': '/foreign/other'}
+    landings = {'/foreign/repo': 'pushed_no_pr', '/foreign/other': 'merged'}
+    resolved: list[str] = []
+
+    def root_resolver(path):
+        resolved.append(path)
+        return roots.get(path)
+
+    result = gate.check(
+        'p',
+        deliverables_loader=lambda _p: payload,
+        root_resolver=root_resolver,
+        landing_resolver=lambda root: {'landing_state': landings[root]},
+    )
+
+    assert result['status'] == 'blocked'
+    assert result['blocking'] == [{'repo_root': '/foreign/repo', 'deliverables': [1]}]
+    assert sorted(resolved) == ['/foreign/other/Mutated.java', '/foreign/repo/src/Changed.java']
+    assert result['excluded_read_only'] == [
+        {'deliverable': 1, 'path': '/foreign/repo/src/Reference.java'},
+        {'deliverable': 2, 'path': '/foreign/pool/Surveyed.java'},
+    ]

@@ -36,7 +36,9 @@ from _architecture_core import (
     load_project_meta,
 )
 from _plan_parsing import (
+    DECLARATION_FIELDS,
     _slugify_section_name,
+    declares_change,
     deliverable_write_set,
     extract_deliverables,
     is_foreign_path,
@@ -610,14 +612,24 @@ def _annotate_foreign(deliverables: list[dict[str, Any]]) -> None:
     """Stamp a ``foreign`` flag onto every deliverable and each of its declared
     file entries, in place.
 
-    Every entry of the deliverable's declared surface — ``affected_files``, plus
-    the ``mutation_scope`` / ``survey_scope`` pair a survey-scope deliverable
-    declares instead — gains ``foreign: true/false`` derived from
-    :func:`is_foreign_path` against the project root (the git toplevel), and the
-    deliverable gains a roll-up ``foreign: true`` when ANY of its paths is
-    foreign. This is what lets a coverage ratio separate the two populations
-    (host vs foreign) instead of silently pooling them, and it is the population
-    the phase-6 pre-archive landing gate iterates.
+    Two flags with two different meanings:
+
+    - **Per entry** — every entry of the deliverable's declared surface
+      (``affected_files``, plus the ``mutation_scope`` / ``survey_scope`` pair a
+      survey-scope deliverable declares instead) gains ``foreign: true/false``
+      derived purely lexically from :func:`is_foreign_path` against the project
+      root (the git toplevel), whatever its intent. This flag keeps the raw
+      host-vs-foreign split over paths, so a coverage ratio can separate the two
+      populations instead of silently pooling them.
+    - **Per deliverable** — the roll-up ``foreign: true`` means *this deliverable
+      declares a foreign change*: at least one entry is lexically foreign AND
+      passes :func:`declares_change`. A deliverable that only consults a foreign
+      file (``read`` intent, or a marker-less ``Files to survey`` bullet, which
+      parses as ``read``) names a foreign path but declares no foreign change, so
+      it rolls up ``false`` while that entry's own flag stays ``true``. The
+      phase-6 pre-archive landing gate applies the same predicate to the same
+      per-entry flags, so the column and the gate agree on what a foreign change
+      is.
 
     The project root is resolved once via :func:`cwd_checkout_root`. When the
     root cannot be resolved (not in a git checkout), every path is classified
@@ -631,22 +643,21 @@ def _annotate_foreign(deliverables: list[dict[str, Any]]) -> None:
         project_root = None
 
     for deliverable in deliverables:
-        any_foreign = False
-        # All THREE declaration fields, not `affected_files` alone. A
+        declares_foreign_change = False
+        # Every declaration field the parser emits, not `affected_files` alone. A
         # survey-scope deliverable declares `Files to survey:` +
-        # `Files expected to mutate:` instead, so scanning only the flat field
-        # would leave its whole surface unstamped — and the phase-6 landing gate
-        # iterates exactly this stamped population, so an unstamped foreign path
-        # is one the gate cannot see. That is the incomplete-derived-set failure
-        # this plan exists to close, reproduced in the gate that guards landings.
-        for field in ('affected_files', 'mutation_scope', 'survey_scope'):
+        # `Files expected to mutate:` instead of the flat field, so scanning one
+        # field would leave its whole surface unstamped — and the phase-6 landing
+        # gate reads exactly these per-entry flags, so an unstamped foreign path
+        # is one the gate cannot see.
+        for field in DECLARATION_FIELDS:
             for entry in deliverable.get(field, []) or []:
                 if not isinstance(entry, dict):
                     continue
                 is_foreign = project_root is not None and is_foreign_path(entry.get('path', ''), project_root)
                 entry['foreign'] = is_foreign
-                any_foreign = any_foreign or is_foreign
-        deliverable['foreign'] = any_foreign
+                declares_foreign_change = declares_foreign_change or (is_foreign and declares_change(entry))
+        deliverable['foreign'] = declares_foreign_change
 
 
 def _lookup_deliverable(plan_id: str, content: str, deliverable_number: int) -> dict[str, Any]:

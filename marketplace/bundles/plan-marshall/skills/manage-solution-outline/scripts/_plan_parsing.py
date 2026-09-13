@@ -12,6 +12,8 @@ Usage:
         extract_deliverable_headings,
         split_deliverable_blocks,
         extract_deliverables,
+        declares_change,
+        deliverable_write_set,
         declared_paths_by_intent,
         declared_paths_population,
     )
@@ -375,6 +377,30 @@ _DECLARATION_HEADINGS: tuple[tuple[str, str | None], ...] = (
     (_SURVEY_SCOPE_HEADING, STEP_INTENT_READ),
 )
 
+#: The record KEYS :func:`extract_deliverables` emits for a deliverable's declared
+#: file surface.
+#:
+#: Both foreign selectors read it: the per-entry ``foreign`` stamp
+#: ``manage-solution-outline list-deliverables`` applies, and the population walk of
+#: the phase-6 pre-archive foreign-PR landing gate. Sharing one object is what makes
+#: a heading addition reach BOTH by construction — the failure this constant exists
+#: to prevent is a new heading that reaches the declared-footprint derivation while
+#: each selector keeps walking its own stale copy, leaving that heading's foreign
+#: paths unstamped and outside the gate's population.
+#:
+#: Relationship to its two neighbours — the three are deliberately distinct:
+#:
+#: - :data:`_DECLARATION_HEADINGS` is heading TEXT plus default intent, consumed at
+#:   PARSE time; this tuple is the parsed RECORD KEYS, consumed at CONSUME time.
+#:   They describe the same declaration surface from opposite ends of the parse, so
+#:   a heading added to the standard means editing both, in step.
+#: - :func:`deliverable_write_set` deliberately walks the NARROWER
+#:   ``('affected_files', 'mutation_scope')`` and MUST NOT be switched to this
+#:   constant. ``survey_scope`` is the analysis-only candidate pool and is excluded
+#:   from the write-set by design; unifying the two would silently pull every
+#:   surveyed path into every deliverable's change footprint.
+DECLARATION_FIELDS: tuple[str, ...] = ('affected_files', 'mutation_scope', 'survey_scope')
+
 #: The bucket a bullet lands in when it declares no intent this parser recognises.
 #:
 #: Deliberately OUTSIDE the closed :data:`constants.VALID_STEP_INTENTS` enum, and
@@ -490,6 +516,52 @@ def _extract_affected_files(content: str) -> list[dict[str, Any]]:
     return _extract_scope_field(content, _AFFECTED_FILES_HEADING)
 
 
+def declares_change(entry: dict[str, Any]) -> bool:
+    """Return True when a parsed declaration entry states a CHANGE to its path.
+
+    The single definition of "does this declared path change?". Every consumer
+    that separates a deliverable's change footprint from its reading surface
+    calls this predicate rather than re-deriving the rule:
+    :func:`deliverable_write_set`, the deliverable roll-up of the ``foreign``
+    column ``manage-solution-outline list-deliverables`` stamps, and the
+    population walk of the phase-6 pre-archive foreign-PR landing gate. One
+    definition is what keeps the column and the gate from disagreeing about
+    what a foreign change is.
+
+    The disposition is an operator ruling, and each arm carries its reason:
+
+    - ``read`` → **not** a change. The entry names a file the deliverable
+      consults and leaves untouched, so no commit can carry it and no pull
+      request can exist to clear it.
+    - ``write-new`` / ``write-replace`` / ``delete`` → a change. Each states a
+      modification of the path.
+    - **No intent marker** (``None``) → a change. The conservative direction: the
+      marker is mandatory on ``Affected files`` and its absence is reported as a
+      validation error, so the missing intent must never silently subtract the
+      path from a change footprint — an unmarked entry must never be quieter
+      than a marked one. This is also what keeps a foreign change that was
+      declared without a marker inside the landing gate's population.
+    - **An unrecognised marker** → a change, for the same reason: it declared no
+      valid intent, and ``validate_deliverable_contract`` is what reports it.
+
+    ``Files to survey`` bullets fall out through the ``read`` arm, never through
+    a field-name special case: :data:`_DECLARATION_HEADINGS` gives a marker-less
+    survey bullet the ``read`` default at parse time, so it reaches this
+    predicate already carrying ``read``. A survey bullet that carries an
+    explicit write marker therefore counts as a change, because the decision is
+    made by the parsed intent alone.
+
+    Args:
+        entry: One ``{'path', 'intent'}`` record from any of the three
+            declaration fields.
+
+    Returns:
+        False only for an entry whose declared intent is
+        :data:`constants.STEP_INTENT_READ`; True otherwise.
+    """
+    return entry.get('intent') != STEP_INTENT_READ
+
+
 def deliverable_write_set(deliverable: dict[str, Any]) -> list[str]:
     """Return the paths a deliverable declares it will MODIFY.
 
@@ -523,11 +595,10 @@ def deliverable_write_set(deliverable: dict[str, Any]) -> list[str]:
     consulted test file makes a deliverable look test-bearing, one consulted
     ``.py`` makes a documentation-only deliverable look like code.
 
-    An entry with no intent marker at all is counted as a write. The marker is
-    mandatory and its absence is already a validation error, so the missing
-    intent is reported as the error it is rather than silently subtracting the
-    path from the change footprint — an unmarked entry must never be quieter
-    than a marked one.
+    Which entries count as writes is decided by :func:`declares_change` — ``read``
+    is excluded, and an entry with no intent marker at all is counted as a
+    write — so this function and every other consumer of that rule apply one
+    definition of it.
 
     Args:
         deliverable: A record from :func:`extract_deliverables`.
@@ -537,11 +608,13 @@ def deliverable_write_set(deliverable: dict[str, Any]) -> list[str]:
     """
     write_set: list[str] = []
     seen: set[str] = set()
+    # Deliberately NARROWER than :data:`DECLARATION_FIELDS` — see that constant's
+    # docstring for why ``survey_scope`` stays out of the write-set.
     for field in ('affected_files', 'mutation_scope'):
         for entry in deliverable.get(field, []) or []:
             if not isinstance(entry, dict):
                 continue
-            if entry.get('intent') == STEP_INTENT_READ:
+            if not declares_change(entry):
                 continue
             path = entry.get('path')
             if isinstance(path, str) and path and path not in seen:

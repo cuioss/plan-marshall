@@ -40,6 +40,7 @@ of each:
 | Report exposes | Inbox (historical) | Classification | Routed as |
 |---|---|---|---|
 | PR number + merge/landing state (headline token `MERGED`/`OPEN`/…) | narrative "the PR reference" | MECHANISABLE | `pr`, `merge_state` |
+| Branch cleanup left owed | absent | MECHANISABLE | `cleanup_owed` |
 | Deliverables `N_done/N_total` + titles | narrative "what shipped" | MECHANISABLE | `deliverables_total`, `deliverables_done` |
 | Per-step outcome + `display_detail` for every finalize step, in composed order | absent | MECHANISABLE | **required** `steps`, which carries the per-step `{step}:{outcome}` pairs ONLY (split each element on its LAST colon — a namespaced step id contains one; [`../workflow/analyze.md`](../workflow/analyze.md) § Step 4 is where the drain applies it); each step's typed `facts` ride the **optional** `step.{name}.{fact_key}` keys |
 | Token totals + wall-clock (`record-metrics`) | absent | MECHANISABLE | **required** `total_tokens`; the wall-clock rides the **optional** `total_wall_seconds` |
@@ -91,6 +92,7 @@ the drain consumes. These keys are **required** — a landing missing any of the
 | `plan_id` | The plan's id (the message `sender_id`) | run |
 | `pr` | PR reference (`#NNN`), `n/a`, or `unknown` — `n/a` is a PR that was never created, a real end state; `unknown` is a `pr_number` that could not be read, and asserts only that nothing was observed. Neither collapses into the other | `create-pr`'s `pr_number` fact |
 | `merge_state` | The merge/landing state the step recorded (`merged` / `open` / `closed` / `unknown` / `n/a`) — the STEP'S claim, never a corroboration. `closed` is a PR the merge queue dequeued without merging; `unknown` is a PR whose state could not be read, and asserts only that nothing was observed. Neither collapses into `open` | `branch-cleanup`'s `merge_state` fact |
+| `cleanup_owed` | Whether the run still owes branch cleanup that nothing re-entering will discharge (`true` / `false`), `n/a`, or `unknown` — the STEP'S claim. `n/a` is the answer when no `branch-cleanup` step ran, a real end state: a plan whose manifest carried no such step owes no cleanup it could record. `unknown` is a `cleanup_owed` fact that could not be read, and asserts only that nothing was observed. Neither collapses into the other. `true` is the only structured carrier of the owed cleanup on a PR the merge queue dequeued, whose `merge_state=closed` otherwise reads complete | `branch-cleanup`'s `cleanup_owed` fact |
 | `deliverables_total` | Total deliverable count from the solution outline | run |
 | `deliverables_done` | Completed deliverable count | run |
 | `total_tokens` | The run's token total (raw integer) | `record-metrics` facts |
@@ -104,8 +106,9 @@ different terms because they assert different things.
 
 The **answered-degraded** class is `n/a`. `emit-landing.md` sanctions writing it for a fact the run has
 no value for — no PR was ever created, the step legitimately did not run — so it asserts an ABSENCE THE
-RUN OBSERVED. For `pr` and `merge_state` that IS an answer — "no PR exists" is a real end state, which
-is why both rows above name `n/a` as a legal value. For the remaining required keys — `plan_id`,
+RUN OBSERVED. For `pr`, `merge_state` and `cleanup_owed` that IS an answer — "no PR exists" and "no
+cleanup step ran" are real end states, which is why all three rows above name `n/a` as a legal value.
+For the remaining required keys — `plan_id`,
 `deliverables_total`, `deliverables_done`, `total_tokens`, `steps` — it is not: each names something a
 landed plan always has, so an absence there is a producer gap, not an answer.
 `check_landing_completeness` treats those as MISSING and names them, so a landing whose token total,
@@ -115,14 +118,14 @@ The **could-not-read** class is `unknown` — the value the `merge_state` row ab
 could not be read, asserting only that nothing was observed. `emit-landing.md` routes EVERY failed read
 here, at every key: a value the producer could not read is written as `unknown`, never as `n/a`. It is
 therefore a GAP AT EVERY REQUIRED KEY, with no carve-out: `merge_state=unknown` is INCOMPLETE exactly as
-`total_tokens=unknown` is, and `pr` is no exception either. The carve-out above belongs to the answered
+`total_tokens=unknown` is, and neither `pr` nor `cleanup_owed` is an exception either. The carve-out above belongs to the answered
 class ALONE. The asymmetry is the reason
 the two are separate vocabularies rather than one list: `merge_state=n/a` must stay an answer while
 `merge_state=unknown` must read as a gap, and a single per-key allow-list cannot express both — widening
 the allow-list to cover `merge_state` would reject the legitimate `n/a` alongside the failed read.
 
 The two classes therefore split by CONDITION, not by key. Routing a failed read to `n/a` is the
-false-completeness defect this split closes: `n/a` is exempt at `pr` and `merge_state`, so a merge state
+false-completeness defect this split closes: `n/a` is exempt at `pr`, `merge_state` and `cleanup_owed`, so a merge state
 nobody managed to read would drain as a settled "no PR exists".
 
 `schema` needs no such rule for either class: any value other than

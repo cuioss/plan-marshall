@@ -810,11 +810,19 @@ LANDING_FACTS_SCHEMA = 'landing-facts/1'
 #: intended failure, not a reason to relax them. Which document wins a prose
 #: disagreement is settled by ``landing-payload-spec.md``'s own tie-break
 #: sentence, which this comment does not restate or override.
+#:
+#: ``cleanup_owed`` is the structured carrier of branch cleanup a run still owes
+#: (``branch-cleanup``'s fact of the same name). It is required because a PR the
+#: merge queue dequeued records a fully-readable ``merge_state=closed``, so without
+#: it such a landing reads complete and clean while cleanup is still owed. Like
+#: ``pr`` and ``merge_state`` it sits OUTSIDE
+#: :data:`LANDING_SENTINEL_REJECTING_KEYS` — see that set for why.
 LANDING_REQUIRED_KEYS: tuple[str, ...] = (
     'schema',
     'plan_id',
     'pr',
     'merge_state',
+    'cleanup_owed',
     'deliverables_total',
     'deliverables_done',
     'total_tokens',
@@ -837,9 +845,9 @@ LANDING_ANSWERED_SENTINELS: frozenset[str] = frozenset({'n/a'})
 #: FAILED READ, never an end state. Compared case-insensitively after stripping.
 #:
 #: ⛔ This class carries **NO allow-list and no per-key gate**: a key holding one
-#: of these values is unsupplied at EVERY key, ``pr`` and ``merge_state``
-#: included — precisely the two keys :data:`LANDING_SENTINEL_REJECTING_KEYS`
-#: deliberately omits. That asymmetry between the two classes is the whole point
+#: of these values is unsupplied at EVERY key, ``pr``, ``merge_state`` and
+#: ``cleanup_owed`` included — precisely the keys
+#: :data:`LANDING_SENTINEL_REJECTING_KEYS` deliberately omits. That asymmetry between the two classes is the whole point
 #: of splitting them. Gating this class the way the answered class is gated would
 #: reintroduce the defect the split closes: ``merge_state=unknown`` would drain as
 #: a settled merge fact while recording that the merge state could not be read.
@@ -859,10 +867,13 @@ LANDING_COULD_NOT_READ_SENTINELS: frozenset[str] = frozenset({'unknown'})
 #: The set is deliberately a SUBSET of :data:`LANDING_REQUIRED_KEYS`, and the
 #: asymmetry is the point: ``pr`` and ``merge_state`` stay allowed to be ``n/a``
 #: because "no PR exists" is a real end state the payload spec names, so an
-#: ANSWERED-degraded value there is an answer rather than a gap. They are NOT
-#: thereby allowed to be ``unknown`` — that value is a failed read at every key,
-#: which is why the fix is this split and NOT the widening of this set to include
-#: ``merge_state``. ``schema`` needs no entry —
+#: ANSWERED-degraded value there is an answer rather than a gap. ``cleanup_owed``
+#: stays outside for the same reason: a plan whose manifest carried no
+#: ``branch-cleanup`` step owes no cleanup it could record, so ``n/a`` there is
+#: an observed absence, not a producer that failed to read the fact. None of the
+#: three is thereby allowed to be ``unknown`` — that value is a failed read at
+#: every key, which is why the fix is this split and NOT the widening of this set
+#: to include ``merge_state``. ``schema`` needs no entry —
 #: :func:`check_landing_completeness` fail-closes on any value other than
 #: :data:`LANDING_FACTS_SCHEMA` before the required-key sweep runs, so a sentinel
 #: of either class is already rejected there by the stricter check.
@@ -889,8 +900,8 @@ def _is_unsupplied(key: str, facts: dict[str, str]) -> bool:
        unsupplied at EVERY key, with no allow-list. The value asserts only that
        nothing was observed, which is never an answer, so there is no key at
        which it could legitimately stand in for a fact. This test runs BEFORE the
-       per-key gate below precisely so the gate cannot exempt it: ``pr`` and
-       ``merge_state`` are outside
+       per-key gate below precisely so the gate cannot exempt it: ``pr``,
+       ``merge_state`` and ``cleanup_owed`` are outside
        :data:`LANDING_SENTINEL_REJECTING_KEYS`, and a gated could-not-read value
        would drain there as a settled fact.
     3. **An ANSWERED sentinel** (:data:`LANDING_ANSWERED_SENTINELS`) at a key
@@ -975,13 +986,13 @@ def check_landing_completeness(payload_body: str) -> tuple[bool, list[str]]:
       and the difference is the point:
 
       - An ANSWERED sentinel (``n/a``, per :data:`LANDING_ANSWERED_SENTINELS`) is
-        rejected only at :data:`LANDING_SENTINEL_REJECTING_KEYS`. ``pr`` and
-        ``merge_state`` stay allowed to be ``n/a``, because "no PR exists" is a
-        real end state the payload spec names and the value there is an answer
-        rather than a gap.
+        rejected only at :data:`LANDING_SENTINEL_REJECTING_KEYS`. ``pr``,
+        ``merge_state`` and ``cleanup_owed`` stay allowed to be ``n/a``, because
+        "no PR exists" and "no cleanup step ran" are real end states the payload
+        spec names and the value there is an answer rather than a gap.
       - A COULD-NOT-READ sentinel (``unknown``, per
         :data:`LANDING_COULD_NOT_READ_SENTINELS`) is rejected at EVERY key, with
-        no allow-list — ``pr`` and ``merge_state`` included. It asserts only that
+        no allow-list — ``pr``, ``merge_state`` and ``cleanup_owed`` included. It asserts only that
         nothing was observed, so it is a failed read wherever it appears. This is
         why the fix was to SPLIT the vocabulary rather than to add ``merge_state``
         to the rejecting set: ``merge_state=n/a`` must stay an answer while
@@ -2013,8 +2024,8 @@ def cmd_inbox_landing_check(args: Any) -> dict[str, Any]:
     reported missing only at :data:`LANDING_SENTINEL_REJECTING_KEYS`; a
     COULD-NOT-READ sentinel (``unknown``,
     :data:`LANDING_COULD_NOT_READ_SENTINELS`) asserts only that nothing was
-    observed and is reported missing at EVERY key, ``pr`` and ``merge_state``
-    included. So ``merge_state=n/a`` leaves a landing complete while
+    observed and is reported missing at EVERY key, ``pr``, ``merge_state`` and
+    ``cleanup_owed`` included. So ``merge_state=n/a`` leaves a landing complete while
     ``merge_state=unknown`` does not — the drain records the failed read as a gap
     instead of reconciling against it as a settled merge fact.
 

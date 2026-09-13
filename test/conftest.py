@@ -1139,6 +1139,10 @@ _ROUTING_GUARD_MODULES: tuple[tuple[str, str], ...] = (
         'call-graph-dispatch-classes',
         'plan-marshall/manage-metrics/test_dispatch_boundary_ledger_population.py',
     ),
+    (
+        'measured-diff-size-call-sites',
+        'plan-marshall/automatic-review/test_measured_diff_size_bare_flag.py',
+    ),
 )
 
 

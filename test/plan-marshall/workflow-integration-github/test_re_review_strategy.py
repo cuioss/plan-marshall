@@ -18,8 +18,13 @@ Covers the three concerns of the post-merge re-review registry:
        ``submitted_at`` post-dates the trigger time, AND whose
        body is not a refusal notice; reported with ``head_sha_verified: true``)
        OR ``_match_bot_comment`` (an issue comment from the awaited bot
-       post-dating the trigger and likewise not a refusal notice; reported with
-       ``head_sha_verified: false``). BOTH paths run the same refusal-recognition
+       post-dating the trigger and likewise not a refusal notice). ``head_sha_verified``
+       is decided on BOTH paths by that SAME ``_references_head_sha`` predicate, run
+       over whichever field carries the reviewed-commit claim — the review's
+       ``commit_sha``, or the comment's BODY. It is NOT "true only on the review
+       path": that shortcut manufactured a decline for every bot whose sole declared
+       publish shape is an issue comment naming its reviewed commit as a permalink.
+       BOTH paths run the same refusal-recognition
        STACK as the producer — the arms are named once in
        ``_github_pr.REFUSAL_LAYERS`` and the list is open — so a bot that answers
        the trigger by declining to review is never a completed review, however
@@ -889,8 +894,10 @@ def test_await_matches_bot_issue_comment_when_no_review_exists(monkeypatch):
     """A bot-authored comment post-dating the trigger satisfies await with no review.
 
     This is the case that used to be a guaranteed timeout. The envelope must name
-    the weaker signal: ``matched_signal: issue_comment`` and
-    ``head_sha_verified: false``, because a comment carries no reviewed-commit SHA.
+    the weaker signal: ``matched_signal: issue_comment``. ``head_sha_verified`` is
+    ``false`` here because THIS comment's body names no commit — not because a
+    comment structurally cannot; see the comment-path verification section below,
+    where a body that does name the awaited commit verifies.
     """
     result = _await_with_comments(monkeypatch, [_comment(_PR_AGENT_LOGIN, created_at='2026-01-01T00:05:00Z')])
 
@@ -1192,6 +1199,134 @@ def test_await_does_not_verify_a_review_naming_a_different_commit(monkeypatch):
     assert result['matched_signal'] == ''
     assert result['head_sha_verified'] is False
     assert result['timed_out'] is True
+
+
+# =============================================================================
+# The COMMENT path verifies the HEAD too — the reference is read off the body
+# =============================================================================
+#
+# ⛔ "An issue comment carries no reviewed-commit SHA" was a PREMISE, never an
+# observation, and it is false for a bot whose only declared publish shape is an
+# issue comment. ``cuioss-review-bot`` declares ``participation_evidence:
+# issue_comment`` with an empty ``completion_check_name`` — it submits no review
+# object at all — and it names the commit it reviewed INSIDE that comment, as a
+# ``…/commit/{sha}`` permalink: the exact URL-embedded shape the section above
+# already taught ``_references_head_sha`` to recognise on the review path.
+#
+# While the field was hard-coded ``matched_signal == 'review'``, the matcher never
+# inspected the body, so every correct re-review that bot performed was published as
+# ``matched: true`` / ``head_sha_verified: false`` — which both consumers route as an
+# incremental-review DECLINE. That member is blocking and its documented remedy is to
+# demote the bot to ``optional_bots`` or take a merge-authorization waiver, so a
+# REQUIRED bot in this shape could never verify and the pipeline's own advice was to
+# stop requiring it.
+#
+# Every case below is PAIRED on the observed body: the positive and its negative
+# control are built from the same body template and differ only in WHICH commit the
+# permalink names, so a matcher that answered ``true`` for any comment fails the
+# negative while still passing the positive. The third case is the genuine decline —
+# a comment naming no commit at all — and it pins that the correction did not erase
+# the state it was distinguishing.
+
+#: The commit ``cuioss-review-bot`` named on the live observation (plan-marshall
+#: #1473). A REAL 40-hex SHA rather than the ``'headsha'`` token the fixtures above
+#: use: the token is not hex, so no token scan can extract it, and the URL-embedded
+#: shape is the whole point here.
+_OBSERVED_REVIEW_BOT_SHA = '4d6738e2d96150706cda6b682109336c5c0c383b'
+
+
+def _guide_body(sha: str) -> str:
+    """The Guide body shape observed live, naming ``sha`` as the reviewed commit.
+
+    Pinned as the OBSERVED wording rather than a synthetic "sha: <hex>" string: the
+    permalink is how this bot actually reports its reviewed commit, and a fixture
+    that invented an easier shape would prove the matcher handles a shape no bot
+    emits. The heading is carried too, because the real comment is one persistent
+    Guide that the bot EDITS — the body always arrives with it attached.
+    """
+    return f'## PR Reviewer Guide 🔍 (Review updated until commit https://github.com/cuioss/plan-marshall/commit/{sha})'
+
+
+def test_await_verifies_a_comment_whose_body_names_the_awaited_commit(monkeypatch):
+    """POSITIVE: the live defect, pinned at the field both consumers branch on.
+
+    No review is supplied, so nothing but the comment can satisfy the await and the
+    stronger signal cannot mask the result.
+    """
+    result = _await_with_comments(
+        monkeypatch,
+        [
+            _comment(
+                _PR_AGENT_LOGIN,
+                created_at='2026-01-01T00:05:00Z',
+                body=_guide_body(_OBSERVED_REVIEW_BOT_SHA),
+            )
+        ],
+        head_sha=_OBSERVED_REVIEW_BOT_SHA,
+    )
+
+    assert result['matched'] is True
+    assert result['matched_signal'] == 'issue_comment'
+    assert result['head_sha_verified'] is True
+    assert result['timed_out'] is False
+
+
+def test_await_does_not_verify_a_comment_naming_a_different_commit(monkeypatch):
+    """NEGATIVE control: the same body shape naming another commit stays unverified.
+
+    Same builder, same author, same timestamps — the ONLY difference is which commit
+    the permalink names. Without it the positive above would pass just as happily
+    against a matcher widened to answer ``true`` for every comment, which is the
+    false-green that would credit a re-review nobody performed.
+
+    It must still MATCH: the bot answered, and a decline is an observation the
+    ``declined`` member is built on. Collapsing it into a timeout would lose it.
+    """
+    result = _await_with_comments(
+        monkeypatch,
+        [_comment(_PR_AGENT_LOGIN, created_at='2026-01-01T00:05:00Z', body=_guide_body(_OTHER_SHA))],
+        head_sha=_OBSERVED_REVIEW_BOT_SHA,
+    )
+
+    assert result['matched'] is True
+    assert result['matched_signal'] == 'issue_comment'
+    assert result['head_sha_verified'] is False
+
+
+def test_await_does_not_verify_a_comment_naming_no_commit_at_all(monkeypatch):
+    """The genuine DECLINE survives the correction unchanged.
+
+    A bot that answers the trigger without naming any reviewed commit is the case
+    ``head_sha_verified: false`` was always supposed to report, and the widening must
+    not launder it. The body is the same Guide heading with the permalink clause
+    absent — the shape a bot emits when it acknowledges without reviewing.
+    """
+    result = _await_with_comments(
+        monkeypatch,
+        [_comment(_PR_AGENT_LOGIN, created_at='2026-01-01T00:05:00Z', body='## PR Reviewer Guide 🔍')],
+        head_sha=_OBSERVED_REVIEW_BOT_SHA,
+    )
+
+    assert result['matched'] is True
+    assert result['matched_signal'] == 'issue_comment'
+    assert result['head_sha_verified'] is False
+
+
+def test_the_comment_and_review_paths_share_ONE_predicate():
+    """The verification rule is the same function on both paths, over both fields.
+
+    Asserted at the helper rather than only through the envelope, because the
+    property that matters is that neither path can drift into its own rule. An
+    unmatched signal fails closed — there is no evidence to verify against.
+    """
+    review = _review(_HEAD_SHA, '2026-01-01T00:05:00Z')
+    comment = _comment(_PR_AGENT_LOGIN, created_at='2026-01-01T00:05:00Z', body=_guide_body(_HEAD_SHA))
+
+    assert github_re_review._verifies_head_sha('review', review, _HEAD_SHA) is True
+    assert github_re_review._verifies_head_sha('issue_comment', comment, _HEAD_SHA) is True
+    assert github_re_review._verifies_head_sha('issue_comment', comment, _OTHER_SHA) is False
+    # Fail-closed: nothing matched, so nothing is verified.
+    assert github_re_review._verifies_head_sha('', None, _HEAD_SHA) is False
 
 
 # =============================================================================
