@@ -549,6 +549,357 @@ def test_only_the_ran_verdicts_are_clean_and_the_not_run_one_is_not():
 
 
 # ---------------------------------------------------------------------------
+# (h) author and verifier: whichever arrangement was implemented is asserted,
+#     and an unrecorded author-equals-verifier state fails
+# ---------------------------------------------------------------------------
+#
+# The step used to close on its author's own reading of its own findings list:
+# one party produced the verdict and the same party's branch selection accepted
+# it. Two arrangements could answer that, and this suite must not pin either as
+# a string — it asserts whichever one the document implements, and fails the one
+# state that is never acceptable: author and verifier are the same party AND the
+# document does not say so.
+#
+# The ARRANGEMENT is derived from the document, not listed here:
+#   * independence — a Role table declaring an author and a verifier that run in
+#     DIFFERENT contexts, a second dispatch that spawns the verifier, and a
+#     closing branch that requires its acceptance;
+#   * the honest alternative — the same-party limitation stated in BOTH the
+#     workflow doc and the surfacer skill, and carried on the recorded verdict.
+# Exactly one must hold. Neither is the unrecorded collapse; both at once is a
+# document that says two contradictory things about its own shape.
+
+_SURFACER_SKILL_DOC = (
+    MARKETPLACE_ROOT / 'pm-plugin-development' / 'skills' / 'ext-self-review-plan-marshall' / 'SKILL.md'
+)
+
+_INDEPENDENCE_HEADING = '## Author and verifier are different parties'
+_VERIFIER_STEP_HEADING = '### Step 3b: Independent verification (dispatch)'
+_BRANCH_A_SECTION_HEADING = '### Step 4: Mark Step Complete (inline)'
+
+#: The two judging roles the independence arrangement must declare, as the Role
+#: table spells them. Derived comparison: the assertion below reads each row's
+#: "where it runs" cell out of the table, so the CONTEXTS are never pinned here —
+#: only the fact that these two roles must both be declared and must differ.
+_AUTHOR_ROLE = 'author'
+_VERIFIER_ROLE = 'verifier'
+
+#: The first header cell that identifies the Role table, by the same
+#: first-header-cell discipline the prompt-fields guard uses for its own table.
+_ROLE_TABLE_HEADER = 'role'
+
+#: The phrase the HONEST-ALTERNATIVE arrangement would state. It is the marker
+#: for "the limitation is recorded", never for "the limitation exists" — the
+#: whole point of the disjunction below is that an existing-but-unstated
+#: limitation matches nothing and therefore fails.
+_SAME_PARTY_MARKER = 'author and verifier are the same party'
+
+#: A dispatch spawn, as the workflow document writes one.
+_TASK_SPAWN = re.compile(r'^\s*Task:\s+plan-marshall:', re.MULTILINE)
+
+#: The acceptance token the closing branch must require. Read as a token of the
+#: verifier's own return contract rather than as a sentence, so rewording the
+#: precondition's prose does not break the assertion while dropping the
+#: requirement would.
+_ACCEPTANCE_TOKEN = 'acceptance: accepted'
+
+
+def _optional_section(text: str, heading: str) -> str:
+    """Return a heading-bounded section, or the empty string when absent.
+
+    ``section_lines`` raises on a missing heading, which is correct for a section
+    the document MUST carry. Both arrangement branches below are optional by
+    construction — exactly one is expected to be present — so a raise would make
+    the disjunction unaskable.
+    """
+    if not any(line.strip() == heading for line in text.splitlines()):
+        return ''
+    return '\n'.join(section_lines(text, heading, _STOP_PREFIXES))
+
+
+def _table_rows(text: str, header_literal: str) -> list[list[str]]:
+    """Return the body rows of the table whose first header cell is ``header_literal``.
+
+    Matched on the first header cell, emphasis-stripped and lowercased — the same
+    discriminator the prompt-body-field guard uses, and for the same reason: a
+    document carries several tables and "the one with these columns" would fold
+    an unrelated one in.
+    """
+    lines = text.splitlines()
+    rows: list[list[str]] = []
+    index = 0
+    while index < len(lines):
+        if not lines[index].strip().startswith('|') or index + 1 >= len(lines):
+            index += 1
+            continue
+        header = [cell.strip() for cell in lines[index].strip().strip('|').split('|')]
+        delimiter = [cell.strip() for cell in lines[index + 1].strip().strip('|').split('|')]
+        if len(delimiter) != len(header) or not all(re.fullmatch(r':?-{2,}:?', cell) for cell in delimiter):
+            index += 1
+            continue
+        row_index = index + 2
+        if header[0].strip('*_ ').lower() == header_literal:
+            while row_index < len(lines) and lines[row_index].strip().startswith('|'):
+                rows.append([cell.strip() for cell in lines[row_index].strip().strip('|').split('|')])
+                row_index += 1
+        else:
+            while row_index < len(lines) and lines[row_index].strip().startswith('|'):
+                row_index += 1
+        index = row_index
+    return rows
+
+
+def _declared_roles(section: str) -> dict[str, str]:
+    """Map each declared role name to the context its row says it runs in.
+
+    The role NAME is the first cell (emphasis and backticks stripped, lowercased);
+    the context is the LAST cell. Reading the last cell rather than a fixed index
+    keeps the parse correct if the table gains a column between them.
+    """
+    roles: dict[str, str] = {}
+    for row in _table_rows(section, _ROLE_TABLE_HEADER):
+        if len(row) < 2:
+            continue
+        name = row[0].strip('*_` ').lower()
+        roles[name] = row[-1]
+    return roles
+
+
+def _independence_is_implemented(doc: str) -> bool:
+    """Whether the workflow doc implements the role-separated arrangement."""
+    declares_roles = bool(_optional_section(doc, _INDEPENDENCE_HEADING))
+    dispatches_verifier = bool(_optional_section(doc, _VERIFIER_STEP_HEADING))
+    return declares_roles and dispatches_verifier
+
+
+def _limitation_is_recorded(doc: str, surfacer_doc: str) -> bool:
+    """Whether the honest-alternative arrangement is recorded in BOTH docs.
+
+    Both, because the deliverable's alternative branch names both surfaces: a
+    limitation recorded in one document and not the other is half-recorded, and
+    the half that omits it reads as though no limitation exists.
+    """
+    return _SAME_PARTY_MARKER in doc.lower() and _SAME_PARTY_MARKER in surfacer_doc.lower()
+
+
+def test_exactly_one_author_verifier_arrangement_is_documented():
+    """The one state that is never acceptable is the unrecorded collapse.
+
+    This is the assertion the deliverable's criterion names: it fails when author
+    and verifier are the same party and nothing says so. It is written as a
+    disjunction over the two admissible arrangements rather than as a pin on the
+    one that was implemented, so the suite states the property instead of the
+    outcome — and so re-deciding the architecture later changes which branch is
+    taken, not whether the property is asserted.
+    """
+    doc = _doc_text()
+    surfacer_doc = _SURFACER_SKILL_DOC.read_text(encoding='utf-8')
+
+    independent = _independence_is_implemented(doc)
+    recorded = _limitation_is_recorded(doc, surfacer_doc)
+
+    assert independent or recorded, (
+        'The self-review documents neither arrangement: no role-separated '
+        f'verifier ({_INDEPENDENCE_HEADING!r} + {_VERIFIER_STEP_HEADING!r} are '
+        f'not both present) and no recorded limitation (neither doc states '
+        f'{_SAME_PARTY_MARKER!r}). Author and verifier are then the same party '
+        'with nothing saying so, which is the exact state this deliverable '
+        'exists to make impossible — a reader of the step record cannot tell '
+        'that the verdict was accepted by its own author.'
+    )
+    assert not (independent and recorded), (
+        'The self-review documents BOTH arrangements at once — it declares a '
+        'separately-dispatched verifier AND states that author and verifier are '
+        'the same party. A reader has no way to know which is true of the '
+        'shipped step.'
+    )
+
+
+def test_the_implemented_arrangement_separates_the_two_judging_roles():
+    """When independence is the implemented arrangement, the roles really differ.
+
+    Skipped-by-construction on the honest-alternative branch: the disjunction
+    above already asserted that branch's obligation, and a role table is not one
+    of its surfaces. Everything here is READ from the table — the role names it
+    declares and the context cell each one carries — so the contexts themselves
+    are never pinned in this file.
+    """
+    doc = _doc_text()
+    if not _independence_is_implemented(doc):
+        return
+
+    roles = _declared_roles(_optional_section(doc, _INDEPENDENCE_HEADING))
+
+    missing = [role for role in (_AUTHOR_ROLE, _VERIFIER_ROLE) if role not in roles]
+    assert not missing, (
+        f'The independence section declares no role table row for {missing}. '
+        f'Declared roles: {sorted(roles)}. Without both rows the separation is '
+        f'prose with no stated division of labour.'
+    )
+    assert roles[_AUTHOR_ROLE] != roles[_VERIFIER_ROLE], (
+        f'The author and the verifier are documented as running in the SAME '
+        f'context ({roles[_AUTHOR_ROLE]!r}). Two roles in one context is one '
+        f'party wearing two names, which is the arrangement this deliverable '
+        f'replaced.'
+    )
+
+
+def test_the_verifier_is_a_second_dispatch_not_a_second_pass_in_the_author():
+    """Independence rests on a SECOND dispatch, and the doc must carry one.
+
+    A verifier described in prose but never spawned would be an arrangement the
+    run cannot reach — the reachability question the settled harness evidence
+    turns on. The count is derived from the document's own spawns rather than
+    pinned: the author dispatch plus the verifier dispatch is two, and the
+    assertion fails if the verifier section carries none of its own.
+    """
+    doc = _doc_text()
+    if not _independence_is_implemented(doc):
+        return
+
+    verifier_section = _optional_section(doc, _VERIFIER_STEP_HEADING)
+
+    assert _TASK_SPAWN.search(verifier_section), (
+        f'{_VERIFIER_STEP_HEADING!r} describes a verifier but issues no '
+        f'`Task: plan-marshall:` dispatch of its own, so the second party is '
+        f'documented and unreachable.'
+    )
+    assert len(_TASK_SPAWN.findall(doc)) >= 2, (
+        f'The document carries {len(_TASK_SPAWN.findall(doc))} dispatch(es). '
+        f'Independence needs at least two — the author pass and the verifier — '
+        f'because a leaf cannot spawn the second from inside the first.'
+    )
+
+
+def test_the_closing_branch_requires_the_verifiers_acceptance():
+    """The round closes on an acceptance the author could not grant itself.
+
+    Without this, the verifier is a dispatch whose answer nothing consumes — a
+    producer with no consumer, which is a defect class this very step checks for.
+    """
+    doc = _doc_text()
+    if not _independence_is_implemented(doc):
+        return
+
+    closing = _optional_section(doc, _BRANCH_A_SECTION_HEADING)
+    assert closing.strip(), (
+        f'{_BRANCH_A_SECTION_HEADING!r} parsed empty, so the acceptance assertion below would be vacuous'
+    )
+
+    assert _ACCEPTANCE_TOKEN in closing, (
+        f'The closing branch does not require {_ACCEPTANCE_TOKEN!r}, so the round '
+        f'still closes on the reading its own author produced, and the verifier '
+        f'answer is consumed by nothing.'
+    )
+
+
+def test_an_absent_or_refused_acceptance_does_not_close_the_round():
+    """An unanswered verifier is not a yes — the fail-open this arrangement closes.
+
+    The three non-acceptance states (refused, errored dispatch, no return) must
+    each be documented as NOT closing. Asserted over the verifier section, where
+    the routing lives, rather than document-wide, so unrelated prose mentioning
+    a refusal cannot satisfy it.
+    """
+    doc = _doc_text()
+    if not _independence_is_implemented(doc):
+        return
+
+    verifier_section = _optional_section(doc, _VERIFIER_STEP_HEADING).lower()
+
+    for state in ('refused', 'error'):
+        assert state in verifier_section, (
+            f'{_VERIFIER_STEP_HEADING!r} does not document the {state!r} state, '
+            f'so what happens to a round the verifier did not accept is unstated.'
+        )
+    assert 'never read an absent verifier return as an acceptance' in verifier_section, (
+        'The verifier section does not forbid reading an ABSENT return as an '
+        'acceptance. That is the fail-open the separation exists to close: an '
+        'unanswered question silently restores the author-accepts-itself state.'
+    )
+
+
+# ---------------------------------------------------------------------------
+# Mutation guards for (h) — each detector must fire on the shape it targets
+# ---------------------------------------------------------------------------
+
+
+def test_arrangement_detectors_fire_on_the_pre_fix_and_alternative_shapes():
+    """The disjunction must be able to fail, and each branch to be selected alone.
+
+    Three synthetic documents, one per state. Without them a typo in either
+    detector would make the disjunction unconditionally true — a guard that can
+    never fail is exactly what let author-equals-verifier stand unremarked.
+    """
+    pre_fix = '## Execution\n\nStep 4 Branch A closes when the findings list is empty.\n'
+    alternative = (
+        '## Execution\n\nA limitation is recorded here: author and verifier are the same party in this harness.\n'
+    )
+    implemented = (
+        f'{_INDEPENDENCE_HEADING}\n\n'
+        '| Role | What it does | Where it runs |\n'
+        '|------|--------------|---------------|\n'
+        '| **Author** | writes the verdict | the dispatched envelope |\n'
+        '| **Verifier** | accepts or refuses it | a separate dispatched envelope |\n'
+        '\n'
+        f'{_VERIFIER_STEP_HEADING}\n\n'
+        '```text\n'
+        'Task: plan-marshall:{target}\n'
+        '```\n'
+    )
+
+    # Pre-fix: neither branch selected -> the disjunction FAILS.
+    assert not _independence_is_implemented(pre_fix)
+    assert not _limitation_is_recorded(pre_fix, pre_fix)
+
+    # Honest alternative: the limitation branch alone.
+    assert _limitation_is_recorded(alternative, alternative)
+    assert not _independence_is_implemented(alternative)
+
+    # Implemented: the independence branch alone, with both roles resolvable to
+    # DIFFERENT contexts and a spawn inside the verifier section.
+    assert _independence_is_implemented(implemented)
+    assert not _limitation_is_recorded(implemented, implemented)
+    roles = _declared_roles(_optional_section(implemented, _INDEPENDENCE_HEADING))
+    assert set(roles) >= {_AUTHOR_ROLE, _VERIFIER_ROLE}, f'Role parser read {sorted(roles)}'
+    assert roles[_AUTHOR_ROLE] != roles[_VERIFIER_ROLE]
+    assert _TASK_SPAWN.search(_optional_section(implemented, _VERIFIER_STEP_HEADING))
+
+
+def test_role_parser_fires_on_a_same_context_table_and_ignores_a_foreign_table():
+    """The role comparison must catch two roles sharing one context.
+
+    And it must not read an unrelated table: a doc carries several, so a parser
+    keyed on "has these columns" rather than on the first header cell would fold
+    a foreign one in and compare cells that are not roles at all.
+    """
+    collapsed = (
+        f'{_INDEPENDENCE_HEADING}\n\n'
+        '| Role | What it does | Where it runs |\n'
+        '|------|--------------|---------------|\n'
+        '| **Author** | writes the verdict | the inline dispatcher context |\n'
+        '| **Verifier** | accepts it | the inline dispatcher context |\n'
+    )
+    roles = _declared_roles(_optional_section(collapsed, _INDEPENDENCE_HEADING))
+
+    assert roles[_AUTHOR_ROLE] == roles[_VERIFIER_ROLE], (
+        'The role parser did not read two roles sharing one context as equal, so '
+        'the separation assertion could never fail on the collapse it targets.'
+    )
+
+    foreign = (
+        f'{_INDEPENDENCE_HEADING}\n\n'
+        '| Prompt-body field | Required | Description |\n'
+        '|---|---|---|\n'
+        '| `candidates` | Yes | the surfaced candidates |\n'
+    )
+    assert _declared_roles(_optional_section(foreign, _INDEPENDENCE_HEADING)) == {}, (
+        'The role parser folded a foreign table in. Selection is keyed on the '
+        'first header cell, or every table in the document becomes a role table.'
+    )
+
+
+# ---------------------------------------------------------------------------
 # Mutation guards — each detector must fire on the known pre-fix prose
 # ---------------------------------------------------------------------------
 

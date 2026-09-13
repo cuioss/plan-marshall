@@ -26,7 +26,7 @@ Outcome bookkeeping (Step 4) now includes finding persistence: every returned fi
 
 The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../../tools-script-executor/standards/exit-code-convention.md); it is not restated here.
 
-The step combines a deterministic helper that surfaces concrete candidates from the staged diff (Step 1 below) with an LLM cognitive review applied only to those candidates (Steps 2–3 below). Step 1 (deterministic surface) and Step 4 (outcome bookkeeping) run inline in the manifest dispatcher's context; Steps 2–3 (contract cross-reference setup + the seventeen LLM cognitive checks) run in the dispatched envelope under `--phase phase-6-finalize` (no `--role` — pre-submission-self-review tracks `phase-6-finalize.default`). On any finding the LLM returns, the step records `outcome=loop_back` with `loop_back_target: 6-finalize` and the dispatcher's continuation hook admits the round — a PRODUCTIVE non-completion, not a failure. This is deliberately NOT the convention `pre-push-quality-gate` follows: that step records `failed`, because a red build gate ran cleanly and returned a negative verdict, whereas this step hands back findings for amendment on the branch in hand. The two being different is the point — see [`../../manage-execution-manifest/standards/manifest-schema.md`](../../manage-execution-manifest/standards/manifest-schema.md) § "Which situation each `outcome` value means".
+The step combines a deterministic helper that surfaces concrete candidates from the staged diff (Step 1 below) with an LLM cognitive review applied only to those candidates (Steps 2–3 below), and a second, non-authoring reader that accepts or refuses the verdict that review produced (Step 3b below). Step 1 (deterministic surface), Step 3b's dispatch, and Step 4 (outcome bookkeeping) run inline in the manifest dispatcher's context; Steps 2–3 (contract cross-reference setup + the seventeen LLM cognitive checks) and the Step 3b verifier run in dispatched envelopes under `--phase phase-6-finalize` (no `--role` — pre-submission-self-review tracks `phase-6-finalize.default`). The two dispatches are separate firings and separately audited; § "Author and verifier are different parties" below owns why the second one exists and why the inline dispatcher is the only context it can be issued from. On any finding the LLM returns, the step records `outcome=loop_back` with `loop_back_target: 6-finalize` and the dispatcher's continuation hook admits the round — a PRODUCTIVE non-completion, not a failure. This is deliberately NOT the convention `pre-push-quality-gate` follows: that step records `failed`, because a red build gate ran cleanly and returned a negative verdict, whereas this step hands back findings for amendment on the branch in hand. The two being different is the point — see [`../../manage-execution-manifest/standards/manifest-schema.md`](../../manage-execution-manifest/standards/manifest-schema.md) § "Which situation each `outcome` value means".
 
 This document carries NO step-activation logic. Activation is controlled by the manifest composer in `manage-execution-manifest/scripts/manage-execution-manifest.py` (see `manage-execution-manifest/standards/decision-rules.md`). No footprint-gated pre-filter drops this step: the seventeen cognitive checks it targets apply to any code or doc change, so there is no glob gate to fail. More than one compose-time subtraction can drop it. The `commit_push_disabled` pre-filter drops it transitively when `commit_and_push == false`, because both push-only gates are meaningless with no downstream push. The `scope_gated_finalize` pre-filter also drops it when `scope_estimate == 'surgical'` — independently of `commit_and_push` — unless the step carries a declared lane override, which grants it immunity from that gate. For the authoritative set of compose-time subtractions and what each one reads, see [`../../manage-execution-manifest/standards/decision-rules.md`](../../manage-execution-manifest/standards/decision-rules.md); do not treat the two named here as exhaustive. When the dispatcher runs this step the executor always runs to completion: a clean run records `outcome=done`; a non-empty findings list records `outcome=loop_back` with `loop_back_target: 6-finalize`, and the dispatcher re-enters the finalize step loop rather than halting the phase.
 
@@ -62,6 +62,24 @@ Skills the caller MUST forward in `skills[]`: none (the workflow reads files wit
 The only thing that releases a branch from FORWARDING the value is the capture itself failing. Branch C is reached by `git_unavailable` among others, so its `rev-parse` can return no SHA; it then omits the flag rather than passing an unresolved placeholder (§ Step 4 Branch C). That is not a branch exempted from the rule — it is the rule with nothing to hand it, and it is available only because the `missing_head_at_completion` refusal is scoped to the `done` outcome.
 
 The recorded SHA carries a **second, independent** load: it is the **delta anchor** the next round scopes itself against (Step 1 reads it back and passes it as `--since-ref`). That is why its absence on a `done` record is now REFUSED rather than tolerated — `manage-status mark-step-done` returns `error: missing_head_at_completion` and writes nothing when a `head_dependent: true` step records `done` without it. An unanchored record would leave the following round unable to define its delta, silently degrading it to a full re-sweep.
+
+## Author and verifier are different parties
+
+The party that AUTHORS this step's verdict is not the party that ACCEPTS it. Before this separation existed one party did both: whichever context ran the seventeen checks produced the findings list, and Step 4 then selected its branch by reading that same list — so the round closed on the author's own reading of its own output, and no second party ever had to agree with it.
+
+Three roles, and the context each one runs in:
+
+| Role | What it does | Where it runs |
+|------|--------------|---------------|
+| **Surfacer** | Produces the candidate set. Deterministic, read-only, no judgement of its own. | A script call in the inline dispatcher context (Step 1). |
+| **Author** | Applies the seventeen checks to the surfaced candidates and produces the findings list and the verdict. | The dispatched envelope (Step 2) — or, under the Step 1b gate, the inline dispatcher context. |
+| **Verifier** | Reads the author's verdict and either accepts or refuses it. Files no finding and edits no file. | A SEPARATE dispatched envelope (Step 3b), always issued from the inline dispatcher context. |
+
+**The harness decides where a verifier can live, and it admits exactly one origin.** A dispatched subagent is a leaf: it cannot spawn another subagent, and every cross-envelope dispatch originates from a context that is not itself dispatched — see [`../../ref-workflow-architecture/standards/agents.md`](../../ref-workflow-architecture/standards/agents.md). A verifier spawned from INSIDE the Step 2 author envelope is therefore unreachable, and no amount of prompt authoring makes it reachable. What IS reachable is a second dispatch from the inline dispatcher context: that context already issues the Step 2 author dispatch, and a context that can issue one dispatch can issue two. Step 3b is that second dispatch, and it is the only place the verifier may be spawned from.
+
+**The arrangement is identical on both author branches**, which is what keeps the Step 1b gate a pure cost optimization. When the gate sends the author INLINE, the dispatcher context IS the author — so the verifier must still be Step 3b's dispatched envelope, and that is precisely the branch on which running the verifier inline would collapse the two roles back into one party. When the gate DISPATCHES the author, the two already occupy different envelopes and Step 3b adds the second, non-authoring reader. Either way Step 4 reads an acceptance that neither role could grant itself.
+
+**What the verifier deliberately cannot do.** It is a leaf, so it cannot escalate to the operator and cannot dispatch further; it returns an acceptance and the dispatcher records it. It files no finding and edits no file either: the surfacer stays a read-only deterministic script and the author stays the single filer, so the independence is expressed as role separation across the dispatch boundary and NOT as new judgement added inside either of the other two roles.
 
 ## Execution
 
@@ -187,6 +205,8 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 ```
 
 **Return-TOON shape invariant**: BOTH branches MUST produce the IDENTICAL return-TOON shape documented in `## Dispatched-envelope output` below (`status`, `display_detail`, `findings[N]{file,line,defect_class,rationale,cohort_size}`). The inline branch produces the same TOON-shaped result in dispatcher context — `display_detail` follows the same five-verdict rule bit-for-bit (`"self-review not run: no surfacer implementor resolved"` / `"self-review clean: surfacer ran, zero candidates surfaced"` / `"self-review clean: {N} candidates examined, no check matched"` / `"self-review clean: no observation drawn from the files searched"` / `"self-review found {K} issues in {C} classes"`), and `findings[]` carries the same entry shape, `cohort_size` included. Both branches are reached only after a surfacer HAS run, so neither may emit the not-run verdict — that one belongs to the zero-generator fallback alone. In particular the inline branch MUST pick between the clean verdicts on the same predicates the dispatch branch uses (`total_candidates == 0` for nothing-to-check, and `delta_coverage.files_with_candidates == 0` over non-zero `files_in_scope` for zero-observation); a branch that collapses any of them back to one undifferentiated clean string violates this invariant. Downstream consumers (Step 4 bookkeeping, output-template rendering) MUST NOT need to differentiate which branch produced the result. The gate is a pure dispatch-cost optimization — semantics are preserved bit-for-bit.
+
+**The verifier arrangement is identical on both branches too.** Whichever branch produced the author's verdict, Step 3b dispatches the verifier from the inline dispatcher context and Step 4 reads the same `acceptance` either way. The INLINE branch is where this matters most: there the dispatcher context is itself the author, so a verifier run inline would put author and verifier in one party and silently undo the separation § "Author and verifier are different parties" establishes. A branch that skips Step 3b, or runs its adjudication in the author's own context, breaks this invariant exactly as a branch that collapsed the verdict vocabulary would.
 
 ### Step 2: LLM cognitive phase (dispatch)
 
@@ -376,6 +396,90 @@ findings[N]{file,line,defect_class,rationale,cohort_size}:
 
 All five are ≤80-char ASCII with no trailing period, and no verdict is a prefix of another — so a consumer matching a whole verdict string can never mistake one verdict for another. The not-run verdict diverges from every other at its second word (`not` vs `clean` / `found`); the three `clean:` verdicts diverge at the word after the colon (`surfacer` / a digit / `no`). Neither of the two verdicts added by the un-run-versus-un-observed split contains the substring `found`, which is the marker the clean-vs-findings split keys on.
 
+### Step 3b: Independent verification (dispatch)
+
+Runs in the inline dispatcher context after the author's return (Steps 2–3, or the Step 1b inline branch) and BEFORE Step 4 records anything. This is the second dispatch — the one that gives the round a reader who did not write what it is reading. It fires on every round a surfacer ran, on both author branches alike.
+
+⛔ **Two paths do not reach this step, and neither may manufacture an acceptance.** The **zero-generator fallback** (Step 1 — no domain implementor resolved) ran no surfacer, so there is no author verdict for a verifier to accept or refuse; it records `done` with the **not-run** verdict directly, exactly as Step 1 and Step 4 already prescribe. **Branch C** (helper failure) produced no verdict either. Reading an absent verifier return as an acceptance on either path would be the same un-run-read-as-reviewed collapse the verdict vocabulary exists to prevent.
+
+Compute the variant target via the role resolver, exactly as Step 2 does:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  effort resolve-target --phase phase-6-finalize \
+  --workflow plan-marshall:phase-6-finalize/workflow/pre-submission-self-review.md \
+  --plan-id {plan_id} --caller plan-marshall:phase-6-finalize
+```
+
+The resolve carries the dispatch context, so the seam emits the `[DISPATCH]` work-log line and its paired decision-log record for THIS firing — a record separate from Step 2's, which is how the two dispatches stay separately auditable. Do NOT hand-write a `[DISPATCH]` line. Extract the `target` field and use it as `{target}` below.
+
+The verifier carries `instructions` rather than `workflow`: its whole task is the adjudication written inline below, and it reads no file the author did not already name, so there is no second workflow document for it to load. That choice also leaves this step's step-specific prompt-body surface unchanged — `candidates` remains the ONE field declared in `requires_prompt_fields`, because every field the verifier block carries is a generic contract field:
+
+```text
+Task: plan-marshall:{target}
+  prompt: |
+    name: pre-submission-self-review-verifier
+    plan_id: {plan_id}
+    skills: []
+    instructions: |
+      You are the VERIFIER for one round of the pre-submission structural self-review.
+      You did not author the verdict below, and you must not re-author it: file no
+      finding, edit no file, and apply no check of your own.
+
+      The author examined {N} surfaced candidate(s) over {files_in_scope} file(s) at
+      surface_scope {surface_scope} and returned this verdict:
+
+        verdict: {display_detail_from_author}
+        findings: {findings_count} finding(s) in {classes_count} class(es)
+        findings_detail: {findings_rendered}
+
+      The round's own published boundaries, quoted from the surfacer:
+
+        scope_statement: {scope_statement}
+        structural_limit: {structural_limit}
+        delta_coverage: {delta_coverage_statement}
+
+      Decide ONE question: is that verdict supported by what the round actually did?
+      ACCEPT when the verdict states no more than the round's scope, boundaries and
+      findings support. REFUSE when it claims more than they support - an absence
+      phrased wider than the file set searched, a closing verdict drawn from a
+      delta-scoped round, a clean verdict that reads as a reviewed diff where the
+      structural limit says this analysis class could not reach the question, or a
+      findings list whose cohort sizes report a class nobody swept.
+
+      Return exactly this TOON and nothing else:
+
+        status: success
+        acceptance: accepted | refused
+        rationale: "<one line, <=200 chars, naming what you checked and what decided it>"
+    WORKTREE: {worktree_path}
+```
+
+The verifier's return is NOT a step verdict and carries no `display_detail`: the author's verdict string is the one that reaches the step record, and a second verdict vocabulary would be a second thing to keep in step with the first. `acceptance` plus the one-line `rationale` that makes it auditable is the whole of its output.
+
+Record the acceptance on the decision log before Step 4 branches, so the separation is legible in the run record rather than only in the control flow:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO \
+  --message "(plan-marshall:phase-6-finalize:pre-submission-self-review) Verifier {acceptance} the author's verdict — {rationale}"
+```
+
+**On `acceptance: accepted`** the round proceeds to Step 4 on the author's own verdict, with the acceptance recorded above. An acceptance rewrites no verdict string and changes no outcome — it is the precondition Branch A now carries, not a second opinion layered over the first.
+
+**On `acceptance: refused`** the round does NOT close. The party that accepts did not accept, which is exactly the state this separation exists to make reachable. Route to **Step 4 Branch B** carrying the author's findings unchanged, plus ONE additional finding recording the refusal so it reaches the finding store rather than only the log:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qgate add \
+  --plan-id {plan_id} --phase 6-finalize --source qgate --type bug \
+  --title "verdict_refused at pre-submission-self-review" --detail "{rationale}" \
+  --component pm-plugin-development:ext-self-review-plan-marshall --severity warning
+```
+
+⛔ **A refused round records `loop_back`, never `done` and never `failed`.** It is a productive non-completion of exactly the shape § "Dispatched-envelope output" describes — the round examined its surface and handed back something for the next round to act on. Recording it `failed` would grade a working independence check as a broken step, which is the same mis-classification the loop-back convention above exists to prevent.
+
+**When the verifier dispatch itself fails** — `status: error`, or no parseable return — the round has NO acceptance. Treat that as UNVERIFIED and route to Branch B exactly as a refusal does, with the rationale naming the dispatch failure. ⛔ Never read an absent verifier return as an acceptance: an unanswered question is not a yes, and reading it as one restores the author-accepts-its-own-verdict arrangement silently, which is the fail-open this whole separation exists to close.
+
 ### Step 4: Mark Step Complete (inline)
 
 Record the outcome on the live plan so the `phase_steps_complete` handshake invariant is satisfied at phase transition time.
@@ -387,6 +491,8 @@ Record the outcome on the live plan so the `phase_steps_complete` handshake inva
 ⛔ The **zero-generator fallback path** (Step 1 — no domain implementor resolves in the current executor) never invokes a surfacer, so neither a `delta_coverage` block nor a `surface_scope` echo exists on that path and there is nothing to read. It records `done` directly with the **not-run** verdict; NEITHER the read above, its verdict substitution and its WARNING deviation NOR the full-surface precondition below applies to it, and none may be manufactured from an absent block. Note the two are separate absences and carry separate verdicts: this path has no `delta_coverage` because no surfacer ran at all (not-run), whereas the zero-observation path has a `delta_coverage` reporting zero (a surfacer ran and observed nothing). Do not route this path to the zero-observation verdict on the grounds that both "saw nothing" — one performed no analysis and the other performed analysis that yielded nothing, and the whole point of the split is that those are different records. Requiring either unconditionally made this branch unsatisfiable — the instruction named an input the path structurally cannot produce, and the precondition's remedy prescribed re-running a surfacer that never ran. Both obligations are carved out here, in one statement, so the two cannot drift apart.
 
 **Precondition — the clean result MUST come from a full-surface pass.** Before recording `done`, confirm the returned verdict was produced by a run that carried NO `--since-ref` (the surfacer echoes `surface_scope: full`). A `done` recorded off a delta-scoped clean result would close the step on evidence covering only the files that changed since the previous round. When the clean result came from a delta round, do NOT record `done` here — go back to Step 1, re-run the surface call at full scope, and record the outcome from that pass instead.
+
+**Precondition — the verdict MUST carry the verifier's acceptance.** Branch A is where the round closes, so it closes on a verdict a party other than its author has accepted (§ "Author and verifier are different parties"). Before recording `done`, confirm Step 3b returned `acceptance: accepted` for THIS round. A refusal, an errored verifier dispatch, and no verifier return at all are each NOT an acceptance — every one of them routes to Branch B per Step 3b rather than recording `done` on an unverified verdict. The two preconditions are independent and both bind: a full-surface clean pass that the verifier refused does not close, and an accepted delta-scoped result does not close either. ⛔ The **zero-generator fallback path** is carved out of this precondition exactly as it is carved out of the two above — no surfacer ran, so Step 3b never fired and there is no acceptance to look for. Do not manufacture one from its absence.
 
 Immediately before invoking `mark-step-done`, resolve the worktree HEAD SHA so the dispatcher can detect a stale completion record after a downstream loop-back commit advances HEAD (see § HEAD-dependency above):
 
