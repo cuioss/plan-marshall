@@ -336,8 +336,30 @@ merges, so a `--head`-keyed lookup stops resolving exactly when the terminal
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_ops pr list \
-  [--head BRANCH] [--state {open|closed|all}]
+  [--head BRANCH] [--state {open|closed|all}] [--limit N]
 ```
+
+`--limit` bounds the enumeration explicitly and defaults to `100`, so the listing
+is never silently capped at `gh`'s own default page size. The return carries the
+bound alongside the count — `total`, `limit`, and `truncated` are read together:
+
+- `truncated: false` — the population was enumerated; `total` is complete for the
+  given filters.
+- `truncated: true` — the row count REACHED `limit`, so the listing is a page and
+  `total` is a FLOOR, not a total. A caller deriving a population MUST re-read at a
+  higher `--limit` until it gets `truncated: false`, and MUST NOT quote the count it
+  has. Reaching the bound and being exactly that large are indistinguishable from
+  outside the listing, so both report `truncated: true`.
+- `status: error` — the listing could not be read; nothing is known about the
+  population.
+
+⛔ **`--limit`, `limit` and `truncated` are GitHub-only.** The flag is registered on
+the shared `pr list` subparser by this provider's `main()` rather than by
+`ci_base.build_parser`, so the GitLab surface argparse-REJECTS `--limit` instead of
+accepting and ignoring it, and its listing stays page-bounded with no `truncated`
+field. The asymmetry is deliberate: a shared declaration would hand GitLab callers a
+page-bounded `total` with no evidence beside it — the exact defect this contract
+removes here.
 
 ### github_ops pr landing-state
 

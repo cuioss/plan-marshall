@@ -137,14 +137,16 @@ The absent form is the explicit `null` token, **never an empty string**. An empt
 
 **Pattern**: Provider-Agnostic Router
 
-List pull requests with optional branch and state filters.
+List pull requests with optional branch and state filters, and — on GitHub — report whether the listing enumerated the whole population or only a page of it.
 
 ### Step 1: Resolve and Execute
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr list \
-    [--head {branch}] [--state {open|closed|all}]
+    [--head {branch}] [--state {open|closed|all}] [--limit {n}]
 ```
+
+`--limit` is **GitHub-only** and defaults to `100`. It bounds the enumeration explicitly, so the listing is never silently capped at `gh`'s own default page size.
 
 ### Step 2: Process Result
 
@@ -152,6 +154,8 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr list \
 status: success
 operation: pr_list
 total: 2
+limit: 100
+truncated: false
 state_filter: open
 head_filter: feature/my-branch
 
@@ -159,6 +163,26 @@ prs[2]{number,url,title,state,head_branch,base_branch}:
 123	https://github.com/org/repo/pull/123	Add feature X	open	feature/my-branch	main
 456	https://github.com/org/repo/pull/456	Fix bug Y	open	feature/my-branch	develop
 ```
+
+#### `truncated` — a page is not a population
+
+⛔ **`total` is never read on its own.** `limit` is the bound the count was read at and `truncated` says whether the row count REACHED it, so the three fields are one reading:
+
+| Observation | Meaning |
+|-------------|---------|
+| `truncated: false` | The population was enumerated. `total` is the count, and it is complete for the given filters. |
+| `truncated: true` | The population could **not** be enumerated — the listing is a page cut off at `limit`. `total` is a FLOOR, not a total. |
+| `status: error` | The listing could not be read at all. Nothing is known about the population. |
+
+A caller deriving a population — counting open pull requests, classifying every one of them, asserting that none remain — MUST re-read at a higher `--limit` until it gets `truncated: false`, and MUST NOT quote a count taken from a truncated listing. Reaching the bound and being exactly that large are indistinguishable from outside the listing, which is why both report `truncated: true`: the honest answer to "is this everything?" is *unknown*, and an unknown reported as a confident number is the failure these fields exist to remove.
+
+This is the same fail-closed reading `pr landing-state` applies to its own ceiling, differing only in what it does with the verdict — a landing-state correlation is simply wrong once incomplete and refuses, while this verb reports the truncation and lets the caller widen the bound.
+
+#### Provider asymmetry: `--limit` and `truncated` are GitHub-only
+
+`--limit`, `limit` and `truncated` exist on the **GitHub** provider only. The flag is registered on the shared `pr list` subparser by the GitHub front-end rather than by `ci_base.build_parser`, so **GitLab argparse-rejects `--limit`** rather than accepting and ignoring it — a visible refusal instead of a silent no-op. GitLab's `glab mr list` passes no page bound, reports no `truncated` field, and its `total` is therefore page-bounded: treat a GitLab count as a page, never as a population.
+
+The asymmetry is deliberate and recorded rather than quietly closed. A flag declared on the shared parser would have made GitLab accept `--limit`, ignore it, and still report a bounded `total` with no evidence beside it — reintroducing on that provider the exact defect this contract removes on GitHub.
 
 ---
 

@@ -927,11 +927,51 @@ def cmd_pr_view(args: argparse.Namespace) -> dict:
     return github_ops.view_pr_data(head=str(pr_number) if pr_number else head)
 
 
+#: Bound applied to a ``pr list`` enumeration when the caller names none, and the
+#: figure the verb's ``--limit`` flag defaults to.
+#:
+#: Distinct from :data:`_PR_LIST_LIMIT` below, which is the landing-state
+#: correlation CEILING and refuses outright when a listing reaches it. This one is
+#: an overridable default for a verb whose callers legitimately enumerate large
+#: populations — reaching it is reported (``truncated: true``), not refused.
+PR_LIST_DEFAULT_LIMIT = 100
+
+
 def cmd_pr_list(args: argparse.Namespace) -> dict:
-    """Handle 'pr list' subcommand - list pull requests with optional filters."""
+    """Handle 'pr list' — enumerate pull requests, reporting whether the listing is COMPLETE.
+
+    ``gh pr list`` is page-bounded: given no ``--limit`` it returns its own default
+    page and says nothing about what it left behind, so a caller reading the row
+    count as a population silently mistakes a page for the whole set. This handler
+    therefore always passes an explicit bound and reports THREE outcomes rather
+    than two — a failed read (``status: error``), a COMPLETE enumeration
+    (``truncated: false``), and a listing whose row count reached the bound
+    (``truncated: true``), which is a population the probe could not enumerate and
+    is reported as its own state rather than as a confident ``total``.
+
+    ``total`` never travels alone: ``limit`` rides beside it on every success, so
+    no consumer can quote a count without the evidence of what bounded it. This is
+    the same fail-closed reading :func:`cmd_pr_landing_state` applies at
+    :data:`_PR_LIST_LIMIT`, differing only in what it does with the verdict — a
+    truncated listing here is REPORTED and the caller re-reads at a higher bound,
+    while a landing-state correlation is simply wrong once incomplete and refuses.
+
+    **Provider asymmetry.** ``--limit`` and ``truncated`` are GitHub-only. The flag
+    is registered on the shared ``pr list`` subparser by ``github_ops.main``, not by
+    ``ci_base.build_parser``, so the GitLab surface argparse-REJECTS it rather than
+    accepting and ignoring it; GitLab's listing stays page-bounded and reports no
+    ``truncated`` field at all. An accepted-and-ignored flag would hand that
+    provider's callers a page-bounded ``total`` with no evidence beside it — the
+    exact failure this handler exists to remove.
+    """
     is_auth, err = github_ops.check_auth()
     if not is_auth:
         return make_error('pr_list', err)
+
+    # Read defensively via getattr so a direct-Namespace caller that bypasses the
+    # argparse parser (where the flag carries the default) is still bounded
+    # explicitly rather than falling back to gh's own invisible page size.
+    limit = getattr(args, 'limit', None) or PR_LIST_DEFAULT_LIMIT
 
     gh_args = [
         'pr',
@@ -940,6 +980,8 @@ def cmd_pr_list(args: argparse.Namespace) -> dict:
         'number,url,title,state,headRefName,baseRefName',
         '--state',
         args.state,
+        '--limit',
+        str(limit),
     ]
     if args.head:
         gh_args.extend(['--head', args.head])
@@ -968,6 +1010,12 @@ def cmd_pr_list(args: argparse.Namespace) -> dict:
         'status': 'success',
         'operation': 'pr_list',
         'total': len(prs),
+        # The bound the count was read at, emitted unconditionally — a count
+        # without it is a number no reader can check.
+        'limit': limit,
+        # Reaching the bound is indistinguishable from a population that happens
+        # to be exactly that size, so both are reported as "could not enumerate".
+        'truncated': len(prs) >= limit,
         'state_filter': args.state,
         'head_filter': args.head or '',
         'prs': pr_list,

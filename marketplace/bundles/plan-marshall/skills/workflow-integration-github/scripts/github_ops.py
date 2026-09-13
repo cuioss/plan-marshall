@@ -5,7 +5,7 @@
 Subcommands:
     pr create       Create a pull request
     pr view         View PR for current branch (number, URL, state)
-    pr list         List pull requests with optional filters
+    pr list         List pull requests, reporting whether the listing is complete
     pr landing-state  Classify a branch as merged/pr_open/pushed_no_pr/unpushed
     pr reviews      Get PR reviews
     pr comments     Get PR review comments (inline code comments)
@@ -41,7 +41,7 @@ a second plan-less convention of its own:
     python3 github.py issue prepare-comment --plan-id EXAMPLE-PLAN [--slot name]
     python3 github.py pr create --title "Title" --plan-id EXAMPLE-PLAN [--base main] [--draft]
     python3 github.py pr view
-    python3 github.py pr list [--head feature/branch] [--state open|closed|all]
+    python3 github.py pr list [--head feature/branch] [--state open|closed|all] [--limit 200]
     python3 github.py pr landing-state [--branch feature/branch]
     python3 github.py pr reviews --pr-number 123
     python3 github.py pr comments --pr-number 123 [--unresolved-only]
@@ -1889,6 +1889,7 @@ from _github_issue import (  # noqa: E402 — bottom import: primitives must be 
     cmd_issue_wait_for_label,
 )
 from _github_pr import (  # noqa: E402 — bottom import: primitives must be defined first
+    PR_LIST_DEFAULT_LIMIT,
     _cmd_pr_prepare_body,
     _cmd_pr_prepare_comment,
     cmd_branch_delete,
@@ -1971,6 +1972,25 @@ def main() -> int:
         '--branch',
         help='Branch to classify (default: the checked-out branch in the routed working tree)',
     )
+
+    # GitHub: --limit on pr list — the explicit enumeration bound whose value the
+    # handler reports back alongside the count, so a listing that reached the bound
+    # is distinguishable from a complete population. Declared on the SHARED pr list
+    # subparser from the GitHub front-end (the same pr_sub handle the landing-state
+    # registration above uses) rather than in ci_base.build_parser, because that
+    # parser is consumed by BOTH providers: a shared declaration would make the
+    # GitLab surface accept --limit and silently ignore it, reporting a
+    # page-bounded total with no truncated field beside it. GitHub-side, GitLab
+    # argparse-rejects the unknown flag, which is a refusal the caller can see.
+    list_parser = pr_sub.choices.get('list')
+    if list_parser:
+        list_parser.add_argument(
+            '--limit',
+            type=int,
+            default=PR_LIST_DEFAULT_LIMIT,
+            help=f'Maximum pull requests to enumerate (default: {PR_LIST_DEFAULT_LIMIT}); '
+            'a listing that reaches this bound is reported as truncated',
+        )
 
     # GitHub: --pr-number on resolve-thread is optional (accepted for API uniformity)
     resolve_parser = pr_sub.choices.get('resolve-thread')
