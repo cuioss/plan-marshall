@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for extension_discovery.py module (discovery functions)."""
 
-import os
 from pathlib import Path
 
 # Import the module under test (PYTHONPATH set by conftest).
@@ -12,29 +11,22 @@ from extension_discovery import (
 )
 
 
-def test_get_plugin_cache_path_default():
+def test_get_plugin_cache_path_default(monkeypatch):
     """Default plugin cache path is ~/.claude/plugins/cache/plan-marshall."""
-    old_value = os.environ.pop('PLUGIN_CACHE_PATH', None)
-    try:
-        path = get_plugin_cache_path()
-        assert path == Path.home() / '.claude' / 'plugins' / 'cache' / 'plan-marshall'
-    finally:
-        if old_value:
-            os.environ['PLUGIN_CACHE_PATH'] = old_value
+    monkeypatch.delenv('PLUGIN_CACHE_PATH', raising=False)
+
+    path = get_plugin_cache_path()
+
+    assert path == Path.home() / '.claude' / 'plugins' / 'cache' / 'plan-marshall'
 
 
-def test_get_plugin_cache_path_from_env():
+def test_get_plugin_cache_path_from_env(monkeypatch):
     """PLUGIN_CACHE_PATH environment variable overrides default."""
-    old_value = os.environ.get('PLUGIN_CACHE_PATH')
-    try:
-        os.environ['PLUGIN_CACHE_PATH'] = '/custom/cache/path'
-        path = get_plugin_cache_path()
-        assert path == Path('/custom/cache/path')
-    finally:
-        if old_value:
-            os.environ['PLUGIN_CACHE_PATH'] = old_value
-        else:
-            os.environ.pop('PLUGIN_CACHE_PATH', None)
+    monkeypatch.setenv('PLUGIN_CACHE_PATH', '/custom/cache/path')
+
+    path = get_plugin_cache_path()
+
+    assert path == Path('/custom/cache/path')
 
 
 def test_get_extension_api_scripts_path():
