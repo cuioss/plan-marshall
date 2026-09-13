@@ -771,6 +771,73 @@ Each entry carries a `location` field: `current` (the plan directory lives on th
 
 **Concurrent-session visibility**: per [ADR-002](../../../../../doc/adr/002-Plan-scoped_operations_move_into_a_cwd-pinned_hermetic_worktree.adoc), a plan's non-git-controlled runtime state (its plan directory) MOVES into the plan's own worktree at phase-5 entry and moves back to main at finalize. While a plan is executing (phase-5+), its plan directory therefore lives in its worktree, not on main. `cmd_list` discovers both sources: it enumerates the main checkout's plans (`location: current`) AND scans `get_worktree_root()`'s child worktrees for moved-in plans (`location: worktree`), so a `list` run from the main checkout DOES surface a plan that is mid-flight in its worktree — the ADR-002 move-in is exactly why the worktree scan is necessary. See `marketplace/bundles/plan-marshall/skills/workflow-integration-git/standards/worktree-handling.md` for the worktree lifecycle that produces this property.
 
+### census
+
+Count every plan store **separately**, from the **main checkout**, whatever the caller's cwd — and name any store it could not read. Read-only: it writes nothing.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status census
+```
+
+**Parameters**: none. The verb is store-wide rather than plan-scoped, so it declares **no `--plan-id`** — appending one is an `unrecognized arguments` rejection.
+
+**How it differs from `list`.** `list` resolves through the cwd-relative `get_plans_dir()` / `get_worktree_root()` family and reports a `scope` field naming whether that resolution happened to land on main. `census` never depends on where it was called from: every cohort resolves through the main-anchored resolver ([ADR-002](../../../../../doc/adr/002-Plan-scoped_operations_move_into_a_cwd-pinned_hermetic_worktree.adoc)'s single sanctioned exception), so a phase-5+ caller pinned inside a worktree gets the same answer a main-checkout caller does. `list` answers "which plans can I see from here"; `census` answers "how many plans does each store hold".
+
+**Cohorts** — three, counted separately and **never blended into a total**. A live plan, a plan moved into its worktree, and an archived plan are three different populations; a single sum would hide which store a number came from.
+
+| `cohort` | Resolved under the anchor | `id` shape |
+|----------|---------------------------|------------|
+| `live` | `plans/` | plan id |
+| `worktree` | `worktrees/{wt}/.plan/local/plans/` (one level deeper — a phase-5+ plan directory is moved into its worktree) | plan id |
+| `archived` | `archived-plans/` | the dated directory name `{YYYY-MM-DD}-{plan_id}` that `archive` writes |
+
+**Population membership** is "a directory carrying a `status.json` file". A directory without one is not a plan and is not counted — that is the orphan population, owned by `list-orphans`.
+
+**Coverage is a tri-state, and an unevaluated cohort publishes no counts at all.**
+
+| `coverage` | Meaning | Keys present |
+|------------|---------|--------------|
+| `complete` | The cohort was enumerated in full; every member was read. An absent cohort directory under a resolved anchor is `complete` with `population: 0` — the anchor was reachable and the store demonstrably holds nothing. | `population`, `open_phase_count`, `unreadable_count` (0). `reason` **omitted** — there is no shortfall to name. |
+| `partial` | The cohort was enumerated, but at least one entry went unread — either a member whose `status.json` would not parse, or an entry the census could not examine at all, so its membership was never established. Both count toward the shortfall; an entry of the second kind is never silently skipped, because skipping it would leave the cohort claiming `complete` over an enumeration it knows fell short. | `population` (established members only — an unexaminable entry is not counted as one), `open_phase_count`, `unreadable_count` (**non-zero**, summing both kinds), `reason` naming each. |
+| `unevaluated` | The cohort was **not enumerated at all** (its directory exists but could not be listed). | **`population`, `open_phase_count` and `unreadable_count` are ABSENT** — not zero. `reason` names the condition. |
+
+⛔ **`unevaluated` is not zero.** The count keys are omitted rather than set to `0` because a zero published by a cohort nobody looked at is byte-identical to a verified empty store, and no reader can recover the difference. A consumer branching on `population` finds **no key** and must handle the absence; it must never substitute `0`. The rule covers `unreadable_count` for the same reason it covers the other two — on a store that was never enumerated, "zero unreadable members" is a claim about members nobody examined. Read `coverage` **first**.
+
+A worktree whose plan store exists but cannot be listed may hold any number of plans, none of which were seen. Such a store counts as **one unreadable unit** (its true member count is unknowable) and degrades the cohort to `partial` with that worktree named in the `reason`, so the shortfall is reported with its real shape instead of passing as a single unreadable plan.
+
+**The open-phase predicate** is `phase['status'] == 'in_progress'` over `phases[]`, and nothing else. It is deliberately **not** keyed on `metadata.loop_back_reentry`: that marker records that a loop-back was *scheduled*, which is neither necessary nor sufficient for a phase actually being left open — a plan can carry the marker with every phase closed, and a plan with no marker can still hold an `in_progress` phase, which is exactly the population this verb exists to find.
+
+**`anchor`** is `main` when the cohorts resolved through the production git-common-dir branch, or `override` when a `PLAN_BASE_DIR` / `set_base_dir()` override stood in for the main-checkout store (the branch every fixture-driven caller takes). `anchor_path` is the resolved base. Reporting both is what lets a reader tell a census of a real checkout from a census of a redirected one.
+
+**Output** (TOON):
+```toon
+status: success
+anchor: main
+anchor_path: /abs/path/.plan/local
+cohorts[3]{cohort,coverage,population,open_phase_count,unreadable_count,reason}:
+  live,complete,3,1,0,""
+  worktree,complete,1,1,0,""
+  archived,partial,41,2,1,"1 of 41 plan(s) carry an unreadable status.json: 2026-03-02-broken-plan"
+open_phase_records[2]{cohort,id,open_phases}:
+  live,my-feature,"[\"5-execute\"]"
+  worktree,bugfix-123,"[\"5-execute\"]"
+```
+
+A cohort row's omitted keys render as empty cells, never as `0` — the `unevaluated` row below is the shape to branch on:
+```toon
+cohorts[3]{cohort,coverage,population,open_phase_count,unreadable_count,reason}:
+  live,unevaluated,,,,"cohort directory /abs/path/.plan/local/plans exists but could not be listed, so no member was enumerated"
+```
+
+**Output — anchor unresolvable** (TOON, fail-closed, **no cohort rows**):
+```toon
+status: error
+error: anchor_unresolved
+message: "Could not resolve the main-anchored plan root, so no cohort was counted: ..."
+```
+
+Without an anchor there is no store to count, so the verb refuses rather than emitting three zeroed cohorts — which would report a thoroughly-surveyed empty machine.
+
 ### transition
 
 Mark a phase as done and advance to next phase. Validates phase ordering.
@@ -1142,6 +1209,8 @@ Phase set, transition rules, and phase-to-skill routing are defined in [standard
 | `get-context` | `--plan-id` | Get combined status context |
 | `get-worktree-path` | `--plan-id` | Resolve persisted worktree path (returns empty string when `use_worktree==false`) |
 | `list` | `[--filter PHASE]` | Discover all plans across the main checkout and its worktrees (each entry tagged `location: current`/`worktree`), optionally filtered by phase |
+| `list-orphans` | _(none)_ | Discover orphan plan directories — entries under `plans/` with no readable `status.json`. Inverse of `list`; the archived-plans directory is excluded |
+| `census` | _(none)_ | Count each plan store SEPARATELY from the **main checkout**, cwd-independently (every cohort resolves through the main-anchored resolver, so a worktree-pinned caller gets main's answer), and name any store it could not read. Declares **no `--plan-id`** — it is store-wide, not plan-scoped. Returns `anchor` / `anchor_path`, one `cohorts[]` row per store (`live` / `worktree` / `archived`) and one `open_phase_records[]` row per plan still recording an `in_progress` phase. Each row carries its own `coverage` (`complete` \| `partial` \| `unevaluated`) and ONLY the counts that coverage justifies: an `unevaluated` cohort omits `population`, `open_phase_count` and `unreadable_count` entirely, because a zero from a store nobody enumerated is indistinguishable from a verified empty one. Fails closed with `error: anchor_unresolved` and no cohort rows when the anchor will not resolve. Zero writes |
 | `transition` | `--plan-id --completed` | Mark phase done, advance to next |
 | `archive` | `--plan-id [--dry-run] [--reason REASON]` | Archive completed plan; `--reason` persists to `status.metadata.archived_reason` (used by `plan-doctor stuck-low-confidence-archive` rule) |
 | `delete-plan` | `--plan-id [--no-restore-lessons]` | Delete entire plan directory. Runs the lesson carry-back FIRST, resolving the corpus through the **main-anchored** store handle (never the cwd-keyed `base_path()`), and reports `lesson_carry_back_action` over the closed vocabulary enumerated in full under [Lesson carry-back (and the veto)](#lesson-carry-back-and-the-veto) — that table is the single home for the value set — plus `lesson_store_resolution`, `lessons_dir`, `restored_lesson_ids`, and `skipped_lessons`. **Vetoes the deletion** with `error: lesson_carry_back_incomplete` when any carried lesson did not land — the directory holds the only copy, so it is left intact. `--no-restore-lessons` skips the carry-back and therefore the veto. |
@@ -1245,6 +1314,30 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status get-wo
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status list \
   [--filter PHASES_CSV]
 ```
+
+### census
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status census
+```
+
+Takes **no arguments**. The verb is store-wide rather than plan-scoped, so it declares no `--plan-id` — appending one is an `unrecognized arguments` rejection.
+
+Read-only. Counts each plan store separately from the **main checkout** whatever the caller's cwd, and names any store it could not read:
+
+```toon
+status: success
+anchor: main | override
+anchor_path: /abs/path/.plan/local
+cohorts[3]{cohort,coverage,population,open_phase_count,unreadable_count,reason}:
+  ...
+open_phase_records[N]{cohort,id,open_phases}:
+  ...
+```
+
+⛔ **`coverage: unevaluated` is NOT zero — read `coverage` before any count.** An `unevaluated` cohort omits `population`, `open_phase_count` and `unreadable_count` **entirely**, because a zero published by a store nobody enumerated is byte-identical to a verified empty store and no reader can recover the difference. A consumer finds **no key** and must handle the absence; substituting `0` is the defect the omission exists to make unreachable. `reason` is present on `unevaluated` and `partial`, omitted on `complete`. A genuinely absent cohort directory under a resolved anchor is `complete` with `population: 0` — that zero IS evidence. When the anchor itself will not resolve the verb fails closed with `status: error`, `error: anchor_unresolved` and **no cohort rows** at all.
+
+See § [census](#census) under Operations for the cohort table, the population-membership rule, the open-phase predicate (`phases[]` status only — never `metadata.loop_back_reentry`), and the worked output.
 
 ### transition
 

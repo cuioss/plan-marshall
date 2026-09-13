@@ -4,17 +4,23 @@
 
 ``cmd_transition`` enforces a clean worktree when the next phase is a
 blocking boundary: after the inline strict-verify guard passes, the guard
-runs ``git -C {worktree_path} status --porcelain`` and refuses with
-``error: worktree_dirty_at_boundary`` (listing the dirty paths, skipping
-``write_status``) when the tree carries uncommitted changes. Proves:
+runs ``git -C {worktree_path} status --porcelain`` and refuses (skipping
+``write_status``) on either of TWO distinct tree-state codes. Proves:
 
-(a) a dirty worktree refuses the transition, lists the dirty paths, and
-    leaves ``current_phase`` at ``5-execute``;
+(a) a dirty worktree refuses with ``worktree_dirty_at_boundary``, lists the
+    dirty paths, and leaves ``current_phase`` at ``5-execute``;
 (b) a clean worktree passes;
 (c) ``use_worktree=false`` plans skip the guard entirely;
-(d) the error is a member of ``VERIFY_REFUSAL_ERRORS`` so the CLI wrapper
+(d) BOTH codes are members of ``VERIFY_REFUSAL_ERRORS`` so the CLI wrapper
     in ``manage-status.py`` main() exits 1 in lockstep with the in-process
-    refusal (``verify_blocks_transition``).
+    refusal (``verify_blocks_transition``);
+(e) an UNREADABLE tree refuses with ``worktree_unreadable_at_boundary`` and
+    publishes NO ``dirty_files`` key at all.
+
+Cases (a) and (e) are a matched pair over one question — what the porcelain read
+found — and the split is load-bearing because the REMEDIES differ: a dirty tree
+needs the boundary settlement commit, whereas an unreadable one needs the worktree
+itself repaired. Reporting one code for both sent the reader to the wrong remedy.
 
 The companion implementation lives in ``_cmd_lifecycle.py``
 (``_clean_tree_refusal``, wired into ``cmd_transition``'s blocking-boundary
@@ -255,10 +261,21 @@ def test_empty_worktree_path_defers_to_verify_guard(plan_context, _stubbed_invar
 # =============================================================================
 
 
-def test_error_is_member_of_verify_refusal_errors():
-    """``worktree_dirty_at_boundary`` is in VERIFY_REFUSAL_ERRORS — the single
-    source of truth both cmd_transition and the CLI exit-code wrapper consume."""
-    assert 'worktree_dirty_at_boundary' in _lifecycle.VERIFY_REFUSAL_ERRORS
+def test_both_tree_state_codes_are_members_of_verify_refusal_errors():
+    """BOTH tree-state codes are in VERIFY_REFUSAL_ERRORS — the single source of
+    truth that cmd_transition and the CLI exit-code wrapper consume.
+
+    Splitting a code out of an existing one WITHOUT adding it here silently degrades
+    the guard from fail-closed to fail-open: ``verify_blocks_transition`` would
+    return False for the new code, so the transition would proceed and the CLI
+    wrapper would exit 0 on a refusal the guard actually raised. Asserting the PAIR,
+    rather than only the new member, is what keeps a future split from dropping
+    either half.
+    """
+    for code in ('worktree_dirty_at_boundary', 'worktree_unreadable_at_boundary'):
+        assert code in _lifecycle.VERIFY_REFUSAL_ERRORS, (
+            f'{code} must be a VERIFY_REFUSAL_ERRORS member, or the boundary guard fails open for it.'
+        )
 
 
 def test_refusal_dict_blocks_transition_for_cli_wrapper(
@@ -285,8 +302,19 @@ def test_refusal_dict_blocks_transition_for_cli_wrapper(
 # =============================================================================
 
 
-def test_git_status_failure_fails_closed(outside_repo_dir: Path):
-    """A path where ``git status`` fails (not a repo) refuses fail-closed."""
+def test_unreadable_tree_refuses_with_its_own_code_and_publishes_no_dirty_files(outside_repo_dir: Path):
+    """A path where ``git status`` fails (not a repo) refuses fail-closed — and says
+    the tree was UNREADABLE rather than dirty.
+
+    The code carries the distinction: the porcelain read never happened, so "dirty"
+    names a condition nobody observed, and it points at the wrong remedy (a
+    settlement commit rather than repairing the worktree).
+
+    ``dirty_files`` is ABSENT rather than ``[]``. An empty list here would be a
+    measured-zero claim about a tree that was never enumerated — byte-identical to
+    what a genuinely clean read produces — which is the same false zero the matched
+    dirty case above refutes by carrying a real, non-empty list.
+    """
     # ``plain`` must be OUTSIDE the repo: pytest's tmp_path now roots under the
     # repo-local --basetemp, where ``git status`` succeeds (the dir is inside a
     # git worktree) instead of failing as this fail-closed test requires.
@@ -298,6 +326,15 @@ def test_git_status_failure_fails_closed(outside_repo_dir: Path):
     )
 
     assert refusal is not None
-    assert refusal['error'] == 'worktree_dirty_at_boundary'
-    assert refusal['dirty_files'] == []
+    assert refusal['error'] == 'worktree_unreadable_at_boundary', (
+        f'An unreadable tree must report its OWN code, not the dirty one; got {refusal!r}.'
+    )
+    assert 'dirty_files' not in refusal, (
+        f'A tree that was never enumerated must publish no dirty_files key at all; got {refusal!r}.'
+    )
     assert 'cannot prove' in refusal['message']
+    assert _lifecycle.verify_blocks_transition(refusal) is True, (
+        'The unreadable refusal must block via verify_blocks_transition — otherwise the '
+        'CLI wrapper exits 0 while the in-process guard refuses, which is the fail-open '
+        'degradation a code split must not introduce.'
+    )

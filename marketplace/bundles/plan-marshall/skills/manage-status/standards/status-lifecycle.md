@@ -21,6 +21,21 @@ pending ──→ in_progress ──→ done
 - `transition --completed X` marks phase X as `done` and advances to the next phase
 - The first phase is automatically marked `in_progress` on plan creation
 
+### Loop-back re-entry marker: two consumption points
+
+A backward `set-phase` — one whose target phase precedes the current phase in the plan's phase list — is a sanctioned **loop-back re-entry**. It re-opens the target phase as `in_progress` (the one sanctioned backward status move, which is why the forward-only rule above describes the ordinary path rather than an invariant) and persists `metadata.loop_back_reentry` as `{from_phase, to_phase, at}`. The marker is a *scheduling* record: a re-entered phase re-captures its invariants against a tree that has legitimately moved on, so handshake drift at the next guarded boundary is guaranteed by construction, and the marker is what authorises auto-resolving exactly that drift.
+
+A backward `set-phase` never clears a **later** phase, so the phase it re-opens is additive: a plan looping back from `6-finalize` to `5-execute` then holds **two** phases `in_progress` at once. That is the ordinary way a plan arrives in the multi-open-phase state the archive post-condition below has to close.
+
+**There is exactly one marker, and it has two consumption points.** A reader who sees only the first would wrongly conclude the transition path is the only one:
+
+| Consumption point | Reached when | What is recorded |
+|---|---|---|
+| `transition` at a guarded boundary | The re-entered phases reach the next guarded boundary (today `6-finalize`) | The marker is cleared. On drift it authorises one auto-override re-capture; on a **clean** verify it is cleared anyway, so a later genuinely-unscheduled drift cannot find a stale marker and have it auto-overridden |
+| `archive` | The plan is archived while a re-entry is still open, so it never reaches that boundary at all | The marker is cleared and `metadata.loop_back_reentry_outcome` records `outcome: ended_without_completing` alongside the marker's `from_phase` / `to_phase`, its `scheduled_at`, and `consumed_at` / `consumed_by: archive` |
+
+Both points consume the **same** marker; neither introduces a second one. At `archive` the pop and the outcome write land in the **same write that closes the phases** — deliberately not a follow-up write, because `shutil.move` has by then invalidated the live plan path. Without this second point the marker would ride into the permanent record still asserting that a loop-back was in flight for a plan that had already finished.
+
 ## Plan Lifecycle
 
 ```text
@@ -34,6 +49,38 @@ create ──→ [phases 1-6] ──→ archive
 - Moves plan directory to `.plan/archived-plans/YYYY-MM-DD-{plan_id}/`
 - Supports `--dry-run` preview
 - Archived plans subject to retention cleanup (default: 5 days)
+
+#### Phase-closure post-condition
+
+The archived `status.json` is the plan's **permanent record**, so `archive` closes the plan's open phases before moving the directory. The write happens while the live plan path still resolves — a follow-up `transition` call cannot do it, because the move has already invalidated that path. Three parts, and all three are load-bearing:
+
+1. **Every** phase recorded as `in_progress` is closed to `done` — not just the first one found. A plan holding more than one open phase (a loop-back re-entry is the ordinary way to get there) would otherwise keep the second one recorded as running in the permanent record, so the archive would assert that a phase is still in flight for a plan that has finished.
+2. Every phase whose status is in `UNTOUCHED_PHASE_STATUSES` — derived as `VALID_PHASE_STATUSES - {in_progress, done}`, today exactly `{pending}` — is **left alone**. `in_progress` is the only *closable* status: it names a phase that really did start, so recording it `done` closes a genuine record. Writing `done` onto a `pending` phase would instead fabricate a fresh false record of work that never happened, which is the opposite of the defect in (1) and equally a falsification. A never-started phase therefore stays `pending` in the archive.
+3. `current_phase` becomes `complete` once **no phase remains `in_progress`**. This is deliberately *not* "every phase is `done`": that predicate can never hold for a plan abandoned mid-lifecycle, whose untouched `pending` phases are not `done` and must stay that way, so such a plan was archived frozen at its last phase and never reached the post-finalize sentinel its dormant consumers match on (the phase-6-finalize `current_phase: complete` check, and `cleanup --filter complete`).
+
+A plan abandoned mid-lifecycle consequently archives as `current_phase: complete` with its started phases `done` and its unstarted phases still `pending` — a record that says what happened rather than one that claims the whole plan ran.
+
+The predicate behind (1) and (3) is `_status_core.in_progress_phases`, and the `census` verb's open-phase reporting consumes that same function. The set of phases archive closes and the set census reports as open are therefore one answer to one question, rather than two local re-spellings of `status == in_progress` free to drift apart.
+
+#### Deferred requirement: the phase record and the metrics ledger are not cross-checked
+
+Two independent accounts of the same phase lifecycle exist side by side, and **nothing currently reconciles them**:
+
+| Account | Owner | What it records |
+|---------|-------|-----------------|
+| The phase record — `status.json`'s `phases[]` plus `current_phase` | `manage-status` (this skill) | Which phase a plan is in, and each phase's `pending` / `in_progress` / `done` status |
+| The metrics ledger — the per-phase rows `manage-metrics` writes | `manage-metrics` | Per-phase `start_time` / `end_time` and token/duration figures for the same phases |
+
+Because the two are written by different verbs at different moments and are never compared, **a plan can complete with the two disagreeing** and no gate notices. The disagreement a future implementor must detect is a phase the two accounts describe incompatibly — a phase the status record reports `done` that the ledger never closed (no `end_time`), a phase the ledger closed that the status record still reports `in_progress`, and a phase present in one account and absent from the other altogether. The `archive` post-condition above narrows one source of this drift but does not close it: it corrects the *status* side only, and the ledger is not consulted.
+
+This reconciliation is **deliberately deferred**, and the reason is that the surface it must seam into does not exist yet. It needs two things:
+
+- a **verdict vocabulary** — the agreed value set a reconciliation result would be reported over, so a disagreement is reportable as a typed outcome rather than as prose;
+- a **statistics host** under `manage-metrics` — an existing aggregate-reporting surface for such a verdict to join.
+
+Neither is available today: `manage-metrics` owns exactly two scripts, `manage-metrics.py` and `_ledger_reconciliation.py`, and neither mentions statistics in any case, so there is no statistics host under that skill to seam into.
+
+⛔ **Do not build a private host here.** Standing up a reconciliation surface inside `manage-status` would put the cross-check on the side that owns only one of the two accounts, and would commit the project to a second, parallel statistics home that the eventual `manage-metrics` host would then have to absorb or contradict. The requirement is recorded so it is not lost, and it waits on the host rather than routing around it.
 
 ### Delete
 

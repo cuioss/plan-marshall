@@ -79,7 +79,8 @@ Scope limits:
 
 - Expected-by-construction drift on a sanctioned loop-back re-entry is the ONLY auto-resolved case. Drift WITHOUT the marker keeps the blocking behavior unchanged — the operator-facing drift protocol below applies only to unscheduled drift.
 - The marker never survives past the first guarded boundary check after the loop-back — it is consumed on that check's outcome either way (recapture on drift, plain clear on clean).
-- The worktree-resolution, dirty-boundary and main-capture-misresolution refusals (`VERIFY_REFUSAL_ERRORS`: `worktree_unresolved`, `worktree_metadata_drift`, `main_checkout_dirtied_during_plan`, `worktree_dirty_at_boundary`, `main_capture_read_the_worktree`) are NEVER bypassed by the marker — only invariant drift is auto-resolved.
+- The worktree-resolution, tree-state and main-capture-misresolution refusals (`VERIFY_REFUSAL_ERRORS`: `worktree_unresolved`, `worktree_metadata_drift`, `main_checkout_dirtied_during_plan`, `worktree_dirty_at_boundary`, `worktree_unreadable_at_boundary`, `main_capture_read_the_worktree`) are NEVER bypassed by the marker — only invariant drift is auto-resolved.
+- The two tree-state members are a **pair reporting different conditions**, and the remedy differs by which one fired: `worktree_dirty_at_boundary` means the tree *was* read and carries uncommitted changes (enumerated in `dirty_files`), so the remedy is the boundary settlement commit; `worktree_unreadable_at_boundary` means `git status` itself failed, so the tree was *never read* and the refusal is "cannot be proven clean" rather than "is dirty" — the remedy is to repair the worktree. The unreadable payload carries **no** `dirty_files` key, because an empty list there would be a measured-zero claim about a tree nobody enumerated.
 - A failed re-capture blocks the transition (fail closed) with the re-capture's error payload.
 
 ### `findings-check`

@@ -240,11 +240,28 @@ def test_refusal_error_code_is_a_verify_refusal_that_blocks_transition() -> None
     """The refusal is never bypassed by the loop-back auto-override marker.
 
     Quantified over the shipped ``VERIFY_REFUSAL_ERRORS`` set rather than a
-    hard-coded copy of it.
+    hard-coded copy of it — and quantified in earnest: EVERY member must block via
+    ``verify_blocks_transition``, not just this file's own code. That makes the
+    sweep cover a member split out of an existing one the moment it joins the set
+    (``worktree_unreadable_at_boundary`` was split from
+    ``worktree_dirty_at_boundary`` exactly this way), and it fails here rather than
+    at a live boundary if any member silently stops blocking — the fail-open
+    degradation the set exists to prevent.
+
+    The population is derived from the shipped set and its size is reported in the
+    failure message, so a green run cannot be a sweep over an empty population.
     """
     lifecycle = load_script_module('plan-marshall', 'manage-status', '_cmd_lifecycle.py', 'lifecycle_refusal_mod')
 
     assert 'main_capture_read_the_worktree' in lifecycle.VERIFY_REFUSAL_ERRORS
+
+    population = sorted(lifecycle.VERIFY_REFUSAL_ERRORS)
+    assert population, 'VERIFY_REFUSAL_ERRORS is empty — the quantified sweep below would be vacuous.'
+    non_blocking = [code for code in population if not lifecycle.verify_blocks_transition({'error': code})]
+    assert non_blocking == [], (
+        f'Every VERIFY_REFUSAL_ERRORS member must block the transition, or the boundary '
+        f'guard fails open for it: {non_blocking!r} of {len(population)} member(s) did not.'
+    )
 
 
 def test_refusal_exits_non_zero_under_strict_verify(
