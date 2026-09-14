@@ -41,6 +41,7 @@ from _architecture_core import (
     save_project_meta,
     stamp_concept_document,
     swap_data_dir,
+    sync_module_index,
     unknown_generation,
 )
 from constants import (
@@ -862,17 +863,31 @@ def api_init(project_dir: str = '.', check: bool = False, force: bool = False, r
     # missing stubs and preserves existing enrichment.
     reset = reset and force
 
-    initialised = 0
+    # Write through the SHARED live-path operation, not ``save_module_enriched``.
+    # Every stub written here carries a fresh generation header, and writing the
+    # document alone left ``_project.json``'s module index still describing the
+    # provenance and description the document no longer carries — a repair that
+    # silently desynchronised the pre-flight surface consumers read to decide
+    # which documents are worth opening. The enrich verbs always carried the
+    # index through; this path is the one that did not.
+    #
+    # The index write is batched into ONE ``_project.json`` write at the end
+    # rather than one per module, so a whole-project reset does not rewrite the
+    # index once per stub.
+    initialised: list[str] = []
     for module_name in module_names:
         path = get_module_enriched_path(module_name, project_dir)
         if path.exists() and not reset:
             continue
         save_module_enriched(module_name, _empty_module_enrichment(), project_dir)
-        initialised += 1
+        initialised.append(module_name)
+
+    if initialised:
+        sync_module_index(initialised, project_dir)
 
     return {
         'status': 'success',
-        'modules_initialized': initialised,
+        'modules_initialized': len(initialised),
         'output_file': str(project_meta_path),
     }
 

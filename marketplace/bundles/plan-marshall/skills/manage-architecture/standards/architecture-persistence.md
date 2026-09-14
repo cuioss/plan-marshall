@@ -27,6 +27,32 @@ under a sibling staging directory `project-architecture.tmp/` and then
 before or after the rename leaves the project in a consistent state — the
 old layout is intact, or the new layout is intact, never half-written.
 
+The same guarantee holds **per file**, not only per whole-tree swap. Every JSON
+write in this store goes through one writer (`_architecture_core._write_json`),
+which serialises into a temp file in the destination's OWN directory, flushes and
+`fsync`s it, and `os.replace`s it onto the destination. Opening the destination
+for writing directly would truncate it first, so a concurrent reader — a
+dispatched leaf, or the crawl running against the same tree — could observe a
+prefix of the document and fail to parse it. The temp shares the destination's
+directory because `os.replace` is atomic only within one filesystem.
+
+**Every live-path concept-document write also writes the module index through.**
+`save_module_document` is that operation: it persists the module's
+`enriched.json` and then refreshes that module's `_project.json` index entry from
+what was actually written to disk. It exists because the write-through was once a
+habit of one caller rather than a property of the write — the enrich verbs
+carried it and `api_init`'s repair/reset branch did not, so repairing a document
+left the index describing a description and a provenance the document no longer
+carried. Both live writers now share the operation; `api_init` batches its index
+write into a single `_project.json` pass, as `enrich all` already did.
+
+⛔ That operation is the **live-path** writer and is not for staged writes.
+`discover --force` places every document under the staging directory above;
+routing it through the live-path writer would write into the real tree and
+destroy the swap's atomicity. A staging caller takes the shared invariants from
+`stamp_concept_document` and places the returned document itself — the
+invariants are what the two paths share, never the write.
+
 **Discovery is the live crawl, NOT the index.** Module discovery walks the live
 worktree filesystem (`iter_modules` → `crawl_all_modules`); the `_project.json`
 `modules` index is **not** the discovery gatekeeper. A module present on disk but

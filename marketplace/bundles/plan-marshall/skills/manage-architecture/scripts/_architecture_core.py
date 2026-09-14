@@ -29,6 +29,7 @@ import copy
 import json
 import os
 import shutil
+import tempfile
 from pathlib import Path
 from typing import Any, NoReturn
 
@@ -470,9 +471,42 @@ def _read_json(path: Path) -> dict[str, Any]:
 
 
 def _write_json(path: Path, data: dict[str, Any]) -> None:
+    """Write ``data`` to ``path`` as JSON, replacing the destination ATOMICALLY.
+
+    Opening the destination with mode ``'w'`` TRUNCATES it before a single byte
+    is written, so every concurrent reader between the truncate and the last
+    flush observes a partial document and fails to parse it. ``_project.json``
+    and ``enriched.json`` are read by dispatched leaves and by the crawl on the
+    same tree a write may be running against, so that window is reachable — and
+    a store whose readers can see a half-written document is the persistence-layer
+    form of the untruthfulness this module is otherwise careful about.
+
+    Write-to-temp-then-rename closes it: a reader sees either the whole previous
+    document or the whole new one, never a prefix. The temp file is created in
+    the DESTINATION'S OWN DIRECTORY so both live on one filesystem, which is what
+    makes :func:`os.replace` atomic; a temp in the system temp dir would degrade
+    to a cross-device copy. The temp is removed on a failed write so a raising
+    serializer cannot leave scratch behind.
+
+    This is the module's existing convention rather than a new one —
+    :func:`swap_data_dir` already uses ``os.replace`` for exactly this reason,
+    as do ``_locks_core``, ``_config_core`` and ``generate_executor``.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, 'w', encoding='utf-8') as f:
-        json.dump(data, f, indent=2, sort_keys=True)
+    tmp_fd, tmp_name = tempfile.mkstemp(dir=str(path.parent), prefix=f'.{path.name}.', suffix='.tmp')
+    tmp_path = Path(tmp_name)
+    try:
+        with os.fdopen(tmp_fd, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=2, sort_keys=True)
+            # Flush the interpreter buffer into the OS before the rename; without
+            # it the rename can publish a temp the process has not finished
+            # writing, which reinstates the partial-read window by another route.
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_path, path)
+    except BaseException:
+        tmp_path.unlink(missing_ok=True)
+        raise
 
 
 def load_project_meta(project_dir: str = '.') -> dict[str, Any]:
@@ -837,6 +871,78 @@ def save_module_enriched(
     """
     path = get_module_enriched_path(module_name, project_dir)
     _write_json(path, stamp_concept_document(data, project_dir, generated_by))
+    return path
+
+
+def sync_module_index(module_names: list[str], project_dir: str = '.') -> None:
+    """Refresh ``_project.json``'s index entry for each named module, in one write.
+
+    Each entry is rebuilt from what is ON DISK — the document is re-read so the
+    index records the provenance header that was actually persisted, rather than
+    a header recomputed here that could differ from it.
+
+    **A missing or unreadable ``_project.json`` is tolerated as a no-op.** The
+    index is a derived pre-flight surface, not the store: a document write is
+    reachable before ``discover`` has ever run, and failing its follow-up because
+    the index does not exist would make writing a document depend on an artifact
+    it does not need. ``discover`` rebuilds the index from the documents when it
+    next runs.
+
+    Takes a LIST so a caller with several owed modules pays one ``_project.json``
+    write rather than one per module.
+    """
+    try:
+        meta = load_project_meta(project_dir)
+    except (DataNotFoundError, OSError, ValueError):
+        return
+
+    index = meta.get('modules')
+    if not isinstance(index, dict):
+        index = {}
+
+    for module_name in module_names:
+        document = load_module_enriched_or_empty(module_name, project_dir)
+        if not document:
+            continue
+        index[module_name] = {
+            'description': document.get('responsibility', '') or '',
+            GENERATION_FIELD: document.get(GENERATION_FIELD, {}),
+        }
+
+    meta['modules'] = index
+    save_project_meta(meta, project_dir)
+
+
+def save_module_document(module_name: str, document: dict[str, Any], project_dir: str = '.') -> Path:
+    """Persist a module's concept document AND carry its header into the root index.
+
+    **The live-path write operation every caller that writes a concept document
+    to its real location uses.** :func:`save_module_enriched` writes the document
+    alone, which leaves ``_project.json``'s ``modules`` entry describing a
+    provenance and a description the document no longer carries — the index is a
+    read-side pre-flight surface consumers trust to decide which documents are
+    worth opening, so a stale entry sends them to the wrong answer without ever
+    failing.
+
+    The divergence was reachable from a real path rather than hypothetical:
+    ``api_init``'s repair/reset branch wrote through :func:`save_module_enriched`
+    directly while the enrich verbs carried the index through, so one of the two
+    live writers kept the index in step and the other did not. Both now share
+    THIS operation, so the write-through cannot be present on one path and absent
+    on the other.
+
+    ⛔ This is the LIVE-path writer and must not be used for staged writes.
+    ``discover --force`` builds every document under a tmp directory it later
+    swaps into place; routing it here would write into the live tree and destroy
+    that atomicity. Such a caller uses :func:`stamp_concept_document` for the
+    invariants and places the returned document itself — the invariants are what
+    is shared with the staging path, never the write.
+
+    Raises:
+        InvalidConceptTypeError: If ``document`` declares an unknown ``type``.
+    """
+    path = save_module_enriched(module_name, document, project_dir)
+    sync_module_index([module_name], project_dir)
     return path
 
 

@@ -17,7 +17,6 @@ from pathlib import Path
 from typing import Any
 
 from _architecture_core import (
-    GENERATION_FIELD,
     DataNotFoundError,
     ModuleNotFoundInProjectError,
     NonResolvingPathKeyError,
@@ -30,8 +29,10 @@ from _architecture_core import (
     load_module_enriched_or_empty,
     load_project_meta,
     require_project_meta_result,
+    save_module_document,
     save_module_enriched,
     save_project_meta,
+    sync_module_index,
     validate_package_key,
 )
 
@@ -47,8 +48,15 @@ from _architecture_core import (
 # a description and a provenance the documents no longer carried.
 #
 # Every enrich write therefore goes through :func:`_save_module_document`, which
-# persists the document through the single writer and then carries the module's
-# current ``responsibility`` and ``generation`` into the index.
+# delegates to ``_architecture_core.save_module_document`` — the SHARED live-path
+# operation that persists the document and then carries the module's current
+# ``responsibility`` and ``generation`` into the index.
+#
+# The write-through used to live in THIS module, and that is why it was not
+# universal: ``api_init``'s repair/reset branch is the other live-path writer and
+# called ``save_module_enriched`` directly, so it left the index stale. Owning the
+# operation in the core is what makes the write-through a property of writing a
+# document rather than a habit of one caller.
 
 #: Deferred index-sync buffer. ``None`` means not batching — each save writes
 #: ``_project.json`` through immediately. A set means a batch is open and holds
@@ -80,59 +88,28 @@ def _batched_index_sync(project_dir: str) -> Iterator[None]:
         owed = _INDEX_SYNC_BATCH
         _INDEX_SYNC_BATCH = previous
         if owed:
-            _sync_module_index(sorted(owed), project_dir)
+            sync_module_index(sorted(owed), project_dir)
 
 
 def _save_module_document(module_name: str, document: dict[str, Any], project_dir: str) -> None:
-    """Persist a module's concept document and carry its header into the root index.
+    """Persist a module's concept document, batching the index write-through.
 
-    The single enrich-side write path: :func:`save_module_enriched` stamps the
-    concept-model invariants and writes the document, then the module's current
-    ``responsibility`` and freshly-stamped ``generation`` are written through to
-    ``_project.json``'s ``modules`` entry so the pre-flight surface keeps
-    describing the store it indexes.
+    The write itself and the index write-through both belong to
+    :func:`_architecture_core.save_module_document`, the shared live-path
+    operation ``api_init`` also goes through — the write-through used to live
+    here, which is exactly why one of the two live writers carried it and the
+    other did not. What stays enrich-side is only the BATCHING: inside
+    :func:`_batched_index_sync` the index write is deferred so ``enrich all``
+    pays one ``_project.json`` write instead of one per (module × domain) pair.
+
+    The batched branch therefore calls the plain document writer and records the
+    owed module; the un-batched branch calls the shared operation whole.
     """
-    save_module_enriched(module_name, document, project_dir)
     if _INDEX_SYNC_BATCH is not None:
+        save_module_enriched(module_name, document, project_dir)
         _INDEX_SYNC_BATCH.add(module_name)
         return
-    _sync_module_index([module_name], project_dir)
-
-
-def _sync_module_index(module_names: list[str], project_dir: str) -> None:
-    """Refresh ``_project.json``'s index entry for each named module, in one write.
-
-    Each entry is rebuilt from what is ON DISK — the document is re-read so the
-    index records the provenance header that was actually persisted, rather than
-    a header recomputed here that could differ from it.
-
-    **A missing or unreadable ``_project.json`` is tolerated as a no-op.** The
-    index is a derived pre-flight surface, not the store: enrich verbs are
-    reachable before ``discover`` has ever run, and failing a document write's
-    follow-up because the index does not exist would make enrichment depend on an
-    artifact it does not need. ``discover`` rebuilds the index from the documents
-    when it next runs.
-    """
-    try:
-        meta = load_project_meta(project_dir)
-    except (DataNotFoundError, OSError, ValueError):
-        return
-
-    index = meta.get('modules')
-    if not isinstance(index, dict):
-        index = {}
-
-    for module_name in module_names:
-        document = load_module_enriched_or_empty(module_name, project_dir)
-        if not document:
-            continue
-        index[module_name] = {
-            'description': document.get('responsibility', '') or '',
-            GENERATION_FIELD: document.get(GENERATION_FIELD, {}),
-        }
-
-    meta['modules'] = index
-    save_project_meta(meta, project_dir)
+    save_module_document(module_name, document, project_dir)
 
 
 # =============================================================================

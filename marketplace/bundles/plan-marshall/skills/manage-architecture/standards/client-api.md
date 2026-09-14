@@ -27,6 +27,23 @@ reads every such fence as naming a real verb — a placeholder in one is reporte
 as a `phantom_documented_verb`, because no script registers a subcommand called
 `{verb}`. The per-verb blocks below are the runnable ones.
 
+**What this document's verb set is, and what it is not.** The verbs documented
+here are the client contract this bundle publishes to consumers. That is a
+**different set** from the `def cmd_*` handler population of
+[`../scripts/_cmd_client_handlers.py`](../scripts/_cmd_client_handlers.py), and
+the two are expected to differ: every documented verb is registered, but a
+registered handler need not be a published client verb. A count taken on one
+side is therefore no evidence about the other, and the two must never be
+reconciled by editing either to match the other's cardinality.
+
+Neither side is kept honest by a restatement. The handler file names no roster
+at all — its `def cmd_*` definitions are its own population. This document's
+side is checked mechanically by the plugin-doctor `documented-verb-set-drift`
+rule, which derives the documented verbs from the `bash` fences below and
+compares them against the LIVE registered argparse surface, so a verb documented
+here that no script registers is reported at edit time rather than discovered by
+a reader.
+
 ## Commands
 
 ### info

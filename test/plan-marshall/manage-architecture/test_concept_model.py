@@ -1272,3 +1272,157 @@ def test_search_count_and_file_count_converge_for_a_claimed_duplicate(monkeypatc
             'the scanned population moved between the two arms; the collapse must '
             'change what is REPORTED, never what is read'
         )
+
+
+# =============================================================================
+# The store's JSON writer replaces atomically
+#
+# Opening the destination with mode 'w' truncates it before a byte is written, so
+# a concurrent reader of _project.json or enriched.json observes a prefix and
+# fails to parse. The failure is asserted through a serializer that raises
+# MID-DUMP, which is the deterministic stand-in for that window: under a
+# truncating writer the destination is left holding the partial output, under a
+# tmp-then-rename writer it is untouched.
+# =============================================================================
+
+
+class TestTheJsonWriterReplacesAtomically:
+    def test_a_write_that_raises_mid_dump_leaves_the_destination_untouched(self):
+        """The pre-existing document survives a failed rewrite byte-for-byte."""
+        # Arrange — a valid document on disk, read back as the exact bytes.
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / 'store' / '_project.json'
+            _architecture_core._write_json(path, {'name': 'before', 'modules': {}})
+            before = path.read_bytes()
+
+            # Act — sort_keys puts 'a' ahead of 'b', so json.dump emits real output
+            # and THEN raises on the unserializable value: a mid-dump failure, not
+            # a refusal before the first byte.
+            with pytest.raises(TypeError):
+                _architecture_core._write_json(path, {'a': 1, 'b': object()})
+
+            # Assert
+            assert path.read_bytes() == before, (
+                'the destination was modified by a write that never completed — a '
+                'truncating writer leaves exactly this partial state where a reader '
+                'can see it.'
+            )
+            assert json.loads(path.read_text(encoding='utf-8'))['name'] == 'before'
+
+    def test_a_failed_write_leaves_no_scratch_behind(self):
+        """The temp is removed on the failure path, so the store gains no residue."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            directory = Path(tmpdir) / 'store'
+            path = directory / '_project.json'
+            _architecture_core._write_json(path, {'name': 'before'})
+
+            with pytest.raises(TypeError):
+                _architecture_core._write_json(path, {'a': 1, 'b': object()})
+
+            assert sorted(p.name for p in directory.iterdir()) == ['_project.json']
+
+    def test_a_successful_write_replaces_the_content_and_leaves_no_scratch(self):
+        """Matched control — the writer must still actually write.
+
+        Without it, every assertion above is equally consistent with a writer that
+        never touches the destination at all.
+        """
+        with tempfile.TemporaryDirectory() as tmpdir:
+            directory = Path(tmpdir) / 'store'
+            path = directory / '_project.json'
+            _architecture_core._write_json(path, {'name': 'before'})
+
+            _architecture_core._write_json(path, {'name': 'after'})
+
+            assert json.loads(path.read_text(encoding='utf-8')) == {'name': 'after'}
+            assert sorted(p.name for p in directory.iterdir()) == ['_project.json']
+
+    def test_the_writer_creates_missing_parents(self):
+        """The pre-existing mkdir behaviour is preserved by the rewrite."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / 'deep' / 'nested' / 'enriched.json'
+
+            _architecture_core._write_json(path, {'responsibility': 'x'})
+
+            assert json.loads(path.read_text(encoding='utf-8')) == {'responsibility': 'x'}
+
+
+# =============================================================================
+# Every live-path document write carries the module index through
+#
+# _project.json's ``modules`` entry is the read-side pre-flight surface. Writing a
+# document without refreshing it leaves the index describing a description and a
+# provenance the document no longer carries — and api_init's repair/reset branch
+# was the live writer that did exactly that, while the enrich verbs carried it.
+# =============================================================================
+
+
+_INDEX_STALE_MARKER = 'a description the document no longer carries'
+
+
+def _index_entry(project_dir: str, module_name: str) -> dict[str, Any]:
+    entry: dict[str, Any] = _architecture_core.load_project_meta(project_dir)['modules'][module_name]
+    return entry
+
+
+class TestApiInitCarriesTheModuleIndexThrough:
+    def test_a_reset_refreshes_the_index_entry_it_invalidated(self):
+        """The blank-all rewrites the document, so the index must follow it."""
+        # Arrange — a module whose document and index entry agree on a real
+        # description, which the reset is about to blank.
+        with tempfile.TemporaryDirectory() as tmpdir:
+            setup_test_project(tmpdir)
+            _cmd_enrich.enrich_module('module-a', _INDEX_STALE_MARKER, project_dir=tmpdir)
+            assert _index_entry(tmpdir, 'module-a')['description'] == _INDEX_STALE_MARKER, (
+                'the fixture did not put a real description in the index, so the '
+                'assertion below could not distinguish a refreshed entry from an '
+                'entry that was always blank'
+            )
+
+            # Act — the destructive repair path, which writes every document.
+            result = _cmd_manage.api_init(tmpdir, force=True, reset=True)
+
+            # Assert — the index describes what is ON DISK now, not what was.
+            assert result['status'] == 'success'
+            assert result['modules_initialized'] == 1
+            document = _architecture_core.load_module_enriched_or_empty('module-a', tmpdir)
+            entry = _index_entry(tmpdir, 'module-a')
+            assert entry['description'] == '', (
+                'the index still carries the pre-reset description — api_init wrote '
+                'the document without carrying its header through.'
+            )
+            assert entry['generation'] == document['generation'], (
+                'the index generation header diverged from the document it indexes; '
+                'a freshness verdict read off the index would describe a different '
+                'document than the one on disk.'
+            )
+
+    def test_a_seeding_init_indexes_the_stub_it_created(self):
+        """The non-destructive branch writes documents too, and indexes them."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Arrange — no enriched.json at all, so init seeds one.
+            seed_project(tmpdir, {'module-a': {'name': 'module-a', 'paths': {'module': 'module-a'}}})
+
+            result = _cmd_manage.api_init(tmpdir, force=True)
+
+            assert result['modules_initialized'] == 1
+            document = _architecture_core.load_module_enriched_or_empty('module-a', tmpdir)
+            assert _index_entry(tmpdir, 'module-a')['generation'] == document['generation']
+
+    def test_an_init_that_writes_nothing_leaves_the_index_alone(self):
+        """Matched control — the write-through follows a WRITE, not every call.
+
+        Without it, the assertions above are equally consistent with an api_init
+        that rewrites the index unconditionally, which would blank a curated
+        entry on a bare init that preserved every document.
+        """
+        with tempfile.TemporaryDirectory() as tmpdir:
+            setup_test_project(tmpdir)
+            _cmd_enrich.enrich_module('module-a', _INDEX_STALE_MARKER, project_dir=tmpdir)
+            before = _index_entry(tmpdir, 'module-a')
+
+            # Every document already exists and reset is off, so nothing is written.
+            result = _cmd_manage.api_init(tmpdir, force=True)
+
+            assert result['modules_initialized'] == 0
+            assert _index_entry(tmpdir, 'module-a') == before

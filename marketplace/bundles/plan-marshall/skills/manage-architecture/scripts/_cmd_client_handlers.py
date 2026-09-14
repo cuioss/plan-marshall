@@ -3,13 +3,29 @@
 """Argparse ``cmd_*`` handlers for the architecture client commands.
 
 Extracted verbatim from ``_cmd_client``; the facade re-exports every public
-name here. Covers all 20 CLI handlers this file defines — one per ``def
-cmd_*`` — namely info, modules, graph, capabilities, module, overview, commands,
-resolve, derive-verification, profiles, siblings, path, neighbors, impact,
-files, which-module, find, search, diff-modules and
-descriptor-regression-check, plus their private helpers, including the Bucket B
-execution-tier augmentation, the files-inventory readers, the snapshot diff, and
-the descriptor regression gate.
+name here.
+
+**The handler roster is the ``def cmd_*`` population of this file, and is
+deliberately not restated.** A docstring that names each handler and counts them
+is a second copy of a set the file already carries, and it goes stale in the one
+direction nobody notices: a handler added below leaves the roster silently short
+while the count beside it keeps asserting completeness. Read the definitions for
+the population; there is no list here to disagree with them.
+
+⛔ That population is **not** the same set as the documented client-verb surface
+in ``../standards/client-api.md``, and the two must not be reconciled by editing
+either one to match the other. A ``cmd_*`` handler is an argparse entry point;
+a documented verb is a contract this bundle publishes to consumers, and the
+first set legitimately contains members the second does not. What keeps the
+documented half honest is mechanical and already runs: the plugin-doctor
+``documented-verb-set-drift`` rule derives the documented verbs from that
+document's own ``bash`` fences and compares them against the LIVE registered
+argparse surface, so a documented verb no script registers, and a drift between
+the doc and the parser, are both reported at edit time.
+
+Besides the handlers this file carries their private helpers, including the
+Bucket B execution-tier augmentation, the files-inventory readers, the snapshot
+diff, and the descriptor regression gate.
 
 The files-inventory readers (``find`` / ``search`` / ``which-module``) read
 through the ``_resolve_module_inventory`` seam: an in-scope elided category is
