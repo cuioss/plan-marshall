@@ -37,14 +37,17 @@ prefix of the document and fail to parse it. The temp shares the destination's
 directory because `os.replace` is atomic only within one filesystem.
 
 **Every live-path concept-document write also writes the module index through.**
-`save_module_document` is that operation: it persists the module's
-`enriched.json` and then refreshes that module's `_project.json` index entry from
-what was actually written to disk. It exists because the write-through was once a
-habit of one caller rather than a property of the write — the enrich verbs
-carried it and `api_init`'s repair/reset branch did not, so repairing a document
-left the index describing a description and a provenance the document no longer
-carried. Both live writers now share the operation; `api_init` batches its index
-write into a single `_project.json` pass, as `enrich all` already did.
+`sync_module_index` is that shared piece: it refreshes a module's `_project.json`
+index entry from what was actually written to disk. `save_module_document`
+composes it with `save_module_enriched` for a single-module live-path caller;
+`api_init`'s repair/reset branch instead calls `sync_module_index` directly,
+batched across every repaired module into one `_project.json` pass. The
+write-through was once a habit of one caller rather than a property of the
+write — the enrich verbs carried it and `api_init`'s repair/reset branch did
+not, so repairing a document left the index describing a description and a
+provenance the document no longer carried. Both live writers now call the
+shared `sync_module_index`, whether directly (batched) or through
+`save_module_document` (single-module).
 
 ⛔ That operation is the **live-path** writer and is not for staged writes.
 `discover --force` places every document under the staging directory above;
