@@ -118,7 +118,7 @@ jobs:
           mkdir -p settings/packs
           cp source/target/pr-agent/packs/*.md settings/packs/
 
-      - name: Open the publish pull request
+      - name: Open or update the publish pull request
         working-directory: settings
         # Every context value is passed through env: and referenced as a quoted
         # shell variable — no context expression is spliced into this shell.
@@ -135,20 +135,58 @@ jobs:
             echo "The published packs already match the derived set — nothing to publish."
             exit 0
           fi
-          branch="pr-agent-packs/${SOURCE_SHA}"
+          # ONE rolling branch, not one per source commit. A branch per commit is
+          # what let the backlog accumulate: each publish opened a pull request of
+          # its own and nothing ever closed the one before it. The branch is
+          # rebuilt from the settings default branch and force-pushed on every
+          # publish, so at most one publish pull request can be open BY
+          # CONSTRUCTION — not as the outcome of a cleanup step that a stuck check
+          # could leave unrun. The source commit is carried in the title and body,
+          # which is where a reader looks for it now that the branch name no
+          # longer holds it.
+          branch="pr-agent-packs"
           title="chore(packs): publish reviewer packs from ${SOURCE_REPOSITORY}@${SOURCE_SHA}"
+          body="Generated artifact set, published from ${SOURCE_REPOSITORY}@${SOURCE_SHA}. The packs/ directory is REPLACED rather than merged, so a review domain that stopped deriving disappears from the published set. Do not edit these files by hand — they are regenerated from the source marketplace."
           git checkout -b "${branch}"
           git commit -m "${title}"
-          git push origin "${branch}"
-          # --label applies skip-bot-review AT CREATION TIME. That ordering is
-          # load-bearing rather than stylistic: the org reusable workflow honours
-          # the label through a job-level `if:` guard evaluated when the review job
-          # is scheduled, so a label added after the pull request exists loses the
-          # race and the review runs anyway.
-          gh pr create \
+          git push --force origin "${branch}"
+          # The force-push above has already updated any open pull request for the
+          # rolling branch in place, so only its ABSENCE calls for a create.
+          pr_number="$(gh pr list --repo cuioss/pr-agent-settings --head "${branch}" --state open --json number --jq '.[0].number // empty')"
+          if [ -z "${pr_number}" ]; then
+            # --label applies skip-bot-review AT CREATION TIME. That ordering is
+            # load-bearing rather than stylistic: the org reusable workflow honours
+            # the label through a job-level `if:` guard evaluated when the review job
+            # is scheduled, so a label added after the pull request exists loses the
+            # race and the review runs anyway.
+            gh pr create \
+              --repo cuioss/pr-agent-settings \
+              --base main \
+              --head "${branch}" \
+              --title "${title}" \
+              --label skip-bot-review \
+              --body "${body}"
+          else
+            # A reused pull request keeps its number but must not keep the
+            # previous publish's source commit: the title and body are the only
+            # place that commit is recorded, so leaving them stale would name
+            # commit A on a pull request carrying commit B's derived set.
+            gh pr edit "${pr_number}" \
+              --repo cuioss/pr-agent-settings \
+              --title "${title}" \
+              --body "${body}"
+          fi
+          # Arm auto-merge so a published set lands as soon as the repository's
+          # required check passes, with no human action. The call is idempotent —
+          # re-arming an already-armed pull request succeeds — which is what lets
+          # it run on the reuse path too and re-arm a pull request whose earlier
+          # arming did not take.
+          #
+          # A successful call establishes only that auto-merge was REQUESTED.
+          # Every reason a pull request can fail to merge leaves it successful, so
+          # nothing downstream may read this step's exit status as evidence that
+          # anything reached the settings repository's default branch.
+          gh pr merge "${branch}" \
             --repo cuioss/pr-agent-settings \
-            --base main \
-            --head "${branch}" \
-            --title "${title}" \
-            --label skip-bot-review \
-            --body "Generated artifact set, published from ${SOURCE_REPOSITORY}@${SOURCE_SHA}. The packs/ directory is REPLACED rather than merged, so a review domain that stopped deriving disappears from the published set. Do not edit these files by hand — they are regenerated from the source marketplace."
+            --auto \
+            --squash
