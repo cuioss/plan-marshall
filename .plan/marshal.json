@@ -305,7 +305,8 @@
       "optionals": []
     },
     "general-dev": {
-      "bundle": "plan-marshall"
+      "bundle": "plan-marshall",
+      "always_on": true
     },
     "python": {
       "bundle": "pm-dev-python",
