@@ -606,7 +606,7 @@ class TestDraftingDispatchWritePathContainment:
         """
         population = _containment_population(_PLAN_MARSHALL)
         texts: dict[Path, str] = population['texts']
-        offenders = {doc.name: _leaf_write_grants(text) for doc, text in texts.items() if _leaf_write_grants(text)}
+        offenders = {doc.name: grants for doc, text in texts.items() if (grants := _leaf_write_grants(text))}
 
         assert not offenders, (
             f'{len(offenders)} orchestrator dispatch document(s) grant a dispatched leaf a '
