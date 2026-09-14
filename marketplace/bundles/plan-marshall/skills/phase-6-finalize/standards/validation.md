@@ -166,25 +166,3 @@ When a source lesson identifies a *missing pattern* in one finalize-standards fi
 **Generic applicability** — the audit rule is stated generically so it applies to any sibling-standards directory in the bundle (`manage-execution-manifest/standards/`, `phase-4-plan/standards/`, `ref-workflow-architecture/standards/`, etc.), not just `phase-6-finalize/standards/`. The lesson's peer-pattern claim names the target directory; the audit applies the same enumeration + grep + add-to-cleanup-plan flow regardless of which sibling-standards directory is in scope.
 
 **Cross-reference**: the **Path / Constant Migration Sub-pattern** in `phase-4-plan/SKILL.md` codifies the five-task decomposition (code / test / prose / example / verification) when the divergent-sibling count exceeds the single-task threshold or when prose / example sweeps materially extend the work. The two rules compose: the audit identifies the surface, and the migration sub-pattern shapes the task decomposition.
-
-## Mark Step Complete
-
-This document also serves as the `validation` finalize step entry in `required-steps.md`: it captures the end-of-pipeline validation pass. Before returning control to the finalize pipeline, record that this step ran on the live plan so the `phase_steps_complete` handshake invariant is satisfied at phase transition time.
-
-Pass a `--display-detail` value alongside `--outcome done` so the output-template renderer can surface the validation outcome. The payload differs by whether the validation pass exposed per-check counts:
-
-**Branch A — default** (the handshake invariant confirms all required steps are done; no per-check telemetry is available):
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
-  --plan-id {plan_id} --phase 6-finalize --step validation --outcome done \
-  --display-detail "all required steps done"
-```
-
-**Branch B — per-check counts available** (when the validation pass enumerates individual checks and `{N}` is the count of checks that passed):
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
-  --plan-id {plan_id} --phase 6-finalize --step validation --outcome done \
-  --display-detail "{N} validation check(s) passed"
-```
