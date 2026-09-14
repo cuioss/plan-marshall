@@ -306,13 +306,30 @@ This skill runs as a leaf inside the `execution-context` envelope — it issues 
      run --identifiers-file "{temp_identifiers_file}" --log "{module_test_log_path}"
    ```
 
-   3. On `passed: true`: proceed to the standard "Mark task done" path.
-   4. On `passed: false`: do NOT mark the task `done` — the run was silently incomplete. Log, mark the task `requires_attention`, and surface the mismatch in the return value:
+   3. **Branch on `status` FIRST, never on `passed`.** The helper returns two shapes, and only one of them carries a verdict:
+
+      | `status` | Exit code | What it established | What to do |
+      |----------|-----------|---------------------|------------|
+      | `success` | `0` / `1` | The log enumerated a run, and every written identifier was searched for in it. `passed` is the verdict. | Read `passed` — step 4 or step 5. |
+      | `could_not_look` | `3` | The supplied log carries **no pytest nodeid at all**, so nothing was searched. `passed`, `found_count` and `missing_count` are **absent from the payload**. | Step 6 — re-supply the right log. |
+
+      ⛔ `could_not_look` is NOT a failure and NOT a pass. Its `found_count` / `missing_count` are omitted precisely so a caller cannot read a measured zero off a run that measured nothing; treating an absent `passed` as falsy re-creates the defect the outcome exists to remove. Both shapes carry `log_enumerates_nodeids` and `log_nodeid_count`, so a green result also states the population its verdict was computed over.
+
+   4. On `status: success` with `passed: true`: proceed to the standard "Mark task done" path.
+   5. On `status: success` with `passed: false`: do NOT mark the task `done` — the run was silently incomplete. Log, mark the task `requires_attention`, and surface the mismatch in the return value:
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
      work --plan-id {plan_id} --level WARNING \
      --message "[VERIFY] (plan-marshall:execute-task) Diff assertion failed: {missing_count} written test identifiers absent from module-test log — {missing}"
+   ```
+
+   6. On `status: could_not_look`: do NOT mark the task `done`, and do NOT report a diff-assertion failure — there is no diff. The usual cause is the WRONG LOG: the build wrapper's own TOON reply and the build-server job log are summaries that name a `log_file` rather than enumerating the run, while the per-run **build-results** log the `log_file` field points at does enumerate every nodeid. Re-run the assertion against that path. Log the gap and carry it into the return value as an unmeasured check rather than a passed one:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+     work --plan-id {plan_id} --level WARNING \
+     --message "[VERIFY] (plan-marshall:execute-task) Diff assertion could not look: the supplied log enumerates no pytest nodeid, so {identifiers_supplied} written identifier(s) went unchecked — re-run against the build-results log named by the build reply's log_file field"
    ```
 
    On test failure: determine if test logic is wrong or implementation has a bug. If test logic → fix test. If implementation bug → fix production code AND the test. Adapting production code to make tests pass is expected within this profile.
@@ -328,13 +345,19 @@ verification:
   tests_passed: N
   tests_failed: N
   diff_assertion:
-    passed: true | false
-    missing_count: N
-    parametrized_match_count: N
-    missing[]: [identifier, ...]
+    status: success | could_not_look
+    log_enumerates_nodeids: true | false
+    log_nodeid_count: N
+    passed: true | false                 # omitted on could_not_look
+    missing_count: N                     # omitted on could_not_look
+    parametrized_match_count: N          # omitted on could_not_look
+    missing[]: [identifier, ...]         # omitted on could_not_look
+    identifiers_supplied: N              # could_not_look only — how much went unchecked
 ```
 
 Note: `diff_assertion.passed: false` overrides `tests_passed` — a green test count does not imply a successful run if written identifiers are absent from the log.
+
+Note: `diff_assertion.status: could_not_look` overrides it differently and must not be collapsed into either verdict — the log enumerated no nodeid, so the assertion established nothing about this run. Carry it forward as an unmeasured check (the task stays not-`done`), never as a pass, and never as the `passed: false` a genuine silent-skip earns.
 
 Note: `parametrized_match_count` is how many identifiers matched only via a per-case nodeid (`name[case]`) rather than exactly. A `@pytest.mark.parametrize` function never appears bare in the log, so a bare stem legitimately matches this way — the count is what keeps that case distinguishable from an exact match, and it carries no failure meaning on its own.
 

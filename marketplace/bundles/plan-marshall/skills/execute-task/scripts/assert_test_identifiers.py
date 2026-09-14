@@ -12,7 +12,10 @@ with:
 
 The helper returns a :class:`DiffResult` describing which identifiers were
 located on some line of the log (``found``) and which were not (``missing``).
-``passed`` is true iff every written identifier appears at least once.
+``passed`` is ``True`` iff every written identifier appears at least once, and
+``False`` when one does not — but it is **tri-state**: ``None`` says the log
+enumerated no test at all, so neither verdict was established. See
+`Could-not-look`_ below before branching on it.
 
 The matching is a case-sensitive regex anchored to a whitespace boundary, an
 end-of-line, or a parametrize bracket: ``{re.escape(identifier)}(?:\\s|$|\\[)``.
@@ -44,19 +47,52 @@ line, followed by whitespace before the status token. The anchor lets us
 accept all of those surrounding tokens while still requiring the identifier
 to end at a token boundary.
 
+Could-not-look
+--------------
+
+A log that enumerates **no pytest nodeid at all** cannot answer the question
+this helper asks. Searching it for a written identifier finds nothing, and the
+retired shape reported that as ``passed: false, found_count: 0`` — byte-identical
+to a log that enumerated its run in full and genuinely did not contain the
+identifier. Those two warrant opposite reactions: the first means *supply the
+right log*, the second means *the test silently did not run*, and a caller
+branching on ``passed`` could not tell them apart.
+
+The discriminator is therefore structural and is computed **before** any
+identifier is searched for: does the supplied log carry a pytest nodeid token
+(``<path>.py::<name>``) anywhere? Every log that enumerates a run carries them —
+pytest's ``-v`` per-test lines, its ``-rsfE`` short-summary lines, and its
+failure headers all do. A log that carries none never enumerated a run, whatever
+else it contains.
+
+When it carries none the helper returns the **could-not-look** outcome:
+``passed`` is ``None``, ``status`` is ``could_not_look``, and ``found_count`` /
+``missing_count`` are **omitted from the payload entirely**. The omission is the
+contract, not an oversight: a ``0`` published by a run that searched nothing is
+indistinguishable from a measured zero, and ``reason`` alone does not fix that
+because it is advisory and trivially dropped. Read ``status`` first.
+
+⛔ The gate is the log's nodeid population, never the outcome. A log that DOES
+enumerate nodeids and is missing one of the written identifiers still reports
+``passed: false`` exactly as before — that is the genuine silent-skip this
+guardrail exists to catch, and the could-not-look outcome must never absorb it.
+
 Contract
 --------
 
 ``assert_identifiers_in_log(written_identifiers, log_path) -> DiffResult``
 
-* Reads ``log_path`` line by line. For each identifier in
-  ``written_identifiers``, checks whether any line contains the identifier as
-  a substring. Returns a :class:`DiffResult` with ``passed=True`` iff every
-  identifier was found on at least one line.
+* Reads ``log_path`` line by line, counts the distinct pytest nodeid tokens it
+  carries, and — only when that count is non-zero — checks each identifier in
+  ``written_identifiers`` against every line. Returns a :class:`DiffResult`
+  whose ``passed`` is ``True`` iff every identifier was found, ``False`` iff at
+  least one was not, and ``None`` iff the log enumerated no nodeid to search.
 * Input order is preserved in both ``found`` and ``missing`` tuples so the
   caller can display a stable, deterministic diff.
 * Empty ``written_identifiers`` yields ``DiffResult(passed=True, found=(),
-  missing=())`` — vacuously true.
+  missing=())`` — vacuously true, and the log is not read at all, so
+  ``log_nodeid_count`` stays ``None`` rather than claiming a population nobody
+  counted.
 * Missing or unreadable ``log_path`` raises :class:`FileNotFoundError` (or
   :class:`PermissionError` / :class:`OSError`) with a clear message. The
   helper never swallows IO errors; callers must decide how to report them.
@@ -67,8 +103,9 @@ CLI
 ``python3 assert_test_identifiers.py run --identifiers-file {path} --log {path}``
 
 ``--identifiers-file`` is a newline-delimited list of identifiers; blank lines
-are stripped. TOON output carries ``status``, ``passed``, ``found_count``,
-``missing_count``, ``parametrized_match_count``, the
+are stripped. TOON output carries ``status``, ``log_enumerates_nodeids``,
+``log_nodeid_count``, and — on the measured path only — ``passed``,
+``found_count``, ``missing_count``, ``parametrized_match_count``, the
 ``found_forms[]{identifier,matched_form}`` table, and the ``missing[]`` table,
 so callers can surface the gap — and tell an exact match from a
 per-case-nodeid match — without re-parsing the log.
@@ -80,6 +117,11 @@ as a guardrail boolean:
 * ``0`` — assertion passed (every identifier found)
 * ``1`` — assertion failed (one or more identifiers missing)
 * ``2`` — usage error or IO error (argparse failure, log unreadable)
+* ``3`` — could not look (the log enumerates no nodeid). Deliberately its own
+  code rather than ``0`` or ``1``: a shell-boolean caller must not read an
+  unmeasurable check as a pass, and it did not fail either. ``2`` is reserved
+  for a log that could not be READ — this one was read and had nothing to
+  search.
 """
 
 from __future__ import annotations
@@ -93,29 +135,65 @@ from pathlib import Path
 
 from toon_parser import serialize_toon
 
+#: Matches one pytest nodeid token — ``<path>.py::<name>`` — bounded by
+#: whitespace on both sides. Used ONLY to establish whether the supplied log
+#: enumerates a run at all; it never decides whether a particular identifier is
+#: present, which stays the per-identifier anchored match below.
+#:
+#: The right boundary is a whitespace/end-of-line lookahead rather than a greedy
+#: run, so a nodeid followed by pytest's status token is counted once and the
+#: status token is not swallowed into it.
+_NODEID_TOKEN_RE = re.compile(r'(?<!\S)(\S+\.py::\S+?)(?=\s|$)')
+
+
+def count_log_nodeids(lines: Iterable[str]) -> int:
+    """Return how many DISTINCT pytest nodeid tokens ``lines`` carries.
+
+    This is the could-not-look discriminator's population. Distinct rather than
+    total because pytest names one nodeid several times in a verbose run (the
+    scheduling line, the PASSED line, the durations table), and a total would
+    report a single-test log as a rich one.
+
+    A zero means the log enumerated no test at all, which is the one state in
+    which searching it for a written identifier establishes nothing.
+    """
+    return len({match.group(1) for line in lines for match in _NODEID_TOKEN_RE.finditer(line)})
+
 
 @dataclass(frozen=True, slots=True)
 class DiffResult:
     """Outcome of comparing written identifiers against a module-test log.
 
     Attributes:
-        passed: True iff every input identifier appeared on some line of the
-            log. Vacuously true when the input is empty.
+        passed: ``True`` iff every input identifier appeared on some line of the
+            log; ``False`` iff at least one did not; ``None`` iff the log
+            enumerated no pytest nodeid, so nothing could be searched for.
+            Vacuously ``True`` when the input is empty. ⛔ Read the ``None``
+            state first — it is NOT a failure, and collapsing it into ``False``
+            reinstates the defect this field's tri-state exists to remove.
         found: Identifiers located on at least one log line, preserving the
-            input order.
+            input order. Empty on the could-not-look path — nothing was looked
+            for, so nothing was found.
         missing: Identifiers that did not appear on any log line, preserving
-            the input order.
+            the input order. Empty on the could-not-look path for the same
+            reason, which is why the CLI OMITS ``missing_count`` there rather
+            than publishing the ``0`` this empty tuple would otherwise render.
         found_forms: Parallel to ``found`` — how each identifier matched,
             either ``'exact'`` (the log carries the nodeid as written) or
             ``'parametrized'`` (the log carries only per-case nodeids
             ``identifier[case]``). Recording the form keeps a genuine absence
             distinguishable from a parametrize-stem supply.
+        log_nodeid_count: How many distinct pytest nodeids the log carried, or
+            ``None`` when the log was never read (the empty-input vacuous pass).
+            ``None`` and ``0`` are different facts: the first is "not counted",
+            the second is "counted, and the log enumerates nothing".
     """
 
-    passed: bool
+    passed: bool | None
     found: tuple[str, ...]
     missing: tuple[str, ...]
     found_forms: tuple[str, ...] = ()
+    log_nodeid_count: int | None = None
 
 
 def assert_identifiers_in_log(
@@ -137,7 +215,9 @@ def assert_identifiers_in_log(
 
     Returns:
         A :class:`DiffResult` describing which identifiers were found and
-        which were not. ``passed`` is ``True`` iff ``missing`` is empty.
+        which were not. ``passed`` is ``True`` iff ``missing`` is empty,
+        ``False`` when it is not, and ``None`` when the log enumerated no
+        pytest nodeid — in which case no identifier was searched for at all.
 
     Raises:
         FileNotFoundError: ``log_path`` does not exist.
@@ -165,6 +245,19 @@ def assert_identifiers_in_log(
     # pytest occasionally emits without hiding IO errors.
     with log_path.open('r', encoding='utf-8', errors='replace') as handle:
         lines = handle.readlines()
+
+    # Establish the log's nodeid population BEFORE searching for anything. A log
+    # that enumerates no test cannot answer "did this test run?", and answering
+    # it anyway is what made a wrong log indistinguishable from a silent skip.
+    log_nodeid_count = count_log_nodeids(lines)
+    if log_nodeid_count == 0:
+        return DiffResult(
+            passed=None,
+            found=(),
+            missing=(),
+            found_forms=(),
+            log_nodeid_count=0,
+        )
 
     found: list[str] = []
     found_forms: list[str] = []
@@ -205,6 +298,7 @@ def assert_identifiers_in_log(
         found=tuple(found),
         missing=tuple(missing),
         found_forms=tuple(found_forms),
+        log_nodeid_count=log_nodeid_count,
     )
 
 
@@ -231,7 +325,7 @@ def _load_identifiers(identifiers_path: Path) -> list[str]:
     return identifiers
 
 
-def _emit_toon(result: DiffResult) -> None:
+def _emit_toon(result: DiffResult, identifiers_supplied: int) -> None:
     """Write the TOON output contract for ``run`` to stdout.
 
     The shape is kept flat on purpose so the output is easy to diff and easy
@@ -239,10 +333,47 @@ def _emit_toon(result: DiffResult) -> None:
     serializer does the writing, which is what quotes a pytest nodeid — every
     one of which carries ``::`` — instead of letting it split its own row.
 
-    ``found_forms`` and ``missing`` are always present, empty or not: an empty
-    list serializes as the ``key[0]:`` idiom, so downstream parsers see one
-    stable schema rather than a key that disappears when nothing matched.
+    Two shapes, discriminated by ``status``:
+
+    * ``could_not_look`` — the log enumerated no pytest nodeid, so nothing was
+      searched. ``passed``, ``found_count``, ``missing_count``,
+      ``parametrized_match_count``, ``found_forms`` and ``missing`` are all
+      OMITTED. Publishing them as zeros / empty lists is precisely the defect
+      this outcome exists to remove: a caller gating on ``passed`` or
+      ``missing_count`` would read a measured verdict off a run that measured
+      nothing. ``identifiers_supplied`` is published instead, so the payload
+      still says how much work went unchecked.
+    * ``success`` — the measured path. Every field above is present, and
+      ``found_forms`` / ``missing`` are present even when empty (the ``key[0]:``
+      idiom), so downstream parsers see one stable schema.
+
+    ``log_enumerates_nodeids`` and ``log_nodeid_count`` ride BOTH shapes: a
+    caller reading a green result should still be able to see the population the
+    verdict was computed over.
     """
+    coverage: dict[str, object] = {
+        'log_enumerates_nodeids': bool(result.log_nodeid_count),
+        'log_nodeid_count': result.log_nodeid_count,
+    }
+
+    if result.passed is None:
+        print(
+            serialize_toon(
+                {
+                    'status': 'could_not_look',
+                    'reason': 'log_enumerates_no_nodeids',
+                    'detail': (
+                        'the supplied log carries no pytest nodeid, so no written identifier '
+                        'was searched for; passed/found_count/missing_count are omitted '
+                        'because nothing was measured'
+                    ),
+                    **coverage,
+                    'identifiers_supplied': identifiers_supplied,
+                }
+            )
+        )
+        return
+
     # Report how many of the found identifiers matched only via a per-case
     # nodeid. A caller that supplied a parametrize stem needs to know the match
     # was not exact, so an absence stays distinguishable from a stem supply.
@@ -253,6 +384,7 @@ def _emit_toon(result: DiffResult) -> None:
             {
                 'status': 'success',
                 'passed': result.passed,
+                **coverage,
                 'found_count': len(result.found),
                 'missing_count': len(result.missing),
                 'parametrized_match_count': parametrized_count,
@@ -278,12 +410,19 @@ def _emit_toon_error(message: str) -> None:
     print(serialize_toon({'status': 'error', 'error': flattened}))
 
 
+#: Exit code for the could-not-look outcome. Distinct from ``0`` (passed) and
+#: ``1`` (failed) because execute-task shells this status as a guardrail
+#: boolean, and an unmeasurable check must read as neither; distinct from ``2``
+#: because the log WAS read — it simply enumerated nothing to search.
+COULD_NOT_LOOK_RC = 3
+
+
 def cmd_run(args: argparse.Namespace) -> int:
     """Handle the ``run`` subcommand.
 
     Returns the process exit code directly (``0`` pass, ``1`` fail, ``2``
-    usage/IO error) so ``main`` can forward it to :func:`sys.exit` without
-    translation.
+    usage/IO error, ``3`` could-not-look) so ``main`` can forward it to
+    :func:`sys.exit` without translation.
     """
     identifiers_path = Path(args.identifiers_file)
     log_path = Path(args.log)
@@ -301,7 +440,9 @@ def cmd_run(args: argparse.Namespace) -> int:
         _emit_toon_error(f'IO error: {exc}')
         return 2
 
-    _emit_toon(result)
+    _emit_toon(result, len(identifiers))
+    if result.passed is None:
+        return COULD_NOT_LOOK_RC
     return 0 if result.passed else 1
 
 
