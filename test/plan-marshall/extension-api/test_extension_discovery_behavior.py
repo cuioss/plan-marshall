@@ -731,7 +731,7 @@ def _code_read_keys(candidate_keys: set[str]) -> set[str]:
     remaining = set(candidate_keys)
     found: set[str] = set()
     repo_root = _repo_root()
-    py_files = sorted(repo_root.glob('marketplace/**/scripts/*.py')) + sorted(repo_root.glob('test/**/*.py'))
+    py_files = sorted(repo_root.glob('marketplace/**/*.py')) + sorted(repo_root.glob('test/**/*.py'))
     for py_file in py_files:
         if not remaining:
             break
