@@ -1278,10 +1278,7 @@ class TestUnconfidentFlagSurfaceSkipsValidation:
             },
         )
         index = {_SYN_NOTATION: surf.ScriptSurface(root=root)}
-        content = (
-            f'python3 .plan/execute-script.py {_SYN_NOTATION} repo label '
-            '--color blue --description d --label x\n'
-        )
+        content = f'python3 .plan/execute-script.py {_SYN_NOTATION} repo label --color blue --description d --label x\n'
         findings = analyze_manage_invocation_markdown(content, '/fake/SKILL.md', index)
         assert findings == []
 
