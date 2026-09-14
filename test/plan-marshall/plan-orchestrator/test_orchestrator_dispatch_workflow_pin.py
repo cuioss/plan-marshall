@@ -716,12 +716,22 @@ class TestDraftingDispatchWritePathContainment:
         # The gap this control closes: negation used to be checked over the
         # WHOLE sentence, so a semicolon-joined sentence pairing a real grant in
         # one clause with an unrelated prohibition in another clause let the
-        # prohibition's "not" silently suppress the grant. This fixture mirrors
-        # the real shape at orchestration-model.md's write-freedom bullet (a
-        # permission clause followed by `;` and an unrelated `MAY NOT` clause),
-        # but with the first clause naming an ACTUAL forbidden target so a
-        # sentence-scoped negation check would have missed it.
-        sentence_scoped = re.compile(r'\b(?:not|never|nothing|no|none|cannot)\b')
+        # prohibition's negation silently suppress the grant. This fixture
+        # mirrors the real shape at orchestration-model.md's write-freedom
+        # bullet (a permission clause followed by `;` and an unrelated
+        # prohibition clause), but with the first clause naming an ACTUAL
+        # forbidden target so a sentence-scoped negation check would have
+        # missed it.
+        #
+        # The negation check below asserts with `_NEGATION_RE` ITSELF, never a
+        # hand-transcribed subset: a local copy of the vocabulary drifts out of
+        # sync with the live pattern in both directions — it can stay green
+        # after `_NEGATION_RE` drops a word the fixture relies on (this control
+        # then witnesses nothing), and it can fail red against a fixture phrased
+        # with a word `_NEGATION_RE` still recognizes but the copy does not.
+        # `_leaf_write_grants` itself already exercises `_NEGATION_RE` on the
+        # real path; this second assertion only confirms the fixture actually
+        # carries a negation at all, so it must consult the same authority.
         fixture = tmp_path / 'clause-scoped-grant.md'
         fixture.write_text(
             'The leaf writes the queue row itself via `manage-status`; it may not touch '
@@ -732,7 +742,7 @@ class TestDraftingDispatchWritePathContainment:
         found = _leaf_write_grants(_normalized(fixture))
 
         assert found, 'the grant scan missed a real grant sharing a sentence with an unrelated prohibition'
-        assert sentence_scoped.search(fixture.read_text(encoding='utf-8').lower()), (
+        assert _NEGATION_RE.search(fixture.read_text(encoding='utf-8').lower()), (
             'the fixture is supposed to carry a negation word somewhere in the sentence — otherwise '
             'this control does not exercise clause-scoping at all'
         )
