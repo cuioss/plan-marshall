@@ -268,10 +268,19 @@ class TestAbsenceDiscriminator:
         # The locator could not answer — no executor, a non-zero exit, an
         # unparsable payload. A miss on top of that establishes nothing, and the
         # main scope alone must not upgrade it into a claim about every checkout.
-        _stub_locator(monkeypatch, status_core._LOOKUP_UNANSWERED)
+        #
+        # The worktree slot must EXIST for a degraded consult to be reachable at
+        # all: with no slot the pre-gate renders _LOOKUP_NO_HOLDER by itself and
+        # the consult never runs, which is a different state pinned by
+        # ``test_the_slot_pre_gate_answers_without_spawning_the_locator``. The
+        # ``seen`` assertion below is what keeps the two apart — without it this
+        # test passes through the pre-gate path and checks nothing it claims to.
+        (main_base / WORKTREES_DIRNAME / 'nobody-has-this').mkdir(parents=True)
+        seen = _stub_locator(monkeypatch, status_core._LOOKUP_UNANSWERED)
 
         resolution = status_core.resolve_plan_status('nobody-has-this', any_checkout=True)
 
+        assert seen == ['nobody-has-this'], 'the locator was never consulted, so nothing degraded'
         assert resolution.scope == 'main'
         assert resolution.visibility == status_core.PLAN_NOT_VISIBLE_FROM_SCOPE
 

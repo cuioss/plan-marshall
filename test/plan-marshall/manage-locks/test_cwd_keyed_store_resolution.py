@@ -122,7 +122,11 @@ class TestCmdListScopeField:
         (base / 'plans').mkdir(parents=True)
         monkeypatch.setenv('PLAN_BASE_DIR', str(base))
         worktree_base = base / 'worktrees' / 'wt-x' / '.plan' / 'local'
-        monkeypatch.setattr(status_query, 'get_base_dir', lambda: worktree_base)
+        # Patched on ``status_core`` for the reason the module docstring gives: the
+        # scope comes from ``_resolution_scope``, which is DEFINED in ``_status_core``
+        # and closes over that module's ``get_base_dir``. ``_status_query`` imports the
+        # predicate, not the resolver, so it carries no ``get_base_dir`` to patch.
+        monkeypatch.setattr(status_core, 'get_base_dir', lambda: worktree_base)
 
         result = status_query.cmd_list(Namespace(filter=None))
 
