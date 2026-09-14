@@ -1409,6 +1409,70 @@ class TestApiInitCarriesTheModuleIndexThrough:
             document = _architecture_core.load_module_enriched_or_empty('module-a', tmpdir)
             assert _index_entry(tmpdir, 'module-a')['generation'] == document['generation']
 
+    def test_an_init_that_raises_partway_indexes_the_stubs_it_did_write(self, monkeypatch):
+        """A run that aborts mid-loop still carries through the documents it wrote.
+
+        ``api_init`` batches the index write-through into ONE ``_project.json``
+        write after the per-module loop. Without a ``finally`` that write is
+        simply skipped when a document write raises: the modules already
+        re-seeded carry a fresh generation header while the index keeps
+        describing the description and provenance those documents no longer
+        have — the staleness the write-through exists to remove.
+        ``_cmd_enrich._batched_index_sync`` flushes its owed entries on the way
+        out for exactly this reason, and this is the same guarantee for the one
+        live-path writer that batches without a context manager.
+
+        Which module the loop reaches first is the crawl's business, so the
+        stand-in writes whichever module it is called with FIRST and raises on
+        every one after it. The assertions then read that recorded name rather
+        than assuming an iteration order.
+        """
+        seeded = ('module-a', 'module-b')
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Arrange — two modules with no enriched.json, so init seeds both,
+            # and index entries that carry no generation yet.
+            seed_project(tmpdir, {name: {'name': name, 'paths': {'module': name}} for name in seeded})
+            for name in seeded:
+                assert 'generation' not in _index_entry(tmpdir, name), (
+                    'the fixture already carried a generation header in the index, so '
+                    'the assertion below could not distinguish a flushed entry from a '
+                    'pre-existing one'
+                )
+
+            written: list[str] = []
+
+            def _write_then_raise(module_name: str, document: dict[str, Any], project_dir: str) -> None:
+                if written:
+                    raise RuntimeError('document write failed partway through the loop')
+                written.append(module_name)
+                _architecture_core.save_module_enriched(module_name, document, project_dir)
+
+            monkeypatch.setattr(_cmd_manage, 'save_module_enriched', _write_then_raise)
+
+            # Act — the loop writes one document and then raises.
+            with pytest.raises(RuntimeError):
+                _cmd_manage.api_init(tmpdir, force=True)
+
+            # Assert — anti-vacuity first: the fixture really did abort AFTER a
+            # write, not before one. An abort with nothing written would make the
+            # index assertion below hold for the wrong reason.
+            assert len(written) == 1, f'the fixture did not abort after exactly one document write: {written}'
+            aborted_after = written[0]
+            never_written = next(name for name in seeded if name != aborted_after)
+
+            document = _architecture_core.load_module_enriched_or_empty(aborted_after, tmpdir)
+            entry = _index_entry(tmpdir, aborted_after)
+            assert entry['generation'] == document['generation'], (
+                'the index does not describe the document that DID get written — the '
+                'owed index entries were dropped when the loop raised, which is the '
+                'staleness an aborted run leaves behind.'
+            )
+            assert 'generation' not in _index_entry(tmpdir, never_written), (
+                'the flush indexed a module whose document was never written; the '
+                'index now describes a document that is not on disk'
+            )
+            assert not get_module_enriched_path(never_written, tmpdir).exists()
+
     def test_an_init_that_writes_nothing_leaves_the_index_alone(self):
         """Matched control — the write-through follows a WRITE, not every call.
 

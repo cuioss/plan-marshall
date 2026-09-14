@@ -874,16 +874,28 @@ def api_init(project_dir: str = '.', check: bool = False, force: bool = False, r
     # The index write is batched into ONE ``_project.json`` write at the end
     # rather than one per module, so a whole-project reset does not rewrite the
     # index once per stub.
+    #
+    # The batch is flushed in a ``finally`` so the entries owed so far are
+    # written even when the loop raises partway through. Without it, the stubs
+    # already re-seeded carry a fresh generation header while ``_project.json``
+    # keeps describing the description and provenance those documents no longer
+    # carry — an index left behind by an aborted run is the staleness this
+    # write-through exists to remove. ``_cmd_enrich._batched_index_sync`` flushes
+    # its own owed entries on the way out for the same reason; this is the same
+    # guarantee for the one live-path writer that batches without a context
+    # manager. The ``if initialised:`` guard is kept, so a run that wrote nothing
+    # still performs no ``_project.json`` write.
     initialised: list[str] = []
-    for module_name in module_names:
-        path = get_module_enriched_path(module_name, project_dir)
-        if path.exists() and not reset:
-            continue
-        save_module_enriched(module_name, _empty_module_enrichment(), project_dir)
-        initialised.append(module_name)
-
-    if initialised:
-        sync_module_index(initialised, project_dir)
+    try:
+        for module_name in module_names:
+            path = get_module_enriched_path(module_name, project_dir)
+            if path.exists() and not reset:
+                continue
+            save_module_enriched(module_name, _empty_module_enrichment(), project_dir)
+            initialised.append(module_name)
+    finally:
+        if initialised:
+            sync_module_index(initialised, project_dir)
 
     return {
         'status': 'success',

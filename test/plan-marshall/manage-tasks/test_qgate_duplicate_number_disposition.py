@@ -2,10 +2,12 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the duplicate-number disposition across the mechanical Q-Gate.
 
-Four call sites index a caller-supplied deliverable or task number into a
-keyed collection: the prose map, the keyword-drift index and the acyclic
-check's ``in_degree`` graph in ``_cmd_qgate_mechanical``, and the closure index
-in ``_qgate_closure``. A bare subscript insert lets the LAST write win, which
+``index_unique_by_number`` is the shared indexer behind every site that keys a
+caller-supplied deliverable or task number into a collection, across
+``_cmd_qgate_mechanical`` and ``_qgate_closure``. The subject here is that
+indexer's disposition, not a roll-call of its callers: nothing below enumerates
+the call sites or counts them, so no cardinality is asserted that these tests do
+not verify. A bare subscript insert lets the LAST write win, which
 removes one record from the indexing caller's own population while the pass
 goes on reporting a measured verdict over the survivor — a completeness claim
 computed over a set one element short of what it says it examined.
