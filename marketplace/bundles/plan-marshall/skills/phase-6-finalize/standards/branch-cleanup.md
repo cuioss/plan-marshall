@@ -174,10 +174,12 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 #### Check for other open PRs using this branch
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-dir {worktree_path} pr list --head {head_branch} --state open
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-dir {worktree_path} pr list --head {head_branch} --state open --limit 100
 ```
 
-Extract count and details of other open PRs (excluding the current PR).
+`--limit` states the enumeration bound at the call site instead of inheriting the producer's default. It is **GitHub-only** — GitLab argparse-rejects it, so a GitLab project drops the flag rather than passing it through.
+
+Extract the details of other open PRs (excluding the current PR), and read `total` **together with** `truncated` rather than on its own: on GitHub `total` is a complete count only when `truncated: false`, and a `truncated: true` listing is a page whose `total` is a floor. GitLab reports no `truncated` field and its listing stays page-bounded. See [`tools-integration-ci/standards/pr-operations.md`](../../tools-integration-ci/standards/pr-operations.md) § "`truncated` — a page is not a population".
 
 ### Conflict-Severity Classifier
 
@@ -317,14 +319,25 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ### Safety Check: Other Open PRs
 
-If other open PRs were found using this branch as head:
+This check gates a destructive remote-branch deletion, so it **fails closed**. Two separate observations abort it, and only one observation lets cleanup proceed: a listing that enumerated the whole population and found no other open PR. An unenumerable population takes the **same** abort path as a positive count — never the proceed path.
+
+**Trigger 1 — other open PRs were found** using this branch as head:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level WARNING --message "[WARNING] (plan-marshall:phase-6-finalize) Branch cleanup aborted: {count} other open PR(s) use branch {head_branch}"
 ```
 
-→ Abort cleanup. The user was already informed about these PRs in the confirmation dialog but confirmed anyway — however, deleting a branch with dependent PRs is too destructive. Log and skip.
+**Trigger 2 — the population was not enumerated.** On GitHub a `truncated: true` listing is a page cut off at `--limit`, so its `total` is a floor and a zero count proves nothing about the branch's dependants. Re-read at a higher `--limit` first; abort when it still comes back truncated:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level WARNING --message "[WARNING] (plan-marshall:phase-6-finalize) Branch cleanup aborted: open-PR listing for branch {head_branch} is truncated at limit {limit}, so the population was not enumerated"
+```
+
+This trigger is GitHub-only, because the field it reads is. GitLab reports no `truncated` field at all — do not look for one there; on that provider the check rests on Trigger 1 alone.
+
+→ Abort cleanup on **either** trigger. On Trigger 1 the user was already informed about those PRs in the confirmation dialog but confirmed anyway — however, deleting a branch with dependent PRs is too destructive. Log and skip.
 
 ### Read PR Merge Strategy
 
