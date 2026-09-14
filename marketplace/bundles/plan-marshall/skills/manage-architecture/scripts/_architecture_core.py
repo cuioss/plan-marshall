@@ -927,15 +927,11 @@ def save_module_document(module_name: str, document: dict[str, Any], project_dir
     worth opening, so a stale entry sends them to the wrong answer without ever
     failing.
 
-    The divergence was reachable from a real path rather than hypothetical:
-    ``api_init``'s repair/reset branch wrote through :func:`save_module_enriched`
-    directly with no index write-through at all, while the enrich verbs carried
-    the index through via this wrapper — so one of the two live writers kept the
-    index in step and the other did not. ``api_init`` now calls
-    :func:`sync_module_index` itself (batched across every repaired module, one
-    ``_project.json`` write rather than one per module) rather than going
-    through this wrapper — the shared invariant is the index write-through,
-    not a shared call site.
+    ``api_init``'s repair/reset branch is the other live-path writer, and it
+    calls :func:`sync_module_index` itself (batched across every repaired
+    module, one ``_project.json`` write rather than one per module) rather than
+    going through this wrapper — the shared invariant is the index
+    write-through, not a shared call site.
 
     ⛔ This is the LIVE-path writer and must not be used for staged writes.
     ``discover --force`` builds every document under a tmp directory it later

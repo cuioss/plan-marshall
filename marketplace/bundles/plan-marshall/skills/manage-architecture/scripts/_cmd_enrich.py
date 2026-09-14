@@ -96,14 +96,10 @@ def _save_module_document(module_name: str, document: dict[str, Any], project_di
 
     The un-batched branch calls
     :func:`_architecture_core.save_module_document`, the document-write +
-    index-write-through composition for a single-module live-path caller. The
-    index write-through itself is :func:`_architecture_core.sync_module_index`
-    — the piece every live writer shares — which used to live only here,
-    which is exactly why one of the two live writers (``api_init``) carried it
-    and the other did not before both were moved onto the shared core
-    functions. What stays enrich-side is only the BATCHING: inside
-    :func:`_batched_index_sync` the index write is deferred so ``enrich all``
-    pays one ``_project.json`` write instead of one per (module × domain) pair.
+    index-write-through composition for a single-module live-path caller. What
+    stays enrich-side is only the BATCHING: inside :func:`_batched_index_sync`
+    the index write is deferred so ``enrich all`` pays one ``_project.json``
+    write instead of one per (module × domain) pair.
 
     The batched branch therefore calls the plain document writer and records the
     owed module; the un-batched branch calls the document+index composition whole.
