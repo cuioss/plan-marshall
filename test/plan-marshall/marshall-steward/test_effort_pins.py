@@ -24,9 +24,7 @@ from pathlib import Path
 
 from conftest import get_script_path, load_script_module, run_script
 
-effort_pins = load_script_module(
-    'plan-marshall', 'marshall-steward', 'effort_pins.py', module_name='effort_pins'
-)
+effort_pins = load_script_module('plan-marshall', 'marshall-steward', 'effort_pins.py', module_name='effort_pins')
 
 
 def _write_map(tmp_path: Path, payload: dict) -> str:
