@@ -23,6 +23,12 @@ The level palette is intentionally small and ordinal — `level-1 → level-2 �
 
 The model column lists **aliases** (`fable`, `opus`, `sonnet`, `haiku`), not version-pinned IDs. See [Aliases, not IDs](#aliases-not-ids) below for rationale.
 
+> **Local provisioning pointer.** This table is unchanged by machine-local
+> provisioning: a target-owned effort-to-model map may satisfy a rung with a
+> local or provider-routed model post-resolve, but it never alters the rungs
+> themselves. See `doc/adr/021-machine-local-effort-to-model-map-and-resolve-chain-slot.adoc`
+> for the settled schema, slot, and never-escalate rule.
+
 ## Aliases, not IDs
 
 The level table maps to model **aliases** (`fable`, `opus`, `sonnet`, `haiku`) rather than version-pinned IDs (e.g., `claude-opus-4-8`). Rationale:

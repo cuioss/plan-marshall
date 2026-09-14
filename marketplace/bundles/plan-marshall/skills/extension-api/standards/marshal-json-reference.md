@@ -159,6 +159,19 @@ The `reader` surface resolves a LEVEL like the others; the dispatch site compose
 
 `orchestrator.auto_emit` is a scalar boolean, seeded at its default of `false`, read and written through the same `manage-config orchestrator get/set --field` verb as `parallelization_scope` and governed by its `reject_unknown_provisioning_field` whitelist. When `false` the orchestrator's post-landing queue-fill emit stays **stage-and-wait**: it produces the copy-paste block and records the `launched` transition only on operator confirmation. When `true` the emit fires automatically under the existing disjointness, prep-readiness and "only if sensible" guards. The knob automates the *emit*, never the *start* — the emit≠running invariant is absolute, and a colliding, blocked or unprepared candidate emits nothing and logs the shortfall rather than filling a slot with a bad emit.
 
+### Target-local effort-to-model provisioning (not a marshal.json path)
+
+Per-level effort-to-model provisioning carries **no marshal.json key by
+design**: the map is machine-local and target-owned, so it lives in a
+target-local file plus a target-specific manage skill under
+`marketplace/targets/opencode`, defined as part of the extension
+architecture. The schema (per-level entries with a `local`-vs-`provider`
+entry-kind discriminator), the post-resolve slot above the inherit fallback,
+and the narrow-but-never-escalate rule are settled in
+`doc/adr/021-machine-local-effort-to-model-map-and-resolve-chain-slot.adoc`,
+which is the single source — this section records only the home, not the
+schema.
+
 ## Project Configuration (marshal.json)
 
 Project-level settings under the `project.*` block — persist across plans, seeded by `init`, back-filled into existing projects by `sync-defaults`.

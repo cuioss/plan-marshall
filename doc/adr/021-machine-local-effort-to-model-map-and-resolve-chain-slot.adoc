@@ -1,0 +1,156 @@
+= ADR-021: Effort-to-model provisioning lives in target-local infra and resolves post-level above the inherit fallback
+:toc: left
+:toclevels: 2
+:sectnums:
+
+// adr-metadata
+// Progressive-disclosure metadata block (see manage-adr SKILL.md → "ADR Template
+// Structure"). Read by `manage-adr.py scan` so a caller can assess an ADR's
+// relevance without reading the full file. List fields are comma-separated.
+// summary: Per-level effort-to-model provisioning is a machine-local, target-owned map with a local-vs-provider entry-kind discriminator; it is consulted post-resolve for the exact resolved level only, never escalates above the resolved rung, and the inherit fallback is preserved as the universal default.
+// tags: effort, model-provisioning, resolve-chain, target-local, entry-kind, narrow-but-never-escalate, inherit-fallback
+// affects: plan-marshall, manage-config, extension-api, marshall-steward, opencode-target
+// supersedes:
+// end-adr-metadata
+
+// Authoring discipline (see manage-adr SKILL.md → "Authoring Discipline"):
+// ADRs are durable architectural statements, not incident write-ups. No PR numbers,
+// commit SHAs, dates, or lesson IDs anywhere in the body. CLAUDE.md's "current state
+// only" rule applies — describe the architecture, not the chronology.
+
+== Status
+
+Proposed
+
+== Context
+
+Effort resolution and model provisioning are two distinct decisions that
+currently collapse into one outcome on some targets. The resolver walks a
+target-neutral chain — per-sub-key override, phase default slot, phase
+plain-string effort, plan-wide effort — to a single level keyword on the
+ordinal palette (`level-1` through `level-7`, plus the `inherit` sentinel).
+What happens with that level afterwards is target-owned: one target pins a
+concrete model and effort per level at build time, while the OpenCode target
+emits its level variants model-less, so every dispatch inherits the session
+model regardless of the resolved level.
+
+Operators with machine-specific model capacity — locally available models on
+one hand, provider-routed configurations on the other — want the resolved
+level to provision a concrete model again on machines that have one, without
+losing the inherit behaviour everywhere else. Three properties of that want
+make it architectural rather than a configuration tweak:
+
+* **Machine variance must not be version-controlled.** Which local models or
+  provider routes exist differs per machine, so the map cannot live in
+  project-shared configuration without forcing every checkout to agree on
+  capacity it does not have.
+* **The entry kind matters.** A locally available model and a provider-routed
+  configuration fail differently, cost differently, and are configured
+  differently. A map without an entry-kind discriminator cannot be read,
+  validated, or provisioned correctly.
+* **The resolver is shared and must stay so.** The level walk is consumed by
+  every target. Any provisioning slot placed *inside* that walk perturbs a
+  contract all targets rely on; the slot must therefore sit *after* the walk,
+  where only the provisioning target observes it.
+
+== Decision
+
+**Per-level effort-to-model provisioning is a machine-local, target-owned map
+consulted post-resolve for the exact resolved level only. It never escalates
+above the resolved rung, and the inherit fallback is preserved as the
+universal default.**
+
+Four obligations follow, and they bind together:
+
+**1. Carry an entry-kind discriminator.** Every map entry declares its kind —
+`local` for a locally available model, `provider` for a provider-routed
+configuration. The kind decides which fields the entry carries and how the
+provisioning seam interprets it. An entry without a usable kind is
+unprovisioned, exactly as an absent entry is.
+
+**2. Live in target-local infrastructure.** The map and its manage skill are
+owned by the provisioning target (`marketplace/targets/opencode`), defined as
+part of the extension architecture. Project-shared configuration carries no
+new key for this map, and the generic machine-local store gains no parallel
+schema — one target, one home, no cross-target coupling.
+
+**3. Resolve post-level, above the inherit fallback.** The level walk is
+unchanged: the resolver returns the same level it returns today, and the
+build-time pinning of other targets is untouched. After the level is known,
+the provisioning seam consults the map for that exact level — a hit provisions
+the entry's model, a miss (or a resolved `inherit`) dispatches on the session
+model. Inherit-only therefore remains the behaviour everywhere the map is
+silent, and the workaround-turned-fallback is never removed.
+
+**4. Narrow but never escalate.** A map entry serves only its own level —
+never a neighbouring one — and a provisioned model never exceeds the
+capability of the resolved rung. Provisioning may satisfy a level more
+cheaply or more locally, but it may not silently upgrade the dispatch beyond
+what the resolved level requested.
+
+== Consequences
+
+=== Positive
+
+* Machines with local capacity regain per-level provisioning while machines
+  without it observe byte-identical behaviour to today — the map's silence is
+  the current inherit path, not a new fallback mode.
+* The shared resolver and the build-time bindings of other targets are
+  untouched, so the decision cannot regress a target that does not consume
+  the map.
+* The discriminator makes entries validatable: tooling can reject a provider
+  entry missing its route or a local entry missing its model without guessing
+  which was meant.
+
+=== Negative
+
+* One more resolution hop stands between the resolved level and the dispatch,
+  and its miss path must stay as fast and as quiet as the inherit it
+  preserves.
+* Target-local ownership means each provisioning target repeats the
+  file-plus-manage-skill shape rather than inheriting a shared schema; the
+  extension-architecture definition is what keeps those repetitions
+  conformant.
+
+=== Risks
+
+* **The map becomes a shadow level table.** If entries routinely remap levels
+  to unrelated capabilities, the ordinal palette stops meaning anything on
+  provisioning targets. Mitigation: the never-escalate obligation must be
+  enforced at the provisioning seam when WS-02 builds it — this ADR states
+  the requirement; the seam does not enforce it yet.
+* **Silent divergence between checkouts.** Two machines with different maps
+  dispatch the same plan to different models. Mitigation: the map is
+  machine-local by design and announced as such — reproducibility across
+  machines is explicitly not a property of provisioned dispatches, only of
+  the resolved levels, which remain shared and inspectable.
+
+== Alternatives Considered
+
+**Project-shared key for the map.** Carry the per-level map in the shared
+project configuration alongside the effort chain. Rejected: local model
+capacity and provider routes vary per machine, so version-controlling them
+forces checkouts to agree on capacity they do not have and leaks
+machine-specific routing into shared state.
+
+**Generic machine-local map for all targets.** Hold one target-neutral map in
+the shared machine-local store that every target consults. Rejected: it
+couples all targets to one schema and one seam for a concern only
+provisioning targets consume, and it invites the shared resolver to depend on
+a store that exists to stay target-specific.
+
+**Slot inside the level walk.** Consult the map as another rung of the
+resolve chain, before the inherit fallback. Rejected: the walk is the one
+contract every target shares, and threading a target-specific source through
+it perturbs resolution for consumers that never provision. The post-resolve
+slot keeps the resolver target-neutral and confines the new behaviour to the
+provisioning seam.
+
+== References
+
+* `marketplace/bundles/plan-marshall/skills/plan-marshall/standards/effort-variants.md` § Resolution Order — the target-neutral level walk this decision leaves unchanged.
+* `marketplace/bundles/plan-marshall/skills/plan-marshall/standards/effort-levels.md` § Level Table — the ordinal palette whose rungs bound provisioning under never-escalate.
+* `marketplace/bundles/plan-marshall/skills/extension-api/standards/marshal-json-reference.md` § Orchestrator Configuration — the polymorphic string-or-object shape the map's per-level entries mirror.
+* `marketplace/bundles/plan-marshall/skills/manage-config/scripts/_cmd_effort.py` § `_resolve_orchestrator_level` — the resolver seam whose post-level output the provisioning hook consumes.
+* `marketplace/targets/opencode/variant_emitter.py` § Inherit-only emission — the fallback this decision preserves.
+* `doc/concepts/extension-architecture.adoc` — the extension-architecture home of the target-local file-plus-manage-skill definition.
