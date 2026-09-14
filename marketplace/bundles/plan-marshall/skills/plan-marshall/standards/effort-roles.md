@@ -36,7 +36,7 @@ Per-phase effort config lives **inside the matching `plan.<phase>` entry** under
 
 Total: **5 phase role groups under `plan`**. Every group is polymorphic — its `effort` value may be a string (single-level shorthand for the entire phase) or an object whose sub-keys are listed below. **Zero mandatory keys**: a minimal config is `{}` and every dispatch resolves via `plan.effort` → `inherit`.
 
-A **sixth role group — `orchestrator`** — sits OUTSIDE `plan`: it is rooted at the top-level `orchestrator.effort` block (a sibling of `plan`, NOT a `plan.<phase>` entry) and governs the epic-orchestration identity's read-only analysis surfaces. It is documented in its own section (see "## Orchestrator role group" below) because its resolution root differs from the five phase groups; it is deliberately absent from the `plan`-scoped Storage-layout sample, Groups, and Per-phase-sub-keys tables above, which enumerate only the phase groups nested under `plan`.
+A **sixth role group — `orchestrator`** — sits OUTSIDE `plan`: it is rooted at the top-level `orchestrator.effort` block (a sibling of `plan`, NOT a `plan.<phase>` entry) and governs the epic-orchestration identity's dispatch surfaces — analysis and, for `analyze`/`decompose`, their write-bound drafting sub-steps alike. It is documented in its own section (see "## Orchestrator role group" below) because its resolution root differs from the five phase groups; it is deliberately absent from the `plan`-scoped Storage-layout sample, Groups, and Per-phase-sub-keys tables above, which enumerate only the phase groups nested under `plan`.
 
 ## Groups
 

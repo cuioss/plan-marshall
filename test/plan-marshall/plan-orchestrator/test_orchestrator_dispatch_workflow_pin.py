@@ -373,6 +373,16 @@ _NEGATION_RE = re.compile(
 
 _SENTENCE_SPLIT_RE = re.compile(r'(?<=[.!?])\s+')
 
+#: Negation is scoped to the CLAUSE, not the sentence: a semicolon-joined
+#: sentence legitimately pairs a permission clause with an unrelated
+#: prohibition clause ("a leaf MAY compose a document body; it MAY NOT call
+#: `manage-status`"), and checking negation over the whole sentence lets the
+#: second clause's "not" silently suppress a grant written in the first. The
+#: target/affirmative/negation triple is therefore checked per clause; only the
+#: leaf-mention stays sentence-scoped, because a later clause legitimately
+#: refers back to "leaf" with a pronoun ("it") rather than repeating the noun.
+_CLAUSE_SPLIT_RE = re.compile(r'(?<=[.!?;])\s+')
+
 #: A doc declares a dispatchable SPEC-BODY draft when it declares the return field
 #: that carries one. Keying on the declared field rather than on any mention of a
 #: spec draft is deliberate: the monotonic-resource constraint binds where the
@@ -380,8 +390,22 @@ _SENTENCE_SPLIT_RE = re.compile(r'(?<=[.!?])\s+')
 #: verb docs, not the shared rule that merely indexes the dispatch.
 _SPEC_BODY_DRAFT_RE = re.compile(r'(?i)\bspec_drafts\b|\bspec_body\b|drafted spec body')
 
-_MONOTONIC_CONSTRAINT_RE = re.compile(r'(?i)monotonic resource')
-_SELECTION_RULE_RE = re.compile(r'(?i)selection rule')
+#: The monotonic-resource constraint and the selection rule it substitutes must
+#: be checked as ONE co-occurring pair, never as two independent whole-document
+#: searches. A bare `selection rule` search is unanchored and is satisfied by
+#: any occurrence anywhere in the document — including `orchestrate.md`'s own
+#: unrelated `next`-verb "selection rules" prose, which shares no relationship
+#: with the spec-body monotonic-resource constraint. Two independent searches
+#: would therefore still report the constraint present even if the real
+#: sentence pairing the two phrases were deleted, so long as an unrelated
+#: "selection rule(s)" mention survived elsewhere in the same document. The
+#: bounded window (crossing a sentence boundary, since the constraint spans two
+#: sentences in both verb docs, but not a whole document) requires the two
+#: phrases to actually co-occur near each other rather than merely both exist.
+_MONOTONIC_SELECTION_PROXIMITY_RE = re.compile(
+    r'(?i)monotonic resource[\s\S]{0,400}?selection rule'
+    r'|selection rule[\s\S]{0,400}?monotonic resource'
+)
 
 
 def _normalized(path: Path) -> str:
@@ -400,27 +424,35 @@ def _states_orchestrator_applies(text: str) -> bool:
 def _leaf_write_grants(text: str) -> list[str]:
     """Sentences that grant a dispatched leaf a ledger-write path.
 
-    A grant is a sentence that names a ``leaf``, names one of the forbidden write
-    targets, carries an affirmative permission or assertion, and carries NO
-    negation. All four conditions are load-bearing — dropping the negation
-    condition turns every prohibition in the containment rule into a reported
-    grant. The affirmative condition is deliberately wide rather than a list of
-    the verbs the current docs happen to use: a grant phrased with any other verb
-    names the same write path, and a narrow set silently excuses it (see
-    ``_AFFIRMATIVE_RE``).
+    A grant is a sentence that names a ``leaf`` and contains a CLAUSE that names
+    one of the forbidden write targets, carries an affirmative permission or
+    assertion, and carries NO negation. The leaf-mention stays sentence-scoped
+    (a later clause may refer back to it as "it"), but the target/affirmative/
+    negation triple is checked per CLAUSE, split additionally on `;`: a
+    semicolon-joined sentence legitimately pairs a permission clause with an
+    unrelated prohibition clause ("a leaf MAY compose X; it MAY NOT call Y"),
+    and scoping negation to the whole sentence would let the second clause's
+    "not" silently suppress a grant written in the first. All four conditions
+    are load-bearing — dropping the negation condition turns every prohibition
+    in the containment rule into a reported grant. The affirmative condition is
+    deliberately wide rather than a list of the verbs the current docs happen to
+    use: a grant phrased with any other verb names the same write path, and a
+    narrow set silently excuses it (see ``_AFFIRMATIVE_RE``).
     """
     grants: list[str] = []
     for sentence in _SENTENCE_SPLIT_RE.split(text):
-        lowered = sentence.lower()
-        if not re.search(r'\bleaf\b', lowered):
+        if not re.search(r'\bleaf\b', sentence.lower()):
             continue
-        if not any(target in lowered for target in _FORBIDDEN_WRITE_TARGETS):
-            continue
-        if not _AFFIRMATIVE_RE.search(lowered):
-            continue
-        if _NEGATION_RE.search(lowered):
-            continue
-        grants.append(' '.join(sentence.split()))
+        for clause in _CLAUSE_SPLIT_RE.split(sentence):
+            lowered = clause.lower()
+            if not any(target in lowered for target in _FORBIDDEN_WRITE_TARGETS):
+                continue
+            if not _AFFIRMATIVE_RE.search(lowered):
+                continue
+            if _NEGATION_RE.search(lowered):
+                continue
+            grants.append(' '.join(sentence.split()))
+            break
     return grants
 
 
@@ -529,7 +561,7 @@ class TestDraftingDispatchWritePathContainment:
         uncovered = [
             doc.name
             for doc in spec_body_docs
-            if not (_MONOTONIC_CONSTRAINT_RE.search(texts[doc]) and _SELECTION_RULE_RE.search(texts[doc]))
+            if not _MONOTONIC_SELECTION_PROXIMITY_RE.search(texts[doc])
         ]
 
         assert not uncovered, (
@@ -538,6 +570,40 @@ class TestDraftingDispatchWritePathContainment:
             'A draft that embeds an assumed PLAN-NN ordinal instead of the selection rule would be '
             f'silently accepted, and it collides with a sibling staged against the same HEAD. '
             f'{_evidence(population)}'
+        )
+
+    def test_a_distant_unrelated_selection_rule_mention_does_not_satisfy_the_constraint(self, tmp_path):
+        # The gap this control closes: checking "monotonic resource" and
+        # "selection rule" as two independent whole-document searches is
+        # satisfied by any UNRELATED "selection rule(s)" mention anywhere in the
+        # document — such as orchestrate.md's own next-verb selection rules,
+        # which share nothing with the spec-body monotonic-resource constraint.
+        # Deleting the real paired sentence while such an unrelated mention
+        # survives elsewhere must still fail the check.
+        far_apart = tmp_path / 'far-apart.md'
+        far_apart.write_text(
+            'A drafted spec body MUST NOT reserve a monotonic resource by assumption.\n\n'
+            + ('Padding paragraph unrelated to either phrase. ' * 40)
+            + '\n\nSeparately, the orchestrate.md next verb has its own selection rules governing '
+            'slot admission, unrelated to spec-body drafting.\n',
+            encoding='utf-8',
+        )
+
+        assert not _MONOTONIC_SELECTION_PROXIMITY_RE.search(_normalized(far_apart)), (
+            'the proximity check was satisfied by two unrelated mentions of the two phrases far '
+            'apart in the same document — it must require them to co-occur, not merely both exist'
+        )
+
+        close_together = tmp_path / 'close-together.md'
+        close_together.write_text(
+            'A drafted spec body MUST NOT reserve a monotonic resource by assumption. The draft '
+            'states the selection rule and the orchestrator performs the allocation.\n',
+            encoding='utf-8',
+        )
+
+        assert _MONOTONIC_SELECTION_PROXIMITY_RE.search(_normalized(close_together)), (
+            'the proximity check missed the real paired sentence — the window is too narrow for '
+            'the constraint as it is actually phrased in the shipped verb docs'
         )
 
     def test_a_drafting_declaration_without_the_applies_clause_is_detected(self, tmp_path):
@@ -645,3 +711,28 @@ class TestDraftingDispatchWritePathContainment:
         )
 
         assert _leaf_write_grants(_normalized(rule)) == []
+
+    def test_a_grant_sharing_a_sentence_with_an_unrelated_prohibition_is_detected(self, tmp_path):
+        # The gap this control closes: negation used to be checked over the
+        # WHOLE sentence, so a semicolon-joined sentence pairing a real grant in
+        # one clause with an unrelated prohibition in another clause let the
+        # prohibition's "not" silently suppress the grant. This fixture mirrors
+        # the real shape at orchestration-model.md's write-freedom bullet (a
+        # permission clause followed by `;` and an unrelated `MAY NOT` clause),
+        # but with the first clause naming an ACTUAL forbidden target so a
+        # sentence-scoped negation check would have missed it.
+        sentence_scoped = re.compile(r'\b(?:not|never|nothing|no|none|cannot)\b')
+        fixture = tmp_path / 'clause-scoped-grant.md'
+        fixture.write_text(
+            'The leaf writes the queue row itself via `manage-status`; it may not touch '
+            '`epic.md` directly.\n',
+            encoding='utf-8',
+        )
+
+        found = _leaf_write_grants(_normalized(fixture))
+
+        assert found, 'the grant scan missed a real grant sharing a sentence with an unrelated prohibition'
+        assert sentence_scoped.search(fixture.read_text(encoding='utf-8').lower()), (
+            'the fixture is supposed to carry a negation word somewhere in the sentence — otherwise '
+            'this control does not exercise clause-scoping at all'
+        )
