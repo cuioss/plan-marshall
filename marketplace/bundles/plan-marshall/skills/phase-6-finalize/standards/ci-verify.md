@@ -132,30 +132,24 @@ not re-typed per finalize).
 ## Placement
 
 `ci-verify` runs immediately AFTER `create-pr` and BEFORE
-`architecture-refresh`. Rationale: `create-pr` is the first moment at
-which a server-side CI run exists to consume; `architecture-refresh`,
-`automatic-review`, and `sonar-roundtrip` all benefit from the CI
-verdict already being triaged when they run. Placing `ci-verify`
-between `automatic-review` and `sonar-roundtrip` would be wrong —
-`automatic-review` can itself depend on CI conclusions the reviewer-bot
-observed, and waiting until then to surface CI failures delays the
-loop-back signal unnecessarily.
+`automatic-review`. Rationale: `create-pr` is the first moment at
+which a server-side CI run exists to consume; `automatic-review` and
+`sonar-roundtrip` both benefit from the CI verdict already being
+triaged when they run. Placing `ci-verify` between `automatic-review`
+and `sonar-roundtrip` would be wrong — `automatic-review` can itself
+depend on CI conclusions the reviewer-bot observed, and waiting until
+then to surface CI failures delays the loop-back signal unnecessarily.
 
-The canonical default order:
-
-```text
-pre-submission-self-review
-push
-create-pr
-ci-verify          ← here
-architecture-refresh
-automatic-review
-sonar-roundtrip
-record-metrics
-archive-plan
-branch-cleanup
-lessons-capture
-```
+The canonical order is each step's own `order:` frontmatter value — `ci-verify`
+declares `22`, between `create-pr` (`20`) and `automatic-review` (`30`). See
+[`../SKILL.md`](../SKILL.md) § "Step Types" for the authority (and the
+central lane/order contract in
+[`../../extension-api/standards/ext-point-finalize-step.md`](../../extension-api/standards/ext-point-finalize-step.md));
+a hand-maintained copy of the full step list is not kept here, for
+the same reason `pre-submission-self-review.md` removed its own — a second
+enumeration of a registry-derived order has to be re-edited on every step
+added, removed, or reordered, and a copy that falls behind states an order
+the registry does not have.
 
 ## Precondition mode
 
