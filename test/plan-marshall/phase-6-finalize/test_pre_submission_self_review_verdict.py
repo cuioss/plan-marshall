@@ -876,6 +876,31 @@ def _branch_label(body: str) -> str:
     return body.split('\n', 1)[0]
 
 
+#: A branch's own "Precondition — ..." paragraph(s) — the line(s) a closing
+#: decision's actual gate is written on, distinct from the label above it and
+#: from the rest of the branch's unrelated prose.
+_BRANCH_PRECONDITION = re.compile(r'^\*\*Precondition.*$', re.MULTILINE)
+
+
+def _branch_precondition(body: str) -> str:
+    """The branch's own Precondition paragraph(s), joined.
+
+    A branch with none returns the empty string — callers combine this with
+    the label rather than assuming every branch carries a Precondition line.
+    """
+    return '\n'.join(_BRANCH_PRECONDITION.findall(body))
+
+
+def _branch_selector(body: str) -> str:
+    """The text a branch's routing decision is actually keyed on.
+
+    The label plus any Precondition paragraph(s) — never the whole body, whose
+    unrelated prose could accidentally mention a token this file checks for and
+    let a branch pass on the strength of a sentence that decides nothing.
+    """
+    return _branch_label(body) + '\n' + _branch_precondition(body)
+
+
 def _branch_bodies() -> dict[str, str]:
     """The Step 4 branch bodies of the real workflow document."""
     return _slice_branches(_optional_section(_doc_text(), _BRANCH_A_SECTION_HEADING))
@@ -943,18 +968,25 @@ def test_no_branch_records_done_without_an_answered_stop_question():
     next assertion checks separately. Skipping a whole branch because it mentions
     the carve-out would let a branch that LOST the stop answer pass on the
     strength of a sentence about a different path.
+
+    Scoped to the branch's SELECTOR (label + Precondition paragraph(s)), not the
+    whole body: a whole-body scan accepts the stop answer appearing anywhere,
+    including unrelated prose that never actually gates the `mark-step-done`
+    call — the regex-over-fit class this plan's own self-review sweeps for.
     """
     doc = _doc_text()
     if not _independence_is_implemented(doc):
         return
 
-    offenders = [letter for letter, body in _branches_recording_done().items() if _STOP_ANSWER_YES not in body]
+    offenders = [
+        letter for letter, body in _branches_recording_done().items() if _STOP_ANSWER_YES not in _branch_selector(body)
+    ]
 
     assert not offenders, (
         f'Step 4 branch(es) {offenders} record `--outcome done` without requiring '
-        f'{_STOP_ANSWER_YES!r}. A `done` recorded on an unanswered stop question is '
-        f'the author closing the review on its own verdict, which is the '
-        f'arrangement this deliverable replaced.'
+        f'{_STOP_ANSWER_YES!r} in their label or Precondition paragraph. A `done` '
+        f'recorded on an unanswered stop question is the author closing the review '
+        f'on its own verdict, which is the arrangement this deliverable replaced.'
     )
 
 
