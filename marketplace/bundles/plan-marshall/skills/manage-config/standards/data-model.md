@@ -148,6 +148,7 @@ JSON structure and field definitions for project configuration.
       "project_key": "cuioss_plan-marshall"
     }
   },
+  "interaction_mode": "advanced",
   "project_dir": "/absolute/path/to/project",
   "runtime": {
     "target": "claude"
@@ -303,6 +304,26 @@ Read/write via `manage-config orchestrator get/set --field auto_emit`: `get` ret
 ### Validation
 
 The whole block is validated by `validate_orchestrator_block` (`_config_defaults.py`): the seeded shape (`{"auto_emit": false, "effort": {}, "parallelization_scope": 1}`) passes trivially, as does a legacy block carrying only `{"auto_emit": false}`; a populated block rejects any top-level key outside `{effort, parallelization_scope, auto_emit}`, any `orchestrator.effort` object key outside `{analyze, decompose, reader, default, max}`, any non-`ALLOWED_LEVELS` effort value, a `parallelization_scope` that is not an int `>= 1`, and an `auto_emit` that is not a bool.
+
+## Section: interaction_mode
+
+A top-level scalar **sibling of `plan`** (not a child of it) naming how plan-marshall interacts with the operator. Seeded on `init` at its default and back-filled into existing projects by `sync-defaults`' non-destructive deep-merge; `save_config` orders it canonically between `credentials_config` and `project` (see `CANONICAL_TOP_LEVEL_KEY_ORDER` in `_config_core.py`).
+
+### Structure
+
+```json
+{
+  "interaction_mode": "advanced"
+}
+```
+
+### Fields
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `interaction_mode` | string (`basic`\|`advanced`\|`expert`) | `"advanced"` | How much the operator is told and asked while work runs — never what gets built or which checks run. `basic` ⇒ short check-ins at the important moments; `advanced` ⇒ the full standard surface; `expert` ⇒ terse output for operators who drive with explicit overrides (e.g. `--domain-override`), never re-enabling retired prompts. The per-mode behaviour contract is [`interaction-mode.md`](interaction-mode.md). |
+
+Read via `manage-config interaction-mode get --field interaction_mode`: returns the persisted value, falling back to the canonical default (`advanced`) from `DEFAULT_INTERACTION_MODE` when the key is unset. Write via `manage-config interaction-mode set --field interaction_mode --value {basic|advanced|expert}`: the field routes through the shared provisioning-write guard (`reject_unknown_provisioning_field`) and the value through `validate_interaction_mode`, so a typo'd field or an out-of-schema value fails closed with `status: error` instead of persisting silently. See [`api-reference.md` § Noun: interaction-mode](api-reference.md#noun-interaction-mode).
 
 ## Section: plan.phase-6-finalize step params — review-bot participation
 

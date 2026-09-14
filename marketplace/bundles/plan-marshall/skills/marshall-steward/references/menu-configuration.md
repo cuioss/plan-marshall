@@ -21,13 +21,14 @@ The exit-code contract for every `python3 .plan/execute-script.py` call in this 
 - [Configuration: Display Timezone](#configuration-display-timezone)
 - [Configuration: Merge Queue](#configuration-merge-queue)
 - [Configuration: Commit Trailer](#configuration-commit-trailer)
+- [Configuration: Interaction Mode](#configuration-interaction-mode)
 - [Configuration: Recipes](#configuration-recipes)
 
 ---
 
 ## Configuration Submenu
 
-The Configuration submenu has 14 options, which exceeds the `AskUserQuestion` 4-option cap. It is presented as a multi-page paginated menu following the "More actions..." pattern documented in `plan-marshall/workflow/planning.md` (§ Action: list): options are chunked into pages of ≤4, every non-final page reserves its 4th slot for a "More..." continuation that triggers the next page's `AskUserQuestion`, and the final page exposes a "Back" element returning to the Main Menu without quitting.
+The Configuration submenu has 15 options, which exceeds the `AskUserQuestion` 4-option cap. It is presented as a multi-page paginated menu following the "More actions..." pattern documented in `plan-marshall/workflow/planning.md` (§ Action: list): options are chunked into pages of ≤4, every non-final page reserves its 4th slot for a "More..." continuation that triggers the next page's `AskUserQuestion`, and the final page exposes a "Back" element returning to the Main Menu without quitting.
 
 **Page 1** — first 3 options plus the "More..." continuation:
 
@@ -116,7 +117,7 @@ AskUserQuestion:
       description: "Check whether your host can queue merges and turn it on, so branches land one at a time"
       value: "merge-queue"
     - label: "More..."
-      description: "Shows the last entries: Commit Trailer, Full Reconfigure, and Back"
+      description: "Shows the last entries: Interaction Mode, Commit Trailer, Full Reconfigure, and Back"
       value: "more-4"
 ```
 
@@ -127,6 +128,9 @@ AskUserQuestion:
   question: "These are the last entries. Pick one, or go back if none of them is what you were after."
   header: "More config"
   options:
+    - label: "Interaction Mode"
+      description: "Change how much plan-marshall tells you and asks you while it works — short check-ins, the full surface, or terse expert output"
+      value: "interaction-mode"
     - label: "Commit Trailer"
       description: "Choose the co-author name and address that assistant-written commits are recorded under"
       value: "commit-trailer"
@@ -158,6 +162,7 @@ AskUserQuestion:
 | display-timezone | Load `Read references/menu-display-timezone.md` → Execute |
 | merge-queue | Load `Read references/merge-queue-setup.md` → Execute the provisioning flow |
 | more-4 | Present Configuration Page 5 `AskUserQuestion` |
+| interaction-mode | Execute "Configuration: Interaction Mode" below |
 | commit-trailer | Load `Read references/menu-commit-trailer.md` → Execute |
 | wizard | Load `Read references/wizard-flow.md` — skip to Step 5 (bootstrap already done) |
 | back | Do nothing → Return to the Main Menu |
@@ -917,6 +922,28 @@ Load and execute the dedicated reference:
 ```text
 Read references/menu-commit-trailer.md
 ```
+
+After completion, return to Main Menu.
+
+---
+
+## Configuration: Interaction Mode
+
+Re-surface the first-run interaction-mode choice (wizard-flow Step 6b) and rewrite the persisted top-level `interaction_mode` scalar. Show the current value first:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  interaction-mode get --field interaction_mode
+```
+
+Display the current mode, then re-ask the Step 6b `AskUserQuestion` verbatim — same question, same user-experience option descriptions (`Basic` / `Advanced (recommended)` / `Expert`) — and persist the newly selected `{mode}`:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  interaction-mode set --field interaction_mode --value {mode}
+```
+
+The choice only changes how much the operator is told and asked — never what gets built or which checks run. The per-mode behaviour contract is [`manage-config/standards/interaction-mode.md`](../../manage-config/standards/interaction-mode.md).
 
 After completion, return to Main Menu.
 

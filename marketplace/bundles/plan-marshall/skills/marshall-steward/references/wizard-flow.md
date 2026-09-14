@@ -307,6 +307,51 @@ Persisting on every option is what makes the answer stick: `phase-1-init` reads 
 
 ---
 
+## Step 6b: Interaction Mode
+
+Ask how plan-marshall should interact with the operator and persist the answer as the top-level `interaction_mode` scalar (`basic` | `advanced` | `expert`, default `advanced`). The modes are described by user experience, never by system behaviour — see [`manage-config/standards/interaction-mode.md`](../../manage-config/standards/interaction-mode.md) for the mode-to-behaviour mapping the answer opts into.
+
+**On non-first-run invocations** the prompt is skipped when a mode is already persisted:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  interaction-mode get --field interaction_mode
+```
+
+If the call returns `set: true`, keep the persisted value and continue. If it returns `set: false` (a pre-`interaction_mode` config that `sync-defaults` has not back-filled yet), proceed with the prompt below — answering seeds the key explicitly rather than leaving the implicit `advanced` fallback.
+
+**Prompt the operator** via `AskUserQuestion`:
+
+```text
+AskUserQuestion:
+  questions:
+    - question: "How much do you want plan-marshall to involve you while it works? Short check-ins at the important moments, the full standard surface, or terse output while you drive with explicit overrides?"
+      header: "Interaction mode"
+      description: |
+        This only changes how much you are told and asked — never what gets built or which checks run.
+
+        **Advanced** is the default: the full standard surface, a question whenever a decision is genuinely yours.
+      options:
+        - label: "Basic"
+          description: "Short answers and key points only — you check in at the important moments and otherwise stay out of the way"
+        - label: "Advanced (recommended)"
+          description: "The full standard surface — context where it matters, a question whenever a decision is genuinely yours"
+        - label: "Expert"
+          description: "Terse output for operators who drive with explicit overrides; never asks twice, never re-enables retired prompts"
+      multiSelect: false
+```
+
+**Every option persists** — including `Advanced`. Resolve the selection to `{mode}` (`basic`, `advanced`, or `expert`) and persist:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  interaction-mode set --field interaction_mode --value {mode}
+```
+
+Persisting the default explicitly is what makes the choice deliberate: an unset key silently resolves to `advanced` on every read, so skipping the write would leave no record that the operator ever chose it.
+
+---
+
 ## Step 7: Discover and Activate Providers
 
 See [provider-setup.md](provider-setup.md#provider-discovery-and-activation-step-7) for the full discovery and activation workflow; the CI sub-step auto-selects the CI provider on high-confidence detection with manual fallback.

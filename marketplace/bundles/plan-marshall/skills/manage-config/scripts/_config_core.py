@@ -159,6 +159,10 @@ CANONICAL_TOP_LEVEL_KEY_ORDER = [
     # by concern: a project-level capability block, not a provider or plan block.
     'code_intelligence',
     'credentials_config',
+    # `interaction_mode` is the top-level scalar preference naming how
+    # plan-marshall interacts with the operator (basic|advanced|expert). It sits
+    # in its alphabetical slot among the trailing keys that follow `build`.
+    'interaction_mode',
     'project',
     # `project_dir` and `runtime` are written at the top level by the platform
     # runtime seed (`project initial-setup`): the Claude seed writes both, the
@@ -339,6 +343,38 @@ def reject_unknown_provisioning_field(field: str, allowed_fields, block_name: st
             error_type='unknown_field',
         )
     return None
+
+
+def resolve_interaction_mode(config: dict) -> str:
+    """Return the effective top-level ``interaction_mode`` preference.
+
+    Reads ``config['interaction_mode']`` (never mutates ``config``). An absent
+    key resolves to the canonical default from ``_config_defaults`` (so a
+    pre-`interaction_mode` marshal.json behaves as ``advanced`` until
+    `sync-defaults` back-fills it). A present-but-invalid value fails closed
+    with :class:`ValueError` rather than resolving silently — marshal.json is
+    operator-editable and `sync-defaults` preserves an already-present key
+    without inspecting its value, so an unchecked read would propagate a typo'd
+    mode to every consumer.
+
+    Args:
+        config: The loaded marshal.json config dict (read-only).
+
+    Returns:
+        The resolved mode value (``basic`` | ``advanced`` | ``expert``).
+
+    Raises:
+        ValueError: If the persisted value is not a known mode.
+    """
+    # Lazy import — _config_defaults never imports this module, but the lazy
+    # form keeps the dependency direction one-way at import time, mirroring the
+    # other cross-module collaborator imports in this file.
+    from _config_defaults import DEFAULT_INTERACTION_MODE, validate_interaction_mode
+
+    value: object = config.get('interaction_mode', DEFAULT_INTERACTION_MODE)
+    validate_interaction_mode(value)
+    assert isinstance(value, str)
+    return value
 
 
 def _parse_skill_md_description(skill_path: Path, fallback: str) -> str:
