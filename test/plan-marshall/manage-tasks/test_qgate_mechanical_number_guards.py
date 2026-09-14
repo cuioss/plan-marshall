@@ -43,6 +43,7 @@ _check_acyclic = _qgate._check_acyclic
 _check_files_exist = _qgate._check_files_exist
 _check_keyword_drift = _qgate._check_keyword_drift
 _task_number = _qgate._task_number
+_as_int = _qgate._as_int
 
 #: A real repository file, so ``files_exist``'s existence predicate passes for a
 #: well-formed control and the only variable is the malformed number.
@@ -216,7 +217,7 @@ class TestAcyclicDropsUnnumberedTasks:
         """
         tasks = [_task(1), _task(2, depends_on=['TASK-1']), _task(value)]
 
-        failed, emitted = _check_acyclic('p', tasks, _no_emit(), emit=False)
+        failed, emitted, _population = _check_acyclic('p', tasks, _no_emit(), emit=False)
 
         assert failed == 0, 'dropping an unnumbered task must not read as an unvisited cycle member'
         assert emitted == 0
@@ -225,7 +226,7 @@ class TestAcyclicDropsUnnumberedTasks:
         """Positive control — the guard must not disarm cycle detection."""
         tasks = [_task(1, depends_on=['TASK-2']), _task(2, depends_on=['TASK-1'])]
 
-        failed, _emitted = _check_acyclic('p', tasks, _no_emit(), emit=False)
+        failed, _emitted, _population = _check_acyclic('p', tasks, _no_emit(), emit=False)
 
         assert failed == 1
 
@@ -233,9 +234,115 @@ class TestAcyclicDropsUnnumberedTasks:
         """An edge needs two identified endpoints; a dangling one is reported elsewhere."""
         tasks = [_task(_ABSENT), _task(2, depends_on=['TASK-1'])]
 
-        failed, _emitted = _check_acyclic('p', tasks, _no_emit(), emit=False)
+        failed, _emitted, _population = _check_acyclic('p', tasks, _no_emit(), emit=False)
 
         assert failed == 0
+
+
+# =============================================================================
+# _as_int — a non-integral number has no identity to truncate into
+# =============================================================================
+
+
+class TestAsIntRefusesANonIntegralNumber:
+    """``int(1.5) == 1`` would hand deliverable 1's identity to a fractional number.
+
+    The consequence is not a rounding inaccuracy: the truncated value becomes a
+    real key, so :func:`index_unique_by_number` either records a phantom
+    duplicate against the genuine deliverable 1 or keeps the wrong record as the
+    deterministic survivor, and every gap / completeness result downstream is
+    computed over a corrupted key set.
+    """
+
+    @pytest.mark.parametrize('value', [1.5, -0.5, 2.000001, float('nan'), float('inf'), float('-inf')])
+    def test_a_non_integral_number_is_unusable(self, value):
+        assert _as_int(value) is None, f'{value!r} has no integer identity and must not be truncated into one'
+
+    def test_the_string_spelling_was_already_refused(self):
+        """The two spellings of one value must not disagree.
+
+        ``int('1.5')`` raises, so the string path already returned ``None`` while
+        the float path truncated — the same input reaching two different
+        identities depending on how it was serialized.
+        """
+        assert _as_int('1.5') is None
+
+    @pytest.mark.parametrize(('value', 'expected'), [(2.0, 2), (-3.0, -3), (0.0, 0)])
+    def test_an_integer_valued_float_is_still_accepted(self, value, expected):
+        """Matched control — the narrowing is on INTEGRALITY, not on the float type.
+
+        JSON has one number type, so a task number written ``2`` can arrive as
+        ``2.0``. Refusing it would drop well-formed records from every population
+        that reads a number.
+        """
+        assert _as_int(value) == expected
+
+
+# =============================================================================
+# The DAG check publishes the population it measured over
+# =============================================================================
+
+
+class TestAcyclicPublishesItsPopulation:
+    """A "no cycle" verdict over a shortened node set is a completeness claim.
+
+    The check loses records on two paths before it examines anything — an
+    unusable number is DROPPED, and two records claiming one number COLLAPSE to
+    a single node — and neither loss was visible in ``(failed, emitted)``. The
+    sibling indexer in ``_qgate_closure`` already reports its collisions and its
+    docstring states the rule: a non-empty ``duplicate_numbers`` is a POPULATION
+    defect. This is that rule applied to the one site in the pair that lacked it.
+    """
+
+    def test_a_complete_population_is_reported_complete(self):
+        """Control first — the flag must be able to read True on a clean input."""
+        tasks = [_task(1), _task(2, depends_on=['TASK-1'])]
+
+        _failed, _emitted, population = _check_acyclic('p', tasks, _no_emit(), emit=False)
+
+        assert population['tasks_scanned'] == 2
+        assert population['nodes_indexed'] == 2
+        assert population['unusable_task_numbers'] == []
+        assert population['duplicate_task_numbers'] == []
+        assert population['population_complete'] is True
+
+    @pytest.mark.parametrize('value', _UNUSABLE)
+    def test_a_dropped_record_makes_the_population_incomplete(self, value):
+        """The record is absent from the graph, so the verdict covers less than it says."""
+        tasks = [_task(1), _task(value)]
+
+        _failed, _emitted, population = _check_acyclic('p', tasks, _no_emit(), emit=False)
+
+        assert population['tasks_scanned'] == 2
+        assert population['nodes_indexed'] == 1
+        assert population['unusable_task_numbers'] == [repr(value)]
+        assert population['population_complete'] is False
+
+    def test_two_records_claiming_one_number_are_disclosed_as_a_collapse(self):
+        """The node count says 1 where the record count says 2, and the number is named.
+
+        Still no phantom cycle — the denominator stays the node population — but
+        the collapse now reaches the caller instead of being absorbed silently.
+        """
+        tasks = [_task(1), _task(1)]
+
+        failed, _emitted, population = _check_acyclic('p', tasks, _no_emit(), emit=False)
+
+        assert failed == 0, 'a collapsed duplicate must not be reported as an unvisited cycle member'
+        assert population['tasks_scanned'] == 2
+        assert population['nodes_indexed'] == 1
+        assert population['duplicate_task_numbers'] == [1]
+        assert population['population_complete'] is False
+
+    def test_distinct_numbers_on_the_same_shape_stay_complete(self):
+        """Matched control for the collapse case — the difference is the NUMBER, nothing else."""
+        tasks = [_task(1), _task(2)]
+
+        _failed, _emitted, population = _check_acyclic('p', tasks, _no_emit(), emit=False)
+
+        assert population['nodes_indexed'] == 2
+        assert population['duplicate_task_numbers'] == []
+        assert population['population_complete'] is True
 
 
 # =============================================================================

@@ -336,34 +336,59 @@ def _check_acyclic(
     tasks: list[dict[str, Any]],
     persist_failures: list[dict[str, str]],
     emit: bool,
-) -> tuple[int, int]:
+) -> tuple[int, int, dict[str, Any]]:
     """Acyclic: depends_on across all tasks forms a DAG.
 
     Uses Kahn's algorithm — any node with non-zero remaining in-degree
     after processing belongs to a cycle. One finding per cycle root keeps
     the noise bounded for chained-cycle cases.
+
+    Returns ``(failed_count, findings_emitted, population)``. The population is
+    published rather than implied, for the same reason every closure check in
+    :mod:`_qgate_closure` publishes one: this check loses records on TWO paths
+    before it examines anything, and neither loss is visible in its verdict.
+
+    - A record whose ``number`` is unusable has no identity to be a node under,
+      so it is DROPPED from the graph entirely.
+    - Two records claiming one number COLLAPSE to a single node, because the
+      graph is keyed by number and nothing validates that a record's ``number``
+      field matches its ``TASK-NNN`` filename.
+
+    Either way the check goes on reporting a measured "no cycle" over a set
+    shorter than the one it says it examined — the completeness-over-a-shortened-set
+    defect. :func:`_qgate_closure.index_unique_by_number` is the sibling that
+    already reports its collisions, and its docstring states the rule every
+    caller follows: a non-empty ``duplicate_numbers`` is a POPULATION defect,
+    not a verdict. This check now follows it too, so the caller flips
+    ``ambiguous`` and the LLM dispatch re-evaluates instead of trusting a zero
+    computed over a collapsed graph.
     """
     failed = 0
     emitted = 0
 
-    # Build the graph over the tasks whose number is USABLE, dropping the rest.
-    # A record with an absent / null / non-numeric number cannot be a node — it
-    # has no identity to be a node under — so it is excluded from the graph and
-    # from the completeness comparison below. Comparing ``visited`` against the
-    # raw ``len(tasks)`` after dropping records would report a phantom cycle for
-    # every dropped record, so the denominator is the NODE population —
-    # ``len(in_degree)``, not ``len(numbered)``. The two differ: ``numbered`` is
-    # a list that may hold the same task number twice (nothing validates that a
-    # record's ``number`` field matches its ``TASK-NNN`` filename), while
-    # ``in_degree`` is keyed by number and therefore already collapsed to the
-    # DISTINCT nodes Kahn's algorithm can visit. Counting against the list would
-    # make ``visited < len(numbered)`` true with no cycle present, emitting a
-    # phantom-cycle finding whose ``cycle_members`` list is empty.
-    numbered: list[tuple[int, dict[str, Any]]] = []
-    for t in tasks:
-        n = _as_int(t.get('number'))
-        if n is not None:
-            numbered.append((n, t))
+    # Index by number through the shared indexer, which keeps the FIRST record
+    # for a repeated number and REPORTS the collision. A record whose number is
+    # unusable is dropped by that same guard; it is collected separately here so
+    # the drop reaches the published population rather than vanishing.
+    #
+    # The completeness comparison below still uses ``len(in_degree)`` — the NODE
+    # population — as its denominator, never a record count. Comparing
+    # ``visited`` against the raw ``len(tasks)`` would report a phantom cycle for
+    # every dropped or collapsed record, and the finding it emitted would name no
+    # task at all, because ``cycle_members`` is derived from the same already-collapsed
+    # ``in_degree``. Reporting the loss in the population is what makes the
+    # denominator honest without manufacturing a cycle.
+    by_number, duplicate_task_numbers = index_unique_by_number((t.get('number'), t) for t in tasks)
+    unusable_task_numbers = sorted(repr(t.get('number')) for t in tasks if _as_int(t.get('number')) is None)
+    numbered: list[tuple[int, dict[str, Any]]] = list(by_number.items())
+
+    population: dict[str, Any] = {
+        'tasks_scanned': len(tasks),
+        'nodes_indexed': len(by_number),
+        'unusable_task_numbers': unusable_task_numbers,
+        'duplicate_task_numbers': duplicate_task_numbers,
+        'population_complete': not unusable_task_numbers and not duplicate_task_numbers,
+    }
 
     by_id: dict[str, dict[str, Any]] = {}
     for n, t in numbered:
@@ -411,7 +436,7 @@ def _check_acyclic(
             emit=emit,
         )
 
-    return failed, emitted
+    return failed, emitted, population
 
 
 def _check_files_exist(
@@ -725,7 +750,7 @@ def cmd_qgate_mechanical(args) -> dict[str, Any]:
     findings_emitted += e
     checks['skill_resolution'] = {'failed': skill_failed}
 
-    acyclic_failed, e = _check_acyclic(plan_id, all_tasks, persist_failures, emit=emit)
+    acyclic_failed, e, acyclic_population = _check_acyclic(plan_id, all_tasks, persist_failures, emit=emit)
     findings_emitted += e
     checks['acyclic'] = {'failed': acyclic_failed}
 
@@ -793,11 +818,22 @@ def cmd_qgate_mechanical(args) -> dict[str, Any]:
     # guarantee and a coincidence: a glob that matches nothing looks identical
     # to a glob that matches everything, and only the published population
     # separates them.
+    #
+    # ``acyclic`` joins the two closure checks here on the same footing. It is not
+    # a closure check, but it is the third site that loses records before it
+    # measures — dropping an unusable task number and collapsing a duplicate one —
+    # and a "no cycle" computed over a shortened node set is the same
+    # completeness-over-an-unscanned-set claim.
     population = {
+        'acyclic': acyclic_population,
         'declared_set_closure': closure_population,
         'declared_scope_reconciliation': scope_population,
     }
-    population_complete = bool(closure_population['population_complete'] and scope_population['population_complete'])
+    population_complete = bool(
+        acyclic_population['population_complete']
+        and closure_population['population_complete']
+        and scope_population['population_complete']
+    )
     ambiguous = not parseable or not population_complete
 
     return {

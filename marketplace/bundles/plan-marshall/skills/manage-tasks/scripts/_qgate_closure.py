@@ -90,9 +90,23 @@ def _as_int(value: Any) -> int | None:
     be absent, null, or a string. Returning ``None`` rather than raising keeps
     the malformed case a POPULATION fact the caller discloses, instead of an
     exception that would abort the whole closure pass over one bad record.
+
+    ⛔ A non-integral number is UNUSABLE, never truncated. ``int(1.5)`` is ``1``,
+    so a fractional deliverable number would silently take deliverable 1's
+    identity: :func:`index_unique_by_number` would then either record a phantom
+    duplicate or keep the wrong record as the deterministic survivor, and every
+    gap / completeness result downstream would be computed over a corrupted key
+    set — a population defect wearing the shape of a measured verdict. The
+    string path already refused it (``int('1.5')`` raises ``ValueError``), so
+    truncating the float was also an inconsistency between two spellings of the
+    same value.
     """
     if isinstance(value, bool) or value is None:
         return None
+    if isinstance(value, float):
+        # Reject NaN / ±inf too: neither is_integer() nor int() gives a usable
+        # identity for them, and int() raises on both.
+        return int(value) if value.is_integer() else None
     try:
         return int(value)
     except (TypeError, ValueError):

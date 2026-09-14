@@ -2,13 +2,18 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the duplicate-number disposition across the mechanical Q-Gate.
 
-Three call sites index a caller-supplied deliverable or task number into a
-keyed collection: the prose map and the keyword-drift index in
-``_cmd_qgate_mechanical``, and the closure index in ``_qgate_closure``. A bare
-subscript insert lets the LAST write win, which removes one record from the
-indexing caller's own population while the pass goes on reporting a measured
-verdict over the survivor — a completeness claim computed over a set one
-element short of what it says it examined.
+Four call sites index a caller-supplied deliverable or task number into a
+keyed collection: the prose map, the keyword-drift index and the acyclic
+check's ``in_degree`` graph in ``_cmd_qgate_mechanical``, and the closure index
+in ``_qgate_closure``. A bare subscript insert lets the LAST write win, which
+removes one record from the indexing caller's own population while the pass
+goes on reporting a measured verdict over the survivor — a completeness claim
+computed over a set one element short of what it says it examined.
+
+The acyclic check is the site that came last: it was already immune to the
+PHANTOM-CYCLE direction (its denominator is the node count, not the record
+count) but published nothing about the records it dropped or collapsed, so its
+"no cycle" was still a verdict over a shortened set.
 
 Every test here is paired with a control on the same shape and a distinct
 number, because the assertions are about a DIFFERENCE (duplicate vs not) and a
@@ -17,6 +22,7 @@ fixture that can only produce one of the two verdicts measures nothing.
 
 from __future__ import annotations
 
+import json
 from argparse import Namespace
 
 from _qgate_closure_fixtures import (
@@ -151,21 +157,50 @@ def test_the_same_outline_numbered_apart_is_not_ambiguous(plan_context):
 # =============================================================================
 
 
-def test_duplicate_task_numbers_do_not_manufacture_a_phantom_cycle():
-    """Kahn's denominator is the NODE count, not the record count.
+def test_duplicate_task_numbers_are_disclosed_rather_than_absorbed():
+    """Kahn's denominator is the NODE count — and the collapse is PUBLISHED.
 
     ``in_degree`` is keyed by task number, so two records sharing a number
     collapse to one node. Comparing ``visited`` against the record LIST would
     make the shortfall true with no cycle present — and the finding it emits
     names no task at all, because ``cycle_members`` is derived from the same
-    already-collapsed ``in_degree``.
+    already-collapsed ``in_degree``. So the check must NOT fire a cycle finding.
+
+    But not firing is only half the disposition, and the half that was missing is
+    the one this module exists to enforce: a clean ``(0, 0)`` return said the
+    graph was acyclic over a node set one record shorter than the list handed in,
+    with nothing in the result saying so. That is the same
+    completeness-over-a-shortened-set claim ``index_unique_by_number`` refuses at
+    its own call sites — "Every caller treats a non-empty ``duplicate_numbers``
+    as a POPULATION defect" — and the DAG check was the one site in the pair not
+    following it.
     """
     tasks = [_task(1, 1, [_REAL_A]), _task(1, 1, [_REAL_B])]
 
-    failed, emitted = check_acyclic('dup-task-number', tasks, [], emit=False)
+    failed, emitted, population = check_acyclic('dup-task-number', tasks, [], emit=False)
+
+    assert failed == 0, 'a collapsed duplicate must not read as an unvisited cycle member'
+    assert emitted == 0
+    assert population['duplicate_task_numbers'] == [1]
+    assert population['tasks_scanned'] == 2
+    assert population['nodes_indexed'] == 1
+    assert population['population_complete'] is False
+
+
+def test_distinct_task_numbers_keep_the_population_claim():
+    """Control: the same two records, numbered apart, publish a complete population.
+
+    Without it, the disclosure above could be produced by a check that reported
+    a collapse unconditionally.
+    """
+    tasks = [_task(1, 1, [_REAL_A]), _task(2, 1, [_REAL_B])]
+
+    failed, _emitted, population = check_acyclic('distinct-task-numbers', tasks, [], emit=False)
 
     assert failed == 0
-    assert emitted == 0
+    assert population['duplicate_task_numbers'] == []
+    assert population['nodes_indexed'] == 2
+    assert population['population_complete'] is True
 
 
 def test_a_real_cycle_is_still_reported():
@@ -175,6 +210,37 @@ def test_a_real_cycle_is_still_reported():
         {**_task(2, 1, [_REAL_B]), 'depends_on': ['TASK-001']},
     ]
 
-    failed, _emitted = check_acyclic('real-cycle', tasks, [], emit=False)
+    failed, _emitted, _population = check_acyclic('real-cycle', tasks, [], emit=False)
 
     assert failed == 1
+
+
+def test_a_duplicate_task_number_makes_the_mechanical_pass_ambiguous(plan_context):
+    """End-to-end: the collapse withholds the pass's authority, as the outline case does.
+
+    The deliverable-number sibling above already reaches ``ambiguous`` through
+    ``declared_set_closure``. This is the task-number half of the same rule
+    arriving at the same place, so a plan whose task records collapse cannot be
+    signed off by a mechanical zero.
+    """
+    plan_dir = plan_context.plan_dir_for('dup-task-number-e2e')
+    _write_outline(
+        plan_dir,
+        f'### 1. Widen the sweep\n\n**Affected files:**\n- `{_REAL_A}` (write-replace)\n',
+    )
+    # Two task FILES whose records both claim number 1. The second is written
+    # directly rather than through ``_write_task_file``, which derives the
+    # filename FROM the record's number and would therefore overwrite the first.
+    # Nothing in production validates that a record's ``number`` matches its
+    # TASK-NNN filename, which is exactly what makes this collapse reachable from
+    # a real plan directory rather than only from a hand-built list.
+    task_dir = plan_dir / 'tasks'
+    _write_task_file(task_dir, _task(1, 1, [_REAL_A]))
+    collided = json.loads((task_dir / 'TASK-001.json').read_text(encoding='utf-8'))
+    (task_dir / 'TASK-002.json').write_text(json.dumps(collided, indent=2), encoding='utf-8')
+
+    result = cmd_qgate_mechanical(Namespace(plan_id='dup-task-number-e2e', no_emit=True))
+
+    assert result['population']['acyclic']['duplicate_task_numbers'] == [1]
+    assert result['population_complete'] is False
+    assert result['ambiguous'] is True

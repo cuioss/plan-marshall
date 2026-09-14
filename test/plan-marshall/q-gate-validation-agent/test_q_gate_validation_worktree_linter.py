@@ -551,11 +551,26 @@ def _unmarked_literal_hits(
     beside the verdict because an empty population makes a clean result vacuous:
     "no unmarked literal" and "no literal" are different facts, and only the
     count tells them apart.
+
+    ⛔ The marker context is reset across a LINE-NUMBER DISCONTINUITY.
+    ``numbered_lines`` is not one contiguous span: ``_numbered_lines_outside_section``
+    concatenates the region before the excluded section with the region after it,
+    so the last line before the section and the first line after it sit adjacent
+    in this list while being far apart in the file. Carrying ``previous`` across
+    that seam makes a marker on the pre-section line suppress the first unmarked
+    literal following the section — one line of the very region this guard exists
+    to keep detectable, silently exempted by a marker that does not precede it.
+    The reset keys on the line numbers rather than on knowledge of where the seam
+    falls, so it holds for any number of excluded spans. ``population`` is
+    unaffected: it counts literal-bearing lines, not marker context.
     """
     violations: list[tuple[str, int, str]] = []
     population = 0
     previous = ''
+    previous_lineno: int | None = None
     for lineno, line in numbered_lines:
+        if previous_lineno is not None and lineno != previous_lineno + 1:
+            previous = ''
         for letter, detect in _WL_LITERAL_DETECTORS:
             if not detect(line):  # type: ignore[operator]
                 continue
@@ -563,6 +578,7 @@ def _unmarked_literal_hits(
             if not _line_is_anti_pattern_marked(line, previous):
                 violations.append((letter, lineno, line))
         previous = line
+        previous_lineno = lineno
     return violations, population
 
 
@@ -620,6 +636,56 @@ def test_the_outside_section_guard_honours_the_explicit_marker_arm() -> None:
     violations, population = _unmarked_literal_hits(synthetic)
     assert population == 2, f'Both synthetic lines must register in the population; got {population}.'
     assert violations == [], f'A marked literal must be suppressed by the explicit-marker arm; got {violations!r}.'
+
+
+def test_a_marker_does_not_suppress_across_the_excluded_span() -> None:
+    """The marker context stops at the seam between the two concatenated regions.
+
+    ``_numbered_lines_outside_section`` hands the guard the region BEFORE the
+    excluded section followed by the region AFTER it, so the two lines either
+    side of that join are adjacent in the list and far apart in the file. Reading
+    the pre-section line as the first post-section line's marker context makes a
+    marked line immediately before § 2.15 exempt the first unmarked literal after
+    it — one line of the region the guard exists to keep detectable, suppressed
+    by a marker that is nowhere near it.
+    """
+    # Arrange — line 10 carries a marker; line 40 is the far side of the seam and
+    # is unmarked. The line numbers are non-consecutive, which is the whole signal.
+    synthetic = [
+        (10, 'Anti-pattern — do NOT write `cd $WORKTREE && git status`.'),
+        (40, 'The worktree lives at .claude/worktrees/EXAMPLE-PLAN on disk.'),
+    ]
+
+    # Act
+    violations, population = _unmarked_literal_hits(synthetic)
+
+    # Assert
+    assert population == 2
+    assert [letter for letter, _lineno, _line in violations] == ['WL-B'], (
+        'The unmarked literal on the far side of the excluded span must be flagged; '
+        f'a marker 30 lines earlier is not its context. Got {violations!r}.'
+    )
+
+
+def test_a_marker_still_suppresses_the_line_it_actually_precedes() -> None:
+    """Matched control — the reset must fire on a DISCONTINUITY, not on every line.
+
+    Without this, the reset above is equally consistent with clearing ``previous``
+    unconditionally, which would disable the predecessor arm of the marker rule
+    everywhere and flag every literal whose marker sits on the line before it.
+    """
+    # Arrange — consecutive line numbers, marker on the predecessor.
+    synthetic = [
+        (10, 'Anti-pattern — the following form is forbidden:'),
+        (11, 'The worktree lives at .claude/worktrees/EXAMPLE-PLAN on disk.'),
+    ]
+
+    # Act
+    violations, population = _unmarked_literal_hits(synthetic)
+
+    # Assert
+    assert population == 1, f'Only the second line carries a literal; got {population}.'
+    assert violations == [], f'A marker on the genuine predecessor must still suppress; got {violations!r}.'
 
 
 # -----------------------------------------------------------------------------
