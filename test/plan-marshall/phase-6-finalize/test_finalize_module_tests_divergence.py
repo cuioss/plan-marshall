@@ -743,9 +743,20 @@ _DEGRADED_VARIANT_MARKER = 'module-tests DEGRADED'
 _DISPLAY_DETAIL_PAYLOAD = re.compile(r'--display-detail\s+"([^"]*)"')
 
 #: Tokens that mark a payload as reporting a module-tests arm that did NOT run.
-#: Derived from the document's own vocabulary for its three module-tests
-#: non-run paths rather than invented here.
+#: A hand-maintained FLOOR, not a derivation — the gate document's "Detail
+#: variant — module-tests ..." headings use inconsistent casing against their
+#: own `--display-detail` payloads (`un-gated` heading vs. `UN-GATED` payload),
+#: which defeats a single mechanical read. `test_module_tests_degradation_token_floor_covers_every_declared_variant`
+#: below guards the floor: it counts the document's own "module-tests" detail-variant
+#: headings and asserts that count against how many payloads this tuple actually
+#: covers, so a variant added under a new spelling fails loudly here instead of
+#: being silently excluded from the sweep above.
 _MODULE_TESTS_DEGRADATION_TOKENS = ('module-tests DEGRADED', 'module-tests UN-GATED', 'module-tests skipped')
+
+#: A "Detail variant — module-tests ..." heading, as the gate document renders one.
+#: Counts the document's OWN declared module-tests degradation variants, independent
+#: of whether `_MODULE_TESTS_DEGRADATION_TOKENS` currently covers them.
+_MODULE_TESTS_DETAIL_VARIANT_HEADING = re.compile(r'\*\*Detail variant — module-tests ')
 
 #: The claim a module-tests degradation payload must never make. NOT a blanket ban
 #: on the word "green": the same payload legitimately reports the arms that DID run
@@ -850,6 +861,30 @@ def test_no_module_tests_degradation_variant_claims_the_arm_is_green():
         f'These degradation payload(s) report the module-tests arm as green while '
         f'naming it as not run — a step record that contradicts itself, and the one '
         f'a consumer reads instead of the work log: {claiming_green}'
+    )
+
+
+def test_module_tests_degradation_token_floor_covers_every_declared_variant():
+    """The hand-maintained token floor must cover every variant the document declares.
+
+    :data:`_MODULE_TESTS_DEGRADATION_TOKENS` is a floor, not a derivation, so
+    nothing mechanically keeps it in step with the gate document. This guards
+    the gap directly: the document's OWN "Detail variant — module-tests ..."
+    headings are counted independently of the tuple, then compared against how
+    many payloads the tuple actually covers (`_module_tests_degradation_payloads`).
+    A degradation variant added under a spelling the tuple does not name would
+    grow the heading count without growing the covered-payload count, so this
+    assertion fails loudly instead of the sweep above silently passing over it.
+    """
+    declared_variant_count = len(_MODULE_TESTS_DETAIL_VARIANT_HEADING.findall(_gate_text()))
+    covered_payload_count = len(_module_tests_degradation_payloads())
+
+    assert declared_variant_count == covered_payload_count, (
+        f'The gate document declares {declared_variant_count} "module-tests" detail '
+        f'variant(s) but {_MODULE_TESTS_DEGRADATION_TOKENS!r} only covers '
+        f'{covered_payload_count} payload(s) — a variant was added under a spelling '
+        f'this floor does not name. Add the new spelling to '
+        f'_MODULE_TESTS_DEGRADATION_TOKENS.'
     )
 
 
