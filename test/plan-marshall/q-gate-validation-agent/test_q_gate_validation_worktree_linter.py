@@ -643,11 +643,13 @@ def test_a_marker_does_not_suppress_across_the_excluded_span() -> None:
 
     ``_numbered_lines_outside_section`` hands the guard the region BEFORE the
     excluded section followed by the region AFTER it, so the two lines either
-    side of that join are adjacent in the list and far apart in the file. Reading
-    the pre-section line as the first post-section line's marker context makes a
-    marked line immediately before § 2.15 exempt the first unmarked literal after
-    it — one line of the region the guard exists to keep detectable, suppressed
-    by a marker that is nowhere near it.
+    side of that join are adjacent in the list and far apart in the file. Were
+    the pre-section line read as the first post-section line's marker context,
+    a marked line immediately before § 2.15 would exempt the first unmarked
+    literal after it — one line of the region the guard exists to keep
+    detectable, suppressed by a marker that is nowhere near it. This test pins
+    the reset that keeps that from happening, regardless of whether the current
+    slice construction happens to insert a boundary element at the seam.
     """
     # Arrange — line 10 carries a marker; line 40 is the far side of the seam and
     # is unmarked. The line numbers are non-consecutive, which is the whole signal.

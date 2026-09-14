@@ -635,3 +635,9 @@ def test_module_docstring_points_at_cmd_handler_population_not_a_restated_roster
     assert verbs, 'no cmd_* handlers were discovered — the population is empty'
     assert 'def cmd_*' in doc, 'docstring no longer points at the def cmd_* population as the roster source'
     assert 'deliberately not restated' in doc, 'docstring no longer states that the roster is deliberately not restated'
+
+    restated_count = re.search(r'\b\d+\s+(?:total|handlers)\b', doc)
+    assert restated_count is None, (
+        f'docstring reintroduces a restated handler count ({restated_count.group()!r}) '
+        'alongside the pointer — this is the exact drift the pointer replaced'
+    )

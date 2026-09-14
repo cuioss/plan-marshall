@@ -207,8 +207,8 @@ def count_log_nodeids(lines: Iterable[str]) -> int:
 
     This is the could-not-look discriminator's population. Distinct rather than
     total because pytest names one nodeid several times in a verbose run (the
-    scheduling line, the PASSED line, the durations table), and a total would
-    report a single-test log as a rich one.
+    scheduling line and the PASSED line), and a total would report a
+    single-test log as a rich one.
 
     Only lines that :func:`is_pytest_result_line` accepts contribute. A nodeid
     on any other line is not evidence of a run — see that function for why the
