@@ -136,8 +136,20 @@ indistinguishable from "never registered", and a zero-edge answer that cannot ex
 exactly what the seam's provenance contract exists to prevent.
 
 ⚠ **It is not counted as having run.** `resolver_count` counts only resolvers whose status is not
-`not_dispatched`, so switching off *every* resolver makes the graph report `resolver_count: 0` and
-`capabilities` report `module_edges: not_derivable`. That is the truthful answer — the envelope
-genuinely cannot derive edges — and the non-empty `resolvers[]` alongside it is what distinguishes
-this from "no resolver is registered". Tell an operator who disables everything to expect exactly
-that, rather than leaving them to read it as a fault.
+`not_dispatched`, so switching off *every* resolver makes the graph report `resolver_count: 0`. The
+non-empty `resolvers[]` alongside it is what distinguishes this from "no resolver is registered".
+Tell an operator who disables everything to expect exactly that, rather than leaving them to read it
+as a fault.
+
+⛔ **`capabilities` does not follow `resolver_count` here, and this menu must not promise that it
+does.** `module_edges.status` is decided by the FULL producer population that reached the response —
+the dispatched resolvers PLUS the reserved non-resolver producers (`declared`, `sibling-cross-link`)
+stamped on the returned edges, reported as `edge_producers`. A declared `internal_dependencies` edge
+reaches the graph with no resolver dispatched at all, so a project carrying one reports
+`module_edges: derivable` with `producer_count: 0` even after this menu switches off every resolver.
+`not_derivable` is reported only when `resolver_count` is `0` **and** `edge_producers` is empty — no
+resolver ran and nothing declared put an edge in the graph either. Read the two together; a verdict
+taken off `producer_count` alone under-counts the producers that can put an edge in the graph and
+pairs `not_derivable` with a non-zero `derived_count`. See
+[`../../manage-architecture/standards/client-api.md`](../../manage-architecture/standards/client-api.md)
+§ `capabilities` for the authoritative statement.

@@ -11,6 +11,8 @@ touched module's ``enriched.json``.
 """
 
 import argparse
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -27,10 +29,87 @@ from _architecture_core import (
     load_module_enriched_or_empty,
     load_project_meta,
     require_project_meta_result,
+    save_module_document,
     save_module_enriched,
     save_project_meta,
+    sync_module_index,
     validate_package_key,
 )
+
+# =============================================================================
+# Concept document writer + root-index write-through
+# =============================================================================
+#
+# ``_project.json``'s ``modules`` block is the read-side pre-flight surface: a
+# consumer reads it alone to see each module's description and generation header
+# and decide which concept documents are worth opening. Only ``discover`` used to
+# refresh it, while every enrich verb rewrote the document — so the index went
+# stale against its own store on the first enrich after a discover, and reported
+# a description and a provenance the documents no longer carried.
+#
+# Every enrich write therefore goes through :func:`_save_module_document`, which
+# delegates to ``_architecture_core.save_module_document`` — the SHARED live-path
+# operation that persists the document and then carries the module's current
+# ``responsibility`` and ``generation`` into the index.
+#
+# The write-through used to live in THIS module, and that is why it was not
+# universal: ``api_init``'s repair/reset branch is the other live-path writer and
+# called ``save_module_enriched`` directly, so it left the index stale. Owning the
+# operation in the core is what makes the write-through a property of writing a
+# document rather than a habit of one caller.
+
+#: Deferred index-sync buffer. ``None`` means not batching — each save writes
+#: ``_project.json`` through immediately. A set means a batch is open and holds
+#: the module names whose index entries are owed at flush.
+_INDEX_SYNC_BATCH: set[str] | None = None
+
+
+@contextmanager
+def _batched_index_sync(project_dir: str) -> Iterator[None]:
+    """Collect index write-throughs and apply them in ONE ``_project.json`` write.
+
+    ``enrich all`` saves a document per (module × domain) pair, so writing the
+    root index through on every save would rewrite the whole file O(pairs) times
+    for an index that only needs to reflect the final state. Inside this context
+    each save records its module name; on exit the owed entries are read once per
+    module and written in a single pass.
+
+    The flush runs on the way out even when the body raised, so a partially
+    completed enrich still leaves the index describing the documents that DID get
+    written — an index left behind by an aborted run is the staleness this
+    write-through exists to remove.
+    """
+    global _INDEX_SYNC_BATCH
+    previous = _INDEX_SYNC_BATCH
+    _INDEX_SYNC_BATCH = set()
+    try:
+        yield
+    finally:
+        owed = _INDEX_SYNC_BATCH
+        _INDEX_SYNC_BATCH = previous
+        if owed:
+            sync_module_index(sorted(owed), project_dir)
+
+
+def _save_module_document(module_name: str, document: dict[str, Any], project_dir: str) -> None:
+    """Persist a module's concept document, batching the index write-through.
+
+    The un-batched branch calls
+    :func:`_architecture_core.save_module_document`, the document-write +
+    index-write-through composition for a single-module live-path caller. What
+    stays enrich-side is only the BATCHING: inside :func:`_batched_index_sync`
+    the index write is deferred so ``enrich all`` pays one ``_project.json``
+    write instead of one per (module × domain) pair.
+
+    The batched branch therefore calls the plain document writer and records the
+    owed module; the un-batched branch calls the document+index composition whole.
+    """
+    if _INDEX_SYNC_BATCH is not None:
+        save_module_enriched(module_name, document, project_dir)
+        _INDEX_SYNC_BATCH.add(module_name)
+        return
+    save_module_document(module_name, document, project_dir)
+
 
 # =============================================================================
 # API Functions
@@ -115,7 +194,7 @@ def enrich_module(
         if purp_reason is not None:
             enriched['purpose_reasoning'] = purp_reason
 
-    save_module_enriched(module_name, enriched, project_dir)
+    _save_module_document(module_name, enriched, project_dir)
 
     return {'status': 'success', 'module': module_name, 'updated': updated}
 
@@ -156,7 +235,7 @@ def enrich_package(
 
     enriched['key_packages'][package_name] = pkg_data
 
-    save_module_enriched(module_name, enriched, project_dir)
+    _save_module_document(module_name, enriched, project_dir)
 
     result: dict[str, Any] = {'status': 'success', 'module': module_name, 'package': package_name, 'action': action}
 
@@ -199,6 +278,16 @@ def _validate_skills_by_profile_structure(skills_by_profile: dict[str, Any]) -> 
             warnings.append(
                 f"Profile '{profile_name}.minimal' must be a boolean, got {type(profile_data['minimal']).__name__}"
             )
+        # `minimal: true` asserts the profile is deliberately empty. A profile
+        # that carries entries contradicts its own declaration, so the pair is
+        # malformed rather than a judgement call about which half to believe:
+        # the read side would otherwise report "deliberately minimal" about a
+        # profile whose skills are right there in the same block.
+        if profile_data.get('minimal') is True and any(
+            isinstance(profile_data.get(section), list) and profile_data.get(section)
+            for section in ('defaults', 'optionals')
+        ):
+            warnings.append(f"Profile '{profile_name}' declares 'minimal': true but carries defaults/optionals entries")
         for section in ['defaults', 'optionals']:
             entries = profile_data.get(section, [])
             if not isinstance(entries, list):
@@ -344,6 +433,15 @@ def enrich_add_domain(
                 existing_names.add(skill_name)
                 added_in_profile = True
 
+        if added_in_profile:
+            # The profile just received a skill, so it is no longer deliberately
+            # empty. Carrying a stale `minimal: true` through the write path is
+            # what let the persisted document declare "deliberately minimal"
+            # about a profile that now holds entries — the read side has no way
+            # to tell that apart from a genuine declaration, so the write path
+            # is where the contradiction has to be removed.
+            merged.pop('minimal', None)
+
         current[profile_name] = merged
         # Only report the profile as updated when at least one new skill was
         # actually added. Re-running with identical inputs must be a no-op so
@@ -360,7 +458,7 @@ def enrich_add_domain(
         else:
             enriched['skills_by_profile_reasoning'] = reasoning
 
-    save_module_enriched(module_name, enriched, project_dir)
+    _save_module_document(module_name, enriched, project_dir)
 
     return {
         'status': 'success',
@@ -419,43 +517,46 @@ def enrich_all(project_dir: str = '.', include_optionals: bool = False, reasonin
             continue
         ext_domains.append((bundle, all_domains))
 
-    for module_name in module_names:
-        # Apply shared reasoning only once per module to avoid duplicate
-        # concatenation into skills_by_profile_reasoning.
-        reasoning_to_apply = reasoning
-        for _bundle, all_domains in ext_domains:
-            for domain_info in all_domains:
-                domain_key = domain_info.get('domain', {}).get('key')
-                if not domain_key or domain_key == 'system':
-                    continue
-                try:
-                    result = enrich_add_domain(
-                        module_name,
-                        domain_key,
-                        project_dir=project_dir,
-                        include_optionals=include_optionals,
-                        reasoning=reasoning_to_apply,
-                        crawled_modules=crawled_modules,
-                    )
-                except ModuleNotFoundInProjectError as e:
-                    summary['errors'].append(f'{module_name}/{domain_key}: {e}')
-                    continue
-                except ValueError:
-                    # Domain not present in extensions (shouldn't happen here); skip
-                    summary['pairs_skipped'] += 1
-                    continue
-                except Exception as e:
-                    summary['errors'].append(f'{module_name}/{domain_key}: {e}')
-                    continue
-                if reasoning_to_apply:
-                    reasoning_to_apply = None
-                if result.get('profiles_updated'):
-                    summary['pairs_applied'] += 1
-                    if module_name not in enriched_set:
-                        enriched_set.add(module_name)
-                        summary['modules_enriched'].append(module_name)
-                else:
-                    summary['pairs_skipped'] += 1
+    # One root-index write for the whole run. Each save records the module it
+    # touched; the batch flushes a single `_project.json` write on exit.
+    with _batched_index_sync(project_dir):
+        for module_name in module_names:
+            # Apply shared reasoning only once per module to avoid duplicate
+            # concatenation into skills_by_profile_reasoning.
+            reasoning_to_apply = reasoning
+            for _bundle, all_domains in ext_domains:
+                for domain_info in all_domains:
+                    domain_key = domain_info.get('domain', {}).get('key')
+                    if not domain_key or domain_key == 'system':
+                        continue
+                    try:
+                        result = enrich_add_domain(
+                            module_name,
+                            domain_key,
+                            project_dir=project_dir,
+                            include_optionals=include_optionals,
+                            reasoning=reasoning_to_apply,
+                            crawled_modules=crawled_modules,
+                        )
+                    except ModuleNotFoundInProjectError as e:
+                        summary['errors'].append(f'{module_name}/{domain_key}: {e}')
+                        continue
+                    except ValueError:
+                        # Domain not present in extensions (shouldn't happen here); skip
+                        summary['pairs_skipped'] += 1
+                        continue
+                    except Exception as e:
+                        summary['errors'].append(f'{module_name}/{domain_key}: {e}')
+                        continue
+                    if reasoning_to_apply:
+                        reasoning_to_apply = None
+                    if result.get('profiles_updated'):
+                        summary['pairs_applied'] += 1
+                        if module_name not in enriched_set:
+                            enriched_set.add(module_name)
+                            summary['modules_enriched'].append(module_name)
+                    else:
+                        summary['pairs_skipped'] += 1
     return summary
 
 
@@ -474,7 +575,7 @@ def enrich_skills_by_profile(
     if reasoning is not None:
         enriched['skills_by_profile_reasoning'] = reasoning
 
-    save_module_enriched(module_name, enriched, project_dir)
+    _save_module_document(module_name, enriched, project_dir)
 
     result: dict[str, Any] = {'status': 'success', 'module': module_name, 'skills_by_profile': skills_by_profile}
 
@@ -517,7 +618,7 @@ def enrich_dependencies(
     if reasoning is not None:
         enriched['key_dependencies_reasoning'] = reasoning
 
-    save_module_enriched(module_name, enriched, project_dir)
+    _save_module_document(module_name, enriched, project_dir)
 
     return result
 
@@ -549,7 +650,7 @@ def _append_to_list(module_name: str, field: str, value: str, project_dir: str =
     if value not in enriched[field]:
         enriched[field].append(value)
 
-    save_module_enriched(module_name, enriched, project_dir)
+    _save_module_document(module_name, enriched, project_dir)
 
     return {'status': 'success', 'module': module_name, field: enriched[field]}
 

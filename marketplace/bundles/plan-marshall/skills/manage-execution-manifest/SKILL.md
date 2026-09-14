@@ -392,13 +392,32 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
 
 | Frozen step | Live candidate set | Verdict | Action |
 |---|---|---|---|
-| unloadable | **absent** from it | `stale` | **Drop.** Live config agrees the step is gone, so the frozen view is merely behind a change this plan already made. |
-| unloadable | **still lists it** | `broken` | **Fail loud** (`unreconcilable_step`, canonical actionable message). The doc was deleted without sweeping `marshal.json` — the original motivating failure. Reconciling it away would silently drop work the project still schedules. |
-| loadable | — | retained | Untouched. |
+| unresolvable | **absent** from it | `stale` | **Drop.** Live config agrees the step is gone, so the frozen view is merely behind a change this plan already made. |
+| unresolvable | **still lists it** | `broken` | **Fail loud** (`unreconcilable_step`, canonical actionable message). The doc was deleted without sweeping `marshal.json` — the original motivating failure. Reconciling it away would silently drop work the project still schedules. |
+| resolvable | — | retained | Untouched. |
+
+**The partition tests RESOLVABILITY, not loadability.** `reconcile` runs `_check_step_resolvable` — the same gate `compose` runs over its emitted lists — so an external (`project:` / `bundle:skill`) step is genuinely resolved against the project-local skill tree and the finalize-step discovery registry. The loadability check asserts built-in standards-file presence only and short-circuits every external step to `loadable: true`; partitioning on it made the external half of this verb vacuous, so a `project:` skill the plan had just renamed reported fine and was retained. One definition of "this id resolves to something", both verbs.
+
+**A non-string `phase_6.steps` entry is rejected, not filtered.** Such an entry returns `invalid_manifest` naming its `offending_index`, and no manifest is written. It has no step id to quote, so its position is the only handle a reader can repair it by — and silently skipping it meant `--apply` erased it from the manifest on write-back with no decision-log record, since it never reached the `stale` bucket.
 
 **Backfill is narrow by construction.** Only a live candidate absent from `phase_6.candidate_steps` is owed — such a step never faced the decision matrix. A candidate the matrix saw and dropped must stay dropped, so "in live config but not in the manifest" is NOT the backfill test. When `candidate_steps` is absent (a manifest frozen before the field existed) or live config is unreadable, the verb reports `backfill_determinable: false` and backfills nothing; guessing would resurrect every matrix-dropped step. The drop direction needs no snapshot and still runs.
 
-**Fail closed on unreadable live config.** When the live candidate set cannot be read at all (`candidate_source: unavailable`), "config dropped it" is indistinguishable from "config still wants it", so every unloadable step is classified `broken` — today's hard fail — rather than reconciled away on absent evidence.
+**Fail closed on unreadable live config.** When the live candidate set cannot be read at all (`candidate_source: unavailable`), "config dropped it" is indistinguishable from "config still wants it", so every unresolvable step is classified `broken` — today's hard fail — rather than reconciled away on absent evidence.
+
+**Composer filters that cannot apply at reconcile time.** `reconcile` applies exactly ONE of the composer's transforms — the frontmatter-order sort, through the shared `_sort_steps_by_frontmatter_order` choke point. Every SELECTION filter listed under [Decision Rules](#decision-rules) is unavailable to it, because each reads a compose-time input `reconcile` neither receives as an argument nor re-derives:
+
+| Composer filter | Its input | Why `reconcile` cannot apply it |
+|---|---|---|
+| Six-row decision matrix | `change_type`, `track`, `scope_estimate`, `recipe_key`, `affected_files_count` | Deliberately never re-run — re-running it is re-resolving the selection, which is the coupling the write-time snapshot exists to break. |
+| `scope_gated_finalize` | `scope_estimate` (references.json) | Not read by this verb. |
+| `ceremony_finalize_selection` | the four gates, from the merged phase-6 step map | Not read by this verb. |
+| `lane_resolution` | `status.metadata.execution_profile` | Not read by this verb. |
+| `simplify_inactive` / `security_class_inactive` | settled change type / plan metadata | Not read by this verb. |
+| `canonical_verify_inactive`, `execution_tier` routing + stamping | live footprint, per-command tier | Phase-5 transforms; `reconcile` amends `phase_6.steps` only, so they are out of scope rather than merely unavailable. |
+
+The consequence is confined to the BACKFILL direction, and it is what makes the narrowing above load-bearing rather than merely conservative: a backfilled step is added on a resolvability check alone, having faced **no** selection filter. The `candidate_steps` narrowing bounds that to steps which entered live config after this manifest was composed — a population the matrix provably never judged — so `reconcile` adds only steps for which "the filters never ran" is the accurate description of their history, never steps a filter already judged and dropped. The DROP direction needs no such bound: a step whose id resolves to nothing cannot be wanted by any filter.
+
+A backfilled step therefore does NOT inherit this plan's posture or scope gating. When that matters — a `minimal`-posture plan, or one whose scope gate would have dropped the newly-added step — re-run `compose` instead of `reconcile --apply`: re-composition re-reads every input and re-applies the full filter stack.
 
 On `--apply` the merged list is re-sorted through the shared `_sort_steps_by_frontmatter_order` choke point (the same one `compose` uses), the dropped steps' `step_params` entries are pruned, and backfilled steps get a params snapshot from the live marshal map. One `decision.log` line is emitted per dropped and per backfilled step, so every subtraction and addition is auditable.
 
@@ -554,11 +573,11 @@ The bulk form requires the manifest to exist on disk; if it does not, the script
 | `invalid_track` | --track not `simple` or `complex` |
 | `invalid_phase` | `record-step` --phase not `5-execute` or `6-finalize` |
 | `invalid_outcome` | `record-step` --outcome outside `VALID_RECORD_OUTCOMES` |
-| `invalid_manifest` | Manifest schema invalid or step IDs unknown; or `step-params set` target section malformed |
+| `invalid_manifest` | Manifest schema invalid or step IDs unknown; `step-params set` target section malformed; or `reconcile` — a `phase_6.steps` entry is not a string (names `offending_index`; writes no manifest) |
 | `unresolvable_step` | `compose` — a FINAL emitted phase-5/6 step id resolves to no built-in doc, project-local skill, or bundle discovery-registry entry (fail-loud; names the offending step's provenance — the `marshal.json` key for an authored step, or the derive-verification routing origin for a routed phase-5 step — and phase) |
 | `phase_6_order_violation` | `compose` — the FINAL composed `phase_6.steps` is not verifiably in ascending frontmatter `order`: either an `order_inversion` (a step precedes one with a lower `order`) or an `unresolvable_order` (a built-in / `project:` step whose `order` does not resolve, so its pinned position cannot be verified). Fail-loud; names the offending `step_id`, the `reason`, and `phase`; writes no partial manifest |
 | `non_canonical_step` | `compose` — a FINAL emitted phase-5/6 step id is not in canonical form (`canonicalize_step_key(step_id) != step_id`; a `default:` prefix or promoted-alias bundle spelling slipped past intake normalization). Fail-loud; names the offending `step_id`, its `canonical` form, and phase; writes no partial manifest |
-| `unreconcilable_step` | `reconcile` — a frozen `phase_6.steps` entry has no loadable standards doc AND live `marshal.json` still lists it (or live config is unreadable, so the drop cannot be substantiated). Fail-loud; names the offending step in `broken[]` and carries the canonical actionable message; writes no manifest |
+| `unreconcilable_step` | `reconcile` — a frozen `phase_6.steps` entry is unresolvable (no built-in standards doc, project-local skill, or discovery-registry entry) AND live `marshal.json` still lists it (or live config is unreadable, so the drop cannot be substantiated). Fail-loud; names the offending step in `broken[]` and carries the canonical actionable message; writes no manifest |
 | `invalid_arguments` | `validate-loadable` invoked without exactly one of `--step-id` / `--all` |
 | `step_not_found` | `step-params get`/`set` `--step-id` has no snapshotted params in the manifest for the given phase |
 

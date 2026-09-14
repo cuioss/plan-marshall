@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the Axis-C ``DerivationResolverBase`` contract in ``extension_base``.
 
-Covers the four concerns the module-edge derivation extension point rests on:
+Covers the five concerns the module-edge derivation extension point rests on:
 
 1. **Safe defaults** — ``derivation_resolver_id()`` returns ``''``,
    ``derive_edges()`` returns ``([], [])``, and ``derivation_file_patterns()``
@@ -23,6 +23,9 @@ Covers the four concerns the module-edge derivation extension point rests on:
 4. **Multiple-inheritance opt-in** — a class inheriting ``BuildExtensionBase``
    *and* ``DerivationResolverBase`` satisfies ``isinstance`` for both, which is
    the shape ``build-maven`` uses to provide the Maven coordinate join.
+5. **The aggregated-note populations** — ``_aggregate_notes`` reports the summed
+   ``occurrences`` (source REFERENCES) while sampling over distinct CANDIDATES,
+   so neither number is published under the other's name.
 
 The discovery collector and the edge merge are covered separately in
 test_derivation_resolver_discovery.py and test_derivation_merge.py — this module
@@ -31,6 +34,7 @@ covers only the ABC's own method contract and the hierarchy invariant.
 
 import pytest
 from extension_base import (
+    NOTE_SAMPLE_LIMIT,
     BuildExtensionBase,
     DerivationResolverBase,
     ExtensionBase,
@@ -248,3 +252,119 @@ def test_multiple_inheritance_from_axis_a_side_is_also_valid():
     assert isinstance(extension, ExtensionBase)
     assert isinstance(extension, DerivationResolverBase)
     assert extension.derivation_resolver_id() == 'fixture-domain'
+
+
+# --- 5. The aggregated-note populations -------------------------------------
+#
+# A ``component_refs`` element is deduplicated on its
+# ``(target_bundle, dep_type, resolved)`` triple, so ONE candidate can stand for
+# many source references. The note reports the summed ``occurrences`` under the
+# name "reference(s)"; the sample and its ``(+N more)`` suffix stay over the
+# distinct candidates a sample is actually drawn from. Counting candidates and
+# labelling the result "reference(s)" is the defect this split closes.
+
+_AGGREGATE = DerivationResolverBase._aggregate_notes
+
+
+def _reference_total(note: str) -> int:
+    """Read the ``N`` out of ``'{category}: N reference(s) suppressed - ...'``."""
+    return int(note.split(': ', 1)[1].split(' reference(s)', 1)[0])
+
+
+def test_note_reports_summed_occurrences_not_the_candidate_count():
+    """Several references collapsing onto ONE triple report the reference total.
+
+    The population the schema documents is *source references*, and the whole
+    point of ``occurrences`` is that the element count no longer measures it.
+    """
+    # Arrange — one deduplicated candidate standing for five source references
+    suppressed = {'unresolved-target': [('documentation -> plan-marshall [path]', 5)]}
+
+    # Act
+    notes = _AGGREGATE(suppressed)
+
+    # Assert — five references, reported from a single candidate
+    assert _reference_total(notes[0]) == 5
+    assert notes[0].endswith('sample: documentation -> plan-marshall [path]')
+
+
+def test_bare_descriptions_each_count_as_one_reference():
+    """The negative control: a materializer that omits ``occurrences``.
+
+    The documented default is ``1``, so an omitting materializer renders exactly
+    as it did before the field existed — the reference total equals the candidate
+    count, which is the ONLY case in which the two populations coincide.
+    """
+    # Arrange — five bare candidates, no multiplicity carried
+    suppressed = {'unresolved-target': [f'a -> b{i} [path]' for i in range(5)]}
+
+    # Act
+    notes = _AGGREGATE(suppressed)
+
+    # Assert — same total as the pair form above, reached the other way
+    assert _reference_total(notes[0]) == 5
+
+
+def test_sample_and_overflow_stay_over_distinct_candidates():
+    """``(+N more)`` counts CANDIDATES beyond the sample cap, never references.
+
+    The suffix qualifies the sample, and a sample is drawn from candidates — so a
+    single high-multiplicity candidate must not inflate it.
+    """
+    # Arrange — one candidate carrying 99 references, well over the sample cap
+    suppressed = {'self-edge': [('a -> a [path]', 99)]}
+
+    # Act
+    notes = _AGGREGATE(suppressed)
+
+    # Assert — 99 references, but one candidate, so nothing overflows the sample
+    assert _reference_total(notes[0]) == 99
+    assert 'more)' not in notes[0]
+
+
+def test_overflow_counts_candidates_beyond_the_sample_cap():
+    # Arrange — one more candidate than the cap admits, each a single reference
+    candidates = [f'a -> b{i} [path]' for i in range(NOTE_SAMPLE_LIMIT + 2)]
+
+    # Act
+    notes = _AGGREGATE({'self-edge': candidates})
+
+    # Assert — the two beyond the cap are counted, not hidden
+    assert notes[0].endswith('(+2 more)')
+
+
+def test_mixed_bare_and_pair_entries_sum_together():
+    # Arrange — a materializer that populates the field for only some elements
+    suppressed = {'unknown-endpoint': ['a -> b [path]', ('a -> c [path]', 4)]}
+
+    # Act
+    notes = _AGGREGATE(suppressed)
+
+    # Assert — 1 (defaulted) + 4 (carried)
+    assert _reference_total(notes[0]) == 5
+
+
+@pytest.mark.parametrize('occurrences', [0, -3, None, 'many', 1.5], ids=['zero', 'negative', 'none', 'text', 'float'])
+def test_unusable_occurrences_floors_to_one(occurrences):
+    """A suppressed candidate always stands for at least the reference that produced it.
+
+    Contributing ``0`` would under-report a suppression the Axis-C contract
+    requires be visible, so the floor is fail-closed rather than permissive.
+    """
+    # Arrange / Act
+    notes = _AGGREGATE({'self-edge': [('a -> a [path]', occurrences)]})
+
+    # Assert
+    assert _reference_total(notes[0]) == 1
+
+
+def test_empty_category_emits_no_note():
+    # Arrange — seeding every recognised category is how a caller fixes note order
+    suppressed: dict = {'unresolved-target': [], 'self-edge': [('a -> a [path]', 2)]}
+
+    # Act
+    notes = _AGGREGATE(suppressed)
+
+    # Assert — only the non-empty category renders
+    assert len(notes) == 1
+    assert notes[0].startswith('self-edge: 2 reference(s)')

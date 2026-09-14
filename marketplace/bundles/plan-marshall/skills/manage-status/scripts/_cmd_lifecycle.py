@@ -62,6 +62,30 @@ VERIFY_REFUSAL_ERRORS = frozenset(
     }
 )
 
+# Phases whose COMPLETION arms the finalize blocking-findings state assertion
+# (:func:`_finalize_findings_refusal`).
+#
+# Deliberately DISTINCT from ``_invariants._BLOCKING_BOUNDARIES`` even though
+# both currently hold ``{'6-finalize'}``. The two answer different questions and
+# are read against different operands:
+#
+# - ``_BLOCKING_BOUNDARIES`` names the phase being ENTERED. It is the handshake's
+#   own vocabulary — the boundary at which a pending actionable finding makes
+#   ``_capture_pending_findings_blocking_count`` raise — and here it gates the
+#   strict-verify guard on ``next_phase``.
+# - ``_COMPLETION_GUARD_PHASES`` names the phase being COMPLETED. Reaching the
+#   END of one of these phases is what arms the completion assertion, tested
+#   against ``args.completed`` (and, in ``cmd_archive``, against the plan's
+#   still-active ``current_phase``).
+#
+# Sharing one name for both let a change made for one meaning silently retarget
+# the other: adding a phase to the entry set would have armed the completion
+# assertion for it too, with nothing at either call site to reveal the coupling.
+# The equal value today is a coincidence of this project's phase list, not a
+# relationship — so the two are separate constants and neither is derived from
+# the other.
+_COMPLETION_GUARD_PHASES: frozenset[str] = frozenset({'6-finalize'})
+
 
 def _clean_tree_refusal(plan_id: str, status: dict[str, Any]) -> dict[str, Any] | None:
     """Clean-tree post-condition for guarded boundaries (5-execute → 6-finalize).
@@ -397,13 +421,15 @@ def cmd_transition(args: argparse.Namespace) -> dict[str, Any] | None:
     # Finalize completion boundary (D2): completing ``6-finalize`` asserts the
     # blocking-findings STATE — the merge boundary asserts a state that must
     # hold rather than trusting an optional ``capture --phase 6-finalize`` call.
-    # Armed by REACHING this boundary (``args.completed in _BLOCKING_BOUNDARIES``),
-    # NOT by a call, so a plan can no longer be marked complete while an
-    # actionable finding is still pending. Distinct from the entering-finalize
-    # guard below (``next_phase in _BLOCKING_BOUNDARIES``): this fires on the
-    # phase being COMPLETED, that one on the phase being ENTERED. On refusal,
-    # SKIP write_status so current_phase stays on the completed phase.
-    if args.completed in _BLOCKING_BOUNDARIES:
+    # Armed by REACHING this boundary
+    # (``args.completed in _COMPLETION_GUARD_PHASES``), NOT by a call, so a plan
+    # can no longer be marked complete while an actionable finding is still
+    # pending. Distinct from the entering-finalize guard below
+    # (``next_phase in _BLOCKING_BOUNDARIES``): this fires on the phase being
+    # COMPLETED, that one on the phase being ENTERED — which is why the two read
+    # separate constants. On refusal, SKIP write_status so current_phase stays
+    # on the completed phase.
+    if args.completed in _COMPLETION_GUARD_PHASES:
         findings_refusal = _finalize_findings_refusal(args.plan_id, status)
         if findings_refusal is not None:
             return findings_refusal
@@ -607,7 +633,7 @@ def cmd_archive(args: argparse.Namespace) -> dict[str, Any] | None:
                     'not be established. Repair the phases, or archive deliberately with --reason.'
                 ),
             }
-        if any(phase.get('name') == '6-finalize' for phase in open_scan.phases):
+        if any(phase.get('name') in _COMPLETION_GUARD_PHASES for phase in open_scan.phases):
             findings_refusal = _finalize_findings_refusal(args.plan_id, status)
             if findings_refusal is not None:
                 return findings_refusal

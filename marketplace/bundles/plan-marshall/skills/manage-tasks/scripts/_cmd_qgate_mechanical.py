@@ -52,8 +52,10 @@ from _plan_parsing import (
     split_deliverable_blocks,
 )
 from _qgate_closure import (
+    _as_int,
     check_declared_scope_reconciliation,
     check_declared_set_closure,
+    index_unique_by_number,
 )
 from _tasks_core import get_all_tasks, get_tasks_dir
 from constants import FILE_SOLUTION_OUTLINE
@@ -80,6 +82,23 @@ _PLANNING_KEYWORDS: tuple[str, ...] = (
 
 _SKILL_SHAPE_RE = re.compile(r'^[a-zA-Z0-9][a-zA-Z0-9_-]*:[a-zA-Z0-9][a-zA-Z0-9_.-]*$')
 _TASK_FILENAME_RE = re.compile(r'^TASK-(\d{3})\.json$')
+
+
+def _task_number(task: dict[str, Any]) -> int:
+    """Return a task's number for DISPLAY, falling back to ``0``.
+
+    Used only where the number is interpolated into a finding's title or detail
+    (``TASK-{n:03d}``). A raw ``task['number']`` there raises ``KeyError`` /
+    ``TypeError`` on a malformed record — and it does so on the branch that is
+    REPORTING a defect, so the whole mechanical Q-Gate would crash precisely
+    when it had a finding to emit and pass when it had none. That is the
+    fail-open shape these checks exist to prevent, committed against itself.
+
+    ``0`` renders as ``TASK-000``, which is not a real task id — the record is
+    malformed and the finding says so by naming an impossible number, rather
+    than silently attributing the defect to some other task.
+    """
+    return _as_int(task.get('number')) or 0
 
 
 def _emit_finding(
@@ -126,9 +145,15 @@ def _load_deliverables(plan_id: str) -> tuple[list[dict[str, Any]], dict[int, st
     """Read solution_outline.md and extract deliverables plus their raw prose.
 
     Returns ``(deliverables, prose_by_number, parseable)`` — ``parseable`` is
-    False when the outline is missing or its Deliverables section can't be
-    located, in which case the caller flips ``ambiguous=true`` so the LLM
-    dispatch re-evaluates rather than the mechanical script declaring victory.
+    False when the outline is missing, when its Deliverables section can't be
+    located, or when two blocks claim the SAME deliverable number (a collision
+    that removes one record from every number-keyed population downstream). In
+    each case the caller flips ``ambiguous=true`` so the LLM dispatch
+    re-evaluates rather than the mechanical script declaring victory.
+
+    The first two return empty collections — nothing parsed. The collision case
+    returns the records that DID parse, so the checks still report what they
+    can; only the pass's authority is withheld.
 
     ``prose_by_number`` maps a deliverable number to its VERBATIM block body.
     It is returned alongside the structured records rather than folded into
@@ -150,11 +175,24 @@ def _load_deliverables(plan_id: str) -> tuple[list[dict[str, Any]], dict[int, st
         return [], {}, False
     try:
         deliverables = extract_deliverables(deliverables_section)
-        prose_by_number = {
-            int(block['number']): str(block['content']) for block in split_deliverable_blocks(deliverables_section)
-        }
+        blocks = split_deliverable_blocks(deliverables_section)
     except (ValueError, AttributeError):
         return [], {}, False
+    # Key the prose map through ``index_unique_by_number``, which applies
+    # ``_as_int`` and DROPS any block whose number is unusable. A raw
+    # ``int(block['number'])`` raises on a block whose number is absent, null, or
+    # non-numeric, and the resulting abort is indistinguishable to the caller
+    # from an unparseable outline — one malformed heading would take down the
+    # whole mechanical pass. Dropping the block instead costs only that block's
+    # prose from the keyword-drift haystack, and the deliverable itself is still
+    # checked.
+    #
+    # The indexer also REPORTS a duplicate number instead of letting the last
+    # write win, and the duplicate is dispositioned below.
+    prose_by_number, duplicate_prose_numbers = index_unique_by_number(
+        (block.get('number'), str(block.get('content', ''))) for block in blocks
+    )
+    _, duplicate_deliverable_numbers = index_unique_by_number((d.get('number'), d) for d in deliverables)
     if not deliverables:
         # A Deliverables section that exists but carries no `### N. Title`
         # heading yields an empty list, and every check downstream then passes
@@ -163,6 +201,17 @@ def _load_deliverables(plan_id: str) -> tuple[list[dict[str, Any]], dict[int, st
         # orchestrator the mechanical pass was authoritative. An outline nobody
         # could parse must reach the LLM dispatch, not a clean bill of health.
         return [], {}, False
+    if duplicate_prose_numbers or duplicate_deliverable_numbers:
+        # Two blocks claiming one deliverable number. Every consumer of this
+        # outline indexes BY that number — the prose map here, the keyword-drift
+        # haystack, the declared-set closure — so one of the two records is
+        # absent from each of those populations while the pass goes on reporting
+        # a measured verdict over the survivor. The records that DID parse are
+        # still returned, so every check still reports what it can; what is
+        # withheld is the pass's AUTHORITY over this outline, which is exactly
+        # what ``parseable=False`` buys (the caller flips ``ambiguous`` and the
+        # LLM dispatch re-evaluates).
+        return deliverables, prose_by_number, False
     return deliverables, prose_by_number, True
 
 
@@ -180,8 +229,12 @@ def _check_coverage(
     failed = 0
     emitted = 0
 
-    deliverable_numbers = {int(d['number']) for d in deliverables}
-    task_deliverables: set[int] = {int(t.get('deliverable', 0)) for t in tasks if int(t.get('deliverable', 0)) > 0}
+    # Both sets are built through ``_as_int``, dropping records whose number is
+    # unusable rather than raising over them — see :func:`_task_number`.
+    deliverable_numbers = {n for n in (_as_int(d.get('number')) for d in deliverables) if n is not None}
+    task_deliverables: set[int] = {
+        n for n in (_as_int(t.get('deliverable', 0)) for t in tasks) if n is not None and n > 0
+    }
 
     for d in sorted(deliverable_numbers):
         if d not in task_deliverables:
@@ -199,7 +252,12 @@ def _check_coverage(
             )
 
     for t in tasks:
-        deliverable = int(t.get('deliverable', 0))
+        deliverable = _as_int(t.get('deliverable', 0))
+        # An unusable deliverable field is dropped rather than flagged here: the
+        # value is not a deliverable reference at all, so "references unknown
+        # deliverable None" would misreport a malformed record as an orphan.
+        if deliverable is None:
+            continue
         # deliverable=0 is the holistic-task sentinel; do not flag as orphan.
         if deliverable == 0:
             continue
@@ -207,9 +265,9 @@ def _check_coverage(
             failed += 1
             emitted += _emit_finding(
                 plan_id,
-                title=f'coverage: TASK-{t["number"]:03d} references unknown deliverable {deliverable}',
+                title=f'coverage: TASK-{_task_number(t):03d} references unknown deliverable {deliverable}',
                 detail=(
-                    f'TASK-{t["number"]:03d} {t.get("title", "?")!r} carries '
+                    f'TASK-{_task_number(t):03d} {t.get("title", "?")!r} carries '
                     f'deliverable={deliverable}, but the solution outline has no '
                     f"such deliverable. Either fix the task's deliverable field "
                     f'or add the missing deliverable to solution_outline.md.'
@@ -237,7 +295,7 @@ def _check_skill_resolution(
     emitted = 0
     for t in tasks:
         profile = (t.get('profile') or '').strip()
-        number = t['number']
+        number = _task_number(t)
         domain = (t.get('domain') or '').strip()
         if profile != 'verification' and not domain:
             failed += 1
@@ -278,34 +336,79 @@ def _check_acyclic(
     tasks: list[dict[str, Any]],
     persist_failures: list[dict[str, str]],
     emit: bool,
-) -> tuple[int, int]:
+) -> tuple[int, int, dict[str, Any]]:
     """Acyclic: depends_on across all tasks forms a DAG.
 
     Uses Kahn's algorithm — any node with non-zero remaining in-degree
     after processing belongs to a cycle. One finding per cycle root keeps
     the noise bounded for chained-cycle cases.
+
+    Returns ``(failed_count, findings_emitted, population)``. The population is
+    published rather than implied, for the same reason every closure check in
+    :mod:`_qgate_closure` publishes one: this check loses records on TWO paths
+    before it examines anything, and neither loss is visible in its verdict.
+
+    - A record whose ``number`` is unusable has no identity to be a node under,
+      so it is DROPPED from the graph entirely.
+    - Two records claiming one number COLLAPSE to a single node, because the
+      graph is keyed by number and nothing validates that a record's ``number``
+      field matches its ``TASK-NNN`` filename.
+
+    Either way the check goes on reporting a measured "no cycle" over a set
+    shorter than the one it says it examined — the completeness-over-a-shortened-set
+    defect. :func:`_qgate_closure.index_unique_by_number` is the sibling that
+    already reports its collisions, and its docstring states the rule every
+    caller follows: a non-empty ``duplicate_numbers`` is a POPULATION defect,
+    not a verdict. This check now follows it too, so the caller flips
+    ``ambiguous`` and the LLM dispatch re-evaluates instead of trusting a zero
+    computed over a collapsed graph.
     """
     failed = 0
     emitted = 0
 
+    # Index by number through the shared indexer, which keeps the FIRST record
+    # for a repeated number and REPORTS the collision. A record whose number is
+    # unusable is dropped by that same guard; it is collected separately here so
+    # the drop reaches the published population rather than vanishing.
+    #
+    # The completeness comparison below still uses ``len(in_degree)`` — the NODE
+    # population — as its denominator, never a record count. Comparing
+    # ``visited`` against the raw ``len(tasks)`` would report a phantom cycle for
+    # every dropped or collapsed record, and the finding it emitted would name no
+    # task at all, because ``cycle_members`` is derived from the same already-collapsed
+    # ``in_degree``. Reporting the loss in the population is what makes the
+    # denominator honest without manufacturing a cycle.
+    by_number, duplicate_task_numbers = index_unique_by_number((t.get('number'), t) for t in tasks)
+    unusable_task_numbers = sorted(repr(t.get('number')) for t in tasks if _as_int(t.get('number')) is None)
+    numbered: list[tuple[int, dict[str, Any]]] = list(by_number.items())
+
+    population: dict[str, Any] = {
+        'tasks_scanned': len(tasks),
+        'nodes_indexed': len(by_number),
+        'unusable_task_numbers': unusable_task_numbers,
+        'duplicate_task_numbers': duplicate_task_numbers,
+        'population_complete': not unusable_task_numbers and not duplicate_task_numbers,
+    }
+
     by_id: dict[str, dict[str, Any]] = {}
-    for t in tasks:
-        n = int(t['number'])
+    for n, t in numbered:
         by_id[f'TASK-{n}'] = t
         by_id[f'TASK-{n:03d}'] = t
 
-    in_degree: dict[int, int] = {int(t['number']): 0 for t in tasks}
+    in_degree: dict[int, int] = {n: 0 for n, _t in numbered}
     graph: dict[int, list[int]] = defaultdict(list)
-    for t in tasks:
+    for n, t in numbered:
         for dep in t.get('depends_on', []) or []:
             dep_task = by_id.get(dep)
             if dep_task is None:
                 # Missing dependency surfaces under coverage / other checks;
                 # do not double-report here.
                 continue
-            dep_n = int(dep_task['number'])
-            graph[dep_n].append(int(t['number']))
-            in_degree[int(t['number'])] += 1
+            dep_n = _as_int(dep_task.get('number'))
+            if dep_n is None:
+                continue
+            graph[dep_n].append(n)
+            in_degree[n] += 1
 
     queue = [n for n, d in in_degree.items() if d == 0]
     visited = 0
@@ -317,7 +420,7 @@ def _check_acyclic(
             if in_degree[m] == 0:
                 queue.append(m)
 
-    if visited < len(tasks):
+    if visited < len(in_degree):
         cycle_members = sorted(n for n, d in in_degree.items() if d > 0)
         failed = 1
         emitted += _emit_finding(
@@ -333,7 +436,7 @@ def _check_acyclic(
             emit=emit,
         )
 
-    return failed, emitted
+    return failed, emitted, population
 
 
 def _check_files_exist(
@@ -365,7 +468,7 @@ def _check_files_exist(
     for t in tasks:
         if (t.get('profile') or '').strip() == 'verification':
             continue
-        number = t['number']
+        number = _task_number(t)
         for step in t.get('steps', []) or []:
             if not isinstance(step, dict):
                 continue
@@ -496,7 +599,16 @@ def _check_keyword_drift(
     """Keyword drift: planning-domain keywords appear in description but not in haystack."""
     failed = 0
     emitted = 0
-    by_number: dict[int, dict[str, Any]] = {int(d['number']): d for d in deliverables}
+    # Dropped rather than raised over — see :func:`_task_number`. Indexed
+    # through ``index_unique_by_number`` so a duplicate deliverable number
+    # cannot silently collapse two deliverables into whichever one happened to
+    # be written last, leaving every task pointing at that number compared
+    # against the survivor alone. The collision itself is dispositioned once,
+    # upstream in :func:`_load_deliverables`, which withholds the whole
+    # mechanical pass's authority over such an outline; here it is enough that
+    # the surviving record is chosen deterministically rather than by write
+    # order.
+    by_number, _duplicate_numbers = index_unique_by_number((d.get('number'), d) for d in deliverables)
 
     # Pre-compile the keyword patterns once per call (independent of N tasks);
     # cache per-deliverable haystacks so two tasks under the same deliverable
@@ -510,7 +622,9 @@ def _check_keyword_drift(
         description = (t.get('description') or '').strip()
         if not description:
             continue
-        d_num = int(t.get('deliverable', 0))
+        d_num = _as_int(t.get('deliverable', 0))
+        if d_num is None:
+            continue
         deliverable = by_number.get(d_num)
         if deliverable is None:
             continue
@@ -525,7 +639,7 @@ def _check_keyword_drift(
                 emitted += _emit_finding(
                     plan_id,
                     title=(
-                        f'keyword_drift: TASK-{t["number"]:03d} uses {keyword!r} not present in deliverable outline'
+                        f'keyword_drift: TASK-{_task_number(t):03d} uses {keyword!r} not present in deliverable outline'
                     ),
                     detail=(f'{excerpt}; deliverable {d_num} outline does not mention {keyword!r}'),
                     persist_failures=persist_failures,
@@ -636,7 +750,7 @@ def cmd_qgate_mechanical(args) -> dict[str, Any]:
     findings_emitted += e
     checks['skill_resolution'] = {'failed': skill_failed}
 
-    acyclic_failed, e = _check_acyclic(plan_id, all_tasks, persist_failures, emit=emit)
+    acyclic_failed, e, acyclic_population = _check_acyclic(plan_id, all_tasks, persist_failures, emit=emit)
     findings_emitted += e
     checks['acyclic'] = {'failed': acyclic_failed}
 
@@ -704,11 +818,22 @@ def cmd_qgate_mechanical(args) -> dict[str, Any]:
     # guarantee and a coincidence: a glob that matches nothing looks identical
     # to a glob that matches everything, and only the published population
     # separates them.
+    #
+    # ``acyclic`` joins the two closure checks here on the same footing. It is not
+    # a closure check, but it is the third site that loses records before it
+    # measures — dropping an unusable task number and collapsing a duplicate one —
+    # and a "no cycle" computed over a shortened node set is the same
+    # completeness-over-an-unscanned-set claim.
     population = {
+        'acyclic': acyclic_population,
         'declared_set_closure': closure_population,
         'declared_scope_reconciliation': scope_population,
     }
-    population_complete = bool(closure_population['population_complete'] and scope_population['population_complete'])
+    population_complete = bool(
+        acyclic_population['population_complete']
+        and closure_population['population_complete']
+        and scope_population['population_complete']
+    )
     ambiguous = not parseable or not population_complete
 
     return {

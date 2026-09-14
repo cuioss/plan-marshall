@@ -130,6 +130,52 @@ rather than re-deriving the path from filesystem layout. Re-derivation
 breaks if the platform-neutral worktree root constant ever changes
 again, and it duplicates logic that `manage-status` already owns.
 
+### Sibling-worktree resolution (read verbs only)
+
+Under ADR-002 a phase-5+ plan's directory **moves into its own worktree**, so it is absent from every other checkout by design. A read that answers that absence with a bare "not found" is structurally incapable of returning presence for such a plan, so its refusal is evidence of nothing — and reading it as "the plan is dead" has already destroyed live coordination state.
+
+The **read** verbs therefore widen their resolution: on a local miss they consult `git-workflow locate-plan-checkout` and return the plan's real status from the checkout that holds it.
+
+| Verb | Widened? |
+|------|----------|
+| `read` (alias `get`) | Yes |
+| `progress` | Yes |
+| `get-context` | Yes |
+| `metadata --get` | Yes |
+| `metadata --set` / `--set --append` | No — write |
+| `set-phase`, `update-phase`, `transition`, `title-token` | No — write |
+| `get-worktree-path` | No — see below |
+| `list` | Unchanged — it already scans worktrees and already publishes `scope` |
+
+⛔ **The fallback is read-only and is never default-on.** The same gate serves the write verbs, and every one of them commits through a **locally** resolved path. A write verb that read a sibling plan through the fallback would then write the document into the wrong tree — strictly worse than the absence being fixed.
+
+⛔ **`get-worktree-path` stays strict on purpose.** `locate-plan-checkout` calls straight back into it, so opting it in would make the consult call itself. Every verb on the locator's own call path stays strict; the locator's structural probe already covers the moved-in-from-main case.
+
+**Which checkout answered.** Every widened read publishes its provenance, so a caller can tell a local read from a sibling-worktree one:
+
+| Field | Meaning |
+|-------|---------|
+| `resolved_from` | `current` — read from the locally resolved tree; `worktree` — adopted from the checkout that holds the plan |
+| `resolved_checkout` | The holding checkout's absolute path. Present only when `resolved_from: worktree` |
+
+**An absence from a non-`main` scope is `unknown`, not absence.** When no reachable checkout holds the plan, the refusal keeps its `error: file_not_found` code and adds the discriminator:
+
+| Field | Meaning |
+|-------|---------|
+| `scope` | How wide the look reached — `main`, `worktree_local`, or `unknown`. The same vocabulary `list` publishes, from the same predicate |
+| `plan_visibility` | `absent_anywhere` — the locator rendered a verdict **and** the scope was `main`, which observes main and every sibling worktree, so the absence is authoritative. `not_visible_from_this_scope` — everything else: a strict gate that never consulted, a locator that could not answer, or a scope blind to sibling worktrees |
+
+Only the conjunction substantiates absence. `not_visible_from_this_scope` means the plan was not found **here** and says nothing about whether it exists elsewhere — never treat it as proof that a plan is gone.
+
+```toon
+status: error
+plan_id: my-feature
+error: file_not_found
+message: "status.json not found: plan 'my-feature' is not visible from this scope (scope=worktree_local). ..."
+scope: worktree_local
+plan_visibility: not_visible_from_this_scope
+```
+
 ---
 
 ## Operations
@@ -203,6 +249,17 @@ plan:
   current_phase: 2-refine
   phases: [...]
   metadata: {...}
+resolved_from: current
+```
+
+A plan that has moved into its own worktree answers from there instead, carrying the holding checkout — see [Sibling-worktree resolution](#sibling-worktree-resolution-read-verbs-only):
+
+```toon
+status: success
+plan_id: my-feature
+plan: {...}
+resolved_from: worktree
+resolved_checkout: /abs/path/.plan/local/worktrees/my-feature
 ```
 
 ### set-phase
@@ -260,6 +317,7 @@ progress:
   completed_phases: 3
   current_phase: 4-plan
   percent: 50
+resolved_from: current
 ```
 
 **Progress formula**: `percent = floor(completed_phases / total_phases * 100)`. A phase counts as "completed" only when its status is `done`. Phases with status `in_progress` or `pending` are not counted.
@@ -313,7 +371,10 @@ status: success
 plan_id: my-feature
 field: change_type
 value: feature
+resolved_from: current
 ```
+
+`--get` is the only branch of this command that resolves a sibling-worktree plan; `--set` and `--set --append` write, so they keep the strict local gate — see [Sibling-worktree resolution](#sibling-worktree-resolution-read-verbs-only).
 
 ### mark-step-done
 
@@ -689,9 +750,10 @@ current_phase: 2-refine
 total_phases: 6
 completed_phases: 1
 change_type: feature
+resolved_from: current
 ```
 
-**Note**: All metadata fields are promoted to top level for convenience (flattened from `metadata` object). The fields shown depend on what has been set via `metadata --set`.
+**Note**: All metadata fields are promoted to top level for convenience (flattened from `metadata` object). The fields shown depend on what has been set via `metadata --set`. `resolved_from` (and `resolved_checkout`) are merged AFTER that flattening, so a metadata field sharing either name cannot shadow the read's provenance — see [Sibling-worktree resolution](#sibling-worktree-resolution-read-verbs-only).
 
 ### get-worktree-path
 
@@ -761,11 +823,14 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status list \
 ```toon
 status: success
 total: 2
+scope: main
 
 plans[2]{id,current_phase,status,location}:
 my-feature,3-outline,in_progress,current
 bugfix-123,5-execute,in_progress,worktree
 ```
+
+`scope` names how wide the enumeration reached — `main`, `worktree_local`, or `unknown` — from the same predicate the read verbs' `plan_visibility` discriminator is derived from. An absent plan under a non-`main` scope is `unknown`, not absence; see [Sibling-worktree resolution](#sibling-worktree-resolution-read-verbs-only).
 
 Each entry carries a `location` field: `current` (the plan directory lives on the cwd checkout) or `worktree` (the plan directory was moved into its worktree at phase-5 entry, ADR-002). The merged list is deduped by plan id (a moved-in plan appears exactly once) and sorted by id.
 

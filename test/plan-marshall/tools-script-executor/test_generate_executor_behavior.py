@@ -31,8 +31,20 @@ def derived_surfaces(monkeypatch):
 
 @pytest.fixture()
 def previous_surfaces(monkeypatch):
-    """Pin the previously-generated surface set the generator reads."""
-    monkeypatch.setattr(_gen, 'read_previous_surfaces', lambda executor: {'a:b:c': _surface_literal()})
+    """Pin the previously-generated surface set the generator reads.
+
+    The stub returns a :class:`PreviousSurfaces`, not the bare mapping this
+    reader used to hand back: the generator consumes ``previous.outcome``
+    alongside ``previous.surfaces``, and the whole point of that record is that
+    an empty mapping alone cannot say whether the previous executor verifiably
+    carried nothing or simply could not be read. ``read`` is the outcome here —
+    the block was found and parsed, and it held the one entry below.
+    """
+    monkeypatch.setattr(
+        _gen,
+        'read_previous_surfaces',
+        lambda executor: _gen.PreviousSurfaces({'a:b:c': _surface_literal()}, 'read', ''),
+    )
 
 
 @pytest.fixture()
@@ -433,7 +445,11 @@ def test_fail_open_guard_allows_zero_surfaces_against_empty_previous(tmp_path, m
     """
     base = _prep_synthetic(tmp_path, monkeypatch)
     plan_dir = tmp_path / '.plan'
-    monkeypatch.setattr(_gen, 'read_previous_surfaces', lambda executor: {})
+    # ``absent`` — no executor file exists at all, which is a MEASUREMENT that it
+    # carried no surfaces. The distinction is load-bearing here: the same empty
+    # mapping under ``unreadable`` is the guard's refusal case, so a stub that
+    # returned only the mapping would not pin which branch this control takes.
+    monkeypatch.setattr(_gen, 'read_previous_surfaces', lambda executor: _gen.PreviousSurfaces({}, 'absent', ''))
 
     result = _gen.generate_executor({'a:b:c': '/p/c.py'}, base, dry_run=False, target='claude')
 
@@ -497,7 +513,7 @@ def test_surface_stats_line_emitted_on_both_fail_open_and_success(
     assert 'surfaces_derived=0' in out_zero
 
     # Non-zero case — success, the line carries the non-zero value.
-    monkeypatch.setattr(_gen, 'read_previous_surfaces', lambda executor: {})
+    monkeypatch.setattr(_gen, 'read_previous_surfaces', lambda executor: _gen.PreviousSurfaces({}, 'absent', ''))
     monkeypatch.setattr(
         _gen, 'derive_script_surfaces', lambda *a, **k: ({'a:b:c': _surface_literal()}, _stats(1, 1, 0))
     )

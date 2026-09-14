@@ -34,6 +34,8 @@ import pytest
 from assert_test_identifiers import (
     DiffResult,
     assert_identifiers_in_log,
+    count_log_nodeids,
+    is_pytest_result_line,
 )
 
 from conftest import get_scripts_dir, run_script
@@ -772,3 +774,473 @@ class TestTheLeftBoundaryIsAnchoredToo:
         # Assert
         assert result.passed is True
         assert result.found_forms == ('exact',)
+
+
+# =============================================================================
+# Could-not-look — an unsearchable log is not a failed assertion
+# =============================================================================
+
+#: A real green reply from the build wrapper, verbatim in shape: it NAMES the
+#: per-run log rather than enumerating the run, so it carries no pytest nodeid
+#: at all. Supplying this where the build-results log belongs is the mistake the
+#: could-not-look outcome exists to make visible, and it is the exact text the
+#: defect was observed against.
+_SUMMARY_ONLY_GREEN_LOG = (
+    '[EXEC] ./pw module-tests plan-marshall\n'
+    '[EXEC] green build: analyses examined: test; 38 test(s) executed\n'
+    'status: success\n'
+    'exit_code: 0\n'
+    'duration_seconds: 46\n'
+    'log_file: /repo/.plan/local/plans/p/build-results/plan-marshall/python-2026-09-13-235437.log\n'
+    'command: ./pw module-tests plan-marshall\n'
+    'tests_run: 38\n'
+    'tests_population: measured\n'
+    'analyses_examined: test\n'
+)
+
+
+class TestAnUnsearchableLogIsNotAFailedAssertion:
+    """A log that enumerates no nodeid establishes nothing about the run.
+
+    The retired shape reported it as ``passed: false, found_count: 0`` —
+    byte-identical to a log that enumerated its run in full and genuinely did
+    not contain the identifier. The two warrant opposite reactions (supply the
+    right log, versus the test silently did not run), so the helper reports the
+    unsearchable case as its own outcome.
+
+    The three cells below are the discrimination itself, and each is needed: the
+    could-not-look cell alone is equally consistent with a helper that returns it
+    for everything, so the two ``success`` cells are matched controls proving the
+    narrowing did not widen into a blanket exemption.
+    """
+
+    def test_a_summary_only_green_log_reports_could_not_look(self, tmp_path: Path) -> None:
+        """Cell 1 — no nodeid in the log: ``passed`` is ``None``, never ``False``."""
+        # Arrange — the build wrapper's own green reply, which names a log
+        # rather than enumerating one.
+        log_path = _write_log(tmp_path, _SUMMARY_ONLY_GREEN_LOG)
+        written = ['test/plan-marshall/execute-task/test_foo.py::test_alpha']
+
+        # Act
+        result = assert_identifiers_in_log(written, log_path)
+
+        # Assert
+        assert result.passed is None, (
+            'An unsearchable log must report the could-not-look outcome. '
+            'passed=False here is the defect: it is indistinguishable from a '
+            'genuine silent skip, and it sends the reader to the wrong remedy.'
+        )
+        assert result.log_nodeid_count == 0
+        assert result.found == ()
+        assert result.missing == (), (
+            'Nothing was searched for, so nothing may be reported missing — a '
+            'populated missing[] here would be a measured claim about an '
+            'unmeasured run.'
+        )
+
+    def test_a_genuine_silent_skip_is_still_a_failure(self, tmp_path: Path) -> None:
+        """Cell 2 — matched control: an enumerating log missing one identifier still fails.
+
+        This is the assertion the guardrail exists for, and the one the new
+        outcome must never absorb. Without this control the change is equally
+        consistent with a helper that returns could-not-look for every absence.
+        """
+        # Arrange — the log enumerates a real run, and beta is absent from it.
+        written = [
+            'test/plan-marshall/execute-task/test_foo.py::test_alpha',
+            'test/plan-marshall/execute-task/test_foo.py::test_beta',
+        ]
+        log_path = _write_log(tmp_path, _pytest_log_lines([written[0]]))
+
+        # Act
+        result = assert_identifiers_in_log(written, log_path)
+
+        # Assert
+        assert result.passed is False, 'A log that DOES enumerate nodeids and lacks one is a silent skip, not a gap.'
+        assert result.missing == (written[1],)
+        assert result.log_nodeid_count == 1
+
+    def test_a_complete_log_still_passes_and_publishes_its_population(self, tmp_path: Path) -> None:
+        """Cell 3 — matched control: the green path is unchanged, and now self-describing."""
+        # Arrange
+        written = [
+            'test/plan-marshall/execute-task/test_foo.py::test_alpha',
+            'test/plan-marshall/execute-task/test_foo.py::test_beta',
+        ]
+        log_path = _write_log(tmp_path, _pytest_log_lines(written))
+
+        # Act
+        result = assert_identifiers_in_log(written, log_path)
+
+        # Assert
+        assert result.passed is True
+        assert result.found == tuple(written)
+        assert result.log_nodeid_count == 2, (
+            'A green verdict must still publish the population it was computed '
+            'over, so a shrunken log cannot pass as a rich one.'
+        )
+
+    def test_the_empty_input_vacuous_pass_counts_nothing(self, tmp_path: Path) -> None:
+        """The vacuous pass never reads the log, so it claims no population.
+
+        ``None`` and ``0`` are different facts here — *not counted* versus
+        *counted, and the log enumerates nothing* — and collapsing them would
+        make the vacuous pass indistinguishable from a could-not-look.
+        """
+        # Arrange — deliberately a path that does not exist, so any read fails loudly.
+        nonexistent_log = tmp_path / 'does-not-exist.log'
+
+        # Act
+        result = assert_identifiers_in_log([], nonexistent_log)
+
+        # Assert
+        assert result.passed is True
+        assert result.log_nodeid_count is None
+
+
+class TestTheCouldNotLookCliContract:
+    """The CLI shape: its own exit code, and no fabricated counts."""
+
+    def test_cli_could_not_look_exits_three_and_omits_the_verdict_keys(self, tmp_path: Path) -> None:
+        """Exit 3, ``status: could_not_look``, and no ``passed`` / count keys.
+
+        The omission is the contract. A ``0`` published by a run that searched
+        nothing is byte-identical to a measured zero, and execute-task shells
+        this exit status as a guardrail boolean — so an unmeasurable check must
+        read as neither a pass (0) nor a failed assertion (1).
+        """
+        # Arrange
+        log_path = _write_log(tmp_path, _SUMMARY_ONLY_GREEN_LOG)
+        ids_path = _write_identifiers(tmp_path, ['test/plan-marshall/execute-task/test_foo.py::test_alpha'])
+
+        # Act
+        result = run_script(
+            SCRIPT_PATH,
+            'run',
+            '--identifiers-file',
+            str(ids_path),
+            '--log',
+            str(log_path),
+            cwd=tmp_path,
+        )
+
+        # Assert
+        assert result.returncode == 3, f'CLI stderr: {result.stderr}'
+        data = result.toon()
+        assert data['status'] == 'could_not_look'
+        assert data['reason'] == 'log_enumerates_no_nodeids'
+        assert data['log_enumerates_nodeids'] in (False, 'false')
+        assert int(data['log_nodeid_count']) == 0
+        assert int(data['identifiers_supplied']) == 1
+        for absent in ('passed', 'found_count', 'missing_count', 'parametrized_match_count'):
+            assert absent not in data, (
+                f'{absent!r} must be OMITTED on the could-not-look payload — publishing it '
+                f'lets a caller read a measured verdict off a run that measured nothing.'
+            )
+
+    def test_cli_measured_path_still_publishes_the_verdict_and_the_population(self, tmp_path: Path) -> None:
+        """Matched control: the success payload keeps every key and gains the coverage pair."""
+        # Arrange
+        written = ['test/plan-marshall/execute-task/test_foo.py::test_alpha']
+        log_path = _write_log(tmp_path, _pytest_log_lines(written))
+        ids_path = _write_identifiers(tmp_path, written)
+
+        # Act
+        result = run_script(
+            SCRIPT_PATH,
+            'run',
+            '--identifiers-file',
+            str(ids_path),
+            '--log',
+            str(log_path),
+            cwd=tmp_path,
+        )
+
+        # Assert
+        assert result.returncode == 0, f'CLI stderr: {result.stderr}'
+        data = result.toon()
+        assert data['status'] == 'success'
+        assert data['passed'] in (True, 'true')
+        assert data['log_enumerates_nodeids'] in (True, 'true')
+        assert int(data['log_nodeid_count']) == 1
+        assert int(data['found_count']) == 1
+        assert int(data['missing_count']) == 0
+
+
+class TestTheCoveragePairIsTriState:
+    """``log_enumerates_nodeids`` moves with ``log_nodeid_count``, including its ``None``.
+
+    The vacuous pass returns before the log is ever opened, so the count stays
+    ``None``. Rendering the companion flag as ``false`` there stated that the log
+    HAD been read and enumerated nothing — a measured claim about a file nobody
+    touched, and the exact collapse the count's tri-state exists to prevent.
+    """
+
+    def test_the_vacuous_pass_publishes_null_for_both_coverage_fields(self, tmp_path: Path) -> None:
+        """Never opened → ``null`` / ``null``, never ``false`` / ``null``."""
+        # Arrange — no identifiers, so the helper returns before reading the log.
+        ids_path = tmp_path / 'ids.txt'
+        ids_path.write_text('\n   \n', encoding='utf-8')
+        log_path = _write_log(tmp_path, _pytest_log_lines(['test/foo/test_thing.py::test_login']))
+
+        # Act
+        result = run_script(
+            SCRIPT_PATH,
+            'run',
+            '--identifiers-file',
+            str(ids_path),
+            '--log',
+            str(log_path),
+            cwd=tmp_path,
+        )
+
+        # Assert
+        assert result.returncode == 0, f'CLI stderr: {result.stderr}'
+        data = result.toon()
+        assert data['status'] == 'success'
+        assert data['log_nodeid_count'] in (None, 'null')
+        assert data['log_enumerates_nodeids'] in (None, 'null'), (
+            'false here would say the log was read and enumerated nothing, which '
+            'is a different fact from "not counted" — and the log carries a real '
+            'nodeid, so that reading would also be wrong on its face.'
+        )
+
+    def test_a_measured_zero_still_publishes_false(self, tmp_path: Path) -> None:
+        """Matched control — the flag must still reach ``false`` once it is measured.
+
+        Without this the fix is equally consistent with an emitter that never
+        publishes ``false`` at all, which would lose the measured-zero state
+        instead of separating it from the unmeasured one.
+        """
+        # Arrange — a log that WAS read and carries no outcome line.
+        log_path = _write_log(tmp_path, _SUMMARY_ONLY_GREEN_LOG)
+        ids_path = _write_identifiers(tmp_path, ['test/foo/test_thing.py::test_login'])
+
+        # Act
+        result = run_script(
+            SCRIPT_PATH,
+            'run',
+            '--identifiers-file',
+            str(ids_path),
+            '--log',
+            str(log_path),
+            cwd=tmp_path,
+        )
+
+        # Assert
+        assert result.returncode == 3, f'CLI stderr: {result.stderr}'
+        data = result.toon()
+        assert data['log_enumerates_nodeids'] in (False, 'false')
+        assert int(data['log_nodeid_count']) == 0
+
+    def test_a_measured_population_still_publishes_true(self, tmp_path: Path) -> None:
+        """Matched control — and the third state is unchanged."""
+        # Arrange
+        written = ['test/foo/test_thing.py::test_login']
+        log_path = _write_log(tmp_path, _pytest_log_lines(written))
+        ids_path = _write_identifiers(tmp_path, written)
+
+        # Act
+        result = run_script(
+            SCRIPT_PATH,
+            'run',
+            '--identifiers-file',
+            str(ids_path),
+            '--log',
+            str(log_path),
+            cwd=tmp_path,
+        )
+
+        # Assert
+        assert result.returncode == 0, f'CLI stderr: {result.stderr}'
+        data = result.toon()
+        assert data['log_enumerates_nodeids'] in (True, 'true')
+        assert int(data['log_nodeid_count']) == 1
+
+
+class TestTheNodeidPopulationCount:
+    """``count_log_nodeids`` is the could-not-look gate, so its own edges matter."""
+
+    def test_a_nodeid_named_many_times_counts_once(self) -> None:
+        """Distinct, not total — a verbose run names one nodeid several times.
+
+        A total would report a single-test log as a rich one, which matters
+        nowhere for the zero/non-zero gate but everywhere for the population a
+        green payload publishes.
+        """
+        nodeid = 'test/foo/test_thing.py::test_login'
+        lines = [
+            f'{nodeid} \n',
+            f'[gw0] [ 10%] PASSED {nodeid} \n',
+            f'0.79s call     {nodeid}\n',
+        ]
+        assert count_log_nodeids(lines) == 1
+
+    def test_prose_mentioning_a_path_without_a_nodeid_counts_nothing(self) -> None:
+        """A ``.py`` path alone is not a nodeid — the ``::`` is what makes one."""
+        lines = [
+            '>>> module-tests: pytest test/plan-marshall/execute-task\n',
+            '    uv run pytest test/plan-marshall/execute-task --basetemp=.plan/temp/x\n',
+            'log_file: /repo/.plan/local/plans/p/build-results/python-2026-09-13.log\n',
+        ]
+        assert count_log_nodeids(lines) == 0
+
+    def test_a_failure_summary_line_counts(self) -> None:
+        """A red run enumerates through ``-rsfE`` short-summary lines, and those count.
+
+        Without this the gate would call a failing run unsearchable and route a
+        real regression into the could-not-look branch.
+        """
+        lines = ['FAILED test/foo/test_thing.py::test_login - AssertionError: boom\n']
+        assert count_log_nodeids(lines) == 1
+
+
+# =============================================================================
+# The evidence gate — only a line carrying a per-test OUTCOME proves a run
+#
+# A nodeid on any other line proves nothing: the build wrapper echoes its own
+# pytest invocation, and that echo alone previously supplied BOTH a non-zero
+# nodeid population and an exact identifier match, so the helper reported a
+# measured pass over a log in which pytest never collected or ran anything.
+# =============================================================================
+
+#: A log whose ONLY nodeid sits on the echoed pytest invocation. pytest never
+#: reported an outcome here — the run died before collection — so nothing in
+#: this text is evidence that ``test_login`` ran.
+_COMMAND_ECHO_ONLY_LOG = (
+    '[EXEC] ./pw module-tests plan-marshall\n'
+    'uv run pytest test/foo/test_thing.py::test_login -v --basetemp=.plan/temp/x\n'
+    'ImportError while loading conftest\n'
+)
+
+
+class TestOnlyAnOutcomeBearingLineIsEvidence:
+    """The population and the per-identifier match both gate on the same line set.
+
+    Each cell below is needed. The two refusals alone are equally consistent
+    with a helper that refuses everything, so the matched positive controls
+    prove the narrowing did not widen into a blanket refusal of real logs.
+    """
+
+    def test_a_command_echo_supplies_no_population(self) -> None:
+        """Refusal 1 — the echoed invocation is not an enumerated run."""
+        # Arrange / Act
+        count = count_log_nodeids(_COMMAND_ECHO_ONLY_LOG.splitlines(keepends=True))
+
+        # Assert
+        assert count == 0, (
+            'A nodeid echoed inside the pytest command line is not evidence that '
+            'pytest enumerated anything — counting it lets a run that never '
+            'collected a test satisfy the could-not-look gate.'
+        )
+
+    def test_a_command_echo_does_not_satisfy_the_identifier_match(self, tmp_path: Path) -> None:
+        """Refusal 2 — and it must not match the written identifier either.
+
+        Gating only the population would still leave the match satisfiable the
+        moment any unrelated outcome line pushed the population above zero.
+        """
+        # Arrange — one real outcome line for an UNRELATED test lifts the
+        # population off zero, so the run reaches the measured path; the
+        # requested identifier appears only on the echo.
+        log_path = _write_log(
+            tmp_path,
+            _COMMAND_ECHO_ONLY_LOG + 'test/foo/test_other.py::test_unrelated PASSED [100%]\n',
+        )
+
+        # Act
+        result = assert_identifiers_in_log(['test/foo/test_thing.py::test_login'], log_path)
+
+        # Assert
+        assert result.passed is False
+        assert result.missing == ('test/foo/test_thing.py::test_login',), (
+            'The identifier appears only on the echoed command line, which is '
+            'not a result line — reporting it found claims a run that did not happen.'
+        )
+
+    def test_a_deselect_argument_does_not_report_the_test_as_run(self, tmp_path: Path) -> None:
+        """Refusal 3 — a nodeid named in ``--deselect`` ran precisely because it did NOT run."""
+        # Arrange
+        log_path = _write_log(
+            tmp_path,
+            'uv run pytest test/foo --deselect test/foo/test_thing.py::test_login\n'
+            'test/foo/test_thing.py::test_other PASSED [100%]\n',
+        )
+
+        # Act
+        result = assert_identifiers_in_log(['test/foo/test_thing.py::test_login'], log_path)
+
+        # Assert
+        assert result.passed is False
+        assert result.missing == ('test/foo/test_thing.py::test_login',)
+
+    def test_a_verbose_result_line_is_still_accepted(self, tmp_path: Path) -> None:
+        """Positive control 1 — the ordinary ``-v`` line pytest writes still counts and matches."""
+        # Arrange
+        log_path = _write_log(tmp_path, 'test/foo/test_thing.py::test_login PASSED [100%]\n')
+
+        # Act
+        result = assert_identifiers_in_log(['test/foo/test_thing.py::test_login'], log_path)
+
+        # Assert
+        assert result.passed is True
+        assert result.log_nodeid_count == 1
+
+    def test_an_xdist_scheduling_line_is_still_accepted(self, tmp_path: Path) -> None:
+        """Positive control 2 — the outcome token may PRECEDE the nodeid."""
+        # Arrange
+        log_path = _write_log(tmp_path, '[gw3] [ 42%] PASSED test/foo/test_thing.py::test_login \n')
+
+        # Act
+        result = assert_identifiers_in_log(['test/foo/test_thing.py::test_login'], log_path)
+
+        # Assert
+        assert result.passed is True
+        assert result.log_nodeid_count == 1
+
+    def test_a_short_summary_failure_line_is_still_accepted(self, tmp_path: Path) -> None:
+        """Positive control 3 — a red run's enumeration must keep reaching the measured path."""
+        # Arrange
+        log_path = _write_log(
+            tmp_path,
+            'FAILED test/foo/test_thing.py::test_login - AssertionError: boom\n',
+        )
+
+        # Act
+        result = assert_identifiers_in_log(['test/foo/test_thing.py::test_login'], log_path)
+
+        # Assert
+        assert result.passed is True
+        assert result.log_nodeid_count == 1
+
+    @pytest.mark.parametrize(
+        'line',
+        [
+            'test/foo/test_thing.py::test_login PASSED [100%]',
+            'test/foo/test_thing.py::test_login FAILED',
+            'ERROR test/foo/test_thing.py::test_login',
+            'SKIPPED [1] test/foo/test_thing.py:12: needs network',
+            'XFAIL test/foo/test_thing.py::test_login',
+            'XPASS test/foo/test_thing.py::test_login',
+        ],
+    )
+    def test_every_outcome_token_qualifies_a_line(self, line: str) -> None:
+        """Positive control 4 — each token pytest can report opens the gate."""
+        assert is_pytest_result_line(line) is True
+
+    @pytest.mark.parametrize(
+        'line',
+        [
+            'uv run pytest test/foo/test_thing.py::test_login -v',
+            '0.79s call     test/foo/test_thing.py::test_login',
+            '=================================== ERRORS ====================================',
+            'collected 38 items',
+        ],
+    )
+    def test_a_non_outcome_line_does_not_qualify(self, line: str) -> None:
+        """Negative control — an echo, a durations row, a banner, and a collection count.
+
+        ``ERRORS`` is the banner that would collapse the boundary if the token
+        match were unanchored on its right side.
+        """
+        assert is_pytest_result_line(line) is False

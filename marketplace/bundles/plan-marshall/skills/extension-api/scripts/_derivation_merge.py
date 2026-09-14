@@ -104,8 +104,10 @@ def merge_resolver_edges(
 
     Zero resolvers is a first-class, non-error outcome: the return is
     ``([], [])``, never an exception and never a fabricated edge. The caller
-    distinguishes "no resolver ran" from "N resolvers ran and found nothing" by
-    the length of the returned report list.
+    distinguishes "no resolver ran" from "N resolvers ran and found nothing"
+    through ``_cmd_client_query.count_dispatched``, which counts only the reports
+    NOT carrying ``not_dispatched`` — not through the length of the returned
+    report list, which counts a discovered-but-withheld resolver as having run.
 
     Args:
         resolvers: Discovered resolver records from

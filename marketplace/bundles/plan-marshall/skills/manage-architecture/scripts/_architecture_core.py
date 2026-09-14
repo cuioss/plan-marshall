@@ -29,6 +29,7 @@ import copy
 import json
 import os
 import shutil
+import tempfile
 from pathlib import Path
 from typing import Any, NoReturn
 
@@ -386,8 +387,12 @@ def package_key_resolves(key: str, project_dir: str = '.') -> bool:
     candidate = (root / normalized).resolve()
     # Anything that escaped the project root — a drive-letter component, or a
     # symlink resolving outside the tree — is not a repo-relative location.
-    # ``candidate == root`` is the key that names the root itself.
-    if candidate != root and root not in candidate.parents:
+    #
+    # ``candidate == root`` is refused too: it is what ``.`` and ``./`` resolve
+    # to, and the project root is not a package. Accepting it would make those
+    # two strings valid package keys that "resolve" for every project, which is
+    # the dotted-pseudo-identifier escape hatch path-is-identity exists to close.
+    if candidate == root or root not in candidate.parents:
         return False
     return candidate.exists()
 
@@ -418,9 +423,20 @@ def migrate_key_packages(
 
     * a key that already resolves to a path is kept as-is;
     * a dotted key found in ``derived_packages`` is rewritten to that entry's
-      ``path``;
+      ``path`` — but only when that bridge ``path`` itself resolves. A bridge
+      pointing at a location that does not exist is not a migration, it is a
+      second non-resolving key, so the original is kept and reported;
     * a key that resolves to neither is kept under its original key AND reported in
-      the returned ``unresolved`` list — a named outcome, never a silent drop.
+      the returned ``unresolved`` list — a named outcome, never a silent drop;
+    * a rewrite whose target key is ALREADY present — two dotted keys bridging to
+      one path, or a dotted key bridging onto a path key the document already
+      carries — would overwrite a curated description with another. The incoming
+      key is kept under its original name and reported instead, so the collision
+      surfaces through the same channel rather than costing a caller its data.
+
+    The return signature is a two-tuple that every caller destructures, so all
+    three reportable outcomes share the one ``unresolved`` list; each entry names
+    the key that did not migrate.
 
     Returns:
         A ``(migrated, unresolved)`` pair.
@@ -433,7 +449,9 @@ def migrate_key_packages(
             continue
         derived_entry = derived_packages.get(key)
         path = derived_entry.get('path') if isinstance(derived_entry, dict) else None
-        if path:
+        # A bridge is only usable when its target is a real repo-relative
+        # location AND that location is not already spoken for in this document.
+        if path and package_key_resolves(path, project_dir) and path not in migrated and path not in key_packages:
             migrated[path] = value
         else:
             migrated[key] = value
@@ -453,9 +471,42 @@ def _read_json(path: Path) -> dict[str, Any]:
 
 
 def _write_json(path: Path, data: dict[str, Any]) -> None:
+    """Write ``data`` to ``path`` as JSON, replacing the destination ATOMICALLY.
+
+    Opening the destination with mode ``'w'`` TRUNCATES it before a single byte
+    is written, so every concurrent reader between the truncate and the last
+    flush observes a partial document and fails to parse it. ``_project.json``
+    and ``enriched.json`` are read by dispatched leaves and by the crawl on the
+    same tree a write may be running against, so that window is reachable — and
+    a store whose readers can see a half-written document is the persistence-layer
+    form of the untruthfulness this module is otherwise careful about.
+
+    Write-to-temp-then-rename closes it: a reader sees either the whole previous
+    document or the whole new one, never a prefix. The temp file is created in
+    the DESTINATION'S OWN DIRECTORY so both live on one filesystem, which is what
+    makes :func:`os.replace` atomic; a temp in the system temp dir would degrade
+    to a cross-device copy. The temp is removed on a failed write so a raising
+    serializer cannot leave scratch behind.
+
+    This is the module's existing convention rather than a new one —
+    :func:`swap_data_dir` already uses ``os.replace`` for exactly this reason,
+    as do ``_locks_core``, ``_config_core`` and ``generate_executor``.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, 'w', encoding='utf-8') as f:
-        json.dump(data, f, indent=2, sort_keys=True)
+    tmp_fd, tmp_name = tempfile.mkstemp(dir=str(path.parent), prefix=f'.{path.name}.', suffix='.tmp')
+    tmp_path = Path(tmp_name)
+    try:
+        with os.fdopen(tmp_fd, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=2, sort_keys=True)
+            # Flush the interpreter buffer into the OS before the rename; without
+            # it the rename can publish a temp the process has not finished
+            # writing, which reinstates the partial-read window by another route.
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_path, path)
+    except BaseException:
+        tmp_path.unlink(missing_ok=True)
+        raise
 
 
 def load_project_meta(project_dir: str = '.') -> dict[str, Any]:
@@ -487,11 +538,14 @@ def save_project_meta(meta: dict[str, Any], project_dir: str = '.') -> Path:
 # module map for that project; callers receive a deep copy so a mutation by one
 # caller never corrupts the cached object another caller will read.
 #
-# The crawl shells out to the build tools (e.g. Maven runs ``help:all-profiles
-# dependency:tree`` per module), so a single ``architecture resolve`` against a
-# multi-module repo would otherwise pay that cost once per ``load_module_derived``
-# call — O(N²) subprocess invocations. Memoizing the crawl collapses that to one
-# crawl per project per process. The cache is invalidated by
+# The crawl parses every module's build file and walks the worktree filesystem to
+# build the per-module file inventories. It does NOT run a build tool — that cost
+# belongs to the lazy per-module Maven enrich, which only the graph path and a
+# profile-derived ``resolve`` reach. The walk is still the expensive part, and a
+# single ``architecture resolve`` against a multi-module repo would otherwise
+# repeat it once per ``load_module_derived`` call — O(N²) full-tree walks.
+# Memoizing the crawl collapses that to one crawl per project per process. The
+# cache is invalidated by
 # :func:`invalidate_crawl_cache`, which ``swap_data_dir`` (the ``discover
 # --force`` path) calls so a forced refresh re-crawls.
 _CRAWL_CACHE: dict[str, dict[str, dict[str, Any]]] = {}
@@ -500,11 +554,12 @@ _CRAWL_CACHE: dict[str, dict[str, dict[str, Any]]] = {}
 def invalidate_crawl_cache(project_dir: str | None = None) -> None:
     """Clear the ``crawl_all_modules`` memo for one project, or the whole cache.
 
-    The Axis-D path-claim memo (:data:`_PATH_CLAIM_CACHE`) is dropped WHOLESALE
-    on every call, regardless of ``project_dir``. It is keyed by the known-module
-    tuple rather than by project path, so there is no per-project entry to
-    target — and a refresh that changes the module set must not leave a claim set
-    merged against the old one.
+    The Axis-D path-claim memo is dropped WHOLESALE on every call, regardless of
+    ``project_dir``, via :func:`invalidate_path_claim_cache`. Its key now carries
+    the project path, so a per-project drop WOULD be expressible — it is still
+    not what this wants: a refresh that changes the module set must not leave any
+    project's claim set merged against the old population, and an attributor
+    installed or removed between calls is not scoped to one project either.
 
     Args:
         project_dir: When given, only the crawl entry for this project's resolved
@@ -513,7 +568,7 @@ def invalidate_crawl_cache(project_dir: str | None = None) -> None:
             path) calls this so a forced refresh re-crawls instead of returning
             stale memoized data.
     """
-    _PATH_CLAIM_CACHE.clear()
+    invalidate_path_claim_cache()
     # The worktree-sha memo is dropped WHOLESALE: it is keyed by resolved
     # project_dir, but a refresh anywhere means the tree may have moved, and a
     # stale sha would silently mis-report freshness.
@@ -538,8 +593,12 @@ def crawl_all_modules(project_dir: str = '.') -> dict[str, dict[str, Any]]:
     ``Path.cwd()`` or ``git rev-parse --show-toplevel``. This is what gives
     ``--project-dir <worktree>`` callers worktree-correct results.
 
-    Memoization: the crawl is expensive (it shells out to the build tools — e.g.
-    Maven runs ``help:all-profiles dependency:tree`` per module). The result is
+    Memoization: the crawl is expensive, but not because it runs a build tool —
+    it does not. It parses each module's build file with stdlib XML and walks the
+    worktree filesystem for the file inventories; the per-module
+    ``help:all-profiles dependency:tree`` belongs to the LAZY Maven enrich, which
+    only the dependency-graph path and a profile-derived ``resolve`` reach. The
+    full-tree walk is the cost being avoided. The result is
     memoized in :data:`_CRAWL_CACHE` keyed by the resolved absolute
     ``project_dir`` so repeated calls within one process — the common case for a
     single ``architecture resolve`` that touches several modules — crawl only
@@ -738,28 +797,154 @@ def load_module_enriched_or_empty(module_name: str, project_dir: str = '.') -> d
     return migrate_concept_document(_read_json(path))
 
 
-def save_module_enriched(
-    module_name: str, data: dict[str, Any], project_dir: str = '.', generated_by: str = GENERATED_BY
-) -> Path:
-    """Save one module's ``enriched.json`` — the single concept-document writer.
+def unknown_generation() -> dict[str, Any]:
+    """Provenance header for a document whose generating tree is not known.
 
-    Two concept-model constructs are enforced here so every persisted document
-    carries them regardless of which caller wrote it:
+    Records WHO the document is attributed to (:data:`GENERATED_BY`) while stating
+    that the tree it was written against is unrecorded (``tree_sha: None``), which
+    :func:`derive_freshness` maps to :data:`FRESHNESS_UNKNOWN`.
+
+    This is the header to back-fill onto a document that reaches a writer with no
+    provenance of its own. Stamping the CURRENT tree sha there instead would
+    assert that the document's content was generated against this tree, which
+    nothing established — it would manufacture a ``fresh`` verdict for a body of
+    unknown vintage, the precise false-confidence the generation header exists to
+    prevent.
+    """
+    return {'by': GENERATED_BY, 'tree_sha': None}
+
+
+def stamp_concept_document(
+    data: dict[str, Any],
+    project_dir: str = '.',
+    generated_by: str = GENERATED_BY,
+    generation: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Return ``data`` carrying the concept-model invariants, ready to be written.
+
+    The single place the two write-time invariants are applied:
 
     * ``type`` is migrated/validated via :func:`migrate_concept_document` — an
       absent type is filled with the module default, an **unknown** type is
-      REFUSED (:class:`InvalidConceptTypeError`) at write time;
-    * a fresh ``generation`` header is stamped, recording ``generated_by`` and the
-      current working-tree sha — the document is being written against *this* tree
-      now, so its provenance is refreshed on every write.
+      REFUSED (:class:`InvalidConceptTypeError`);
+    * the document carries a ``generation`` header. By default a FRESH one is
+      stamped, recording ``generated_by`` and the current working-tree sha — the
+      content is being authored against *this* tree now.
+
+    Pass ``generation`` to supply the header instead of building one. That is for
+    a writer that persists content it did not author: ``discover`` re-writes every
+    module's existing document verbatim, and a fresh stamp there would claim
+    preserved content was generated against the current tree. Such a caller
+    forwards the document's own header, or :func:`unknown_generation` when it has
+    none.
+
+    It RETURNS the document rather than writing it, so a caller that owns its own
+    write placement can still be held to the invariants. That matters because the
+    writers do not share a destination: :func:`save_module_enriched` resolves the
+    live path from ``project_dir``, while ``discover --force`` stages every
+    document under the tmp directory it later swaps into place. Redirecting the
+    staging writer through the live-path writer would break that atomicity, so
+    the invariants are what is shared, not the write.
+
+    Never mutates the caller's dict.
+
+    Raises:
+        InvalidConceptTypeError: If ``data`` declares an unknown ``type``.
+    """
+    document = migrate_concept_document(data)
+    document[GENERATION_FIELD] = generation if generation is not None else build_generation(project_dir, generated_by)
+    return document
+
+
+def save_module_enriched(
+    module_name: str, data: dict[str, Any], project_dir: str = '.', generated_by: str = GENERATED_BY
+) -> Path:
+    """Save one module's ``enriched.json`` — the live-path concept-document writer.
+
+    Stamps the concept-model invariants via :func:`stamp_concept_document`, then
+    writes to the module's live ``enriched.json``. A caller that stages its write
+    elsewhere (``discover --force``'s tmp+swap) calls that helper directly and
+    places the returned document itself.
 
     Raises:
         InvalidConceptTypeError: If ``data`` declares an unknown ``type``.
     """
     path = get_module_enriched_path(module_name, project_dir)
-    document = migrate_concept_document(data)
-    document[GENERATION_FIELD] = build_generation(project_dir, generated_by)
-    _write_json(path, document)
+    _write_json(path, stamp_concept_document(data, project_dir, generated_by))
+    return path
+
+
+def sync_module_index(module_names: list[str], project_dir: str = '.') -> None:
+    """Refresh ``_project.json``'s index entry for each named module, in one write.
+
+    Each entry is rebuilt from what is ON DISK — the document is re-read so the
+    index records the provenance header that was actually persisted, rather than
+    a header recomputed here that could differ from it.
+
+    **A missing or unreadable ``_project.json`` is tolerated as a no-op.** The
+    index is a derived pre-flight surface, not the store: a document write is
+    reachable before ``discover`` has ever run, and failing its follow-up because
+    the index does not exist would make writing a document depend on an artifact
+    it does not need. ``discover`` rebuilds the index from the documents when it
+    next runs.
+
+    Takes a LIST so a caller with several owed modules pays one ``_project.json``
+    write rather than one per module.
+    """
+    try:
+        meta = load_project_meta(project_dir)
+    except (DataNotFoundError, OSError, ValueError):
+        return
+
+    index = meta.get('modules')
+    if not isinstance(index, dict):
+        index = {}
+
+    for module_name in module_names:
+        document = load_module_enriched_or_empty(module_name, project_dir)
+        if not document:
+            continue
+        index[module_name] = {
+            'description': document.get('responsibility', '') or '',
+            GENERATION_FIELD: document.get(GENERATION_FIELD, {}),
+        }
+
+    meta['modules'] = index
+    save_project_meta(meta, project_dir)
+
+
+def save_module_document(module_name: str, document: dict[str, Any], project_dir: str = '.') -> Path:
+    """Persist a module's concept document AND carry its header into the root index.
+
+    A composition of :func:`save_module_enriched` (writes the document alone)
+    and :func:`sync_module_index` (folds the document's header into
+    ``_project.json``'s ``modules`` entry) for the un-batched, single-module
+    live-path caller. :func:`sync_module_index` — not this wrapper — is the
+    piece every live writer of a concept document must go through: a caller
+    that writes the document alone leaves the index describing a provenance
+    and a description the document no longer carries, and the index is a
+    read-side pre-flight surface consumers trust to decide which documents are
+    worth opening, so a stale entry sends them to the wrong answer without ever
+    failing.
+
+    ``api_init``'s repair/reset branch is the other live-path writer, and it
+    calls :func:`sync_module_index` itself (batched across every repaired
+    module, one ``_project.json`` write rather than one per module) rather than
+    going through this wrapper — the shared invariant is the index
+    write-through, not a shared call site.
+
+    ⛔ This is the LIVE-path writer and must not be used for staged writes.
+    ``discover --force`` builds every document under a tmp directory it later
+    swaps into place; routing it here would write into the live tree and destroy
+    that atomicity. Such a caller uses :func:`stamp_concept_document` for the
+    invariants and places the returned document itself — the invariants are what
+    is shared with the staging path, never the write.
+
+    Raises:
+        InvalidConceptTypeError: If ``document`` declares an unknown ``type``.
+    """
+    path = save_module_enriched(module_name, document, project_dir)
+    sync_module_index([module_name], project_dir)
     return path
 
 
@@ -1102,21 +1287,51 @@ def _load_path_attribution_seam():
     return discover_path_attributors, merge_path_claims, lookup_claim
 
 
-# Process-lifetime memo for the merged Axis-D attribution, keyed by the sorted
-# known-module tuple (the only input the merge validates claims against;
-# attributor discovery itself is process-global). Each value is the
-# ``(claims, attributor_reports)`` pair the merge returned.
+# Process-lifetime memo for the merged Axis-D attribution, keyed by the
+# ``(resolved project_dir, sorted known-module tuple)`` pair.
+#
+# BOTH halves of the key are load-bearing. The module tuple is what the merge
+# validates claims against, but it does not identify the PROJECT: two checkouts
+# of the same repository — a worktree and its main checkout, or two fixture
+# projects built from one template — present identical module names while being
+# different trees. Keyed on the module tuple alone, the first project's merged
+# claim set is served to the second, so a per-project answer silently becomes a
+# per-module-name-set one. The resolved absolute path discriminates them, exactly
+# as it does for :data:`_CRAWL_CACHE`.
 #
 # The memo is REQUIRED, not an optimisation. The retired hardcoded prefix map was
 # an O(1) tuple scan, and :func:`resolve_module_for_path` calls the helper below
 # once per changed path — so an unmemoized seam would run full extension
 # discovery (loading every bundle's ``extension.py`` from disk) plus the merge N
 # times for an N-path footprint, silently widening a lazy contract into an eager
-# one. :func:`invalidate_crawl_cache` drops this memo alongside the crawl memo.
-_PATH_CLAIM_CACHE: dict[tuple[str, ...], tuple[list[dict[str, Any]], list[dict[str, Any]]]] = {}
+# one. :func:`invalidate_path_claim_cache` drops it, and
+# :func:`invalidate_crawl_cache` calls that alongside dropping the crawl memo.
+_PATH_CLAIM_CACHE: dict[tuple[str, tuple[str, ...]], tuple[list[dict[str, Any]], list[dict[str, Any]]]] = {}
 
 
-def resolve_path_attribution(path: str, module_names: list[str]) -> tuple[str | None, list[dict[str, Any]]]:
+def invalidate_path_claim_cache() -> None:
+    """Drop the whole Axis-D path-claim memo (:data:`_PATH_CLAIM_CACHE`).
+
+    Cleared WHOLESALE rather than per project. A caller invalidates because the
+    population the merge ran against may have moved — a refreshed module set, or
+    a newly-installed attributor, neither of which is scoped to one project — so
+    dropping only one entry would leave every other project's claim set merged
+    against the stale population it was computed from.
+
+    Two callers, for two different reasons: :func:`invalidate_crawl_cache` calls
+    it because a refresh that changes the module set must not leave a claim set
+    merged against the old one, and ``cmd_capabilities`` calls it because that
+    verb reports what ran in the CURRENT envelope and must not replay an earlier
+    call's attributor population. It is deliberately NOT called from
+    :func:`resolve_module_for_path`'s per-path loop — the memo exists for that
+    loop, and clearing it there would re-run full extension discovery per path.
+    """
+    _PATH_CLAIM_CACHE.clear()
+
+
+def resolve_path_attribution(
+    path: str, module_names: list[str], project_dir: str = '.'
+) -> tuple[str | None, list[dict[str, Any]]]:
     """Resolve ``path`` through the Axis-D seam and return the attributor reports.
 
     The full-fidelity seam reader: it returns BOTH the resolved owner and the
@@ -1139,6 +1354,11 @@ def resolve_path_attribution(path: str, module_names: list[str]) -> tuple[str | 
         path: A repo-relative path.
         module_names: The list of modules known to the project — the
             authoritative set every claim's module is validated against.
+        project_dir: The project the answer is for. It does not reach the merge;
+            it is the other half of the memo key, so two checkouts presenting the
+            same module names are not served each other's claim set. Callers that
+            hold a project dir MUST pass it — the ``'.'`` default is for the
+            single-project caller, not a licence to omit a known value.
 
     Returns:
         An ``(owner, attributor_reports)`` pair. ``owner`` is the claimed module
@@ -1165,7 +1385,7 @@ def resolve_path_attribution(path: str, module_names: list[str]) -> tuple[str | 
     except ImportError:
         return None, []
 
-    cache_key = tuple(sorted(module_names))
+    cache_key = (str(Path(project_dir).resolve()), tuple(sorted(module_names)))
     merged = _PATH_CLAIM_CACHE.get(cache_key)
     if merged is None:
         merged = merge_path_claims(discover_path_attributors(), module_names)
@@ -1177,7 +1397,7 @@ def resolve_path_attribution(path: str, module_names: list[str]) -> tuple[str | 
     return owner, reports
 
 
-def project_local_module_for_path(path: str, module_names: list[str]) -> str | None:
+def project_local_module_for_path(path: str, module_names: list[str], project_dir: str = '.') -> str | None:
     """Resolve ``path`` to its owning module through the path-attribution seam.
 
     Rung 3 of the ``which-module`` ladder: handles paths that sit outside every
@@ -1193,12 +1413,14 @@ def project_local_module_for_path(path: str, module_names: list[str]) -> str | N
     Args:
         path: A repo-relative path.
         module_names: The list of modules known to the project.
+        project_dir: The project the answer is for; forwarded to
+            :func:`resolve_path_attribution` as the other half of its memo key.
 
     Returns:
         The owning module name when a claimed prefix contains ``path`` and that
         module exists, else ``None``.
     """
-    owner, _reports = resolve_path_attribution(path, module_names)
+    owner, _reports = resolve_path_attribution(path, module_names, project_dir)
     return owner
 
 
@@ -1335,7 +1557,7 @@ def resolve_module_for_path(path: str, project_dir: str = '.', preferred_domain:
             if affine:
                 return affine[0]
         return best[0][0]
-    project_local = project_local_module_for_path(path, module_names)
+    project_local = project_local_module_for_path(path, module_names, project_dir)
     if project_local is not None:
         return project_local
     return root_fallback

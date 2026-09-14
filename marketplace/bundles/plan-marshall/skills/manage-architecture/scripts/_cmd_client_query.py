@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from _architecture_core import (
+    FRESHNESS_UNKNOWN,
     GENERATION_FIELD,
     DataNotFoundError,
     ModuleNotFoundInProjectError,
@@ -172,12 +173,25 @@ def _enriched_dependencies(module_name: str, derived: dict[str, Any], project_di
 def get_project_info(project_dir: str = '.') -> dict[str, Any]:
     """Get project summary with metadata and module overview.
 
-    Each module row carries a ``description`` and a ``freshness`` verdict read
-    from the root index's per-module header (``_project.json``'s ``modules``
-    entry) — the description a consumer uses to decide which concept documents to
-    open, and the staleness verdict derived from the index's ``generation.tree_sha``
-    against the current working tree. Both come from the index header, NOT from
-    parsing any concept body, so a consumer can filter before loading.
+    Each module row carries a ``description`` and a ``freshness`` verdict — the
+    description a consumer uses to decide which concept documents to open, and
+    the staleness verdict that says whether opening it is worth it.
+
+    **The verdict is derived from the concept document's OWN ``generation``
+    header, not from the root index's per-module header.** The two headers are
+    written by different paths: only ``discover`` refreshes the
+    ``_project.json`` index, while every enrich verb rewrites the document. They
+    therefore separate on the first enrich after a discover, and the index-derived
+    verdict would then describe a tree the document was never written against.
+    The document is already loaded here to read ``purpose``, so reading its
+    header costs no extra I/O.
+
+    A module with **no document on disk** has no provenance to derive from, so
+    its row is forced to :data:`FRESHNESS_UNKNOWN` with a blank ``description``
+    rather than inheriting the index's — an index header outliving its document
+    would otherwise report ``fresh`` for a concept body that does not exist.
+    Neither field parses any concept body, so a consumer can still filter before
+    loading.
     """
     meta = load_project_meta(project_dir)
     index = meta.get('modules') or {}
@@ -200,13 +214,22 @@ def get_project_info(project_dir: str = '.') -> dict[str, Any]:
         enriched = load_module_enriched_or_empty(name, project_dir)
         paths = derived.get('paths', {})
         index_entry = index.get(name) or {}
+        if enriched:
+            description = index_entry.get('description', '')
+            freshness = derive_freshness(enriched.get(GENERATION_FIELD), tree_sha)
+        else:
+            # No document on disk: nothing wrote a provenance header, so there is
+            # no tree to compare against. Report the absence rather than letting a
+            # surviving index entry describe a document that is not there.
+            description = ''
+            freshness = FRESHNESS_UNKNOWN
         module_overview.append(
             {
                 'name': name,
                 'path': paths.get('module', ''),
                 'purpose': enriched.get('purpose', ''),
-                'description': index_entry.get('description', ''),
-                'freshness': derive_freshness(index_entry.get(GENERATION_FIELD), tree_sha),
+                'description': description,
+                'freshness': freshness,
             }
         )
 
@@ -468,8 +491,61 @@ def _profile_declares_minimal(profile_data: dict[str, Any]) -> bool:
     return profile_data.get('minimal') is True
 
 
+def _unresolved_profile_message(module_name: str, profile_name: str) -> str:
+    """The single wording for the unresolved-profile condition.
+
+    Two shapes reach this condition — a dict block that resolves no skills and
+    declares no ``minimal``, and an empty list-shaped block — and they are the
+    same fact about the store, so they say the same thing to the reader.
+    """
+    return (
+        f"module '{module_name}': profile '{profile_name}' resolves no skills and is "
+        'not declared minimal — set "minimal": true to declare a deliberately-minimal '
+        'profile, or enrich it'
+    )
+
+
+def _configured_expected_profiles(project_dir: str) -> set[str] | None:
+    """The profile set a module is expected to answer for, read from configuration.
+
+    Never a hard-coded list. The expectation comes from ``.plan/marshal.json``'s
+    ``skill_domains.active_profiles`` — the same declaration the enrich path
+    resolves active profiles from — so the read-side guard and the write side
+    cannot disagree about which profiles this project actually runs.
+
+    Returns ``None`` when configuration declares no set: an unreadable or absent
+    ``marshal.json``, no ``active_profiles`` key, or a value that is not a list of
+    profile names. ``None`` means "no expectation was declared", and the guard
+    then reports no absent profile at all — a default list invented here would
+    manufacture the very expectation the guard would go on to report against, and
+    every module in a project that never declared one would be warned about
+    profiles nobody asked for.
+    """
+    import json
+
+    try:
+        marshal_path = Path(project_dir) / '.plan' / 'marshal.json'
+        if not marshal_path.exists():
+            return None
+        config = json.loads(marshal_path.read_text(encoding='utf-8'))
+    except Exception:
+        return None
+
+    skill_domains = config.get('skill_domains')
+    if not isinstance(skill_domains, dict):
+        return None
+    declared = skill_domains.get('active_profiles')
+    if not isinstance(declared, list):
+        return None
+    names = {entry for entry in declared if isinstance(entry, str) and entry}
+    return names or None
+
+
 def detect_stale_skills_by_profile(
-    module_name: str, skills_by_profile: dict[str, Any], is_live: Callable[[str], bool]
+    module_name: str,
+    skills_by_profile: dict[str, Any],
+    is_live: Callable[[str], bool],
+    expected_profiles: set[str] | None = None,
 ) -> list[str]:
     """Return non-blocking WARNING messages for a stale, missing, or unresolved skills_by_profile map.
 
@@ -482,14 +558,25 @@ def detect_stale_skills_by_profile(
       deliberate. A profile that DOES declare itself minimal is silent — the
       escape hatch that keeps "the inventory answered, and the answer is empty"
       distinct from "the inventory was never populated", without the distinction
-      being inferred from cardinality.
+      being inferred from cardinality. An EMPTY list-shaped block is always this
+      condition: a list has nowhere to carry the declaration, so it cannot be
+      deliberate.
     * The map references one or more skill notations that ``is_live`` reports as
       absent from the live registry (retired / renamed IDs).
 
+    A fourth signal fires only when ``expected_profiles`` is supplied: a profile
+    the project's configuration declares active that the map carries **no block
+    for at all**. This is distinct from the unresolved-profile condition above —
+    an unresolved profile answered "none", an absent one was never asked. The set
+    is always caller-supplied and configuration-derived (see
+    :func:`_configured_expected_profiles`); ``None`` means no expectation was
+    declared, and the check is then silent rather than falling back to a
+    hard-coded list of profile names.
+
     ``is_live`` is injected so the check is deterministic and unit-testable
     without a real bundle tree. Returns an empty list when the map is present,
-    every present profile either resolves skills or declares itself minimal, and
-    every notation resolves.
+    every present profile either resolves skills or declares itself minimal,
+    every expected profile is present, and every notation resolves.
     """
     if not isinstance(skills_by_profile, dict):
         return [f"module '{module_name}': skills_by_profile is malformed (expected a dictionary)"]
@@ -499,13 +586,30 @@ def detect_stale_skills_by_profile(
     messages: list[str] = []
     for profile_name in sorted(skills_by_profile):
         profile_data = skills_by_profile[profile_name]
+        if isinstance(profile_data, list):
+            # A list-shaped block has nowhere to put `"minimal": true`, so an EMPTY
+            # one can never declare itself deliberate: it resolves no skills and
+            # nothing says that was intended, which is the unresolved-profile
+            # condition exactly. Passing it over as "the write path's problem" left
+            # the read path silent about a profile that answered nothing — the very
+            # absence this guard exists to report. A NON-empty list does resolve
+            # skills, so it is not this condition; its shape stays the enrich
+            # validator's surface.
+            if not profile_data:
+                messages.append(_unresolved_profile_message(module_name, profile_name))
+            continue
         if not isinstance(profile_data, dict):
             continue  # structural defects are the enrich validator's surface
         if _profile_resolves_no_skills(profile_data) and not _profile_declares_minimal(profile_data):
+            messages.append(_unresolved_profile_message(module_name, profile_name))
+
+    for profile_name in sorted(expected_profiles or ()):
+        if profile_name not in skills_by_profile:
             messages.append(
-                f"module '{module_name}': profile '{profile_name}' resolves no skills and is "
-                'not declared minimal — set "minimal": true to declare a deliberately-minimal '
-                'profile, or enrich it'
+                f"module '{module_name}': profile '{profile_name}' is declared active by "
+                'skill_domains.active_profiles but has no block in skills_by_profile — the '
+                'profile was never asked, which is not the same as answering none; enrich it, '
+                'or drop it from the declared active set'
             )
 
     stale = sorted({n for n in _iter_skill_notations(skills_by_profile) if not is_live(n)})
@@ -530,19 +634,31 @@ def _skill_notation_is_live(notation: str, bundles_root: Path) -> bool:
         return False
 
 
-def _emit_skills_by_profile_staleness_warning(module_name: str, merged: dict[str, Any]) -> None:
+def _emit_skills_by_profile_staleness_warning(
+    module_name: str, merged: dict[str, Any], project_dir: str = '.'
+) -> list[str]:
     """Emit a non-blocking WARNING when ``merged``'s skills_by_profile is stale, missing, or unresolved.
 
     "Unresolved" is a present-but-empty profile block that resolves no skills and
-    is not declared minimal — see :func:`detect_stale_skills_by_profile`.
+    is not declared minimal; an ABSENT profile — one configuration declares active
+    and the map has no block for — is a separate condition. See
+    :func:`detect_stale_skills_by_profile` for all four.
+
+    ``project_dir`` is what the configuration-derived expected-profile set is read
+    from; it is never a hard-coded list.
+
+    Returns the messages it emitted, so the caller can carry them onto the read
+    response as well. A log line reaches whoever is reading the log; the consumer
+    that asked the question reads the payload, and a warning only the log carries
+    is one the asker never sees.
 
     An unresolvable registry root NARROWS the guard, it does not silence it. Only
     the stale-notation check consults the registry, so an unresolvable root leaves
     ``bundles_root`` unset and ``is_live`` answers ``True`` for every notation —
-    suppressing that one message and nothing else. The missing/empty and
-    unresolved-profile conditions need no registry data and still reach the sink.
-    Returning early instead would let a registry failure blank two conditions that
-    never depended on it.
+    suppressing that one message and nothing else. The missing/empty,
+    unresolved-profile and absent-profile conditions need no registry data and
+    still reach the sink. Returning early instead would let a registry failure
+    blank every condition that never depended on it.
     """
     skills_by_profile = merged.get('skills_by_profile', {})
 
@@ -560,18 +676,22 @@ def _emit_skills_by_profile_staleness_warning(module_name: str, merged: dict[str
     def is_live(notation: str) -> bool:
         # No registry to consult — either the root was unresolvable, or the map is
         # empty and warns without a lookup. Either way every notation counts as
-        # live, which drops the stale-notation message and leaves the other two.
+        # live, which drops the stale-notation message and leaves the others.
         if bundles_root is None:
             return True
         return _skill_notation_is_live(notation, bundles_root)
 
-    for message in detect_stale_skills_by_profile(module_name, skills_by_profile, is_live):
+    messages = detect_stale_skills_by_profile(
+        module_name, skills_by_profile, is_live, _configured_expected_profiles(project_dir)
+    )
+    for message in messages:
         try:
             from plan_logging import log_entry
 
             log_entry('script', None, 'WARNING', f'[STALENESS] {message}')
         except Exception:
             pass
+    return messages
 
 
 def get_module_info(module_name: str | None = None, full: bool = False, project_dir: str = '.') -> dict[str, Any]:
@@ -589,9 +709,10 @@ def get_module_info(module_name: str | None = None, full: bool = False, project_
     merged = merge_module_data(module_name, project_dir)
 
     # Read-path staleness guard: non-blocking WARNING when skills_by_profile is
-    # stale (retired notations), missing entirely, or carries an unresolved
-    # (present-but-empty, undeclared) profile. Never raises.
-    _emit_skills_by_profile_staleness_warning(module_name, merged)
+    # stale (retired notations), missing entirely, carries an unresolved
+    # (present-but-empty, undeclared) profile, or has no block for a profile
+    # configuration declares active. Never raises.
+    staleness_warnings = _emit_skills_by_profile_staleness_warning(module_name, merged, project_dir)
 
     if not full:
         reasoning_fields = [
@@ -605,6 +726,14 @@ def get_module_info(module_name: str | None = None, full: bool = False, project_
 
         merged.pop('packages', None)
         merged.pop('dependencies', None)
+
+    # Presence-gated: the key appears only when the guard actually had something
+    # to say. An always-present `warnings: []` would make "the guard found
+    # nothing" and "the guard was never consulted" the same payload, and a
+    # consumer reading the empty list would take it as a clean bill of health it
+    # was never given.
+    if staleness_warnings:
+        merged['warnings'] = staleness_warnings
 
     return merged
 
@@ -806,9 +935,22 @@ def resolve_project_build_notations(project_dir: str = '.') -> frozenset[str]:
     exactly the unrelated-evidence case.
 
     **Cost.** This runs the same live crawl ``architecture resolve`` runs
-    (memoized per process, but the first call pays for it, and for Maven that
-    means a per-module ``help:all-profiles dependency:tree``). Call it once per
-    process and reuse the result; do not call it per candidate.
+    (memoized per process, but the first call pays for it). That crawl is the
+    CHEAP one: it parses each module's build file with stdlib XML and walks the
+    worktree filesystem to build the per-module file inventories, and the
+    filesystem walk is the dominant cost. It does **not** run the per-module
+    Maven enrich (``help:all-profiles dependency:tree``) — that path is reached
+    only by :func:`resolve_command` for a profile-derived canonical and by the
+    dependency-graph path, and a command-map sweep triggers neither.
+
+    This sweep also does **not** shell out to ``git``. The working-tree currency
+    hash is produced by ``current_worktree_sha``, which only the freshness
+    surfaces call (:func:`get_project_info` and ``build_generation``); the crawl
+    itself never reaches it, and neither does the command-map walk below. Naming
+    that subprocess here would attribute to this function a cost it does not
+    cause.
+
+    Call it once per process and reuse the result; do not call it per candidate.
 
     Args:
         project_dir: Project root to crawl. Defaults to the current directory.

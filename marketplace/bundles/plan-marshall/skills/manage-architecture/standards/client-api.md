@@ -17,9 +17,32 @@ architecture.py {verb} [options]
 ```
 
 **Invocation**:
-```bash
+```text
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture {verb} [options]
 ```
+
+`{verb}` is a placeholder, so this block is fenced `text` rather than `bash`: a
+`bash` fence declares a copyable invocation, and `documented-verb-set-drift`
+reads every such fence as naming a real verb — a placeholder in one is reported
+as a `phantom_documented_verb`, because no script registers a subcommand called
+`{verb}`. The per-verb blocks below are the runnable ones.
+
+**What this document's verb set is, and what it is not.** The verbs documented
+here are the client contract this bundle publishes to consumers. That is a
+**different set** from the `def cmd_*` handler population of
+[`../scripts/_cmd_client_handlers.py`](../scripts/_cmd_client_handlers.py), and
+the two are expected to differ: every documented verb is registered, but a
+registered handler need not be a published client verb. A count taken on one
+side is therefore no evidence about the other, and the two must never be
+reconciled by editing either to match the other's cardinality.
+
+Neither side is kept honest by a restatement. The handler file names no roster
+at all — its `def cmd_*` definitions are its own population. This document's
+side is checked mechanically by the plugin-doctor `documented-verb-set-drift`
+rule, which derives the documented verbs from the `bash` fences below and
+compares them against the LIVE registered argparse surface, so a verb documented
+here that no script registers is reported at edit time rather than discovered by
+a reader.
 
 ## Commands
 
@@ -48,11 +71,13 @@ oauth-sheriff-quarkus,oauth-sheriff-quarkus,extension,Quarkus runtime integratio
 oauth-sheriff-quarkus-deployment,oauth-sheriff-quarkus-deployment,deployment,Build-time processing,fresh
 ```
 
-`description` and `freshness` are read from the `_project.json` `modules`
-index header (the module's description and its `generation.tree_sha` compared
-to the current working tree) — a pre-flight surface, so a consumer filters
-which concept documents to open without opening any concept body. `freshness`
-is one of `fresh` / `stale` / `unknown`.
+`description` comes from the `_project.json` `modules` index header — a
+pre-flight surface, so a consumer filters which concept documents to open
+without opening any concept body. A module with no concept document on disk
+reports a blank `description`. `freshness` is derived from the **document's
+own** `generation` header (not the index mirror), comparing its `tree_sha` to
+the current working tree; a module with no document on disk reports
+`freshness: unknown`. `freshness` is one of `fresh` / `stale` / `unknown`.
 
 ---
 
@@ -310,6 +335,18 @@ A leaf module (nothing depends on it) returns an empty `impact` list — and the
 
 ---
 
+## Commands (module, inventory and capability queries)
+
+The remaining verbs, resumed from [§ Commands](#commands) above. The four
+graph-family verbs keep their own H2 rather than moving here: that heading exists
+to state the `resolvers[]` / `resolver_count` provenance contract *all four* of
+them carry, and the zero-edge disambiguation rule is only readable next to the
+verbs it governs. Moving them under this heading would replace that adjacency
+with a cross-reference — the contract would still be stated once, but each verb
+would no longer be read beside it, which is the property the grouping buys. The
+verbs below carry no shared contract of that kind, so they group by catalogue
+rather than by provenance.
+
 ### module
 
 Get module information including description, paths, and commands.
@@ -370,6 +407,12 @@ commands[3]:
   - verify
   - quality-gate
 ```
+
+A `warnings` key is added to this payload only when the read-path
+`skills_by_profile` staleness guard has something to report (a stale
+notation, a missing block, or an unresolved profile) — it is **presence-gated**,
+never rendered as an empty list, so its absence and a clean guard result are
+not the same payload.
 
 **Output** (TOON, `--full`):
 ```toon
@@ -554,58 +597,6 @@ npm,python3 .plan/execute-script.py plan-marshall:build-npm:npm run --command-ar
 ```
 
 ---
-
-## Command Summary
-
-| Command | Purpose | Output |
-|---------|---------|--------|
-| `info` | Project overview | Project metadata + module list |
-| `modules` | List modules | Module names, optionally filtered by `--command` |
-| `graph` | Module dependency graph | Dependency tree for ordering |
-| `path` | Shortest dependency path between two modules | TOON path list (or `null`) |
-| `neighbors` | N-hop neighborhood of a module | TOON sorted module list |
-| `impact` | Reverse-dependency closure | TOON sorted module list |
-| `module` | Module details | Condensed (default), full (`--full`), or markdown (`--full --budget N`) |
-| `overview` | Project architecture summary | Deterministic markdown |
-| `commands` | Module commands | Command names with descriptions |
-| `resolve` | Executable command | Full python3 invocation |
-| `files` | Module file inventory | Categorised paths, optionally filtered by `--category` |
-| `which-module` | Reverse path lookup | Owning module for a given path |
-| `find` | Glob inventory search (PATH) | Cross-module path matches |
-| `search` | Content inventory search (BODY) | Cross-module file hits with `match_count` and `file_count`, plus `files_scanned` / `unreadable[]`; `--ignore-case` composes with `--literal` |
-| `capabilities` | Envelope capability report | Per-capability `derivable`/`not_derivable` (module edges, path attribution, content search) |
-| `diff-modules` | Snapshot diff | `added`/`removed`/`changed`/`unchanged` module buckets |
-| `descriptor-regression-check` | Commit-gate regression predicate | `regressive` (bool) + `violations` list |
-
-**Default vs Full**:
-- Default: Key packages, key dependencies, proposed skill domains (no reasoning)
-- `--full`: All packages, all dependencies, all reasoning fields
-
-## Error Handling
-
-**Module not found**:
-```toon
-error: Module not found
-module: unknown-module
-available[4]:
-  - oauth-sheriff-parent
-  - oauth-sheriff-core
-  - oauth-sheriff-quarkus
-  - oauth-sheriff-quarkus-deployment
-```
-
-**Command not found**:
-```toon
-error: Command not found
-module: oauth-sheriff-core
-command: unknown-command
-available[5]:
-  - module-tests
-  - verify
-  - quality-gate
-  - clean
-  - install
-```
 
 ### files
 
@@ -802,8 +793,10 @@ elided[0]:
 - Path matches no module: `module: null` with `status: success` — and, when no
   in-scope category was elided, `truncated: false`, so the negative is
   trustworthy rather than a bare unqualified miss.
-- **Unclaimed attribution residue**: `attributor_count` separates two states a
-  bare `module: null` collapses. The two MUST be distinguishable without
+- **Unclaimed attribution residue**: a path is *claimed* when some Axis-D
+  attributor named an owning module for it — the resolved case above; it is
+  *unclaimed* when none did. `attributor_count` separates the two states a bare
+  `module: null` collapses. The two MUST be distinguishable without
   inspecting `module` or the claim list — the same fail-closed discipline the
   `graph` family applies via `resolver_count`:
 
@@ -861,6 +854,46 @@ category names and true counts. Both `truncated` (bool) and `elided`
 are ALWAYS present, so callers branch without a `KeyError` (ADR-009 fail-closed
 reporting).
 
+**`count` and `file_count` name two different populations.** One physical file
+can be inventoried by more than one module, so a row is not a file:
+
+| Field | Population |
+|-------|------------|
+| `count` | Result **ROWS** — one per `(module, category, path)` hit. A file two modules inventory contributes two rows. |
+| `file_count` | **DISTINCT paths** in `results`. That same file counts once. |
+
+A caller asking *"how many files match this glob?"* reads `file_count`; a caller
+ranking module-attributed hits reads the `results` rows. Neither is wrong — they
+answer different questions, and both are named so the population is never left
+implicit. Publishing `count` alone left it hybrid: after the ownership collapse
+below it is neither a stable row count nor a file count.
+
+**An Axis-D ownership claim outranks the root crawl.** When several modules
+inventory one path, the reader collapses those duplicate rows onto the single row
+of the module that OWNS the path through an Axis-D claim — the root module's
+whole-tree crawl yields to the explicit claim. Three boundaries make the rule
+total:
+
+- A **claimed** path's duplicate rows collapse to the owner's row.
+- An **unclaimed** duplicate is left untouched — both rows survive, and `count`
+  exceeds `file_count` by the duplication. The collapse fixes exactly the corpus a
+  bundle has claimed and nothing else.
+- A path with a **single row is never dropped**, claimed or not. A claimed file
+  the owner does not itself inventory (a repo-root prose doc the documentation
+  module claims but does not walk) keeps its lone crawled row.
+
+The consequence a caller must not misread: **`module` names the INVENTORYING
+module, not the owner.** The collapse picks the owner's row only when the owner
+inventoried the path; where it did not, the surviving row still names whichever
+module crawled the file, and that row's `module` is never rewritten to the owner.
+`README.md` is the worked example — the `documentation` module claims it but does
+not walk it, so `find` reports it under the module whose crawl saw it.
+[`which-module`](#which-module) is the authoritative ownership answer; a caller
+that needs the owner asks that verb rather than reading `module` off a `find` row.
+The merge semantics behind the claim are contracted in
+[ext-point-path-attribution.md](../../extension-api/standards/ext-point-path-attribution.md)
+and are not restated here.
+
 **Output** (TOON, self-scanned / clean):
 
 ```toon
@@ -868,6 +901,7 @@ status: success
 pattern: "*SKILL.md"
 category: null
 count: 3
+file_count: 3
 results[3]{module,category,path}:
   pm-dev-java,skill,marketplace/bundles/pm-dev-java/skills/junit-core/SKILL.md
   pm-dev-java,skill,marketplace/bundles/pm-dev-java/skills/lombok/SKILL.md
@@ -876,6 +910,10 @@ truncated: false
 elided[0]:
 ```
 
+Here `count` and `file_count` coincide because each hit is a different file. They
+**diverge** on an unclaimed cross-module duplicate: one file inventoried by two
+modules is two rows and one path, so `count: 2` rides with `file_count: 1`.
+
 **Output** (TOON, truthful truncation — self-scan impossible):
 
 ```toon
@@ -883,6 +921,7 @@ status: success
 pattern: "test/plan-marshall/manage-status/*"
 category: null
 count: 0
+file_count: 0
 results[0]:
 truncated: true
 elided[1]{module,category,elided_count,sample_size}:
@@ -897,8 +936,8 @@ elided[1]{module,category,elided_count,sample_size}:
   caveat that still governs `files`. When the self-scan is impossible the
   result carries `truncated: true` with the elided category names and their
   true counts instead of a bare `count: 0`.
-- No matches: `count: 0`, `results: []`, `status: success`, and — when no
-  in-scope category was elided — `truncated: false`, so the negative is
+- No matches: `count: 0`, `file_count: 0`, `results: []`, `status: success`, and
+  — when no in-scope category was elided — `truncated: false`, so the negative is
   trustworthy.
 - Unrecognised category (not a member of `FILE_CATEGORIES`): returns
   `status: error`, `error: unknown_category`, and the sorted
@@ -1037,11 +1076,24 @@ elided[0]:
 
 Here `count` (rows) and `file_count` (distinct paths) coincide because each hit
 is a different file. They **diverge** when one physical file is inventoried by
-more than one module (an unclaimed cross-module duplicate `search` leaves intact):
-that file is one row per attributing module, so `count` exceeds `file_count`. A
-caller asking "how many files contain this?" reads `file_count`; a caller ranking
-module-attributed hits reads the `results` rows. Both populations are named so
-neither is left implicit.
+more than one module and no Axis-D claim owns it — an *unclaimed* cross-module
+duplicate, which `search` leaves intact: that file is one row per attributing
+module, so `count` exceeds `file_count`. A *claimed* duplicate is the other case:
+an Axis-D ownership claim outranks the root crawl, so its duplicate rows collapse
+onto the owning module's single row, while a single-rowed claimed path is never
+dropped. `search` applies exactly the precedence [`find`](#find) documents — see
+§ find for the three boundaries, for why `module` names the **inventorying**
+module rather than the owner, and for `which-module` being the authoritative
+ownership answer. A caller asking "how many files contain this?" reads
+`file_count`; a caller ranking module-attributed hits reads the `results` rows.
+Both populations are named so neither is left implicit.
+
+Ownership is resolved **before** the body scan, not after it, so a claimed path is
+opened and matched once rather than once per attributing module. That is what
+makes `files_scanned` a count of files OPENED rather than of inventory rows
+walked, and it is why a multiply-inventoried unreadable file yields exactly one
+`unreadable` entry instead of one per module — repeats collapse, a path is never
+dropped.
 
 **Output** (TOON, genuinely-absent token — a trustworthy negative):
 
@@ -1297,7 +1349,8 @@ regenerated descriptor and refuses to commit when the delta is regressive
 § 3c.5).
 
 ```bash
-architecture.py descriptor-regression-check --pre PATH
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture descriptor-regression-check \
+  --pre PATH
 ```
 
 **Options**:
@@ -1377,55 +1430,97 @@ Three binding properties, each from a recorded failure:
   set (or errored), a discovered path attributor that returned claims, a crawl
   that yielded an inventory. A registered-but-unrun producer never promises a
   capability here.
-- **Uncached, recomputed per call.** The answer is derived fresh on every
-  invocation from the executing `--project-dir`; nothing is memoised across
-  calls, so a capability present on one dispatch is never assumed present on the
-  next. "Probe once then branch" is exactly the unsound fallback this refuses to
-  enable.
+- **Recomputed per call; no memo survives into the answer.** The answer is
+  derived fresh on every invocation from the executing `--project-dir`, and the
+  process-lifetime path-attribution memo is dropped on entry, so a second call
+  in one process re-runs attributor discovery instead of replaying the
+  population the first call happened to see. A capability present on one
+  dispatch is therefore never assumed present on the next. "Probe once then
+  branch" is exactly the unsound fallback this refuses to enable.
 - **Envelope-scoped.** The answer is for the executing envelope only. Run in the
   orchestrator and run in a dispatched leaf, it answers for each independently.
 
-Each capability entry carries `status` plus the producer evidence, so three
-states stay distinct:
+**One status vocabulary across all three entries.** Every entry emits exactly
+`derivable` or `not_derivable`. There is no per-entry exception and no second
+spelling: a consumer branches on those two values for every entry it reads.
 
-| Entry shape | Meaning |
-|-------------|---------|
-| `status: not_derivable`, `producer_count: 0` | **No producer ran.** An absence of capability, not an empty finding. |
-| `status: derivable`, `derived_count: 0` | A producer ran and found nothing — a real, positive answer. |
-| `status: derivable`, `derived_count: N` | A producer ran and derived N. |
+`not_derivable` means *no producer of this capability ran at all* — an absence of
+capability, not an empty finding. `derivable` with `derived_count: 0` means
+*producers ran and found nothing*, which is a real, positive answer.
 
-The `content_search` entry uses `available` / `unavailable` (a crawl either
-produced an inventory or did not) with a `modules_inventoried` count.
+**Entry shape.** Each entry carries exactly the fields its row names below, and
+nothing else:
+
+| Entry | Fields | What decides `status` |
+|-------|--------|-----------------------|
+| `module_edges` | `capability`, `verbs`, `status`, `producers`, `producer_count`, `edge_producers`, `derived_count` | The **full** producer population that reached this response: the dispatched resolvers PLUS the reserved non-resolver producers stamped on the returned edges. |
+| `path_attribution` | `capability`, `verbs`, `status`, `producers`, `producer_count`, `derived_count` | Whether at least one attributor ran. |
+| `content_search` | `capability`, `verbs`, `status`, `modules_inventoried`, `modules_total` | Whether at least one module descriptor could be READ. |
+
+Per-field meaning, where the name alone does not carry it:
+
+| Field | Population it counts |
+|-------|----------------------|
+| `producer_count` | **Resolvers/attributors only.** For `module_edges` this is `resolver_count` — it deliberately excludes the reserved `declared` and `sibling-cross-link` producers, so `derivable` with `producer_count: 0` is a REAL state: no resolver ran, yet declared edges still reached the graph. ⛔ Never derive the verdict from this field alone — it under-counts the producers that can put an edge in the graph, and pairs `not_derivable` with a non-zero `derived_count`. |
+| `edge_producers` | Every producer id stamped on the returned edges, reserved ids included. This is the evidence `module_edges.status` was computed from, published so the verdict is checkable against the payload rather than asserted. |
+| `derived_count` (`module_edges`) | Edges in the graph. |
+| `derived_count` (`path_attribution`) | **Claims reported, not paths attributed** — the sum of every attributor report's `claim_count`. Two attributors corroborating one prefix contribute 2, because each of them reported that claim. |
+| `modules_inventoried` | Modules whose descriptor was read AND carried a non-empty file inventory. |
+| `modules_total` | The population `modules_inventoried` is counted over: every module the crawl surfaced. |
 
 **Output** (TOON, a project with a Maven resolver and an inventory):
 
 ```toon
 status: success
 project_dir: .
-capabilities[3]{capability,status,producer_count,derived_count,modules_inventoried}:
-  module_edges,derivable,1,7,
-  path_attribution,derivable,1,,
-  content_search,available,,,42
+capabilities[3]{capability,status,producer_count,derived_count,modules_inventoried,modules_total}:
+  module_edges,derivable,1,7,,
+  path_attribution,derivable,1,3,,
+  content_search,derivable,,,42,44
 ```
+
+**Output** (TOON, every resolver switched off, but a declared edge in the graph):
+
+```toon
+status: success
+project_dir: .
+capabilities[3]{capability,status,producer_count,derived_count,modules_inventoried,modules_total}:
+  module_edges,derivable,0,1,,
+  path_attribution,derivable,1,3,,
+  content_search,derivable,,,42,44
+```
+
+Both halves of that row are accurate together: `producer_count: 0` because no
+resolver ran, and `derivable` because the `declared` producer put an edge in the
+graph. `edge_producers` (elided from the flat table, see below) carries
+`['declared']`, which is the evidence for both. Read the pair this way rather
+than treating `producer_count: 0` as a synonym for `not_derivable`.
 
 **Output** (TOON, a greenfield envelope — nothing answerable, truthfully):
 
 ```toon
 status: success
 project_dir: .
-capabilities[3]{capability,status,producer_count,derived_count,modules_inventoried}:
-  module_edges,not_derivable,0,0,
-  path_attribution,not_derivable,0,,
-  content_search,unavailable,,,0
+capabilities[3]{capability,status,producer_count,derived_count,modules_inventoried,modules_total}:
+  module_edges,not_derivable,0,0,,
+  path_attribution,not_derivable,0,0,,
+  content_search,not_derivable,,,0,0
 ```
+
+**`content_search` distinguishes never-crawled from crawled-and-file-less.** The
+greenfield row above reads `not_derivable` because no descriptor could be read.
+A project whose modules WERE crawled but carry no inventoried files answers
+`derivable` with `modules_inventoried: 0` and `modules_total: N` — a positive
+"searched, found nothing". `status` is the discriminator between the two;
+`modules_inventoried: 0` alone does not tell them apart.
 
 Each entry also carries a `verbs` list naming the verbs it governs
 (`module_edges` → `graph` / `path` / `neighbors` / `impact`; `path_attribution`
-→ `which-module`; `content_search` → `files` / `find` / `search`) and, for the
-two derivation capabilities, a `producers` list of the ids that ran. Those two
-per-entry **list** fields are elided from the flat tabular examples above (a
-row-per-entry TOON table cannot nest a list inside a cell); the real payload
-carries them on every entry.
+→ `which-module`; `content_search` → `files` / `find` / `search`); the two
+derivation entries additionally carry `producers`, and `module_edges` carries
+`edge_producers`. Those per-entry **list** fields are elided from the flat
+tabular examples above (a row-per-entry TOON table cannot nest a list inside a
+cell); the real payload carries them on every entry the table names.
 
 **Why the leaf answer is not a weaker answer.** *Envelope-scoped* is easy to read
 as an admission that a dispatched leaf gets a degraded report, because a leaf's
@@ -1434,7 +1529,7 @@ question was settled by taking the reading rather than by arguing from the
 design: invoked inside a dispatched `execution-context` leaf, `capabilities`
 returns the same fully-populated three-entry report — `module_edges` and
 `path_attribution` both `derivable` off producers that ran in that envelope, and
-`content_search` `available` off the leaf's own crawl.
+`content_search` `derivable` off the leaf's own crawl.
 
 The reasoning is what generalises that single reading. Every `status` here is a
 function of exactly two inputs: the executing `--project-dir`, and which
@@ -1469,6 +1564,62 @@ you are asking about; that is the whole point of it being uncached.
   empty graph as a clean dependency-direction pass (see
   [`phase-2-refine:refine-workflow-detail.md`](../../phase-2-refine/standards/refine-workflow-detail.md)
   § "Feasibility Check").
+
+---
+
+## Command Summary
+
+| Command | Purpose | Output |
+|---------|---------|--------|
+| `info` | Project overview | Project metadata + module list |
+| `modules` | List modules | Module names, optionally filtered by `--command` |
+| `graph` | Module dependency graph | Dependency tree for ordering |
+| `path` | Shortest dependency path between two modules | TOON path list (or `null`) |
+| `neighbors` | N-hop neighborhood of a module | TOON sorted module list |
+| `impact` | Reverse-dependency closure | TOON sorted module list |
+| `module` | Module details | Condensed (default), full (`--full`), or markdown (`--full --budget N`) |
+| `overview` | Project architecture summary | Deterministic markdown |
+| `commands` | Module commands | Command names with descriptions |
+| `resolve` | Executable command | Full python3 invocation |
+| `files` | Module file inventory | Categorised paths, optionally filtered by `--category` |
+| `which-module` | Reverse path lookup | Owning module for a given path |
+| `find` | Glob inventory search (PATH) | Cross-module path matches |
+| `search` | Content inventory search (BODY) | Cross-module file hits with `match_count` and `file_count`, plus `files_scanned` / `unreadable[]`; `--ignore-case` composes with `--literal` |
+| `capabilities` | Envelope capability report | Per-capability `derivable`/`not_derivable` (module edges, path attribution, content search) |
+| `diff-modules` | Snapshot diff | `added`/`removed`/`changed`/`unchanged` module buckets |
+| `descriptor-regression-check` | Commit-gate regression predicate | `regressive` (bool) + `violations` list |
+
+**Default vs Full**:
+- Default: Key packages, key dependencies, proposed skill domains (no reasoning)
+- `--full`: All packages, all dependencies, all reasoning fields
+
+---
+
+## Error Handling
+
+**Module not found**:
+```toon
+error: Module not found
+module: unknown-module
+available[4]:
+  - oauth-sheriff-parent
+  - oauth-sheriff-core
+  - oauth-sheriff-quarkus
+  - oauth-sheriff-quarkus-deployment
+```
+
+**Command not found**:
+```toon
+error: Command not found
+module: oauth-sheriff-core
+command: unknown-command
+available[5]:
+  - module-tests
+  - verify
+  - quality-gate
+  - clean
+  - install
+```
 
 ---
 

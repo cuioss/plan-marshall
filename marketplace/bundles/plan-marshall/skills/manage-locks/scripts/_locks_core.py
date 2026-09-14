@@ -480,16 +480,30 @@ two sessions disagree on — so each is a warning rather than a lifecycle note.
 def _resolve_lock_log_path() -> Path:
     """Resolve the single main-anchored ``[LOCK]`` event log, cwd-independent.
 
-    Derives the global-log dir from the main-anchored ``.plan/local`` base
-    (:func:`marketplace_paths.resolve_main_anchored_path` with an empty subpath)
-    by stepping to its parent ``.plan/`` and appending ``logs/lock-{date}.log``.
-    The result is the SINGLE main-anchored global lock-event timeline regardless
-    of which worktree the caller is pinned to. This deliberately does NOT use
-    ``plan_logging.get_log_path`` / ``log_work`` — those resolve cwd-relative
-    (``get_base_dir()``) and would wrongly land the line in the per-worktree log.
+    Returns ``<main>/.plan/local/logs/lock-{date}.log`` — the global-log
+    directory every other global-log producer and consumer uses, which is
+    ``get_base_dir() / 'logs'`` in shape.
+
+    **This previously stepped to the base's PARENT.** ``resolve_main_anchored_path('')``
+    is ``.plan/local``, so appending ``logs/`` to its parent wrote the timeline to
+    ``.plan/logs/`` — the git-TRACKED config directory, one level above where
+    global logs live. Nothing read it there: the merge-window-accounting check in
+    ``audit.py`` scans ``.plan/local/logs/``, so no production emission was ever
+    in scan range and the check's contention count was a STRUCTURAL zero — it
+    reported "no contention" from a directory the emitter never wrote to. The
+    consumer is correct and is left untouched; the producer moves to meet it.
+
+    **Main-anchored, not cwd-relative — the resolver is load-bearing.** The
+    destination is the one ``get_base_dir()`` names, but this MUST NOT call
+    ``get_base_dir()`` (nor ``plan_logging.get_log_path`` / ``log_work``, which
+    do): those resolve cwd-relative, so a phase-5+ caller pinned to its worktree
+    would write the line into that worktree's own log and the cross-session
+    timeline would fragment into one file per worktree — defeating the whole
+    point of a shared lock-event timeline. ``resolve_main_anchored_path('logs')``
+    yields the same ``.plan/local/logs`` directory while keeping every session
+    pointed at ONE file (ADR-002's sanctioned main-anchored exception).
     """
-    main_local_base = resolve_main_anchored_path('')
-    return main_local_base.parent / 'logs' / f'lock-{date.today()}.log'
+    return resolve_main_anchored_path('logs') / f'lock-{date.today()}.log'
 
 
 def log_lock_event(lock: str, event: str, lock_id: str, **fields: Any) -> None:

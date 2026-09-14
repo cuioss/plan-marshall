@@ -47,7 +47,8 @@ class TestLockEventEmission:
     atomic window — a logging failure never breaks the lock action.
 
     The ``isolated_base`` fixture stages PLAN_BASE_DIR at ``<tmp>/main/.plan/local``
-    so the lock-event log resolves to the per-test ``<tmp>/main/.plan/logs`` dir."""
+    so the lock-event log resolves to the per-test ``<tmp>/main/.plan/local/logs``
+    dir."""
 
     def test_acquire_emits_lock_acquired(self, isolated_base: dict) -> None:
         merge_lock.run_acquire(Namespace(plan_id='plan-a', timeout=5.0))

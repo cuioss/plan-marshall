@@ -562,6 +562,29 @@ def declares_change(entry: dict[str, Any]) -> bool:
     return entry.get('intent') != STEP_INTENT_READ
 
 
+def normalize_declared_path(path: str) -> str:
+    """Return a declared path in the one spelling every comparison uses.
+
+    Declared paths and step targets are both repo-relative strings authored by
+    hand, so ``./x/y.py`` and ``x/y.py`` name the same file and must compare
+    equal. Only leading ``./`` segments and trailing separators are removed — no
+    resolution against the filesystem, since a declaration comparison must work
+    for a ``write-new`` target that does not exist yet.
+
+    This lives HERE, beside the parser that produces declared paths, rather than
+    in a consumer. It was previously defined inside
+    ``manage-tasks/_qgate_closure.py``, which meant the closure checks compared
+    normalized spellings while the write-set they compared AGAINST deduplicated
+    raw ones — two spellings of one path survived as two write-set members, and
+    the projection closure then reported the spelling no task happened to use as
+    an unprojected gap. The producer and its consumers now share one definition.
+    """
+    stripped = path.strip()
+    while stripped.startswith('./'):
+        stripped = stripped[2:]
+    return stripped.rstrip('/')
+
+
 def deliverable_write_set(deliverable: dict[str, Any]) -> list[str]:
     """Return the paths a deliverable declares it will MODIFY.
 
@@ -583,9 +606,24 @@ def deliverable_write_set(deliverable: dict[str, Any]) -> list[str]:
     downstream — the incomplete-derived-set failure in its purest form, since
     the missing paths were the ones nobody could see were missing.
 
-    The two fields are disjoint by the standard's own disjointness requirement,
-    so the union is deduplicated defensively rather than assumed disjoint: a
-    path declared under both fields contributes one write-set member.
+    The two fields are disjoint by the standard's own disjointness requirement —
+    now ENFORCED by ``validate_deliverable_contract``'s check 3c, which rejects a
+    path declared under both ``survey_scope`` and ``mutation_scope`` rather than
+    letting this derivation silently resolve the contradiction in the write
+    direction. The union is still deduplicated defensively rather than assumed
+    disjoint: a path declared under both write-bearing fields
+    (``affected_files`` and ``mutation_scope``, which the validator does NOT
+    require to be disjoint) contributes one write-set member.
+
+    **Deduplication is on the NORMALIZED spelling**
+    (:func:`normalize_declared_path`), and the returned members are normalized
+    too. Deduplicating on the raw string let ``./x/y.py`` and ``x/y.py`` both
+    survive as members of one write-set, which is not merely redundant: every
+    set-guarding consumer downstream compares normalized, so the duplicate pair
+    became one matched member and one permanent phantom gap — the projection
+    closure reported whichever spelling no task happened to use as a declared
+    write nobody targets. Returning the canonical spelling is what makes a
+    write-set member comparable to the step target it is supposed to match.
 
     Every classification derived from a deliverable's file list — its file-type
     bucket, whether it warrants a testing profile, what a build must cover —
@@ -604,7 +642,7 @@ def deliverable_write_set(deliverable: dict[str, Any]) -> list[str]:
         deliverable: A record from :func:`extract_deliverables`.
 
     Returns:
-        The declared write paths, in document order.
+        The declared write paths, normalized and in document order.
     """
     write_set: list[str] = []
     seen: set[str] = set()
@@ -616,8 +654,14 @@ def deliverable_write_set(deliverable: dict[str, Any]) -> list[str]:
                 continue
             if not declares_change(entry):
                 continue
-            path = entry.get('path')
-            if isinstance(path, str) and path and path not in seen:
+            raw = entry.get('path')
+            if not isinstance(raw, str) or not raw:
+                continue
+            # Guard the NORMALIZED value, not the raw one: './' is a non-empty
+            # string that normalizes to '', and an empty write-set member would
+            # be compared against step targets and reported as a gap named ''.
+            path = normalize_declared_path(raw)
+            if path and path not in seen:
                 seen.add(path)
                 write_set.append(path)
     return write_set

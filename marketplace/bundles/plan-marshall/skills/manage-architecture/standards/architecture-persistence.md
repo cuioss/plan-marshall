@@ -27,6 +27,35 @@ under a sibling staging directory `project-architecture.tmp/` and then
 before or after the rename leaves the project in a consistent state — the
 old layout is intact, or the new layout is intact, never half-written.
 
+The same guarantee holds **per file**, not only per whole-tree swap. Every JSON
+write in this store goes through one writer (`_architecture_core._write_json`),
+which serialises into a temp file in the destination's OWN directory, flushes and
+`fsync`s it, and `os.replace`s it onto the destination. Opening the destination
+for writing directly would truncate it first, so a concurrent reader — a
+dispatched leaf, or the crawl running against the same tree — could observe a
+prefix of the document and fail to parse it. The temp shares the destination's
+directory because `os.replace` is atomic only within one filesystem.
+
+**Every live-path concept-document write also writes the module index through.**
+`sync_module_index` is that shared piece: it refreshes a module's `_project.json`
+index entry from what was actually written to disk. `save_module_document`
+composes it with `save_module_enriched` for a single-module live-path caller;
+`api_init`'s repair/reset branch instead calls `sync_module_index` directly,
+batched across every repaired module into one `_project.json` pass. The
+write-through was once a habit of one caller rather than a property of the
+write — the enrich verbs carried it and `api_init`'s repair/reset branch did
+not, so repairing a document left the index describing a description and a
+provenance the document no longer carried. Both live writers now call the
+shared `sync_module_index`, whether directly (batched) or through
+`save_module_document` (single-module).
+
+⛔ That operation is the **live-path** writer and is not for staged writes.
+`discover --force` places every document under the staging directory above;
+routing it through the live-path writer would write into the real tree and
+destroy the swap's atomicity. A staging caller takes the shared invariants from
+`stamp_concept_document` and places the returned document itself — the
+invariants are what the two paths share, never the write.
+
 **Discovery is the live crawl, NOT the index.** Module discovery walks the live
 worktree filesystem (`iter_modules` → `crawl_all_modules`); the `_project.json`
 `modules` index is **not** the discovery gatekeeper. A module present on disk but
@@ -83,18 +112,31 @@ Top-level project metadata and the module index.
 
 ### `modules` index — read-side pre-flight surface
 
-Each index entry carries two mirrored fields, refreshed at `discover` time from
-the module's concept document:
+Each index entry carries two mirrored fields, refreshed from the module's concept
+document by **every writer that touches it** — `discover` rebuilds the whole
+index, each `enrich` verb writes its module's entry through after saving the
+document, and `api_init`'s repair/reset branch writes its repaired modules'
+entries through via the same shared `sync_module_index` call (see "Every
+live-path concept-document write also writes the module index through" above):
 
 | Field | Description |
 |-------|-------------|
 | `description` | The module's `responsibility` (its 1-2 sentence description), so a consumer can decide which concept documents to open **from the index alone**. |
 | `generation` | The concept document's generation header `{by, tree_sha}`, so a consumer can derive a staleness verdict (`derive_freshness`) from the tree identifier **without opening the concept body**. |
 
+Refreshing on every one of these writers is what keeps the mirror true. When
+only `discover` refreshed it, the index went stale against its own store on the
+first enrich (or repair) after a discover — it then advertised a description and
+a provenance the documents no longer carried. `enrich all` and `api_init`'s
+repair/reset branch each batch their write-throughs into a single `_project.json`
+write rather than rewriting the file once per module.
+
 The index is **not** the discovery gatekeeper (see "Discovery is the live crawl"
 above): `iter_modules()` crawls the live filesystem, so a module on disk but
 absent from the index is still discovered. The index is a denormalized pre-flight
-snapshot; the per-module concept document is authoritative.
+snapshot; **the per-module concept document is authoritative**, and a reader that
+can afford to open the document derives its verdict from the document's own
+header rather than from this mirror.
 
 ---
 
@@ -335,7 +377,53 @@ blanking every module's enrichment back to the empty stub only under
 |-----------|----------|
 | `type` | Required, drawn from a **closed, validated** vocabulary declared once as `CONCEPT_TYPES` in `scripts/_architecture_core.py` (`module`, `skill`, `script`, `standard`, `decision_record`). An unknown type is **refused at write time** with a message naming the accepted set. A pre-field document (no `type`) migrates deterministically to `module` on read (the store held only modules before the field existed) — a named migrate-on-read outcome, never a silent default. |
 | `generation` | A provenance header `{by, tree_sha}` recording **who** wrote the document and the **working-tree it was written against** (`compute_worktree_sha`). Freshness is derived from `tree_sha` — the tree identifier, **not** mtime (`derive_freshness`: `fresh` when it matches the current tree, `stale` when it differs, `unknown` when absent). Readable without parsing the body; also mirrored into the root index. |
-| `key_packages` keys | **Repo-relative paths (path is identity)**, not dotted pseudo-identifiers. A key must resolve to a real filesystem location; `enrich package` **refuses a non-resolving key** with a named error. Legacy dotted keys migrate to paths on read via the derived `packages` map (dotted → path). |
+| `key_packages` keys | **Repo-relative paths (path is identity)**, not dotted pseudo-identifiers. A key must resolve to a real filesystem location; `enrich package` **refuses a non-resolving key** with a named error. Legacy dotted keys migrate to paths on read via the derived `packages` map (dotted → path). The project root itself (`.`, `./`) is **not** a valid key — it names no package. |
+
+#### Provenance records *who* and *against which tree*, deliberately not *when*
+
+`generation` carries `by` and `tree_sha` and **no timestamp**. This is a decided
+contract, not an omission to be filled in later.
+
+A freshness verdict answers *is this document describing the tree I am looking
+at*. A tree identifier answers that **exactly**: it matches, or it does not. A
+timestamp can only answer it by proxy, through an expiry policy that has to guess
+how long a document stays true — and that guess is wrong in both directions. A
+document written a minute ago against a tree that has since changed is already
+`stale`, while one written months ago against an unchanged tree is still
+perfectly `fresh`. Recording *when* would invite a reader to derive the verdict
+from age, which is precisely the inadmissible-evidence move this store rules out.
+
+The cost of the decision is real and accepted: the store cannot answer "at what
+point was this written", and no consumer may infer it. Nothing in the read path
+derives anything from document mtime either.
+
+The three verdicts `derive_freshness` returns follow from the tree identifier
+alone — `fresh` (recorded tree matches), `stale` (it differs), and `unknown`
+(either sha is absent). `unknown` is the fail-closed third state: an absent
+provenance header is never read as `fresh`. A writer that persists content it did
+not author back-fills `unknown_generation()` (`tree_sha: null`) rather than
+stamping the current tree, so a document of unrecorded vintage reports `unknown`
+instead of manufacturing a `fresh` verdict nothing established.
+
+#### Non-`module` concept types are reachable only through the Python API
+
+`CONCEPT_TYPES` is a closed vocabulary of five (`module`, `skill`, `script`,
+`standard`, `decision_record`), but **only `module` has a CLI surface**. There is
+no `--type` flag on any `architecture` verb, and adding one is not a pending
+task — it is blocked on an unsettled design question. The other four types are
+writable only by a Python caller invoking `save_module_enriched` /
+`stamp_concept_document` directly, which is why the vocabulary is validated at
+write time even though no CLI can currently produce a non-`module` value.
+
+**The question a writer must settle first is the key space.** Every path in this
+store is `{module}/enriched.json` — the document is keyed by MODULE NAME, and the
+module name is what `iter_modules` enumerates from the live crawl. A `skill` or a
+`decision_record` is not a module: it has no entry in that enumeration, so there
+is no answer yet to where its document lives, what identifies it, or how a reader
+lists the documents of a given type. Introducing a `--type` flag without an
+answer would let a second concept type be written into a key space that cannot
+address it — the store would hold documents no reader could enumerate, which is
+the same *write path and read path disagree* defect the module type already had.
 
 ### Structure
 
@@ -526,7 +614,7 @@ files for output:
 |------------|-----------------|--------------------------|---------------------------|
 | `module` (default) | — | paths, commands | type, generation, responsibility, purpose, key_packages, internal_dependencies, key_dependencies, skills_by_profile |
 | `module --full` | — | + packages, dependencies | + reasoning fields |
-| `info` | name, description; per-module `description` + `freshness` (from the index `generation` header) | build_systems (per module) | purpose (per module) |
+| `info` | name, description; per-module `description` | build_systems (per module) | purpose (per module); per-module `freshness`, derived from the **document's own** `generation` header. A module with no document on disk reports `freshness: unknown` and a blank `description`. |
 
 ---
 

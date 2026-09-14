@@ -541,7 +541,9 @@ See [client-api.md](standards/client-api.md) § search for the full pattern cont
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture capabilities
 ```
 
-Reports which query capabilities are answerable **right now, in the executing envelope** — `module_edges` (graph/path/neighbors/impact), `path_attribution` (which-module), and `content_search` (files/find/search) — each distinguishing *cannot-derive* (no producer ran) from *derived-nothing*. Read from producers that actually ran (never the declaration), recomputed per call (never cached across dispatches), and scoped to the executing `--project-dir`. See [client-api.md](standards/client-api.md) § capabilities for the full contract.
+Reports which query capabilities are answerable **right now, in the executing envelope** — `module_edges` (graph/path/neighbors/impact), `path_attribution` (which-module), and `content_search` (files/find/search) — each distinguishing *cannot-derive* (no producer ran) from *derived-nothing*. Read from producers that actually ran (never the declaration), recomputed per call (the path-attribution memo is dropped on entry, so nothing is carried across dispatches), and scoped to the executing `--project-dir`.
+
+All three entries emit **one** status vocabulary, `derivable` / `not_derivable`, with no per-entry exception. For `content_search` the discriminator is whether any module descriptor could be READ: a never-crawled envelope answers `not_derivable`, while a crawled project whose modules carry no inventoried files answers `derivable` with `modules_inventoried: 0` out of `modules_total: N`. For `module_edges` the verdict comes from every producer that put an edge in the graph — the dispatched resolvers plus the reserved `declared` and `sibling-cross-link` producers — so `derivable` alongside `producer_count: 0` is a real state, not a contradiction. See [client-api.md](standards/client-api.md) § capabilities for the per-entry field set and the worked payloads.
 
 ### diff-modules
 

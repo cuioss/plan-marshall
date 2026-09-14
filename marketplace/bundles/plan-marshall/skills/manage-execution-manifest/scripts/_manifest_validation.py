@@ -508,8 +508,17 @@ def _check_step_loadable(step_id: str) -> dict[str, Any]:
 # silently and only fails much later at dispatch time. ``_check_step_resolvable``
 # closes that hole by RESOLVING external steps against the same discovery
 # registries the finalize/verify seed and discovery surfaces use, so the composer
-# can fail loud at compose time. It is the gate ``cmd_compose`` runs over the
-# FINAL emitted phase lists.
+# can fail loud at compose time.
+#
+# TWO verbs run it, and they must: ``cmd_compose`` over the FINAL emitted phase
+# lists, and ``cmd_reconcile`` over the FROZEN ``phase_6.steps`` it re-partitions
+# much later. Reconcile is the second consumer because it re-asks the same
+# question compose asked — "does this step id resolve to something?" — against a
+# tree the plan has since changed. Answering it there with the loadability check
+# instead made reconcile's external half vacuous: every ``project:`` /
+# ``bundle:skill`` step reported loadable and was retained, so a step whose
+# implementor the plan had just renamed survived reconciliation untouched. One
+# definition, both verbs.
 
 
 def _phase_step_ext_point(phase: str) -> str:

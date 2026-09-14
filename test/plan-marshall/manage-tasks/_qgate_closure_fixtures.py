@@ -65,7 +65,13 @@ normalize_declared_path = _closure.normalize_declared_path
 is_glob = _closure.is_glob
 
 
+index_unique_by_number = _closure.index_unique_by_number
+
+
 cmd_qgate_mechanical = _qgate.cmd_qgate_mechanical
+
+
+check_acyclic = _qgate._check_acyclic
 
 
 _parsing = load_script_module('plan-marshall', 'manage-solution-outline', '_plan_parsing.py', '_plan_parsing_closure')

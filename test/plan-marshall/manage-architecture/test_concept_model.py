@@ -381,8 +381,92 @@ def test_freshness_verdict_derived_from_header_alone():
     assert derive_freshness(index_entry['generation'], 'TREE-B') == 'stale'
 
 
-def test_info_surfaces_freshness_from_index(monkeypatch):
-    """``info`` surfaces per-module description + freshness read from the index header."""
+def _seed_module_with_document(tmpdir: str, *, index_generation: dict, document: dict) -> None:
+    """Seed one module whose index header and concept document are set independently.
+
+    The two headers are deliberately separable: that is the whole point of the
+    tests below, which pin WHICH of the two ``info`` derives its verdict from.
+    """
+    invalidate_crawl_cache()
+    save_module_derived('mod', {'name': 'mod', 'build_systems': ['maven'], 'paths': {'module': 'mod'}}, tmpdir)
+    save_project_meta(
+        {
+            'name': 'p',
+            'description': '',
+            'extensions_used': [],
+            'modules': {'mod': {'description': 'Does things', 'generation': index_generation}},
+        },
+        tmpdir,
+    )
+    # Written raw so the document's own generation header is exactly what this
+    # fixture states — ``save_module_enriched`` would restamp it against the
+    # current tree and destroy the divergence under test.
+    path = get_module_enriched_path('mod', tmpdir)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(document), encoding='utf-8')
+
+
+def test_info_surfaces_description_and_document_derived_freshness(monkeypatch):
+    """``info`` surfaces per-module description + a freshness verdict from the DOCUMENT.
+
+    The predecessor of this test seeded an index entry and NO ``enriched.json``,
+    then asserted ``fresh`` — which pinned the defect: the verdict was read off
+    the root index, the one header only ``discover`` refreshes. It now seeds a
+    real concept document, so it still tests what its name says while asserting
+    the corrected source.
+    """
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed_module_with_document(
+            tmpdir,
+            index_generation={'by': 'architecture', 'tree_sha': 'TREE-A'},
+            document={'type': 'module', 'generation': {'by': 'architecture', 'tree_sha': 'TREE-A'}},
+        )
+
+        monkeypatch.setattr(_cmd_client_query, 'current_worktree_sha', lambda _pd: 'TREE-A')
+        row = next(m for m in get_project_info(tmpdir)['modules'] if m['name'] == 'mod')
+        assert row['description'] == 'Does things'
+        assert row['freshness'] == 'fresh'
+
+        # A moved tree flips the verdict to stale — still from the header alone,
+        # with no parse of the concept body.
+        monkeypatch.setattr(_cmd_client_query, 'current_worktree_sha', lambda _pd: 'TREE-B')
+        row = next(m for m in get_project_info(tmpdir)['modules'] if m['name'] == 'mod')
+        assert row['freshness'] == 'stale'
+
+
+def test_info_freshness_follows_the_document_when_the_index_disagrees(monkeypatch):
+    """A current-tree INDEX header cannot make a differently-generated document fresh.
+
+    This is the separation the defect produced: only ``discover`` refreshes the
+    index while every enrich verb rewrites the document, so the two headers
+    diverge on the first enrich after a discover. The index says ``TREE-A`` (the
+    current tree) and the document says ``TREE-B``; the verdict must follow the
+    document, because the document is what a consumer would go on to read.
+    """
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed_module_with_document(
+            tmpdir,
+            index_generation={'by': 'architecture', 'tree_sha': 'TREE-A'},
+            document={'type': 'module', 'generation': {'by': 'architecture', 'tree_sha': 'TREE-B'}},
+        )
+
+        monkeypatch.setattr(_cmd_client_query, 'current_worktree_sha', lambda _pd: 'TREE-A')
+        row = next(m for m in get_project_info(tmpdir)['modules'] if m['name'] == 'mod')
+
+        assert row['freshness'] == 'stale', (
+            'info reported the index header verdict; the concept document was '
+            'generated against a different tree and is what a consumer opens'
+        )
+
+
+def test_info_reports_unknown_and_blank_description_when_no_document_exists(monkeypatch):
+    """An index entry that outlived its document reports ``unknown``, not ``fresh``.
+
+    The index is a denormalized mirror, so an entry can survive a document that
+    is not on disk. Reading the verdict off that entry would advertise a
+    current-tree ``fresh`` document that a consumer then cannot open. With no
+    document there is no provenance, so the row states the absence.
+    """
     with tempfile.TemporaryDirectory() as tmpdir:
         invalidate_crawl_cache()
         save_module_derived('mod', {'name': 'mod', 'build_systems': ['maven'], 'paths': {'module': 'mod'}}, tmpdir)
@@ -397,16 +481,16 @@ def test_info_surfaces_freshness_from_index(monkeypatch):
             },
             tmpdir,
         )
+        # Deliberately NO enriched.json on disk for 'mod'.
+        assert not get_module_enriched_path('mod', tmpdir).exists()
 
         monkeypatch.setattr(_cmd_client_query, 'current_worktree_sha', lambda _pd: 'TREE-A')
         row = next(m for m in get_project_info(tmpdir)['modules'] if m['name'] == 'mod')
-        assert row['description'] == 'Does things'
-        assert row['freshness'] == 'fresh'
 
-        # A moved tree flips the same header's verdict to stale — no re-read of the body.
-        monkeypatch.setattr(_cmd_client_query, 'current_worktree_sha', lambda _pd: 'TREE-B')
-        row = next(m for m in get_project_info(tmpdir)['modules'] if m['name'] == 'mod')
-        assert row['freshness'] == 'stale'
+        assert row['freshness'] == 'unknown'
+        assert row['description'] == '', (
+            'the row carried the surviving index description for a document that does not exist on disk'
+        )
 
 
 # =============================================================================
@@ -556,14 +640,16 @@ def test_validate_package_key_returns_key_when_resolving():
 
 def test_migrate_key_packages_rewrites_dotted_to_path():
     """A legacy dotted key is rewritten to its path via the derived packages bridge."""
-    key_packages = {'com.example.pkg': {'description': 'D'}}
-    derived_packages = {'com.example.pkg': {'path': 'src/pkg'}}
+    with tempfile.TemporaryDirectory() as tmpdir:
+        (Path(tmpdir) / 'src' / 'pkg').mkdir(parents=True)
+        key_packages = {'com.example.pkg': {'description': 'D'}}
+        derived_packages = {'com.example.pkg': {'path': 'src/pkg'}}
 
-    migrated, unresolved = migrate_key_packages(key_packages, derived_packages, '.')
+        migrated, unresolved = migrate_key_packages(key_packages, derived_packages, tmpdir)
 
-    assert 'src/pkg' in migrated
-    assert 'com.example.pkg' not in migrated
-    assert unresolved == []
+        assert 'src/pkg' in migrated
+        assert 'com.example.pkg' not in migrated
+        assert unresolved == []
 
 
 def test_migrate_key_packages_reports_unresolved_without_dropping():
@@ -576,9 +662,75 @@ def test_migrate_key_packages_reports_unresolved_without_dropping():
     assert unresolved == ['com.orphan']
 
 
+def test_migrate_key_packages_reports_a_bridge_collision_without_losing_a_description():
+    """Two dotted keys bridging to ONE path keep both curated descriptions.
+
+    The bridge is many-to-one in principle, and a rewrite that simply assigned
+    into the target key would let the second key silently overwrite the first —
+    a curated description destroyed by a migration that reported success. The
+    loser keeps its original key and is named in the diagnostics instead.
+    """
+    with tempfile.TemporaryDirectory() as tmpdir:
+        (Path(tmpdir) / 'src' / 'pkg').mkdir(parents=True)
+        key_packages = {
+            'com.example.one': {'description': 'FIRST'},
+            'com.example.two': {'description': 'SECOND'},
+        }
+        derived_packages = {
+            'com.example.one': {'path': 'src/pkg'},
+            'com.example.two': {'path': 'src/pkg'},
+        }
+
+        migrated, unresolved = migrate_key_packages(key_packages, derived_packages, tmpdir)
+
+        assert migrated['src/pkg']['description'] == 'FIRST'
+        assert migrated['com.example.two']['description'] == 'SECOND', (
+            'the colliding key was rewritten over its predecessor — a curated description was lost by the migration'
+        )
+        assert unresolved == ['com.example.two']
+        # Anti-vacuity: every description that went in came back out.
+        assert {entry['description'] for entry in migrated.values()} == {'FIRST', 'SECOND'}
+
+
+def test_migrate_key_packages_refuses_a_bridge_whose_path_does_not_exist():
+    """A bridge pointing at nothing is not a migration — the dotted key is reported.
+
+    Rewriting onto a non-resolving target would replace one key that fails
+    ``package_key_resolves`` with another that also fails it, while reporting the
+    migration as clean.
+    """
+    with tempfile.TemporaryDirectory() as tmpdir:
+        key_packages = {'com.example.gone': {'description': 'D'}}
+        derived_packages = {'com.example.gone': {'path': 'src/never/created'}}
+
+        migrated, unresolved = migrate_key_packages(key_packages, derived_packages, tmpdir)
+
+        assert 'com.example.gone' in migrated
+        assert 'src/never/created' not in migrated
+        assert unresolved == ['com.example.gone']
+
+
+def test_package_key_resolves_rejects_the_project_root_itself():
+    """``.`` and ``./`` are not package keys — the root names no package.
+
+    Both strings resolve to the project root, which exists for every project, so
+    accepting them would hand back a key that "resolves" everywhere while
+    identifying nothing. The matched positive control keeps the rejection from
+    being an accidental blanket refusal.
+    """
+    with tempfile.TemporaryDirectory() as tmpdir:
+        (Path(tmpdir) / 'pkg').mkdir()
+
+        assert package_key_resolves('.', tmpdir) is False
+        assert package_key_resolves('./', tmpdir) is False
+        # Positive control: a real sub-path still resolves.
+        assert package_key_resolves('pkg', tmpdir) is True
+
+
 def test_merge_module_data_migrates_dotted_key_packages():
     """merge_module_data rewrites legacy dotted key_packages keys to path identity on read."""
     with tempfile.TemporaryDirectory() as tmpdir:
+        (Path(tmpdir) / 'mod' / 'src' / 'pkg').mkdir(parents=True)
         invalidate_crawl_cache()
         save_module_derived(
             'mod',
@@ -592,6 +744,270 @@ def test_merge_module_data_migrates_dotted_key_packages():
 
         assert 'mod/src/pkg' in merged['key_packages']
         assert 'com.example.pkg' not in merged['key_packages']
+
+
+# =============================================================================
+# The outline's architecture-context reader reports path identity
+# =============================================================================
+#
+# ``manage-solution-outline``'s ``get-module-context`` feeds placement decisions
+# during outline authoring, and it reported ``key_packages`` keys verbatim — so a
+# document still carrying a legacy dotted identifier handed the author a name
+# that resolves to no location. It applies the same dotted→path bridge here,
+# using the derived ``packages`` map it already holds.
+
+_outline = load_script_module(
+    'plan-marshall',
+    'manage-solution-outline',
+    'manage-solution-outline.py',
+    module_name='manage_solution_outline_concept_model',
+)
+
+
+def _seed_outline_module(tmpdir: str, *, packages: dict, key_packages: dict) -> None:
+    """Seed one module the outline reader can read, with a controllable bridge."""
+    invalidate_crawl_cache()
+    save_module_derived('mod', {'name': 'mod', 'paths': {'module': 'mod'}, 'packages': packages}, tmpdir)
+    save_project_meta({'name': 'p', 'description': '', 'extensions_used': [], 'modules': {'mod': {}}}, tmpdir)
+    save_module_enriched('mod', {'key_packages': key_packages}, tmpdir)
+
+
+def test_outline_module_context_reports_the_path_not_the_dotted_name():
+    """The outline reader migrates a legacy dotted key to its repo-relative path."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        (Path(tmpdir) / 'mod' / 'src' / 'pkg').mkdir(parents=True)
+        _seed_outline_module(
+            tmpdir,
+            packages={'com.example.pkg': {'path': 'mod/src/pkg'}},
+            key_packages={'com.example.pkg': {'description': 'D'}},
+        )
+
+        context = _outline._read_module_context(tmpdir)
+
+        assert context['status'] == 'success'
+        row = next(m for m in context['modules'] if m['name'] == 'mod')
+        assert row['key_packages'] == ['mod/src/pkg']
+
+
+def test_outline_module_context_survives_absent_derived_data(monkeypatch):
+    """A module whose derived data cannot be loaded still yields a context read.
+
+    The reader tolerates a missing ``derived.json`` by falling back to an empty
+    derived shape, which is why the migration is applied inline rather than
+    through ``merge_module_data`` — that helper raises ``DataNotFoundError``
+    here, and routing through it would turn a degraded-but-readable module into a
+    hard failure of the whole context read. With no bridge available the dotted
+    key is REPORTED UNCHANGED rather than dropped.
+    """
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed_outline_module(
+            tmpdir,
+            packages={'com.example.pkg': {'path': 'mod/src/pkg'}},
+            key_packages={'com.example.pkg': {'description': 'D'}},
+        )
+
+        def _raise_missing(_name, _project_dir):
+            raise _architecture_core.DataNotFoundError('derived.json absent')
+
+        monkeypatch.setattr(_outline, 'load_module_derived', _raise_missing)
+
+        context = _outline._read_module_context(tmpdir)
+
+        assert context['status'] == 'success', (
+            'an absent derived.json failed the whole context read instead of degrading to the empty derived shape'
+        )
+        row = next(m for m in context['modules'] if m['name'] == 'mod')
+        assert row['key_packages'] == ['com.example.pkg']
+
+
+# =============================================================================
+# The store's two writers agree, and neither invents provenance
+# =============================================================================
+#
+# ``save_module_enriched`` is the documented single concept-document writer, but
+# ``api_discover`` stages its documents into the tmp tree it later swaps, so it
+# cannot route through a writer that resolves the live path. What the two share
+# is the INVARIANT GATE (``stamp_concept_document``), and these tests pin that
+# sharing by its observable: the field sets agree, and the provenance a document
+# ends up with is never invented.
+
+
+def _fake_module_with_packages(_project_root):
+    """Discovery stand-in whose module carries a dotted→path ``packages`` bridge."""
+    return {
+        'modules': {
+            'module-a': {
+                'name': 'module-a',
+                'build_systems': ['maven'],
+                'paths': {'module': 'module-a'},
+                'metadata': {},
+                'packages': {'com.example.pkg': {'path': 'module-a/src/pkg'}},
+                'dependencies': [],
+                'stats': {},
+                'commands': {},
+            }
+        },
+        'extensions_used': [],
+    }
+
+
+def test_discover_and_save_write_the_same_concept_model_field_set(monkeypatch):
+    """A document written by ``api_discover`` carries the same fields as one written
+    by ``save_module_enriched`` from the same input.
+
+    ``api_discover`` writes through ``_write_json`` because it stages into the
+    tmp+swap tree, so the shared contract cannot be "the same writer". It is "the
+    same invariant gate", and the field set is what makes that observable — a
+    discover path that stopped stamping would drop ``type`` / ``generation``
+    here.
+    """
+    import extension_discovery
+
+    with tempfile.TemporaryDirectory() as discovered, tempfile.TemporaryDirectory() as saved:
+        monkeypatch.setattr(extension_discovery, 'discover_project_modules', _fake_single_module)
+        api_discover(discovered, force=True)
+        discovered_doc = load_module_enriched('module-a', discovered)
+
+        save_module_enriched('module-a', _empty_module_enrichment(), saved)
+        saved_doc = load_module_enriched('module-a', saved)
+
+        assert set(discovered_doc) == set(saved_doc)
+        # Anti-vacuity: the two concept-model constructs are actually present.
+        assert {'type', 'generation'} <= set(discovered_doc)
+
+
+def test_discover_backfills_unknown_generation_never_the_current_tree(monkeypatch):
+    """A preserved document with no ``generation`` gets ``unknown``, not this tree.
+
+    ``discover`` re-writes existing documents verbatim — it did not author their
+    content. Stamping the current tree sha onto a body of unrecorded vintage
+    would manufacture a ``fresh`` verdict nothing established. The current tree
+    is pinned to a known value so the assertion is sharp: the persisted header
+    must not carry it.
+    """
+    import extension_discovery
+
+    monkeypatch.setattr(_architecture_core, 'current_worktree_sha', lambda _pd: 'TREE-CURRENT')
+    monkeypatch.setattr(extension_discovery, 'discover_project_modules', _fake_single_module)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # A document on disk with real content and NO generation header.
+        path = get_module_enriched_path('module-a', tmpdir)
+        path.parent.mkdir(parents=True)
+        path.write_text(json.dumps({'type': 'module', 'responsibility': 'Curated'}), encoding='utf-8')
+
+        api_discover(tmpdir, force=True)
+
+        generation = load_module_enriched('module-a', tmpdir)['generation']
+        assert generation['tree_sha'] != 'TREE-CURRENT', (
+            'discover stamped the current tree onto a document it did not author'
+        )
+        assert generation['tree_sha'] is None
+        assert derive_freshness(generation, 'TREE-CURRENT') == 'unknown'
+
+
+def test_discover_migrates_a_legacy_dotted_key_package_on_disk(monkeypatch):
+    """A legacy dotted ``key_packages`` key is rewritten to its path, ON DISK.
+
+    ``migrate_key_packages`` existed but no writer called it, so the migration
+    never reached the store — a read path rewrote the key on every read while
+    disk kept the dotted one forever. The re-read is from disk deliberately: an
+    in-memory return value would pass even with the write path unchanged.
+    """
+    import extension_discovery
+
+    monkeypatch.setattr(extension_discovery, 'discover_project_modules', _fake_module_with_packages)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # The bridge target must be a real location, or it is not a migration.
+        (Path(tmpdir) / 'module-a' / 'src' / 'pkg').mkdir(parents=True)
+        path = get_module_enriched_path('module-a', tmpdir)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps({'type': 'module', 'key_packages': {'com.example.pkg': {'description': 'Curated'}}}),
+            encoding='utf-8',
+        )
+
+        api_discover(tmpdir, force=True)
+
+        on_disk = json.loads(get_module_enriched_path('module-a', tmpdir).read_text(encoding='utf-8'))
+        key_packages = on_disk['key_packages']
+        assert 'module-a/src/pkg' in key_packages
+        assert 'com.example.pkg' not in key_packages
+        assert key_packages['module-a/src/pkg']['description'] == 'Curated'
+
+
+def test_enrich_writes_description_and_generation_through_to_the_index():
+    """An enrich verb refreshes the root index — with no intervening ``discover``.
+
+    Only ``discover`` used to refresh the index, so the first enrich after a
+    discover left it advertising a description and a provenance the documents no
+    longer carried. The pre-state is asserted so the post-state cannot be read as
+    a coincidence.
+    """
+    with tempfile.TemporaryDirectory() as tmpdir:
+        setup_test_project(tmpdir)
+
+        before = load_project_meta(tmpdir)['modules']['module-a']
+        assert before.get('description', '') == '', 'the fixture already carried the description under test'
+
+        _cmd_enrich.enrich_module('module-a', 'Newly curated responsibility', project_dir=tmpdir)
+
+        entry = load_project_meta(tmpdir)['modules']['module-a']
+        assert entry['description'] == 'Newly curated responsibility'
+        # The mirrored header is the document's own, as just written.
+        assert entry['generation'] == load_module_enriched('module-a', tmpdir)['generation']
+
+
+# =============================================================================
+# The persistence standard records the two decided contract statements
+# =============================================================================
+
+
+def _persistence_standard_text() -> str:
+    """The standard's prose with runs of whitespace collapsed to single spaces.
+
+    The phrases below are asserted as contract statements, not as typography: a
+    sentence that happens to wrap mid-phrase carries the statement just as much
+    as one that does not. Reading the raw text would pin the assertions to the
+    current line breaks, so reflowing a paragraph — an editorial change that
+    alters no contract — would fail the pin. Normalising here keeps the phrase
+    the subject and the wrapping irrelevant.
+    """
+    # Bound through an annotated local: ``MARKETPLACE_ROOT`` is untyped at this
+    # boundary, so the read would otherwise propagate ``Any`` out of a function
+    # declared to return ``str``.
+    text: str = _PERSISTENCE_STANDARD.read_text(encoding='utf-8')
+    return ' '.join(text.split())
+
+
+def test_standard_records_the_deliberate_absence_of_a_timestamp():
+    """The standard states that provenance omits *when*, AND why.
+
+    A reader who finds ``{by, tree_sha}`` and no timestamp cannot tell a decided
+    contract from an unfinished one. Recording the deviation without its reason
+    would leave the next author free to "complete" the header with an mtime,
+    which is the inadmissible evidence the tree identifier replaced.
+    """
+    text = _persistence_standard_text()
+
+    assert 'at what point' in text, 'the standard does not name the deviation it takes'
+    assert 'tree identifier' in text, 'the standard does not give the reason for the deviation'
+    assert 'no timestamp' in text
+
+
+def test_standard_records_non_module_types_as_python_api_only():
+    """The standard states non-``module`` concept types have no CLI, and names the blocker.
+
+    The vocabulary is validated at write time although no CLI can produce four of
+    its five values. Without the statement that reads as an oversight; with it,
+    the unsettled key-space question is on the record as what a writer must
+    settle first.
+    """
+    text = _persistence_standard_text()
+
+    assert '--type' in text, 'the standard does not state that there is no --type flag'
+    assert 'key space' in text, 'the standard does not name the question a writer must settle first'
 
 
 # =============================================================================
@@ -757,13 +1173,19 @@ def _seed_claimed_doc_corpus(tmpdir: str) -> None:
     )
 
 
-def _claiming_attributor(path: str, _module_names: list[str]) -> tuple[str | None, list[dict]]:
-    """Stand in for the Axis-D seam, claiming the seeded corpus for its owner."""
+def _claiming_attributor(path: str, _module_names: list[str], _project_dir: str) -> tuple[str | None, list[dict]]:
+    """Stand in for the Axis-D seam, claiming the seeded corpus for its owner.
+
+    ``project_dir`` is a third positional because the seam is keyed on it — the
+    path-attribution memo is per ``(project_dir, module_names)``. These tests
+    assert on the reader-side collapse, not on which project dir reached the
+    seam, so the argument is accepted and ignored.
+    """
     owner = _DOC_OWNER if path in _CLAIMED_DOCS else None
     return owner, [{'id': 'stub-doc-claim', 'notes': []}]
 
 
-def _no_claim_attributor(_path: str, _module_names: list[str]) -> tuple[None, list[dict]]:
+def _no_claim_attributor(_path: str, _module_names: list[str], _project_dir: str) -> tuple[None, list[dict]]:
     """The negative control: an attributor that runs and claims nothing."""
     return None, [{'id': 'stub-doc-claim', 'notes': []}]
 
@@ -841,7 +1263,230 @@ def test_search_count_and_file_count_converge_for_a_claimed_duplicate(monkeypatc
             'search still reports more rows than distinct files under an ownership '
             'claim — the reader-side collapse is not running at this call site'
         )
-        assert claimed['files_scanned'] == unclaimed['files_scanned'] == _UNCOLLAPSED_ROWS, (
+        # Derived from the FILE population, not from ``_UNCOLLAPSED_ROWS``: the
+        # scan is memoized on the path, so ``files_scanned`` counts DISTINCT files
+        # opened, and a file both modules inventory is read once. Reusing the rows
+        # constant here is the same rows-versus-files conflation this test exists
+        # to pin — the two coincide only at a fixture arity neither population owns.
+        assert claimed['files_scanned'] == unclaimed['files_scanned'] == len(_CLAIMED_DOCS), (
             'the scanned population moved between the two arms; the collapse must '
             'change what is REPORTED, never what is read'
         )
+
+
+# =============================================================================
+# The store's JSON writer replaces atomically
+#
+# Opening the destination with mode 'w' truncates it before a byte is written, so
+# a concurrent reader of _project.json or enriched.json observes a prefix and
+# fails to parse. The failure is asserted through a serializer that raises
+# MID-DUMP, which is the deterministic stand-in for that window: under a
+# truncating writer the destination is left holding the partial output, under a
+# tmp-then-rename writer it is untouched.
+# =============================================================================
+
+
+class TestTheJsonWriterReplacesAtomically:
+    def test_a_write_that_raises_mid_dump_leaves_the_destination_untouched(self):
+        """The pre-existing document survives a failed rewrite byte-for-byte."""
+        # Arrange — a valid document on disk, read back as the exact bytes.
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / 'store' / '_project.json'
+            _architecture_core._write_json(path, {'name': 'before', 'modules': {}})
+            before = path.read_bytes()
+
+            # Act — sort_keys puts 'a' ahead of 'b', so json.dump emits real output
+            # and THEN raises on the unserializable value: a mid-dump failure, not
+            # a refusal before the first byte.
+            with pytest.raises(TypeError):
+                _architecture_core._write_json(path, {'a': 1, 'b': object()})
+
+            # Assert
+            assert path.read_bytes() == before, (
+                'the destination was modified by a write that never completed — a '
+                'truncating writer leaves exactly this partial state where a reader '
+                'can see it.'
+            )
+            assert json.loads(path.read_text(encoding='utf-8'))['name'] == 'before'
+
+    def test_a_failed_write_leaves_no_scratch_behind(self):
+        """The temp is removed on the failure path, so the store gains no residue."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            directory = Path(tmpdir) / 'store'
+            path = directory / '_project.json'
+            _architecture_core._write_json(path, {'name': 'before'})
+
+            with pytest.raises(TypeError):
+                _architecture_core._write_json(path, {'a': 1, 'b': object()})
+
+            assert sorted(p.name for p in directory.iterdir()) == ['_project.json']
+
+    def test_a_successful_write_replaces_the_content_and_leaves_no_scratch(self):
+        """Matched control — the writer must still actually write.
+
+        Without it, every assertion above is equally consistent with a writer that
+        never touches the destination at all.
+        """
+        with tempfile.TemporaryDirectory() as tmpdir:
+            directory = Path(tmpdir) / 'store'
+            path = directory / '_project.json'
+            _architecture_core._write_json(path, {'name': 'before'})
+
+            _architecture_core._write_json(path, {'name': 'after'})
+
+            assert json.loads(path.read_text(encoding='utf-8')) == {'name': 'after'}
+            assert sorted(p.name for p in directory.iterdir()) == ['_project.json']
+
+    def test_the_writer_creates_missing_parents(self):
+        """The pre-existing mkdir behaviour is preserved by the rewrite."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / 'deep' / 'nested' / 'enriched.json'
+
+            _architecture_core._write_json(path, {'responsibility': 'x'})
+
+            assert json.loads(path.read_text(encoding='utf-8')) == {'responsibility': 'x'}
+
+
+# =============================================================================
+# Every live-path document write carries the module index through
+#
+# _project.json's ``modules`` entry is the read-side pre-flight surface. Writing a
+# document without refreshing it leaves the index describing a description and a
+# provenance the document no longer carries — and api_init's repair/reset branch
+# was the live writer that did exactly that, while the enrich verbs carried it.
+# =============================================================================
+
+
+_INDEX_STALE_MARKER = 'a description the document no longer carries'
+
+
+def _index_entry(project_dir: str, module_name: str) -> dict[str, Any]:
+    entry: dict[str, Any] = _architecture_core.load_project_meta(project_dir)['modules'][module_name]
+    return entry
+
+
+class TestApiInitCarriesTheModuleIndexThrough:
+    def test_a_reset_refreshes_the_index_entry_it_invalidated(self):
+        """The blank-all rewrites the document, so the index must follow it."""
+        # Arrange — a module whose document and index entry agree on a real
+        # description, which the reset is about to blank.
+        with tempfile.TemporaryDirectory() as tmpdir:
+            setup_test_project(tmpdir)
+            _cmd_enrich.enrich_module('module-a', _INDEX_STALE_MARKER, project_dir=tmpdir)
+            assert _index_entry(tmpdir, 'module-a')['description'] == _INDEX_STALE_MARKER, (
+                'the fixture did not put a real description in the index, so the '
+                'assertion below could not distinguish a refreshed entry from an '
+                'entry that was always blank'
+            )
+
+            # Act — the destructive repair path, which writes every document.
+            result = _cmd_manage.api_init(tmpdir, force=True, reset=True)
+
+            # Assert — the index describes what is ON DISK now, not what was.
+            assert result['status'] == 'success'
+            assert result['modules_initialized'] == 1
+            document = _architecture_core.load_module_enriched_or_empty('module-a', tmpdir)
+            entry = _index_entry(tmpdir, 'module-a')
+            assert entry['description'] == '', (
+                'the index still carries the pre-reset description — api_init wrote '
+                'the document without carrying its header through.'
+            )
+            assert entry['generation'] == document['generation'], (
+                'the index generation header diverged from the document it indexes; '
+                'a freshness verdict read off the index would describe a different '
+                'document than the one on disk.'
+            )
+
+    def test_a_seeding_init_indexes_the_stub_it_created(self):
+        """The non-destructive branch writes documents too, and indexes them."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Arrange — no enriched.json at all, so init seeds one.
+            seed_project(tmpdir, {'module-a': {'name': 'module-a', 'paths': {'module': 'module-a'}}})
+
+            result = _cmd_manage.api_init(tmpdir, force=True)
+
+            assert result['modules_initialized'] == 1
+            document = _architecture_core.load_module_enriched_or_empty('module-a', tmpdir)
+            assert _index_entry(tmpdir, 'module-a')['generation'] == document['generation']
+
+    def test_an_init_that_raises_partway_indexes_the_stubs_it_did_write(self, monkeypatch):
+        """A run that aborts mid-loop still carries through the documents it wrote.
+
+        ``api_init`` batches the index write-through into ONE ``_project.json``
+        write after the per-module loop. Without a ``finally`` that write is
+        simply skipped when a document write raises: the modules already
+        re-seeded carry a fresh generation header while the index keeps
+        describing the description and provenance those documents no longer
+        have — the staleness the write-through exists to remove.
+        ``_cmd_enrich._batched_index_sync`` flushes its owed entries on the way
+        out for exactly this reason, and this is the same guarantee for the one
+        live-path writer that batches without a context manager.
+
+        Which module the loop reaches first is the crawl's business, so the
+        stand-in writes whichever module it is called with FIRST and raises on
+        every one after it. The assertions then read that recorded name rather
+        than assuming an iteration order.
+        """
+        seeded = ('module-a', 'module-b')
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Arrange — two modules with no enriched.json, so init seeds both,
+            # and index entries that carry no generation yet.
+            seed_project(tmpdir, {name: {'name': name, 'paths': {'module': name}} for name in seeded})
+            for name in seeded:
+                assert 'generation' not in _index_entry(tmpdir, name), (
+                    'the fixture already carried a generation header in the index, so '
+                    'the assertion below could not distinguish a flushed entry from a '
+                    'pre-existing one'
+                )
+
+            written: list[str] = []
+
+            def _write_then_raise(module_name: str, document: dict[str, Any], project_dir: str) -> None:
+                if written:
+                    raise RuntimeError('document write failed partway through the loop')
+                written.append(module_name)
+                _architecture_core.save_module_enriched(module_name, document, project_dir)
+
+            monkeypatch.setattr(_cmd_manage, 'save_module_enriched', _write_then_raise)
+
+            # Act — the loop writes one document and then raises.
+            with pytest.raises(RuntimeError):
+                _cmd_manage.api_init(tmpdir, force=True)
+
+            # Assert — anti-vacuity first: the fixture really did abort AFTER a
+            # write, not before one. An abort with nothing written would make the
+            # index assertion below hold for the wrong reason.
+            assert len(written) == 1, f'the fixture did not abort after exactly one document write: {written}'
+            aborted_after = written[0]
+            never_written = next(name for name in seeded if name != aborted_after)
+
+            document = _architecture_core.load_module_enriched_or_empty(aborted_after, tmpdir)
+            entry = _index_entry(tmpdir, aborted_after)
+            assert entry['generation'] == document['generation'], (
+                'the index does not describe the document that DID get written — the '
+                'owed index entries were dropped when the loop raised, which is the '
+                'staleness an aborted run leaves behind.'
+            )
+            assert 'generation' not in _index_entry(tmpdir, never_written), (
+                'the flush indexed a module whose document was never written; the '
+                'index now describes a document that is not on disk'
+            )
+            assert not get_module_enriched_path(never_written, tmpdir).exists()
+
+    def test_an_init_that_writes_nothing_leaves_the_index_alone(self):
+        """Matched control — the write-through follows a WRITE, not every call.
+
+        Without it, the assertions above are equally consistent with an api_init
+        that rewrites the index unconditionally, which would blank a curated
+        entry on a bare init that preserved every document.
+        """
+        with tempfile.TemporaryDirectory() as tmpdir:
+            setup_test_project(tmpdir)
+            _cmd_enrich.enrich_module('module-a', _INDEX_STALE_MARKER, project_dir=tmpdir)
+            before = _index_entry(tmpdir, 'module-a')
+
+            # Every document already exists and reset is off, so nothing is written.
+            result = _cmd_manage.api_init(tmpdir, force=True)
+
+            assert result['modules_initialized'] == 0
+            assert _index_entry(tmpdir, 'module-a') == before

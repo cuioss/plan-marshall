@@ -15,7 +15,8 @@ deliverables that touch skill, agent, or script source files:
 
 The validator is documented prose (not executable Python), so these tests
 pin the **structure** of the validator section in
-``marketplace/bundles/plan-marshall/agents/q-gate-validation-agent.md``:
+``marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/q-gate-validation.md``
+— the path ``_AGENT_PATH`` below resolves, and the one every assertion reads:
 
 1. **Positive cases** — Section 2.15 exists, names every pattern letter
    (WL-A, WL-B, WL-C), declares its activation condition, finding-emission
@@ -24,8 +25,14 @@ pin the **structure** of the validator section in
 2. **Negative cases** — Section 2.15 does NOT itself contain stale
    ``.claude/worktrees/`` literals outside explicit anti-pattern markers
    (the validator must not be self-violating).
-3. **Verification matrix sync** — the matrix table at the bottom of the
-   agent must include a row for the worktree-linter validator so the
+3. **Narrowing guard** — the suppression rule's self-reference arm exempts
+   this document in Section 2.15 ONLY, so every WL-A / WL-B literal the file
+   carries elsewhere must stand on the explicit-marker arm. The guard is
+   matched by positive and negative controls over synthetic input, because a
+   guard that passes over an empty population reads exactly like one whose
+   detectors match nothing.
+4. **Verification matrix sync** — the matrix table at the bottom of the
+   document must include a row for the worktree-linter validator so the
    summary stays in lockstep with the section body.
 
 A future edit that drops Section 2.15, removes a pattern letter, or breaks
@@ -241,6 +248,65 @@ def test_section_documents_suppression_rule(section_2_15_text: str) -> None:
     )
 
 
+def test_suppression_rule_carries_a_self_reference_arm(section_2_15_text: str) -> None:
+    """The suppression rule must carry a self-reference arm.
+
+    Without it the linter flags its OWN pattern catalogue: this file cannot
+    define WL-A / WL-B without quoting the literals they forbid, so every plan
+    that touches it earns findings that say nothing. The arm generalises the
+    single hard-coded ``worktree-handling.md`` exemption the rule started with.
+    """
+    assert 'Self-reference' in section_2_15_text, (
+        'The suppression rule must carry a "Self-reference" arm exempting a '
+        "document's own definition of a pattern from that pattern's sweep. "
+        'Without it the validator flags its own catalogue in Section 2.15.'
+    )
+
+
+def test_self_reference_arm_is_keyed_on_document_and_region_not_document_alone(
+    section_2_15_text: str,
+) -> None:
+    """The self-reference arm must name a REGION per definition source.
+
+    A document-only key is the fail-open shape: it would exempt every stale
+    pattern anywhere in a definition source, so a genuinely new violation
+    dropped into an unrelated part of this file would be absorbed silently. The
+    arm therefore has to state a region alongside each source, and this file's
+    region has to be Section 2.15 rather than the whole file.
+    """
+    assert 'Exempt region' in section_2_15_text, (
+        'The self-reference arm must publish an "Exempt region" per definition '
+        'source. Keyed on the document alone it is fail-open: a stale pattern '
+        'introduced anywhere in the file would inherit the exemption.'
+    )
+    assert '§ 2.15 only' in section_2_15_text, (
+        "The self-reference arm must scope THIS file's exemption to '§ 2.15 only'. "
+        'A whole-file exemption here would cover the other validator sections, '
+        'which define none of these patterns.'
+    )
+
+
+@pytest.mark.parametrize(
+    'definition_source',
+    (
+        'workflow-integration-git/standards/worktree-handling.md',
+        'plan-marshall/workflow/q-gate-validation.md',
+    ),
+)
+def test_self_reference_arm_enumerates_both_definition_sources(section_2_15_text: str, definition_source: str) -> None:
+    """Both definition sources must be named in the arm's own table.
+
+    The arm is only checkable against reality if it says WHICH documents it
+    covers. Naming them is also what makes a third entry a visible decision
+    rather than a quiet widening.
+    """
+    assert definition_source in section_2_15_text, (
+        f'The self-reference arm must name {definition_source!r} as a definition '
+        f'source with its exempt region. An unnamed source cannot be audited, and '
+        f'a reader cannot tell an earned exemption from a widened one.'
+    )
+
+
 def test_section_documents_finding_emission_template(section_2_15_text: str) -> None:
     """Section 2.15 must contain a finding emission template that calls
     ``manage-findings qgate add`` with the canonical ``--source qgate``.
@@ -432,6 +498,196 @@ def test_section_2_15_has_no_unmarked_cd_worktree_compounds(section_2_15_text: s
         'demonstrate the WL-A pattern without an anti-pattern marker: '
         + '; '.join(f'line {idx}: {line.strip()!r}' for idx, line in violations)
     )
+
+
+# -----------------------------------------------------------------------------
+# The narrowing guard — this file's self-reference exemption covers Section 2.15
+# ONLY, so every WL-A / WL-B literal it carries ELSEWHERE has to stand on its own
+# under the explicit-marker arm. This is the mechanical half of that narrowing:
+# the prose states the region, and this guard is what keeps the region honest, so
+# a pattern literal dropped into another validator section fails here instead of
+# being absorbed by an exemption that was never meant to reach it.
+# -----------------------------------------------------------------------------
+
+
+#: The WL-A / WL-B literal detectors, as ``(pattern_letter, predicate)``. WL-C is
+#: absent by construction: its signal is the ABSENCE of ``--plan-id`` from an
+#: invocation, so there is no literal a document could carry by quoting it.
+_WL_LITERAL_DETECTORS: tuple[tuple[str, object], ...] = (
+    ('WL-A', re.compile(r'cd\s+[^\s]*worktree[^\s]*\s*&&', re.IGNORECASE).search),
+    ('WL-B', re.compile(re.escape('.claude/worktrees/')).search),
+)
+
+
+def _numbered_lines_outside_section(agent_text: str, section_text: str) -> list[tuple[int, str]]:
+    """Return ``(1-based line number, line)`` for every line OUTSIDE ``section_text``.
+
+    Sliced by index rather than by re-matching the heading, so the excluded span
+    is exactly the one ``section_2_15_text`` returns — the guard and the fixture
+    cannot drift into disagreeing about where the exempt region ends.
+    """
+    start = agent_text.index(section_text)
+    end = start + len(section_text)
+    before = agent_text[:start].split('\n')
+    after_offset = agent_text[:end].count('\n') + 1
+    after = agent_text[end:].split('\n')
+    numbered = [(idx + 1, line) for idx, line in enumerate(before)]
+    numbered += [(after_offset + idx, line) for idx, line in enumerate(after)]
+    return numbered
+
+
+@pytest.fixture(scope='module')
+def lines_outside_section_2_15(agent_text: str, section_2_15_text: str) -> list[tuple[int, str]]:
+    """The numbered lines of q-gate-validation.md that Section 2.15 does not cover."""
+    return _numbered_lines_outside_section(agent_text, section_2_15_text)
+
+
+def _unmarked_literal_hits(
+    numbered_lines: list[tuple[int, str]],
+) -> tuple[list[tuple[str, int, str]], int]:
+    """Return ``(violations, population)`` for the WL-A / WL-B literal detectors.
+
+    ``population`` is how many lines carried a literal at all. It is published
+    beside the verdict because an empty population makes a clean result vacuous:
+    "no unmarked literal" and "no literal" are different facts, and only the
+    count tells them apart.
+
+    ⛔ The marker context is reset across a LINE-NUMBER DISCONTINUITY.
+    ``numbered_lines`` is not one contiguous span: ``_numbered_lines_outside_section``
+    concatenates the region before the excluded section with the region after it,
+    so the last line before the section and the first line after it sit adjacent
+    in this list while being far apart in the file. Carrying ``previous`` across
+    that seam makes a marker on the pre-section line suppress the first unmarked
+    literal following the section — one line of the very region this guard exists
+    to keep detectable, silently exempted by a marker that does not precede it.
+    The reset keys on the line numbers rather than on knowledge of where the seam
+    falls, so it holds for any number of excluded spans. ``population`` is
+    unaffected: it counts literal-bearing lines, not marker context.
+    """
+    violations: list[tuple[str, int, str]] = []
+    population = 0
+    previous = ''
+    previous_lineno: int | None = None
+    for lineno, line in numbered_lines:
+        if previous_lineno is not None and lineno != previous_lineno + 1:
+            previous = ''
+        for letter, detect in _WL_LITERAL_DETECTORS:
+            if not detect(line):  # type: ignore[operator]
+                continue
+            population += 1
+            if not _line_is_anti_pattern_marked(line, previous):
+                violations.append((letter, lineno, line))
+        previous = line
+        previous_lineno = lineno
+    return violations, population
+
+
+def test_no_unmarked_wl_literals_outside_section_2_15(
+    lines_outside_section_2_15: list[tuple[int, str]],
+) -> None:
+    """Outside Section 2.15, every WL-A / WL-B literal must carry an explicit marker.
+
+    Section 2.15 is the only part of this file the self-reference exemption
+    reaches. Anywhere else the file is ordinary prose, so a pattern literal there
+    is a violation exactly as it would be in any other skill document — and the
+    whole reason the exemption is scoped to a region rather than to the file is
+    that this case stays detectable.
+    """
+    violations, population = _unmarked_literal_hits(lines_outside_section_2_15)
+    assert not violations, (
+        f'q-gate-validation.md carries {len(violations)} unmarked WL-A / WL-B literal(s) '
+        f'OUTSIDE Section 2.15, over a population of {population} literal-bearing line(s). '
+        f'The self-reference exemption covers § 2.15 only, so these stand or fall on the '
+        f'explicit-marker arm: '
+        + '; '.join(f'{letter} line {lineno}: {line.strip()!r}' for letter, lineno, line in violations)
+    )
+
+
+def test_the_outside_section_guard_detects_an_unmarked_literal() -> None:
+    """Matched positive control for the guard above.
+
+    The guard passes today, and a passing guard proves nothing on its own — it
+    reads identically whether the detectors work or match nothing at all. Feeding
+    it a synthetic unmarked line of each pattern is what establishes that a real
+    violation would be caught rather than silently absorbed.
+    """
+    synthetic = [
+        (1, 'Run `cd $WORKTREE && git status` to inspect the tree.'),
+        (2, 'The worktree lives at .claude/worktrees/EXAMPLE-PLAN on disk.'),
+    ]
+    violations, population = _unmarked_literal_hits(synthetic)
+    assert population == 2, f'Both synthetic lines must register in the population; got {population}.'
+    assert [letter for letter, _lineno, _line in violations] == ['WL-A', 'WL-B'], (
+        f'The guard must flag one WL-A and one WL-B violation on the synthetic input; got {violations!r}.'
+    )
+
+
+def test_the_outside_section_guard_honours_the_explicit_marker_arm() -> None:
+    """Matched negative control: a marked literal is suppressed, not flagged.
+
+    Without this half the control above is equally consistent with a guard that
+    flags every literal unconditionally — which would make the explicit-marker
+    arm unusable outside Section 2.15 and force a whole-file exemption after all.
+    """
+    synthetic = [
+        (1, 'Anti-pattern — do NOT write `cd $WORKTREE && git status`.'),
+        (2, 'Forbidden: a hard-coded .claude/worktrees/EXAMPLE-PLAN reference.'),
+    ]
+    violations, population = _unmarked_literal_hits(synthetic)
+    assert population == 2, f'Both synthetic lines must register in the population; got {population}.'
+    assert violations == [], f'A marked literal must be suppressed by the explicit-marker arm; got {violations!r}.'
+
+
+def test_a_marker_does_not_suppress_across_the_excluded_span() -> None:
+    """The marker context stops at the seam between the two concatenated regions.
+
+    ``_numbered_lines_outside_section`` hands the guard the region BEFORE the
+    excluded section followed by the region AFTER it, so the two lines either
+    side of that join are adjacent in the list and far apart in the file. Were
+    the pre-section line read as the first post-section line's marker context,
+    a marked line immediately before § 2.15 would exempt the first unmarked
+    literal after it — one line of the region the guard exists to keep
+    detectable, suppressed by a marker that is nowhere near it. This test pins
+    the reset that keeps that from happening, regardless of whether the current
+    slice construction happens to insert a boundary element at the seam.
+    """
+    # Arrange — line 10 carries a marker; line 40 is the far side of the seam and
+    # is unmarked. The line numbers are non-consecutive, which is the whole signal.
+    synthetic = [
+        (10, 'Anti-pattern — do NOT write `cd $WORKTREE && git status`.'),
+        (40, 'The worktree lives at .claude/worktrees/EXAMPLE-PLAN on disk.'),
+    ]
+
+    # Act
+    violations, population = _unmarked_literal_hits(synthetic)
+
+    # Assert
+    assert population == 2
+    assert [letter for letter, _lineno, _line in violations] == ['WL-B'], (
+        'The unmarked literal on the far side of the excluded span must be flagged; '
+        f'a marker 30 lines earlier is not its context. Got {violations!r}.'
+    )
+
+
+def test_a_marker_still_suppresses_the_line_it_actually_precedes() -> None:
+    """Matched control — the reset must fire on a DISCONTINUITY, not on every line.
+
+    Without this, the reset above is equally consistent with clearing ``previous``
+    unconditionally, which would disable the predecessor arm of the marker rule
+    everywhere and flag every literal whose marker sits on the line before it.
+    """
+    # Arrange — consecutive line numbers, marker on the predecessor.
+    synthetic = [
+        (10, 'Anti-pattern — the following form is forbidden:'),
+        (11, 'The worktree lives at .claude/worktrees/EXAMPLE-PLAN on disk.'),
+    ]
+
+    # Act
+    violations, population = _unmarked_literal_hits(synthetic)
+
+    # Assert
+    assert population == 1, f'Only the second line carries a literal; got {population}.'
+    assert violations == [], f'A marker on the genuine predecessor must still suppress; got {violations!r}.'
 
 
 # -----------------------------------------------------------------------------

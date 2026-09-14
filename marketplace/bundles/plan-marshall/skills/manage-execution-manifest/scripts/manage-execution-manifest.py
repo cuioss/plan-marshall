@@ -3018,14 +3018,27 @@ def cmd_reconcile(args: argparse.Namespace) -> dict[str, Any] | None:
     splits the case ``validate-loadable`` conflated, and the split IS the
     settled fail-direction:
 
-    - **stale** — unloadable AND absent from the live candidate set. Live
+    - **stale** — unresolvable AND absent from the live candidate set. Live
       config agrees the step is gone, so the frozen view is merely behind:
       DROP it and carry on.
-    - **broken** — unloadable BUT still in the live candidate set. This is the
+    - **broken** — unresolvable BUT still in the live candidate set. This is the
       original motivating failure (the doc was deleted without sweeping
       ``marshal.json``), so it still fails loud with the canonical actionable
       message. Reconciling it away would silently drop work the project still
       schedules.
+
+    **The partition is keyed on RESOLVABILITY, not loadability.**
+    :func:`_check_step_loadable` short-circuits every external
+    (``project:`` / ``bundle:skill``) step to ``loadable: true`` — it asserts
+    built-in standards-file presence and nothing else. Partitioning on it made
+    the external half of this verb vacuous: a ``project:`` skill the plan
+    renamed, or a ``bundle:skill`` id naming no discovered implementor, reported
+    loadable and was RETAINED, so reconcile passed through exactly the frozen-view
+    divergence it exists to catch and finalize failed later at dispatch instead.
+    :func:`_manifest_validation._check_step_resolvable` is the gate ``compose``
+    already runs over its emitted lists; using it here makes the two surfaces
+    apply ONE definition of "this step id resolves to something", so a manifest
+    that composes clean cannot reconcile dirty on a different rule.
 
     **Backfill is narrow by construction.** Only a live candidate absent from
     the candidate set THIS manifest was composed from is owed — such a step
@@ -3038,7 +3051,7 @@ def cmd_reconcile(args: argparse.Namespace) -> dict[str, Any] | None:
 
     **Fail closed on unreadable live config.** When the live candidate set
     cannot be read at all, "config dropped it" is indistinguishable from
-    "config still wants it", so every unloadable step is classified ``broken``
+    "config still wants it", so every unresolvable step is classified ``broken``
     — today's hard fail — rather than reconciled away on absent evidence.
 
     ``--apply`` writes the reconciled list (re-sorted through the shared
@@ -3072,7 +3085,28 @@ def cmd_reconcile(args: argparse.Namespace) -> dict[str, Any] | None:
             'error': 'invalid_manifest',
             'message': 'phase_6.steps must be a list',
         }
-    frozen_steps = [step for step in frozen if isinstance(step, str)]
+    # A non-string entry is REJECTED, naming its index — never filtered out. The
+    # comprehension this replaces dropped such an entry silently, and under
+    # ``--apply`` the write-back of ``retained + backfill`` then removed it from
+    # the manifest for good: a malformed entry was ERASED by a verb whose whole
+    # contract is to report what it changed, and the decision log recorded no
+    # subtraction because the step never reached the stale bucket. Naming the
+    # index is what makes the report actionable — the entry has no step id to
+    # quote, so its position is the only handle a reader can repair it by.
+    for index, step in enumerate(frozen):
+        if not isinstance(step, str):
+            return {
+                'status': 'error',
+                'plan_id': plan_id,
+                'error': 'invalid_manifest',
+                'message': (
+                    f'phase_6.steps[{index}] is {type(step).__name__}, not a string ({step!r}). '
+                    'Every step id must be a string; repair or remove the entry at that index '
+                    'before reconciling.'
+                ),
+                'offending_index': index,
+            }
+    frozen_steps = list(frozen)
 
     live_candidates = _live_phase_6_candidates()
     candidate_source = 'marshal.json' if live_candidates is not None else 'unavailable'
@@ -3082,13 +3116,16 @@ def cmd_reconcile(args: argparse.Namespace) -> dict[str, Any] | None:
     backfill_determinable = isinstance(composed_candidates, list) and live_candidates is not None
 
     # Partition the frozen list. A step that resolves is retained untouched; an
-    # unloadable one is stale or broken by whether live config still wants it.
+    # unresolvable one is stale or broken by whether live config still wants it.
+    # ``_check_step_resolvable`` — not ``_check_step_loadable`` — so the external
+    # (``project:`` / ``bundle:skill``) half of the partition is real rather than
+    # short-circuited to "loadable"; see this verb's docstring.
     stale: list[str] = []
     broken: list[dict[str, str]] = []
     retained: list[str] = []
     for step in frozen_steps:
-        verdict = _check_step_loadable(step)
-        if verdict['loadable']:
+        verdict = _check_step_resolvable(step, 'phase_6')
+        if verdict['resolvable']:
             retained.append(step)
         elif live_candidates is not None and canonicalize_step_key(step) not in live_set:
             # Compare canonically — ``live_set`` is boundary-normalized, and a
@@ -3124,10 +3161,15 @@ def cmd_reconcile(args: argparse.Namespace) -> dict[str, Any] | None:
         # frozen id must not read as "absent from the manifest" and get
         # backfilled as a duplicate of a step already there.
         frozen_set = {canonicalize_step_key(step) for step in frozen_steps}
+        # Resolvability again, for the same reason the partition above uses it: a
+        # loadability test would backfill an external candidate that resolves to
+        # nothing, ADDING a step finalize is guaranteed to fail on.
         backfill = [
             step
             for step in live_candidates
-            if step not in composed_set and step not in frozen_set and _check_step_loadable(step)['loadable']
+            if step not in composed_set
+            and step not in frozen_set
+            and _check_step_resolvable(step, 'phase_6')['resolvable']
         ]
 
     reconciled = bool(stale or backfill)

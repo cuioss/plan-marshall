@@ -1614,7 +1614,7 @@ class DerivationResolverBase(ABC):  # noqa: B024 — ABC contract anchor; every 
         return []
 
     @staticmethod
-    def _aggregate_notes(suppressed: dict[str, list[str]]) -> list[str]:
+    def _aggregate_notes(suppressed: dict[str, list[str | tuple[str, int]]]) -> list[str]:
         """Render one aggregated ``notes[]`` entry per non-empty suppression category.
 
         The shared renderer for the reporting half of :meth:`derive_edges`. A
@@ -1632,11 +1632,32 @@ class DerivationResolverBase(ABC):  # noqa: B024 — ABC contract anchor; every 
         note per category, carrying the full count plus a bounded sample, keeps
         every suppression visible without drowning the report.
 
+        **Two populations, each named by the number that measures it.** A
+        ``component_refs`` element is deduplicated on its
+        ``(target_bundle, dep_type, resolved)`` triple, so ONE candidate can stand
+        for many source references. The note therefore reports the reference
+        total — the sum of each candidate's ``occurrences`` — while the sample and
+        its ``(+N more)`` suffix stay over distinct CANDIDATES, which is the
+        population a sample is drawn from. Counting candidates and calling the
+        result "reference(s)" is the defect this split closes: the two numbers are
+        equal only when every candidate stands for exactly one reference.
+
         Args:
-            suppressed: Category name → the descriptions suppressed under it. The
+            suppressed: Category name → the entries suppressed under it. The
                 caller owns the category vocabulary; seeding the mapping with
                 every category it recognises — including the empty ones — is what
-                fixes the emission order below.
+                fixes the emission order below. An entry is either a bare
+                description (counting as **one** reference) or a
+                ``(description, occurrences)`` pair carrying the number of source
+                references that collapsed onto that one deduplicated candidate.
+                The pair form is OPTIONAL and additive: a materializer that does
+                not populate the ``component_refs`` ``occurrences`` field passes
+                bare strings and gets the pre-existing rendering, because the
+                field's documented default is ``1``. A non-positive or
+                non-integer occurrence count is floored to ``1`` — a suppressed
+                candidate always stands for at least the one reference that
+                produced it, and silently contributing ``0`` would under-report a
+                suppression the contract requires be visible.
 
         Returns:
             One note per non-empty category, in the mapping's own key order, so a
@@ -1647,13 +1668,23 @@ class DerivationResolverBase(ABC):  # noqa: B024 — ABC contract anchor; every 
         """
         notes: list[str] = []
         for category, entries in suppressed.items():
-            candidates = sorted(entries)
-            if not candidates:
+            described: list[tuple[str, int]] = []
+            for entry in entries:
+                if isinstance(entry, tuple):
+                    description, raw_occurrences = entry
+                else:
+                    description, raw_occurrences = entry, 1
+                occurrences = raw_occurrences if isinstance(raw_occurrences, int) and raw_occurrences > 0 else 1
+                described.append((str(description), occurrences))
+            if not described:
                 continue
+            described.sort()
+            candidates = [description for description, _ in described]
+            references = sum(occurrences for _, occurrences in described)
             sample = ', '.join(candidates[:NOTE_SAMPLE_LIMIT])
             overflow = len(candidates) - NOTE_SAMPLE_LIMIT
             suffix = f' (+{overflow} more)' if overflow > 0 else ''
-            notes.append(f'{category}: {len(candidates)} reference(s) suppressed - sample: {sample}{suffix}')
+            notes.append(f'{category}: {references} reference(s) suppressed - sample: {sample}{suffix}')
         return notes
 
 
