@@ -549,11 +549,6 @@ def test_a_verifier_declined_round_persists_as_an_inline_fixable_loop_back(plan_
     assert entry['outcome'] == 'loop_back', (
         f'A round the verifier declined to close must record loop_back; got {entry["outcome"]!r}'
     )
-    assert entry['outcome'] not in ('done', 'failed'), (
-        'Neither terminal outcome is correct for a declined round: `done` closes a '
-        'review the verifier did not close, and `failed` grades a working '
-        'independence check as a broken step.'
-    )
     assert entry['loop_back_target'] == '6-finalize', (
         'A declined round is resolved by amending the diff in hand, so it re-enters '
         'the finalize step loop rather than rolling back to phase-5-execute.'
