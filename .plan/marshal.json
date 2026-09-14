@@ -44,16 +44,6 @@
         "default:verify:compile",
         "default:verify:module-tests"
       ],
-      "per_envelope_budget_tokens": "400K",
-      "verification_steps": {
-        "default:verify:quality-gate": {},
-        "default:verify:module-tests": {},
-        "default:verify:coverage": {}
-      },
-      "effort": {
-        "default": "level-5",
-        "verification-feedback": "level-4"
-      },
       "cost_size_token_table": {
         "XS": "5K",
         "S": "25K",
@@ -61,6 +51,15 @@
         "L": "130K",
         "XL": "260K",
         "XXL": "520K"
+      },
+      "per_envelope_budget_tokens": "400K",
+      "verification_steps": {
+        "default:verify:quality-gate": {},
+        "default:verify:module-tests": {}
+      },
+      "effort": {
+        "default": "level-5",
+        "verification-feedback": "level-4"
       }
     },
     "phase-6-finalize": {
