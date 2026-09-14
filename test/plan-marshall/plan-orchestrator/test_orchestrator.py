@@ -805,6 +805,35 @@ class TestQueueAddRow:
         assert result['error'] == 'invalid_field'
         assert _read_status_file(status_path)['plans'] == []
 
+    def test_should_leave_non_canonical_bytes_untouched_on_epic_slug_refusal(self, plan_context):
+        status_path = _write_status(plan_context, 'add-epic-slug-raw-epic', plans=[])
+        # A compact document is non-canonical for this store: rmw_json
+        # serializes with indent=2, so had the refusal gone through the
+        # critical section the no-op return would still have normalized these
+        # bytes on commit.
+        raw = status_path.read_text(encoding='utf-8')
+        non_canonical = json.dumps(json.loads(raw), separators=(',', ':'))
+        assert non_canonical != raw
+        status_path.write_text(non_canonical, encoding='utf-8')
+
+        result = cmd_queue(
+            _add_row_args('add-epic-slug-raw-epic', add_row='PLAN-07', slug_value='add-epic-slug-raw-epic')
+        )
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'invalid_field'
+        assert status_path.read_text(encoding='utf-8') == non_canonical
+
+    def test_should_admit_a_distinct_slug_onto_a_non_canonical_document(self, plan_context):
+        status_path = _write_status(plan_context, 'add-raw-admit-epic', plans=[])
+        raw = status_path.read_text(encoding='utf-8')
+        status_path.write_text(json.dumps(json.loads(raw), separators=(',', ':')), encoding='utf-8')
+
+        result = cmd_queue(_add_row_args('add-raw-admit-epic', add_row='PLAN-07', slug_value='beta-slug'))
+
+        assert result['status'] == 'success'
+        assert [row['slug'] for row in _read_status_file(status_path)['plans']] == ['beta-slug']
+
     def test_should_admit_distinct_slugs_cleanly(self, plan_context):
         queued = _make_plan('PLAN-01')
         queued['slug'] = 'alpha-slug'

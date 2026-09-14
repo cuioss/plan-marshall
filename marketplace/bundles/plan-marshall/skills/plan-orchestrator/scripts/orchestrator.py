@@ -878,7 +878,9 @@ def _mutate_plan_row(slug: str, plan_id: str, apply: Callable[[dict[str, Any]], 
 
 
 def _append_plan_row(slug: str, row: dict[str, Any]) -> dict[str, Any]:
-    """Append one row to ``plans[]`` inside the SAME serialized critical section.
+    """Append one row to ``plans[]`` inside the SAME serialized critical section
+    (the state-independent epic-slug refusal below returns before it, needing
+    neither lock nor file I/O).
 
     The append counterpart to :func:`_mutate_plan_row`: it runs the identical
     ``O_EXCL``-guarded :func:`_locks_core.rmw_json` over the identical
@@ -910,10 +912,25 @@ def _append_plan_row(slug: str, row: dict[str, Any]) -> dict[str, Any]:
     ``duplicate_slug`` (the already-queued row bearing that slug),
     ``epic_slug`` (the epic slug the row slug must never equal), or
     ``invalid_plans`` (the type name of the present-but-non-list ``plans``
-    value). ``updated`` is re-stamped only on a real append, so every refusal
-    leaves the document byte-identical.
+    value). ``updated`` is re-stamped only on a real append.
     """
     outcome: dict[str, Any] = {}
+
+    # Epic-slug refusal BEFORE the critical section: the verdict
+    # (``row['slug'] == slug``) depends on nothing in the queue, so it needs no
+    # lock and performs no file I/O at all — not even a read. The refusal
+    # therefore leaves the document byte-identical even when the on-disk bytes
+    # are non-canonical: :func:`_locks_core.rmw_json` commits unconditionally,
+    # so a no-op return from inside the critical section would still normalize
+    # those bytes on write. The remaining refusals are queue-dependent and stay
+    # in-lock below, returning ``state`` unmutated. Precedence note: a row whose
+    # slug both duplicates a queued row and equals the epic slug now reports
+    # ``epic_slug`` rather than ``duplicate`` / ``duplicate_slug`` — every arm
+    # is an ``invalid_field``-family refusal with nothing written, and the epic
+    # verdict names the root cause.
+    if row.get('slug') == slug:
+        outcome['epic_slug'] = slug
+        return outcome
 
     def _mutate(state: dict[str, Any]) -> dict[str, Any]:
         if 'plans' in state:
@@ -939,18 +956,15 @@ def _append_plan_row(slug: str, row: dict[str, Any]) -> dict[str, Any]:
                 outcome['duplicate'] = existing
                 return state
         # Duplicate-slug lint: exact-equality over every queued row with no
-        # path-shape filter, plus refusal when the row slug equals the epic
-        # slug. Runs against the FRESH in-lock queue so a concurrent append
-        # cannot evade it. Shares its exact-equality slug comparison
-        # vocabulary with the resume-summary shared-slug detector — no second
-        # divergent comparison lives here.
+        # path-shape filter. Runs against the FRESH in-lock queue so a
+        # concurrent append cannot evade it. Shares its exact-equality slug
+        # comparison vocabulary with the resume-summary shared-slug detector —
+        # no second divergent comparison lives here. (The epic-slug refusal
+        # lives above, outside the critical section — it is state-independent.)
         for existing in plans:
             if isinstance(existing, dict) and existing.get('slug') == row.get('slug'):
                 outcome['duplicate_slug'] = existing
                 return state
-        if row.get('slug') == slug:
-            outcome['epic_slug'] = slug
-            return state
         if seeded:
             state['plans'] = plans
         plans.append(row)
