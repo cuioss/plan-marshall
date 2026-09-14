@@ -9,7 +9,10 @@
   "modules": {
     "default": {
       "description": "Root project module housing the pyprojectx-based test harness for the entire marketplace. Contains the unified pytest suite that exercises every bundle's scripts (plan-marshall, pm-dev-*, pm-documents, pm-plugin-development, pm-requirements) plus the multi-target adapter generator.",
-      "generation": {}
+      "generation": {
+        "by": "architecture",
+        "tree_sha": null
+      }
     },
     "documentation": {
       "description": "The repository's prose documentation tree. Carries the architectural decision records (doc/adr), the concept narratives that explain how the system works (doc/concepts), the contributor-facing build and layout guides (doc/developer), the operator-facing usage guides (doc/user), and the standalone cloud-lane plan corpus (doc/plans).",
@@ -27,39 +30,66 @@
     },
     "pm-dev-frontend": {
       "description": "General frontend development standards bundle providing vanilla JavaScript (ES2022+) and CSS knowledge skills, JSDoc analyzer, ESLint flat-config standards, Jest testing patterns, and the JS/CSS triage extension. TypeScript and frameworks (React/Vue/Angular) are out of scope.",
-      "generation": {}
+      "generation": {
+        "by": "architecture",
+        "tree_sha": null
+      }
     },
     "pm-dev-frontend-cui": {
       "description": "CUI-specific JavaScript project standards complementing pm-dev-frontend with opinionated patterns for Maven+npm dual-build CUI projects: frontend-maven-plugin integration, Quarkus DevUI / NiFi project layouts, and SonarQube configuration for JS.",
-      "generation": {}
+      "generation": {
+        "by": "architecture",
+        "tree_sha": null
+      }
     },
     "pm-dev-java": {
       "description": "Comprehensive Java development knowledge base covering core patterns, null safety (JSpecify), Lombok, CDI/Quarkus, JUnit 5 unit & integration testing, JavaDoc, maintenance prioritization, Maven profile classification, and the Java triage extension.",
-      "generation": {}
+      "generation": {
+        "by": "architecture",
+        "tree_sha": null
+      }
     },
     "pm-dev-java-cui": {
       "description": "CUI-specific Java standards bundle layering on pm-dev-java: CuiLogger + LogRecord structured-logging patterns, CUI test library + value-object contracts, HttpHandler/HttpResult HTTP client, MockWebServer testing, and the cui-logging enforcement recipe.",
-      "generation": {}
+      "generation": {
+        "by": "architecture",
+        "tree_sha": null
+      }
     },
     "pm-dev-oci": {
       "description": "OCI container expertise bundle covering image building (minimal bases, multi-stage, pinned versions), multi-platform builds, distroless health probes, runtime hardening, vulnerability scanning, supply-chain security (signing, SBOMs), and OWASP Docker Top 10 controls.",
-      "generation": {}
+      "generation": {
+        "by": "architecture",
+        "tree_sha": null
+      }
     },
     "pm-dev-python": {
       "description": "Python 3.10+ development standards bundle covering core language patterns (types, dataclasses, pathlib, async), pytest testing with isolation/fixtures/coverage, ruff+mypy toolchain integration, and the Python triage extension.",
-      "generation": {}
+      "generation": {
+        "by": "architecture",
+        "tree_sha": null
+      }
     },
     "pm-documents": {
       "description": "Documentation domain bundle providing AsciiDoc formatting/validation/link-verification workflows, content-quality review standards, ADR and Interface specification management, narrative-style references, and PlantUML/SVG diagram authoring + verification recipes.",
-      "generation": {}
+      "generation": {
+        "by": "architecture",
+        "tree_sha": null
+      }
     },
     "pm-plugin-development": {
       "description": "Plugin development toolchain for the marketplace itself: create new components (agents/skills/commands/bundles), diagnose quality issues (plugin-doctor), scan marketplace inventory, apply lessons learned, and orchestrate verification-feedback workflows under phase-6-finalize.",
-      "generation": {}
+      "generation": {
+        "by": "architecture",
+        "tree_sha": null
+      }
     },
     "pm-requirements": {
       "description": "Requirements engineering bundle covering SMART requirements authoring, specification structure, project setup, planning documentation, bidirectional traceability between requirements/specs/code, and the requirements triage extension.",
-      "generation": {}
+      "generation": {
+        "by": "architecture",
+        "tree_sha": null
+      }
     }
   },
   "name": "plan-marshall"

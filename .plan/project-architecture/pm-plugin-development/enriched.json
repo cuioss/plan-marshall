@@ -2,6 +2,10 @@
   "best_practices": [
     "Review-bot style nits on test fixtures in this module are routinely declined under a lean simplicity posture - weigh reviewer suggestions against the plan recorded simplicity setting before allocating a fix task"
   ],
+  "generation": {
+    "by": "architecture",
+    "tree_sha": null
+  },
   "insights": [],
   "internal_dependencies": [],
   "key_dependencies": [],
