@@ -956,13 +956,10 @@ def cmd_pr_list(args: argparse.Namespace) -> dict:
     truncated listing here is REPORTED and the caller re-reads at a higher bound,
     while a landing-state correlation is simply wrong once incomplete and refuses.
 
-    **Provider asymmetry.** ``--limit`` and ``truncated`` are GitHub-only. The flag
-    is registered on the shared ``pr list`` subparser by ``github_ops.main``, not by
-    ``ci_base.build_parser``, so the GitLab surface argparse-REJECTS it rather than
-    accepting and ignoring it; GitLab's listing stays page-bounded and reports no
-    ``truncated`` field at all. An accepted-and-ignored flag would hand that
-    provider's callers a page-bounded ``total`` with no evidence beside it — the
-    exact failure this handler exists to remove.
+    **Provider asymmetry.** ``--limit`` and ``truncated`` are GitHub-only: GitLab
+    argparse-REJECTS the flag and reports no ``truncated`` field at all. Why the
+    flag is declared on the GitHub front-end rather than on the shared parser is
+    recorded at the registration site in ``github_ops.main``.
     """
     is_auth, err = github_ops.check_auth()
     if not is_auth:
@@ -1010,8 +1007,6 @@ def cmd_pr_list(args: argparse.Namespace) -> dict:
         'status': 'success',
         'operation': 'pr_list',
         'total': len(prs),
-        # The bound the count was read at, emitted unconditionally — a count
-        # without it is a number no reader can check.
         'limit': limit,
         # Reaching the bound is indistinguishable from a population that happens
         # to be exactly that size, so both are reported as "could not enumerate".
