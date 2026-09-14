@@ -14,6 +14,7 @@ paths and skip branches are deterministic.
 
 import re
 import types
+from pathlib import Path
 
 import file_ops
 import pytest
@@ -701,36 +702,127 @@ def test_every_record_key_is_declared_in_the_ext_point_document():
     )
 
 
+#: Repo root, derived from the marketplace/bundles path this module already
+#: resolves — used to scan both ``marketplace/`` and ``test/`` for real
+#: frontmatter-field consumers, never hand-maintained as a second path.
+def _repo_root() -> Path:
+    return _disc.get_marketplace_bundles_path().parent.parent
+
+
+def _code_read_keys(candidate_keys: set[str]) -> set[str]:
+    """The subset of ``candidate_keys`` with a REAL Python consumer somewhere
+    in the shipped tree — script or test alike.
+
+    A field counts as code-read when its bare name appears as a quoted string
+    literal (``'name'`` or ``"name"``) in some ``.py`` file under
+    ``marketplace/`` or ``test/``. That shape catches every way this codebase
+    actually reads a frontmatter field: a ``_read_frontmatter_fields(doc,
+    (KEY,))`` call site, a step's own lightweight direct parser (e.g.
+    ``mutates_source``'s plugin-doctor analyzer, which never goes through the
+    shared helper), and a guard test that parses the field to assert against
+    it. A field mentioned only in prose or a docstring — never as a quoted
+    dict-key literal — does NOT count; that distinction is exactly what
+    the refuted premise this test replaces conflated.
+    """
+    patterns = {key: re.compile(f"""['"]{re.escape(key)}['"]""") for key in candidate_keys}
+    remaining = set(candidate_keys)
+    found: set[str] = set()
+    repo_root = _repo_root()
+    py_files = sorted(repo_root.glob('marketplace/**/scripts/*.py')) + sorted(repo_root.glob('test/**/*.py'))
+    for py_file in py_files:
+        if not remaining:
+            break
+        content = py_file.read_text(encoding='utf-8')
+        matched = {key for key in remaining if patterns[key].search(content)}
+        found |= matched
+        remaining -= matched
+    return found
+
+
+#: The word an agent-only reader's declared contract names its reader by — the
+#: shape the ``advances_main_via_rebase`` exception already uses ("the
+#: orchestrating agent follows directly"). Checked per SENTENCE, not per
+#: paragraph: the field's own introductory list sentence names every
+#: Conditional/Optional field in one breath, so a paragraph-wide co-occurrence
+#: would credit all of them with whichever ONE field's sentence names "agent".
+_AGENT_CONSUMER_TOKEN = 'agent'
+
+#: A sentence boundary in this document's prose — punctuation followed by
+#: whitespace and either a capital letter or a backtick-quoted identifier,
+#: which is how a new sentence starts here.
+_SENTENCE_SPLIT = re.compile(r'(?<=[.!?])\s+(?=[A-Z`])')
+
+
+def _agent_declared_keys(candidate_keys: set[str], text: str) -> set[str]:
+    """Fields whose consuming contract is EXPLICITLY named as agent-only.
+
+    Per field: the field's backtick-quoted name must co-occur with
+    :data:`_AGENT_CONSUMER_TOKEN` inside the SAME sentence somewhere in the
+    document — a checkable fact naming that one field's reader, not an
+    inference from the Required column and not credited to it merely by
+    sharing a paragraph with a sentence that names a DIFFERENT field's reader.
+    """
+    sentences = _SENTENCE_SPLIT.split(text)
+    declared: set[str] = set()
+    for key in candidate_keys:
+        marker = f'`{key}`'
+        if any(marker in sentence and _AGENT_CONSUMER_TOKEN in sentence for sentence in sentences):
+            declared.add(key)
+    return declared
+
+
 def test_every_declared_field_has_a_reader():
     """No unread declaration: every declared field is resolved by some consumer.
 
-    A field is read either because the scanner parses it into the record
-    (``_IMPLEMENTOR_FRONTMATTER_KEYS``) or because the document marks it
-    ``Conditional`` / ``Optional`` / ``Never``, which is its own statement that a
-    consumer reads it from the step doc's frontmatter directly rather than off
-    the record. A row that is neither is a declaration nothing resolves. Both
-    operands are derived — the parsed set from the code, the obligation from the
-    document's own Required column.
+    Two mechanically distinct arms, never a Required-column marking alone —
+    the refuted premise this test replaces treated ``Conditional`` / ``Optional``
+    / ``Never`` as its own proof of a reader, which this plan's own self-review
+    (finding a9de78) disproved for ``advances_main_via_rebase``: a complete-
+    coverage sweep found it in NO Python file at all, so a field marked
+    ``Optional`` with no consumer of any kind would have passed unnoticed.
+
+    - **Code-read**: a real quoted-literal consumer exists somewhere in
+      ``marketplace/`` or ``test/`` (:func:`_code_read_keys`).
+    - **Agent-only**: no code consumer exists, but the document explicitly
+      names an agent-followed contract for that field
+      (:func:`_agent_declared_keys`) — a declared, checkable fact, not an
+      inference from the Required column.
+
+    Both populations publish their size so a zero cannot pass as a clean
+    sweep, and the fields covered by neither arm are the unread declarations.
     """
     text = _ext_point_doc_text()
     rows = _markdown_table_rows(text, 'Field')
     assert rows, 'Implementor-Frontmatter table not found; declaration surface unresolvable'
 
-    parsed_keys = set(_disc._IMPLEMENTOR_FRONTMATTER_KEYS)
-    unread: list[str] = []
+    declared_keys: dict[str, str] = {}
     for row in rows:
         idents = _IDENT_RE.findall(row[0])
         if not idents:
             continue
-        key = idents[0]
-        required = row[2] if len(row) > 2 else ''
-        if key in parsed_keys:
-            continue
-        if any(marker in required for marker in ('Conditional', 'Optional', 'Never')):
-            continue
-        unread.append(key)
+        declared_keys[idents[0]] = row[2] if len(row) > 2 else ''
+
+    assert declared_keys, 'No field rows parsed from the Implementor-Frontmatter table'
+
+    always_on_keys = set(_disc._IMPLEMENTOR_FRONTMATTER_KEYS)
+    candidate_keys = set(declared_keys) - always_on_keys
+
+    code_read = _code_read_keys(candidate_keys)
+    still_candidate = candidate_keys - code_read
+    agent_declared = _agent_declared_keys(still_candidate, text)
+
+    unread = sorted(candidate_keys - code_read - agent_declared)
+
+    print(
+        f'field-reader populations: always_on={len(always_on_keys)} '
+        f'code_read={len(code_read)} agent_declared={len(agent_declared)} '
+        f'unread={len(unread)}'
+    )
 
     assert not unread, (
-        f'fields declared in ext-point-finalize-step.md that no consumer resolves: {unread}. '
-        'Either wire a reader, or drop the row.'
+        f'fields declared in ext-point-finalize-step.md with no code consumer '
+        f'({sorted(candidate_keys - code_read)}) AND no explicit agent-only '
+        f'contract naming them alongside {_AGENT_CONSUMER_TOKEN!r}: {unread}. '
+        'Either wire a reader, name the agent-followed contract explicitly, or '
+        'drop the row — a Required-column marking alone is not evidence of a reader.'
     )
