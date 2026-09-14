@@ -81,50 +81,50 @@ from pathlib import Path
 from typing import Any
 
 LEVELS: tuple[str, ...] = (
-    "level-1",
-    "level-2",
-    "level-3",
-    "level-4",
-    "level-5",
-    "level-6",
-    "level-7",
+    'level-1',
+    'level-2',
+    'level-3',
+    'level-4',
+    'level-5',
+    'level-6',
+    'level-7',
 )
 
 LEVEL_RANK: dict[str, int] = {level: index for index, level in enumerate(LEVELS)}
 
-ALLOWED_KINDS: tuple[str, ...] = ("local", "provider")
+ALLOWED_KINDS: tuple[str, ...] = ('local', 'provider')
 
-DEFAULT_MAP_PATH: str = str(Path.home() / ".config" / "plan-marshall" / "effort-pins.json")
+DEFAULT_MAP_PATH: str = str(Path.home() / '.config' / 'plan-marshall' / 'effort-pins.json')
 
 
 def _entry_error(level: str, reason: str) -> str:
-    return f"pins.{level}: {reason}"
+    return f'pins.{level}: {reason}'
 
 
 def validate_map_data(data: Any) -> tuple[bool, list[str]]:
     """Validate decoded map JSON. Returns (ok, errors)."""
     errors: list[str] = []
     if not isinstance(data, dict):
-        return False, ["map root must be a JSON object"]
-    pins = data.get("pins", {})
+        return False, ['map root must be a JSON object']
+    pins = data.get('pins', {})
     if not isinstance(pins, dict):
         return False, ["'pins' must be an object keyed by level"]
     for level, entry in pins.items():
         if level not in LEVEL_RANK:
-            errors.append(f"pins.{level}: unknown level (expected one of {','.join(LEVELS)})")
+            errors.append(f'pins.{level}: unknown level (expected one of {",".join(LEVELS)})')
             continue
         if not isinstance(entry, dict):
-            errors.append(_entry_error(level, "entry must be an object"))
+            errors.append(_entry_error(level, 'entry must be an object'))
             continue
-        kind = entry.get("kind")
+        kind = entry.get('kind')
         if kind not in ALLOWED_KINDS:
             errors.append(_entry_error(level, "missing or unknown 'kind' (expected 'local' or 'provider')"))
             continue
-        if kind == "local" and not entry.get("model"):
+        if kind == 'local' and not entry.get('model'):
             errors.append(_entry_error(level, "missing required field 'model'"))
-        if kind == "provider" and not (entry.get("route") or entry.get("model")):
+        if kind == 'provider' and not (entry.get('route') or entry.get('model')):
             errors.append(_entry_error(level, "missing required field 'route' (or 'model')"))
-        rank = entry.get("capability_rank")
+        rank = entry.get('capability_rank')
         if rank is not None and (not isinstance(rank, int) or isinstance(rank, bool)):
             errors.append(_entry_error(level, "'capability_rank' must be an integer when present"))
     return (len(errors) == 0), errors
@@ -133,16 +133,16 @@ def validate_map_data(data: Any) -> tuple[bool, list[str]]:
 def load_map_file(map_path: str) -> tuple[dict[str, Any] | None, str]:
     """Load and decode the map file. Returns (data, error_detail)."""
     try:
-        text = Path(map_path).expanduser().read_text(encoding="utf-8")
+        text = Path(map_path).expanduser().read_text(encoding='utf-8')
     except FileNotFoundError:
-        return None, f"map file not found: {map_path}"
+        return None, f'map file not found: {map_path}'
     except OSError as exc:
-        return None, f"map file unreadable: {exc}"
+        return None, f'map file unreadable: {exc}'
     try:
         data = json.loads(text)
     except json.JSONDecodeError as exc:
-        return None, f"map file is not valid JSON: {exc}"
-    return data, ""
+        return None, f'map file is not valid JSON: {exc}'
+    return data, ''
 
 
 def materialize_levels(map_data: dict[str, Any]) -> tuple[dict[str, str], int]:
@@ -155,35 +155,35 @@ def materialize_levels(map_data: dict[str, Any]) -> tuple[dict[str, str], int]:
     """
     pins: dict[str, str] = {}
     guard_hits = 0
-    entries = map_data.get("pins", {})
+    entries = map_data.get('pins', {})
     if not isinstance(entries, dict):
         entries = {}
     for level in LEVELS:
         entry = entries.get(level)
         if not isinstance(entry, dict):
-            pins[level] = "inherit"
+            pins[level] = 'inherit'
             continue
-        kind = entry.get("kind")
+        kind = entry.get('kind')
         if kind not in ALLOWED_KINDS:
-            pins[level] = "inherit"
+            pins[level] = 'inherit'
             continue
-        rank = entry.get("capability_rank")
+        rank = entry.get('capability_rank')
         if isinstance(rank, int) and not isinstance(rank, bool):
             if rank > LEVEL_RANK[level]:
                 guard_hits += 1
-                pins[level] = "inherit"
+                pins[level] = 'inherit'
                 continue
-        if kind == "local":
-            model = entry.get("model")
-            pins[level] = str(model) if model else "inherit"
+        if kind == 'local':
+            model = entry.get('model')
+            pins[level] = str(model) if model else 'inherit'
         else:
-            route = entry.get("route") or entry.get("model")
-            pins[level] = str(route) if route else "inherit"
+            route = entry.get('route') or entry.get('model')
+            pins[level] = str(route) if route else 'inherit'
     return pins, guard_hits
 
 
 def _pins_to_string(pins: dict[str, str]) -> str:
-    return ",".join(f"{level}={pins[level]}" for level in LEVELS)
+    return ','.join(f'{level}={pins[level]}' for level in LEVELS)
 
 
 def cmd_validate(args: argparse.Namespace) -> dict[str, Any]:
@@ -191,119 +191,118 @@ def cmd_validate(args: argparse.Namespace) -> dict[str, Any]:
     data, load_error = load_map_file(map_path)
     if data is None:
         return {
-            "status": "error",
-            "error": "map_unreadable",
-            "detail": load_error,
-            "map_path": map_path,
+            'status': 'error',
+            'error': 'map_unreadable',
+            'detail': load_error,
+            'map_path': map_path,
         }
     ok, errors = validate_map_data(data)
     if not ok:
         return {
-            "status": "error",
-            "error": "map_schema_invalid",
-            "detail": "; ".join(errors),
-            "map_path": map_path,
+            'status': 'error',
+            'error': 'map_schema_invalid',
+            'detail': '; '.join(errors),
+            'map_path': map_path,
         }
-    pins = data.get("pins", {})
+    pins = data.get('pins', {})
     count = len(pins) if isinstance(pins, dict) else 0
     return {
-        "status": "success",
-        "valid": True,
-        "entries": count,
-        "map_path": map_path,
+        'status': 'success',
+        'valid': True,
+        'entries': count,
+        'map_path': map_path,
     }
 
 
 def cmd_materialize(args: argparse.Namespace) -> dict[str, Any]:
     map_path = str(args.map_path)
     harness = str(args.harness)
-    if harness == "claude":
+    if harness == 'claude':
         return {
-            "status": "success",
-            "harness": "claude",
-            "untouched": True,
-            "detail": (
-                "Claude target fixed alias-palette flow is untouched; "
-                "pin materialization applies to open-model-set harnesses only"
+            'status': 'success',
+            'harness': 'claude',
+            'untouched': True,
+            'detail': (
+                'Claude target fixed alias-palette flow is untouched; '
+                'pin materialization applies to open-model-set harnesses only'
             ),
-            "map_path": map_path,
+            'map_path': map_path,
         }
     data, load_error = load_map_file(map_path)
     if data is None:
         return {
-            "status": "error",
-            "error": "map_unreadable",
-            "detail": load_error,
-            "map_path": map_path,
+            'status': 'error',
+            'error': 'map_unreadable',
+            'detail': load_error,
+            'map_path': map_path,
         }
     ok, errors = validate_map_data(data)
     if not ok:
         return {
-            "status": "error",
-            "error": "map_schema_invalid",
-            "detail": "; ".join(errors),
-            "map_path": map_path,
+            'status': 'error',
+            'error': 'map_schema_invalid',
+            'detail': '; '.join(errors),
+            'map_path': map_path,
         }
     pins, guard_hits = materialize_levels(data)
-    materialized = sum(1 for level in LEVELS if pins[level] != "inherit")
+    materialized = sum(1 for level in LEVELS if pins[level] != 'inherit')
     return {
-        "status": "success",
-        "harness": harness,
-        "materialized_count": materialized,
-        "inherit_count": len(LEVELS) - materialized,
-        "guard_hits": guard_hits,
-        "pins": _pins_to_string(pins),
-        "map_path": map_path,
+        'status': 'success',
+        'harness': harness,
+        'materialized_count': materialized,
+        'inherit_count': len(LEVELS) - materialized,
+        'guard_hits': guard_hits,
+        'pins': _pins_to_string(pins),
+        'map_path': map_path,
     }
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        prog="effort_pins",
+        prog='effort_pins',
         description=(
-            "Materialize per-level model pins from the machine-local "
-            "effort-to-model map for open-model-set harnesses."
+            'Materialize per-level model pins from the machine-local effort-to-model map for open-model-set harnesses.'
         ),
         allow_abbrev=False,
     )
-    subparsers = parser.add_subparsers(dest="command", required=True)
+    subparsers = parser.add_subparsers(dest='command', required=True)
 
     validate_parser = subparsers.add_parser(
-        "validate",
-        help="Validate the map file schema. Read-only.",
+        'validate',
+        help='Validate the map file schema. Read-only.',
         allow_abbrev=False,
     )
     validate_parser.add_argument(
-        "--map-path",
+        '--map-path',
         type=str,
         default=DEFAULT_MAP_PATH,
-        help="Path to the machine-local pin map JSON file.",
+        help='Path to the machine-local pin map JSON file.',
     )
 
     materialize_parser = subparsers.add_parser(
-        "materialize",
-        help="Materialize per-level pins from the map file. Read-only emitter.",
+        'materialize',
+        help='Materialize per-level pins from the map file. Read-only emitter.',
         allow_abbrev=False,
     )
     materialize_parser.add_argument(
-        "--map-path",
+        '--map-path',
         type=str,
         default=DEFAULT_MAP_PATH,
-        help="Path to the machine-local pin map JSON file.",
+        help='Path to the machine-local pin map JSON file.',
     )
     materialize_parser.add_argument(
-        "--harness",
+        '--harness',
         type=str,
-        choices=("open", "claude"),
-        default="open",
+        choices=('open', 'claude'),
+        default='open',
         help="Active harness. 'claude' returns untouched (guarded).",
     )
 
     args = parser.parse_args(argv)
 
-    if args.command == "validate":
+    if args.command == 'validate':
         result = cmd_validate(args)
-    elif args.command == "materialize":
+    elif args.command == 'materialize':
         result = cmd_materialize(args)
     else:  # pragma: no cover - argparse enforces a valid subcommand
         parser.print_help()
@@ -315,5 +314,5 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     sys.exit(main())
