@@ -319,7 +319,44 @@ _FORBIDDEN_WRITE_TARGETS: tuple[str, ...] = (
     '.plan/local/orchestrator',
 )
 
-_AFFIRMATIVE_RE = re.compile(r'\b(?:may|can|writes|write|calls|invokes|performs)\b')
+#: The affirmative half of a grant: a permission or an assertion that the leaf DOES
+#: the named call. The vocabulary is deliberately WIDE, because the narrow original
+#: set — ``may|can|writes|write|calls|invokes|performs`` — made the condition a test
+#: of PHRASING rather than of meaning: "the leaf records the disposition via
+#: `manage-status`" and "the leaf appends the drafted row via `orchestrator queue`"
+#: name exactly the write path the containment rule excludes, satisfy the leaf and
+#: the forbidden-target conditions, and matched NOTHING here, so
+#: ``test_no_dispatch_doc_grants_a_leaf_a_write_path`` reported green over the
+#: sentence it exists to catch. ``test_a_grant_phrased_outside_the_narrow_verb_set_is_detected``
+#: is the control that pins the widening.
+#:
+#: Widening this condition moves the discrimination onto the other three — a
+#: sentence must still name a ``leaf``, name a forbidden target, and carry no
+#: negation — which is close to the inversion (leaf + target + no negation = grant)
+#: the alternative reading would have made explicit. What still separates the two is
+#: that a sentence naming a leaf beside a forbidden call with no permission or
+#: assertion at all (a bare cross-reference, a heading, a return-shape listing) does
+#: not read as a grant here.
+#:
+#: ``sets`` is spelled plural-only on purpose: a bare ``set`` carries a word boundary
+#: at the hyphen of the forbidden target ``corpus set-verdict``, so every sentence
+#: naming that call would satisfy this condition by naming it, making the affirmative
+#: half vacuous exactly where it is most load-bearing.
+_AFFIRMATIVE_RE = re.compile(
+    r'\b(?:may|can|shall|must|will|is responsible for'
+    r'|write|writes|writing|written'
+    r'|call|calls|calling'
+    r'|invoke|invokes|invoking'
+    r'|perform|performs|performing'
+    r'|record|records|recording'
+    r'|author|authors|authoring|authored'
+    r'|sets|setting'
+    r'|mutate|mutates|mutating'
+    r'|append|appends|appending'
+    r'|stamp|stamps|stamping'
+    r'|persist|persists|persisting'
+    r'|emit|emits|emitting)\b'
+)
 
 #: Negation vocabulary. Every real statement about a leaf and a forbidden call is a
 #: PROHIBITION ("it MAY NOT call", "No leaf ... writes"), so a grant scan that
@@ -358,9 +395,13 @@ def _leaf_write_grants(text: str) -> list[str]:
     """Sentences that grant a dispatched leaf a ledger-write path.
 
     A grant is a sentence that names a ``leaf``, names one of the forbidden write
-    targets, carries an affirmative permission, and carries NO negation. All four
-    conditions are load-bearing — dropping the negation condition turns every
-    prohibition in the containment rule into a reported grant.
+    targets, carries an affirmative permission or assertion, and carries NO
+    negation. All four conditions are load-bearing — dropping the negation
+    condition turns every prohibition in the containment rule into a reported
+    grant. The affirmative condition is deliberately wide rather than a list of
+    the verbs the current docs happen to use: a grant phrased with any other verb
+    names the same write path, and a narrow set silently excuses it (see
+    ``_AFFIRMATIVE_RE``).
     """
     grants: list[str] = []
     for sentence in _SENTENCE_SPLIT_RE.split(text):
@@ -547,6 +588,40 @@ class TestDraftingDispatchWritePathContainment:
             fixture.write_text(sentence + '\n', encoding='utf-8')
             found = _leaf_write_grants(_normalized(fixture))
             assert found, f'the grant scan missed the {label} write path: {sentence}'
+
+    def test_a_grant_phrased_outside_the_narrow_verb_set_is_detected(self, tmp_path):
+        # The gap this control closes, and the reason it is separate from the
+        # per-target control above: that one varies the TARGET while holding the
+        # phrasing inside the original affirmative set, so it never exercised the
+        # affirmative condition itself. A grant that chose any other verb satisfied
+        # the leaf and target conditions, failed the affirmative one, and was
+        # reported as no grant at all — the assertion passed green over exactly the
+        # sentence it exists to catch.
+        #
+        # Each phrasing is asserted TWICE, and the second half is what makes this a
+        # measured widening rather than a wider regex nobody needed: the superseded
+        # narrow pattern must MISS the sentence the current scan catches. A fixture
+        # the old pattern already matched would witness nothing.
+        superseded = re.compile(r'\b(?:may|can|writes|write|calls|invokes|performs)\b')
+        grants = {
+            'records': 'The leaf records each disposition through `manage-status` in the orchestrator store.',
+            'appends': 'The leaf appends the drafted row via `orchestrator queue` once the mapping is settled.',
+            'authors': 'The leaf authors the landing record inside `.plan/local/orchestrator/{slug}/landings/`.',
+            'is-responsible-for-writing': (
+                'The leaf is responsible for writing each settled verdict with `corpus set-verdict`.'
+            ),
+        }
+        for label, sentence in grants.items():
+            fixture = tmp_path / f'wide-grant-{label}.md'
+            fixture.write_text(sentence + '\n', encoding='utf-8')
+
+            found = _leaf_write_grants(_normalized(fixture))
+
+            assert found, f'the grant scan missed the {label} phrasing: {sentence}'
+            assert not superseded.search(sentence.lower()), (
+                f'the {label} fixture is phrased with a verb the narrow set already matched, so it '
+                f'cannot witness the widening — repick the verb: {sentence}'
+            )
 
     def test_a_prohibition_is_not_read_as_a_grant(self, tmp_path):
         # The matched negative half of direction 2's control, and the one that
