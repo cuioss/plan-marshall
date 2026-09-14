@@ -87,15 +87,18 @@ _NON_CLOSE_STATES = ('verdict_refused', 'further_round_owed', 'verifier_unavaila
 _STATE_OUTCOME_ROW = re.compile(r'^\|\s*`([a-z_]+)`\s*\|.*\|\s*`([a-z_]+)`\s*\|\s*$', re.MULTILINE)
 
 
-def _non_close_state_outcomes(section: str) -> dict[str, str]:
-    """Return ``{state: recorded_outcome}`` derived from the section's own table.
+def _non_close_state_outcome_rows(section: str) -> list[tuple[str, str]]:
+    """Return every ``(state, recorded_outcome)`` row from the section's own table.
 
-    A row whose state token is not a real state name (e.g. the header's
+    Every parsed row, not a deduped ``{state: outcome}`` view: collapsing into
+    a dict keeps only the LAST row per state, so a duplicate row for the same
+    state would be silently discarded before any routing assertion saw it. A
+    row whose state token is not a real state name (e.g. the header's
     ``{state}`` placeholder) never matches ``[a-z_]+`` against a literal `{`,
     so the header and separator rows are excluded by construction rather than
     by position.
     """
-    return dict(_STATE_OUTCOME_ROW.findall(section))
+    return _STATE_OUTCOME_ROW.findall(section)
 
 
 def _section_after(text: str, heading: str) -> str:
@@ -480,9 +483,10 @@ def test_verifier_non_close_states_route_to_the_loop_back_branch():
     Both populations are derived from the section's own state-to-outcome table
     rather than pinned as a sentence, so rewording the routing prose does not
     break the test while changing a state's recorded outcome does. The routing
-    assertion below runs PER STATE — a state whose table row records `done` or
-    `failed` fails on its own row, distinct from any sibling that still records
-    `loop_back` correctly.
+    assertion below runs over EVERY parsed row — a state whose table carries
+    two rows is asserted on both, so a duplicate row recording `done` or
+    `failed` fails on its own row rather than being silently discarded by a
+    dict collapse that keeps only the last row per state.
     """
     doc = _PRE_SUBMISSION_SELF_REVIEW_MD.read_text(encoding='utf-8')
     section = _section_after(doc, _VERIFIER_STEP_HEADING)
@@ -493,21 +497,33 @@ def test_verifier_non_close_states_route_to_the_loop_back_branch():
         f'assertion below would sweep nothing.'
     )
 
-    state_outcomes = _non_close_state_outcomes(section)
+    rows = _non_close_state_outcome_rows(section)
 
-    assert state_outcomes, (
+    assert rows, (
         'The verifier section carries no state-to-outcome table row of the form '
         '`| `{state}` | ... | `{outcome}` |`, so this sweep would cover nothing.'
     )
 
-    missing = [state for state in _NON_CLOSE_STATES if state not in state_outcomes]
+    states = {state for state, _ in rows}
+    missing = [state for state in _NON_CLOSE_STATES if state not in states]
     assert not missing, (
         f'The verifier section table no longer names these non-close state(s): '
         f'{missing}. A state that loses its row loses its documented routing with '
         f'it, and nothing then says where a round in that state lands.'
     )
 
-    for state, outcome in state_outcomes.items():
+    outcomes_by_state: dict[str, set[str]] = {}
+    for state, outcome in rows:
+        outcomes_by_state.setdefault(state, set()).add(outcome)
+
+    conflicting = {state: sorted(outs) for state, outs in outcomes_by_state.items() if len(outs) > 1}
+    assert not conflicting, (
+        f'These state(s) carry rows with CONFLICTING recorded outcomes: {conflicting}. '
+        f'A contradictory table is a documentation defect in its own right, reported '
+        f'here rather than as a routing failure on one arbitrary row.'
+    )
+
+    for state, outcome in rows:
         assert outcome == 'loop_back', (
             f'State `{state}` records `{outcome}` in the verifier section table, not '
             f'`loop_back`. A round the verifier did not close must not record `done` '
