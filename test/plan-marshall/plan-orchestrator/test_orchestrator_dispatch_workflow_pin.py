@@ -338,13 +338,19 @@ _FORBIDDEN_WRITE_TARGETS: tuple[str, ...] = (
 #: assertion at all (a bare cross-reference, a heading, a return-shape listing) does
 #: not read as a grant here.
 #:
-#: ``sets`` is spelled plural-only on purpose: a bare ``set`` carries a word boundary
-#: at the hyphen of the forbidden target ``corpus set-verdict``, so every sentence
-#: naming that call would satisfy this condition by naming it, making the affirmative
-#: half vacuous exactly where it is most load-bearing.
+#: Two alternatives are spelled in inflected forms ONLY, for the same reason: a
+#: forbidden target is matched as a lower-cased SUBSTRING, and the non-word
+#: characters around the verb inside it supply the word boundaries this pattern
+#: needs, so a bare stem would be satisfied by the very target it is meant to
+#: qualify. A bare ``set`` sits at the hyphen of ``corpus set-verdict``, and a bare
+#: ``write`` sits inside the backtick-quoted target ```write```. Either one makes
+#: the affirmative half self-satisfying for that target, collapsing the scan to
+#: leaf + target + no negation — the inversion this condition exists to avoid —
+#: exactly where it is most load-bearing. Hence ``sets|setting`` and
+#: ``writes|writing|written``, never a bare ``set`` or ``write``.
 _AFFIRMATIVE_RE = re.compile(
     r'\b(?:may|can|shall|must|will|is responsible for'
-    r'|write|writes|writing|written'
+    r'|writes|writing|written'
     r'|call|calls|calling'
     r'|invoke|invokes|invoking'
     r'|perform|performs|performing'
