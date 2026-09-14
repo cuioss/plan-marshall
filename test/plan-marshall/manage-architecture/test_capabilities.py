@@ -618,13 +618,14 @@ def test_report_is_envelope_scoped_to_project_dir():
         assert cs_without['modules_inventoried'] == 0
 
 
-def test_module_docstring_names_every_cmd_handler_it_defines():
-    """The module docstring's handler list is complete, and its count matches.
-
-    Both numbers are RE-DERIVED from the module's own ``def cmd_*`` population
-    rather than trusted: the stated count is checked against that population's
-    size, and every handler's CLI verb spelling must appear in the prose. A
-    handler added without a docstring entry reddens this.
+def test_module_docstring_points_at_cmd_handler_population_not_a_restated_roster():
+    """The module docstring names the ``def cmd_*`` population as the source of
+    truth for the handler roster, rather than restating a list or count of its
+    own — a restated roster/count drifts silently the moment a handler is added
+    without a matching docstring edit, which is exactly the defect this pointer
+    replaced. The population itself must be non-empty (there is something for
+    the pointer to point at), and the docstring must actually carry the
+    pointer language rather than reintroducing a hand-maintained list.
     """
     verbs = sorted(
         name[len('cmd_') :].replace('_', '-') for name in dir(_cmd_client_handlers) if name.startswith('cmd_')
@@ -632,7 +633,5 @@ def test_module_docstring_names_every_cmd_handler_it_defines():
     doc = _cmd_client_handlers.__doc__ or ''
 
     assert verbs, 'no cmd_* handlers were discovered — the population is empty'
-    assert str(len(verbs)) in doc, f'docstring does not state the re-derived handler count {len(verbs)}'
-
-    missing = [verb for verb in verbs if not re.search(rf'\b{re.escape(verb)}\b', doc)]
-    assert missing == [], f'docstring omits handler(s): {missing}'
+    assert 'def cmd_*' in doc, 'docstring no longer points at the def cmd_* population as the roster source'
+    assert 'deliberately not restated' in doc, 'docstring no longer states that the roster is deliberately not restated'
