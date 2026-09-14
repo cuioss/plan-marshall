@@ -252,6 +252,25 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config init -
 
 ---
 
+## Step 5b: Pin Setup (Optional)
+
+Seed-then-tune for machine-local model pins, parallel to the Step 5 effort seeding above. When this machine carries a machine-local effort-to-model pin map, materialize per-level pins for the open-model-set harness now so the first dispatch already provisions this machine's models; when the map is absent, skip silently — `inherit` remains the behavior everywhere the map is silent.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:marshall-steward:effort_pins validate
+```
+
+- **`status: success`** → the map is readable and schema-valid. Materialize and apply through the existing `manage-config effort` surface:
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:marshall-steward:effort_pins materialize --harness open
+  ```
+  Apply the emitted pins via the `manage-config effort` verbs (`effort set` for surgical per-scope writes), then verify the `inherit` fallback on unpinned levels with `effort resolve-target`. The full operator flow lives in [menu-pins.md](menu-pins.md); the map contract lives in [pin-provisioning.md](../standards/pin-provisioning.md).
+- **`status: error`** → no map, or a malformed one. A missing map is the normal skip (nothing to seed); a malformed map fails closed — fix the map and re-run this step, never hand-edit the levels to compensate.
+
+This step never touches the Claude target fixed alias-palette flow — pin materialization applies to open-model-set harnesses only.
+
+---
+
 ## Step 6: Project Default Base Branch
 
 Seed `project.default_base_branch` so `phase-1-init` can populate `references.base_branch` without falling back to whatever branch happens to be checked out at plan-creation time. The value is the project's canonical base branch — typically `main` or `master` for legacy projects.

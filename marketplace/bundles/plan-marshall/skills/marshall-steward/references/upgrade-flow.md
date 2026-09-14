@@ -22,7 +22,7 @@ consumer-only — `cache-freshness-check` — and the reason for that asymmetry 
 documented in § "Meta/consumer cache-freshness asymmetry" below.
 
 This reference is loaded from two entry points (see [`../SKILL.md`](../SKILL.md)):
-Main Menu option 5 ("Upgrade"), and the `upgrade` early verb check (which passes
+Main Menu option 6 ("Upgrade"), and the `upgrade` early verb check (which passes
 the `integrate` value from `/marshall-steward upgrade [integrate=true]`).
 
 `{repo_root}` below is the main-checkout repository root the steward is running
@@ -556,6 +556,6 @@ No stage is un-done. The reconciliation is forward-only.
 When all four stages complete (or the flow stops per the partial-failure
 contract), return control to the steward's end-of-flow behavior:
 
-- Invoked from **Main Menu option 5** → return to Main Menu Page 1.
+- Invoked from **Main Menu option 6** → return to Main Menu Page 1.
 - Invoked from the **`upgrade` early verb check** → the run ends (the verb
   bypassed the menu).
