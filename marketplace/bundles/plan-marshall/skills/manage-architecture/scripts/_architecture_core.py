@@ -763,11 +763,11 @@ def load_module_enriched_or_empty(module_name: str, project_dir: str = '.') -> d
     return migrate_concept_document(_read_json(path))
 
 
-def unknown_generation(by: str = GENERATED_BY) -> dict[str, Any]:
+def unknown_generation() -> dict[str, Any]:
     """Provenance header for a document whose generating tree is not known.
 
-    Records WHO the document is attributed to while stating that the tree it was
-    written against is unrecorded (``tree_sha: None``), which
+    Records WHO the document is attributed to (:data:`GENERATED_BY`) while stating
+    that the tree it was written against is unrecorded (``tree_sha: None``), which
     :func:`derive_freshness` maps to :data:`FRESHNESS_UNKNOWN`.
 
     This is the header to back-fill onto a document that reaches a writer with no
@@ -777,7 +777,7 @@ def unknown_generation(by: str = GENERATED_BY) -> dict[str, Any]:
     unknown vintage, the precise false-confidence the generation header exists to
     prevent.
     """
-    return {'by': by, 'tree_sha': None}
+    return {'by': GENERATED_BY, 'tree_sha': None}
 
 
 def stamp_concept_document(
