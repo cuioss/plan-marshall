@@ -1,113 +1,97 @@
-# Reasoning-token minimalism in the agent persona — decision
+# Reasoning-token minimalism — measurement and decision
 
 An external result reported cutting reasoning tokens ~92% by constraining a
-model's visible "thinking" to five words, with accuracy held and run-to-run
-self-disagreement falling from 5.8% to 1.9%. The proposal this document decides
-is whether to encode a matching minimalism rule for *thinking* in
-`plan-marshall:persona-plan-marshall-agent`.
+model's visible "thinking" to a five-word ceiling, with task accuracy held and
+run-to-run self-disagreement falling from 5.8% to 1.9%. This document is the
+measurement-side assessment of whether that lever applies here.
+
+The architectural principle the assessment produced is recorded separately, in
+[ADR-021](../adr/021-Economy_rules_bind_the_persisted_artifact_never_the_reasoning_that_produced_it.adoc);
+this document holds the numbers, the bound they place on the idea, and an
+instrument defect found while deriving them.
 
 ## Decision
 
-**SKIP.** No thinking-minimalism rule is added to the persona.
+**SKIP.** No reasoning-minimalism rule is added to
+`plan-marshall:persona-plan-marshall-agent` or anywhere else. The structural
+grounds are ADR-021's; the measurement grounds are below, and they are
+independently sufficient.
 
-The transferable half of the idea is already implemented on the surface that
-actually costs money — see [Where the rule already
-lives](#where-the-rule-already-lives).
+## Why the reported result does not transfer
 
-## Rationale
+The discriminator is the **input:output ratio of the workload a result was
+measured on**, and it should be established before any such result is assessed
+for transfer.
 
-### The dispatch architecture already discards reasoning
+| | the reported setting | this system |
+|---|---|---|
+| input per call | a support ticket plus a two-line system prompt | a large context, cached and resident |
+| output per call | ~1,800 reasoning tokens | comparatively little |
+| dominant term | **output** | **input** — resident context × turns |
 
-A dispatched `execution-context` leaf may think at length and return a bounded
-TOON struct; the parent pays for the struct, not the reasoning. The agent
-boundary *is* the compressor the external result hand-rolls with a word ceiling.
-There is no thinking-token problem left to solve, and the only real knob on
-thinking depth is the `execution-context-level-N` effort pin — a different
-mechanism with its own measured tradeoff (below).
+Short-prompt, single-shot classification is one of the few regimes where
+generation genuinely dominates a bill. Almost every published token-saving
+result comes from that regime; almost none comes from long-lived agent contexts.
 
-### The regime does not transfer
+The reported determinism improvement is a separate claim and is not assessed
+here — it is a property of deliberation, which this system controls through
+effort levels rather than through prose, and effort reduction is settled on
+other grounds.
 
-The reported result comes from short-prompt, single-shot classification: a
-~100-token input against ~1,800 output tokens, so output dominates that bill.
-Plan-marshall's regime is the inverse — a large resident context re-read many
-times per run, against comparatively little generation. The discriminator when
-reading any such result is the **input:output ratio** of the workload it was
-measured on.
+## The ceiling on a reasoning-side lever
 
-### Compression advice inverts across the boundary
+These figures **bound** the idea. They are not offered as a durable measurement:
+the corpus percentages they rest on are a single analysis pass that this project
+has not re-derived first-party, and the share of generation that is reasoning
+rather than tool-call payloads or response text is an estimate, not a measure.
+Both would need re-deriving before anything is built on them — which is
+precisely why the decision does not rest on them.
 
-A persisted artifact is read by a later agent that has no access to the
-reasoning that produced it, so it must carry the *derivation*, not the verdict.
-A five-word ceiling applied to a persisted surface is a vacuous-authority
-generator — a recurring defect archetype in this repository, and the direct
-opposite of the standing "derive completeness, never assert it" discipline.
+Generation is roughly **5%** of billing weight once output's price premium is
+applied (see the defect below — the recorded figure understates it fivefold).
+Reasoning is a fraction of generation, the remainder being tool-call payloads
+and response text. So eliminating reasoning *entirely* caps at low single digits
+of spend, and a prose instruction captures only a fraction of its own ceiling —
+the reported result's own evidence is that an exhortation achieves roughly
+two-thirds of what an enforced ceiling does, in a setting far more favourable to
+the exhortation than a line inside a large persona competing with an explicit
+effort pin.
 
-### The rule would be unenforceable
+The residual sits inside the noise band of ordinary build-time variance, before
+subtracting the standing cost of the added line — which loads into every
+dispatch and is re-read for the life of each.
 
-Thinking is not inspectable by a test, a `plugin-doctor` rule, or any CI check,
-so compliance could never be observed. The external result's own central claim
-is that an enforced ceiling beats a prose exhortation precisely *because* it is
-enforced; the enforced version is unavailable here.
+## Instrument defect: `billing_weighted_total` understates generation fivefold
 
-### It reduces to "examine less", which is already rejected on measurement
+`manage-metrics/standards/data-format.md` defines the figure as:
 
-Raising effort levels was measured first-party to cost ~1.34× while moving
-per-phase zero-finding rates sharply down (both unraised control phases moved
-the other way), establishing that the prior zeros were under-examination. The
-standing conclusion is to reject any lever whose mechanism reduces to examining
-less, on that ground rather than by weighing it. A "think less" instruction is
-that lever under another name, and its downside is asymmetric: not a percentage
-of spend, but a defect reaching `main`.
+```
+input + output + round(0.1 × cache_read) + round(1.25 × cache_creation)
+```
 
-### The line would not pay for itself
+`output` is weighted **1×**. Every current Claude model prices output at **5×**
+input, so the correction is model-independent. The field is classed
+`derived-cost` and rendered as a first-class "Billing (cost)" column, so the
+understatement is invisible at every read site.
 
-`persona-plan-marshall-agent` loads unconditionally into every dispatch, making
-it the most expensive place in the corpus to add prose — a byte there is paid on
-entry and again on every subsequent turn of every dispatch. Any change to that
-file should displace something, not append to it.
+The consequence is directional, not incidental: every generation-versus-context
+conclusion drawn from that column is skewed toward context by a factor of five.
+It does not change this decision — the corrected share is still small — but it is
+upstream of every token-reduction judgement that reads the column, and is
+tracked separately.
 
-## What the arithmetic supports
+A related interpretation trap is worth recording alongside it. A triple of
+`cache_read` / `cache_creation` / `output` percentages can be read either as
+token shares or as weighted-cost shares, and the readings differ by more than an
+order of magnitude. The discriminator is internal: dividing the first two by
+their weights must reproduce the independently measured average re-read factor.
+Under the cost reading it does; under the token reading it is off by more than
+tenfold. **Read the producing formula before interpreting such a percentage.**
 
-These figures bound the idea rather than record a durable measurement. The
-underlying corpus percentages are a single analysis pass that this project has
-not yet re-derived first-party, so they are stated as a ceiling argument, not as
-a result to build on.
+## What to do instead
 
-Generation is roughly 5% of billing weight once output's price premium is
-applied. Thinking is only a fraction of generation — the remainder is tool-call
-payloads and response text — so the ceiling on eliminating thinking *entirely*
-is low single digits of spend, and a prose nudge captures a fraction of that
-ceiling. The expected yield sits inside the noise band of ordinary build-time
-variance, before accounting for the cost of the added line.
-
-## Where the rule already lives
-
-The version of this idea that pays applies to persisted artifacts, and both
-directions are already governed:
-
-- `persona-plan-marshall-agent/standards/user-communication.md` Rule 3 bounds
-  the orchestrator-to-user leg: the **completeness floor first** (a failure, a
-  skip, or a partial result is outcome and may never be trimmed), then the
-  ceiling that cuts narration.
-- `ref-workflow-architecture/standards/citations-only-return.md` bounds the
-  sub-agent return leg: exactly one TOON block, counts as citations, detail
-  persisted to a queryable sink.
-
-Both are enforceable, both sit on the paid surface, and Rule 3 carries the
-completeness guard the external result lacks. The residual discipline is
-**density, not brevity** — cut bytes that restate, keep every byte that derives.
-
-## Defect surfaced by this analysis
-
-`billing_weighted_total` (see
-`manage-metrics/standards/data-format.md`) is defined as
-`input + output + round(0.1 × cache_read) + round(1.25 × cache_creation)`,
-weighting output at 1×. Every current Claude model prices output at 5× input, so
-the figure understates generation's share of real spend by that factor while
-being rendered as a first-class "Billing (cost)" column and classed
-`derived-cost`.
-
-Conclusions drawn from that column about generation versus context are therefore
-skewed toward context. This does not change the decision above — the corrected
-share is still small — but it is upstream of every token-reduction decision that
-reads the column, and is tracked separately.
+Nothing new. The transferable half of the idea applies to persisted artifacts,
+where both directions are already governed — `user-communication.md` Rule 3 for
+the orchestrator-to-user leg, `citations-only-return.md` for the sub-agent return
+leg. ADR-021 states the principle those two implement, including the
+completeness floor that the external result's rule lacks.
