@@ -32,6 +32,14 @@ document set, the invocation population, and the matched sites), and
 mirroring ``test_landing_completeness.py``'s ``test_the_extractors_are_not_vacuous``.
 A guard that can return 0 from an empty population MUST publish that population
 size, or a green proves only that the enumerator ran.
+
+The module carries a **second** pin over the same derived surface:
+``TestDraftingDispatchWritePathContainment`` asserts the write-path containment of
+the dispatchable DRAFTING sub-steps — that every doc declaring one also names the
+orchestrator as the writer, that no doc grants a leaf a ledger-write path, and that
+every declared spec-body draft states the monotonic-resource constraint. Both pins
+derive their document set the same way, so a doc added later is covered by both
+without being listed in either.
 """
 
 from __future__ import annotations
@@ -54,6 +62,8 @@ _KNOWN_DISPATCH_DOCS: tuple[Path, ...] = (
     _PLAN_MARSHALL / 'plan-orchestrator' / 'workflow' / 'decompose.md',
     _PLAN_MARSHALL / 'persona-plan-orchestrator' / 'standards' / 'orchestration-model.md',
 )
+
+_ANALYZE_MD, _DECOMPOSE_MD, _ORCHESTRATION_MODEL_MD = _KNOWN_DISPATCH_DOCS
 
 #: One orchestrator dispatch resolve invocation. The workflow docs carry the
 #: call inline in prose, the standards doc carries it in a fenced block with
@@ -257,3 +267,636 @@ class TestDispatchResolveSitesCarryWorkflow:
 
         assert len(found) == 1, f'the enumerator matched {len(found)} invocation(s), expected 1'
         assert '--workflow' not in found[0]
+
+
+# =============================================================================
+# Write-path containment for dispatchable DRAFTING sub-steps
+# =============================================================================
+#
+# The write-freedom test admits a sub-step that only DRAFTS the content of a
+# ledger write. That widening changes the test's truth conditions, so a drafting
+# sub-step that previously FAILED write-freedom now passes it — and the control
+# below asserts BOTH directions of that inversion, because the untested direction
+# is exactly where the inverse defect lands:
+#
+#   1. a drafting declaration is ADMITTED, but only when its doc also states that
+#      the orchestrator performs the resulting write; and
+#   2. a leaf that PERFORMS a ledger write is STILL REJECTED, so widening the test
+#      did not also admit the class it was always meant to exclude.
+#
+# The population is the SAME derived surface the `--workflow` pin runs over — the
+# orchestrator dispatch docs derived from the plan-marshall skills tree — never a
+# hard-coded document list.
+
+#: A doc DECLARES a dispatchable drafting sub-step only when it ADMITS drafting —
+#: either by qualifying a drafting sub-step as ``dispatchable`` (in that order,
+#: within one sentence) or by stating that the drafting passes the write-freedom
+#: test. Mere adjacency of "drafting" and "dispatch" is deliberately NOT enough:
+#: the phrase occurs in headings and in prose that DENIES the declaration, and the
+#: matched negative control below is what established that the looser form matched
+#: a decoy. The one-sentence window (``[^.]``) is load-bearing too — it is what
+#: keeps a "dispatchable" in one sentence from pairing with a "draft" in the next.
+_DRAFTING_DECLARATION_RE = re.compile(
+    r'(?i)dispatchable[^.]{0,160}draft(?:ing|ed)?'
+    r'|draft(?:ing|ed)?[^.]{0,160}passes write-freedom'
+    r'|draft(?:ing|ed)?[^.]{0,160}admitted by the write-freedom'
+)
+
+#: The orchestrator-applies clause: the doc must say the ORCHESTRATOR performs the
+#: write whose content the leaf drafted. Without it a doc declares a dispatch that
+#: drafts a write and names nobody who performs it, which is the gap that reads as
+#: a licence for the leaf to perform it itself.
+_ORCHESTRATOR_APPLIES_RE = re.compile(r'(?i)the orchestrator\b[^.]{0,80}\bperforms\b[^.]{0,180}\bwrite')
+
+#: The concrete calls a drafting leaf may never make — the write path the refined
+#: write-freedom test still excludes. Lower-cased, because the grant scan folds
+#: case before matching.
+_FORBIDDEN_WRITE_TARGETS: tuple[str, ...] = (
+    '`write`',
+    '`edit`',
+    'manage-status',
+    'manage-logging --store orchestrator',
+    'orchestrator queue',
+    'corpus set-verdict',
+    '.plan/local/orchestrator',
+)
+
+#: The affirmative half of a grant: a permission or an assertion that the leaf DOES
+#: the named call. The vocabulary is deliberately WIDE, because the narrow original
+#: set — ``may|can|writes|write|calls|invokes|performs`` — made the condition a test
+#: of PHRASING rather than of meaning: "the leaf records the disposition via
+#: `manage-status`" and "the leaf appends the drafted row via `orchestrator queue`"
+#: name exactly the write path the containment rule excludes, satisfy the leaf and
+#: the forbidden-target conditions, and matched NOTHING here, so
+#: ``test_no_dispatch_doc_grants_a_leaf_a_write_path`` reported green over the
+#: sentence it exists to catch. ``test_a_grant_phrased_outside_the_narrow_verb_set_is_detected``
+#: is the control that pins the widening.
+#:
+#: Widening this condition moves the discrimination onto the other three — a
+#: sentence must still name a ``leaf``, name a forbidden target, and carry no
+#: negation — which is close to the inversion (leaf + target + no negation = grant)
+#: the alternative reading would have made explicit. What still separates the two is
+#: that a sentence naming a leaf beside a forbidden call with no permission or
+#: assertion at all (a bare cross-reference, a heading, a return-shape listing) does
+#: not read as a grant here.
+#:
+#: Two alternatives are spelled in inflected forms ONLY, for the same reason: a
+#: forbidden target is matched as a lower-cased SUBSTRING, and the non-word
+#: characters around the verb inside it supply the word boundaries this pattern
+#: needs, so a bare stem would be satisfied by the very target it is meant to
+#: qualify. A bare ``set`` sits at the hyphen of ``corpus set-verdict``, and a bare
+#: ``write`` sits inside the backtick-quoted target ```write```. Either one makes
+#: the affirmative half self-satisfying for that target, collapsing the scan to
+#: leaf + target + no negation — the inversion this condition exists to avoid —
+#: exactly where it is most load-bearing. Hence ``sets|setting`` and
+#: ``writes|writing|written``, never a bare ``set`` or ``write``.
+_AFFIRMATIVE_RE = re.compile(
+    r'\b(?:may|can|shall|must|will|is responsible for'
+    r'|writes|writing|written'
+    r'|call|calls|calling'
+    r'|invoke|invokes|invoking'
+    r'|perform|performs|performing'
+    r'|record|records|recording'
+    r'|author|authors|authoring|authored'
+    r'|sets|setting'
+    r'|mutate|mutates|mutating'
+    r'|append|appends|appending'
+    r'|stamp|stamps|stamping'
+    r'|persist|persists|persisting'
+    r'|emit|emits|emitting)\b'
+)
+
+#: Negation vocabulary. Every real statement about a leaf and a forbidden call is a
+#: PROHIBITION ("it MAY NOT call", "No leaf ... writes"), so a grant scan that
+#: ignored negation would report the containment rule itself as the violation.
+_NEGATION_RE = re.compile(
+    r'\b(?:not|never|nothing|no|none|cannot|bars|barred|prohibited|prohibits|forbidden|forbids|without|outside)\b'
+)
+
+_SENTENCE_SPLIT_RE = re.compile(r'(?<=[.!?])\s+')
+
+#: Negation is scoped to the CLAUSE, not the sentence: a semicolon-joined
+#: sentence legitimately pairs a permission clause with an unrelated
+#: prohibition clause ("a leaf MAY compose a document body; it MAY NOT call
+#: `manage-status`"), and checking negation over the whole sentence lets the
+#: second clause's "not" silently suppress a grant written in the first. The
+#: target/affirmative/negation triple is therefore checked per clause; only the
+#: leaf-mention stays sentence-scoped, because a later clause legitimately
+#: refers back to "leaf" with a pronoun ("it") rather than repeating the noun.
+_CLAUSE_SPLIT_RE = re.compile(r'(?<=[.!?;])\s+')
+
+#: A doc declares a dispatchable SPEC-BODY draft when it declares the return field
+#: that carries one. Keying on the declared field rather than on any mention of a
+#: spec draft is deliberate: the monotonic-resource constraint binds where the
+#: draft's SHAPE is specified — the doc a leaf author works from — which is the two
+#: verb docs, not the shared rule that merely indexes the dispatch.
+_SPEC_BODY_DRAFT_RE = re.compile(r'(?i)\bspec_drafts\b|\bspec_body\b|drafted spec body')
+
+#: The monotonic-resource constraint and the selection rule it substitutes must
+#: be checked as ONE co-occurring pair, never as two independent whole-document
+#: searches. A bare `selection rule` search is unanchored and is satisfied by
+#: any occurrence anywhere in the document — including `orchestrate.md`'s own
+#: unrelated `next`-verb "selection rules" prose, which shares no relationship
+#: with the spec-body monotonic-resource constraint. Two independent searches
+#: would therefore still report the constraint present even if the real
+#: sentence pairing the two phrases were deleted, so long as an unrelated
+#: "selection rule(s)" mention survived elsewhere in the same document. The
+#: bounded window (crossing a sentence boundary, since the constraint spans two
+#: sentences in both verb docs, but not a whole document) requires the two
+#: phrases to actually co-occur near each other rather than merely both exist.
+_MONOTONIC_SELECTION_PROXIMITY_RE = re.compile(
+    r'(?i)monotonic resource[\s\S]{0,400}?selection rule'
+    r'|selection rule[\s\S]{0,400}?monotonic resource'
+)
+
+#: orchestration-model.md's own numbered index of sanctioned dispatchable
+#: sub-steps, so its self-declared cardinality word (e.g. "seven") and its
+#: numbered entries can be checked against an INDEPENDENT derivation from the
+#: two verb docs, rather than trusted as an unchecked assertion. Bounded to
+#: stop before "The **drafting** sub-steps", whose own parenthetical numbers
+#: are a re-partition of the SAME entries (which of them draft vs read), not
+#: a second index — including that sentence in the body would double-count.
+_SANCTIONED_INDEX_RE = re.compile(
+    r'sanctioned dispatchable sub-steps are these \*\*(?P<word>\w+)\*\*, '
+    r'and this list is a complete index of them:(?P<body>[\s\S]*?)\s+The \*\*drafting\*\* sub-steps',
+)
+
+#: Matches only a LEADING enumeration marker — "(N)" immediately followed by
+#: a backtick or "the " — never a parenthetical back-reference mid-entry
+#: (item 7's own text reads "...the SAME Step 2 envelope as (6) returns",
+#: whose "(6)" is followed by "returns" and must NOT be double-counted as a
+#: second occurrence of entry 6).
+_PAREN_ENTRY_RE = re.compile(r'\((\d+)\)\s*(?=`|the\s)')
+_INDEX_NUMBER_WORDS = {'two': 2, 'five': 5, 'seven': 7}
+
+#: A top-level dispatchable-declaring bullet in a verb doc's Step 2 section:
+#: "- **Dispatchable**" (the read) or "- **Two-stage for untrusted third-party
+#: text**" (analyze.md's reader-extraction read). Each match is one logical
+#: dispatchable READ entry.
+_TOP_LEVEL_DISPATCH_BULLET_RE = re.compile(
+    r'^- \*\*(?:Dispatchable|Two-stage for untrusted third-party text)\*\*',
+    re.MULTILINE,
+)
+
+#: A nested drafting sub-bullet under analyze.md's "Also dispatchable" heading
+#: — "The Step 4 item 1 landing-report body", "The Step 5b per-message
+#: dispositions", "The Step 5b Stage new-spec body". Each match is one logical
+#: dispatchable DRAFT entry.
+_NESTED_DRAFT_BULLET_RE = re.compile(r'^  - \*\*The Step \d+', re.MULTILINE)
+
+
+def _dispatch_index_entry_count(path: Path) -> int:
+    """The number of logical dispatchable sub-step entries a verb doc declares.
+
+    A top-level bullet is one READ entry each; a nested "Also dispatchable"
+    sub-bullet is one DRAFT entry each — this covers analyze.md's five (two
+    top-level reads, three nested drafts). decompose.md carries no "Also
+    dispatchable" heading and no nested sub-bullet: its single top-level
+    `Dispatchable` bullet's RETURN SHAPE names both a read (`candidates[N]`)
+    and a draft (`spec_body`) riding the SAME Step 2 envelope, so that one
+    bullet counts as TWO logical entries exactly when its text also carries
+    `_SPEC_BODY_DRAFT_RE` — reusing the same detector `_containment_population`
+    keys `spec_body` on, rather than a second hand-written pattern that could
+    drift from it. The bonus fires only when no nested draft bullet already
+    accounted for the draft (analyze.md has nested bullets and needs none).
+    """
+    text = _normalized(path)
+    top_level = len(_TOP_LEVEL_DISPATCH_BULLET_RE.findall(text))
+    nested = len(_NESTED_DRAFT_BULLET_RE.findall(text))
+    bonus = 1 if (nested == 0 and _SPEC_BODY_DRAFT_RE.search(text)) else 0
+    return top_level + nested + bonus
+
+
+def _normalized(path: Path) -> str:
+    """One document's text with continuation backslashes folded away."""
+    return _CONTINUATION_RE.sub(' ', path.read_text(encoding='utf-8'))
+
+
+def _declares_drafting_dispatch(text: str) -> bool:
+    return bool(_DRAFTING_DECLARATION_RE.search(text))
+
+
+def _states_orchestrator_applies(text: str) -> bool:
+    return bool(_ORCHESTRATOR_APPLIES_RE.search(text))
+
+
+def _leaf_write_grants(text: str) -> list[str]:
+    """Sentences that grant a dispatched leaf a ledger-write path.
+
+    A grant is a sentence that names a ``leaf`` and contains a CLAUSE that names
+    one of the forbidden write targets, carries an affirmative permission or
+    assertion, and carries NO negation. The leaf-mention stays sentence-scoped
+    (a later clause may refer back to it as "it"), but the target/affirmative/
+    negation triple is checked per CLAUSE, split additionally on `;`: a
+    semicolon-joined sentence legitimately pairs a permission clause with an
+    unrelated prohibition clause ("a leaf MAY compose X; it MAY NOT call Y"),
+    and scoping negation to the whole sentence would let the second clause's
+    "not" silently suppress a grant written in the first. All four conditions
+    are load-bearing — dropping the negation condition turns every prohibition
+    in the containment rule into a reported grant. The affirmative condition is
+    deliberately wide rather than a list of the verbs the current docs happen to
+    use: a grant phrased with any other verb names the same write path, and a
+    narrow set silently excuses it (see ``_AFFIRMATIVE_RE``).
+    """
+    grants: list[str] = []
+    for sentence in _SENTENCE_SPLIT_RE.split(text):
+        if not re.search(r'\bleaf\b', sentence.lower()):
+            continue
+        for clause in _CLAUSE_SPLIT_RE.split(sentence):
+            lowered = clause.lower()
+            if not any(target in lowered for target in _FORBIDDEN_WRITE_TARGETS):
+                continue
+            if not _AFFIRMATIVE_RE.search(lowered):
+                continue
+            if _NEGATION_RE.search(lowered):
+                continue
+            grants.append(' '.join(sentence.split()))
+            break
+    return grants
+
+
+def _containment_population(root: Path) -> dict[str, object]:
+    """The labelled populations every containment assertion is computed over.
+
+    Each count is returned under a key that NAMES the population it enumerated.
+    `scanned` ⊇ `derived` is a nested subset; `drafting` and `spec_body` are
+    each INDEPENDENT subsets of `derived`, never one nested inside the other.
+    `spec_body` deliberately filters from `derived`, not from `drafting`:
+    `_SPEC_BODY_DRAFT_RE` keys on the declared return field, which a doc can
+    carry independently of whether `_DRAFTING_DECLARATION_RE` also matched it.
+    Filtering from `drafting` would let a verb doc that phrases its drafting
+    admission outside `_DRAFTING_DECLARATION_RE` drop out of `drafting` — and
+    therefore out of `spec_body` too — while still declaring a `spec_drafts`
+    return field with no monotonic-resource constraint, silently escaping the
+    containment assertion below. Keeping the two detectors independent is what
+    closes that gap.
+    """
+    scanned = _scanned_docs_under(root)
+    derived = _dispatch_docs_under(root)
+    texts = {doc: _normalized(doc) for doc in derived}
+    drafting = [doc for doc in derived if _declares_drafting_dispatch(texts[doc])]
+    spec_body = [doc for doc in derived if _SPEC_BODY_DRAFT_RE.search(texts[doc])]
+    return {
+        'markdown_docs_scanned': len(scanned),
+        'docs_derived_as_orchestrator_dispatch_docs': len(derived),
+        'dispatch_docs_declaring_a_drafting_substep': len(drafting),
+        'drafting_docs_declaring_a_spec_body_draft': len(spec_body),
+        'drafting_doc_names': sorted(doc.name for doc in drafting),
+        'spec_body_doc_names': sorted(doc.name for doc in spec_body),
+        'drafting_docs': drafting,
+        'spec_body_docs': spec_body,
+        'texts': texts,
+    }
+
+
+def _evidence(population: dict[str, object]) -> str:
+    """The population statement every assertion message below carries."""
+    return (
+        f'Populations, each named by what it enumerated (nested subsets, not comparable counts): '
+        f'markdown documents scanned under the plan-marshall skills tree='
+        f'{population["markdown_docs_scanned"]}; '
+        f'of those, documents derived as orchestrator dispatch docs='
+        f'{population["docs_derived_as_orchestrator_dispatch_docs"]}; '
+        f'of those, documents declaring a dispatchable drafting sub-step='
+        f'{population["dispatch_docs_declaring_a_drafting_substep"]} '
+        f'{population["drafting_doc_names"]}; '
+        f'separately, of the derived documents (independent of the drafting-declaration match), '
+        f'documents declaring a spec-body draft return field='
+        f'{population["drafting_docs_declaring_a_spec_body_draft"]} '
+        f'{population["spec_body_doc_names"]}.'
+    )
+
+
+class TestDraftingDispatchWritePathContainment:
+    def test_the_drafting_declaration_population_is_not_vacuous(self):
+        """A zero drafting-declaration count is a BROKEN PIN, not a clean pass.
+
+        Every assertion below quantifies over the drafting docs, so an enumerator
+        that matched none would make all of them pass while asserting nothing.
+        """
+        population = _containment_population(_PLAN_MARSHALL)
+
+        assert population['dispatch_docs_declaring_a_drafting_substep'], (
+            'NO document in the derived orchestrator dispatch surface declares a dispatchable '
+            'drafting sub-step, so every containment assertion in this class would pass '
+            f'vacuously. Reported as a broken pin rather than green. {_evidence(population)}'
+        )
+
+    def test_every_drafting_declaration_names_the_orchestrator_as_the_writer(self):
+        """Direction 1 of the inversion: drafting is admitted, but only with the applies-clause."""
+        population = _containment_population(_PLAN_MARSHALL)
+        texts: dict[Path, str] = population['texts']
+        drafting: list[Path] = population['drafting_docs']
+        silent = [doc.name for doc in drafting if not _states_orchestrator_applies(texts[doc])]
+
+        assert not silent, (
+            f'{len(silent)} document(s) declare a dispatchable drafting sub-step without stating '
+            f'that the orchestrator performs the resulting write: {silent}. A drafting dispatch '
+            'that names nobody as the writer reads as a licence for the leaf to perform the write '
+            f'itself. {_evidence(population)}'
+        )
+
+    def test_no_dispatch_doc_grants_a_leaf_a_write_path(self):
+        """Direction 2 of the inversion: performing a ledger write is STILL rejected.
+
+        Widening write-freedom to admit drafting must not also admit the class the
+        test was always meant to exclude. This runs over every derived dispatch
+        doc, not only the drafting ones — a grant is out of bounds wherever it is
+        written.
+        """
+        population = _containment_population(_PLAN_MARSHALL)
+        texts: dict[Path, str] = population['texts']
+        offenders = {doc.name: grants for doc, text in texts.items() if (grants := _leaf_write_grants(text))}
+
+        assert not offenders, (
+            f'{len(offenders)} orchestrator dispatch document(s) grant a dispatched leaf a '
+            f'ledger-write path: {offenders}. The refined write-freedom test admits DRAFTING the '
+            'content of a write; performing one stays with the orchestrator. '
+            f'{_evidence(population)}'
+        )
+
+    def test_every_spec_body_draft_carries_the_monotonic_resource_constraint(self):
+        """A drafted spec body must state the selection rule, never assume an ordinal."""
+        population = _containment_population(_PLAN_MARSHALL)
+        texts: dict[Path, str] = population['texts']
+        spec_body_docs: list[Path] = population['spec_body_docs']
+
+        assert spec_body_docs, (
+            'NO document declares a spec-body draft return field, so this assertion would '
+            f'quantify over an empty set. {_evidence(population)}'
+        )
+
+        uncovered = [doc.name for doc in spec_body_docs if not _MONOTONIC_SELECTION_PROXIMITY_RE.search(texts[doc])]
+
+        assert not uncovered, (
+            f'{len(uncovered)} document(s) declare a dispatchable spec-body draft without stating '
+            f'the monotonic-resource constraint and the selection rule it substitutes: {uncovered}. '
+            'A draft that embeds an assumed PLAN-NN ordinal instead of the selection rule would be '
+            f'silently accepted, and it collides with a sibling staged against the same HEAD. '
+            f'{_evidence(population)}'
+        )
+
+    def test_a_distant_unrelated_selection_rule_mention_does_not_satisfy_the_constraint(self, tmp_path):
+        # The gap this control closes: checking "monotonic resource" and
+        # "selection rule" as two independent whole-document searches is
+        # satisfied by any UNRELATED "selection rule(s)" mention anywhere in the
+        # document — such as orchestrate.md's own next-verb selection rules,
+        # which share nothing with the spec-body monotonic-resource constraint.
+        # Deleting the real paired sentence while such an unrelated mention
+        # survives elsewhere must still fail the check.
+        far_apart = tmp_path / 'far-apart.md'
+        far_apart.write_text(
+            'A drafted spec body MUST NOT reserve a monotonic resource by assumption.\n\n'
+            + ('Padding paragraph unrelated to either phrase. ' * 40)
+            + '\n\nSeparately, the orchestrate.md next verb has its own selection rules governing '
+            'slot admission, unrelated to spec-body drafting.\n',
+            encoding='utf-8',
+        )
+
+        assert not _MONOTONIC_SELECTION_PROXIMITY_RE.search(_normalized(far_apart)), (
+            'the proximity check was satisfied by two unrelated mentions of the two phrases far '
+            'apart in the same document — it must require them to co-occur, not merely both exist'
+        )
+
+        close_together = tmp_path / 'close-together.md'
+        close_together.write_text(
+            'A drafted spec body MUST NOT reserve a monotonic resource by assumption. The draft '
+            'states the selection rule and the orchestrator performs the allocation.\n',
+            encoding='utf-8',
+        )
+
+        assert _MONOTONIC_SELECTION_PROXIMITY_RE.search(_normalized(close_together)), (
+            'the proximity check missed the real paired sentence — the window is too narrow for '
+            'the constraint as it is actually phrased in the shipped verb docs'
+        )
+
+    def test_a_drafting_declaration_without_the_applies_clause_is_detected(self, tmp_path):
+        # Matched POSITIVE control: the assertion above is green over the real
+        # tree, so this proves that green is a measured pass rather than a
+        # detector that cannot fail.
+        offender = tmp_path / 'silent-drafting.md'
+        offender.write_text(
+            '- **Dispatchable** — the landing-report body is drafting work and rides one envelope.\n',
+            encoding='utf-8',
+        )
+        text = _normalized(offender)
+
+        assert _declares_drafting_dispatch(text), 'the drafting-declaration detector missed a declaration'
+        assert not _states_orchestrator_applies(text), (
+            'the fixture was supposed to omit the orchestrator-applies clause, so the detector '
+            'pair cannot demonstrate a failure'
+        )
+
+    def test_a_doc_with_no_drafting_dispatch_is_not_matched(self, tmp_path):
+        # Matched NEGATIVE control: pointed at a doc that talks about dispatch and
+        # about drafts in unrelated sentences, the detector must NOT claim a
+        # declaration. Without this, a too-greedy pattern would make every
+        # document look like a drafting dispatch and the population above healthy.
+        # This is not hypothetical: the first form of the detector matched the
+        # heading below — the adversarial phrase is deliberately the one that
+        # DENIES the declaration, and the sentence pairing "dispatchable" with a
+        # later "draft" across a sentence boundary is the second decoy.
+        decoy = tmp_path / 'no-drafting.md'
+        decoy.write_text(
+            '# Not a drafting dispatch\n\n'
+            'This verb has one dispatchable sub-step: corroborating a landing against ground '
+            'truth.\n\n'
+            'Separately, the operator sometimes keeps a draft of the report in their own notes.\n',
+            encoding='utf-8',
+        )
+
+        assert not _declares_drafting_dispatch(_normalized(decoy))
+
+    def test_a_leaf_granted_a_write_path_is_detected(self, tmp_path):
+        # Matched control for direction 2: each forbidden call must be caught on
+        # its own, so a detector covering only the `Write`/`Edit` half cannot pass
+        # this. Asserted per-target rather than over one omnibus fixture, because
+        # an omnibus doc is matched by whichever target the scan happens to
+        # support.
+        grants = {
+            'write-in-epic-tree': 'The leaf may call `Write` inside `.plan/local/orchestrator/{slug}/plans/`.',
+            'status-store': 'The leaf writes the queue row itself via `manage-status` with the orchestrator store.',
+            'queue': 'The leaf calls `orchestrator queue` to append the row once it has drafted the spec.',
+            'verdict': 'The leaf invokes `corpus set-verdict` for each claim it settled.',
+        }
+        for label, sentence in grants.items():
+            fixture = tmp_path / f'grant-{label}.md'
+            fixture.write_text(sentence + '\n', encoding='utf-8')
+            found = _leaf_write_grants(_normalized(fixture))
+            assert found, f'the grant scan missed the {label} write path: {sentence}'
+
+    def test_a_grant_phrased_outside_the_narrow_verb_set_is_detected(self, tmp_path):
+        # The gap this control closes, and the reason it is separate from the
+        # per-target control above: that one varies the TARGET while holding the
+        # phrasing inside the original affirmative set, so it never exercised the
+        # affirmative condition itself. A grant that chose any other verb satisfied
+        # the leaf and target conditions, failed the affirmative one, and was
+        # reported as no grant at all — the assertion passed green over exactly the
+        # sentence it exists to catch.
+        #
+        # Each phrasing is asserted TWICE, and the second half is what makes this a
+        # measured widening rather than a wider regex nobody needed: the superseded
+        # narrow pattern must MISS the sentence the current scan catches. A fixture
+        # the old pattern already matched would witness nothing.
+        superseded = re.compile(r'\b(?:may|can|writes|write|calls|invokes|performs)\b')
+        grants = {
+            'records': 'The leaf records each disposition through `manage-status` in the orchestrator store.',
+            'appends': 'The leaf appends the drafted row via `orchestrator queue` once the mapping is settled.',
+            'authors': 'The leaf authors the landing record inside `.plan/local/orchestrator/{slug}/landings/`.',
+            'is-responsible-for-writing': (
+                'The leaf is responsible for writing each settled verdict with `corpus set-verdict`.'
+            ),
+        }
+        for label, sentence in grants.items():
+            fixture = tmp_path / f'wide-grant-{label}.md'
+            fixture.write_text(sentence + '\n', encoding='utf-8')
+
+            found = _leaf_write_grants(_normalized(fixture))
+
+            assert found, f'the grant scan missed the {label} phrasing: {sentence}'
+            assert not superseded.search(sentence.lower()), (
+                f'the {label} fixture is phrased with a verb the narrow set already matched, so it '
+                f'cannot witness the widening — repick the verb: {sentence}'
+            )
+
+    def test_a_prohibition_is_not_read_as_a_grant(self, tmp_path):
+        # The matched negative half of direction 2's control, and the one that
+        # actually bites: every real statement pairing a leaf with a forbidden
+        # call is a PROHIBITION, so a grant scan that ignored negation would
+        # report the containment rule itself as the violation.
+        rule = tmp_path / 'prohibition.md'
+        rule.write_text(
+            'A drafting leaf MAY compose a spec draft; it MAY NOT call `Write`/`Edit` inside '
+            '`.plan/local/orchestrator/{slug}/**`, `manage-status` or `manage-logging --store '
+            'orchestrator`, `orchestrator queue`, or `corpus set-verdict`.\n\n'
+            'No leaf dispatched by an orchestrator verb writes inside '
+            '`.plan/local/orchestrator/{slug}/**`.\n',
+            encoding='utf-8',
+        )
+
+        assert _leaf_write_grants(_normalized(rule)) == []
+
+    def test_a_grant_sharing_a_sentence_with_an_unrelated_prohibition_is_detected(self, tmp_path):
+        # The gap this control closes: negation used to be checked over the
+        # WHOLE sentence, so a semicolon-joined sentence pairing a real grant in
+        # one clause with an unrelated prohibition in another clause let the
+        # prohibition's negation silently suppress the grant. This fixture
+        # mirrors the real shape at orchestration-model.md's write-freedom
+        # bullet (a permission clause followed by `;` and an unrelated
+        # prohibition clause), but with the first clause naming an ACTUAL
+        # forbidden target so a sentence-scoped negation check would have
+        # missed it.
+        #
+        # The negation check below asserts with `_NEGATION_RE` ITSELF, never a
+        # hand-transcribed subset: a local copy of the vocabulary drifts out of
+        # sync with the live pattern in both directions — it can stay green
+        # after `_NEGATION_RE` drops a word the fixture relies on (this control
+        # then witnesses nothing), and it can fail red against a fixture phrased
+        # with a word `_NEGATION_RE` still recognizes but the copy does not.
+        # `_leaf_write_grants` itself already exercises `_NEGATION_RE` on the
+        # real path; this second assertion only confirms the fixture actually
+        # carries a negation at all, so it must consult the same authority.
+        fixture = tmp_path / 'clause-scoped-grant.md'
+        fixture.write_text(
+            'The leaf writes the queue row itself via `manage-status`; it may not touch `epic.md` directly.\n',
+            encoding='utf-8',
+        )
+
+        found = _leaf_write_grants(_normalized(fixture))
+
+        assert found, 'the grant scan missed a real grant sharing a sentence with an unrelated prohibition'
+        assert _NEGATION_RE.search(fixture.read_text(encoding='utf-8').lower()), (
+            'the fixture is supposed to carry a negation word somewhere in the sentence — otherwise '
+            'this control does not exercise clause-scoping at all'
+        )
+
+    def test_the_sanctioned_dispatch_index_count_matches_the_verb_docs(self):
+        """orchestration-model.md's seven-entry index must agree with the verb docs.
+
+        The index asserts its own cardinality ("these **seven**, and this list is
+        a complete index of them") but nothing machine-checked it against
+        analyze.md and decompose.md before this test. A count derived
+        independently from the two verb docs — never from the index's own
+        parenthetical numbers — is what catches an added or removed entry.
+        """
+        text = _normalized(_ORCHESTRATION_MODEL_MD)
+        match = _SANCTIONED_INDEX_RE.search(text)
+        assert match, (
+            'could not locate the "sanctioned dispatchable sub-steps" index sentence in '
+            f'{_ORCHESTRATION_MODEL_MD.name} — has it been reworded?'
+        )
+
+        claimed_word = match.group('word').lower()
+        assert claimed_word in _INDEX_NUMBER_WORDS, (
+            f'unrecognized cardinality word {claimed_word!r} in the index sentence — add it to '
+            '_INDEX_NUMBER_WORDS if this is a legitimate new count'
+        )
+        claimed_count = _INDEX_NUMBER_WORDS[claimed_word]
+
+        entry_numbers = [int(n) for n in _PAREN_ENTRY_RE.findall(match.group('body'))]
+        assert entry_numbers, (
+            'the index sentence body contained no numbered "(N)" entries at all — the population this '
+            'test quantifies over would be empty'
+        )
+        assert entry_numbers == list(range(1, len(entry_numbers) + 1)), (
+            f'the index entries are not sequential starting at 1: {entry_numbers} — a renumbering or a '
+            'dropped/duplicated entry would produce exactly this gap'
+        )
+        assert len(entry_numbers) == claimed_count, (
+            f'the index sentence claims {claimed_word} ({claimed_count}) entries but its own numbered '
+            f'list carries {len(entry_numbers)}: {entry_numbers}'
+        )
+
+        analyze_count = _dispatch_index_entry_count(_ANALYZE_MD)
+        decompose_count = _dispatch_index_entry_count(_DECOMPOSE_MD)
+
+        assert analyze_count > 0 and decompose_count > 0, (
+            f'the per-verb-doc derivation is vacuous (analyze.md={analyze_count}, '
+            f'decompose.md={decompose_count}) — a zero here would let the cross-check below pass '
+            'trivially rather than by genuine agreement'
+        )
+
+        derived_total = analyze_count + decompose_count
+        assert derived_total == claimed_count, (
+            f'{_ORCHESTRATION_MODEL_MD.name} claims {claimed_count} sanctioned dispatchable sub-steps, '
+            f'but deriving independently from the verb docs gives {derived_total} '
+            f'(analyze.md={analyze_count}, decompose.md={decompose_count}) — the index and the verb '
+            'docs have drifted apart'
+        )
+
+    def test_a_doc_missing_its_dispatchable_bullets_drops_the_derived_count(self, tmp_path):
+        # Matched control: a doc carrying NEITHER a top-level dispatchable
+        # bullet NOR a nested draft bullet NOR a spec_body return field must
+        # derive to zero — the non-vacuity assertion above depends on this.
+        empty = tmp_path / 'no-dispatch-bullets.md'
+        empty.write_text('# Not a dispatch doc\n\nJust prose, no dispatchable bullets here.\n', encoding='utf-8')
+
+        assert _dispatch_index_entry_count(empty) == 0
+
+    def test_a_decompose_shaped_doc_counts_as_two(self, tmp_path):
+        # Matched control: a single top-level Dispatchable bullet whose return
+        # shape also carries spec_body counts as TWO entries (read + draft),
+        # mirroring decompose.md's real shape — never one.
+        fixture = tmp_path / 'decompose-shaped.md'
+        fixture.write_text(
+            '- **Dispatchable** — reads the corpus. Return shape: `candidates[N]{spec_body}`.\n',
+            encoding='utf-8',
+        )
+
+        assert _dispatch_index_entry_count(fixture) == 2
+
+    def test_an_analyze_shaped_doc_counts_reads_and_drafts_separately(self, tmp_path):
+        # Matched control: two top-level bullets plus three nested draft
+        # bullets sum to five, mirroring analyze.md's real shape, with no
+        # bonus applied since the nested bullets already account for drafts.
+        fixture = tmp_path / 'analyze-shaped.md'
+        fixture.write_text(
+            '- **Dispatchable** — corroboration.\n\n'
+            '- **Two-stage for untrusted third-party text** — reader extraction.\n\n'
+            '  - **The Step 4 item 1 landing-report body** — a draft.\n'
+            '  - **The Step 5b per-message dispositions** — a draft.\n'
+            '  - **The Step 5b Stage new-spec body** — a draft.\n',
+            encoding='utf-8',
+        )
+
+        assert _dispatch_index_entry_count(fixture) == 5

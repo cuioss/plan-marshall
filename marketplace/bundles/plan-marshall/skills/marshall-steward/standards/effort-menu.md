@@ -6,7 +6,9 @@
 
 The Effort submenu is a single preset-picker. The user chooses one of three named presets — `economic`, `balanced`, `high-end` — and the wizard delegates to `manage-config effort apply-preset`, which **completely overwrites** the per-phase effort configuration with the preset payload. Per-role values come from the `EffortPresets` constant-class in [`plan-marshall/scripts/effort_presets.py`](../../plan-marshall/scripts/effort_presets.py); validation against the level enum from [`plan-marshall:plan-marshall/standards/effort-levels.md`](../../plan-marshall/standards/effort-levels.md) is enforced at constant-class construction (an import-time `_validate_preset` self-check) and re-validated defense-in-depth at write time inside `manage-config`. The new preset takes effect on the next dispatch — the resolver reads `marshal.json` fresh per call, so no Claude Code restart is required.
 
-> For per-role fine-tuning beyond the three presets, edit `.plan/marshal.json` directly. The wizard intentionally does not expose per-role editing — the preset-then-manual-edit split keeps the wizard small and the tweak point obvious.
+**The overwrite is scoped to the `plan` block.** `apply-preset` writes `plan.effort` and each `plan.<phase>.effort`, and it never touches the sibling top-level `orchestrator.effort` block — so an orchestrator surface pinned through `effort set --scope orchestrator.{surface}` **survives a preset apply unchanged**. What an apply does move on the orchestrator side is every *unpinned* surface: those resolve through `plan.effort`, and the apply rewrites exactly that.
+
+> For per-role fine-tuning beyond the three presets, use the surgical writer — `manage-config effort set --scope {phase}.{role} --level {level}` for a phase role, `--scope orchestrator.{surface}` for an orchestrator surface. ⛔ **Never edit `.plan/marshal.json` by hand**: `.plan/` access goes through the `manage-*` scripts, and the writer normalises a pre-existing scalar `effort` shorthand into an object and preserves every sibling sub-key, which a hand edit does not. The wizard intentionally does not expose per-role editing — the preset-then-surgical-write split keeps the wizard small and the tweak point obvious.
 
 This document is the contract. The wizard implementation in `SKILL.md` (Main Menu Option 4) loads this file when the user picks "Effort".
 
@@ -39,6 +41,8 @@ It reconstructs the `{default, roles}` payload from `.plan/marshal.json` (the `p
 
 `effort identify` matches the current presets first and then the pre-respread shapes recorded in `EffortPresets._LEGACY_PRESETS`, so a value re-spread never silently reclassifies a working config as `custom`. The recogniser walks `EffortPresets.all_names()`, so any future preset added to `effort_presets.py` is picked up here without further wizard changes.
 
+⛔ **`effort identify` reconstructs its payload from the `plan` block alone**, so a pinned `orchestrator.effort` is **invisible** to the `Current: …` line. The wizard can therefore report a clean preset match while the orchestrator surfaces sit at levels that preset never names — the line classifies the per-phase configuration and makes no claim about the orchestrator block. Read an orchestrator surface directly with `manage-config effort read --role orchestrator.{surface}` and judge it by the returned `source`: `orchestrator.effort.{surface}` means pinned, `plan.effort` means it is tracking the plan-wide fallback.
+
 ### Step 2: Preset Selection
 
 Single `AskUserQuestion` with four options. Each preset's description is sourced verbatim from `EffortPresets.describe(name)` so the wizard never duplicates the preset's per-role rationale.
@@ -70,7 +74,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   effort apply-preset --preset <name>
 ```
 
-with `<name>` set to the canonical preset name (`economic`, `balanced`, or `high-end`). The script completely overwrites the per-phase effort configuration — any `effort` attributes present in the previous configuration but absent from the preset are gone after the write.
+with `<name>` set to the canonical preset name (`economic`, `balanced`, or `high-end`). The script completely overwrites the per-phase effort configuration — any `effort` attributes present in the previous configuration but absent from the preset are gone after the write. The sibling `orchestrator.effort` block lies outside that scope and is left exactly as it stands.
 
 After a successful save:
 
