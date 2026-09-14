@@ -311,9 +311,13 @@ This skill runs as a leaf inside the `execution-context` envelope — it issues 
       | `status` | Exit code | What it established | What to do |
       |----------|-----------|---------------------|------------|
       | `success` | `0` / `1` | The log enumerated a run, and every written identifier was searched for in it. `passed` is the verdict. | Read `passed` — take the `passed: true` branch (mark task done) or the `passed: false` branch (mark `requires_attention`) below. |
-      | `could_not_look` | `3` | The supplied log carries **no pytest nodeid at all**, so nothing was searched. `passed`, `found_count` and `missing_count` are **absent from the payload**. | Take the `status: could_not_look` branch below — re-supply the right log. |
+      | `could_not_look` | `3` | The supplied log carries **no pytest nodeid on any outcome-bearing line**, so nothing was searched. `passed`, `found_count` and `missing_count` are **absent from the payload**. | Take the `status: could_not_look` branch below — re-supply the right log. |
 
       ⛔ `could_not_look` is NOT a failure and NOT a pass. Its `found_count` / `missing_count` are omitted precisely so a caller cannot read a measured zero off a run that measured nothing; treating an absent `passed` as falsy re-creates the defect the outcome exists to remove. Both shapes carry `log_enumerates_nodeids` and `log_nodeid_count`, so a green result also states the population its verdict was computed over.
+
+      ⛔ **Only a line on which pytest reported a per-test OUTCOME is evidence.** Both the population count and the per-identifier match consider only lines carrying a `PASSED` / `FAILED` / `ERROR` / `SKIPPED` / `XFAIL` / `XPASS` token — the shape of pytest's `-v` line, its xdist scheduling line, and its `-ra` short-summary line. A nodeid anywhere else proves nothing and is deliberately ignored: a log that merely ECHOES its own invocation (`uv run pytest test/foo.py::test_login -v`) would otherwise supply both a non-zero population and an exact match, reporting a measured pass over a run in which pytest never collected or executed anything. A `--deselect` argument names a nodeid precisely because that test did NOT run, and a bare `--collect-only` listing establishes collection rather than execution — neither qualifies.
+
+      ⛔ **The coverage pair is TRI-STATE, and both fields move together.** `log_enumerates_nodeids: null` with `log_nodeid_count: null` means the log was never opened at all (the empty-identifier vacuous pass), so no population was counted. `false` / `0` is the different, measured fact that the log WAS read and reported no test outcome. Never read a `null` as a `false`.
 
    4. On `status: success` with `passed: true`: proceed to the standard "Mark task done" path.
    5. On `status: success` with `passed: false`: do NOT mark the task `done` — the run was silently incomplete. Log, mark the task `requires_attention`, and surface the mismatch in the return value:
@@ -324,7 +328,7 @@ This skill runs as a leaf inside the `execution-context` envelope — it issues 
      --message "[VERIFY] (plan-marshall:execute-task) Diff assertion failed: {missing_count} written test identifiers absent from module-test log — {missing}"
    ```
 
-   6. On `status: could_not_look`: do NOT mark the task `done`, and do NOT report a diff-assertion failure — there is no diff. The usual cause is the WRONG LOG: the build wrapper's own TOON reply and the build-server job log are summaries that name a `log_file` rather than enumerating the run, while the per-run **build-results** log the `log_file` field points at does enumerate every nodeid. Re-run the assertion against that path. Log the gap and carry it into the return value as an unmeasured check rather than a passed one:
+   6. On `status: could_not_look`: do NOT mark the task `done`, and do NOT report a diff-assertion failure — there is no diff. The usual cause is the WRONG LOG: the build wrapper's own TOON reply and the build-server job log are summaries that name a `log_file` rather than enumerating the run, while the per-run **build-results** log the `log_file` field points at does enumerate every nodeid. The second cause is a log that CARRIES a nodeid but only on its echoed command line — a run that died before collection — which is a real signal that pytest never ran, not a wrong-log mistake. Re-run the assertion against the build-results path. Log the gap and carry it into the return value as an unmeasured check rather than a passed one:
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -346,8 +350,8 @@ verification:
   tests_failed: N
   diff_assertion:
     status: success | could_not_look
-    log_enumerates_nodeids: true | false
-    log_nodeid_count: N
+    log_enumerates_nodeids: true | false | null   # null = the log was never opened
+    log_nodeid_count: N | null                    # null = not counted; 0 = counted, none found
     passed: true | false                 # omitted on could_not_look
     missing_count: N                     # omitted on could_not_look
     parametrized_match_count: N          # omitted on could_not_look

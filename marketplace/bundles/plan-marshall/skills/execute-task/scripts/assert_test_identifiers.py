@@ -61,12 +61,24 @@ branching on ``passed`` could not tell them apart.
 
 The discriminator is therefore structural and is computed **before** any
 identifier is searched for: does the supplied log carry a pytest nodeid token
-(``<path>.py::<name>``) anywhere? Every log that enumerates a run carries them —
-pytest's ``-v`` per-test lines, its ``-rsfE`` short-summary lines, and its
-failure headers all do. A log that carries none never enumerated a run, whatever
+(``<path>.py::<name>``) on a line where pytest reported that test's OUTCOME?
+Every log that enumerates a run carries such lines — pytest's ``-v`` per-test
+lines, its xdist scheduling lines, and its ``-rsfE`` short-summary lines all
+pair the nodeid with a ``PASSED`` / ``FAILED`` / ``ERROR`` / ``SKIPPED`` /
+``XFAIL`` / ``XPASS`` token. A log that carries none never ran a test, whatever
 else it contains.
 
-When it carries none the helper returns the **could-not-look** outcome:
+The outcome-token requirement is load-bearing in both directions, and the same
+restriction governs the per-identifier match below. A module-test log that
+merely ECHOES its own invocation (``uv run pytest test/foo.py::test_login -v``)
+carries a nodeid on that echo line alone; counting it yielded a non-zero
+population AND an exact match for the written identifier, so the check reported
+a measured pass over a run in which pytest never collected or executed
+anything. Restricting both the population and the match to outcome-bearing
+lines is what keeps the command echo and the surrounding prose from satisfying
+either. See :func:`is_pytest_result_line`.
+
+When the log carries no such line the helper returns the **could-not-look** outcome:
 ``passed`` is ``None``, ``status`` is ``could_not_look``, and ``found_count`` /
 ``missing_count`` are **omitted from the payload entirely**. The omission is the
 contract, not an oversight: a ``0`` published by a run that searched nothing is
@@ -83,9 +95,9 @@ Contract
 
 ``assert_identifiers_in_log(written_identifiers, log_path) -> DiffResult``
 
-* Reads ``log_path`` line by line, counts the distinct pytest nodeid tokens it
-  carries, and — only when that count is non-zero — checks each identifier in
-  ``written_identifiers`` against every line. Returns a :class:`DiffResult`
+* Reads ``log_path`` line by line, counts the distinct pytest nodeid tokens its
+  outcome-bearing lines carry, and — only when that count is non-zero — checks
+  each identifier in ``written_identifiers`` against those same lines. Returns a :class:`DiffResult`
   whose ``passed`` is ``None`` iff the log enumerated no nodeid — nothing was
   searched for, so neither verdict was established and ``missing`` is empty for
   that reason rather than for a measured one. On the MEASURED path alone
@@ -108,7 +120,9 @@ CLI
 
 ``--identifiers-file`` is a newline-delimited list of identifiers; blank lines
 are stripped. TOON output carries ``status``, ``log_enumerates_nodeids``,
-``log_nodeid_count``, and — on the measured path only — ``passed``,
+``log_nodeid_count`` — the coverage pair, both tri-state: ``null`` when the log
+was never opened, ``false`` / ``0`` only after a measured zero — and, on the
+measured path only, ``passed``,
 ``found_count``, ``missing_count``, ``parametrized_match_count``, the
 ``found_forms[]{identifier,matched_form}`` table, and the ``missing[]`` table,
 so callers can surface the gap — and tell an exact match from a
@@ -149,6 +163,44 @@ from toon_parser import serialize_toon
 #: status token is not swallowed into it.
 _NODEID_TOKEN_RE = re.compile(r'(?<!\S)(\S+\.py::\S+?)(?=\s|$)')
 
+#: Matches a pytest per-test outcome token as a standalone word. This is the
+#: RESULT-LINE discriminator: every line on which pytest reports a per-test
+#: outcome carries one of these adjacent to the nodeid — the ``-v`` progress
+#: line (``nodeid PASSED [ 12%]``), the xdist scheduling line
+#: (``[gw0] [ 10%] PASSED nodeid``), and the ``-ra`` short-summary line
+#: (``FAILED nodeid - AssertionError``) all do.
+#:
+#: The word boundaries are explicit rather than ``\b`` so that a section banner
+#: (``==== ERRORS ====``) does not qualify a line: ``ERRORS`` continues with an
+#: identifier character, so the trailing look-ahead refuses it.
+_PYTEST_OUTCOME_RE = re.compile(r'(?<![A-Za-z0-9_])(?:PASSED|FAILED|ERROR|SKIPPED|XFAIL|XPASS)(?![A-Za-z0-9_])')
+
+
+def is_pytest_result_line(line: str) -> bool:
+    """Return whether ``line`` is a pytest per-test RESULT line.
+
+    A nodeid is only evidence that a test ran when it appears on a line where
+    pytest itself reported that test's outcome. Any other line may carry a
+    nodeid for reasons that prove nothing: the build wrapper echoes its own
+    invocation (``uv run pytest test/foo.py::test_login -v``), a ``--deselect``
+    argument names a nodeid precisely because it did NOT run, and surrounding
+    prose quotes nodeids freely. Counting those made the guardrail satisfiable
+    by a log in which pytest never collected or ran anything at all — the
+    command echo alone yielded both a non-zero nodeid population AND an exact
+    match for the written identifier.
+
+    The discriminator is the per-test outcome token (``PASSED`` / ``FAILED`` /
+    ``ERROR`` / ``SKIPPED`` / ``XFAIL`` / ``XPASS``), which pytest writes
+    adjacent to the nodeid on every line that reports a result and which no
+    command echo carries.
+
+    ⛔ This deliberately also excludes a bare ``--collect-only`` listing, whose
+    lines are plain nodeids indistinguishable from an echoed argument. That is
+    the intended narrowing, not collateral damage: this helper exists to prove a
+    written test RAN, and collection alone does not establish that.
+    """
+    return _PYTEST_OUTCOME_RE.search(line) is not None
+
 
 def count_log_nodeids(lines: Iterable[str]) -> int:
     """Return how many DISTINCT pytest nodeid tokens ``lines`` carries.
@@ -158,10 +210,17 @@ def count_log_nodeids(lines: Iterable[str]) -> int:
     scheduling line, the PASSED line, the durations table), and a total would
     report a single-test log as a rich one.
 
-    A zero means the log enumerated no test at all, which is the one state in
-    which searching it for a written identifier establishes nothing.
+    Only lines that :func:`is_pytest_result_line` accepts contribute. A nodeid
+    on any other line is not evidence of a run — see that function for why the
+    command echo the build wrapper writes would otherwise supply a population
+    all by itself.
+
+    A zero means the log reported no test outcome at all, which is the one state
+    in which searching it for a written identifier establishes nothing.
     """
-    return len({match.group(1) for line in lines for match in _NODEID_TOKEN_RE.finditer(line)})
+    return len(
+        {match.group(1) for line in lines if is_pytest_result_line(line) for match in _NODEID_TOKEN_RE.finditer(line)}
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -270,6 +329,12 @@ def assert_identifiers_in_log(
             log_nodeid_count=0,
         )
 
+    # Search ONLY the lines pytest reported an outcome on. A nodeid anywhere
+    # else — most commonly the build wrapper's echo of its own pytest
+    # invocation — is not evidence that the test ran, and matching against it
+    # let a log in which pytest never ran satisfy the identifier check.
+    result_lines = [line for line in lines if is_pytest_result_line(line)]
+
     found: list[str] = []
     found_forms: list[str] = []
     missing: list[str] = []
@@ -295,10 +360,10 @@ def assert_identifiers_in_log(
         # colliding sibling continues with an identifier character, not ``[``.
         # The left anchor is the same one, for the same reason.
         parametrized = re.compile(rf'(?<!\S){escaped}\[')
-        if any(exact.search(line) for line in lines):
+        if any(exact.search(line) for line in result_lines):
             found.append(identifier)
             found_forms.append('exact')
-        elif any(parametrized.search(line) for line in lines):
+        elif any(parametrized.search(line) for line in result_lines):
             found.append(identifier)
             found_forms.append('parametrized')
         else:
@@ -361,9 +426,17 @@ def _emit_toon(result: DiffResult, identifiers_supplied: int) -> None:
     ``log_enumerates_nodeids`` and ``log_nodeid_count`` ride BOTH shapes: a
     caller reading a green result should still be able to see the population the
     verdict was computed over.
+
+    Both coverage fields are **tri-state**, and they move together.
+    ``log_nodeid_count`` is ``None`` exactly when the log was never opened (the
+    empty-input vacuous pass), and ``log_enumerates_nodeids`` is then ``null``
+    too — never ``false``. A ``false`` there would say the log was read and
+    enumerated nothing, which is a different fact from *not counted* and is the
+    very collapse ``DiffResult.log_nodeid_count``'s tri-state exists to prevent.
+    ``false`` is emitted only after a measured zero.
     """
     coverage: dict[str, object] = {
-        'log_enumerates_nodeids': bool(result.log_nodeid_count),
+        'log_enumerates_nodeids': (None if result.log_nodeid_count is None else result.log_nodeid_count > 0),
         'log_nodeid_count': result.log_nodeid_count,
     }
 
