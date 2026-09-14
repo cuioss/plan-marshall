@@ -706,7 +706,10 @@ def test_every_record_key_is_declared_in_the_ext_point_document():
 #: resolves — used to scan both ``marketplace/`` and ``test/`` for real
 #: frontmatter-field consumers, never hand-maintained as a second path.
 def _repo_root() -> Path:
-    return _disc.get_marketplace_bundles_path().parent.parent
+    # ``_disc`` is loaded dynamically, so the path chain is untyped; Path()
+    # pins the declared return rather than leaking Any into every caller —
+    # the same pattern _ext_point_doc_text() uses above.
+    return Path(_disc.get_marketplace_bundles_path()).parent.parent
 
 
 def _code_read_keys(candidate_keys: set[str]) -> set[str]:
