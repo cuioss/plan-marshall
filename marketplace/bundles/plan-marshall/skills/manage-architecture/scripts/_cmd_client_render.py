@@ -94,7 +94,14 @@ def _resolver_provenance_line(resolver_reports: list[dict[str, Any]]) -> str:
     RESOLVER derived anything — and say where a listed dependency came from
     instead of implying there is none.
     """
-    declared_note = 'no edges were derived by a resolver; any dependency listed above is declared'
+    # The note must cover EVERY reserved non-resolver provenance the docstring
+    # above names, not just the first one. Naming only ``declared`` describes a
+    # ``sibling-cross-link`` edge listed in the table above as declared, which is
+    # the same contradiction-with-the-table the qualification exists to remove —
+    # narrowed from "there are no edges" to "every edge here is declared".
+    declared_note = (
+        'no edges were derived by a resolver; any dependency listed above is declared or a virtual-sibling cross-link'
+    )
 
     if not resolver_reports:
         return f'_Edge provenance: no derivation resolver is registered — {declared_note}._'

@@ -553,7 +553,11 @@ def test_overview_footer_does_not_deny_a_declared_edge_it_just_rendered(plan_con
     # footer assertion below would hold vacuously.
     assert 'core' in rendered
     assert 'no edges were derived by a resolver' in rendered
-    assert 'any dependency listed above is declared' in rendered
+    # The note names EVERY reserved non-resolver provenance, not only the first.
+    # ``sibling-cross-link`` is the other one, and a footer that named only
+    # ``declared`` would describe such an edge — listed in the very table above —
+    # as declared, narrowing the contradiction rather than removing it.
+    assert 'any dependency listed above is declared or a virtual-sibling cross-link' in rendered
 
 
 def test_no_registered_resolver_footer_is_qualified_the_same_way(plan_context, monkeypatch):
@@ -571,7 +575,9 @@ def test_no_registered_resolver_footer_is_qualified_the_same_way(plan_context, m
 
     assert 'no derivation resolver is registered' in rendered
     assert 'no edges were derived by a resolver' in rendered
-    assert 'any dependency listed above is declared' in rendered
+    # Symmetry extends to the WHOLE note: both branches name both reserved
+    # non-resolver provenances, so neither can under-declare where the other does not.
+    assert 'any dependency listed above is declared or a virtual-sibling cross-link' in rendered
 
 
 # =============================================================================
