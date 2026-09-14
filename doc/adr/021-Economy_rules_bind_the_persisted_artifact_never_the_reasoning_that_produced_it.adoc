@@ -1,0 +1,234 @@
+= ADR-021: Economy rules bind the persisted artifact, never the reasoning that produced it
+:toc: left
+:toclevels: 2
+:sectnums:
+
+// adr-metadata
+// Progressive-disclosure metadata block (see manage-adr SKILL.md → "ADR Template
+// Structure"). Read by `manage-adr.py scan` so a caller can assess an ADR's
+// relevance without reading the full file. List fields are comma-separated.
+// summary: A dispatch boundary discards the reasoning behind it, so brevity and economy rules attach to what crosses that boundary and persists, never to the model's thinking; and because a persisted artifact is read by a party that no longer has access to the reasoning that justified it, its discipline is density — cut what restates, keep what derives — never brevity, which degrades a derivation into an assertion.
+// tags: token-economy, dispatch-boundary, persistence, artifact-contract, anti-vacuity, derivation, return-shape, context-cost
+// affects: plan-marshall, persona-plan-marshall-agent, ref-workflow-architecture, extension-api, execution-context, manage-metrics, phase-6-finalize
+// supersedes:
+// end-adr-metadata
+
+// Authoring discipline (see manage-adr SKILL.md → "Authoring Discipline"):
+// ADRs are durable architectural statements, not incident write-ups. No PR numbers,
+// commit SHAs, dates, or lesson IDs anywhere in the body. CLAUDE.md's "current state
+// only" rule applies — describe the architecture, not the chronology.
+
+== Status
+
+Proposed
+
+== Context
+
+Proposals to reduce what this system costs to run arrive regularly, and they
+arrive aimed at generation: instruct the model to think less, reason more
+tersely, deliberate within a word ceiling. The intuition is sound in the setting
+those proposals are usually measured in — a short prompt against a long
+response, where generation genuinely dominates the bill.
+
+This system's cost has the opposite shape. A large context is assembled once and
+re-read on every subsequent turn, so the dominant term is resident context
+multiplied by turns, and generation is a small minority of billing weight even
+after output's price premium is applied.
+
+The discriminator between the two settings is the **input:output ratio of the
+workload a result was measured on**:
+
+[cols="1,2,2", options="header"]
+|===
+| | Where such results are measured | This system
+
+| input per call
+| a short prompt — a record and a few lines of instruction
+| a large context, cached and resident
+
+| output per call
+| a long reasoning trace
+| comparatively little
+
+| dominant term
+| *output*
+| *input* — resident context × turns
+|===
+
+Short-prompt, single-shot work is one of the few regimes where generation
+genuinely dominates a bill, and it is the regime nearly every published
+token-saving result comes from. Almost none comes from long-lived agent
+contexts. That alone makes generation a poor target here. But the structural
+reason the proposals misfire is sharper than the arithmetic, and it survives any
+re-measurement:
+
+**The dispatch topology already discards reasoning.** A dispatched
+`execution-context` leaf may deliberate at whatever length its effort level
+warrants and returns a bounded struct; its reasoning does not cross the boundary
+and the parent never pays to re-read it. The boundary is already the compressor
+that a thinking-word-ceiling would be trying to install by instruction. There is
+no reasoning-side lever left to pull, and the one knob that genuinely governs
+deliberation depth — the effort level pinned per dispatch variant — is a
+separate mechanism whose reduction this project rejects on measured grounds:
+lowering it reduces examination, and the findings that stop appearing were being
+found.
+
+What does cross the boundary, and what is therefore paid for repeatedly, is the
+**persisted artifact** — the return struct, the status field, the finding
+record, the report body, the specification. Each such artifact enters context
+once and is re-read for the remainder of every run that touches it, and each is
+read by a party that did not produce it.
+
+That second property is the one that inverts the advice. The reader of an
+artifact has no access to the reasoning that justified it: the reasoning was
+discarded at the boundary the artifact crossed. An artifact compressed to its
+verdict is therefore not a compact record of a derivation — it is an assertion,
+indistinguishable to its reader from a guess. Applying a brevity rule there
+manufactures the vacuous-authority shape this project already spends effort
+detecting, and it does so in the name of an economy the artifact surface does
+not even dominate.
+
+So there are two surfaces, with opposite economics and opposite disciplines, and
+proposals routinely address the wrong one because both are loosely called
+"output".
+
+== Decision
+
+**Brevity and economy rules attach to what persists across a boundary. They
+never attach to the model's reasoning.** Two obligations follow.
+
+**1. Do not regulate reasoning.** No standard, persona, or skill instructs an
+agent to think less, reason more briefly, or deliberate within a length bound.
+Such a rule is unenforceable — reasoning is not inspectable by a test, a
+structural linter, or CI, so compliance can never be observed — and it targets
+the surface the dispatch boundary already discards. Deliberation depth is
+governed solely by the effort level of the dispatched variant, which is a
+capability decision, not an economy one.
+
+**2. Govern persisted artifacts by density, not brevity.** Every artifact that
+crosses a boundary is bounded, and the bound has a fixed order:
+
+* **The completeness floor comes first.** What the artifact's reader must have
+  in order to decide — what failed and why, what was skipped and under what
+  condition, what landed only partially, and the enumeration behind any claim of
+  a set, a count, or a completeness — is never trimmed. Brevity is never the
+  justification for dropping one of these.
+* **The ceiling applies only to what the floor has released.** What is cut is
+  restatement: narration of work already concluded, reasoning re-told after its
+  conclusion is stated, and any copy of content a queryable sink already holds
+  verbatim. The canonical move is to replace a restatement with a pointer at its
+  source, which reduces size and raises trustworthiness together.
+
+The discrimination is **restatement versus evidence**, and it is the whole rule;
+the floor and the ceiling are its two halves. A shorter artifact that dropped a
+failure is not a compact artifact, it is a wrong one — and the copy that
+restates is also the copy that goes stale.
+
+Because the rule binds the artifact rather than the agent, it is enforceable: an
+artifact's shape can be checked structurally, and the surfaces that carry hard
+bounds already are.
+
+**The regime test screens incoming proposals.** A published economy result is
+assessed by establishing the input:output ratio of the workload it was measured
+on *before* asking whether it transfers. A result from an output-dominated
+regime does not carry to an input-dominated one, and the two are not
+distinguished by anything in the result's own framing.
+
+== Consequences
+
+=== Positive
+
+* Cost proposals get routed correctly on first reading. A lever aimed at
+  reasoning is rejected structurally rather than re-argued from measurement each
+  time it arrives.
+* The artifact discipline that does pay is stated once as a principle, so the
+  standards that implement it per direction are recognisable as instances rather
+  than independent conventions.
+* Density and trustworthiness stop being in tension. Cutting restatement makes
+  artifacts both smaller and more reliable, so the economy goal no longer
+  competes with the anti-vacuity goal.
+* An artifact's bound is machine-checkable, which the reasoning-side version
+  never could be. Enforcement is available where the obligation is.
+
+=== Negative
+
+* Artifacts are larger than a pure brevity rule would make them, because every
+  derivation they assert must be carried rather than summarised away.
+* Authors must judge restatement against evidence per artifact. That judgement
+  is domain work and cannot be applied by a sweep.
+* The rule declines a lever that is genuinely effective elsewhere, so it will
+  keep being proposed by anyone reasoning from results measured in an
+  output-dominated regime.
+
+=== Risks
+
+* **"Density" becomes a licence to expand.** An author can justify any length by
+  calling it evidence. Mitigation: the test is whether a later reader could
+  reach the same conclusion without the bytes — content a sink already holds is
+  restatement regardless of how load-bearing it feels.
+* **The floor is applied to the ceiling's surface.** Carrying a full derivation
+  into a field that exists as a routing summary defeats the field's purpose.
+  Mitigation: hard-bounded fields keep their bounds; the derivation belongs in
+  the sink the summary points at, not in the summary.
+* **The boundary is assumed rather than checked.** The rule's premise is that
+  reasoning does not cross a dispatch boundary. A surface that persists
+  reasoning — a transcript, a verbose log, a report that quotes deliberation —
+  puts it back on the paid side and inherits the artifact discipline, not the
+  exemption.
+* **The instrument understates the surface this rule declines to regulate.** The
+  recorded billing-weighted total sums `input + output + round(0.1 ×
+  cache_read) + round(1.25 × cache_creation)`, weighting output at 1× while every
+  current model prices it at 5× input, so generation's share of real spend is
+  understated fivefold in a figure classed as a derived cost and rendered as a
+  first-class billing column. The correction does not reverse this decision —
+  generation remains a minority term, and the decision rests on the boundary
+  argument rather than on the share — but any re-argument that quotes the
+  recorded figure will understate the surface it is arguing about. A related trap
+  attends any such percentage triple: it reads either as token shares or as
+  weighted-cost shares, and the two differ by more than an order of magnitude.
+  The discriminator is internal — dividing the context terms by their weights
+  must reproduce the independently measured average re-read factor. **Read the
+  producing formula before interpreting the percentage.**
+
+== Alternatives Considered
+
+**Instruct agents to reason tersely.** Add a minimalism rule for thinking to the
+foundational persona. Rejected on three independent grounds: it is
+unenforceable, because reasoning is not inspectable by any check this system
+has; it targets a surface the dispatch boundary already discards; and its
+mechanism reduces to examining less, which is rejected on measurement rather
+than weighed. The foundational persona is also the most expensive place in the
+corpus to add prose, since it loads unconditionally into every dispatch.
+
+**Apply one brevity rule to everything the model emits.** Treat reasoning and
+persisted artifacts as a single "output" surface with a single length
+discipline. Rejected: the two surfaces have opposite economics and opposite
+readers. A rule short enough to matter on the discarded surface destroys the
+derivation on the surface that is read by a party who cannot reconstruct it.
+
+**Lower effort levels.** Reduce deliberation depth directly, through the knob
+that actually controls it. Rejected on first-party measurement: the reduction in
+spend is accompanied by findings ceasing to appear, and the phases that were not
+lowered moved the other way — the prior quiet was under-examination, not
+absence. This is a capability decision, and it is settled separately from
+economy.
+
+**Leave it to per-surface convention.** Let each standard decide its own bound
+as it is written. Rejected: that is the state the rule replaces, and it is why
+proposals aimed at reasoning keep being evaluated on their own terms. Without a
+stated parent, the next surface re-derives the answer, and the next proposal
+gets re-argued.
+
+The rejected options share one property: each treats "how much the model emits"
+as a single quantity with a single cost, when it is two quantities — one
+discarded at a boundary and effectively unpaid, the other persisted and paid for
+on every subsequent read.
+
+== References
+
+* `marketplace/bundles/plan-marshall/skills/persona-plan-marshall-agent/standards/user-communication.md` § Rule 3 — this rule applied to the orchestrator-to-user leg: the completeness floor, then the narration-versus-outcome ceiling.
+* `marketplace/bundles/plan-marshall/skills/ref-workflow-architecture/standards/citations-only-return.md` — this rule applied to the sub-agent return leg: one bounded struct, counts as citations, detail persisted to a queryable sink.
+* `marketplace/bundles/plan-marshall/skills/ref-workflow-architecture/standards/agents.md` — the leaf/dispatch-topology invariant and the agent-return-shape bounds this ADR's premise rests on.
+* xref:003-Reader_isolation_as_a_tool-surface_lever.adoc[ADR-003: Reader isolation as a tool-surface lever] — the same boundary used to contain trust rather than cost; the isolation property this ADR relies on for economy is the one that decision relies on for containment.
+* xref:019-An_audit_separates_what_it_could_not_evaluate_from_what_it_evaluated_and_found_wanting.adoc[ADR-019: An audit separates what it could not evaluate from what it evaluated and found wanting] — the completeness floor is that rule's obligation seen from the economy side: a trimmed derivation and an unreported coverage gap produce the same unfounded clean verdict.
+* `marketplace/bundles/plan-marshall/skills/manage-metrics/standards/data-format.md` — the `billing_weighted_total` definition named in the Risks section; its output weighting is the reason a share quoted from that column understates generation.
