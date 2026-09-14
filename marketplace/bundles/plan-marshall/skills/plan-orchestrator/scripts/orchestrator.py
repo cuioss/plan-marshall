@@ -926,12 +926,14 @@ def _append_plan_row(slug: str, row: dict[str, Any]) -> dict[str, Any]:
                 # caller can name what it found.
                 outcome['invalid_plans'] = type(plans).__name__
                 return state
+            seeded = False
         else:
             # A MEASURED empty queue: the key is absent, so there is nothing to
-            # destroy and seeding the list here is what makes the first staged
-            # row land rather than raising inside the lock.
+            # destroy. Keep the seed LOCAL until an append is certain — every
+            # refusal below returns ``state`` without the key so the refusal
+            # leaves the document byte-identical per the outcome contract.
             plans = []
-            state['plans'] = plans
+            seeded = True
         for existing in plans:
             if isinstance(existing, dict) and existing.get('id') == row['id']:
                 outcome['duplicate'] = existing
@@ -949,6 +951,8 @@ def _append_plan_row(slug: str, row: dict[str, Any]) -> dict[str, Any]:
         if row.get('slug') == slug:
             outcome['epic_slug'] = slug
             return state
+        if seeded:
+            state['plans'] = plans
         plans.append(row)
         state['updated'] = now_utc_iso()
         outcome['row'] = row
@@ -1389,7 +1393,8 @@ def _build_summary(status_doc: dict[str, Any], counts: InboxCounts) -> str:
 
 def _derive_counts(status_doc: dict[str, Any]) -> dict[str, int]:
     """Re-derive, from ``status.json``, every count a rendered block can claim."""
-    plans = [plan for plan in status_doc.get('plans', []) if isinstance(plan, dict)]
+    raw_plans = status_doc.get('plans', [])
+    plans = [plan for plan in raw_plans if isinstance(plan, dict)] if isinstance(raw_plans, list) else []
     tally = Counter(str(plan.get('status', '')) for plan in plans)
     derived = {'rows': len(plans), 'plans': len(plans)}
     for noun in COUNT_CLAIM_NOUNS:
@@ -1627,8 +1632,11 @@ def _epic_slug_rows(status_doc: dict[str, Any], epic_slug: str) -> tuple[list[di
         if not isinstance(row, dict):
             continue
         scanned += 1
-        if row.get('slug', '') == epic_slug:
-            findings.append({'id': str(row.get('id', '')), 'slug': row.get('slug', '')})
+        slug_value = row.get('slug', '')
+        if not isinstance(slug_value, str):
+            return [], 0, 'indeterminate'
+        if slug_value == epic_slug:
+            findings.append({'id': str(row.get('id', '')), 'slug': slug_value})
     return findings, scanned, 'measured'
 
 
@@ -3702,7 +3710,8 @@ def _build_ordered_queue(status_doc: dict[str, Any], root: Path) -> str:
     header = '| # | Plan | Workstream | Status | Surface (expected) |'
     divider = '|---|------|------------|--------|--------------------|'
     lines = [header, divider]
-    rows = [row for row in status_doc.get('plans', []) if isinstance(row, dict)]
+    raw_plans = status_doc.get('plans', [])
+    rows = [row for row in raw_plans if isinstance(row, dict)] if isinstance(raw_plans, list) else []
     live = [row for row in rows if str(row.get('status', '')) not in LIVE_QUEUE_EXCLUDED_STATUSES]
     if not live:
         lines.append('| — | (empty) | — | — | — |')
