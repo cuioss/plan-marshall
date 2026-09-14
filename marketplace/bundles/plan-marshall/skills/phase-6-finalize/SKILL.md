@@ -1743,14 +1743,13 @@ Deliverables (5/5)
   [OK]  4. Simplify standards/record-metrics.md
   [OK]  5. Add display_detail to 9 step standards docs
 
-Finalize steps (10/10 done)
+Finalize steps (9/9 done)
   [OK]  push                              -> a1b2c3d
   [OK]  create-pr                         #212
   [OK]  plan-marshall:automatic-review                  3 comment(s) resolved (no loop-back)
   [OK]  sonar-roundtrip                   quality gate passed
   [OK]  lessons-capture                   no lessons recorded
   [OK]  adr-propose                       no ADRs proposed
-  [OK]  validation                        all required steps done
   [OK]  record-metrics                    1591s / 209327 tokens
   [OK]  branch-cleanup                    main pulled, branch deleted (local+remote), worktree removed
   [OK]  archive-plan                      -> .plan/archived-plans/2026-04-17-lesson-2026-04-17-005
