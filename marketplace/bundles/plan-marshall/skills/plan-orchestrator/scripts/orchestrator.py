@@ -1363,6 +1363,7 @@ def _build_summary(status_doc: dict[str, Any], counts: InboxCounts) -> str:
             helper stays a pure renderer over already-resolved inputs.
     """
     plans = status_doc.get('plans', [])
+    plans = [p for p in plans if isinstance(p, dict)] if isinstance(plans, list) else []
     lines = [
         f'**Resume anchor**: {status_doc.get("resume_anchor") or "(not set)"}',
         f'**Phase**: {status_doc.get("phase", "")}',
@@ -1432,6 +1433,8 @@ def _shared_slug_rows(status_doc: dict[str, Any]) -> tuple[list[dict[str, Any]],
             continue
         scanned += 1
         slug_value = row.get('slug', '')
+        if not isinstance(slug_value, str):
+            return [], 0, 'indeterminate'
         by_slug.setdefault(slug_value, []).append(str(row.get('id', '')))
     findings = [
         {'slug': slug_value, 'plans': ids, 'count': len(ids)}

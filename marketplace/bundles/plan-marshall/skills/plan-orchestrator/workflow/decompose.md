@@ -50,7 +50,7 @@ Author every per-plan carry — claim labels, expected surface, re-grounding ins
 
 ### Step 5: Populate the status.json queue
 
-Write the queue into the machine authority — one `plans[]` entry per staged spec (`{id, slug, workstream, status: staged, plan_marshall_plan_id: "", pr: "", landing: ""}`), plus the `workstreams[]` list. The `slug` field carries the plan's own short slug, unique within the queue, never the epic slug:
+Write the queue into the machine authority — one `plans[]` entry per staged spec (`{id, slug, workstream, status: staged, plan_marshall_plan_id: "", pr: "", landing: ""}`), plus the `workstreams[]` list. The `slug` field carries the plan's own short slug, unique within the queue, never the epic slug. Each plan row MUST be appended through the slug admission gate — one `queue --add-row` call per staged spec — never through a bulk `update-field --field plans` array write, which bypasses the duplicate-slug and epic-slug lint in `orchestrator.py::_append_plan_row`:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status update-field \
@@ -58,9 +58,11 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status update
 ```
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage-status update-field \
-  --plan-id {slug} --field plans --value {plans_json_array} --store orchestrator
+python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator queue \
+  --slug {slug} --add-row {plan_id} --slug-value {plan_slug} --workstream {workstream_id} --status staged
 ```
+
+Repeat the `queue --add-row` call once per staged spec, substituting `{plan_id}`, `{plan_slug}`, and `{workstream_id}` per row. A refused append (`duplicate_slug`, `epic_slug`, `invalid_plans`) writes nothing — repair the row and retry rather than falling back to a bulk array write.
 
 The `{workstreams_json_array}` / `{plans_json_array}` placeholders are a complete JSON array that MUST be passed as ONE shell-safe `--value` argument — single-quote the whole payload so the shell never word-splits or glob-expands the brackets, commas, and quotes. Never interpolate the raw JSON unquoted onto the command line.
 
