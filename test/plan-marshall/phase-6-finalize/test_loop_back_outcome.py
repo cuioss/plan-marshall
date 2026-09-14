@@ -484,9 +484,12 @@ def test_verifier_non_close_states_route_to_the_loop_back_branch():
     rather than pinned as a sentence, so rewording the routing prose does not
     break the test while changing a state's recorded outcome does. The routing
     assertion below runs over EVERY parsed row — a state whose table carries
-    two rows is asserted on both, so a duplicate row recording `done` or
-    `failed` fails on its own row rather than being silently discarded by a
-    dict collapse that keeps only the last row per state.
+    two AGREEING rows is asserted on both, so a pair that both record `done`
+    or `failed` fails on its own row rather than being silently discarded by
+    a dict collapse that keeps only the last row per state. A pair recording
+    DIFFERING outcomes is caught earlier, by the conflicting-outcomes guard
+    below, which reports the contradiction once rather than as a routing
+    failure on one arbitrary row.
     """
     doc = _PRE_SUBMISSION_SELF_REVIEW_MD.read_text(encoding='utf-8')
     section = _section_after(doc, _VERIFIER_STEP_HEADING)
