@@ -156,7 +156,7 @@ The `pr`, `checks`, `issue`, and `branch` subcommand surfaces are common across 
 |---|---|
 | Create a pull request | `ci pr create --title "{title}" --plan-id {id}` |
 | View the PR for the current branch | `ci pr view` |
-| List pull requests | `ci pr list [--head {branch}] [--state open|closed|all]` |
+| List pull requests | `ci pr list [--head {branch}] [--state open\|closed\|all] [--limit {n}]` (`--limit` and the returned `truncated` field are **GitHub-only**, `--limit` defaulting to 100; GitLab argparse-rejects `--limit` and reports no `truncated`, so a GitLab `total` is a page rather than a population) |
 | Reply to a PR | `ci pr reply --pr-number {n} --plan-id {id} [--slot {slot}]` (body via prior `ci pr prepare-comment --for reply`) |
 | Resolve a review thread | `ci pr resolve-thread --thread-id {id}` |
 | Reply within a thread | `ci pr thread-reply --pr-number {n} --thread-id {thread_id} --plan-id {id} [--slot {slot}]` (body via prior `ci pr prepare-comment --for thread-reply`) |

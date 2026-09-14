@@ -1253,6 +1253,49 @@ class TestMissingRequiredFlag:
         assert f['details']['missing'] == ['phase']
 
 
+class TestUnconfidentFlagSurfaceSkipsValidation:
+    """A leaf (or ancestor) whose flags were never confidently derived is skipped.
+
+    ``argparse_surface._derive_node`` registers a child as
+    ``ParserNode(flags_confident=False, ...)`` — an EMPTY ``flags`` set — whenever
+    its own ``--help`` probe fails (non-zero exit, timeout, OSError, empty
+    output). Reading that empty set as "this leaf declares no flags" manufactures
+    a false unknown-flag / missing-required-flag finding for every real flag the
+    script actually accepts. This mirrors the guard the sibling rule already
+    applies (``_analyze_argument_naming._subtree_flags``).
+    """
+
+    def test_unconfident_leaf_suppresses_unknown_flag_and_missing_required(self) -> None:
+        root = surf.ParserNode(
+            children={
+                'repo': surf.ParserNode(
+                    children={
+                        # The leaf's own --help probe failed: empty flags/required_flags,
+                        # flags_confident=False -- NOT "this leaf declares no flags".
+                        'label': surf.ParserNode(flags_confident=False),
+                    }
+                ),
+            },
+        )
+        index = {_SYN_NOTATION: surf.ScriptSurface(root=root)}
+        content = f'python3 .plan/execute-script.py {_SYN_NOTATION} repo label --color blue --description d --label x\n'
+        findings = analyze_manage_invocation_markdown(content, '/fake/SKILL.md', index)
+        assert findings == []
+
+    def test_unconfident_root_suppresses_validation_of_every_subcommand(self) -> None:
+        # An unconfident ROOT poisons validation for every subcommand, not just
+        # the one whose own probe failed -- mirrors
+        # _analyze_argument_naming._entry_from_surface's root_flags=None fallback.
+        root = surf.ParserNode(
+            flags_confident=False,
+            children={'foo': surf.ParserNode(flags={'alpha'}, required_flags={'alpha'})},
+        )
+        index = {_SYN_NOTATION: surf.ScriptSurface(root=root)}
+        content = f'python3 .plan/execute-script.py {_SYN_NOTATION} foo --not-a-flag z\n'
+        findings = analyze_manage_invocation_markdown(content, '/fake/SKILL.md', index)
+        assert findings == []
+
+
 # ---------------------------------------------------------------------------
 # Layer D — missing-canonical-block rule (per in-scope SKILL.md).
 # ---------------------------------------------------------------------------

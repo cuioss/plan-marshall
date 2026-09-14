@@ -60,7 +60,7 @@ _HELP_SURFACE = [
     (('pr', 'close'), ('--pr-number',), ()),
     (('pr', 'ready'), ('--pr-number',), ()),
     (('pr', 'edit'), ('--pr-number', '--title'), ()),
-    (('pr', 'list'), ('--head', '--state'), ()),
+    (('pr', 'list'), ('--head', '--state', '--limit'), ()),
     # --help renders the choices, so the advertised default doubles as the
     # state-choices assertion.
     (('pr', 'list'), ('open',), ()),
@@ -543,3 +543,140 @@ def test_pr_comments_kind_field_on_inline(monkeypatch):
     assert comment['line'] == 10
     assert comment['thread_id'] == 'PRRT_1'
     assert comment['body'] == 'fix this line'
+
+
+# ---------------------------------------------------------------------------
+# pr list — the enumeration bound and the truncation signal.
+#
+# The two `truncated` tests below are a MATCHED PAIR: identical setup differing
+# only in whether the returned row count reaches the requested bound. Each arm
+# alone is consistent with `truncated` being a constant, so deleting or weakening
+# either one voids the other's evidentiary value.
+# ---------------------------------------------------------------------------
+
+
+def _run_pr_list(monkeypatch, rows, **overrides):
+    """Drive ``cmd_pr_list`` over a stubbed ``gh``; return ``(result, captured_argv)``.
+
+    Stubs only the subprocess primitive ``run_gh``, so the argument vector the
+    handler CONSTRUCTED is captured verbatim rather than re-derived from a copy of
+    the builder. ``overrides`` are applied to the Namespace, so a caller can omit
+    ``limit`` entirely to exercise the default.
+    """
+    import argparse
+    import json
+
+    import github_ops
+
+    captured: list[list[str]] = []
+
+    def fake_run_gh(args, capture_json=False, timeout=60):
+        captured.append(list(args))
+        return 0, json.dumps(rows), ''
+
+    monkeypatch.setattr(github_ops, 'check_auth', lambda: (True, ''))
+    monkeypatch.setattr(github_ops, 'run_gh', fake_run_gh)
+
+    fields = {'state': 'open', 'head': None}
+    fields.update(overrides)
+    result = github_ops.cmd_pr_list(argparse.Namespace(**fields))
+    assert len(captured) == 1, f'expected exactly one gh invocation, got {captured}'
+    return result, captured[0]
+
+
+def _pr_row(number: int) -> dict:
+    return {
+        'number': number,
+        'url': f'https://github.com/octo/repo/pull/{number}',
+        'title': f'Change {number}',
+        'state': 'OPEN',
+        'headRefName': f'feature/{number}',
+        'baseRefName': 'main',
+    }
+
+
+def test_pr_list_reports_a_short_listing_as_untruncated(monkeypatch):
+    """A row count BELOW the requested bound is a complete enumeration.
+
+    ``total`` is only quotable as a population on this arm, which is why the
+    bound it was read at travels beside it even when nothing was cut off.
+    """
+    result, _argv = _run_pr_list(monkeypatch, [_pr_row(1), _pr_row(2)], limit=5)
+
+    assert result['status'] == 'success', result
+    assert result['total'] == 2
+    assert result['limit'] == 5
+    assert result['truncated'] is False
+
+
+def test_pr_list_reports_a_limit_filling_listing_as_truncated(monkeypatch):
+    """A row count that REACHES the requested bound is reported as unenumerable.
+
+    A listing exactly filling its bound and one cut short by it are
+    indistinguishable from outside, so both are ``truncated: true``: ``total`` is a
+    floor rather than a population, and a caller must widen the bound instead of
+    quoting the number it has.
+    """
+    result, _argv = _run_pr_list(monkeypatch, [_pr_row(1), _pr_row(2), _pr_row(3)], limit=3)
+
+    assert result['status'] == 'success', result
+    assert result['total'] == 3
+    assert result['limit'] == 3
+    assert result['truncated'] is True
+
+
+def test_pr_list_passes_the_requested_limit_into_the_gh_invocation(monkeypatch):
+    """``--limit`` reaches the constructed ``gh pr list`` argument vector.
+
+    Asserted on the vector the handler handed to the subprocess primitive: a bound
+    the handler reports but never sends leaves the listing capped at the provider's
+    own invisible page size while the payload claims it was read at the requested
+    figure.
+    """
+    _result, argv = _run_pr_list(monkeypatch, [_pr_row(1)], limit=50)
+
+    assert argv[:2] == ['pr', 'list'], argv
+    assert '--limit' in argv, argv
+    assert argv[argv.index('--limit') + 1] == '50', argv
+
+
+def test_pr_list_sends_the_documented_default_when_no_limit_is_supplied(monkeypatch):
+    """A caller supplying no bound still gets an EXPLICIT one of ``100``.
+
+    The Namespace carries no ``limit`` at all here, which is the direct-caller
+    shape that bypasses the argparse default. An unbounded invocation would fall
+    back to the provider's own page size — the silent cap the flag exists to
+    remove — so the default is sent rather than omitted.
+    """
+    result, argv = _run_pr_list(monkeypatch, [_pr_row(1)])
+
+    assert '--limit' in argv, argv
+    assert argv[argv.index('--limit') + 1] == '100', argv
+    assert result['limit'] == 100
+
+
+def test_pr_list_limit_is_accepted_at_verb_scope():
+    """``--limit`` parses where it is declared — on the ``pr list`` subparser.
+
+    The positive arm of the scoping pair. ``--help`` is reached only after the
+    preceding ``--limit 50`` has parsed, so a zero exit is evidence the subparser
+    accepts the flag rather than evidence the help path skipped it.
+    """
+    result = run_script(SCRIPT_PATH, 'pr', 'list', '--limit', '50', '--help')
+
+    assert result.success, f'pr list rejected a verb-scoped --limit: {result.stderr}'
+
+
+def test_pr_list_limit_is_refused_at_router_scope():
+    """The ROOT parser refuses ``--limit``, so it cannot drift up to the router.
+
+    The negative control of the pair above, and the reason the flag is declared on
+    the subparser at all: a router-scoped flag is consumed before the provider
+    parser is built, so it would never reach the ``gh`` invocation — the listing
+    would stay page-bounded while the call still looked accepted. The refusal is
+    what makes that move fail loudly instead of silently.
+    """
+    result = run_script(SCRIPT_PATH, '--limit', '50', 'pr', 'list')
+
+    assert not result.success, 'root parser accepted a router-placed --limit'
+    assert 'error:' in result.stderr, result.stderr
