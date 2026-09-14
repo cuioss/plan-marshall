@@ -114,20 +114,22 @@ Top-level project metadata and the module index.
 
 Each index entry carries two mirrored fields, refreshed from the module's concept
 document by **every writer that touches it** — `discover` rebuilds the whole
-index, and each `enrich` verb writes its module's entry through after saving the
-document:
+index, each `enrich` verb writes its module's entry through after saving the
+document, and `api_init`'s repair/reset branch writes its repaired modules'
+entries through via the same shared `sync_module_index` call (see "Every
+live-path concept-document write also writes the module index through" above):
 
 | Field | Description |
 |-------|-------------|
 | `description` | The module's `responsibility` (its 1-2 sentence description), so a consumer can decide which concept documents to open **from the index alone**. |
 | `generation` | The concept document's generation header `{by, tree_sha}`, so a consumer can derive a staleness verdict (`derive_freshness`) from the tree identifier **without opening the concept body**. |
 
-Refreshing on enrich as well as on discover is what keeps the mirror true. When
+Refreshing on every one of these writers is what keeps the mirror true. When
 only `discover` refreshed it, the index went stale against its own store on the
-first enrich after a discover — it then advertised a description and a provenance
-the documents no longer carried. `enrich all` batches its write-throughs into a
-single `_project.json` write rather than rewriting the file once per
-(module × domain) pair.
+first enrich (or repair) after a discover — it then advertised a description and
+a provenance the documents no longer carried. `enrich all` and `api_init`'s
+repair/reset branch each batch their write-throughs into a single `_project.json`
+write rather than rewriting the file once per module.
 
 The index is **not** the discovery gatekeeper (see "Discovery is the live crawl"
 above): `iter_modules()` crawls the live filesystem, so a module on disk but

@@ -414,17 +414,17 @@ under `.plan/project-architecture/{module}/{derived,enriched}.json`.
 | Command | Reads | Writes |
 |---------|-------|--------|
 | `discover` | Extension API, run-configuration.json | `_project.json` + per-module `{derived,enriched}.json` (via tmp+swap) |
-| `init` | `_project.json` | per-module `enriched.json` (one per module) |
+| `init` | `_project.json` | per-module `enriched.json` (one per module) + `_project.json` (batched index write-through) |
 | `derived` | `_project.json` + per-module `derived.json` | - |
 | `derived-module` | `_project.json` + `{module}/derived.json` | - |
 | `enrich project` | `_project.json` | `_project.json` |
-| `enrich module` | `{module}/enriched.json` | `{module}/enriched.json` |
-| `enrich package` | `{module}/enriched.json` | `{module}/enriched.json` |
-| `enrich skills` | `{module}/enriched.json` | `{module}/enriched.json` |
-| `enrich dependencies` | `{module}/enriched.json` | `{module}/enriched.json` |
-| `enrich tip` | `{module}/enriched.json` | `{module}/enriched.json` |
-| `enrich insight` | `{module}/enriched.json` | `{module}/enriched.json` |
-| `enrich best-practice` | `{module}/enriched.json` | `{module}/enriched.json` |
+| `enrich module` | `{module}/enriched.json` | `{module}/enriched.json` + `_project.json` (index write-through) |
+| `enrich package` | `{module}/enriched.json` | `{module}/enriched.json` + `_project.json` (index write-through) |
+| `enrich skills` | `{module}/enriched.json` | `{module}/enriched.json` + `_project.json` (index write-through) |
+| `enrich dependencies` | `{module}/enriched.json` | `{module}/enriched.json` + `_project.json` (index write-through) |
+| `enrich tip` | `{module}/enriched.json` | `{module}/enriched.json` + `_project.json` (index write-through) |
+| `enrich insight` | `{module}/enriched.json` | `{module}/enriched.json` + `_project.json` (index write-through) |
+| `enrich best-practice` | `{module}/enriched.json` | `{module}/enriched.json` + `_project.json` (index write-through) |
 
 ---
 

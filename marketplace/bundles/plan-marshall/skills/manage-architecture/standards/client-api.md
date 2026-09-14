@@ -71,11 +71,13 @@ oauth-sheriff-quarkus,oauth-sheriff-quarkus,extension,Quarkus runtime integratio
 oauth-sheriff-quarkus-deployment,oauth-sheriff-quarkus-deployment,deployment,Build-time processing,fresh
 ```
 
-`description` and `freshness` are read from the `_project.json` `modules`
-index header (the module's description and its `generation.tree_sha` compared
-to the current working tree) — a pre-flight surface, so a consumer filters
-which concept documents to open without opening any concept body. `freshness`
-is one of `fresh` / `stale` / `unknown`.
+`description` comes from the `_project.json` `modules` index header — a
+pre-flight surface, so a consumer filters which concept documents to open
+without opening any concept body. A module with no concept document on disk
+reports a blank `description`. `freshness` is derived from the **document's
+own** `generation` header (not the index mirror), comparing its `tree_sha` to
+the current working tree; a module with no document on disk reports
+`freshness: unknown`. `freshness` is one of `fresh` / `stale` / `unknown`.
 
 ---
 
@@ -405,6 +407,12 @@ commands[3]:
   - verify
   - quality-gate
 ```
+
+A `warnings` key is added to this payload only when the read-path
+`skills_by_profile` staleness guard has something to report (a stale
+notation, a missing block, or an unresolved profile) — it is **presence-gated**,
+never rendered as an empty list, so its absence and a clean guard result are
+not the same payload.
 
 **Output** (TOON, `--full`):
 ```toon
