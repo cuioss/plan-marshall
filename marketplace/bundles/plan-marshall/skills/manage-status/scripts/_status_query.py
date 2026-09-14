@@ -330,7 +330,14 @@ def cmd_metadata(args: argparse.Namespace) -> dict[str, Any] | None:
         resolution = require_status_resolved(args, any_checkout=True)
         if resolution is None:
             return None
-        metadata = (resolution.status or {}).get('metadata', {})
+        # Normalize through the shared seam rather than ``.get('metadata', {})``:
+        # the dict default applies only when the KEY IS ABSENT, so a status
+        # document carrying an explicit ``"metadata": null`` — or any non-object
+        # value — flows straight through and the ``.get`` below raises
+        # AttributeError. status.json is an on-disk, operator-editable external
+        # input, so that is a real boundary, and this widened any-checkout read is
+        # the branch that newly exposes it.
+        metadata = normalize_metadata(resolution.status or {})
         value = metadata.get(args.field)
         provenance = plan_resolution_fields(resolution)
         if value is None:
@@ -363,13 +370,18 @@ def cmd_metadata(args: argparse.Namespace) -> dict[str, Any] | None:
         }
 
     if args.set:
-        # Set metadata
-        if 'metadata' not in status:
-            status['metadata'] = {}
+        # Set metadata. ``'metadata' not in status`` is the same trap the --get
+        # branch above avoids from the other side: an explicit ``"metadata": null``
+        # SATISFIES the membership test, so the guard does not fire and the
+        # ``.get`` below raises AttributeError on None. Normalize through the
+        # shared seam, which keys on the VALUE's type rather than the key's
+        # presence and writes the correction back onto ``status`` so the
+        # assignment and the subsequent ``write_status`` commit the same object.
+        metadata = normalize_metadata(status)
 
-        previous_value = status['metadata'].get(args.field)
+        previous_value = metadata.get(args.field)
         coerced_value = _coerce_metadata_value(args.field, args.value)
-        status['metadata'][args.field] = coerced_value
+        metadata[args.field] = coerced_value
 
         write_status(args.plan_id, status)
         log_entry('work', args.plan_id, 'INFO', f'[MANAGE-STATUS] Metadata: {args.field}={coerced_value}')

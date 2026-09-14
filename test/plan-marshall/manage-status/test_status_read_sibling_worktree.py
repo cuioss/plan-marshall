@@ -417,3 +417,103 @@ class TestCmdListUnchanged:
 
         assert 'resolved_from' not in result
         assert 'plan_visibility' not in result
+
+
+# =============================================================================
+# A non-object ``metadata`` field is an input, not a crash
+#
+# status.json is on-disk and operator-editable, so ``"metadata": null`` is a
+# reachable input rather than a hypothetical. Neither of the two guards that
+# stood here keys on the VALUE: ``.get('metadata', {})`` applies its default only
+# when the KEY IS ABSENT, and ``'metadata' not in status`` is satisfied by an
+# explicit null — so both fell through to an AttributeError on None.
+# =============================================================================
+
+
+def _write_local_plan(base: Path, plan_id: str, metadata: object) -> Path:
+    """Write a local plan document whose ``metadata`` field is ``metadata`` verbatim.
+
+    Verbatim is the point: the fixture must be able to place a JSON ``null`` (and
+    a non-object scalar) where every other fixture in this file places a dict.
+    """
+    plan_dir = base / 'plans' / plan_id
+    plan_dir.mkdir(parents=True, exist_ok=True)
+    document = _status_document('2-refine')
+    document['metadata'] = metadata
+    (plan_dir / 'status.json').write_text(json.dumps(document), encoding='utf-8')
+    return plan_dir / 'status.json'
+
+
+class TestANonObjectMetadataFieldIsHandled:
+    """Both branches normalize; neither raises. The dict cells are matched controls.
+
+    Without the dict cells the guard is equally consistent with a normalization
+    that discards every caller's real metadata, which would pass the null cells
+    and silently destroy state on the ordinary path.
+    """
+
+    @pytest.mark.parametrize('metadata', [None, 'a string', 42, ['a', 'list']])
+    def test_metadata_get_reports_not_found_instead_of_raising(
+        self, metadata: object, main_base: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Arrange — the widened any-checkout READ branch, over a document whose
+        # metadata is not an object.
+        _write_local_plan(main_base, PLAN_ID, metadata)
+        _stub_locator(monkeypatch, status_core._LOOKUP_UNANSWERED)
+
+        # Act
+        result = status_query.cmd_metadata(_ns('metadata', '--plan-id', PLAN_ID, '--get', '--field', 'use_worktree'))
+
+        # Assert — a structured verdict, and an available_fields list that is
+        # empty because it was DERIVED from a normalized empty mapping.
+        assert result is not None
+        assert result['status'] == 'not_found'
+        assert result['available_fields'] == []
+
+    def test_metadata_get_still_returns_a_real_value(self, main_base: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        # Matched control — normalization must not flatten a genuine object.
+        _write_local_plan(main_base, PLAN_ID, {'use_worktree': True, 'other': 'x'})
+        _stub_locator(monkeypatch, status_core._LOOKUP_UNANSWERED)
+
+        result = status_query.cmd_metadata(_ns('metadata', '--plan-id', PLAN_ID, '--get', '--field', 'use_worktree'))
+
+        assert result is not None
+        assert result['status'] == 'success'
+        assert result['value'] is True
+
+    @pytest.mark.parametrize('metadata', [None, 'a string', 42])
+    def test_metadata_set_writes_through_instead_of_raising(
+        self, metadata: object, main_base: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Arrange — the sibling WRITE branch, whose ``'metadata' not in status``
+        # guard an explicit null walks straight past.
+        status_path = _write_local_plan(main_base, PLAN_ID, metadata)
+        _stub_locator(monkeypatch, status_core._LOOKUP_UNANSWERED)
+
+        # Act
+        result = status_query.cmd_metadata(
+            _ns('metadata', '--plan-id', PLAN_ID, '--set', '--field', 'change_type', '--value', 'bug_fix')
+        )
+
+        # Assert — and the correction reaches DISK, not only the in-memory view.
+        assert result is not None
+        assert result['status'] == 'success'
+        assert result['value'] == 'bug_fix'
+        assert json.loads(status_path.read_text(encoding='utf-8'))['metadata'] == {'change_type': 'bug_fix'}
+
+    def test_metadata_set_preserves_existing_sibling_fields(
+        self, main_base: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Matched control — the normalization must be a no-op on a real object, so
+        # a set never becomes a wipe of everything already recorded.
+        status_path = _write_local_plan(main_base, PLAN_ID, {'use_worktree': True})
+        _stub_locator(monkeypatch, status_core._LOOKUP_UNANSWERED)
+
+        result = status_query.cmd_metadata(
+            _ns('metadata', '--plan-id', PLAN_ID, '--set', '--field', 'change_type', '--value', 'bug_fix')
+        )
+
+        assert result is not None
+        assert result['status'] == 'success'
+        persisted = json.loads(status_path.read_text(encoding='utf-8'))['metadata']
+        assert persisted == {'use_worktree': True, 'change_type': 'bug_fix'}
