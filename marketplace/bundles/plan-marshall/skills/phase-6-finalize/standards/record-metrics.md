@@ -38,7 +38,7 @@ This step performs three sequenced `manage-metrics` invocations — `end-phase`,
 
 ## Record Phase End for 6-Finalize
 
-Close out the 6-finalize phase timing/token ledger. The agent-dispatched steps (`create-pr`, `automatic-review`, `sonar-roundtrip`, `lessons-capture`) persist their `<usage>` totals to `.plan/plans/{plan_id}/work/metrics-accumulator-6-finalize.toon` via `manage-metrics accumulate-agent-usage` from SKILL.md Step 3 step 5b. `end-phase` reads that accumulator file as a fallback when no explicit token flags are passed:
+Close out the 6-finalize phase timing/token ledger. Every agent-dispatched step (see [`../SKILL.md`](../SKILL.md) Step 3, which owns the current roster) persists its `<usage>` totals to `.plan/plans/{plan_id}/work/metrics-accumulator-6-finalize.toon` via `manage-metrics accumulate-agent-usage` from SKILL.md Step 3 step 5b. `end-phase` reads that accumulator file as a fallback when no explicit token flags are passed:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics end-phase \
