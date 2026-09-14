@@ -2042,9 +2042,7 @@ def test_project_tuned_orchestrator_effort_surfaces_match_the_registry():
     tuned_keys = set(_PROJECT_TUNED_ORCHESTRATOR_KNOBS['effort'].keys())
     registered_surfaces = set(_cmd_effort_mod.ORCHESTRATOR_SURFACES)
 
-    assert registered_surfaces, (
-        'ORCHESTRATOR_SURFACES is empty — the comparison below would be vacuous'
-    )
+    assert registered_surfaces, 'ORCHESTRATOR_SURFACES is empty — the comparison below would be vacuous'
     assert tuned_keys == registered_surfaces, (
         f'_PROJECT_TUNED_ORCHESTRATOR_KNOBS["effort"] pins {sorted(tuned_keys)} but the resolver '
         f'registers {sorted(registered_surfaces)} — a surface was added to or removed from '
