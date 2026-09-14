@@ -1036,12 +1036,20 @@ def compute_surface_digest(script_path: str, shared_digest: str) -> str:
 #: - ``no_block`` — the file was read in full and carries no ``SCRIPT_SURFACES``
 #:   block at all (an executor generated before the map existed). It too
 #:   verifiably carried no surfaces.
-#: - ``read`` — the block was found and parsed. :attr:`PreviousSurfaces.surfaces`
-#:   is what it held, which is legitimately empty when the literal was ``{}``.
+#: - ``read`` — the block was found and parsed, and EVERY entry was well-shaped.
+#:   :attr:`PreviousSurfaces.surfaces` is what it held, which is legitimately
+#:   empty when the literal was ``{}``.
 #: - ``unreadable`` — the file EXISTS but its surfaces could not be established:
 #:   the read raised, or the block was found but its literal would not parse /
-#:   did not parse to a dict. Nothing was measured, so the empty mapping is not
+#:   did not parse to a dict / held an entry whose key is not a ``str`` or whose
+#:   value is not a ``dict``. Nothing was measured, so the empty mapping is not
 #:   evidence that the previous executor carried nothing.
+#:
+#: ⛔ A partly-understood map is ``unreadable``, not a ``read`` of the entries
+#: that happened to parse. Dropping the offenders and reporting ``read`` returns
+#: an empty mapping under a measured outcome, which is byte-identical to a
+#: previous executor that genuinely carried none — and that is the citation the
+#: fail-open guard would then accept as proof that nothing is being stripped.
 PREVIOUS_SURFACE_OUTCOMES: frozenset[str] = frozenset({'absent', 'no_block', 'read', 'unreadable'})
 
 
@@ -1112,15 +1120,30 @@ def read_previous_surfaces(executor: Path) -> PreviousSurfaces:
             'unreadable',
             f'{executor} SCRIPT_SURFACES parsed to {type(parsed).__name__}, not a dict',
         )
-    return PreviousSurfaces(
-        {
-            notation: entry
-            for notation, entry in parsed.items()
-            if isinstance(notation, str) and isinstance(entry, dict)
-        },
-        'read',
-        '',
-    )
+    # Reject the WHOLE map when any entry is wrong-shaped, rather than filtering
+    # the offenders out and returning 'read'. A silent filter makes a corrupt
+    # previous executor indistinguishable from one that legitimately carried no
+    # surfaces — and that is exactly the citation the fail-open guard must never
+    # accept: with every entry dropped, the guard reads "verifiably carried none",
+    # passes, and writes an executor with no pre-spawn validation. The outcome
+    # this function exists to separate is MEASURED vs NOT MEASURED, and a map it
+    # could only partly understand was not measured.
+    malformed = [
+        repr(notation)
+        for notation, entry in parsed.items()
+        if not isinstance(notation, str) or not isinstance(entry, dict)
+    ]
+    if malformed:
+        return PreviousSurfaces(
+            {},
+            'unreadable',
+            (
+                f'{executor} SCRIPT_SURFACES holds {len(malformed)} wrong-shaped '
+                f'entr{"y" if len(malformed) == 1 else "ies"} '
+                f'(expected str key and dict value): {", ".join(sorted(malformed))}'
+            ),
+        )
+    return PreviousSurfaces(dict(parsed), 'read', '')
 
 
 def derive_script_surfaces(

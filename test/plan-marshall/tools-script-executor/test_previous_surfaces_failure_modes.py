@@ -21,7 +21,11 @@ The partition that matters is MEASURED vs NOT MEASURED, not empty vs non-empty:
 Every ``unreadable`` shape is driven here rather than one standing in for the
 rest, because each reaches the verdict through a different branch: the read
 raising, the block having no terminating brace, the literal refusing to parse,
-and the literal parsing to something that is not a dict.
+the literal parsing to something that is not a dict, and the literal parsing to
+a dict that holds a wrong-shaped ENTRY. The last one is the subtlest, because
+the map parsed perfectly well — a reader that filtered the offenders out would
+return a measured-looking ``read``, and with every entry dropped that ``read``
+carries the same empty mapping an executor with no surfaces carries.
 
 The stats-line cases pin the emission contract stated in
 ``format_surface_stats_line``: the line is a VALUE a consumer reads, never an
@@ -72,6 +76,24 @@ _MALFORMED_LITERAL = '#!/usr/bin/env python3\nSCRIPT_SURFACES = {\n    "a:b:c": 
 
 #: The literal parses — to a SET, not a mapping. ``{1, 2}`` is valid Python.
 _NON_DICT_LITERAL = '#!/usr/bin/env python3\nSCRIPT_SURFACES = {\n    1,\n    2,\n}\n'
+
+#: A mapping whose entries are wrong-shaped: a non-str key, and a non-dict value.
+#: Every entry is unusable, so filtering them out would yield ``{}`` under a
+#: ``read`` outcome — indistinguishable from an executor that carried none.
+_ALL_ENTRIES_WRONG_SHAPED = (
+    '#!/usr/bin/env python3\nSCRIPT_SURFACES = {\n    7: {"digest": "d0"},\n    "a:b:c": "not a dict",\n}\n'
+)
+
+#: The harder half: ONE entry is perfectly well-formed and one is not. Filtering
+#: returns a NON-empty map here, so the surviving entry makes the return look
+#: like a successful read of a smaller executor.
+_ONE_ENTRY_WRONG_SHAPED = (
+    '#!/usr/bin/env python3\n'
+    'SCRIPT_SURFACES = {\n'
+    '    "a:b:c": {"digest": "d0", "surface": {"root": {"children": {}}}},\n'
+    '    "d:e:f": ["not", "a", "dict"],\n'
+    '}\n'
+)
 
 
 @pytest.fixture
@@ -162,6 +184,49 @@ class TestOutcomeIsReported:
         assert previous.surfaces == {}
         assert str(executor) in previous.detail, previous.detail
 
+    @pytest.mark.parametrize(
+        ('text', 'named'),
+        [
+            pytest.param(_ALL_ENTRIES_WRONG_SHAPED, ['7', "'a:b:c'"], id='every_entry_wrong'),
+            pytest.param(_ONE_ENTRY_WRONG_SHAPED, ["'d:e:f'"], id='one_entry_wrong'),
+        ],
+    )
+    def test_a_wrong_shaped_entry_makes_the_whole_map_unreadable(self, generator, text, named):
+        """A map that could only be PARTLY understood was not measured.
+
+        Dropping the offenders and reporting ``read`` is the fail-open: with
+        every entry dropped the return is ``{}`` under a measured outcome —
+        byte-identical to an executor that carried none — and with one dropped
+        the survivor makes it look like a smaller but successful read. Neither
+        is a state the guard may cite.
+        """
+        module, executor = generator
+        _stage(executor, text)
+
+        previous = module.read_previous_surfaces(executor)
+
+        assert previous.outcome == 'unreadable'
+        assert previous.surfaces == {}, 'a partly-understood map must carry nothing forward'
+        assert str(executor) in previous.detail, previous.detail
+        for entry in named:
+            assert entry in previous.detail, f'the detail must name {entry}: {previous.detail}'
+
+    def test_an_all_valid_map_is_still_read_verbatim(self, generator):
+        """Matched control — the narrowing must not reject well-formed maps.
+
+        Without this, every assertion above is equally consistent with a reader
+        that calls EVERY parsed map unreadable, which would refuse all reuse and
+        make guard 5 refuse every regeneration that followed a real executor.
+        """
+        module, executor = generator
+        _stage(executor, _WITH_ONE_SURFACE)
+
+        previous = module.read_previous_surfaces(executor)
+
+        assert previous.outcome == 'read'
+        assert previous.detail == ''
+        assert previous.surfaces == {'a:b:c': {'digest': 'd0', 'surface': {'root': {'children': {}}}}}
+
     def test_an_unreadable_read_error_reports_unreadable(self, generator, monkeypatch):
         """An ``OSError`` on the read is unreadable, not absent.
 
@@ -208,6 +273,11 @@ class TestGuardFiveReadsTheOutcome:
             pytest.param(_UNTERMINATED_BLOCK, id='unterminated'),
             pytest.param(_MALFORMED_LITERAL, id='malformed_literal'),
             pytest.param(_NON_DICT_LITERAL, id='non_dict'),
+            # The chain the wrong-shaped-entry finding names: filtered to empty,
+            # the corrupt previous WAS cited as proof that nothing is stripped,
+            # and the zero-surface write went through.
+            pytest.param(_ALL_ENTRIES_WRONG_SHAPED, id='every_entry_wrong_shaped'),
+            pytest.param(_ONE_ENTRY_WRONG_SHAPED, id='one_entry_wrong_shaped'),
         ],
     )
     def test_zero_surfaces_against_an_unreadable_previous_refuses(self, generator, monkeypatch, text):
