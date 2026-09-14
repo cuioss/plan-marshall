@@ -558,11 +558,7 @@ class TestDraftingDispatchWritePathContainment:
             f'quantify over an empty set. {_evidence(population)}'
         )
 
-        uncovered = [
-            doc.name
-            for doc in spec_body_docs
-            if not _MONOTONIC_SELECTION_PROXIMITY_RE.search(texts[doc])
-        ]
+        uncovered = [doc.name for doc in spec_body_docs if not _MONOTONIC_SELECTION_PROXIMITY_RE.search(texts[doc])]
 
         assert not uncovered, (
             f'{len(uncovered)} document(s) declare a dispatchable spec-body draft without stating '
@@ -734,8 +730,7 @@ class TestDraftingDispatchWritePathContainment:
         # carries a negation at all, so it must consult the same authority.
         fixture = tmp_path / 'clause-scoped-grant.md'
         fixture.write_text(
-            'The leaf writes the queue row itself via `manage-status`; it may not touch '
-            '`epic.md` directly.\n',
+            'The leaf writes the queue row itself via `manage-status`; it may not touch `epic.md` directly.\n',
             encoding='utf-8',
         )
 
