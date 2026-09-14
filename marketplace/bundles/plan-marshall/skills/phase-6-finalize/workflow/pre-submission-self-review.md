@@ -9,6 +9,10 @@ mutates_source: false
 head_dependent: true
 default_on: true
 presets: []
+records_facts:
+  - acceptance
+  - may_close
+  - work_performed
 requires_prompt_fields:
   - candidates
 implements:
@@ -26,9 +30,9 @@ Outcome bookkeeping (Step 4) now includes finding persistence: every returned fi
 
 The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../../tools-script-executor/standards/exit-code-convention.md); it is not restated here.
 
-The step combines a deterministic helper that surfaces concrete candidates from the staged diff (Step 1 below) with an LLM cognitive review applied only to those candidates (Steps 2–3 below). Step 1 (deterministic surface) and Step 4 (outcome bookkeeping) run inline in the manifest dispatcher's context; Steps 2–3 (contract cross-reference setup + the seventeen LLM cognitive checks) run in the dispatched envelope under `--phase phase-6-finalize` (no `--role` — pre-submission-self-review tracks `phase-6-finalize.default`). On any finding the LLM returns, the step records `outcome=loop_back` with `loop_back_target: 6-finalize` and the dispatcher's continuation hook admits the round — a PRODUCTIVE non-completion, not a failure. This is deliberately NOT the convention `pre-push-quality-gate` follows: that step records `failed`, because a red build gate ran cleanly and returned a negative verdict, whereas this step hands back findings for amendment on the branch in hand. The two being different is the point — see [`../../manage-execution-manifest/standards/manifest-schema.md`](../../manage-execution-manifest/standards/manifest-schema.md) § "Which situation each `outcome` value means".
+The step combines a deterministic helper that surfaces concrete candidates from the staged diff (Step 1 below) with an LLM cognitive review applied only to those candidates (Steps 2–3 below), and a second, non-authoring reader that accepts or refuses the verdict that review produced (Step 3b below). Step 1 (deterministic surface), Step 3b's dispatch, and Step 4 (outcome bookkeeping) run inline in the manifest dispatcher's context; Steps 2–3 (contract cross-reference setup + the seventeen LLM cognitive checks) and the Step 3b verifier run in dispatched envelopes under `--phase phase-6-finalize` (no `--role` — pre-submission-self-review tracks `phase-6-finalize.default`). The two dispatches are separate firings and separately audited; § "Author and verifier are different parties" below owns why the second one exists and why the inline dispatcher is the only context it can be issued from. On any finding the LLM returns, the step records `outcome=loop_back` with `loop_back_target: 6-finalize` and the dispatcher's continuation hook admits the round — a PRODUCTIVE non-completion, not a failure. This is deliberately NOT the convention `pre-push-quality-gate` follows: that step records `failed`, because a red build gate ran cleanly and returned a negative verdict, whereas this step hands back findings for amendment on the branch in hand. The two being different is the point — see [`../../manage-execution-manifest/standards/manifest-schema.md`](../../manage-execution-manifest/standards/manifest-schema.md) § "Which situation each `outcome` value means".
 
-This document carries NO step-activation logic. Activation is controlled by the manifest composer in `manage-execution-manifest/scripts/manage-execution-manifest.py` (see `manage-execution-manifest/standards/decision-rules.md`). No footprint-gated pre-filter drops this step: the seventeen cognitive checks it targets apply to any code or doc change, so there is no glob gate to fail. More than one compose-time subtraction can drop it. The `commit_push_disabled` pre-filter drops it transitively when `commit_and_push == false`, because both push-only gates are meaningless with no downstream push. The `scope_gated_finalize` pre-filter also drops it when `scope_estimate == 'surgical'` — independently of `commit_and_push` — unless the step carries a declared lane override, which grants it immunity from that gate. For the authoritative set of compose-time subtractions and what each one reads, see [`../../manage-execution-manifest/standards/decision-rules.md`](../../manage-execution-manifest/standards/decision-rules.md); do not treat the two named here as exhaustive. When the dispatcher runs this step the executor always runs to completion: a clean run records `outcome=done`; a non-empty findings list records `outcome=loop_back` with `loop_back_target: 6-finalize`, and the dispatcher re-enters the finalize step loop rather than halting the phase.
+This document carries NO step-activation logic. Activation is controlled by the manifest composer in `manage-execution-manifest/scripts/manage-execution-manifest.py` (see `manage-execution-manifest/standards/decision-rules.md`). No footprint-gated pre-filter drops this step: the seventeen cognitive checks it targets apply to any code or doc change, so there is no glob gate to fail. More than one compose-time subtraction can drop it. The `commit_push_disabled` pre-filter drops it transitively when `commit_and_push == false`, because both push-only gates are meaningless with no downstream push. The `scope_gated_finalize` pre-filter also drops it when `scope_estimate == 'surgical'` — independently of `commit_and_push` — unless the step carries a declared lane override, which grants it immunity from that gate. For the authoritative set of compose-time subtractions and what each one reads, see [`../../manage-execution-manifest/standards/decision-rules.md`](../../manage-execution-manifest/standards/decision-rules.md); do not treat the two named here as exhaustive. When the dispatcher runs this step the executor always runs to completion; which outcome a given round records is Step 4's own precondition set (§ "Step 4: Mark Step Complete"), not restated here — a non-empty findings list records `outcome=loop_back` with `loop_back_target: 6-finalize` and the dispatcher re-enters the finalize step loop rather than halting the phase.
 
 ## Domain-Aware Candidate Surfacing
 
@@ -62,6 +66,24 @@ Skills the caller MUST forward in `skills[]`: none (the workflow reads files wit
 The only thing that releases a branch from FORWARDING the value is the capture itself failing. Branch C is reached by `git_unavailable` among others, so its `rev-parse` can return no SHA; it then omits the flag rather than passing an unresolved placeholder (§ Step 4 Branch C). That is not a branch exempted from the rule — it is the rule with nothing to hand it, and it is available only because the `missing_head_at_completion` refusal is scoped to the `done` outcome.
 
 The recorded SHA carries a **second, independent** load: it is the **delta anchor** the next round scopes itself against (Step 1 reads it back and passes it as `--since-ref`). That is why its absence on a `done` record is now REFUSED rather than tolerated — `manage-status mark-step-done` returns `error: missing_head_at_completion` and writes nothing when a `head_dependent: true` step records `done` without it. An unanchored record would leave the following round unable to define its delta, silently degrading it to a full re-sweep.
+
+## Author and verifier are different parties
+
+The party that AUTHORS this step's verdict is not the party that ACCEPTS it. Before this separation existed one party did both: whichever context ran the seventeen checks produced the findings list, and Step 4 then selected its branch by reading that same list — so the round closed on the author's own reading of its own output, and no second party ever had to agree with it.
+
+Three roles, and the context each one runs in:
+
+| Role | What it does | Where it runs |
+|------|--------------|---------------|
+| **Surfacer** | Produces the candidate set. Deterministic, read-only, no judgement of its own. | A script call in the inline dispatcher context (Step 1). |
+| **Author** | Applies the seventeen checks to the surfaced candidates and produces the findings list and the verdict. | The dispatched envelope (Step 2) — or, under the Step 1b gate, the inline dispatcher context. |
+| **Verifier** | Answers the two questions Step 3b poses about the author's verdict. Files no finding and edits no file. | A SEPARATE dispatched envelope (Step 3b), always issued from the inline dispatcher context. |
+
+**The harness decides where a verifier can live, and it admits exactly one origin.** A dispatched subagent is a leaf: it cannot spawn another subagent, and every cross-envelope dispatch originates from a context that is not itself dispatched — see [`../../ref-workflow-architecture/standards/agents.md`](../../ref-workflow-architecture/standards/agents.md). A verifier spawned from INSIDE the Step 2 author envelope is therefore unreachable, and no amount of prompt authoring makes it reachable. What IS reachable is a second dispatch from the inline dispatcher context: that context already issues the Step 2 author dispatch, and a context that can issue one dispatch can issue two. Step 3b is that second dispatch, and it is the only place the verifier may be spawned from.
+
+**The arrangement is identical on both author branches**, which is what keeps the Step 1b gate a pure cost optimization. When the gate sends the author INLINE, the dispatcher context IS the author — so the verifier must still be Step 3b's dispatched envelope, and that is precisely the branch on which running the verifier inline would collapse the two roles back into one party. When the gate DISPATCHES the author, the two already occupy different envelopes and Step 3b adds the second, non-authoring reader. Either way Step 4 reads answers that neither role could grant itself — see § "Step 3b" for what those answers are and what closing on them requires.
+
+**What the verifier deliberately cannot do.** It is a leaf, so it cannot escalate to the operator and cannot dispatch further — see § "Step 3b" for its return contract. It files no finding and edits no file either: the surfacer stays a read-only deterministic script and the author stays the single filer, so the independence is expressed as role separation across the dispatch boundary and NOT as new judgement added inside either of the other two roles.
 
 ## Execution
 
@@ -187,6 +209,8 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 ```
 
 **Return-TOON shape invariant**: BOTH branches MUST produce the IDENTICAL return-TOON shape documented in `## Dispatched-envelope output` below (`status`, `display_detail`, `findings[N]{file,line,defect_class,rationale,cohort_size}`). The inline branch produces the same TOON-shaped result in dispatcher context — `display_detail` follows the same five-verdict rule bit-for-bit (`"self-review not run: no surfacer implementor resolved"` / `"self-review clean: surfacer ran, zero candidates surfaced"` / `"self-review clean: {N} candidates examined, no check matched"` / `"self-review clean: no observation drawn from the files searched"` / `"self-review found {K} issues in {C} classes"`), and `findings[]` carries the same entry shape, `cohort_size` included. Both branches are reached only after a surfacer HAS run, so neither may emit the not-run verdict — that one belongs to the zero-generator fallback alone. In particular the inline branch MUST pick between the clean verdicts on the same predicates the dispatch branch uses (`total_candidates == 0` for nothing-to-check, and `delta_coverage.files_with_candidates == 0` over non-zero `files_in_scope` for zero-observation); a branch that collapses any of them back to one undifferentiated clean string violates this invariant. Downstream consumers (Step 4 bookkeeping, output-template rendering) MUST NOT need to differentiate which branch produced the result. The gate is a pure dispatch-cost optimization — semantics are preserved bit-for-bit.
+
+**The verifier arrangement is identical on both branches too.** Whichever branch produced the author's verdict, Step 3b dispatches the verifier from the inline dispatcher context and Step 4 reads the same verifier answers either way. The INLINE branch is where this matters most: there the dispatcher context is itself the author, so a verifier run inline would put author and verifier in one party and silently undo the separation § "Author and verifier are different parties" establishes. A branch that skips Step 3b, or runs its adjudication in the author's own context, breaks this invariant exactly as a branch that collapsed the verdict vocabulary would.
 
 ### Step 2: LLM cognitive phase (dispatch)
 
@@ -362,7 +386,7 @@ findings[N]{file,line,defect_class,rationale,cohort_size}:
 
 `cohort_size` is the number of findings in this round sharing that entry's `defect_class` (see § Class-closure obligation). Every entry carries it, including a genuine cohort of one — an omitted field would be indistinguishable from a cohort whose other members were never looked for.
 
-`status: success` regardless of findings count — the workflow itself succeeds at producing the structural-review verdict; the caller's manifest-step orchestration translates a non-empty `findings` list into the manifest step's `--outcome loop_back --loop-back-target 6-finalize`. Empty `findings` → caller marks `--outcome done`.
+`status: success` regardless of findings count — the workflow itself succeeds at producing the structural-review verdict; the caller's manifest-step orchestration translates a non-empty `findings` list into the manifest step's `--outcome loop_back --loop-back-target 6-finalize`. An empty `findings` list does NOT by itself select `--outcome done` — see Step 4, where the verifier's `may_close` answer is the selecting predicate.
 
 ⚠ **A findings-bearing return is a loop-back, not a failure.** This step examined its surface, filed real findings and handed control back — a PRODUCTIVE non-completion. Recording it as `failed` made every archive-wide analysis that counts failures mis-grade a thorough round as a defect, so *the more findings this gate legitimately raised, the worse its plan looked*. `loop_back` is also what makes the dispatch ledger's `returned_with_findings` stamp correct **by construction** rather than by coincidence — that stamp's documented trigger is precisely a `mark-step-done` recording `outcome: loop_back`. The contrast to keep is `pre-push-quality-gate`, which records `failed`: a red build gate RAN CLEANLY and self-assessed not-clean, which is a negative verdict rather than a productive hand-back. See [`../../manage-execution-manifest/standards/manifest-schema.md`](../../manage-execution-manifest/standards/manifest-schema.md) § "Which situation each `outcome` value means".
 
@@ -376,11 +400,128 @@ findings[N]{file,line,defect_class,rationale,cohort_size}:
 
 All five are ≤80-char ASCII with no trailing period, and no verdict is a prefix of another — so a consumer matching a whole verdict string can never mistake one verdict for another. The not-run verdict diverges from every other at its second word (`not` vs `clean` / `found`); the three `clean:` verdicts diverge at the word after the colon (`surfacer` / a digit / `no`). Neither of the two verdicts added by the un-run-versus-un-observed split contains the substring `found`, which is the marker the clean-vs-findings split keys on.
 
+### Step 3b: Independent verification (dispatch)
+
+Runs in the inline dispatcher context after the author's return (Steps 2–3, or the Step 1b inline branch) and BEFORE Step 4 records anything. This is the second dispatch — the one that gives the round a reader who did not write what it is reading. It fires on every round a surfacer ran, on both author branches alike.
+
+⛔ **Two paths do not reach this step, and neither may manufacture an acceptance.** The **zero-generator fallback** (Step 1 — no domain implementor resolved) ran no surfacer, so there is no author verdict for a verifier to accept or refuse; it records `done` with the **not-run** verdict directly, exactly as Step 1 and Step 4 already prescribe. **Branch C** (helper failure) produced no verdict either. Reading an absent verifier return as an acceptance on either path would be the same un-run-read-as-reviewed collapse the verdict vocabulary exists to prevent.
+
+Compute the variant target via the role resolver, exactly as Step 2 does:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  effort resolve-target --phase phase-6-finalize \
+  --workflow plan-marshall:phase-6-finalize/workflow/pre-submission-self-review.md \
+  --plan-id {plan_id} --caller plan-marshall:phase-6-finalize
+```
+
+The resolve carries the dispatch context, so the seam emits the `[DISPATCH]` work-log line and its paired decision-log record for THIS firing — a record separate from Step 2's, which is how the two dispatches stay separately auditable. Do NOT hand-write a `[DISPATCH]` line. Extract the `target` field and use it as `{target}` below.
+
+The verifier carries `instructions` rather than `workflow`: its whole task is the adjudication written inline below, and it reads no file the author did not already name, so there is no second workflow document for it to load. That choice also leaves this step's step-specific prompt-body surface unchanged — `candidates` remains the ONE field declared in `requires_prompt_fields`, because every field the verifier block carries is a generic contract field:
+
+```text
+Task: plan-marshall:{target}
+  prompt: |
+    name: pre-submission-self-review-verifier
+    plan_id: {plan_id}
+    skills: []
+    instructions: |
+      You are the VERIFIER for one round of the pre-submission structural self-review.
+      You did not author the verdict below, and you must not re-author it: file no
+      finding, edit no file, and apply no check of your own.
+
+      The author examined {N} surfaced candidate(s) over {files_in_scope} file(s) at
+      surface_scope {surface_scope} and returned this verdict:
+
+        verdict: {display_detail_from_author}
+        findings: {findings_count} finding(s) in {classes_count} class(es)
+        findings_detail: {findings_rendered}
+
+      The round's own published boundaries, quoted from the surfacer:
+
+        scope_statement: {scope_statement}
+        structural_limit: {structural_limit}
+        delta_coverage: {delta_coverage_statement}
+
+      Decide TWO questions, in this order.
+
+      (1) Is that verdict supported by what the round actually did?
+      ACCEPT when the verdict states no more than the round's scope, boundaries and
+      findings support. REFUSE when it claims more than they support - an absence
+      phrased wider than the file set searched, a closing verdict drawn from a
+      delta-scoped round, a clean verdict that reads as a reviewed diff where the
+      structural limit says this analysis class could not reach the question, or a
+      findings list whose cohort sizes report a class nobody swept.
+
+      (2) THE STOP QUESTION - may this round record done, closing the review?
+      Answer yes ONLY when you accepted the verdict in (1) AND the round returned
+      no finding AND nothing you were given suggests a further round would find
+      something this one did not look for. Answer no otherwise, and say which of
+      the three it was. A round that returned findings is always no: the findings
+      are the work the next round exists to do.
+
+      You are being asked this because the author must not answer it about its own
+      verdict. Answer it on what you were given, and do not soften a no because a
+      further round costs something - the cost of one more round is not evidence
+      that the last one was complete.
+
+      Return exactly this TOON and nothing else:
+
+        status: success
+        acceptance: accepted | refused
+        may_close: yes | no
+        rationale: "<one line, <=200 chars, naming what you checked and what decided it>"
+    WORKTREE: {worktree_path}
+```
+
+The verifier's return is NOT a step verdict and carries no `display_detail`: the author's verdict string is the one that reaches the step record, and a second verdict vocabulary would be a second thing to keep in step with the first. `acceptance`, `may_close` and the one-line `rationale` that makes both auditable are the whole of its output.
+
+**The stop question is the verifier's, and the author records the answer.** Branch A used to be selected by the bare predicate *the findings list is empty* — the author's own reading of the list it had just produced, so the party that wrote the verdict also decided the review could stop. `may_close` moves that decision to the party that did not write it. The author still composes the verdict string and still performs the bookkeeping; what it no longer does is decide that the round is over.
+
+⛔ **`may_close` is an ADDITIONAL gate, never a substitute for the preconditions Step 4 already carries.** A `yes` does not release Branch A from the full-surface requirement, from the zero-observation verdict substitution, or from `--force` on a terminal write that lands on a differing stored outcome. All of them bind together, and a `yes` obtained over a delta-scoped round still does not close — the verifier answers the stop question, it does not waive the round's own contract. The two answers are also not interchangeable: `acceptance` judges the verdict's *wording* against the round, `may_close` judges whether *another round is owed*, and a verdict can be accurately worded about a round that should still be followed by another.
+
+Record both answers on the decision log before Step 4 branches, so the separation is legible in the run record rather than only in the control flow:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO \
+  --message "(plan-marshall:phase-6-finalize:pre-submission-self-review) Verifier {acceptance} the author's verdict and answered the stop question may_close={may_close} — {rationale}"
+```
+
+**On `acceptance: accepted` AND `may_close: yes`** the round proceeds to Step 4 Branch A on the author's own verdict string, with both answers recorded above. Neither answer rewrites a verdict string — they are the preconditions Branch A carries, not a second opinion layered over the first.
+
+**On `acceptance: accepted` AND `may_close: no`** the verdict was accurately worded and the review is nonetheless not over. The round does NOT close: route to **Step 4 Branch B** exactly as a refusal does, with the `rationale` naming what a further round is owed for. ⛔ Do NOT fold this into an acceptance on the grounds that the verdict was accepted — that reads question (1)'s answer as question (2)'s, which is the collapse the two fields exist to prevent.
+
+**On `acceptance: refused`** the round does NOT close. The party that accepts did not accept, which is exactly the state this separation exists to make reachable. Route to **Step 4 Branch B** carrying the author's findings unchanged, plus ONE additional finding recording the non-close so it reaches the finding store rather than only the log.
+
+The same `qgate add` serves every non-closing verifier state, with `{state}` naming which one it was — `verdict_refused` for a refusal, `further_round_owed` for an `accepted` verdict the verifier answered `may_close: no` over, `verifier_unavailable` for a dispatch that failed or returned nothing. One call, three state names, because the finding's job is to carry the `rationale` into the store and the state is what tells the next round which question it has to answer.
+
+Every one of the three routes to the SAME recorded outcome:
+
+| `{state}` | Verifier situation | Recorded outcome |
+|---|---|---|
+| `verdict_refused` | `acceptance: refused` | `loop_back` |
+| `further_round_owed` | `acceptance: accepted` AND `may_close: no` | `loop_back` |
+| `verifier_unavailable` | dispatch failed, or returned no parseable answer | `loop_back` |
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qgate add \
+  --plan-id {plan_id} --phase 6-finalize --source qgate --type bug \
+  --title "{state} at pre-submission-self-review" --detail "{rationale}" \
+  --component pm-plugin-development:ext-self-review-plan-marshall --severity warning
+```
+
+⛔ **Every non-closing state above records `loop_back`, never `done` and never `failed`** — the table above is not aspirational, it is the whole outcome column. It is a productive non-completion of exactly the shape § "Dispatched-envelope output" describes — the round examined its surface and handed back something for the next round to act on. Recording any of the three `failed` would grade a working independence check as a broken step, which is the same mis-classification the loop-back convention above exists to prevent.
+
+**When the verifier dispatch itself fails** — `status: error`, or no parseable return — the round has NO acceptance and NO answer to the stop question. Treat that as UNVERIFIED and route to Branch B exactly as a refusal does, with the rationale naming the dispatch failure. ⛔ Never read an absent verifier return as an acceptance, and never read it as a `may_close: yes`: an unanswered question is not a yes, and reading it as one restores the author-accepts-its-own-verdict arrangement silently, which is the fail-open this whole separation exists to close. The same holds for a return that carries one field and not the other — a partial answer answers only the question it names.
+
 ### Step 4: Mark Step Complete (inline)
 
 Record the outcome on the live plan so the `phase_steps_complete` handshake invariant is satisfied at phase transition time.
 
-**Branch A — findings list is empty**: read the `display_detail` returned by the workflow verbatim (the workflow computes the candidate count for the human-readable message).
+**Branch A — the verifier answered the stop question `may_close: yes`**: read the `display_detail` returned by the workflow verbatim (the workflow computes the candidate count for the human-readable message).
+
+⛔ **The selecting predicate is the verifier's answer, not the author's reading of its own findings list.** An empty findings list is a necessary input to that answer and no longer the branch selector: the verifier is what turns *this round found nothing* into *this review may stop*, and those are different claims — the first is about one round, the second is about whether another is owed. The zero-generator fallback is the one path that reaches `done` without an answer, and § "Step 3b" states why that is not a hole: it ran no surfacer, so there is no round for a stop question to be about and no verdict for a second party to accept.
 
 **Conditional on a surfacer result having been produced**: when the round ran a surfacer, read the returned `delta_coverage` block before recording `done` and apply § "A clean verdict states what the round observed". A clean pass that surfaced nothing of its own still records `--outcome done`, but it does NOT record the same `display_detail` as a pass that observed something: when `delta_coverage.files_with_candidates == 0` over a non-zero `files_in_scope`, substitute the **zero-observation** verdict `"self-review clean: no observation drawn from the files searched"` for the workflow-returned string, and log the deviation as well. The outcome and every other flag on this branch are unchanged — only `--display-detail` differs. Promoting the deviation into the recorded verdict is the point: a WARNING in the work log is not read by anything that consumes the step record, so an un-observed dimension recorded only there is invisible at exactly the surface a reader trusts.
 
@@ -388,18 +529,34 @@ Record the outcome on the live plan so the `phase_steps_complete` handshake inva
 
 **Precondition — the clean result MUST come from a full-surface pass.** Before recording `done`, confirm the returned verdict was produced by a run that carried NO `--since-ref` (the surfacer echoes `surface_scope: full`). A `done` recorded off a delta-scoped clean result would close the step on evidence covering only the files that changed since the previous round. When the clean result came from a delta round, do NOT record `done` here — go back to Step 1, re-run the surface call at full scope, and record the outcome from that pass instead.
 
+**Precondition — the verdict MUST carry the verifier's acceptance AND its stop answer.** Branch A is where the round closes, so it closes on a verdict a party other than its author accepted, and on that same party's answer to the stop question (§ "Author and verifier are different parties", § "Step 3b"). Before recording `done`, confirm Step 3b returned BOTH `acceptance: accepted` and `may_close: yes` for THIS round. Each of a refusal, an `accepted` paired with `may_close: no`, an errored verifier dispatch, and no verifier return at all fails this precondition on its own — every one of them routes to Branch B per Step 3b rather than recording `done`. The preconditions on this branch are independent and ALL bind: a full-surface clean pass the verifier refused does not close, an accepted delta-scoped result does not close, and an accepted full-surface result the verifier answered `may_close: no` over does not close either. ⛔ The **zero-generator fallback path** is carved out of this precondition exactly as it is carved out of the two above — no surfacer ran, so Step 3b never fired, and there is neither an acceptance nor a stop answer to look for. Do not manufacture either from its absence.
+
 Immediately before invoking `mark-step-done`, resolve the worktree HEAD SHA so the dispatcher can detect a stale completion record after a downstream loop-back commit advances HEAD (see § HEAD-dependency above):
 
 ```bash
 git -C {worktree_path} rev-parse HEAD
 ```
 
-The `{worktree_path}` value is the path resolved by `phase-6-finalize` Step 0 (Resolve Worktree and Main Checkout Paths); do NOT re-resolve it from any other cwd or shell context. Capture the stdout as `{sha}` (a 40-character hex SHA) and forward it via `--head-at-completion`:
+The `{worktree_path}` value is the path resolved by `phase-6-finalize` Step 0 (Resolve Worktree and Main Checkout Paths); do NOT re-resolve it from any other cwd or shell context. Capture the stdout as `{sha}` (a 40-character hex SHA) and forward it via `--head-at-completion`.
+
+**The `--fact acceptance=… --fact may_close=…` pair is conditional on this round having actually run Step 3b.** On every ordinary Branch A close a verifier answer exists and both flags are forwarded. On the **zero-generator fallback path** (§ "Step 4: Mark Step Complete" ⛔ note above) Step 3b never fired, so there is no acceptance and no stop answer to report — OMIT both `--fact` flags on that path rather than inventing a value or forwarding an unresolved placeholder, mirroring the `--head-at-completion` omission rule Branch C already applies when `{sha}` cannot be resolved.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step default:pre-submission-self-review --outcome done \
   --display-detail "{display_detail_from_workflow}" \
+  --fact acceptance={acceptance} --fact may_close={may_close} --fact work_performed=true \
+  --head-at-completion {sha} \
+  --force
+```
+
+On the zero-generator fallback path, omit `acceptance`/`may_close` (Step 3b never fired) and record `work_performed=false` — this `done` closes without the step having examined any file:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
+  --plan-id {plan_id} --phase 6-finalize --step default:pre-submission-self-review --outcome done \
+  --display-detail "self-review not run: no surfacer implementor resolved" \
+  --fact work_performed=false \
   --head-at-completion {sha} \
   --force
 ```
@@ -415,6 +572,7 @@ Both are ordinary terminal writes of the loop this document prescribes, not esca
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step default:pre-submission-self-review --outcome done \
   --display-detail "{display_detail_from_workflow}" \
+  --fact acceptance={acceptance} --fact may_close={may_close} --fact work_performed=true \
   --head-at-completion {sha} --force
 ```
 
@@ -422,7 +580,9 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
 
 The overwrite is intended and is not a loss of signal in either direction: a superseded `loop_back` record's findings are already persisted in the finding store by Branch B, a superseded `done` record's verdict was anchored to a SHA the re-fire has left behind, and `mark-step-done` returns `previous_outcome` / `previous_head_at_completion` so the transition it replaced stays legible in the return.
 
-**Branch B — findings list is non-empty**: first persist every finding to the plan's `qgate-6-finalize.jsonl` finding store, then surface the findings in the finalize TOON output (consumed by `output-template.md`) so the operator sees `file:line` and `defect_class` per finding.
+**Branch B — the verifier did not answer `may_close: yes`**: the round does not close. Four states reach this branch and they are not interchangeable — a findings-bearing round (the ordinary case, where `may_close` is `no` because the findings ARE the next round's work), a refused verdict, an `accepted` verdict the verifier nonetheless answered `may_close: no` over, and an unverified round whose verifier dispatch failed or returned nothing. Step 3b names which one applies and supplies the `rationale`; this branch records the same `loop_back` for all four, because the outcome enum's job is to say the round did not close, not to say why.
+
+First persist every finding to the plan's `qgate-6-finalize.jsonl` finding store, then surface the findings in the finalize TOON output (consumed by `output-template.md`) so the operator sees `file:line` and `defect_class` per finding. On the three non-findings-bearing states the author's `findings[]` may be empty; the finding Step 3b files — `verdict_refused`, `further_round_owed`, or `verifier_unavailable` (§ "Step 3b") — is then the one this branch persists, and the loop-back still carries something for the next round to act on.
 
 For every entry in the returned `findings[N]{file,line,defect_class,rationale,cohort_size}` list, emit one `manage-findings qgate add` call. This loop runs in the inline dispatcher context (the same context as the `mark-step-done` call below). `--phase 6-finalize` and `--source qgate` are mandatory; `--type bug` is the canonical finding type for a structural self-review defect. The `--detail` body carries the entry's `cohort_size` so the loop-back fix task addresses the CLASS rather than the instance — a fix task that reads "1 of 4 in this class" is told, at the point of work, that three siblings are waiting.
 
@@ -436,7 +596,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qg
   --component pm-plugin-development:ext-self-review-plan-marshall --severity warning
 ```
 
-Then resolve the worktree HEAD SHA — the same call and the same `{worktree_path}` as Branch A — and record the loop-back outcome carrying it:
+Then resolve the worktree HEAD SHA — the same call and the same `{worktree_path}` as Branch A — and record the loop-back outcome carrying it. As on Branch A, the `--fact acceptance=… --fact may_close=…` pair is conditional: forward both on the three states where Step 3b actually returned an answer (a findings-bearing round, a refusal, or an accepted-but-`may_close: no` round). On the **`verifier_unavailable`** state — the verifier dispatch itself failed or returned nothing (§ "Step 3b") — there is no acceptance and no stop answer to report; OMIT both `--fact` flags on that state, exactly as the zero-generator fallback omits them on Branch A:
 
 ```bash
 git -C {worktree_path} rev-parse HEAD
@@ -447,6 +607,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
   --plan-id {plan_id} --phase 6-finalize --step default:pre-submission-self-review --outcome loop_back \
   --loop-back-target 6-finalize \
   --display-detail "{display_detail_from_workflow}" \
+  --fact acceptance={acceptance} --fact may_close={may_close} --fact work_performed=true \
   --head-at-completion {sha} \
   --force
 ```
@@ -460,6 +621,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
   --plan-id {plan_id} --phase 6-finalize --step default:pre-submission-self-review --outcome loop_back \
   --loop-back-target 6-finalize \
   --display-detail "{display_detail_from_workflow}" \
+  --fact acceptance={acceptance} --fact may_close={may_close} --fact work_performed=true \
   --head-at-completion {sha} --force
 ```
 
@@ -490,7 +652,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
   --force
 ```
 
-Branch A (empty findings) persists nothing — there are no findings to write. Branch B always forwards `--head-at-completion`; Branch C forwards it whenever the SHA resolved and omits it when it did not. The two are forwarded for different reasons, and only ONE of the two SHAs is ever read as an anchor.
+Branch A persists nothing — there are no findings to write. Branch B always forwards `--head-at-completion`; Branch C forwards it whenever the SHA resolved and omits it when it did not. The two are forwarded for different reasons, and only ONE of the two SHAs is ever read as an anchor.
 
 - **Branch B** — the SHA carries no *re-fire* decision value (the dispatcher re-fires `loop_back` records unconditionally), but it IS the delta anchor the NEXT round reads in Step 1. A `loop_back` record written without it leaves the following round with no anchor, which silently degrades that round to a full sweep — the exact re-sweep this scoping exists to remove.
 - **Branch C** — the SHA is recorded for the audit record of where the failure happened, and because an unresolved `{sha}` placeholder would otherwise persist verbatim in its place. When git cannot resolve it at all the field is omitted rather than filled, so the record distinguishes a HEAD nobody could read from a HEAD read as blank. Either way it is **NOT** an anchor: Step 1 admits an anchor only from a `done` or `loop_back` record, because a round that aborted before surfacing anything reviewed nothing and cannot assert that everything up to its HEAD was examined. See Step 1's ⛔ note for the false-green that reading it would produce.
@@ -512,7 +674,7 @@ This step re-fires per round (§ HEAD-dependency). Two shapes close it through a
 
 **The termination criterion — converged, not-run, and out of budget.** These are DIFFERENT closes and a later reader MUST NOT collapse them. The not-run close is the zero-generator path named in the section opening; it is listed here so the criterion covers every close this step can reach rather than only the two that involve a surfacer:
 
-- **Converged** — the step closed on a clean pass (Step 4 Branch A): every counted candidate examined, no check matched, over `surface_scope: full` on any round a surfacer ran. The doc-claim half reached a fixpoint by deletion and the behavioural half found nothing.
+- **Converged** — the step closed on a clean pass (Step 4 Branch A): every counted candidate examined, no check matched, over `surface_scope: full` on a round a surfacer ran, AND the verifier answered the stop question `may_close: yes` over that round. The doc-claim half reached a fixpoint by deletion and the behavioural half found nothing — and a party other than the author agreed that no further round was owed, which is what makes *converged* a verdict rather than the author's own decision to stop.
 - **Not run** — the zero-generator close: no surfacer implementor resolved, so no file was searched and no check executed. It closes the step, and it is not a clean pass — see § "A clean verdict states what the round observed".
 - **Out of budget** — the loop stopped while the doc-claim half was still non-converged: a self-seeding spiral kept alive by correction-instead-of-deletion, or a round/token ceiling reached, closing on a recorded WARNING DEVIATION rather than a clean pass. This is NOT a converged close and MUST NOT be reported as one. A warning-deviation close is *out of budget*; a clean pass is *converged*.
 

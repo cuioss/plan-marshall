@@ -519,12 +519,6 @@ python3 .plan/execute-script.py plan-marshall:plan-marshall:phase_handshake capt
   --plan-id {plan_id} --phase 4-plan
 ```
 
-Log task plan agent invocation:
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:plan-marshall) Invoked execution-context for phase-4-plan"
-```
-
 **Step 4b**: Transition phase after tasks created.
 
 **Post-dispatch contract assertion**: phase-4-plan runs on the main checkout (the worktree is not materialized until phase-5 Step 2.5) and its contract restricts writes to `.plan/local/plans/{plan_id}/**` and `.plan/local/worktrees/{plan_id}/**` — the task-plan artifacts only. The plan phase reaching for `Edit` / `Write` against the main checkout silently advances the orchestrator into phase-5-execute with main-checkout drift. Assert structurally that the main checkout is clean before advancing. Plan-workspace writes under `.plan/local/**` are untracked, so they never appear in porcelain output — only a stray main-tree edit does:

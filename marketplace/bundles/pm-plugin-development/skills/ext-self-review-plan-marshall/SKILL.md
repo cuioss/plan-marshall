@@ -22,6 +22,14 @@ When the cognitive review pass files a finding for a confirmed structural defect
 
 2. **File find-only; defer triage.** The cognitive review pass FILES findings (`manage-findings add`) for confirmed defects and STOPS there — it does NOT triage them (no FIX / SUPPRESS / ACCEPT decision, no source edit, no respond). Disposition is owned by the single consolidated triage pass that runs later in finalize (`verification-feedback` → `triage.md`), which reads the promoted top-level fields and decides each finding once. Filing find-only keeps the self-review generator a pure producer on the FIND side of the pipeline.
 
+## This surfacer is neither the author nor the verifier
+
+The review round separates the party that AUTHORS its verdict from the party that ACCEPTS it — the arrangement, the harness constraint behind it, and the context each role runs in are owned by [`pre-submission-self-review.md`](../../../plan-marshall/skills/phase-6-finalize/workflow/pre-submission-self-review.md) § "Author and verifier are different parties" and are not restated here. What belongs here is this skill's own position in that arrangement, because it is the one role the separation must NOT be built into:
+
+**This skill is the SURFACER, and it is neither of the two judging roles.** It produces the candidate set deterministically and read-only; the author adjudicates those candidates and writes the verdict; a separately-dispatched verifier accepts or refuses it. The independence therefore lives entirely across the dispatch boundary between those two — and adding judgement here would not create it. A surfacer that decided which candidates were real would be authoring findings, so it would BE the author, and a surfacer that scored the author's verdict would be the verifier running inside a producer the author already consumes. Either move puts two roles in one party, which is exactly the state the separation exists to leave behind.
+
+⛔ **Consequences for anyone extending this skill.** Every detector added here must stay a pattern over the diff that emits a candidate and adjudicates nothing. A detector that suppresses a candidate because it judged it benign has made an adjudication no verifier sees, and it is invisible at the surface it was made — the candidate simply never appears, so neither judging role can disagree with it. The declared prohibition above (`Do not modify any source files`) says the same thing about writes; this says it about verdicts.
+
 ## Enforcement
 
 **Execution mode**: Library script; invoked via the standard 3-part executor notation by `plan-marshall:phase-6-finalize/workflow/pre-submission-self-review.md` Step 1.

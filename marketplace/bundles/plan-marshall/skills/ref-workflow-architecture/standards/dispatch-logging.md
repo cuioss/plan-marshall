@@ -102,7 +102,7 @@ Two further forbidden shapes, specific to the seam:
 - **A separately hand-written `manage-logging work "[DISPATCH]"` step.** Now that the resolver emits the line, a hand-written one double-emits, and — placed once per role in the doc — reintroduces the per-role blind spot the seam exists to close. Pass the dispatch context to the resolve; do not also hand-write the line.
 - **A re-fire that reuses the envelope without re-resolving.** Re-dispatching by re-issuing a prior `Task:` block with a cached `target`, skipping the resolve, emits nothing — the re-fire vanishes from the trail exactly as before. Every firing MUST perform its own `effort resolve-target … --workflow …` so the seam emits per firing.
 
-The seam emission specified above is the sole permitted dispatch-emission shape. Callers that today emit no dispatch log MUST pass the dispatch context to their resolve; callers that hand-write the `[DISPATCH]` line (or the pre-resolve placeholder) MUST drop it and let the seam emit.
+The seam emission specified above is the sole permitted dispatch-emission shape. Every caller passes the dispatch context to the resolve it already performs, and no caller hand-writes the `[DISPATCH]` line or a pre-resolve `[STATUS]` placeholder beside it. `test/plan-marshall/phase-6-finalize/test_dispatch_roster_closure.py` holds that over a derived dispatch-site population and publishes the population's size, so a site added without the context — or one that reintroduces either forbidden emission — fails the build rather than going quiet in the trail.
 
 ## Cross-references
 

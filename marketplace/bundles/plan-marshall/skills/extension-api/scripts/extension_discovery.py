@@ -1406,7 +1406,16 @@ def find_implementors(ext_point: str) -> list[dict[str, Any]]:
     Returns:
         A list of per-implementor records, sorted by ``order`` then ``name``.
         Each record carries ``name`` / ``order`` / ``default_on`` / ``presets`` /
-        ``canonicals`` / ``description`` / ``source`` / ``path``.
+        ``canonicals`` / ``description`` / ``source`` / ``path``, plus
+        ``verification_profile`` ONLY when the doc declares it with a non-empty
+        value — its absence is the ext-point-verify non-participation signal
+        rather than a defaulted empty, so a consumer enumerating participating
+        producers tests for the key's presence. ``source`` and ``path`` are
+        derived by the scanner rather than read from frontmatter; every other
+        key is a declared frontmatter field. See
+        :func:`_build_implementor_record` for the per-key defaults and
+        ext-point-finalize-step.md § "Keys the record carries that no finalize
+        step declares" for each key's declaring source.
     """
     records: list[dict[str, Any]] = []
     records.extend(_scan_phase6_for_implementors(ext_point))

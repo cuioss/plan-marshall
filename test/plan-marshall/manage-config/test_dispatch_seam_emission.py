@@ -35,10 +35,12 @@ shipped workflow document actually goes through the seam: a doc that reinstated 
 hand-written ``[DISPATCH]`` line, or dropped ``--workflow`` from its resolve, leaves
 every assertion below unchanged. That is a DOCUMENT contract, and it is verified
 where the documents are read — ``test/plan-marshall/phase-6-finalize/
-test_dispatch_roster_closure.py`` (the seam-pairing and hand-written-emit sweeps
-over every markdown file under the finalize skill). A finalize-flavoured copy of
-the per-firing test used to sit here and was deleted for exactly this reason; see
-the comment block below where it stood.
+test_dispatch_roster_closure.py``, at two scopes: the per-spawn seam-pairing and
+hand-written-emit sweeps over every markdown file under the finalize skill, and the
+per-document roster-vs-seam equality over every dispatch site in the whole
+plan-marshall skills tree. A finalize-flavoured copy of the per-firing test used to
+sit here and was deleted for exactly this reason; see the comment block below where
+it stood.
 """
 
 import json
@@ -192,13 +194,18 @@ def test_role_fired_n_times_produces_n_records(plan_context):
 #     ::test_every_task_spawn_is_preceded_by_a_seam_resolve
 #     ::test_no_hand_written_dispatch_emit_survives
 #     ::test_the_seam_sweep_population_reaches_past_the_skill_document
+#     ::test_the_dispatch_site_roster_equals_the_seam_emitting_set
+#     ::test_no_hand_written_dispatch_emit_survives_across_the_roster
 #
-# Those sweep every markdown file under the finalize skill, pair each `Task:`
-# spawn with a preceding `effort resolve-target … --workflow` call, and reject any
-# surviving hand-written `--message "[DISPATCH] …"` step — the mutations this test
-# named and could not see. The duplicate is deleted rather than repaired: repairing
-# it would mean reading the finalize documents from this file, which is the other
-# suite's job and would leave two populations to keep in step.
+# The first three sweep every markdown file under the finalize skill, pair each
+# `Task:` spawn with a preceding `effort resolve-target … --workflow` call, and
+# reject any surviving hand-written `--message "[DISPATCH] …"` step. The last two
+# carry the same two properties, per document, over the derived dispatch-site roster
+# across the whole plan-marshall skills tree — so a dispatch site outside the
+# finalize skill is covered too. Between them they hold the mutations this test named
+# and could not see. The duplicate is deleted rather than repaired: repairing it would
+# mean reading the finalize documents from this file, which is the other suite's job
+# and would leave two populations to keep in step.
 # =============================================================================
 
 

@@ -701,6 +701,220 @@ def test_degradation_warning_worked_example_names_all_three_dimensions():
     )
 
 
+# ---------------------------------------------------------------------------
+# A degraded module-tests arm reports itself in the step RECORD, not only in a
+# work-log WARNING
+# ---------------------------------------------------------------------------
+#
+# The gate's module-tests arm has several paths that reach Mark Step Complete
+# (Success) having run NO pytest. Each already emits a `[WARNING]`, but no
+# consumer of the step record reads the work log — so a path whose
+# `display_detail` still ends `module-tests green` reports a clean run of an arm
+# that never ran. These sweeps pin the two halves of the fix: every branch-0
+# degradation path NAMES the detail variant it must emit, and no degradation
+# variant claims the degraded arm is green.
+
+
+#: The label opening the derived list of Branch A paths that reach success without
+#: an arm having produced a `status: success`. Anchored on the label rather than an
+#: ordinal so ordinary prose edits around it do not silently empty the sweep.
+_NON_RUN_LIST_LABEL = '**Branch A does not mean every arm ran.**'
+
+#: The paragraph that closes that list. Bounding the sweep here keeps the prose
+#: after it out of the item population.
+_NON_RUN_LIST_TERMINATOR = '**A non-finish is not on that list'
+
+#: A numbered item, as the non-run list renders one.
+_NUMBERED_ITEM = re.compile(r'^\d+\.\s')
+
+#: The two paths this deliverable gives a named variant to. Both are branch-0
+#: paths: the resolved build skill exposes no `resolve-test-scope` verb, and no
+#: `module-tests` canonical resolves at all. Selected by the token the document
+#: itself uses to name them, so the population is READ from the list rather than
+#: pinned by ordinal — renumbering the list cannot drop an item from the sweep.
+_BRANCH_ZERO_TOKEN = 'branch-0'
+
+#: What a degraded module-tests path must name in the recorded verdict.
+_DEGRADED_VARIANT_MARKER = 'module-tests DEGRADED'
+
+#: A documented `--display-detail` payload, matched the same way the ceiling sweep
+#: matches one. Anchored on the flag, so prose that merely discusses display_detail
+#: is not read as a variant.
+_DISPLAY_DETAIL_PAYLOAD = re.compile(r'--display-detail\s+"([^"]*)"')
+
+#: Tokens that mark a payload as reporting a module-tests arm that did NOT run.
+#: A hand-maintained FLOOR, not a derivation — the gate document's "Detail
+#: variant — module-tests ..." headings use inconsistent casing against their
+#: own `--display-detail` payloads (`un-gated` heading vs. `UN-GATED` payload),
+#: which defeats a single mechanical read. `test_module_tests_degradation_token_floor_covers_every_declared_variant`
+#: below guards the floor: it counts the document's own "module-tests" detail-variant
+#: headings and asserts that count against how many payloads this tuple actually
+#: covers, so a variant added under a new spelling fails loudly here instead of
+#: being silently excluded from the sweep above.
+_MODULE_TESTS_DEGRADATION_TOKENS = ('module-tests DEGRADED', 'module-tests UN-GATED', 'module-tests skipped')
+
+#: A "Detail variant — module-tests ..." heading, as the gate document renders one.
+#: Counts the document's OWN declared module-tests degradation variants, independent
+#: of whether `_MODULE_TESTS_DEGRADATION_TOKENS` currently covers them.
+_MODULE_TESTS_DETAIL_VARIANT_HEADING = re.compile(r'\*\*Detail variant — module-tests ')
+
+#: The claim a module-tests degradation payload must never make. NOT a blanket ban
+#: on the word "green": the same payload legitimately reports the arms that DID run
+#: ("whole-tree gates green"), and the gate document sanctions exactly that — its
+#: rule is that a variant says green "for no dimension it did not gate". The
+#: forbidden shape is therefore the ARM-SPECIFIC claim, which is what this token
+#: spells.
+_FORBIDDEN_GREEN_CLAIM = 'module-tests green'
+
+
+def _non_run_list_items() -> list[str]:
+    """Return the numbered items of Branch A's derived non-run path list.
+
+    An absent label yields ``[]``, which every caller asserts against, so a
+    relocated or reworded list fails loudly rather than emptying the sweep.
+    """
+    lines = _gate_text().splitlines()
+    start = next((i for i, line in enumerate(lines) if _NON_RUN_LIST_LABEL in line), None)
+    if start is None:
+        return []
+    items: list[str] = []
+    for line in lines[start + 1 :]:
+        if _SAME_OR_HIGHER_HEADING.match(line) or line.startswith(_NON_RUN_LIST_TERMINATOR):
+            break
+        if _NUMBERED_ITEM.match(line):
+            items.append(line)
+    return items
+
+
+def _module_tests_degradation_payloads() -> list[str]:
+    """Return every documented `display_detail` payload reporting a non-run module-tests arm."""
+    return [
+        payload
+        for payload in _DISPLAY_DETAIL_PAYLOAD.findall(_gate_text())
+        if any(token in payload for token in _MODULE_TESTS_DEGRADATION_TOKENS)
+    ]
+
+
+def test_every_branch_zero_path_names_the_degraded_detail_variant():
+    """Both branch-0 paths must say WHICH variant they emit, not defer to a rule.
+
+    Deferring to "compose under the governing rule" is what left these two paths
+    with no named detail at all: an author following the gate document reached
+    Branch A, found no variant covering the path, and the nearest one to hand ends
+    `test-compile + module-tests green` — asserting an arm that never ran. The
+    population is READ from the list by the document's own `branch-0` token, so
+    renumbering the list cannot silently drop an item from this sweep.
+    """
+    items = _non_run_list_items()
+
+    assert items, (
+        f'The gate document carries no numbered non-run list under '
+        f'{_NON_RUN_LIST_LABEL!r}, so Branch A no longer enumerates the paths that '
+        f'reach it without an arm having run, and this sweep would pass over nothing'
+    )
+
+    branch_zero_items = [item for item in items if _BRANCH_ZERO_TOKEN in item]
+
+    assert branch_zero_items, (
+        f'None of the {len(items)} non-run item(s) names a {_BRANCH_ZERO_TOKEN!r} '
+        f'path, so either the list dropped both branch-0 degradations or it renamed '
+        f'them — in both cases the paths this deliverable covers are unswept. '
+        f'Items: {items}'
+    )
+
+    unnamed = [item for item in branch_zero_items if _DEGRADED_VARIANT_MARKER not in item]
+
+    assert not unnamed, (
+        f'These branch-0 non-run path(s) name no {_DEGRADED_VARIANT_MARKER!r} detail '
+        f'variant, so an author reaching Branch A from them has no documented string '
+        f'to emit and the nearest one claims module-tests is green: {unnamed}'
+    )
+
+
+def test_no_module_tests_degradation_variant_claims_the_arm_is_green():
+    """A degraded arm is never reported green — the deliverable's load-bearing property.
+
+    The population is DERIVED from the gate document's own payloads, so a variant
+    added later for a fourth non-run path is swept without editing this file.
+
+    ⛔ The forbidden shape is the ARM-SPECIFIC claim
+    (:data:`_FORBIDDEN_GREEN_CLAIM`), not the word "green" anywhere in the payload.
+    A blanket ban would condemn the same variants the gate document sanctions: each
+    of them reports the arms that DID run as green in the same breath as naming the
+    one that did not, and the document's rule is that a variant contains "green"
+    for no dimension it did not gate. Banning the word outright would also delete
+    real outcome from the step record — the reader would lose which arms passed —
+    which is the completeness floor traded away for a simpler predicate.
+    """
+    payloads = _module_tests_degradation_payloads()
+
+    assert payloads, (
+        f'No documented display_detail payload reports a non-run module-tests arm '
+        f'(looked for {_MODULE_TESTS_DEGRADATION_TOKENS}), so every module-tests '
+        f'degradation path reaches Branch A with only its default string — the exact '
+        f'misreport this sweep exists to prevent, and it would pass vacuously'
+    )
+
+    claiming_green = [payload for payload in payloads if _FORBIDDEN_GREEN_CLAIM in payload]
+
+    assert not claiming_green, (
+        f'These degradation payload(s) report the module-tests arm as green while '
+        f'naming it as not run — a step record that contradicts itself, and the one '
+        f'a consumer reads instead of the work log: {claiming_green}'
+    )
+
+
+def test_module_tests_degradation_token_floor_covers_every_declared_variant():
+    """The hand-maintained token floor must cover every variant the document declares.
+
+    :data:`_MODULE_TESTS_DEGRADATION_TOKENS` is a floor, not a derivation, so
+    nothing mechanically keeps it in step with the gate document. This guards
+    the gap directly: the document's OWN "Detail variant — module-tests ..."
+    headings are counted independently of the tuple, then compared against how
+    many payloads the tuple actually covers (`_module_tests_degradation_payloads`).
+    A degradation variant added under a spelling the tuple does not name would
+    grow the heading count without growing the covered-payload count, so this
+    assertion fails loudly instead of the sweep above silently passing over it.
+    """
+    declared_variant_count = len(_MODULE_TESTS_DETAIL_VARIANT_HEADING.findall(_gate_text()))
+    covered_payload_count = len(_module_tests_degradation_payloads())
+
+    assert declared_variant_count == covered_payload_count, (
+        f'The gate document declares {declared_variant_count} "module-tests" detail '
+        f'variant(s) but {_MODULE_TESTS_DEGRADATION_TOKENS!r} only covers '
+        f'{covered_payload_count} payload(s) — a variant was added under a spelling '
+        f'this floor does not name. Add the new spelling to '
+        f'_MODULE_TESTS_DEGRADATION_TOKENS.'
+    )
+
+
+def test_the_green_claim_detector_fires_on_branch_as_default_string():
+    """Mutation guard: the predicate must reject the string it exists to keep out.
+
+    Branch A's default detail is precisely the payload a degradation path must not
+    emit, so it is the exact shape the detector has to catch. Without this, a typo
+    in :data:`_FORBIDDEN_GREEN_CLAIM` would leave the sweep above vacuously green
+    over every payload.
+    """
+    branch_a_default = '{N} bundles + whole-tree quality-gate green, test-compile + module-tests green'
+
+    assert _FORBIDDEN_GREEN_CLAIM in branch_a_default, (
+        'The green-claim detector does not fire on Branch A default string, which '
+        'is the one payload a degradation path must never emit — so the sweep above '
+        'would pass over it'
+    )
+
+    # Negative control — a payload that reports the arms that DID run as green while
+    # naming module-tests as not run is CONFORMANT, so the detector must not fire on
+    # it. A detector that did would have to be suppressed to keep the document green.
+    conformant = '{N} bundles + whole-tree gates green, module-tests DEGRADED'
+    assert _FORBIDDEN_GREEN_CLAIM not in conformant, (
+        'The green-claim detector fires on a conformant degradation payload that '
+        'reports only the arms that ran as green — banning the word outright would '
+        'strip the passing arms out of the step record'
+    )
+
+
 def test_lock_step_sites_all_name_the_whole_tree_quality_gate_arm():
     sites = _lock_step_sites()
 

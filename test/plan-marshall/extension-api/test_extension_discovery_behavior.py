@@ -12,7 +12,9 @@ stub extension modules (no dependency on the live marketplace tree) so error
 paths and skip branches are deterministic.
 """
 
+import re
 import types
+from pathlib import Path
 
 import file_ops
 import pytest
@@ -609,3 +611,221 @@ def test_get_marketplace_bundles_path_falls_back_when_no_source(monkeypatch):
     monkeypatch.setattr(_disc, 'find_marketplace_path', lambda: None)
     result = _disc.get_marketplace_bundles_path()
     assert result.is_dir()
+
+
+# =============================================================================
+# Declaration surface == read surface (ext-point-finalize-step)
+# =============================================================================
+#
+# The ext-point document is the DECLARATION and ``find_implementors()``'s record
+# is the READ. Both directions are asserted, and both are DERIVED — from the live
+# discovered population and from the document's own tables — never from a
+# hand-written key list here. A field added later is therefore covered with no
+# edit to this module, which is the whole point: a literal list in the test would
+# reintroduce exactly the hand-maintained enumeration the ext-point exists to
+# remove. Per ADR-017 each assertion resolves its contract from the target's own
+# declaration and FAILS CLOSED when it cannot resolve it, so an unparseable doc
+# or an empty population is a failure rather than a vacuous pass.
+
+_IDENT_RE = re.compile(r'`([A-Za-z_][A-Za-z0-9_]*)`')
+
+
+def _ext_point_doc_text() -> str:
+    """The finalize-step ext-point document's text, via the module's own resolver.
+
+    Fails closed: an unresolvable document is a failure, not an empty contract.
+    """
+    doc = (
+        _disc.get_marketplace_bundles_path()
+        / 'plan-marshall'
+        / 'skills'
+        / 'extension-api'
+        / 'standards'
+        / 'ext-point-finalize-step.md'
+    )
+    assert doc.is_file(), f'ext-point doc unresolvable at {doc}; declaration surface cannot be derived'
+    # ``_disc`` is loaded dynamically, so the path chain above is untyped; str()
+    # pins the declared return rather than leaking Any into every caller.
+    return str(doc.read_text(encoding='utf-8'))
+
+
+def _markdown_table_rows(text: str, header_first_cell: str) -> list[list[str]]:
+    """Every body row of the first markdown table whose first header cell matches.
+
+    Returns each row as its list of stripped cells. Selecting the table by its
+    first HEADER cell — not by the presence of some column — is what keeps this
+    pointed at one table in a document that carries several.
+    """
+    lines = text.splitlines()
+    for index, line in enumerate(lines):
+        if not line.startswith('|'):
+            continue
+        cells = [cell.strip() for cell in line.strip().strip('|').split('|')]
+        if not cells or cells[0].lower() != header_first_cell.lower():
+            continue
+        rows: list[list[str]] = []
+        for raw in lines[index + 2 :]:  # +2 skips the header separator row
+            if not raw.startswith('|'):
+                break
+            rows.append([cell.strip() for cell in raw.strip().strip('|').split('|')])
+        return rows
+    return []
+
+
+def test_every_record_key_is_declared_in_the_ext_point_document():
+    """No undeclared read: every key the live record carries is declared.
+
+    The record key set is the UNION over the discovered population rather than
+    one record's keys, because ``verification_profile`` is surfaced only when a
+    doc declares it — reading a single record would miss a conditionally-present
+    key entirely. Fails when a key is added to the record without a matching row
+    in either the Implementor-Frontmatter table or the record-key provenance
+    table.
+    """
+    records = _disc.find_implementors(_FINALIZE_STEP_EXT_POINT)
+    assert records, 'no finalize-step implementors discovered; the population is unresolvable, so nothing is asserted'
+
+    record_keys: set[str] = set()
+    for record in records:
+        record_keys.update(record)
+
+    text = _ext_point_doc_text()
+    frontmatter_keys = {ident for row in _markdown_table_rows(text, 'Field') for ident in _IDENT_RE.findall(row[0])}
+    provenance_keys = {ident for row in _markdown_table_rows(text, 'Record key') for ident in _IDENT_RE.findall(row[0])}
+    assert frontmatter_keys, 'Implementor-Frontmatter table not found; declaration surface unresolvable'
+    assert provenance_keys, 'record-key provenance table not found; derived-key declarations unresolvable'
+
+    undeclared = record_keys - (frontmatter_keys | provenance_keys)
+    assert not undeclared, (
+        f'record keys carried but never declared in ext-point-finalize-step.md: {sorted(undeclared)}. '
+        'Add a row declaring each, or stop emitting it.'
+    )
+
+
+#: Repo root, derived from the marketplace/bundles path this module already
+#: resolves — used to scan both ``marketplace/`` and ``test/`` for real
+#: frontmatter-field consumers, never hand-maintained as a second path.
+def _repo_root() -> Path:
+    # ``_disc`` is loaded dynamically, so the path chain is untyped; Path()
+    # pins the declared return rather than leaking Any into every caller —
+    # the same pattern _ext_point_doc_text() uses above.
+    return Path(_disc.get_marketplace_bundles_path()).parent.parent
+
+
+def _code_read_keys(candidate_keys: set[str]) -> set[str]:
+    """The subset of ``candidate_keys`` with a REAL Python consumer somewhere
+    in the shipped tree — script or test alike.
+
+    A field counts as code-read when its bare name appears as a quoted string
+    literal (``'name'`` or ``"name"``) in some ``.py`` file under
+    ``marketplace/`` or ``test/``. That shape catches every way this codebase
+    actually reads a frontmatter field: a ``_read_frontmatter_fields(doc,
+    (KEY,))`` call site, a step's own lightweight direct parser (e.g.
+    ``mutates_source``'s plugin-doctor analyzer, which never goes through the
+    shared helper), and a guard test that parses the field to assert against
+    it. A field mentioned only in prose or a docstring — never as a quoted
+    dict-key literal — does NOT count; that distinction is exactly what
+    the refuted premise this test replaces conflated.
+    """
+    patterns = {key: re.compile(f"""['"]{re.escape(key)}['"]""") for key in candidate_keys}
+    remaining = set(candidate_keys)
+    found: set[str] = set()
+    repo_root = _repo_root()
+    py_files = sorted(repo_root.glob('marketplace/**/*.py')) + sorted(repo_root.glob('test/**/*.py'))
+    for py_file in py_files:
+        if not remaining:
+            break
+        content = py_file.read_text(encoding='utf-8')
+        matched = {key for key in remaining if patterns[key].search(content)}
+        found |= matched
+        remaining -= matched
+    return found
+
+
+#: The word an agent-only reader's declared contract names its reader by — the
+#: shape the ``advances_main_via_rebase`` exception already uses ("the
+#: orchestrating agent follows directly"). Checked per SENTENCE, not per
+#: paragraph: the field's own introductory list sentence names every
+#: Conditional/Optional field in one breath, so a paragraph-wide co-occurrence
+#: would credit all of them with whichever ONE field's sentence names "agent".
+_AGENT_CONSUMER_TOKEN = 'agent'
+
+#: A sentence boundary in this document's prose — punctuation followed by
+#: whitespace and either a capital letter or a backtick-quoted identifier,
+#: which is how a new sentence starts here.
+_SENTENCE_SPLIT = re.compile(r'(?<=[.!?])\s+(?=[A-Z`])')
+
+
+def _agent_declared_keys(candidate_keys: set[str], text: str) -> set[str]:
+    """Fields whose consuming contract is EXPLICITLY named as agent-only.
+
+    Per field: the field's backtick-quoted name must co-occur with
+    :data:`_AGENT_CONSUMER_TOKEN` inside the SAME sentence somewhere in the
+    document — a checkable fact naming that one field's reader, not an
+    inference from the Required column and not credited to it merely by
+    sharing a paragraph with a sentence that names a DIFFERENT field's reader.
+    """
+    sentences = _SENTENCE_SPLIT.split(text)
+    declared: set[str] = set()
+    for key in candidate_keys:
+        marker = f'`{key}`'
+        if any(marker in sentence and _AGENT_CONSUMER_TOKEN in sentence for sentence in sentences):
+            declared.add(key)
+    return declared
+
+
+def test_every_declared_field_has_a_reader():
+    """No unread declaration: every declared field is resolved by some consumer.
+
+    Two mechanically distinct arms, never a Required-column marking alone —
+    the refuted premise this test replaces treated ``Conditional`` / ``Optional``
+    / ``Never`` as its own proof of a reader, which this plan's own self-review
+    (finding a9de78) disproved for ``advances_main_via_rebase``: a complete-
+    coverage sweep found it in NO Python file at all, so a field marked
+    ``Optional`` with no consumer of any kind would have passed unnoticed.
+
+    - **Code-read**: a real quoted-literal consumer exists somewhere in
+      ``marketplace/`` or ``test/`` (:func:`_code_read_keys`).
+    - **Agent-only**: no code consumer exists, but the document explicitly
+      names an agent-followed contract for that field
+      (:func:`_agent_declared_keys`) — a declared, checkable fact, not an
+      inference from the Required column.
+
+    Both populations publish their size so a zero cannot pass as a clean
+    sweep, and the fields covered by neither arm are the unread declarations.
+    """
+    text = _ext_point_doc_text()
+    rows = _markdown_table_rows(text, 'Field')
+    assert rows, 'Implementor-Frontmatter table not found; declaration surface unresolvable'
+
+    declared_keys: dict[str, str] = {}
+    for row in rows:
+        idents = _IDENT_RE.findall(row[0])
+        if not idents:
+            continue
+        declared_keys[idents[0]] = row[2] if len(row) > 2 else ''
+
+    assert declared_keys, 'No field rows parsed from the Implementor-Frontmatter table'
+
+    always_on_keys = set(_disc._IMPLEMENTOR_FRONTMATTER_KEYS)
+    candidate_keys = set(declared_keys) - always_on_keys
+
+    code_read = _code_read_keys(candidate_keys)
+    still_candidate = candidate_keys - code_read
+    agent_declared = _agent_declared_keys(still_candidate, text)
+
+    unread = sorted(candidate_keys - code_read - agent_declared)
+
+    print(
+        f'field-reader populations: always_on={len(always_on_keys)} '
+        f'code_read={len(code_read)} agent_declared={len(agent_declared)} '
+        f'unread={len(unread)}'
+    )
+
+    assert not unread, (
+        f'fields declared in ext-point-finalize-step.md with no code consumer '
+        f'({sorted(candidate_keys - code_read)}) AND no explicit agent-only '
+        f'contract naming them alongside {_AGENT_CONSUMER_TOKEN!r}: {unread}. '
+        'Either wire a reader, name the agent-followed contract explicitly, or '
+        'drop the row — a Required-column marking alone is not evidence of a reader.'
+    )

@@ -286,16 +286,6 @@ def _partition_foreign_paths(deliverables: list[dict]) -> _ForeignPopulation:
     return _ForeignPopulation(by_deliverable, excluded_read_only)
 
 
-def _foreign_paths_by_deliverable(deliverables: list[dict]) -> list[tuple[int, list[str]]]:
-    """Extract ``(deliverable_number, [foreign_path, ...])`` — the gate's population.
-
-    The population view of :func:`_partition_foreign_paths`: every path that is
-    both foreign and declares a change, grouped by the deliverable that declared
-    it. Deliverables with no such path are dropped.
-    """
-    return _partition_foreign_paths(deliverables).by_deliverable
-
-
 # ---------------------------------------------------------------------------
 # Public entry point
 # ---------------------------------------------------------------------------

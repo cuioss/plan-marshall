@@ -209,7 +209,7 @@ def test_one_pushed_no_pr_among_several_repos_blocks():
 # --------------------------------------------------------------------------- #
 
 
-def test_foreign_paths_by_deliverable_selects_only_foreign_entries():
+def test_the_population_selects_only_foreign_entries():
     deliverables = [
         {'number': 1, 'foreign': False, 'affected_files': [{'path': 'host.py', 'foreign': False}]},
         {
@@ -221,11 +221,11 @@ def test_foreign_paths_by_deliverable_selects_only_foreign_entries():
             ],
         },
     ]
-    extracted = gate._foreign_paths_by_deliverable(deliverables)
+    extracted = gate._partition_foreign_paths(deliverables).by_deliverable
     assert extracted == [(2, ['/foreign/a.py'])]
 
 
-def test_foreign_paths_by_deliverable_reads_the_survey_scope_pair():
+def test_the_population_reads_the_survey_scope_pair():
     """A survey-scope deliverable's foreign paths reach the landing gate.
 
     A discovery-style deliverable declares ``Files to survey:`` +
@@ -255,7 +255,7 @@ def test_foreign_paths_by_deliverable_reads_the_survey_scope_pair():
         },
     ]
 
-    extracted = gate._foreign_paths_by_deliverable(deliverables)
+    extracted = gate._partition_foreign_paths(deliverables).by_deliverable
 
     assert extracted == [(1, ['/foreign/mutated.py', '/foreign/surveyed.py'])]
 
@@ -287,7 +287,7 @@ def test_a_doubly_declared_foreign_path_is_named_once():
         },
     ]
 
-    extracted = gate._foreign_paths_by_deliverable(deliverables)
+    extracted = gate._partition_foreign_paths(deliverables).by_deliverable
 
     assert extracted == [(1, ['/foreign/both.py'])]
 
