@@ -1,4 +1,4 @@
-= ADR-021: Economy rules bind the persisted artifact, never the reasoning that produced it
+= ADR-022: Economy rules bind the persisted artifact, never the reasoning that produced it
 :toc: left
 :toclevels: 2
 :sectnums:
