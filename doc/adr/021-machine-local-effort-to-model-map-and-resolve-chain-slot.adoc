@@ -116,8 +116,9 @@ what the resolved level requested.
 
 * **The map becomes a shadow level table.** If entries routinely remap levels
   to unrelated capabilities, the ordinal palette stops meaning anything on
-  provisioning targets. Mitigation: the never-escalate obligation is enforced
-  at the seam, not documented beside it.
+  provisioning targets. Mitigation: the never-escalate obligation must be
+  enforced at the provisioning seam when WS-02 builds it — this ADR states
+  the requirement; the seam does not enforce it yet.
 * **Silent divergence between checkouts.** Two machines with different maps
   dispatch the same plan to different models. Mitigation: the map is
   machine-local by design and announced as such — reproducibility across
