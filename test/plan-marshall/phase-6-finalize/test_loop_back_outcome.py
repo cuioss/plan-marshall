@@ -37,6 +37,7 @@ The tests use unique ``plan_id`` values per test to avoid cross-test
 contamination (per MEMORY.md "Test Isolation Pattern").
 """
 
+import re
 from argparse import Namespace
 from pathlib import Path
 
@@ -72,11 +73,29 @@ _RETIRED_LITERAL = 'HEAD_DEPENDENT_STEPS'
 #: routed. Test 6 reads it for the states that do NOT close the round.
 _VERIFIER_STEP_HEADING = '### Step 3b: Independent verification (dispatch)'
 
-#: The state names the verifier's non-closing outcomes are filed under. Their
-#: presence in the section is a population FLOOR, not a roster: the assertion
-#: below derives what each one must record from the section's own text, and a
-#: fourth state added later joins the sweep by being named there.
+#: The state names the verifier's non-closing outcomes are filed under. A
+#: population FLOOR, not the sweep's population: the assertion below derives
+#: the actual per-state routing from the section's own state-to-outcome table,
+#: and only checks that these three still appear among the derived rows — so a
+#: state that loses its row loses its documented routing, and this floor
+#: notices the loss even if the whole table were somehow removed.
 _NON_CLOSE_STATES = ('verdict_refused', 'further_round_owed', 'verifier_unavailable')
+
+#: One row of the section's `` | `{state}` | ... | `{outcome}` | `` state-to-outcome
+#: table. Captures the state token and its recorded outcome; the middle
+#: "Verifier situation" column is read and discarded.
+_STATE_OUTCOME_ROW = re.compile(r'^\|\s*`([a-z_]+)`\s*\|.*\|\s*`([a-z_]+)`\s*\|\s*$', re.MULTILINE)
+
+
+def _non_close_state_outcomes(section: str) -> dict[str, str]:
+    """Return ``{state: recorded_outcome}`` derived from the section's own table.
+
+    A row whose state token is not a real state name (e.g. the header's
+    ``{state}`` placeholder) never matches ``[a-z_]+`` against a literal `{`,
+    so the header and separator rows are excluded by construction rather than
+    by position.
+    """
+    return dict(_STATE_OUTCOME_ROW.findall(section))
 
 
 def _section_after(text: str, heading: str) -> str:
@@ -458,11 +477,12 @@ def test_loop_back_commit_re_fires_pre_submission_self_review():
 def test_verifier_non_close_states_route_to_the_loop_back_branch():
     """Every documented non-close state lands on loop_back, not done or failed.
 
-    The three states are a population FLOOR — the assertion fails if the section
-    stops naming one, which is how a state would quietly lose its routing. What
-    each one must record is read from the section's own text rather than pinned
-    as a sentence, so rewording the routing prose does not break the test while
-    changing the outcome it names does.
+    Both populations are derived from the section's own state-to-outcome table
+    rather than pinned as a sentence, so rewording the routing prose does not
+    break the test while changing a state's recorded outcome does. The routing
+    assertion below runs PER STATE — a state whose table row records `done` or
+    `failed` fails on its own row, distinct from any sibling that still records
+    `loop_back` correctly.
     """
     doc = _PRE_SUBMISSION_SELF_REVIEW_MD.read_text(encoding='utf-8')
     section = _section_after(doc, _VERIFIER_STEP_HEADING)
@@ -473,22 +493,27 @@ def test_verifier_non_close_states_route_to_the_loop_back_branch():
         f'assertion below would sweep nothing.'
     )
 
-    missing = [state for state in _NON_CLOSE_STATES if state not in section]
-    assert not missing, (
-        f'The verifier section no longer names these non-close state(s): {missing}. '
-        f'A state that loses its name loses its documented routing with it, and '
-        f'nothing then says where a round in that state lands.'
+    state_outcomes = _non_close_state_outcomes(section)
+
+    assert state_outcomes, (
+        'The verifier section carries no state-to-outcome table row of the form '
+        '`| `{state}` | ... | `{outcome}` |`, so this sweep would cover nothing.'
     )
 
-    assert 'loop_back' in section, (
-        'The verifier section never names `loop_back`, so a round the verifier '
-        'declined to close has no documented outcome to record.'
+    missing = [state for state in _NON_CLOSE_STATES if state not in state_outcomes]
+    assert not missing, (
+        f'The verifier section table no longer names these non-close state(s): '
+        f'{missing}. A state that loses its row loses its documented routing with '
+        f'it, and nothing then says where a round in that state lands.'
     )
-    assert '--outcome done' not in section, (
-        'The verifier section documents a `--outcome done` call. A round the '
-        'verifier did not close must not record the closing outcome — that is the '
-        'author closing a review a second party declined to close.'
-    )
+
+    for state, outcome in state_outcomes.items():
+        assert outcome == 'loop_back', (
+            f'State `{state}` records `{outcome}` in the verifier section table, not '
+            f'`loop_back`. A round the verifier did not close must not record `done` '
+            f'(closing a review a second party declined to close) or `failed` '
+            f'(grading a working independence check as a broken step).'
+        )
 
 
 def test_a_verifier_declined_round_persists_as_an_inline_fixable_loop_back(plan_context):

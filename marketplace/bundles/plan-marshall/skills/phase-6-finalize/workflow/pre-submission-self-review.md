@@ -494,7 +494,15 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 **On `acceptance: refused`** the round does NOT close. The party that accepts did not accept, which is exactly the state this separation exists to make reachable. Route to **Step 4 Branch B** carrying the author's findings unchanged, plus ONE additional finding recording the non-close so it reaches the finding store rather than only the log.
 
-The same `qgate add` serves every non-closing verifier state, with `{state}` naming which one it was — `verdict_refused` for a refusal, `further_round_owed` for an `accepted` verdict the verifier answered `may_close: no` over, `verifier_unavailable` for a dispatch that failed or returned nothing. One call, three state names, because the finding's job is to carry the `rationale` into the store and the state is what tells the next round which question it has to answer:
+The same `qgate add` serves every non-closing verifier state, with `{state}` naming which one it was — `verdict_refused` for a refusal, `further_round_owed` for an `accepted` verdict the verifier answered `may_close: no` over, `verifier_unavailable` for a dispatch that failed or returned nothing. One call, three state names, because the finding's job is to carry the `rationale` into the store and the state is what tells the next round which question it has to answer.
+
+Every one of the three routes to the SAME recorded outcome:
+
+| `{state}` | Verifier situation | Recorded outcome |
+|---|---|---|
+| `verdict_refused` | `acceptance: refused` | `loop_back` |
+| `further_round_owed` | `acceptance: accepted` AND `may_close: no` | `loop_back` |
+| `verifier_unavailable` | dispatch failed, or returned no parseable answer | `loop_back` |
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qgate add \
@@ -503,7 +511,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qg
   --component pm-plugin-development:ext-self-review-plan-marshall --severity warning
 ```
 
-⛔ **A refused round records `loop_back`, never `done` and never `failed`.** It is a productive non-completion of exactly the shape § "Dispatched-envelope output" describes — the round examined its surface and handed back something for the next round to act on. Recording it `failed` would grade a working independence check as a broken step, which is the same mis-classification the loop-back convention above exists to prevent.
+⛔ **Every non-closing state above records `loop_back`, never `done` and never `failed`** — the table above is not aspirational, it is the whole outcome column. It is a productive non-completion of exactly the shape § "Dispatched-envelope output" describes — the round examined its surface and handed back something for the next round to act on. Recording any of the three `failed` would grade a working independence check as a broken step, which is the same mis-classification the loop-back convention above exists to prevent.
 
 **When the verifier dispatch itself fails** — `status: error`, or no parseable return — the round has NO acceptance and NO answer to the stop question. Treat that as UNVERIFIED and route to Branch B exactly as a refusal does, with the rationale naming the dispatch failure. ⛔ Never read an absent verifier return as an acceptance, and never read it as a `may_close: yes`: an unanswered question is not a yes, and reading it as one restores the author-accepts-its-own-verdict arrangement silently, which is the fail-open this whole separation exists to close. The same holds for a return that carries one field and not the other — a partial answer answers only the question it names.
 
