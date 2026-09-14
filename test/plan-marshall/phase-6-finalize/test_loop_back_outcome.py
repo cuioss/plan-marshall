@@ -79,8 +79,8 @@ _VERIFIER_STEP_HEADING = '### Step 3b: Independent verification (dispatch)'
 _NON_CLOSE_STATES = ('verdict_refused', 'further_round_owed', 'verifier_unavailable')
 
 
-def _section_after(text: str, heading: str, stop_prefix: str = '### ') -> str:
-    """Return the text between ``heading`` and the next ``stop_prefix`` line.
+def _section_after(text: str, heading: str) -> str:
+    """Return the text between ``heading`` and the next ``### `` heading line.
 
     Deliberately local and tiny: this module reads whole documents everywhere
     else, and the one section it needs is bounded by a heading it can name. An
@@ -93,7 +93,7 @@ def _section_after(text: str, heading: str, stop_prefix: str = '### ') -> str:
         return ''
     body: list[str] = []
     for line in lines[start + 1 :]:
-        if line.startswith(stop_prefix):
+        if line.startswith('### '):
             break
         body.append(line)
     return '\n'.join(body)
