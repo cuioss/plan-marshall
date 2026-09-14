@@ -774,6 +774,29 @@ def _ancestor_union_flags(tree: _ScriptTree, chain: list[str]) -> set[str]:
     return union
 
 
+def _flag_surface_confident(tree: _ScriptTree, chain: list[str]) -> bool:
+    """True when every node's flag surface from root to the resolved leaf is confident.
+
+    Mirrors ``_analyze_argument_naming._subtree_flags``'s confidence-poisons-the-union
+    rule: a node whose own ``--help`` probe failed carries ``flags_confident=False``
+    (the ``argparse_surface._derive_node`` unprobeable-child path), and treating its
+    empty ``flags`` / ``required_flags`` as ground truth manufactures false
+    unknown-flag and missing-required-flag findings. Returns ``False`` as soon as any
+    node along the walked chain — root included — disclaims confidence.
+    """
+    if not tree.root.flags_confident:
+        return False
+    node = tree.root
+    for token in chain:
+        child = node.children.get(token)
+        if child is None:
+            return False
+        if not child.flags_confident:
+            return False
+        node = child
+    return True
+
+
 def _validate_router_verb(
     *,
     notation: str,
@@ -991,6 +1014,12 @@ def _analyze_one_invocation(
                 },
             )
         )
+        return findings
+
+    if not _flag_surface_confident(tree, chain):
+        # A probe failure somewhere along root..leaf makes the flags/required_flags
+        # sets an under-approximation, not ground truth — fail closed (see
+        # _flag_surface_confident's docstring) rather than manufacture a finding.
         return findings
 
     leaf = node
