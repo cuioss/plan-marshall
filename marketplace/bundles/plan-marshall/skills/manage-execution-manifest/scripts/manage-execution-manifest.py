@@ -3051,7 +3051,7 @@ def cmd_reconcile(args: argparse.Namespace) -> dict[str, Any] | None:
 
     **Fail closed on unreadable live config.** When the live candidate set
     cannot be read at all, "config dropped it" is indistinguishable from
-    "config still wants it", so every unloadable step is classified ``broken``
+    "config still wants it", so every unresolvable step is classified ``broken``
     — today's hard fail — rather than reconciled away on absent evidence.
 
     ``--apply`` writes the reconciled list (re-sorted through the shared

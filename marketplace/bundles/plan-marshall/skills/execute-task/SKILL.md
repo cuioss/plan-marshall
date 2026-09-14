@@ -310,8 +310,8 @@ This skill runs as a leaf inside the `execution-context` envelope — it issues 
 
       | `status` | Exit code | What it established | What to do |
       |----------|-----------|---------------------|------------|
-      | `success` | `0` / `1` | The log enumerated a run, and every written identifier was searched for in it. `passed` is the verdict. | Read `passed` — step 4 or step 5. |
-      | `could_not_look` | `3` | The supplied log carries **no pytest nodeid at all**, so nothing was searched. `passed`, `found_count` and `missing_count` are **absent from the payload**. | Step 6 — re-supply the right log. |
+      | `success` | `0` / `1` | The log enumerated a run, and every written identifier was searched for in it. `passed` is the verdict. | Read `passed` — take the `passed: true` branch (mark task done) or the `passed: false` branch (mark `requires_attention`) below. |
+      | `could_not_look` | `3` | The supplied log carries **no pytest nodeid at all**, so nothing was searched. `passed`, `found_count` and `missing_count` are **absent from the payload**. | Take the `status: could_not_look` branch below — re-supply the right log. |
 
       ⛔ `could_not_look` is NOT a failure and NOT a pass. Its `found_count` / `missing_count` are omitted precisely so a caller cannot read a measured zero off a run that measured nothing; treating an absent `passed` as falsy re-creates the defect the outcome exists to remove. Both shapes carry `log_enumerates_nodeids` and `log_nodeid_count`, so a green result also states the population its verdict was computed over.
 

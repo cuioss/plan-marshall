@@ -12,9 +12,10 @@ with:
 
 The helper returns a :class:`DiffResult` describing which identifiers were
 located on some line of the log (``found``) and which were not (``missing``).
-``passed`` is ``True`` iff every written identifier appears at least once, and
-``False`` when one does not — but it is **tri-state**: ``None`` says the log
-enumerated no test at all, so neither verdict was established. See
+``passed`` is **tri-state**, and the third state comes first: ``None`` says the
+log enumerated no test at all, so neither verdict was established and nothing
+was searched for. Only on the measured path does it read ``True`` iff every
+written identifier appears at least once and ``False`` iff one does not. See
 `Could-not-look`_ below before branching on it.
 
 The matching is a case-sensitive regex anchored to a whitespace boundary, an
@@ -85,8 +86,11 @@ Contract
 * Reads ``log_path`` line by line, counts the distinct pytest nodeid tokens it
   carries, and — only when that count is non-zero — checks each identifier in
   ``written_identifiers`` against every line. Returns a :class:`DiffResult`
-  whose ``passed`` is ``True`` iff every identifier was found, ``False`` iff at
-  least one was not, and ``None`` iff the log enumerated no nodeid to search.
+  whose ``passed`` is ``None`` iff the log enumerated no nodeid — nothing was
+  searched for, so neither verdict was established and ``missing`` is empty for
+  that reason rather than for a measured one. On the MEASURED path alone
+  (a non-zero nodeid count) it is ``True`` iff every identifier was found and
+  ``False`` iff at least one was not.
 * Input order is preserved in both ``found`` and ``missing`` tuples so the
   caller can display a stable, deterministic diff.
 * Empty ``written_identifiers`` yields ``DiffResult(passed=True, found=(),
@@ -165,12 +169,16 @@ class DiffResult:
     """Outcome of comparing written identifiers against a module-test log.
 
     Attributes:
-        passed: ``True`` iff every input identifier appeared on some line of the
-            log; ``False`` iff at least one did not; ``None`` iff the log
-            enumerated no pytest nodeid, so nothing could be searched for.
-            Vacuously ``True`` when the input is empty. ⛔ Read the ``None``
-            state first — it is NOT a failure, and collapsing it into ``False``
-            reinstates the defect this field's tri-state exists to remove.
+        passed: ``None`` iff the log enumerated no pytest nodeid, so nothing
+            could be searched for — note ``missing`` is EMPTY on that path for
+            exactly that reason, which is why the ``True``/``False`` halves
+            below are defined over the MEASURED path only rather than over
+            ``missing``. On a log that did enumerate nodeids: ``True`` iff every
+            input identifier appeared on some line, ``False`` iff at least one
+            did not. Vacuously ``True`` when the input is empty. ⛔ Read the
+            ``None`` state first — it is NOT a failure, and collapsing it into
+            ``False`` reinstates the defect this field's tri-state exists to
+            remove.
         found: Identifiers located on at least one log line, preserving the
             input order. Empty on the could-not-look path — nothing was looked
             for, so nothing was found.
@@ -215,9 +223,12 @@ def assert_identifiers_in_log(
 
     Returns:
         A :class:`DiffResult` describing which identifiers were found and
-        which were not. ``passed`` is ``True`` iff ``missing`` is empty,
-        ``False`` when it is not, and ``None`` when the log enumerated no
-        pytest nodeid — in which case no identifier was searched for at all.
+        which were not. ``passed`` is ``None`` when the log enumerated no pytest
+        nodeid — no identifier was searched for at all, and ``missing`` is the
+        EMPTY tuple on that path, so an ``iff missing is empty`` reading of
+        ``True`` would be false in exactly the direction this tri-state exists
+        to prevent. On the measured path only, ``passed`` is ``True`` iff
+        ``missing`` is empty and ``False`` when it is not.
 
     Raises:
         FileNotFoundError: ``log_path`` does not exist.

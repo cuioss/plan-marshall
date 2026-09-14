@@ -48,6 +48,7 @@ examined.
 from __future__ import annotations
 
 import posixpath
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, NamedTuple
 
@@ -96,6 +97,42 @@ def _as_int(value: Any) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def index_unique_by_number(pairs: Iterable[tuple[Any, Any]]) -> tuple[dict[int, Any], list[int]]:
+    """Index ``(raw_number, value)`` pairs by number, REPORTING every collision.
+
+    Returns ``(by_number, duplicate_numbers)``. A pair whose number is unusable
+    under :func:`_as_int` is DROPPED, the same guard every other number read in
+    this module applies. A number that appears more than once keeps the FIRST
+    value and records the number in ``duplicate_numbers`` (sorted, deduplicated).
+
+    First-wins rather than last-wins only so the result is deterministic;
+    neither choice is correct on its own. What makes the collapse safe is that
+    it is REPORTED. A subscript insert keyed on a caller-supplied identity lets
+    the last write win silently, which removes one record from the indexing
+    caller's own population while it goes on reporting a measured verdict over
+    the survivor — a completeness claim computed over a set one element short of
+    what it says it examined. Nothing upstream rejects duplicate deliverable
+    numbers (``extract_deliverables`` and the declared-path validators guard
+    PATHS, not number uniqueness), so the state is reachable from an outline a
+    human wrote.
+
+    Every caller treats a non-empty ``duplicate_numbers`` as a POPULATION
+    defect — withholding the mechanical pass's authority over that outline —
+    rather than reading the shortened map as the whole set.
+    """
+    by_number: dict[int, Any] = {}
+    duplicates: set[int] = set()
+    for raw_number, value in pairs:
+        number = _as_int(raw_number)
+        if number is None:
+            continue
+        if number in by_number:
+            duplicates.add(number)
+            continue
+        by_number[number] = value
+    return by_number, sorted(duplicates)
 
 
 def is_glob(path: str) -> bool:
@@ -261,10 +298,13 @@ def check_declared_set_closure(
     ``population`` publishes what was actually examined:
     ``deliverables_scanned``, ``declared_paths_scanned``,
     ``step_targets_scanned``, ``tasks_scanned``, ``unmapped_tasks``,
-    ``holistic_tasks``, ``scanned_paths`` and ``population_complete``.
-    ``population_complete`` is False when any non-verification task names a
-    deliverable the outline does not contain, so an empty gap list computed over
-    an incomplete population can never be read as closure.
+    ``holistic_tasks``, ``scanned_paths``, ``duplicate_deliverable_numbers`` and
+    ``population_complete``. ``population_complete`` is False when any
+    non-verification task names a deliverable the outline does not contain, and
+    when two deliverables claim the same number — the second removes the first
+    from the indexed population, so the closure would never run that
+    deliverable's declared set. Either way an empty gap list computed over an
+    incomplete population can never be read as closure.
 
     ``tasks_scanned`` and ``step_targets_scanned`` count only what the closure
     actually examined. A holistic task (``deliverable == 0``) is EXEMPT rather
@@ -284,19 +324,22 @@ def check_declared_set_closure(
     every Q-Gate payload while a reader can still tell a full list from a cut
     one.
     """
-    # Keyed through :func:`_as_int`, DROPPING any deliverable whose number is
-    # unusable — the same guard every other number read in this module uses. The
-    # previous ``str(...).isdigit()`` pre-filter was a SECOND, differently-shaped
-    # guard over the same question, and two guards for one question drift: this
-    # one rejected a number ``_as_int`` accepts (and the module's own population
-    # accounting is written against ``_as_int``'s verdict), so a deliverable
-    # could be absent from ``by_number`` while the task pointing at it was
-    # counted as mapped. One guard, one answer.
-    by_number: dict[int, dict[str, Any]] = {}
-    for d in deliverables:
-        d_number = _as_int(d.get('number'))
-        if d_number is not None:
-            by_number[d_number] = d
+    # Keyed through :func:`index_unique_by_number`, which applies :func:`_as_int`
+    # — DROPPING any deliverable whose number is unusable, the same guard every
+    # other number read in this module uses. The previous ``str(...).isdigit()``
+    # pre-filter was a SECOND, differently-shaped guard over the same question,
+    # and two guards for one question drift: this one rejected a number
+    # ``_as_int`` accepts (and the module's own population accounting is written
+    # against ``_as_int``'s verdict), so a deliverable could be absent from
+    # ``by_number`` while the task pointing at it was counted as mapped. One
+    # guard, one answer.
+    #
+    # The indexer also DISPOSES of a duplicate number rather than letting the
+    # last write win. This function PUBLISHES a completeness claim, so a silent
+    # collapse here is the defect the docstring above argues against, committed
+    # against itself: the dropped deliverable's declared set would never be run
+    # through the closure while ``population_complete`` still reported True.
+    by_number, duplicate_numbers = index_unique_by_number((d.get('number'), d) for d in deliverables)
     tasks_by_deliverable: dict[int, list[dict[str, Any]]] = {}
     unmapped_tasks: list[int] = []
     holistic_tasks: list[int] = []
@@ -412,7 +455,8 @@ def check_declared_set_closure(
         'holistic_tasks': sorted(holistic_tasks),
         'scanned_paths': published[:_MAX_SCANNED_PATHS_PUBLISHED],
         'scanned_paths_truncated': len(published) > _MAX_SCANNED_PATHS_PUBLISHED,
-        'population_complete': not unmapped_tasks,
+        'duplicate_deliverable_numbers': duplicate_numbers,
+        'population_complete': not unmapped_tasks and not duplicate_numbers,
     }
     return gaps, population
 

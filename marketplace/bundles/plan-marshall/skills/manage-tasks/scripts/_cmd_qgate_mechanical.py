@@ -55,6 +55,7 @@ from _qgate_closure import (
     _as_int,
     check_declared_scope_reconciliation,
     check_declared_set_closure,
+    index_unique_by_number,
 )
 from _tasks_core import get_all_tasks, get_tasks_dir
 from constants import FILE_SOLUTION_OUTLINE
@@ -144,9 +145,15 @@ def _load_deliverables(plan_id: str) -> tuple[list[dict[str, Any]], dict[int, st
     """Read solution_outline.md and extract deliverables plus their raw prose.
 
     Returns ``(deliverables, prose_by_number, parseable)`` — ``parseable`` is
-    False when the outline is missing or its Deliverables section can't be
-    located, in which case the caller flips ``ambiguous=true`` so the LLM
-    dispatch re-evaluates rather than the mechanical script declaring victory.
+    False when the outline is missing, when its Deliverables section can't be
+    located, or when two blocks claim the SAME deliverable number (a collision
+    that removes one record from every number-keyed population downstream). In
+    each case the caller flips ``ambiguous=true`` so the LLM dispatch
+    re-evaluates rather than the mechanical script declaring victory.
+
+    The first two return empty collections — nothing parsed. The collision case
+    returns the records that DID parse, so the checks still report what they
+    can; only the pass's authority is withheld.
 
     ``prose_by_number`` maps a deliverable number to its VERBATIM block body.
     It is returned alongside the structured records rather than folded into
@@ -171,19 +178,21 @@ def _load_deliverables(plan_id: str) -> tuple[list[dict[str, Any]], dict[int, st
         blocks = split_deliverable_blocks(deliverables_section)
     except (ValueError, AttributeError):
         return [], {}, False
-    # Key the prose map through ``_as_int``, DROPPING any block whose number is
-    # unusable. A raw ``int(block['number'])`` raises on a block whose number is
-    # absent, null, or non-numeric, and the resulting abort is indistinguishable
-    # to the caller from an unparseable outline — one malformed heading would
-    # take down the whole mechanical pass. Dropping the block instead costs only
-    # that block's prose from the keyword-drift haystack, and the deliverable
-    # itself is still checked.
-    prose_by_number: dict[int, str] = {}
-    for block in blocks:
-        number = _as_int(block.get('number'))
-        if number is None:
-            continue
-        prose_by_number[number] = str(block.get('content', ''))
+    # Key the prose map through ``index_unique_by_number``, which applies
+    # ``_as_int`` and DROPS any block whose number is unusable. A raw
+    # ``int(block['number'])`` raises on a block whose number is absent, null, or
+    # non-numeric, and the resulting abort is indistinguishable to the caller
+    # from an unparseable outline — one malformed heading would take down the
+    # whole mechanical pass. Dropping the block instead costs only that block's
+    # prose from the keyword-drift haystack, and the deliverable itself is still
+    # checked.
+    #
+    # The indexer also REPORTS a duplicate number instead of letting the last
+    # write win, and the duplicate is dispositioned below.
+    prose_by_number, duplicate_prose_numbers = index_unique_by_number(
+        (block.get('number'), str(block.get('content', ''))) for block in blocks
+    )
+    _, duplicate_deliverable_numbers = index_unique_by_number((d.get('number'), d) for d in deliverables)
     if not deliverables:
         # A Deliverables section that exists but carries no `### N. Title`
         # heading yields an empty list, and every check downstream then passes
@@ -192,6 +201,17 @@ def _load_deliverables(plan_id: str) -> tuple[list[dict[str, Any]], dict[int, st
         # orchestrator the mechanical pass was authoritative. An outline nobody
         # could parse must reach the LLM dispatch, not a clean bill of health.
         return [], {}, False
+    if duplicate_prose_numbers or duplicate_deliverable_numbers:
+        # Two blocks claiming one deliverable number. Every consumer of this
+        # outline indexes BY that number — the prose map here, the keyword-drift
+        # haystack, the declared-set closure — so one of the two records is
+        # absent from each of those populations while the pass goes on reporting
+        # a measured verdict over the survivor. The records that DID parse are
+        # still returned, so every check still reports what it can; what is
+        # withheld is the pass's AUTHORITY over this outline, which is exactly
+        # what ``parseable=False`` buys (the caller flips ``ambiguous`` and the
+        # LLM dispatch re-evaluates).
+        return deliverables, prose_by_number, False
     return deliverables, prose_by_number, True
 
 
@@ -331,7 +351,14 @@ def _check_acyclic(
     # has no identity to be a node under — so it is excluded from the graph and
     # from the completeness comparison below. Comparing ``visited`` against the
     # raw ``len(tasks)`` after dropping records would report a phantom cycle for
-    # every dropped record, so the denominator is the numbered population.
+    # every dropped record, so the denominator is the NODE population —
+    # ``len(in_degree)``, not ``len(numbered)``. The two differ: ``numbered`` is
+    # a list that may hold the same task number twice (nothing validates that a
+    # record's ``number`` field matches its ``TASK-NNN`` filename), while
+    # ``in_degree`` is keyed by number and therefore already collapsed to the
+    # DISTINCT nodes Kahn's algorithm can visit. Counting against the list would
+    # make ``visited < len(numbered)`` true with no cycle present, emitting a
+    # phantom-cycle finding whose ``cycle_members`` list is empty.
     numbered: list[tuple[int, dict[str, Any]]] = []
     for t in tasks:
         n = _as_int(t.get('number'))
@@ -368,7 +395,7 @@ def _check_acyclic(
             if in_degree[m] == 0:
                 queue.append(m)
 
-    if visited < len(numbered):
+    if visited < len(in_degree):
         cycle_members = sorted(n for n, d in in_degree.items() if d > 0)
         failed = 1
         emitted += _emit_finding(
@@ -547,12 +574,16 @@ def _check_keyword_drift(
     """Keyword drift: planning-domain keywords appear in description but not in haystack."""
     failed = 0
     emitted = 0
-    # Dropped rather than raised over — see :func:`_task_number`.
-    by_number: dict[int, dict[str, Any]] = {}
-    for d in deliverables:
-        d_number = _as_int(d.get('number'))
-        if d_number is not None:
-            by_number[d_number] = d
+    # Dropped rather than raised over — see :func:`_task_number`. Indexed
+    # through ``index_unique_by_number`` so a duplicate deliverable number
+    # cannot silently collapse two deliverables into whichever one happened to
+    # be written last, leaving every task pointing at that number compared
+    # against the survivor alone. The collision itself is dispositioned once,
+    # upstream in :func:`_load_deliverables`, which withholds the whole
+    # mechanical pass's authority over such an outline; here it is enough that
+    # the surviving record is chosen deterministically rather than by write
+    # order.
+    by_number, _duplicate_numbers = index_unique_by_number((d.get('number'), d) for d in deliverables)
 
     # Pre-compile the keyword patterns once per call (independent of N tasks);
     # cache per-deliverable haystacks so two tasks under the same deliverable

@@ -1504,7 +1504,7 @@ question was settled by taking the reading rather than by arguing from the
 design: invoked inside a dispatched `execution-context` leaf, `capabilities`
 returns the same fully-populated three-entry report — `module_edges` and
 `path_attribution` both `derivable` off producers that ran in that envelope, and
-`content_search` `available` off the leaf's own crawl.
+`content_search` `derivable` off the leaf's own crawl.
 
 The reasoning is what generalises that single reading. Every `status` here is a
 function of exactly two inputs: the executing `--project-dir`, and which
