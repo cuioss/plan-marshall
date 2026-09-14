@@ -33,9 +33,34 @@ response, where generation genuinely dominates the bill.
 This system's cost has the opposite shape. A large context is assembled once and
 re-read on every subsequent turn, so the dominant term is resident context
 multiplied by turns, and generation is a small minority of billing weight even
-after output's price premium is applied. That alone makes generation a poor
-target. But the structural reason the proposals misfire is sharper than the
-arithmetic, and it survives any re-measurement:
+after output's price premium is applied.
+
+The discriminator between the two settings is the **input:output ratio of the
+workload a result was measured on**:
+
+[cols="1,2,2", options="header"]
+|===
+| | Where such results are measured | This system
+
+| input per call
+| a short prompt — a record and a few lines of instruction
+| a large context, cached and resident
+
+| output per call
+| a long reasoning trace
+| comparatively little
+
+| dominant term
+| *output*
+| *input* — resident context × turns
+|===
+
+Short-prompt, single-shot work is one of the few regimes where generation
+genuinely dominates a bill, and it is the regime nearly every published
+token-saving result comes from. Almost none comes from long-lived agent
+contexts. That alone makes generation a poor target here. But the structural
+reason the proposals misfire is sharper than the arithmetic, and it survives any
+re-measurement:
 
 **The dispatch topology already discards reasoning.** A dispatched
 `execution-context` leaf may deliberate at whatever length its effort level
@@ -103,6 +128,12 @@ Because the rule binds the artifact rather than the agent, it is enforceable: an
 artifact's shape can be checked structurally, and the surfaces that carry hard
 bounds already are.
 
+**The regime test screens incoming proposals.** A published economy result is
+assessed by establishing the input:output ratio of the workload it was measured
+on *before* asking whether it transfers. A result from an output-dominated
+regime does not carry to an input-dominated one, and the two are not
+distinguished by anything in the result's own framing.
+
 == Consequences
 
 === Positive
@@ -144,6 +175,20 @@ bounds already are.
   reasoning — a transcript, a verbose log, a report that quotes deliberation —
   puts it back on the paid side and inherits the artifact discipline, not the
   exemption.
+* **The instrument understates the surface this rule declines to regulate.** The
+  recorded billing-weighted total sums `input + output + round(0.1 ×
+  cache_read) + round(1.25 × cache_creation)`, weighting output at 1× while every
+  current model prices it at 5× input, so generation's share of real spend is
+  understated fivefold in a figure classed as a derived cost and rendered as a
+  first-class billing column. The correction does not reverse this decision —
+  generation remains a minority term, and the decision rests on the boundary
+  argument rather than on the share — but any re-argument that quotes the
+  recorded figure will understate the surface it is arguing about. A related trap
+  attends any such percentage triple: it reads either as token shares or as
+  weighted-cost shares, and the two differ by more than an order of magnitude.
+  The discriminator is internal — dividing the context terms by their weights
+  must reproduce the independently measured average re-read factor. **Read the
+  producing formula before interpreting the percentage.**
 
 == Alternatives Considered
 
@@ -186,4 +231,4 @@ on every subsequent read.
 * `marketplace/bundles/plan-marshall/skills/ref-workflow-architecture/standards/agents.md` — the leaf/dispatch-topology invariant and the agent-return-shape bounds this ADR's premise rests on.
 * xref:003-Reader_isolation_as_a_tool-surface_lever.adoc[ADR-003: Reader isolation as a tool-surface lever] — the same boundary used to contain trust rather than cost; the isolation property this ADR relies on for economy is the one that decision relies on for containment.
 * xref:019-An_audit_separates_what_it_could_not_evaluate_from_what_it_evaluated_and_found_wanting.adoc[ADR-019: An audit separates what it could not evaluate from what it evaluated and found wanting] — the completeness floor is that rule's obligation seen from the economy side: a trimmed derivation and an unreported coverage gap produce the same unfounded clean verdict.
-* `doc/analysis/reasoning-token-minimalism.md` — the measurement-side argument, the bound on what a reasoning-side lever could yield, and the instrument defect found while deriving it.
+* `marketplace/bundles/plan-marshall/skills/manage-metrics/standards/data-format.md` — the `billing_weighted_total` definition named in the Risks section; its output weighting is the reason a share quoted from that column understates generation.
