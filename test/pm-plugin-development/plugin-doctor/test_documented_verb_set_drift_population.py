@@ -337,14 +337,19 @@ def test_the_reached_skip_states_are_published_and_all_declared():
     unrecognised reason means a skip path grew without the vocabulary following it,
     and a reader would have no way to tell what coverage was lost.
     """
-    declared = {
-        _mod.SKIP_UNREADABLE,
-        _mod.SKIP_UNPARSEABLE,
-        _mod.SKIP_DYNAMIC,
-        _mod.SKIP_UNRESOLVED_GROUP,
-        _mod.SKIP_NO_SUBPARSERS,
-        _mod.SKIP_NO_ROOT_PARSER,
-    }
+    # DERIVED from the analyzer module, never restated. A hand-written list of
+    # the SKIP_* constants is a second copy of the vocabulary that goes stale
+    # silently in the one direction that matters: a skip reason added to the
+    # analyzer and omitted here reads as "not in the declared vocabulary" and
+    # fails a correct tree, while the reverse — a constant retired from the
+    # analyzer but left here — quietly widens the accept-set. The module is
+    # already imported at the assertion site, so the authoritative set is in hand.
+    declared = {value for name, value in vars(_mod).items() if name.startswith('SKIP_') and isinstance(value, str)}
+    assert declared, (
+        'the analyzer declares no SKIP_* vocabulary, so the subset assertion below '
+        'would hold only because there is nothing to compare against — a derived '
+        'population that can come back empty is a vacuous pass, not a guard.'
+    )
     reached = set(_skip_reasons(_corpus()['findings']))
 
     assert reached <= declared, (

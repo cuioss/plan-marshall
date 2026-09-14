@@ -239,20 +239,53 @@ def _cap(result: dict, name: str) -> dict:
     return entry
 
 
+#: The entry-shape table's header row. Locating the table by its header is what
+#: bounds the row walk below to THAT table: the per-field table immediately
+#: following it also opens every row with a backtick-quoted lowercase name
+#: (``producer_count``, ``edge_producers``), so a document-wide row regex would
+#: pull field names into the entry population.
+_ENTRY_TABLE_HEADER_RE = re.compile(r'^\|\s*Entry\s*\|\s*Fields\s*\|', re.MULTILINE)
+
+
 def _documented_entry_fields() -> dict[str, set[str]]:
     """Parse client-api.md's capabilities entry-shape table into ``entry -> fields``.
 
-    DERIVED from the document rather than restated here, so a payload key added
-    or removed on one side without the other reddens this test instead of
-    silently drifting. The table's first column is the entry name and its second
-    column is the backtick-quoted field list.
+    BOTH halves are DERIVED from the document — the field sets and the ENTRY
+    POPULATION itself. Restating the entry names as a literal tuple made the
+    guard silently partial in the direction it exists to catch: a fourth entry
+    added to the payload and to the table would never be compared against
+    anything, because the test only asked about the three names it already knew.
+    The table is the authority for which entries exist, so it is read for that
+    too.
+
+    The table's first column is the entry name and its second column is the
+    backtick-quoted field list; the walk runs from the header row until the first
+    non-table line, so it cannot spill into the per-field table below it.
     """
     text = _CLIENT_API_MD.read_text(encoding='utf-8')
+    header = _ENTRY_TABLE_HEADER_RE.search(text)
+    assert header is not None, 'client-api.md carries no capabilities entry-shape table'
+
     documented: dict[str, set[str]] = {}
-    for entry in ('module_edges', 'path_attribution', 'content_search'):
-        match = re.search(rf'^\|\s*`{entry}`\s*\|([^|]*)\|', text, re.MULTILINE)
-        assert match is not None, f'client-api.md has no entry-shape row for {entry}'
-        documented[entry] = set(re.findall(r'`([a-z_]+)`', match.group(1)))
+    # ``[1:]`` drops the remainder of the header line itself; the first row walked
+    # is the ``|---|---|`` separator, which carries no backticked name and is
+    # skipped by the name match below.
+    for line in text[header.end() :].split('\n')[1:]:
+        if not line.lstrip().startswith('|'):
+            break
+        cells = [cell.strip() for cell in line.strip().strip('|').split('|')]
+        if len(cells) < 2:
+            continue
+        name = re.fullmatch(r'`([a-z_]+)`', cells[0])
+        if name is None:
+            continue
+        documented[name.group(1)] = set(re.findall(r'`([a-z_]+)`', cells[1]))
+
+    assert documented, (
+        'the capabilities entry-shape table was found but no entry row parsed out of '
+        'it, so the population is empty and every comparison against it would hold '
+        'vacuously — a parse that read nothing must not present as a clean pass.'
+    )
     return documented
 
 
@@ -308,6 +341,11 @@ def test_entry_payload_keys_match_the_documented_entry_shape():
 
         result = _capabilities(tmpdir)
 
+        # The ENTRY SETS are compared before the field sets. With the population
+        # derived from the table rather than restated, this is what the
+        # derivation buys: an entry documented and never emitted, or emitted and
+        # never documented, is now a failure instead of a row nobody looked at.
+        assert {entry['capability'] for entry in result['capabilities']} == set(documented)
         for entry in result['capabilities']:
             assert set(entry) == documented[entry['capability']], entry['capability']
 
