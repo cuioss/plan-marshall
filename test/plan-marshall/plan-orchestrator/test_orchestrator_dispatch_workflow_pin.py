@@ -63,6 +63,8 @@ _KNOWN_DISPATCH_DOCS: tuple[Path, ...] = (
     _PLAN_MARSHALL / 'persona-plan-orchestrator' / 'standards' / 'orchestration-model.md',
 )
 
+_ANALYZE_MD, _DECOMPOSE_MD, _ORCHESTRATION_MODEL_MD = _KNOWN_DISPATCH_DOCS
+
 #: One orchestrator dispatch resolve invocation. The workflow docs carry the
 #: call inline in prose, the standards doc carries it in a fenced block with
 #: backslash continuations, and the marshal.json reference carries it in a table
@@ -407,6 +409,63 @@ _MONOTONIC_SELECTION_PROXIMITY_RE = re.compile(
     r'|selection rule[\s\S]{0,400}?monotonic resource'
 )
 
+#: orchestration-model.md's own numbered index of sanctioned dispatchable
+#: sub-steps, so its self-declared cardinality word (e.g. "seven") and its
+#: numbered entries can be checked against an INDEPENDENT derivation from the
+#: two verb docs, rather than trusted as an unchecked assertion. Bounded to
+#: stop before "The **drafting** sub-steps", whose own parenthetical numbers
+#: are a re-partition of the SAME entries (which of them draft vs read), not
+#: a second index — including that sentence in the body would double-count.
+_SANCTIONED_INDEX_RE = re.compile(
+    r'sanctioned dispatchable sub-steps are these \*\*(?P<word>\w+)\*\*, '
+    r'and this list is a complete index of them:(?P<body>[\s\S]*?)\s+The \*\*drafting\*\* sub-steps',
+)
+
+#: Matches only a LEADING enumeration marker — "(N)" immediately followed by
+#: a backtick or "the " — never a parenthetical back-reference mid-entry
+#: (item 7's own text reads "...the SAME Step 2 envelope as (6) returns",
+#: whose "(6)" is followed by "returns" and must NOT be double-counted as a
+#: second occurrence of entry 6).
+_PAREN_ENTRY_RE = re.compile(r'\((\d+)\)\s*(?=`|the\s)')
+_INDEX_NUMBER_WORDS = {'two': 2, 'five': 5, 'seven': 7}
+
+#: A top-level dispatchable-declaring bullet in a verb doc's Step 2 section:
+#: "- **Dispatchable**" (the read) or "- **Two-stage for untrusted third-party
+#: text**" (analyze.md's reader-extraction read). Each match is one logical
+#: dispatchable READ entry.
+_TOP_LEVEL_DISPATCH_BULLET_RE = re.compile(
+    r'^- \*\*(?:Dispatchable|Two-stage for untrusted third-party text)\*\*',
+    re.MULTILINE,
+)
+
+#: A nested drafting sub-bullet under analyze.md's "Also dispatchable" heading
+#: — "The Step 4 item 1 landing-report body", "The Step 5b per-message
+#: dispositions", "The Step 5b Stage new-spec body". Each match is one logical
+#: dispatchable DRAFT entry.
+_NESTED_DRAFT_BULLET_RE = re.compile(r'^  - \*\*The Step \d+', re.MULTILINE)
+
+
+def _dispatch_index_entry_count(path: Path) -> int:
+    """The number of logical dispatchable sub-step entries a verb doc declares.
+
+    A top-level bullet is one READ entry each; a nested "Also dispatchable"
+    sub-bullet is one DRAFT entry each — this covers analyze.md's five (two
+    top-level reads, three nested drafts). decompose.md carries no "Also
+    dispatchable" heading and no nested sub-bullet: its single top-level
+    `Dispatchable` bullet's RETURN SHAPE names both a read (`candidates[N]`)
+    and a draft (`spec_body`) riding the SAME Step 2 envelope, so that one
+    bullet counts as TWO logical entries exactly when its text also carries
+    `_SPEC_BODY_DRAFT_RE` — reusing the same detector `_containment_population`
+    keys `spec_body` on, rather than a second hand-written pattern that could
+    drift from it. The bonus fires only when no nested draft bullet already
+    accounted for the draft (analyze.md has nested bullets and needs none).
+    """
+    text = _normalized(path)
+    top_level = len(_TOP_LEVEL_DISPATCH_BULLET_RE.findall(text))
+    nested = len(_NESTED_DRAFT_BULLET_RE.findall(text))
+    bonus = 1 if (nested == 0 and _SPEC_BODY_DRAFT_RE.search(text)) else 0
+    return top_level + nested + bonus
+
 
 def _normalized(path: Path) -> str:
     """One document's text with continuation backslashes folded away."""
@@ -460,15 +519,23 @@ def _containment_population(root: Path) -> dict[str, object]:
     """The labelled populations every containment assertion is computed over.
 
     Each count is returned under a key that NAMES the population it enumerated.
-    The three document counts are NESTED SUBSETS (scanned ⊇ derived ⊇ drafting
-    ⊇ spec-body), so they are reported side by side and never differenced as
-    though they counted one set.
+    `scanned` ⊇ `derived` is a nested subset; `drafting` and `spec_body` are
+    each INDEPENDENT subsets of `derived`, never one nested inside the other.
+    `spec_body` deliberately filters from `derived`, not from `drafting`:
+    `_SPEC_BODY_DRAFT_RE` keys on the declared return field, which a doc can
+    carry independently of whether `_DRAFTING_DECLARATION_RE` also matched it.
+    Filtering from `drafting` would let a verb doc that phrases its drafting
+    admission outside `_DRAFTING_DECLARATION_RE` drop out of `drafting` — and
+    therefore out of `spec_body` too — while still declaring a `spec_drafts`
+    return field with no monotonic-resource constraint, silently escaping the
+    containment assertion below. Keeping the two detectors independent is what
+    closes that gap.
     """
     scanned = _scanned_docs_under(root)
     derived = _dispatch_docs_under(root)
     texts = {doc: _normalized(doc) for doc in derived}
     drafting = [doc for doc in derived if _declares_drafting_dispatch(texts[doc])]
-    spec_body = [doc for doc in drafting if _SPEC_BODY_DRAFT_RE.search(texts[doc])]
+    spec_body = [doc for doc in derived if _SPEC_BODY_DRAFT_RE.search(texts[doc])]
     return {
         'markdown_docs_scanned': len(scanned),
         'docs_derived_as_orchestrator_dispatch_docs': len(derived),
@@ -493,7 +560,8 @@ def _evidence(population: dict[str, object]) -> str:
         f'of those, documents declaring a dispatchable drafting sub-step='
         f'{population["dispatch_docs_declaring_a_drafting_substep"]} '
         f'{population["drafting_doc_names"]}; '
-        f'of those, documents declaring a spec-body draft return field='
+        f'separately, of the derived documents (independent of the drafting-declaration match), '
+        f'documents declaring a spec-body draft return field='
         f'{population["drafting_docs_declaring_a_spec_body_draft"]} '
         f'{population["spec_body_doc_names"]}.'
     )
@@ -741,3 +809,94 @@ class TestDraftingDispatchWritePathContainment:
             'the fixture is supposed to carry a negation word somewhere in the sentence — otherwise '
             'this control does not exercise clause-scoping at all'
         )
+
+    def test_the_sanctioned_dispatch_index_count_matches_the_verb_docs(self):
+        """orchestration-model.md's seven-entry index must agree with the verb docs.
+
+        The index asserts its own cardinality ("these **seven**, and this list is
+        a complete index of them") but nothing machine-checked it against
+        analyze.md and decompose.md before this test. A count derived
+        independently from the two verb docs — never from the index's own
+        parenthetical numbers — is what catches an added or removed entry.
+        """
+        text = _normalized(_ORCHESTRATION_MODEL_MD)
+        match = _SANCTIONED_INDEX_RE.search(text)
+        assert match, (
+            'could not locate the "sanctioned dispatchable sub-steps" index sentence in '
+            f'{_ORCHESTRATION_MODEL_MD.name} — has it been reworded?'
+        )
+
+        claimed_word = match.group('word').lower()
+        assert claimed_word in _INDEX_NUMBER_WORDS, (
+            f'unrecognized cardinality word {claimed_word!r} in the index sentence — add it to '
+            '_INDEX_NUMBER_WORDS if this is a legitimate new count'
+        )
+        claimed_count = _INDEX_NUMBER_WORDS[claimed_word]
+
+        entry_numbers = [int(n) for n in _PAREN_ENTRY_RE.findall(match.group('body'))]
+        assert entry_numbers, (
+            'the index sentence body contained no numbered "(N)" entries at all — the population this '
+            'test quantifies over would be empty'
+        )
+        assert entry_numbers == list(range(1, len(entry_numbers) + 1)), (
+            f'the index entries are not sequential starting at 1: {entry_numbers} — a renumbering or a '
+            'dropped/duplicated entry would produce exactly this gap'
+        )
+        assert len(entry_numbers) == claimed_count, (
+            f'the index sentence claims {claimed_word} ({claimed_count}) entries but its own numbered '
+            f'list carries {len(entry_numbers)}: {entry_numbers}'
+        )
+
+        analyze_count = _dispatch_index_entry_count(_ANALYZE_MD)
+        decompose_count = _dispatch_index_entry_count(_DECOMPOSE_MD)
+
+        assert analyze_count > 0 and decompose_count > 0, (
+            f'the per-verb-doc derivation is vacuous (analyze.md={analyze_count}, '
+            f'decompose.md={decompose_count}) — a zero here would let the cross-check below pass '
+            'trivially rather than by genuine agreement'
+        )
+
+        derived_total = analyze_count + decompose_count
+        assert derived_total == claimed_count, (
+            f'{_ORCHESTRATION_MODEL_MD.name} claims {claimed_count} sanctioned dispatchable sub-steps, '
+            f'but deriving independently from the verb docs gives {derived_total} '
+            f'(analyze.md={analyze_count}, decompose.md={decompose_count}) — the index and the verb '
+            'docs have drifted apart'
+        )
+
+    def test_a_doc_missing_its_dispatchable_bullets_drops_the_derived_count(self, tmp_path):
+        # Matched control: a doc carrying NEITHER a top-level dispatchable
+        # bullet NOR a nested draft bullet NOR a spec_body return field must
+        # derive to zero — the non-vacuity assertion above depends on this.
+        empty = tmp_path / 'no-dispatch-bullets.md'
+        empty.write_text('# Not a dispatch doc\n\nJust prose, no dispatchable bullets here.\n', encoding='utf-8')
+
+        assert _dispatch_index_entry_count(empty) == 0
+
+    def test_a_decompose_shaped_doc_counts_as_two(self, tmp_path):
+        # Matched control: a single top-level Dispatchable bullet whose return
+        # shape also carries spec_body counts as TWO entries (read + draft),
+        # mirroring decompose.md's real shape — never one.
+        fixture = tmp_path / 'decompose-shaped.md'
+        fixture.write_text(
+            '- **Dispatchable** — reads the corpus. Return shape: `candidates[N]{spec_body}`.\n',
+            encoding='utf-8',
+        )
+
+        assert _dispatch_index_entry_count(fixture) == 2
+
+    def test_an_analyze_shaped_doc_counts_reads_and_drafts_separately(self, tmp_path):
+        # Matched control: two top-level bullets plus three nested draft
+        # bullets sum to five, mirroring analyze.md's real shape, with no
+        # bonus applied since the nested bullets already account for drafts.
+        fixture = tmp_path / 'analyze-shaped.md'
+        fixture.write_text(
+            '- **Dispatchable** — corroboration.\n\n'
+            '- **Two-stage for untrusted third-party text** — reader extraction.\n\n'
+            '  - **The Step 4 item 1 landing-report body** — a draft.\n'
+            '  - **The Step 5b per-message dispositions** — a draft.\n'
+            '  - **The Step 5b Stage new-spec body** — a draft.\n',
+            encoding='utf-8',
+        )
+
+        assert _dispatch_index_entry_count(fixture) == 5

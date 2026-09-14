@@ -2026,6 +2026,32 @@ _PROJECT_TUNED_ORCHESTRATOR_KNOBS: dict[str, object] = {
 }
 
 
+def test_project_tuned_orchestrator_effort_surfaces_match_the_registry():
+    """The tuned-knobs table's surface KEYS must track the resolver's own registry.
+
+    ``_PROJECT_TUNED_ORCHESTRATOR_KNOBS['effort']`` is hardcoded because its VALUES
+    are a deliberate per-surface tuning decision (finding 77b104) that must NOT be
+    derived away — a derived value would silently re-track whatever the registry
+    or the seed says instead of asserting the pin. But its KEY SET is not a
+    decision at all; it is supposed to equal every surface the resolver actually
+    recognises (`_cmd_effort_mod.ORCHESTRATOR_SURFACES`), and a newly registered
+    surface would stay unpinned and untested here while this table's own assertion
+    kept passing on the surfaces it already knew about. This test catches that
+    drift without touching the tuned VALUES.
+    """
+    tuned_keys = set(_PROJECT_TUNED_ORCHESTRATOR_KNOBS['effort'].keys())
+    registered_surfaces = set(_cmd_effort_mod.ORCHESTRATOR_SURFACES)
+
+    assert registered_surfaces, (
+        'ORCHESTRATOR_SURFACES is empty — the comparison below would be vacuous'
+    )
+    assert tuned_keys == registered_surfaces, (
+        f'_PROJECT_TUNED_ORCHESTRATOR_KNOBS["effort"] pins {sorted(tuned_keys)} but the resolver '
+        f'registers {sorted(registered_surfaces)} — a surface was added to or removed from '
+        'ORCHESTRATOR_SURFACES without updating this table'
+    )
+
+
 def test_committed_marshal_json_surfaces_every_orchestrator_knob():
     """The committed .plan/marshal.json must surface every settable orchestrator knob.
 

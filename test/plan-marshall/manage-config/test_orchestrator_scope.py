@@ -617,7 +617,11 @@ def test_a_pinned_surface_does_not_move_when_plan_effort_moves(plan_context):
     resolves to an identical ``level`` whether or not the pin landed, so ``level``
     alone cannot witness the pin. ``source`` is the field that can.
     """
-    for surface in ('analyze', 'decompose', 'reader'):
+    assert _cmd_effort_mod.ORCHESTRATOR_SURFACES, (
+        'ORCHESTRATOR_SURFACES is empty — the loop below would iterate zero times and this test '
+        'would pass vacuously without exercising a single surface'
+    )
+    for surface in _cmd_effort_mod.ORCHESTRATOR_SURFACES:
         pinned = {'effort': {surface: _PINNED_LEVEL}}
 
         arm_a = _resolve_under_plan_effort(plan_context.fixture_dir, pinned, _PLAN_EFFORT_ARM_A, surface)
@@ -642,7 +646,11 @@ def test_an_unpinned_surface_tracks_plan_effort(plan_context):
     consulted ``plan.effort`` would satisfy it. Here the same two fallback values
     must produce two DIFFERENT resolutions, each sourced from ``plan.effort``.
     """
-    for surface in ('analyze', 'decompose', 'reader'):
+    assert _cmd_effort_mod.ORCHESTRATOR_SURFACES, (
+        'ORCHESTRATOR_SURFACES is empty — the loop below would iterate zero times and this test '
+        'would pass vacuously without exercising a single surface'
+    )
+    for surface in _cmd_effort_mod.ORCHESTRATOR_SURFACES:
         unpinned: dict = {'effort': {}}  # the pin removed; the block itself unchanged
 
         arm_a = _resolve_under_plan_effort(plan_context.fixture_dir, unpinned, _PLAN_EFFORT_ARM_A, surface)
