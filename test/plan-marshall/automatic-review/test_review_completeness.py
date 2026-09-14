@@ -2106,6 +2106,10 @@ class TestLoadFailure:
 #: below instead of silently losing them.
 _LIST_FLAGS = derive_bot_flags(SCRIPT_PATH, 'check')
 
+# ⛔ Vacuity guard — the flags are derived from the live parser, so a derivation that
+# came back empty collects zero cases at every parametrize below and reports green.
+assert _LIST_FLAGS, 'derive_bot_flags found no list-shaped bot flags on the check parser'
+
 
 def _parsed_check_args(monkeypatch, argv: list[str]):
     """Return the ``argparse.Namespace`` ``main`` built for ``argv``.

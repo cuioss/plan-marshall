@@ -20,6 +20,10 @@ from _build_extension_fixtures import (
 from conftest import get_script_path
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'build-maven', 'maven.py')
+
+# ⛔ Vacuity guard — the case table is imported, so an emptied one collects zero cases
+# at the parametrize below and still reports green.
+assert COVERAGE_REPORT_CASES, 'COVERAGE_REPORT_CASES is empty'
 FIXTURES_DIR = Path(__file__).parent / 'fixtures' / 'coverage'
 
 

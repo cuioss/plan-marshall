@@ -29,6 +29,10 @@ SCRIPT_PATH = get_script_path('plan-marshall', 'manage-providers', 'credentials.
 #: constant so the sweep below covers a key added to it without an edit here.
 SECRET_PLACEHOLDERS = _providers_core.SECRET_PLACEHOLDERS
 
+# ⛔ Vacuity guard — the placeholder set belongs to production, so emptying it there
+# collects zero cases at the parametrize below and still reports green.
+assert SECRET_PLACEHOLDERS, '_providers_core.SECRET_PLACEHOLDERS is empty'
+
 _SKILL = 'plan-marshall:workflow-integration-sonar'
 _TOKEN = 'super-secret-token-value'
 

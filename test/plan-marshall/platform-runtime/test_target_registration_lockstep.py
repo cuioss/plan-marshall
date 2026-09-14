@@ -89,6 +89,10 @@ def test_default_bundle_cache_roots_match_what_the_default_target_resolves() -> 
 #: report order is stable across runs rather than dict-insertion dependent.
 _REGISTERED_TARGETS = sorted(platform_runtime._REGISTRY)
 
+# ⛔ Vacuity guard — the registry is production's, so emptying it there collects zero
+# cases at the parametrize below and still reports green.
+assert _REGISTERED_TARGETS, 'platform_runtime._REGISTRY is empty'
+
 
 def test_the_registry_is_not_empty() -> None:
     """The per-target sweep below needs a population, or it asserts nothing.

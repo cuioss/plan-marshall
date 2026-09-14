@@ -212,7 +212,11 @@ def _documented_values(document: str, knob: str) -> list[tuple[str, str]]:
 
 def _family() -> list[str]:
     """Return the knob names of the autonomy-gate family, sorted for stable ids."""
-    return sorted(_declared_defaults())
+    knobs = sorted(_declared_defaults())
+    # ⛔ Vacuity guard — an empty family collects zero cases at the parametrize sites
+    # that bind this helper, which would report green while checking no knob at all.
+    assert knobs, 'the autonomy-gate knob family is empty'
+    return knobs
 
 
 def _candidate_documents() -> tuple[str, ...]:
@@ -242,6 +246,10 @@ def _derive_documents() -> tuple[str, ...]:
 
 
 _DOCUMENTS = _derive_documents()
+
+# ⛔ Vacuity guard — the documents are discovered, so a discovery that came back empty
+# collects zero cases at the parametrize below and still reports green.
+assert _DOCUMENTS, 'no autonomy-default mirror documents were discovered'
 
 
 def test_the_declared_family_is_derived_and_not_silently_empty():
@@ -453,6 +461,11 @@ def _census_rows() -> tuple[_CensusRow, ...]:
 
 
 _CENSUS_ROWS = _census_rows()
+
+# ⛔ Vacuity guard — stated at the derivation so it fires at import, naming the
+# population, rather than surfacing later as an empty parameter set at the
+# parametrize below. The row-count floor and the anchor check stay in the test.
+assert _CENSUS_ROWS, f'the pause-gate census in {_ANCHOR_DOC} parsed no rows'
 
 
 def test_the_census_parse_is_not_vacuous():

@@ -147,6 +147,10 @@ def _read(path: Path) -> str:
 #: Module-level derivation so the per-row tests can parametrize over it. Parsed
 #: once at collection time from the authoritative document — no literal list.
 _ROWS: list[tuple[str, str]] = parse_roster_rows(_read(_BRANCH_CLEANUP), _ROSTER_HEADING)
+
+# ⛔ Vacuity guard — the rows are parsed out of a document, so a heading that moved
+# collects zero cases at every parametrize below and still reports green.
+assert _ROWS, f'no roster rows parsed under {_ROSTER_HEADING!r} in {_BRANCH_CLEANUP}'
 _ROSTER_KINDS: list[str] = [kind for kind, _ in _ROWS]
 
 
@@ -248,6 +252,9 @@ def _corpus_grant_kinds() -> tuple[str, ...]:
             continue
         for block in _invocations(text, _GRANT_VERB):
             kinds.update(_kinds_in(block))
+    # ⛔ Vacuity guard — a sweep that found no grant site collects zero cases at the
+    # parametrize that binds this helper, reporting green while checking no mechanism.
+    assert kinds, 'no merge-authorization grant invocation was found anywhere in the bundles'
     return tuple(sorted(kinds))
 
 

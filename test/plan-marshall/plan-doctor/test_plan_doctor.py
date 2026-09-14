@@ -42,6 +42,7 @@ import shutil
 # order. The domain-prefixed name — not a path insert, which cannot change what
 # ``sys.modules`` already holds under a name — is what keeps both loadable.
 from _doctor_fixtures import (
+    CANONICAL_PHASES,
     REAL_LESSON_IDS,
     make_archived_plan,
     make_healthy_plan,
@@ -689,3 +690,95 @@ def test_scan_aggregates_rejected_persists_into_summary(plan_context, monkeypatc
     assert rejected['qgate_persist_failed'] is True
     assert len(rejected['qgate_persist_failures']) == 1
     assert 'Invalid finding type' in rejected['qgate_persist_failures'][0]['message']
+
+
+# =============================================================================
+# The fixture phase vocabulary tracks the live source — and a rename is SEEN
+# =============================================================================
+#
+# ``_doctor_fixtures.CANONICAL_PHASES`` derives from ``constants.PHASES`` rather
+# than transcribing it, so a phase added or removed in production cannot leave
+# every status.json fixture here building a lifecycle the product no longer has.
+#
+# Deriving alone cannot detect a RENAME, because both sides move together. This
+# is the independent half: ``plan_doctor`` declares its own ``REFINE_PHASE``
+# literal, which does NOT follow a rename in ``constants.PHASES``. Pinning the
+# two against each other is what turns a rename into a red build instead of a
+# rule that silently stops matching any phase and reports clean.
+
+
+def test_the_live_phase_vocabulary_is_ordered_and_non_empty():
+    """Non-vacuity: the derived tuple must carry a real lifecycle.
+
+    Without this, an emptied ``constants.PHASES`` would satisfy the membership
+    assertion below by having nothing to disagree with, and every status.json
+    fixture would build a phase-less plan that no rule can fire on.
+    """
+    assert len(CANONICAL_PHASES) >= 2, (
+        f'the live phase vocabulary is too short to model a lifecycle: {CANONICAL_PHASES}'
+    )
+    assert len(set(CANONICAL_PHASES)) == len(CANONICAL_PHASES), f'duplicate phase names: {CANONICAL_PHASES}'
+
+
+def test_plan_doctor_refine_phase_names_a_live_phase():
+    """``plan_doctor.REFINE_PHASE`` must name a phase the live vocabulary carries.
+
+    The two are declared independently — the literal in ``plan_doctor.py``, the
+    tuple in ``constants.py`` — so this is a genuine equality against the live
+    source rather than a tautology. Rename the phase in ``constants.PHASES`` and
+    this fails, which is exactly the signal the retired hand-kept copy could not
+    produce: Rule 2's post-refine predicate would otherwise match no phase at
+    all and report every stalled archive clean.
+    """
+    assert _plan_doctor.REFINE_PHASE in CANONICAL_PHASES, (
+        f'plan_doctor.REFINE_PHASE={_plan_doctor.REFINE_PHASE!r} names no phase in the live '
+        f'vocabulary {CANONICAL_PHASES}. Rule 2 compares phases AFTER this one, so a name that '
+        'resolves to nothing makes the post-refine set empty and the rule vacuously green.'
+    )
+
+
+def test_at_least_one_phase_follows_refine():
+    """Rule 2 needs a non-empty post-refine set, or its predicate is vacuous.
+
+    ``_all_post_refine_pending`` asks whether every phase after refine is
+    pending. Over an empty tail that is trivially true for every plan, so the
+    stuck-low-confidence rule would fire on healthy archives — or, paired with
+    the membership guard above, never fire at all.
+    """
+    assert _plan_doctor.REFINE_PHASE in CANONICAL_PHASES, (
+        f'{_plan_doctor.REFINE_PHASE!r} is absent from {CANONICAL_PHASES} — see '
+        'test_plan_doctor_refine_phase_names_a_live_phase, which owns that failure'
+    )
+    tail = CANONICAL_PHASES[CANONICAL_PHASES.index(_plan_doctor.REFINE_PHASE) + 1 :]
+
+    assert tail, (
+        f'no phase follows {_plan_doctor.REFINE_PHASE!r} in {CANONICAL_PHASES}, so the '
+        'post-refine predicate has an empty set to quantify over'
+    )
+
+
+def test_mutation_pin_a_renamed_live_phase_turns_the_guard_red():
+    """The guard above passes BECAUSE the two declarations genuinely agree.
+
+    A guard that would pass whatever the live vocabulary said proves nothing, and
+    observing it fail once by hand-editing a production constant leaves no record
+    anyone can re-run. So the rename is applied HERE, to the derived value, and the
+    same predicate is observed to flip.
+
+    The mutation models exactly what a production rename does: the fixture tuple
+    derives from ``constants.PHASES`` and therefore FOLLOWS the rename, while
+    ``plan_doctor.REFINE_PHASE`` is declared independently and does not. That
+    divergence is the whole signal the retired hand-kept copy could not produce —
+    when both sides were transcribed by hand they drifted together into silence.
+    """
+    renamed = tuple('2-clarify' if phase == _plan_doctor.REFINE_PHASE else phase for phase in CANONICAL_PHASES)
+
+    # Baseline: against the shipped vocabulary the guard's predicate holds.
+    assert _plan_doctor.REFINE_PHASE in CANONICAL_PHASES
+
+    # Mutation: the derived fixture follows the rename, the consumer's literal
+    # does not, and the predicate the guard asserts is now false.
+    assert _plan_doctor.REFINE_PHASE not in renamed, (
+        'renaming the live phase left plan_doctor.REFINE_PHASE still resolving, so the '
+        'guard above would stay green through a rename and is not load-bearing'
+    )

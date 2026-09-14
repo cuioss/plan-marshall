@@ -22,7 +22,11 @@ EXPECTED_MANIFEST_COUNT = 10
 
 def _bundle_manifests() -> list[Path]:
     """Return the sorted list of bundle plugin.json manifest paths."""
-    return sorted(BUNDLES_DIR.glob('*/.claude-plugin/plugin.json'))
+    manifests = sorted(BUNDLES_DIR.glob('*/.claude-plugin/plugin.json'))
+    # ⛔ Vacuity guard — a glob that matched nothing collects zero cases at the
+    # parametrize below and still reports green, so it fails here instead.
+    assert manifests, f'no bundle plugin.json manifests found under {BUNDLES_DIR}'
+    return manifests
 
 
 def test_expected_number_of_bundle_manifests():

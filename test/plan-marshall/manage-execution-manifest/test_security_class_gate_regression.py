@@ -52,6 +52,10 @@ _mem = load_script_module(
     'manage-execution-manifest.py',
     module_name='_mem_script_security_class_regression',
 )
+
+# ⛔ Vacuity guard — the vocabulary belongs to the loaded production module, so emptying
+# it there collects zero cases at the parametrize below and still reports green.
+assert _mem.VALID_CHANGE_TYPES, 'manage-execution-manifest.VALID_CHANGE_TYPES is empty'
 cmd_compose = _mem.cmd_compose
 read_manifest = _mem.read_manifest
 DEFAULT_PHASE_6_STEPS = _mem.DEFAULT_PHASE_6_STEPS

@@ -14,6 +14,16 @@ import pytest
 import retro_sections as _rs
 from _compile_report_behavior_fixtures import _cr
 
+#: The always-emit registry rows a fragment-less run must omit rather than write,
+#: bound here so the vacuity guard below can name the filtered population.
+_ALWAYS_EMIT_ROWS = [(h, k) for h, k, trigger in _rs.SECTION_SPEC if trigger is None and not k.startswith('_')]
+
+# ⛔ Vacuity guards — all three populations are read out of the registry at
+# collection time, so an emptied one would collect zero cases and still report green.
+assert _ALWAYS_EMIT_ROWS, 'no always-emit registry row survived the filter'
+assert _rs.ZERO_ATTRIBUTION_FIELDS, 'ZERO_ATTRIBUTION_FIELDS is empty'
+assert _rs.ZERO_DECLARED_UNMEASURED_STATUSES, 'ZERO_DECLARED_UNMEASURED_STATUSES is empty'
+
 
 class TestWrittenImpliesNonEmpty:
     """D1 regression: the partition invariant *written implies non-empty*.
@@ -136,10 +146,7 @@ class TestWrittenImpliesNonEmpty:
         phantom = [h for h in omitted if h not in spec_headings]
         assert phantom == [], f'omitted names sections declared by no registry row: {phantom}'
 
-    @pytest.mark.parametrize(
-        'heading,fragment_key',
-        [(h, k) for h, k, trigger in _rs.SECTION_SPEC if trigger is None and not k.startswith('_')],
-    )
+    @pytest.mark.parametrize('heading,fragment_key', _ALWAYS_EMIT_ROWS)
     def test_an_always_emit_row_with_no_fragment_is_omitted_not_written(self, tmp_path, heading, fragment_key):
         # There are 11 `trigger=None` rows; this parametrization covers the 10
         # that are not `_executive-summary` (that row has its own branch and

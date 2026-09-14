@@ -19,6 +19,10 @@ from conftest import get_script_path
 SCRIPT_PATH = get_script_path('plan-marshall', 'build-gradle', 'gradle.py')
 FIXTURES_DIR = Path(__file__).parent / 'fixtures' / 'coverage'
 
+# ⛔ Vacuity guard — the case table is imported, so an emptied one collects zero cases
+# at the parametrize below and still reports green.
+assert COVERAGE_REPORT_CASES, 'COVERAGE_REPORT_CASES is empty'
+
 
 @pytest.mark.parametrize('case', COVERAGE_REPORT_CASES)
 def test_coverage_report_contract(case):

@@ -56,6 +56,25 @@ from claude_runtime import (
 )
 from toon_parser import parse_toon
 
+# ``_BUILD_WRAPPER_NOTATIONS`` is imported from the production module, so its
+# emptiness is not visible at the two ``parametrize`` sites that iterate it
+# (``test_each_wrapper_notation_matches`` and
+# ``test_build_command_renders_build_busy_icon``). An empty frozenset would
+# collect ZERO cases at both and report them as passing, so the sweep would go
+# green while asserting nothing about any wrapper.
+#
+# The guard sits at module level rather than in either test body because a test
+# body never runs when its parameter set is empty -- an assertion there would be
+# exactly as vacuous as the binding it was meant to protect. Non-emptiness is
+# what is asserted, not a count: the cardinality is the production module's to
+# state, and pinning it here would fail every time a wrapper is legitimately
+# added or removed.
+assert _BUILD_WRAPPER_NOTATIONS, (
+    'claude_runtime._BUILD_WRAPPER_NOTATIONS is empty, so every test parametrized '
+    'over it collects no cases and passes without exercising the build-detection '
+    'predicate at all'
+)
+
 
 # =============================================================================
 # Helpers

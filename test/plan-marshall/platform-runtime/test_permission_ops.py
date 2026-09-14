@@ -47,6 +47,11 @@ from toon_parser import parse_toon
 
 from conftest import get_script_path, run_script
 
+# ⛔ Vacuity guard — both populations are production's, so emptying either there
+# collects zero cases at its parametrize below and still reports green.
+assert PERMISSION_FIX_OPERATIONS, 'runtime_base.PERMISSION_FIX_OPERATIONS is empty'
+assert claude_runtime._RETIRED_DEFAULT_RULES, 'claude_runtime._RETIRED_DEFAULT_RULES is empty'
+
 
 def _parse(output: str) -> dict[str, Any]:
     return parse_toon(output)

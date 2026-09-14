@@ -87,6 +87,11 @@ def _derive_populations() -> tuple[frozenset[str], frozenset[str]]:
 
 POST_VERB_SUBCOMMANDS, ALL_SUBCOMMANDS = _derive_populations()
 
+# ⛔ Vacuity guard — the populations are derived by walking the parser tree
+# ``_build_full_parser`` registers, so a walk that came back empty collects zero
+# cases at the parametrize below.
+assert POST_VERB_SUBCOMMANDS, 'no post-verb subcommands were derived from the ci parser tree'
+
 
 def _plan_id_cell() -> str:
     """Return the ``plan_id`` row of the prompt-body contract table."""

@@ -98,6 +98,10 @@ def _required_callable_hooks() -> list[str]:
 #: time rather than a contract note.
 _CALLABLE_CONFIG_HOOKS = _required_callable_hooks()
 
+# ⛔ Vacuity guard — the hooks are derived, so a derivation that came back empty collects
+# zero cases at the parametrize below and still reports green.
+assert _CALLABLE_CONFIG_HOOKS, 'no required callable config hooks were derived'
+
 
 def test_the_required_callable_hook_set_is_non_empty_and_excludes_the_optional_ones():
     """The derived hook set has members, and is narrower than the ``_fn`` fields.

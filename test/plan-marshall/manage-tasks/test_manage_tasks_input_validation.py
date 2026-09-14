@@ -18,6 +18,12 @@ from _manage_tasks_fixtures import SCRIPT_PATH
 
 from conftest import run_script
 
+# ⛔ Vacuity guard — the axis populations are imported, so an emptied one collects
+# zero cases at the parametrize sites below and still reports green.
+assert MALFORMED_AXES['plan_id'], 'MALFORMED_AXES["plan_id"] is empty'
+assert MALFORMED_AXES['task_number'], 'MALFORMED_AXES["task_number"] is empty'
+assert MALFORMED_AXES['domain'], 'MALFORMED_AXES["domain"] is empty'
+
 # =============================================================================
 # --plan-id (list, read, exists, next, etc.)
 # =============================================================================

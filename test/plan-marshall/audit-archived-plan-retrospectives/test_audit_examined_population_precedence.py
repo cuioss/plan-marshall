@@ -30,6 +30,10 @@ from _audit_fixtures import audit
 _CANONICAL = 'plans_in_corpus'
 _ALIASES = tuple(k for k in audit._EXAMINED_POPULATION_KEYS if k != _CANONICAL)
 
+# ⛔ Vacuity guard — the aliases are derived by filtering a production constant, so
+# an empty result collects zero cases at every parametrize below and reports green.
+assert _ALIASES, 'audit._EXAMINED_POPULATION_KEYS carries no alias beyond the canonical key'
+
 
 def _block(*pairs: tuple[str, int]) -> str:
     """Render a check block declaring each ``(key, value)`` in the order given."""

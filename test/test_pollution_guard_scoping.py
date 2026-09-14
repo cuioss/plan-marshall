@@ -15,13 +15,21 @@ against synthetic sources, so each one is shown to mark ON ITS OWN rather than
 riding on a sibling; the matched negative controls pin that a pure-logic module and
 a module that merely READS ``PLAN_BASE_DIR`` stay unmarked, without which a
 predicate that marked everything would satisfy every positive assertion here and
-silently undo the scoping. The population check is derived by walking the tree
-rather than from a list, and publishes its counts, so it cannot pass over an empty
+silently undo the scoping. Every population here is derived by walking the tree
+rather than from a list, and publishes its counts, so none can pass over an empty
 or near-empty set.
+
+The real-module coverage names a ROLE, never a filename. It sweeps whatever the
+tree derives as state-driving and separately asserts that the ``PLAN_BASE_DIR``-
+setting route — the half a fixture-name-only predicate missed — is populated. The
+retired form instead named five modules by path, one per slice, so an unrelated
+slice renaming its own test file failed this module with "named module has moved":
+a report about a filename rather than about the marking contract under test.
 """
 
 from __future__ import annotations
 
+from functools import lru_cache
 from pathlib import Path
 
 import pytest
@@ -29,17 +37,44 @@ import pytest
 import conftest
 from conftest import TEST_ROOT
 
-#: The named modules that set ``PLAN_BASE_DIR`` themselves, re-derived by sweep.
-#: They are the concrete regression targets: each drives the resolver directly and
-#: none of them requests ``plan_context``, so under the fixture-only predicate every
-#: one of them went unmarked.
-_NAMED_STATE_DRIVING_MODULES = (
-    'plan-marshall/manage-logging/test_logging.py',
-    'plan-marshall/manage-providers/test_list_providers.py',
-    'plan-marshall/build-maven/test_maven_run.py',
-    'plan-marshall/build-npm/test_npm_run.py',
-    'plan-marshall/script-shared/test_build_parse.py',
-)
+
+@lru_cache(maxsize=1)
+def _walked_test_modules() -> tuple[Path, ...]:
+    """Every collectable test module in the tree, walked rather than listed.
+
+    The walk is what lets the real-module coverage below name a ROLE instead of a
+    filename. The retired form pinned five modules by path, each owned by a
+    different slice, so an unrelated slice renaming its own test file failed THIS
+    module with "named module has moved" — a report about a filename, not about the
+    marking contract the module exists to check.
+
+    Cached: the three callers below would otherwise walk the same tree three times
+    per session for an answer that cannot change within a run.
+    """
+    return tuple(sorted(p for p in TEST_ROOT.rglob('test_*.py') if '__pycache__' not in p.parts))
+
+
+def _state_driving(modules: tuple[Path, ...]) -> list[Path]:
+    """The subset that collection derives as driving real plan state."""
+    return [p for p in modules if conftest._module_drives_real_state(p)]
+
+
+def _sets_plan_base_dir(module_path: Path) -> bool:
+    """Whether a module's SOURCE sets ``PLAN_BASE_DIR`` itself.
+
+    One half of :func:`conftest._module_drives_real_state`'s disjunction, read on
+    its own so that route can be asserted POPULATED rather than merely folded into
+    the union. The five modules the retired list named were all of this shape, and
+    they were exactly the ones the fixture-only predicate left unmarked.
+
+    An unreadable path answers ``False``, matching the predicate it mirrors.
+    """
+    try:
+        source = module_path.read_text(encoding='utf-8')
+    except OSError:
+        return False
+    return bool(conftest._PLAN_BASE_DIR_SET_RE.search(source))
+
 
 #: One synthetic source per signal, each carrying that signal and nothing else.
 _SOURCE_SIGNALS = {
@@ -82,21 +117,61 @@ def _synthetic_module(tmp_path: Path, source: str, name: str = 'test_synthetic.p
     return module
 
 
-@pytest.mark.parametrize('relative_path', _NAMED_STATE_DRIVING_MODULES)
-def test_a_named_state_driving_module_yields_marked_items(relative_path: str):
-    """Each named module's tests are marked, so the backstop actually checks them.
+def test_every_state_driving_module_yields_marked_items():
+    """Every module the tree derives as state-driving comes back MARKED.
 
-    Driven against the REAL file rather than a copy of its idiom: the point is that
-    these specific modules — the ones the ownership migration touched — are covered,
-    and a synthetic stand-in would pass even if the real file drifted away from the
-    shape the predicate recognises.
+    The role-expressed successor to the five modules this used to name by path. The
+    population is whatever the tree's state-driving modules ARE, so no rename in any
+    slice can make this module report a missing FILE in place of a marking failure —
+    and the sweep covers strictly more than the five filenames ever did.
+
+    Driven through ``pytest_collection_modifyitems`` rather than through the
+    predicate directly, so what is asserted is the marking the backstop actually
+    receives: the hook reads ``item.path`` and consults the per-path memo, and a
+    change to either would leave the predicate right while the collection went
+    wrong. Every unmarked member is reported in one message, because a predicate
+    regression takes the whole population down at once and the useful report is the
+    set, not the first element of it.
     """
-    module_path = TEST_ROOT / relative_path
-    assert module_path.is_file(), f'named module has moved or been renamed: {module_path}'
+    driving = _state_driving(_walked_test_modules())
 
-    assert _marked(_StubItem(module_path)), (
-        f'{relative_path} sets PLAN_BASE_DIR but collection left its items unmarked, '
-        'so _pollution_guard skips the very tests whose redirect it exists to verify'
+    assert driving, (
+        'no test module derives as state-driving, so this sweep asserts nothing; '
+        'test_the_derived_population_is_neither_empty_nor_the_whole_tree owns the '
+        'population floor this leans on'
+    )
+
+    unmarked = [p.relative_to(TEST_ROOT).as_posix() for p in driving if not _marked(_StubItem(p))]
+
+    assert not unmarked, (
+        f'{len(unmarked)} of {len(driving)} state-driving module(s) came back unmarked, so '
+        f'_pollution_guard skips the very tests whose redirect it exists to verify: {unmarked}'
+    )
+
+
+def test_the_plan_base_dir_setting_route_is_populated_and_marks():
+    """The regression target, by ROLE: the modules that SET ``PLAN_BASE_DIR``.
+
+    ``_module_drives_real_state`` is a disjunction, so the sweep above stays green
+    even if the env/attribute route matches nothing at all and every derived member
+    arrives via the ``PlanContext`` symbol route instead. That route is the one the
+    fixture-only predicate missed, and it is what the five retired filenames stood
+    for, so its population is asserted non-empty in its own right — the sub-population
+    anti-vacuity the sweep cannot supply for itself.
+    """
+    setters = [p for p in _walked_test_modules() if _sets_plan_base_dir(p)]
+
+    assert setters, (
+        'no test module sets PLAN_BASE_DIR itself, so the env/attribute half of '
+        '_module_drives_real_state matches nothing and the sweep above rests entirely '
+        'on the PlanContext symbol route'
+    )
+
+    unmarked = [p.relative_to(TEST_ROOT).as_posix() for p in setters if not _marked(_StubItem(p))]
+
+    assert not unmarked, (
+        f'{len(unmarked)} of {len(setters)} module(s) that set PLAN_BASE_DIR were left '
+        f'unmarked by collection: {unmarked}'
     )
 
 
@@ -151,8 +226,8 @@ def test_the_derived_population_is_neither_empty_nor_the_whole_tree():
     nothing. Both counts are published so a future shift is readable from the
     failure rather than needing a re-derivation.
     """
-    modules = sorted(p for p in TEST_ROOT.rglob('test_*.py') if '__pycache__' not in p.parts)
-    driving = [p for p in modules if conftest._module_drives_real_state(p)]
+    modules = _walked_test_modules()
+    driving = _state_driving(modules)
 
     assert len(modules) >= 100, f'walked only {len(modules)} test modules — the population is not the tree'
     assert 20 <= len(driving) < len(modules), (

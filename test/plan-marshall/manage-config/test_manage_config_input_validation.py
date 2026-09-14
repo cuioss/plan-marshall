@@ -21,6 +21,11 @@ from conftest import get_script_path, run_script
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-config', 'manage-config.py')
 
+# ⛔ Vacuity guard — the axis populations are imported, so an emptied one collects
+# zero cases at the parametrize sites below and still reports green.
+assert MALFORMED_AXES['domain'], 'MALFORMED_AXES["domain"] is empty'
+assert MALFORMED_AXES['field'], 'MALFORMED_AXES["field"] is empty'
+
 
 # =============================================================================
 # --domain (skill-domains get)

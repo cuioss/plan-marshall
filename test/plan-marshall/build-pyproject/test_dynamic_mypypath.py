@@ -19,6 +19,22 @@ from conftest import MARKETPLACE_ROOT, PROJECT_ROOT
 BUNDLES_DIR = MARKETPLACE_ROOT
 PLAN_MARSHALL_SCRIPTS = BUNDLES_DIR / 'plan-marshall' / 'skills' / 'script-shared' / 'scripts'
 
+#: ⛔ HAND-KEPT ON PURPOSE — do NOT derive this from a disk walk.
+#:
+#: These four look like a mirror of the directories under
+#: ``script-shared/scripts/``, and deriving them would read as the obvious
+#: cleanup. It is the wrong one: ``test_collect_script_dirs_covers_every_
+#: immediate_subdir`` below ALREADY derives the full expected set from disk and
+#: compares it against ``collect_script_dirs``. Deriving here too would make the
+#: two assertions the same assertion — the expected set and the actual set would
+#: move together, and the pair could then never disagree.
+#:
+#: Hand-keeping is what buys the independent signal: this set is a FLOOR. If one
+#: of these directories were deleted outright, the disk-derived test would shrink
+#: its expectation and pass vacuously, while this one fails and names the missing
+#: directory. A MYPYPATH that silently stops covering a canonical scripts subdir
+#: makes mypy skip those sources without reporting anything, which is precisely
+#: the failure a vacuous derivation would hide.
 CANONICAL_SUBDIRS = {
     PLAN_MARSHALL_SCRIPTS / 'build',
     PLAN_MARSHALL_SCRIPTS / 'extension',

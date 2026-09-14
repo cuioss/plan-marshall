@@ -30,6 +30,10 @@ from conftest import get_script_path, run_script
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'workflow-integration-sonar', 'sonar_rest.py')
 
+# ⛔ Vacuity guard — the axis populations are imported, so an emptied one collects
+# zero cases at the parametrize sites below and still reports green.
+assert MALFORMED_AXES['component'], 'MALFORMED_AXES["component"] is empty'
+
 
 @pytest.mark.parametrize('axis,bad_value', MALFORMED_AXES['component'])
 def test_metrics_rejects_invalid_component(axis, bad_value):

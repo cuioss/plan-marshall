@@ -35,6 +35,10 @@ cmd_get_field = _mod.cmd_get_field
 cmd_get_deliverable = _mod.cmd_get_deliverable
 SCOPE_ESTIMATE_VALUES = _mod.SCOPE_ESTIMATE_VALUES
 
+# ⛔ Vacuity guard — the vocabulary belongs to the loaded production module, so emptying
+# it there collects zero cases at the parametrize below and still reports green.
+assert SCOPE_ESTIMATE_VALUES, 'manage-solution-outline.SCOPE_ESTIMATE_VALUES is empty'
+
 # Import toon_parser - conftest sets up PYTHONPATH
 from toon_parser import parse_toon  # noqa: E402
 

@@ -26,6 +26,10 @@ SCRIPT_PATH = get_script_path('plan-marshall', 'manage-execution-manifest', 'man
 _mem = load_script_module(
     'plan-marshall', 'manage-execution-manifest', 'manage-execution-manifest.py', module_name='_mem_reconcile'
 )
+
+# ⛔ Vacuity guard — the vocabulary belongs to the loaded production module, so emptying
+# it there collects zero cases at the parametrize below and still reports green.
+assert _mem.VALID_CHANGE_TYPES, 'manage-execution-manifest.VALID_CHANGE_TYPES is empty'
 cmd_compose = _mem.cmd_compose
 
 # Silence the best-effort per-rule decision-log subprocess so the tests do not

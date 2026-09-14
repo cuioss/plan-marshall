@@ -21,6 +21,11 @@ cmd_detect_ide = _mod.cmd_detect_ide
 MACOS_JETBRAINS_BUNDLE_IDS = _mod.MACOS_JETBRAINS_BUNDLE_IDS
 LINUX_LAUNCHER_PRIORITY = _mod.LINUX_LAUNCHER_PRIORITY
 
+# ⛔ Vacuity guard — both tables belong to the loaded production module, so emptying
+# either there collects zero cases at its parametrize below and still reports green.
+assert MACOS_JETBRAINS_BUNDLE_IDS, 'manage-files.MACOS_JETBRAINS_BUNDLE_IDS is empty'
+assert LINUX_LAUNCHER_PRIORITY, 'manage-files.LINUX_LAUNCHER_PRIORITY is empty'
+
 
 # =============================================================================
 # macOS branches

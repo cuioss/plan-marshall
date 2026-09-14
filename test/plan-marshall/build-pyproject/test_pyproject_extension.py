@@ -55,6 +55,10 @@ EXTENSION_FILE = get_scripts_dir('plan-marshall', 'build-pyproject') / 'extensio
 _EXTENSION_MODULE = load_script_module(
     'plan-marshall', 'build-pyproject', 'extension.py', module_name='pyproject_build_extension'
 )
+
+# ⛔ Vacuity guard — the suffix population belongs to the loaded production module, so
+# emptying it there collects zero cases at every parametrize below and reports green.
+assert _EXTENSION_MODULE._TEST_FIXTURE_SUFFIXES, 'extension._TEST_FIXTURE_SUFFIXES is empty'
 BuildExtension = _EXTENSION_MODULE.BuildExtension
 
 # The live blocking instance that motivated the python-source-template route: the

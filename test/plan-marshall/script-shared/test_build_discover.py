@@ -139,6 +139,10 @@ _EXCLUDED_DIR_SHAPES = {
 #: segment of each row is the excluded name.
 _EXCLUDED_DIR_CASES = [_EXCLUDED_DIR_SHAPES.get(name, (name, 'pom.xml')) for name in sorted(EXCLUDE_DIRS)]
 
+# ⛔ Vacuity guard — the cases are derived from production's EXCLUDE_DIRS, so emptying it
+# there collects zero cases at the parametrize below and still reports green.
+assert _EXCLUDED_DIR_CASES, '_build_discover.EXCLUDE_DIRS is empty'
+
 _EXCLUDED_DIR_IDS = [
     relative_dir.split('/', 1)[0].strip('._').replace('_', '-') for relative_dir, _ in _EXCLUDED_DIR_CASES
 ]

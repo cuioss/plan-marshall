@@ -41,6 +41,10 @@ from _lessons_helpers import SCRIPT_PATH, _mod, cmd_remove
 from conftest import run_script
 from _remove_fixtures import _CLAUSE, _INPUT, _NON_EVIDENCE_VERDICTS, _seed_lesson_file
 
+# ⛔ Vacuity guard — the verdict population is imported, so an emptied one collects zero
+# cases at the parametrize below and still reports green.
+assert _NON_EVIDENCE_VERDICTS, '_NON_EVIDENCE_VERDICTS is empty'
+
 
 class TestCmdRemove:
     """``cmd_remove`` deletes the lesson, writes a tombstone, and logs an audit entry."""

@@ -50,6 +50,10 @@ cmd_effort = load_script_module('plan-marshall', 'manage-config', '_cmd_effort.p
 #: archetype these guards exist to catch, recurring inside their own fix.
 _ALL_PRESET_NAMES: list[str] = mp.EffortPresets.all_names()
 
+# ⛔ Vacuity guard — stated at the binding site as well as by the pin named above,
+# because a test body never runs when its parameter set is empty.
+assert _ALL_PRESET_NAMES, 'mp.EffortPresets.all_names() is empty'
+
 
 # =============================================================================
 # (1) Presets exist as class-level attributes

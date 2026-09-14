@@ -27,6 +27,10 @@ from _denominator_sampling_point_fixtures import (
 )
 from _manage_metrics_fixtures import ns_generate
 
+# ⛔ Vacuity guard — the outline population is imported, so an emptied one collects zero
+# cases at the parametrize below and still reports green.
+assert _DIVERGENT_OUTLINES, '_DIVERGENT_OUTLINES is empty'
+
 # =============================================================================
 # Absent is not zero, and not a guess
 # =============================================================================

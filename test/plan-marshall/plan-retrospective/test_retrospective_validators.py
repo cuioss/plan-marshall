@@ -157,6 +157,11 @@ def test_compile_report_canonical_session_id(tmp_path):
 
 from _plan_retrospective_fixtures import build_happy_plan_dir  # noqa: E402
 
+# ⛔ Vacuity guard — the axis populations are imported, so an emptied one collects
+# zero cases at the parametrize sites below and still reports green.
+assert MALFORMED_AXES['plan_id'], 'MALFORMED_AXES["plan_id"] is empty'
+assert MALFORMED_AXES['session_id'], 'MALFORMED_AXES["session_id"] is empty'
+
 
 def _make_dir_at(path) -> None:
     """Replace ``path`` with a directory of the same name.

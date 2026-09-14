@@ -142,6 +142,32 @@ norecursedirs = ["fixtures", "__pycache__", ".git"]
 # ``build_failure`` row and take the per-test triage surface with it. ``f`` and
 # ``E`` are therefore re-stated alongside ``s`` rather than assumed to survive.
 addopts = ["-v", "--tb=short", "--strict-markers", "--strict-config", "-rsfE", "--durations=25"]
+# A parametrize whose argvalues are COMPUTED rather than displayed reports an
+# empty parameter set as a skip under pytest's default, so the case never runs,
+# the run stays green, and the only trace is one more `s` in a suite that
+# already prints thousands. `fail_at_collect` turns that into an attributable
+# collection failure naming the parametrize that produced nothing.
+#
+# Armed on a measured census, exactly as `filterwarnings` below was: a full
+# whole-tree run under this value collected 25679 tests and was GREEN, so ZERO
+# existing parametrizations turn red. The flip therefore costs nothing today and
+# converts the NEXT empty parameter set into a failure at the commit that
+# introduces it. Re-derive the census without editing this file:
+#
+#   python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build \
+#     run --command-args "module-tests" \
+#     --env "PYTEST_ADDOPTS=-oempty_parameter_set_mark=fail_at_collect"
+#
+# That the env var actually reaches pytest is not assumed: substituting an
+# invalid value for it fails the run with a usage error, because `--strict-config`
+# above rejects an unrecognised ini value rather than ignoring it. A green census
+# run is meaningful only against that control.
+#
+# This is a whole-tree backstop, not a replacement for a non-vacuity assertion at
+# the binding site: it reports THAT a parameter set was empty, while an assertion
+# beside the derivation reports WHY the population it was built from came back
+# empty. The two are complementary and both are kept.
+empty_parameter_set_mark = "fail_at_collect"
 # Every warning is an error. Armed on a measured census, not on optimism: a full
 # whole-tree run under the flags above emitted ZERO warnings — no
 # warnings-summary section at all, in any category, from third-party or

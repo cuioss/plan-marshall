@@ -42,8 +42,10 @@ verbatim, so this module would pass its own rules even without the exclusion.
 
 from __future__ import annotations
 
+import ast
 import re
 from argparse import Namespace
+from collections import Counter
 from pathlib import Path
 
 import _freshness_crosscheck as crosscheck
@@ -213,19 +215,23 @@ _DOC_BRANCHING_CONSUMERS = (
     'marketplace/bundles/plan-marshall/skills/phase-5-execute/SKILL.md',
 )
 
-#: The eight code members of the class, declared so the DERIVED set below has
-#: something to be reconciled against. The derivation is what makes the check
-#: population-derived; this tuple is what makes a drift legible.
-_CODE_BRANCHING_CONSUMERS = (
-    'test/plan-marshall/manage-tasks/test_pre_commit_verify_freshness.py',
-    'test/plan-marshall/manage-tasks/test_pre_commit_verify_freshness_verdict_and_reason.py',
-    'test/plan-marshall/manage-tasks/test_pre_commit_verify_freshness_killed_row.py',
-    'test/plan-marshall/manage-tasks/test_pre_commit_verify_freshness_unresolvable_worktree_falls_back_to_cwd.py',
-    'test/plan-marshall/manage-tasks/test_freshness_notation_crosscheck.py',
-    'test/plan-marshall/manage-tasks/test_freshness_notation_crosscheck_unrelated_notation.py',
-    'test/plan-marshall/manage-execution-manifest/test_plan31_docs_only_deadlock_regression.py',
-    'test/plan-marshall/tools-script-executor/test_build_class_stamp_discriminator.py',
-)
+#: The eight code members of the class, declared by the SLICE that owns each one
+#: rather than by filename, so the DERIVED set below has something to be reconciled
+#: against without this module pinning another slice's file names. The derivation is
+#: what makes the check population-derived; this per-slice census is what makes a
+#: drift legible — a consumer appearing in a new slice, or leaving one, moves a
+#: count here, while a rename inside a slice moves nothing. A filename list would
+#: instead red this module for a rename that has nothing to do with the gate.
+#: The slice that owns the gate. Its members drive ``cmd_pre_commit_verify_freshness``
+#: directly and build the verdict themselves; every member outside it is a CONSUMER
+#: pinning the gate's behaviour from another slice.
+_GATE_OWNING_SLICE = 'test/plan-marshall/manage-tasks'
+
+_CODE_CONSUMER_SLICES = {
+    _GATE_OWNING_SLICE: 6,
+    'test/plan-marshall/manage-execution-manifest': 1,
+    'test/plan-marshall/tools-script-executor': 1,
+}
 
 #: This module — the prover, excluded from its own population by explicit path.
 _SELF = 'test/plan-marshall/manage-tasks/test_freshness_exempt_vs_verified_discrimination.py'
@@ -250,11 +256,52 @@ _STATUS_COMPARISON = re.compile(r"""(?:==|!=|\bin\b)\s*[\(\{\[]?\s*['"](?:exempt
 _FORBIDDEN_BARE_REFUSAL = '!=' + " 'fresh'"
 _FORBIDDEN_STALE_VOCABULARY = "('fresh', " + "'stale', " + "'undecidable')"
 
+#: The POSITIVE form of the same comparison, which is what identifies the
+#: verified-route control by its behaviour instead of by its file name.
+_VERIFIED_ROUTE_PASS_PREDICATE = '==' + " 'fresh'"
+
 
 def _read(rel_path: str) -> str:
     """Read a repository-relative file as text."""
     text: str = (PROJECT_ROOT / rel_path).read_text(encoding='utf-8')
     return text
+
+
+def _encloses(outer: ast.FunctionDef | ast.AsyncFunctionDef, inner: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    """True when ``outer``'s source span contains ``inner``'s.
+
+    ``end_lineno`` is ``int | None`` on every AST node, and an absent end is not
+    evidence of containment in either direction: a node whose span is unknown
+    must neither swallow a sibling nor be swallowed by one. Such a pair is
+    therefore reported as non-enclosing, so both survive the innermost-wins
+    filter rather than one silently disappearing on a span nobody could read.
+    """
+    if outer.end_lineno is None or inner.end_lineno is None:
+        return False
+    return outer.lineno <= inner.lineno and inner.end_lineno <= outer.end_lineno
+
+
+def _functions_carrying(text: str, needle: str) -> list[tuple[str, str]]:
+    """``(name, source)`` for the INNERMOST function whose source carries ``needle``.
+
+    Whole-file containment is the wrong unit for a positive control: any unrelated
+    test, comment or string elsewhere in the same module satisfies it, so a control
+    that reads nothing the gate examined still passes. The unit that makes the
+    comparison is the unit that must carry the evidence, and the innermost one is
+    taken so an enclosing function does not inherit a nested one's evidence.
+    """
+    tree = ast.parse(text)
+    matches = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and needle in (ast.get_source_segment(text, node) or '')
+    ]
+    return [
+        (node.name, ast.get_source_segment(text, node) or '')
+        for node in matches
+        if not any(other is not node and _encloses(node, other) for other in matches)
+    ]
 
 
 def _derive_code_branching_population() -> list[str]:
@@ -291,27 +338,36 @@ def _derive_code_branching_population() -> list[str]:
     return found
 
 
+#: The class's code members, DERIVED. Bound once at module level so every guard
+#: below reasons over the same measured population instead of re-walking the tree,
+#: and so none of them has to name a file another slice owns.
+_CODE_BRANCHING_CONSUMERS: tuple[str, ...] = tuple(
+    path for path in _derive_code_branching_population() if path != _SELF
+)
+
+
 def test_the_branching_population_is_derived_non_empty_and_reconciles() -> None:
     """The population is measured, published, and reconciled — never assumed.
 
     Three failures are kept apart. An EMPTY derived set would make every
-    per-member assertion below vacuously true, so it fails first. A derived set
-    that does not match the declared one means a branching consumer appeared or
-    vanished without this class being updated. And a total that does not equal
-    deliverable 1's published ``branches`` count means the partition this module
-    reasons over has moved — recorded as a failure rather than absorbed.
+    per-member assertion below vacuously true, so it fails first. A per-slice
+    census that does not match the declared one means a branching consumer
+    appeared or vanished without this class being updated — reconciled by owning
+    slice rather than by filename, so a rename inside a slice is not reported as a
+    drift it is not. And a total that does not equal deliverable 1's published
+    ``branches`` count means the partition this module reasons over has moved —
+    recorded as a failure rather than absorbed.
     """
-    derived = [path for path in _derive_code_branching_population() if path != _SELF]
+    derived = _CODE_BRANCHING_CONSUMERS
 
     assert derived, (
         'the derived branching-consumer population is EMPTY, so every per-member '
         'assertion in this module would pass without examining anything'
     )
-    assert sorted(derived) == sorted(_CODE_BRANCHING_CONSUMERS), (
-        f'derived {len(derived)} code branching consumer(s) against a declared '
-        f'{len(_CODE_BRANCHING_CONSUMERS)}; only in derived: '
-        f'{sorted(set(derived) - set(_CODE_BRANCHING_CONSUMERS))}; only in declared: '
-        f'{sorted(set(_CODE_BRANCHING_CONSUMERS) - set(derived))}'
+    by_slice = dict(Counter(path.rsplit('/', 1)[0] for path in derived))
+    assert by_slice == _CODE_CONSUMER_SLICES, (
+        f'the branching class is now distributed as {by_slice} against a declared '
+        f'{_CODE_CONSUMER_SLICES}; the derived members are {sorted(derived)}'
     )
 
     total = len(derived) + len(_DOC_BRANCHING_CONSUMERS)
@@ -359,29 +415,58 @@ def test_no_code_consumer_enumerates_a_vocabulary_missing_a_permitting_member() 
     )
 
 
-def test_the_verified_route_positive_control_reads_its_evidence() -> None:
-    """The one ``== 'fresh'`` pass predicate in the class reads what was examined.
+def test_every_cross_slice_positive_control_reads_its_evidence() -> None:
+    """A consumer outside the gate's slice that PASSES on the token reads what was examined.
 
-    ``test_build_class_stamp_discriminator.py`` bypasses the exempt short-circuit
-    deliberately, so its token comparison would pass unchanged — which is exactly
-    why the predicate had to move anyway. A positive control that can be satisfied
-    without reading what the gate examined is the defect this plan removes, and
-    leaving one inside the plan that removes it is not acceptable.
+    The subjects are selected by their structural role — a member of the derived
+    class that lives outside the slice owning the gate, and whose predicate
+    compares positively against the token — rather than by file name, so a rename
+    in the slice that owns one does not red this module over code that has nothing
+    to do with the gate. The distinction is load-bearing: the owning slice's
+    members construct the verdict themselves, while a cross-slice consumer reaches
+    the verified route through the real gate and so bypasses the exempt
+    short-circuit, which is exactly why its token comparison would pass unchanged.
+    A positive control that can be satisfied without reading what the gate examined
+    is the defect this plan removes, and leaving one inside the plan that removes
+    it is not acceptable.
+
+    The non-emptiness assertion is not decoration: with no cross-slice positive
+    control the per-member loop below would iterate nothing and pass while
+    examining no consumer at all.
+
+    Both the selection and the evidence check are scoped to the FUNCTION making the
+    comparison, not to the whole file. Selecting and checking by the same unit is
+    what closes the gap: over a whole file, a control satisfied the evidence
+    requirement whenever any unrelated test in the same module happened to mention
+    one of the keys.
     """
-    target = 'test/plan-marshall/tools-script-executor/test_build_class_stamp_discriminator.py'
-    assert target in _CODE_BRANCHING_CONSUMERS, (
-        f'{target} is not in the declared branching class of '
-        f'{len(_CODE_BRANCHING_CONSUMERS)} code member(s), so this assertion has no subject'
+    controls = {}
+    for path in _CODE_BRANCHING_CONSUMERS:
+        if path.startswith(f'{_GATE_OWNING_SLICE}/'):
+            continue
+        units = _functions_carrying(_read(path), _VERIFIED_ROUTE_PASS_PREDICATE)
+        if units:
+            controls[path] = units
+
+    assert controls, (
+        f'no member of the branching class of {len(_CODE_BRANCHING_CONSUMERS)} lives outside '
+        f'{_GATE_OWNING_SLICE} AND passes positively on the token, so this assertion has no '
+        f'subject and the verified route is pinned from inside the gate alone'
     )
-    text = _read(target)
 
     required = ('matched_notation', 'matched_entry_index', 'worktree_sha')
-    missing = [key for key in required if key not in text]
+    unit_count = sum(len(units) for units in controls.values())
+    offenders = {
+        f'{path}::{name}': missing
+        for path, units in controls.items()
+        for name, source in units
+        if (missing := [key for key in required if key not in source])
+    }
 
-    assert not missing, (
-        f'the verified-route positive control reads {len(required) - len(missing)} of '
-        f'{len(required)} evidence key(s); missing {missing}. Without them the control '
-        f'passes on the bare token alone.'
+    assert not offenders, (
+        f'{len(offenders)} of {unit_count} cross-slice positive control unit(s) do not read the '
+        f'{len(required)} evidence key(s) the gate examined: {offenders}. Without them the '
+        f'control passes on the bare token alone.'
     )
 
 
@@ -422,10 +507,14 @@ def _degradation_inputs() -> tuple[tuple[str, object], ...]:
     is the fail-closed direction. Reading either as "no build was needed" would
     wave a plan through with no freshness proof at all.
     """
-    return (
+    inputs = (
         ('raises', RuntimeError('marshal.json unreadable')),
         ('non_dict', ['not', 'a', 'dict']),
     )
+    # ⛔ Vacuity guard — an empty return collects zero cases at the parametrize that
+    # binds this helper, reporting green while exercising neither degradation path.
+    assert inputs, 'the degradation-input population is empty'
+    return inputs
 
 
 @pytest.mark.parametrize(('label', 'payload'), _degradation_inputs())

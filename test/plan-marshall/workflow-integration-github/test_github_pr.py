@@ -1505,9 +1505,10 @@ def test_the_gate_populations_are_non_empty_and_disjoint():
     population, so their sizes are asserted here; disjointness is what makes the pair a
     partition rather than two overlapping lists.
     """
+    assert MARKER_GATED_EVIDENCE and UNGATED_EVIDENCE, 'a half with no members makes its sweep vacuous'
     gated_pairs = {(bot_kind, shape) for bot_kind, shape, _marker in MARKER_GATED_EVIDENCE}
-    assert MARKER_GATED_EVIDENCE_COUNT == len(gated_pairs) > 0
-    assert UNGATED_EVIDENCE_COUNT == len(set(UNGATED_EVIDENCE)) > 0
+    assert MARKER_GATED_EVIDENCE_COUNT == len(gated_pairs)
+    assert UNGATED_EVIDENCE_COUNT == len(set(UNGATED_EVIDENCE))
     assert gated_pairs.isdisjoint(UNGATED_EVIDENCE)
 
 
@@ -2855,6 +2856,10 @@ _CLASSIFICATION_FLAGS = derive_bot_flags(
     'fetch_findings',
 )
 
+# ⛔ Vacuity guard — the flags are derived from the live parser, so a derivation that
+# came back empty collects zero cases at every parametrize below and reports green.
+assert _CLASSIFICATION_FLAGS, 'derive_bot_flags found no classification flags on fetch_findings'
+
 
 def _parsed_fetch_args(monkeypatch, argv):
     """Return the ``argparse.Namespace`` ``github_pr.main`` built for ``argv``.
@@ -3030,6 +3035,10 @@ class TestBareClassificationFlags:
 
 _PR_AGENT_REQUIRED_MARKERS = bot_registry.contentless_review_markers('cuioss-review-bot')
 
+# ⛔ Vacuity guard — the markers are read off the live registry, so a bot whose entry
+# lost them collects zero cases at the parametrize below and still reports green.
+assert _PR_AGENT_REQUIRED_MARKERS, 'bot_registry declares no contentless review markers for cuioss-review-bot'
+
 # Both Guide bodies come from ``test/_shared/_pr_agent_guide_bodies.py`` — the
 # CLEAN one is a verbatim observed body (an HTML ``<table>`` of
 # ``<strong>`` assertions, NOT the markdown rendering a human reads), and the
@@ -3201,7 +3210,7 @@ def test_the_currency_subject_population_guard_is_exercised():
     nothing about what it rejects.
     """
     assert CURRENCY_SUBJECT_BOT_COUNT == len(CURRENCY_SUBJECT_BOTS)
-    assert CURRENCY_SUBJECT_BOT_COUNT > 0
+    assert len(CURRENCY_SUBJECT_BOTS) > 0
     assert guard_non_empty(CURRENCY_SUBJECT_BOTS, 'CURRENCY_SUBJECT_BOTS', 'the registry')
     with pytest.raises(VacuousPopulationError, match='reporting clean while covering nothing'):
         guard_non_empty((), 'CURRENCY_SUBJECT_BOTS', 'a registry declaring no such bot')
@@ -3980,7 +3989,7 @@ def test_the_currency_blind_population_is_derived_and_guarded():
     both, would make one of the two sweeps quietly wrong about which rule governs it.
     """
     assert CURRENCY_BLIND_BOT_COUNT == len(CURRENCY_BLIND_BOTS)
-    assert CURRENCY_BLIND_BOT_COUNT > 0
+    assert len(CURRENCY_BLIND_BOTS) > 0
     assert guard_non_empty(CURRENCY_BLIND_BOTS, 'CURRENCY_BLIND_BOTS', 'the registry')
     with pytest.raises(VacuousPopulationError, match='reporting clean while covering nothing'):
         guard_non_empty((), 'CURRENCY_BLIND_BOTS', 'a registry declaring no such bot')

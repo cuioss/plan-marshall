@@ -19,6 +19,10 @@ from marketplace.targets.claude.equality_check import (
     run_equality_check,
 )
 
+# ⛔ Vacuity guard — ``_ARRAY_FIELDS`` is the production module's, so emptying it
+# there would collect zero cases at every parametrize below and still report green.
+assert _ARRAY_FIELDS, 'equality_check._ARRAY_FIELDS is empty'
+
 
 def _write(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)

@@ -208,7 +208,10 @@ _BRANCH_CLEANUP_ROUND_TRIP_KNOBS = frozenset(
 _BRANCH_CLEANUP_ROUND_TRIP = [
     row for row in _BRANCH_CLEANUP_PARAM_DEFAULTS if row[0] in _BRANCH_CLEANUP_ROUND_TRIP_KNOBS
 ]
-assert len(_BRANCH_CLEANUP_ROUND_TRIP) == len(_BRANCH_CLEANUP_ROUND_TRIP_KNOBS), (
+# The non-vacuity conjunct is not implied by the equality: two empty sides are
+# equal, so an emptied knob set would agree with an empty selection and the
+# parametrize over it would collect nothing.
+assert _BRANCH_CLEANUP_ROUND_TRIP and len(_BRANCH_CLEANUP_ROUND_TRIP) == len(_BRANCH_CLEANUP_ROUND_TRIP_KNOBS), (
     'a round-trip knob was renamed out of _BRANCH_CLEANUP_PARAM_DEFAULTS'
 )
 

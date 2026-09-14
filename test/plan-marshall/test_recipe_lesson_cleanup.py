@@ -42,6 +42,12 @@ from _recipe_lesson_cleanup_fixtures import (
     read_manifest,
 )
 
+# ⛔ Vacuity guard — these populations are imported, so an emptied one collects zero
+# cases at its parametrize below and still reports green.
+assert _CODE_FENCE_LANGS, '_CODE_FENCE_LANGS is empty'
+assert _CODE_ACTION_VERBS, '_CODE_ACTION_VERBS is empty'
+assert LESSON_KIND_TO_CHANGE_TYPE, 'LESSON_KIND_TO_CHANGE_TYPE is empty'
+
 # =============================================================================
 # Auto-suggest predicate tests
 # =============================================================================

@@ -19,6 +19,10 @@ from _manage_metrics_module_fixtures import (
     manage_metrics,
 )
 
+# ⛔ Vacuity guard — the cause population is imported, so an emptied one collects zero
+# cases at the parametrize below and still reports green.
+assert _NEW_TERMINATION_CAUSES_WITH_PHASE, '_NEW_TERMINATION_CAUSES_WITH_PHASE is empty'
+
 
 class TestRecordDispatchBoundaryAcceptsNewCauses:
     """cmd_record_dispatch_boundary accepts each of the 5 new termination causes."""
