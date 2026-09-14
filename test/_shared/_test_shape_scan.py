@@ -254,18 +254,23 @@ def _contains_yield(body: list[ast.stmt]) -> bool:
 def _post_yield_statements(body: list[ast.stmt]) -> list[ast.stmt]:
     """The teardown half of a generator fixture -- what runs after its yield.
 
-    A fixture commonly protects its yield with a ``try`` and puts the teardown in
-    the matching ``finally``; that ``finally`` is the teardown half exactly as
-    the statements after a bare yield are. Reading only a direct ``Expr(Yield)``
-    statement in the function body would report such a fixture as having no
-    teardown at all, which is how an unsafe deletion in it goes unexamined. The
-    recursion covers a yield nested one or more ``try`` levels deep.
+    A fixture commonly WRAPS its yield rather than stating it bare: a ``try``
+    whose matching ``finally`` holds the teardown, or a ``with`` that keeps a
+    context manager open across the yield and leaves the teardown in the
+    statements following the block. Both are the teardown half exactly as the
+    statements after a bare yield are, and reading only a direct ``Expr(Yield)``
+    statement in the function body would report either as having no teardown at
+    all -- which is how an unsafe deletion in one goes unexamined. A ``with`` has
+    no ``finally`` of its own, so its branch is the ``try`` branch minus that
+    term. The recursion covers a yield nested one or more wrapper levels deep.
     """
     for index, stmt in enumerate(body):
         if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Yield):
             return body[index + 1 :]
         if isinstance(stmt, ast.Try) and _contains_yield(stmt.body):
             return [*stmt.finalbody, *_post_yield_statements(stmt.body), *body[index + 1 :]]
+        if isinstance(stmt, (ast.With, ast.AsyncWith)) and _contains_yield(stmt.body):
+            return [*_post_yield_statements(stmt.body), *body[index + 1 :]]
     return []
 
 
@@ -422,20 +427,28 @@ def _named_in(node: ast.expr) -> set[str]:
 def _len_comparison_names(node: ast.Compare) -> set[str]:
     """Names a ``len()`` comparison proves non-empty -- empty when it proves nothing.
 
-    ``len(cases) > 0``, ``>= 1`` and ``== 3`` can only hold for a non-empty
-    population. ``>= 0``, ``== 0`` and ``len(a) == len(b)`` are every bit as true
-    of an empty one, so they name nothing.
+    ``len(cases) > 0``, ``>= 1``, ``== 3`` and ``!= 0`` can only hold for a
+    non-empty population. ``>= 0``, ``== 0``, ``len(a) == len(b)`` -- and
+    ``!= 3``, which an empty population satisfies -- are every bit as true of an
+    empty one, so they name nothing. The inequality is accepted against the
+    constant ``0`` alone for exactly that reason.
     """
     operands = [node.left, *node.comparators]
     for index, op in enumerate(node.ops):
         left, right = operands[index], operands[index + 1]
         if _is_len_call(left) and isinstance(right, ast.Constant) and isinstance(right.value, int):
-            if (isinstance(op, ast.Gt) and right.value >= 0) or (
-                isinstance(op, (ast.GtE, ast.Eq)) and right.value >= 1
+            if (
+                (isinstance(op, ast.Gt) and right.value >= 0)
+                or (isinstance(op, (ast.GtE, ast.Eq)) and right.value >= 1)
+                or (isinstance(op, ast.NotEq) and right.value == 0)
             ):
                 return _named_in(left.args[0])
         if _is_len_call(right) and isinstance(left, ast.Constant) and isinstance(left.value, int):
-            if (isinstance(op, ast.Lt) and left.value >= 0) or (isinstance(op, (ast.LtE, ast.Eq)) and left.value >= 1):
+            if (
+                (isinstance(op, ast.Lt) and left.value >= 0)
+                or (isinstance(op, (ast.LtE, ast.Eq)) and left.value >= 1)
+                or (isinstance(op, ast.NotEq) and left.value == 0)
+            ):
                 return _named_in(right.args[0])
     return set()
 
@@ -467,24 +480,65 @@ def _positive_cardinality_names(test: ast.expr) -> set[str]:
     return set()
 
 
+def _carried_non_empty_names(node: ast.expr, depth: int = 0) -> set[str]:
+    """Names whose non-emptiness a returned expression carries through to itself.
+
+    A transform that can only preserve cardinality passes the guarantee along:
+    ``sorted(cases)`` is non-empty exactly when ``cases`` is, and a comprehension
+    with no filter clause emits one element per element it iterates. A NARROWING
+    transform passes nothing along -- a comprehension carrying an ``if``, a
+    ``filter()``, and any other call not known to preserve cardinality can all
+    return nothing from a non-empty input, so they name nothing and an assertion
+    about their input proves nothing about their result.
+
+    A call the helper returns names its CALLEE, because that is the name an
+    assertion on the same call names too (``assert derive()`` names ``derive``),
+    so the two sides meet on it.
+    """
+    if depth > 6:
+        return set()
+    if isinstance(node, ast.Name):
+        return {node.id}
+    if isinstance(node, ast.Call):
+        base = node.func.attr if isinstance(node.func, ast.Attribute) else getattr(node.func, 'id', '')
+        if base in _NON_EMPTYING and node.args:
+            return _carried_non_empty_names(node.args[0], depth + 1)
+        if not base or base in _EMPTYING:
+            return set()
+        return {base}
+    if isinstance(node, (ast.ListComp, ast.SetComp, ast.GeneratorExp, ast.DictComp)):
+        # One generator only: with a second, a non-empty outer iterable proves
+        # nothing, since an empty inner one still yields no element.
+        generators = node.generators
+        if len(generators) == 1 and not generators[0].ifs and not generators[0].is_async:
+            return _carried_non_empty_names(generators[0].iter, depth + 1)
+        return set()
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        return _carried_non_empty_names(node.left, depth + 1) | _carried_non_empty_names(node.right, depth + 1)
+    return set()
+
+
 def _guards_its_result(fn: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
-    """True when the helper asserts that what it returns is non-empty."""
-    returned = {
-        sub.id
-        for node in ast.walk(fn)
-        if isinstance(node, ast.Return) and node.value is not None
-        for sub in ast.walk(node.value)
-        if isinstance(sub, ast.Name)
-    }
+    """True when the helper asserts that what IT RETURNS is non-empty.
+
+    WHICH population an assertion is attached to is the whole question here. A
+    helper that asserts its INPUT non-empty and then returns a narrowed view of
+    it has proved nothing about the parameter set its caller binds: every
+    candidate can be filtered out and the parametrization still receives no
+    cases, so reading such an assertion as a guard would pass exactly the vacuous
+    shape R5 exists to report. The assertion must therefore name the returned
+    result itself, or a name the return carries the guarantee through -- never
+    merely a name the return expression happens to read.
+    """
+    guarded: set[str] = set()
     for node in ast.walk(fn):
-        if not isinstance(node, ast.Assert):
-            continue
-        names = _positive_cardinality_names(node.test)
-        if not names:
-            continue
-        if not returned or names & returned:
-            return True
-    return False
+        if isinstance(node, ast.Return) and node.value is not None:
+            guarded |= _carried_non_empty_names(node.value)
+    if not guarded:
+        return False
+    return any(
+        isinstance(node, ast.Assert) and bool(_positive_cardinality_names(node.test) & guarded) for node in ast.walk(fn)
+    )
 
 
 def r5_unguarded_runtime_parametrize(paths: list[Path] | None = None) -> ScanResult:

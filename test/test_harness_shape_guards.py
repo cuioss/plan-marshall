@@ -310,6 +310,35 @@ def test_r4_reads_a_fixtures_finally_as_its_teardown_half(tmp_path: Path) -> Non
     assert not passed.hits, f'R4 flagged a monkeypatch restore in the same teardown position: {passed.hits}'
 
 
+#: A generator fixture holding a context manager open across its yield, with the
+#: teardown in the statements after the block; ``{call}`` is its monkeypatch call.
+_FIXTURE_YIELDING_INSIDE_WITH = 'import pytest\n\n\n@pytest.fixture\ndef env(monkeypatch, tmp_path):\n    with chdir(tmp_path):\n        yield tmp_path\n    monkeypatch.{call}\n'
+
+
+def test_r4_reads_the_statements_after_a_with_wrapped_yield_as_its_teardown_half(tmp_path: Path) -> None:
+    """Matched pair for the with-wrapped yield: the deletion fires, the restore does not.
+
+    The two modules differ only in the teardown call. A scan that recognised a
+    bare post-yield statement and a ``try`` body but not a ``with`` one finds no
+    teardown at all here, so BOTH pass — the silent half of the gap, where the
+    shape is missed rather than misreported.
+    """
+    deleting = _write(
+        tmp_path, 'synthetic_r4_with_delete.py', _FIXTURE_YIELDING_INSIDE_WITH.format(call="delenv('PM_SYNTHETIC')")
+    )
+    restoring = _write(
+        tmp_path,
+        'synthetic_r4_with_restore.py',
+        _FIXTURE_YIELDING_INSIDE_WITH.format(call="setenv('PM_SYNTHETIC', 'v')"),
+    )
+
+    caught = shape_scan.r4_presence_keyed_restores([deleting])
+    passed = shape_scan.r4_presence_keyed_restores([restoring])
+
+    assert len(caught.hits) == 1, f'R4 missed a delenv after a with-wrapped yield: {caught}'
+    assert not passed.hits, f'R4 flagged a monkeypatch restore in the same teardown position: {passed.hits}'
+
+
 # =============================================================================
 # R5 — unguarded runtime-derived parametrize
 # =============================================================================
@@ -393,15 +422,17 @@ _CLAIMED_DERIVATION = (
 
 #: ``(claim, guards)`` — module-level claims beside an IDENTICAL derivation,
 #: differing only in what each one proves about the population's cardinality. The
-#: rejected pair is the point: both mention ``CASES`` and both are true of an
-#: empty derivation, so accepting either would suppress the hit on exactly the
-#: population that vanished.
+#: rejected rows are the point: each mentions ``CASES`` and each is true of an
+#: empty derivation, so accepting any of them would suppress the hit on exactly
+#: the population that vanished.
 _R5_CLAIMS = (
     ('CASES', True),
     ('len(CASES) > 0', True),
     ('len(CASES) >= 1', True),
+    ('len(CASES) != 0', True),
     ('isinstance(CASES, list)', False),
     ('len(CASES) >= 0', False),
+    ('len(CASES) != 3', False),
 )
 
 
@@ -415,3 +446,40 @@ def test_r5_accepts_only_a_claim_that_implies_positive_cardinality(tmp_path: Pat
         assert not result.hits, f'R5 flagged a derivation guarded by `assert {claim}`: {result.hits}'
     else:
         assert len(result.hits) == 1, f'R5 read `assert {claim}` as a guard, though an empty derivation satisfies it'
+
+
+#: A parametrize bound to a helper that asserts its input before returning;
+#: ``{returned}`` is the expression the helper returns.
+_HELPER_GUARDED_DERIVATION = (
+    'import pytest\n\n\ndef derive_cases():\n'
+    '    candidates = discover_cases()\n'
+    '    assert candidates\n'
+    '    return {returned}\n\n\n'
+    "@pytest.mark.parametrize('case', derive_cases())\ndef test_case(case):\n    assert case\n"
+)
+
+
+def test_r5_credits_a_helper_guard_only_for_the_population_it_returns(tmp_path: Path) -> None:
+    """Matched pair for the helper guard: the returned result counts, a narrowed one does not.
+
+    The two modules differ only in the returned expression, and ``assert
+    candidates`` proves the INPUT non-empty in both. That says nothing about a
+    filtered view of it — every candidate can be excluded and the
+    parametrization still receives no case — so crediting the assertion merely
+    because the name it uses reappears in the return expression is the vacuous
+    pass this shape exists to report. The unfiltered arm is asserted alongside
+    it because a predicate that credited no helper at all would satisfy the
+    first assertion while making the rule unsatisfiable.
+    """
+    direct = _write(tmp_path, 'synthetic_r5_direct.py', _HELPER_GUARDED_DERIVATION.format(returned='candidates'))
+    filtered = _write(
+        tmp_path,
+        'synthetic_r5_filtered.py',
+        _HELPER_GUARDED_DERIVATION.format(returned='[case for case in candidates if case.enabled]'),
+    )
+
+    guarded = shape_scan.r5_unguarded_runtime_parametrize([direct])
+    vacuous = shape_scan.r5_unguarded_runtime_parametrize([filtered])
+
+    assert not guarded.hits, f'R5 flagged a helper asserting the very result it returns: {guarded.hits}'
+    assert len(vacuous.hits) == 1, f'R5 credited an assertion about the input of a narrowing helper: {vacuous}'
