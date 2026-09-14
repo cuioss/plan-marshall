@@ -192,9 +192,7 @@ def test_cli_interaction_mode_set(plan_context):
     """Test CLI plumbing: interaction-mode set outputs TOON."""
     create_marshal_json(plan_context.fixture_dir)
 
-    result = run_script(
-        SCRIPT_PATH, 'interaction-mode', 'set', '--field', 'interaction_mode', '--value', 'expert'
-    )
+    result = run_script(SCRIPT_PATH, 'interaction-mode', 'set', '--field', 'interaction_mode', '--value', 'expert')
 
     assert result.success, f'Should succeed: {result.stderr}'
     assert 'expert' in result.stdout
