@@ -1263,7 +1263,12 @@ def test_search_count_and_file_count_converge_for_a_claimed_duplicate(monkeypatc
             'search still reports more rows than distinct files under an ownership '
             'claim — the reader-side collapse is not running at this call site'
         )
-        assert claimed['files_scanned'] == unclaimed['files_scanned'] == _UNCOLLAPSED_ROWS, (
+        # Derived from the FILE population, not from ``_UNCOLLAPSED_ROWS``: the
+        # scan is memoized on the path, so ``files_scanned`` counts DISTINCT files
+        # opened, and a file both modules inventory is read once. Reusing the rows
+        # constant here is the same rows-versus-files conflation this test exists
+        # to pin — the two coincide only at a fixture arity neither population owns.
+        assert claimed['files_scanned'] == unclaimed['files_scanned'] == len(_CLAIMED_DOCS), (
             'the scanned population moved between the two arms; the collapse must '
             'change what is REPORTED, never what is read'
         )
