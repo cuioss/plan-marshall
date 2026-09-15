@@ -32,6 +32,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
+import runtime_info
 from runtime_base import (
     PERMISSION_FIX_OPERATIONS,
     Runtime,
@@ -818,3 +819,13 @@ class OpenCodeRuntime(Runtime):
                 'results': results,
             },
         )
+
+    def runtime_info(self) -> str:
+        """Collect runtime information for the opencode target.
+
+        Reads harness, model, effort, and build-version from
+        script-accessible sources via the shared collector; unreadable
+        attributes are dropped rather than estimated.
+        """
+        info = runtime_info.collect_runtime_info('opencode')
+        return toon_success(runtime_info.RUNTIME_INFO_OPERATION, info)

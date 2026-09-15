@@ -1211,3 +1211,19 @@ class Runtime(ABC):
         Returns:
             Serialized TOON string (success, error, or no-op).
         """
+
+    @abstractmethod
+    def runtime_info(self) -> str:
+        """Collect runtime information for the client.toon artifact.
+
+        Returns the harness/client identifier, model name/type/version, effort
+        level, and build-version on a best-effort basis — attributes that
+        scripts cannot read are dropped rather than estimated.
+
+        A target that cannot collect runtime information returns ``no-op``
+        with a ``reason`` and an ``alternative`` rather than fabricating
+        values.
+
+        Returns:
+            Serialized TOON string (success, error, or no-op).
+        """

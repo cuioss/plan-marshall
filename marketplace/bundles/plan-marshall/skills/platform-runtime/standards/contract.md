@@ -1,6 +1,6 @@
 # Platform Runtime TOON Contract
 
-Per-operation TOON schemas for all 26 `platform-runtime` operations. Almost every operation returns one of three status variants: `success`, `error`, or `no-op`. The single exception is `session render-title` on a target that renders the title itself — it owns stdout and returns the empty string, documented in its own section below. Parser: `from toon_parser import parse_toon, serialize_toon` from `plan-marshall:ref-toon-format`.
+Per-operation TOON schemas for all 27 `platform-runtime` operations. Almost every operation returns one of three status variants: `success`, `error`, or `no-op`. The single exception is `session render-title` on a target that renders the title itself — it owns stdout and returns the empty string, documented in its own section below. Parser: `from toon_parser import parse_toon, serialize_toon` from `plan-marshall:ref-toon-format`.
 
 **Invocation pattern**:
 ```bash
@@ -1371,4 +1371,52 @@ status: error
 operation: health-check
 error: marshal_not_found
 message: .plan/marshal.json not found; run 'project initial-setup' first
+```
+
+---
+
+### `runtime-info`
+
+Collect runtime information for the `client.toon` pre-flight artifact. Takes
+no arguments. See `standards/runtime-info.md` for the schema, the
+best-effort drop semantics, and the extension-point contract.
+
+**Arguments**: none
+
+**Success (all attributes readable)**:
+```toon
+status: success
+operation: runtime-info
+harness: claude
+model_name: claude-sonnet-4-5
+model_type: chat
+model_version: 2026-09-01
+effort: standard
+build_version: "0.1"
+```
+
+**Success (best-effort drop)**:
+```toon
+status: success
+operation: runtime-info
+harness: claude
+build_version: "0.1"
+```
+
+**Error (unregistered target)**:
+```toon
+status: error
+operation: runtime-info
+error: unknown_target
+message: "runtime.target 'antigravity' is not in the registry; valid targets are: claude, opencode"
+```
+
+**Declining.** A target that cannot collect runtime information returns a
+`no-op` with a `reason` and an `alternative` rather than fabricating values:
+
+```toon
+status: no-op
+operation: runtime-info
+reason: no script-accessible source exposes runtime information on this target
+alternative: record the client attributes manually
 ```

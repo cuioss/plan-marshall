@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """
-Platform router for plan-marshall — dispatches 26 operations to the correct
+Platform router for plan-marshall — dispatches 27 operations to the correct
 target implementation based on ``runtime.target`` in ``.plan/marshal.json``.
 
 Usage:
@@ -35,6 +35,7 @@ Operations:
     subagent dispatch       --agent <name>  [--prompt-file <path>]  [--context <json>]
     wait for                --observable <kind>  --reference <id>  --bound-seconds <n>
     health-check            --checks all|permissions|display|mcp-diagnostics
+    runtime-info            (no arguments)
 
 The router resolves ``PLAN_DIR_NAME`` (default ``.plan``) from the environment,
 reads ``marshal.json``, looks up ``runtime.target``, and dispatches to the
@@ -717,6 +718,14 @@ def _dispatch(runtime: Runtime, operation: str, remaining: list[str]) -> str:
         ns = p.parse_args(remaining)
         return runtime.health_check(ns.checks)
 
+    # ------------------------------------------------------------------
+    # runtime-info
+    # ------------------------------------------------------------------
+    if operation == 'runtime-info':
+        p = argparse.ArgumentParser(allow_abbrev=False, prog='platform_runtime runtime-info')
+        p.parse_args(remaining)
+        return runtime.runtime_info()
+
     # Unrecognized operation.
     return toon_error(
         operation,
@@ -732,7 +741,7 @@ def _dispatch(runtime: Runtime, operation: str, remaining: list[str]) -> str:
         'permission web-analyze, permission web-apply, '
         'metrics capture, metrics normalized-tokens, chat extract-signal, '
         'subagent dispatch, '
-        'wait for, health-check',
+        'wait for, health-check, runtime-info',
     )
 
 
@@ -745,16 +754,16 @@ def _build_operation(argv: list[str]) -> tuple[str, list[str]]:
     """Determine the two-word operation from argv and return (operation, remaining).
 
     Operations are two-word identifiers (e.g. ``project initial-setup``).
-    Some are single-hyphenated second words (``health-check``).
+    Some are single-hyphenated second words (``health-check``, ``runtime-info``).
 
-    Supported prefix tokens: project, layout, harness, session, permission, metrics, chat, subagent, wait, health-check.
+    Supported prefix tokens: project, layout, harness, session, permission, metrics, chat, subagent, wait, health-check, runtime-info.
     """
     if not argv:
         return ('', [])
 
-    # health-check is a special case — single token.
-    if argv[0] == 'health-check':
-        return ('health-check', argv[1:])
+    # health-check and runtime-info are special cases — single token.
+    if argv[0] in ('health-check', 'runtime-info'):
+        return (argv[0], argv[1:])
 
     # All other operations have the form: <group> <subcommand>
     if len(argv) >= 2:

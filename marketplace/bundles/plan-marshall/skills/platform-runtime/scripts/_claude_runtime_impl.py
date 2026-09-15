@@ -31,6 +31,7 @@ from typing import Any
 
 import _chat_signal_reducer
 import claude_runtime
+import runtime_info
 import session_binding
 from manage_terminal_title import _compose_body, compose
 from runtime_base import (
@@ -2265,3 +2266,13 @@ class ClaudeRuntime(Runtime):
             )
 
         return toon_success('health-check', fields)
+
+    def runtime_info(self) -> str:
+        """Collect runtime information for the claude target.
+
+        Reads harness, model, effort, and build-version from
+        script-accessible sources via the shared collector; unreadable
+        attributes are dropped rather than estimated.
+        """
+        info = runtime_info.collect_runtime_info('claude')
+        return toon_success(runtime_info.RUNTIME_INFO_OPERATION, info)
