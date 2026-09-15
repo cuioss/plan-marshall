@@ -1,0 +1,60 @@
+---
+name: pm-dev-java-arch-gate-java
+description: "Use when authoring, running, or interpreting the Java arch-gate — the ArchUnit-based architectural-fitness-function check that runs as a per-deliverable read-only structural-boundary gate and emits arch-constraint findings. Also use when writing an ArchUnit rule, which ships a negative control, or a hand-written ArchCondition, which additionally pairs both rule forms against that control. A thin pointer to the central arch-gate model in plan-marshall:manage-architecture; carries only the Java/ArchUnit binding."
+compatibility: Adapted from plan-marshall marketplace (Claude Code native)
+---
+
+# Java arch-gate (ArchUnit)
+
+**REFERENCE MODE**: This skill provides reference material for the Java domain's `arch-gate` binding. It is a **thin pointer** — the structural concept, the read-only contract, the execution model, and the findings → triage → lesson feedback loop are owned by the central standard and MUST NOT be duplicated here.
+
+The single authoritative model for `arch-gate` lives in [`arch-gate-fitness-functions.md`](../../../plan-marshall/skills/manage-architecture/standards/arch-gate-fitness-functions.md) in `plan-marshall:manage-architecture`. Read that document for what an architectural fitness function is, the read-only structural-boundary-gate contract, the single per-deliverable execution model, resolution/execution path, and the lesson lifecycle. This skill carries only the Java-specific binding.
+
+## Enforcement
+
+**Execution mode**: Reference library; load for context when authoring, running, or interpreting the Java arch-gate. Never execute this document's content as a workflow.
+
+**Prohibited actions:**
+- Do not duplicate the central `arch-gate-fitness-functions.md` model here — this skill is a thin pointer
+- Do not mutate source from the arch-gate run — it is read-only with respect to both source and the lessons corpus
+- Do not piggyback the ArchUnit rules onto `module-tests` — the `@ArchTest` rules run as a dedicated ArchUnit-only execution
+
+**Constraints:**
+- The Java arch-gate tool is ArchUnit; the descriptor the extension declares is `{'tool': 'archunit'}`
+- arch-gate runs as a per-deliverable read-only verify-step resolved through `architecture resolve --command arch-gate`
+- A structural-boundary violation is typed as an `arch-constraint` finding, never a generic `test-failure`
+
+## Java binding
+
+| Aspect | Java value |
+|--------|------------|
+| Native tool | ArchUnit |
+| Rule surface | `@ArchTest` rules run as a dedicated ArchUnit-only invocation — a tagged Surefire/JUnit execution of only the `@ArchTest` rules, distinct from `module-tests` |
+| Extension descriptor | `provides_arch_gate()` returns `{'tool': 'archunit'}` |
+| Verify-step | `default:verify:arch-gate`, appended to `phase-5-execute.verification_steps` by `skill-domains configure` when the java domain is configured |
+| Finding type | `arch-constraint` (one finding per structural-boundary violation, carrying the violated rule's identity) |
+| Negative control | Binds to the `@ArchTest` rule surface above: every rule ships one, per [`arch-gate-fitness-functions.md` § Every rule ships a negative control](../../../plan-marshall/skills/manage-architecture/standards/arch-gate-fitness-functions.md#every-rule-ships-a-negative-control) |
+
+The Java binding of the central pipeline's `ext-triage-{domain}` stage is [`pm-dev-java:ext-triage-java`](../ext-triage-java/SKILL.md) — that is where an `arch-constraint` finding from this gate is dispositioned. The disposition step itself and the lesson lifecycle it feeds are owned by [`arch-gate-fitness-functions.md` § Findings → triage → lesson feedback loop](../../../plan-marshall/skills/manage-architecture/standards/arch-gate-fitness-functions.md#findings--triage--lesson-feedback-loop).
+
+## Polarity trap in a hand-written `ArchCondition`
+
+This is the concrete ArchUnit instance of the negative-control obligation the Java binding table above points at — **secondary to that obligation, never a substitute for it**. The obligation governs every rule; this note covers one ArchUnit-specific way a Java rule goes vacuous.
+
+A hand-written `ArchCondition` reports its finding by adding a `violated(...)` event, so the implementation has already expressed the constraint negatively — *this item is bad*. Composing that condition under ArchUnit's `no…` rule form (`noClasses().should(condition)`) negates it a second time, because the enclosing form inverts the events the condition produced. The offending item's `violated(...)` event is flipped to a satisfied one, the compliant items produced no events to flip, and the rule finishes with no violations at all: **it passes on exactly the tree it was written to reject**. Nothing in the run distinguishes that pass from a genuine one.
+
+That vacuous pass is scoped to the **violated-only event shape** — a condition that reports `violated(...)` for non-compliant items and emits nothing for compliant ones. ArchUnit also accepts `ConditionEvent.satisfied(...)`, and the `no…` form inverts *each* event the condition reported rather than only the absence of violations, so a condition that emits `satisfied(...)` for compliant items has those events flipped into violations and the rule fails loudly instead of passing. Loud failure and vacuous pass are two symptoms of the same inverted composition, and which one appears is decided by the condition's event shape rather than by anything visible at the call site — so neither the rule's own result nor a reading of `noClasses().should(...)` tells the author which composition they wrote.
+
+Both halves are individually correct, which is why the composition survives review: `violated(...)` is the documented way for a condition to report a finding, and the `no…` form is the documented way to express a prohibition. Only their combination is wrong, and at the call site `noClasses().should(...)` reads as the intent it silently inverts.
+
+**Pairing requirement.** A hand-written condition MUST also be exercised in the positive rule form — `classes().should(condition)` — against the same deliberately non-compliant fixture, and not merely reviewed by eye. In the positive form the condition's polarity is the one its implementation expressed, so it rejects that fixture; an inverted `no…` composition accepts it. Exercising both forms is what turns the inversion into an observable disagreement at authoring time instead of a green rule that enforces nothing.
+
+The paired test MUST assert the concrete **event polarity** the condition reported — that the non-compliant fixture item produced a `violated(...)` event, and which event kind (if any) the compliant item produced — alongside each form's pass/fail outcome. Outcome alone is a weaker signal than it looks: a pass states nothing about what the condition examined, so an assertion phrased purely over pass/fail reads the same for a condition that reported correctly-polarised events and for one that reported none at all. That is the examined-nothing-reads-as-green failure the central negative-control obligation exists to close, reappearing inside the test written to close it. Asserting the events themselves is what pins the pairing to the polarity it exists to observe.
+
+The fixture and both rule forms live in a plain unit test of the condition, never as an `@ArchTest` rule over the production tree. A deliberately non-compliant fixture inside the scanned tree would hold the arch-gate permanently red, and the pairing is a check on the condition's polarity rather than a structural claim about the codebase.
+
+## Related
+
+- [`arch-gate-fitness-functions.md`](../../../plan-marshall/skills/manage-architecture/standards/arch-gate-fitness-functions.md) — the central, authoritative arch-gate model (single source of truth)
+- [`extension-contract.md` § provides_arch_gate](../../../plan-marshall/skills/extension-api/standards/extension-contract.md) — the hook contract the Java extension implements
+- [`pm-dev-java:ext-triage-java`](../ext-triage-java/SKILL.md) — Java triage, including `arch-constraint` finding disposition
