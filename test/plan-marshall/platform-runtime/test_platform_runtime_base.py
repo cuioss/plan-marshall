@@ -255,6 +255,7 @@ class _ConcreteRuntime(Runtime):
 #: second edit. ``test_runtime_has_34_abstract_methods`` stays the non-vacuity
 #: guard that pins the count.
 ALL_ABSTRACT_METHODS = sorted(getattr(Runtime, '__abstractmethods__', frozenset()))
+assert ALL_ABSTRACT_METHODS, 'the derived abstract-method population is empty'
 
 
 def test_runtime_has_34_abstract_methods():
