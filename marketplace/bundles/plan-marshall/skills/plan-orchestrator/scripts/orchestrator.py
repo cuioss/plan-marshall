@@ -3,7 +3,7 @@
 """Thin scaffolding script for the plan-orchestrator skill.
 
 Deliberately lean, per the orchestrator's lean posture: everything that
-requires judgement stays LLM-workflow; this script owns eight deterministic
+requires judgement stays LLM-workflow; this script owns nine deterministic
 operation groups against the main-anchored orchestrator store
 (``.plan/local/orchestrator/{slug}/``, resolved via
 ``file_ops.get_store_dir('orchestrator', slug)``):
@@ -87,10 +87,15 @@ operation groups against the main-anchored orchestrator store
   the write boundary is enforced by construction there (no caller-supplied
   output path exists). ``landing-check`` additionally carries the drain-time
   surface-expansion delta as a first-class field: the landing's realized
-  footprint (``--realized-paths``, from the merged diff) reconciled against
-  its declared surface (``--declared-paths``) with the footprint base anchor
-  reported beside the counts, so an in-flight expansion is detectable at
-  drain time with no manual diff.
+   footprint (``--realized-paths``, from the merged diff) reconciled against
+   its declared surface (``--declared-paths``) with the footprint base anchor
+   reported beside the counts, so an in-flight expansion is detectable at
+   drain time with no manual diff.
+- ``preflight --plan-id ID`` — invoke ``platform_runtime runtime-info`` and
+  write the returned payload as the per-plan ``client.toon`` pre-flight
+  artifact, settling the plan's title state best-effort on the way.
+  Best-effort throughout: a collector failure degrades (drop, report
+  ``degraded: true``) and never blocks plan start.
 
 The ``kind=orchestrator`` ``status.json`` schema is owned by
 ``manage-status/standards/status-lifecycle.md``; ``status.json`` is created
@@ -103,6 +108,7 @@ import json
 import re
 import shutil
 import subprocess
+import sys
 from collections import Counter
 from collections.abc import Callable, Collection
 from pathlib import Path
@@ -4097,6 +4103,116 @@ def _add_slug_arg(parser: argparse.ArgumentParser) -> None:
     parser.add_argument('--slug', required=True, help='Epic slug (kebab-case)')
 
 
+def _best_effort_plan_title(plan_id: str) -> None:
+    """Settle the plan's title state at plan start (best-effort, never raises).
+
+    The plan-scoped form of the terminal-title repaint obligation: with no
+    epic slug in scope the hook settles the plan's own title state rather
+    than the epic push. Failures are swallowed — title settling never blocks
+    plan start.
+    """
+    try:
+        subprocess.run(
+            [
+                sys.executable,
+                '.plan/execute-script.py',
+                'plan-marshall:platform-runtime:platform_runtime',
+                'session',
+                'push-title-token',
+                '--plan-id',
+                plan_id,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+    except Exception:
+        pass
+
+
+def cmd_preflight(args: argparse.Namespace) -> dict[str, Any]:
+    """Invoke runtime-info and write the per-plan client.toon artifact.
+
+    Best-effort by contract: any collector, resolution, or write failure
+    degrades to ``degraded: true`` with ``artifact_written: false`` and still
+    returns ``status: success`` — a pre-flight probe never blocks plan start.
+    """
+    try:
+        validate_plan_id(args.plan_id)
+    except ValueError as exc:
+        return {
+            'status': 'success',
+            'operation': 'preflight',
+            'plan_id': args.plan_id,
+            'degraded': True,
+            'degrade_reason': f'invalid plan id: {exc}',
+            'artifact_written': False,
+        }
+    _best_effort_plan_title(args.plan_id)
+    try:
+        plan_dir = get_store_dir('plans', args.plan_id)
+    except Exception as exc:
+        return {
+            'status': 'success',
+            'operation': 'preflight',
+            'plan_id': args.plan_id,
+            'degraded': True,
+            'degrade_reason': f'plan directory unresolvable: {exc}',
+            'artifact_written': False,
+        }
+    try:
+        completed = subprocess.run(
+            [
+                sys.executable,
+                '.plan/execute-script.py',
+                'plan-marshall:platform-runtime:platform_runtime',
+                'runtime-info',
+            ],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+    except Exception as exc:
+        return {
+            'status': 'success',
+            'operation': 'preflight',
+            'plan_id': args.plan_id,
+            'degraded': True,
+            'degrade_reason': f'runtime-info invocation failed: {exc}',
+            'artifact_written': False,
+        }
+    payload = completed.stdout.strip()
+    if completed.returncode != 0 or not payload or 'status: success' not in payload.splitlines()[0]:
+        return {
+            'status': 'success',
+            'operation': 'preflight',
+            'plan_id': args.plan_id,
+            'degraded': True,
+            'degrade_reason': 'runtime-info returned no success payload',
+            'artifact_written': False,
+        }
+    try:
+        plan_dir.mkdir(parents=True, exist_ok=True)
+        (plan_dir / 'client.toon').write_text(payload + '\n', encoding='utf-8')
+    except OSError as exc:
+        return {
+            'status': 'success',
+            'operation': 'preflight',
+            'plan_id': args.plan_id,
+            'degraded': True,
+            'degrade_reason': f'client.toon unwritable: {exc}',
+            'artifact_written': False,
+        }
+    return {
+        'status': 'success',
+        'operation': 'preflight',
+        'plan_id': args.plan_id,
+        'degraded': False,
+        'artifact_written': True,
+        'artifact': 'client.toon',
+    }
+
+
 def _build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog='orchestrator',
@@ -4105,8 +4221,9 @@ def _build_arg_parser() -> argparse.ArgumentParser:
             'epic tree, read/transition/stamp/append the plan queue, generate '
             'the START-HERE resume summary, archive a closed epic, reconcile '
             'the staged spec corpus and its re-grounding verdicts, report the '
-            'restart-readiness verdict, and drive the plan-writable inbox '
-            'OUTBOX and its drain.'
+            'restart-readiness verdict, drive the plan-writable inbox '
+            'OUTBOX and its drain, and write the per-plan client.toon '
+            'pre-flight artifact.'
         ),
         allow_abbrev=False,
     )
@@ -4216,6 +4333,18 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     )
     _add_slug_arg(compact)
     compact.set_defaults(handler=cmd_compact)
+
+    preflight = subparsers.add_parser(
+        'preflight',
+        help='Invoke runtime-info and write the per-plan client.toon artifact (best-effort, never blocks).',
+        allow_abbrev=False,
+    )
+    preflight.add_argument(
+        '--plan-id',
+        required=True,
+        help='Plan identifier the client.toon artifact is written for.',
+    )
+    preflight.set_defaults(handler=cmd_preflight)
 
     _add_corpus_group(subparsers)
     _add_cleanup_group(subparsers)
