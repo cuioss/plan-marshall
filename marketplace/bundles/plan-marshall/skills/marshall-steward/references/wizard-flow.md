@@ -260,11 +260,11 @@ Seed-then-tune for machine-local model pins, parallel to the Step 5 effort seedi
 python3 .plan/execute-script.py plan-marshall:marshall-steward:effort_pins validate
 ```
 
-- **`status: success`** → the map is readable and schema-valid. Materialize and apply through the existing `manage-config effort` surface:
+- **`status: success`** → the map is readable and schema-valid. Materialize and hand off to the harness provisioning seam (never through `manage-config effort`):
   ```bash
   python3 .plan/execute-script.py plan-marshall:marshall-steward:effort_pins materialize --harness open
   ```
-  Apply the emitted pins via the `manage-config effort` verbs (`effort set` for surgical per-scope writes), then verify the `inherit` fallback on unpinned levels with `effort resolve-target`. The full operator flow lives in [menu-pins.md](menu-pins.md); the map contract lives in [pin-provisioning.md](../standards/pin-provisioning.md).
+  Do NOT apply the emitted pins via the `manage-config effort` verbs — `effort set` validates `--level` against `ALLOWED_LEVELS` and cannot persist model references; `manage-config effort` stays the effort-level configuration surface only. The emitter is read-only; hand each emitted `level=model` pair to the harness provisioning seam — the PLAN-01 post-resolve slot per ADR-021 — then verify the `inherit` fallback on unpinned levels with `effort resolve-target`. The full operator flow lives in [menu-pins.md](menu-pins.md); the map contract lives in [pin-provisioning.md](../standards/pin-provisioning.md).
 - **`status: error`** → no map, or a malformed one. A missing map is the normal skip (nothing to seed); a malformed map fails closed — fix the map and re-run this step, never hand-edit the levels to compensate.
 
 This step never touches the Claude target fixed alias-palette flow — pin materialization applies to open-model-set harnesses only.

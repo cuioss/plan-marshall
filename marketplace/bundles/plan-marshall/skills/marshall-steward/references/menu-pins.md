@@ -45,9 +45,9 @@ python3 .plan/execute-script.py plan-marshall:marshall-steward:effort_pins mater
 
 The emitter is read-only — it writes nothing itself. `pins` carries one `level=model` pair per level; any level the map does not pin reads `inherit`. `guard_hits` counts entries the never-escalate guard held back to `inherit`. On the Claude target the flow returns `untouched` instead: the fixed alias-palette flow is never modified.
 
-### Step 3: Apply Through `manage-config effort`
+### Step 3: Hand Off to the Harness Provisioning Seam
 
-Persist the emitted pins through the existing `manage-config effort` verbs (`effort set` for surgical per-scope writes) — the same surface the Effort flow writes through, so validation, audit logging, and no-restart semantics stay uniform. The pin step adds no parallel writer.
+Do NOT persist the emitted pins through `manage-config effort` — `effort set` validates `--level` against `ALLOWED_LEVELS` (`level-1` through `level-7` plus `inherit`) and cannot persist model references, so `manage-config effort` stays the effort-level configuration surface only. The `effort_pins` emitter is read-only; hand each emitted `level=model` pair to the harness provisioning seam — the PLAN-01 post-resolve slot per ADR-021 (`doc/adr/021-machine-local-effort-to-model-map-and-resolve-chain-slot.adoc`) and `plan-marshall/standards/effort-variants.md` § Local-Map Provisioning Slot — which consults the map for the exact resolved level after `effort resolve-target` returns. The pin step adds no parallel writer and no new project-shared config key.
 
 ### Step 4: Verify the Inherit Fallback
 

@@ -32,10 +32,10 @@ Resolution order is unchanged. The resolver walks the target-neutral chain to a 
 
 ## Delegation Seam
 
-All effort reads and writes route through the existing `manage-config effort` verbs. The pin step adds no parallel resolver and no parallel writer.
+Effort-level reads route through the existing `manage-config effort` verbs; per-level model pins are NOT persisted through them. The pin step adds no parallel resolver and no parallel writer.
 
 - Read the resolved level through the standard effort resolution before consulting the map.
-- Persist per-level pins through the standard effort write path so validation, audit logging, and the no-restart semantics stay uniform.
+- Do NOT persist per-level pins through the standard effort write path — `effort set` validates `--level` against `ALLOWED_LEVELS` and cannot persist model references. Hand each emitted `level=model` pair to the harness provisioning seam instead: the PLAN-01 post-resolve slot per ADR-021 (`doc/adr/021-machine-local-effort-to-model-map-and-resolve-chain-slot.adoc`) and `plan-marshall/standards/effort-variants.md` § Local-Map Provisioning Slot, which consults the map for the exact resolved level after resolution. Project-shared configuration carries no new key for this hand-off.
 - The Claude target fixed alias-palette flow is untouched. Pin materialization targets open-model-set harnesses only; the Claude build-time guard and alias-capability behavior are never modified.
 
 ## Resolution and Provisioning Grounding
