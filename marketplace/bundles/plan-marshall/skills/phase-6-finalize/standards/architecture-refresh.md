@@ -3,7 +3,7 @@ lane:
   class: derived-state
   cost_size: S
 name: default:architecture-refresh
-description: Refresh architecture descriptors in the pre-push settle stage — tier-0 deterministic discover + diff-driven commit, tier-1 LLM re-enrichment
+description: Refresh architecture descriptors in the pre-push settle stage — tier-0 deterministic discover gated on the attribution verdict, tier-1 LLM re-enrichment
 order: 10
 default_on: true
 presets: []
@@ -12,7 +12,7 @@ implements: plan-marshall:extension-api/standards/ext-point-finalize-step
 
 # Architecture Refresh
 
-Pure executor for the `architecture-refresh` finalize step. The pre-baseline is the committed `origin/main` tree: `_project.json` and the per-module `enriched.json` files are git-tracked, so `origin/main`'s `.plan/project-architecture/` is a zero-cost snapshot of the architecture surface as it stood before this plan. Tier 0 extracts that baseline, re-runs `discover --force`, and commits the regenerated descriptor when the working tree actually shifted; Tier 1 optionally re-enriches the affected modules via an LLM pass.
+Pure executor for the `architecture-refresh` finalize step. The pre-baseline is the committed `origin/main` tree: `_project.json` and the per-module `enriched.json` files are git-tracked, so `origin/main`'s `.plan/project-architecture/` is a zero-cost baseline of the architecture surface as it stood before this plan. The architecture verbs read that baseline by ref (`--pre-ref origin/main`) — this step materializes nothing on disk. Tier 0 re-runs `discover --force --apply plan`, which writes only the plan-attributable part of the regenerated descriptor, and commits it when the regression gate is green; Tier 1 optionally re-enriches the affected modules via an LLM pass.
 
 ## Exit-code convention for `manage-*` script calls
 
@@ -21,7 +21,7 @@ Every `manage-*` script call in this document carries the following exit-code co
 - **`exit_code == 0`**: parse the returned TOON and use the value as the step describes.
 - **`exit_code != 0`**: STOP and return an error TOON to the orchestrator carrying the script's stderr verbatim. Non-zero exits include `argparse_rejection` (exit 2) — silent swallowing of `wrong_parameters` rejections is the prohibited anti-pattern; "log and continue" is equally forbidden.
 
-This document carries NO step-activation logic. Activation is controlled by the dispatcher in `phase-6-finalize/SKILL.md` Step 3 and is driven solely by presence of `architecture-refresh` in `manifest.phase_6.steps`. When the dispatcher runs this step, the document executes top to bottom — there is no skip-conditional branching at this layer beyond the documented Tier-0 / Tier-1 knob reads and the absent-baseline short-circuit.
+This document carries NO step-activation logic. Activation is controlled by the dispatcher in `phase-6-finalize/SKILL.md` Step 3 and is driven solely by presence of `architecture-refresh` in `manifest.phase_6.steps`. When the dispatcher runs this step, the document executes top to bottom — there is no skip-conditional branching at this layer beyond the documented Tier-0 / Tier-1 knob reads, the absent-baseline short-circuit, and the attribution-verdict branches.
 
 This step is **inline** (executed directly inside the finalize main context, not via a separate Task agent) because the Tier-1 `prompt` mode requires an `AskUserQuestion` interaction. Inline steps are not timeout-wrapped — they execute under the host platform's standard per-call ceiling.
 
@@ -41,9 +41,9 @@ This step is **inline** (executed directly inside the finalize main context, not
 The step flow is:
 
 1. Read inputs (run-config knobs + change_type).
-2. Extract the `origin/main` architecture baseline (Tier-0-enabled only); short-circuit when `origin/main` carries no committed baseline.
-3. Tier 0 — `discover --force`, diff against the extracted baseline, reject a regressive descriptor delta at the commit gate, then commit when `.plan/project-architecture` is dirty on disk.
-4. Tier 1 — LLM re-enrichment of the affected modules (`added ∪ removed`).
+2. Probe the `origin/main` architecture baseline with `diff-modules --pre-ref origin/main` (Tier-0-enabled only); short-circuit when `origin/main` carries no committed baseline.
+3. Tier 0 — `discover --force --apply plan`, branch on the attribution verdict, reject a regressive descriptor delta at the commit gate, then commit when `.plan/project-architecture` is dirty on disk.
+4. Tier 1 — LLM re-enrichment of the affected modules (`added ∪ removed`), reached only on a verdict that leaves no migration deferred and nothing unattributable.
 5. Mark step complete with `--display-detail` summarising the outcome.
 
 ## Step 1: Read Inputs
@@ -69,13 +69,13 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
 
 When `change_type` is absent, treat it as `unknown` and proceed (no Tier-1 short-circuit applies; the Tier-1 knob alone governs).
 
-## Step 2: Extract the origin/main Architecture Baseline
+## Step 2: Probe the origin/main Architecture Baseline
 
-The pre-baseline is `origin/main`'s committed `.plan/project-architecture/` tree. Because `_project.json` and the per-module `enriched.json` files are git-tracked, the committed tree is the snapshot to diff the freshly-regenerated descriptors against — no separate capture is needed at plan start.
+The pre-baseline is `origin/main`'s committed `.plan/project-architecture/` tree. Because `_project.json` and the per-module `enriched.json` files are git-tracked, the committed tree is the baseline to compare against — no capture is needed at plan start, and none is taken here: `--pre-ref` reads the tree from git inside the verb and leaves no file behind.
 
 ### 2a. Tier-0 disabled short-circuit
 
-If the run-config returned `tier_0: disabled`, skip extraction and the entire Tier-0 deterministic pass. `affected_modules` is never computed (treated as UNKNOWN in Tier 1). Log the decision and proceed to Step 4:
+If the run-config returned `tier_0: disabled`, skip the probe and the entire Tier-0 deterministic pass. `affected_modules` is never computed (treated as UNKNOWN in Tier 1). Log the decision and proceed to Step 4:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -83,33 +83,28 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   --message "(plan-marshall:phase-6-finalize:architecture-refresh) Tier 0 skipped — architecture_refresh.tier_0 = disabled"
 ```
 
-When Tier 0 is disabled, Tier 1 still runs against the *unchanged* `.plan/project-architecture/` descriptor. The two tiers are independently switchable; the only coupling is that Tier-1 `auto`/`prompt` consumes the `diff-modules --pre` result, which a Tier-0-disabled path does not produce. Tier-1 documents how it handles a missing diff (see Step 4 below).
+When Tier 0 is disabled, Tier 1 still runs against the *unchanged* `.plan/project-architecture/` descriptor. The two tiers are independently switchable; the only coupling is that Tier-1 `auto`/`prompt` consumes the `diff-modules` result, which a Tier-0-disabled path does not produce. Tier-1 documents how it handles a missing diff (see Step 4 below).
 
-### 2b. Extract the committed baseline tree
+### 2b. Diff the working tree against origin/main
 
-Extract `origin/main`'s `.plan/project-architecture/` subtree into a temp directory under the worktree. Clear any previous extraction, create a fresh extraction root, archive the subtree, then unpack it — four single commands:
-
-```bash
-rm -rf {worktree_path}/.plan/temp/architecture-baseline {worktree_path}/.plan/temp/architecture-baseline.tar
-```
+One call reads the committed baseline by ref and classifies the modules:
 
 ```bash
-mkdir -p {worktree_path}/.plan/temp/architecture-baseline
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
+  --project-dir {worktree_path} diff-modules --pre-ref origin/main
 ```
 
-```bash
-git -C {worktree_path} archive --format=tar --output=.plan/temp/architecture-baseline.tar origin/main .plan/project-architecture
+Capture the four buckets from the TOON output: `added`, `removed`, `changed`, `unchanged`. **Against a derived-less git baseline the `changed` bucket is noise.** `origin/main` commits `_project.json` + `enriched.json` only — `derived.json` is ephemeral and never committed — so the baseline side has no per-module `derived.json` sha and EVERY common module classifies as `changed`. The reliable drift signal is therefore the index-derived buckets only:
+
+```text
+affected_modules = added ∪ removed     # sorted; intra-module structural drift (the changed bucket) is out-of-scope
 ```
 
-```bash
-tar -xf {worktree_path}/.plan/temp/architecture-baseline.tar -C {worktree_path}/.plan/temp/architecture-baseline
-```
-
-The `git archive` pathspec `.plan/project-architecture` produces tar entries rooted at that path, so after extraction the baseline descriptor lives at `{baseline_dir} = {worktree_path}/.plan/temp/architecture-baseline/.plan/project-architecture` — the directory that directly contains `_project.json`. Step 3b feeds `{baseline_dir}` to `diff-modules --pre`.
+A `status: error` other than `snapshot_not_found` (for example `invalid_ref`) is a step failure: log it with the standard error template below, mark the step `outcome failed` with `--display-detail "baseline diff failed — see work.log"`, and return.
 
 ### 2c. Absent-baseline short-circuit (Branch A)
 
-When `origin/main` carries no committed `.plan/project-architecture/_project.json`, there is no baseline to diff against. Two equivalent signals reach this branch: the `git archive` call in 2b exits non-zero (the pathspec matched nothing in `origin/main`), or — when a partial tree extracts without `_project.json` — `diff-modules` in Step 3b returns `error: snapshot_not_found`. On either signal, mark the step done with the no-baseline outcome and return without running discover / diff / commit or Tier 1:
+When `diff-modules` returns `error: snapshot_not_found`, `origin/main` carries no committed `.plan/project-architecture/_project.json` — there is no baseline to compare against. Because the probe runs before discover, this short-circuit precedes every write. Mark the step done with the no-baseline outcome and return without running discover / commit or Tier 1:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -124,43 +119,97 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
   --display-detail "skipped — no committed origin/main architecture baseline"
 ```
 
-## Step 3: Tier 0 — Deterministic Refresh
+## Step 3: Tier 0 — Attributed Refresh
 
-Tier 0 regenerates the descriptor with `architecture discover --force`, diffs it against the extracted baseline to surface the affected module set, and commits only when the regenerated descriptor actually changed on disk.
+Tier 0 regenerates the descriptor with `architecture discover --force --apply plan`, which classifies its own rewrite of the on-disk tree and writes only the plan-attributable part of it. The delta classes, their attribution (plan / migration / undecidable) and the verdict each set of classes reduces to are published once, in `marketplace/bundles/plan-marshall/skills/manage-architecture/standards/manage-api.md` § discover — see that section; this step consumes the verdict and does not restate the table.
 
-### 3a. Run discover --force
+Two segments can leave `.plan/project-architecture` dirty, and only the second is discover's doing: plan-time writers that edited descriptors during the plan without committing them (segment 1), and the discover rewrite itself (segment 2). The attribution verdict governs segment 2 only. Segment 1 is plan-caused by construction and always flows through the unchanged porcelain + regression gates below.
 
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
-  --project-dir {worktree_path} discover --force
-```
-
-The `--force` flag instructs `manage-architecture` to bypass any freshness checks and rewrite `_project.json` plus the per-module `enriched.json` stubs. `derived.json` is not persisted, so `--force` does not rewrite per-module derived files; the call is an idempotent refresh of the module index and a re-seed of empty enrichment stubs for newly-discovered modules.
-
-### 3b. Diff against the extracted baseline
+### 3a. Run discover --force --apply plan
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
-  --project-dir {worktree_path} diff-modules --pre {baseline_dir}
+  --project-dir {worktree_path} discover --force --apply plan
 ```
 
-Capture the four buckets from the TOON output: `added`, `removed`, `changed`, `unchanged`. **Against a derived-less git baseline the `changed` bucket is noise.** `origin/main` commits `_project.json` + `enriched.json` only — `derived.json` is ephemeral and never committed — so the snapshot side has no per-module `derived.json` sha and EVERY common module classifies as `changed`. The reliable drift signal is therefore the index-derived buckets only:
+Parse `status`, `attribution`, `applied`, `delta_classes[]{class,attribution,module_count}`, `unclassified_fields[]{document,field}` and `unresolved_key_packages_count` from the TOON output. `{migration_classes}` below is the comma-separated `class` list of the `delta_classes` rows whose `attribution` is `migration`; `{plan_classes}` is the same for `plan`; `{unclassified_fields}` is the comma-separated `document:field` list.
 
-```text
-affected_modules = added ∪ removed     # sorted; intra-module structural drift (the changed bucket) is out-of-scope
+On `status: error`, log ERROR, mark the step `outcome failed` with `--display-detail "discover failed — see work.log"`, and return.
+
+Branch on `attribution` and record the outcome — every verdict gets a decision-log line, so no verdict passes silently:
+
+- **`clean`** — the regenerated tree carries nothing the pre-state lacks; nothing was written.
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    decision --plan-id {plan_id} --level INFO \
+    --message "(plan-marshall:phase-6-finalize:architecture-refresh) Tier 0 discover — attribution clean, applied {applied}"
+  ```
+
+- **`plan_attributable`** — plan classes only; the plan projection was written (`applied: plan`, or `none` when the projection equals the pre-state).
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    decision --plan-id {plan_id} --level INFO \
+    --message "(plan-marshall:phase-6-finalize:architecture-refresh) Tier 0 discover — attribution plan_attributable, applied {applied}; plan classes: {plan_classes}"
+  ```
+
+- **`mixed`** — plan and migration classes; only the plan projection was written, and the migration classes stay unwritten for the steward upgrade to land. Set `migration_deferred = true`.
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    decision --plan-id {plan_id} --level INFO \
+    --message "(plan-marshall:phase-6-finalize:architecture-refresh) Tier 0 discover — attribution mixed, applied {applied}; plan classes: {plan_classes}; deferred migration classes: {migration_classes} ({unresolved_key_packages_count} unresolved key_packages). Reconcile via /marshall-steward upgrade"
+  ```
+
+- **`migration_only`** — migration classes only; nothing was written. Set `migration_deferred = true`.
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    decision --plan-id {plan_id} --level INFO \
+    --message "(plan-marshall:phase-6-finalize:architecture-refresh) Tier 0 discover — attribution migration_only, nothing written; migration classes: {migration_classes} ({unresolved_key_packages_count} unresolved key_packages). Reconcile via /marshall-steward upgrade"
+  ```
+
+- **`undecidable`** — at least one difference no class explains; nothing was written. Set `unattributable = true` and log the unclassified fields at WARNING as well as in the decision log:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    work --plan-id {plan_id} --level WARNING \
+    --message "[WARNING] (plan-marshall:phase-6-finalize:architecture-refresh) Unattributable descriptor delta — unclassified fields: {unclassified_fields}; discover wrote nothing. Reconcile via /marshall-steward upgrade"
+  ```
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    decision --plan-id {plan_id} --level INFO \
+    --message "(plan-marshall:phase-6-finalize:architecture-refresh) Tier 0 discover — attribution undecidable, nothing written; unclassified fields: {unclassified_fields}"
+  ```
+
+- **`no_baseline`** — the worktree carries no `_project.json` although `origin/main` does (Step 2 ruled out the reverse). There is no pre-state to attribute against and nothing was written; handle it exactly as `undecidable`, naming `no_baseline` in place of the unclassified fields.
+
+Whatever the verdict, continue to 3b — segment-1 writes still reach the gates.
+
+### 3b. Refresh the affected module set
+
+When `applied` is `plan`, discover changed the on-disk index, so the Step 2b buckets describe the tree before the write. Re-run the same diff and take `affected_modules = added ∪ removed` from it:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
+  --project-dir {worktree_path} diff-modules --pre-ref origin/main
 ```
 
-If `diff-modules` returns `error: snapshot_not_found`, the extracted baseline lacked `_project.json` → treat as the absent-baseline case (Step 2c Branch A): mark the step done with the no-baseline detail and return.
+When `applied` is `none`, discover wrote nothing and the Step 2b buckets already describe the post-discover tree — reuse them.
 
 ### 3c. Commit gate — porcelain status
 
-Decide whether to commit on the REAL on-disk delta after `discover --force`, not on the diff buckets (which always report every common module as `changed` against this baseline). Check the architecture path only:
+Decide whether to commit on the REAL on-disk delta, not on the diff buckets (which always report every common module as `changed` against this baseline). Check the architecture path only:
 
 ```bash
 git -C {worktree_path} status --porcelain .plan/project-architecture
 ```
 
-Empty output → the regenerated descriptor is byte-identical to the committed tree; there is nothing to commit. Log Branch C and proceed to Tier 1 with `affected_modules` as computed in 3b:
+Under `--apply plan` the only content that can be dirty here is plan-caused: segment-1 writes plus the plan projection. A migration class or an unattributable difference is never on disk, so it can never reach the commit below.
+
+Empty output → there is nothing to commit. Log Branch C and proceed to the Tier-1 entry gate (Step 4) with `affected_modules` as computed in 3b:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -170,23 +219,30 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ### 3c.5. Regression gate — reject regressive descriptor deltas
 
-When `git status --porcelain .plan/project-architecture` is non-empty there is a regenerated delta queued for commit. Before committing it, inspect WHAT changed in the project-identity fields — the commit gate must refuse a *regressive* delta even though the porcelain status is non-empty. A regressive delta is a regenerated `name` that lost the curated value (canonically, overwritten with the worktree/plan-id basename) or a `description` / `description_reasoning` blanked from a previously-curated value. This is the defense-in-depth backstop for the `api_discover` identity-preservation fix: even if a future source path reintroduces the corruption, the commit gate refuses to ship it onto the plan's PR.
+When `git status --porcelain .plan/project-architecture` is non-empty there is a delta queued for commit. Before committing it, inspect WHAT changed against the `origin/main` baseline — the commit gate must refuse a *regressive* delta even though the porcelain status is non-empty. A regressive delta loses curated content: a regenerated project `name` that lost the curated value (canonically, overwritten with the worktree/plan-id basename), a `description` / `description_reasoning` blanked from a previously-curated value, a blanked module `responsibility`, or a lost or blanked `key_packages` entry. The fields the check covers are the ones its own response names in `examined_fields`, and this step logs them rather than restating them. This is the defense-in-depth backstop for the discover preservation and attribution rules: even if a future source path reintroduces the corruption, the commit gate refuses to ship it onto the plan's PR.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
-  --project-dir {worktree_path} descriptor-regression-check --pre {baseline_dir}
+  --project-dir {worktree_path} descriptor-regression-check --pre-ref origin/main
 ```
 
-Parse `status`, `regressive` (bool), and `violations[]` from the TOON output. `{baseline_dir}` is the same extracted-baseline directory Step 3b passed to `diff-modules`.
+Parse `status`, `regressive` (bool), `violations[]`, `examined_fields` and `modules_examined` from the TOON output.
 
-- **`status: error`** → the regression check itself failed (e.g., the baseline directory cannot be read, the project-architecture descriptor is malformed, or a required field is absent). Treat this the same as `regressive: true`: do NOT commit. Log an ERROR carrying the TOON `error` and `detail` fields, mark the step `outcome failed`, and return — the delta is left uncommitted in the worktree.
-- **`regressive: false`** → the delta is benign (the module index shifted, project identity intact). Proceed to 3d and commit.
-- **`regressive: true`** → do NOT commit. The regenerated descriptor lost curated project identity. Log an ERROR naming the violated fields, leave the regressive descriptor uncommitted in the worktree, mark the step `outcome failed`, and return — do NOT abort the finalize pipeline (the next plan retries from a clean state once the source path is repaired):
+- **`status: error`** → the regression check itself failed (e.g., the baseline cannot be read by ref, the project-architecture descriptor is malformed, or a required field is absent). Treat this the same as `regressive: true`: do NOT commit. Log an ERROR carrying the TOON `error` and `detail` fields, mark the step `outcome failed`, and return — the delta is left uncommitted in the worktree.
+- **`regressive: false`** → the delta is benign. Log the verdict together with the coverage it was computed over, so a green gate states what it examined, then proceed to 3d and commit:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    decision --plan-id {plan_id} --level INFO \
+    --message "(plan-marshall:phase-6-finalize:architecture-refresh) Regression gate green — examined_fields: {examined_fields}; modules_examined: {modules_examined}"
+  ```
+
+- **`regressive: true`** → do NOT commit. The delta lost curated content. Log an ERROR naming the violated fields and the coverage, leave the regressive descriptor uncommitted in the worktree, mark the step `outcome failed`, and return — do NOT abort the finalize pipeline (the next plan retries from a clean state once the source path is repaired):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level ERROR \
-  --message "[ERROR] (plan-marshall:phase-6-finalize:architecture-refresh) Regressive descriptor delta refused — {violation_fields}; leaving .plan/project-architecture uncommitted"
+  --message "[ERROR] (plan-marshall:phase-6-finalize:architecture-refresh) Regressive descriptor delta refused — {violation_fields} (examined_fields: {examined_fields}; modules_examined: {modules_examined}); leaving .plan/project-architecture uncommitted"
 ```
 
 ```bash
@@ -196,11 +252,11 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
   --display-detail "regressive descriptor delta refused — {violation_fields}"
 ```
 
-`{violation_fields}` is the comma-separated list of `violations[].field` values (e.g., `name, description`).
+`{violation_fields}` is the comma-separated list of `violations[].field` values (e.g., `name, enriched.key_packages`); `{examined_fields}` is the comma-separated `examined_fields` list.
 
 ### 3d. Non-empty status — commit the refresh
 
-When `git status --porcelain .plan/project-architecture` is non-empty AND the 3c.5 regression gate returned `regressive: false`, the regenerated descriptors are dirty in the worktree and safe to ship. Stage and commit the architecture path only:
+When `git status --porcelain .plan/project-architecture` is non-empty AND the 3c.5 regression gate returned `regressive: false`, the dirty descriptors are plan-caused and safe to ship. Stage and commit the architecture path only:
 
 ```bash
 git -C {worktree_path} add .plan/project-architecture
@@ -210,7 +266,7 @@ git -C {worktree_path} add .plan/project-architecture
 git -C {worktree_path} commit -m "chore(architecture): refresh derived data after {plan-title}"
 ```
 
-`{plan-title}` is the plan's short description, captured from `manage-status read --plan-id {plan_id}` field `plan.short_description`. When `short_description` is `None` or empty, use the literal `plan-id` as the slug (e.g., `chore(architecture): refresh derived data after phase-d-auto-refresh`).
+`{plan-title}` is the plan's short description, captured from `manage-status read --plan-id {plan_id}` field `plan.short_description`. When `short_description` is `None` or empty, use the literal `plan-id` as the slug (e.g., `chore(architecture): refresh derived data after phase-d-auto-refresh`). The subject is accurate because `--apply plan` keeps every tool migration off disk: what this commit carries is plan-caused.
 
 The commit message intentionally does NOT name the affected modules — the modules list is derivable from the commit's diff and from the diff-modules log line above. Naming them inline would duplicate the audit trail and inflate the subject when many modules change.
 
@@ -226,9 +282,25 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 `affected_modules = added ∪ removed` (the bucket union, sorted) — pass forward to Step 4.
 
+### 3e. Deferred or unattributable verdict — end after Tier 0
+
+When `unattributable` or `migration_deferred` is set, Tier 1 does not run, and the step ends here with the matching Step 5 template. A deferred migration leaves the `enriched.json` vocabulary mid-migration, so re-enriching now would write package entries into a map the upgrade path has yet to migrate; an unattributable delta leaves the descriptor state unknown. Both are reconciled through `/marshall-steward upgrade` (see `marshall-steward/references/upgrade-flow.md`), not through a plan's finalize. Log the skip:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO \
+  --message "(plan-marshall:phase-6-finalize:architecture-refresh) Tier 1 skipped — attribution {attribution} leaves the descriptor for /marshall-steward upgrade"
+```
+
+Then select the Step 5 template:
+
+- `unattributable` → **Branch H**, whether or not 3d committed segment-1 writes (the commit is on record in the `[ARTIFACT]` line; the discover delta is what went uncommitted).
+- `migration_deferred` and 3d did NOT commit → **Branch G**.
+- `migration_deferred` and 3d committed → **Branch I**.
+
 ## Step 4: Tier 1 — LLM Re-enrichment
 
-Tier 1 re-runs the LLM-curated enrichment pass on the modules whose structure was added or removed. It is the expensive half of architecture refresh and is gated by both a change-type shortcut and a tier knob.
+Tier 1 re-runs the LLM-curated enrichment pass on the modules whose structure was added or removed. It is the expensive half of architecture refresh and is gated by the Tier-0 verdict (3e), a change-type shortcut and a tier knob. It is reached only when Tier 0 was disabled or its verdict was `clean` or `plan_attributable`.
 
 ### 4a. change_type shortcut
 
@@ -375,7 +447,7 @@ Continue to Step 5.
 
 Before returning control to the finalize pipeline, record that this step ran on the live plan so the `phase_steps_complete` handshake invariant is satisfied at phase transition time.
 
-Pass a `--display-detail` value alongside `--outcome done` so the output-template renderer can surface the refresh outcome. The payload differs by branch — pick the matching template below. (Branch A's mark-step-done is emitted inline in Step 2c.)
+Pass a `--display-detail` value alongside `--outcome done` so the output-template renderer can surface the refresh outcome. The payload differs by branch — pick the matching template below. (Branch A's mark-step-done is emitted inline in Step 2c; Branches G, H and I are selected in Step 3e.)
 
 **Branch A — no committed origin/main baseline (Step 2c path)**:
 
@@ -431,16 +503,45 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
   --display-detail "refreshed; re-enrichment deferred"
 ```
 
+**Branch G — tool migration only, nothing committed (Step 3e)**:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
+  mark-step-done --plan-id {plan_id} --phase 6-finalize \
+  --step architecture-refresh --outcome done \
+  --display-detail "tool migration not committed; run marshall-steward upgrade"
+```
+
+**Branch H — unattributable descriptor delta (Step 3e)**:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
+  mark-step-done --plan-id {plan_id} --phase 6-finalize \
+  --step architecture-refresh --outcome done \
+  --display-detail "descriptor delta unattributable; not committed"
+```
+
+**Branch I — plan-caused refresh committed, tool migration deferred (Step 3e)**:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
+  mark-step-done --plan-id {plan_id} --phase 6-finalize \
+  --step architecture-refresh --outcome done \
+  --display-detail "refreshed derived data ({affected_module_count} modules); migration deferred"
+```
+
 The `--display-detail` strings are subject to the output-template contract (≤80 chars, single line, no trailing period, plain ASCII) — see `phase-6-finalize/SKILL.md` "Required termination" and `standards/output-template.md` for the full convention.
 
 ## Error Handling
 
 | Failure | Action |
 |---------|--------|
-| `git archive origin/main .plan/project-architecture` exits non-zero | `origin/main` carries no committed architecture baseline (the pathspec matched nothing). This is NOT a failure — treat as Branch A: mark the step done with `--display-detail "skipped — no committed origin/main architecture baseline"`, return without running discover / diff / commit. |
-| `discover --force` returns `status: error` | Log ERROR, mark the step `outcome failed` with `--display-detail "discover failed — see work.log"`, return — do NOT abort the finalize pipeline. The next plan will retry from a clean state. |
-| `diff-modules --pre` returns `error: snapshot_not_found` | The extracted baseline lacked `_project.json` — equivalent to no committed baseline. Treat as Branch A (NOT a failure): mark the step done with `--display-detail "skipped — no committed origin/main architecture baseline"`. |
-| `descriptor-regression-check` returns `regressive: true` | The regenerated descriptor lost curated project identity (name overwritten with the worktree/plan-id basename, or description/description_reasoning blanked). Do NOT commit. Log ERROR, mark the step `outcome failed` with `--display-detail "regressive descriptor delta refused — {fields}"`, leave `.plan/project-architecture` uncommitted, and return — do NOT abort the finalize pipeline. The next plan retries from a clean state once the source path is repaired. |
+| `diff-modules --pre-ref origin/main` returns `error: snapshot_not_found` | `origin/main` carries no committed architecture baseline. This is NOT a failure — treat as Branch A: mark the step done with `--display-detail "skipped — no committed origin/main architecture baseline"`, return without running discover / commit. |
+| `diff-modules --pre-ref origin/main` returns any other `status: error` | Log ERROR, mark the step `outcome failed` with `--display-detail "baseline diff failed — see work.log"`, return — do NOT abort the finalize pipeline. |
+| `discover --force --apply plan` returns `status: error` | Log ERROR, mark the step `outcome failed` with `--display-detail "discover failed — see work.log"`, return — do NOT abort the finalize pipeline. The next plan will retry from a clean state. |
+| `discover` returns `attribution: undecidable` or `no_baseline` | NOT a failure. Nothing was written; log the unclassified fields at WARNING, still gate any segment-1 writes through 3c / 3c.5 / 3d, skip Tier 1, and mark the step done with Branch H. |
+| `discover` returns `attribution: migration_only` or `mixed` | NOT a failure. The migration classes stay unwritten; gate what is dirty through 3c / 3c.5 / 3d, skip Tier 1, and mark the step done with Branch G (nothing committed) or Branch I (committed). The migration lands through `/marshall-steward upgrade`. |
+| `descriptor-regression-check` returns `status: error` or `regressive: true` | The delta lost curated content (or the check could not run). Do NOT commit. Log ERROR with the violated fields and the `examined_fields` / `modules_examined` coverage, mark the step `outcome failed` with `--display-detail "regressive descriptor delta refused — {fields}"`, leave `.plan/project-architecture` uncommitted, and return — do NOT abort the finalize pipeline. The next plan retries from a clean state once the source path is repaired. |
 | `architecture enrich` fails | Log ERROR, fall back to Branch F (deferral recorded in the decision log) — do NOT mark the whole step failed. The deterministic refresh has already shipped; the user can re-enrich manually via `/marshall-steward` Step 13. Mark the step done with `--display-detail "refreshed; enrich failed — see work.log"`. |
 | `AskUserQuestion` aborted | Treat the same as `Skip — note in PR` (Branch F). The user actively backing out is informationally equivalent to declining the prompt. |
 
@@ -466,18 +567,9 @@ if tier_0 != "enabled":
     log: "Tier 0 skipped — disabled"
     affected := UNKNOWN  # never computed
 else:
-    # extract origin/main's committed baseline tree
-    mkdir -p {baseline_root}
-    git -C {worktree_path} archive --format=tar --output={baseline_tar} origin/main .plan/project-architecture
-        → on non-zero (no committed baseline):
-            log: "skipped — no committed origin/main architecture baseline"
-            mark-step-done outcome=done detail="skipped — no committed origin/main architecture baseline"
-            return
-    tar -xf {baseline_tar} -C {baseline_root}     # baseline_dir := {baseline_root}/.plan/project-architecture
-
-    architecture --project-dir {worktree_path} discover --force
-    diff := architecture --project-dir {worktree_path} diff-modules --pre {baseline_dir}
-        → on error snapshot_not_found:
+    # read origin/main's committed baseline by ref; nothing is materialized
+    diff := architecture --project-dir {worktree_path} diff-modules --pre-ref origin/main
+        → on error snapshot_not_found (no committed baseline):
             log: "skipped — no committed origin/main architecture baseline"
             mark-step-done outcome=done detail="skipped — no committed origin/main architecture baseline"
             return
@@ -485,19 +577,45 @@ else:
     # (snap_sha == None ⇒ every common module classifies as "changed")
     affected := diff.added ∪ diff.removed         # sorted; intra-module drift out-of-scope
 
+    disc := architecture --project-dir {worktree_path} discover --force --apply plan
+    # verdict vocabulary and class attribution: manage-api.md § discover
+    log decision: attribution, applied, classes by attribution
+    migration_deferred := disc.attribution in {"migration_only", "mixed"}
+    unattributable     := disc.attribution in {"undecidable", "no_baseline"}
+    if unattributable:
+        log WARNING: "Unattributable descriptor delta — unclassified fields"
+    if disc.applied == "plan":
+        diff := architecture --project-dir {worktree_path} diff-modules --pre-ref origin/main
+        affected := diff.added ∪ diff.removed
+
+    # only plan-caused content can be dirty: segment-1 writes + the plan projection
+    committed := false
     if git -C {worktree_path} status --porcelain .plan/project-architecture is empty:
         log: "Tier 0 — clean after discover, no commit needed"
-        # fall through to Tier 1 with affected as computed
     else:
-        reg := architecture --project-dir {worktree_path} descriptor-regression-check --pre {baseline_dir}
-        if reg.regressive:
-            log ERROR: "Regressive descriptor delta refused — {fields}"
+        reg := architecture --project-dir {worktree_path} descriptor-regression-check --pre-ref origin/main
+        if reg.status == "error" or reg.regressive:
+            log ERROR: "Regressive descriptor delta refused — {fields} (examined_fields, modules_examined)"
             mark-step-done outcome=failed detail="regressive descriptor delta refused — {fields}"
             return    # leave .plan/project-architecture uncommitted
+        log decision: "Regression gate green — examined_fields, modules_examined"
         git -C {worktree_path} add .plan/project-architecture
         git -C {worktree_path} commit -m "chore(architecture): refresh derived data after {plan-title}"
         # no push — the order-11 default:push barrier ships this commit
+        committed := true
         log artifact
+
+    if unattributable:
+        log: "Tier 1 skipped — attribution leaves the descriptor for /marshall-steward upgrade"
+        mark-step-done detail="descriptor delta unattributable; not committed"
+        return
+    if migration_deferred:
+        log: "Tier 1 skipped — attribution leaves the descriptor for /marshall-steward upgrade"
+        if committed:
+            mark-step-done detail="refreshed derived data ({n} modules); migration deferred"
+        else:
+            mark-step-done detail="tool migration not committed; run marshall-steward upgrade"
+        return
 
 # --- Tier 1 ---
 if change_type in {"bug_fix", "verification"}:
@@ -549,9 +667,11 @@ switch tier_1:
 
 ## Cross-References
 
-- `phase-1-init/SKILL.md` — phase-1-init does not snapshot the architecture descriptor; this step derives its pre-baseline from the committed `origin/main` tree instead.
+- `phase-1-init/SKILL.md` — phase-1-init does not snapshot the architecture descriptor; this step reads its pre-baseline from the committed `origin/main` tree by ref instead.
 - `manage-run-config/SKILL.md` `architecture-refresh` subcommand group — the source of truth for tier-0 / tier-1 knob semantics.
-- `manage-architecture/standards/client-api.md` `discover`, `diff-modules`, and `descriptor-regression-check` — the deterministic backbone of Tier 0, including the derived-less-baseline classification note (every common module reports `changed` against a git baseline; consume `added` / `removed` only) and the commit-gate regression predicate that refuses a regressive project-identity delta.
+- `manage-architecture/standards/manage-api.md` § discover — the `--apply` modes, the delta-class table, the attribution verdicts and their precedence; this step consumes the verdict and does not restate the table.
+- `manage-architecture/standards/client-api.md` `diff-modules` and `descriptor-regression-check` — the `--pre-ref` baseline read, the derived-less-baseline classification note (every common module reports `changed` against a git baseline; consume `added` / `removed` only), and the commit-gate regression predicate with its published `examined_fields` coverage.
 - `manage-architecture` `enrich` verb — the LLM re-enrichment surface used by Tier 1 `auto` and `prompt`-accepted paths.
-- `phase-6-finalize/standards/output-template.md` — the renderer that consumes `--display-detail` from the Branch A–F templates above.
+- `marshall-steward/references/upgrade-flow.md` — the steward upgrade flow that lands a deferred tool migration on the plan-less steward PR; the reconcile path Branches G, H and I name.
+- `phase-6-finalize/standards/output-template.md` — the renderer that consumes `--display-detail` from the Branch A–I templates above.
 - `phase-6-finalize/standards/required-steps.md` — declares `architecture-refresh` as a required step for the `phase_steps_complete` handshake.

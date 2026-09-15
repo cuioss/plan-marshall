@@ -12,13 +12,17 @@ playbook, not a Python module. These tests pin its decision flow contract by:
       * Tier-0 ``enabled`` vs ``disabled``
       * ``origin/main`` baseline present vs absent (no committed baseline)
       * Drift detected vs none (``added union removed`` non-empty vs empty)
+      * The ``discover --force --apply plan`` attribution verdict, and whether
+        plan-time writers left uncommitted descriptor edits before discover ran
       * Tier-1 dispatch knob (``prompt`` / ``auto`` / ``disabled``)
       * ``change_type`` shortcut for ``bug_fix`` / ``verification``
 
 2. **Asserting the standard's narrative** documents every observable branch
    (absent baseline, tier-0 disabled, empty diff, non-empty diff with each
-   tier-1 value, change_type shortcut) and emits the matching
-   ``--display-detail`` template per branch.
+   tier-1 value, change_type shortcut, each attribution outcome) and emits the
+   matching ``--display-detail`` template per branch, reads its baseline by ref
+   with no shell extraction, and points at the delta-class table instead of
+   restating it.
 
 3. **Asserting registration** of ``architecture-refresh`` in
    ``standards/required-steps.md`` so the ``phase_steps_complete`` handshake
@@ -31,7 +35,8 @@ playbook, not a Python module. These tests pin its decision flow contract by:
    tier-0/tier-1 knobs are referenced.
 
 The functional behaviour of the underlying scripts (``architecture discover
---force``, ``diff-modules --pre``, ``manage-run-config architecture-refresh
+--force --apply plan``, ``diff-modules --pre-ref``,
+``descriptor-regression-check --pre-ref``, ``manage-run-config architecture-refresh
 get-tier-0/1``, etc.) is covered by their own bundle-scoped test suites; this
 file pins ONLY the orchestration contract documented in the standard.
 """
@@ -49,12 +54,22 @@ import pytest
 from _dispatch_roster import parse_roster
 from _push_prescription_scan import fenced_command_lines, scan_push_prescriptions
 
-from conftest import MARKETPLACE_ROOT
+from conftest import MARKETPLACE_ROOT, load_script_module
+
+# The delta-class vocabulary and the verdict set are declared once, in the
+# discover attribution module. The decision model and the pointer guard below
+# derive from it rather than restating either set.
+_descriptor_delta = load_script_module(
+    'plan-marshall', 'manage-architecture', '_descriptor_delta.py', '_descriptor_delta'
+)
+DELTA_CLASSES: dict[str, str] = _descriptor_delta.DELTA_CLASSES
+VERDICTS: tuple[str, ...] = _descriptor_delta.VERDICTS
 
 # ---------------------------------------------------------------------------
 # Standards-doc paths (authoritative narrative surface).
 # ---------------------------------------------------------------------------
 
+_MANAGE_API_MD = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'manage-architecture' / 'standards' / 'manage-api.md'
 _PHASE_6_DIR = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-6-finalize'
 _PHASE_6_SKILL_MD = _PHASE_6_DIR / 'SKILL.md'
 _ARCHITECTURE_REFRESH_MD = _PHASE_6_DIR / 'standards' / 'architecture-refresh.md'
@@ -138,6 +153,18 @@ _RETIRED_PR_CALL_SHAPES = (
 _AFFECTED_UNKNOWN = object()
 
 
+#: Verdicts under which ``discover --force --apply plan`` writes the plan projection.
+_PLAN_PROJECTION_VERDICTS = frozenset({'plan_attributable', 'mixed'})
+#: Verdicts that leave a tool migration unwritten for the steward upgrade.
+_MIGRATION_DEFERRED_VERDICTS = frozenset({'migration_only', 'mixed'})
+#: Verdicts under which nothing about the discover delta can be attributed.
+_UNATTRIBUTABLE_VERDICTS = frozenset({'undecidable', 'no_baseline'})
+
+_DETAIL_MIGRATION_NOT_COMMITTED = 'tool migration not committed; run marshall-steward upgrade'
+_DETAIL_UNATTRIBUTABLE = 'descriptor delta unattributable; not committed'
+_DETAIL_MIGRATION_DEFERRED = 'refreshed derived data ({affected_module_count} modules); migration deferred'
+
+
 def _decide_architecture_refresh(
     *,
     baseline_present: bool,
@@ -147,15 +174,20 @@ def _decide_architecture_refresh(
     diff_added: tuple[str, ...] = (),
     diff_removed: tuple[str, ...] = (),
     diff_changed: tuple[str, ...] = (),
+    attribution: str | None = None,
+    preexisting_plan_writes: bool = False,
+    regressive: bool = False,
     user_response: str | None = None,
 ) -> dict[str, Any]:
     """Pure re-implementation of the standard's pseudo-code summary.
 
     Returns a dict with keys:
 
-      * ``branch``: the ``A``-``F`` branch identifier from "Step 5: Mark Step
+      * ``branch``: the ``A``-``I`` branch identifier from "Step 5: Mark Step
         Complete" (no baseline / tier-0+tier-1 skipped / no diff / refresh only /
-        refresh + enrich / refresh + deferred re-enrichment).
+        refresh + enrich / refresh + deferred re-enrichment / migration not
+        committed / unattributable / refresh with migration deferred), or
+        ``refused`` when the regression gate rejected the delta.
       * ``tier_0_committed``: True if the Tier-0 ``chore(architecture):
         refresh`` commit fires.
       * ``tier_1_action``: ``enrich`` / ``deferred`` / ``skipped``.
@@ -164,21 +196,32 @@ def _decide_architecture_refresh(
       * ``display_detail``: the ``--display-detail`` payload that the
         ``mark-step-done`` call MUST carry on this branch.
 
+    ``attribution`` is the ``discover --force --apply plan`` verdict. When
+    omitted it is derived the way a structural-only run reports it: a drift
+    (``added union removed`` non-empty) is ``plan_attributable``, no drift is
+    ``clean``.
+
+    The commit gate is the on-disk porcelain status, and the model derives that
+    status from its two real sources instead of from the diff buckets: discover's
+    plan projection (written only under ``plan_attributable`` / ``mixed``) and
+    ``preexisting_plan_writes`` — uncommitted descriptor edits plan-time writers
+    left before discover ran. A migration class and an unattributable difference
+    are never written under ``--apply plan``, so neither can dirty the tree.
+
     Note: ``diff_changed`` is accepted but DELIBERATELY ignored. Against a
     derived-less ``origin/main`` git baseline every common module classifies as
     ``changed`` (no committed per-module ``derived.json`` sha), so the changed
     bucket is noise; the reliable drift signal is the index-derived
-    ``added union removed`` buckets only. Because ``_project.json`` only shifts when
-    a module is added or removed, the on-disk ``git status --porcelain
-    .plan/project-architecture`` commit gate fires exactly when
-    ``added union removed`` is non-empty.
+    ``added union removed`` buckets only.
     """
-    # -- Step 2a: Tier-0 disabled — no extraction, affected never computed --
+    migration_deferred = False
+    unattributable = False
+    # -- Step 2a: Tier-0 disabled — no probe, affected never computed --------
     if tier_0 == 'disabled':
         affected: tuple[Any, ...] = _AFFECTED_UNKNOWN  # type: ignore[assignment]
         tier_0_committed = False
     elif tier_0 == 'enabled':
-        # -- Step 2b/2c: extract origin/main baseline -----------------------
+        # -- Step 2b/2c: diff-modules --pre-ref origin/main probe ----------
         if not baseline_present:
             return {
                 'branch': 'A',
@@ -189,11 +232,53 @@ def _decide_architecture_refresh(
             }
         # -- Step 3b: affected = added union removed (changed bucket is noise) ---
         affected = tuple(sorted(set(diff_added) | set(diff_removed)))
-        # -- Step 3c/3d: commit gated on dirty .plan/project-architecture ---
-        # (porcelain-dirty ⟺ module add/remove ⟺ affected non-empty).
-        tier_0_committed = len(affected) > 0
+        # -- Step 3a: discover --force --apply plan verdict -----------------
+        if attribution is None:
+            attribution = 'plan_attributable' if affected else 'clean'
+        if attribution not in VERDICTS:
+            raise ValueError(f'attribution must be one of {VERDICTS}, got {attribution!r}')
+        migration_deferred = attribution in _MIGRATION_DEFERRED_VERDICTS
+        unattributable = attribution in _UNATTRIBUTABLE_VERDICTS
+        # -- Step 3c: porcelain gate over segment-1 writes + plan projection -
+        dirty = preexisting_plan_writes or attribution in _PLAN_PROJECTION_VERDICTS
+        # -- Step 3c.5 / 3d: regression gate, then commit ------------------
+        if dirty and regressive:
+            return {
+                'branch': 'refused',
+                'tier_0_committed': False,
+                'tier_1_action': 'skipped',
+                'affected_modules': affected,
+                'display_detail': 'regressive descriptor delta refused — {violation_fields}',
+            }
+        tier_0_committed = dirty
     else:
         raise ValueError(f'tier_0 must be enabled|disabled, got {tier_0!r}')
+
+    # -- Step 3e: a deferred or unattributable verdict ends after Tier 0 -----
+    if unattributable:
+        return {
+            'branch': 'H',
+            'tier_0_committed': tier_0_committed,
+            'tier_1_action': 'skipped',
+            'affected_modules': affected,
+            'display_detail': _DETAIL_UNATTRIBUTABLE,
+        }
+    if migration_deferred:
+        if tier_0_committed:
+            return {
+                'branch': 'I',
+                'tier_0_committed': tier_0_committed,
+                'tier_1_action': 'skipped',
+                'affected_modules': affected,
+                'display_detail': _DETAIL_MIGRATION_DEFERRED.format(affected_module_count=len(affected)),
+            }
+        return {
+            'branch': 'G',
+            'tier_0_committed': False,
+            'tier_1_action': 'skipped',
+            'affected_modules': affected,
+            'display_detail': _DETAIL_MIGRATION_NOT_COMMITTED,
+        }
 
     # -- Step 4: Tier 1 -----------------------------------------------------
     # 4a. change_type shortcut
@@ -209,7 +294,7 @@ def _decide_architecture_refresh(
         if tier_0_committed:
             return {
                 'branch': 'D',
-                'tier_0_committed': True,
+                'tier_0_committed': tier_0_committed,
                 'tier_1_action': 'skipped',
                 'affected_modules': affected,
                 'display_detail': (f'refreshed derived data ({len(affected)} modules)'),
@@ -243,12 +328,12 @@ def _decide_architecture_refresh(
         }
 
     # 4d. tier_1 dispatch — affected is non-empty, tier-0 enabled, change_type
-    # is not in the shortcut list (so a Tier-0 commit has fired).
+    # is not in the shortcut list, and the verdict deferred nothing.
     n = len(affected)
     if tier_1 == 'disabled':
         return {
             'branch': 'F',
-            'tier_0_committed': True,
+            'tier_0_committed': tier_0_committed,
             'tier_1_action': 'deferred',
             'affected_modules': affected,
             'display_detail': ('refreshed; re-enrichment deferred'),
@@ -256,7 +341,7 @@ def _decide_architecture_refresh(
     if tier_1 == 'auto':
         return {
             'branch': 'E',
-            'tier_0_committed': True,
+            'tier_0_committed': tier_0_committed,
             'tier_1_action': 'enrich',
             'affected_modules': affected,
             'display_detail': f'refreshed + re-enriched ({n} modules)',
@@ -267,7 +352,7 @@ def _decide_architecture_refresh(
         if user_response == 'Re-enrich now':
             return {
                 'branch': 'E',
-                'tier_0_committed': True,
+                'tier_0_committed': tier_0_committed,
                 'tier_1_action': 'enrich',
                 'affected_modules': affected,
                 'display_detail': f'refreshed + re-enriched ({n} modules)',
@@ -275,7 +360,7 @@ def _decide_architecture_refresh(
         if user_response in ('Skip — note in PR', 'aborted'):
             return {
                 'branch': 'F',
-                'tier_0_committed': True,
+                'tier_0_committed': tier_0_committed,
                 'tier_1_action': 'deferred',
                 'affected_modules': affected,
                 'display_detail': ('refreshed; re-enrichment deferred'),
@@ -421,6 +506,159 @@ class TestTier0EnabledMatrix:
             diff_removed=('shared',),
         )
         assert result['affected_modules'] == ('shared',)
+
+
+# ===========================================================================
+# Attribution verdict — Step 3a / 3e.
+# ===========================================================================
+
+
+class TestAttributionVerdict:
+    """Step 3a/3e — the discover verdict, not porcelain dirtiness, decides what is committed."""
+
+    def test_verdict_population_is_the_declared_set(self):
+        """Every verdict the attribution module declares is exercised below — derived, not listed."""
+        assert len(VERDICTS) > 0, 'VERDICTS resolved empty — every per-verdict assertion would be vacuous'
+        assert set(VERDICTS) == (
+            {'clean'} | _PLAN_PROJECTION_VERDICTS | _MIGRATION_DEFERRED_VERDICTS | _UNATTRIBUTABLE_VERDICTS
+        ), 'a verdict the attribution module declares is not routed by the decision model'
+
+    @pytest.mark.parametrize('attribution', VERDICTS)
+    def test_every_verdict_reaches_a_documented_branch(self, attribution: str):
+        result = _decide_architecture_refresh(
+            baseline_present=True,
+            tier_0='enabled',
+            tier_1='disabled',
+            change_type='feature',
+            diff_added=('mod-x',),
+            attribution=attribution,
+        )
+        assert result['branch'] in {'C', 'D', 'E', 'F', 'G', 'H', 'I'}
+
+    def test_migration_only_commits_nothing_and_names_the_upgrade_path(self):
+        """The observed consumer run: an empty module union and a tool-migration-only delta."""
+        result = _decide_architecture_refresh(
+            baseline_present=True,
+            tier_0='enabled',
+            tier_1='auto',
+            change_type='feature',
+            attribution='migration_only',
+        )
+        assert result['branch'] == 'G'
+        assert result['tier_0_committed'] is False
+        assert result['tier_1_action'] == 'skipped'
+        assert result['display_detail'] == _DETAIL_MIGRATION_NOT_COMMITTED
+
+    def test_migration_only_with_preexisting_plan_writes_commits_segment_one_only(self):
+        """Plan-time writes still ship; the migration stays unwritten and is named as deferred."""
+        result = _decide_architecture_refresh(
+            baseline_present=True,
+            tier_0='enabled',
+            tier_1='auto',
+            change_type='feature',
+            attribution='migration_only',
+            preexisting_plan_writes=True,
+        )
+        assert result['branch'] == 'I'
+        assert result['tier_0_committed'] is True
+        assert result['tier_1_action'] == 'skipped'
+        assert result['display_detail'] == 'refreshed derived data (0 modules); migration deferred'
+
+    def test_mixed_commits_the_plan_projection_with_the_deferred_template(self):
+        result = _decide_architecture_refresh(
+            baseline_present=True,
+            tier_0='enabled',
+            tier_1='auto',
+            change_type='feature',
+            diff_added=('mod-new',),
+            attribution='mixed',
+        )
+        assert result['branch'] == 'I'
+        assert result['tier_0_committed'] is True
+        assert result['tier_1_action'] == 'skipped'
+        assert result['display_detail'] == 'refreshed derived data (1 modules); migration deferred'
+
+    @pytest.mark.parametrize('attribution', sorted(_UNATTRIBUTABLE_VERDICTS))
+    def test_unattributable_delta_is_not_committed(self, attribution: str):
+        result = _decide_architecture_refresh(
+            baseline_present=True,
+            tier_0='enabled',
+            tier_1='auto',
+            change_type='feature',
+            diff_added=('mod-x',),
+            attribution=attribution,
+        )
+        assert result['branch'] == 'H'
+        assert result['tier_0_committed'] is False
+        assert result['tier_1_action'] == 'skipped'
+        assert result['display_detail'] == _DETAIL_UNATTRIBUTABLE
+
+    def test_undecidable_still_gates_preexisting_plan_writes(self):
+        """The discover delta goes uncommitted; segment-1 writes pass the unchanged gates."""
+        result = _decide_architecture_refresh(
+            baseline_present=True,
+            tier_0='enabled',
+            tier_1='auto',
+            change_type='feature',
+            attribution='undecidable',
+            preexisting_plan_writes=True,
+        )
+        assert result['branch'] == 'H'
+        assert result['tier_0_committed'] is True
+        assert result['display_detail'] == _DETAIL_UNATTRIBUTABLE
+
+    @pytest.mark.parametrize(
+        ('tier_1', 'user_response', 'branch'),
+        [('auto', None, 'E'), ('disabled', None, 'F'), ('prompt', 'Skip — note in PR', 'F')],
+    )
+    def test_plan_attributable_keeps_the_structural_branches(self, tier_1: str, user_response: str | None, branch: str):
+        result = _decide_architecture_refresh(
+            baseline_present=True,
+            tier_0='enabled',
+            tier_1=tier_1,
+            change_type='feature',
+            diff_added=('mod-new',),
+            attribution='plan_attributable',
+            user_response=user_response,
+        )
+        assert result['branch'] == branch
+        assert result['tier_0_committed'] is True
+
+    def test_plan_attributable_under_change_type_shortcut_is_branch_d(self):
+        result = _decide_architecture_refresh(
+            baseline_present=True,
+            tier_0='enabled',
+            tier_1='auto',
+            change_type='bug_fix',
+            diff_removed=('mod-gone',),
+            attribution='plan_attributable',
+        )
+        assert result['branch'] == 'D'
+        assert result['display_detail'] == 'refreshed derived data (1 modules)'
+
+    def test_regressive_delta_is_refused_before_any_commit(self):
+        result = _decide_architecture_refresh(
+            baseline_present=True,
+            tier_0='enabled',
+            tier_1='auto',
+            change_type='feature',
+            diff_added=('mod-new',),
+            attribution='mixed',
+            regressive=True,
+        )
+        assert result['branch'] == 'refused'
+        assert result['tier_0_committed'] is False
+
+    def test_clean_verdict_with_nothing_dirty_is_branch_c(self):
+        result = _decide_architecture_refresh(
+            baseline_present=True,
+            tier_0='enabled',
+            tier_1='auto',
+            change_type='feature',
+            attribution='clean',
+        )
+        assert result['branch'] == 'C'
+        assert result['tier_0_committed'] is False
 
 
 # ===========================================================================
@@ -665,12 +903,15 @@ class TestNarrativeContract:
         """The standard cites phase-1-init as NOT snapshotting the descriptor."""
         assert 'phase-1-init' in standard_text, 'Standard must cite phase-1-init context'
 
-    # ----- Step 2: origin/main baseline extraction -------------------------
+    # ----- Step 2: origin/main baseline read by ref -------------------------
 
-    def test_documents_origin_main_baseline_extraction(self, standard_text: str):
-        """The pre-baseline is the committed origin/main tree, extracted via git archive."""
-        assert 'origin/main' in standard_text
-        assert 'git archive' in standard_text or 'archive --format=tar' in standard_text
+    def test_documents_origin_main_baseline_read_by_ref(self, standard_text: str):
+        """The pre-baseline is the committed origin/main tree, read by ref inside the verbs."""
+        assert 'diff-modules --pre-ref origin/main' in standard_text
+        assert 'descriptor-regression-check --pre-ref origin/main' in standard_text
+        assert '{baseline_dir}' not in standard_text, (
+            'the extracted-baseline placeholder survived — a caller-side extraction path is still documented'
+        )
 
     def test_documents_absent_baseline_branch(self, standard_text: str):
         assert 'no committed origin/main architecture baseline' in standard_text
@@ -687,12 +928,39 @@ class TestNarrativeContract:
     def test_documents_tier_0_disabled_branch(self, standard_text: str):
         assert 'Tier 0 skipped' in standard_text or 'tier_0 = disabled' in standard_text
 
-    def test_documents_discover_force_call(self, standard_text: str):
-        assert 'discover --force' in standard_text
+    def test_documents_discover_force_apply_plan_call(self, standard_text: str):
+        assert 'discover --force --apply plan' in standard_text
 
-    def test_documents_diff_modules_pre_call(self, standard_text: str):
-        assert 'diff-modules' in standard_text
-        assert '--pre' in standard_text
+    def test_no_snapshot_verb_is_called_with_a_path_baseline(self, standard_text: str):
+        """Every fenced diff-modules / descriptor-regression-check call reads the baseline by ref."""
+        calls = [
+            line
+            for line in fenced_command_lines(standard_text)
+            if re.search(r'\b(?:diff-modules|descriptor-regression-check)\b', line)
+        ]
+        assert calls, 'no fenced snapshot-verb call resolved — the assertion below would be vacuous'
+        assert all('--pre-ref origin/main' in line for line in calls), calls
+
+    @pytest.mark.parametrize('attribution', VERDICTS)
+    def test_documents_every_attribution_verdict(self, standard_text: str, attribution: str):
+        assert f'`{attribution}`' in standard_text, f'the standard does not route the {attribution!r} verdict'
+
+    def test_names_the_upgrade_path_for_deferred_and_unattributable_deltas(self, standard_text: str):
+        assert '/marshall-steward upgrade' in standard_text
+        assert 'marshall-steward/references/upgrade-flow.md' in standard_text
+
+    def test_logs_the_regression_gate_coverage_with_a_green_verdict(self, standard_text: str):
+        """A green regression gate is logged together with the fields it covered."""
+        green_lines = [line for line in fenced_command_lines(standard_text) if 'Regression gate green' in line]
+        assert green_lines, 'no fenced log line records a green regression gate'
+        assert all('examined_fields' in line and 'modules_examined' in line for line in green_lines), green_lines
+
+    def test_unattributable_delta_is_logged_at_warning(self, standard_text: str):
+        warning_lines = [
+            line for line in fenced_command_lines(standard_text) if 'Unattributable descriptor delta' in line
+        ]
+        assert warning_lines, 'the undecidable verdict has no WARNING log line'
+        assert all('{unclassified_fields}' in line for line in warning_lines), warning_lines
 
     def test_documents_porcelain_commit_gate(self, standard_text: str):
         """The Tier-0 commit is gated on a dirty .plan/project-architecture."""
@@ -917,6 +1185,9 @@ class TestNarrativeContract:
             'refreshed derived data ({affected_module_count} modules)',
             'refreshed + re-enriched ({affected_module_count} modules)',
             'refreshed; re-enrichment deferred',
+            _DETAIL_MIGRATION_NOT_COMMITTED,
+            _DETAIL_UNATTRIBUTABLE,
+            _DETAIL_MIGRATION_DEFERRED,
         ],
     )
     def test_documents_display_detail_template(
@@ -926,9 +1197,20 @@ class TestNarrativeContract:
     ):
         assert template in standard_text, f'Standard must document the display-detail template: {template!r}'
 
-    def test_documents_six_branches_a_through_f(self, standard_text: str):
-        for label in ('Branch A', 'Branch B', 'Branch C', 'Branch D', 'Branch E', 'Branch F'):
-            assert label in standard_text, f'Standard must label {label} for renderer audit'
+    @pytest.mark.parametrize(
+        'template', [_DETAIL_MIGRATION_NOT_COMMITTED, _DETAIL_UNATTRIBUTABLE, _DETAIL_MIGRATION_DEFERRED]
+    )
+    def test_attribution_templates_honour_the_output_contract(self, template: str):
+        """ASCII, single line, no trailing period, at most 80 chars once the count is rendered."""
+        rendered = template.format(affected_module_count=999)
+        assert rendered.isascii()
+        assert '\n' not in rendered
+        assert not rendered.endswith('.')
+        assert len(rendered) <= 80, rendered
+
+    def test_documents_nine_branches_a_through_i(self, standard_text: str):
+        for label in ('A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I'):
+            assert f'Branch {label}' in standard_text, f'Standard must label Branch {label} for renderer audit'
 
     def test_mark_step_done_uses_correct_phase_and_step(
         self,
@@ -950,6 +1232,8 @@ class TestNarrativeContract:
         for marker in (
             'discover --force',
             'snapshot_not_found',
+            'undecidable',
+            'migration_only',
             'descriptor-regression-check',
             'enrich',
         ):
@@ -1033,6 +1317,105 @@ class TestPushScannerControls:
             'The scanner reported a push prescription in a block that only DESCRIBES '
             f'not pushing — it would fail every correctly-fixed step doc: {offenders}'
         )
+
+
+# ===========================================================================
+# No shell extraction — the baseline is read by ref inside the verbs.
+#
+# The step used to materialize its baseline with four Bash calls (`rm -rf`,
+# `mkdir -p`, `git archive`, `tar -xf`), none of which an unattended session can
+# be granted. The scan reuses `fenced_command_lines` so a sentence recording
+# that the calls are gone — in prose or in a fenced comment — is not read as a
+# prescription, and it publishes how many command lines it examined.
+# ===========================================================================
+
+
+#: A shell deletion, directory creation or tar call as a command word, or a git
+#: archive invocation in any spelling.
+_SHELL_EXTRACTION = re.compile(r'(?:^|\s)(?:rm|mkdir|tar)\s|\bgit\b[^\n]*\barchive\b')
+
+
+def _scan_shell_extraction(text: str) -> tuple[list[str], int]:
+    """Return ``(extraction command lines, fenced command lines examined)``."""
+    commands = fenced_command_lines(text)
+    offenders = [line.strip() for line in commands if _SHELL_EXTRACTION.search(line)]
+    return offenders, len(commands)
+
+
+#: The removed extraction block, verbatim: the matched positive control.
+_REMOVED_EXTRACTION_BLOCK = """\
+```bash
+rm -rf {worktree_path}/.plan/temp/architecture-baseline {worktree_path}/.plan/temp/architecture-baseline.tar
+```
+
+```bash
+mkdir -p {worktree_path}/.plan/temp/architecture-baseline
+```
+
+```bash
+git -C {worktree_path} archive --format=tar --output=.plan/temp/architecture-baseline.tar origin/main .plan/project-architecture
+```
+
+```bash
+tar -xf {worktree_path}/.plan/temp/architecture-baseline.tar -C {worktree_path}/.plan/temp/architecture-baseline
+```
+"""
+
+
+class TestNoShellExtraction:
+    @pytest.fixture(scope='class')
+    @classmethod
+    def standard_text(cls) -> str:
+        return str(_ARCHITECTURE_REFRESH_MD.read_text(encoding='utf-8'))
+
+    def test_standard_prescribes_no_extraction_command(self, standard_text: str):
+        offenders, examined = _scan_shell_extraction(standard_text)
+        assert examined > 0, 'the scan examined 0 fenced command lines — a clean result would be vacuous'
+        print(f'architecture-refresh shell-extraction scan: examined={examined} command lines')
+        assert offenders == [], f'extraction commands still prescribed across {examined} command lines: {offenders}'
+
+    def test_positive_control_detects_every_removed_extraction_call(self):
+        offenders, examined = _scan_shell_extraction(_REMOVED_EXTRACTION_BLOCK)
+        assert examined == 4
+        assert len(offenders) == 4, f'the scan missed a removed extraction call: {offenders}'
+
+    def test_negative_control_ignores_prose_and_comments(self):
+        described = (
+            'The step no longer calls `rm -rf`, `mkdir -p`, `git archive` or `tar -xf`.\n\n'
+            '```text\n# no git archive / tar extraction — the verb reads the ref\n'
+            'diff := architecture diff-modules --pre-ref origin/main\n```\n'
+        )
+        offenders, examined = _scan_shell_extraction(described)
+        assert examined == 1
+        assert offenders == []
+
+
+# ===========================================================================
+# The delta-class table is referenced, never restated.
+# ===========================================================================
+
+
+def _restated_classes(text: str) -> list[str]:
+    """Delta-class names written as code spans — the form a restated class table takes."""
+    return [name for name in DELTA_CLASSES if f'`{name}`' in text]
+
+
+class TestClassTablePointer:
+    @pytest.fixture(scope='class')
+    @classmethod
+    def standard_text(cls) -> str:
+        return str(_ARCHITECTURE_REFRESH_MD.read_text(encoding='utf-8'))
+
+    def test_standard_points_at_the_published_class_table(self, standard_text: str):
+        assert 'manage-architecture/standards/manage-api.md` § discover' in standard_text
+
+    def test_standard_does_not_restate_the_class_table(self, standard_text: str):
+        assert len(DELTA_CLASSES) > 0, 'DELTA_CLASSES resolved empty — the absence check would be vacuous'
+        assert _restated_classes(standard_text) == []
+
+    def test_positive_control_the_published_table_is_detected(self):
+        """The detector sees every class in the document that DOES publish the table."""
+        assert _restated_classes(_MANAGE_API_MD.read_text(encoding='utf-8')) == list(DELTA_CLASSES)
 
 
 # ===========================================================================
