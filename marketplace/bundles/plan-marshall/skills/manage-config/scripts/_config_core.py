@@ -128,9 +128,11 @@ def load_config() -> dict:
     """
     try:
         raw = MARSHAL_PATH.read_text(encoding='utf-8')
-        config: dict = json.loads(raw)
+        config = json.loads(raw)
     except json.JSONDecodeError as e:
         raise ValueError(f'Invalid JSON in {MARSHAL_PATH}: {e}') from e
+    if not isinstance(config, dict):
+        raise ValueError(f'Invalid marshal.json: top-level JSON value must be an object, got {type(config).__name__}')
     _CONFIG_FINGERPRINTS[str(MARSHAL_PATH)] = _content_fingerprint(raw)
     return config
 

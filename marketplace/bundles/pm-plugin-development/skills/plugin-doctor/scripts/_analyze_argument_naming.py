@@ -1036,12 +1036,17 @@ def scan_flag(
                     if inv.subcommand is None:
                         root_allowed = fresh.root_accept_flags
                         if root_allowed is None:
-                            continue
+                            # The refreshed root scope is still unknown: `allowed`
+                            # holds the stale set and no second refresh will run,
+                            # so judging the remaining flags would accuse out of
+                            # it. Exit the flag loop for this invocation only.
+                            break
                         allowed = root_allowed
                     else:
                         sub_allowed = fresh.subcommands.get(inv.subcommand)
                         if sub_allowed is None:
-                            continue
+                            # Same unknown-scope exit as the root branch above.
+                            break
                         allowed = sub_allowed
                     if flag in allowed:
                         continue

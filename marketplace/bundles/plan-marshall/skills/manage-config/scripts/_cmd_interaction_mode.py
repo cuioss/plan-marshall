@@ -9,9 +9,9 @@ Handles the top-level ``interaction_mode`` scalar preference::
 
 The preference is a top-level scalar sibling of ``plan``, ``project``, and
 ``orchestrator`` in marshal.json (default ``advanced``; allowed
-``basic|advanced|expert``). Every read resolves through
-:func:`_config_core.resolve_interaction_mode` (absent key falls back to the
-default; a present-but-invalid value fails closed), and every write routes the
+``basic|advanced|expert``). Every read applies the same fallback and validation
+(an absent key falls back to the default; a present-but-invalid value fails
+closed), and every write routes the
 field through :func:`_config_core.reject_unknown_provisioning_field` and the
 value through :func:`_config_defaults.validate_interaction_mode` before
 :func:`_config_core.save_config`, so a typo'd field or an out-of-schema value
@@ -54,7 +54,10 @@ def cmd_interaction_mode_get(args) -> dict:
     if rejection is not None:
         return rejection
 
-    config = load_config()
+    try:
+        config = load_config()
+    except ValueError as e:
+        return error_exit(str(e), error_type='invalid_config')
     if field in config:
         is_set = True
         value = config[field]
@@ -94,7 +97,10 @@ def cmd_interaction_mode_set(args) -> dict:
     except ValueError as e:
         return error_exit(str(e), error_type='invalid_value')
 
-    config = load_config()
+    try:
+        config = load_config()
+    except ValueError as e:
+        return error_exit(str(e), error_type='invalid_config')
     config[field] = raw_value
     save_config(config)
 

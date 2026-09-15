@@ -173,6 +173,18 @@ def test_interaction_mode_unknown_field_rejected(plan_context):
         assert result.get('error_type') == 'unknown_field'
 
 
+@pytest.mark.parametrize('root', [[], [1, 2], 42, 'advanced', True, None])
+def test_interaction_mode_non_object_root_returns_structured_error(plan_context, root):
+    """A non-object marshal.json root yields a structured config error, not a TypeError."""
+    path = create_marshal_json(plan_context.fixture_dir)
+    path.write_text(json.dumps(root), encoding='utf-8')
+
+    for verb in (cmd_interaction_mode_get, cmd_interaction_mode_set):
+        result = verb(Namespace(field='interaction_mode', value='advanced'))
+        assert result['status'] == 'error', f'{verb.__name__} must fail closed on a non-object root'
+        assert result.get('error_type') == 'invalid_config'
+
+
 # =============================================================================
 # CLI Plumbing Tests (Tier 3 - subprocess)
 # =============================================================================
