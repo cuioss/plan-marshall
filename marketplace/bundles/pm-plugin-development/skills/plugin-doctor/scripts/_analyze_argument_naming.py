@@ -125,6 +125,21 @@ anchored at the BUNDLES root so ``cmd_quality_gate``'s ``_finding_is_tree_wide``
 bypass keeps it under a ``--paths``-scoped run, exactly as the other
 anti-vacuity guards are kept.
 
+Stale accept-sets are re-probed, never accused
+------------------------------------------------
+The on-disk surface digest covers the entry script plus its same-directory
+siblings — the scope :func:`argparse_surface.content_hash` can see. A surface
+declared OUTSIDE that scope (the ``ci`` router's ``pr list`` flags, which live
+in the provider ``{provider}_ops`` modules of other skill directories) edits
+without invalidating the digest, so the cached accept-set describes the parser
+that used to exist and rejects the now-valid call. :func:`scan_flag` therefore
+re-probes live (:func:`argparse_surface.refresh_surface`, exactly once per
+notation per scan) before emitting an unknown-flag finding: a flag the fresh
+surface knows is valid prose, not drift, and the healed cache entry serves
+every later consumer. A flag the live surface still rejects is emitted exactly
+as before — the re-probe can only ever shrink the finding set toward the truth,
+never grow it, and a failed re-probe leaves the original verdict untouched.
+
 Coverage is published on every run, clean or not
 ------------------------------------------------
 A finding count answers "how many invocations were wrong". It cannot answer
@@ -204,6 +219,7 @@ from argparse_surface import (
     ParserNode,
     ScriptSurface,
     build_surface_index,
+    refresh_surface,
     resolve_executor,
 )
 
@@ -941,12 +957,40 @@ def scan_subcommand(
 # =============================================================================
 
 
+def _refresh_entry(
+    notation: str,
+    marketplace_root: Path,
+    refreshed: set[str],
+) -> _ScriptEntry | None:
+    """Live re-derive one notation's entry after a cache-suspect unknown flag.
+
+    The on-disk accept-set digest covers the entry script plus its same-directory
+    siblings only, so a surface-defining edit OUTSIDE that scope (a provider
+    ``{provider}_ops`` module behind the ``ci`` router) serves a stale cached
+    surface that rejects a now-valid call. Rather than accusing on that
+    too-small set, re-probe live exactly once per notation per scan: on a fresh
+    ``ScriptSurface`` rebuild the entry, cache it for the rest of the scan, and
+    return it; on any failure return ``None`` so the caller emits as today.
+    """
+    if notation in refreshed:
+        return None
+    refreshed.add(notation)
+    executor = resolve_executor(marketplace_root)
+    if executor is None:
+        return None
+    surface = refresh_surface(notation, executor)
+    if not isinstance(surface, ScriptSurface):
+        return None
+    return _entry_from_surface(surface)
+
+
 def scan_flag(
     marketplace_root: Path,
     script_index: dict[str, _ScriptEntry],
 ) -> list[dict]:
     """Detect invented ``--flag`` tokens against a script's argparse declarations."""
     findings: list[Finding] = []
+    refreshed: set[str] = set()
     for md in _markdown_targets(marketplace_root):
         for inv in _extract_invocations(md):
             if inv.positional_region_is_templated:
@@ -985,6 +1029,27 @@ def scan_flag(
                 flag = match.group('flag')
                 if flag in allowed:
                     continue
+                fresh = _refresh_entry(inv.notation, marketplace_root, refreshed)
+                if fresh is not None:
+                    script_index[inv.notation] = fresh
+                    entry = fresh
+                    if inv.subcommand is None:
+                        root_allowed = fresh.root_accept_flags
+                        if root_allowed is None:
+                            # The refreshed root scope is still unknown: `allowed`
+                            # holds the stale set and no second refresh will run,
+                            # so judging the remaining flags would accuse out of
+                            # it. Exit the flag loop for this invocation only.
+                            break
+                        allowed = root_allowed
+                    else:
+                        sub_allowed = fresh.subcommands.get(inv.subcommand)
+                        if sub_allowed is None:
+                            # Same unknown-scope exit as the root branch above.
+                            break
+                        allowed = sub_allowed
+                    if flag in allowed:
+                        continue
                 findings.append(
                     Finding(
                         type=RULE_FLAG_UNKNOWN,

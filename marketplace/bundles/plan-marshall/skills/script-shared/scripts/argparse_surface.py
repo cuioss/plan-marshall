@@ -125,6 +125,8 @@ Public API
 - :class:`NotDerivable` — the explicit "no confident surface" result.
 - :class:`DerivationConfig` — the bounding parameters.
 - :func:`derive_surface` — cached derivation of one script's surface.
+- :func:`refresh_surface` — forced live re-derivation that heals a stale
+  cache entry (see its docstring for the stale-accept-set contract).
 - :func:`build_surface_index` — notation -> surface index, derived in parallel.
 - :func:`resolve_executor` — locate ``.plan/execute-script.py`` from a root.
 - :func:`parse_help_node` / :func:`parse_choice_list` / :func:`parse_alias_groups`
@@ -1332,6 +1334,53 @@ def derive_surface(
     if not isinstance(derived, ScriptSurface):
         return derived
     _SURFACE_MEMO[memo_key] = derived
+    return derived
+
+
+def refresh_surface(
+    notation: str,
+    executor: Path,
+    *,
+    config: DerivationConfig = DEFAULT_CONFIG,
+) -> ScriptSurface | NotDerivable:
+    """Force a LIVE re-derivation of one script's surface, healing the caches.
+
+    Stale-accept-set contract: the on-disk digest (:func:`content_hash`) covers
+    the entry script plus its same-directory siblings, because a surface is
+    "frequently assembled in a SIBLING module". It does NOT cover
+    surface-defining files OUTSIDE that directory — ``ci.py``'s ``pr list``
+    flags, for example, are declared in the provider ``{provider}_ops`` modules
+    of other skill directories and loaded through a dynamic import the digest
+    cannot see. Editing such a file leaves the digest unchanged, so the next
+    derivation serves the cached surface describing the parser that used to
+    exist — and a rule judging a documented call against that too-small
+    accept-set manufactures an unknown-flag finding against a valid call.
+
+    Callers MUST therefore re-probe live (this function) before accusing on an
+    unknown flag, never widen the cached set by hand. On success the fresh
+    surface replaces BOTH the in-process memo entry and the on-disk entry, so
+    the stale read heals for every later consumer; on failure the caches are
+    left untouched and the ``NotDerivable`` is returned for the caller to treat
+    as "no ground truth" exactly as today.
+    """
+    budget = _Budget(config)
+    if not budget.take_node():
+        return NotDerivable(notation=notation, reason=REASON_BUDGET_EXHAUSTED)
+    top_help = run_help(executor, notation, config=config)
+    if top_help is None:
+        return NotDerivable(notation=notation, reason=REASON_HELP_FAILED)
+    if not has_argparse_structure(top_help):
+        return NotDerivable(notation=notation, reason=REASON_NO_STRUCTURE)
+    root = _derive_node(executor, notation, [], top_help, depth=0, config=config, budget=budget)
+    derived = ScriptSurface(root=root)
+    script_file = script_path_for_notation(notation, executor)
+    digest = content_hash(script_file) if script_file is not None else None
+    if digest is not None:
+        _SURFACE_MEMO[(notation, digest)] = derived
+        if config.use_disk_cache:
+            _write_cache(_cache_path(executor, notation, digest), derived)
+    else:
+        _SURFACE_MEMO[(notation, f'executor::{executor}')] = derived
     return derived
 
 
