@@ -200,8 +200,15 @@ def _resolve_model(value: str, model_map: dict[str, dict]) -> str | None:
     ``model_map`` is the ``{alias: {id, supports_effort}}`` shape loaded
     from ``mapping.json``. The function extracts the ``.id`` from the
     matched entry and prefixes it with ``OPENCODE_MODEL_PREFIX``.
-    Unmapped values (e.g., already-qualified ``anthropic/...`` strings,
-    or a custom override) pass through unchanged.
+
+    It is the single handler for BOTH entry kinds that can reach a ``model:``
+    line: the canonical agent's inherited ``model:`` declaration, and the
+    per-level variant pins materialized from the local map
+    (``variant_emitter`` "Per-level model pins"). An alias-mapped value is a
+    quoted model reference (``opus`` → ``anthropic/claude-opus-4-8``); an
+    already-qualified provider/local string (``zen/route-r``,
+    ``local-model-a``) is unmapped and passes through unchanged — a pin is
+    never resolved twice.
     """
     if not value:
         return None

@@ -188,6 +188,18 @@ class TestModelAliasResolution:
         result = transform_agent_frontmatter(fm, mapping, rules, source_label='agents/x.md')
         assert 'model: anthropic/custom-model' in result
 
+    def test_qualified_provider_string_passes_through(self, mapping: dict[str, dict], rules: dict[str, list[str]]):
+        """A provider-qualified string passes through unchanged (provider kind)."""
+        fm = {'description': 'agent', 'model': 'zen/route-r'}
+        result = transform_agent_frontmatter(fm, mapping, rules, source_label='agents/x.md')
+        assert 'model: zen/route-r' in result
+
+    def test_local_model_string_passes_through(self, mapping: dict[str, dict], rules: dict[str, list[str]]):
+        """A local model string passes through unchanged (local kind)."""
+        fm = {'description': 'agent', 'model': 'local-model-a'}
+        result = transform_agent_frontmatter(fm, mapping, rules, source_label='agents/x.md')
+        assert 'model: local-model-a' in result
+
     def test_no_model_field_omits_model_line(self, mapping: dict[str, dict], rules: dict[str, list[str]]):
         fm = {'description': 'agent'}
         result = transform_agent_frontmatter(fm, mapping, rules, source_label='agents/x.md')
