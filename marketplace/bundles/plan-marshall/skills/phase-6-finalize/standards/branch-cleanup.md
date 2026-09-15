@@ -174,10 +174,8 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 #### Check for other open PRs using this branch
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-dir {worktree_path} pr list --head {head_branch} --state open --limit 100
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-dir {worktree_path} pr list --head {head_branch} --state open
 ```
-
-`--limit` states the enumeration bound at the call site instead of inheriting the producer's default. It is **GitHub-only** — GitLab argparse-rejects it, so a GitLab project drops the flag rather than passing it through.
 
 Extract the details of other open PRs (excluding the current PR), and read `total` **together with** `truncated` rather than on its own: on GitHub `total` is a complete count only when `truncated: false`, and a `truncated: true` listing is a page whose `total` is a floor. GitLab reports no `truncated` field and its listing stays page-bounded. See [`tools-integration-ci/standards/pr-operations.md`](../../tools-integration-ci/standards/pr-operations.md) § "`truncated` — a page is not a population".
 
