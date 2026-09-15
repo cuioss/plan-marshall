@@ -7,6 +7,18 @@ Entry point for all architecture operations. Dispatches to command modules.
 
 import argparse
 
+from _descriptor_delta import (
+    APPLY_ALL,
+    APPLY_MIGRATION,
+    APPLY_MODES,
+    APPLY_PLAN,
+    ATTRIBUTION_MIGRATION,
+    ATTRIBUTION_PLAN,
+    DELTA_CLASSES,
+    VERDICT_NO_BASELINE,
+    VERDICT_UNDECIDABLE,
+    VERDICTS,
+)
 from file_ops import output_toon, safe_main
 from input_validation import (
     add_domain_arg,
@@ -24,6 +36,11 @@ from resolve_project_dir import (
     emit_worktree_error,
     resolve_project_dir,
 )
+
+
+def _classes_of(attribution: str) -> str:
+    """Comma-joined delta class names carrying ``attribution``, in table order."""
+    return ', '.join(name for name, owner in DELTA_CLASSES.items() if owner == attribution)
 
 
 @safe_main
@@ -55,6 +72,19 @@ def main() -> int:
         help=(
             'Blank the project description/description_reasoning instead of '
             'preserving the existing curated values (opt back into regeneration)'
+        ),
+    )
+    discover_parser.add_argument(
+        '--apply',
+        choices=APPLY_MODES,
+        default=APPLY_ALL,
+        help=(
+            f'Which part of the regenerated tree to write (default: {APPLY_ALL}). Every call reports '
+            f'attribution as one of: {", ".join(VERDICTS)}. {APPLY_ALL}: write the full regenerated '
+            f'tree whatever the verdict. {APPLY_PLAN} / {APPLY_MIGRATION}: write only the plan classes '
+            f'({_classes_of(ATTRIBUTION_PLAN)}) or the migration classes '
+            f'({_classes_of(ATTRIBUTION_MIGRATION)}); nothing is written on {VERDICT_UNDECIDABLE}, '
+            f'on {VERDICT_NO_BASELINE}, or when no class of that kind exists'
         ),
     )
 

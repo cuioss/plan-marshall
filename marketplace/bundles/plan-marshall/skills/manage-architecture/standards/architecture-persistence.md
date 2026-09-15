@@ -585,16 +585,17 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config get-sk
 
 ## Atomicity: tmp+swap protocol
 
-`architecture discover --force` writes the entire layout to a sibling
-staging directory before atomically replacing the live tree:
+`architecture discover --force` writes the layout to a sibling staging
+directory before atomically replacing the live tree:
 
 ```text
 Step 1. Stage:    Build .plan/project-architecture.tmp/
                     ├── _project.json
-                    ├── {module-1}/{derived,enriched}.json
-                    └── {module-2}/{derived,enriched}.json
-Step 2. Swap:     os.replace(project-architecture.tmp, project-architecture)
-                  (after rmtree-ing the old tree if it existed)
+                    ├── {module-1}/enriched.json
+                    └── {module-2}/enriched.json
+Step 2. Swap:     os.replace(project-architecture, project-architecture.old)
+                  os.replace(project-architecture.tmp, project-architecture)
+                  then remove project-architecture.old
 ```
 
 **Guarantee**: An interrupt either before or after Step 2 leaves either the
@@ -602,6 +603,35 @@ old layout intact (interrupt before swap) or the new layout intact
 (interrupt after swap). There is never a half-written `project-architecture/`
 directory. Implementation lives in
 [`_architecture_core.py:swap_data_dir`](../scripts/_architecture_core.py).
+
+### What is staged: `--apply`
+
+Before staging, discover reads the on-disk pre-state and classifies the
+regenerated tree against it; the class table, the verdicts and the output
+fields are specified in [manage-api.md](manage-api.md) § discover → Attribution.
+The `unknown_generation()` back-fill described under "Provenance records *who*
+and *against which tree*" above is the `generation_backfill` migration class.
+
+**`--apply all` (the default)** stages the full regenerated tree and swaps it
+in on every call, whatever the verdict — `undecidable` and `no_baseline`
+included. There is no "staged tree equals pre-state" skip in this mode.
+
+**`--apply plan` and `--apply migration` only** decide in memory, before
+anything is staged:
+
+- On `undecidable`, on `no_baseline`, or when no class of the requested kind
+  exists, nothing is staged and nothing is written — there is no staging
+  directory to remove.
+- Otherwise the staged tree is the pre-state plus that one kind of change.
+  `plan` stages an added module's document together with its index entry, drops
+  a removed module's document and index entry, and takes over a changed
+  `extensions_used`. `migration` stages the regenerated document of each
+  pre-existing module carrying a migration class, together with its index
+  entry, and writes no added module while keeping every removed module
+  verbatim.
+- Every document the projection does not change keeps its exact bytes, and
+  `_project.json` keeps its exact bytes unless the projection changed it.
+- When the projection equals the pre-state, nothing is swapped.
 
 ---
 
