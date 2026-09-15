@@ -1215,3 +1215,91 @@ class TestRegisteredNotationsReader:
             'bundle:skill:script',
             'bundle:skill:other',
         }
+
+
+# ---------------------------------------------------------------------------
+# Cross-directory surface dependencies
+# ---------------------------------------------------------------------------
+
+
+def _cross_dir_layout(tmp_path: Path, *, with_dep: bool = True) -> Path:
+    """Mirror the ``skills/<skill>/scripts/ci.py`` shape with a dep one skill over.
+
+    Returns the synthetic ``ci.py``. The declared relative dep resolves to
+    ``skills/workflow-integration-github/scripts/github_ops.py`` only when the
+    layout mirrors the real tree — which is exactly what makes this layout the
+    regression shape for the stale-``ci``-surface defect rather than an
+    arbitrary fixture.
+    """
+    scripts_dir = tmp_path / 'skills' / 'alpha' / 'scripts'
+    scripts_dir.mkdir(parents=True, exist_ok=True)
+    entry = scripts_dir / 'ci.py'
+    entry.write_text('#!/usr/bin/env python3\n', encoding='utf-8')
+    if with_dep:
+        dep_dir = tmp_path / 'skills' / 'workflow-integration-github' / 'scripts'
+        dep_dir.mkdir(parents=True, exist_ok=True)
+        (dep_dir / 'github_ops.py').write_text('# v1\n', encoding='utf-8')
+    return entry
+
+
+class TestCrossDirSurfaceDeps:
+    """A parser assembled outside the entry point's own directory must still move the key.
+
+    The ``ci`` surface is assembled in provider front-ends that live in
+    sibling skill dirs. ``content_hash`` covered same-directory siblings only,
+    so a provider-side flag addition (``pr list --limit``) left the digest
+    put and the cache kept serving the pre-change surface — which then
+    false-rejected the valid documented call. These tests pin the wider key.
+    """
+
+    def test_unknown_filename_declares_no_cross_dir_deps(self, tmp_path):
+        other = tmp_path / 'skills' / 'alpha' / 'scripts' / 'manage-syn.py'
+        other.parent.mkdir(parents=True, exist_ok=True)
+        other.write_text('#!/usr/bin/env python3\n', encoding='utf-8')
+
+        assert surf.extra_surface_deps(other) == []
+
+    def test_cross_dir_dep_edit_moves_the_content_hash(self, tmp_path):
+        entry = _cross_dir_layout(tmp_path)
+        before = surf.content_hash(entry)
+        dep = tmp_path / 'skills' / 'workflow-integration-github' / 'scripts' / 'github_ops.py'
+        dep.write_text('# v2 — new flag declared\n', encoding='utf-8')
+
+        assert surf.content_hash(entry) != before, (
+            'a provider-side parser edit left the ci digest put — the stale '
+            'surface would keep serving and false-reject the new flag'
+        )
+
+    def test_absent_cross_dir_dep_still_hashes_deterministically(self, tmp_path):
+        entry = _cross_dir_layout(tmp_path, with_dep=False)
+
+        first = surf.content_hash(entry)
+        second = surf.content_hash(entry)
+
+        assert first is not None and first == second
+
+    def test_declared_cross_dir_deps_exist_in_the_live_tree(self):
+        """The declaration rots silently if a provider file moves.
+
+        A row naming a file that no longer exists contributes only its key,
+        so a moved provider module would reopen the exact staleness hole this
+        class closes — with every test above still green. Pin the live tree
+        instead.
+        """
+        ci = (
+            PROJECT_ROOT
+            / 'marketplace'
+            / 'bundles'
+            / 'plan-marshall'
+            / 'skills'
+            / 'tools-integration-ci'
+            / 'scripts'
+            / 'ci.py'
+        )
+        assert ci.is_file(), f'expected live ci.py at {ci}'
+        missing = [str(path) for _, path in surf.extra_surface_deps(ci) if not path.is_file()]
+        assert not missing, (
+            'declared cross-dir surface deps missing from the live tree — '
+            'the digest no longer covers the delegated parser surface: '
+            f'{missing}'
+        )
