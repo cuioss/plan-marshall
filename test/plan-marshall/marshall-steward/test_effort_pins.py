@@ -167,8 +167,8 @@ def test_rank_at_rung_provisions_normally():
 # =============================================================================
 
 
-def test_validate_rejects_entry_missing_kind():
-    """An entry without a usable kind is invalid, exactly as an absent one."""
+def test_validate_skips_entry_missing_kind_as_inherit():
+    """An entry without a usable kind is unprovisioned, exactly as an absent one."""
     # Arrange
     data = {'pins': {'level-2': {'model': 'local-model-a'}}}
 
@@ -176,8 +176,52 @@ def test_validate_rejects_entry_missing_kind():
     ok, errors = effort_pins.validate_map_data(data)
 
     # Assert
+    assert ok
+    assert errors == []
+    pins, guard_hits = effort_pins.materialize_levels(data)
+    assert pins['level-2'] == 'inherit'
+    assert guard_hits == 0
+
+
+def test_validate_skips_entry_unknown_kind_as_inherit():
+    """An entry with an unknown kind yields inherit instead of failing the map."""
+    # Arrange
+    data = {'pins': {'level-3': {'kind': 'weird', 'model': 'local-model-b'}}}
+
+    # Act
+    ok, errors = effort_pins.validate_map_data(data)
+
+    # Assert
+    assert ok
+    assert errors == []
+    pins, _ = effort_pins.materialize_levels(data)
+    assert pins['level-3'] == 'inherit'
+
+
+def test_validate_rejects_non_string_model():
+    """A ``local`` entry with a non-string model is invalid."""
+    # Arrange
+    data = {'pins': {'level-2': {'kind': 'local', 'model': ['local-model-a']}}}
+
+    # Act
+    ok, errors = effort_pins.validate_map_data(data)
+
+    # Assert
     assert not ok
-    assert any('level-2' in error for error in errors)
+    assert any('model' in error for error in errors)
+
+
+def test_validate_rejects_non_string_route():
+    """A ``provider`` entry with a non-string route is invalid."""
+    # Arrange
+    data = {'pins': {'level-4': {'kind': 'provider', 'route': {'route': 'zen/route-r'}}}}
+
+    # Act
+    ok, errors = effort_pins.validate_map_data(data)
+
+    # Assert
+    assert not ok
+    assert any('route' in error for error in errors)
 
 
 def test_validate_rejects_local_entry_missing_model():

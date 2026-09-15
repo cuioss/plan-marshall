@@ -118,12 +118,19 @@ def validate_map_data(data: Any) -> tuple[bool, list[str]]:
             continue
         kind = entry.get('kind')
         if kind not in ALLOWED_KINDS:
-            errors.append(_entry_error(level, "missing or unknown 'kind' (expected 'local' or 'provider')"))
+            # Per pin-provisioning.md and ADR-021 obligation 1: an entry
+            # without a usable kind is unprovisioned, exactly as an absent
+            # entry is — the level resolves to inherit at materialize
+            # time instead of failing the whole map.
             continue
-        if kind == 'local' and not entry.get('model'):
-            errors.append(_entry_error(level, "missing required field 'model'"))
-        if kind == 'provider' and not (entry.get('route') or entry.get('model')):
-            errors.append(_entry_error(level, "missing required field 'route' (or 'model')"))
+        if kind == 'local':
+            model = entry.get('model')
+            if not isinstance(model, str) or not model:
+                errors.append(_entry_error(level, "missing required field 'model' (non-empty string)"))
+        if kind == 'provider':
+            ref = entry.get('route') or entry.get('model')
+            if not isinstance(ref, str) or not ref:
+                errors.append(_entry_error(level, "missing required field 'route' (or 'model') as non-empty string"))
         rank = entry.get('capability_rank')
         if rank is not None and (not isinstance(rank, int) or isinstance(rank, bool)):
             errors.append(_entry_error(level, "'capability_rank' must be an integer when present"))
