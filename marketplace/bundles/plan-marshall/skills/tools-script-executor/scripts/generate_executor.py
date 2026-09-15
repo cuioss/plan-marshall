@@ -1011,6 +1011,15 @@ def compute_surface_digest(script_path: str, shared_digest: str) -> str:
     meant to replace and the fix appears to do nothing until a script happens to
     change. Schema currency is an input to the surface exactly as script content
     is.
+
+    Cross-directory assembly rides the same key through
+    ``surface_api.extra_surface_deps``: a script whose parser is assembled in
+    another skill's directory (``ci.py`` delegating to the provider
+    front-ends) folds those files in here, so the carried entry is reused only
+    while the delegated surface is unchanged. Without it the generator reuses
+    a stale entry and the executor pre-spawn-rejects an invocation that is
+    now valid — the same hole :func:`argparse_surface.content_hash` closes
+    for the shared on-disk cache, via the same declaration.
     """
     path = Path(script_path)
     hasher = hashlib.sha256()
@@ -1019,6 +1028,12 @@ def compute_surface_digest(script_path: str, shared_digest: str) -> str:
     except OSError:
         hasher.update(b'<unreadable>')
     hasher.update(_dir_digest(path.parent).encode('utf-8'))
+    for rel_key, dep_path in surface_api.extra_surface_deps(path):
+        hasher.update(rel_key.encode('utf-8'))
+        try:
+            hasher.update(dep_path.read_bytes())
+        except OSError:
+            hasher.update(b'<unreadable>')
     hasher.update(shared_digest.encode('utf-8'))
     hasher.update(f'surface-schema-v{surface_api.CACHE_VERSION}'.encode())
     return hasher.hexdigest()

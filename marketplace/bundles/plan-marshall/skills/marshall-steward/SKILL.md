@@ -1,6 +1,6 @@
 ---
 name: marshall-steward
-description: Project configuration wizard for planning system. Manages executor generation, health checks, executor/config staleness signaling, build systems, skill domains, and the upgrade verb for one-flow post-change reconciliation.
+description: Project configuration wizard for planning system. Manages executor generation, health checks, executor/config staleness signaling, build systems, skill domains, per-level model pin materialization, and the upgrade verb for one-flow post-change reconciliation.
 user-invocable: true
 mode: workflow
 ---
@@ -167,7 +167,7 @@ Display menu when both executor and marshal.json exist.
 
 ### Main Menu
 
-The Main Menu has 6 options, which exceeds the `AskUserQuestion` 4-option cap. It is presented as a paginated menu following the "More actions..." pattern documented in `plan-marshall/workflow/planning.md` (§ Action: list): each page presents at most 4 options, and every non-final page reserves its 4th slot for a "More..." continuation that triggers the next page's `AskUserQuestion`.
+The Main Menu has 7 options, which exceeds the `AskUserQuestion` 4-option cap. It is presented as a paginated menu following the "More actions..." pattern documented in `plan-marshall/workflow/planning.md` (§ Action: list): each page presents at most 4 options, and every non-final page reserves its 4th slot for a "More..." continuation that triggers the next page's `AskUserQuestion`. Page 2 carries 4 options and needs no further continuation.
 
 **Page 1** — first 3 options plus the "More..." continuation:
 
@@ -183,7 +183,7 @@ AskUserQuestion:
     - label: "3. Configuration"
       description: "Change how this project builds, which standards apply, and the other project settings"
     - label: "More..."
-      description: "Shows the three remaining entries: Effort, Upgrade, and Quit"
+      description: "Shows the four remaining entries: Effort, Pin models, Upgrade, and Quit"
   multiSelect: false
 ```
 
@@ -191,14 +191,16 @@ AskUserQuestion:
 
 ```text
 AskUserQuestion:
-  question: "These are the three entries that did not fit on the first page. What would you like to do?"
+  question: "These are the four entries that did not fit on the first page. What would you like to do?"
   header: "More actions"
   options:
     - label: "4. Effort"
       description: "Choose how much model capability each kind of work gets — more for planning and review, less for routine steps"
-    - label: "5. Upgrade"
+    - label: "5. Pin models"
+      description: "Materialize per-level model pins from the machine-local map — which model each level provisions on this machine"
+    - label: "6. Upgrade"
       description: "Brings this checkout back in line after a plan-marshall change: rebuilds the runner, reconciles settings, verifies, and lands the result"
-    - label: "6. Quit"
+    - label: "7. Quit"
       description: "Ends this session, offering first to commit any settings changes it made"
   multiSelect: false
 ```
@@ -212,8 +214,9 @@ AskUserQuestion:
 | "3. Configuration" | Load: `Read references/menu-configuration.md` → Execute |
 | "More..." | Present Main Menu Page 2 `AskUserQuestion` |
 | "4. Effort" | Load: `Read standards/effort-menu.md` → Execute |
-| "5. Upgrade" | Load: `Read references/upgrade-flow.md` → Execute |
-| "6. Quit" | Output "Good bye!" → STOP |
+| "5. Pin models" | Load: `Read references/menu-pins.md` → Execute |
+| "6. Upgrade" | Load: `Read references/upgrade-flow.md` → Execute |
+| "7. Quit" | Output "Good bye!" → STOP |
 
 After any menu option completes, return to Main Menu Page 1 (except Quit).
 
@@ -250,13 +253,14 @@ Then execute the workflow described in that file. Each reference file is loaded 
 | `menu-healthcheck.md` | Verify setup, diagnose issues | Menu option 2 |
 | `menu-configuration.md` | Build systems, skill domains, architecture refresh tier knobs | Menu option 3 |
 | `standards/effort-menu.md` | Per-phase effort configuration (Effort submenu) | Menu option 4 |
+| `references/menu-pins.md` | Per-level model pin materialization (Pin models flow) | Menu option 5 |
 | `menu-recipes.md` | Built-in recipes available in the wizard | Linked from `menu-configuration.md` |
 | `menu-derivation-resolvers.md` | Inspect and change which module-edge derivation resolvers run in this checkout; machine-local, keyed by resolver id, unconfigured means every discovered resolver is active | Linked from `menu-configuration.md` (Derivation Resolvers) |
 | `menu-display-timezone.md` | Inspect and change the IANA zone operator-facing timestamps are rendered in; machine-local, display-only (storage and comparison stay UTC), unconfigured renders `UTC` | Linked from `menu-configuration.md` (Display Timezone) |
 | `menu-commit-trailer.md` | Inspect and change the co-author identity assistant-authored commits are recorded under; machine-local, per-half fallback, unconfigured commits under `plan-marshall <noreply@cuioss.de>` | Linked from `menu-configuration.md` (Commit Trailer) |
 | `merge-queue-setup.md` | Idempotent probe→ask→configure provisioning of the platform merge queue (GitHub merge queue / GitLab merge train) via the `ci repo merge-queue` verbs | Linked from `wizard-flow.md` Step 13.5 and `menu-configuration.md` (Merge Queue) |
 | `landing-cycle.md` | End-of-run landing cycle: detect uncommitted plan-marshall artifact diff → offer to commit → push → `skip-bot-review`-labelled plan-less PR → merge-queue-aware merge → switch-to-main → pull; base-branch-conditional branch selection + bot skip-label honoring matrix | Linked from the "End-of-Run Landing Cycle" hook (menu-mode Quit path + `wizard-flow.md` end) |
-| `upgrade-flow.md` | Post-change `upgrade` verb: four-stage reconciliation driven by the project-kind-aware `upgrade.py plan` stage plan (the meta/consumer stage matrix — meta regenerates the target tree + executor and verifies with preflight + content-drift; consumer regenerates the executor only and verifies with preflight only), honoring each stage's per-stage gate dispositions and `sub_steps` | Main Menu option 5, or the `upgrade` early verb check |
+| `upgrade-flow.md` | Post-change `upgrade` verb: four-stage reconciliation driven by the project-kind-aware `upgrade.py plan` stage plan (the meta/consumer stage matrix — meta regenerates the target tree + executor and verifies with preflight + content-drift; consumer regenerates the executor only and verifies with preflight only), honoring each stage's per-stage gate dispositions and `sub_steps` | Main Menu option 6, or the `upgrade` early verb check |
 | `error-handling.md` | Error types and recovery | On error conditions |
 
 ---
@@ -709,7 +713,7 @@ tree dirty.
 **Uniform firing point.** The hook fires at the natural END of every steward
 mode:
 
-- **Menu mode** — on the "Quit" path (Main Menu option 6), AFTER "Good bye!" is
+- **Menu mode** — on the "Quit" path (Main Menu option 7), AFTER "Good bye!" is
   emitted and BEFORE the skill stops.
 - **Wizard mode** — at the end of the wizard flow (see
   [`references/wizard-flow.md`](references/wizard-flow.md)), after the final

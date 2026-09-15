@@ -847,6 +847,51 @@ def script_path_for_notation(notation: str, executor: Path) -> Path | None:
     return None
 
 
+# Cross-directory surface dependencies, keyed by entry-point filename.
+#
+# ``content_hash`` covers the script plus its same-directory siblings, but a
+# script's argparse surface is sometimes assembled in a module that lives in
+# ANOTHER skill's directory: ``tools-integration-ci:ci`` delegates to
+# ``ci_base.py`` (same dir, covered) AND to the provider front-ends
+# ``{provider}_ops.py`` (sibling skill dirs, NOT covered). An edit out there
+# changes the accept-set without moving the key, so the cache hands back a
+# surface describing the parser that used to exist — which then false-rejects
+# a valid call (observed: ``pr list --limit`` added in the GitHub front-end
+# while the cached ``ci`` surface still predated it).
+#
+# Each value lists paths RELATIVE to the entry point's own directory, so the
+# declaration stays valid whatever absolute prefix the checkout lives under.
+# A new cross-directory parser delegation adds a row here; the row is data
+# about the marketplace layout, not logic, and both cache-key consumers
+# (:func:`content_hash` below and the executor generator's
+# ``compute_surface_digest``) read it through :func:`extra_surface_deps`.
+_CROSS_DIR_SURFACE_DEPS: dict[str, tuple[str, ...]] = {
+    'ci.py': (
+        '../../workflow-integration-github/scripts/github_ops.py',
+        '../../workflow-integration-gitlab/scripts/gitlab_ops.py',
+    ),
+}
+
+
+def extra_surface_deps(script_path: Path) -> list[tuple[str, Path]]:
+    """Resolve declared cross-directory surface deps for ``script_path``.
+
+    Returns ``(relative_key, absolute_path)`` pairs in declaration order.
+    Paths that do not exist on disk are still returned — the caller hashes
+    the key either way, so a dep that appears later flips the digest just as
+    a dep whose bytes changed does. Resolution never raises: an unresolvable
+    parent simply yields no pairs.
+    """
+    deps = _CROSS_DIR_SURFACE_DEPS.get(Path(script_path).name, ())
+    if not deps:
+        return []
+    try:
+        parent = Path(script_path).parent
+    except (OSError, ValueError):
+        return []
+    return [(rel, parent / rel) for rel in deps]
+
+
 def content_hash(script_path: Path) -> str | None:
     """Cache key covering ``script_path`` AND every ``*.py`` beside it.
 
@@ -856,6 +901,12 @@ def content_hash(script_path: Path) -> str | None:
     exactly where the derivation is most valuable: edit the sibling, and a
     script-only key hands back a cached surface describing the parser that used
     to exist.
+
+    Cross-directory assembly (``ci.py`` delegating to provider front-ends in
+    sibling skill dirs) is covered the same way through
+    :data:`_CROSS_DIR_SURFACE_DEPS` / :func:`extra_surface_deps`: each declared
+    dep contributes its relative key always and its bytes when readable, so an
+    edit out there moves the key exactly like a sibling edit does.
 
     Over-invalidating (an unrelated edit in the same directory re-derives)
     costs time. Under-invalidating costs correctness — a stale accept-set
@@ -878,6 +929,12 @@ def content_hash(script_path: Path) -> str | None:
         hasher.update(sibling.name.encode('utf-8'))
         try:
             hasher.update(sibling.read_bytes())
+        except OSError:
+            hasher.update(b'<unreadable>')
+    for rel_key, dep_path in extra_surface_deps(script_path):
+        hasher.update(rel_key.encode('utf-8'))
+        try:
+            hasher.update(dep_path.read_bytes())
         except OSError:
             hasher.update(b'<unreadable>')
     return hasher.hexdigest()

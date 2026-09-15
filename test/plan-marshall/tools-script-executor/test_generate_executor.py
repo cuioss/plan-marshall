@@ -2749,6 +2749,38 @@ def test_dir_digest_ignores_pycache_residue(tmp_path):
     assert module._dir_digest(shared) == before
 
 
+def test_surface_digest_moves_when_a_cross_dir_provider_file_changes(tmp_path):
+    """The provider-delegation axis of stale-surface invalidation.
+
+    ``compute_surface_digest`` covers the script's own bytes plus its own
+    directory, but ``ci.py`` assembles its parser in provider front-ends that
+    live in sibling skill dirs. A provider-side flag addition then leaves the
+    digest put, ``read_previous_surfaces`` reuses the stale ``SCRIPT_SURFACES``
+    entry, and the generated executor pre-spawn-rejects an invocation that is
+    now valid (observed: ``pr list --limit``). The layout below mirrors the
+    real ``skills/<skill>/scripts`` shape so the relative dep declaration
+    resolves exactly as it does in the tree.
+    """
+    module = load_module()
+    scripts_dir = tmp_path / 'skills' / 'alpha' / 'scripts'
+    scripts_dir.mkdir(parents=True, exist_ok=True)
+    entry = scripts_dir / 'ci.py'
+    entry.write_text('#!/usr/bin/env python3\n', encoding='utf-8')
+    provider_dir = tmp_path / 'skills' / 'workflow-integration-github' / 'scripts'
+    provider_dir.mkdir(parents=True, exist_ok=True)
+    provider = provider_dir / 'github_ops.py'
+    provider.write_text('# v1\n', encoding='utf-8')
+
+    before = module.compute_surface_digest(str(entry), 'shared')
+    provider.write_text('# v2 — new flag declared\n', encoding='utf-8')
+
+    assert module.compute_surface_digest(str(entry), 'shared') != before, (
+        'a provider-side parser edit left the executor digest put — the '
+        'stale embedded surface would be reused and pre-spawn-reject the '
+        'new flag'
+    )
+
+
 def test_failed_rederivation_drops_the_entry_rather_than_reusing_the_cached_one(tmp_path, monkeypatch):
     """A stale surface is never resurrected by a derivation that failed.
 

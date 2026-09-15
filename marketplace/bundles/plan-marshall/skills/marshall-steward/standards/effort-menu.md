@@ -83,6 +83,10 @@ After a successful save:
 
 When the user picks "Back to Main Menu" in Step 2, return to the Main Menu without making any changes.
 
+## Pin Models (Sibling Flow)
+
+Per-level model pins are a sibling flow, not part of this preset-picker. The Pin models menu option materializes which model each level provisions on this machine from the machine-local pin map; this submenu only chooses the levels. See [`../references/menu-pins.md`](../references/menu-pins.md) for the operator flow and [`pin-provisioning.md`](pin-provisioning.md) for the map contract — neither is restated here.
+
 ## Cross-References
 
 | Document | Content |
@@ -91,4 +95,6 @@ When the user picks "Back to Main Menu" in Step 2, return to the Main Menu witho
 | [`effort-roles.md`](../../plan-marshall/standards/effort-roles.md) | Role registry that the presets cover. |
 | [`effort-variants.md`](../../plan-marshall/standards/effort-variants.md) | User-facing centralised guide cross-linked from save confirmations. |
 | [`effort_presets.py`](../../plan-marshall/scripts/effort_presets.py) | `EffortPresets` constant-class — per-preset payloads, `get`, `all_names`, `describe`, `identify`. |
+| [`../references/menu-pins.md`](../references/menu-pins.md) | Pin models operator flow — the sibling per-level provisioning flow. |
+| [`pin-provisioning.md`](pin-provisioning.md) | Pin-provisioning standard — steward surface and map contract. |
 | `manage-config:_cmd_effort.py` | Resolver that reads the same per-phase `effort` configuration written by this wizard, plus `apply-preset` writer. |
