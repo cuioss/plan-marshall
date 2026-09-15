@@ -152,5 +152,5 @@ provisioning seam.
 * `marketplace/bundles/plan-marshall/skills/plan-marshall/standards/effort-levels.md` § Level Table — the ordinal palette whose rungs bound provisioning under never-escalate.
 * `marketplace/bundles/plan-marshall/skills/extension-api/standards/marshal-json-reference.md` § Orchestrator Configuration — the polymorphic string-or-object shape the map's per-level entries mirror.
 * `marketplace/bundles/plan-marshall/skills/manage-config/scripts/_cmd_effort.py` § `_resolve_orchestrator_level` — the resolver seam whose post-level output the provisioning hook consumes.
-* `marketplace/targets/opencode/variant_emitter.py` § Inherit-only emission — the fallback this decision preserves.
+* `marketplace/targets/opencode/variant_emitter.py` § Per-level model pins — the fallback this decision preserves and the slot its pins are consumed at.
 * `doc/concepts/extension-architecture.adoc` — the extension-architecture home of the target-local file-plus-manage-skill definition.
