@@ -9,7 +9,7 @@ The steward surface owning per-level model configuration is a Main Menu option o
 - **Location**: Main Menu Page 2, alongside option 4 Effort. The option loads the pin-materialization flow.
 - **Why not `apply-preset`**: `apply-preset` completely overwrites the per-phase effort configuration with the preset payload. Pin materialization tunes per-level model bindings without replacing the resolved levels, so it cannot ride the overwrite contract.
 - **Precedent**: the wizard-flow seed-then-tune split. Init seeds per-phase `effort` keys; the Effort submenu tunes them afterwards. Pin setup follows the same shape: resolution seeds levels, the pin step tunes the model each level provisions.
-- **Step shape**: a deterministic steward step that reads the machine-local map, materializes per-level pins through the existing `manage-config effort` verbs, and verifies the inherit fallback. Operator flow lives in `references/menu-pins.md`; script logic lives in `scripts/effort_pins.py`.
+- **Step shape**: a deterministic steward step that reads the machine-local map, resolves the level through `manage-config effort`, applies the pin through the harness provisioning seam, and verifies the `inherit` fallback. Operator flow lives in `references/menu-pins.md`; script logic lives in `scripts/effort_pins.py`.
 
 ## Map Read and Write Contract
 

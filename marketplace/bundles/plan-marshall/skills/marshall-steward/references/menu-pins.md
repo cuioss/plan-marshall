@@ -4,7 +4,7 @@
 
 ## Overview
 
-The Pin models flow provisions this machine's models into the per-level dispatch chain. It reads the machine-local pin map, materializes which model each level provisions, applies the pins through the existing `manage-config effort` surface, and verifies the `inherit` fallback on unpinned levels. The levels themselves are chosen by the sibling Effort flow (see [effort-menu.md](../standards/effort-menu.md)); this flow only provisions models for them.
+The Pin models flow provisions this machine's models into the per-level dispatch chain. It reads the machine-local pin map, materializes which model each level provisions, emits the `level=model` pairs via `effort_pins` for the PLAN-01 post-resolve harness provisioning seam to apply, and verifies the `inherit` fallback on unpinned levels. The levels themselves are chosen by the sibling Effort flow (see [effort-menu.md](../standards/effort-menu.md)); this flow only provisions models for them.
 
 The map contract — machine-local location, PLAN-01 schema, both entry kinds, inherit preservation, and the never-escalate guard — lives in [pin-provisioning.md](../standards/pin-provisioning.md) and is not restated here.
 
