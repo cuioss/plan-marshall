@@ -24,8 +24,9 @@ argparse surface, so a documented verb no script registers, and a drift between
 the doc and the parser, are both reported at edit time.
 
 Besides the handlers this file carries their private helpers, including the
-Bucket B execution-tier augmentation, the files-inventory readers, the snapshot
-diff, and the descriptor regression gate.
+Bucket B execution-tier augmentation, the files-inventory readers, the baseline
+materialization shared by the two snapshot verbs, the snapshot diff, and the
+descriptor regression gate.
 
 The files-inventory readers (``find`` / ``search`` / ``which-module``) read
 through the ``_resolve_module_inventory`` seam: an in-scope elided category is
@@ -38,8 +39,15 @@ true counts) instead of silently treating the writer's sample as the whole list.
 import argparse
 import fnmatch
 import hashlib
+import io
 import json
 import re
+import subprocess
+import tarfile
+import tempfile
+from collections.abc import Iterator
+from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -60,6 +68,7 @@ from _architecture_core import (
     load_module_enriched_or_empty,
     load_project_meta,
     longest_containing_prefix,
+    package_key_resolves,
     require_project_meta_result,
     resolve_module_for_path,
     resolve_path_attribution,
@@ -92,8 +101,10 @@ from _cmd_client_render import (
     render_module_markdown,
     render_overview,
 )
+from _descriptor_delta import match_rekeys
 from constants import (
     DIR_PER_MODULE_DERIVED,
+    DIR_PER_MODULE_ENRICHED,
     FILE_PROJECT_META,
 )
 
@@ -1415,55 +1426,178 @@ def _resolve_snapshot_dir(pre: str) -> Path:
     return base
 
 
+# =============================================================================
+# Baseline Materialization (--pre | --pre-ref)
+# =============================================================================
+
+# Upper bound on the ``git archive`` a ``--pre-ref`` baseline is read through.
+_GIT_ARCHIVE_TIMEOUT_SECONDS = 60
+
+
+@dataclass(frozen=True)
+class _Baseline:
+    """A baseline descriptor tree that materialized and parsed.
+
+    ``source`` is the caller-facing identity of the baseline — ``{'path': PRE}``
+    or ``{'ref': REF}`` — echoed on every error payload so a failure names what
+    the caller asked for.
+    """
+
+    source: dict[str, str]
+    snapshot_dir: Path
+    meta: dict[str, Any]
+
+
+class _UnsafeArchiveMemberError(Exception):
+    """Raised when a baseline archive carries a member extraction must refuse."""
+
+
+def _snapshot_not_found(source: dict[str, str], detail: str | None = None) -> dict[str, Any]:
+    payload: dict[str, Any] = {'status': 'error', 'error': 'snapshot_not_found', **source}
+    if detail:
+        payload['detail'] = detail
+    return payload
+
+
+def _load_baseline(source: dict[str, str], snapshot_dir: Path) -> _Baseline | dict[str, Any]:
+    """Parse the baseline ``_project.json`` under ``snapshot_dir``, or name why it cannot be."""
+    meta_path = snapshot_dir / FILE_PROJECT_META
+    if not meta_path.is_file():
+        return _snapshot_not_found(source)
+    try:
+        meta = json.loads(meta_path.read_text(encoding='utf-8'))
+    except (OSError, ValueError) as e:
+        return _snapshot_not_found(source, str(e))
+    if not isinstance(meta, dict):
+        return _snapshot_not_found(source, f'{FILE_PROJECT_META} is not a JSON object')
+    return _Baseline(source=source, snapshot_dir=snapshot_dir, meta=meta)
+
+
+def _extract_archive(archive: bytes, destination: Path) -> None:
+    """Extract a tar archive under ``destination``, refusing every unsafe member.
+
+    Only regular files and directories are extracted. An absolute member, a
+    member with a ``..`` component, a link, a device, or any member that would
+    land outside ``destination`` fails the whole extraction — a baseline read
+    through a filtered archive would be a baseline the caller never asked for.
+    """
+    root = destination.resolve()
+    with tarfile.open(fileobj=io.BytesIO(archive), mode='r:') as tar:
+        for member in tar.getmembers():
+            name = member.name.replace('\\', '/')
+            if not name or name.startswith('/') or '..' in name.split('/'):
+                raise _UnsafeArchiveMemberError(f'unsafe archive member path: {member.name}')
+            if not (member.isdir() or member.isfile()):
+                raise _UnsafeArchiveMemberError(f'archive member is not a regular file or directory: {member.name}')
+            target = (root / name).resolve()
+            if target != root and root not in target.parents:
+                raise _UnsafeArchiveMemberError(f'archive member escapes the extraction root: {member.name}')
+            if member.isdir():
+                target.mkdir(parents=True, exist_ok=True)
+                continue
+            extracted = tar.extractfile(member)
+            if extracted is None:
+                raise _UnsafeArchiveMemberError(f'archive member has no readable content: {member.name}')
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with extracted:
+                target.write_bytes(extracted.read())
+
+
+def _archive_baseline(
+    source: dict[str, str], ref: str, project_dir: str, destination: Path
+) -> _Baseline | dict[str, Any]:
+    """Read the descriptor tree at ``ref`` through ``git archive`` into ``destination``."""
+    argv = ['git', '-C', str(project_dir), 'archive', '--format=tar', ref, '--', DATA_DIR.as_posix()]
+    try:
+        completed = subprocess.run(argv, capture_output=True, check=False, timeout=_GIT_ARCHIVE_TIMEOUT_SECONDS)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return _snapshot_not_found(source, str(e))
+    if completed.returncode != 0:
+        return _snapshot_not_found(source, completed.stderr.decode('utf-8', errors='replace').strip())
+    try:
+        _extract_archive(completed.stdout, destination)
+    except (tarfile.TarError, OSError, _UnsafeArchiveMemberError) as e:
+        return _snapshot_not_found(source, str(e))
+    return _load_baseline(source, destination / DATA_DIR)
+
+
+@contextmanager
+def _materialize_baseline(args: argparse.Namespace) -> Iterator[_Baseline | dict[str, Any]]:
+    """Materialize the baseline tree named by ``--pre`` or ``--pre-ref``.
+
+    Yields a :class:`_Baseline`, or the error payload the handler returns as-is:
+
+    * ``--pre PATH`` — the on-disk snapshot resolved by
+      :func:`_resolve_snapshot_dir`; nothing is created or removed.
+    * ``--pre-ref REF`` — the ``.plan/project-architecture`` tree at ``REF``,
+      read with ``git archive`` (an argv list, never a shell) and extracted into
+      a temporary directory that exists only for the ``with`` block. A ref
+      starting with ``-`` is refused as ``invalid_ref`` before git runs, so it
+      can never be read as an option.
+
+    Both shapes return ``snapshot_not_found`` when no parseable ``_project.json``
+    materializes, carrying ``path`` or ``ref`` respectively. Handlers read
+    ``pre_ref`` through ``getattr`` so a namespace that carries only ``pre`` keeps
+    working.
+    """
+    pre_ref = getattr(args, 'pre_ref', None)
+    if pre_ref is None:
+        pre_arg = args.pre
+        yield _load_baseline({'path': pre_arg}, _resolve_snapshot_dir(pre_arg))
+        return
+
+    source = {'ref': pre_ref}
+    if not pre_ref or pre_ref.startswith('-'):
+        yield {
+            'status': 'error',
+            'error': 'invalid_ref',
+            'ref': pre_ref,
+            'message': 'A --pre-ref value must be a non-empty git ref that does not start with "-"',
+        }
+        return
+
+    with tempfile.TemporaryDirectory(prefix='architecture-baseline-') as tmp:
+        yield _archive_baseline(source, pre_ref, args.project_dir, Path(tmp))
+
+
 def cmd_diff_modules(args: argparse.Namespace) -> dict[str, Any]:
     """CLI handler for the ``diff-modules`` reader.
 
-    Compares pre-snapshot per-module ``derived.json`` shas (read from the
-    on-disk snapshot under ``--pre``) against the sha of the live on-demand
-    crawl of the current project's modules, and classifies every module from
-    the union of both module sets into one of four buckets: ``added``,
-    ``removed``, ``changed``, ``unchanged``.
+    Compares baseline per-module ``derived.json`` shas (read from the tree
+    ``--pre`` or ``--pre-ref`` materializes, see :func:`_materialize_baseline`)
+    against the sha of the live on-demand crawl of the current project's
+    modules, and classifies every module from the union of both module sets
+    into one of four buckets: ``added``, ``removed``, ``changed``,
+    ``unchanged``.
 
-    The snapshot side keeps its file-based read because the snapshot is an
-    on-disk artifact captured at some earlier point. The current side
-    computes a fresh crawl-based sha; nothing reads
-    ``{module}/derived.json`` from the current project's
-    ``project-architecture/`` directory.
+    The baseline side keeps its file-based read because the baseline is a tree
+    captured at some earlier point. The current side computes a fresh
+    crawl-based sha; nothing reads ``{module}/derived.json`` from the current
+    project's ``project-architecture/`` directory.
 
     Comparison surface is intentionally narrow — only ``derived.json`` shas
     matter. Differences confined to ``enriched.json`` (LLM-curated fields)
     never produce a ``changed`` classification.
 
-    Error contract: when the snapshot directory or its ``_project.json`` is
-    missing, returns ``status: error, error: snapshot_not_found, path: <pre>``.
+    Error contract: ``invalid_ref`` for a ``-``-prefixed ref, and
+    ``snapshot_not_found`` (carrying ``path`` or ``ref``) when the baseline's
+    ``_project.json`` does not materialize.
     """
-    pre_arg = args.pre
-    snapshot_dir = _resolve_snapshot_dir(pre_arg)
-    snapshot_meta_path = snapshot_dir / FILE_PROJECT_META
+    with _materialize_baseline(args) as baseline:
+        if isinstance(baseline, dict):
+            return baseline
+        return _diff_modules(baseline, args.project_dir)
 
-    if not snapshot_meta_path.is_file():
-        return {
-            'status': 'error',
-            'error': 'snapshot_not_found',
-            'path': pre_arg,
-        }
 
-    try:
-        snapshot_meta = json.loads(snapshot_meta_path.read_text(encoding='utf-8'))
-    except (OSError, ValueError) as e:
-        return {
-            'status': 'error',
-            'error': 'snapshot_not_found',
-            'path': pre_arg,
-            'detail': str(e),
-        }
+def _diff_modules(baseline: _Baseline, project_dir: str) -> dict[str, Any]:
+    snapshot_dir = baseline.snapshot_dir
+    snapshot_index = baseline.meta.get('modules')
+    snapshot_modules = set(snapshot_index.keys()) if isinstance(snapshot_index, dict) else set()
 
-    snapshot_modules = set((snapshot_meta.get('modules') or {}).keys())
-
-    current_modules_data = crawl_all_modules(args.project_dir)
+    current_modules_data = crawl_all_modules(project_dir)
     current_modules = set(current_modules_data.keys())
     if not current_modules:
-        return require_project_meta_result(args.project_dir)
+        return require_project_meta_result(project_dir)
 
     added = sorted(current_modules - snapshot_modules)
     removed = sorted(snapshot_modules - current_modules)
@@ -1522,66 +1656,158 @@ def _is_blanked(baseline_value: Any, current_value: Any) -> bool:
     return had_value and not has_value
 
 
+FIELD_NAME = 'name'
+FIELD_DESCRIPTION = 'description'
+FIELD_DESCRIPTION_REASONING = 'description_reasoning'
+FIELD_ENRICHED_RESPONSIBILITY = 'enriched.responsibility'
+FIELD_ENRICHED_KEY_PACKAGES = 'enriched.key_packages'
+
+# The descriptor fields the regression predicate is computed over, published
+# verbatim as ``examined_fields`` on every successful response. This tuple is the
+# only list of them: a field the check starts comparing is added here, and a
+# field absent from it is one the verdict says nothing about.
+DESCRIPTOR_REGRESSION_EXAMINED_FIELDS: tuple[str, ...] = (
+    FIELD_NAME,
+    FIELD_DESCRIPTION,
+    FIELD_DESCRIPTION_REASONING,
+    FIELD_ENRICHED_RESPONSIBILITY,
+    FIELD_ENRICHED_KEY_PACKAGES,
+)
+
+
+def _index_module_names(meta: dict[str, Any]) -> set[str]:
+    index = meta.get('modules')
+    return set(index) if isinstance(index, dict) else set()
+
+
+def _read_module_document(data_dir: Path, module: str) -> tuple[dict[str, Any] | None, str | None]:
+    """Read one module's ``enriched.json``: ``(document, None)`` or ``(None, reason)``."""
+    path = data_dir / module / DIR_PER_MODULE_ENRICHED
+    if not path.is_file():
+        return None, 'absent'
+    try:
+        parsed = json.loads(path.read_text(encoding='utf-8'))
+    except UnicodeDecodeError:
+        return None, 'decode_error'
+    except ValueError:
+        return None, 'invalid_json'
+    except OSError:
+        return None, 'os_error'
+    if not isinstance(parsed, dict):
+        return None, 'not_an_object'
+    return parsed, None
+
+
+def _entry_description(entry: Any) -> Any:
+    return entry.get('description') if isinstance(entry, dict) else None
+
+
+def _compare_module_documents(
+    module: str,
+    baseline_doc: dict[str, Any],
+    current_doc: dict[str, Any],
+    project_dir: str,
+) -> tuple[list[dict[str, str]], list[dict[str, str]], list[dict[str, str]]]:
+    """Compare two readable versions of one module document.
+
+    Returns ``(violations, migrations, unresolved_keys)``. A ``key_packages``
+    entry is kept when the same key survives or when a re-keyed counterpart
+    carries a byte-identical value (the matcher ``discover`` uses); every other
+    lost entry, and every surviving entry whose description was blanked, is a
+    violation. A pure re-key is a migration, never a violation.
+    """
+    violations: list[dict[str, str]] = []
+    if _is_blanked(baseline_doc.get('responsibility'), current_doc.get('responsibility')):
+        violations.append(
+            {'field': FIELD_ENRICHED_RESPONSIBILITY, 'reason': f'module {module}: curated responsibility blanked'}
+        )
+
+    before_raw = baseline_doc.get('key_packages')
+    after_raw = current_doc.get('key_packages')
+    before = before_raw if isinstance(before_raw, dict) else {}
+    after = after_raw if isinstance(after_raw, dict) else {}
+    match = match_rekeys(before, after)
+
+    for key in match.lost:
+        violations.append(
+            {
+                'field': FIELD_ENRICHED_KEY_PACKAGES,
+                'reason': f'module {module}: key_packages entry "{key}" lost with no re-keyed counterpart',
+            }
+        )
+    for key in match.changed:
+        if _is_blanked(_entry_description(before[key]), _entry_description(after[key])):
+            violations.append(
+                {
+                    'field': FIELD_ENRICHED_KEY_PACKAGES,
+                    'reason': f'module {module}: key_packages entry "{key}" description blanked',
+                }
+            )
+
+    migrations = [{'module': module, 'from_key': from_key, 'to_key': to_key} for from_key, to_key in match.rekeys]
+    unresolved = [{'module': module, 'key': key} for key in sorted(after) if not package_key_resolves(key, project_dir)]
+    return violations, migrations, unresolved
+
+
 def cmd_descriptor_regression_check(args: argparse.Namespace) -> dict[str, Any]:
     """CLI handler for the ``descriptor-regression-check`` commit gate.
 
-    Compares the baseline ``_project.json`` (read from the on-disk snapshot
-    under ``--pre``) against the regenerated descriptor at the current
-    project's ``.plan/project-architecture/_project.json`` and classifies the
-    project-identity delta as regressive or benign. This is the defense-in-depth
-    backstop for the ``api_discover`` identity-preservation fix: even if a future
-    source path reintroduces the worktree-basename corruption, the
+    Compares the baseline descriptor tree (materialized from ``--pre`` or
+    ``--pre-ref``, see :func:`_materialize_baseline`) against the regenerated
+    tree at the current project's ``.plan/project-architecture/`` and classifies
+    the delta as regressive or benign. This is the defense-in-depth backstop for
+    the ``api_discover`` preservation contract: even if a future source path
+    reintroduces identity corruption or drops curated enrichment, the
     ``architecture-refresh`` commit gate refuses to commit a regressive delta.
 
-    Regressive predicates (each contributes one ``violations[]`` entry):
+    Regressive predicates (each contributes one ``violations[]`` entry, its
+    ``field`` drawn from :data:`DESCRIPTOR_REGRESSION_EXAMINED_FIELDS`):
 
     * ``name`` — the baseline carried a curated name AND the regenerated name
       differs from it. A regenerated name equal to the project-dir basename (the
       canonical worktree/plan-id corruption) is reported with that signature; any
       other divergence from the curated baseline name is also regressive.
-    * ``description`` — transitioned from non-empty to empty (curated text wiped).
-    * ``description_reasoning`` — transitioned from non-empty to empty.
+    * ``description`` / ``description_reasoning`` — transitioned from non-empty
+      to empty (curated text wiped).
+    * ``enriched.responsibility`` — for a module present in both indexes with a
+      readable document on both sides, a curated responsibility was blanked.
+    * ``enriched.key_packages`` — on the same modules, a baseline entry has
+      neither the same key nor a re-keyed counterpart with a byte-identical
+      value, or a surviving entry's description was blanked.
 
-    A benign refresh (identity preserved, only the ``modules`` index changing as
-    modules are added/removed) returns ``regressive: false`` with no violations.
+    The response always states its coverage: ``examined_fields``,
+    ``modules_examined`` (modules whose documents were compared) and
+    ``modules_unreadable[]{module,reason}`` (modules in both indexes whose
+    document could not be read on one side or both). A byte-identical re-key is
+    reported in ``migrations[]{module,from_key,to_key}``; keys the current map
+    still holds that do not resolve to a path are reported in
+    ``unresolved_keys[]{module,key}``. Neither is a violation.
 
-    Error contract: when the snapshot directory or its ``_project.json`` is
-    missing, returns ``status: error, error: snapshot_not_found, path: <pre>``;
-    when the current project's ``_project.json`` is absent, returns the standard
-    ``require_project_meta_result`` error.
+    Error contract: ``invalid_ref`` for a ``-``-prefixed ref;
+    ``snapshot_not_found`` (carrying ``path`` or ``ref``) when the baseline's
+    ``_project.json`` does not materialize; the standard
+    ``require_project_meta_result`` error when the current project's
+    ``_project.json`` is absent.
     """
-    pre_arg = args.pre
-    snapshot_dir = _resolve_snapshot_dir(pre_arg)
-    baseline_meta_path = snapshot_dir / FILE_PROJECT_META
+    with _materialize_baseline(args) as baseline:
+        if isinstance(baseline, dict):
+            return baseline
+        return _descriptor_regression_check(baseline, args.project_dir)
 
-    if not baseline_meta_path.is_file():
-        return {
-            'status': 'error',
-            'error': 'snapshot_not_found',
-            'path': pre_arg,
-        }
 
+def _descriptor_regression_check(baseline: _Baseline, project_dir: str) -> dict[str, Any]:
+    baseline_meta = baseline.meta
     try:
-        baseline_meta = json.loads(baseline_meta_path.read_text(encoding='utf-8'))
-    except (OSError, ValueError) as e:
-        return {
-            'status': 'error',
-            'error': 'snapshot_not_found',
-            'path': pre_arg,
-            'detail': str(e),
-        }
-
-    try:
-        current_meta = load_project_meta(args.project_dir)
+        current_meta = load_project_meta(project_dir)
     except DataNotFoundError:
-        return require_project_meta_result(args.project_dir)
+        return require_project_meta_result(project_dir)
 
-    project_basename = Path(args.project_dir).resolve().name
+    project_basename = Path(project_dir).resolve().name
 
     violations: list[dict[str, str]] = []
 
-    baseline_name = _descriptor_text(baseline_meta.get('name'))
-    current_name = _descriptor_text(current_meta.get('name'))
+    baseline_name = _descriptor_text(baseline_meta.get(FIELD_NAME))
+    current_name = _descriptor_text(current_meta.get(FIELD_NAME))
     if baseline_name and current_name != baseline_name:
         if current_name == project_basename:
             reason = (
@@ -1590,16 +1816,45 @@ def cmd_descriptor_regression_check(args: argparse.Namespace) -> dict[str, Any]:
             )
         else:
             reason = f'name changed from curated "{baseline_name}" to "{current_name}"'
-        violations.append({'field': 'name', 'reason': reason})
+        violations.append({'field': FIELD_NAME, 'reason': reason})
 
-    if _is_blanked(baseline_meta.get('description'), current_meta.get('description')):
-        violations.append({'field': 'description', 'reason': 'curated description blanked'})
+    if _is_blanked(baseline_meta.get(FIELD_DESCRIPTION), current_meta.get(FIELD_DESCRIPTION)):
+        violations.append({'field': FIELD_DESCRIPTION, 'reason': 'curated description blanked'})
 
-    if _is_blanked(baseline_meta.get('description_reasoning'), current_meta.get('description_reasoning')):
-        violations.append({'field': 'description_reasoning', 'reason': 'curated description_reasoning blanked'})
+    if _is_blanked(baseline_meta.get(FIELD_DESCRIPTION_REASONING), current_meta.get(FIELD_DESCRIPTION_REASONING)):
+        violations.append({'field': FIELD_DESCRIPTION_REASONING, 'reason': 'curated description_reasoning blanked'})
+
+    current_data_dir = Path(project_dir) / DATA_DIR
+    migrations: list[dict[str, str]] = []
+    unresolved_keys: list[dict[str, str]] = []
+    modules_unreadable: list[dict[str, str]] = []
+    modules_examined = 0
+    for module in sorted(_index_module_names(baseline_meta) & _index_module_names(current_meta)):
+        baseline_doc, baseline_reason = _read_module_document(baseline.snapshot_dir, module)
+        current_doc, current_reason = _read_module_document(current_data_dir, module)
+        if baseline_doc is None or current_doc is None:
+            reasons = [
+                f'{side}_{reason}'
+                for side, reason in (('baseline', baseline_reason), ('current', current_reason))
+                if reason is not None
+            ]
+            modules_unreadable.append({'module': module, 'reason': ', '.join(reasons)})
+            continue
+        modules_examined += 1
+        module_violations, module_migrations, module_unresolved = _compare_module_documents(
+            module, baseline_doc, current_doc, project_dir
+        )
+        violations.extend(module_violations)
+        migrations.extend(module_migrations)
+        unresolved_keys.extend(module_unresolved)
 
     return {
         'status': 'success',
         'regressive': bool(violations),
         'violations': violations,
+        'examined_fields': list(DESCRIPTOR_REGRESSION_EXAMINED_FIELDS),
+        'modules_examined': modules_examined,
+        'modules_unreadable': modules_unreadable,
+        'migrations': migrations,
+        'unresolved_keys': unresolved_keys,
     }

@@ -45,7 +45,8 @@ scope: hybrid
 | `graph`, `path`, `neighbors`, `impact` | [client-api](standards/client-api.md) | Dependency graph queries (full graph, shortest path, n-hop neighborhood, reverse-dep closure) |
 | `capabilities` | [client-api](standards/client-api.md) | Envelope capability report — which query capabilities are answerable right now (module edges, path attribution, content search), distinguishing cannot-derive from derived-nothing |
 | `overview` | [client-api](standards/client-api.md) | Token-bounded markdown summary of the project architecture |
-| `diff-modules` | [client-api](standards/client-api.md) | Drift detection vs a pre-snapshot (added/removed/changed/unchanged buckets) |
+| `diff-modules` | [client-api](standards/client-api.md) | Drift detection vs a baseline tree read from `--pre PATH` or `--pre-ref REF` (added/removed/changed/unchanged buckets) |
+| `descriptor-regression-check` | [client-api](standards/client-api.md) | Commit-gate regression predicate vs a baseline tree read from `--pre PATH` or `--pre-ref REF`, publishing the fields and modules it examined |
 
 ---
 
@@ -343,8 +344,10 @@ for the Bucket A/B two-state contract.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture discover \
-  [--force]
+  [--force] [--apply MODE]
 ```
+
+`MODE` is `all`, `plan` or `migration`; `--apply` defaults to `all` (the full regenerated tree is written whatever the verdict); `plan` and `migration` write only that kind of delta class. Every call reports the attribution verdict. See [manage-api.md](standards/manage-api.md) § discover for the class table, the verdicts and the output fields.
 
 ### init
 
@@ -550,7 +553,22 @@ All three entries emit **one** status vocabulary, `derivable` / `not_derivable`,
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture diff-modules \
   --pre PRE_SNAPSHOT_DIR
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture diff-modules \
+  --pre-ref REF
 ```
+
+`--pre` and `--pre-ref` form a required, mutually exclusive group. `--pre-ref` reads the committed `.plan/project-architecture/` tree at `REF` through `git archive` into a temporary directory the verb removes before returning, so a caller needs no extraction or cleanup; a ref starting with `-` is refused as `invalid_ref`. See [client-api.md](standards/client-api.md) § diff-modules for the materialization and its error codes.
+
+### descriptor-regression-check
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture descriptor-regression-check \
+  --pre PRE_SNAPSHOT_DIR
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture descriptor-regression-check \
+  --pre-ref REF
+```
+
+Takes the same `--pre` / `--pre-ref` group as `diff-modules`. Classifies the baseline-to-current delta over project identity and module enrichment as regressive or benign, and states its coverage on every success (`examined_fields`, `modules_examined`, `modules_unreadable`) alongside the byte-identical `key_packages` re-keys (`migrations`) and the keys that still do not resolve (`unresolved_keys`). See [client-api.md](standards/client-api.md) § descriptor-regression-check for the predicates and worked payloads.
 
 ### enrich project
 

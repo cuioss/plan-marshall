@@ -43,6 +43,27 @@ def _classes_of(attribution: str) -> str:
     return ', '.join(name for name, owner in DELTA_CLASSES.items() if owner == attribution)
 
 
+def _add_baseline_args(subparser: argparse.ArgumentParser) -> None:
+    """Add the required, mutually exclusive ``--pre PATH | --pre-ref REF`` baseline group."""
+    group = subparser.add_mutually_exclusive_group(required=True)
+    group.add_argument(
+        '--pre',
+        help=(
+            'Path to an on-disk baseline tree (either a snapshot root containing _project.json '
+            'directly, or a project root whose .plan/project-architecture/ subtree holds it)'
+        ),
+    )
+    group.add_argument(
+        '--pre-ref',
+        dest='pre_ref',
+        help=(
+            'Git ref whose committed .plan/project-architecture/ tree is the baseline (for example '
+            'origin/main or HEAD). Read with git archive into a temporary directory that is removed '
+            'when the command returns; a ref starting with "-" is refused as invalid_ref'
+        ),
+    )
+
+
 @safe_main
 def main() -> int:
     parser = argparse.ArgumentParser(description='Architecture analysis and enrichment operations', allow_abbrev=False)
@@ -324,44 +345,29 @@ def main() -> int:
         allow_abbrev=False,
     )
 
-    # diff-modules - Diff per-module derived.json files against a pre-snapshot
+    # diff-modules - Diff per-module derived.json files against a baseline tree
     diff_modules_parser = subparsers.add_parser(
         'diff-modules',
         help=(
-            'Diff per-module derived.json files against a pre-snapshot directory. '
+            'Diff per-module derived.json files against a baseline tree (--pre PATH or --pre-ref REF). '
             'Returns added/removed/changed/unchanged module name lists.'
         ),
         allow_abbrev=False,
     )
-    diff_modules_parser.add_argument(
-        '--pre',
-        required=True,
-        help=(
-            'Path to the pre-snapshot directory (either a snapshot root '
-            'containing _project.json directly, or a project root whose '
-            '.plan/project-architecture/ subtree holds the snapshot)'
-        ),
-    )
+    _add_baseline_args(diff_modules_parser)
 
-    # descriptor-regression-check - Reject regressive project-identity deltas at the commit gate
+    # descriptor-regression-check - Reject regressive descriptor deltas at the commit gate
     descriptor_regression_parser = subparsers.add_parser(
         'descriptor-regression-check',
         help=(
-            'Classify the project-identity delta between a baseline _project.json '
-            '(--pre) and the regenerated descriptor as regressive or benign. '
-            'Returns regressive (bool) plus a violations list.'
+            'Classify the delta between a baseline descriptor tree (--pre PATH or --pre-ref REF) and '
+            'the regenerated tree as regressive or benign, over project identity and module '
+            'enrichment. Returns regressive (bool), violations, examined_fields, modules_examined, '
+            'modules_unreadable, migrations and unresolved_keys.'
         ),
         allow_abbrev=False,
     )
-    descriptor_regression_parser.add_argument(
-        '--pre',
-        required=True,
-        help=(
-            'Path to the baseline-descriptor directory (either a snapshot root '
-            'containing _project.json directly, or a project root whose '
-            '.plan/project-architecture/ subtree holds the baseline)'
-        ),
-    )
+    _add_baseline_args(descriptor_regression_parser)
 
     # =========================================================================
     # Enrich Commands (Write Enrichment)
