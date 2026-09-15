@@ -3,7 +3,7 @@
 """Thin scaffolding script for the plan-orchestrator skill.
 
 Deliberately lean, per the orchestrator's lean posture: everything that
-requires judgement stays LLM-workflow; this script owns eight deterministic
+requires judgement stays LLM-workflow; this script owns nine deterministic
 operation groups against the main-anchored orchestrator store
 (``.plan/local/orchestrator/{slug}/``, resolved via
 ``file_ops.get_store_dir('orchestrator', slug)``):
@@ -87,10 +87,15 @@ operation groups against the main-anchored orchestrator store
   the write boundary is enforced by construction there (no caller-supplied
   output path exists). ``landing-check`` additionally carries the drain-time
   surface-expansion delta as a first-class field: the landing's realized
-  footprint (``--realized-paths``, from the merged diff) reconciled against
-  its declared surface (``--declared-paths``) with the footprint base anchor
-  reported beside the counts, so an in-flight expansion is detectable at
-  drain time with no manual diff.
+   footprint (``--realized-paths``, from the merged diff) reconciled against
+   its declared surface (``--declared-paths``) with the footprint base anchor
+   reported beside the counts, so an in-flight expansion is detectable at
+   drain time with no manual diff.
+- ``preflight --plan-id ID`` — invoke ``platform_runtime runtime-info`` and
+  write the returned payload as the per-plan ``client.toon`` pre-flight
+  artifact, settling the plan's title state best-effort on the way.
+  Best-effort throughout: a collector failure degrades (drop, report
+  ``degraded: true``) and never blocks plan start.
 
 The ``kind=orchestrator`` ``status.json`` schema is owned by
 ``manage-status/standards/status-lifecycle.md``; ``status.json`` is created
@@ -99,10 +104,14 @@ No implementation-side capability (no build/CI/source verbs) exists here.
 """
 
 import argparse
+import importlib.util
 import json
+import os
 import re
 import shutil
 import subprocess
+import sys
+import time
 from collections import Counter
 from collections.abc import Callable, Collection
 from pathlib import Path
@@ -149,6 +158,7 @@ from file_ops import (
     safe_main,
 )
 from input_validation import validate_plan_id
+from toon_parser import parse_toon, serialize_toon
 
 ORCHESTRATOR_STORE = 'orchestrator'
 
@@ -4097,6 +4107,257 @@ def _add_slug_arg(parser: argparse.ArgumentParser) -> None:
     parser.add_argument('--slug', required=True, help='Epic slug (kebab-case)')
 
 
+def _best_effort_plan_title(plan_id: str) -> None:
+    """Settle the plan's title state at plan start (best-effort, never raises).
+
+    The plan-scoped form of the terminal-title repaint obligation: with no
+    epic slug in scope the hook settles the plan's own title state rather
+    than the epic push. Failures are swallowed — title settling never blocks
+    plan start.
+    """
+    try:
+        subprocess.run(
+            [
+                sys.executable,
+                '.plan/execute-script.py',
+                'plan-marshall:platform-runtime:platform_runtime',
+                'session',
+                'push-title-token',
+                '--plan-id',
+                plan_id,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+    except Exception:
+        pass
+
+
+def _merge_client_toon_text(existing_text: str | None, payload: str) -> str | None:
+    """Merge a runtime-info payload into timestamp-keyed client.toon text.
+
+    Read-merge-write: the existing artifact (when present and parseable) keeps
+    every timestamped entry and the new payload appends under a fresh
+    human-readable datetime stamp; nothing is ever overwritten. A legacy flat
+    artifact migrates under the ``legacy`` entry key so its data survives.
+
+    Returns the merged text, or None when an EXISTING artifact is present but
+    unparseable or wrong-shaped: the caller must then degrade without writing
+    rather than replacing history it could not read. A missing artifact (None)
+    always merges fresh. A payload that itself fails to parse degrades the same
+    way — there is no well-formed entry to append.
+    The canonical ``toon_parser`` import above is deliberately unguarded: a
+    missing parser must fail loudly at import time, never degrade into a
+    hand-rolled serialization that drifts from the canonical form.
+    """
+    try:
+        parsed_payload = parse_toon(payload)
+    except Exception:
+        return None
+    if not isinstance(parsed_payload, dict):
+        return None
+    existing_doc: dict[str, Any] | None = None
+    if existing_text:
+        try:
+            parsed_existing = parse_toon(existing_text)
+        except Exception:
+            return None
+        if not isinstance(parsed_existing, dict):
+            return None
+        existing_doc = parsed_existing
+    try:
+        from runtime_info import append_client_entry
+
+        merged = append_client_entry(existing_doc, parsed_payload)
+    except ValueError:
+        return None
+    except Exception:
+        info = {
+            key: value
+            for key, value in parsed_payload.items()
+            if key not in ('status', 'operation', 'schema_version', 'entries')
+        }
+        entries: dict[str, Any] = {}
+        if isinstance(existing_doc, dict):
+            current = existing_doc.get('entries')
+            if isinstance(current, dict):
+                entries.update({str(key): value for key, value in current.items()})
+            elif 'entries' in existing_doc:
+                return None
+            else:
+                legacy = {
+                    key: value
+                    for key, value in existing_doc.items()
+                    if key not in ('status', 'operation', 'schema_version', 'entries')
+                }
+                if legacy:
+                    entries['legacy'] = legacy
+        # No raw datetime call here: the stamp derives from the shared
+        # ``now_utc_iso`` helper (already imported from file_ops) via string
+        # reshaping, so this module keeps reaching timestamps only through
+        # shared helpers per the display-timezone guard.
+        stamp = now_utc_iso().replace('T', ' ').replace(':', '-')
+        if stamp.endswith('Z'):
+            stamp = stamp[:-1] + ' UTC'
+        else:
+            stamp = f'{stamp} UTC'
+        key = stamp
+        suffix = 2
+        while key in entries:
+            key = f'{stamp} ({suffix})'
+            suffix += 1
+        entries[key] = info
+        merged = {'schema_version': 1, 'entries': entries}
+    try:
+        return serialize_toon(merged)
+    except Exception:
+        return None
+
+
+def _write_client_toon_locked(artifact_path: Path, payload: str) -> None:
+    """Read-merge-write client.toon under an exclusive lock.
+
+    The read, the ``_merge_client_toon_text`` merge, and the write all happen
+    while holding the lock, so concurrent preflights serialise instead of
+    racing: each one merges against the previous writer's output, preserving
+    append-never-overwrite semantics.
+
+    Best-effort but never-blocking: the lock is acquired non-blocking with a
+    bounded retry budget (2s); platforms without ``fcntl`` or an unacquirable
+    lock raise ``OSError`` so the caller degrades without writing rather than
+    racing unlocked or stalling plan start. Availability is probed via
+    ``importlib.util.find_spec`` (no ``try/except ImportError`` fallback shape)
+    so the toon-import canonical-guard does not misread this revert path as a
+    swallowed parser import.
+    """
+    if importlib.util.find_spec('fcntl') is None:
+        raise OSError('no process lock available on this platform')
+    import fcntl
+
+    lock_path = artifact_path.parent / (artifact_path.name + '.lock')
+    fd = os.open(str(lock_path), os.O_CREAT | os.O_RDWR, 0o644)
+    try:
+        deadline = time.monotonic() + 2.0
+        while True:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except OSError:
+                if time.monotonic() >= deadline:
+                    raise OSError('client.toon lock unavailable within 2s') from None
+                time.sleep(0.05)
+        try:
+            try:
+                existing_text = artifact_path.read_text(encoding='utf-8')
+            except FileNotFoundError:
+                existing_text = None
+            merged = _merge_client_toon_text(existing_text, payload)
+            if merged is None:
+                raise OSError('existing client.toon is unparseable; refusing to overwrite')
+            artifact_path.write_text(merged + '\n', encoding='utf-8')
+        finally:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+    finally:
+        os.close(fd)
+
+
+def cmd_preflight(args: argparse.Namespace) -> dict[str, Any]:
+    """Invoke runtime-info and append to the per-plan client.toon artifact.
+
+    Read-merge-write: each run appends a new timestamp-keyed entry and never
+    overwrites prior entries.
+
+    Best-effort by contract: any collector, resolution, or write failure
+    degrades to ``degraded: true`` with ``artifact_written: false`` and still
+    returns ``status: success`` — a pre-flight probe never blocks plan start.
+    """
+    try:
+        validate_plan_id(args.plan_id)
+    except ValueError as exc:
+        return {
+            'status': 'success',
+            'operation': 'preflight',
+            'plan_id': args.plan_id,
+            'degraded': True,
+            'degrade_reason': f'invalid plan id: {exc}',
+            'artifact_written': False,
+        }
+    _best_effort_plan_title(args.plan_id)
+    try:
+        plan_dir = get_store_dir('plans', args.plan_id)
+    except Exception as exc:
+        return {
+            'status': 'success',
+            'operation': 'preflight',
+            'plan_id': args.plan_id,
+            'degraded': True,
+            'degrade_reason': f'plan directory unresolvable: {exc}',
+            'artifact_written': False,
+        }
+    try:
+        completed = subprocess.run(
+            [
+                sys.executable,
+                '.plan/execute-script.py',
+                'plan-marshall:platform-runtime:platform_runtime',
+                'runtime-info',
+            ],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+    except Exception as exc:
+        return {
+            'status': 'success',
+            'operation': 'preflight',
+            'plan_id': args.plan_id,
+            'degraded': True,
+            'degrade_reason': f'runtime-info invocation failed: {exc}',
+            'artifact_written': False,
+        }
+    payload = completed.stdout.strip()
+    if completed.returncode != 0 or not payload or 'status: success' not in payload.splitlines()[0]:
+        return {
+            'status': 'success',
+            'operation': 'preflight',
+            'plan_id': args.plan_id,
+            'degraded': True,
+            'degrade_reason': 'runtime-info returned no success payload',
+            'artifact_written': False,
+        }
+    try:
+        plan_dir.mkdir(parents=True, exist_ok=True)
+        artifact_path = plan_dir / 'client.toon'
+        if artifact_path.exists() and not os.access(artifact_path, os.R_OK):
+            return {
+                'status': 'success',
+                'operation': 'preflight',
+                'plan_id': args.plan_id,
+                'degraded': True,
+                'degrade_reason': f'client.toon exists but is unreadable: {artifact_path}',
+                'artifact_written': False,
+            }
+        _write_client_toon_locked(artifact_path, payload)
+    except OSError as exc:
+        return {
+            'status': 'success',
+            'operation': 'preflight',
+            'plan_id': args.plan_id,
+            'degraded': True,
+            'degrade_reason': f'client.toon unwritable: {exc}',
+            'artifact_written': False,
+        }
+    return {
+        'status': 'success',
+        'operation': 'preflight',
+        'plan_id': args.plan_id,
+        'degraded': False,
+        'artifact_written': True,
+        'artifact': 'client.toon',
+    }
+
+
 def _build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog='orchestrator',
@@ -4105,8 +4366,9 @@ def _build_arg_parser() -> argparse.ArgumentParser:
             'epic tree, read/transition/stamp/append the plan queue, generate '
             'the START-HERE resume summary, archive a closed epic, reconcile '
             'the staged spec corpus and its re-grounding verdicts, report the '
-            'restart-readiness verdict, and drive the plan-writable inbox '
-            'OUTBOX and its drain.'
+            'restart-readiness verdict, drive the plan-writable inbox '
+            'OUTBOX and its drain, and write the per-plan client.toon '
+            'pre-flight artifact.'
         ),
         allow_abbrev=False,
     )
@@ -4216,6 +4478,18 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     )
     _add_slug_arg(compact)
     compact.set_defaults(handler=cmd_compact)
+
+    preflight = subparsers.add_parser(
+        'preflight',
+        help='Invoke runtime-info and write the per-plan client.toon artifact (best-effort, never blocks).',
+        allow_abbrev=False,
+    )
+    preflight.add_argument(
+        '--plan-id',
+        required=True,
+        help='Plan identifier the client.toon artifact is written for.',
+    )
+    preflight.set_defaults(handler=cmd_preflight)
 
     _add_corpus_group(subparsers)
     _add_cleanup_group(subparsers)

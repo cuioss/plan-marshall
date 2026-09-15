@@ -27,6 +27,7 @@ The exit-code contract for every `python3 .plan/execute-script.py` call in this 
 /plan-orchestrator archive slug={slug}      # Relocate a closed epic to archived-orchestrators/
 /plan-orchestrator lessons                  # Lessons-handling mode (dated-slug epic)
 /plan-orchestrator cleanup slug={slug}      # Review and reconcile the spec corpus, then ledger, archive, and restart-readiness
+/plan-orchestrator preflight plan={plan_id} # Write the per-plan client.toon pre-flight artifact (best-effort, never blocks)
 ```
 
 ## Foundational Practices
@@ -72,8 +73,17 @@ Resolve the verb from the invocation (default: `status`), then load and follow t
 | `archive` | `workflow/archive.md` | Relocate a closed epic tree to `archived-orchestrators/` (post-close, mechanical) |
 | `lessons` | `workflow/lessons-handling.md` | Lessons-handling mode: dated-slug epic, local dedup/aggregate, cross-repo integrate-then-remove |
 | `cleanup` | `workflow/cleanup.md` | Review and reconcile the spec corpus, then call the ledger-compaction stage, the archive step, and the restart-readiness verdict |
+| `preflight` | `workflow/preflight.md` | Write the per-plan `client.toon` pre-flight artifact (best-effort, never blocks) |
 
 `status` and `next` share `workflow/orchestrate.md` — the two queue-facing verbs; the doc branches on the invoked verb.
+
+### Pre-flight hook (single entry point for runtime collection)
+
+Starting a plan runs the deterministic `orchestrator.py preflight --plan-id {id}`
+hook first: it invokes `platform_runtime runtime-info` and writes the returned
+payload as the per-plan `client.toon` pre-flight artifact. Best-effort —
+a collector failure degrades and never blocks plan start. See
+`workflow/preflight.md` for when the hook fires and where the artifact lands.
 
 ## Ledger Templates
 
@@ -90,7 +100,7 @@ Authoring templates for the ledger documents live in `templates/` and mirror the
 
 | Script | Notation | Purpose |
 |--------|----------|---------|
-| orchestrator | `plan-marshall:plan-orchestrator:orchestrator` | Thin scaffolding: `scaffold` (create the epic tree), `queue` (read the plan queue, transition a plan's status, set one plan row's result field, or append one new plan row), `resume-summary` (generate the two derivable `epic.md` blocks — START-HERE and the Ordered Queue table — from status.json, with the START-HERE self-validation detectors), `archive` (relocate a closed epic tree to `archived-orchestrators/`), `compact` (regenerate every derivable `epic.md` surface in place, verify the invariants, and report — the ledger-compaction stage `cleanup` Phase B calls; refuses a closed epic), `corpus` (enumerate the epic population across both store homes, reconcile the staged spec corpus against the queue, cross-check it against sibling epics and live plans, publish every spec's declared Expected Surface with its derivation status and population — the read the disjointness gate decides on — and read or stamp the re-grounding verdict field), `cleanup` (report the restart-readiness verdict), `inbox` (append/amend/supersede/validate a plan-written OUTBOX message, close a sender's stream, list the queued messages with their lifecycle, archive a consumed one under its per-sender subdirectory, migrate a flat archive into that layout, or detect orchestration context from a plan's `source_id`) |
+| orchestrator | `plan-marshall:plan-orchestrator:orchestrator` | Thin scaffolding: `scaffold` (create the epic tree), `queue` (read the plan queue, transition a plan's status, set one plan row's result field, or append one new plan row), `resume-summary` (generate the two derivable `epic.md` blocks — START-HERE and the Ordered Queue table — from status.json, with the START-HERE self-validation detectors), `archive` (relocate a closed epic tree to `archived-orchestrators/`), `compact` (regenerate every derivable `epic.md` surface in place, verify the invariants, and report — the ledger-compaction stage `cleanup` Phase B calls; refuses a closed epic), `preflight` (invoke `platform_runtime runtime-info` and write the per-plan `client.toon` pre-flight artifact, best-effort), `corpus` (enumerate the epic population across both store homes, reconcile the staged spec corpus against the queue, cross-check it against sibling epics and live plans, publish every spec's declared Expected Surface with its derivation status and population — the read the disjointness gate decides on — and read or stamp the re-grounding verdict field), `cleanup` (report the restart-readiness verdict), `inbox` (append/amend/supersede/validate a plan-written OUTBOX message, close a sender's stream, list the queued messages with their lifecycle, archive a consumed one under its per-sender subdirectory, migrate a flat archive into that layout, or detect orchestration context from a plan's `source_id`) |
 
 ## Canonical invocations
 
@@ -168,10 +178,18 @@ Relocates a *closed* epic tree to `archived-orchestrators/{slug}/` — a post-cl
 python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator compact \
   --slug SLUG
 ```
-
 The ledger-compaction stage [`workflow/cleanup.md`](workflow/cleanup.md) Phase B runs. Regenerates every DERIVABLE surface of `epic.md` **in place** — the START-HERE resume summary and the Ordered Queue table — from `status.json` and the staged specs, replacing only the content between each `BEGIN/END GENERATED` marker pair and leaving every byte OUTSIDE the markers untouched. That boundary is the safety property: a retraction, a refutation, a do-not-re-derive note, and the operator-confirmed `running` note all sit in narrative and survive a pass verbatim, because the stage never reads them as regenerable. The narrative-versus-settled RELOCATION judgement is NOT here — it is the orchestrator's, and this stage only VERIFIES that whatever was relocated is reachable from its pointer.
 
 The report names every mutation and every abstention: `regenerated[]` (per block: `outcome` ∈ `regenerated` / `unchanged` / `markers_absent`, its before/after line counts, and `replaced_body` — the pre-write between-marker text, non-empty only for `regenerated`, so a first pass over an already-annotated ledger names the content it overwrote rather than reporting only a line-count delta), `invariants[]` (`queue_spec_bidirectional`, `no_terminal_in_live_queue`, and `relocated_pointer_reachable`, each with a `verdict` ∈ `ok` / `violated` / `indeterminate`, its evidence, and its population), and `abstained[]` (every `##` section not rewritten, each with a `treatment` ∈ `preserved_verbatim` / `markers_absent_not_regenerated`). The two treatments mean opposite things and are counted apart: `preserved_verbatim` is a **choice** — the section carries no derivable surface, so leaving it alone is correct — and `abstained_count` counts those; `markers_absent_not_regenerated` is a **blind spot** — the section owns a derivable surface whose marker pair is absent, so the stage could not reach it — and `unreachable_count` counts those. Reporting a blind spot as an abstention would claim a choice the stage never made. **Idempotent** — a second run finds every block `unchanged` and writes nothing (`epic_changed: false`). Resolves the store strictly (never the archived read-fallback) and **refuses a closed epic** (`refused_closed`): compaction is a live-epic operation only, and the frozen record is never mutated. Also refuses an unsafe slug (`invalid_slug`), a missing store tree (`not_found`), and a missing `epic.md` or `status.json` (`file_not_found`).
+
+### preflight
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator preflight \
+  --plan-id PLAN_ID
+```
+
+Invokes `platform_runtime runtime-info` and writes the returned payload as the per-plan `client.toon` pre-flight artifact. Best-effort: a collector failure degrades to `degraded: true` with `artifact_written: false` and still returns `status: success` — the hook never blocks plan start. See `workflow/preflight.md` for when the hook fires and where the artifact lands.
 
 ### corpus epics
 

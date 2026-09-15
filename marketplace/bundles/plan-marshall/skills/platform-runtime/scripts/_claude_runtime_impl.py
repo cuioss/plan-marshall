@@ -31,6 +31,7 @@ from typing import Any
 
 import _chat_signal_reducer
 import claude_runtime
+import runtime_info
 import session_binding
 from manage_terminal_title import _compose_body, compose
 from runtime_base import (
@@ -2265,3 +2266,41 @@ class ClaudeRuntime(Runtime):
             )
 
         return toon_success('health-check', fields)
+
+    #: Model variables this target may resolve: Claude-specific sources
+    #: first by construction (the shared collector reads first-match-wins),
+    #: generic fallbacks last, and no OpenCode-specific source at all — kept
+    #: here, outside the shared collector, whose contract forbids per-target
+    #: logic.
+    _CLAUDE_MODEL_ENV = frozenset(
+        {
+            'CLAUDE_CODE_MODEL',
+            'CLAUDE_MODEL',
+            'ANTHROPIC_MODEL',
+            'CLAUDE_MODEL_TYPE',
+            'CLAUDE_MODEL_VERSION',
+            'MODEL_NAME',
+            'MODEL_TYPE',
+            'MODEL_VERSION',
+            'PLAN_MARSHALL_EFFORT',
+            'MARSHALL_EFFORT',
+            'EFFORT_LEVEL',
+            'PLAN_MARSHALL_BUILD_VERSION',
+            'BUILD_VERSION',
+        }
+    )
+
+    def runtime_info(self) -> str:
+        """Collect runtime information for the claude target.
+
+        Reads harness, model, effort, and build-version from
+        script-accessible sources via the shared collector; unreadable
+        attributes are dropped rather than estimated. Model resolution is
+        target-scoped here (never in the shared collector): only
+        Claude-specific and generic variables are visible, so OpenCode
+        metadata leaking into a shared environment can never be attributed
+        to a Claude entry.
+        """
+        env = {key: value for key, value in os.environ.items() if key in self._CLAUDE_MODEL_ENV}
+        info = runtime_info.collect_runtime_info('claude', env=env)
+        return toon_success(runtime_info.RUNTIME_INFO_OPERATION, info)

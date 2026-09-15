@@ -219,6 +219,9 @@ class _ConcreteRuntime(Runtime):
     def health_check(self, checks: str) -> str:
         return toon_success('health-check')
 
+    def runtime_info(self) -> str:
+        return toon_success('runtime-info')
+
     def permission_settings_path(self, scope: str, write: bool = False, project_dir: str | None = None) -> str:
         return '/tmp/settings.json'
 
@@ -247,48 +250,19 @@ class _ConcreteRuntime(Runtime):
         return []
 
 
-ALL_ABSTRACT_METHODS = [
-    'project_initial_setup',
-    'project_install_hook',
-    'layout_skill_roots',
-    'layout_bundle_cache_root',
-    'harness_bash_timeout_ceiling',
-    'session_capture',
-    'session_render_title',
-    'session_push_title_token',
-    'session_bind',
-    'session_resolve_plan',
-    'session_doctor',
-    'session_teardown',
-    'session_reload_directive',
-    'permission_configure',
-    'permission_analyze',
-    'permission_fix',
-    'permission_ensure_wildcards',
-    'permission_ensure_steps',
-    'permission_web_analyze',
-    'permission_web_apply',
-    'metrics_capture',
-    'metrics_normalized_tokens',
-    'chat_extract_signal',
-    'subagent_dispatch',
-    'wait_for',
-    'health_check',
-    'permission_settings_path',
-    'permission_load_settings',
-    'permission_save_settings',
-    'permission_ensure_defaults',
-    'permission_check_skill_coverage',
-    'permission_load_marshal_config',
-    'permission_extract_project_steps',
-]
+#: Parametrization population for the missing-method test, derived from the
+#: authoritative set so a newly added abstract method is covered without a
+#: second edit. ``test_runtime_has_34_abstract_methods`` stays the non-vacuity
+#: guard that pins the count.
+ALL_ABSTRACT_METHODS = sorted(getattr(Runtime, '__abstractmethods__', frozenset()))
+assert ALL_ABSTRACT_METHODS, 'the derived abstract-method population is empty'
 
 
-def test_runtime_has_33_abstract_methods():
-    """Runtime ABC exposes exactly 33 abstract methods."""
+def test_runtime_has_34_abstract_methods():
+    """Runtime ABC exposes exactly 34 abstract methods."""
     abstract_methods = getattr(Runtime, '__abstractmethods__', frozenset())
-    assert len(abstract_methods) == 33, (
-        f'Expected 33 abstract methods, found {len(abstract_methods)}: {sorted(abstract_methods)}'
+    assert len(abstract_methods) == 34, (
+        f'Expected 34 abstract methods, found {len(abstract_methods)}: {sorted(abstract_methods)}'
     )
 
 
@@ -358,9 +332,10 @@ def test_concrete_returns_valid_toon_for_each_method():
         runtime.subagent_dispatch('execution-context', None, None),
         runtime.wait_for('build-job', 'job-1', 60),
         runtime.health_check('all'),
+        runtime.runtime_info(),
     ]
 
-    assert len(outputs) == 26, 'Expected output for each of the 26 TOON-returning operations'
+    assert len(outputs) == 27, 'Expected output for each of the 27 TOON-returning operations'
     for output in outputs:
         result = parse_toon(output)
         assert result.get('status') == 'success', (
@@ -388,11 +363,11 @@ def test_every_toon_operation_documents_a_decline_path():
 
     The non-vacuity guards below prove the population did not collapse: the
     ABC still exposes the full method set, the operation subset is exactly the
-    dispatchable 26, and the helper subset is exactly the 7 that never return
+    dispatchable 27, and the helper subset is exactly the 7 that never return
     TOON outcomes.
     """
     abstract = set(getattr(Runtime, '__abstractmethods__', frozenset()))
-    assert len(abstract) == 33, f'Runtime method population collapsed: {len(abstract)}'
+    assert len(abstract) == 34, f'Runtime method population collapsed: {len(abstract)}'
 
     def _doc(name: str) -> str:
         return getattr(Runtime, name).__doc__ or ''
@@ -404,9 +379,9 @@ def test_every_toon_operation_documents_a_decline_path():
         is_operation = 'Serialized TOON' in doc or 'no-op TOON instead' in doc or 'ordinary no-op TOON' in doc
         (toon_operations if is_operation else helpers).append(name)
 
-    # Non-vacuity: 26 dispatchable operations and 7 non-TOON helper methods.
-    assert len(toon_operations) == 26, (
-        f'Expected 26 TOON-returning operations, found {len(toon_operations)}: {toon_operations}'
+    # Non-vacuity: 27 dispatchable operations and 7 non-TOON helper methods.
+    assert len(toon_operations) == 27, (
+        f'Expected 27 TOON-returning operations, found {len(toon_operations)}: {toon_operations}'
     )
     assert len(helpers) == 7, f'Expected 7 non-TOON helpers, found {len(helpers)}: {helpers}'
 
