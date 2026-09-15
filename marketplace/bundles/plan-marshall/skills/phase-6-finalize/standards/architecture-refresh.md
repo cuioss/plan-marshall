@@ -583,7 +583,7 @@ else:
     migration_deferred := disc.attribution in {"migration_only", "mixed"}
     unattributable     := disc.attribution in {"undecidable", "no_baseline"}
     if unattributable:
-        log WARNING: "Unattributable descriptor delta — unclassified fields"
+        log WARNING: "Unattributable descriptor delta — unclassified fields: {unclassified_fields}"
     if disc.applied == "plan":
         diff := architecture --project-dir {worktree_path} diff-modules --pre-ref origin/main
         affected := diff.added ∪ diff.removed
