@@ -104,7 +104,9 @@ No implementation-side capability (no build/CI/source verbs) exists here.
 """
 
 import argparse
+import importlib.util
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -155,6 +157,7 @@ from file_ops import (
     safe_main,
 )
 from input_validation import validate_plan_id
+from toon_parser import parse_toon, serialize_toon
 
 ORCHESTRATOR_STORE = 'orchestrator'
 
@@ -4140,11 +4143,10 @@ def _merge_client_toon_text(existing_text: str | None, payload: str) -> str:
 
     Best-effort: any parse or merge failure returns the payload unchanged, so
     the caller still writes something rather than blocking plan start.
+    The canonical ``toon_parser`` import above is deliberately unguarded: a
+    missing parser must fail loudly at import time, never degrade into a
+    hand-rolled serialization that drifts from the canonical form.
     """
-    try:
-        from toon_parser import parse_toon, serialize_toon
-    except Exception:
-        return payload
     try:
         parsed_payload = parse_toon(payload)
     except Exception:
@@ -4202,6 +4204,44 @@ def _merge_client_toon_text(existing_text: str | None, payload: str) -> str:
         return serialize_toon(merged)
     except Exception:
         return payload
+
+
+def _write_client_toon_locked(artifact_path: Path, payload: str) -> None:
+    """Read-merge-write client.toon under an exclusive lock.
+
+    The read, the ``_merge_client_toon_text`` merge, and the write all happen
+    while holding the lock, so concurrent preflights serialise instead of
+    racing: each one merges against the previous writer's output, preserving
+    append-never-overwrite semantics.
+
+    Best-effort: platforms without ``fcntl`` fall back to an unlocked
+    read-merge-write — the preflight contract is best-effort and never blocks
+    plan start on locking. Availability is probed via ``importlib.util.find_spec``
+    (no ``try/except ImportError`` fallback shape) so the toon-import
+    canonical-guard does not misread this revert path as a swallowed parser
+    import.
+    """
+    if importlib.util.find_spec('fcntl') is None:
+        try:
+            existing_text = artifact_path.read_text(encoding='utf-8')
+        except FileNotFoundError:
+            existing_text = None
+        artifact_path.write_text(_merge_client_toon_text(existing_text, payload) + '\n', encoding='utf-8')
+        return
+    import fcntl
+    fd = os.open(str(artifact_path.parent / (artifact_path.name + '.lock')), os.O_CREAT | os.O_RDWR, 0o644)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        try:
+            existing_text = artifact_path.read_text(encoding='utf-8')
+        except FileNotFoundError:
+            existing_text = None
+        artifact_path.write_text(_merge_client_toon_text(existing_text, payload) + '\n', encoding='utf-8')
+    finally:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+        finally:
+            os.close(fd)
 
 
 def cmd_preflight(args: argparse.Namespace) -> dict[str, Any]:
@@ -4271,12 +4311,16 @@ def cmd_preflight(args: argparse.Namespace) -> dict[str, Any]:
     try:
         plan_dir.mkdir(parents=True, exist_ok=True)
         artifact_path = plan_dir / 'client.toon'
-        try:
-            existing_text = artifact_path.read_text(encoding='utf-8')
-        except OSError:
-            existing_text = None
-        merged_text = _merge_client_toon_text(existing_text, payload)
-        artifact_path.write_text(merged_text + '\n', encoding='utf-8')
+        if artifact_path.exists() and not os.access(artifact_path, os.R_OK):
+            return {
+                'status': 'success',
+                'operation': 'preflight',
+                'plan_id': args.plan_id,
+                'degraded': True,
+                'degrade_reason': f'client.toon exists but is unreadable: {artifact_path}',
+                'artifact_written': False,
+            }
+        _write_client_toon_locked(artifact_path, payload)
     except OSError as exc:
         return {
             'status': 'success',

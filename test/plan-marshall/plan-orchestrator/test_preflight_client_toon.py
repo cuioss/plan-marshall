@@ -31,6 +31,10 @@ def _ns(plan_id: str) -> argparse.Namespace:
 def test_preflight_writes_client_toon(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """The hook writes the runtime-info payload as client.toon."""
     monkeypatch.setattr(_orch, 'get_store_dir', lambda store, plan_id: tmp_path / plan_id)
+    _runtime_info_fake(
+        ['status: success\noperation: runtime-info\nharness: claude\n'],
+        monkeypatch,
+    )
     result: dict[str, Any] = cmd_preflight(_ns('my-plan'))
     assert result['status'] == 'success'
     assert result['artifact_written'] is True
