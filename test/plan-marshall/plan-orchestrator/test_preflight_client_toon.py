@@ -37,9 +37,7 @@ def test_preflight_writes_client_toon(tmp_path: Path, monkeypatch: pytest.Monkey
     assert 'harness:' in artifact.read_text(encoding='utf-8')
 
 
-def test_preflight_failure_degrades_without_blocking(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_preflight_failure_degrades_without_blocking(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A collector failure degrades to success with no artifact."""
     monkeypatch.setattr(_orch, 'get_store_dir', lambda store, plan_id: tmp_path / plan_id)
 
