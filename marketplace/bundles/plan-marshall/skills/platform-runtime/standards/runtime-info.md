@@ -27,7 +27,7 @@ Takes no arguments. Routing is config-driven via `runtime.target` in
 
 ## Client.toon Schema
 
-Four attributes per run entry. Unreadable attributes are absent rather than estimated.
+One required attribute (`harness`) and five optional attributes per run entry. Unreadable attributes are absent rather than estimated.
 
 | Key | Meaning | Always present |
 |-----|---------|----------------|

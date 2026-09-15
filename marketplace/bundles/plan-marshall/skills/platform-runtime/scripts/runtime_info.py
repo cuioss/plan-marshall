@@ -6,8 +6,9 @@ Pure runtime-information collector owning the client.toon schema.
 Client.toon entries are keyed by human-readable UTC datetime stamp; multiple
 runs append a new timestamped entry instead of overwriting.
 
-Collects the four client.toon attributes — harness/client, model
-name/type/version, effort level, and build-version — on a best-effort basis.
+Collects the client.toon attributes — one required (`harness`) plus five
+optional (model name/type/version, effort level, and build-version) — on a
+best-effort basis.
 Attributes that scripts cannot read are dropped rather than estimated; where
 script access is hard or strange an LLM fallback may fill the gap upstream —
 this module never estimates.
@@ -295,6 +296,9 @@ def append_client_entry(
     existing timestamp key is suffixed, never replaced. A legacy flat document
     (attributes beside ``schema_version``, as written before timestamp keys)
     migrates under the ``legacy`` entry key so its data survives the upgrade.
+    A document whose ``entries`` key is present but not a mapping is REJECTED
+    with ``ValueError``: migrating it would silently discard the wrong-shaped
+    value, violating append-never-overwrite.
 
     Args:
         existing: Parsed client.toon document, or None for a fresh document.
@@ -306,18 +310,24 @@ def append_client_entry(
 
     Returns:
         New document carrying ``schema_version`` plus the ``entries`` map.
+
+    Raises:
+        ValueError: When *existing* carries an ``entries`` key that is not a
+            mapping — the caller must degrade without writing.
     """
     base = timestamp_key if timestamp_key else format_timestamp_key()
     entries: dict[str, Any] = {}
     if isinstance(existing, Mapping):
         current_entries = existing.get(CLIENT_TOON_ENTRIES_KEY)
-        if isinstance(current_entries, Mapping):
-            for key, value in current_entries.items():
-                entries[str(key)] = dict(value) if isinstance(value, Mapping) else value
-        else:
+        if current_entries is None and CLIENT_TOON_ENTRIES_KEY not in existing:
             legacy = _strip_to_entry(existing)
             if legacy:
                 entries[_unique_entry_key(entries, LEGACY_ENTRY_KEY)] = legacy
+        elif isinstance(current_entries, Mapping):
+            for key, value in current_entries.items():
+                entries[str(key)] = dict(value) if isinstance(value, Mapping) else value
+        else:
+            raise ValueError('existing client.toon has a non-mapping entries value; refusing to overwrite')
     key = _unique_entry_key(entries, base)
     entries[key] = _strip_to_entry(info)
     return {'schema_version': CLIENT_TOON_SCHEMA_VERSION, CLIENT_TOON_ENTRIES_KEY: entries}

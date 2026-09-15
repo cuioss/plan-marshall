@@ -132,3 +132,51 @@ def test_preflight_verb_is_registered() -> None:
     parser = _orch._build_arg_parser()
     ns = parser.parse_args(['preflight', '--plan-id', 'my-plan'])
     assert ns.handler is cmd_preflight
+
+
+def test_preflight_degrades_without_overwriting_unparseable_artifact(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An existing-but-unparseable artifact degrades instead of being replaced."""
+    plan_dir = tmp_path / 'my-plan'
+    plan_dir.mkdir(parents=True)
+    before = 'schema_version: 1\nentries: [not, a, mapping]\n'
+    (plan_dir / 'client.toon').write_text(before, encoding='utf-8')
+    monkeypatch.setattr(_orch, 'get_store_dir', lambda store, plan_id: tmp_path / plan_id)
+    real_parse = _orch.parse_toon
+
+    def _fail_on_existing(text: str) -> Any:
+        if 'not, a, mapping' in text:
+            raise ValueError('unparseable artifact')
+        return real_parse(text)
+
+    monkeypatch.setattr(_orch, 'parse_toon', _fail_on_existing)
+    _runtime_info_fake(
+        ['status: success\noperation: runtime-info\nharness: claude\n'],
+        monkeypatch,
+    )
+    result: dict[str, Any] = cmd_preflight(_ns('my-plan'))
+    assert result['status'] == 'success'
+    assert result['degraded'] is True
+    assert result['artifact_written'] is False
+    assert (plan_dir / 'client.toon').read_text(encoding='utf-8') == before
+
+
+def test_preflight_degrades_without_overwriting_wrong_shaped_entries(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An entries-present-but-not-mapping artifact is preserved, not migrated."""
+    plan_dir = tmp_path / 'my-plan'
+    plan_dir.mkdir(parents=True)
+    before = 'schema_version: 1\nentries: [not, a, mapping]\n'
+    (plan_dir / 'client.toon').write_text(before, encoding='utf-8')
+    monkeypatch.setattr(_orch, 'get_store_dir', lambda store, plan_id: tmp_path / plan_id)
+    _runtime_info_fake(
+        ['status: success\noperation: runtime-info\nharness: claude\n'],
+        monkeypatch,
+    )
+    result: dict[str, Any] = cmd_preflight(_ns('my-plan'))
+    assert result['status'] == 'success'
+    assert result['degraded'] is True
+    assert result['artifact_written'] is False
+    assert (plan_dir / 'client.toon').read_text(encoding='utf-8') == before

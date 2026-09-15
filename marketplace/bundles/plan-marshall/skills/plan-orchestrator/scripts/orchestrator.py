@@ -111,6 +111,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 from collections import Counter
 from collections.abc import Callable, Collection
 from pathlib import Path
@@ -4133,7 +4134,7 @@ def _best_effort_plan_title(plan_id: str) -> None:
         pass
 
 
-def _merge_client_toon_text(existing_text: str | None, payload: str) -> str:
+def _merge_client_toon_text(existing_text: str | None, payload: str) -> str | None:
     """Merge a runtime-info payload into timestamp-keyed client.toon text.
 
     Read-merge-write: the existing artifact (when present and parseable) keeps
@@ -4141,8 +4142,11 @@ def _merge_client_toon_text(existing_text: str | None, payload: str) -> str:
     human-readable datetime stamp; nothing is ever overwritten. A legacy flat
     artifact migrates under the ``legacy`` entry key so its data survives.
 
-    Best-effort: any parse or merge failure returns the payload unchanged, so
-    the caller still writes something rather than blocking plan start.
+    Returns the merged text, or None when an EXISTING artifact is present but
+    unparseable or wrong-shaped: the caller must then degrade without writing
+    rather than replacing history it could not read. A missing artifact (None)
+    always merges fresh. A payload that itself fails to parse degrades the same
+    way — there is no well-formed entry to append.
     The canonical ``toon_parser`` import above is deliberately unguarded: a
     missing parser must fail loudly at import time, never degrade into a
     hand-rolled serialization that drifts from the canonical form.
@@ -4150,21 +4154,24 @@ def _merge_client_toon_text(existing_text: str | None, payload: str) -> str:
     try:
         parsed_payload = parse_toon(payload)
     except Exception:
-        return payload
+        return None
     if not isinstance(parsed_payload, dict):
-        return payload
+        return None
     existing_doc: dict[str, Any] | None = None
     if existing_text:
         try:
             parsed_existing = parse_toon(existing_text)
         except Exception:
-            parsed_existing = None
-        if isinstance(parsed_existing, dict):
-            existing_doc = parsed_existing
+            return None
+        if not isinstance(parsed_existing, dict):
+            return None
+        existing_doc = parsed_existing
     try:
         from runtime_info import append_client_entry
 
         merged = append_client_entry(existing_doc, parsed_payload)
+    except ValueError:
+        return None
     except Exception:
         info = {
             key: value
@@ -4176,6 +4183,8 @@ def _merge_client_toon_text(existing_text: str | None, payload: str) -> str:
             current = existing_doc.get('entries')
             if isinstance(current, dict):
                 entries.update({str(key): value for key, value in current.items()})
+            elif 'entries' in existing_doc:
+                return None
             else:
                 legacy = {
                     key: value
@@ -4203,7 +4212,7 @@ def _merge_client_toon_text(existing_text: str | None, payload: str) -> str:
     try:
         return serialize_toon(merged)
     except Exception:
-        return payload
+        return None
 
 
 def _write_client_toon_locked(artifact_path: Path, payload: str) -> None:
@@ -4214,34 +4223,43 @@ def _write_client_toon_locked(artifact_path: Path, payload: str) -> None:
     racing: each one merges against the previous writer's output, preserving
     append-never-overwrite semantics.
 
-    Best-effort: platforms without ``fcntl`` fall back to an unlocked
-    read-merge-write — the preflight contract is best-effort and never blocks
-    plan start on locking. Availability is probed via ``importlib.util.find_spec``
-    (no ``try/except ImportError`` fallback shape) so the toon-import
-    canonical-guard does not misread this revert path as a swallowed parser
-    import.
+    Best-effort but never-blocking: the lock is acquired non-blocking with a
+    bounded retry budget (2s); platforms without ``fcntl`` or an unacquirable
+    lock raise ``OSError`` so the caller degrades without writing rather than
+    racing unlocked or stalling plan start. Availability is probed via
+    ``importlib.util.find_spec`` (no ``try/except ImportError`` fallback shape)
+    so the toon-import canonical-guard does not misread this revert path as a
+    swallowed parser import.
     """
     if importlib.util.find_spec('fcntl') is None:
-        try:
-            existing_text = artifact_path.read_text(encoding='utf-8')
-        except FileNotFoundError:
-            existing_text = None
-        artifact_path.write_text(_merge_client_toon_text(existing_text, payload) + '\n', encoding='utf-8')
-        return
+        raise OSError('no process lock available on this platform')
     import fcntl
-    fd = os.open(str(artifact_path.parent / (artifact_path.name + '.lock')), os.O_CREAT | os.O_RDWR, 0o644)
+
+    lock_path = artifact_path.parent / (artifact_path.name + '.lock')
+    fd = os.open(str(lock_path), os.O_CREAT | os.O_RDWR, 0o644)
     try:
-        fcntl.flock(fd, fcntl.LOCK_EX)
+        deadline = time.monotonic() + 2.0
+        while True:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except OSError:
+                if time.monotonic() >= deadline:
+                    raise OSError('client.toon lock unavailable within 2s') from None
+                time.sleep(0.05)
         try:
-            existing_text = artifact_path.read_text(encoding='utf-8')
-        except FileNotFoundError:
-            existing_text = None
-        artifact_path.write_text(_merge_client_toon_text(existing_text, payload) + '\n', encoding='utf-8')
-    finally:
-        try:
-            fcntl.flock(fd, fcntl.LOCK_UN)
+            try:
+                existing_text = artifact_path.read_text(encoding='utf-8')
+            except FileNotFoundError:
+                existing_text = None
+            merged = _merge_client_toon_text(existing_text, payload)
+            if merged is None:
+                raise OSError('existing client.toon is unparseable; refusing to overwrite')
+            artifact_path.write_text(merged + '\n', encoding='utf-8')
         finally:
-            os.close(fd)
+            fcntl.flock(fd, fcntl.LOCK_UN)
+    finally:
+        os.close(fd)
 
 
 def cmd_preflight(args: argparse.Namespace) -> dict[str, Any]:

@@ -57,5 +57,6 @@ artifact: client.toon
 
 `display_detail` is composed by the calling workflow and is ≤80 chars, ASCII,
 no trailing period. `artifact` is present only when `artifact_written` is
-true. `degraded` names whether the collector path failed; the plan starts
-either way.
+true. `degraded` names whether any preflight-path step failed — invalid plan id,
+plan-directory resolution, unreadable artifact, write failure, or collector
+failure; the plan starts either way.

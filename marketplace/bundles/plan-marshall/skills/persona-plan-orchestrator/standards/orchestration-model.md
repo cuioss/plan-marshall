@@ -67,9 +67,9 @@ Orchestration is resumable by construction: any session can stop at any point an
 
 ## Terminal-Title Repaint Contract
 
-**Every verb repaints the terminal title at verb entry, because any verb may open a session.** The obligation is not restricted to `init` and `resume`: an operator routinely opens a session with `status`, `next`, `analyze`, `decompose`, `cleanup`, or `lessons`, and each of those must surface the epic in the terminal title exactly as the session-opening verbs do. All eleven verbs — `init`, `decompose`, `status`, `next`, `analyze`, `resume`, `close`, `archive`, `lessons`, `cleanup`, `preflight` — carry the obligation. `preflight` carries it in plan-scoped form: with no epic slug in scope it settles the plan's own title state (`session push-title-token --plan-id`) rather than the epic push below.
+**Every verb settles the terminal-title state at verb entry, because any verb may open a session.** Settling is not repainting: the seam persists the state the next render reads, and delivery rides the subsequent hook-driven render event. The obligation is not restricted to `init` and `resume`: an operator routinely opens a session with `status`, `next`, `analyze`, `decompose`, `cleanup`, or `lessons`, and each of those must surface the epic in the terminal title exactly as the session-opening verbs do. All eleven verbs — `init`, `decompose`, `status`, `next`, `analyze`, `resume`, `close`, `archive`, `lessons`, `cleanup`, `preflight` — carry the obligation. `preflight` carries it in plan-scoped form: with no epic slug in scope it settles the plan's own title state (`session push-title-token --plan-id`) rather than the epic push below.
 
-- **Canonical invocation.** The repaint is the single platform-runtime seam, invoked with the orchestrator store and the epic slug:
+- **Canonical invocation.** The settlement is the single platform-runtime seam, invoked with the orchestrator store and the epic slug:
 
   ```bash
   python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime session push-title-token \

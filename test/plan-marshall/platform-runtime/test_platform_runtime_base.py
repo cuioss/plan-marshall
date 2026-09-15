@@ -250,42 +250,11 @@ class _ConcreteRuntime(Runtime):
         return []
 
 
-ALL_ABSTRACT_METHODS = [
-    'project_initial_setup',
-    'project_install_hook',
-    'layout_skill_roots',
-    'layout_bundle_cache_root',
-    'harness_bash_timeout_ceiling',
-    'session_capture',
-    'session_render_title',
-    'session_push_title_token',
-    'session_bind',
-    'session_resolve_plan',
-    'session_doctor',
-    'session_teardown',
-    'session_reload_directive',
-    'permission_configure',
-    'permission_analyze',
-    'permission_fix',
-    'permission_ensure_wildcards',
-    'permission_ensure_steps',
-    'permission_web_analyze',
-    'permission_web_apply',
-    'metrics_capture',
-    'metrics_normalized_tokens',
-    'chat_extract_signal',
-    'subagent_dispatch',
-    'wait_for',
-    'health_check',
-    'runtime_info',
-    'permission_settings_path',
-    'permission_load_settings',
-    'permission_save_settings',
-    'permission_ensure_defaults',
-    'permission_check_skill_coverage',
-    'permission_load_marshal_config',
-    'permission_extract_project_steps',
-]
+#: Parametrization population for the missing-method test, derived from the
+#: authoritative set so a newly added abstract method is covered without a
+#: second edit. ``test_runtime_has_34_abstract_methods`` stays the non-vacuity
+#: guard that pins the count.
+ALL_ABSTRACT_METHODS = sorted(getattr(Runtime, '__abstractmethods__', frozenset()))
 
 
 def test_runtime_has_34_abstract_methods():

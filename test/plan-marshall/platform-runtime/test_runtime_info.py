@@ -157,6 +157,34 @@ def test_append_strips_envelope_keys_from_entries() -> None:
     assert entry == {'harness': 'claude'}
 
 
+def test_append_rejects_non_mapping_entries_value() -> None:
+    """A present-but-wrong-shaped entries value refuses instead of migrating."""
+    import pytest
+
+    with pytest.raises(ValueError):
+        runtime_info.append_client_entry(
+            {'schema_version': 1, 'entries': ['not', 'a', 'mapping']},
+            {'harness': 'claude'},
+            timestamp_key='2026-09-15 07-00-00 UTC',
+        )
+
+
+def test_opencode_runtime_prefers_opencode_env_over_claude_env(monkeypatch: Any) -> None:
+    """An OpenCode entry never carries Claude metadata from a mixed env."""
+    monkeypatch.setenv('CLAUDE_CODE_MODEL', 'claude-model')
+    monkeypatch.setenv('OPENCODE_MODEL', 'opencode-model')
+    result = _parse(OpenCodeRuntime().runtime_info())
+    assert result['model_name'] == 'opencode-model'
+
+
+def test_claude_runtime_prefers_claude_env_over_opencode_env(monkeypatch: Any) -> None:
+    """A Claude entry never carries OpenCode metadata from a mixed env."""
+    monkeypatch.setenv('OPENCODE_MODEL', 'opencode-model')
+    monkeypatch.setenv('CLAUDE_CODE_MODEL', 'claude-model')
+    result = _parse(ClaudeRuntime().runtime_info())
+    assert result['model_name'] == 'claude-model'
+
+
 def test_claude_provider_reports_claude_harness() -> None:
     """ClaudeRuntime answers runtime-info with the claude harness."""
     result = _parse(ClaudeRuntime().runtime_info())

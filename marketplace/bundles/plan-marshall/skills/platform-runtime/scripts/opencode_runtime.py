@@ -49,6 +49,28 @@ class OpenCodeRuntime(Runtime):
     Every method returns a serialized TOON string ready for ``print()``.
     """
 
+    #: Model variables this target may resolve: OpenCode-specific sources
+    #: first by construction (the shared collector reads first-match-wins),
+    #: generic fallbacks last, and no Claude-specific source at all — kept
+    #: here, outside the shared collector, whose contract forbids per-target
+    #: logic.
+    _OPENCODE_MODEL_ENV = frozenset(
+        {
+            'OPENCODE_MODEL',
+            'OPENCODE_MODEL_NAME',
+            'OPENCODE_MODEL_TYPE',
+            'OPENCODE_MODEL_VERSION',
+            'MODEL_NAME',
+            'MODEL_TYPE',
+            'MODEL_VERSION',
+            'PLAN_MARSHALL_EFFORT',
+            'MARSHALL_EFFORT',
+            'EFFORT_LEVEL',
+            'PLAN_MARSHALL_BUILD_VERSION',
+            'BUILD_VERSION',
+        }
+    )
+
     # ------------------------------------------------------------------
     # Project lifecycle
     # ------------------------------------------------------------------
@@ -825,7 +847,14 @@ class OpenCodeRuntime(Runtime):
 
         Reads harness, model, effort, and build-version from
         script-accessible sources via the shared collector; unreadable
-        attributes are dropped rather than estimated.
+        attributes are dropped rather than estimated. Model resolution is
+        target-scoped here (never in the shared collector): only
+        OpenCode-specific and generic variables are visible, so Claude
+        metadata leaking into a shared environment can never be attributed
+        to an OpenCode entry.
         """
-        info = runtime_info.collect_runtime_info('opencode')
+        import os
+
+        env = {key: value for key, value in os.environ.items() if key in self._OPENCODE_MODEL_ENV}
+        info = runtime_info.collect_runtime_info('opencode', env=env)
         return toon_success(runtime_info.RUNTIME_INFO_OPERATION, info)
