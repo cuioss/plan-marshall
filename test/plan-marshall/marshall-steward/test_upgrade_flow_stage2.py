@@ -98,3 +98,26 @@ def test_stage2_runs_migrate_bot_lists_after_the_reconcile_verbs():
     build_map_drift = _invocation_index(block, 'build-map drift')
 
     assert normalize_keys < migrate < build_map_drift
+
+
+def test_stage2_runs_the_descriptor_migration_after_validate_bot_lists_and_before_build_map():
+    # The descriptor migration is the last emitted Stage 2 sub-step: it follows the
+    # bot-list validation and precedes the stage-level build-map drift gate.
+    block = _stage2_block()
+
+    validate = block.index('plan-marshall:marshall-steward:upgrade validate-bot-lists')
+    migrate_descriptors = block.index('discover --force --apply migration')
+    build_map_drift = _invocation_index(block, 'build-map drift')
+
+    assert validate < migrate_descriptors < build_map_drift
+
+
+def test_stage2_descriptor_migration_is_gated_on_the_regression_check_against_head():
+    # A written migration is checked against the committed HEAD baseline before it is
+    # left for Stage 4 — and the check follows the write it gates.
+    block = _stage2_block()
+
+    migrate_descriptors = block.index('discover --force --apply migration')
+    regression_check = block.index('descriptor-regression-check --pre-ref HEAD')
+
+    assert migrate_descriptors < regression_check

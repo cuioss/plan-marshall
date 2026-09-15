@@ -36,7 +36,7 @@ Project kinds:
 The four stages are fixed and ordered:
 
     1. regenerate-targets  (mutating)  — regenerate target tree and/or executor
-    2. reconcile-config    (mutating)  — reconcile marshal.json
+    2. reconcile-config    (mutating)  — reconcile marshal.json and migrate architecture descriptors
     3. verify              (read-only) — executor preflight (+ content drift on meta)
     4. land                (mutating)  — run the landing cycle
 
@@ -47,10 +47,15 @@ Per-stage ``sub_steps`` (the meta/consumer matrix):
                                 consumer: [cache-freshness-check, regenerate-executor,
                                            cache-retention-sweep]
     Stage 2 reconcile-config    both:     [reconcile-marshal-json, migrate-bot-lists,
-                                           validate-bot-lists]
+                                           validate-bot-lists, migrate-architecture-descriptors]
     Stage 3 verify              meta:     [executor-preflight, content-drift-report]
                                 consumer: [executor-preflight]
     Stage 4 land                both:     [run-landing-cycle]
+
+``migrate-architecture-descriptors`` has no subcommand here: the router drives
+it through the existing ``manage-architecture`` verbs (``discover --force
+--apply migration`` then ``descriptor-regression-check --pre-ref HEAD``), and
+the migration it writes lands through Stage 4 with no commit of its own.
 
 Gate model:
 
@@ -144,7 +149,12 @@ _STAGE_SPECS: list[dict] = [
         'name': 'Reconcile config',
         'mutating': True,
         'nested_gates': ['build-map-reseed'],
-        'sub_steps': ['reconcile-marshal-json', 'migrate-bot-lists', 'validate-bot-lists'],
+        'sub_steps': [
+            'reconcile-marshal-json',
+            'migrate-bot-lists',
+            'validate-bot-lists',
+            'migrate-architecture-descriptors',
+        ],
     },
     {
         'order': 3,

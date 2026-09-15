@@ -67,7 +67,7 @@ configure · verify · maintain
 |--------|----------|---------|
 | determine_mode | `plan-marshall:marshall-steward:determine_mode` | Determine wizard vs menu mode; also exposes `check-working-prefixes` (project.working_prefixes presence/drift) and `check-staleness` (health-menu executor/config staleness preflight) |
 | gitignore_setup | `plan-marshall:marshall-steward:gitignore_setup` | Configure .gitignore for .plan/ |
-| upgrade | `plan-marshall:marshall-steward:upgrade` | Emit the four-stage `upgrade` verb plan (pure function of `(integrate, project_kind)`); also exposes `migrate-bot-lists`, the idempotent one-shot auto-map of the retired `enabled_bots` knob onto `required_bots` / `optional_bots` driven as the Stage-2 `migrate-bot-lists` sub-step, and `validate-bot-lists`, the read-only report of configured reviewer tokens matching no registered bot kind driven as the Stage-2 `validate-bot-lists` sub-step |
+| upgrade | `plan-marshall:marshall-steward:upgrade` | Emit the four-stage `upgrade` verb plan (pure function of `(integrate, project_kind)`); also exposes `migrate-bot-lists`, the idempotent one-shot auto-map of the retired `enabled_bots` knob onto `required_bots` / `optional_bots` driven as the Stage-2 `migrate-bot-lists` sub-step, and `validate-bot-lists`, the read-only report of configured reviewer tokens matching no registered bot kind driven as the Stage-2 `validate-bot-lists` sub-step. The plan's last Stage-2 sub-step, `migrate-architecture-descriptors`, has no subcommand here — it is driven through the `manage-architecture` verbs (see `references/upgrade-flow.md`) |
 | cache_freshness | `plan-marshall:marshall-steward:cache_freshness` | Fail-closed three-valued plugin-cache freshness verdict (`fresh\|stale\|unknown`) driving the consumer Stage-1 `cache-freshness-check` sub-step |
 | cache_retention | `plan-marshall:marshall-steward:cache_retention` | Union-keep plugin-cache retention sweep (dry run unless `--apply`) driving the Stage-1 `cache-retention-sweep` sub-step behind the `cache-retention-prune` nested gate |
 | bootstrap_plugin | _(direct Python call)_ | Detect plugin root, cache in `.plan/local/marshall-state.toon` |
@@ -260,7 +260,7 @@ Then execute the workflow described in that file. Each reference file is loaded 
 | `menu-commit-trailer.md` | Inspect and change the co-author identity assistant-authored commits are recorded under; machine-local, per-half fallback, unconfigured commits under `plan-marshall <noreply@cuioss.de>` | Linked from `menu-configuration.md` (Commit Trailer) |
 | `merge-queue-setup.md` | Idempotent probe→ask→configure provisioning of the platform merge queue (GitHub merge queue / GitLab merge train) via the `ci repo merge-queue` verbs | Linked from `wizard-flow.md` Step 13.5 and `menu-configuration.md` (Merge Queue) |
 | `landing-cycle.md` | End-of-run landing cycle: detect uncommitted plan-marshall artifact diff → offer to commit → push → `skip-bot-review`-labelled plan-less PR → merge-queue-aware merge → switch-to-main → pull; base-branch-conditional branch selection + bot skip-label honoring matrix | Linked from the "End-of-Run Landing Cycle" hook (menu-mode Quit path + `wizard-flow.md` end) |
-| `upgrade-flow.md` | Post-change `upgrade` verb: four-stage reconciliation driven by the project-kind-aware `upgrade.py plan` stage plan (the meta/consumer stage matrix — meta regenerates the target tree + executor and verifies with preflight + content-drift; consumer regenerates the executor only and verifies with preflight only), honoring each stage's per-stage gate dispositions and `sub_steps` | Main Menu option 6, or the `upgrade` early verb check |
+| `upgrade-flow.md` | Post-change `upgrade` verb: four-stage reconciliation driven by the project-kind-aware `upgrade.py plan` stage plan (the meta/consumer stage matrix — meta regenerates the target tree + executor and verifies with preflight + content-drift; consumer regenerates the executor only and verifies with preflight only; both reconcile config through `reconcile-marshal-json`, `migrate-bot-lists`, `validate-bot-lists` and `migrate-architecture-descriptors`), honoring each stage's per-stage gate dispositions and `sub_steps` | Main Menu option 6, or the `upgrade` early verb check |
 | `error-handling.md` | Error types and recovery | On error conditions |
 
 ---
@@ -440,6 +440,22 @@ kind set the tokens were checked against — the set the corrected token must be
 size of the population it actually checked, so a clean verdict over three configured tokens stays
 distinguishable from a clean verdict over none. See the Canonical invocations
 (`upgrade validate-bot-lists`) for the emitted fields and the `noop` states.
+
+## Architecture Descriptor Migration (upgrade Stage 2)
+
+The `migrate-architecture-descriptors` sub_step of Stage 2 (`reconcile-config`) is the
+sanctioned home of the architecture-descriptor tool migration, for both project kinds. A plan's
+`architecture-refresh` finalize step commits only the plan-attributable part of a
+`discover --force` rewrite and leaves every migration class unwritten; this sub-step writes exactly
+the migration part (`architecture discover --force --apply migration`), gates it on
+`descriptor-regression-check --pre-ref HEAD`, and leaves it in the working tree so Stage 4 lands it on
+the plan-less steward PR with no commit of its own. It skips itself when
+`.plan/project-architecture` already carries uncommitted edits. The procedure and its per-verdict
+reporting are documented in
+[`references/upgrade-flow.md`](references/upgrade-flow.md) § "Sub-step
+`migrate-architecture-descriptors`"; the delta classes and verdicts it consumes are published in
+[`../manage-architecture/standards/manage-api.md`](../manage-architecture/standards/manage-api.md)
+§ discover.
 
 ## Blocking-Finding Classification (fixed rule — no wizard seed)
 
