@@ -27,7 +27,7 @@ Takes no arguments. Routing is config-driven via `runtime.target` in
 
 ## Client.toon Schema
 
-Four attributes. Unreadable attributes are absent rather than estimated.
+Four attributes per run entry. Unreadable attributes are absent rather than estimated.
 
 | Key | Meaning | Always present |
 |-----|---------|----------------|
@@ -41,6 +41,14 @@ Four attributes. Unreadable attributes are absent rather than estimated.
 `model_type` and `model_version` are never derived from `model_name`.
 Derivation would be estimation. Where script access is hard or strange, an LLM
 fallback may fill the gap upstream; the collector itself never estimates.
+
+Entries are keyed by human-readable UTC datetime stamp
+(`YYYY-MM-DD HH-MM-SS UTC`, no colons so the key survives TOON parsing).
+Multiple runs append a new timestamped entry instead of overwriting; a repeated
+stamp gains a ` (N)` suffix. A legacy flat document migrates under the
+`legacy` entry key on first append. Helpers live in `runtime_info.py`:
+`format_timestamp_key` formats a stamp, `append_client_entry` merges one run's
+attributes into the entries map, and `to_client_toon` renders a single run.
 
 ## Success
 
@@ -64,6 +72,21 @@ status: success
 operation: runtime-info
 harness: claude
 build_version: "0.1"
+```
+
+Timestamp-keyed client.toon artifact, after two runs appended:
+
+```toon
+schema_version: 1
+entries:
+  2026-09-15 07-00-00 UTC:
+    harness: claude
+    build_version: "0.1"
+  2026-09-15 08-00-00 UTC:
+    harness: claude
+    model_name: claude-sonnet-4-5
+    effort: standard
+    build_version: "0.1"
 ```
 
 ## Error

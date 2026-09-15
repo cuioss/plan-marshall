@@ -32,9 +32,10 @@ This is the deterministic script-side invocation. It settles the plan's title
 state best-effort (`session push-title-token --plan-id`, the plan-scoped form
 of the terminal-title repaint obligation — no epic slug is in scope), then
 resolves the plan directory, invokes `platform_runtime runtime-info` for the
-active target, and writes the returned payload as `client.toon` into the plan
-directory (`.plan/local/plans/{plan_id}/client.toon`, worktree-resident when
-the plan runs in a worktree).
+active target, and read-merge-writes the returned payload into `client.toon`
+in the plan directory (`.plan/local/plans/{plan_id}/client.toon`,
+worktree-resident when the plan runs in a worktree). Each run appends a new
+timestamp-keyed entry and never overwrites prior entries.
 
 ### Step 2: Continue plan start regardless of outcome
 

@@ -9,6 +9,7 @@ and opencode provider dispatch, and the router unknown-target error path.
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -82,6 +83,78 @@ def test_client_toon_carries_schema_version() -> None:
     """The rendered client.toon document states its schema version."""
     rendered = runtime_info.to_client_toon({'harness': 'claude'})
     assert _parse(rendered)['schema_version'] == runtime_info.CLIENT_TOON_SCHEMA_VERSION
+
+
+def test_timestamp_key_is_human_readable_without_colons() -> None:
+    """The timestamp key reads as a UTC datetime and stays TOON-safe."""
+    moment = datetime(2026, 9, 15, 7, 0, 0, tzinfo=UTC)
+    assert runtime_info.format_timestamp_key(moment) == '2026-09-15 07-00-00 UTC'
+    assert ':' not in runtime_info.format_timestamp_key(moment)
+
+
+def test_client_toon_wraps_single_entry_under_timestamp_key() -> None:
+    """The rendered document keys the run's attributes by its timestamp."""
+    rendered = runtime_info.to_client_toon(
+        {'harness': 'claude'},
+        timestamp_key='2026-09-15 07-00-00 UTC',
+    )
+    doc = _parse(rendered)
+    assert doc['entries']['2026-09-15 07-00-00 UTC']['harness'] == 'claude'
+
+
+def test_append_preserves_prior_entries_across_runs() -> None:
+    """A second run appends its entry while the first entry stays intact."""
+    first = runtime_info.append_client_entry(
+        None,
+        {'harness': 'claude'},
+        timestamp_key='2026-09-15 07-00-00 UTC',
+    )
+    second = runtime_info.append_client_entry(
+        first,
+        {'harness': 'opencode'},
+        timestamp_key='2026-09-15 08-00-00 UTC',
+    )
+    assert second['entries']['2026-09-15 07-00-00 UTC'] == {'harness': 'claude'}
+    assert second['entries']['2026-09-15 08-00-00 UTC'] == {'harness': 'opencode'}
+
+
+def test_append_suffixes_colliding_timestamp_instead_of_overwriting() -> None:
+    """A repeated timestamp key gains a suffix so no entry is overwritten."""
+    first = runtime_info.append_client_entry(
+        None,
+        {'harness': 'claude'},
+        timestamp_key='2026-09-15 07-00-00 UTC',
+    )
+    second = runtime_info.append_client_entry(
+        first,
+        {'harness': 'opencode'},
+        timestamp_key='2026-09-15 07-00-00 UTC',
+    )
+    assert second['entries']['2026-09-15 07-00-00 UTC'] == {'harness': 'claude'}
+    assert second['entries']['2026-09-15 07-00-00 UTC (2)'] == {'harness': 'opencode'}
+
+
+def test_append_migrates_legacy_flat_document() -> None:
+    """A pre-timestamp flat document survives under the legacy entry key."""
+    legacy = {'schema_version': 1, 'harness': 'claude', 'effort': 'standard'}
+    merged = runtime_info.append_client_entry(
+        legacy,
+        {'harness': 'opencode'},
+        timestamp_key='2026-09-15 08-00-00 UTC',
+    )
+    assert merged['entries']['legacy'] == {'harness': 'claude', 'effort': 'standard'}
+    assert merged['entries']['2026-09-15 08-00-00 UTC'] == {'harness': 'opencode'}
+
+
+def test_append_strips_envelope_keys_from_entries() -> None:
+    """Envelope keys never leak into a run entry."""
+    merged = runtime_info.append_client_entry(
+        None,
+        {'status': 'success', 'operation': 'runtime-info', 'harness': 'claude'},
+        timestamp_key='2026-09-15 07-00-00 UTC',
+    )
+    entry = merged['entries']['2026-09-15 07-00-00 UTC']
+    assert entry == {'harness': 'claude'}
 
 
 def test_claude_provider_reports_claude_harness() -> None:

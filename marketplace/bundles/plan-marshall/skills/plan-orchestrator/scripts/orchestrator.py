@@ -4130,8 +4130,85 @@ def _best_effort_plan_title(plan_id: str) -> None:
         pass
 
 
+def _merge_client_toon_text(existing_text: str | None, payload: str) -> str:
+    """Merge a runtime-info payload into timestamp-keyed client.toon text.
+
+    Read-merge-write: the existing artifact (when present and parseable) keeps
+    every timestamped entry and the new payload appends under a fresh
+    human-readable datetime stamp; nothing is ever overwritten. A legacy flat
+    artifact migrates under the ``legacy`` entry key so its data survives.
+
+    Best-effort: any parse or merge failure returns the payload unchanged, so
+    the caller still writes something rather than blocking plan start.
+    """
+    try:
+        from toon_parser import parse_toon, serialize_toon
+    except Exception:
+        return payload
+    try:
+        parsed_payload = parse_toon(payload)
+    except Exception:
+        return payload
+    if not isinstance(parsed_payload, dict):
+        return payload
+    existing_doc: dict[str, Any] | None = None
+    if existing_text:
+        try:
+            parsed_existing = parse_toon(existing_text)
+        except Exception:
+            parsed_existing = None
+        if isinstance(parsed_existing, dict):
+            existing_doc = parsed_existing
+    try:
+        from runtime_info import append_client_entry
+
+        merged = append_client_entry(existing_doc, parsed_payload)
+    except Exception:
+        info = {
+            key: value
+            for key, value in parsed_payload.items()
+            if key not in ('status', 'operation', 'schema_version', 'entries')
+        }
+        entries: dict[str, Any] = {}
+        if isinstance(existing_doc, dict):
+            current = existing_doc.get('entries')
+            if isinstance(current, dict):
+                entries.update({str(key): value for key, value in current.items()})
+            else:
+                legacy = {
+                    key: value
+                    for key, value in existing_doc.items()
+                    if key not in ('status', 'operation', 'schema_version', 'entries')
+                }
+                if legacy:
+                    entries['legacy'] = legacy
+        # No raw datetime call here: the stamp derives from the shared
+        # ``now_utc_iso`` helper (already imported from file_ops) via string
+        # reshaping, so this module keeps reaching timestamps only through
+        # shared helpers per the display-timezone guard.
+        stamp = now_utc_iso().replace('T', ' ').replace(':', '-')
+        if stamp.endswith('Z'):
+            stamp = stamp[:-1] + ' UTC'
+        else:
+            stamp = f'{stamp} UTC'
+        key = stamp
+        suffix = 2
+        while key in entries:
+            key = f'{stamp} ({suffix})'
+            suffix += 1
+        entries[key] = info
+        merged = {'schema_version': 1, 'entries': entries}
+    try:
+        return serialize_toon(merged)
+    except Exception:
+        return payload
+
+
 def cmd_preflight(args: argparse.Namespace) -> dict[str, Any]:
-    """Invoke runtime-info and write the per-plan client.toon artifact.
+    """Invoke runtime-info and append to the per-plan client.toon artifact.
+
+    Read-merge-write: each run appends a new timestamp-keyed entry and never
+    overwrites prior entries.
 
     Best-effort by contract: any collector, resolution, or write failure
     degrades to ``degraded: true`` with ``artifact_written: false`` and still
@@ -4193,7 +4270,13 @@ def cmd_preflight(args: argparse.Namespace) -> dict[str, Any]:
         }
     try:
         plan_dir.mkdir(parents=True, exist_ok=True)
-        (plan_dir / 'client.toon').write_text(payload + '\n', encoding='utf-8')
+        artifact_path = plan_dir / 'client.toon'
+        try:
+            existing_text = artifact_path.read_text(encoding='utf-8')
+        except OSError:
+            existing_text = None
+        merged_text = _merge_client_toon_text(existing_text, payload)
+        artifact_path.write_text(merged_text + '\n', encoding='utf-8')
     except OSError as exc:
         return {
             'status': 'success',

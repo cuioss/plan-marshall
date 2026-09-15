@@ -3,6 +3,9 @@
 """
 Pure runtime-information collector owning the client.toon schema.
 
+Client.toon entries are keyed by human-readable UTC datetime stamp; multiple
+runs append a new timestamped entry instead of overwriting.
+
 Collects the four client.toon attributes — harness/client, model
 name/type/version, effort level, and build-version — on a best-effort basis.
 Attributes that scripts cannot read are dropped rather than estimated; where
@@ -19,6 +22,7 @@ from __future__ import annotations
 import json
 import os
 from collections.abc import Mapping
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +30,20 @@ from toon_parser import serialize_toon
 
 #: Schema version stamped into every client.toon payload this module renders.
 CLIENT_TOON_SCHEMA_VERSION = 1
+
+#: Key holding the timestamp-keyed run entries in every client.toon payload.
+CLIENT_TOON_ENTRIES_KEY = 'entries'
+
+#: Entry key a legacy flat client.toon migrates under on first append.
+LEGACY_ENTRY_KEY = 'legacy'
+
+#: Human-readable UTC timestamp shape for entry keys. Colons are deliberately
+#: absent: a TOON key ends at its first colon, so a ``HH:MM:SS`` stamp would
+#: split the key during parsing.
+TIMESTAMP_FORMAT = '%Y-%m-%d %H-%M-%S UTC'
+
+#: Payload keys that never belong inside a run entry.
+_NON_ENTRY_KEYS = frozenset({'status', 'operation', 'schema_version', 'entries'})
 
 #: Operation name carried in the TOON envelope for runtime-info responses.
 RUNTIME_INFO_OPERATION = 'runtime-info'
@@ -223,15 +241,98 @@ def collect_runtime_info(
     return info
 
 
-def to_client_toon(info: Mapping[str, Any]) -> str:
-    """Serialize an attribute dict to the client.toon TOON document.
+def format_timestamp_key(moment: datetime | None = None) -> str:
+    """Format a human-readable UTC datetime stamp for a client.toon entry key.
+
+    The stamp is sortable and TOON-safe: it carries no colon, because a TOON
+    key ends at its first colon and a ``HH:MM:SS`` stamp would split the key
+    during parsing.
+
+    Args:
+        moment: Timestamp to format; defaults to the current UTC time. Naive
+            datetimes are read as UTC.
+
+    Returns:
+        Stamp shaped ``YYYY-MM-DD HH-MM-SS UTC``.
+    """
+    current = moment if moment is not None else datetime.now(UTC)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=UTC)
+    return current.astimezone(UTC).strftime(TIMESTAMP_FORMAT)
+
+
+def _unique_entry_key(entries: Mapping[str, Any], base: str) -> str:
+    """Return a key for *base* that never overwrites an existing entry.
+
+    Args:
+        entries: Entry map collected so far.
+        base: Preferred timestamp key.
+
+    Returns:
+        *base* itself when free, else *base* with a `` (N)`` suffix.
+    """
+    if base not in entries:
+        return base
+    suffix = 2
+    while f'{base} ({suffix})' in entries:
+        suffix += 1
+    return f'{base} ({suffix})'
+
+
+def _strip_to_entry(info: Mapping[str, Any]) -> dict[str, Any]:
+    """Reduce a parsed payload to the attribute dict that belongs in an entry."""
+    return {key: value for key, value in dict(info).items() if key not in _NON_ENTRY_KEYS}
+
+
+def append_client_entry(
+    existing: Mapping[str, Any] | None,
+    info: Mapping[str, Any],
+    timestamp_key: str | None = None,
+) -> dict[str, Any]:
+    """Merge one run's attributes into a timestamp-keyed client.toon document.
+
+    Multiple runs append a new timestamped entry instead of overwriting: an
+    existing timestamp key is suffixed, never replaced. A legacy flat document
+    (attributes beside ``schema_version``, as written before timestamp keys)
+    migrates under the ``legacy`` entry key so its data survives the upgrade.
+
+    Args:
+        existing: Parsed client.toon document, or None for a fresh document.
+        info: Attribute dict as returned by :func:`collect_runtime_info`; a
+            parsed runtime-info payload is accepted too (envelope keys are
+            stripped).
+        timestamp_key: Entry key for this run; defaults to the current UTC
+            stamp from :func:`format_timestamp_key`.
+
+    Returns:
+        New document carrying ``schema_version`` plus the ``entries`` map.
+    """
+    base = timestamp_key if timestamp_key else format_timestamp_key()
+    entries: dict[str, Any] = {}
+    if isinstance(existing, Mapping):
+        current_entries = existing.get(CLIENT_TOON_ENTRIES_KEY)
+        if isinstance(current_entries, Mapping):
+            for key, value in current_entries.items():
+                entries[str(key)] = dict(value) if isinstance(value, Mapping) else value
+        else:
+            legacy = _strip_to_entry(existing)
+            if legacy:
+                entries[_unique_entry_key(entries, LEGACY_ENTRY_KEY)] = legacy
+    key = _unique_entry_key(entries, base)
+    entries[key] = _strip_to_entry(info)
+    return {'schema_version': CLIENT_TOON_SCHEMA_VERSION, CLIENT_TOON_ENTRIES_KEY: entries}
+
+
+def to_client_toon(info: Mapping[str, Any], timestamp_key: str | None = None) -> str:
+    """Serialize an attribute dict to the timestamp-keyed client.toon document.
 
     Args:
         info: Attribute dict as returned by :func:`collect_runtime_info`.
+        timestamp_key: Entry key for this run; defaults to the current UTC
+            stamp from :func:`format_timestamp_key`.
 
     Returns:
-        Serialized TOON string carrying the schema version plus attributes.
+        Serialized TOON string carrying the schema version plus the
+        timestamp-keyed ``entries`` map with this run's attributes.
     """
-    payload: dict[str, Any] = {'schema_version': CLIENT_TOON_SCHEMA_VERSION}
-    payload.update(dict(info))
-    return serialize_toon(payload)
+    return serialize_toon(append_client_entry(None, info, timestamp_key))
