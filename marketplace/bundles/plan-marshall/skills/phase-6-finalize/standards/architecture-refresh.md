@@ -209,7 +209,7 @@ git -C {worktree_path} status --porcelain .plan/project-architecture
 
 Under `--apply plan` the only content that can be dirty here is plan-caused: segment-1 writes plus the plan projection. A migration class or an unattributable difference is never on disk, so it can never reach the commit below.
 
-Empty output → there is nothing to commit. Log Branch C and proceed to the Tier-1 entry gate (Step 4) with `affected_modules` as computed in 3b:
+Empty output → there is nothing to commit. Log it and proceed to the Tier-1 entry gate (Step 4) with `affected_modules` as computed in 3b; `tier1_exit_detail()` selects the Step 5 exit cell:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -228,7 +228,7 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
 
 Parse `status`, `regressive` (bool), `violations[]`, `examined_fields` and `modules_examined` from the TOON output.
 
-- **`status: error`** → the regression check itself failed (e.g., the baseline cannot be read by ref, the project-architecture descriptor is malformed, or a required field is absent). The check never ran, so this is NOT a regression verdict and the response carries no `violations[]`, `examined_fields` or `modules_examined` to name. It shares only the commit decision with `regressive: true`: do NOT commit. Log an ERROR carrying the TOON `error` and `detail` fields, mark the step `outcome failed` with `--display-detail "regression check failed — {error}"`, and return — the delta is left uncommitted in the worktree.
+- **`status: error`** → the regression check itself failed (e.g., the baseline cannot be read by ref, the project-architecture descriptor is malformed, or a required field is absent). The check never ran, so this is NOT a regression verdict and the response carries no `violations[]`, `examined_fields` or `modules_examined` to name. It shares only the commit decision with `regressive: true`: do NOT commit. Log an ERROR carrying the payload's `error` field together with the rest of the payload (the error shapes are documented in `manage-architecture/standards/client-api.md` § descriptor-regression-check), mark the step `outcome failed` with `--display-detail "regression check failed — {error}"`, and return — the delta is left uncommitted in the worktree.
 - **`regressive: false`** → the delta is benign. Log the verdict together with the coverage it was computed over, so a green gate states what it examined, then proceed to 3d and commit:
 
   ```bash
@@ -304,7 +304,7 @@ Tier 1 re-runs the LLM-curated enrichment pass on the modules whose structure wa
 
 ### 4a. change_type shortcut
 
-If `change_type` is `bug_fix` or `verification`, skip Tier 1 entirely. These change types do not warrant LLM re-enrichment regardless of the run-config setting because they target behaviour, not structure — `bug_fix` repairs an existing capability and `verification` adds tests around it; neither shifts the architectural narrative captured in `enriched.json`. Log and continue to Step 5:
+If `change_type` is `bug_fix` or `verification`, skip Tier 1 entirely. These change types do not warrant LLM re-enrichment regardless of the run-config setting because they target behaviour, not structure — `bug_fix` repairs an existing capability and `verification` adds tests around it; neither shifts the architectural narrative captured in `enriched.json`. Log the skip:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -312,7 +312,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   --message "(plan-marshall:phase-6-finalize:architecture-refresh) Tier 1 skipped — change_type = {change_type}"
 ```
 
-Continue to Step 5 and select between Branches C, D, J and K on whether Step 3d committed and whether `affected_modules` is non-empty.
+Continue to Step 5. When Tier 0 was disabled, `affected_modules` was never computed and the cell is **Branch B**; otherwise `tier1_exit_detail()` in the Pseudo-Code Summary selects it.
 
 ### 4b. Affected-modules empty (Tier-0-enabled, no added/removed)
 
@@ -449,9 +449,7 @@ Continue to Step 5.
 
 Before returning control to the finalize pipeline, record that this step ran on the live plan so the `phase_steps_complete` handshake invariant is satisfied at phase transition time.
 
-Pass a `--display-detail` value alongside `--outcome done` so the output-template renderer can surface the refresh outcome. The payload differs by branch — pick the matching template below. (Branch A's mark-step-done is emitted inline in Step 2c; Branches G, H and I are selected in Step 3e.)
-
-Branches C, D, J and K are the four cells a Tier-1 skip (Step 4a or 4b) can land in. Select between them on **both** dimensions — whether Step 3d committed, and whether `added ∪ removed` is non-empty — because neither implies the other: a round can commit segment-1 descriptor edits with an empty union (Branch J), and a round can see a non-empty union whose commit already landed earlier on the branch (Branch K). The `tier1_exit_detail()` selection in the Pseudo-Code Summary is the authoritative form.
+Pass a `--display-detail` value alongside `--outcome done` so the output-template renderer can surface the refresh outcome. The payload differs by branch — pick the matching template below. (Branch A's mark-step-done is emitted inline in Step 2c; Branches G, H and I are selected in Step 3e; the Tier-1 skip cells are selected by `tier1_exit_detail()` in the Pseudo-Code Summary.)
 
 **Branch A — no committed origin/main baseline (Step 2c path)**:
 
@@ -567,7 +565,7 @@ The `--display-detail` strings are subject to the output-template contract (≤8
 | `discover --force --apply plan` returns `status: error` | Log ERROR, mark the step `outcome failed` with `--display-detail "discover failed — see work.log"`, return — do NOT abort the finalize pipeline. The next plan will retry from a clean state. |
 | `discover` returns `attribution: undecidable` or `no_baseline` | NOT a failure. Nothing was written; log the unclassified fields at WARNING, still gate any segment-1 writes through 3c / 3c.5 / 3d, skip Tier 1, and mark the step done with Branch H. |
 | `discover` returns `attribution: migration_only` or `mixed` | NOT a failure. The migration classes stay unwritten; gate what is dirty through 3c / 3c.5 / 3d, skip Tier 1, and mark the step done with Branch G (nothing committed) or Branch I (committed). The migration lands through `/marshall-steward upgrade`. |
-| `descriptor-regression-check` returns `status: error` | The check could not run, so nothing is known about the delta — this is NOT a regression verdict. Do NOT commit. The error payload carries only `status` / `error` / `ref`\|`path` / `message`\|`detail`, so log ERROR with the `error` and `detail` fields and name no violated fields or coverage, mark the step `outcome failed` with `--display-detail "regression check failed — {error}"`, leave `.plan/project-architecture` uncommitted, and return — do NOT abort the finalize pipeline. |
+| `descriptor-regression-check` returns `status: error` | The check could not run, so nothing is known about the delta — this is NOT a regression verdict. Do NOT commit. The payload carries no `violations[]`, `examined_fields` or `modules_examined`, so log ERROR with its `error` field and the rest of the payload, naming no violated fields or coverage, mark the step `outcome failed` with `--display-detail "regression check failed — {error}"`, leave `.plan/project-architecture` uncommitted, and return — do NOT abort the finalize pipeline. |
 | `descriptor-regression-check` returns `regressive: true` | The delta lost curated content. Do NOT commit. Log ERROR with the violated fields and the `examined_fields` / `modules_examined` coverage, mark the step `outcome failed` with `--display-detail "regressive descriptor delta refused — {fields}"`, leave `.plan/project-architecture` uncommitted, and return — do NOT abort the finalize pipeline. The next plan retries from a clean state once the source path is repaired. |
 | `architecture enrich` fails | Log ERROR, fall back to Branch F (deferral recorded in the decision log) — do NOT mark the whole step failed. The deterministic refresh has already shipped; the user can re-enrich manually via `/marshall-steward` Step 13. Mark the step done with `--display-detail "refreshed; enrich failed — see work.log"`. |
 | `AskUserQuestion` aborted | Treat the same as `Skip — note in PR` (Branch F). The user actively backing out is informationally equivalent to declining the prompt. |
@@ -626,7 +624,7 @@ else:
         reg := architecture --project-dir {worktree_path} descriptor-regression-check --pre-ref origin/main
         if reg.status == "error":
             # the check never ran: no violations[], examined_fields or modules_examined to name
-            log ERROR: "Regression check failed — {reg.error}: {reg.detail}"
+            log ERROR: "Regression check failed — {reg.error}"
             mark-step-done outcome=failed detail="regression check failed — {reg.error}"
             return    # leave .plan/project-architecture uncommitted
         if reg.regressive:
@@ -665,7 +663,10 @@ tier1_exit_detail() :=
 
 if change_type in {"bug_fix", "verification"}:
     log: "Tier 1 skipped — change_type = {change_type}"
-    mark-step-done detail=tier1_exit_detail()
+    if affected == UNKNOWN:       # tier_0 disabled ⇒ no module set to describe
+        mark-step-done with "tier-0 disabled; tier-1 skipped"  # Branch B
+    else:
+        mark-step-done detail=tier1_exit_detail()
     return
 
 if affected == UNKNOWN:           # tier_0 disabled ⇒ the commit block never ran, committed is false

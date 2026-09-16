@@ -516,11 +516,12 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
 ```
 
 - **`status: error`** — the check could not run, so nothing is known about the
-  migrated tree; this is NOT a regression verdict. The error payload carries only
-  `status` / `error` / `ref`\|`path` / `message`\|`detail` — there are no
-  `violations[]`, `examined_fields` or `modules_examined` to name. STOP the flow
-  per "Partial-failure and abort handling" below, reporting the `error` and
-  `detail` fields, and leave the migrated descriptor uncommitted in the working
+  migrated tree; this is NOT a regression verdict. The payload carries no
+  `violations[]`, `examined_fields` or `modules_examined` to name — the error
+  shapes are documented in `manage-architecture/standards/client-api.md`
+  § descriptor-regression-check. STOP the flow per "Partial-failure and abort
+  handling" below, reporting the payload's `error` field together with the rest
+  of the payload, and leave the migrated descriptor uncommitted in the working
   tree for the operator to inspect.
 - **`regressive: true`** — the migration lost curated content. STOP the flow per
   "Partial-failure and abort handling" below, naming the `violations[].field`
