@@ -5,7 +5,8 @@ Script API for managing architecture data. Used during the enrichment workflow.
 ## Purpose
 
 These commands support the LLM enrichment workflow:
-- Reading raw discovered data (per-module `derived.json` files only).
+- Reading raw discovered data — crawled from the live worktree on demand, never
+  read back from a persisted `derived.json` (see § Data Sources).
 - Writing enrichment data (top-level `_project.json` for project-level
   fields, per-module `enriched.json` for module-scoped fields).
 
@@ -214,6 +215,9 @@ output_file	.plan/project-architecture/_project.json
 ---
 
 ## Read Commands (Derived Data)
+
+Both verbs answer from the live worktree crawl, so they report the tree as it
+stands now rather than the state of any snapshot on disk.
 
 ### derived
 
@@ -523,15 +527,25 @@ expected_file	.plan/project-architecture/_project.json
 `_project.json` lives at the top of `.plan/project-architecture/` and holds
 project identity plus the module index — a read-side pre-flight surface
 (per-module `description` + `generation` header), **not** the discovery
-gatekeeper (`iter_modules` crawls the live filesystem). Per-module files live
-under `.plan/project-architecture/{module}/{derived,enriched}.json`.
+gatekeeper (`iter_modules` crawls the live filesystem). The one persisted
+per-module file is `.plan/project-architecture/{module}/enriched.json`.
+
+**Current derived data is ephemeral, and a `derived.json` on disk is a
+snapshot.** Derived data is crawled from the live worktree on every read and is
+never written by `discover`, so no command below reads a `derived.json` for
+CURRENT state. A `{module}/derived.json` file exists only where a caller
+deliberately captured one (`save_module_derived`), and it is read as a BASELINE
+— by [client-api.md](client-api.md)'s `diff-modules` and
+`descriptor-regression-check` via `--pre` / `--pre-ref`, never as the tree's
+present state. See
+[architecture-persistence.md](architecture-persistence.md) § Storage.
 
 | Command | Reads | Writes |
 |---------|-------|--------|
 | `discover` | Extension API, run-configuration.json, the on-disk `_project.json` + per-module `enriched.json` pre-state | `_project.json` + per-module `enriched.json` (via tmp+swap; `--apply plan` / `migration` write a projection or nothing) |
 | `init` | `_project.json` | per-module `enriched.json` (one per module) + `_project.json` (batched index write-through) |
-| `derived` | `_project.json` + per-module `derived.json` | - |
-| `derived-module` | `_project.json` + `{module}/derived.json` | - |
+| `derived` | `_project.json` + the live worktree crawl | - |
+| `derived-module` | the live worktree crawl | - |
 | `enrich project` | `_project.json` | `_project.json` |
 | `enrich module` | `{module}/enriched.json` | `{module}/enriched.json` + `_project.json` (index write-through) |
 | `enrich package` | `{module}/enriched.json` | `{module}/enriched.json` + `_project.json` (index write-through) |

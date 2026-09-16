@@ -1478,9 +1478,20 @@ unresolved_keys[1]{module,key}:
 ```
 
 **Error contract**: `invalid_ref` and `snapshot_not_found` exactly as
-[`diff-modules`](#diff-modules) documents them (carrying `ref` or `path`);
-when the current project's `_project.json` is absent, the standard
-`require_project_meta` error envelope.
+[`diff-modules`](#diff-modules) documents them (carrying `ref` or `path`); plus
+one case of its own, named by its `error` value like the other two, because a
+consumer branches on that value and can never match a helper name:
+
+| `error` | When | Carries |
+|---------|------|---------|
+| `data_not_found` | The CURRENT project has no `_project.json` — there is no regenerated tree to compare the baseline against. Distinct from `snapshot_not_found`, which reports the missing file on the BASELINE side. | `expected_file` (the absolute `_project.json` path that was looked for) and `resolution` (`Run 'architecture.py discover' first`). No `message` field. |
+
+```toon
+status: error
+error: data_not_found
+expected_file: /path/to/project/.plan/project-architecture/_project.json
+resolution: "Run 'architecture.py discover' first"
+```
 
 **Use cases**:
 

@@ -2,8 +2,10 @@
 
 Storage format for project architecture data. The on-disk layout is fanned
 out per module: a single top-level `_project.json` plus one directory per
-module containing `derived.json` (deterministic discovery output) and
-`enriched.json` (LLM-augmented fields).
+module containing `enriched.json` (LLM-augmented fields). The deterministic
+discovery output — `derived.json` — is **ephemeral**: it is computed on demand
+by crawling the live worktree and is NOT written by `discover`. It appears on
+disk only as a deliberately-captured snapshot (see below).
 
 ## Storage
 
@@ -13,19 +15,33 @@ module containing `derived.json` (deterministic discovery output) and
 .plan/project-architecture/
 ├── _project.json                   # Top-level project metadata + module index
 ├── {module-1}/
-│   ├── derived.json                # Extension API output (deterministic)
-│   └── enriched.json               # LLM-enriched fields
+│   └── enriched.json               # LLM-enriched fields — the persisted file
 ├── {module-2}/
-│   ├── derived.json
 │   └── enriched.json
 └── ...
 ```
 
+**Persisted vs ephemeral.** `_project.json` and each module's `enriched.json`
+are the persisted store: expensive to regenerate, so they are written and kept.
+Derived data is the opposite — cheap to recompute and stale the moment the
+worktree moves — so it is crawled on every read (`crawl_module_derived`) and
+`discover` writes no `derived.json` at all.
+
+**Snapshot / baseline artifacts.** A `{module}/derived.json` on disk is
+therefore a SNAPSHOT a caller deliberately captured, not current state:
+`save_module_derived` writes one, and the `diff-modules` and
+`descriptor-regression-check` verbs read such a snapshot as their BASELINE via
+`--pre` / `--pre-ref`. The schema below is the schema of both the crawled
+derived data and of a snapshot of it — reading it is how a baseline is
+interpreted.
+
 **Atomicity contract**: `architecture discover --force` builds the new tree
-under a sibling staging directory `project-architecture.tmp/` and then
-`os.replace`-swaps it onto the real path. A forced interruption either
-before or after the rename leaves the project in a consistent state — the
-old layout is intact, or the new layout is intact, never half-written.
+under a sibling staging directory `project-architecture.tmp/` and then swaps it
+onto the real path with TWO renames. An interrupt before or after the swap
+leaves either the old layout or the new layout intact, never a half-written one;
+an interrupt BETWEEN the two renames leaves no live tree at all and needs a
+manual restore. The protocol, that window, and its recovery are specified once
+in § "Atomicity: tmp+swap protocol" below.
 
 The same guarantee holds **per file**, not only per whole-tree swap. Every JSON
 write in this store goes through one writer (`_architecture_core._write_json`),
@@ -70,7 +86,7 @@ is stale, without opening any concept body.
 - Per-module re-enrichment is local — editing one module never rewrites the
   whole project.
 - Atomic writes via tmp+swap are simple to reason about.
-- Clear provenance: extensions own `derived.json`; the LLM owns
+- Clear provenance: extensions own the derived data; the LLM owns
   `enriched.json`; the project metadata sits in `_project.json`.
 
 ---
@@ -140,11 +156,13 @@ header rather than from this mirror.
 
 ---
 
-## Per-module `derived.json`
+## Per-module derived data (`derived.json` schema)
 
-Path: `.plan/project-architecture/{module}/derived.json`
-
-Direct output from `discover_project_modules()` for one module. See
+Direct output from `discover_project_modules()` for one module. Crawled on
+demand — `discover` never writes it (see § Storage → "Persisted vs ephemeral").
+The schema below is what the crawl returns in memory, and equally what a
+deliberately-captured snapshot at `.plan/project-architecture/{module}/derived.json`
+holds when one is read back as a baseline. See
 [module-discovery.md](../../extension-api/standards/module-discovery.md) for
 the full extension contract.
 
@@ -211,11 +229,11 @@ Dependencies use technology-native format without prefixes:
 
 ### `files:` block — categorised inventory
 
-`derived.json` carries a `files:` block on every module. The block lists
+The derived data carries a `files:` block on every module. The block lists
 every non-ignored file under the module's `paths.module` (and any
 `paths.tests` directories that fall outside the module root) grouped by
 category. The inventory is path-only — no hashes, no line counts, no
-content excerpts — and is refreshed on every `discover --force`.
+content excerpts — and is recomputed by every crawl.
 
 ```json
 {
@@ -280,9 +298,9 @@ the inventory understands.
 #### Determinism
 
 Each category list is sorted byte-wise (equivalent to `LC_COLLATE=C`) so
-the output is byte-identical across operating systems. Two consecutive
-`discover --force` runs against the same working tree produce identical
-`derived.json` files.
+the output is byte-identical across operating systems. Two consecutive crawls
+of the same working tree produce identical derived data — and therefore
+identical `derived.json` snapshots of it.
 
 #### Per-category cap
 
@@ -598,10 +616,27 @@ Step 2. Swap:     os.replace(project-architecture, project-architecture.old)
                   then remove project-architecture.old
 ```
 
-**Guarantee**: An interrupt either before or after Step 2 leaves either the
-old layout intact (interrupt before swap) or the new layout intact
-(interrupt after swap). There is never a half-written `project-architecture/`
-directory. Implementation lives in
+**Guarantee, and the window it does not cover**: an interrupt BEFORE Step 2
+leaves the old layout intact; an interrupt AFTER Step 2 leaves the new layout
+intact. Neither leaves a half-written `project-architecture/` directory — that
+is the whole of the guarantee, and Step 2 itself is outside it.
+
+Step 2 is **two** renames, so there is a window between them in which
+`project-architecture/` does not exist and the only copy of the tree is
+`project-architecture.old/`. An interrupt inside that window leaves no live
+tree, and the next `discover --force` does **not** recover it: its first act is
+to `rmtree` a leftover `project-architecture.old/`, which DELETES that surviving
+copy rather than renaming it back. The run then reads no pre-state, treats the
+baseline as absent, and under `--apply all` rebuilds from nothing — the curated
+project `name` falls back to the repo-root basename, `description` and
+`description_reasoning` are blanked, and every module document is written as an
+empty stub.
+
+Recovery from an interrupt in that window is therefore **manual, and must happen
+before the next discover runs**: rename `project-architecture.old/` back to
+`project-architecture/`. Closing the window itself would take an atomic
+directory exchange (`renameat2(RENAME_EXCHANGE)` or an indirection symlink) and
+is not implemented. Implementation lives in
 [`_architecture_core.py:swap_data_dir`](../scripts/_architecture_core.py).
 
 ### What is staged: `--apply`
@@ -624,7 +659,8 @@ anything is staged:
   directory to remove.
 - Otherwise the staged tree is the pre-state plus that one kind of change.
   `plan` stages an added module's document together with its index entry, drops
-  a removed module's document and index entry, and takes over a changed
+  a removed module's document and index entry, re-derives the index entry of a
+  module the pre-state documents but does not index, and takes over a changed
   `extensions_used`. `migration` stages the regenerated document of each
   pre-existing module carrying a migration class, together with its index
   entry, and writes no added module while keeping every removed module
