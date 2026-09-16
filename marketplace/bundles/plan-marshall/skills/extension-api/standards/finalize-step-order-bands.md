@@ -48,8 +48,9 @@ without renumbering a neighbour:
 
 - **Settle — pre-push (1–11)** — **no guaranteed insertion room.** Every integer from 3 to 11 is
   occupied (`finalize-step-sync-baseline` 3, `finalize-step-lessons-housekeeping` 4,
-  `pre-push-quality-gate` 5, `finalize-step-plugin-doctor` 6, `pre-submission-self-review` 7,
-  `finalize-step-simplify` 8, `finalize-step-security-audit` 9, `architecture-refresh` 10, `push` 11),
+  `finalize-step-simplify` 5, `finalize-step-plugin-doctor` 6,
+  `finalize-step-security-audit` 7, `pre-submission-self-review` 8,
+  `architecture-refresh` 9, `pre-push-quality-gate` 10, `push` 11),
   leaving only 1–2 free below the whole cluster. The post-push gaps below CANNOT absorb a pre-push step:
   every one of them is numbered above `push`, so a step placed there runs after the branch has already
   shipped. The sanctioned remedy for a new pre-push step is therefore a **deliberate re-space of the

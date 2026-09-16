@@ -155,7 +155,7 @@ When authoring a finalize step that edits source:
     `default:push` is a *pure push barrier*: it carries no commit logic, asserts a
     clean tree, and pushes the converged branch. A step at a lower order that pushed
     on its own would push the same branch a second time, outside the single-push
-    contract the barrier exists to hold. `default:architecture-refresh` (order 10) is
+    contract the barrier exists to hold. `default:architecture-refresh` (order 9) is
     the reference case — it commits its refreshed descriptor and stops.
   - **Ordered AFTER `default:push`** — commit **and** push within the step, because no
     later barrier will ship it. `project:finalize-step-era-stamp-fill` (order 21) is

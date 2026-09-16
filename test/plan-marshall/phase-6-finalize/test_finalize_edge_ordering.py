@@ -520,8 +520,8 @@ def test_no_step_below_the_push_barrier_prescribes_a_push():
     """GATE: a step whose commit the barrier ships must not push it itself.
 
     This is the population-level negative control for the D6 fix. The fix
-    removed the push from one step — ``default:architecture-refresh`` at order
-    10, which the barrier at order 11 immediately follows — and a fix pinned to
+    removed the push from one step — ``default:architecture-refresh``, which the
+    barrier at order 11 follows after the quality gate — and a fix pinned to
     that one document would leave the same defect free to reappear in any of its
     siblings. This assertion generalises the obligation from that instance to
     the whole below-the-barrier population, derived from the orders rather than

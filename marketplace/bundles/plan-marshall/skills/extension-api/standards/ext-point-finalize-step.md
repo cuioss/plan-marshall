@@ -289,12 +289,12 @@ Every step doc that declares the finalize-step interface. Built-in steps live un
 |------|--------|-------|:----------:|---------|
 | `default:finalize-step-sync-baseline` | built-in | 3 | true | `[full]` |
 | `project:finalize-step-lessons-housekeeping` | project | 4 | false | `[]` |
-| `default:pre-push-quality-gate` | built-in | 5 | true | `[full]` |
+| `default:finalize-step-simplify` | built-in | 5 | true | `[full]` |
 | `project:finalize-step-plugin-doctor` | project | 6 | false | `[]` |
-| `default:pre-submission-self-review` | built-in | 7 | true | `[]` |
-| `default:finalize-step-simplify` | built-in | 8 | true | `[full]` |
-| `default:finalize-step-security-audit` | built-in | 9 | true | `[]` |
-| `default:architecture-refresh` | built-in | 10 | true | `[]` |
+| `default:finalize-step-security-audit` | built-in | 7 | true | `[]` |
+| `default:pre-submission-self-review` | built-in | 8 | true | `[]` |
+| `default:architecture-refresh` | built-in | 9 | true | `[]` |
+| `default:pre-push-quality-gate` | built-in | 10 | true | `[full]` |
 | `default:push` | built-in | 11 | true | `[local, standard, full]` |
 | `default:create-pr` | built-in | 20 | true | `[standard, full]` |
 | `project:finalize-step-era-stamp-fill` | project | 21 | false | `[]` |

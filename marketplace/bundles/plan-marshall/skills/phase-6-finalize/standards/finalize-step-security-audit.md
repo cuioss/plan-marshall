@@ -6,7 +6,7 @@ lane:
 name: default:finalize-step-security-audit
 description: Proactive phase-6 security-audit pass — runs the shared five-stage security-audit engine over the plan's live footprint, layering each affected domain's skills_by_profile.security skills onto the action-general context; declared mutates_source so the dispatcher's commit instrumentation ships any hardening edits before the push barrier
 persona: persona-security-expert
-order: 9
+order: 7
 mutates_source: true
 head_dependent: true
 default_on: true

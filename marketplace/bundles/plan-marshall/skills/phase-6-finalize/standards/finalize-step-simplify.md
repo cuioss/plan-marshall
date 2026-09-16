@@ -5,7 +5,7 @@ lane:
   cost_size: M
 name: default:finalize-step-simplify
 description: Domain-agnostic phase-6 cognitive simplification pass — reviews the plan's changeset against the minimum-viable-code anti-patterns and deletes surplus structure directly in the worktree
-order: 8
+order: 5
 mutates_source: true
 head_dependent: true
 default_on: true
@@ -68,6 +68,10 @@ The step derives the plan's live footprint on demand from the worktree (via `com
 ## HEAD-dependency
 
 `finalize-step-simplify` declares `head_dependent: true` in its frontmatter — that fact IS the membership declaration the dispatcher's re-entry check reads (see [`../../extension-api/standards/ext-point-finalize-step.md`](../../extension-api/standards/ext-point-finalize-step.md) § "Implementor Frontmatter"). Because it applies edits directly to the worktree — which the dispatcher's commit instrumentation (`phase-6-finalize/SKILL.md` Step 3 item 5f) commits after the step records `done`, advancing HEAD — a loop-back fix task that advances HEAD past the recorded `head_at_completion` MUST re-fire this step so the simplification pass runs against the newer tree. Capture `git rev-parse HEAD` immediately before the terminal `mark-step-done` call and forward it via `--head-at-completion {sha}`.
+
+## Settle-band position — edits are reviewed and gated in the same pass
+
+This step sorts FIRST among the code-mutating settle steps (`order: 5`), ahead of `finalize-step-security-audit` (7), `pre-submission-self-review` (8), `architecture-refresh` (9), and `pre-push-quality-gate` (10). That position means its edits are examined by the self-review, captured by the descriptor refresh, and certified by the quality gate within the same pass — no HEAD it produces is shipped without passing every downstream settle check. Security hardening stays after simplification deliberately: a guard the audit adds is a decision, not surplus structure, and must not be offered back to the simplifier in the same pass (the Step 3b reconciliation enforces the same direction for review commitments).
 
 ## Workflow
 
