@@ -1697,6 +1697,18 @@ def _published_class_attributions(text: str) -> dict[str, str]:
     Returns the EMPTY mapping when the table cannot be resolved at all, so a
     caller that publishes the parsed row count fails loudly on a table the
     parser no longer recognises instead of passing vacuously on zero rows.
+
+    Raises ``ValueError`` naming the class when the table carries TWO rows for
+    it. Assignment into a dict is last-write-wins, so a silent overwrite lets a
+    self-contradictory table compare EQUAL to ``DELTA_CLASSES`` — and keep the
+    expected row count — whenever the last of the conflicting rows happens to
+    agree, which is the same green-over-a-disagreeing-document shape the guard
+    below exists to remove, re-entering through the parser. Raising rather than
+    returning the empty mapping is deliberate: the empty mapping is this
+    helper's documented signal for "the table could not be resolved at all",
+    and a duplicate row is the opposite situation — the table resolved
+    perfectly well and states two things at once — so reusing that signal would
+    report "parsed 0 rows" about a table the parser read in full.
     """
     _, separator, tail = text.partition(_CLASS_TABLE_HEADER)
     if not separator:
@@ -1709,7 +1721,17 @@ def _published_class_attributions(text: str) -> dict[str, str]:
             break
         row = _CLASS_TABLE_ROW.match(line)
         if row is not None:
-            parsed[row.group(1)] = row.group(2)
+            class_name, attribution = row.group(1), row.group(2)
+            if class_name in parsed:
+                raise ValueError(
+                    'the published delta-class table carries two rows for '
+                    f'`{class_name}` ({parsed[class_name]!r} then {attribution!r}) — '
+                    'the second would silently overwrite the first, so the table can '
+                    'state two attributions at once while parsing to a mapping that '
+                    'agrees with DELTA_CLASSES. Each class must be published exactly '
+                    'once; do not delete this check.'
+                )
+            parsed[class_name] = attribution
     return parsed
 
 
@@ -1763,6 +1785,30 @@ class TestPublishedClassAttributions:
         assert len(published) == len(DELTA_CLASSES) - 1
         assert 'key_packages_rekey' not in published
         assert published != DELTA_CLASSES
+
+    def test_positive_control_a_duplicate_row_is_rejected(self, manage_api_text: str):
+        """Two contradictory rows for one class must raise, not silently merge.
+
+        Injected as a SECOND row for a class the table already publishes, with a
+        conflicting attribution. Under last-write-wins the guard above would see
+        a mapping equal to ``DELTA_CLASSES`` at the expected row count — green
+        over a document stating two things at once — so the rejection branch is
+        what stands between the parser and that vacuity, and this control is
+        what exercises it.
+        """
+        duplicated = ''.join(
+            line + '| `index_entry_added` | migration | injected conflicting row |\n'
+            if line.startswith('| `index_entry_added` |')
+            else line
+            for line in manage_api_text.splitlines(keepends=True)
+        )
+        assert duplicated != manage_api_text, (
+            'the control injected nothing — the published row it duplicates has '
+            'changed shape, so it no longer demonstrates that the parser rejects '
+            'a duplicate'
+        )
+        with pytest.raises(ValueError, match='index_entry_added'):
+            _published_class_attributions(duplicated)
 
     def test_negative_control_an_unresolvable_table_parses_to_zero_rows(self):
         """No table means no rows — which is what the published count turns into a failure."""
