@@ -88,6 +88,7 @@ def test_pinned_alias_renders_resolved_id_never_raw_alias() -> None:
             source_label='agents/demo/execution-context.md',
             level_pin=alias,
         )
+        assert alias in model_map, f'{level}: alias {alias!r} missing from mapping.json model_map'
         resolved = f'{OPENCODE_MODEL_PREFIX}{model_map[alias]["id"]}'
         assert f'model: {resolved}' in block, (
             f'{level}: pinned alias {alias!r} must render as {resolved!r}, never the raw alias'

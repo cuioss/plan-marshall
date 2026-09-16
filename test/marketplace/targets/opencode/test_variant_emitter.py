@@ -355,6 +355,8 @@ def test_lower_tier_keeps_own_pin_when_higher_resolves_stronger(role_bundle: Pat
     model_map = load_mapping(CONFIG_DIR)['model_map']
     lower = LEVEL_TABLE['level-2']['model']
     higher = LEVEL_TABLE['level-6']['model']
+    assert lower is not None
+    assert higher is not None
     lower_resolved = f'anthropic/{model_map[lower]["id"]}'
     higher_resolved = f'anthropic/{model_map[higher]["id"]}'
     emit_bundles(
