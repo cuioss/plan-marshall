@@ -502,7 +502,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
 
 **Branch K — module structure changed but this step committed nothing**:
 
-Reached when `added ∪ removed` against `origin/main` is non-empty while the porcelain status is clean — the descriptor change already landed in an earlier commit on the branch:
+Reached when `added ∪ removed` against `origin/main` is non-empty while the porcelain status is clean — the descriptor change is already committed on the branch, so this step has nothing left to commit:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
