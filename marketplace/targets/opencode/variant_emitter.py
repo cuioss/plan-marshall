@@ -19,21 +19,30 @@ the Claude target uses; it is imported from
 drift. ``effort-levels.md`` remains the single documentary source of truth
 for both (guarded by the lockstep tests).
 
-Inherit-only emission (the OpenCode policy)
+Per-level model pins (the OpenCode policy)
 -------------------------------------------
-Every OpenCode level variant is emitted **model-less**: it carries no
-``model:`` and no ``reasoningEffort:`` frontmatter, so each subagent inherits
-the session's model at dispatch time. The level variants therefore behave
-identically no matter which one the effort-resolution seam picks — the seam
-keeps returning ``{base}-level-N`` names and every such name dispatches on
-the session model.
+Every OpenCode level variant is emitted **inherit-only by default**: it
+carries no ``model:`` and no ``reasoningEffort:`` frontmatter, so each
+subagent inherits the session's model at dispatch time. That is the fallback
+everywhere the local map is silent, and it is what every variant emitted
+without an explicit pin looks like.
 
-This deliberately deviates from the Claude target, whose variants pin
-``model:`` (and ``effort:``) per ``effort-levels.md``. The OpenCode adapter
-shares the level palette (``LEVEL_TABLE``) with Claude only so the level
-*names* cannot drift; it does not consume the model/effort binding. The
-alias-capability gate (``ALIAS_GATED_EFFORTS``, ``supports_effort``) is
-therefore a Claude-only concern and is not imported here.
+When the emit path is handed the materialized pin map from
+``marshall-steward/scripts/effort_pins.py`` (the PLAN-02 seam; see ADR-021),
+a level with a pin carries its configured ``model:``: an alias-mapped model
+resolves through ``mapping.json::model_map`` to a provider-qualified id, and
+an already-qualified provider/local string passes through unchanged (the
+shared ``_resolve_model`` path in ``frontmatter.py``). ``reasoningEffort:``
+is never emitted — the pin map carries model references only, so the
+effort-passthrough of the pre-inherit emitter is not restored.
+
+The alias-capability gate (``ALIAS_GATED_EFFORTS``, ``supports_effort``) is a
+Claude-only concern and is not imported here: the OpenCode side consumes the
+materialized pins ``as-is``. Never-escalate is enforced by the
+materialization seam upstream (``materialize_levels`` holds any entry ranked
+above its rung at ``inherit``), and the emitter enforces narrow scope: each
+pin is applied only to the exact level it is keyed for, and an unknown level
+key fails closed rather than being silently ignored.
 """
 
 from __future__ import annotations
@@ -103,21 +112,29 @@ def render_variant_frontmatter(
     rules: dict[str, list[str]],
     *,
     source_label: str,
+    level_pin: str | None = None,
 ) -> str:
     """Render the OpenCode frontmatter block for one level variant.
 
     The variant identity is carried by its filename (``{base}-{level}.md``),
     matching how the canonical agent id derives from its filename — no ``name:``
-    line is emitted. ``implements:``/``levels:`` are dropped and NO ``model:``
-    or ``reasoningEffort:`` is added, per the module docstring
-    "Inherit-only emission": every level variant inherits the session model.
-    ``level`` is not consulted in the block — the filename carries the level —
-    but the parameter keeps the call site explicit about which variant is
-    being rendered.
+    line is emitted. ``implements:``/``levels:`` are dropped.
+
+    ``level_pin`` is the materialized model reference for this exact level
+    (from ``effort_pins.materialize_levels``). When it is a non-empty string
+    other than ``inherit``, the variant carries ``model:`` resolved through
+    ``transform_agent_frontmatter`` — an alias resolves via
+    ``mapping.json::model_map`` to a provider-qualified id, an already-qualified
+    provider/local string passes through unchanged. When it is ``None``, empty,
+    or the ``inherit`` sentinel, no ``model:`` (and never a ``reasoningEffort:``)
+    is emitted and the variant dispatches on the session model. ``level``
+    selects the pin from the caller's pin map; the filename carries the level.
     """
     variant_fm = dict(fm)
     variant_fm.pop('implements', None)
     variant_fm.pop('levels', None)
+    if level_pin and level_pin != 'inherit':
+        variant_fm['model'] = level_pin
     return transform_agent_frontmatter(variant_fm, mapping, rules, source_label=source_label)
 
 
@@ -139,6 +156,7 @@ def emit_agent_variants(
     rules: dict[str, list[str]],
     *,
     source_label: str,
+    level_pins: dict[str, str] | None = None,
 ) -> OpenCodeVariantEmissionResult | None:
     """Emit ``{base_id}-level-N.md`` variant files for a role-eligible agent.
 
@@ -147,10 +165,19 @@ def emit_agent_variants(
 
     When eligible, writes one variant file per selected level into
     ``agent_dir`` (reusing the caller's already-transformed ``transformed_body``
-    verbatim) and returns the emission summary. Every variant is an
-    inherit-only copy of the canonical frontmatter (no ``model:``, no
-    ``reasoningEffort:``) — see the module docstring "Inherit-only emission".
-    No variant is ever skipped: the alias-capability gate is a Claude-only
+    verbatim) and returns the emission summary. ``level_pins`` is the
+    materialized per-level pin map (``{level: 'inherit' | model-reference}``
+    from ``effort_pins.materialize_levels``): any level whose pin is a
+    concrete model reference emits with ``model:`` set, any level without a
+    pin (or holding ``inherit``) emits an inherit-only copy of the canonical
+    frontmatter (no ``model:``, no ``reasoningEffort:``) — see the module
+    docstring "Per-level model pins".
+
+    Narrow scope is enforced at emit time: a pin is applied only to the exact
+    level it is keyed for, and a pin key outside the known palette fails
+    closed. Never-escalate is enforced by the materialization seam upstream
+    (``materialize_levels``), so no escalated pin reaches this function. No
+    variant is ever skipped: the alias-capability gate is a Claude-only
     concern, so ``variants_skipped`` is always empty. The canonical no-suffix
     file is NOT written here: the caller's normal emit path already produces
     it, and since the source carries no ``model:`` it is correct as-emitted.
@@ -160,12 +187,28 @@ def emit_agent_variants(
 
     validate_canonical(fm, source_label)
 
+    pins = level_pins or {}
+    unknown_keys = [level for level in pins if level not in LEVEL_TABLE]
+    if unknown_keys:
+        raise ValueError(
+            f'{source_label}: unknown level key(s) in pin map: '
+            f'{", ".join(sorted(unknown_keys))} — a pin can only be applied to '
+            f'its own configured level'
+        )
+
     agent_dir.mkdir(parents=True, exist_ok=True)
     emitted: list[str] = []
     skipped: list[tuple[str, str]] = []
 
     for level in selected_levels(fm):
-        block = render_variant_frontmatter(fm, level, mapping, rules, source_label=source_label)
+        block = render_variant_frontmatter(
+            fm,
+            level,
+            mapping,
+            rules,
+            source_label=source_label,
+            level_pin=pins.get(level),
+        )
         variant_path = agent_dir / f'{base_id}-{level}.md'
         variant_path.write_text(block + '\n\n' + transformed_body, encoding='utf-8')
         emitted.append(level)

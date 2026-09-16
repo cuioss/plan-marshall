@@ -352,6 +352,7 @@ def _emit_agent(
     body_transformer: BodyTransformer,
     written: list[Path],
     agent_index: dict[str, dict[str, str]],
+    level_pins: dict[str, str] | None = None,
 ) -> None:
     if not agent_md.exists():
         return
@@ -375,9 +376,11 @@ def _emit_agent(
 
     # Role-eligible agents (dynamic-level-executor extension point) also emit
     # per-level variant files alongside the canonical one, so
-    # ``{base}-level-N`` resolve-target results stay dispatchable. Every
-    # variant is an inherit-only copy of the canonical frontmatter (no
-    # model/effort pin) — non-eligible agents leave this a no-op (None).
+    # ``{base}-level-N`` resolve-target results stay dispatchable. With no pin
+    # map each variant is an inherit-only copy of the canonical frontmatter
+    # (no model/effort pin); with a materialized pin map a pinned level carries
+    # its configured ``model:`` — see variant_emitter's "Per-level model pins".
+    # Non-eligible agents leave this a no-op (None).
     result = emit_agent_variants(
         fm,
         new_body,
@@ -386,6 +389,7 @@ def _emit_agent(
         mapping,
         rules,
         source_label=source_label,
+        level_pins=level_pins,
     )
     if result is not None:
         for level in result.variants_emitted:
@@ -497,6 +501,7 @@ def emit_bundles(
     bundles: Iterable[str] | None = None,
     body_transformer: BodyTransformer | None = None,
     target_name: str = OPENCODE_TARGET_NAME,
+    level_pins: dict[str, str] | None = None,
 ) -> list[Path]:
     """Walk source bundles and emit OpenCode output.
 
@@ -512,6 +517,10 @@ def emit_bundles(
             before it is written. Defaults to identity (verbatim body).
         target_name: Registry name this emit runs as. A component whose
             ``targets:`` frontmatter scope omits it is not emitted.
+        level_pins: Optional materialized per-level model pin map
+            (``{level: 'inherit' | model-reference}``, from
+            ``effort_pins.materialize_levels``) threaded into per-level agent
+            variant emission. ``None`` keeps every variant inherit-only.
 
     Returns:
         List of generated paths (``SKILL.md`` files, agent / command files,
@@ -593,6 +602,7 @@ def emit_bundles(
                 transform_body,
                 written,
                 agent_index,
+                level_pins,
             )
 
         for command_md in _resolve_md_components(bundle_dir, plugin_config, 'commands', 'commands'):
