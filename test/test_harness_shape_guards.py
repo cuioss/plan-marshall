@@ -173,7 +173,7 @@ def test_no_test_module_pins_another_slices_filename() -> None:
     """The armed guard: the tree carries no cross-slice path literal."""
     result = shape_scan.r1_cross_slice_filename_pins()
 
-    assert not result.hits, _guard_report(
+    assert result.clean, _guard_report(
         'cross-slice filename pin(s)', result, 'test_no_test_module_pins_another_slices_filename'
     )
 
@@ -258,7 +258,7 @@ def test_no_teardown_restores_state_on_one_arm_only() -> None:
     """The armed guard: the tree carries no leaking restore."""
     result = shape_scan.r4_presence_keyed_restores()
 
-    assert not result.hits, _guard_report(
+    assert result.clean, _guard_report(
         'presence-keyed restore(s)', result, 'test_no_teardown_restores_state_on_one_arm_only'
     )
 
@@ -400,7 +400,7 @@ def test_no_runtime_derived_parametrize_is_unguarded() -> None:
     """The armed guard: every derived parameter set is asserted non-empty."""
     result = shape_scan.r5_unguarded_runtime_parametrize()
 
-    assert not result.hits, _guard_report(
+    assert result.clean, _guard_report(
         'unguarded runtime-derived parametrize binding(s)', result, 'test_no_runtime_derived_parametrize_is_unguarded'
     )
 
