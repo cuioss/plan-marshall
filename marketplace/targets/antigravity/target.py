@@ -45,9 +45,7 @@ class AntigravityTarget(TargetBase):
         bundles: list[str] | None = None,
     ) -> list[Path]:
         if output_dir is None:
-            raise ValueError(
-                'AntigravityTarget requires --output: pass an output directory (e.g. target/antigravity/)'
-            )
+            raise ValueError('AntigravityTarget requires --output: pass an output directory (e.g. target/antigravity/)')
         rules = load_transform_rules(self.config_dir / 'mapping.json')
         lookup = build_user_invocable_lookup(marketplace_dir)
         transformer = make_body_transformer(lookup, rules)

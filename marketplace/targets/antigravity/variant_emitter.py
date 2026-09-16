@@ -40,12 +40,12 @@ def validate_canonical(fm: dict[str, str], source_label: str) -> None:
     if fm.get('model'):
         raise AntigravityCanonicalValidationError(
             f"{source_label}: canonical declares 'implements:' AND 'model: {fm['model']}' — "
-            "role-eligible canonicals must stay target-neutral"
+            'role-eligible canonicals must stay target-neutral'
         )
     if fm.get('effort'):
         raise AntigravityCanonicalValidationError(
             f"{source_label}: canonical declares 'implements:' AND 'effort: {fm['effort']}' — "
-            "role-eligible canonicals must stay target-neutral"
+            'role-eligible canonicals must stay target-neutral'
         )
 
 
@@ -56,11 +56,14 @@ def render_variant_frontmatter(
     rules: dict[str, list[str]],
     *,
     source_label: str,
+    level_pin: str | None = None,
 ) -> str:
     """Render frontmatter for one level variant."""
     variant_fm = dict(fm)
     variant_fm.pop('implements', None)
     variant_fm.pop('levels', None)
+    if level_pin and level_pin != 'inherit':
+        variant_fm['model'] = level_pin
     return transform_agent_frontmatter(variant_fm, mapping, rules, source_label=source_label)
 
 
@@ -82,6 +85,7 @@ def emit_agent_variants(
     rules: dict[str, list[str]],
     *,
     source_label: str,
+    level_pins: dict[str, str] | None = None,
 ) -> AntigravityVariantEmissionResult | None:
     """Emit ``{base_id}-level-N.md`` variant files for a role-eligible agent."""
     if not is_role_eligible(fm):
@@ -89,12 +93,28 @@ def emit_agent_variants(
 
     validate_canonical(fm, source_label)
 
+    pins = level_pins or {}
+    unknown_keys = [level for level in pins if level not in LEVEL_TABLE]
+    if unknown_keys:
+        raise ValueError(
+            f'{source_label}: unknown level key(s) in pin map: '
+            f'{", ".join(sorted(unknown_keys))} — a pin can only be applied to '
+            f'its own configured level'
+        )
+
     agent_dir.mkdir(parents=True, exist_ok=True)
     emitted: list[str] = []
     skipped: list[tuple[str, str]] = []
 
     for level in selected_levels(fm):
-        block = render_variant_frontmatter(fm, level, mapping, rules, source_label=source_label)
+        block = render_variant_frontmatter(
+            fm,
+            level,
+            mapping,
+            rules,
+            source_label=source_label,
+            level_pin=pins.get(level),
+        )
         variant_path = agent_dir / f'{base_id}-{level}.md'
         variant_path.write_text(block + '\n\n' + transformed_body, encoding='utf-8')
         emitted.append(level)
