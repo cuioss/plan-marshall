@@ -102,6 +102,7 @@ format = "uv run ruff format marketplace/bundles/ marketplace/targets/ test/ .cl
 
 # Multi-target generator (Claude Code, OpenCode, …) — see marketplace/targets/.
 generate = "uv run python marketplace/targets/generate.py"
+generate-antigravity = "uv run python marketplace/targets/generate.py --target antigravity --output target/antigravity"
 generate-claude = "uv run python marketplace/targets/generate.py --target claude --output target/claude"
 generate-opencode = "uv run python marketplace/targets/generate.py --target opencode --output target/opencode"
 

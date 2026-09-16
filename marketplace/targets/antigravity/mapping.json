@@ -1,0 +1,74 @@
+{
+  "tool_permissions": {
+    "Read": "view_file",
+    "Write": "write_to_file",
+    "Edit": "replace_file_content",
+    "Glob": "find_by_name",
+    "Grep": "grep_search",
+    "Bash": "run_command",
+    "WebFetch": "read_url_content",
+    "WebSearch": "search_web",
+    "AskUserQuestion": "ask_question",
+    "Task": "invoke_subagent",
+    "Skill": "view_file",
+    "NotebookEdit": null,
+    "TaskCreate": "manage_task",
+    "TaskGet": "manage_task",
+    "TaskList": "manage_task",
+    "Monitor": "manage_task"
+  },
+  "directive_rewrites": {
+    "skill_directive": {
+      "template": "Call the `view_file` tool on `{bundle}-{skill}/SKILL.md` before continuing.",
+      "note": "Transform 1: a full-line `Skill: {bundle}:{skill}` directive rewrites to a view_file instruction."
+    },
+    "read_directive": {
+      "template": "Call the `view_file` tool with `{ AbsolutePath: \"{path}\" }` before continuing.",
+      "note": "Transform 1: a full-line `Read: {path}` load directive rewrites to a view_file instruction."
+    }
+  },
+  "slash_rewrites": {
+    "slash_command": {
+      "template": "/{name}",
+      "note": "Transform 2: `/skill-name` cross-references rewrite to `/{bundle}-{skill}`."
+    }
+  },
+  "body_idiom_rewrites": {
+    "AskUserQuestion": {
+      "disposition": "rewrite_inline_code",
+      "target_tool": "ask_question",
+      "opencode_tool": "ask_question",
+      "note": "Backtick-wrapped AskUserQuestion tool references rewrite to ask_question."
+    },
+    "Task:": {
+      "disposition": "preserve",
+      "note": "Leaf-aware: dispatcher prose is descriptive and preserved."
+    },
+    "Skill: <entry>": {
+      "disposition": "source_fix",
+      "note": "The runtime placeholder is reworded target-neutrally in the source."
+    },
+    "Monitor": {
+      "disposition": "source_fix",
+      "note": "The background-completion watch has no direct tool analog; concept prose preserved."
+    }
+  },
+  "model_map": {
+    "opus": {
+      "id": "pro",
+      "supports_effort": ["medium", "high", "xhigh"]
+    },
+    "sonnet": {
+      "id": "pro",
+      "supports_effort": ["medium", "high"]
+    },
+    "haiku": {
+      "id": "flash",
+      "supports_effort": []
+    },
+    "fable": {
+      "id": "flash_lite",
+      "supports_effort": ["medium", "high", "xhigh", "max"]
+    }
+  }
+}
