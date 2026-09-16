@@ -4,7 +4,7 @@
 
 ## Overview
 
-The Pin models flow provisions this machine's models into the per-level dispatch chain. It reads the machine-local pin map, materializes which model each level provisions, emits the `level=model` pairs via `effort_pins` for the PLAN-01 post-resolve harness provisioning seam to apply, and verifies the `inherit` fallback on unpinned levels. The levels themselves are chosen by the sibling Effort flow (see [effort-menu.md](../standards/effort-menu.md)); this flow only provisions models for them.
+The Pin models flow provisions this machine's models into the per-level dispatch chain. It reads the machine-local pin map, materializes which model each level provisions, emits the `level=model` pairs via `effort_pins` for the PLAN-01 post-resolve harness provisioning seam to apply, and spot-checks the `inherit` fallback on one unpinned slot. The levels themselves are chosen by the sibling Effort flow (see [effort-menu.md](../standards/effort-menu.md)); this flow only provisions models for them.
 
 The map contract — machine-local location, PLAN-01 schema, both entry kinds, inherit preservation, and the never-escalate guard — lives in [pin-provisioning.md](../standards/pin-provisioning.md) and is not restated here.
 
@@ -51,13 +51,13 @@ Hand each emitted `level=model` pair to the harness provisioning seam, under the
 
 ### Step 4: Verify the Inherit Fallback
 
-Confirm unpinned levels still resolve to the session model:
+Confirm one slot's unpinned level still resolves to the session model:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config effort resolve-target --phase phase-5-execute --role default
 ```
 
-Every level the map left unpinned must resolve to the canonical (`inherit`) target. A level that resolves to a provisioned model it was never pinned to is a defect — re-run Step 1 against the current map rather than editing the resolution.
+When the map leaves this slot's level unpinned, the call must return the canonical (`inherit`) target. A provisioned model the level was never pinned to is a defect — re-run Step 1 against the current map rather than editing the resolution. The per-level picture is Step 2's `pins`, not this call.
 
 ### Step 5: Re-Run on Map Change
 

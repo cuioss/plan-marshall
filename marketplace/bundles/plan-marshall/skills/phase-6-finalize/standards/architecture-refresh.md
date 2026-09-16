@@ -226,15 +226,15 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
   --project-dir {worktree_path} descriptor-regression-check --pre-ref origin/main
 ```
 
-Parse `status`, `regressive` (bool), `violations[]`, `examined_fields` and `modules_examined` from the TOON output.
+Parse `status`, `regressive` (bool), `violations[]`, `examined_fields`, `modules_examined` and `modules_unreadable[]` from the TOON output.
 
-- **`status: error`** → the regression check itself failed (e.g., the baseline cannot be read by ref, the project-architecture descriptor is malformed, or a required field is absent). The check never ran, so this is NOT a regression verdict and the response carries no `violations[]`, `examined_fields` or `modules_examined` to name. It shares only the commit decision with `regressive: true`: do NOT commit. Log an ERROR carrying the payload's `error` field together with the rest of the payload (the error shapes are documented in `manage-architecture/standards/client-api.md` § descriptor-regression-check), mark the step `outcome failed` with `--display-detail "regression check failed — {error}"`, and return — the delta is left uncommitted in the worktree.
-- **`regressive: false`** → the delta is benign. Log the verdict together with the coverage it was computed over, so a green gate states what it examined, then proceed to 3d and commit:
+- **`status: error`** → the regression check itself failed (e.g., the baseline cannot be read by ref, the project-architecture descriptor is malformed, or a required field is absent). The check never ran, so this is NOT a regression verdict and the response carries none of the success-response fields to name. It shares only the commit decision with `regressive: true`: do NOT commit. Log an ERROR carrying the payload's `error` field together with the rest of the payload (the error shapes are documented in `manage-architecture/standards/client-api.md` § descriptor-regression-check), mark the step `outcome failed` with `--display-detail "regression check failed — {error}"`, and return — the delta is left uncommitted in the worktree.
+- **`regressive: false`** → the delta is benign. Log the verdict together with the coverage it was computed over, so a green gate states what it examined and what it could not read, then proceed to 3d and commit:
 
   ```bash
   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
     decision --plan-id {plan_id} --level INFO \
-    --message "(plan-marshall:phase-6-finalize:architecture-refresh) Regression gate green — examined_fields: {examined_fields}; modules_examined: {modules_examined}"
+    --message "(plan-marshall:phase-6-finalize:architecture-refresh) Regression gate green — examined_fields: {examined_fields}; modules_examined: {modules_examined}; modules_unreadable: {modules_unreadable}"
   ```
 
 - **`regressive: true`** → do NOT commit. The delta lost curated content. Log an ERROR naming the violated fields and the coverage, leave the regressive descriptor uncommitted in the worktree, mark the step `outcome failed`, and return — do NOT abort the finalize pipeline (the next plan retries from a clean state once the source path is repaired):
@@ -242,7 +242,7 @@ Parse `status`, `regressive` (bool), `violations[]`, `examined_fields` and `modu
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level ERROR \
-  --message "[ERROR] (plan-marshall:phase-6-finalize:architecture-refresh) Regressive descriptor delta refused — {violation_fields} (examined_fields: {examined_fields}; modules_examined: {modules_examined}); leaving .plan/project-architecture uncommitted"
+  --message "[ERROR] (plan-marshall:phase-6-finalize:architecture-refresh) Regressive descriptor delta refused — {violation_fields} (examined_fields: {examined_fields}; modules_examined: {modules_examined}; modules_unreadable: {modules_unreadable}); leaving .plan/project-architecture uncommitted"
 ```
 
 ```bash
@@ -565,8 +565,8 @@ The `--display-detail` strings are subject to the output-template contract (≤8
 | `discover --force --apply plan` returns `status: error` | Log ERROR, mark the step `outcome failed` with `--display-detail "discover failed — see work.log"`, return — do NOT abort the finalize pipeline. The next plan will retry from a clean state. |
 | `discover` returns `attribution: undecidable` or `no_baseline` | NOT a failure. Nothing was written; log the unclassified fields at WARNING, still gate any segment-1 writes through 3c / 3c.5 / 3d, skip Tier 1, and mark the step done with Branch H. |
 | `discover` returns `attribution: migration_only` or `mixed` | NOT a failure. The migration classes stay unwritten; gate what is dirty through 3c / 3c.5 / 3d, skip Tier 1, and mark the step done with Branch G (nothing committed) or Branch I (committed). The migration lands through `/marshall-steward upgrade`. |
-| `descriptor-regression-check` returns `status: error` | The check could not run, so nothing is known about the delta — this is NOT a regression verdict. Do NOT commit. The payload carries no `violations[]`, `examined_fields` or `modules_examined`, so log ERROR with its `error` field and the rest of the payload, naming no violated fields or coverage, mark the step `outcome failed` with `--display-detail "regression check failed — {error}"`, leave `.plan/project-architecture` uncommitted, and return — do NOT abort the finalize pipeline. |
-| `descriptor-regression-check` returns `regressive: true` | The delta lost curated content. Do NOT commit. Log ERROR with the violated fields and the `examined_fields` / `modules_examined` coverage, mark the step `outcome failed` with `--display-detail "regressive descriptor delta refused — {fields}"`, leave `.plan/project-architecture` uncommitted, and return — do NOT abort the finalize pipeline. The next plan retries from a clean state once the source path is repaired. |
+| `descriptor-regression-check` returns `status: error` | The check could not run, so nothing is known about the delta — this is NOT a regression verdict. Do NOT commit. The payload carries none of the success-response fields, so log ERROR with its `error` field and the rest of the payload, naming no violated fields or coverage, mark the step `outcome failed` with `--display-detail "regression check failed — {error}"`, leave `.plan/project-architecture` uncommitted, and return — do NOT abort the finalize pipeline. |
+| `descriptor-regression-check` returns `regressive: true` | The delta lost curated content. Do NOT commit. Log ERROR with the violated fields and the `examined_fields` / `modules_examined` / `modules_unreadable` coverage, mark the step `outcome failed` with `--display-detail "regressive descriptor delta refused — {fields}"`, leave `.plan/project-architecture` uncommitted, and return — do NOT abort the finalize pipeline. The next plan retries from a clean state once the source path is repaired. |
 | `architecture enrich` fails | Log ERROR, fall back to Branch F (deferral recorded in the decision log) — do NOT mark the whole step failed. The deterministic refresh has already shipped; the user can re-enrich manually via `/marshall-steward` Step 13. Mark the step done with `--display-detail "refreshed; enrich failed — see work.log"`. |
 | `AskUserQuestion` aborted | Treat the same as `Skip — note in PR` (Branch F). The user actively backing out is informationally equivalent to declining the prompt. |
 
@@ -623,15 +623,15 @@ else:
     else:
         reg := architecture --project-dir {worktree_path} descriptor-regression-check --pre-ref origin/main
         if reg.status == "error":
-            # the check never ran: no violations[], examined_fields or modules_examined to name
+            # the check never ran: none of the success-response fields to name
             log ERROR: "Regression check failed — {reg.error}"
             mark-step-done outcome=failed detail="regression check failed — {reg.error}"
             return    # leave .plan/project-architecture uncommitted
         if reg.regressive:
-            log ERROR: "Regressive descriptor delta refused — {fields} (examined_fields, modules_examined)"
+            log ERROR: "Regressive descriptor delta refused — {fields} (examined_fields, modules_examined, modules_unreadable)"
             mark-step-done outcome=failed detail="regressive descriptor delta refused — {fields}"
             return    # leave .plan/project-architecture uncommitted
-        log decision: "Regression gate green — examined_fields, modules_examined"
+        log decision: "Regression gate green — examined_fields, modules_examined, modules_unreadable"
         git -C {worktree_path} add .plan/project-architecture
         git -C {worktree_path} commit -m "chore(architecture): refresh derived data after {plan-title}"
         # no push — the order-11 default:push barrier ships this commit
@@ -716,8 +716,8 @@ switch tier_1:
 - `phase-1-init/SKILL.md` — phase-1-init does not snapshot the architecture descriptor; this step reads its pre-baseline from the committed `origin/main` tree by ref instead.
 - `manage-run-config/SKILL.md` `architecture-refresh` subcommand group — the source of truth for tier-0 / tier-1 knob semantics.
 - `manage-architecture/standards/manage-api.md` § discover — the `--apply` modes, the delta-class table, the attribution verdicts and their precedence; this step consumes the verdict and does not restate the table.
-- `manage-architecture/standards/client-api.md` `diff-modules` and `descriptor-regression-check` — the `--pre-ref` baseline read, the derived-less-baseline classification note (every common module reports `changed` against a git baseline; consume `added` / `removed` only), and the commit-gate regression predicate with its published `examined_fields` coverage.
+- `manage-architecture/standards/client-api.md` `diff-modules` and `descriptor-regression-check` — the `--pre-ref` baseline read, the derived-less-baseline classification note (every common module reports `changed` against a git baseline; consume `added` / `removed` only), and the commit-gate regression predicate with the coverage fields it publishes.
 - `manage-architecture` `enrich` verb — the LLM re-enrichment surface used by Tier 1 `auto` and `prompt`-accepted paths.
 - `marshall-steward/references/upgrade-flow.md` — the steward upgrade flow that lands a deferred tool migration on the plan-less steward PR; the reconcile path Branches G, H and I name.
-- `phase-6-finalize/standards/output-template.md` — the renderer that consumes `--display-detail` from the Branch A–I templates above.
+- `phase-6-finalize/standards/output-template.md` — the renderer that consumes `--display-detail` from the Step 5 branch templates above.
 - `phase-6-finalize/standards/required-steps.md` — declares `architecture-refresh` as a required step for the `phase_steps_complete` handshake.
