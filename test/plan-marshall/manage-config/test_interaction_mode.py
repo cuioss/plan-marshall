@@ -39,6 +39,11 @@ _config_core_mod = load_script_module(
 cmd_interaction_mode_get = _cmd_interaction_mode.cmd_interaction_mode_get
 cmd_interaction_mode_set = _cmd_interaction_mode.cmd_interaction_mode_set
 
+# Module-level non-vacuity guard for the runtime-derived parametrizations below
+# (R5 harness shape guard): the mode tuple must be non-empty, or every derived
+# parametrize would silently run zero cases.
+assert _config_defaults_mod.VALID_INTERACTION_MODES, 'derived mode population is empty'
+
 
 # =============================================================================
 # Validator unit tests
