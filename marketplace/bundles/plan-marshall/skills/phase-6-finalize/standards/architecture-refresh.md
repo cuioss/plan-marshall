@@ -228,7 +228,7 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
 
 Parse `status`, `regressive` (bool), `violations[]`, `examined_fields` and `modules_examined` from the TOON output.
 
-- **`status: error`** → the regression check itself failed (e.g., the baseline cannot be read by ref, the project-architecture descriptor is malformed, or a required field is absent). Treat this the same as `regressive: true`: do NOT commit. Log an ERROR carrying the TOON `error` and `detail` fields, mark the step `outcome failed`, and return — the delta is left uncommitted in the worktree.
+- **`status: error`** → the regression check itself failed (e.g., the baseline cannot be read by ref, the project-architecture descriptor is malformed, or a required field is absent). The check never ran, so this is NOT a regression verdict and the response carries no `violations[]`, `examined_fields` or `modules_examined` to name. It shares only the commit decision with `regressive: true`: do NOT commit. Log an ERROR carrying the TOON `error` and `detail` fields, mark the step `outcome failed` with `--display-detail "regression check failed — {error}"`, and return — the delta is left uncommitted in the worktree.
 - **`regressive: false`** → the delta is benign. Log the verdict together with the coverage it was computed over, so a green gate states what it examined, then proceed to 3d and commit:
 
   ```bash
@@ -312,6 +312,8 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   --message "(plan-marshall:phase-6-finalize:architecture-refresh) Tier 1 skipped — change_type = {change_type}"
 ```
 
+Continue to Step 5 and select between Branches C, D, J and K on whether Step 3d committed and whether `affected_modules` is non-empty.
+
 ### 4b. Affected-modules empty (Tier-0-enabled, no added/removed)
 
 When Tier 0 ran and `added ∪ removed` is empty, `affected_modules = []`. There is no enrichment to do — log and exit Tier 1 cleanly:
@@ -322,7 +324,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   --message "(plan-marshall:phase-6-finalize:architecture-refresh) Tier 1 skipped — no affected modules"
 ```
 
-Continue to Step 5.
+Continue to Step 5 — **Branch J** when Step 3d committed, **Branch C** when it did not. An empty module union does not mean nothing was committed.
 
 ### 4c. Affected-modules unknown (Tier-0-disabled path)
 
@@ -449,6 +451,8 @@ Before returning control to the finalize pipeline, record that this step ran on 
 
 Pass a `--display-detail` value alongside `--outcome done` so the output-template renderer can surface the refresh outcome. The payload differs by branch — pick the matching template below. (Branch A's mark-step-done is emitted inline in Step 2c; Branches G, H and I are selected in Step 3e.)
 
+Branches C, D, J and K are the four cells a Tier-1 skip (Step 4a or 4b) can land in. Select between them on **both** dimensions — whether Step 3d committed, and whether `added ∪ removed` is non-empty — because neither implies the other: a round can commit segment-1 descriptor edits with an empty union (Branch J), and a round can see a non-empty union whose commit already landed earlier on the branch (Branch K). The `tier1_exit_detail()` selection in the Pseudo-Code Summary is the authoritative form.
+
 **Branch A — no committed origin/main baseline (Step 2c path)**:
 
 ```bash
@@ -467,7 +471,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
   --display-detail "tier-0 disabled; tier-1 skipped"
 ```
 
-**Branch C — Tier 0 ran, no diff**:
+**Branch C — Tier 0 ran, nothing committed and no module structure change**:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
@@ -476,13 +480,35 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
   --display-detail "no module structure changed"
 ```
 
-**Branch D — Tier 0 commit only (Tier 1 skipped via change_type, knob, or empty diff)**:
+**Branch D — Tier 0 committed and module structure changed (Tier 1 skipped via change_type or knob)**:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
   mark-step-done --plan-id {plan_id} --phase 6-finalize \
   --step architecture-refresh --outcome done \
   --display-detail "refreshed derived data ({affected_module_count} modules)"
+```
+
+**Branch J — Tier 0 committed but no module structure change (`affected_module_count` is 0)**:
+
+Reached when segment-1 plan-time descriptor edits left `.plan/project-architecture` dirty while `added` and `removed` are both empty. The count is deliberately not interpolated — rendering `(0 modules)` would advertise a module delta the round does not have:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
+  mark-step-done --plan-id {plan_id} --phase 6-finalize \
+  --step architecture-refresh --outcome done \
+  --display-detail "refreshed derived data; no module structure changed"
+```
+
+**Branch K — module structure changed but this step committed nothing**:
+
+Reached when `added ∪ removed` against `origin/main` is non-empty while the porcelain status is clean — the descriptor change already landed in an earlier commit on the branch:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
+  mark-step-done --plan-id {plan_id} --phase 6-finalize \
+  --step architecture-refresh --outcome done \
+  --display-detail "module structure changed ({affected_module_count} modules); nothing to commit"
 ```
 
 **Branch E — Tier 0 + Tier 1 enrich (auto or prompt-accepted)**:
@@ -541,7 +567,8 @@ The `--display-detail` strings are subject to the output-template contract (≤8
 | `discover --force --apply plan` returns `status: error` | Log ERROR, mark the step `outcome failed` with `--display-detail "discover failed — see work.log"`, return — do NOT abort the finalize pipeline. The next plan will retry from a clean state. |
 | `discover` returns `attribution: undecidable` or `no_baseline` | NOT a failure. Nothing was written; log the unclassified fields at WARNING, still gate any segment-1 writes through 3c / 3c.5 / 3d, skip Tier 1, and mark the step done with Branch H. |
 | `discover` returns `attribution: migration_only` or `mixed` | NOT a failure. The migration classes stay unwritten; gate what is dirty through 3c / 3c.5 / 3d, skip Tier 1, and mark the step done with Branch G (nothing committed) or Branch I (committed). The migration lands through `/marshall-steward upgrade`. |
-| `descriptor-regression-check` returns `status: error` or `regressive: true` | The delta lost curated content (or the check could not run). Do NOT commit. Log ERROR with the violated fields and the `examined_fields` / `modules_examined` coverage, mark the step `outcome failed` with `--display-detail "regressive descriptor delta refused — {fields}"`, leave `.plan/project-architecture` uncommitted, and return — do NOT abort the finalize pipeline. The next plan retries from a clean state once the source path is repaired. |
+| `descriptor-regression-check` returns `status: error` | The check could not run, so nothing is known about the delta — this is NOT a regression verdict. Do NOT commit. The error payload carries only `status` / `error` / `ref`\|`path` / `message`\|`detail`, so log ERROR with the `error` and `detail` fields and name no violated fields or coverage, mark the step `outcome failed` with `--display-detail "regression check failed — {error}"`, leave `.plan/project-architecture` uncommitted, and return — do NOT abort the finalize pipeline. |
+| `descriptor-regression-check` returns `regressive: true` | The delta lost curated content. Do NOT commit. Log ERROR with the violated fields and the `examined_fields` / `modules_examined` coverage, mark the step `outcome failed` with `--display-detail "regressive descriptor delta refused — {fields}"`, leave `.plan/project-architecture` uncommitted, and return — do NOT abort the finalize pipeline. The next plan retries from a clean state once the source path is repaired. |
 | `architecture enrich` fails | Log ERROR, fall back to Branch F (deferral recorded in the decision log) — do NOT mark the whole step failed. The deterministic refresh has already shipped; the user can re-enrich manually via `/marshall-steward` Step 13. Mark the step done with `--display-detail "refreshed; enrich failed — see work.log"`. |
 | `AskUserQuestion` aborted | Treat the same as `Skip — note in PR` (Branch F). The user actively backing out is informationally equivalent to declining the prompt. |
 
@@ -561,6 +588,10 @@ The decision flow as a single procedural block (authoritative — implementation
 read tier_0      := manage-run-config architecture-refresh get-tier-0
 read tier_1      := manage-run-config architecture-refresh get-tier-1
 read change_type := manage-status metadata get change_type
+
+# did THIS step ship a descriptor commit? every Tier-1 exit below reads it,
+# so it is bound before the Tier-0 branch that can set it
+committed := false
 
 # --- Tier 0 ---
 if tier_0 != "enabled":
@@ -589,12 +620,16 @@ else:
         affected := diff.added ∪ diff.removed
 
     # only plan-caused content can be dirty: segment-1 writes + the plan projection
-    committed := false
     if git -C {worktree_path} status --porcelain .plan/project-architecture is empty:
         log: "Tier 0 — clean after discover, no commit needed"
     else:
         reg := architecture --project-dir {worktree_path} descriptor-regression-check --pre-ref origin/main
-        if reg.status == "error" or reg.regressive:
+        if reg.status == "error":
+            # the check never ran: no violations[], examined_fields or modules_examined to name
+            log ERROR: "Regression check failed — {reg.error}: {reg.detail}"
+            mark-step-done outcome=failed detail="regression check failed — {reg.error}"
+            return    # leave .plan/project-architecture uncommitted
+        if reg.regressive:
             log ERROR: "Regressive descriptor delta refused — {fields} (examined_fields, modules_examined)"
             mark-step-done outcome=failed detail="regressive descriptor delta refused — {fields}"
             return    # leave .plan/project-architecture uncommitted
@@ -618,19 +653,29 @@ else:
         return
 
 # --- Tier 1 ---
+# Shared exit detail for the Tier-1 skips below. It selects on BOTH dimensions,
+# because neither implies the other: a round can commit segment-1 descriptor
+# edits with an empty added ∪ removed union, and a round can see a non-empty
+# union whose commit already landed earlier on the branch.
+tier1_exit_detail() :=
+    if committed and len(affected) > 0:  "refreshed derived data ({n} modules)"              # Branch D
+    elif committed:                      "refreshed derived data; no module structure changed"  # Branch J
+    elif len(affected) > 0:              "module structure changed ({n} modules); nothing to commit"  # Branch K
+    else:                                "no module structure changed"                       # Branch C
+
 if change_type in {"bug_fix", "verification"}:
     log: "Tier 1 skipped — change_type = {change_type}"
-    mark-step-done with appropriate detail
+    mark-step-done detail=tier1_exit_detail()
     return
 
-if affected == UNKNOWN:           # tier_0 disabled
+if affected == UNKNOWN:           # tier_0 disabled ⇒ the commit block never ran, committed is false
     log WARNING: "Tier 1 skipped — no diff to scope"
-    mark-step-done with "tier-0 disabled; tier-1 skipped"
+    mark-step-done with "tier-0 disabled; tier-1 skipped"     # Branch B
     return
 
 if len(affected) == 0:            # tier_0 enabled but no added/removed
     log: "Tier 1 skipped — no affected modules"
-    mark-step-done with "no module structure changed"
+    mark-step-done detail=tier1_exit_detail()                 # Branch J when committed, else Branch C
     return
 
 switch tier_1:

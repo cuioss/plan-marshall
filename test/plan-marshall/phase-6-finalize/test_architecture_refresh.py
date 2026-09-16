@@ -164,6 +164,35 @@ _DETAIL_MIGRATION_NOT_COMMITTED = 'tool migration not committed; run marshall-st
 _DETAIL_UNATTRIBUTABLE = 'descriptor delta unattributable; not committed'
 _DETAIL_MIGRATION_DEFERRED = 'refreshed derived data ({affected_module_count} modules); migration deferred'
 
+# -- The four Tier-1-skip exit cells (Step 5 Branches C / D / J / K) ---------
+#
+# The exit detail is selected on BOTH dimensions — whether Step 3d committed,
+# and whether `added union removed` is non-empty — because neither implies the
+# other. A round can commit segment-1 plan-time descriptor edits while the
+# module union is empty (J), and a round can see a non-empty union whose commit
+# already landed in an earlier commit on the branch (K). Keying on one dimension
+# alone is what let a committed round report "no module structure changed".
+_DETAIL_NO_STRUCTURE_CHANGE = 'no module structure changed'
+_DETAIL_REFRESHED = 'refreshed derived data ({affected_module_count} modules)'
+_DETAIL_REFRESHED_NO_STRUCTURE_CHANGE = 'refreshed derived data; no module structure changed'
+_DETAIL_STRUCTURE_CHANGE_NOT_COMMITTED = 'module structure changed ({affected_module_count} modules); nothing to commit'
+
+
+def _tier1_exit(*, committed: bool, affected: tuple[str, ...]) -> tuple[str, str]:
+    """Return ``(branch, display_detail)`` for a Tier-1 skip.
+
+    Mirrors ``tier1_exit_detail()`` in the standard's Pseudo-Code Summary. Branch
+    J deliberately interpolates no module count: rendering ``(0 modules)`` would
+    advertise a module delta the round does not have.
+    """
+    if committed and affected:
+        return 'D', _DETAIL_REFRESHED.format(affected_module_count=len(affected))
+    if committed:
+        return 'J', _DETAIL_REFRESHED_NO_STRUCTURE_CHANGE
+    if affected:
+        return 'K', _DETAIL_STRUCTURE_CHANGE_NOT_COMMITTED.format(affected_module_count=len(affected))
+    return 'C', _DETAIL_NO_STRUCTURE_CHANGE
+
 
 def _decide_architecture_refresh(
     *,
@@ -183,11 +212,13 @@ def _decide_architecture_refresh(
 
     Returns a dict with keys:
 
-      * ``branch``: the ``A``-``I`` branch identifier from "Step 5: Mark Step
-        Complete" (no baseline / tier-0+tier-1 skipped / no diff / refresh only /
-        refresh + enrich / refresh + deferred re-enrichment / migration not
-        committed / unattributable / refresh with migration deferred), or
-        ``refused`` when the regression gate rejected the delta.
+      * ``branch``: the ``A``-``K`` branch identifier from "Step 5: Mark Step
+        Complete" (no baseline / tier-0+tier-1 skipped / nothing committed and no
+        structure change / refresh only / refresh + enrich / refresh + deferred
+        re-enrichment / migration not committed / unattributable / refresh with
+        migration deferred / committed with an empty module union / structure
+        change this step did not commit), or ``refused`` when the regression gate
+        rejected the delta.
       * ``tier_0_committed``: True if the Tier-0 ``chore(architecture):
         refresh`` commit fires.
       * ``tier_1_action``: ``enrich`` / ``deferred`` / ``skipped``.
@@ -291,20 +322,13 @@ def _decide_architecture_refresh(
                 'affected_modules': _AFFECTED_UNKNOWN,
                 'display_detail': 'tier-0 disabled; tier-1 skipped',
             }
-        if tier_0_committed:
-            return {
-                'branch': 'D',
-                'tier_0_committed': tier_0_committed,
-                'tier_1_action': 'skipped',
-                'affected_modules': affected,
-                'display_detail': (f'refreshed derived data ({len(affected)} modules)'),
-            }
+        branch, detail = _tier1_exit(committed=tier_0_committed, affected=affected)
         return {
-            'branch': 'C',
-            'tier_0_committed': False,
+            'branch': branch,
+            'tier_0_committed': tier_0_committed,
             'tier_1_action': 'skipped',
             'affected_modules': affected,
-            'display_detail': 'no module structure changed',
+            'display_detail': detail,
         }
 
     # 4c. affected unknown (Tier-0 disabled)
@@ -317,14 +341,18 @@ def _decide_architecture_refresh(
             'display_detail': 'tier-0 disabled; tier-1 skipped',
         }
 
-    # 4b. affected empty (Tier-0 enabled, no added/removed -> no commit)
+    # 4b. affected empty (Tier-0 enabled, no added/removed). An empty module
+    # union does NOT mean nothing was committed: segment-1 plan-time descriptor
+    # edits dirty the tree with added and removed both empty, so this exit reads
+    # `tier_0_committed` rather than assuming it False (Branch J vs Branch C).
     if len(affected) == 0:
+        branch, detail = _tier1_exit(committed=tier_0_committed, affected=())
         return {
-            'branch': 'C',
-            'tier_0_committed': False,
+            'branch': branch,
+            'tier_0_committed': tier_0_committed,
             'tier_1_action': 'skipped',
             'affected_modules': (),
-            'display_detail': 'no module structure changed',
+            'display_detail': detail,
         }
 
     # 4d. tier_1 dispatch — affected is non-empty, tier-0 enabled, change_type
@@ -533,7 +561,7 @@ class TestAttributionVerdict:
             diff_added=('mod-x',),
             attribution=attribution,
         )
-        assert result['branch'] in {'C', 'D', 'E', 'F', 'G', 'H', 'I'}
+        assert result['branch'] in {'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K'}
 
     def test_migration_only_commits_nothing_and_names_the_upgrade_path(self):
         """The observed consumer run: an empty module union and a tool-migration-only delta."""
@@ -841,6 +869,110 @@ class TestChangeTypeShortcut:
                 diff_added=('mod-q',),
             )
             assert result['branch'] == 'E', f'change_type={change_type!r} must run tier-1 with auto knob'
+
+
+# ===========================================================================
+# Tier-1 exit cells — the two dimensions are independent.
+#
+# Step 5 Branches C / D / J / K are the four cells a Tier-1 skip can land in.
+# The regression these tests pin: the exits used to key on ONE dimension, so a
+# round that committed segment-1 plan-time descriptor edits with an empty module
+# union reported Branch C's "no module structure changed" — nothing changed, on a
+# round that shipped a descriptor commit onto the PR.
+# ===========================================================================
+
+
+class TestTier1ExitCells:
+    """`committed` and `len(affected)` each decide half of the exit detail."""
+
+    def test_exit_cell_population_is_the_full_two_by_two(self):
+        """All four cells resolve to distinct branches — no cell is unreachable in the model."""
+        cells = {
+            _tier1_exit(committed=committed, affected=affected)[0]
+            for committed in (True, False)
+            for affected in ((), ('mod-x',))
+        }
+        assert cells == {'C', 'D', 'J', 'K'}, (
+            f'the four exit cells must map to four distinct branches, got {sorted(cells)}'
+        )
+
+    def test_committed_with_empty_union_is_branch_j_not_c(self):
+        """THE regression: a committed round with no added/removed is Branch J.
+
+        Reached the way the standard names it — segment-1 plan-time descriptor
+        edits leave the tree dirty (`preexisting_plan_writes`) while the discover
+        verdict is `clean`, so `added` and `removed` are both empty. Keying the
+        exit on the module union alone reports "no module structure changed" for
+        a round that committed.
+        """
+        result = _decide_architecture_refresh(
+            baseline_present=True,
+            tier_0='enabled',
+            tier_1='auto',
+            change_type='feature',
+            attribution='clean',
+            preexisting_plan_writes=True,
+        )
+        assert result['tier_0_committed'] is True, 'the fixture must actually commit, or the cell is not exercised'
+        assert result['affected_modules'] == ()
+        assert result['branch'] == 'J', (
+            'a committed round with an empty module union must be Branch J; Branch C '
+            'would report "no module structure changed" for a round that shipped a commit'
+        )
+        assert result['display_detail'] == _DETAIL_REFRESHED_NO_STRUCTURE_CHANGE
+        assert '0 modules' not in result['display_detail'], (
+            "Branch J must not interpolate the zero count — '(0 modules)' advertises "
+            'a module delta the round does not have'
+        )
+
+    def test_committed_with_empty_union_under_change_type_shortcut_is_also_branch_j(self):
+        """The same cell reached through the 4a exit rather than the 4b exit."""
+        result = _decide_architecture_refresh(
+            baseline_present=True,
+            tier_0='enabled',
+            tier_1='auto',
+            change_type='bug_fix',
+            attribution='clean',
+            preexisting_plan_writes=True,
+        )
+        assert result['tier_0_committed'] is True
+        assert result['branch'] == 'J', 'both Tier-1 exits must select the same cell for the same inputs'
+        assert result['display_detail'] == _DETAIL_REFRESHED_NO_STRUCTURE_CHANGE
+
+    def test_uncommitted_with_non_empty_union_is_branch_k(self):
+        """The mirror cell: structure changed against origin/main, but not by this step.
+
+        Reachable when the descriptor change already landed in an earlier commit
+        on the branch, so the porcelain status is clean while `added` union
+        `removed` is non-empty. This is the cell the standard's old
+        "mark-step-done with appropriate detail" left unnamed.
+        """
+        result = _decide_architecture_refresh(
+            baseline_present=True,
+            tier_0='enabled',
+            tier_1='auto',
+            change_type='bug_fix',
+            diff_added=('mod-x',),
+            attribution='clean',
+        )
+        assert result['tier_0_committed'] is False
+        assert result['affected_modules'] == ('mod-x',)
+        assert result['branch'] == 'K'
+        assert result['display_detail'] == 'module structure changed (1 modules); nothing to commit'
+
+    def test_neither_dimension_is_branch_c(self):
+        """The negative control: Branch C keeps the cell it legitimately owns."""
+        result = _decide_architecture_refresh(
+            baseline_present=True,
+            tier_0='enabled',
+            tier_1='auto',
+            change_type='bug_fix',
+            attribution='clean',
+        )
+        assert result['tier_0_committed'] is False
+        assert result['affected_modules'] == ()
+        assert result['branch'] == 'C'
+        assert result['display_detail'] == _DETAIL_NO_STRUCTURE_CHANGE
 
 
 # ===========================================================================
@@ -1181,13 +1313,15 @@ class TestNarrativeContract:
         [
             'skipped — no committed origin/main architecture baseline',
             'tier-0 disabled; tier-1 skipped',
-            'no module structure changed',
-            'refreshed derived data ({affected_module_count} modules)',
+            _DETAIL_NO_STRUCTURE_CHANGE,
+            _DETAIL_REFRESHED,
             'refreshed + re-enriched ({affected_module_count} modules)',
             'refreshed; re-enrichment deferred',
             _DETAIL_MIGRATION_NOT_COMMITTED,
             _DETAIL_UNATTRIBUTABLE,
             _DETAIL_MIGRATION_DEFERRED,
+            _DETAIL_REFRESHED_NO_STRUCTURE_CHANGE,
+            _DETAIL_STRUCTURE_CHANGE_NOT_COMMITTED,
         ],
     )
     def test_documents_display_detail_template(
@@ -1198,7 +1332,16 @@ class TestNarrativeContract:
         assert template in standard_text, f'Standard must document the display-detail template: {template!r}'
 
     @pytest.mark.parametrize(
-        'template', [_DETAIL_MIGRATION_NOT_COMMITTED, _DETAIL_UNATTRIBUTABLE, _DETAIL_MIGRATION_DEFERRED]
+        'template',
+        [
+            _DETAIL_MIGRATION_NOT_COMMITTED,
+            _DETAIL_UNATTRIBUTABLE,
+            _DETAIL_MIGRATION_DEFERRED,
+            _DETAIL_NO_STRUCTURE_CHANGE,
+            _DETAIL_REFRESHED,
+            _DETAIL_REFRESHED_NO_STRUCTURE_CHANGE,
+            _DETAIL_STRUCTURE_CHANGE_NOT_COMMITTED,
+        ],
     )
     def test_attribution_templates_honour_the_output_contract(self, template: str):
         """ASCII, single line, no trailing period, at most 80 chars once the count is rendered."""
@@ -1208,8 +1351,8 @@ class TestNarrativeContract:
         assert not rendered.endswith('.')
         assert len(rendered) <= 80, rendered
 
-    def test_documents_nine_branches_a_through_i(self, standard_text: str):
-        for label in ('A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I'):
+    def test_documents_every_branch_a_through_k(self, standard_text: str):
+        for label in ('A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K'):
             assert f'Branch {label}' in standard_text, f'Standard must label Branch {label} for renderer audit'
 
     def test_mark_step_done_uses_correct_phase_and_step(
@@ -1560,6 +1703,12 @@ class TestCrossReferences:
 
 # (baseline_present, tier_0, tier_1, change_type, drift, expected_branch,
 #  expected_display_detail_substring, user_response)
+#
+# Branches J and K are NOT reachable through this sweep's axes: both need a
+# commit state the `drift` axis cannot express on its own (J needs
+# preexisting_plan_writes with an empty union, K needs a non-empty union with a
+# clean tree). They are exercised by TestTier1ExitCells instead, so this list is
+# deliberately not the whole branch set.
 _MATRIX_CASES = [
     # baseline absent, tier-0 enabled — Branch A short-circuit.
     (False, 'enabled', 'prompt', 'feature', False, 'A', 'no committed origin/main', None),

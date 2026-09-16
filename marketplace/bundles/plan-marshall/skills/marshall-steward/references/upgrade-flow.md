@@ -515,11 +515,17 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
   --project-dir {repo_root} descriptor-regression-check --pre-ref HEAD
 ```
 
-- **`status: error`** or **`regressive: true`** — the migration lost curated
-  content, or the check could not run. STOP the flow per "Partial-failure and
-  abort handling" below, naming the `violations[].field` values, and leave the
-  migrated descriptor uncommitted in the working tree for the operator to
-  inspect.
+- **`status: error`** — the check could not run, so nothing is known about the
+  migrated tree; this is NOT a regression verdict. The error payload carries only
+  `status` / `error` / `ref`\|`path` / `message`\|`detail` — there are no
+  `violations[]`, `examined_fields` or `modules_examined` to name. STOP the flow
+  per "Partial-failure and abort handling" below, reporting the `error` and
+  `detail` fields, and leave the migrated descriptor uncommitted in the working
+  tree for the operator to inspect.
+- **`regressive: true`** — the migration lost curated content. STOP the flow per
+  "Partial-failure and abort handling" below, naming the `violations[].field`
+  values, and leave the migrated descriptor uncommitted in the working tree for
+  the operator to inspect.
 - **`regressive: false`** — report `migrations[]`, `unresolved_keys[]` and
   `examined_fields` together with `modules_examined`, so the green verdict names
   what it covered.

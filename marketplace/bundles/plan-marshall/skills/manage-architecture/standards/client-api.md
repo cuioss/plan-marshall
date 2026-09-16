@@ -1341,7 +1341,13 @@ error: snapshot_not_found
 path: /does/not/exist
 ```
 
-**Use cases**:
+**Use cases** — each one names the baseline form it holds under, because the
+`changed` / `unchanged` split carries signal under only one of the two. The
+divider is whether the baseline carries per-module `derived.json` on disk; see
+**Derived-less git baselines** above.
+
+Against a **derived-bearing baseline** (`--pre` pointing at a real checkout or
+snapshot tree whose modules have their `derived.json`):
 
 - Detect which modules need re-verification after a refactor (run
   module-tests only on `added` ∪ `changed`)
@@ -1349,6 +1355,15 @@ path: /does/not/exist
   `unchanged`
 - Drive deliverable scoping: a change touching `derived.json` in N
   modules implies N module-scoped tasks
+
+Against a **derived-less git baseline** (`--pre-ref`, or `--pre` pointing at a
+tree extracted from a ref) none of the three holds: every common module lands in
+`changed`, so `added` ∪ `changed` degrades to "every module", `unchanged` is
+always empty, and the `derived.json` count is not readable from the baseline. The
+one use case that survives is the structural one the MUST above prescribes:
+
+- Detect which modules were added or removed relative to the ref, from the
+  index-derived `added` / `removed` buckets alone
 
 ---
 

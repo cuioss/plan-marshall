@@ -37,7 +37,7 @@ python3 .plan/execute-script.py plan-marshall:marshall-steward:effort_pins valid
 
 ### Step 2: Materialize
 
-Emit the per-level pins for the active harness:
+Emit the per-level pins for the active harness class. `--harness` names a CLASS, not a `runtime.target`: pass `open` on every open-model-set harness (opencode included), `claude` on the Claude target.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:marshall-steward:effort_pins materialize --harness open
@@ -47,7 +47,7 @@ The emitter is read-only — it writes nothing itself. `pins` carries one `level
 
 ### Step 3: Hand Off to the Harness Provisioning Seam
 
-Do NOT persist the emitted pins through `manage-config effort` — `effort set` validates `--level` against `ALLOWED_LEVELS` (`level-1` through `level-7` plus `inherit`) and cannot persist model references, so `manage-config effort` stays the effort-level configuration surface only. The `effort_pins` emitter is read-only; hand each emitted `level=model` pair to the harness provisioning seam — the PLAN-01 post-resolve slot per ADR-021 (`doc/adr/021-machine-local-effort-to-model-map-and-resolve-chain-slot.adoc`) and `plan-marshall/standards/effort-variants.md` § Local-Map Provisioning Slot — which consults the map for the exact resolved level after `effort resolve-target` returns. The pin step adds no parallel writer and no new project-shared config key.
+Hand each emitted `level=model` pair to the harness provisioning seam, under the write-path rule [`pin-provisioning.md`](../standards/pin-provisioning.md) § Delegation Seam owns — including which surface may persist a pin and which may not. Follow it there; it is not restated here.
 
 ### Step 4: Verify the Inherit Fallback
 
