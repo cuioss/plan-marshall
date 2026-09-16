@@ -12,9 +12,12 @@ These commands support the LLM enrichment workflow:
 
 For client/consumer commands, see [client-api.md](client-api.md).
 
-For the on-disk layout (`_project.json` + per-module `{derived,enriched}.json`)
+For the persisted on-disk layout (`_project.json` + per-module `enriched.json`)
 and the atomic tmp+swap protocol used by `discover --force`, see
-[architecture-persistence.md](architecture-persistence.md).
+[architecture-persistence.md](architecture-persistence.md). That document also
+covers `derived.json`, which the store does not persist: one on disk is a
+deliberately-captured baseline snapshot — the shape `diff-modules` and
+`descriptor-regression-check` read via `--pre` / `--pre-ref`.
 
 ## Script Pattern
 
