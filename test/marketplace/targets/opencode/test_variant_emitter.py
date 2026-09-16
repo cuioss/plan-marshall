@@ -455,7 +455,7 @@ def _materialize(map_payload: dict) -> dict[str, str]:
         'plan-marshall', 'marshall-steward', 'effort_pins.py', module_name='effort_pins_live'
     )
     pins, _ = effort_pins.materialize_levels(map_payload)
-    return pins
+    return dict(pins)
 
 
 def _local_full_map() -> dict:
