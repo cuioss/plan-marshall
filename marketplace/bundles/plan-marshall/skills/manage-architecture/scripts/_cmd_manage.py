@@ -13,6 +13,7 @@ so an interrupted discover run never leaves a half-written tree behind.
 """
 
 import argparse
+import copy
 import json
 import re
 import shutil
@@ -25,6 +26,7 @@ from _architecture_core import (
     GENERATION_FIELD,
     LEGACY_CONCEPT_TYPE,
     DataNotFoundError,
+    InvalidConceptTypeError,
     ModuleNotFoundInProjectError,
     _write_json,
     crawl_all_modules,
@@ -696,6 +698,48 @@ def _parse_json_object(raw: bytes) -> dict[str, Any] | None:
     return parsed if isinstance(parsed, dict) else None
 
 
+def _regenerate_document(
+    existing: dict[str, Any],
+    module_name: str,
+    modules: dict[str, dict[str, Any]],
+    project_dir: str,
+) -> tuple[dict[str, Any] | None, list[str]]:
+    """Rebuild one module's concept document from the content already on disk.
+
+    Returns ``(document, unresolved_key_package_keys)``, or ``(None, [])`` when
+    the concept-model gate REFUSES the existing document's ``type``. That refusal
+    is reported rather than raised: an unusable document is a condition the
+    caller classifies against the pre-state, not one that aborts the whole
+    discover call before any classification happens.
+
+    The generation header is carried, never re-stamped: an existing document
+    keeps its own header, and one with no header is back-filled with
+    :func:`unknown_generation` so its unrecorded vintage is not restamped as
+    generated against the current tree.
+    """
+    preserved = existing.get(GENERATION_FIELD)
+    generation = preserved if isinstance(preserved, dict) and preserved else unknown_generation()
+    migrated, unresolved = _migrated_key_packages(existing, module_name, modules, project_dir)
+    try:
+        document = stamp_concept_document(migrated, project_dir, generation=generation)
+    except InvalidConceptTypeError:
+        return None, []
+    return document, sorted(unresolved)
+
+
+def _carried_index_entry(pre_index: dict[str, Any], module_name: str) -> dict[str, Any]:
+    """The ``_project.json`` index entry to keep for a module with no usable document.
+
+    The entry is derived from its document, so nothing new can be derived for a
+    module whose document this call could not consume. The entry the pre-state
+    already carried is kept verbatim; a module the pre-state had no entry for
+    gets an empty one. Deriving a fresh entry here would describe a document that
+    was never read.
+    """
+    entry = pre_index.get(module_name)
+    return copy.deepcopy(entry) if isinstance(entry, dict) else {}
+
+
 def _stage_tree(tmp_dir: Path, staged: delta.StagedTree) -> None:
     """Write a staged tree under ``tmp_dir``: bytes verbatim, documents as JSON."""
     for relative_path, content in sorted(staged.items()):
@@ -836,19 +880,44 @@ def api_discover(
     #     manufacture a ``fresh`` verdict nothing established;
     #   * a fresh (first-seen) module IS authored here, so its empty stub takes a
     #     real current-tree stamp.
+    #
+    # The existing content comes from the tolerant pre-state read above, NOT from
+    # a second read of the same file. Re-reading it through the strict loader is
+    # what used to raise HERE — a present-but-unparseable document on a bare
+    # ``json.load``, a refused ``type`` on the concept-model gate — before
+    # ``classify_delta`` below could name it. That made the documented
+    # ``undecidable`` / write-nothing outcome unreachable for such a document and
+    # left the classifier's unreadable-document branch with no production input.
+    # A document this call cannot consume is therefore recorded in
+    # ``unusable_modules`` and carried through untouched: it is classified as
+    # unreadable, and ``--apply all`` re-stages its original bytes rather than
+    # blanking curated enrichment into an empty stub.
     module_documents: dict[str, dict[str, Any]] = {}
     module_index: dict[str, dict[str, Any]] = {}
     unresolved_key_packages: list[dict[str, str]] = []
+    unusable_modules: set[str] = set()
+    pre_index_raw = existing_meta.get('modules')
+    pre_index: dict[str, Any] = pre_index_raw if isinstance(pre_index_raw, dict) else {}
     for module_name in sorted(modules.keys()):
-        existing = load_module_enriched_or_empty(module_name, project_dir)
-        if existing:
-            preserved = existing.get(GENERATION_FIELD)
-            generation = preserved if isinstance(preserved, dict) and preserved else unknown_generation()
-            migrated, unresolved = _migrated_key_packages(existing, module_name, modules, project_dir)
-            unresolved_key_packages.extend({'module': module_name, 'key': key} for key in sorted(unresolved))
-            document = stamp_concept_document(migrated, project_dir, generation=generation)
+        document: dict[str, Any] | None
+        if module_name in pre_state.documents:
+            document, unresolved = _regenerate_document(
+                pre_state.documents[module_name], module_name, modules, project_dir
+            )
+            unresolved_key_packages.extend({'module': module_name, 'key': key} for key in unresolved)
+        elif module_name in pre_state.document_bytes:
+            # Present on disk but it did not parse — no parsed form exists to
+            # rebuild from.
+            document = None
         else:
             document = stamp_concept_document(_empty_module_enrichment(), project_dir)
+
+        if document is None:
+            unusable_modules.add(module_name)
+            module_documents[module_name] = {}
+            module_index[module_name] = _carried_index_entry(pre_index, module_name)
+            continue
+
         module_documents[module_name] = document
         # The index entry is a read-side pre-flight surface: a consumer reads
         # _project.json alone to see each module's description and generation
@@ -874,8 +943,20 @@ def api_discover(
 
     # Classify the regenerated tree against the pre-state on every call, so the
     # attribution is reported whichever part is written.
+    #
+    # The classifier compares against the documents this call could actually
+    # consume. A document whose ``type`` the concept gate refused parsed as JSON
+    # but is no more usable than one that did not parse, so it is withheld from
+    # the parsed view and reported the same way — as an unreadable document —
+    # instead of as a field-by-field diff against a document never rebuilt.
+    classification_state = delta.TreeState(
+        meta=pre_state.meta,
+        meta_bytes=pre_state.meta_bytes,
+        documents={name: doc for name, doc in pre_state.documents.items() if name not in unusable_modules},
+        document_bytes=pre_state.document_bytes,
+    )
     report = delta.classify_delta(
-        pre_state,
+        classification_state,
         project_meta,
         module_documents,
         {module_name: _package_bridge(module_name, modules) for module_name in modules},
@@ -890,7 +971,13 @@ def api_discover(
         # Per-module enriched.json only — derived.json is ephemeral under the
         # on-demand crawl model.
         for module_name in sorted(modules.keys()):
-            staged[delta.document_path(module_name)] = module_documents[module_name]
+            if module_name in unusable_modules:
+                # No document was rebuilt for this module, so its original bytes
+                # are re-staged verbatim. Writing the empty stub instead would
+                # blank curated enrichment on the strength of a read that failed.
+                staged[delta.document_path(module_name)] = pre_state.document_bytes[module_name]
+            else:
+                staged[delta.document_path(module_name)] = module_documents[module_name]
     else:
         wanted = delta.ATTRIBUTION_PLAN if apply == delta.APPLY_PLAN else delta.ATTRIBUTION_MIGRATION
         build = delta.build_plan_projection if apply == delta.APPLY_PLAN else delta.build_migration_projection
@@ -898,8 +985,8 @@ def api_discover(
         if report.verdict not in (delta.VERDICT_UNDECIDABLE, delta.VERDICT_NO_BASELINE) and report.has_attribution(
             wanted
         ):
-            projection = build(pre_state, project_meta, module_documents, report)
-            if not delta.projection_equals_pre_state(projection, pre_state):
+            projection = build(classification_state, project_meta, module_documents, report)
+            if not delta.projection_equals_pre_state(projection, classification_state):
                 staged = projection
 
     applied = delta.APPLY_NONE

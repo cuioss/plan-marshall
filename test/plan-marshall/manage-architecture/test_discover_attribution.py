@@ -506,6 +506,94 @@ def test_default_apply_over_migration_only_rewrites_the_tree(monkeypatch):
 
 
 # =============================================================================
+# An existing document the regeneration loop cannot consume
+# =============================================================================
+#
+# Two conditions make a pre-existing document unusable, and both used to raise
+# out of the regeneration loop BEFORE any classification ran: a present file that
+# is not parseable JSON, and a parseable one whose ``type`` the concept-model gate
+# refuses. Each scenario pairs the unusable document with a readable, clean
+# sibling, so the assertions below distinguish "module-b was named" from "the
+# whole call fell over".
+
+_TRUNCATED_JSON = b'{"responsibility": "Handles module-b",'
+
+
+def _write_raw_document(tmpdir: str, module_name: str, raw: bytes) -> None:
+    """Overwrite one module's ``enriched.json`` with bytes of the caller's choosing."""
+    path = Path(tmpdir) / _ARCH_DIR / module_name / 'enriched.json'
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(raw)
+
+
+def _scenario_unparseable_document(tmpdir: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    """``module-b``'s document is on disk but truncated, so it does not parse."""
+    _seed(tmpdir, {'module-a': _document('module-a'), 'module-b': _document('module-b')})
+    _write_raw_document(tmpdir, 'module-b', _TRUNCATED_JSON)
+    _stub_discovery(monkeypatch, {'module-a': {}, 'module-b': {}})
+
+
+def _scenario_refused_concept_type(tmpdir: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    """``module-b``'s document parses but declares a type outside the closed vocabulary."""
+    _seed(
+        tmpdir,
+        {'module-a': _document('module-a'), 'module-b': _document('module-b', type='not-a-concept-type')},
+    )
+    _stub_discovery(monkeypatch, {'module-a': {}, 'module-b': {}})
+
+
+_UNUSABLE_SCENARIOS = [
+    pytest.param(_scenario_unparseable_document, id='unparseable_json'),
+    pytest.param(_scenario_refused_concept_type, id='refused_concept_type'),
+]
+
+
+@pytest.mark.parametrize('scenario', _UNUSABLE_SCENARIOS)
+def test_an_unusable_existing_document_reaches_the_undecidable_verdict(scenario, monkeypatch):
+    """The documented write-nothing outcome fires instead of the read aborting the call."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        scenario(tmpdir, monkeypatch)
+        before = _snapshot(tmpdir)
+
+        result = api_discover(tmpdir, force=True, apply='plan')
+
+        assert result['status'] == 'success', result
+        assert result['attribution'] == 'undecidable'
+        assert _classes(result) == {'unclassified'}, result['delta_classes']
+        assert result['unclassified_fields'] == [{'document': 'module-b/enriched.json', 'field': '(unreadable)'}], (
+            'the unusable document is what must be named, and the readable sibling must contribute nothing'
+        )
+        assert result['modules_examined'] == 2, 'both modules must be examined, not just the readable one'
+        assert result['applied'] == 'none'
+        assert _snapshot(tmpdir) == before
+
+
+@pytest.mark.parametrize('scenario', _UNUSABLE_SCENARIOS)
+def test_default_apply_preserves_an_unusable_document_instead_of_blanking_it(scenario, monkeypatch):
+    """``--apply all`` re-stages the original bytes; an empty stub would destroy curated content."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        scenario(tmpdir, monkeypatch)
+        before = _snapshot(tmpdir)
+
+        result = api_discover(tmpdir, force=True)
+
+        assert result['status'] == 'success', result
+        assert result['attribution'] == 'undecidable'
+        assert result['applied'] == 'all'
+        after = _snapshot(tmpdir)
+        assert after['module-a/enriched.json'] != before['module-a/enriched.json'], (
+            'the readable sibling was not rewritten, so the preservation assertion below is vacuous'
+        )
+        assert after['module-b/enriched.json'] == before['module-b/enriched.json'], (
+            'the unusable document was rewritten — curated enrichment would be blanked'
+        )
+        before_entry = json.loads(before[_META])['modules']['module-b']
+        assert json.loads(after[_META])['modules']['module-b'] == before_entry, (
+            'the index entry for an unread document was re-derived rather than carried forward'
+        )
+
+
+# =============================================================================
 # CLI surface
 # =============================================================================
 
