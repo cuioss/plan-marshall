@@ -57,6 +57,7 @@ from _cmd_steps_sort import cmd_steps_sort
 from _cmd_sync_defaults import cmd_sync_defaults
 from _cmd_system_plan import cmd_plan, cmd_project, cmd_system
 from _config_core import ConcurrentConfigModificationError, error_exit, normalize_keys
+from _config_defaults import VALID_INTERACTION_MODES
 
 # Direct imports - PYTHONPATH set by executor
 from effort_presets import EffortPresets
@@ -610,8 +611,8 @@ def main() -> int:
     orch_set.add_argument('--value', required=True, help='Field value')
 
     # --- interaction-mode ---
-    # Top-level `interaction_mode` scalar preference (basic|advanced|expert,
-    # default advanced). The field whitelist is the singleton
+    # Top-level `interaction_mode` scalar preference (modes from
+    # VALID_INTERACTION_MODES, default advanced). The field whitelist is the singleton
     # INTERACTION_MODE_FIELDS in _cmd_interaction_mode; both verbs route through
     # the shared provisioning-write guard so an unknown field fails closed.
     p_im = subparsers.add_parser(
@@ -630,7 +631,7 @@ def main() -> int:
         'set', help='Set the interaction_mode preference (whitelist-guarded, validated)', allow_abbrev=False
     )
     add_field_arg(im_set)
-    im_set.add_argument('--value', required=True, help='Mode value (basic|advanced|expert)')
+    im_set.add_argument('--value', required=True, help=f'Mode value ({"|".join(VALID_INTERACTION_MODES)})')
 
     # --- coverage ---
     # Two-dial coverage contract: thoroughness (T1-T5) x scope

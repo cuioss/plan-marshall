@@ -45,7 +45,7 @@ cmd_interaction_mode_set = _cmd_interaction_mode.cmd_interaction_mode_set
 # =============================================================================
 
 
-@pytest.mark.parametrize('mode', ['basic', 'advanced', 'expert'])
+@pytest.mark.parametrize('mode', _config_defaults_mod.VALID_INTERACTION_MODES)
 def test_validate_interaction_mode_accepts_each_mode(mode):
     """Every allowed mode validates cleanly."""
     _config_defaults_mod.validate_interaction_mode(mode)  # must not raise
@@ -92,7 +92,7 @@ def test_resolve_interaction_mode_absent_key_falls_back_to_default():
     assert _config_core_mod.resolve_interaction_mode({}) == 'advanced'
 
 
-@pytest.mark.parametrize('mode', ['basic', 'advanced', 'expert'])
+@pytest.mark.parametrize('mode', _config_defaults_mod.VALID_INTERACTION_MODES)
 def test_resolve_interaction_mode_returns_persisted_value(mode):
     """A persisted valid mode resolves verbatim."""
     assert _config_core_mod.resolve_interaction_mode({'interaction_mode': mode}) == mode
@@ -109,7 +109,7 @@ def test_resolve_interaction_mode_invalid_value_fails_closed():
 # =============================================================================
 
 
-@pytest.mark.parametrize('mode', ['basic', 'advanced', 'expert'])
+@pytest.mark.parametrize('mode', _config_defaults_mod.VALID_INTERACTION_MODES)
 def test_interaction_mode_set_get_round_trip(plan_context, mode):
     """Each mode persists and reads back with ``set: true``."""
     create_marshal_json(plan_context.fixture_dir)
