@@ -1663,6 +1663,113 @@ class TestClassTablePointer:
 
 
 # ===========================================================================
+# The published delta-class table states the declared attributions.
+#
+# ``_restated_classes`` above covers class NAMES and their order only, and its
+# positive control exists to exercise that detector — not to guard the table.
+# The Attribution column is a second contract riding on the same table, and it
+# is pinned nowhere else. In test_discover_attribution.py,
+# ``test_each_class_is_detected_alone_with_its_attribution`` reads
+# ``DELTA_CLASSES`` on BOTH sides of its assertion, so flipping an attribution
+# flips the expectation with it; and the verdict scenarios in that same file
+# reach only ``module_added`` and ``generation_backfill``, indirectly.
+# The remaining five classes therefore state their attribution independently in
+# exactly one place — the manage-api.md table — and nothing compared the two.
+# Flipping e.g. ``index_entry_added`` from plan to migration passed the whole
+# suite green while the document, and the operator-facing ``--apply plan``
+# contract it specifies, said the opposite.
+#
+# The guard below derives the expectation from the declaring source and checks
+# the document against it: doc as the checked witness, never as the expectation.
+# ===========================================================================
+
+
+#: The header row that opens the published delta-class table.
+_CLASS_TABLE_HEADER = '| Class | Attribution | Detected when |'
+
+#: One published row: ``| `class` | attribution | detected when |``.
+_CLASS_TABLE_ROW = re.compile(r'^\|\s*`([^`]+)`\s*\|\s*([^|]+?)\s*\|')
+
+
+def _published_class_attributions(text: str) -> dict[str, str]:
+    """Parse ``class -> attribution`` out of the published delta-class table.
+
+    Returns the EMPTY mapping when the table cannot be resolved at all, so a
+    caller that publishes the parsed row count fails loudly on a table the
+    parser no longer recognises instead of passing vacuously on zero rows.
+    """
+    _, separator, tail = text.partition(_CLASS_TABLE_HEADER)
+    if not separator:
+        return {}
+    parsed: dict[str, str] = {}
+    # ``tail`` opens mid-line, so element 0 is the header's own remainder;
+    # element 1 is the delimiter row, which matches no data-row pattern.
+    for line in tail.splitlines()[1:]:
+        if not line.startswith('|'):
+            break
+        row = _CLASS_TABLE_ROW.match(line)
+        if row is not None:
+            parsed[row.group(1)] = row.group(2)
+    return parsed
+
+
+class TestPublishedClassAttributions:
+    @pytest.fixture(scope='class')
+    @classmethod
+    def manage_api_text(cls) -> str:
+        return str(_MANAGE_API_MD.read_text(encoding='utf-8'))
+
+    def test_published_table_states_the_declared_attributions(self, manage_api_text: str):
+        published = _published_class_attributions(manage_api_text)
+        print(f'published delta-class table: parsed {len(published)} row(s)')
+        assert published, (
+            'the delta-class table in manage-api.md parsed to 0 rows — the parser no '
+            'longer resolves the published table, so the comparison below would be '
+            'vacuous. Repair the parser or the table; do not delete this assertion.'
+        )
+        assert published == DELTA_CLASSES, (
+            'the attribution published in manage-api.md disagrees with DELTA_CLASSES '
+            f'(parsed {len(published)} row(s)): {published} != {DELTA_CLASSES}'
+        )
+
+    def test_positive_control_a_flipped_attribution_reddens_the_guard(self, manage_api_text: str):
+        """A single flipped attribution must make the comparison above fail."""
+        flipped = manage_api_text.replace(
+            '| `index_entry_added` | plan |',
+            '| `index_entry_added` | migration |',
+            1,
+        )
+        assert flipped != manage_api_text, (
+            'the control edited nothing — the published row it flips has changed shape, '
+            'so it no longer demonstrates that the guard fires'
+        )
+        published = _published_class_attributions(flipped)
+        assert len(published) == len(DELTA_CLASSES), 'the flip must change an attribution, not drop a row'
+        assert published['index_entry_added'] == 'migration'
+        assert published != DELTA_CLASSES
+
+    def test_positive_control_a_dropped_row_reddens_the_guard(self, manage_api_text: str):
+        """A row missing from the published table must make the comparison above fail."""
+        dropped = ''.join(
+            line
+            for line in manage_api_text.splitlines(keepends=True)
+            if not line.startswith('| `key_packages_rekey` |')
+        )
+        assert dropped != manage_api_text, (
+            'the control dropped nothing — the published row it removes has changed '
+            'shape, so it no longer demonstrates that the guard fires'
+        )
+        published = _published_class_attributions(dropped)
+        assert len(published) == len(DELTA_CLASSES) - 1
+        assert 'key_packages_rekey' not in published
+        assert published != DELTA_CLASSES
+
+    def test_negative_control_an_unresolvable_table_parses_to_zero_rows(self):
+        """No table means no rows — which is what the published count turns into a failure."""
+        assert _published_class_attributions('# Architecture Manage API\n\nJust prose.\n') == {}
+
+
+# ===========================================================================
 # Cross-references — SKILL.md, phase-1-init, frontmatter wiring.
 # ===========================================================================
 
