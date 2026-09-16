@@ -547,11 +547,24 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
 
 **Branch I — plan-caused refresh committed, tool migration deferred (Step 3e)**:
 
+The count is omitted at zero, for exactly the reason Branch J omits it. The zero state is reachable here: `migration_deferred` is derived from the discover attribution and is independent of `affected`, so segment-1 plan-time descriptor edits can leave `.plan/project-architecture` dirty, clear the regression gate and set `committed`, while `added` and `removed` are both empty.
+
+With `affected_module_count` greater than 0:
+
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
   mark-step-done --plan-id {plan_id} --phase 6-finalize \
   --step architecture-refresh --outcome done \
   --display-detail "refreshed derived data ({affected_module_count} modules); migration deferred"
+```
+
+With `affected_module_count` of 0:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
+  mark-step-done --plan-id {plan_id} --phase 6-finalize \
+  --step architecture-refresh --outcome done \
+  --display-detail "refreshed derived data; migration deferred"
 ```
 
 The `--display-detail` strings are subject to the output-template contract (≤80 chars, single line, no trailing period, plain ASCII) — see `phase-6-finalize/SKILL.md` "Required termination" and `standards/output-template.md` for the full convention.
@@ -644,8 +657,10 @@ else:
         return
     if migration_deferred:
         log: "Tier 1 skipped — attribution leaves the descriptor for /marshall-steward upgrade"
-        if committed:
-            mark-step-done detail="refreshed derived data ({n} modules); migration deferred"
+        if committed and len(affected) > 0:
+            mark-step-done detail="refreshed derived data ({n} modules); migration deferred"  # Branch I
+        elif committed:
+            mark-step-done detail="refreshed derived data; migration deferred"                # Branch I, zero count
         else:
             mark-step-done detail="tool migration not committed; run marshall-steward upgrade"
         return

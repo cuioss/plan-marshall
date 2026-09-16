@@ -163,6 +163,12 @@ _UNATTRIBUTABLE_VERDICTS = frozenset({'undecidable', 'no_baseline'})
 _DETAIL_MIGRATION_NOT_COMMITTED = 'tool migration not committed; run marshall-steward upgrade'
 _DETAIL_UNATTRIBUTABLE = 'descriptor delta unattributable; not committed'
 _DETAIL_MIGRATION_DEFERRED = 'refreshed derived data ({affected_module_count} modules); migration deferred'
+#: Branch I at a zero module union. ``migration_deferred`` is derived from the
+#: discover attribution and is independent of ``affected``, so a round can commit
+#: segment-1 plan-time descriptor edits with ``added`` and ``removed`` both empty.
+#: The count is omitted for the same reason Branch J omits it: rendering
+#: ``(0 modules)`` would advertise a module delta the round does not have.
+_DETAIL_MIGRATION_DEFERRED_NO_STRUCTURE_CHANGE = 'refreshed derived data; migration deferred'
 
 # -- The four Tier-1-skip exit cells (Step 5 Branches C / D / J / K) ---------
 #
@@ -296,12 +302,17 @@ def _decide_architecture_refresh(
         }
     if migration_deferred:
         if tier_0_committed:
+            detail = (
+                _DETAIL_MIGRATION_DEFERRED.format(affected_module_count=len(affected))
+                if affected
+                else _DETAIL_MIGRATION_DEFERRED_NO_STRUCTURE_CHANGE
+            )
             return {
                 'branch': 'I',
                 'tier_0_committed': tier_0_committed,
                 'tier_1_action': 'skipped',
                 'affected_modules': affected,
-                'display_detail': _DETAIL_MIGRATION_DEFERRED.format(affected_module_count=len(affected)),
+                'display_detail': detail,
             }
         return {
             'branch': 'G',
@@ -578,7 +589,12 @@ class TestAttributionVerdict:
         assert result['display_detail'] == _DETAIL_MIGRATION_NOT_COMMITTED
 
     def test_migration_only_with_preexisting_plan_writes_commits_segment_one_only(self):
-        """Plan-time writes still ship; the migration stays unwritten and is named as deferred."""
+        """Plan-time writes still ship; the migration stays unwritten and is named as deferred.
+
+        The module union is empty here, so Branch I omits the count exactly as
+        Branch J does — ``(0 modules)`` would advertise a module delta this round
+        does not have.
+        """
         result = _decide_architecture_refresh(
             baseline_present=True,
             tier_0='enabled',
@@ -590,7 +606,9 @@ class TestAttributionVerdict:
         assert result['branch'] == 'I'
         assert result['tier_0_committed'] is True
         assert result['tier_1_action'] == 'skipped'
-        assert result['display_detail'] == 'refreshed derived data (0 modules); migration deferred'
+        assert result['affected_modules'] == (), 'the zero-count assertion below needs an empty union'
+        assert result['display_detail'] == _DETAIL_MIGRATION_DEFERRED_NO_STRUCTURE_CHANGE
+        assert '0 modules' not in result['display_detail']
 
     def test_mixed_commits_the_plan_projection_with_the_deferred_template(self):
         result = _decide_architecture_refresh(
@@ -605,6 +623,48 @@ class TestAttributionVerdict:
         assert result['tier_0_committed'] is True
         assert result['tier_1_action'] == 'skipped'
         assert result['display_detail'] == 'refreshed derived data (1 modules); migration deferred'
+
+    def test_branch_i_splits_on_the_module_union_like_branch_j(self):
+        """Branch I's two cells, as a matched pair over one committed-and-deferred round.
+
+        `migration_deferred` is derived from the attribution and is independent of
+        `affected`, so both cells are reachable. The pair is asserted together
+        because either assertion alone is weak: the zero-count one would also pass
+        for a branch that never interpolates the count at all, and the counted one
+        would also pass for a branch that always interpolates it.
+        """
+        empty = _decide_architecture_refresh(
+            baseline_present=True,
+            tier_0='enabled',
+            tier_1='auto',
+            change_type='feature',
+            attribution='mixed',
+            preexisting_plan_writes=True,
+        )
+        counted = _decide_architecture_refresh(
+            baseline_present=True,
+            tier_0='enabled',
+            tier_1='auto',
+            change_type='feature',
+            attribution='mixed',
+            diff_added=('mod-new',),
+        )
+
+        assert empty['branch'] == counted['branch'] == 'I'
+        assert empty['tier_0_committed'] is True
+        assert counted['tier_0_committed'] is True
+        assert empty['affected_modules'] == ()
+        assert counted['affected_modules'] == ('mod-new',)
+        assert empty['display_detail'] == _DETAIL_MIGRATION_DEFERRED_NO_STRUCTURE_CHANGE
+        assert counted['display_detail'] == _DETAIL_MIGRATION_DEFERRED.format(affected_module_count=1)
+        assert '0 modules' not in empty['display_detail'], (
+            "Branch I must not interpolate the zero count — '(0 modules)' advertises "
+            'a module delta the round does not have, which is the rule Branch J states'
+        )
+        assert '1 modules' in counted['display_detail'], (
+            'the counted cell must still render its count, or the zero-count assertion '
+            'above is satisfied by a branch that simply never counts'
+        )
 
     @pytest.mark.parametrize('attribution', sorted(_UNATTRIBUTABLE_VERDICTS))
     def test_unattributable_delta_is_not_committed(self, attribution: str):
@@ -1320,6 +1380,7 @@ class TestNarrativeContract:
             _DETAIL_MIGRATION_NOT_COMMITTED,
             _DETAIL_UNATTRIBUTABLE,
             _DETAIL_MIGRATION_DEFERRED,
+            _DETAIL_MIGRATION_DEFERRED_NO_STRUCTURE_CHANGE,
             _DETAIL_REFRESHED_NO_STRUCTURE_CHANGE,
             _DETAIL_STRUCTURE_CHANGE_NOT_COMMITTED,
         ],
@@ -1337,6 +1398,7 @@ class TestNarrativeContract:
             _DETAIL_MIGRATION_NOT_COMMITTED,
             _DETAIL_UNATTRIBUTABLE,
             _DETAIL_MIGRATION_DEFERRED,
+            _DETAIL_MIGRATION_DEFERRED_NO_STRUCTURE_CHANGE,
             _DETAIL_NO_STRUCTURE_CHANGE,
             _DETAIL_REFRESHED,
             _DETAIL_REFRESHED_NO_STRUCTURE_CHANGE,
@@ -1350,6 +1412,45 @@ class TestNarrativeContract:
         assert '\n' not in rendered
         assert not rendered.endswith('.')
         assert len(rendered) <= 80, rendered
+
+    def test_standard_never_renders_a_zero_module_count(self, standard_text: str):
+        """No branch may advertise `(0 modules)` — the rule Branch J states, applied everywhere.
+
+        Population-derived rather than keyed to one branch: every count-bearing
+        template is rendered at zero and searched for in the document, so a NEW
+        branch that interpolates the count unguarded fails this guard too. The
+        rendered population is published so a scan over an empty template set
+        cannot pass vacuously.
+        """
+        counted_templates = [
+            template
+            for template in (
+                _DETAIL_REFRESHED,
+                _DETAIL_MIGRATION_DEFERRED,
+                _DETAIL_STRUCTURE_CHANGE_NOT_COMMITTED,
+                'refreshed + re-enriched ({affected_module_count} modules)',
+            )
+            if '{affected_module_count}' in template
+        ]
+        assert counted_templates, 'no count-bearing template resolved — a clean result would be vacuous'
+        rendered_at_zero = [template.format(affected_module_count=0) for template in counted_templates]
+        offenders = [rendered for rendered in rendered_at_zero if rendered in standard_text]
+        assert offenders == [], (
+            f'the standard renders a zero module count across {len(rendered_at_zero)} '
+            f'count-bearing templates: {offenders}. Branch J states the rule — '
+            f'"(0 modules)" advertises a module delta the round does not have — and '
+            f'every branch that can reach a zero union needs a countless variant.'
+        )
+
+    def test_documents_both_branch_i_variants(self, standard_text: str):
+        """Branch I carries the countless variant alongside the counted one.
+
+        The negative half of the guard above: asserting that `(0 modules)` is
+        absent would also pass for a Branch I that dropped the count entirely, or
+        for one that named no zero case at all.
+        """
+        assert _DETAIL_MIGRATION_DEFERRED in standard_text
+        assert _DETAIL_MIGRATION_DEFERRED_NO_STRUCTURE_CHANGE in standard_text
 
     def test_documents_every_branch_a_through_k(self, standard_text: str):
         for label in ('A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K'):
