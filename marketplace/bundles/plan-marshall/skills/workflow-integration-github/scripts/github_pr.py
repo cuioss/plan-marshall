@@ -2371,6 +2371,37 @@ def cmd_post_responses(args):
 # ============================================================================
 
 
+def _router_plan_id_value(argv: list) -> str | None:
+    """Return the first ``--plan-id`` value in ``argv``, or ``None``.
+
+    Reads both ``--plan-id VALUE`` and ``--plan-id=VALUE`` spellings. Used to
+    recover the router-consumed value when a verb declares its own required
+    ``--plan-id`` after the verb (``fetch_findings``, ``post_responses``):
+    the router strips the pre-verb occurrence for worktree resolution, leaving
+    the subparser reporting it missing. Re-injecting the recovered value makes
+    the router position accepted consistently.
+    """
+    i = 0
+    while i < len(argv):
+        token = argv[i]
+        if token == '--plan-id':
+            if i + 1 < len(argv) and not str(argv[i + 1]).startswith('-'):
+                return str(argv[i + 1])
+            return None
+        if isinstance(token, str) and token.startswith('--plan-id='):
+            value = token.split('=', 1)[1]
+            return value or None
+        i += 1
+    return None
+
+
+# Verbs that declare their own required ``--plan-id`` after the verb. When the
+# router consumed a pre-verb ``--plan-id`` and the remaining argv carries one
+# of these verbs without its own ``--plan-id``, the consumed value is
+# re-injected so the router position is accepted.
+_BODY_CONSUMER_VERBS = frozenset({'fetch_findings', 'post_responses'})
+
+
 def main():
     """Main entry point."""
     # Consume top-level --plan-id / --project-dir before argparse runs,
@@ -2378,7 +2409,19 @@ def main():
     # auto-resolves via manage-status; --project-dir is the explicit
     # override; both together is a hard error. Resolved cwd is forwarded
     # to every gh subprocess via run_cli's process-global default.
-    project_dir, remaining = extract_routing_args(sys.argv[1:])
+    _argv = sys.argv[1:]
+    router_plan_id = _router_plan_id_value(_argv)
+    project_dir, remaining = extract_routing_args(_argv)
+    # Forward the router-consumed ``--plan-id`` to verbs that declare their
+    # own: a pre-verb ``--plan-id`` was swallowed for worktree resolution and
+    # the subparser would otherwise report it missing even though the caller
+    # supplied it.
+    if (
+        router_plan_id is not None
+        and not any(isinstance(t, str) and (t == '--plan-id' or t.startswith('--plan-id=')) for t in remaining)
+        and any(v in remaining for v in _BODY_CONSUMER_VERBS)
+    ):
+        remaining = [*remaining, '--plan-id', router_plan_id]
     sys.argv = [sys.argv[0], *remaining]
     if project_dir is not None:
         set_default_cwd(project_dir)
@@ -2399,6 +2442,13 @@ Examples:
                 'args': [
                     {'flags': ['--pr'], 'type': int, 'help': "PR number (default: current branch's PR)"},
                     {'flags': ['--unresolved-only'], 'action': 'store_true', 'help': 'Only return unresolved comments'},
+                    {
+                        'flags': ['--plan-id'],
+                        'dest': 'plan_id',
+                        'required': False,
+                        'default': None,
+                        'help': 'Plan identifier (accepted for routing uniformity)',
+                    },
                 ],
             },
             {
@@ -2457,6 +2507,13 @@ Examples:
                 'handler': cmd_pull_request_runs,
                 'args': [
                     {'flags': ['--pr-number'], 'dest': 'pr_number', 'type': int, 'required': True, 'help': 'PR number'},
+                    {
+                        'flags': ['--plan-id'],
+                        'dest': 'plan_id',
+                        'required': False,
+                        'default': None,
+                        'help': 'Plan identifier (accepted for routing uniformity)',
+                    },
                 ],
             },
             {
@@ -2474,6 +2531,13 @@ Examples:
                             'resolved internally; a bot with an empty completion_check_name reports status '
                             'no_check_name so the caller falls back to the review_bot_buffer_seconds wait.'
                         ),
+                    },
+                    {
+                        'flags': ['--plan-id'],
+                        'dest': 'plan_id',
+                        'required': False,
+                        'default': None,
+                        'help': 'Plan identifier (accepted for routing uniformity)',
                     },
                 ],
             },

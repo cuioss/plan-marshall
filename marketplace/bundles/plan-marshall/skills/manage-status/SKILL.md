@@ -1349,6 +1349,8 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status read \
   --plan-id PLAN_ID [--store {plans|orchestrator}]
 ```
 
+`read` accepts no `--phase`: phase-scoped step records are returned inside `metadata.phase_steps` of the bare `read` payload, so narrowing needs no flag. A `read --phase X` spelling is rejected at exit 2 naming `--phase` and the sibling verbs that declare it.
+
 ### set-phase
 
 ```bash

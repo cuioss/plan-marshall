@@ -129,6 +129,29 @@ def build_parser() -> argparse.ArgumentParser:
         add_plan_id_arg(mark_clarified_parser)
         mark_clarified_parser.set_defaults(func=lambda args, dt=doc_type: cmd_mark_clarified(dt, args))
 
+    # Top-level `read` redirect: `manage-plan-documents read --plan-id X
+    # --document request` is the transposed shape callers generalize from
+    # sibling `manage-*` scripts (where `read` is the top-level verb). The
+    # canonical form keeps the document type in verb position
+    # (`request read --plan-id X`), so this redirect accepts the transposed
+    # spelling and forwards to the same `cmd_read` rather than rejecting
+    # with `unknown_verb`. `--document` selects the type (default: request).
+    read_redirect_parser = subparsers.add_parser(
+        'read',
+        help='Read a document by --document selector (redirect to "<type> read")',
+        allow_abbrev=False,
+    )
+    add_plan_id_arg(read_redirect_parser)
+    read_redirect_parser.add_argument(
+        '--document',
+        default='request',
+        choices=sorted(available_types) if available_types else ['request'],
+        help='Document type to read (default: request). Redirects to "<type> read".',
+    )
+    read_redirect_parser.add_argument('--raw', action='store_true', help='Output raw content')
+    read_redirect_parser.add_argument('--section', help='Read specific section (e.g., clarified_request)')
+    read_redirect_parser.set_defaults(func=lambda args: cmd_read(args.document, args))
+
     return parser
 
 
