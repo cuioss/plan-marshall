@@ -228,6 +228,33 @@ The block is additively shaped: the `get`/`set --field` verb and its known-field
 
 ---
 
+## Noun: interaction-mode
+
+Manage the top-level `interaction_mode` scalar preference in marshal.json — a **sibling of `plan`**, not a child of it. The preference names how plan-marshall interacts with the operator (`basic` | `advanced` | `expert`, default `advanced`): how much the operator is told and asked while work runs, never what gets built or which checks run. `marshall-steward` asks the choice at first run (wizard-flow Step 6b) and re-surfaces it in the Configuration submenu ("Configuration: Interaction Mode"); `sync-defaults` back-fills the key into existing projects. The per-mode behaviour contract is [`interaction-mode.md`](interaction-mode.md).
+
+| Verb | Parameters | Description |
+|------|-----------|-------------|
+| `get` | `--field` | Get the preference. Returns `{field, value, set}` — `set` is `false` when the key is unset in the live block; `value` then falls back to the canonical default (`advanced`) from `DEFAULT_INTERACTION_MODE`. `--field` is checked against the known-field whitelist (`interaction_mode`) before the read, and a persisted-but-invalid value fails closed with `error_type: invalid_value`. |
+| `set` | `--field`, `--value` | Set the preference. The value is validated against the allowed mode set (`basic`\|`advanced`\|`expert`) and any `--field` outside the known field set is rejected via the shared fail-closed provisioning-write seam (ADR-009) with `error_type: unknown_field` before any write — a typo'd field or an out-of-schema value never persists. |
+
+### Example: get interaction_mode
+
+```bash
+manage-config interaction-mode get --field interaction_mode
+```
+
+Returns the live value, or the default `advanced` (implicit-default fallback) when
+the key is absent from marshal.json.
+
+### Example: set interaction_mode
+
+```bash
+manage-config interaction-mode set --field interaction_mode --value expert
+```
+
+
+---
+
 ## Noun: plan
 
 Manage phase-specific plan configuration. Each phase has its own sub-noun.

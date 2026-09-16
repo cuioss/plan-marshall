@@ -337,6 +337,41 @@ def validate_user_language(value: object, field_name: str = 'user_language') -> 
         raise ValueError(f'Invalid {field_name} {value!r}: expected a non-empty string.')
 
 
+# Top-level `interaction_mode` preference (`interaction_mode` in marshal.json).
+#
+# A persisted top-level scalar sibling to `plan`, `project`, and `orchestrator`,
+# seeded at init (see :func:`get_default_config`) and back-filled into existing
+# projects by `sync-defaults`' non-destructive deep-merge. It names how
+# plan-marshall interacts with the operator:
+#   - 'basic':    minimal prompt context, concise phase-boundary output.
+#   - 'advanced': (default) the full standard interaction surface.
+#   - 'expert':   terse output for operators who drive via explicit overrides
+#                 (e.g. `--domain-override`); never re-enables retired prompts.
+# The mode-to-behaviour mapping is owned by
+# `manage-config/standards/interaction-mode.md`; this module owns only the value
+# contract (the allowed set + the fail-closed validator). Read/written via the
+# `interaction-mode get/set` verbs, which route the field through the shared
+# provisioning-write guard and this validator before persisting.
+DEFAULT_INTERACTION_MODE = 'advanced'
+
+VALID_INTERACTION_MODES = ('basic', 'advanced', 'expert')
+
+
+def validate_interaction_mode(value: object, field_name: str = 'interaction_mode') -> None:
+    """Validate `interaction_mode` (``basic|advanced|expert``).
+
+    Args:
+        value: The candidate mode value.
+        field_name: The ``interaction_mode`` path, used in the error message so
+            a rejected value names the offending knob.
+
+    Raises:
+        ValueError: If ``value`` is not in :data:`VALID_INTERACTION_MODES`.
+    """
+    if value not in VALID_INTERACTION_MODES:
+        raise ValueError(f"Invalid {field_name} '{value}'. Allowed: {list(VALID_INTERACTION_MODES)}")
+
+
 def validate_pr_compact_max_changed_files(value: object, field_name: str = 'pr_compact_max_changed_files') -> None:
     """Validate `pr_compact_max_changed_files` (int ``>= 0``).
 
@@ -1328,6 +1363,9 @@ def get_default_config() -> dict:
     validate_pr_strategy(DEFAULT_PROJECT['pr_strategy'])
     validate_pr_compact_max_changed_files(DEFAULT_PROJECT['pr_compact_max_changed_files'])
     validate_user_language(DEFAULT_PROJECT['user_language'])
+    # Self-validate the seeded top-level interaction_mode preference so a
+    # malformed default fails loud at seed time rather than at first read.
+    validate_interaction_mode(DEFAULT_INTERACTION_MODE)
     # Self-validate the seeded plugin-cache retention knobs on the same footing.
     validate_plugin_cache_retention(
         DEFAULT_SYSTEM_RETENTION['plugin_cache_keep_versions'],
@@ -1360,6 +1398,11 @@ def get_default_config() -> dict:
     config = {
         'providers': [],
         'project': copy.deepcopy(DEFAULT_PROJECT),
+        # Top-level `interaction_mode` preference — a scalar sibling of `plan`,
+        # `project`, and `orchestrator` (see DEFAULT_INTERACTION_MODE). Its
+        # canonical placement among the trailing keys is handled by
+        # _config_core.CANONICAL_TOP_LEVEL_KEY_ORDER at save time.
+        'interaction_mode': DEFAULT_INTERACTION_MODE,
         'skill_domains': {'system': system_domain},
         'build': {
             'queue': copy.deepcopy(DEFAULT_BUILD_QUEUE),

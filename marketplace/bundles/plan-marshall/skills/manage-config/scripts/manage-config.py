@@ -37,6 +37,7 @@ from _cmd_finalize_steps import (
     cmd_finalize_steps_set_lane,
 )
 from _cmd_init import cmd_init
+from _cmd_interaction_mode import cmd_interaction_mode_get, cmd_interaction_mode_set
 from _cmd_orchestrator import cmd_orchestrator_get, cmd_orchestrator_set
 from _cmd_recipe_match import cmd_recipe_match
 from _cmd_skill_domains import (
@@ -56,6 +57,7 @@ from _cmd_steps_sort import cmd_steps_sort
 from _cmd_sync_defaults import cmd_sync_defaults
 from _cmd_system_plan import cmd_plan, cmd_project, cmd_system
 from _config_core import ConcurrentConfigModificationError, error_exit, normalize_keys
+from _config_defaults import VALID_INTERACTION_MODES
 
 # Direct imports - PYTHONPATH set by executor
 from effort_presets import EffortPresets
@@ -608,6 +610,29 @@ def main() -> int:
     add_field_arg(orch_set)
     orch_set.add_argument('--value', required=True, help='Field value')
 
+    # --- interaction-mode ---
+    # Top-level `interaction_mode` scalar preference (modes from
+    # VALID_INTERACTION_MODES, default advanced). The field whitelist is the singleton
+    # INTERACTION_MODE_FIELDS in _cmd_interaction_mode; both verbs route through
+    # the shared provisioning-write guard so an unknown field fails closed.
+    p_im = subparsers.add_parser(
+        'interaction-mode',
+        help='Manage the top-level interaction_mode preference (get/set --field)',
+        allow_abbrev=False,
+    )
+    im_sub = p_im.add_subparsers(dest='verb', required=True, help='Operation')
+
+    im_get = im_sub.add_parser(
+        'get', help='Get the interaction_mode preference (absent key falls back to advanced)', allow_abbrev=False
+    )
+    add_field_arg(im_get)
+
+    im_set = im_sub.add_parser(
+        'set', help='Set the interaction_mode preference (whitelist-guarded, validated)', allow_abbrev=False
+    )
+    add_field_arg(im_set)
+    im_set.add_argument('--value', required=True, help=f'Mode value ({"|".join(VALID_INTERACTION_MODES)})')
+
     # --- coverage ---
     # Two-dial coverage contract: thoroughness (T1-T5) x scope
     # (change-set..overall). The read/resolve verbs mirror the `effort`
@@ -1004,6 +1029,14 @@ def main() -> int:
                 result = cmd_orchestrator_get(args)
             else:
                 result = cmd_orchestrator_set(args)
+        elif args.noun == 'interaction-mode':
+            if not args.verb:
+                p_im.print_help()
+                return 2
+            if args.verb == 'get':
+                result = cmd_interaction_mode_get(args)
+            else:
+                result = cmd_interaction_mode_set(args)
         elif args.noun == 'coverage':
             if not args.verb:
                 p_coverage.print_help()
