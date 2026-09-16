@@ -435,3 +435,115 @@ def test_render_variant_frontmatter_inherit_sentinel_no_model() -> None:
         level_pin='inherit',
     )
     assert 'model:' not in block
+
+
+# --------------------------------------------------------------------------
+# Live pin-chain verification per entry kind (PLAN-04)
+# --------------------------------------------------------------------------
+# These tests thread the REAL steward output — effort_pins.materialize_levels
+# over a machine-local map — into emit_bundles(..., level_pins=...), proving
+# the epic done-state end to end rather than asserting against a hand-written
+# pins dict. Red-first shape: every pinned expectation below FAILS against the
+# inherit-only baseline (level_pins=None emits no model:) and PASSES with the
+# materialized pin map threaded in.
+
+
+def _materialize(map_payload: dict) -> dict[str, str]:
+    from conftest import load_script_module
+
+    effort_pins = load_script_module(
+        'plan-marshall', 'marshall-steward', 'effort_pins.py', module_name='effort_pins_live'
+    )
+    pins, _ = effort_pins.materialize_levels(map_payload)
+    return dict(pins)
+
+
+def _local_full_map() -> dict:
+    return {
+        'pins': {f'level-{n}': {'kind': 'local', 'model': f'local-model-{n}'} for n in range(1, 8)},
+    }
+
+
+def _provider_full_map() -> dict:
+    routes = {
+        1: 'zen/route-1',
+        2: 'zen/route-2',
+        3: 'go/route-3',
+        4: 'zen/route-4',
+        5: 'go/route-5',
+        6: 'zen/route-6',
+        7: 'go/route-7',
+    }
+    return {'pins': {f'level-{n}': {'kind': 'provider', 'route': routes[n]} for n in range(1, 8)}}
+
+
+def test_live_local_full_matrix_resolves_each_level(role_bundle: Path, tmp_path: Path) -> None:
+    pins = _materialize(_local_full_map())
+    out = tmp_path / 'out'
+    emit_bundles(role_bundle, out, CONFIG_DIR, level_pins=pins)
+    agent_dir = out / 'agent'
+    for n in range(1, 8):
+        level = f'level-{n}'
+        fm = _fm_of(agent_dir / f'execution-context-{level}.md')
+        assert fm['model'] == f'local-model-{n}', f'{level}: must resolve to its configured local model'
+
+
+def test_live_provider_full_matrix_resolves_each_level(role_bundle: Path, tmp_path: Path) -> None:
+    pins = _materialize(_provider_full_map())
+    out = tmp_path / 'out'
+    emit_bundles(role_bundle, out, CONFIG_DIR, level_pins=pins)
+    agent_dir = out / 'agent'
+    expected = {
+        1: 'zen/route-1',
+        2: 'zen/route-2',
+        3: 'go/route-3',
+        4: 'zen/route-4',
+        5: 'go/route-5',
+        6: 'zen/route-6',
+        7: 'go/route-7',
+    }
+    for n in range(1, 8):
+        level = f'level-{n}'
+        fm = _fm_of(agent_dir / f'execution-context-{level}.md')
+        assert fm['model'] == expected[n], f'{level}: must resolve to its configured provider route'
+
+
+def test_live_mixed_pins_unpinned_stay_inherit_byte_identical(role_bundle: Path, tmp_path: Path) -> None:
+    pins = _materialize(
+        {
+            'pins': {
+                'level-2': {'kind': 'local', 'model': 'local-model-a'},
+                'level-4': {'kind': 'provider', 'route': 'zen/route-r'},
+            }
+        }
+    )
+    out = tmp_path / 'out'
+    emit_bundles(role_bundle, out, CONFIG_DIR, level_pins=pins)
+    agent_dir = out / 'agent'
+    assert _fm_of(agent_dir / 'execution-context-level-2.md')['model'] == 'local-model-a'
+    assert _fm_of(agent_dir / 'execution-context-level-4.md')['model'] == 'zen/route-r'
+    canonical = (agent_dir / 'execution-context.md').read_bytes()
+    for level in ('level-1', 'level-3', 'level-5', 'level-6', 'level-7'):
+        fm = _fm_of(agent_dir / f'execution-context-{level}.md')
+        assert 'model' not in fm, f'{level}: unpinned must dispatch inherit-only'
+        assert 'reasoningEffort' not in fm
+        assert (agent_dir / f'execution-context-{level}.md').read_bytes() == canonical
+
+
+def test_live_capability_rank_overflow_falls_back_to_inherit(role_bundle: Path, tmp_path: Path) -> None:
+    pins = _materialize({'pins': {'level-2': {'kind': 'local', 'model': 'local-model-a', 'capability_rank': 6}}})
+    assert pins['level-2'] == 'inherit'
+    out = tmp_path / 'out'
+    emit_bundles(role_bundle, out, CONFIG_DIR, level_pins=pins)
+    fm = _fm_of(out / 'agent' / 'execution-context-level-2.md')
+    assert 'model' not in fm
+
+
+def test_live_red_first_baseline_fails_pinned_passes(role_bundle: Path, tmp_path: Path) -> None:
+    baseline = tmp_path / 'baseline'
+    emit_bundles(role_bundle, baseline, CONFIG_DIR)
+    assert 'model' not in _fm_of(baseline / 'agent' / 'execution-context-level-2.md')
+    pins = _materialize({'pins': {'level-2': {'kind': 'local', 'model': 'local-model-a'}}})
+    pinned = tmp_path / 'pinned'
+    emit_bundles(role_bundle, pinned, CONFIG_DIR, level_pins=pins)
+    assert _fm_of(pinned / 'agent' / 'execution-context-level-2.md')['model'] == 'local-model-a'
