@@ -919,14 +919,11 @@ def api_discover(
             continue
 
         module_documents[module_name] = document
-        # The index entry is a read-side pre-flight surface: a consumer reads
-        # _project.json alone to see each module's description and generation
-        # header, deciding which concept documents to open and whether each is
-        # stale — without opening any concept body.
-        module_index[module_name] = {
-            'description': document.get('responsibility', '') or '',
-            GENERATION_FIELD: document.get(GENERATION_FIELD, {}),
-        }
+        # The index entry is DERIVED from the document, and the derivation lives
+        # once in ``_descriptor_delta`` — the classifier decides whether an entry
+        # matches the document that implies it, so the writer and the classifier
+        # must agree by construction rather than by two copies staying in step.
+        module_index[module_name] = delta.derive_index_entry(document)
 
     # Build the project-meta document. The ``modules`` index is the record of
     # "which modules existed at last discover" AND the description/generation

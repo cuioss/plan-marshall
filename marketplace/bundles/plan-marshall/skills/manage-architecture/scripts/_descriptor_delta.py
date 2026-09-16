@@ -48,6 +48,7 @@ ATTRIBUTION_UNDECIDABLE = 'undecidable'
 CLASS_MODULE_ADDED = 'module_added'
 CLASS_MODULE_REMOVED = 'module_removed'
 CLASS_EXTENSIONS_USED_CHANGED = 'extensions_used_changed'
+CLASS_INDEX_ENTRY_ADDED = 'index_entry_added'
 CLASS_GENERATION_BACKFILL = 'generation_backfill'
 CLASS_CONCEPT_TYPE_BACKFILL = 'concept_type_backfill'
 CLASS_KEY_PACKAGES_REKEY = 'key_packages_rekey'
@@ -58,6 +59,7 @@ DELTA_CLASSES: dict[str, str] = {
     CLASS_MODULE_ADDED: ATTRIBUTION_PLAN,
     CLASS_MODULE_REMOVED: ATTRIBUTION_PLAN,
     CLASS_EXTENSIONS_USED_CHANGED: ATTRIBUTION_PLAN,
+    CLASS_INDEX_ENTRY_ADDED: ATTRIBUTION_PLAN,
     CLASS_GENERATION_BACKFILL: ATTRIBUTION_MIGRATION,
     CLASS_CONCEPT_TYPE_BACKFILL: ATTRIBUTION_MIGRATION,
     CLASS_KEY_PACKAGES_REKEY: ATTRIBUTION_MIGRATION,
@@ -95,6 +97,11 @@ UNREADABLE_FIELD = '(unreadable)'
 _MODULES_FIELD = 'modules'
 _EXTENSIONS_USED_FIELD = 'extensions_used'
 _KEY_PACKAGES_FIELD = 'key_packages'
+
+# Marks an index entry the pre-state does not carry AT ALL, which is a different
+# state from an entry it carries as JSON ``null``. Only the former is a repairable
+# addition; ``None`` alone cannot tell the two apart.
+_ABSENT = object()
 
 
 # =============================================================================
@@ -310,17 +317,51 @@ def classify_document(
     return frozenset(classes), tuple(unclassified)
 
 
+def derive_index_entry(document: Mapping[str, Any]) -> dict[str, Any]:
+    """The ``_project.json`` index entry one concept document implies.
+
+    The index is a read-side pre-flight surface: a consumer reads
+    ``_project.json`` alone to see each module's description and generation
+    header, deciding which documents to open and whether each is stale. Because
+    the entry is DERIVED, this is the single place the derivation lives — the
+    writer that builds the regenerated index and the classifier that decides
+    whether an entry matches its document must agree by construction, not by two
+    copies of the same expression staying in step.
+    """
+    return {
+        'description': document.get('responsibility', '') or '',
+        GENERATION_FIELD: document.get(GENERATION_FIELD, {}),
+    }
+
+
 def _classify_index_entry(
     before: Any,
     after: Mapping[str, Any],
+    derived: Mapping[str, Any],
 ) -> tuple[frozenset[str], tuple[str, ...]]:
     """Classify one ``_project.json`` module index entry.
 
     The entry is derived from its document, so the only migration an entry can
     carry is a missing generation header receiving the header its regenerated
-    document carries. An absent or non-dict entry, and any other difference,
-    is ``unclassified``.
+    document carries.
+
+    An entry the pre-state does not carry at all (``before is _ABSENT``) whose
+    regenerated value is exactly the entry the module's own document derives
+    (``derived``) is ``index_entry_added`` — a plan class. The index is a derived
+    surface and ``sync_module_index`` no-ops when ``_project.json`` is missing or
+    unreadable, so a module can legitimately end up documented but unindexed;
+    re-deriving its entry adds no information the document did not already carry,
+    which is why the repair is attributable rather than undecidable.
+
+    Every other shape stays ``unclassified``: an entry present but not a dict
+    (a JSON ``null`` among them — the pre-state carried SOMETHING and it is not
+    an entry), an absent entry whose regenerated value is NOT the one its
+    document derives, and any other difference.
     """
+    if before is _ABSENT:
+        if canonical_json(after) == canonical_json(derived):
+            return frozenset({CLASS_INDEX_ENTRY_ADDED}), ()
+        return frozenset({CLASS_UNCLASSIFIED}), ('',)
     if not isinstance(before, dict):
         return frozenset({CLASS_UNCLASSIFIED}), ('',)
     classes: set[str] = set()
@@ -434,7 +475,11 @@ def classify_delta(
                 document_classes[module] = doc_classes
             unclassified.extend((document_path(module), name) for name in doc_fields)
 
-        entry_classes, entry_fields = _classify_index_entry(pre_index.get(module), regenerated_index.get(module) or {})
+        entry_classes, entry_fields = _classify_index_entry(
+            pre_index.get(module, _ABSENT),
+            regenerated_index.get(module) or {},
+            derive_index_entry(regenerated_documents[module]),
+        )
         if entry_classes:
             index_classes[module] = entry_classes
         unclassified.extend(
@@ -498,9 +543,10 @@ def build_plan_projection(
     """The staged tree carrying the pre-state plus the plan classes only.
 
     An added module contributes its regenerated document and index entry; a
-    removed module loses both; a changed extension set is taken over. Every
-    other document keeps its original bytes, and ``_project.json`` keeps its
-    original bytes unless a plan class changed it.
+    removed module loses both; a documented module missing its index entry has
+    that entry re-derived; a changed extension set is taken over. Every other
+    document keeps its original bytes, and ``_project.json`` keeps its original
+    bytes unless a plan class changed it.
     """
     staged = _pre_state_tree(pre)
     meta, index = _mutable_meta(pre)
@@ -509,6 +555,14 @@ def build_plan_projection(
 
     for module in sorted(report.added):
         staged[document_path(module)] = copy.deepcopy(dict(regenerated_documents[module]))
+        index[module] = copy.deepcopy(regenerated_index.get(module, {}))
+        meta_changed = True
+
+    # The index-only repair: the module's document is untouched (it stays on its
+    # original bytes) and only the entry the document derives is written back.
+    for module in sorted(report.index_classes):
+        if CLASS_INDEX_ENTRY_ADDED not in report.index_classes[module]:
+            continue
         index[module] = copy.deepcopy(regenerated_index.get(module, {}))
         meta_changed = True
 
@@ -610,6 +664,7 @@ __all__ = [
     'canonical_json',
     'classify_delta',
     'classify_document',
+    'derive_index_entry',
     'document_path',
     'match_rekeys',
     'projection_equals_pre_state',

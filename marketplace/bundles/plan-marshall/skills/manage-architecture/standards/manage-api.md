@@ -67,10 +67,11 @@ its published form:
 | `module_added` | plan | the live crawl holds the module and the pre-state has no `enriched.json` for it |
 | `module_removed` | plan | the pre-state holds the module (document or index entry) and the live crawl does not |
 | `extensions_used_changed` | plan | `_project.json` `extensions_used` differs |
+| `index_entry_added` | plan | the pre-state has an `enriched.json` for the module but NO `_project.json` `modules` entry at all, and the regenerated entry is exactly the one that module's own document derives |
 | `generation_backfill` | migration | an existing document, or its index entry, had no `generation` header and receives one (`{by: architecture, tree_sha: null}` on the document; the document's header on the index entry) |
 | `concept_type_backfill` | migration | an existing document had no `type` and receives the legacy default `module` |
 | `key_packages_rekey` | migration | every `key_packages` difference is a dotted key replaced by its bridge path with a byte-identical value |
-| `unclassified` | undecidable | any other field difference in an existing document, its index entry or `_project.json`, and any pre-state file that does not parse |
+| `unclassified` | undecidable | any other field difference in an existing document, its index entry or `_project.json`; an index entry present but not an object (a JSON `null` among them); and any pre-state document discover cannot consume — one that does not parse, or one whose `type` the concept vocabulary refuses |
 
 **Verdict** (`attribution`) — reduced from the observed classes:
 
@@ -85,7 +86,13 @@ its published form:
 
 **Named residual.** A structural drift that predates the plan — an `origin/main`
 index already lagging its tree — classifies as `plan`. It is real structural
-knowledge the plan's tree carries, not a tool migration.
+knowledge the plan's tree carries, not a tool migration. `index_entry_added` is
+the named case: a document written without its follow-up index write (a write
+`sync_module_index` no-ops on when `_project.json` is missing or unreadable)
+leaves a module documented but unindexed, and re-deriving the entry from the
+document adds no information the document did not already carry — so the repair
+is attributable and `--apply plan` performs it, rather than being refused as
+undecidable.
 
 **What `--apply` writes:**
 

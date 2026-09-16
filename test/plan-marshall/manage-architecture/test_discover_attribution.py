@@ -185,6 +185,12 @@ def _scenario_key_packages_rekey(tmpdir: str, monkeypatch: pytest.MonkeyPatch) -
     _stub_discovery(monkeypatch, {'module-a': {'com.example.pkg': {'path': 'module-a/src/pkg'}}})
 
 
+def _scenario_index_entry_added(tmpdir: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A readable document whose module has no ``_project.json`` index entry at all."""
+    _seed(tmpdir, {'module-a': _document('module-a')}, index={})
+    _stub_discovery(monkeypatch, {'module-a': {}})
+
+
 def _scenario_unclassified(tmpdir: str, monkeypatch: pytest.MonkeyPatch) -> None:
     document = _document('module-a')
     _seed(
@@ -199,6 +205,7 @@ _CLASS_SCENARIOS: dict[str, Setup] = {
     'module_added': _scenario_module_added,
     'module_removed': _scenario_module_removed,
     'extensions_used_changed': _scenario_extensions_used_changed,
+    'index_entry_added': _scenario_index_entry_added,
     'generation_backfill': _scenario_generation_backfill,
     'concept_type_backfill': _scenario_concept_type_backfill,
     'key_packages_rekey': _scenario_key_packages_rekey,
@@ -503,6 +510,76 @@ def test_default_apply_over_migration_only_rewrites_the_tree(monkeypatch):
         assert result['attribution'] == 'migration_only'
         assert result['applied'] == 'all'
         assert _snapshot(tmpdir) != before
+
+
+# =============================================================================
+# A documented module missing its index entry
+# =============================================================================
+
+
+def test_apply_plan_repairs_a_missing_index_entry(monkeypatch):
+    """The index is derived, so re-deriving an absent entry is a plan repair, not a refusal."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _scenario_index_entry_added(tmpdir, monkeypatch)
+        before = _snapshot(tmpdir)
+
+        result = api_discover(tmpdir, force=True, apply='plan')
+
+        assert result['attribution'] == 'plan_attributable'
+        assert result['applied'] == 'plan'
+        after = _snapshot(tmpdir)
+        assert after['module-a/enriched.json'] == before['module-a/enriched.json'], (
+            'the index-only repair rewrote the document it derives from'
+        )
+        assert json.loads(after[_META])['modules'] == {
+            'module-a': {'description': 'Handles module-a', 'generation': dict(_HEADER)}
+        }
+
+
+def test_an_index_entry_present_but_not_an_object_stays_unclassified(monkeypatch):
+    """The pre-state carried SOMETHING under that key, and it is not an entry."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed(tmpdir, {'module-a': _document('module-a')}, index={'module-a': None})
+        _stub_discovery(monkeypatch, {'module-a': {}})
+        before = _snapshot(tmpdir)
+
+        result = api_discover(tmpdir, force=True, apply='plan')
+
+        assert _classes(result) == {'unclassified'}, result['delta_classes']
+        assert result['attribution'] == 'undecidable'
+        assert result['applied'] == 'none'
+        assert _snapshot(tmpdir) == before
+
+
+def test_an_absent_index_entry_regenerated_as_something_else_stays_unclassified():
+    """The addition class is granted only for the entry the module's own document derives.
+
+    Driven against ``classify_delta`` directly: ``api_discover`` always derives the
+    regenerated entry from the document, so a mismatching entry is reachable only
+    from a caller that supplied its own index.
+    """
+    document = _document('module-a')
+    raw = json.dumps(document).encode('utf-8')
+    pre = _descriptor_delta.TreeState(
+        meta={'modules': {}},
+        meta_bytes=b'{"modules": {}}',
+        documents={'module-a': document},
+        document_bytes={'module-a': raw},
+    )
+    hand_written = {'modules': {'module-a': {'description': 'Hand-written', 'generation': dict(_HEADER)}}}
+
+    report = _descriptor_delta.classify_delta(pre, hand_written, {'module-a': document})
+
+    assert report.index_classes['module-a'] == frozenset({'unclassified'})
+    assert report.verdict == 'undecidable'
+
+    derived = {'modules': {'module-a': _descriptor_delta.derive_index_entry(document)}}
+    matched = _descriptor_delta.classify_delta(pre, derived, {'module-a': document})
+
+    assert matched.index_classes['module-a'] == frozenset({'index_entry_added'}), (
+        'the matched control must classify as the addition, or the mismatch assertion above is vacuous'
+    )
+    assert matched.verdict == 'plan_attributable'
 
 
 # =============================================================================
