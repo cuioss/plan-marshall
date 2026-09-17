@@ -1,0 +1,1282 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
+"""End-to-end regression tests for the phase-6-finalize architecture-refresh standard.
+
+The standard at ``standards/architecture-refresh.md`` is a markdown executor
+playbook, not a Python module. These tests pin its decision flow contract by:
+
+1. **Parsing the standard's pseudo-code summary** and re-implementing it as a
+   pure decision function in this test module. The re-implementation is
+   exercised across the full matrix:
+
+      * Tier-0 ``enabled`` vs ``disabled``
+      * ``origin/main`` baseline present vs absent (no committed baseline)
+      * Drift detected vs none (``added union removed`` non-empty vs empty)
+      * The ``discover --force --apply plan`` attribution verdict, and whether
+        plan-time writers left uncommitted descriptor edits before discover ran
+      * Tier-1 dispatch knob (``prompt`` / ``auto`` / ``disabled``)
+      * ``change_type`` shortcut for ``bug_fix`` / ``verification``
+
+2. **Asserting the standard's narrative** documents every observable branch
+   (absent baseline, tier-0 disabled, empty diff, non-empty diff with each
+   tier-1 value, change_type shortcut, each attribution outcome) and emits the
+   matching ``--display-detail`` template per branch, reads its baseline by ref
+   with no shell extraction, and points at the delta-class table instead of
+   restating it.
+
+3. **Asserting registration** of ``architecture-refresh`` in
+   ``standards/required-steps.md`` so the ``phase_steps_complete`` handshake
+   enforces it whenever it is in ``manifest.phase_6.steps``.
+
+4. **Asserting cross-references** are correct: the SKILL.md dispatch table
+   resolves ``default:architecture-refresh`` to this standard, the standard
+   declares its inline-dispatch contract, phase-1-init is cited as NOT
+   snapshotting the architecture descriptor, and the manage-run-config
+   tier-0/tier-1 knobs are referenced.
+
+The functional behaviour of the underlying scripts (``architecture discover
+--force --apply plan``, ``diff-modules --pre-ref``,
+``descriptor-regression-check --pre-ref``, ``manage-run-config architecture-refresh
+get-tier-0/1``, etc.) is covered by their own bundle-scoped test suites; this
+file pins ONLY the orchestration contract documented in the standard.
+"""
+
+from __future__ import annotations
+
+import re
+from typing import Any
+
+# ``_invariants`` is imported PLAINLY so this suite exercises the same module
+# instance the ``phase_steps_complete`` invariant uses at runtime; the root
+# conftest already puts its marketplace ``scripts/`` directory on ``sys.path``.
+import _invariants as inv
+import pytest
+from _dispatch_roster import parse_roster
+from _push_prescription_scan import fenced_command_lines, scan_push_prescriptions
+
+from conftest import MARKETPLACE_ROOT, load_script_module
+
+# The delta-class vocabulary and the verdict set are declared once, in the
+# discover attribution module. The decision model and the pointer guard below
+# derive from it rather than restating either set.
+_descriptor_delta = load_script_module(
+    'plan-marshall', 'manage-architecture', '_descriptor_delta.py', '_descriptor_delta'
+)
+DELTA_CLASSES: dict[str, str] = _descriptor_delta.DELTA_CLASSES
+VERDICTS: tuple[str, ...] = _descriptor_delta.VERDICTS
+
+# ---------------------------------------------------------------------------
+# Standards-doc paths (authoritative narrative surface).
+# ---------------------------------------------------------------------------
+
+_MANAGE_API_MD = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'manage-architecture' / 'standards' / 'manage-api.md'
+_PHASE_6_DIR = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-6-finalize'
+_PHASE_6_SKILL_MD = _PHASE_6_DIR / 'SKILL.md'
+_ARCHITECTURE_REFRESH_MD = _PHASE_6_DIR / 'standards' / 'architecture-refresh.md'
+_DISPATCH_INLINE_SPLIT_MD = _PHASE_6_DIR / 'standards' / 'dispatch-inline-split.md'
+_DISPATCHED_HEADING = '## Dispatched steps'
+_INLINE_HEADING = '## Inline steps'
+_REQUIRED_STEPS_MD = _PHASE_6_DIR / 'standards' / 'required-steps.md'
+_PHASE_1_INIT_SKILL_MD = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-1-init' / 'SKILL.md'
+
+
+# ---------------------------------------------------------------------------
+# Retired PR-body-write prescription scan (order-9 contract).
+# ---------------------------------------------------------------------------
+#
+# ``default:architecture-refresh`` is order 9 and ``default:create-pr`` is
+# order 20, so NO PR exists while this step runs, and the PR-body-write
+# sequence this branch used to prescribe (``ci pr view`` -> ``ci pr
+# prepare-body`` -> ``ci pr edit``) cannot be prescribed here. The standard
+# still NAMES those three calls, inside an owed-follow-up note, so a substring
+# search over the whole document cannot tell a live prescription from its own
+# retraction.
+#
+# SCOPE: this scan covers those three retired shapes and nothing else. Other
+# ``ci pr`` verbs are deliberately NOT matched — each would need its own
+# matched control to be guarded honestly, and this guard's control set
+# (``_RETIRED_PR_CALL_SHAPES``) is exactly the three. A green run here therefore
+# means "the retired PR-body-write sequence is not prescribed", NOT "no PR
+# operation of any kind appears".
+#
+# The scan reuses ``fenced_command_lines`` — the same fence-tracking primitive
+# the push scan uses — rather than filtering prose. Reuse, not a second
+# implementation: a private copy is how two guards come to disagree about what
+# counts as a command.
+
+#: The three retired PR-body-write calls. Matched as command WORDS with
+#: flexible inner whitespace, so the pseudo-code assignment forms
+#: (``existing := ci pr view --head …``), the multi-line executor form (whose
+#: ``pr view`` sits on a continuation line carrying neither the script name nor
+#: a leading ``ci``), and a bare ``ci pr edit …`` are all one pattern. Keying on
+#: the leading ``ci`` token or on ``execute-script.py`` is what let two of the
+#: three retired shapes through.
+_RETIRED_PR_BODY_WRITE = re.compile(r'\bpr\s+(?:view|edit)\b|\bprepare-body\b')
+
+
+def _scan_pr_operation_prescriptions(text: str) -> tuple[list[str], int]:
+    """Return ``(retired PR-body-write lines, fenced command lines examined)``.
+
+    The second element is the published population: a document whose fences
+    resolve no command lines yields ``(…, 0)``, which the caller MUST treat as
+    an unresolved scan rather than a clean one.
+    """
+    commands = fenced_command_lines(text)
+    offenders = [line.strip() for line in commands if _RETIRED_PR_BODY_WRITE.search(line)]
+    return offenders, len(commands)
+
+
+#: The three call shapes this step retired, verbatim from the removed pseudo-code
+#: and command blocks. Two are ``:=`` assignment forms whose line begins with the
+#: assigned name, and the third is a bare invocation — the spread is the point:
+#: a guard keyed on how a line STARTS catches only the third.
+_RETIRED_PR_CALL_SHAPES = (
+    'existing := ci pr view --head {worktree_branch}',
+    'body_path := ci pr prepare-body --plan-id {plan_id} --for edit',
+    'ci pr edit --pr-number {pr_number} --plan-id {plan_id}',
+)
+
+
+# ===========================================================================
+# Decision-flow re-implementation (mirrors the standard's pseudo-code).
+#
+# The architecture-refresh standard ends with a "Pseudo-Code Summary" section
+# that is the authoritative procedural form of its decision tree. We mirror
+# that summary here and exercise it across the full matrix below. If the
+# narrative ever diverges from this re-implementation, the assertions in
+# ``TestNarrativeContract`` will catch the drift on the markdown side and the
+# parametric tests will catch it on the behavioural side.
+# ===========================================================================
+
+
+# Sentinel for "Tier 0 disabled — affected modules never computed".
+_AFFECTED_UNKNOWN = object()
+
+
+#: Verdicts under which ``discover --force --apply plan`` writes the plan projection.
+_PLAN_PROJECTION_VERDICTS = frozenset({'plan_attributable', 'mixed'})
+#: Verdicts that leave a tool migration unwritten for the steward upgrade.
+_MIGRATION_DEFERRED_VERDICTS = frozenset({'migration_only', 'mixed'})
+#: Verdicts under which nothing about the discover delta can be attributed.
+_UNATTRIBUTABLE_VERDICTS = frozenset({'undecidable', 'no_baseline'})
+
+_DETAIL_MIGRATION_NOT_COMMITTED = 'tool migration not committed; run marshall-steward upgrade'
+_DETAIL_UNATTRIBUTABLE = 'descriptor delta unattributable; not committed'
+_DETAIL_MIGRATION_DEFERRED = 'refreshed derived data ({affected_module_count} modules); migration deferred'
+#: Branch I at a zero module union. ``migration_deferred`` is derived from the
+#: discover attribution and is independent of ``affected``, so a round can commit
+#: segment-1 plan-time descriptor edits with ``added`` and ``removed`` both empty.
+#: The count is omitted for the same reason Branch J omits it: rendering
+#: ``(0 modules)`` would advertise a module delta the round does not have.
+_DETAIL_MIGRATION_DEFERRED_NO_STRUCTURE_CHANGE = 'refreshed derived data; migration deferred'
+
+# -- The four Tier-1-skip exit cells (Step 5 Branches C / D / J / K) ---------
+#
+# The exit detail is selected on BOTH dimensions — whether Step 3d committed,
+# and whether `added union removed` is non-empty — because neither implies the
+# other. A round can commit segment-1 plan-time descriptor edits while the
+# module union is empty (J), and a round can see a non-empty union whose commit
+# already landed in an earlier commit on the branch (K). Keying on one dimension
+# alone is what let a committed round report "no module structure changed".
+_DETAIL_NO_STRUCTURE_CHANGE = 'no module structure changed'
+_DETAIL_REFRESHED = 'refreshed derived data ({affected_module_count} modules)'
+_DETAIL_REFRESHED_NO_STRUCTURE_CHANGE = 'refreshed derived data; no module structure changed'
+_DETAIL_STRUCTURE_CHANGE_NOT_COMMITTED = 'module structure changed ({affected_module_count} modules); nothing to commit'
+
+
+def _tier1_exit(*, committed: bool, affected: tuple[str, ...]) -> tuple[str, str]:
+    """Return ``(branch, display_detail)`` for a Tier-1 skip.
+
+    Mirrors ``tier1_exit_detail()`` in the standard's Pseudo-Code Summary. Branch
+    J deliberately interpolates no module count: rendering ``(0 modules)`` would
+    advertise a module delta the round does not have.
+    """
+    if committed and affected:
+        return 'D', _DETAIL_REFRESHED.format(affected_module_count=len(affected))
+    if committed:
+        return 'J', _DETAIL_REFRESHED_NO_STRUCTURE_CHANGE
+    if affected:
+        return 'K', _DETAIL_STRUCTURE_CHANGE_NOT_COMMITTED.format(affected_module_count=len(affected))
+    return 'C', _DETAIL_NO_STRUCTURE_CHANGE
+
+
+def _decide_architecture_refresh(
+    *,
+    baseline_present: bool,
+    tier_0: str,
+    tier_1: str,
+    change_type: str,
+    diff_added: tuple[str, ...] = (),
+    diff_removed: tuple[str, ...] = (),
+    diff_changed: tuple[str, ...] = (),
+    attribution: str | None = None,
+    preexisting_plan_writes: bool = False,
+    regressive: bool = False,
+    user_response: str | None = None,
+) -> dict[str, Any]:
+    """Pure re-implementation of the standard's pseudo-code summary.
+
+    Returns a dict with keys:
+
+      * ``branch``: the ``A``-``K`` branch identifier from "Step 5: Mark Step
+        Complete" (no baseline / tier-0+tier-1 skipped / nothing committed and no
+        structure change / refresh only / refresh + enrich / refresh + deferred
+        re-enrichment / migration not committed / unattributable / refresh with
+        migration deferred / committed with an empty module union / structure
+        change this step did not commit), or ``refused`` when the regression gate
+        rejected the delta.
+      * ``tier_0_committed``: True if the Tier-0 ``chore(architecture):
+        refresh`` commit fires.
+      * ``tier_1_action``: ``enrich`` / ``deferred`` / ``skipped``.
+      * ``affected_modules``: sorted union ``added union removed``, or
+        ``_AFFECTED_UNKNOWN`` when Tier 0 is disabled.
+      * ``display_detail``: the ``--display-detail`` payload that the
+        ``mark-step-done`` call MUST carry on this branch.
+
+    ``attribution`` is the ``discover --force --apply plan`` verdict. When
+    omitted it is derived the way a structural-only run reports it: a drift
+    (``added union removed`` non-empty) is ``plan_attributable``, no drift is
+    ``clean``.
+
+    The commit gate is the on-disk porcelain status, and the model derives that
+    status from its two real sources instead of from the diff buckets: discover's
+    plan projection (written only under ``plan_attributable`` / ``mixed``) and
+    ``preexisting_plan_writes`` — uncommitted descriptor edits plan-time writers
+    left before discover ran. A migration class and an unattributable difference
+    are never written under ``--apply plan``, so neither can dirty the tree.
+
+    Note: ``diff_changed`` is accepted but DELIBERATELY ignored. Against a
+    derived-less ``origin/main`` git baseline every common module classifies as
+    ``changed`` (no committed per-module ``derived.json`` sha), so the changed
+    bucket is noise; the reliable drift signal is the index-derived
+    ``added union removed`` buckets only.
+    """
+    migration_deferred = False
+    unattributable = False
+    # -- Step 2a: Tier-0 disabled — no probe, affected never computed --------
+    if tier_0 == 'disabled':
+        affected: tuple[Any, ...] = _AFFECTED_UNKNOWN  # type: ignore[assignment]
+        tier_0_committed = False
+    elif tier_0 == 'enabled':
+        # -- Step 2b/2c: diff-modules --pre-ref origin/main probe ----------
+        if not baseline_present:
+            return {
+                'branch': 'A',
+                'tier_0_committed': False,
+                'tier_1_action': 'skipped',
+                'affected_modules': (),
+                'display_detail': 'skipped — no committed origin/main architecture baseline',
+            }
+        # -- Step 3b: affected = added union removed (changed bucket is noise) ---
+        affected = tuple(sorted(set(diff_added) | set(diff_removed)))
+        # -- Step 3a: discover --force --apply plan verdict -----------------
+        if attribution is None:
+            attribution = 'plan_attributable' if affected else 'clean'
+        if attribution not in VERDICTS:
+            raise ValueError(f'attribution must be one of {VERDICTS}, got {attribution!r}')
+        migration_deferred = attribution in _MIGRATION_DEFERRED_VERDICTS
+        unattributable = attribution in _UNATTRIBUTABLE_VERDICTS
+        # -- Step 3c: porcelain gate over segment-1 writes + plan projection -
+        dirty = preexisting_plan_writes or attribution in _PLAN_PROJECTION_VERDICTS
+        # -- Step 3c.5 / 3d: regression gate, then commit ------------------
+        if dirty and regressive:
+            return {
+                'branch': 'refused',
+                'tier_0_committed': False,
+                'tier_1_action': 'skipped',
+                'affected_modules': affected,
+                'display_detail': 'regressive descriptor delta refused — {violation_fields}',
+            }
+        tier_0_committed = dirty
+    else:
+        raise ValueError(f'tier_0 must be enabled|disabled, got {tier_0!r}')
+
+    # -- Step 3e: a deferred or unattributable verdict ends after Tier 0 -----
+    if unattributable:
+        return {
+            'branch': 'H',
+            'tier_0_committed': tier_0_committed,
+            'tier_1_action': 'skipped',
+            'affected_modules': affected,
+            'display_detail': _DETAIL_UNATTRIBUTABLE,
+        }
+    if migration_deferred:
+        if tier_0_committed:
+            detail = (
+                _DETAIL_MIGRATION_DEFERRED.format(affected_module_count=len(affected))
+                if affected
+                else _DETAIL_MIGRATION_DEFERRED_NO_STRUCTURE_CHANGE
+            )
+            return {
+                'branch': 'I',
+                'tier_0_committed': tier_0_committed,
+                'tier_1_action': 'skipped',
+                'affected_modules': affected,
+                'display_detail': detail,
+            }
+        return {
+            'branch': 'G',
+            'tier_0_committed': False,
+            'tier_1_action': 'skipped',
+            'affected_modules': affected,
+            'display_detail': _DETAIL_MIGRATION_NOT_COMMITTED,
+        }
+
+    # -- Step 4: Tier 1 -----------------------------------------------------
+    # 4a. change_type shortcut
+    if change_type in {'bug_fix', 'verification'}:
+        if affected is _AFFECTED_UNKNOWN:
+            return {
+                'branch': 'B',
+                'tier_0_committed': False,
+                'tier_1_action': 'skipped',
+                'affected_modules': _AFFECTED_UNKNOWN,
+                'display_detail': 'tier-0 disabled; tier-1 skipped',
+            }
+        branch, detail = _tier1_exit(committed=tier_0_committed, affected=affected)
+        return {
+            'branch': branch,
+            'tier_0_committed': tier_0_committed,
+            'tier_1_action': 'skipped',
+            'affected_modules': affected,
+            'display_detail': detail,
+        }
+
+    # 4c. affected unknown (Tier-0 disabled)
+    if affected is _AFFECTED_UNKNOWN:
+        return {
+            'branch': 'B',
+            'tier_0_committed': False,
+            'tier_1_action': 'skipped',
+            'affected_modules': _AFFECTED_UNKNOWN,
+            'display_detail': 'tier-0 disabled; tier-1 skipped',
+        }
+
+    # 4b. affected empty (Tier-0 enabled, no added/removed). An empty module
+    # union does NOT mean nothing was committed: segment-1 plan-time descriptor
+    # edits dirty the tree with added and removed both empty, so this exit reads
+    # `tier_0_committed` rather than assuming it False (Branch J vs Branch C).
+    if len(affected) == 0:
+        branch, detail = _tier1_exit(committed=tier_0_committed, affected=())
+        return {
+            'branch': branch,
+            'tier_0_committed': tier_0_committed,
+            'tier_1_action': 'skipped',
+            'affected_modules': (),
+            'display_detail': detail,
+        }
+
+    # 4d. tier_1 dispatch — affected is non-empty, tier-0 enabled, change_type
+    # is not in the shortcut list, and the verdict deferred nothing.
+    n = len(affected)
+    if tier_1 == 'disabled':
+        return {
+            'branch': 'F',
+            'tier_0_committed': tier_0_committed,
+            'tier_1_action': 'deferred',
+            'affected_modules': affected,
+            'display_detail': ('refreshed; re-enrichment deferred'),
+        }
+    if tier_1 == 'auto':
+        return {
+            'branch': 'E',
+            'tier_0_committed': tier_0_committed,
+            'tier_1_action': 'enrich',
+            'affected_modules': affected,
+            'display_detail': f'refreshed + re-enriched ({n} modules)',
+        }
+    if tier_1 == 'prompt':
+        if user_response is None:
+            raise ValueError('tier_1=prompt requires a user_response (Re-enrich now / Skip — note in PR).')
+        if user_response == 'Re-enrich now':
+            return {
+                'branch': 'E',
+                'tier_0_committed': tier_0_committed,
+                'tier_1_action': 'enrich',
+                'affected_modules': affected,
+                'display_detail': f'refreshed + re-enriched ({n} modules)',
+            }
+        if user_response in ('Skip — note in PR', 'aborted'):
+            return {
+                'branch': 'F',
+                'tier_0_committed': tier_0_committed,
+                'tier_1_action': 'deferred',
+                'affected_modules': affected,
+                'display_detail': ('refreshed; re-enrichment deferred'),
+            }
+        raise ValueError(f'unknown user_response: {user_response!r}')
+
+    raise ValueError(f'tier_1 must be prompt|auto|disabled, got {tier_1!r}')
+
+
+# ===========================================================================
+# Absent-baseline handling — origin/main carries no committed descriptor.
+# ===========================================================================
+
+
+_TIER_0_BLOCK_WITH_PUSH = """\
+After the commit, push immediately so the refresh lands on the same PR as the
+plan's substantive commits:
+
+```bash
+git -C {worktree_path} push
+```
+"""
+
+_TIER_0_BLOCK_WITHOUT_PUSH = """\
+**This step does NOT push.** It commits and stops. `default:push` (order 11) is
+a **pure push barrier** that ships the converged branch — including this commit. Pushing here would be a
+second push of the same branch from a step the single-push contract does not
+authorise.
+
+```text
+        git -C {worktree_path} commit -m "chore(architecture): refresh"
+        # no push — the order-11 default:push barrier ships this commit
+```
+"""
+
+_SHELL_EXTRACTION = re.compile(r'(?:^|\s)(?:rm|mkdir|tar)\s|\bgit\b[^\n]*\barchive\b')
+
+
+def _scan_shell_extraction(text: str) -> tuple[list[str], int]:
+    """Return ``(extraction command lines, fenced command lines examined)``."""
+    commands = fenced_command_lines(text)
+    offenders = [line.strip() for line in commands if _SHELL_EXTRACTION.search(line)]
+    return offenders, len(commands)
+
+
+_REMOVED_EXTRACTION_BLOCK = """\
+```bash
+rm -rf {worktree_path}/.plan/temp/architecture-baseline {worktree_path}/.plan/temp/architecture-baseline.tar
+```
+
+```bash
+mkdir -p {worktree_path}/.plan/temp/architecture-baseline
+```
+
+```bash
+git -C {worktree_path} archive --format=tar --output=.plan/temp/architecture-baseline.tar origin/main .plan/project-architecture
+```
+
+```bash
+tar -xf {worktree_path}/.plan/temp/architecture-baseline.tar -C {worktree_path}/.plan/temp/architecture-baseline
+```
+"""
+
+
+def _restated_classes(text: str) -> list[str]:
+    """Delta-class names written as code spans — the form a restated class table takes."""
+    return [name for name in DELTA_CLASSES if f'`{name}`' in text]
+
+
+_CLASS_TABLE_HEADER = '| Class | Attribution | Detected when |'
+
+_CLASS_TABLE_ROW = re.compile(r'^\|\s*`([^`]+)`\s*\|\s*([^|]+?)\s*\|')
+
+
+def _published_class_attributions(text: str) -> dict[str, str]:
+    """Parse ``class -> attribution`` out of the published delta-class table.
+
+    Returns the EMPTY mapping when the table cannot be resolved at all, so a
+    caller that publishes the parsed row count fails loudly on a table the
+    parser no longer recognises instead of passing vacuously on zero rows.
+
+    Raises ``ValueError`` naming the class when the table carries TWO rows for
+    it. Assignment into a dict is last-write-wins, so a silent overwrite lets a
+    self-contradictory table compare EQUAL to ``DELTA_CLASSES`` — and keep the
+    expected row count — whenever the last of the conflicting rows happens to
+    agree, which is the same green-over-a-disagreeing-document shape the guard
+    below exists to remove, re-entering through the parser. Raising rather than
+    returning the empty mapping is deliberate: the empty mapping is this
+    helper's documented signal for "the table could not be resolved at all",
+    and a duplicate row is the opposite situation — the table resolved
+    perfectly well and states two things at once — so reusing that signal would
+    report "parsed 0 rows" about a table the parser read in full.
+    """
+    _, separator, tail = text.partition(_CLASS_TABLE_HEADER)
+    if not separator:
+        return {}
+    parsed: dict[str, str] = {}
+    # ``tail`` opens mid-line, so element 0 is the header's own remainder;
+    # element 1 is the delimiter row, which matches no data-row pattern.
+    for line in tail.splitlines()[1:]:
+        if not line.startswith('|'):
+            break
+        row = _CLASS_TABLE_ROW.match(line)
+        if row is not None:
+            class_name, attribution = row.group(1), row.group(2)
+            if class_name in parsed:
+                raise ValueError(
+                    'the published delta-class table carries two rows for '
+                    f'`{class_name}` ({parsed[class_name]!r} then {attribution!r}) — '
+                    'the second would silently overwrite the first, so the table can '
+                    'state two attributions at once while parsing to a mapping that '
+                    'agrees with DELTA_CLASSES. Each class must be published exactly '
+                    'once; do not delete this check.'
+                )
+            parsed[class_name] = attribution
+    return parsed
+
+
+_MATRIX_CASES = [
+    # baseline absent, tier-0 enabled — Branch A short-circuit.
+    (False, 'enabled', 'prompt', 'feature', False, 'A', 'no committed origin/main', None),
+    (False, 'enabled', 'auto', 'bug_fix', True, 'A', 'no committed origin/main', None),
+    # baseline absent, tier-0 disabled — extraction skipped, Branch B.
+    (False, 'disabled', 'auto', 'feature', True, 'B', 'tier-0 disabled', None),
+    # tier-0 disabled (baseline present) — Branch B for any tier-1 setting.
+    (True, 'disabled', 'prompt', 'feature', True, 'B', 'tier-0 disabled', None),
+    (True, 'disabled', 'auto', 'feature', False, 'B', 'tier-0 disabled', None),
+    (True, 'disabled', 'disabled', 'refactor', True, 'B', 'tier-0 disabled', None),
+    # tier-0 enabled, no drift — Branch C.
+    (True, 'enabled', 'prompt', 'feature', False, 'C', 'no module structure changed', None),
+    (True, 'enabled', 'auto', 'feature', False, 'C', 'no module structure changed', None),
+    # tier-0 enabled, drift, change_type shortcut — Branch D.
+    (True, 'enabled', 'auto', 'bug_fix', True, 'D', 'refreshed derived data', None),
+    (True, 'enabled', 'prompt', 'verification', True, 'D', 'refreshed derived data', None),
+    # tier-0 enabled, drift, tier-1 auto — Branch E.
+    (True, 'enabled', 'auto', 'feature', True, 'E', 'refreshed + re-enriched', None),
+    # tier-0 enabled, drift, tier-1 prompt accepted — Branch E.
+    (True, 'enabled', 'prompt', 'feature', True, 'E', 'refreshed + re-enriched', 'Re-enrich now'),
+    # tier-0 enabled, drift, tier-1 disabled — Branch F.
+    (True, 'enabled', 'disabled', 'feature', True, 'F', 're-enrichment deferred', None),
+    # tier-0 enabled, drift, tier-1 prompt declined — Branch F.
+    (True, 'enabled', 'prompt', 'feature', True, 'F', 're-enrichment deferred', 'Skip — note in PR'),
+]
+
+
+class TestAttributionVerdict:
+    """Step 3a/3e — the discover verdict, not porcelain dirtiness, decides what is committed."""
+
+    def test_verdict_population_is_the_declared_set(self):
+        """Every verdict the attribution module declares is exercised below — derived, not listed."""
+        assert len(VERDICTS) > 0, 'VERDICTS resolved empty — every per-verdict assertion would be vacuous'
+        assert set(VERDICTS) == (
+            {'clean'} | _PLAN_PROJECTION_VERDICTS | _MIGRATION_DEFERRED_VERDICTS | _UNATTRIBUTABLE_VERDICTS
+        ), 'a verdict the attribution module declares is not routed by the decision model'
+
+    @pytest.mark.parametrize('attribution', VERDICTS)
+    def test_every_verdict_reaches_a_documented_branch(self, attribution: str):
+        result = _decide_architecture_refresh(
+            baseline_present=True,
+            tier_0='enabled',
+            tier_1='disabled',
+            change_type='feature',
+            diff_added=('mod-x',),
+            attribution=attribution,
+        )
+        assert result['branch'] in {'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K'}
+
+    def test_migration_only_commits_nothing_and_names_the_upgrade_path(self):
+        """The observed consumer run: an empty module union and a tool-migration-only delta."""
+        result = _decide_architecture_refresh(
+            baseline_present=True,
+            tier_0='enabled',
+            tier_1='auto',
+            change_type='feature',
+            attribution='migration_only',
+        )
+        assert result['branch'] == 'G'
+        assert result['tier_0_committed'] is False
+        assert result['tier_1_action'] == 'skipped'
+        assert result['display_detail'] == _DETAIL_MIGRATION_NOT_COMMITTED
+
+    def test_migration_only_with_preexisting_plan_writes_commits_segment_one_only(self):
+        """Plan-time writes still ship; the migration stays unwritten and is named as deferred.
+
+        The module union is empty here, so Branch I omits the count exactly as
+        Branch J does — ``(0 modules)`` would advertise a module delta this round
+        does not have.
+        """
+        result = _decide_architecture_refresh(
+            baseline_present=True,
+            tier_0='enabled',
+            tier_1='auto',
+            change_type='feature',
+            attribution='migration_only',
+            preexisting_plan_writes=True,
+        )
+        assert result['branch'] == 'I'
+        assert result['tier_0_committed'] is True
+        assert result['tier_1_action'] == 'skipped'
+        assert result['affected_modules'] == (), 'the zero-count assertion below needs an empty union'
+        assert result['display_detail'] == _DETAIL_MIGRATION_DEFERRED_NO_STRUCTURE_CHANGE
+        assert '0 modules' not in result['display_detail']
+
+    def test_mixed_commits_the_plan_projection_with_the_deferred_template(self):
+        result = _decide_architecture_refresh(
+            baseline_present=True,
+            tier_0='enabled',
+            tier_1='auto',
+            change_type='feature',
+            diff_added=('mod-new',),
+            attribution='mixed',
+        )
+        assert result['branch'] == 'I'
+        assert result['tier_0_committed'] is True
+        assert result['tier_1_action'] == 'skipped'
+        assert result['display_detail'] == 'refreshed derived data (1 modules); migration deferred'
+
+    def test_branch_i_splits_on_the_module_union_like_branch_j(self):
+        """Branch I's two cells, as a matched pair over one committed-and-deferred round.
+
+        `migration_deferred` is derived from the attribution and is independent of
+        `affected`, so both cells are reachable. The pair is asserted together
+        because either assertion alone is weak: the zero-count one would also pass
+        for a branch that never interpolates the count at all, and the counted one
+        would also pass for a branch that always interpolates it.
+        """
+        empty = _decide_architecture_refresh(
+            baseline_present=True,
+            tier_0='enabled',
+            tier_1='auto',
+            change_type='feature',
+            attribution='mixed',
+            preexisting_plan_writes=True,
+        )
+        counted = _decide_architecture_refresh(
+            baseline_present=True,
+            tier_0='enabled',
+            tier_1='auto',
+            change_type='feature',
+            attribution='mixed',
+            diff_added=('mod-new',),
+        )
+
+        assert empty['branch'] == counted['branch'] == 'I'
+        assert empty['tier_0_committed'] is True
+        assert counted['tier_0_committed'] is True
+        assert empty['affected_modules'] == ()
+        assert counted['affected_modules'] == ('mod-new',)
+        assert empty['display_detail'] == _DETAIL_MIGRATION_DEFERRED_NO_STRUCTURE_CHANGE
+        assert counted['display_detail'] == _DETAIL_MIGRATION_DEFERRED.format(affected_module_count=1)
+        assert '0 modules' not in empty['display_detail'], (
+            "Branch I must not interpolate the zero count — '(0 modules)' advertises "
+            'a module delta the round does not have, which is the rule Branch J states'
+        )
+        assert '1 modules' in counted['display_detail'], (
+            'the counted cell must still render its count, or the zero-count assertion '
+            'above is satisfied by a branch that simply never counts'
+        )
+
+    @pytest.mark.parametrize('attribution', sorted(_UNATTRIBUTABLE_VERDICTS))
+    def test_unattributable_delta_is_not_committed(self, attribution: str):
+        result = _decide_architecture_refresh(
+            baseline_present=True,
+            tier_0='enabled',
+            tier_1='auto',
+            change_type='feature',
+            diff_added=('mod-x',),
+            attribution=attribution,
+        )
+        assert result['branch'] == 'H'
+        assert result['tier_0_committed'] is False
+        assert result['tier_1_action'] == 'skipped'
+        assert result['display_detail'] == _DETAIL_UNATTRIBUTABLE
+
+    def test_undecidable_still_gates_preexisting_plan_writes(self):
+        """The discover delta goes uncommitted; segment-1 writes pass the unchanged gates."""
+        result = _decide_architecture_refresh(
+            baseline_present=True,
+            tier_0='enabled',
+            tier_1='auto',
+            change_type='feature',
+            attribution='undecidable',
+            preexisting_plan_writes=True,
+        )
+        assert result['branch'] == 'H'
+        assert result['tier_0_committed'] is True
+        assert result['display_detail'] == _DETAIL_UNATTRIBUTABLE
+
+    @pytest.mark.parametrize(
+        ('tier_1', 'user_response', 'branch'),
+        [('auto', None, 'E'), ('disabled', None, 'F'), ('prompt', 'Skip — note in PR', 'F')],
+    )
+    def test_plan_attributable_keeps_the_structural_branches(self, tier_1: str, user_response: str | None, branch: str):
+        result = _decide_architecture_refresh(
+            baseline_present=True,
+            tier_0='enabled',
+            tier_1=tier_1,
+            change_type='feature',
+            diff_added=('mod-new',),
+            attribution='plan_attributable',
+            user_response=user_response,
+        )
+        assert result['branch'] == branch
+        assert result['tier_0_committed'] is True
+
+    def test_plan_attributable_under_change_type_shortcut_is_branch_d(self):
+        result = _decide_architecture_refresh(
+            baseline_present=True,
+            tier_0='enabled',
+            tier_1='auto',
+            change_type='bug_fix',
+            diff_removed=('mod-gone',),
+            attribution='plan_attributable',
+        )
+        assert result['branch'] == 'D'
+        assert result['display_detail'] == 'refreshed derived data (1 modules)'
+
+    def test_regressive_delta_is_refused_before_any_commit(self):
+        result = _decide_architecture_refresh(
+            baseline_present=True,
+            tier_0='enabled',
+            tier_1='auto',
+            change_type='feature',
+            diff_added=('mod-new',),
+            attribution='mixed',
+            regressive=True,
+        )
+        assert result['branch'] == 'refused'
+        assert result['tier_0_committed'] is False
+
+    def test_clean_verdict_with_nothing_dirty_is_branch_c(self):
+        result = _decide_architecture_refresh(
+            baseline_present=True,
+            tier_0='enabled',
+            tier_1='auto',
+            change_type='feature',
+            attribution='clean',
+        )
+        assert result['branch'] == 'C'
+        assert result['tier_0_committed'] is False
+
+
+class TestChangeTypeShortcut:
+    """Step 4a — bug_fix / verification skip Tier 1 even with drift."""
+
+    @pytest.mark.parametrize('change_type', ['bug_fix', 'verification'])
+    def test_shortcut_with_drift_runs_tier_0_only(self, change_type: str):
+        """Drift -> tier-0 commit, but tier-1 is skipped per shortcut."""
+        result = _decide_architecture_refresh(
+            baseline_present=True,
+            tier_0='enabled',
+            tier_1='auto',  # would otherwise enrich
+            change_type=change_type,
+            diff_added=('mod-a',),
+            diff_removed=('mod-b',),
+        )
+        assert result['branch'] == 'D'
+        assert result['tier_0_committed'] is True
+        assert result['tier_1_action'] == 'skipped'
+        assert result['display_detail'] == ('refreshed derived data (2 modules)')
+
+    @pytest.mark.parametrize('change_type', ['bug_fix', 'verification'])
+    def test_shortcut_without_drift_yields_branch_c(self, change_type: str):
+        """No drift + shortcut -> Branch C (no commit, tier-1 skipped)."""
+        result = _decide_architecture_refresh(
+            baseline_present=True,
+            tier_0='enabled',
+            tier_1='auto',
+            change_type=change_type,
+        )
+        assert result['branch'] == 'C'
+        assert result['tier_0_committed'] is False
+        assert result['tier_1_action'] == 'skipped'
+
+    @pytest.mark.parametrize('change_type', ['bug_fix', 'verification'])
+    def test_shortcut_with_tier_0_disabled_yields_branch_b(
+        self,
+        change_type: str,
+    ):
+        """Shortcut + tier-0 disabled still yields tier-0-disabled branch."""
+        result = _decide_architecture_refresh(
+            baseline_present=True,
+            tier_0='disabled',
+            tier_1='auto',
+            change_type=change_type,
+        )
+        assert result['branch'] == 'B'
+        assert result['display_detail'] == 'tier-0 disabled; tier-1 skipped'
+
+    def test_other_change_types_run_tier_1_normally(self):
+        """`feature`, `refactor`, etc. do NOT trigger the shortcut."""
+        for change_type in ('feature', 'refactor', 'tech_debt', 'unknown'):
+            result = _decide_architecture_refresh(
+                baseline_present=True,
+                tier_0='enabled',
+                tier_1='auto',
+                change_type=change_type,
+                diff_added=('mod-q',),
+            )
+            assert result['branch'] == 'E', f'change_type={change_type!r} must run tier-1 with auto knob'
+
+
+class TestNarrativeContract:
+    """The standard's prose surfaces every observable branch and template."""
+
+    @pytest.fixture(scope='class')
+    @classmethod
+    def standard_text(cls) -> str:
+        return str(_ARCHITECTURE_REFRESH_MD.read_text(encoding='utf-8'))
+
+    # ----- Inputs and tiers -------------------------------------------------
+
+    def test_documents_run_config_inputs(self, standard_text: str):
+        assert 'architecture_refresh.tier_0' in standard_text
+        assert 'architecture_refresh.tier_1' in standard_text
+        assert 'manage-run-config' in standard_text
+
+    def test_documents_change_type_input(self, standard_text: str):
+        assert 'change_type' in standard_text
+
+    def test_documents_phase_1_init_context(self, standard_text: str):
+        """The standard cites phase-1-init as NOT snapshotting the descriptor."""
+        assert 'phase-1-init' in standard_text, 'Standard must cite phase-1-init context'
+
+    # ----- Step 2: origin/main baseline read by ref -------------------------
+
+    def test_documents_origin_main_baseline_read_by_ref(self, standard_text: str):
+        """The pre-baseline is the committed origin/main tree, read by ref inside the verbs."""
+        assert 'diff-modules --pre-ref origin/main' in standard_text
+        assert 'descriptor-regression-check --pre-ref origin/main' in standard_text
+        assert '{baseline_dir}' not in standard_text, (
+            'the extracted-baseline placeholder survived — a caller-side extraction path is still documented'
+        )
+
+    def test_documents_absent_baseline_branch(self, standard_text: str):
+        assert 'no committed origin/main architecture baseline' in standard_text
+
+    def test_documents_changed_bucket_is_noise(self, standard_text: str):
+        """The standard must document that the changed bucket is noise; consume added union removed."""
+        assert (
+            'added ∪ removed' in standard_text
+        )  # the union sign is the literal the standard uses, not a lookalike to normalise away
+        assert 'changed' in standard_text
+
+    # ----- Step 3: Tier 0 ---------------------------------------------------
+
+    def test_documents_tier_0_disabled_branch(self, standard_text: str):
+        assert 'Tier 0 skipped' in standard_text or 'tier_0 = disabled' in standard_text
+
+    def test_documents_discover_force_apply_plan_call(self, standard_text: str):
+        assert 'discover --force --apply plan' in standard_text
+
+    def test_no_snapshot_verb_is_called_with_a_path_baseline(self, standard_text: str):
+        """Every fenced diff-modules / descriptor-regression-check call reads the baseline by ref."""
+        calls = [
+            line
+            for line in fenced_command_lines(standard_text)
+            if re.search(r'\b(?:diff-modules|descriptor-regression-check)\b', line)
+        ]
+        assert calls, 'no fenced snapshot-verb call resolved — the assertion below would be vacuous'
+        assert all('--pre-ref origin/main' in line for line in calls), calls
+
+    @pytest.mark.parametrize('attribution', VERDICTS)
+    def test_documents_every_attribution_verdict(self, standard_text: str, attribution: str):
+        assert f'`{attribution}`' in standard_text, f'the standard does not route the {attribution!r} verdict'
+
+    def test_names_the_upgrade_path_for_deferred_and_unattributable_deltas(self, standard_text: str):
+        assert '/marshall-steward upgrade' in standard_text
+        assert 'marshall-steward/references/upgrade-flow.md' in standard_text
+
+    def test_logs_the_regression_gate_coverage_with_a_green_verdict(self, standard_text: str):
+        """A green regression gate is logged together with the fields it covered."""
+        green_lines = [line for line in fenced_command_lines(standard_text) if 'Regression gate green' in line]
+        assert green_lines, 'no fenced log line records a green regression gate'
+        assert all('examined_fields' in line and 'modules_examined' in line for line in green_lines), green_lines
+
+    def test_unattributable_delta_is_logged_at_warning(self, standard_text: str):
+        warning_lines = [
+            line for line in fenced_command_lines(standard_text) if 'Unattributable descriptor delta' in line
+        ]
+        assert warning_lines, 'the undecidable verdict has no WARNING log line'
+        assert all('{unclassified_fields}' in line for line in warning_lines), warning_lines
+
+    def test_documents_porcelain_commit_gate(self, standard_text: str):
+        """The Tier-0 commit is gated on a dirty .plan/project-architecture."""
+        assert 'status --porcelain .plan/project-architecture' in standard_text
+
+    def test_documents_empty_diff_no_commit_branch(self, standard_text: str):
+        assert 'no module structure changed' in standard_text
+
+    def test_documents_non_empty_diff_commit_message_template(
+        self,
+        standard_text: str,
+    ):
+        assert 'chore(architecture): refresh derived data after' in standard_text
+
+    def test_documents_no_push_invocation(self, standard_text: str):
+        """A step at order 9 must NOT push — the order-11 barrier ships its commit.
+
+        This is the inverse of the assertion that stood here before, and it is
+        the matched positive control for the D6 fix. The old form asserted
+        ``count('git -C {worktree_path} push') >= 2`` — it REQUIRED the very
+        push this standard has no authority to perform. ``default:push``
+        (order 11) is a pure push barrier: it carries no commit logic, asserts a
+        clean tree, and ships the converged branch. A push from order 9 is a
+        second push of the same branch, outside the single-push contract the
+        barrier exists to hold.
+
+        The check is population-derived rather than literal-keyed: it scans the
+        standard's fenced command lines for a git push invocation instead of
+        pinning one spelling, so re-introducing the push in any form (a bare
+        ``git push``, a ``-C {main_checkout}`` variant, a ``--force-with-lease``
+        flavour) fails the guard. The examined-line count is published so a scan
+        that resolves nothing fails loudly rather than passing vacuously.
+        """
+        offenders, examined = scan_push_prescriptions(standard_text)
+
+        assert examined > 0, (
+            'Push scan examined 0 fenced command lines of architecture-refresh.md '
+            '— the scan resolved nothing, so a clean result would be vacuous.'
+        )
+        assert offenders == [], (
+            f'architecture-refresh.md (order 9) prescribes {len(offenders)} git '
+            f'push invocation(s) across {examined} examined command lines, but it '
+            f'sits BELOW the order-11 default:push barrier that ships its commit. '
+            f'Offending lines: {offenders}'
+        )
+
+    def test_documents_the_barrier_that_ships_its_commit(self, standard_text: str):
+        """Not pushing is only correct because a later barrier does push.
+
+        The negative half of the control above: asserting the absence of a push
+        would also pass for a standard that commits and lets the work strand.
+        The standard must therefore name ``default:push`` as the step that
+        ships the commit it produces.
+        """
+        assert 'default:push' in standard_text, (
+            'architecture-refresh.md must name default:push as the barrier that '
+            'ships its commit — otherwise "this step does not push" reads as '
+            'the edit being stranded rather than handed to the barrier.'
+        )
+
+    # ----- Step 4: Tier 1 ---------------------------------------------------
+
+    def test_documents_change_type_shortcut(self, standard_text: str):
+        assert 'bug_fix' in standard_text
+        assert 'verification' in standard_text
+        assert 'Tier 1 skipped' in standard_text
+
+    def test_documents_tier_1_dispatch_modes(self, standard_text: str):
+        assert '`disabled`' in standard_text
+        assert '`auto`' in standard_text
+        assert '`prompt`' in standard_text
+
+    def test_documents_deferred_enrichment_branch(self, standard_text: str):
+        """The Tier-1 deferral records the module list somewhere readable at order 9.
+
+        The previous form asserted the branch documented `prepare-body --for
+        edit`, i.e. the `ci pr view` -> `prepare-body` -> `pr edit` pattern.
+        That pattern cannot run here: `default:architecture-refresh` is order
+        9 and `default:create-pr` is order 20, so no PR exists to view or
+        edit. The assertion now pins what the branch CAN do — record the
+        affected-module list in the decision log — and the standard's own
+        record of the owed re-homing.
+        """
+        # The user-facing prompt still names the affected modules.
+        assert 'Architecture re-enrichment recommended for' in standard_text
+        # The deferral is recorded where it is readable without a PR.
+        assert 're-enrichment deferred for' in standard_text, (
+            'The Tier-1 deferral branch must record the affected-module list in '
+            'the decision log — that is the only surface available at order 9.'
+        )
+        # The owed re-homing is recorded rather than left as a dead prescription.
+        assert 'No PR exists when this step runs' in standard_text, (
+            'The standard must state WHY the PR-body note is not written here, '
+            'so the gap reads as owed follow-up rather than an omission.'
+        )
+
+    def test_does_not_prescribe_a_pr_body_write_at_order_9(self, standard_text: str):
+        """No `pr view` / `prepare-body` / `pr edit` CALL may be prescribed here.
+
+        The literals still appear in the standard, but only inside the
+        owed-follow-up note that names them as what this branch USED to
+        prescribe. A substring check over the whole document therefore cannot
+        distinguish a live prescription from its own retraction — so this guard
+        looks only at lines inside fenced code blocks (comments excluded), via
+        the same `fenced_command_lines` primitive the push scan uses, and
+        publishes how many it examined.
+        """
+        offenders, examined = _scan_pr_operation_prescriptions(standard_text)
+
+        assert examined, (
+            'Fenced-command scan resolved 0 command lines in architecture-refresh.md — a clean result would be vacuous.'
+        )
+        print(
+            f'architecture-refresh retired-PR-body-write scan: examined={examined} '
+            f'command lines (scope: pr view / prepare-body / pr edit)'
+        )
+        assert offenders == [], (
+            f'architecture-refresh.md (order 9) prescribes {len(offenders)} retired '
+            f'PR-body-write call(s) (pr view / prepare-body / pr edit) across '
+            f'{examined} examined command lines, but default:create-pr is order 20 '
+            f'— no PR exists yet. Offenders: {offenders}'
+        )
+
+    @pytest.mark.parametrize('retired_call', _RETIRED_PR_CALL_SHAPES, ids=['pr-view', 'prepare-body', 'pr-edit'])
+    def test_pr_operation_scan_fires_on_each_retired_call_shape(self, standard_text: str, retired_call: str):
+        """Matched control pair, per retired shape, over the real document.
+
+        POSITIVE control — the retired call re-introduced inside a fence — must
+        be flagged. This is the regression the guard above exists to prevent, so
+        each of the three shapes is driven through it individually. Two of them
+        are `:=` assignment forms whose lines start with the assigned name and
+        carry no `execute-script.py`; a guard keyed on how a line starts, or on
+        the script token, reports them clean, which is exactly the blind spot
+        this control closes.
+
+        NEGATIVE controls — the SAME line as prose outside any fence, and the
+        SAME line as a comment inside a fence — must stay green. The first is
+        the owed-follow-up note that legitimately names these calls as retired;
+        the second is a pseudo-code comment recording their absence. Without
+        both, "flags a live prescription" and "flags every mention" produce the
+        same red, and the guard would fire on the standard's own retraction.
+        """
+        # The negatives run FIRST so neither direction can hide behind the
+        # other's short-circuit: each assertion below is reachable, and reached,
+        # whenever the ones before it hold.
+
+        # NEGATIVE 1: the same text as prose -> not flagged.
+        as_prose = f'{standard_text}\n\nThis branch previously prescribed {retired_call}.\n'
+        prose_offenders, _ = _scan_pr_operation_prescriptions(as_prose)
+        assert prose_offenders == [], (
+            f'The guard flagged {retired_call!r} written as PROSE '
+            f'(offenders={prose_offenders}). A retraction that names the retired '
+            f'call would then be indistinguishable from a live prescription.'
+        )
+
+        # NEGATIVE 2: the same text as a fenced comment -> not flagged.
+        as_comment = f'{standard_text}\n\n```text\n# no PR at order 9: {retired_call}\n```\n'
+        comment_offenders, _ = _scan_pr_operation_prescriptions(as_comment)
+        assert comment_offenders == [], (
+            f'The guard flagged {retired_call!r} written as a fenced COMMENT '
+            f'(offenders={comment_offenders}). A comment recording the absence of '
+            f'a call is the opposite of prescribing one.'
+        )
+
+        # POSITIVE: the same text as a fenced command line -> flagged.
+        injected = f'{standard_text}\n\n```text\n{retired_call}\n```\n'
+        offenders, examined = _scan_pr_operation_prescriptions(injected)
+        assert offenders == [retired_call], (
+            f'Re-introducing {retired_call!r} inside a fence was NOT flagged '
+            f'(offenders={offenders}, examined={examined}). The guard does not '
+            f'defend against the regression it names.'
+        )
+
+    def test_documents_enrich_call_in_auto_branch(self, standard_text: str):
+        """The `auto` branch enriches per-module, not via a batch invocation.
+
+        The standard explicitly forbids the (never-registered) `architecture
+        enrich --modules {csv}` batch shape and instead documents a per-module
+        loop that calls the three registered enrich subcommands. Pin every
+        observable token of that contract so the narrative cannot silently
+        drift back to the batch form.
+        """
+        assert 'architecture' in standard_text
+        # The auto branch carries an explicit per-module loop.
+        assert 'for each module' in standard_text, (
+            'Standard must spell out the per-module iteration in the auto '
+            'branch — the batch `enrich --modules {csv}` shape is gone.'
+        )
+        # All three registered enrich subcommands must be cited. The top-level
+        # `--project-dir {worktree_path}` flag is interposed between the
+        # `architecture` script token and the subcommand (top-level flags
+        # precede the subcommand), so pin the subcommand tokens rather than an
+        # `architecture <subcommand>` adjacency.
+        assert 'enrich module' in standard_text
+        assert 'enrich package' in standard_text
+        assert 'enrich skills-by-profile' in standard_text
+        # The legacy batch literal MUST NOT reappear in the standard — it
+        # named a verb that was never registered and prompted at least one
+        # historical mis-execution. Guard against re-introduction.
+        assert 'enrich --modules' not in standard_text, (
+            'Standard must NOT cite `architecture enrich --modules {csv}` — '
+            'this batch verb is not registered; the auto branch iterates '
+            'modules and calls the per-module enrich subcommands instead.'
+        )
+
+    def test_documents_ask_user_question_prompt_options(
+        self,
+        standard_text: str,
+    ):
+        assert 'AskUserQuestion' in standard_text
+        assert 'Re-enrich now' in standard_text
+        assert 'Skip — note in PR' in standard_text
+
+    # ----- Step 5: mark-step-done templates --------------------------------
+
+    @pytest.mark.parametrize(
+        'template',
+        [
+            'skipped — no committed origin/main architecture baseline',
+            'tier-0 disabled; tier-1 skipped',
+            _DETAIL_NO_STRUCTURE_CHANGE,
+            _DETAIL_REFRESHED,
+            'refreshed + re-enriched ({affected_module_count} modules)',
+            'refreshed; re-enrichment deferred',
+            _DETAIL_MIGRATION_NOT_COMMITTED,
+            _DETAIL_UNATTRIBUTABLE,
+            _DETAIL_MIGRATION_DEFERRED,
+            _DETAIL_MIGRATION_DEFERRED_NO_STRUCTURE_CHANGE,
+            _DETAIL_REFRESHED_NO_STRUCTURE_CHANGE,
+            _DETAIL_STRUCTURE_CHANGE_NOT_COMMITTED,
+        ],
+    )
+    def test_documents_display_detail_template(
+        self,
+        standard_text: str,
+        template: str,
+    ):
+        assert template in standard_text, f'Standard must document the display-detail template: {template!r}'
+
+    @pytest.mark.parametrize(
+        'template',
+        [
+            _DETAIL_MIGRATION_NOT_COMMITTED,
+            _DETAIL_UNATTRIBUTABLE,
+            _DETAIL_MIGRATION_DEFERRED,
+            _DETAIL_MIGRATION_DEFERRED_NO_STRUCTURE_CHANGE,
+            _DETAIL_NO_STRUCTURE_CHANGE,
+            _DETAIL_REFRESHED,
+            _DETAIL_REFRESHED_NO_STRUCTURE_CHANGE,
+            _DETAIL_STRUCTURE_CHANGE_NOT_COMMITTED,
+        ],
+    )
+    def test_attribution_templates_honour_the_output_contract(self, template: str):
+        """ASCII, single line, no trailing period, at most 80 chars once the count is rendered."""
+        rendered = template.format(affected_module_count=999)
+        assert rendered.isascii()
+        assert '\n' not in rendered
+        assert not rendered.endswith('.')
+        assert len(rendered) <= 80, rendered
+
+    def test_standard_never_renders_a_zero_module_count(self, standard_text: str):
+        """No branch may advertise `(0 modules)` — the rule Branch J states, applied everywhere.
+
+        Population-derived rather than keyed to one branch: every count-bearing
+        template is rendered at zero and searched for in the document, so a NEW
+        branch that interpolates the count unguarded fails this guard too. The
+        rendered population is published so a scan over an empty template set
+        cannot pass vacuously.
+        """
+        counted_templates = [
+            template
+            for template in (
+                _DETAIL_REFRESHED,
+                _DETAIL_MIGRATION_DEFERRED,
+                _DETAIL_STRUCTURE_CHANGE_NOT_COMMITTED,
+                'refreshed + re-enriched ({affected_module_count} modules)',
+            )
+            if '{affected_module_count}' in template
+        ]
+        assert counted_templates, 'no count-bearing template resolved — a clean result would be vacuous'
+        rendered_at_zero = [template.format(affected_module_count=0) for template in counted_templates]
+        offenders = [rendered for rendered in rendered_at_zero if rendered in standard_text]
+        assert offenders == [], (
+            f'the standard renders a zero module count across {len(rendered_at_zero)} '
+            f'count-bearing templates: {offenders}. Branch J states the rule — '
+            f'"(0 modules)" advertises a module delta the round does not have — and '
+            f'every branch that can reach a zero union needs a countless variant.'
+        )
+
+    def test_documents_both_branch_i_variants(self, standard_text: str):
+        """Branch I carries the countless variant alongside the counted one.
+
+        The negative half of the guard above: asserting that `(0 modules)` is
+        absent would also pass for a Branch I that dropped the count entirely, or
+        for one that named no zero case at all.
+        """
+        assert _DETAIL_MIGRATION_DEFERRED in standard_text
+        assert _DETAIL_MIGRATION_DEFERRED_NO_STRUCTURE_CHANGE in standard_text
+
+    def test_documents_every_branch_a_through_k(self, standard_text: str):
+        for label in ('A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K'):
+            assert f'Branch {label}' in standard_text, f'Standard must label Branch {label} for renderer audit'
+
+    def test_mark_step_done_uses_correct_phase_and_step(
+        self,
+        standard_text: str,
+    ):
+        """Every mark-step-done call MUST pass --phase 6-finalize --step architecture-refresh."""
+        assert '--phase 6-finalize' in standard_text
+        assert '--step architecture-refresh' in standard_text
+
+    # ----- Error handling --------------------------------------------------
+
+    def test_documents_error_handling_table(self, standard_text: str):
+        # Documented failure modes (see Error Handling table). The `git push`
+        # marker is deliberately absent: a step that performs no push has no
+        # push-failure row to document, and keeping the marker would have
+        # required the standard to keep describing a failure mode it can no
+        # longer reach. Shipping this commit — and any failure of that push —
+        # belongs to the order-11 default:push barrier.
+        for marker in (
+            'discover --force',
+            'snapshot_not_found',
+            'undecidable',
+            'migration_only',
+            'descriptor-regression-check',
+            'enrich',
+        ):
+            assert marker in standard_text, f'Error handling table must cover {marker!r}'
+
+    # ----- Inline-execution contract ---------------------------------------
+
+    def test_declares_inline_execution_contract(self, standard_text: str):
+        """Tier-1 prompt mode requires AskUserQuestion -> step is inline."""
+        text_lower = standard_text.lower()
+        assert 'inline' in text_lower
+        assert 'askuserquestion' in text_lower
+
+    # ----- Pseudo-code summary ---------------------------------------------
+
+    def test_includes_pseudo_code_summary(self, standard_text: str):
+        """The authoritative procedural form must be present at the tail."""
+        assert 'Pseudo-Code Summary' in standard_text
+        # Spot-check the summary names every branch we unit-tested.
+        assert 'tier_0' in standard_text
+        assert 'tier_1' in standard_text
+        assert 'affected' in standard_text
+
+
+class TestClassTablePointer:
+    @pytest.fixture(scope='class')
+    @classmethod
+    def standard_text(cls) -> str:
+        return str(_ARCHITECTURE_REFRESH_MD.read_text(encoding='utf-8'))
+
+    def test_standard_points_at_the_published_class_table(self, standard_text: str):
+        assert 'manage-architecture/standards/manage-api.md` § discover' in standard_text
+
+    def test_standard_does_not_restate_the_class_table(self, standard_text: str):
+        assert len(DELTA_CLASSES) > 0, 'DELTA_CLASSES resolved empty — the absence check would be vacuous'
+        assert _restated_classes(standard_text) == []
+
+    def test_positive_control_the_published_table_is_detected(self):
+        """The detector sees every class in the document that DOES publish the table."""
+        assert _restated_classes(_MANAGE_API_MD.read_text(encoding='utf-8')) == list(DELTA_CLASSES)
+
+
+@pytest.mark.parametrize(
+    ('baseline_present, tier_0, tier_1, change_type, drift, expected_branch, expected_detail_substring, user_response'),
+    _MATRIX_CASES,
+)
+def test_full_decision_matrix(
+    baseline_present: bool,
+    tier_0: str,
+    tier_1: str,
+    change_type: str,
+    drift: bool,
+    expected_branch: str,
+    expected_detail_substring: str,
+    user_response: str | None,
+) -> None:
+    """End-to-end matrix sweep across every documented branch."""
+    result = _decide_architecture_refresh(
+        baseline_present=baseline_present,
+        tier_0=tier_0,
+        tier_1=tier_1,
+        change_type=change_type,
+        diff_added=('mod-x',) if drift else (),
+        user_response=user_response,
+    )
+    assert result['branch'] == expected_branch, (
+        f'Matrix row produced {result["branch"]} but expected {expected_branch}: '
+        f'baseline={baseline_present} tier_0={tier_0} tier_1={tier_1} '
+        f'change_type={change_type} drift={drift} -> {result}'
+    )
+    assert expected_detail_substring in result['display_detail'], (
+        f'display_detail {result["display_detail"]!r} missing expected substring {expected_detail_substring!r}'
+    )
