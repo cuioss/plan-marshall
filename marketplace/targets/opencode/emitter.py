@@ -611,17 +611,13 @@ def emit_bundles(
                 continue
             _emit_command(bundle_name, command_md, output_dir, rules, transform_body, written)
 
-    # Prune stale outputs so a component removed from source leaves no emitted
-    # artifact behind. Full regenerations only (see _prune_stale_outputs).
-    if bundle_list is None:
-        _prune_stale_outputs(output_dir, written)
-
     # Emit root installer script from template
-    if _INSTALL_SCRIPT_TEMPLATE.is_file():
-        install_target = output_dir / 'install.sh'
-        shutil.copyfile(_INSTALL_SCRIPT_TEMPLATE, install_target)
-        install_target.chmod(0o755)
-        written.append(install_target)
+    if not _INSTALL_SCRIPT_TEMPLATE.is_file():
+        raise FileNotFoundError(f'Required install.sh template not found: {_INSTALL_SCRIPT_TEMPLATE}')
+    install_target = output_dir / 'install.sh'
+    shutil.copyfile(_INSTALL_SCRIPT_TEMPLATE, install_target)
+    install_target.chmod(0o755)
+    written.append(install_target)
 
     # Emit root README.adoc copied from doc/user/install-opencode.adoc
     # so GitHub renders user installation guide on the dist-opencode branch.
@@ -631,12 +627,19 @@ def emit_bundles(
         fallback_src = Path(__file__).resolve().parents[3] / 'doc' / 'user' / 'install-opencode.adoc'
         if fallback_src.is_file():
             doc_src = fallback_src
-    if doc_src.is_file():
-        readme_target = output_dir / 'README.adoc'
-        shutil.copyfile(doc_src, readme_target)
-        written.append(readme_target)
+    if not doc_src.is_file():
+        raise FileNotFoundError(f'Required README source not found: {doc_src}')
+    readme_target = output_dir / 'README.adoc'
+    shutil.copyfile(doc_src, readme_target)
+    written.append(readme_target)
 
     written.append(_generate_opencode_json(output_dir, agent_index))
+
+    # Prune stale outputs so a component removed from source leaves no emitted
+    # artifact behind. Full regenerations only (see _prune_stale_outputs).
+    if bundle_list is None:
+        _prune_stale_outputs(output_dir, written)
+
     return written
 
 

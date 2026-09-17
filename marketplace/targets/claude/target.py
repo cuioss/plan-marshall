@@ -267,10 +267,11 @@ class ClaudeTarget(TargetBase):
             fallback_src = _PROJECT_ROOT / 'doc' / 'user' / 'install-claude.adoc'
             if fallback_src.is_file():
                 doc_src = fallback_src
-        if doc_src.is_file():
-            target_readme = output_dir / 'README.adoc'
-            shutil.copyfile(doc_src, target_readme)
-            emitted.append(target_readme)
+        if not doc_src.is_file():
+            raise FileNotFoundError(f'Required README source not found: {doc_src}')
+        target_readme = output_dir / 'README.adoc'
+        shutil.copyfile(doc_src, target_readme)
+        emitted.append(target_readme)
 
         # Run equality check after emit so emit_count reflects bytes written
         # AND so the equality engine has fresh artifacts to compare against.

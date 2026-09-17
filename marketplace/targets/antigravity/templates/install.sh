@@ -147,6 +147,10 @@ fi
 if [ -f "$SOURCE_DIR/README.adoc" ]; then
   cp "$SOURCE_DIR/README.adoc" "$STAGE_DIR/"
 fi
+if [ -f "$SOURCE_DIR/install.sh" ]; then
+  cp "$SOURCE_DIR/install.sh" "$STAGE_DIR/"
+  chmod 0755 "$STAGE_DIR/install.sh"
+fi
 
 rm -rf "$TARGET_DIR"
 mv "$STAGE_DIR" "$TARGET_DIR"

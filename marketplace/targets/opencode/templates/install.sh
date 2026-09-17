@@ -83,25 +83,31 @@ fi
 prune_managed_components() {
   local base_dir="$1"
   if [ -d "${base_dir}/skills" ]; then
-    for d in "${base_dir}/skills"/plan-marshall*; do
+    for d in "${base_dir}/skills"/plan-marshall-*; do
       if [ -d "$d" ]; then
         rm -rf "$d"
       fi
     done
   fi
   if [ -d "${base_dir}/agents" ]; then
-    for f in "${base_dir}/agents"/plan-marshall*; do
+    for f in "${base_dir}/agents"/plan-marshall-*; do
       if [ -e "$f" ]; then
         rm -rf "$f"
       fi
     done
   fi
   if [ -d "${base_dir}/commands" ]; then
-    for f in "${base_dir}/commands"/plan-marshall*; do
+    for f in "${base_dir}/commands"/plan-marshall-*; do
       if [ -e "$f" ]; then
         rm -rf "$f"
       fi
     done
+  fi
+  if [ -f "${base_dir}/plan-marshall-README.adoc" ]; then
+    rm -f "${base_dir}/plan-marshall-README.adoc"
+  fi
+  if [ -f "${base_dir}/plan-marshall-install.sh" ]; then
+    rm -f "${base_dir}/plan-marshall-install.sh"
   fi
 }
 
@@ -156,14 +162,26 @@ mkdir -p "${TARGET_DIR}/skills"
 mkdir -p "${TARGET_DIR}/agents"
 mkdir -p "${TARGET_DIR}/commands"
 
-# Clean prior managed components before installing new version
-prune_managed_components "$TARGET_DIR"
+# Stage new components first to guarantee atomic replacement
+STAGE_DIR="${TARGET_DIR}/.plan-marshall-staging.$$"
+rm -rf "$STAGE_DIR"
+mkdir -p "$STAGE_DIR/skills" "$STAGE_DIR/agents" "$STAGE_DIR/commands"
+
+cleanup_staging() {
+  if [ -d "$STAGE_DIR" ]; then
+    rm -rf "$STAGE_DIR"
+  fi
+  if [ "$CLEANUP_TMP" = true ] && [ -n "$TMP_DIR" ] && [ -d "$TMP_DIR" ]; then
+    rm -rf "$TMP_DIR"
+  fi
+}
+trap cleanup_staging EXIT
 
 # Singular-to-plural mapping: skill/ -> skills/, agent/ -> agents/, command/ -> commands/
 if [ -d "$SOURCE_DIR/skill" ]; then
   for item in "$SOURCE_DIR/skill"/*; do
     if [ -d "$item" ]; then
-      cp -R "$item" "${TARGET_DIR}/skills/"
+      cp -R "$item" "${STAGE_DIR}/skills/"
     fi
   done
 fi
@@ -171,7 +189,7 @@ fi
 if [ -d "$SOURCE_DIR/agent" ]; then
   for item in "$SOURCE_DIR/agent"/*; do
     if [ -f "$item" ]; then
-      cp "$item" "${TARGET_DIR}/agents/"
+      cp "$item" "${STAGE_DIR}/agents/"
     fi
   done
 fi
@@ -179,6 +197,34 @@ fi
 if [ -d "$SOURCE_DIR/command" ]; then
   for item in "$SOURCE_DIR/command"/*; do
     if [ -f "$item" ]; then
+      cp "$item" "${STAGE_DIR}/commands/"
+    fi
+  done
+fi
+
+# Clean prior managed components only after new version is staged successfully
+prune_managed_components "$TARGET_DIR"
+
+# Move staged components into target
+if [ -d "$STAGE_DIR/skills" ]; then
+  for item in "$STAGE_DIR/skills"/*; do
+    if [ -e "$item" ]; then
+      cp -R "$item" "${TARGET_DIR}/skills/"
+    fi
+  done
+fi
+
+if [ -d "$STAGE_DIR/agents" ]; then
+  for item in "$STAGE_DIR/agents"/*; do
+    if [ -e "$item" ]; then
+      cp "$item" "${TARGET_DIR}/agents/"
+    fi
+  done
+fi
+
+if [ -d "$STAGE_DIR/commands" ]; then
+  for item in "$STAGE_DIR/commands"/*; do
+    if [ -e "$item" ]; then
       cp "$item" "${TARGET_DIR}/commands/"
     fi
   done
@@ -187,6 +233,13 @@ fi
 if [ -f "$SOURCE_DIR/README.adoc" ]; then
   cp "$SOURCE_DIR/README.adoc" "${TARGET_DIR}/plan-marshall-README.adoc"
 fi
+
+if [ -f "$SOURCE_DIR/install.sh" ]; then
+  cp "$SOURCE_DIR/install.sh" "${TARGET_DIR}/plan-marshall-install.sh"
+  chmod 0755 "${TARGET_DIR}/plan-marshall-install.sh"
+fi
+
+rm -rf "$STAGE_DIR"
 
 echo "Plan Marshall OpenCode components successfully installed to: $TARGET_DIR"
 echo ""

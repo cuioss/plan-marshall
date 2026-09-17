@@ -419,11 +419,12 @@ def emit_bundles(
     written.append(manifest_path)
 
     # Emit root installer script from template
-    if _INSTALL_SCRIPT_TEMPLATE.is_file():
-        install_target = output_dir / 'install.sh'
-        shutil.copyfile(_INSTALL_SCRIPT_TEMPLATE, install_target)
-        install_target.chmod(0o755)
-        written.append(install_target)
+    if not _INSTALL_SCRIPT_TEMPLATE.is_file():
+        raise FileNotFoundError(f'Required install.sh template not found: {_INSTALL_SCRIPT_TEMPLATE}')
+    install_target = output_dir / 'install.sh'
+    shutil.copyfile(_INSTALL_SCRIPT_TEMPLATE, install_target)
+    install_target.chmod(0o755)
+    written.append(install_target)
 
     # Emit root README.adoc copied from doc/user/install-antigravity.adoc
     # so GitHub renders user installation guide on the dist-antigravity branch.
@@ -433,10 +434,11 @@ def emit_bundles(
         fallback_src = Path(__file__).resolve().parents[3] / 'doc' / 'user' / 'install-antigravity.adoc'
         if fallback_src.is_file():
             doc_src = fallback_src
-    if doc_src.is_file():
-        readme_target = output_dir / 'README.adoc'
-        shutil.copyfile(doc_src, readme_target)
-        written.append(readme_target)
+    if not doc_src.is_file():
+        raise FileNotFoundError(f'Required README source not found: {doc_src}')
+    readme_target = output_dir / 'README.adoc'
+    shutil.copyfile(doc_src, readme_target)
+    written.append(readme_target)
 
     if bundle_list is None:
         _prune_stale_outputs(output_dir, written)

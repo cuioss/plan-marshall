@@ -145,9 +145,9 @@ The emitted `target/antigravity` tree contains:
 === Installer Modes
 
 1. **Remote Execution (`curl -fsSL ... | bash`)**:
-   Downloads the branch tarball (`dist-antigravity.tar.gz` or release tag) from GitHub, extracts into a temporary directory, and stages into the destination.
+   Downloads the branch or release archive from GitHub, extracts into a temporary directory, and stages into the destination. Bootstrap can target either the latest development branch (`dist-antigravity`) or an immutable release tag (`antigravity/v*`).
 2. **Local Execution (`./install.sh`)**:
-   Detects local components sibling to `install.sh` and stages them directly.
+   Detects local components sibling to `install.sh` and stages them directly. The installer is also copied into the installed plugin directory for local uninstallation.
 3. **Destinations**:
    * Global (default): `~/.gemini/config/plugins/plan-marshall`
    * Workspace (`--workspace` / `-w`): `<cwd>/.agents/plugins/plan-marshall`

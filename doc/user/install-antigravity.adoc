@@ -42,11 +42,11 @@ Restart Antigravity or open a new conversation. Antigravity automatically discov
 
 == Pinned Release (Specific Version)
 
-To install a specific immutable release tag instead of tracking the `main` snapshot, pass `--ref`:
+For reproducible installations, download the installer directly from the desired immutable release tag:
 
 [source,bash]
 ----
-curl -fsSL https://raw.githubusercontent.com/cuioss/plan-marshall/dist-antigravity/install.sh | bash -s -- --ref antigravity/v0.1.0
+curl -fsSL https://raw.githubusercontent.com/cuioss/plan-marshall/antigravity/v0.1.0/install.sh | bash -s -- --ref antigravity/v0.1.0
 ----
 
 == Workspace-Scoped Installation
@@ -98,11 +98,11 @@ cd ~/.gemini/config/plugins/plan-marshall && git pull
 
 === Pinned Users
 
-Run the installer specifying the new release tag:
+Run the installer specifying the new release tag directly:
 
 [source,bash]
 ----
-curl -fsSL https://raw.githubusercontent.com/cuioss/plan-marshall/dist-antigravity/install.sh | bash -s -- --ref antigravity/v0.1.1
+curl -fsSL https://raw.githubusercontent.com/cuioss/plan-marshall/antigravity/v0.1.1/install.sh | bash -s -- --ref antigravity/v0.1.1
 ----
 
 == Uninstallation

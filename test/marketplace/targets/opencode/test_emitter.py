@@ -395,12 +395,34 @@ def test_emit_bundles_emits_install_script_and_readme(
     assert (test_dest / 'skills').is_dir()
     assert (test_dest / 'agents').is_dir()
     assert (test_dest / 'commands').is_dir()
+    assert (test_dest / 'plan-marshall-README.adoc').is_file()
+    assert (test_dest / 'plan-marshall-install.sh').is_file()
+    assert (test_dest / 'plan-marshall-install.sh').stat().st_mode & stat.S_IXUSR
 
-    subprocess.run([str(install_sh), '--target-dir', str(test_dest), '--uninstall'], check=True)
-    assert not any((test_dest / 'skills').glob('plan-marshall*'))
+    # User-created component with plan-marshall prefix must NOT be removed (boundary test)
+    custom_skill = test_dest / 'skills' / 'plan-marshalling-helper'
+    custom_skill.mkdir(parents=True)
+    (custom_skill / 'SKILL.md').write_text('custom', encoding='utf-8')
+
+    # Uninstallation via local plan-marshall-install.sh
+    subprocess.run([str(test_dest / 'plan-marshall-install.sh'), '--uninstall'], check=True)
+    assert not any((test_dest / 'skills').glob('plan-marshall-*'))
+    assert not (test_dest / 'plan-marshall-README.adoc').exists()
+    assert not (test_dest / 'plan-marshall-install.sh').exists()
+    assert (custom_skill / 'SKILL.md').is_file(), 'unrelated component must be preserved'
 
     # 5. README.adoc emission
     readme = out / 'README.adoc'
     assert readme.is_file(), 'README.adoc was not emitted'
     assert readme in written
     assert '= Installation (OpenCode)' in readme.read_text(encoding='utf-8')
+
+
+def test_emit_bundles_raises_on_missing_required_template(
+    fixture_bundle: Path, tmp_path: Path, opencode_config_dir: Path, monkeypatch: pytest.MonkeyPatch
+):
+    import marketplace.targets.opencode.emitter as oc_emitter
+
+    monkeypatch.setattr(oc_emitter, '_INSTALL_SCRIPT_TEMPLATE', tmp_path / 'nonexistent.sh')
+    with pytest.raises(FileNotFoundError, match='Required install.sh template not found'):
+        emit_bundles(fixture_bundle, tmp_path / 'out', opencode_config_dir)

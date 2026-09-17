@@ -44,11 +44,11 @@ Restart OpenCode or open a new session. OpenCode automatically discovers the ins
 
 == Pinned Release (Specific Version)
 
-To install a specific immutable release tag instead of tracking the `main` snapshot, pass `--ref`:
+For reproducible installations, download the installer directly from the desired immutable release tag:
 
 [source,bash]
 ----
-curl -fsSL https://raw.githubusercontent.com/cuioss/plan-marshall/dist-opencode/install.sh | bash -s -- --ref opencode/v0.1.0
+curl -fsSL https://raw.githubusercontent.com/cuioss/plan-marshall/opencode/v0.1.0/install.sh | bash -s -- --ref opencode/v0.1.0
 ----
 
 == Workspace-Scoped Installation
@@ -87,11 +87,11 @@ curl -fsSL https://raw.githubusercontent.com/cuioss/plan-marshall/dist-opencode/
 
 === Pinned Users
 
-Run the installer specifying the new release tag:
+Run the installer directly from the new release tag:
 
 [source,bash]
 ----
-curl -fsSL https://raw.githubusercontent.com/cuioss/plan-marshall/dist-opencode/install.sh | bash -s -- --ref opencode/v0.1.1
+curl -fsSL https://raw.githubusercontent.com/cuioss/plan-marshall/opencode/v0.1.1/install.sh | bash -s -- --ref opencode/v0.1.1
 ----
 
 == Uninstallation
@@ -108,6 +108,13 @@ For a workspace-scoped install:
 [source,bash]
 ----
 curl -fsSL https://raw.githubusercontent.com/cuioss/plan-marshall/dist-opencode/install.sh | bash -s -- --workspace --uninstall
+----
+
+Or if you have the local installation file:
+
+[source,bash]
+----
+~/.config/opencode/plan-marshall-install.sh --uninstall
 ----
 
 == Next Step

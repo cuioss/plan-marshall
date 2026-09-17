@@ -123,8 +123,11 @@ def test_emit_bundles_emits_install_script_and_readme(
     subprocess.run([str(install_sh), '--target-dir', str(test_dest)], check=True)
     assert (test_dest / 'plugin.json').is_file()
     assert (test_dest / 'skills').is_dir()
+    assert (test_dest / 'install.sh').is_file()
+    assert (test_dest / 'install.sh').stat().st_mode & stat.S_IXUSR
 
-    subprocess.run([str(install_sh), '--target-dir', str(test_dest), '--uninstall'], check=True)
+    # Uninstallation via installed install.sh copy
+    subprocess.run([str(test_dest / 'install.sh'), '--uninstall'], check=True)
     assert not test_dest.exists()
 
     # 5. README.adoc emission
@@ -132,3 +135,13 @@ def test_emit_bundles_emits_install_script_and_readme(
     assert readme.is_file(), 'README.adoc was not emitted'
     assert readme in written
     assert '= Installation (Google Antigravity)' in readme.read_text(encoding='utf-8')
+
+
+def test_emit_bundles_raises_on_missing_required_template(
+    fixture_bundle: Path, tmp_path: Path, antigravity_config_dir: Path, monkeypatch: pytest.MonkeyPatch
+):
+    import marketplace.targets.antigravity.emitter as ag_emitter
+
+    monkeypatch.setattr(ag_emitter, '_INSTALL_SCRIPT_TEMPLATE', tmp_path / 'nonexistent.sh')
+    with pytest.raises(FileNotFoundError, match='Required install.sh template not found'):
+        emit_bundles(fixture_bundle, tmp_path / 'out', antigravity_config_dir)
