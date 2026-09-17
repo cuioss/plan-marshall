@@ -77,7 +77,8 @@ _HELPER_DIR = Path(__file__).resolve().parent
 if str(_HELPER_DIR) not in sys.path:
     sys.path.insert(0, str(_HELPER_DIR))
 
-import _exit_code_convention_derivation as derivation
+import _exit_code_convention_derivation_causes as _causes
+import _exit_code_convention_derivation_messages as derivation
 
 #: Derived once at import. The same object backs every assertion below and the
 #: published size, so the number reported is the number actually swept.
@@ -165,7 +166,7 @@ def test_no_derived_document_keeps_the_manage_scoped_form():
         f'{len(DERIVATION.narrow)} of {DERIVATION.population_size} executor-invoking document(s) '
         f'carry a convention scoped to manage-* only: {list(DERIVATION.narrow)}. Replace the '
         'narrow form outright with a reference to '
-        f'{derivation.CANONICAL_STANDARD} rather than adding one alongside it.'
+        f'{_causes.CANONICAL_STANDARD} rather than adding one alongside it.'
     )
 
 
@@ -188,10 +189,10 @@ def test_the_convention_is_stated_in_exactly_one_document():
     The count is DERIVED from a content sweep over the walked document set, never
     from an enumerated list of expected paths.
     """
-    assert BODY_SWEEP.documents == (derivation.CANONICAL_STANDARD,), (
+    assert BODY_SWEEP.documents == (_causes.CANONICAL_STANDARD,), (
         f'the convention body occurs in {BODY_SWEEP.occurrences} document(s) rather than in the '
         f'canonical standard alone: {list(BODY_SWEEP.documents)}. Expected exactly '
-        f'{derivation.CANONICAL_STANDARD}. Swept {BODY_SWEEP.coverage.files_scanned} document(s).'
+        f'{_causes.CANONICAL_STANDARD}. Swept {BODY_SWEEP.coverage.files_scanned} document(s).'
     )
 
 
@@ -221,7 +222,7 @@ def test_every_other_retained_document_carries_only_a_reference():
     restating = [
         document
         for document in DERIVATION.widened
-        if document != derivation.CANONICAL_STANDARD and document in BODY_SWEEP.documents
+        if document != _causes.CANONICAL_STANDARD and document in BODY_SWEEP.documents
     ]
     assert restating == [], (
         f'{len(restating)} of {DERIVATION.population_size} retained document(s) state the '
@@ -231,12 +232,12 @@ def test_every_other_retained_document_carries_only_a_reference():
     unreferenced = [
         document
         for document in DERIVATION.widened
-        if document != derivation.CANONICAL_STANDARD
-        and not derivation.references_canonical((derivation.PROJECT_ROOT / document).read_text(encoding='utf-8'))
+        if document != _causes.CANONICAL_STANDARD
+        and not _causes.references_canonical((derivation.PROJECT_ROOT / document).read_text(encoding='utf-8'))
     ]
     assert unreferenced == [], (
         f'{len(unreferenced)} of {DERIVATION.population_size} retained document(s) are classified '
-        f'covered but name no reference to {derivation.CANONICAL_STANDARD}: {unreferenced}.'
+        f'covered but name no reference to {_causes.CANONICAL_STANDARD}: {unreferenced}.'
     )
 
 
@@ -282,7 +283,7 @@ def test_the_three_classes_partition_the_population():
             continue
         if derivation.EXECUTOR_TOKEN not in text:
             continue
-        if derivation.retains(derivation.invoked_notations(text)):
+        if _causes.retains(_causes.invoked_notations(text)):
             retained.append(path)
 
     total = len(DERIVATION.widened) + len(DERIVATION.narrow) + len(DERIVATION.none)
