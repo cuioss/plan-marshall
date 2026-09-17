@@ -186,10 +186,97 @@ missing flag, generator error, plugin.json drift, unmapped tool, etc.).
    a scoped-out component is absent from its output (file-level exclusions
    included), so a target that skips this step fails the suite rather than
    shipping components it was told not to.
+7. **If the target supports local developer deployment (`sync.py`), register a `TargetSyncConfig`.**
+   Targets that support syncing generated bundles into local developer environments (like Claude Code's `/sync-plugin-cache`, Antigravity's `/sync-antigravity`, or OpenCode's `/sync-opencode`) hook into the declarative `marketplace/targets/sync.py` engine.
+   Add a `TargetSyncConfig` entry to `TARGET_CONFIGS` in `marketplace/targets/sync.py`:
+
+   ```python
+   TARGET_CONFIGS['{name}'] = TargetSyncConfig(
+       name='{name}',
+       default_dest=Path.home() / '.config' / '{name}',
+       source_skills_dir='skills',  # or 'skill' if target generator outputs singular layout
+       source_agents_dir='agents',  # or 'agent'
+       source_commands_dir='commands',  # or 'command'
+       root_assets=(
+           ('plugin.json', 'config', False),
+           ('install.sh', 'asset', True),  # (filename, kind, is_executable)
+       ),
+       extra_count_key='assets_count',  # or 'config_count'
+   )
+   ```
+
+   Then register a project-level command (e.g. `.{target}/commands/sync-{target}.md`) invoking `python3 marketplace/targets/sync.py --target {name} "$@"` and add unit tests under `test/sync-{target}/`.
+
+## Target Synchronization Engine (`sync.py`)
+
+`marketplace/targets/sync.py` provides a unified, declarative synchronization engine that deploys generated target artifacts (`target/{name}/`) into a local environment or plugin directory. It replaces ad-hoc per-target sync scripts with a shared, safe, and structured implementation.
+
+### Architecture & Pipeline
+
+```text
+marketplace/bundles/  ──[ ./pw generate --target {name} ]──>  target/{name}/  ──[ sync.py --target {name} ]──>  Platform Config/Plugin Dir
+```
+
+### Declarative Configuration (`TargetSyncConfig`)
+
+Each target is registered in `TARGET_CONFIGS` with a `TargetSyncConfig` dataclass defining:
+* `name`: The target key passed via `--target` (e.g., `'antigravity'`, `'opencode'`).
+* `default_dest`: The target platform's default user/global installation path (e.g., `~/.gemini/config/plugins/plan-marshall` or `~/.config/opencode`). Can be overridden at runtime via `--target-dir`.
+* `source_skills_dir`, `source_agents_dir`, `source_commands_dir`: Source directory names under `target/{name}/`. The engine normalizes both singular layouts (`skill/`, `agent/`, `command/`) and plural layouts (`skills/`, `agents/`, `commands/`) into the standard plural structure expected by target runtimes at destination.
+* `root_assets`: A tuple of `(filename, kind, is_executable)` records for files copied directly to the destination root (e.g., descriptors like `plugin.json` or `opencode.json`, installers like `install.sh`, and documentation like `README.adoc`). Executable assets automatically preserve `0o755` permissions.
+* `extra_count_key`: Output metric key for root assets in the TOON report (e.g., `assets_count` or `config_count`).
+
+### Pruning Safety & Managed Boundaries
+
+The sync engine enforces strict safety boundaries when pruning stale files:
+* **Longest-Prefix Matching against Known Bundles**: Rather than naïve hyphen splitting, `_derive_synced_bundles()` reads the canonical bundle list from `marketplace/bundles/` and identifies managed components using longest-prefix matching. Multi-segment bundle names (e.g., `pm-dev-frontend-css` vs `pm-dev-frontend`) resolve strictly to their owning bundle.
+* **Preservation of Unmanaged Assets**: User-created skills, third-party skills, and custom commands outside the synced bundles' prefixes are never touched or pruned.
+* **Agent Preservation**: Subagent definition files (`agents/*.md`) are deployed into destination, but stale agent pruning is omitted to prevent deleting user-defined or runtime-discovered subagents.
+* **Bundle Scoping (`--bundles`)**: When deployment is scoped to specific bundles (e.g., `--bundles pm-dev-java`), only components belonging to those bundles are pruned or updated. Components belonging to other managed bundles already present in destination remain completely untouched.
+
+### Output Contract (TOON)
+
+The sync engine serializes its execution report in compact TOON format using `toon_parser.serialize_toon`:
+```text
+status: success
+target: antigravity
+source: /path/to/target/antigravity
+destination: /Users/.../.gemini/config/plugins/plan-marshall
+skills_count: 53
+agents_count: 10
+commands_count: 1
+assets_count: 3
+deployed_count: 67
+removed_count: 0
+summary_message: "Deployed 67 items (53 skills, 10 agents, 1 commands, 3 assets) to /Users/.../.gemini/config/plugins/plan-marshall"
+```
+
+When stale items are removed, a structured `removed` array is included:
+```text
+removed_count: 1
+removed[1]{kind,name}:
+  skills,plan-marshall-stale-skill
+```
+
+### CLI Interface
+
+```bash
+# Sync entire generated target to default global destination
+./pw sync --target antigravity
+
+# Sync to a custom or staging directory (non-destructive testing)
+./pw sync --target opencode --target-dir /tmp/opencode-test
+
+# Dry-run preview of deployment and pruning actions
+./pw sync --target antigravity --dry-run
+
+# Scope sync to specific bundle(s)
+./pw sync --target opencode --bundles plan-marshall,pm-dev-java
+```
 
 ## Output directories
 
-`target/claude/` and `target/opencode/` are gitignored — they are build
+`target/claude/`, `target/opencode/`, and `target/antigravity/` are gitignored — they are build
 artifacts, not committed sources. The `project:finalize-step-deploy-target` finalize
 step emits `target/claude/` during the finalize phase; the
 `/sync-plugin-cache` skill consumes that directory when syncing the

@@ -6,9 +6,10 @@ from __future__ import annotations
 import io
 from pathlib import Path
 
+from toon_parser import parse_toon
+
 from conftest import PROJECT_ROOT, ScriptResult, run_script
 from marketplace.targets.sync import TARGET_CONFIGS, sync_target
-from toon_parser import parse_toon
 
 SYNC_SCRIPT = PROJECT_ROOT / 'marketplace' / 'targets' / 'sync.py'
 
