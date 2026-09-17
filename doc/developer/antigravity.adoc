@@ -1,0 +1,143 @@
+= Antigravity Target Port Architecture & Findings
+:nofooter:
+:toc: left
+:toclevels: 3
+:toc-title: Table of Contents
+:sectnums:
+:source-highlighter: highlight.js
+
+xref:../../README.md[Plan Marshall] » xref:README.adoc[Developer Guide]
+
+This document records the architectural design, tool mappings, runtime findings, and operational model for the Google Antigravity distribution target in Plan Marshall.
+
+== Overview
+
+The `antigravity` target generator (`marketplace/targets/antigravity/`) compiles Plan Marshall's native Claude Code marketplace bundles into artifacts consumable by Google Antigravity and the Antigravity CLI (`agy`).
+
+Source format remains Claude Code native; the Antigravity target is an export derived from it via the multi-target generator framework.
+
+== Target Architecture
+
+The target is registered in `TARGET_REGISTRY` (`marketplace/targets/__init__.py`) and participates in the `./pw generate` workflow:
+
+[source,bash]
+----
+./pw generate --target antigravity --output target/antigravity
+----
+
+=== Output Layout
+
+Unlike OpenCode's singular directory layout (`skill/`, `agent/`, `command/`), Antigravity uses standard plural directory naming:
+
+[source,text]
+----
+target/antigravity/
+├── skills/
+│   ├── plan-marshall-execute-task/
+│   │   ├── SKILL.md
+│   │   ├── standards/
+│   │   ├── references/
+│   │   └── scripts/
+│   └── ...
+├── agents/
+│   ├── execution-context.md
+│   ├── execution-context-level-1.md ... level-7.md
+│   └── execution-context-reader.md
+├── commands/
+│   ├── plan-marshall-plan-marshall.md
+│   └── ...
+├── plugin.json
+└── dist-manifest.json
+----
+
+=== Filesystem Safety
+
+The emitter strictly enforces containment invariants via `marketplace/targets/fs_safety.py`:
+
+* `refuse_tree_overlap(output_dir, marketplace_dir)`: Refuses generation if the output directory overlaps the source marketplace in either direction.
+* Stale output pruning: Removes old bundle artifacts while preserving untouched target outputs.
+
+== Tool & Permission Mapping
+
+Antigravity operates with a distinct set of native tools compared to Claude Code. The mappings are declared in `mapping.json`:
+
+[cols="1,1,2", options="header"]
+|===
+| Claude Code Tool | Antigravity Tool | Operational Semantics
+| `Bash` | `run_command` | Execute shell commands in POSIX runtime. Respects terminal sandbox policies.
+| `Read` | `view_file` | Read local file contents by absolute path (lines 1-indexed, slice-based pagination).
+| `Write` | `write_to_file` | Create or overwrite files.
+| `Edit` | `replace_file_content` | Precision contiguous line edits with exact target match.
+| `Glob` | `find_by_name` | Filename search using `fd` glob pattern matching.
+| `Grep` | `grep_search` | Content regex and literal searching using `ripgrep`.
+| `AskUserQuestion` | `ask_question` | Interactive user prompts and multi-choice selections.
+| `Task` | `invoke_subagent` | Spawns subagent execution envelopes.
+| `NotebookEdit` | _None (null)_ | Target-absent sentinel: Antigravity provides no native notebook editing tool; fail-closed omit.
+|===
+
+== Model Selection & ADR-021 Alignment
+
+Plan Marshall uses dynamic-level execution variants (`execution-context-level-1` through `level-7`). The Antigravity emitter aligns with ADR-021:
+
+=== Level Palette Synchronization
+
+The Antigravity variant emitter reuses the canonical `LEVEL_TABLE` from `marketplace/targets/claude/variant_emitter.py`. The two targets cannot drift because they share the identical table object (enforced by `test_level_table_lockstep.py`).
+
+=== Model Map
+
+Claude Code model aliases map to Antigravity model tiers:
+
+[cols="1,1,2", options="header"]
+|===
+| Alias | Antigravity Model | Description
+| `opus` | `pro` | High-capability reasoning model (Gemini Pro tier)
+| `sonnet` | `flash` | Fast, high-efficiency model (Gemini Flash tier)
+| `haiku` | `flash_lite` | Lightweight model for quick lookups (Gemini Flash-Lite tier)
+| `fable` | `flash` | Balanced development tier
+|===
+
+=== Pinned vs Unpinned Variants
+
+* **Unpinned (Default)**: Emitted level variants omit the `model:` frontmatter property. The subagent inherits the calling session's active model (`inherit` behavior).
+* **Pinned (`level_pins`)**: When materialized pins are supplied via ADR-021 (`emit_bundles(..., level_pins=...)`), the configured model alias is resolved through `mapping.json::model_map` and emitted into the variant frontmatter (e.g. `model: pro`).
+
+== Body Transformations
+
+Skill and agent markdown bodies undergo deterministic transformation before emission:
+
+1. **Skill Directives**:
+   `Skill: {bundle}:{skill}` is rewritten to:
+   `Call the \`view_file\` tool on \`{bundle}-{skill}/SKILL.md\` before continuing.`
+2. **Read Directives**:
+   `Read: {path}` is rewritten to:
+   `Call the \`view_file\` tool with \`{ AbsolutePath: "{path}" }\` before continuing.`
+3. **Slash Commands**:
+   `/{name}` invocations are normalized to the registered bundle-prefixed command names.
+
+== Cloud & Sandboxed Environment Findings
+
+Analysis of `.claude/skills/cloud-plan-lane/SKILL.md` and live execution in the Antigravity workspace revealed several critical operational constraints:
+
+=== Sandboxed Execution & Network Egress
+
+* Antigravity provides a secure execution sandbox (`BypassSandbox: false` default).
+* Git remote commands (`git fetch`, `git push`, `git clone`) require network access and must be executed with sandbox bypass (`BypassSandbox: true`).
+* Build toolchain commands (`./pw`, `uv`, `pytest`, `mypy`) execute within the local environment; when running in worktrees, python virtualenv symlinks (`.venv`, `.pyprojectx`) must link back to the host repository root.
+
+=== Executor Bootstrap & Stale Caching
+
+* Plan Marshall scripts validate command syntax against the generated `.plan/execute-script.py`.
+* In isolated worktrees, symlinking `.plan/execute-script.py` from the main repository satisfies `conftest.py` preflight checks.
+* `plugin-doctor` caches argparse surfaces on disk at `.plan/temp/plugin-doctor-help-cache/`. When new subcommands or CLI flags are added upstream, deleting this temporary cache directory triggers fresh derivation of script surfaces.
+
+== Verification & Test Coverage
+
+The test suite at `test/marketplace/targets/antigravity/` provides complete coverage across:
+
+* `test_target.py`: Target registration, capability inspection, and singular-to-plural layout emission.
+* `test_config_files.py`: JSON schema validation for `mapping.json` and `frontmatter-rules.json`.
+* `test_frontmatter.py`: Tool transformation, model resolution, and fail-closed error handling (`UnmappedToolError`, `UnmappedFrontmatterError`).
+* `test_body_transforms.py`: Directive rewriting and slash command expansion.
+* `test_emitter.py`: Bundle traversal, verbatim directory copying (`standards/`, `references/`, `templates/`, `scripts/`), and stale artifact pruning.
+* `test_variant_emitter.py`: Role-eligible subagent variant generation and ADR-021 model pin application.
+* `test_level_table_lockstep.py`: Table object identity assertion against Claude target and model alias validity.

@@ -10,7 +10,7 @@
 
 ### What is it?
 
-Plan Marshall is an orchestration layer for AI coding assistants (Claude Code and OpenCode) that enforces consistency, reliability, and more predictable outputs. It packages a phase-driven planning workflow, a library of domain skills, and a marketplace of ten production bundles covering Java, JavaScript, Python, OCI containers, requirements, and plugin development.
+Plan Marshall is an orchestration layer for AI coding assistants (Claude Code, OpenCode, and Google Antigravity) that enforces consistency, reliability, and more predictable outputs. It packages a phase-driven planning workflow, a library of domain skills, and a marketplace of ten production bundles covering Java, JavaScript, Python, OCI containers, requirements, and plugin development.
 
 ## Prerequisites
 
@@ -65,6 +65,20 @@ Refresh later by re-running both steps after a `git pull`.
 ### Tried and rejected (OBSERVED)
 
 - `opencode plugin plan-marshall` — npm 404 Not Found. The bundle is not published as an npm package. (HYPOTHESIS: works once the bundle is published; tried-and-rejected today.)
+
+## Installation (Google Antigravity)
+
+Plan Marshall ships a Google Antigravity target tree alongside Claude Code and OpenCode. Generate the target tree and link or copy the skills into your Antigravity customization path. Full walkthrough: [User Guide › Antigravity Installation](doc/user/install-antigravity.adoc).
+
+### Deploy
+
+```bash
+./pw generate --target antigravity --output target/antigravity
+mkdir -p ~/.gemini/antigravity/skills
+cp -R target/antigravity/skills/* ~/.gemini/antigravity/skills/
+```
+
+Verified with the Antigravity CLI (`agy`) and Antigravity chat interface.
 
 ## Getting Started
 

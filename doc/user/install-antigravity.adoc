@@ -1,0 +1,98 @@
+= Installation (Google Antigravity)
+:nofooter:
+:toc: left
+:toclevels: 3
+:toc-title: Table of Contents
+:sectnums:
+:source-highlighter: highlight.js
+
+xref:../../README.md[Plan Marshall] » xref:README.adoc[User Guide]
+
+Plan Marshall ships a Google Antigravity target tree alongside the Claude Code marketplace and OpenCode target. Installs are generate-and-deploy operations against a local checkout: the multi-target generator emits the Antigravity tree (`skills`, `agents`, `commands`, `plugin.json`), which is then linked or deployed into the Antigravity configuration directory.
+
+== Prerequisites
+
+[IMPORTANT]
+====
+Python 3 must be available as `python3` in your PATH.
+
+[source,bash]
+----
+python3 --version
+----
+====
+
+=== Supported platforms
+
+The platform requirement is assistant-independent and stated once in xref:install-claude.adoc[Installation (Claude Code) › Supported platforms]: a single POSIX runtime, macOS and Linux native, Windows exclusively inside WSL2. On Windows, install Antigravity inside the WSL distro alongside the rest of the runtime.
+
+== Deploy (generate + link)
+
+The consumption path is a two-step flow:
+
+[source,bash]
+----
+./pw generate --target antigravity --output target/antigravity
+----
+
+=== Step 1 — Generate
+
+Run the generator from the repository root. It emits skills, agents, commands, and `plugin.json` into `target/antigravity/`:
+
+* `skills/`: Individual skill directories (`plan-marshall-*`, etc.) containing `SKILL.md` and verbatim resources (`standards/`, `references/`, `templates/`, `scripts/`).
+* `agents/`: Subagent definition markdown files (`execution-context.md`, `execution-context-reader.md`, and ordinal level variants `level-1` through `level-7`).
+* `commands/`: Markdown wrappers exposing user-invocable workflows.
+* `plugin.json`: Antigravity bundle manifest and metadata.
+
+=== Step 2 — Deploy into Antigravity
+
+Antigravity discovers customizations from global and workspace-scoped locations. You can install the emitted artifacts globally or per-project:
+
+==== Global Installation (Recommended)
+
+Link or copy the emitted skills into the Antigravity global customization directory (`~/.gemini/antigravity/skills/`):
+
+[source,bash]
+----
+mkdir -p ~/.gemini/antigravity/skills
+cp -R target/antigravity/skills/* ~/.gemini/antigravity/skills/
+----
+
+Alternatively, use symlinks during development so updates to `target/antigravity` are immediately visible without copying:
+
+[source,bash]
+----
+mkdir -p ~/.gemini/antigravity/skills
+for skill in target/antigravity/skills/*; do
+  ln -s "$(pwd)/$skill" ~/.gemini/antigravity/skills/"$(basename "$skill")"
+done
+----
+
+==== Workspace-Scoped Installation
+
+For projects that bundle their skills directly in the workspace, copy or link into `.gemini/skills/` or `.agent/skills/` at the project root:
+
+[source,bash]
+----
+mkdir -p .gemini/skills
+cp -R target/antigravity/skills/* .gemini/skills/
+----
+
+=== Step 3 — Verification
+
+Start an Antigravity chat session or invoke the CLI:
+
+[source,bash]
+----
+agy --help
+----
+
+In the chat interface, verify that the skills are listed in the available skills overview (or invoke them directly via conversational prompts).
+
+== Next step
+
+Run xref:getting-started.adoc[`/marshall-steward`] in your target repository to configure the project workspace and initialize `marshal.json`.
+
+== Distribution contract
+
+Publish triggers, source-vs-dist tag semantics, and the multi-target architecture are documented under xref:../developer/distribution.adoc[Developer Guide › Distribution]. Further details on the Antigravity port architecture are in xref:../developer/antigravity.adoc[Developer Guide › Antigravity Target Port].
