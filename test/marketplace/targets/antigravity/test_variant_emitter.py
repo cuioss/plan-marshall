@@ -25,7 +25,7 @@ from marketplace.targets.antigravity.variant_emitter import (
 from marketplace.targets.claude.variant_emitter import EXTENSION_POINT, LEVEL_TABLE
 
 CONFIG_DIR = PROJECT_ROOT / 'marketplace' / 'targets' / 'antigravity'
-ALL_LEVELS = [f'level-{n}' for n in range(1, 8)]
+ALL_LEVELS = list(LEVEL_TABLE)
 
 
 def _write(path: Path, content: str) -> None:

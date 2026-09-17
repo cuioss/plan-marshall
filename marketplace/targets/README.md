@@ -31,6 +31,16 @@ marketplace/targets/
 │   ├── source_fingerprint.py     # Worktree fingerprint for the staleness guard
 │   ├── content_drift.py          # Live content-drift check engine
 │   └── content_drift_cli.py      # CLI wrapper for the content-drift check
+├── antigravity/                  # Google Antigravity build target
+│   ├── __init__.py               # Registers AntigravityTarget
+│   ├── target.py                 # AntigravityTarget(TargetBase)
+│   ├── emitter.py                # Singular-layout emit + plugin.json
+│   ├── frontmatter.py            # Frontmatter transform + fail-closed validation
+│   ├── variant_emitter.py        # Per-level agent variant emission
+│   ├── mapping.json              # Tool/model maps
+│   ├── frontmatter-rules.json
+│   └── templates/
+│       └── user-invocable-command.md
 ├── opencode/                     # OpenCode singular-layout emitter
 │   ├── __init__.py               # Registers OpenCodeTarget
 │   ├── target.py                 # OpenCodeTarget(TargetBase)
