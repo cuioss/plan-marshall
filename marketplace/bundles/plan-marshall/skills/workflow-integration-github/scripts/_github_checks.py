@@ -260,21 +260,61 @@ def _pull_request_event_runs_for_pr(runs: Any, pr_number: Any) -> list:
     return [run for run in runs if _is_pull_request_event_run(run) and not _run_names_a_different_pr(run, pr_number)]
 
 
-def _derive_overall_status(checks: list[dict]) -> tuple[str, list[dict], list[dict]]:
+def _derive_overall_status(
+    checks: list[dict], *, currency_current: bool | None = None
+) -> tuple[str, list[dict], list[dict]]:
     """Derive ``overall | final_status`` plus failing-checks transport.
 
     Returns ``(status, failing_check_rows, wait_check_rows)`` where ``status``
     is one of ``pending | success | failure | none``. The ``mixed`` outcome
     is intentionally absent — every input resolves to one of the four
     canonical states.
+
+    PLAN-03 currency overlay: when ``currency_current`` carries the explicit
+    verdict of the SHA-compared currency guard
+    (``_github_pr.bot_claimed_sha_matches_head``), a stale verdict forces the
+    published check state to ``failure`` so a review credited stale on the
+    findings path cannot read as current on checks. ``None`` means no
+    currency information is available and preserves the pre-currency
+    behaviour; ``True`` leaves the derived status untouched. This overlay is
+    deliberately separate from the issue-comment HEAD-verified read in the
+    re-review await flow: that read belongs to the comment-body path, while
+    this overlay belongs to the checks publication flow consumed by
+    ``cmd_ci_status`` / ``cmd_ci_wait`` via this derivation.
     """
 
     if not checks:
+        base: str = 'none'
+        failing: list[dict] = []
+        wait: list[dict] = []
+    else:
+        failing, wait, _non_failing = _classify_check_buckets(checks)
+        if wait:
+            base = 'pending'
+            failing = []
+        elif failing:
+            base = 'failure'
+            wait = []
+        else:
+            base = 'success'
+            failing = []
+            wait = []
+    if currency_current is None:
+        if base == 'none':
+            return 'none', [], []
+        if base == 'pending':
+            return 'pending', [], wait
+        if base == 'failure':
+            return 'failure', failing, []
+        return 'success', [], []
+    check_state = carry_currency_verdict_to_check_state(bool(currency_current))
+    if check_state == 'STALE' and base in ('success', 'none'):
+        return 'failure', failing, []
+    if base == 'none':
         return 'none', [], []
-    failing, wait, _non_failing = _classify_check_buckets(checks)
-    if wait:
+    if base == 'pending':
         return 'pending', [], wait
-    if failing:
+    if base == 'failure':
         return 'failure', failing, []
     return 'success', [], []
 
