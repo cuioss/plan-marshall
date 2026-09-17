@@ -1400,11 +1400,36 @@ def cmd_branch_sync_state(args):
     re-deriving the state→action mapping in prose. The error payloads carry no
     ``barrier_action``: an unresolvable state is not a verdict to map, and the
     consumer's own ``status: error`` branch (fail toward pushing) governs it.
+
+    Post-removal fallback: when the dedicated worktree no longer resolves
+    (branch-cleanup removed it via move-back then remove-worktree then
+    delete-branch), the probe falls back to the main checkout
+    (``main_checkout_root()``) for the ``origin/{branch}`` and
+    ``origin/{base}`` containment reads, so the verb still returns
+    ``remote_absent_landed``/``remote_absent_unverified`` with the correct
+    ``barrier_action`` (``skip``, never re-fire for a merged-and-deleted
+    branch) instead of ``plan_resolution_failed``.
     """
     plan_id = args.plan_id
     worktree, error = _resolve_worktree_path_for_plan(plan_id)
+    probe_source = 'worktree'
+    if error is None and worktree is not None and not worktree.is_dir():
+        error = {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'plan_resolution_failed',
+            'message': f'worktree path {worktree} is not a directory — falling back to main checkout',
+        }
+        worktree = None
     if error is not None:
-        return error
+        try:
+            fallback = main_checkout_root()
+        except RuntimeError:
+            return error
+        if not fallback.is_dir():
+            return error
+        worktree = fallback
+        probe_source = 'main_checkout_fallback'
 
     branch = _read_metadata_field(plan_id, 'worktree_branch')
     if not branch:
@@ -1424,6 +1449,23 @@ def cmd_branch_sync_state(args):
             'message': stderr or 'git rev-parse HEAD failed',
         }
 
+    if probe_source == 'main_checkout_fallback':
+        rc_feat, feat_out, _feat_err = run_git(['-C', str(worktree), 'rev-parse', '--verify', f'refs/heads/{branch}'])
+        feat_sha = feat_out.strip() if rc_feat == 0 else ''
+        if not feat_sha:
+            base_branch_unverified = _resolve_sync_base_branch(plan_id, worktree)
+            return {
+                'status': 'success',
+                'plan_id': plan_id,
+                'branch': branch,
+                'state': 'remote_absent_unverified',
+                'barrier_action': push_barrier_action('remote_absent_unverified'),
+                'head_sha': head_sha,
+                'base_branch': base_branch_unverified,
+                'probe_source': probe_source,
+            }
+        head_sha = feat_sha
+
     rc, remote_sha, _stderr = run_git(['-C', str(worktree), 'rev-parse', '--verify', '--quiet', f'origin/{branch}'])
     if rc == 0:
         state = 'synced' if head_sha == remote_sha else 'ahead'
@@ -1435,6 +1477,7 @@ def cmd_branch_sync_state(args):
             'barrier_action': push_barrier_action(state),
             'head_sha': head_sha,
             'remote_sha': remote_sha,
+            'probe_source': probe_source,
         }
 
     # origin/{branch} does not resolve — the ambiguous case. Disambiguate via
@@ -1450,6 +1493,7 @@ def cmd_branch_sync_state(args):
             'barrier_action': push_barrier_action('remote_absent_landed'),
             'head_sha': head_sha,
             'base_branch': base_branch,
+            'probe_source': probe_source,
         }
 
     return {
@@ -1460,6 +1504,7 @@ def cmd_branch_sync_state(args):
         'barrier_action': push_barrier_action('remote_absent_unverified'),
         'head_sha': head_sha,
         'base_branch': base_branch,
+        'probe_source': probe_source,
     }
 
 
