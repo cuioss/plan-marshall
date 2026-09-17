@@ -40,6 +40,7 @@ import sys
 from pathlib import Path
 
 from ci_base import (
+    BODY_CONSUMER_VERBS,
     extract_project_dir,
     extract_routing_args,
     output_error,
@@ -107,6 +108,40 @@ def get_provider() -> str | None:
         return None
 
 
+def _router_plan_id_value(argv: list[str]) -> str | None:
+    """Return the first ``--plan-id`` value in ``argv``, or ``None``.
+
+    Reads both ``--plan-id VALUE`` and ``--plan-id=VALUE`` spellings. Used to
+    recover the router-consumed value when a body-consumer verb declares its
+    own required ``--plan-id`` after the verb: the router strips the pre-verb
+    occurrence for worktree resolution, leaving the subparser reporting it
+    missing. Re-injecting the recovered value after the verb makes the
+    router position work instead of rejecting with a misleading missing-flag
+    error.
+    """
+    i = 0
+    while i < len(argv):
+        token = argv[i]
+        if token == '--plan-id':
+            if i + 1 < len(argv) and not argv[i + 1].startswith('-'):
+                return argv[i + 1]
+            return None
+        if token.startswith('--plan-id='):
+            value = token.split('=', 1)[1]
+            return value or None
+        i += 1
+    return None
+
+
+# Verbs that declare their own required ``--plan-id`` after the verb (body
+# consumers). When the router consumed a pre-verb ``--plan-id`` and the
+# remaining argv carries one of these verbs without its own ``--plan-id``,
+# the consumed value is re-injected so the router position is accepted.
+# Imported from `ci_base` beside `add_body_consumer_args` so the reinjection
+# set cannot drift from the parser registrations it mirrors.
+_BODY_CONSUMER_VERBS = BODY_CONSUMER_VERBS
+
+
 def main() -> int:
     # Provider-agnostic barrier coordinator — intercepted BEFORE provider
     # routing because it computes over caller-supplied signal state and needs
@@ -119,6 +154,10 @@ def main() -> int:
 
         return run_barrier_cli(argv[1:])
 
+    # Remember the router-position ``--plan-id`` before it is stripped, so a
+    # body-consumer verb that declares its own required ``--plan-id`` can be
+    # re-injected below instead of reporting a misleading missing-flag error.
+    router_plan_id = _router_plan_id_value(argv)
     # Consume top-level router flags (--project-dir and --plan-id) before
     # delegating to the provider module. sys.argv is rewritten in place so the
     # downstream provider parser sees only its own arguments. The two flags
@@ -126,6 +165,17 @@ def main() -> int:
     # manage-status; --project-dir is the explicit override; both together
     # is a hard error (handled inside extract_routing_args).
     project_dir, remaining = extract_routing_args(argv)
+    # Forward the router-consumed ``--plan-id`` to body-consumer verbs that
+    # declare their own: a pre-verb ``--plan-id`` was swallowed for worktree
+    # resolution and the subparser would otherwise report it missing even
+    # though the caller supplied it. Appending the recovered value makes the
+    # router position accepted consistently across read and body-consumer verbs.
+    if (
+        router_plan_id is not None
+        and not any(t == '--plan-id' or t.startswith('--plan-id=') for t in remaining)
+        and any(v in remaining for v in _BODY_CONSUMER_VERBS)
+    ):
+        remaining = [*remaining, '--plan-id', router_plan_id]
     sys.argv = [sys.argv[0], *remaining]
     if project_dir is not None:
         set_default_cwd(project_dir)

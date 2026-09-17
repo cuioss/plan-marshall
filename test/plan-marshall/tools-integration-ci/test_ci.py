@@ -799,3 +799,26 @@ def test_barrier_re_settle_wake_re_enters_affected_arms_only(tmp_path):
     assert 'barrier_status: re_settle' in result.stdout
     # Only the stale review arm is re-entered; ci/sonar already at _H2 proceed.
     assert 'review' in result.stdout
+
+
+def test_body_consumer_verbs_cover_reply_thread_reply_comment():
+    """Router reinjection must cover reply, thread-reply and comment.
+
+    These three verbs declare a required --plan-id via add_body_consumer_args;
+    a router-position --plan-id consumed for worktree resolution must be
+    reinjected for them, exactly as for create/edit/prepare-body/prepare-comment.
+    """
+    assert {'reply', 'thread-reply', 'comment'} <= set(ci_module._BODY_CONSUMER_VERBS)
+
+
+def test_body_consumer_verbs_mirror_ci_base():
+    """The reinjection set must not drift from the parser registrations in ci_base."""
+    import ci_base
+
+    assert ci_module._BODY_CONSUMER_VERBS == ci_base.BODY_CONSUMER_VERBS
+
+
+def test_router_reinjection_triggers_for_reply_and_thread_reply():
+    """A remaining argv carrying reply/thread-reply without --plan-id triggers reinjection."""
+    for verb_argv in (['pr', 'reply'], ['pr', 'thread-reply'], ['issue', 'comment']):
+        assert any(v in verb_argv for v in ci_module._BODY_CONSUMER_VERBS)

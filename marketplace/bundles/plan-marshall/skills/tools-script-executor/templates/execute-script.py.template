@@ -921,26 +921,74 @@ def _closest_spelling(token: str, candidates) -> str | None:
     return best if best_distance <= max(2, len(token) // 2) else None
 
 
+def _sibling_verbs_with_flag(root: dict, chain: list, flag: str) -> list:
+    """Return sibling verb paths (as ``verb`` strings) whose node declares ``flag``.
+
+    Searched from the PARENT of the resolved node (``root`` followed by
+    ``chain[:-1]``): every child of that parent except the resolved verb
+    itself is a sibling, and a sibling whose ``flags`` list contains ``flag``
+    is a candidate the caller could have meant. Up to two candidates are
+    returned in sorted order so the corrective names a concrete sibling
+    verb's canonical form rather than only the accepted flag set.
+
+    Returns an empty list when the parent cannot be resolved or no sibling
+    declares the flag — the caller then falls back to the declared-set
+    corrective without a sibling hint. An empty chain (no verb resolved,
+    reachable via a non-allowlisted root-level unknown flag) also returns an
+    empty list: the root children are not siblings of a verb that was never
+    selected.
+    """
+    try:
+        if not chain:
+            return []
+        parent = root
+        for step in chain[:-1]:
+            children = parent.get('children') or {}
+            parent = children.get(step)
+            if not isinstance(parent, dict):
+                return []
+        siblings = (parent.get('children') or {}) if isinstance(parent, dict) else {}
+        current = chain[-1] if chain else None
+        hits = []
+        for name in sorted(siblings):
+            if name == current:
+                continue
+            child = siblings.get(name) or {}
+            if flag in (child.get('flags') or []):
+                hits.append(name)
+                if len(hits) >= 2:
+                    break
+        return hits
+    except (AttributeError, TypeError):
+        return []
+
+
 def _corrective_for_verb(notation: str, chain: list, token: str, node: dict) -> str:
     """Phrase the corrective for an unaccepted verb token.
 
     When the closest accepted spelling is itself an ALIAS, the message says so —
     the grouping anchor recovered that relation, and "``get`` is an alias of
     ``read``" is a more useful correction than a bare nearest-match.
+
+    The rejected token is always named first, so the message teaches its own
+    fix at the failure site: a caller that reached for ``read`` on a surface
+    whose verbs are ``request`` / ``list-types`` learns both what was rejected
+    and what exists.
     """
     children = sorted(node.get('children') or {})
     prefix = ' '.join([notation, *chain]).strip()
     suggestion = _closest_spelling(token, children)
     if suggestion is None:
-        return f'Use a registered verb for `{prefix}`: {children}'
+        return f'`{token}` is not a registered verb for `{prefix}`: {children}'
     alias_of = node.get('alias_of') or {}
     canonical = alias_of.get(suggestion)
     if canonical:
         return (
-            f'Use `{prefix} {suggestion}` (an alias of `{canonical}`) — '
+            f'`{token}` is not a registered verb for `{prefix}` — '
+            f'use `{prefix} {suggestion}` (an alias of `{canonical}`) — '
             f'registered: {children}'
         )
-    return f'Use `{prefix} {suggestion}` — registered: {children}'
+    return f'`{token}` is not a registered verb for `{prefix}` — use `{prefix} {suggestion}` — registered: {children}'
 
 
 def _consume_flag_value(name, arity: dict, node: dict, script_args: list, index: int):
@@ -1149,10 +1197,19 @@ def _validate_invocation(notation: str, script_args: list) -> dict | None:
         # do, and which a subtraction silently erased.
         declared = sorted(declared_flags)
         suggestion = _closest_spelling(flag, declared)
+        siblings = _sibling_verbs_with_flag(root, chain, flag)
+        sibling_hint = ''
+        if siblings:
+            # Sibling paths are built from the parent prefix: the parent is the
+            # chain without its last verb, so a sibling suggestion names the
+            # sibling verb's canonical form carrying this same flag.
+            parent_prefix = ' '.join([notation, *chain[:-1]]).strip() or notation
+            sibling_paths = ', '.join(f'`{parent_prefix} {s} --{flag}`' for s in siblings)
+            sibling_hint = f' — flag `--{flag}` is declared on sibling verb(s): {sibling_paths}'
         if suggestion:
-            corrective = f'Use `--{suggestion}` for `{prefix}` — declared: {declared}'
+            corrective = f'`--{flag}` is not declared for `{prefix}` — use `--{suggestion}` — declared: {declared}{sibling_hint}'
         else:
-            corrective = f'Use a declared flag for `{prefix}`: {declared}'
+            corrective = f'`--{flag}` is not declared for `{prefix}`: {declared}{sibling_hint}'
         return {
             'reason': 'unknown_flag',
             'token': f'--{flag}',

@@ -355,6 +355,15 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-
   --plan-id PLAN_ID [--raw] [--section SECTION]
 ```
 
+The canonical form keeps the document type in verb position (`request read`),
+and a top-level `read` redirect is additionally accepted for routing uniformity
+— it forwards to the same read rather than rejecting with `unknown_verb`:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-documents read \
+  --plan-id PLAN_ID [--document request] [--raw] [--section SECTION]
+```
+
 ### request path
 
 ```bash

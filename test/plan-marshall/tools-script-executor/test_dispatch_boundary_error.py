@@ -419,8 +419,11 @@ def test_work_log_detail_carries_the_corrective_via_stdout_precedence(
     assert mock_log_entry.call_count == 1
     message = mock_log_entry.call_args.args[3]
     assert 'failure_kind=argparse_rejection' in message
-    assert 'detail=Use `plan-marshall:manage-tasks:manage-tasks read`' in message, (
+    assert 'detail=`reed` is not a registered verb for `plan-marshall:manage-tasks:manage-tasks`' in message, (
         f'the corrective did not reach detail= via stdout precedence: {message!r}'
+    )
+    assert 'use `plan-marshall:manage-tasks:manage-tasks read`' in message, (
+        f'the sibling suggestion did not reach detail=: {message!r}'
     )
     assert 'detail=' in message and not message.rstrip().endswith('detail='), (
         f'detail= must not be blank on a rejection: {message!r}'
@@ -446,7 +449,9 @@ def test_corrective_for_verb_nearest_spelling_form(executor_with_mock_log_entry)
 
     corrective = executor._corrective_for_verb(_REJECTION_NOTATION, [], 'reed', _VERB_NODE)
 
-    assert corrective == ("Use `plan-marshall:manage-tasks:manage-tasks read` — registered: ['get', 'list', 'read']")
+    assert corrective == (
+        "`reed` is not a registered verb for `plan-marshall:manage-tasks:manage-tasks` — use `plan-marshall:manage-tasks:manage-tasks read` — registered: ['get', 'list', 'read']"
+    )
     # Control: this form never mentions an alias relation.
     assert 'alias of' not in corrective, f'nearest-spelling form must not phrase an alias: {corrective!r}'
 
@@ -462,7 +467,7 @@ def test_corrective_for_verb_alias_of_form(executor_with_mock_log_entry):
     corrective = executor._corrective_for_verb(_REJECTION_NOTATION, [], 'gett', _VERB_NODE)
 
     assert corrective == (
-        "Use `plan-marshall:manage-tasks:manage-tasks get` (an alias of `read`) — registered: ['get', 'list', 'read']"
+        "`gett` is not a registered verb for `plan-marshall:manage-tasks:manage-tasks` — use `plan-marshall:manage-tasks:manage-tasks get` (an alias of `read`) — registered: ['get', 'list', 'read']"
     )
 
 
@@ -479,7 +484,7 @@ def test_corrective_for_verb_no_suggestion_form(executor_with_mock_log_entry):
     corrective = executor._corrective_for_verb(_REJECTION_NOTATION, [], 'nuke', _VERB_NODE)
 
     assert corrective == (
-        "Use a registered verb for `plan-marshall:manage-tasks:manage-tasks`: ['get', 'list', 'read']"
+        "`nuke` is not a registered verb for `plan-marshall:manage-tasks:manage-tasks`: ['get', 'list', 'read']"
     )
     # Control: unlike the other two forms, this one names no single suggested
     # verb in backticks immediately after the notation — proving the pin
@@ -572,10 +577,10 @@ def test_unknown_flag_corrective_nearest_spelling_form(executor_with_mock_log_en
     assert rejection is not None
     assert rejection['reason'] == 'unknown_flag'
     assert rejection['corrective'] == (
-        "Use `--plan-id` for `plan-marshall:manage-tasks:manage-tasks read` — declared: ['plan-id', 'task-number']"
+        "`--plna-id` is not declared for `plan-marshall:manage-tasks:manage-tasks read` — use `--plan-id` — declared: ['plan-id', 'task-number']"
     )
     # Control: the nearest-spelling form never falls back to the whole set.
-    assert 'Use a declared flag for' not in rejection['corrective']
+    assert 'is not declared for' in rejection['corrective']
 
 
 def test_unknown_flag_corrective_no_suggestion_form(executor_with_mock_log_entry):
@@ -592,10 +597,12 @@ def test_unknown_flag_corrective_no_suggestion_form(executor_with_mock_log_entry
     assert rejection is not None
     assert rejection['reason'] == 'unknown_flag'
     assert rejection['corrective'] == (
-        "Use a declared flag for `plan-marshall:manage-tasks:manage-tasks read`: ['plan-id', 'task-number']"
+        "`--zzzzzzzzzzzz` is not declared for `plan-marshall:manage-tasks:manage-tasks read`: ['plan-id', 'task-number']"
     )
     # Control: the fallback form never names a single suggested flag.
-    assert not rejection['corrective'].startswith('Use `--')
+    assert not rejection['corrective'].startswith(
+        '`--zzzzzzzzzzzz` is not declared for `plan-marshall:manage-tasks:manage-tasks read` — use `--'
+    )
 
 
 def test_unknown_flag_closest_spelling_threshold_separates_the_two_forms(
@@ -776,3 +783,24 @@ def test_always_accepted_flags_and_their_arity_share_one_definition(
     assert set(executor._ALWAYS_ACCEPTED_FLAGS) == set(executor._ALWAYS_ACCEPTED_FLAG_ARITY)
     assert executor._ALWAYS_ACCEPTED_FLAG_ARITY['project-dir'] == 1
     assert executor._ALWAYS_ACCEPTED_FLAG_ARITY['help'] == 0
+
+
+def test_sibling_verbs_empty_chain_returns_no_siblings(executor_with_mock_log_entry):
+    """An empty chain (no verb resolved) reports no siblings.
+
+    Reachable via a non-allowlisted root-level unknown flag: the root children
+    are not siblings of a verb that was never selected, so reporting `read`
+    there is a false hint.
+    """
+    executor, _mock = executor_with_mock_log_entry
+    root = {'children': {'read': {'flags': ['plan-id']}}}
+
+    assert executor._sibling_verbs_with_flag(root, [], 'plan-id') == []
+
+
+def test_sibling_verbs_nonempty_chain_still_reports_sibling(executor_with_mock_log_entry):
+    """Control: a resolved verb still names a sibling declaring the same flag."""
+    executor, _mock = executor_with_mock_log_entry
+    root = {'children': {'read': {'flags': ['plan-id']}, 'list': {'flags': ['plan-id']}}}
+
+    assert executor._sibling_verbs_with_flag(root, ['read'], 'plan-id') == ['list']
