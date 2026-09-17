@@ -197,9 +197,7 @@ class TestCmdPruneRefEscapeHatch:
         assert 'local_delete_warning' in result
         assert 'already deleted' in result['local_delete_warning']
 
-    def test_tolerated_delete_prunes_present_remote_ref(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_tolerated_delete_prunes_present_remote_ref(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Tolerated local delete still prunes refs/remotes/origin when present."""
         _init_repo(tmp_path, branch='main')
         orig = _mod.run_git
