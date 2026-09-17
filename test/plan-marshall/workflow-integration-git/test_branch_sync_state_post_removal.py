@@ -47,7 +47,6 @@ def _seed_merged_and_deleted(tmp_path: Path) -> Path:
     subprocess.run(['git', 'checkout', 'main'], cwd=work, capture_output=True)
     subprocess.run(['git', 'merge', '--ff-only', BRANCH], cwd=work, capture_output=True)
     subprocess.run(['git', 'push', 'origin', 'main'], cwd=work, capture_output=True)
-    subprocess.run(['git', 'checkout', 'main'], cwd=work, capture_output=True)
     return work
 
 
