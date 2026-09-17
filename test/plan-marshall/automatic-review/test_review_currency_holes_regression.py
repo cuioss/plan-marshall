@@ -11,7 +11,7 @@ stale bot.
 
 from __future__ import annotations
 
-from conftest import load_script_module
+from conftest import get_script_path, load_script_module, run_script
 
 rc = load_script_module('plan-marshall', 'automatic-review', 'review_completeness.py', register=False)
 gpr = load_script_module('plan-marshall', 'workflow-integration-github', '_github_pr.py', register=False)
@@ -19,37 +19,61 @@ gci = load_script_module('plan-marshall', 'workflow-integration-github', '_githu
 gchk = load_script_module('plan-marshall', 'workflow-integration-github', '_github_checks.py', register=False)
 rgd = load_script_module('plan-marshall', 'automatic-review', 'review_gate_delta.py', register=False)
 
+RC_SCRIPT_PATH = get_script_path('plan-marshall', 'automatic-review', 'review_completeness.py')
+
 
 class TestReviewCurrencyHolesRegression:
     """One failing-without-fix, passing-with-fix test per PLAN-03 hole."""
 
     def test_stale_sha_force_push_not_credited(self):
-        """A force-push after a bot review no longer credits the stale review."""
+        """A force-push after a bot review fails the check state via the currency guard."""
         old_head = 'a' * 40
         new_head = 'b' * 40
         body = f'bot reviewed {old_head}'
 
-        assert gpr.bot_claimed_sha_matches_head(body, old_head) is True
-        assert gpr.bot_claimed_sha_matches_head(body, new_head) is False
-        assert gchk.carry_currency_verdict_to_check_state(False) == 'STALE'
+        currency_current_old = gpr.bot_claimed_sha_matches_head(body, old_head)
+        assert currency_current_old is True
+        currency_current_new = gpr.bot_claimed_sha_matches_head(body, new_head)
+        assert currency_current_new is False
+
+        checks = [{'state': 'SUCCESS', 'bucket': 'pass', 'name': 'review', 'link': ''}]
+        overall_current, _, _ = gchk._derive_overall_status(checks, currency_current=currency_current_old)
+        assert overall_current == 'success'
+
+        overall_stale, _, _ = gchk._derive_overall_status(checks, currency_current=currency_current_new)
+        assert overall_stale == 'failure'
 
     def test_issue_comment_head_read_approving(self, plan_context):
-        """A current review on the issue_comment path reads as approving."""
+        """A current review on the issue_comment path participates via the head check."""
         plan_id = 'regression-issue-comment-approving'
         plan_context.plan_dir_for(plan_id)
         head = 'd' * 40
+        body = f'reviewed .../commit/{head}'
 
-        assert gci.issue_comment_verifies_head(f'reviewed .../commit/{head}', head) is True
+        verified = gci.issue_comment_verifies_head(body, head)
+        assert verified is True
 
+        participated = rc.parse_participation('cuioss-review-bot:issue_comment') if verified else {}
         result = rc.check_completeness(
             plan_id,
             ['cuioss-review-bot'],
-            participated_bots=rc.parse_participation('cuioss-review-bot:issue_comment'),
+            participated_bots=participated,
         )
         assert result['participation_complete'] is True
 
+        stale_plan_id = 'regression-issue-comment-unverified'
+        plan_context.plan_dir_for(stale_plan_id)
+        unverified = gci.issue_comment_verifies_head('no commit reference here', head)
+        assert unverified is False
+        unproven = rc.check_completeness(
+            stale_plan_id,
+            ['cuioss-review-bot'],
+            participated_bots={} if not unverified else rc.parse_participation('cuioss-review-bot:issue_comment'),
+        )
+        assert unproven['participation_complete'] is False
+
     def test_awaitable_refusal_awaits_with_coderabbit_required(self, plan_context):
-        """The awaitable refusal awaits with CodeRabbit required, never demoted."""
+        """The awaitable refusal classifies awaitable through the production refusal path."""
         plan_id = 'regression-awaitable-coderabbit-required'
         plan_context.plan_dir_for(plan_id)
 
@@ -57,17 +81,32 @@ class TestReviewCurrencyHolesRegression:
         assert rgd.should_await_refusal('hard_quota') is False
         assert 'coderabbit' in rc.bot_registry.bot_kinds()
 
+        rate_class = rc.bot_registry.rate_limit_class('coderabbit')
+        assert rgd.should_await_refusal(rate_class) is True
+
         result = rc.check_completeness(plan_id, ['coderabbit'], refused_bots=['coderabbit'])
         assert result['participation_complete'] is False
         states = [r['state'] for r in result['bot_states'] if r['bot_kind'] == 'coderabbit']
         assert states == [rc.STATE_REFUSED_AWAITABLE]
+        assert (states[0] == rc.STATE_REFUSED_AWAITABLE) == rgd.should_await_refusal(rate_class)
 
     def test_trigger_reaches_stale_bot(self, plan_context):
-        """Trigger-B selects the actually-stale bot for re-review."""
+        """Trigger-B resolves the actually-stale bot through the production trigger entry point."""
         plan_id = 'regression-trigger-stale-bot'
         plan_context.plan_dir_for(plan_id)
 
-        assert rc.select_stale_bot_for_trigger(['sourcery'], 'coderabbit') == 'sourcery'
+        trigger = run_script(
+            RC_SCRIPT_PATH,
+            'trigger-bot',
+            '--plan-id',
+            plan_id,
+            '--stale-bots',
+            'sourcery',
+            '--newest-kind',
+            'coderabbit',
+        )
+        assert trigger.success, trigger.stderr
+        assert 'sourcery' in trigger.stdout
 
         result = rc.check_completeness(plan_id, ['sourcery'], stale_participation_bots=['sourcery'])
         assert result['participation_complete'] is False
