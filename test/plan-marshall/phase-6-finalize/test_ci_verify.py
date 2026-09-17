@@ -155,6 +155,29 @@ _PR = 123
 _RUN_URL = 'https://github.com/o/r/actions/runs/987654/job/111'
 
 
+def _live_head_sha() -> str:
+    """Resolve the live HEAD SHA — a real anchor for the persisted record.
+
+    The production `mark-step-done` resolves a supplied `--head-at-completion`
+    against the object store (unfabricable-anchor rule) and refuses a
+    fabricated SHA, so the force-push regression below must record a SHA the
+    local repo actually holds.
+    """
+    import subprocess
+
+    proc = subprocess.run(
+        ['git', 'rev-parse', 'HEAD'],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert proc.returncode == 0, f'Cannot resolve a real HEAD SHA: {proc.stderr.strip()}'
+    sha = proc.stdout.strip()
+    assert sha
+    return sha
+
+
 def _green_envelope() -> dict:
     return {
         'status': 'success',
@@ -1119,7 +1142,11 @@ def test_force_push_supersession_invalidates_a_recorded_ci_verify_green():
     plan_id = 'ci-verify-d4b-force-push'
     _make_ci_verify_plan(plan_id)
 
-    recorded_green_sha = 'c' * 40
+    # The green record must carry a SHA the object store holds: the
+    # production `mark-step-done` resolves a supplied anchor (unfabricable-
+    # anchor rule) and refuses a fabricated one. The post-force-push head is
+    # only ever compared, never recorded, so any distinct string serves.
+    recorded_green_sha = _live_head_sha()
     post_force_push_head = 'd' * 40
 
     _cmd_mark_step_done(

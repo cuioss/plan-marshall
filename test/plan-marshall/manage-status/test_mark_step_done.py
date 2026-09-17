@@ -3,7 +3,7 @@
 """Tests for the mark-step-done subcommand of manage-status."""
 
 import pytest
-from _mark_step_done_fixtures import _args, _make_plan, cmd_mark_step_done, read_status, write_status
+from _mark_step_done_fixtures import _args, _make_plan, _real_head, cmd_mark_step_done, read_status, write_status
 
 
 def test_mark_step_conflict_fires_against_stale_legacy_key(plan_context):
@@ -124,7 +124,7 @@ def test_mark_step_thrice_fired_step_retains_every_firing(plan_context):
             'done',
             force=True,
             display_detail='clean',
-            head_at_completion='c' * 40,
+            head_at_completion=_real_head(),
         )
     )
     assert third['status'] == 'success', third
@@ -134,7 +134,7 @@ def test_mark_step_thrice_fired_step_retains_every_firing(plan_context):
     # `outcome` still means the LATEST firing, and keeps its historical meaning.
     assert entry['outcome'] == 'done'
     assert entry['display_detail'] == 'clean'
-    assert entry['head_at_completion'] == 'c' * 40
+    assert entry['head_at_completion'] == _real_head()
     # A `done` outcome carries no loop_back_target — the key is absent, not stale.
     assert 'loop_back_target' not in entry
 
@@ -217,7 +217,7 @@ def test_mark_step_trail_is_append_only_across_a_fourth_firing(plan_context):
             'done',
             force=True,
             display_detail='r4',
-            head_at_completion='d' * 40,
+            head_at_completion=_real_head('HEAD~1'),
         )
     )
     assert fourth['status'] == 'success', fourth

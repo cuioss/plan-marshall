@@ -140,6 +140,29 @@ def _make_plan(plan_id: str) -> None:
     )
 
 
+def _live_head_sha() -> str:
+    """Resolve the live HEAD SHA — a real anchor for the recorded verdict.
+
+    The production `mark-step-done` resolves a supplied `--head-at-completion`
+    against the object store (unfabricable-anchor rule) and refuses a
+    fabricated SHA, so the verdict record below must carry a SHA the local
+    repo actually holds.
+    """
+    import subprocess
+
+    proc = subprocess.run(
+        ['git', 'rev-parse', 'HEAD'],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert proc.returncode == 0, f'Cannot resolve a real HEAD SHA: {proc.stderr.strip()}'
+    sha = proc.stdout.strip()
+    assert sha
+    return sha
+
+
 def _args(
     plan_id: str,
     phase: str,
@@ -430,7 +453,7 @@ def test_loop_back_commit_re_fires_pre_submission_self_review():
     plan_id = 'loopback-d4a-self-review'
     _make_plan(plan_id)
 
-    head_at_verdict = 'a' * 40
+    head_at_verdict = _live_head_sha()
 
     cmd_mark_step_done(
         _args(

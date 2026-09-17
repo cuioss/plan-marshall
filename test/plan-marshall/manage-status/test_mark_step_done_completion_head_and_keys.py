@@ -10,7 +10,7 @@ Its sections, in order:
 """
 
 import pytest
-from _mark_step_done_fixtures import _args, _make_plan, cmd_mark_step_done, read_status, write_status
+from _mark_step_done_fixtures import _args, _make_plan, _real_head, cmd_mark_step_done, read_status, write_status
 
 
 def test_mark_step_failed_then_done_with_force(plan_context):
@@ -25,7 +25,7 @@ def test_mark_step_failed_then_done_with_force(plan_context):
     """
     plan_id = 'mark-step-failed-then-done'
     _make_plan(plan_id)
-    sha = 'b' * 40
+    sha = _real_head()
     cmd_mark_step_done(_args(plan_id, '6-finalize', 'automatic-review', 'failed', display_detail='timeout'))
 
     # Without --force, a different outcome on an existing step is a conflict.
@@ -106,7 +106,7 @@ def test_mark_step_invalid_plan_id(plan_context):
 def test_mark_step_persists_head_at_completion_on_first_call(plan_context):
     """--head-at-completion is persisted as a third key alongside outcome+display_detail."""
     plan_id = 'mark-step-head-first'
-    sha = 'abc1234567890abcdef1234567890abcdef1234'
+    sha = _real_head()
     _make_plan(plan_id)
     result = cmd_mark_step_done(
         _args(
@@ -135,7 +135,7 @@ def test_mark_step_persists_head_at_completion_on_first_call(plan_context):
 def test_mark_step_idempotent_when_head_at_completion_matches(plan_context):
     """Re-call with same outcome+display_detail+head_at_completion is a no-op."""
     plan_id = 'mark-step-head-idempotent'
-    sha = 'deadbeefcafebabe0123456789abcdef01234567'
+    sha = _real_head()
     _make_plan(plan_id)
     cmd_mark_step_done(
         _args(
@@ -180,8 +180,8 @@ def test_mark_step_idempotent_when_head_at_completion_matches(plan_context):
 def test_mark_step_head_at_completion_change_overwrites_without_force(plan_context):
     """Re-call with same outcome+display_detail but different SHA is a 'changed' overwrite, no --force."""
     plan_id = 'mark-step-head-overwrite'
-    sha_old = '1111111111111111111111111111111111111111'
-    sha_new = '2222222222222222222222222222222222222222'
+    sha_old = _real_head('HEAD~1')
+    sha_new = _real_head('HEAD')
     _make_plan(plan_id)
     cmd_mark_step_done(
         _args(
@@ -312,7 +312,7 @@ def test_mark_step_project_prefixed_records_under_verbatim_key(plan_context):
     # so a ``done`` record must carry the anchor. What this test pins is the KEY
     # the record lands under, not the anchor — supplying it is what lets the call
     # reach the write at all.
-    sha = 'c' * 40
+    sha = _real_head()
     result = cmd_mark_step_done(
         _args(
             plan_id,

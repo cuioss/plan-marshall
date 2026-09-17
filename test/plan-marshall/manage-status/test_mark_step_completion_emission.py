@@ -31,6 +31,7 @@ from argparse import Namespace
 
 from plan_logging import read_work_log
 
+from _mark_step_done_fixtures import _real_head
 from conftest import load_script_module
 
 _lifecycle = load_script_module('plan-marshall', 'manage-status', '_cmd_lifecycle.py', '_emit_lifecycle')
@@ -131,7 +132,7 @@ def test_no_completion_log_suppresses_the_re_stamp_emission(plan_context):
         '6-finalize',
         'step-d',
         'done',
-        head_at_completion='def456',
+        head_at_completion=_real_head(),
         no_completion_log=True,
     )
     assert restamp['status'] == 'success'
