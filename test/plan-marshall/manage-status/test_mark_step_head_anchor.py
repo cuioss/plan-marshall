@@ -92,9 +92,7 @@ def _ANCHOR() -> str:
             timeout=30,
             check=False,
         )
-        assert proc.returncode == 0, (
-            f'Cannot resolve a real HEAD SHA for the anchor fixtures: {proc.stderr.strip()}'
-        )
+        assert proc.returncode == 0, f'Cannot resolve a real HEAD SHA for the anchor fixtures: {proc.stderr.strip()}'
         _real_head_cache = proc.stdout.strip()
     assert _real_head_cache
     return _real_head_cache
