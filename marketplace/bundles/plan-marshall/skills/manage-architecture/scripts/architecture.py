@@ -7,6 +7,18 @@ Entry point for all architecture operations. Dispatches to command modules.
 
 import argparse
 
+from _descriptor_delta import (
+    APPLY_ALL,
+    APPLY_MIGRATION,
+    APPLY_MODES,
+    APPLY_PLAN,
+    ATTRIBUTION_MIGRATION,
+    ATTRIBUTION_PLAN,
+    DELTA_CLASSES,
+    VERDICT_NO_BASELINE,
+    VERDICT_UNDECIDABLE,
+    VERDICTS,
+)
 from file_ops import output_toon, safe_main
 from input_validation import (
     add_domain_arg,
@@ -24,6 +36,32 @@ from resolve_project_dir import (
     emit_worktree_error,
     resolve_project_dir,
 )
+
+
+def _classes_of(attribution: str) -> str:
+    """Comma-joined delta class names carrying ``attribution``, in table order."""
+    return ', '.join(name for name, owner in DELTA_CLASSES.items() if owner == attribution)
+
+
+def _add_baseline_args(subparser: argparse.ArgumentParser) -> None:
+    """Add the required, mutually exclusive ``--pre PATH | --pre-ref REF`` baseline group."""
+    group = subparser.add_mutually_exclusive_group(required=True)
+    group.add_argument(
+        '--pre',
+        help=(
+            'Path to an on-disk baseline tree (either a snapshot root containing _project.json '
+            'directly, or a project root whose .plan/project-architecture/ subtree holds it)'
+        ),
+    )
+    group.add_argument(
+        '--pre-ref',
+        dest='pre_ref',
+        help=(
+            'Git ref whose committed .plan/project-architecture/ tree is the baseline (for example '
+            'origin/main or HEAD). Read with git archive into a temporary directory that is removed '
+            'when the command returns; a ref starting with "-" is refused as invalid_ref'
+        ),
+    )
 
 
 @safe_main
@@ -55,6 +93,19 @@ def main() -> int:
         help=(
             'Blank the project description/description_reasoning instead of '
             'preserving the existing curated values (opt back into regeneration)'
+        ),
+    )
+    discover_parser.add_argument(
+        '--apply',
+        choices=APPLY_MODES,
+        default=APPLY_ALL,
+        help=(
+            f'Which part of the regenerated tree to write (default: {APPLY_ALL}). Every call reports '
+            f'attribution as one of: {", ".join(VERDICTS)}. {APPLY_ALL}: write the full regenerated '
+            f'tree whatever the verdict. {APPLY_PLAN} / {APPLY_MIGRATION}: write only the plan classes '
+            f'({_classes_of(ATTRIBUTION_PLAN)}) or the migration classes '
+            f'({_classes_of(ATTRIBUTION_MIGRATION)}); nothing is written on {VERDICT_UNDECIDABLE}, '
+            f'on {VERDICT_NO_BASELINE}, or when no class of that kind exists'
         ),
     )
 
@@ -294,44 +345,29 @@ def main() -> int:
         allow_abbrev=False,
     )
 
-    # diff-modules - Diff per-module derived.json files against a pre-snapshot
+    # diff-modules - Diff per-module derived.json files against a baseline tree
     diff_modules_parser = subparsers.add_parser(
         'diff-modules',
         help=(
-            'Diff per-module derived.json files against a pre-snapshot directory. '
+            'Diff per-module derived.json files against a baseline tree (--pre PATH or --pre-ref REF). '
             'Returns added/removed/changed/unchanged module name lists.'
         ),
         allow_abbrev=False,
     )
-    diff_modules_parser.add_argument(
-        '--pre',
-        required=True,
-        help=(
-            'Path to the pre-snapshot directory (either a snapshot root '
-            'containing _project.json directly, or a project root whose '
-            '.plan/project-architecture/ subtree holds the snapshot)'
-        ),
-    )
+    _add_baseline_args(diff_modules_parser)
 
-    # descriptor-regression-check - Reject regressive project-identity deltas at the commit gate
+    # descriptor-regression-check - Reject regressive descriptor deltas at the commit gate
     descriptor_regression_parser = subparsers.add_parser(
         'descriptor-regression-check',
         help=(
-            'Classify the project-identity delta between a baseline _project.json '
-            '(--pre) and the regenerated descriptor as regressive or benign. '
-            'Returns regressive (bool) plus a violations list.'
+            'Classify the delta between a baseline descriptor tree (--pre PATH or --pre-ref REF) and '
+            'the regenerated tree as regressive or benign, over project identity and module '
+            'enrichment. Returns regressive (bool), violations, examined_fields, modules_examined, '
+            'modules_unreadable, migrations and unresolved_keys.'
         ),
         allow_abbrev=False,
     )
-    descriptor_regression_parser.add_argument(
-        '--pre',
-        required=True,
-        help=(
-            'Path to the baseline-descriptor directory (either a snapshot root '
-            'containing _project.json directly, or a project root whose '
-            '.plan/project-architecture/ subtree holds the baseline)'
-        ),
-    )
+    _add_baseline_args(descriptor_regression_parser)
 
     # =========================================================================
     # Enrich Commands (Write Enrichment)

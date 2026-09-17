@@ -52,16 +52,22 @@ _STAGE_ROW_KEYS = {'order', 'key', 'name', 'mutating', 'top_level_gate', 'nested
 # (regenerate-target-tree in Stage 1, content-drift-report in Stage 3) and gains
 # the consumer-only cache-freshness gate as Stage 1's FIRST sub-step; BOTH kinds
 # end Stage 1 with the cache-retention sweep. Stages 2 and 4 are kind-invariant.
+_EXPECTED_STAGE_2_SUB_STEPS = [
+    'reconcile-marshal-json',
+    'migrate-bot-lists',
+    'validate-bot-lists',
+    'migrate-architecture-descriptors',
+]
 _EXPECTED_SUB_STEPS = {
     'meta': {
         'regenerate-targets': ['regenerate-target-tree', 'regenerate-executor', 'cache-retention-sweep'],
-        'reconcile-config': ['reconcile-marshal-json', 'migrate-bot-lists', 'validate-bot-lists'],
+        'reconcile-config': _EXPECTED_STAGE_2_SUB_STEPS,
         'verify': ['executor-preflight', 'content-drift-report'],
         'land': ['run-landing-cycle'],
     },
     'consumer': {
         'regenerate-targets': ['cache-freshness-check', 'regenerate-executor', 'cache-retention-sweep'],
-        'reconcile-config': ['reconcile-marshal-json', 'migrate-bot-lists', 'validate-bot-lists'],
+        'reconcile-config': _EXPECTED_STAGE_2_SUB_STEPS,
         'verify': ['executor-preflight'],
         'land': ['run-landing-cycle'],
     },
@@ -175,6 +181,23 @@ def test_build_plan_sub_steps_match_kind_matrix(project_kind: str):
     assert plan['project_kind'] == project_kind
     actual = {stage['key']: stage['sub_steps'] for stage in plan['stages']}
     assert actual == _EXPECTED_SUB_STEPS[project_kind]
+
+
+@pytest.mark.parametrize('project_kind', ['meta', 'consumer'])
+@pytest.mark.parametrize('integrate', [True, False])
+def test_migrate_architecture_descriptors_is_the_last_stage_2_sub_step(project_kind: str, integrate: bool):
+    """The descriptor migration runs after every config reconcile sub-step, for both kinds.
+
+    It follows ``validate-bot-lists`` so the migration it writes is the last Stage 2
+    mutation before the build-map gate, and it is kind-invariant because every
+    discovered project carries descriptors an older tool version may have written.
+    """
+    by_key = {s['key']: s['sub_steps'] for s in upgrade.build_plan(integrate, project_kind)['stages']}
+
+    stage_2 = by_key['reconcile-config']
+    assert stage_2[-1] == 'migrate-architecture-descriptors'
+    assert stage_2.count('migrate-architecture-descriptors') == 1
+    assert stage_2 == _EXPECTED_STAGE_2_SUB_STEPS
 
 
 def test_build_plan_consumer_excludes_meta_only_sub_steps():

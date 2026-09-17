@@ -5,15 +5,19 @@ Script API for managing architecture data. Used during the enrichment workflow.
 ## Purpose
 
 These commands support the LLM enrichment workflow:
-- Reading raw discovered data (per-module `derived.json` files only).
+- Reading raw discovered data — crawled from the live worktree on demand, never
+  read back from a persisted `derived.json` (see § Data Sources).
 - Writing enrichment data (top-level `_project.json` for project-level
   fields, per-module `enriched.json` for module-scoped fields).
 
 For client/consumer commands, see [client-api.md](client-api.md).
 
-For the on-disk layout (`_project.json` + per-module `{derived,enriched}.json`)
+For the persisted on-disk layout (`_project.json` + per-module `enriched.json`)
 and the atomic tmp+swap protocol used by `discover --force`, see
-[architecture-persistence.md](architecture-persistence.md).
+[architecture-persistence.md](architecture-persistence.md). That document also
+covers `derived.json`, which the store does not persist: one on disk is a
+deliberately-captured baseline snapshot — the shape `diff-modules` and
+`descriptor-regression-check` read via `--pre` / `--pre-ref`.
 
 ## Script Pattern
 
@@ -34,27 +38,142 @@ runnable per-verb blocks.
 
 ### discover
 
-Run extension API discovery.
+Run extension API discovery, classify the rewrite against the on-disk
+descriptor tree, and write the requested part of it.
 
 ```bash
-architecture.py discover [--force]
+architecture.py discover [--force] [--regenerate-description] [--apply {all,plan,migration}]
 ```
 
 **Options**:
 | Option | Required | Default | Description |
 |--------|----------|---------|-------------|
 | `--force` | No | false | Overwrite existing `project-architecture/` tree (atomic tmp+swap) |
+| `--regenerate-description` | No | false | Blank the project `description` / `description_reasoning` instead of preserving the curated values |
+| `--apply` | No | `all` | Which part of the regenerated tree is written: `all`, `plan` or `migration` (see § Attribution) |
 
-**Output (TOON)**:
+The written layout (`_project.json` + per-module `enriched.json`) is staged
+under `.plan/project-architecture.tmp/` and then `os.replace`-ed onto the live
+path so the swap is atomic. What `--apply plan` / `--apply migration` stage is
+specified in [architecture-persistence.md](architecture-persistence.md)
+§ "Atomicity: tmp+swap protocol".
+
+#### Attribution
+
+Every call reads the on-disk pre-state (`_project.json` plus every module
+`enriched.json`) before the crawl, builds the full regenerated tree in memory,
+and decomposes the difference per document into delta classes. The class table
+is declared once, as `DELTA_CLASSES` in `scripts/_descriptor_delta.py`; this is
+its published form:
+
+| Class | Attribution | Detected when |
+|-------|-------------|---------------|
+| `module_added` | plan | the live crawl holds the module and the pre-state has no `enriched.json` for it |
+| `module_removed` | plan | the pre-state holds the module (document or index entry) and the live crawl does not |
+| `extensions_used_changed` | plan | `_project.json` `extensions_used` differs |
+| `index_entry_added` | plan | the pre-state has an `enriched.json` for the module but NO `_project.json` `modules` entry at all, and the regenerated entry is exactly the one that module's own document derives |
+| `generation_backfill` | migration | an existing document, or its index entry, had no `generation` header and receives one (`{by: architecture, tree_sha: null}` on the document; the document's header on the index entry) |
+| `concept_type_backfill` | migration | an existing document had no `type` and receives the legacy default `module` |
+| `key_packages_rekey` | migration | every `key_packages` difference is a dotted key replaced by its bridge path with a byte-identical value |
+| `unclassified` | undecidable | any other field difference in an existing document, its index entry or `_project.json`; an index entry present but not an object (a JSON `null` among them); and any pre-state document discover cannot consume — one that does not parse, or one whose `type` the concept vocabulary refuses |
+
+**Verdict** (`attribution`) — reduced from the observed classes:
+
+| Verdict | When |
+|---------|------|
+| `no_baseline` | no `_project.json` on disk — nothing to compare against |
+| `undecidable` | any `unclassified` class — dominates every other class |
+| `mixed` | at least one plan class and at least one migration class |
+| `plan_attributable` | plan classes only |
+| `migration_only` | migration classes only |
+| `clean` | no class — the regenerated tree carries nothing the pre-state lacks |
+
+**Named residual.** A structural drift that predates the plan — an `origin/main`
+index already lagging its tree — classifies as `plan`. It is real structural
+knowledge the plan's tree carries, not a tool migration. `index_entry_added` is
+the named case: a document written without its follow-up index write (a write
+`sync_module_index` no-ops on when `_project.json` is missing or unreadable)
+leaves a module documented but unindexed, and re-deriving the entry from the
+document adds no information the document did not already carry — so the repair
+is attributable and `--apply plan` performs it, rather than being refused as
+undecidable.
+
+**What `--apply` writes:**
+
+| `--apply` | Writes |
+|-----------|--------|
+| `all` (default) | The full regenerated tree on every call, whatever the verdict — `undecidable` and `no_baseline` included. `applied: all`. |
+| `plan` | The pre-state plus the plan classes only. Nothing on `undecidable`, on `no_baseline`, or when no plan class exists; nothing when the projection equals the pre-state. `applied: plan` or `none`. |
+| `migration` | The pre-state plus the migration classes only. Nothing on `undecidable`, on `no_baseline`, or when no migration class exists; nothing when the projection equals the pre-state. `applied: migration` or `none`. |
+
+First-run discovery (`no_baseline`) therefore stays with `all`.
+
+**Output fields**:
+| Field | Description |
+|-------|-------------|
+| `status` | `success` (or `exists` without `--force` when `_project.json` is present) |
+| `modules_discovered` | Modules in the live crawl |
+| `output_file` | The `_project.json` path |
+| `attribution` | The verdict |
+| `applied` | `all`, `plan`, `migration`, or `none` when nothing was written |
+| `delta_classes[]{class,attribution,module_count}` | Every observed class, in table order; `module_count` counts distinct modules, and a class seen only on `_project.json` top-level fields counts `0` |
+| `unclassified_fields[]{document,field}` | Each difference no class explains; `document` is relative to `.plan/project-architecture/` |
+| `unresolved_key_packages[]{module,key}` | `key_packages` keys the dotted→path migration kept dotted (no bridge, a non-resolving bridge path, or a target-key collision) |
+| `unresolved_key_packages_count` | Length of `unresolved_key_packages` — `0` when every key resolved |
+| `modules_examined` | Modules the classification compared (pre-state ∪ live crawl); `0` on `no_baseline` |
+
+**Output (TOON)** — `--apply plan` over a generation back-fill plus a partial
+re-key, no structural change:
 ```toon
-status	success
-modules_discovered	4
-output_file	.plan/project-architecture/_project.json
+status: success
+modules_discovered: 3
+output_file: .plan/project-architecture/_project.json
+attribution: migration_only
+applied: none
+delta_classes[2]{class,attribution,module_count}:
+  generation_backfill,migration,3
+  key_packages_rekey,migration,1
+unclassified_fields[0]:
+unresolved_key_packages[1]{module,key}:
+  api-sheriff,de.cuioss.sheriff.api
+unresolved_key_packages_count: 1
+modules_examined: 3
 ```
 
-The whole layout (`_project.json` + per-module `{derived,enriched}.json`)
-is staged under `.plan/project-architecture.tmp/` and then `os.replace`-ed
-onto the live path so the swap is atomic.
+**Output (TOON)** — `--apply plan` over the same tree after a module was added:
+```toon
+status: success
+modules_discovered: 4
+output_file: .plan/project-architecture/_project.json
+attribution: mixed
+applied: plan
+delta_classes[3]{class,attribution,module_count}:
+  module_added,plan,1
+  generation_backfill,migration,3
+  key_packages_rekey,migration,1
+unclassified_fields[0]:
+unresolved_key_packages[1]{module,key}:
+  api-sheriff,de.cuioss.sheriff.api
+unresolved_key_packages_count: 1
+modules_examined: 4
+```
+
+**Output (TOON)** — `--apply plan` when a curated field would change:
+```toon
+status: success
+modules_discovered: 3
+output_file: .plan/project-architecture/_project.json
+attribution: undecidable
+applied: none
+delta_classes[2]{class,attribution,module_count}:
+  generation_backfill,migration,3
+  unclassified,undecidable,0
+unclassified_fields[1]{document,field}:
+  _project.json,description
+unresolved_key_packages[0]:
+unresolved_key_packages_count: 0
+modules_examined: 3
+```
 
 ---
 
@@ -99,6 +218,9 @@ output_file	.plan/project-architecture/_project.json
 ---
 
 ## Read Commands (Derived Data)
+
+Both verbs answer from the live worktree crawl, so they report the tree as it
+stands now rather than the state of any snapshot on disk.
 
 ### derived
 
@@ -408,15 +530,25 @@ expected_file	.plan/project-architecture/_project.json
 `_project.json` lives at the top of `.plan/project-architecture/` and holds
 project identity plus the module index — a read-side pre-flight surface
 (per-module `description` + `generation` header), **not** the discovery
-gatekeeper (`iter_modules` crawls the live filesystem). Per-module files live
-under `.plan/project-architecture/{module}/{derived,enriched}.json`.
+gatekeeper (`iter_modules` crawls the live filesystem). The one persisted
+per-module file is `.plan/project-architecture/{module}/enriched.json`.
+
+**Current derived data is ephemeral, and a `derived.json` on disk is a
+snapshot.** Derived data is crawled from the live worktree on every read and is
+never written by `discover`, so no command below reads a `derived.json` for
+CURRENT state. A `{module}/derived.json` file exists only where a caller
+deliberately captured one (`save_module_derived`), and it is read as a BASELINE
+— by [client-api.md](client-api.md)'s `diff-modules` and
+`descriptor-regression-check` via `--pre` / `--pre-ref`, never as the tree's
+present state. See
+[architecture-persistence.md](architecture-persistence.md) § Storage.
 
 | Command | Reads | Writes |
 |---------|-------|--------|
-| `discover` | Extension API, run-configuration.json | `_project.json` + per-module `{derived,enriched}.json` (via tmp+swap) |
+| `discover` | Extension API, run-configuration.json, the on-disk `_project.json` + per-module `enriched.json` pre-state | `_project.json` + per-module `enriched.json` (via tmp+swap; `--apply plan` / `migration` write a projection or nothing) |
 | `init` | `_project.json` | per-module `enriched.json` (one per module) + `_project.json` (batched index write-through) |
-| `derived` | `_project.json` + per-module `derived.json` | - |
-| `derived-module` | `_project.json` + `{module}/derived.json` | - |
+| `derived` | `_project.json` + the live worktree crawl | - |
+| `derived-module` | the live worktree crawl | - |
 | `enrich project` | `_project.json` | `_project.json` |
 | `enrich module` | `{module}/enriched.json` | `{module}/enriched.json` + `_project.json` (index write-through) |
 | `enrich package` | `{module}/enriched.json` | `{module}/enriched.json` + `_project.json` (index write-through) |

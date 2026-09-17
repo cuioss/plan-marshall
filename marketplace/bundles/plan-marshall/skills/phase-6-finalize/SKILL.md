@@ -648,7 +648,7 @@ The 5-field prompt-body contract (`name`, `plan_id`, `skills[]`, exactly one of 
 - `record-metrics` is the last token-accounting step — it runs after all token-consuming steps and before the read-only `print-phase-breakdown`/`archive-plan` tail, on the still-live plan directory.
 - `archive-plan` must be last — it moves plan files.
 - `push` is a pure push barrier and is NOT HEAD-dependent; its re-entry skip/re-fire decision is parity-driven via `branch-sync-state`, and the dispatcher also re-invokes it explicitly after a post-PR `mutates_source` step commits.
-- `architecture-refresh` extracts `origin/main`'s committed `.plan/project-architecture/` tree as the pre-baseline.
+- `architecture-refresh` reads `origin/main`'s committed `.plan/project-architecture/` tree by ref (`--pre-ref origin/main`) as the pre-baseline.
 
 Per-step agent `<usage>` totals are persisted on disk by `manage-metrics accumulate-agent-usage` (called from step 5b below). The on-disk file `.plan/plans/{plan_id}/work/metrics-accumulator-6-finalize.toon` survives context compaction and is read by `default:record-metrics` at `end-phase` time. Do NOT maintain a parallel tally in model context — the on-disk file is authoritative.
 
@@ -1848,7 +1848,7 @@ In-step state checks (consulted by individual standards docs after dispatch — 
 | `standards/push.md` | `default:push` | Pure push barrier — freshness precondition + workflow-integration-git push (no commit logic; the dispatcher's instrumentation owns commits) |
 | `workflow/create-pr.md` | `default:create-pr` | PR existence check, body generation, CI pr create |
 | `standards/ci-verify.md` | `default:ci-verify` | Inline deterministic executor (`scripts/ci_verify.py`) — green CI marks done with zero dispatch; red CI classifies failures into the multi-failure-mode taxonomy, files one triage finding per failing check, and returns a per-producer needs-triage signal |
-| `standards/architecture-refresh.md` | `default:architecture-refresh` | Tier-0 deterministic `architecture discover --force` + `diff-modules --pre` driven `chore(architecture)` commit; Tier-1 LLM re-enrichment with `prompt`/`auto`/`disabled` modes; respects `architecture_refresh.tier_0` / `tier_1` run-config knobs and `change_type ∈ {bug_fix, verification}` shortcut |
+| `standards/architecture-refresh.md` | `default:architecture-refresh` | Tier-0 deterministic `architecture discover --force --apply plan` gated on its attribution verdict, with `diff-modules --pre-ref origin/main` scoping the `chore(architecture)` commit; Tier-1 LLM re-enrichment with `prompt`/`auto`/`disabled` modes; respects `architecture_refresh.tier_0` / `tier_1` run-config knobs and `change_type ∈ {bug_fix, verification}` shortcut |
 | `../automatic-review/SKILL.md` | `plan-marshall:automatic-review` | Review-bot comment FIND (per-signal review-arm gate; file `pr-comment` findings); the unified wait-region triage consumes them. Architectural flow: [`findings-pipeline.md`](../ref-workflow-architecture/standards/findings-pipeline.md) |
 | `workflow/sonar-roundtrip.md` | `default:sonar-roundtrip` | Sonar FIND (fetch new-code issues, file `sonar-issue` findings); the unified wait-region triage consumes them. Architectural flow: [`findings-pipeline.md`](../ref-workflow-architecture/standards/findings-pipeline.md) |
 | `workflow/lessons-capture.md` | `default:lessons-capture` | manage-lesson add command |

@@ -48,15 +48,17 @@ with plan start whether or not the artifact was written.
 
 ```toon
 status: success
+operation: preflight
 display_detail: "preflight client.toon written for {plan_id}"
 plan_id: {plan_id}
 degraded: true | false
+degrade_reason: "{what failed}"
 artifact_written: true | false
 artifact: client.toon
 ```
 
 `display_detail` is composed by the calling workflow and is ≤80 chars, ASCII,
 no trailing period. `artifact` is present only when `artifact_written` is
-true. `degraded` names whether any preflight-path step failed — invalid plan id,
-plan-directory resolution, unreadable artifact, write failure, or collector
-failure; the plan starts either way.
+true. `degraded` names whether any preflight-path step failed and
+`degrade_reason` names which one; it is present only when `degraded` is true.
+The plan starts either way.
