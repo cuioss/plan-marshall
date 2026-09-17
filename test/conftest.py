@@ -1436,7 +1436,7 @@ _SKIP_EXCEPTIONS: dict[str, tuple[str, str]] = {
     # what pytest records, so an explanatory gloss appended here would never match
     # and would read as a changed cause. Why this case has nothing to assert is
     # documented under ``in-suite-policy`` above, where prose belongs.
-    'test/plan-marshall/workflow-integration-github/test_refusal_recovery_arming.py'
+    'test/plan-marshall/workflow-integration-github/test_refusal_recovery_arming_detection.py'
     '::TestRefusalIsNeverABareTimeout::test_a_bots_declared_refusal_is_recognized_as_DATA[cuioss-review-bot]': (
         'in-suite-policy',
         'cuioss-review-bot declares no observed refusal phrasing',
