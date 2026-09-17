@@ -1441,6 +1441,23 @@ def cmd_branch_sync_state(args):
             'message': stderr or 'git rev-parse HEAD failed',
         }
 
+    if probe_source == 'main_checkout_fallback':
+        rc_feat, feat_out, _feat_err = run_git(['-C', str(worktree), 'rev-parse', '--verify', f'refs/heads/{branch}'])
+        feat_sha = feat_out.strip() if rc_feat == 0 else ''
+        if not feat_sha:
+            base_branch_unverified = _resolve_sync_base_branch(plan_id, worktree)
+            return {
+                'status': 'success',
+                'plan_id': plan_id,
+                'branch': branch,
+                'state': 'remote_absent_unverified',
+                'barrier_action': push_barrier_action('remote_absent_unverified'),
+                'head_sha': head_sha,
+                'base_branch': base_branch_unverified,
+                'probe_source': probe_source,
+            }
+        head_sha = feat_sha
+
     rc, remote_sha, _stderr = run_git(['-C', str(worktree), 'rev-parse', '--verify', '--quiet', f'origin/{branch}'])
     if rc == 0:
         state = 'synced' if head_sha == remote_sha else 'ahead'
