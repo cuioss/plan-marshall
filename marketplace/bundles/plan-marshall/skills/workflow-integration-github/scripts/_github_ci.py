@@ -80,8 +80,6 @@ def issue_comment_verifies_head(comment_body: str, head_sha: str) -> bool:
     candidate = head_sha.strip().lower()
     if not candidate:
         return False
-    if candidate in comment_body.lower():
-        return True
     for token in re.findall(r'\b[0-9a-f]{40}\b', comment_body, re.IGNORECASE):
         if token.lower() == candidate:
             return True
