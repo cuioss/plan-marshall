@@ -173,11 +173,11 @@ For contributors iterating on Plan Marshall bundles, the Antigravity developer w
 /sync-antigravity
 ----
 
-The project-level command (`.agents/commands/sync-antigravity.md`) invokes `.agents/scripts/sync_antigravity.py`. The deploy engine:
+The project-level command (`.agents/commands/sync-antigravity.md`) invokes the unified deploy engine (`marketplace/targets/sync.py --target antigravity`). The engine:
 * Deploys `skills/`, `agents/`, `commands/`, `plugin.json`, `install.sh`, and `README.adoc` to `~/.gemini/config/plugins/plan-marshall/` (or `--target-dir`).
 * Prunes stale managed entries in `skills/` and `commands/` belonging to the synced bundles while preserving unmanaged user files and agents.
 * Supports `--bundles <name>` for scoped deployments and `--dry-run` for non-destructive preview.
-* Emits a structured TOON report summarizing deployed and removed counts.
+* Emits a compact, structured TOON report summarizing deployed component counts (`skills_count`, `agents_count`, `commands_count`, `assets_count`, `deployed_count`) and pruned entries.
 
 == Verification & Test Coverage
 

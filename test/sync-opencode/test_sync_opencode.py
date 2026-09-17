@@ -1,21 +1,15 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 # ruff: noqa: I001
-"""Unit tests for the project-level sync_opencode.py deploy engine.
+"""Unit tests for the OpenCode deployment engine via marketplace/targets/sync.py.
 
-Covers the singular→plural path mapping, --dry-run (no filesystem
-effect, actions listed), --bundles subsetting, stale-managed-entry
-deletion, preservation of unmanaged destination entries, preservation
-of unselected bundles' entries under --bundles, and the
-prefix-ambiguous bundle derivation (longest match resolves exactly one
-bundle per entry) — all against temp directories, no live OpenCode
-install.
-
-The script under test lives at ``.opencode/scripts/sync_opencode.py``
-(project-level, deployed as the ``/sync-opencode`` OpenCode command from
-``.opencode/commands/``), not in any marketplace bundle — sync-opencode
-is meta-project-only tooling that does not ship to consumers of
-plan-marshall.
+Covers the singular→plural path mapping, config file deployment,
+--dry-run (no filesystem effect, actions listed), --bundles subsetting,
+stale-managed-entry deletion, preservation of unmanaged destination
+entries, preservation of unselected bundles' entries under --bundles,
+and the prefix-ambiguous bundle derivation (longest match resolves
+exactly one bundle per entry) — all against temp directories, no live
+OpenCode install.
 """
 
 from __future__ import annotations
@@ -25,7 +19,7 @@ from pathlib import Path
 from conftest import PROJECT_ROOT, ScriptResult, run_script
 from toon_parser import parse_toon
 
-_SYNC_OP_XPY = PROJECT_ROOT / '.opencode' / 'scripts' / 'sync_opencode.py'
+_SYNC_PY = PROJECT_ROOT / 'marketplace' / 'targets' / 'sync.py'
 
 # Singular source components → plural destination components, and the
 # emitter's singular directory layout under the source root.
@@ -55,7 +49,7 @@ def _make_source(target_root: Path, *, with_agent: bool = True) -> None:
 
 
 def _run(*args: str, cwd: Path | None = None) -> ScriptResult:
-    return run_script(_SYNC_OP_XPY, *args, cwd=cwd, timeout=60)
+    return run_script(_SYNC_PY, '--target', 'opencode', *args, cwd=cwd, timeout=60)
 
 
 # ---------------------------------------------------------------------------
@@ -95,8 +89,16 @@ def test_sync_opencode_deploy_counts_match_rows(tmp_path: Path):
     result = _run('--source', str(source), '--target-dir', str(dest), '--dry-run')
     assert result.returncode == 0
     data = parse_toon(result.stdout)
-    # Skill SKILL.md + skill standards sub-dir + command + 2 agents + config
-    assert int(data['deployed_count']) == 6
+    assert data['status'] == 'success'
+    assert data['target'] == 'opencode'
+    assert data['source'] == str(source.resolve())
+    assert data['destination'] == str(dest.resolve())
+    assert int(data['skills_count']) == 1
+    assert int(data['agents_count']) == 2
+    assert int(data['commands_count']) == 1
+    assert int(data['config_count']) == 1
+    assert int(data['deployed_count']) == 5
+    assert 'deployed' not in data
 
 
 # ---------------------------------------------------------------------------

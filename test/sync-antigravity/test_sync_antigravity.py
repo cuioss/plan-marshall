@@ -1,21 +1,15 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 # ruff: noqa: I001
-"""Unit tests for the project-level sync_antigravity.py deploy engine.
+"""Unit tests for the Antigravity deployment engine via marketplace/targets/sync.py.
 
-Covers the component deployment, root asset handling (plugin.json,
+Covers component deployment, root asset handling (plugin.json,
 install.sh, README.adoc), --dry-run (no filesystem effect, actions listed),
 --bundles subsetting, stale-managed-entry deletion, preservation of
 unmanaged destination entries, preservation of unselected bundles'
 entries under --bundles, and the prefix-ambiguous bundle derivation
 (longest match resolves exactly one bundle per entry) — all against
 temp directories, no live Antigravity install.
-
-The script under test lives at ``.agents/scripts/sync_antigravity.py``
-(project-level, deployed as the ``/sync-antigravity`` Antigravity command
-from ``.agents/commands/``), not in any marketplace bundle — sync-antigravity
-is meta-project-only tooling that does not ship to consumers of
-plan-marshall.
 """
 
 from __future__ import annotations
@@ -26,7 +20,7 @@ from pathlib import Path
 from conftest import PROJECT_ROOT, ScriptResult, run_script
 from toon_parser import parse_toon
 
-_SYNC_AG_PY = PROJECT_ROOT / '.agents' / 'scripts' / 'sync_antigravity.py'
+_SYNC_PY = PROJECT_ROOT / 'marketplace' / 'targets' / 'sync.py'
 
 # Antigravity uses plural component layout in both source and destination.
 _SKILL_SRC = 'skills/plan-marshall-sync-antigravity'
@@ -58,7 +52,7 @@ def _make_source(target_root: Path, *, with_agent: bool = True, with_root_assets
 
 
 def _run(*args: str, cwd: Path | None = None) -> ScriptResult:
-    return run_script(_SYNC_AG_PY, *args, cwd=cwd, timeout=60)
+    return run_script(_SYNC_PY, '--target', 'antigravity', *args, cwd=cwd, timeout=60)
 
 
 # ---------------------------------------------------------------------------
@@ -101,9 +95,16 @@ def test_sync_antigravity_deploy_counts_match_rows(tmp_path: Path):
     result = _run('--source', str(source), '--target-dir', str(dest), '--dry-run')
     assert result.returncode == 0
     data = parse_toon(result.stdout)
-    # Skill SKILL.md + standards sub-dir + command + 2 agents + plugin.json + install.sh + README.adoc = 8
-    assert int(data['deployed_count']) == 8
-    assert len(data['deployed']) == 8
+    assert data['status'] == 'success'
+    assert data['target'] == 'antigravity'
+    assert data['source'] == str(source.resolve())
+    assert data['destination'] == str(dest.resolve())
+    assert int(data['skills_count']) == 1
+    assert int(data['agents_count']) == 2
+    assert int(data['commands_count']) == 1
+    assert int(data['assets_count']) == 3
+    assert int(data['deployed_count']) == 7
+    assert 'deployed' not in data
 
 
 # ---------------------------------------------------------------------------

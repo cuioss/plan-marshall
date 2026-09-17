@@ -245,7 +245,7 @@ The Antigravity inner loop mirrors OpenCode and Claude Code, via the project-lev
 /sync-antigravity
 ```
 
-The middle hop (`target/antigravity/`) is produced by the Antigravity generator (`marketplace/targets/antigravity/`). `/sync-antigravity` deploys that tree into the Antigravity plugin directory (`~/.gemini/config/plugins/plan-marshall/` or custom `--target-dir`), removes stale **managed** entries (those in the `{bundle}-{skill}` namespace of the bundles being synced) while never touching unmanaged user entries or agents, and reports its actions as a TOON document. It is the exact counterpart of `/sync-opencode` for the Antigravity target, and like that command it is project-level — consumer projects never generate Antigravity output. See `.agents/commands/sync-antigravity.md` and `.agents/scripts/sync_antigravity.py` for parameters and flags.
+The middle hop (`target/antigravity/`) is produced by the Antigravity generator (`marketplace/targets/antigravity/`). `/sync-antigravity` deploys that tree into the Antigravity plugin directory (`~/.gemini/config/plugins/plan-marshall/` or custom `--target-dir`), removes stale **managed** entries (those in the `{bundle}-{skill}` namespace of the bundles being synced) while never touching unmanaged user entries or agents, and reports its actions as a TOON document. It is the exact counterpart of `/sync-opencode` for the Antigravity target, backed by the shared deploy engine in `marketplace/targets/sync.py`, and like that command it is project-level — consumer projects never generate Antigravity output. See `.agents/commands/sync-antigravity.md` and `marketplace/targets/sync.py` for parameters and flags.
 
 == Registered marketplace path
 
