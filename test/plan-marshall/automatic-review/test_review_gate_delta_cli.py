@@ -85,8 +85,6 @@ def _full_coverage(**overrides):
 # ---------------------------------------------------------------------------
 
 
-
-
 class TestCLI:
     """The ``assess`` verb's argparse surface and emitted TOON block.
 

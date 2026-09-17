@@ -47,8 +47,6 @@ _SHIPPED_BOTS = ['coderabbit', 'cuioss-review-bot', 'sourcery']
 # =============================================================================
 
 
-
-
 def test_strip_inline_comment_outside_quotes():
     """A ``#`` preceded by whitespace outside quotes starts a comment and is dropped."""
     assert bot_registry._strip_inline_comment('true          # central config').rstrip() == 'true'

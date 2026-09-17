@@ -47,8 +47,6 @@ _SHIPPED_BOTS = ['coderabbit', 'cuioss-review-bot', 'sourcery']
 # =============================================================================
 
 
-
-
 def test_ignore_patterns_are_nonempty_literal_markers():
     """Each bot exposes at least one literal whole-comment ignore marker."""
     coderabbit = bot_registry.ignore_patterns('coderabbit')

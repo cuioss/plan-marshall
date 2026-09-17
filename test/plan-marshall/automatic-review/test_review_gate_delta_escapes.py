@@ -85,8 +85,6 @@ def _full_coverage(**overrides):
 # ---------------------------------------------------------------------------
 
 
-
-
 def test_red_gates_exclude_the_pr_because_nothing_escaped():
     """A finding on a PR whose gates were RED is not a gate escape.
 

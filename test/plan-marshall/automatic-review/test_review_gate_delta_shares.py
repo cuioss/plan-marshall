@@ -85,8 +85,6 @@ def _full_coverage(**overrides):
 # ---------------------------------------------------------------------------
 
 
-
-
 def test_full_coverage_with_a_complete_partition_yields_a_share():
     """The one shape that produces a number: everyone reviewed, everything partitioned."""
     result = _full_coverage()

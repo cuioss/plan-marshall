@@ -47,8 +47,6 @@ _SHIPPED_BOTS = ['coderabbit', 'cuioss-review-bot', 'sourcery']
 # =============================================================================
 
 
-
-
 def test_severity_map_per_bot():
     """Each bot's marker->severity map is parsed as a nested mapping."""
     coderabbit = bot_registry.severity_map('coderabbit')

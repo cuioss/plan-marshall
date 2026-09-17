@@ -85,8 +85,6 @@ def _full_coverage(**overrides):
 # ---------------------------------------------------------------------------
 
 
-
-
 def test_a_padded_registry_entry_still_matches(monkeypatch):
     """Both sides of a registry comparison are normalised — the project's rule.
 

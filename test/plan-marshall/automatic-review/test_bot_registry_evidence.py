@@ -47,8 +47,6 @@ _SHIPPED_BOTS = ['coderabbit', 'cuioss-review-bot', 'sourcery']
 # =============================================================================
 
 
-
-
 def test_participation_evidence_marker_gates_only_coderabbits_issue_comment():
     """CodeRabbit gates its ``issue_comment`` shape on the review-verdict wrapper; nothing else is gated.
 

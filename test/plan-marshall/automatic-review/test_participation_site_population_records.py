@@ -393,8 +393,6 @@ guard_non_empty(PARTICIPATION_SITES, 'PARTICIPATION_SITES', f'{SCANNED_FILE_COUN
 guard_every_site_recorded(PARTICIPATION_SITES, SITE_EXPECTATIONS)
 
 
-
-
 @pytest.mark.parametrize('site', PARTICIPATION_SITES)
 def test_every_expectation_record_answers_in_the_closed_vocabulary(site):
     """A record may not answer in free text — an unconstrained answer compares to nothing."""

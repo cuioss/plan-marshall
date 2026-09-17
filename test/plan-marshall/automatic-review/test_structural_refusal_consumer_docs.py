@@ -151,8 +151,6 @@ _AWAIT_CAN_EVER_SUCCEED = {
 }
 
 
-
-
 _WAIT_OFFER = re.compile(
     r'"?\s*wait\s+(another|for|until)\b'
     r'|\bawait\s+(the\s+)?(window|reset|limit)\b'

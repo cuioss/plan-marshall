@@ -47,8 +47,6 @@ _SHIPPED_BOTS = ['coderabbit', 'cuioss-review-bot', 'sourcery']
 # =============================================================================
 
 
-
-
 def test_bot_kinds_equals_shipped_set_sorted():
     """``bot_kinds()`` returns the shipped bot set in deterministic sorted order."""
     assert bot_registry.bot_kinds() == sorted(_SHIPPED_BOTS)

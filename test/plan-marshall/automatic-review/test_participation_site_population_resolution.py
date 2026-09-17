@@ -393,8 +393,6 @@ guard_non_empty(PARTICIPATION_SITES, 'PARTICIPATION_SITES', f'{SCANNED_FILE_COUN
 guard_every_site_recorded(PARTICIPATION_SITES, SITE_EXPECTATIONS)
 
 
-
-
 @pytest.mark.parametrize('seed', SEED_SYMBOLS)
 def test_every_seed_symbol_resolves_to_at_least_one_site(seed):
     """No stale member: a seed resolving nowhere silently shrinks the population."""

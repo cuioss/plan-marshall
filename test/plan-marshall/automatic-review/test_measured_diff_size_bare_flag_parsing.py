@@ -85,8 +85,6 @@ def _parse(*argv: str):
 # =============================================================================
 
 
-
-
 def test_the_bare_flag_is_accepted_and_reads_as_unmeasured():
     """POSITIVE: a bare `--measured-diff-size` parses, and reads as unmeasured.
 

@@ -319,8 +319,6 @@ def _configurable_defaults() -> dict[str, str]:
     return defaults
 
 
-
-
 _CLEAN_REVIEW_HEADING = '### A credited clean review resolves `participated_but_empty`'
 
 

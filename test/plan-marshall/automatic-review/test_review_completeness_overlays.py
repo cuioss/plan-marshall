@@ -197,8 +197,6 @@ def _state_of(result: dict, bot_kind: str) -> str:
 # =============================================================================
 
 
-
-
 _CODERABBIT_CLEAN_REVIEW_SHAPE = 'issue_comment'
 
 

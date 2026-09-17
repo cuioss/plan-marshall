@@ -85,8 +85,6 @@ def _parse(*argv: str):
 # =============================================================================
 
 
-
-
 _KNOWN_CALL_SITE_DOCS: tuple[str, ...] = (
     'automatic-review/SKILL.md',
     'phase-6-finalize/standards/branch-cleanup.md',
