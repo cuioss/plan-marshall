@@ -386,8 +386,10 @@ call-site compatibility but no longer drives an internal wait. Output carries an
     (`holder_has_live_worktree` True), so it REFUSES to force-release a possibly
     mid-recovery holder and returns this discriminator instead. The existing
     branch-cleanup budget-exhaustion escalation surfaces it to the operator for
-    explicit confirmation. No new force-release CLI verb exists — the acquire
-    surface is unchanged apart from this added discriminator.
+    explicit confirmation. The deliberate reclaim path for a dead holder past
+    its hold budget is the `budget-reclaim` verb below (fail-closed on
+    `fresh`/`unknown`) — the acquire surface is unchanged apart from this added
+    discriminator.
 
 `--no-title-token` suppresses the terminal-title surface for this call (the
 move-back merge lock passes it so no spurious glyph appears). Otherwise `acquire`
@@ -471,6 +473,35 @@ on a `fresh` or `unknown` verdict, so a holder live in a sibling worktree is nev
 `--no-title-token` matches the acquire-side suppression: the caller never set a
 token, so there is nothing to clear. Otherwise the release path issues an
 owner-scoped `merge-lock` clear and settles the state for the next render event.
+
+### merge_lock — budget-reclaim
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock budget-reclaim \
+  --plan-id PLAN_ID --hold-start EPOCH --hold-budget-seconds SECONDS
+```
+
+The waiter-side reclaim for the orchestrator-layer `merge_hold_budget_seconds`
+bound (branch-cleanup records the wall-clock instant of acquire and calls this
+verb when the held duration reaches budget with admission still blocked):
+
+- **No lock file** → `status: success`, `action: nothing_to_reclaim`
+  (a concurrently-released lock is not an error).
+- **Elapsed (`now - hold_start`) below budget** → `status: success`,
+  `action: not_due` — the holder keeps its budget; the waiter keeps polling.
+- **Elapsed at/past budget** → the removal is CONDITIONAL on the recorded
+  holder's `holder_staleness` verdict, reusing the `release --require-stale`
+  eviction core: only a provably `stale` holder is evicted (observed-file
+  sidecar arbitration, dequeued from the FIFO front); a `fresh` or `unknown`
+  holder is REFUSED (`status: refused`, `reason: holder_not_provably_dead`),
+  so a live-but-slow holder is never force-released here.
+
+Caller bugs fail before the lock is touched: a non-finite or negative
+`--hold-start` (`error: invalid_hold_start`) and a non-finite or
+non-positive `--hold-budget-seconds` (`error: invalid_hold_budget`) return
+`status: error`. Every branch carries `elapsed_seconds` and
+`hold_budget_seconds` for budget auditing. No title-token surface: the caller
+waits; it holds nothing.
 
 ### merge_lock — rate-window claim
 
