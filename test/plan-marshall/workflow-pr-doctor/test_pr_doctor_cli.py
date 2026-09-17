@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 # ruff: noqa: I001
-"""Tests for pr-doctor — handoff parsing and CLI surface.
-"""
+"""Tests for pr-doctor — handoff parsing and CLI surface."""
 
 from __future__ import annotations
 
@@ -393,4 +392,3 @@ def test_main_plan_id_use_worktree_false_falls_back_to_main_checkout(clean_proje
         _run_main_with_argv(argv)
 
     assert pr_doctor.get_project_dir() == '/tmp/main-stub'
-

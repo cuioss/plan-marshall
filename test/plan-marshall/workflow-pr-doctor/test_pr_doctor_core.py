@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 # ruff: noqa: I001
-"""Tests for pr-doctor — diagnosis checks and retry policy.
-"""
+"""Tests for pr-doctor — diagnosis checks and retry policy."""
 
 from __future__ import annotations
 
@@ -343,4 +342,3 @@ def test_checks_sonar_with_skip_sonar_warns():
     assert any('sonar' in w.lower() and ('skip' in w.lower() or 'contradict' in w.lower()) for w in warnings), (
         f'Expected contradiction warning about sonar, got: {warnings}'
     )
-

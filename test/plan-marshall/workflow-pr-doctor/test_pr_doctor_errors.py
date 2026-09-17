@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 # ruff: noqa: I001
-"""Tests for pr-doctor — validation and error envelopes.
-"""
+"""Tests for pr-doctor — validation and error envelopes."""
 
 from __future__ import annotations
 
@@ -260,4 +259,3 @@ def test_main_emits_mutually_exclusive_error_on_both_flags(clean_project_dir):
 
     assert ctx.value.code == 2
     assert 'mutually_exclusive_args' in buf.getvalue()
-
