@@ -36,9 +36,10 @@ from marketplace.targets.component_targets import (
 )
 from marketplace.targets.fs_safety import refuse_tree_overlap, safe_rmtree
 
-# Path to the wrapper template used by user-invocable dual-emit.
+# Path to templates used by emitter.
 _TEMPLATES_DIR = Path(__file__).resolve().parent / 'templates'
 _USER_INVOCABLE_TEMPLATE = _TEMPLATES_DIR / 'user-invocable-command.md'
+_INSTALL_SCRIPT_TEMPLATE = _TEMPLATES_DIR / 'install.sh'
 
 ANTIGRAVITY_TARGET_NAME = 'antigravity'
 
@@ -416,6 +417,26 @@ def emit_bundles(
 
     manifest_path = _generate_plugin_json(output_dir, emitted_bundles)
     written.append(manifest_path)
+
+    # Emit root installer script from template
+    if _INSTALL_SCRIPT_TEMPLATE.is_file():
+        install_target = output_dir / 'install.sh'
+        shutil.copyfile(_INSTALL_SCRIPT_TEMPLATE, install_target)
+        install_target.chmod(0o755)
+        written.append(install_target)
+
+    # Emit root README.adoc copied from doc/user/install-antigravity.adoc
+    # so GitHub renders user installation guide on the dist-antigravity branch.
+    repo_root = marketplace_dir.parent.parent
+    doc_src = repo_root / 'doc' / 'user' / 'install-antigravity.adoc'
+    if not doc_src.is_file():
+        fallback_src = Path(__file__).resolve().parents[3] / 'doc' / 'user' / 'install-antigravity.adoc'
+        if fallback_src.is_file():
+            doc_src = fallback_src
+    if doc_src.is_file():
+        readme_target = output_dir / 'README.adoc'
+        shutil.copyfile(doc_src, readme_target)
+        written.append(readme_target)
 
     if bundle_list is None:
         _prune_stale_outputs(output_dir, written)

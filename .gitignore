@@ -49,9 +49,11 @@ target/
 
 
 # Pyprojectx (tool installations, downloaded on demand)
+.pyprojectx
 .pyprojectx/
 
 # Virtual environment (if using uv directly)
+.venv
 .venv/
 
 # Ad-hoc local interpreter environments (see doc/developer/build.adoc:
