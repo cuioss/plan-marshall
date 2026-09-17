@@ -1088,7 +1088,6 @@ def pytest_collection_modifyitems(items):
 #: silent on exactly the run its population matters on, the passing one.
 _ROUTING_GUARD_MODULES: tuple[tuple[str, str], ...] = (
     ('envelope-plan-id', 'plan-marshall/tools-integration-ci/test_envelope_contract_plan_id_placement.py'),
-    ('api-contract-parity', 'plan-marshall/workflow-integration-github/test_pr_landing_state.py'),
     ('gate-derivation', 'plan-marshall/phase-6-finalize/test_gate_derivation_diagnosability.py'),
     ('gate-arm-provenance', 'plan-marshall/phase-6-finalize/test_gate_arm_resolver_provenance.py'),
     ('display-detail-ceiling', 'plan-marshall/phase-6-finalize/test_display_detail_ceiling.py'),
@@ -1116,6 +1115,7 @@ _ROUTING_GUARD_MODULES: tuple[tuple[str, str], ...] = (
         'plan-marshall/tools-integration-ci/test_merge_shaped_offrouting_refusal_merge_shape.py',
     ),
     ('offrouting-offrouting', 'plan-marshall/tools-integration-ci/test_merge_shaped_offrouting_refusal_offrouting.py'),
+    ('api-contract-parity', 'plan-marshall/workflow-integration-github/test_pr_landing_state_states.py'),
 )
 
 
@@ -1391,7 +1391,7 @@ _SKIP_EXCEPTIONS: dict[str, tuple[str, str]] = {
     # what pytest records, so an explanatory gloss appended here would never match
     # and would read as a changed cause. Why this case has nothing to assert is
     # documented under ``in-suite-policy`` above, where prose belongs.
-    'test/plan-marshall/workflow-integration-github/test_refusal_recovery_arming.py'
+    'test/plan-marshall/workflow-integration-github/test_refusal_recovery_arming_detection.py'
     '::TestRefusalIsNeverABareTimeout::test_a_bots_declared_refusal_is_recognized_as_DATA[cuioss-review-bot]': (
         'in-suite-policy',
         'cuioss-review-bot declares no observed refusal phrasing',
