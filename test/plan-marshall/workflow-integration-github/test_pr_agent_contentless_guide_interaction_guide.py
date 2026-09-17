@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 # ruff: noqa: E402
 """End-to-end regression tests for PR-Agent's contentless Guide, producer + aggregator.
 
@@ -62,6 +63,7 @@ aggregator ships as a project-local script under ``.claude/skills/`` which
 ``PROJECT_ROOT``-relative ``sys.path`` prologue ``test_review_retrospective.py``
 uses.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -93,6 +95,8 @@ _findings_core = load_script_module('plan-marshall', 'manage-findings', '_findin
 query_findings = _findings_core.query_findings
 _PR_AGENT_LOGIN = 'cuioss-review-bot'
 _PR_AGENT_REQUIRED_MARKERS = bot_registry.contentless_review_markers('cuioss-review-bot')
+
+
 def _guide_comment(body, comment_id='guide-1', *, created_at=None, updated_at=None):
     """A ``cuioss-review-bot`` issue_comment carrying ``body`` — PR-Agent's one shape.
 
@@ -115,6 +119,8 @@ def _guide_comment(body, comment_id='guide-1', *, created_at=None, updated_at=No
     if updated_at is not None:
         comment['updated_at'] = updated_at
     return comment
+
+
 def _patch_provider(monkeypatch, comments, head_sha='deadbeef', head_committed_at=''):
     """Monkeypatch only the GitHub provider surface — the findings store stays real.
 
@@ -143,6 +149,8 @@ def _patch_provider(monkeypatch, comments, head_sha='deadbeef', head_committed_a
         },
     )
     monkeypatch.setattr(github_pr._github, 'fetch_pr_head_sha', lambda pr_number: head_sha)
+
+
 def _run_fetch(pr_number, plan_id):
     """Run the producer's FIND verb against ``plan_id``, with its plan directory present.
 
@@ -162,12 +170,18 @@ def _run_fetch(pr_number, plan_id):
     (get_base_dir() / 'plans' / plan_id).mkdir(parents=True, exist_ok=True)
     args = argparse.Namespace(pr_number=pr_number, plan_id=plan_id)
     return github_pr.cmd_fetch_findings(args)
+
+
 def _stored(plan_id):
     return query_findings(plan_id, finding_type='pr-comment')['findings']
+
+
 def _raw_body(finding):
     """Return the quarantined ``raw_input.body`` the producer persisted."""
     raw_input = finding.get('raw_input') or {}
     return raw_input.get('body', '')
+
+
 _CREATED_AT = '2026-07-30T09:00:00Z'
 _EDITED_AT = '2026-07-30T11:30:00Z'
 _HEAD_A = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
@@ -185,6 +199,8 @@ def test_guide_renderer_reproduces_the_observed_body_byte_for_byte():
     Equality against the byte-exact literal is what forecloses it.
     """
     assert guide_body(CLEAN_TESTS_ROW, CLEAN_SECURITY_ROW, CLEAN_FOCUS_ROW) == OBSERVED_CLEAN_GUIDE
+
+
 def test_guide_fixtures_track_the_declared_marker_set():
     """The four Guide shapes stay in step with the registry they exercise.
 
@@ -206,6 +222,8 @@ def test_guide_fixtures_track_the_declared_marker_set():
         absent = [m for m in _PR_AGENT_REQUIRED_MARKERS if m not in deviating]
         assert len(absent) == 1
         assert '<details>' not in deviating
+
+
 def test_guide_with_a_finding_is_stored_byte_identical(plan_context, monkeypatch):
     """One ``<details>`` finding vetoes the drop, and the stored body is unmodified.
 
@@ -229,6 +247,8 @@ def test_guide_with_a_finding_is_stored_byte_identical(plan_context, monkeypatch
     stored = _stored(plan_id)
     assert len(stored) == 1
     assert _raw_body(stored[0]) == GUIDE_WITH_FINDING
+
+
 @pytest.mark.parametrize(
     ('arm', 'body'),
     [

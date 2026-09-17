@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """GitHub-specific coverage for the ci/issue wait surface of github_ops.py.
 
 The provider-agnostic poll-handler contract — dispatch-table registration, the
@@ -16,6 +17,7 @@ Tests never shell out to the real ``gh`` CLI: every fetch helper and the auth
 check are monkeypatched, and ``time.sleep`` is neutralised so timeout branches
 run in constant time.
 """
+
 import argparse
 
 import _github_ci
@@ -47,6 +49,8 @@ from _ci_wait_contract import (
 )
 
 _GITHUB_FAIL_LOG = CI_LOG_FIXTURE_ROOT / 'github' / 'fail.log'
+
+
 @pytest.fixture
 def ci_ops():
     """Feed the provider-agnostic contract this module's provider ops module."""

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the PR-wide ``not_triggered`` observable (github_ops pull-request-runs).
 
 The observable answers one question: does ANY workflow run triggered by the
@@ -43,6 +44,7 @@ breaks identity assertions elsewhere and, worse, means a monkeypatch applied her
 targets globals the code under test does not read. The sibling suites
 (``test_github_ops_wait.py``) import these modules plainly for the same reason.
 """
+
 import inspect
 import json
 import re
@@ -52,6 +54,8 @@ import github_ops
 import pytest
 
 _HEAD_BRANCH = 'feature/some-work'
+
+
 def _code_without_docstring(func):
     """Return ``func``'s source with its docstring removed.
 
@@ -64,7 +68,11 @@ def _code_without_docstring(func):
     source = inspect.getsource(func)
     doc = func.__doc__
     return source.replace(doc, '') if doc else source
+
+
 _DETECTION_MODULES = (github_ops, _github_checks)
+
+
 def _resolve_detection_func(name):
     """Return the function ``name`` refers to, searched across both path modules."""
     for module in _DETECTION_MODULES:
@@ -72,6 +80,8 @@ def _resolve_detection_func(name):
         if inspect.isfunction(candidate) and candidate.__module__ in {m.__name__ for m in _DETECTION_MODULES}:
             return candidate
     return None
+
+
 def _module_level_functions():
     """Every function defined in either path module, keyed by name."""
     own = {m.__name__ for m in _DETECTION_MODULES}
@@ -81,9 +91,13 @@ def _module_level_functions():
             if inspect.isfunction(obj) and obj.__module__ in own:
                 found.setdefault(name, obj)
     return found
+
+
 def _calls_in(func):
     """The identifiers ``func`` calls, as a set."""
     return set(re.findall(r'\b([A-Za-z_][A-Za-z0-9_]*)\s*\(', inspect.getsource(func)))
+
+
 def _detection_path_functions():
     """Derive the detection-path function set by walking the entry point's calls.
 
@@ -120,12 +134,18 @@ def _detection_path_functions():
                 callers[callee].add(caller)
 
     return tuple(sorted(name for name in reachable if callers[name] <= reachable))
+
+
 def _run(event, conclusion='success'):
     """One workflow-run record in the shape the actions/runs API returns."""
     return {'id': 12345, 'event': event, 'status': 'completed', 'conclusion': conclusion}
+
+
 def _page(runs):
     """One page envelope of the actions/runs response."""
     return {'total_count': len(runs), 'workflow_runs': list(runs)}
+
+
 def _patch_provider(monkeypatch, pages, *, pr_extras=None, capture=None):
     """Patch the provider surface beneath ``pull_request_runs_result``.
 
@@ -156,7 +176,11 @@ def _patch_provider(monkeypatch, pages, *, pr_extras=None, capture=None):
         return 0, json.dumps(pages), ''
 
     monkeypatch.setattr(github_ops, 'run_gh', _run_gh)
+
+
 _DETECTION_PATH_FUNCS = _detection_path_functions()
+
+
 def _patch_envelope(monkeypatch, raw_stdout):
     """Patch the provider beneath ``fetch_branch_workflow_runs`` with raw stdout.
 
@@ -166,6 +190,8 @@ def _patch_envelope(monkeypatch, raw_stdout):
     """
     monkeypatch.setattr(github_ops, 'get_repo_info', lambda: ('cuioss', 'plan-marshall'))
     monkeypatch.setattr(github_ops, 'run_gh', lambda args, capture_json=False, timeout=60: (0, raw_stdout, ''))
+
+
 def _run_for_pr(event, pr_numbers, conclusion='success'):
     """A workflow run carrying an explicit ``pull_requests`` association."""
     run = _run(event, conclusion=conclusion)
@@ -183,6 +209,8 @@ def test_zero_runs_is_the_only_not_triggered_case(monkeypatch):
     assert result['not_triggered'] is True
     assert result['has_pull_request_run'] is False
     assert result['pull_request_run_count'] == 0
+
+
 @pytest.mark.parametrize('func', _DETECTION_PATH_FUNCS)
 def test_no_function_in_the_detection_path_mentions_mergeable_state(func):
     """Source-level prohibition, per function in the new detection path.
@@ -198,6 +226,8 @@ def test_no_function_in_the_detection_path_mentions_mergeable_state(func):
 
     assert 'mergeable_state' not in source
     assert 'mergeStateStatus' not in source
+
+
 def test_a_well_formed_empty_envelope_is_a_real_empty_read(monkeypatch):
     """An empty ``workflow_runs`` on a valid page is data, not a malformed shape.
 
@@ -211,6 +241,8 @@ def test_a_well_formed_empty_envelope_is_a_real_empty_read(monkeypatch):
 
     assert error == ''
     assert runs == []
+
+
 def test_this_prs_own_run_is_kept_when_the_branch_also_carries_another_prs(monkeypatch):
     """The complement: the exclusion removes only the foreign run, not every run.
 
@@ -232,6 +264,8 @@ def test_this_prs_own_run_is_kept_when_the_branch_also_carries_another_prs(monke
     assert result['not_triggered'] is False
     assert result['has_pull_request_run'] is True
     assert result['pull_request_run_count'] == 1
+
+
 def test_a_run_listing_several_prs_including_this_one_is_kept(monkeypatch):
     """A run may be associated with more than one PR — membership, not equality."""
     _patch_provider(monkeypatch, [_page([_run_for_pr('pull_request', [99, 42])])])
@@ -240,6 +274,8 @@ def test_a_run_listing_several_prs_including_this_one_is_kept(monkeypatch):
 
     assert result['not_triggered'] is False
     assert result['pull_request_run_count'] == 1
+
+
 @pytest.mark.parametrize(
     ('label', 'pr_number'),
     [('int', 42), ('numeric-string', '42')],
@@ -256,6 +292,8 @@ def test_the_requested_pr_is_matched_across_its_argument_spellings(label, pr_num
     result = github_ops.pull_request_runs_result(pr_number)
 
     assert result['not_triggered'] is False, f'{label} spelling excluded the PR own run'
+
+
 def test_the_predicate_never_consults_a_timestamp():
     """Existence only: no time comparison, so no dependence on clock skew.
 

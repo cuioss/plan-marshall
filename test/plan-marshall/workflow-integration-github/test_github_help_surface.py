@@ -1,9 +1,11 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for github.py script.
 
 Tests command structure and argument parsing.
 Note: Actual gh CLI operations require authentication and network.
 These tests focus on the script interface, not live operations.
 """
+
 import pytest
 
 from conftest import get_script_path, run_script
@@ -66,6 +68,8 @@ _MISSING_REQUIRED = [
     ((), None),
 ]
 _STRUCTURED_REFUSAL = [(('checks', 'status'),), (('pr', 'merge'),)]
+
+
 def _prepare_thread_reply_body(tmp_path, monkeypatch, body_text='Fixed it', plan_id='p'):
     """Seed PLAN_BASE_DIR with a prepared thread-reply body scratch file."""
     monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
@@ -114,6 +118,8 @@ def test_help_advertises_the_declared_surface(argv, advertised, absent):
         assert token in result.stdout, f'{token!r} missing from {" ".join(argv)} --help'
     for token in absent:
         assert token not in result.stdout, f'{token!r} still advertised by {" ".join(argv)} --help'
+
+
 def test_pr_thread_reply_fails_when_pending_review_remains(monkeypatch, tmp_path):
     """Regression: if a PENDING review owned by the viewer remains after the
     mutation, the handler must return status: error naming the stuck review id,

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for cmd_pr_merge branch-delete refactor.
 
 After the refactor:
@@ -12,6 +13,7 @@ The worktree fork exercises the scenario ``gh pr merge --delete-branch``
 cannot serve: the merge must finish cleanly and the branch delete must
 round-trip purely through the REST leaf, never through local git.
 """
+
 import argparse
 import json
 from datetime import UTC, datetime
@@ -33,6 +35,8 @@ def _install_common(monkeypatch):
         'get_repo_info',
         lambda: ('octo', 'repo'),
     )
+
+
 def _install_probe(
     monkeypatch,
     *,
@@ -64,6 +68,8 @@ def _install_probe(
 
     monkeypatch.setattr(github_ops, '_probe_merge_queue_state', probe_stub)
     return captured
+
+
 def _pr_view_success_payload() -> dict:
     """Minimal ``view_pr_data`` success payload with a head branch."""
     return {
@@ -79,6 +85,8 @@ def _pr_view_success_payload() -> dict:
         'mergeable': 'mergeable',
         'merge_state': 'clean',
     }
+
+
 _CORROBORATION_PAYLOADS: dict[str, dict] = {
     # Landed merge — the only shape that corroborates.
     'merged': {
@@ -111,6 +119,8 @@ _CORROBORATION_PAYLOADS: dict[str, dict] = {
         'headRefOid': 'abc123',
     },
 }
+
+
 def _capture_run_gh(
     *,
     merge_ok: bool = True,
@@ -166,6 +176,8 @@ def _capture_run_gh(
         return 0, '', ''
 
     return run_gh_stub, captured
+
+
 def _install_merge_preconditions(monkeypatch, *, view_payload: dict | None = None) -> dict:
     """Install the stubs ``cmd_pr_merge``'s own guards require.
 
@@ -177,6 +189,8 @@ def _install_merge_preconditions(monkeypatch, *, view_payload: dict | None = Non
     """
     monkeypatch.setattr(github_ops, 'view_pr_data', lambda head=None: view_payload or _pr_view_success_payload())
     return _install_probe(monkeypatch)
+
+
 def _merge_ns(*, delete_branch: bool, pr_number: int | None = 42, head: str | None = None):
     return argparse.Namespace(
         pr_number=pr_number,
@@ -184,10 +198,14 @@ def _merge_ns(*, delete_branch: bool, pr_number: int | None = 42, head: str | No
         strategy='merge',
         delete_branch=delete_branch,
     )
+
+
 def _assert_no_delete_branch_flag(captured_calls: list[list[str]]) -> None:
     """No ``--delete-branch`` may appear in ANY captured gh invocation."""
     for call in captured_calls:
         assert '--delete-branch' not in call, f'cmd_pr_merge leaked --delete-branch into gh args: {call}'
+
+
 def _safe_merge_ns(
     *,
     pr_number: int | None = 42,
@@ -212,6 +230,8 @@ def _safe_merge_ns(
         poll_timeout=poll_timeout,
         poll_interval=poll_interval,
     )
+
+
 def _pr_view_payload(merge_state: str, *, state: str | None = None) -> dict:
     """A ``view_pr_data`` success payload with the given ``merge_state``.
 
@@ -225,6 +245,8 @@ def _pr_view_payload(merge_state: str, *, state: str | None = None) -> dict:
     if state is not None:
         payload['state'] = state
     return payload
+
+
 def _counting_view(payload: dict):
     """A ``view_pr_data`` stub returning ``payload`` and counting invocations."""
     calls = {'i': 0}
@@ -264,6 +286,8 @@ def test_pr_merge_merge_failure_skips_branch_delete(monkeypatch):
     assert pr_view_calls['count'] == 1, 'only the merge-queue preflight may consult pr view when the merge itself fails'
 
     _assert_no_delete_branch_flag(captured)
+
+
 def test_pr_merge_refuses_when_base_merge_queue_required(monkeypatch):
     """A required merge queue on the PR's base branch refuses the immediate merge.
 
@@ -292,6 +316,8 @@ def test_pr_merge_refuses_when_base_merge_queue_required(monkeypatch):
     # Nothing was attempted: no merge, no branch delete.
     assert captured == [], captured
     assert probe['branch'] == 'main', probe
+
+
 def test_pr_merge_preflight_probe_error_fails_closed(monkeypatch):
     """An unresolvable queue state refuses the merge rather than merging blind."""
     _install_common(monkeypatch)
@@ -310,6 +336,8 @@ def test_pr_merge_preflight_probe_error_fails_closed(monkeypatch):
     assert result['status'] == 'error', result
     assert 'scope' in result['error'], result
     assert captured == [], captured
+
+
 @pytest.mark.parametrize('post_merge_state', ['closed', 'open', 'merged_without_timestamp', 'unreadable'])
 def test_pr_merge_uncorroborated_merge_refuses_and_skips_branch_delete(monkeypatch, post_merge_state):
     """An uncorroborated merge reports error and deletes NOTHING.
@@ -335,6 +363,8 @@ def test_pr_merge_uncorroborated_merge_refuses_and_skips_branch_delete(monkeypat
     assert len(merge_calls) == 1, merge_calls
     delete_calls = [c for c in captured if c[:3] == ['api', '-X', 'DELETE']]
     assert delete_calls == [], delete_calls
+
+
 def test_safe_merge_preflight_refuses_when_merge_queue_required(monkeypatch):
     """A required merge queue on the PR's base branch refuses the immediate merge."""
     _install_common(monkeypatch)
@@ -362,6 +392,8 @@ def test_safe_merge_preflight_refuses_when_merge_queue_required(monkeypatch):
     merge_calls = [c for c in captured if c[:2] == ['pr', 'merge']]
     assert merge_calls == [], merge_calls
     assert view_calls['i'] == 1, view_calls
+
+
 def test_safe_merge_preflight_probe_error_fails_closed(monkeypatch):
     """A probe error (auth scope / malformed rules) refuses the merge, fail-closed."""
     _install_common(monkeypatch)
@@ -381,6 +413,8 @@ def test_safe_merge_preflight_probe_error_fails_closed(monkeypatch):
     assert 'scope' in result['error'], result
     merge_calls = [c for c in captured if c[:2] == ['pr', 'merge']]
     assert merge_calls == [], merge_calls
+
+
 @pytest.mark.parametrize(
     'discriminator',
     [
@@ -403,6 +437,8 @@ def test_safe_merge_preflight_proceeds_for_non_configured(monkeypatch, discrimin
     assert result['merge_path'] == 'polled_clean', result
     merge_call = next(c for c in captured if c[:2] == ['pr', 'merge'])
     assert '--admin' not in merge_call, merge_call
+
+
 def test_safe_merge_preflight_probes_pr_own_base_branch(monkeypatch):
     """The preflight probes the PR's OWN base branch, not the repo default."""
     _install_common(monkeypatch)
@@ -419,6 +455,8 @@ def test_safe_merge_preflight_probes_pr_own_base_branch(monkeypatch):
     # The probe was driven with the PR's non-default base branch, not 'main'.
     assert probe['branch'] == 'develop', probe
     assert probe['calls'] == 1, probe
+
+
 def test_safe_merge_preflight_empty_base_branch_fails_closed(monkeypatch):
     """An empty base branch in the PR view refuses the merge, fail-closed."""
     _install_common(monkeypatch)
@@ -435,6 +473,8 @@ def test_safe_merge_preflight_empty_base_branch_fails_closed(monkeypatch):
     assert 'base branch' in result['error'], result
     merge_calls = [c for c in captured if c[:2] == ['pr', 'merge']]
     assert merge_calls == [], merge_calls
+
+
 def test_safe_merge_preflight_view_failure_fails_closed(monkeypatch):
     """A failed PR view during the preflight refuses the merge, fail-closed."""
     _install_common(monkeypatch)

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """``github_pr.cmd_fetch_findings``: cross-iteration dedup, classification, and participation.
 
 The producer-side dedup keys on ``(bot_kind, comment_id)`` for every bot kind,
@@ -11,6 +12,7 @@ The findings store is REAL (isolated via the autouse ``plan_context``
 ``fetch_pr_comments_data``, ``fetch_pr_head_sha``) is monkeypatched, so the dedup
 path exercises the genuine ``_findings_core`` add/query round-trip.
 """
+
 import argparse
 import json
 import sys
@@ -84,9 +86,13 @@ PLAN_IDS: tuple[str, ...] = (
     'p',
 )
 PLAN_IDS += tuple(f'gh-pr-preupgrade-dedup-{bot_kind}' for bot_kind in CURRENCY_SUBJECT_BOTS)
+
+
 def _evidence_plan_id(prefix: str, bot_kind: str, shape: str) -> str:
     """The kebab-case plan id a per-(bot, shape) evidence-gate case files against."""
     return f'gh-pr-evidence-{prefix}-{bot_kind}-{shape.replace("_", "-")}'
+
+
 PLAN_IDS += tuple(
     _evidence_plan_id(prefix, bot_kind, shape)
     for bot_kind, shape, _marker in MARKER_GATED_EVIDENCE
@@ -135,6 +141,8 @@ _COMMENTS = [
         'resolved': False,
     },
 ]
+
+
 def _patch_provider(monkeypatch, comments, head_sha='deadbeef', head_committed_at=''):
     """Monkeypatch the GitHub provider surface ``github_pr`` reaches through ``_github``.
 
@@ -176,6 +184,8 @@ def _patch_provider(monkeypatch, comments, head_sha='deadbeef', head_committed_a
         'run_gh',
         lambda *_a, **_k: (0, '{"additions": 900, "deletions": 340}', ''),
     )
+
+
 def _run_fetch(pr_number, plan_id):
     """Run the producer's FIND verb against ``plan_id``, with its plan directory present.
 
@@ -198,6 +208,8 @@ def _run_fetch(pr_number, plan_id):
     (get_base_dir() / 'plans' / plan_id).mkdir(parents=True, exist_ok=True)
     args = argparse.Namespace(pr_number=pr_number, plan_id=plan_id)
     return github_pr.cmd_fetch_findings(args)
+
+
 def _run_fetch_classified(pr_number, plan_id, *, required_bots=None, optional_bots=None):
     """Invoke ``cmd_fetch_findings`` with explicit participation-classification lists.
 
@@ -215,12 +227,18 @@ def _run_fetch_classified(pr_number, plan_id, *, required_bots=None, optional_bo
         optional_bots=optional_bots,
     )
     return github_pr.cmd_fetch_findings(args)
+
+
 def _self_response_body(comment_id='c1', reply='Fixed in the follow-up commit; see the updated guard.'):
     """Render a real ``post_responses`` batched body via the production emitter."""
     return github_pr._build_batched_response_body([(comment_id, reply)])
+
+
 def _at(second):
     """ISO-8601 ``created_at`` on a fixed day — only the relative order matters."""
     return f'2026-07-29T10:{second:02d}:00Z'
+
+
 def _reviewer_comment(comment_id, created_at, body):
     """A substantive coderabbit inline comment — provider ``kind`` group 1."""
     return {
@@ -234,6 +252,8 @@ def _reviewer_comment(comment_id, created_at, body):
         'resolved': False,
         'created_at': created_at,
     }
+
+
 def _self_comment(comment_id, created_at):
     """A real batched self-response — provider ``kind`` group 3 (``issue_comment``)."""
     return {
@@ -245,6 +265,8 @@ def _self_comment(comment_id, created_at):
         'resolved': False,
         'created_at': created_at,
     }
+
+
 _RATE_LIMIT_NOTICES = {
     # CodeRabbit: ``## Rate limit exceeded`` callout + body sentence.
     'coderabbit': (
@@ -288,12 +310,16 @@ _GENUINE_RATE_LIMIT_MENTIONS = {
         'add caching before the next release.'
     ),
 }
+
+
 def _stored_comment_id(finding):
     """Extract the ``comment_id`` value from a stored pr-comment finding's detail."""
     for detail_line in (finding.get('detail') or '').splitlines():
         if detail_line.startswith('comment_id:'):
             return detail_line.split(':', 1)[1].strip()
     return ''
+
+
 _DRIFTED_CODERABBIT_NOTICE = (
     '> [!WARNING] > ## Usage limit reached > '
     'This reviewer has reached its usage limit. Reviews will resume after the limit resets.'
@@ -324,6 +350,8 @@ _REWORDED_SOURCERY_REFUSAL = (
     f'Sorry, {_SOURCERY_DECLARED_REFUSAL_MARKER.replace("larger than", "over")} our current plan.'
 )
 _RECOGNISED_SOURCERY_REFUSAL = f'Sorry, {_SOURCERY_DECLARED_REFUSAL_MARKER} our current plan.'
+
+
 def _sourcery_comment(comment_id, body):
     """A sourcery comment in its declared publish shape (``review_body``)."""
     return {
@@ -334,6 +362,8 @@ def _sourcery_comment(comment_id, body):
         'body': body,
         'resolved': False,
     }
+
+
 def _arm_the_enumerative_arm(monkeypatch, max_chars=400):
     """Give the enumerative arm a threshold so it can fire.
 
@@ -355,6 +385,8 @@ def _arm_the_enumerative_arm(monkeypatch, max_chars=400):
         'UNRECOGNISED_REFUSAL_MAX_CHARS',
         max_chars,
     )
+
+
 _BAD_KIND_COMMENT = {
     'id': 'cbad',
     'author': 'coderabbitai',
@@ -413,6 +445,8 @@ def test_unclassified_bot_comments_are_ingested_and_reported(plan_context, monke
     bot_kinds = {f.get('bot_kind') for f in stored}
     # The unclassified bots' findings are present and usable, not merely counted.
     assert {'coderabbit', 'cuioss-review-bot', 'sourcery'} <= bot_kinds
+
+
 def test_pipeline_trigger_is_noise_while_a_rate_limit_notice_is_a_refusal(plan_context, monkeypatch):
     """A pipeline trigger is noise; a rate-limit notice is a REFUSAL, and the two differ.
 
@@ -491,6 +525,8 @@ def test_pipeline_trigger_is_noise_while_a_rate_limit_notice_is_a_refusal(plan_c
     assert 'comment_id: genuine-1' in detail
     assert 'comment_id: trigger-1' not in detail
     assert 'comment_id: ratelimit-1' not in detail
+
+
 def test_self_authored_response_excluded_and_counted_separately(plan_context, monkeypatch):
     """Our own batched response is excluded, counted apart from noise, and files no finding.
 
@@ -547,6 +583,8 @@ def test_self_authored_response_excluded_and_counted_separately(plan_context, mo
     detail = stored[0].get('detail') or ''
     assert 'comment_id: genuine-1' in detail
     assert 'comment_id: self-1' not in detail
+
+
 def test_human_comment_quoting_the_disposition_heading_is_still_stored(plan_context, monkeypatch):
     """The false-positive boundary: quoting the heading is feedback, not our output.
 
@@ -592,6 +630,8 @@ def test_human_comment_quoting_the_disposition_heading_is_still_stored(plan_cont
     details = ' '.join(f.get('detail') or '' for f in stored)
     assert 'comment_id: quote-1' in details
     assert 'comment_id: quote-2' in details
+
+
 def test_accumulated_self_responses_at_the_bound_report_the_loop(plan_context, monkeypatch):
     """At the bound the guard REPORTS exhaustion — it never passes silently.
 
@@ -626,6 +666,8 @@ def test_accumulated_self_responses_at_the_bound_report_the_loop(plan_context, m
     assert 'self_response_loop_persist_failed' not in result
     # Every excluded self response is subtracted, so no mismatch false-positive.
     assert result['producer_mismatch_hash_id'] is None
+
+
 def test_converged_history_at_the_bound_does_not_report_a_loop(plan_context, monkeypatch):
     """Three ALREADY-CONVERGED cycles must not be read as one non-converging cycle.
 
@@ -669,6 +711,8 @@ def test_converged_history_at_the_bound_does_not_report_a_loop(plan_context, mon
     # The reviewer comments are still ingested normally.
     assert result['count_stored'] == 3
     assert result['producer_mismatch_hash_id'] is None
+
+
 def test_unbroken_self_response_run_still_reports_the_loop(plan_context, monkeypatch):
     """The termination guarantee survives: a genuinely stuck cycle is still caught.
 
@@ -695,6 +739,8 @@ def test_unbroken_self_response_run_still_reports_the_loop(plan_context, monkeyp
     assert result['self_response_loop_hash_id']
     assert 'self_response_loop_persist_failed' not in result
     assert result['producer_mismatch_hash_id'] is None
+
+
 def test_interleaved_pipeline_triggers_do_not_reset_the_run(plan_context, monkeypatch):
     """The pipeline cannot reset its own guard by posting re-review triggers.
 
@@ -733,6 +779,8 @@ def test_interleaved_pipeline_triggers_do_not_reset_the_run(plan_context, monkey
     assert result['count_skipped_noise'] == 2
     assert result['count_stored'] == 1
     assert result['producer_mismatch_hash_id'] is None
+
+
 def test_reviewer_comment_after_a_stuck_run_reopens_the_cycle(plan_context, monkeypatch):
     """Fresh reviewer activity breaks the run — the next response starts a new cycle.
 
@@ -759,6 +807,8 @@ def test_reviewer_comment_after_a_stuck_run_reopens_the_cycle(plan_context, monk
     assert result['self_response_loop_detected'] is False
     assert result['self_response_loop_hash_id'] is None
     assert result['count_stored'] == 1
+
+
 @pytest.mark.parametrize('shape', sorted(_RATE_LIMIT_NOTICES))
 def test_refusal_notice_recognizes_every_bot_shape(shape):
     """A rate-limit / service notice from any bot shape is recognized as a refusal.
@@ -768,6 +818,8 @@ def test_refusal_notice_recognizes_every_bot_shape(shape):
     adding a future bot needs no recognizer edit.
     """
     assert github_pr._is_refusal_notice(_RATE_LIMIT_NOTICES[shape]) is True
+
+
 @pytest.mark.parametrize('shape', sorted(_GENUINE_RATE_LIMIT_MENTIONS))
 def test_refusal_notice_keeps_genuine_rate_limit_mentions(shape):
     """A genuine reviewer comment that merely mentions a rate limit is NOT a refusal.
@@ -778,9 +830,13 @@ def test_refusal_notice_keeps_genuine_rate_limit_mentions(shape):
     statement AND a notice shape are BOTH required).
     """
     assert github_pr._is_refusal_notice(_GENUINE_RATE_LIMIT_MENTIONS[shape]) is False
+
+
 def test_refusal_notice_empty_body_is_not_a_refusal():
     """An empty body is not a refusal (the recognizer returns False)."""
     assert github_pr._is_refusal_notice('') is False
+
+
 def test_fetch_findings_surfaces_rate_limit_refusals_bot_agnostically(plan_context, monkeypatch):
     """fetch_findings SURFACES rate-limit refusals from every bot — including an unknown one.
 
@@ -878,6 +934,8 @@ def test_fetch_findings_surfaces_rate_limit_refusals_bot_agnostically(plan_conte
     stored = query_findings(plan_id, finding_type='pr-comment')['findings']
     stored_ids = {_stored_comment_id(f) for f in stored}
     assert stored_ids == {'cr-genuine', 'sr-genuine', 'unk-genuine'}
+
+
 def test_fetch_findings_reports_no_drift_for_an_unattributable_refusal(plan_context, monkeypatch):
     """An unregistered author has no declared wording that COULD have drifted.
 
@@ -902,6 +960,8 @@ def test_fetch_findings_reports_no_drift_for_an_unattributable_refusal(plan_cont
     assert result['count_skipped_refusal'] == 1
     assert result['refused_bots'] == []
     assert result['refusal_pattern_drift'] == []
+
+
 def test_fetch_findings_splits_a_refusing_bot_from_a_participating_one(plan_context, monkeypatch):
     """A bot that only refused lands in ``refused_bots``, never in ``participated_bots``.
 
@@ -963,6 +1023,8 @@ def test_fetch_findings_splits_a_refusing_bot_from_a_participating_one(plan_cont
     assert result['refused_bots'] == ['coderabbit']
     # ...and is NOT laundered into the participation set by its publish shape.
     assert result['participated_bots'] == [{'bot_kind': 'sourcery', 'evidence_kind': 'review_body'}]
+
+
 def test_an_unrecognised_refusal_files_no_finding_and_denies_credit(plan_context, monkeypatch):
     """The defect this plan closes: the reworded refusal is neither filed nor credited.
 
@@ -993,6 +1055,8 @@ def test_an_unrecognised_refusal_files_no_finding_and_denies_credit(plan_context
     assert record['bot_kind'] == 'sourcery'
     # The layer value is READ from the shared vocabulary, never restated as a literal.
     assert record['layer'] == github_pr.REFUSAL_LAYER_ENUMERATIVE
+
+
 def test_the_unmutated_literal_still_classifies_as_a_recognised_refusal(plan_context, monkeypatch):
     """Matched negative control: the case cannot be passing via the structural arm.
 
@@ -1013,6 +1077,8 @@ def test_the_unmutated_literal_still_classifies_as_a_recognised_refusal(plan_con
     assert result['refused_bots'] == ['sourcery']
     assert result['unrecognised_refusal'] == []
     assert result['producer_mismatch_hash_id'] is None
+
+
 def test_a_human_authored_short_comment_is_never_an_unrecognised_refusal(plan_context, monkeypatch):
     """A human's short comment is review feedback and must still be filed.
 
@@ -1041,18 +1107,26 @@ def test_a_human_authored_short_comment_is_never_an_unrecognised_refusal(plan_co
     assert result['count_stored'] == 1
     assert result['unrecognised_refusal'] == []
     assert result['count_skipped_refusal'] == 0
+
+
 def test_refusal_cause_size_matches_the_declared_size_pattern():
     """A refusal matching a bot's ``refusal_size_patterns`` is caused by diff SIZE."""
     assert github_pr.refusal_cause(_SOURCERY_SIZE_NOTICE, 'sourcery') == 'size'
+
+
 def test_refusal_cause_quota_is_the_default_for_a_non_size_refusal():
     """Any refusal that is not a declared size pattern is a rate/budget QUOTA."""
     # Sourcery's weekly notice is a quota, not a size ceiling.
     assert github_pr.refusal_cause(_RATE_LIMIT_NOTICES['sourcery'], 'sourcery') == 'quota'
     # CodeRabbit declares no size patterns, so its refusal is quota.
     assert github_pr.refusal_cause(_RATE_LIMIT_NOTICES['coderabbit'], 'coderabbit') == 'quota'
+
+
 def test_refusal_cause_unregistered_bot_is_quota():
     """A structurally-detected refusal with no bot_kind declares no size pattern → quota."""
     assert github_pr.refusal_cause(_RATE_LIMIT_NOTICES['unknown'], None) == 'quota'
+
+
 def test_refusal_cause_size_pattern_is_bot_scoped():
     """The size pattern is read from the NAMED bot's registry, not any bot's.
 
@@ -1060,6 +1134,8 @@ def test_refusal_cause_size_pattern_is_bot_scoped():
     classifies quota — the cause is grounded in the bot's own declared patterns.
     """
     assert github_pr.refusal_cause(_SOURCERY_SIZE_NOTICE, 'coderabbit') == 'quota'
+
+
 def test_fetch_findings_reports_refusal_causes(plan_context, monkeypatch):
     """fetch_findings emits refused_causes[] — the size vs quota CAUSE per refusing bot.
 
@@ -1102,6 +1178,8 @@ def test_fetch_findings_reports_refusal_causes(plan_context, monkeypatch):
     assert result['refused_size_caps'] == [{'bot_kind': 'sourcery', 'cap': '150000 diff characters'}]
     # ...and the measurement that makes the recorded gap auditable rather than asserted.
     assert result['measured_diff_size'] == '1240 changed lines'
+
+
 def test_fetch_findings_measures_the_diff_on_a_size_refusal_with_no_stated_cap(plan_context, monkeypatch):
     """⛔ The measurement is gated on the CAUSE, never on a successfully-extracted cap.
 
@@ -1136,6 +1214,8 @@ def test_fetch_findings_measures_the_diff_on_a_size_refusal_with_no_stated_cap(p
     assert result['refused_size_caps'] == []
     # ...but the diff was still measured, so the gap is bounded rather than opaque.
     assert result['measured_diff_size'] == '1240 changed lines'
+
+
 def test_fetch_findings_does_not_measure_the_diff_without_a_size_refusal(plan_context, monkeypatch):
     """A quota-only refusal names no diff ceiling, so it buys no provider round-trip.
 

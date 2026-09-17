@@ -1,8 +1,10 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for github_ops.py --head flag routing.
 
 Verifies that branch-aware operations forward the --head value to gh and that
 the --pr-number/--head dual-flag validation works as expected.
 """
+
 import argparse
 
 import ci_base
@@ -18,6 +20,8 @@ _CORROBORATION_JSON_MARKER = 'mergedAt'
 _CORROBORATED_MERGE_PAYLOAD = (
     '{"state": "MERGED", "mergedAt": "2026-01-01T00:00:00Z", "baseRefName": "main", "headRefOid": "abc123"}'
 )
+
+
 def _capture_run_gh():
     """Return a (run_gh_stub, captured_args_list) pair."""
     captured: list[list[str]] = []
@@ -40,6 +44,8 @@ def _capture_run_gh():
         return 0, '', ''
 
     return run_gh_stub, captured
+
+
 _PROVIDERS = (github_ops, gitlab_ops)
 _PROVIDER_IDS = ('github', 'gitlab')
 _PROVIDER_FIXTURES = {
@@ -53,8 +59,12 @@ _PROVIDER_FIXTURES = {
     },
 }
 _CREATE_PR_DOC = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-6-finalize' / 'workflow' / 'create-pr.md'
+
+
 def _wait_for_comments_args(timeout=2, interval=1):
     return argparse.Namespace(pr_number=42, timeout=timeout, interval=interval)
+
+
 def _patch_graphql(monkeypatch, pull_request):
     """Patch auth, repo resolution, and the GraphQL call for fetch_pr_comments_data."""
     monkeypatch.setattr(github_ops, 'check_auth', _ok_auth)
@@ -64,10 +74,16 @@ def _patch_graphql(monkeypatch, pull_request):
         'run_graphql',
         lambda query, variables: (0, {'repository': {'pullRequest': pull_request}}, ''),
     )
+
+
 def _comment_record(result, comment_id):
     """Return the projected comment record carrying ``comment_id``."""
     return next(c for c in result['comments'] if c['id'] == comment_id)
+
+
 _GO_ZERO_GH = '0001-01-01T00:00:00Z'
+
+
 def _mixed_pass_skipping_checks_json():
     return (
         '['
@@ -75,6 +91,8 @@ def _mixed_pass_skipping_checks_json():
         '{"name":"b","state":"SKIPPED","bucket":"skipping","startedAt":"","completedAt":"","link":"","workflow":"CI"}'
         ']'
     )
+
+
 def _skipped_only_checks_json():
     """A check set containing ONE check whose state is SKIPPED.
 
@@ -88,6 +106,8 @@ def _skipped_only_checks_json():
         '"startedAt":"","completedAt":"","link":"","workflow":"CI"}'
         ']'
     )
+
+
 _REUSABLE_LINK = 'https://github.com/octo/repo/actions/runs/123/job/456'
 _RUN_ONLY_LINK = 'https://github.com/octo/repo/actions/runs/123'
 
@@ -103,11 +123,15 @@ def test_ci_status_with_head(monkeypatch):
     assert result['status'] == 'success', result
     checks_call = next(c for c in captured if c[:2] == ['pr', 'checks'])
     assert checks_call[2] == 'feature/x'
+
+
 def test_fetch_pr_head_sha_returns_empty_on_unparseable_json(monkeypatch):
     """Malformed gh JSON yields an empty string rather than raising."""
     monkeypatch.setattr(github_ops, 'run_gh', lambda *_a, **_kw: (0, 'not-json', ''))
 
     assert github_ops.fetch_pr_head_sha(42) == ''
+
+
 def test_fetch_pr_reviews_with_commits_defaults_missing_fields(monkeypatch):
     """Reviews missing user/state/submitted_at/commit_id/body get safe defaults."""
     monkeypatch.setattr(github_ops, 'get_repo_info', lambda: ('octo', 'repo'))
@@ -120,6 +144,8 @@ def test_fetch_pr_reviews_with_commits_defaults_missing_fields(monkeypatch):
     assert result['reviews'] == [
         {'user': 'unknown', 'state': 'UNKNOWN', 'submitted_at': '', 'commit_sha': '', 'body': ''}
     ]
+
+
 def test_fetch_pr_reviews_with_commits_no_repo_info(monkeypatch):
     """When repo owner/name cannot be resolved, an error envelope is returned."""
     monkeypatch.setattr(github_ops, 'get_repo_info', lambda: (None, None))
@@ -129,6 +155,8 @@ def test_fetch_pr_reviews_with_commits_no_repo_info(monkeypatch):
     assert result['status'] == 'error'
     assert result['operation'] == 'fetch_pr_reviews_with_commits'
     assert 'owner/name' in result['error']
+
+
 def test_fetch_pr_comments_data_surfaces_updated_at_on_issue_comments(monkeypatch):
     """An issue comment's ``updatedAt`` is projected as ``updated_at``."""
     _patch_graphql(
@@ -157,6 +185,8 @@ def test_fetch_pr_comments_data_surfaces_updated_at_on_issue_comments(monkeypatc
     assert record['kind'] == 'issue_comment'
     assert record['created_at'] == '2026-07-26T09:27:15Z'
     assert record['updated_at'] == '2026-07-26T11:00:00Z'
+
+
 def test_pr_wait_for_comments_times_out_when_no_new_comments(monkeypatch):
     """Timeout path: count never grows above baseline → returns timed_out: true, new_count: 0."""
     monkeypatch.setattr(github_ops, 'check_auth', _ok_auth)
@@ -174,6 +204,8 @@ def test_pr_wait_for_comments_times_out_when_no_new_comments(monkeypatch):
     assert result['baseline_count'] == 5
     assert result['final_count'] == 5
     assert result['new_count'] == 0
+
+
 def test_main_project_dir_equals_form(tmp_path, monkeypatch, capsys):
     """The --project-dir=PATH form is also honoured by github_ops.main().
 
@@ -214,6 +246,8 @@ def test_main_project_dir_equals_form(tmp_path, monkeypatch, capsys):
     github_ops.main()
     assert ci_base.get_default_cwd() == worktree
     capsys.readouterr()  # drain
+
+
 def test_main_routes_plan_id_via_extract_routing_args(monkeypatch):
     """github_ops.main() MUST consume router-level --plan-id and set the default cwd."""
     import file_ops as _resolver_core
@@ -260,6 +294,8 @@ def test_main_routes_plan_id_via_extract_routing_args(monkeypatch):
     from ci_base import set_default_cwd
 
     set_default_cwd(None)
+
+
 def test_ci_status_aggregates_pass_plus_skipping_as_success(monkeypatch):
     """pass + skipping → overall=success (skipping is non-failing)."""
     payload = _mixed_pass_skipping_checks_json()
@@ -276,6 +312,8 @@ def test_ci_status_aggregates_pass_plus_skipping_as_success(monkeypatch):
     result = github_ops.cmd_ci_status(ns)
     assert result['status'] == 'success'
     assert result['overall_status'] == 'success', result
+
+
 def test_ci_wait_aggregates_pass_plus_skipping_as_success(monkeypatch):
     """ci_wait: pass + skipping → final_status=success (not 'mixed')."""
     import json as _json
@@ -305,6 +343,8 @@ def test_ci_wait_aggregates_pass_plus_skipping_as_success(monkeypatch):
     result = github_ops.cmd_ci_wait(ns)
     assert result['status'] == 'success'
     assert result['final_status'] == 'success', result
+
+
 def test_fetch_pr_overall_ci_status_pass_plus_skipping_is_success(monkeypatch):
     """_fetch_pr_overall_ci_status: pass + skipping → 'success'."""
     payload = _mixed_pass_skipping_checks_json()
@@ -318,6 +358,8 @@ def test_fetch_pr_overall_ci_status_pass_plus_skipping_is_success(monkeypatch):
     ok, overall = github_ops._fetch_pr_overall_ci_status(42)
     assert ok is True
     assert overall == 'success'
+
+
 def test_ci_wait_exits_immediately_for_skipped_only_check_set(monkeypatch):
     """A SKIPPED-only check set MUST be treated as all-terminal so cmd_ci_wait
     exits on its first poll with final_status=success and an empty
@@ -356,6 +398,8 @@ def test_ci_wait_exits_immediately_for_skipped_only_check_set(monkeypatch):
     assert result.get('failing_checks', []) == [], (
         f'SKIPPED-only check set must produce zero failing_checks; got {result.get("failing_checks")!r}'
     )
+
+
 def test_ci_status_and_ci_wait_agree_on_skipped_bearing_set(monkeypatch):
     """cmd_ci_status() and cmd_ci_wait() MUST agree on a SKIPPED-bearing
     check set: both resolve to success. A divergence would surface as
@@ -411,6 +455,8 @@ def test_ci_status_and_ci_wait_agree_on_skipped_bearing_set(monkeypatch):
         'disagree on a SKIPPED-bearing check set — the bucket-vs-state '
         'classification bug is back'
     )
+
+
 def test_cmd_ci_logs_returns_error_context_window_not_head(monkeypatch):
     """cmd_ci_logs must surface the failure tail via the error-context filter.
 

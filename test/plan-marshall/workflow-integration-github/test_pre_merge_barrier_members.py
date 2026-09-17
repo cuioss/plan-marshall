@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Fixture-accurate provider tests for the D1 pre-merge comment-completeness barrier.
 
 The barrier re-runs the ``github_pr fetch_findings`` producer immediately before
@@ -42,6 +43,7 @@ The provider response is built from a real fixture shape (mirroring
 ``test_github_pr.py``), so a green fixture cannot diverge from production
 provider behaviour.
 """
+
 import argparse
 
 import pytest
@@ -93,6 +95,8 @@ _LATE_COMMENT = {
     'line': 42,
     'resolved': False,
 }
+
+
 def _patch_provider(monkeypatch, comments):
     """Monkeypatch the GitHub provider surface ``github_pr`` reaches through ``_github``."""
     monkeypatch.setattr(github_pr._github, 'check_auth', lambda: (True, ''))
@@ -108,21 +112,31 @@ def _patch_provider(monkeypatch, comments):
         },
     )
     monkeypatch.setattr(github_pr._github, 'fetch_pr_head_sha', lambda pr_number: 'deadbeef')
+
+
 def _run_fetch(pr_number, plan_id):
     args = argparse.Namespace(pr_number=pr_number, plan_id=plan_id)
     return github_pr.cmd_fetch_findings(args)
+
+
 def _pending(plan_id):
     """The pending pr-comment findings — the exact set the barrier query returns."""
     return [
         f for f in query_findings(plan_id, finding_type='pr-comment')['findings'] if f.get('resolution') == 'pending'
     ]
+
+
 def _resolve_all_pending(plan_id):
     """Simulate the triage pass resolving every fetched comment (bot handled)."""
     for f in query_findings(plan_id, finding_type='pr-comment')['findings']:
         if f.get('resolution') == 'pending':
             resolve_finding(plan_id, f['hash_id'], 'fixed')
+
+
 review_completeness = load_script_module('plan-marshall', 'automatic-review', 'review_completeness.py', register=False)
 _CODERABBIT_ONLY = [_INITIAL_COMMENTS[0]]
+
+
 def _participation_csv(fetch_result):
     """Render ``fetch_findings``'s participation rows as the barrier's CSV argument.
 
@@ -131,6 +145,8 @@ def _participation_csv(fetch_result):
     so the tests cross it too rather than hand-building an already-parsed map.
     """
     return ','.join(f'{row["bot_kind"]}:{row["evidence_kind"]}' for row in fetch_result['participated_bots'])
+
+
 def _completeness(plan_id, participated_csv, required, optional, **observation):
     """Run the participation predicate as the barrier does.
 
@@ -146,6 +162,8 @@ def _completeness(plan_id, participated_csv, required, optional, **observation):
         participated_bots=review_completeness.parse_participation(participated_csv),
         **observation,
     )
+
+
 _merge_auth = load_script_module(
     'plan-marshall', 'manage-status', '_cmd_merge_authorization.py', '_barrier_merge_auth_cmd'
 )
@@ -154,9 +172,13 @@ _DOCS_ONLY_HEAD = 'd0c50n1ya1b2c3d4e5f60718293a4b5c6d7e8f90'
 _REBASED_HEAD = '76c7200b6f1e2d3c4b5a69788796a5b4c3d2e1f0'
 _BARRIER_GAP = 'review-barrier-gap'
 _MERGE_ACTION_GAP = 'merge-action'
+
+
 def _state_of(verdict, bot):
     """Return the single taxonomy member ``verdict`` assigned to ``bot``."""
     return {row['bot_kind']: row['state'] for row in verdict['bot_states']}[bot]
+
+
 def _barrier_projection(verdict, pending):
     """Project a verdict onto the fields the barrier's merge decision rests on.
 
@@ -176,6 +198,8 @@ def _barrier_projection(verdict, pending):
         # pending comment blocks, and an unproven required bot blocks independently.
         'merge_allowed': verdict['participation_complete'] and not pending,
     }
+
+
 _MEMBER_OBSERVATIONS = {
     review_completeness.STATE_PARTICIPATED_STALE: {'stale_participation_bots': ['cuioss-review-bot']},
     review_completeness.STATE_NOT_TRIGGERED: {'not_triggered': True},
@@ -191,9 +215,13 @@ _MEMBER_OBSERVATIONS = {
         'refused_causes': {'cuioss-review-bot': 'size'},
     },
 }
+
+
 def _parity_plan_id(member):
     """The plan id the parity case for ``member`` files its findings against."""
     return f'barrier-parity-{member.replace("_", "-")}'
+
+
 PLAN_IDS += tuple(_parity_plan_id(member) for member in _MEMBER_OBSERVATIONS)
 _UNPRODUCIBLE_MEMBERS = {
     review_completeness.STATE_ABSENT: (
@@ -255,6 +283,8 @@ def test_absent_required_bot_blocks_merge_though_no_comment_is_pending(plan_cont
     assert {r['bot_kind']: r['state'] for r in verdict['bot_states']}['cuioss-review-bot'] == 'absent'
     # The ceiling travels with the verdict: a satisfied quorum is never a quality claim.
     assert verdict['proves'] == 'participation_only'
+
+
 def test_optional_bot_silence_does_not_block_merge(plan_context, monkeypatch):
     """Silence from an OPTIONAL bot is the configured way to accept non-participation.
 
@@ -281,6 +311,8 @@ def test_optional_bot_silence_does_not_block_merge(plan_context, monkeypatch):
     # The silent optional bots are still REPORTED — accepted, never hidden.
     assert 'cuioss-review-bot' in verdict['unproven_bots']
     assert 'sourcery' in verdict['unproven_bots']
+
+
 def test_the_swept_members_cover_the_taxonomys_blocking_set():
     """⛔ Totality: every blocking member is swept, or excluded WITH a reason.
 
@@ -308,6 +340,8 @@ def test_the_swept_members_cover_the_taxonomys_blocking_set():
         'Add an observation to _MEMBER_OBSERVATIONS, or an explicit reason to '
         '_UNPRODUCIBLE_MEMBERS.'
     )
+
+
 def test_the_structural_member_is_actually_swept():
     """The member the previous hand-list omitted is in the swept set, by name.
 
@@ -317,6 +351,8 @@ def test_the_structural_member_is_actually_swept():
     """
     assert review_completeness.STATE_REFUSED_STRUCTURAL in _MEMBER_OBSERVATIONS
     assert review_completeness.STATE_REFUSED_STRUCTURAL not in _UNPRODUCIBLE_MEMBERS
+
+
 @pytest.mark.parametrize(
     ('member', 'observation'),
     [pytest.param(member, observation, id=member) for member, observation in sorted(_MEMBER_OBSERVATIONS.items())],

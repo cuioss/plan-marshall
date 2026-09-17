@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Fixture-accurate provider tests for the D1 pre-merge comment-completeness barrier.
 
 The barrier re-runs the ``github_pr fetch_findings`` producer immediately before
@@ -42,6 +43,7 @@ The provider response is built from a real fixture shape (mirroring
 ``test_github_pr.py``), so a green fixture cannot diverge from production
 provider behaviour.
 """
+
 import argparse
 
 import pytest
@@ -93,6 +95,8 @@ _LATE_COMMENT = {
     'line': 42,
     'resolved': False,
 }
+
+
 def _patch_provider(monkeypatch, comments):
     """Monkeypatch the GitHub provider surface ``github_pr`` reaches through ``_github``."""
     monkeypatch.setattr(github_pr._github, 'check_auth', lambda: (True, ''))
@@ -108,21 +112,31 @@ def _patch_provider(monkeypatch, comments):
         },
     )
     monkeypatch.setattr(github_pr._github, 'fetch_pr_head_sha', lambda pr_number: 'deadbeef')
+
+
 def _run_fetch(pr_number, plan_id):
     args = argparse.Namespace(pr_number=pr_number, plan_id=plan_id)
     return github_pr.cmd_fetch_findings(args)
+
+
 def _pending(plan_id):
     """The pending pr-comment findings — the exact set the barrier query returns."""
     return [
         f for f in query_findings(plan_id, finding_type='pr-comment')['findings'] if f.get('resolution') == 'pending'
     ]
+
+
 def _resolve_all_pending(plan_id):
     """Simulate the triage pass resolving every fetched comment (bot handled)."""
     for f in query_findings(plan_id, finding_type='pr-comment')['findings']:
         if f.get('resolution') == 'pending':
             resolve_finding(plan_id, f['hash_id'], 'fixed')
+
+
 review_completeness = load_script_module('plan-marshall', 'automatic-review', 'review_completeness.py', register=False)
 _CODERABBIT_ONLY = [_INITIAL_COMMENTS[0]]
+
+
 def _participation_csv(fetch_result):
     """Render ``fetch_findings``'s participation rows as the barrier's CSV argument.
 
@@ -131,6 +145,8 @@ def _participation_csv(fetch_result):
     so the tests cross it too rather than hand-building an already-parsed map.
     """
     return ','.join(f'{row["bot_kind"]}:{row["evidence_kind"]}' for row in fetch_result['participated_bots'])
+
+
 def _completeness(plan_id, participated_csv, required, optional, **observation):
     """Run the participation predicate as the barrier does.
 
@@ -146,12 +162,16 @@ def _completeness(plan_id, participated_csv, required, optional, **observation):
         participated_bots=review_completeness.parse_participation(participated_csv),
         **observation,
     )
+
+
 _merge_auth = load_script_module(
     'plan-marshall', 'manage-status', '_cmd_merge_authorization.py', '_barrier_merge_auth_cmd'
 )
 _lifecycle = load_script_module('plan-marshall', 'manage-status', '_cmd_lifecycle.py', '_barrier_merge_auth_lifecycle')
 _DOCS_ONLY_HEAD = 'd0c50n1ya1b2c3d4e5f60718293a4b5c6d7e8f90'
 _REBASED_HEAD = '76c7200b6f1e2d3c4b5a69788796a5b4c3d2e1f0'
+
+
 def _make_plan(plan_id):
     """Create the plan status.json the merge-authorization store lives in."""
     _lifecycle.cmd_create(
@@ -164,8 +184,12 @@ def _make_plan(plan_id):
             use_worktree=False,
         )
     )
+
+
 _BARRIER_GAP = 'review-barrier-gap'
 _MERGE_ACTION_GAP = 'merge-action'
+
+
 def _grant(plan_id, kind, head, gap_class, granted_over, reason):
     return _merge_auth.cmd_merge_authorization_grant(
         argparse.Namespace(
@@ -177,11 +201,15 @@ def _grant(plan_id, kind, head, gap_class, granted_over, reason):
             reason=reason,
         )
     )
+
+
 def _authorization_check(plan_id, head):
     """Check as the barrier does — always against the gap class IT reports."""
     return _merge_auth.cmd_merge_authorization_check(
         argparse.Namespace(plan_id=plan_id, head=head, gap_class=_BARRIER_GAP)
     )
+
+
 _MEMBER_OBSERVATIONS = {
     review_completeness.STATE_PARTICIPATED_STALE: {'stale_participation_bots': ['cuioss-review-bot']},
     review_completeness.STATE_NOT_TRIGGERED: {'not_triggered': True},
@@ -197,9 +225,13 @@ _MEMBER_OBSERVATIONS = {
         'refused_causes': {'cuioss-review-bot': 'size'},
     },
 }
+
+
 def _parity_plan_id(member):
     """The plan id the parity case for ``member`` files its findings against."""
     return f'barrier-parity-{member.replace("_", "-")}'
+
+
 PLAN_IDS += tuple(_parity_plan_id(member) for member in _MEMBER_OBSERVATIONS)
 _UNPRODUCIBLE_MEMBERS = {
     review_completeness.STATE_ABSENT: (
@@ -296,6 +328,8 @@ def test_stale_override_does_not_satisfy_barrier_after_head_advances(plan_contex
     assert reseeked['authorized_kinds'] == ['barrier-ask-override']
     assert reseeked['admissible_kinds'] == ['barrier-ask-override']
     assert reseeked['lapsed_kinds'] == []
+
+
 def test_consent_over_a_different_gap_at_the_same_head_does_not_satisfy_barrier(plan_context, monkeypatch):
     """The CROSS-KIND case: same HEAD, valid authorization, still inadmissible.
 

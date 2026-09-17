@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for github_re_review.py — the bot_kind-keyed re-review strategy registry.
 
 Covers the three concerns of the post-merge re-review registry:
@@ -74,6 +75,7 @@ works" from "this machine's store happens to hold no claim", and the negative
 control alone proves only that a claim CAN refuse, not that it is suppressed by
 default.
 """
+
 import argparse
 import sys
 import time
@@ -98,6 +100,8 @@ _EXPIRED_WINDOW = {
     'seconds_remaining': 0.0,
 }
 _LIVE_WINDOW_READER = github_re_review.read_rate_window
+
+
 def _window_reader(observation):
     """Build a ``(plan_id, bot_kind, pr_number) -> dict`` reader for ``observation``.
 
@@ -109,6 +113,8 @@ def _window_reader(observation):
         return dict(observation)
 
     return _read
+
+
 @pytest.fixture(autouse=True)
 def _neutralize_rate_window(monkeypatch):
     """Hold the trigger guard's window read at NO STORED RECORD for every test here.
@@ -127,6 +133,8 @@ def _neutralize_rate_window(monkeypatch):
     named in the module docstring is what keeps this fixture honest.
     """
     monkeypatch.setattr(github_re_review, 'read_rate_window', _window_reader(_NO_RECORD_WINDOW))
+
+
 @pytest.fixture(autouse=True)
 def _no_provider_comments(monkeypatch):
     """Default every test to an empty provider comment list.
@@ -141,6 +149,8 @@ def _no_provider_comments(monkeypatch):
         'fetch_pr_comments_data',
         lambda pr_number, unresolved_only=False: {'status': 'success', 'comments': []},
     )
+
+
 def _patch_comments(monkeypatch, comments):
     """Override the provider comment list for the comment-signal tests."""
     monkeypatch.setattr(
@@ -148,10 +158,14 @@ def _patch_comments(monkeypatch, comments):
         'fetch_pr_comments_data',
         lambda pr_number, unresolved_only=False: {'status': 'success', 'comments': list(comments)},
     )
+
+
 def _noop_sleep(monkeypatch):
     """Make poll_until's sleep a no-op so timeout-path tests finish fast."""
     monkeypatch.setattr(ci_base.time, 'sleep', lambda *_a, **_kw: None)
     monkeypatch.setattr(time, 'sleep', lambda *_a, **_kw: None)
+
+
 def _review(commit_sha, submitted_at, *, user='coderabbit[bot]', state='COMMENTED', body=''):
     """Build a review row in the shape fetch_pr_reviews_with_commits returns.
 
@@ -167,6 +181,8 @@ def _review(commit_sha, submitted_at, *, user='coderabbit[bot]', state='COMMENTE
         'commit_sha': commit_sha,
         'body': body,
     }
+
+
 def _comment(author, *, created_at, updated_at='', body='## PR Reviewer Guide', kind='issue_comment'):
     """Build a comment row in the shape fetch_pr_comments_data returns."""
     return {
@@ -181,12 +197,16 @@ def _comment(author, *, created_at, updated_at='', body='## PR Reviewer Guide', 
         'created_at': created_at,
         'updated_at': updated_at,
     }
+
+
 _GUARD_SWEEP_POPULATION: list[str] = bot_registry.bot_kinds()
 _GUARD_SWEEP_POPULATION_SIZE = len(_GUARD_SWEEP_POPULATION)
 _GUARD_PR_NUMBER = 42
 _GUARD_PUSH_TIME = '2026-01-01T00:00:00Z'
 _PR_AGENT_LOGIN = 'cuioss-review-bot'
 _TRIGGER = '2026-01-01T00:02:00Z'
+
+
 def _await_with_comments(monkeypatch, comments, *, reviews=None, bot_kind='cuioss-review-bot', head_sha='headsha'):
     """Run ``await_fresh_review`` over a fixed comment (and review) set.
 
@@ -203,6 +223,8 @@ def _await_with_comments(monkeypatch, comments, *, reviews=None, bot_kind='cuios
     _patch_comments(monkeypatch, comments)
     strategy = github_re_review.resolve_strategy(bot_kind)
     return strategy.await_fresh_review(42, head_sha, _TRIGGER, bot_kind=bot_kind, timeout=1, interval=0)
+
+
 _HEAD_SHA = 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678'
 _OTHER_SHA = '0f1e2d3c4b5a69788796a5b4c3d2e1f098765432'
 _HEAD_SHA_URL = f'https://github.com/cuioss/plan-marshall/commit/{_HEAD_SHA}'
@@ -242,6 +264,8 @@ _CODERABBIT_GENUINE_COMMENT = (
 _CODERABBIT_REFUSAL_WITH_ETA = (
     '> [!WARNING] > ## Review limit reached > Please wait 12 minutes and 30 seconds before requesting another review.'
 )
+
+
 def _arm_enumerative(monkeypatch, max_chars: int = 200) -> None:
     """Give the enumerative arm a threshold, patched where the predicate READS it.
 
@@ -255,7 +279,11 @@ def _arm_enumerative(monkeypatch, max_chars: int = 200) -> None:
         'UNRECOGNISED_REFUSAL_MAX_CHARS',
         max_chars,
     )
+
+
 _UNRECOGNISED_REFUSAL = 'Not reviewing this one.'
+
+
 def _run_recovery_action(monkeypatch, capsys, *extra: str) -> dict:
     """Drive ``main()`` through the ``recovery-action`` verb; return the parsed TOON.
 
@@ -282,6 +310,8 @@ def test_resolve_strategy_coderabbit_is_generic_with_coderabbit_trigger():
     assert strategy is not None
     assert isinstance(strategy, github_re_review._ReReviewStrategy)
     assert strategy.trigger_comment == '@coderabbitai review'
+
+
 def test_resolve_strategy_pr_agent_is_generic_with_pr_agent_trigger():
     """cuioss-review-bot resolves to the same generic strategy class, carrying its own trigger."""
     strategy = github_re_review.resolve_strategy('cuioss-review-bot')
@@ -289,6 +319,8 @@ def test_resolve_strategy_pr_agent_is_generic_with_pr_agent_trigger():
     assert strategy is not None
     assert isinstance(strategy, github_re_review._ReReviewStrategy)
     assert strategy.trigger_comment == '/review'
+
+
 def test_resolve_strategy_sourcery_is_generic_with_sourcery_trigger():
     """sourcery resolves to the same generic strategy class, carrying its own trigger."""
     strategy = github_re_review.resolve_strategy('sourcery')
@@ -296,8 +328,12 @@ def test_resolve_strategy_sourcery_is_generic_with_sourcery_trigger():
     assert strategy is not None
     assert isinstance(strategy, github_re_review._ReReviewStrategy)
     assert strategy.trigger_comment == '@sourcery-ai review'
+
+
 def test_resolve_strategy_unknown_bot_kind_returns_none():
     assert github_re_review.resolve_strategy('copilot') is None
+
+
 def test_resolve_strategy_covers_every_bot_kind():
     """Every canonical BOT_KINDS key must resolve to a registered strategy.
 
@@ -308,6 +344,8 @@ def test_resolve_strategy_covers_every_bot_kind():
 
     for bot_kind in BOT_KINDS:
         assert github_re_review.resolve_strategy(bot_kind) is not None, bot_kind
+
+
 def test_the_guard_sweep_population_is_non_empty_and_publishes_its_size():
     """⛔ Vacuity guard for the derived chokepoint sweeps below, size STATED.
 
@@ -323,6 +361,8 @@ def test_the_guard_sweep_population_is_non_empty_and_publishes_its_size():
     assert _GUARD_SWEEP_POPULATION_SIZE == len(_GUARD_SWEEP_POPULATION)
     for bot_kind in _GUARD_SWEEP_POPULATION:
         assert github_re_review.resolve_strategy(bot_kind) is not None, bot_kind
+
+
 def test_refusal_delivered_as_a_review_is_recorded_not_swallowed(monkeypatch):
     """The review-path refusal arms a recovery instead of vanishing."""
     result = _await_with_comments(
@@ -349,6 +389,8 @@ def test_refusal_delivered_as_a_review_is_recorded_not_swallowed(monkeypatch):
     assert result['refusals'][0]['source'] == 'review'
     assert result['refusals'][0]['bot_kind'] == 'sourcery'
     assert result['refusals'][0]['layer'] == _github_pr.REFUSAL_LAYER_REGISTRY
+
+
 def test_refusal_delivered_as_a_comment_is_recorded_not_swallowed(monkeypatch):
     """The comment-path refusal is recorded on the same envelope fields."""
     result = _await_with_comments(
@@ -360,6 +402,8 @@ def test_refusal_delivered_as_a_comment_is_recorded_not_swallowed(monkeypatch):
     assert result['matched'] is False
     assert result['refusal_detected'] is True
     assert result['refusals'][0]['source'] == 'issue_comment'
+
+
 def test_genuine_timeout_is_distinguishable_from_a_refusal(monkeypatch):
     """The discriminator's whole point: a bot that never answered reports NO
     refusal, so the caller does not arm a recovery for a silence it cannot fix."""
@@ -371,6 +415,8 @@ def test_genuine_timeout_is_distinguishable_from_a_refusal(monkeypatch):
     assert result['refusal_class'] == ''
     assert result['refusal_eta'] == ''
     assert result['refusals'] == []
+
+
 def test_a_refusal_stating_no_ceiling_records_an_empty_cap():
     """The paired no-stated-ceiling case: unknown is reported, never fabricated.
 
@@ -392,6 +438,8 @@ def test_a_refusal_stating_no_ceiling_records_an_empty_cap():
     # Recognised as a refusal, but a QUOTA one — so no ceiling is claimed.
     assert record['cause'] == _github_pr.REFUSAL_CAUSE_QUOTA
     assert record['cap'] == ''
+
+
 def test_the_layer_vocabulary_has_one_definition_site_read_by_this_consumer():
     """``github_re_review`` READS the vocabulary; it does not declare its own.
 
@@ -413,6 +461,8 @@ def test_the_layer_vocabulary_has_one_definition_site_read_by_this_consumer():
     # And the values agree with the copy this test module resolved, so the two
     # import paths describe one vocabulary rather than two that merely coexist.
     assert list(github_re_review.REFUSAL_LAYERS) == list(_github_pr.REFUSAL_LAYERS)
+
+
 def test_with_no_threshold_the_re_review_path_behaves_exactly_as_at_head(monkeypatch):
     """⛔ The fail-safe, asserted at the SHIPPED value: the arm cannot over-tighten.
 
@@ -452,6 +502,8 @@ def test_with_no_threshold_the_re_review_path_behaves_exactly_as_at_head(monkeyp
 
     assert result['matched'] is True
     assert result['refusal_detected'] is False
+
+
 def test_an_armed_threshold_withholds_a_genuine_anchorless_review(monkeypatch):
     """⛔ The tightening's COST, asserted rather than assumed away.
 
@@ -487,19 +539,29 @@ def test_an_armed_threshold_withholds_a_genuine_anchorless_review(monkeypatch):
     # than asserting a size ceiling nobody observed.
     assert record['cap'] == ''
     assert record['cause'] == _github_pr.REFUSAL_CAUSE_QUOTA
+
+
 def test_bot_kind_for_author_none_returns_none():
     """A falsy author login resolves to None (the guard branch)."""
     assert github_re_review.bot_kind_for_author(None) is None
     assert github_re_review.bot_kind_for_author('') is None
+
+
 def test_bot_kind_for_author_strips_bot_suffix():
     """A ``[bot]``-suffixed login is normalized before lookup."""
     assert github_re_review.bot_kind_for_author('coderabbitai[bot]') == 'coderabbit'
+
+
 def test_bot_kind_for_author_is_case_insensitive():
     """Login casing drift is tolerated via lower-casing."""
     assert github_re_review.bot_kind_for_author('CodeRabbitAI') == 'coderabbit'
+
+
 def test_bot_kind_for_author_known_pr_agent_login():
     """The PR-Agent bot account login maps to the cuioss-review-bot bot_kind."""
     assert github_re_review.bot_kind_for_author('cuioss-review-bot') == 'cuioss-review-bot'
+
+
 def test_bot_kind_for_author_unregistered_bot_returns_none():
     """A login absent from the registry resolves to None, exactly like a human.
 
@@ -510,9 +572,13 @@ def test_bot_kind_for_author_unregistered_bot_returns_none():
     """
     assert github_re_review.bot_kind_for_author('some-retired-bot') is None
     assert github_re_review.bot_kind_for_author('some-retired-bot[bot]') is None
+
+
 def test_bot_kind_for_author_known_sourcery_login():
     """The sourcery bot account login maps to the sourcery bot_kind."""
     assert github_re_review.bot_kind_for_author('sourcery-ai') == 'sourcery'
+
+
 def test_main_re_review_wires_args_and_prints_toon(monkeypatch, capsys):
     """main() parses argv, runs cmd_re_review, and prints a TOON envelope.
 
@@ -562,6 +628,8 @@ def test_main_re_review_wires_args_and_prints_toon(monkeypatch, capsys):
     assert 'success' in out
     assert 'coderabbit' in out
     assert 'headsha' in out
+
+
 def test_main_recovery_action_accepts_an_unregistered_bot_kind(monkeypatch, capsys):
     """A STALE ``--bot-kind`` reaches the derivation instead of an argparse rejection.
 
@@ -580,6 +648,8 @@ def test_main_recovery_action_accepts_an_unregistered_bot_kind(monkeypatch, caps
     assert verdict['bot_kind_registered'] is False
     # The live kind set travels with the verdict — the remedy a stale token needs.
     assert verdict['known_bot_kind_count'] == len(bot_registry.bot_kinds())
+
+
 def test_main_timeout_defaults_when_flag_omitted(monkeypatch):
     """When ``--timeout`` is absent, main() supplies the canonical default.
 

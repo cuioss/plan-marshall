@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Fixture-accurate provider tests for the D1 pre-merge comment-completeness barrier.
 
 The barrier re-runs the ``github_pr fetch_findings`` producer immediately before
@@ -42,6 +43,7 @@ The provider response is built from a real fixture shape (mirroring
 ``test_github_pr.py``), so a green fixture cannot diverge from production
 provider behaviour.
 """
+
 import argparse
 
 import pytest
@@ -93,6 +95,8 @@ _LATE_COMMENT = {
     'line': 42,
     'resolved': False,
 }
+
+
 def _patch_provider(monkeypatch, comments):
     """Monkeypatch the GitHub provider surface ``github_pr`` reaches through ``_github``."""
     monkeypatch.setattr(github_pr._github, 'check_auth', lambda: (True, ''))
@@ -108,19 +112,27 @@ def _patch_provider(monkeypatch, comments):
         },
     )
     monkeypatch.setattr(github_pr._github, 'fetch_pr_head_sha', lambda pr_number: 'deadbeef')
+
+
 def _run_fetch(pr_number, plan_id):
     args = argparse.Namespace(pr_number=pr_number, plan_id=plan_id)
     return github_pr.cmd_fetch_findings(args)
+
+
 def _pending(plan_id):
     """The pending pr-comment findings — the exact set the barrier query returns."""
     return [
         f for f in query_findings(plan_id, finding_type='pr-comment')['findings'] if f.get('resolution') == 'pending'
     ]
+
+
 def _resolve_all_pending(plan_id):
     """Simulate the triage pass resolving every fetched comment (bot handled)."""
     for f in query_findings(plan_id, finding_type='pr-comment')['findings']:
         if f.get('resolution') == 'pending':
             resolve_finding(plan_id, f['hash_id'], 'fixed')
+
+
 def _self_response_comment(comment_id, anchor='c1'):
     return {
         'id': comment_id,
@@ -132,6 +144,8 @@ def _self_response_comment(comment_id, anchor='c1'):
         ),
         'resolved': False,
     }
+
+
 review_completeness = load_script_module('plan-marshall', 'automatic-review', 'review_completeness.py', register=False)
 _CODERABBIT_ONLY = [_INITIAL_COMMENTS[0]]
 _merge_auth = load_script_module(
@@ -157,9 +171,13 @@ _MEMBER_OBSERVATIONS = {
         'refused_causes': {'cuioss-review-bot': 'size'},
     },
 }
+
+
 def _parity_plan_id(member):
     """The plan id the parity case for ``member`` files its findings against."""
     return f'barrier-parity-{member.replace("_", "-")}'
+
+
 PLAN_IDS += tuple(_parity_plan_id(member) for member in _MEMBER_OBSERVATIONS)
 _UNPRODUCIBLE_MEMBERS = {
     review_completeness.STATE_ABSENT: (
@@ -221,6 +239,8 @@ def test_late_comment_after_triage_surfaces_pending_finding(plan_context, monkey
     pending = _pending(plan_id)
     assert len(pending) == 1
     assert 'comment_id: c-late' in (pending[0].get('detail') or '')
+
+
 def test_clean_path_no_new_comments_leaves_barrier_empty(plan_context, monkeypatch):
     """A re-fetch with no new comments files zero findings — the barrier passes.
 
@@ -246,6 +266,8 @@ def test_clean_path_no_new_comments_leaves_barrier_empty(plan_context, monkeypat
 
     # Barrier query empty → merge proceeds.
     assert _pending(plan_id) == []
+
+
 def test_self_response_after_triage_leaves_barrier_empty(plan_context, monkeypatch):
     """The loop TERMINATES: our own reply does not re-block the barrier.
 
@@ -281,6 +303,8 @@ def test_self_response_after_triage_leaves_barrier_empty(plan_context, monkeypat
 
     # THE property: the barrier's pending query is empty → the merge proceeds.
     assert _pending(plan_id) == []
+
+
 def test_self_response_loop_bound_reports_qgate_finding(plan_context, monkeypatch):
     """At the bound the guard REPORTS exhaustion — it never passes silently.
 

@@ -1,8 +1,10 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for github_ops.py --head flag routing.
 
 Verifies that branch-aware operations forward the --head value to gh and that
 the --pr-number/--head dual-flag validation works as expected.
 """
+
 import argparse
 
 import ci_base
@@ -18,6 +20,8 @@ _CORROBORATION_JSON_MARKER = 'mergedAt'
 _CORROBORATED_MERGE_PAYLOAD = (
     '{"state": "MERGED", "mergedAt": "2026-01-01T00:00:00Z", "baseRefName": "main", "headRefOid": "abc123"}'
 )
+
+
 def _capture_run_gh():
     """Return a (run_gh_stub, captured_args_list) pair."""
     captured: list[list[str]] = []
@@ -40,6 +44,8 @@ def _capture_run_gh():
         return 0, '', ''
 
     return run_gh_stub, captured
+
+
 _PROVIDERS = (github_ops, gitlab_ops)
 _PROVIDER_IDS = ('github', 'gitlab')
 _PROVIDER_FIXTURES = {
@@ -53,8 +59,12 @@ _PROVIDER_FIXTURES = {
     },
 }
 _CREATE_PR_DOC = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-6-finalize' / 'workflow' / 'create-pr.md'
+
+
 def _wait_for_comments_args(timeout=2, interval=1):
     return argparse.Namespace(pr_number=42, timeout=timeout, interval=interval)
+
+
 def _patch_graphql(monkeypatch, pull_request):
     """Patch auth, repo resolution, and the GraphQL call for fetch_pr_comments_data."""
     monkeypatch.setattr(github_ops, 'check_auth', _ok_auth)
@@ -64,12 +74,18 @@ def _patch_graphql(monkeypatch, pull_request):
         'run_graphql',
         lambda query, variables: (0, {'repository': {'pullRequest': pull_request}}, ''),
     )
+
+
 def _comment_record(result, comment_id):
     """Return the projected comment record carrying ``comment_id``."""
     return next(c for c in result['comments'] if c['id'] == comment_id)
+
+
 _GO_ZERO_GH = '0001-01-01T00:00:00Z'
 _REUSABLE_LINK = 'https://github.com/octo/repo/actions/runs/123/job/456'
 _RUN_ONLY_LINK = 'https://github.com/octo/repo/actions/runs/123'
+
+
 def _prepare_issue_comment_body(tmp_path, monkeypatch, body_text='Milestone reached', plan_id='p'):
     """Seed PLAN_BASE_DIR with a prepared issue-comment body scratch file."""
     monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
@@ -86,11 +102,15 @@ def test_fetch_pr_head_sha_returns_empty_on_gh_failure(monkeypatch):
     monkeypatch.setattr(github_ops, 'run_gh', lambda *_a, **_kw: (1, '', 'boom'))
 
     assert github_ops.fetch_pr_head_sha(42) == ''
+
+
 def test_fetch_pr_head_sha_returns_empty_when_field_missing(monkeypatch):
     """A JSON payload without headRefOid yields an empty string."""
     monkeypatch.setattr(github_ops, 'run_gh', lambda *_a, **_kw: (0, '{"other": "x"}', ''))
 
     assert github_ops.fetch_pr_head_sha(42) == ''
+
+
 def test_post_pr_comment_gh_failure_returns_error(monkeypatch):
     """A non-zero gh exit surfaces as an error envelope carrying stderr."""
     monkeypatch.setattr(github_ops, 'run_gh', lambda *_a, **_kw: (1, '', 'no such PR\n'))
@@ -100,6 +120,8 @@ def test_post_pr_comment_gh_failure_returns_error(monkeypatch):
     assert result['status'] == 'error'
     assert result['operation'] == 'post_pr_comment'
     assert 'no such PR' in result['context']
+
+
 def test_fetch_pr_reviews_with_commits_gh_failure(monkeypatch):
     """A non-zero gh api exit surfaces as an error envelope."""
     monkeypatch.setattr(github_ops, 'get_repo_info', lambda: ('octo', 'repo'))
@@ -110,6 +132,8 @@ def test_fetch_pr_reviews_with_commits_gh_failure(monkeypatch):
     assert result['status'] == 'error'
     assert 'Failed to fetch reviews' in result['error']
     assert 'api error' in result['context']
+
+
 def test_fetch_pr_comments_data_preserves_existing_fields_across_all_kinds(monkeypatch):
     """Adding ``updated_at`` disturbs no existing key on any of the three kinds.
 
@@ -188,6 +212,8 @@ def test_fetch_pr_comments_data_preserves_existing_fields_across_all_kinds(monke
     assert issue_comment['kind'] == 'issue_comment'
     assert issue_comment['thread_id'] == ''
     assert issue_comment['updated_at'] == '2026-07-26T09:27:15Z'
+
+
 def test_pr_wait_for_comments_returns_error_when_auth_fails(monkeypatch):
     """Auth failure short-circuits before any fetch."""
     monkeypatch.setattr(github_ops, 'check_auth', lambda: (False, 'not logged in'))
@@ -206,6 +232,8 @@ def test_pr_wait_for_comments_returns_error_when_auth_fails(monkeypatch):
     assert result['operation'] == 'pr_wait_for_comments'
     assert 'not logged in' in result['error']
     assert fetch_calls['count'] == 0, 'fetch should not be called when auth fails'
+
+
 def test_format_checks_toon_skips_go_zero_timestamps():
     """Three checks: SUCCESS+real, SKIPPED+zero-time, SUCCESS+real.
 
@@ -267,8 +295,12 @@ def test_format_checks_toon_skips_go_zero_timestamps():
         assert 'elapsed_sec' in r, f'Real row missing elapsed_sec: {r!r}'
         assert isinstance(r['elapsed_sec'], int)
         assert r['elapsed_sec'] >= 0, f'Real row elapsed_sec must be non-negative; got {r!r}'
+
+
 def test_extract_job_id_from_link_with_job_segment():
     assert github_ops._extract_job_id_from_link(_REUSABLE_LINK) == '456'
+
+
 def test_build_failing_check_entry_populates_job_id():
     check = {
         'name': 'verify / verify',
@@ -281,6 +313,8 @@ def test_build_failing_check_entry_populates_job_id():
     entry = github_ops._build_failing_check_entry(check)
     assert entry['run_id'] == '123'
     assert entry['job_id'] == '456'
+
+
 def test_fetch_failed_run_log_omits_job_flag_when_job_id_absent(monkeypatch):
     captured: list[list[str]] = []
 
@@ -295,6 +329,8 @@ def test_fetch_failed_run_log_omits_job_flag_when_job_id_absent(monkeypatch):
     assert len(captured) == 1
     assert captured[0] == ['run', 'view', '123', '--log-failed']
     assert '--job' not in captured[0]
+
+
 def test_cmd_issue_comment_body_not_prepared(monkeypatch, tmp_path):
     """A missing prepared body yields a body_not_prepared error, no gh call."""
     monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
@@ -308,6 +344,8 @@ def test_cmd_issue_comment_body_not_prepared(monkeypatch, tmp_path):
     assert result['status'] == 'error', result
     assert result['operation'] == 'issue_comment'
     assert captured == []
+
+
 def test_cmd_issue_comment_api_failure_keeps_body(monkeypatch, tmp_path):
     """A non-zero gh exit returns an error and leaves the scratch body in place."""
     from ci_base import BODY_KIND_ISSUE_COMMENT, get_body_path
@@ -326,6 +364,8 @@ def test_cmd_issue_comment_api_failure_keeps_body(monkeypatch, tmp_path):
 
     assert result['status'] == 'error', result
     assert body_path.exists()
+
+
 def test_cmd_issue_comment_auth_failure(monkeypatch, tmp_path):
     """An auth failure short-circuits before any gh call."""
     run_gh_stub, captured = _capture_run_gh()

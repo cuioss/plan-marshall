@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the ``rate_limited_bots[]`` discriminator on ``pr wait-for-comments``.
 
 ``cmd_pr_wait_for_comments`` (in ``_github_pr.py``, dispatched via ``github_ops``)
@@ -52,6 +53,7 @@ Tests never shell out to the real ``gh`` CLI: ``check_auth``,
 ``fetch_pr_comments_data``, and ``poll_until`` are monkeypatched so the handler
 runs deterministically in constant time.
 """
+
 import argparse
 import importlib
 import re
@@ -62,8 +64,12 @@ from conftest import get_script_path
 
 _github_pr = importlib.import_module('_github_pr')
 github_re_review = importlib.import_module('github_re_review')
+
+
 def _ok_auth():
     return True, ''
+
+
 _CODERABBIT_NOTICE = {
     'author': 'coderabbitai[bot]',
     'body': (
@@ -110,8 +116,12 @@ _HUMAN_COMMENT = {
     'body': 'Please add a test for the rate limit exceeded branch.',
     'created_at': '2026-01-01T00:00:00Z',
 }
+
+
 def _wait_comments_args(*, pr_number=123, timeout=5, interval=0):
     return argparse.Namespace(pr_number=pr_number, timeout=timeout, interval=interval)
+
+
 def _wire(monkeypatch, *, post_comments):
     """Monkeypatch auth / fetch / poll so the handler runs deterministically.
 
@@ -142,6 +152,8 @@ def _wire(monkeypatch, *, post_comments):
         return {'timed_out': False, 'duration_sec': 1, 'polls': 1, 'last_data': {'unresolved': 2}}
 
     monkeypatch.setattr(github_ops, 'poll_until', fake_poll)
+
+
 _FIELD_SET_RE = re.compile(r'\{bot_kind,\s*rate_limit_class,[^}]*\}')
 _BUNDLES = get_script_path('plan-marshall', 'workflow-integration-github', '_github_pr.py').parents[4]
 
@@ -168,6 +180,8 @@ def test_bot_without_declared_class_fails_closed_to_unknown(monkeypatch):
             'body': _PR_AGENT_NOTICE['body'],
         }
     ]
+
+
 def test_coderabbit_notice_yields_registry_extracted_eta(monkeypatch):
     # The ETA phrasings are registry data (rate_limit_eta_patterns), not a literal
     # in the detection path: the notice's own stated reset time is surfaced so a
@@ -189,6 +203,8 @@ def test_coderabbit_notice_yields_registry_extracted_eta(monkeypatch):
             'body': _CODERABBIT_NOTICE['body'],
         }
     ]
+
+
 def test_a_registry_declared_refusal_reports_the_registry_layer_over_the_shape(monkeypatch):
     # The current CodeRabbit phrasing is read by BOTH arms: it carries the declared
     # "Review limit reached" wording AND a notice shape. The record reports the arm
@@ -215,6 +231,8 @@ def test_a_registry_declared_refusal_reports_the_registry_layer_over_the_shape(m
     _wire(monkeypatch, post_comments=[_CODERABBIT_NOTICE])
     [structural] = github_ops.cmd_pr_wait_for_comments(_wait_comments_args())['rate_limited_bots']
     assert structural['layer'] == _github_pr.REFUSAL_LAYER_STRUCTURAL
+
+
 def test_every_documented_field_set_is_the_one_the_detector_emits():
     # A record shape restated in a doc is a second source of truth: widen the record
     # and every restatement the diff did not touch reads as current while it lies.
@@ -240,12 +258,16 @@ def test_every_documented_field_set_is_the_one_the_detector_emits():
     for site, documented_sets in sites.items():
         for documented in documented_sets:
             assert documented == emitted, f'{site} documents {sorted(documented)}, the detector emits {sorted(emitted)}'
+
+
 def test_empty_comment_list_yields_empty_list(monkeypatch):
     _wire(monkeypatch, post_comments=[])
 
     result = github_ops.cmd_pr_wait_for_comments(_wait_comments_args())
 
     assert result['rate_limited_bots'] == []
+
+
 def test_newer_review_supersedes_that_bots_older_notice_only(monkeypatch):
     # Selection is newest-by-created_at PER BOT, not globally. CodeRabbit's older
     # notice is superseded by its own newer genuine review, while Sourcery — whose
@@ -286,6 +308,8 @@ def test_newer_review_supersedes_that_bots_older_notice_only(monkeypatch):
     # timeout, not an unanswerable detector.
     assert result['detector_answerable'] is True
     assert result['unanswerable_reason'] == ''
+
+
 def test_bot_body_sentence_without_notice_shape_is_not_a_notice(monkeypatch):
     # gemini-code-assist false-positive guard: a genuine review whose flattened
     # body contains the "exceeded the limit for the number of" sentence (discussing

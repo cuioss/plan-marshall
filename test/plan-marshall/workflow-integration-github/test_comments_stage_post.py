@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for workflow-integration-github github_pr.py — two-verb provider contract.
 
 The provider surface is exactly two pure verbs (plus the raw ``fetch-comments``):
@@ -17,6 +18,7 @@ the hash_id-keyed post_responses respond loop, the ``--project-dir`` plumbing,
 and the CLI surface contract (the retired ``triage`` / ``triage-batch`` /
 ``comments-stage`` subcommands MUST be gone).
 """
+
 import io
 import sys
 from contextlib import redirect_stdout
@@ -34,6 +36,8 @@ get_current_pr_number = github_pr.get_current_pr_number
 _is_obvious_noise = github_pr._is_obvious_noise
 cmd_fetch_findings = github_pr.cmd_fetch_findings
 cmd_post_responses = github_pr.cmd_post_responses
+
+
 @pytest.fixture(autouse=True)
 def _stub_provider_calls():
     """Stub the auth check and PR HEAD-SHA fetch so fetch_findings tests never hit ``gh``.
@@ -50,6 +54,8 @@ def _stub_provider_calls():
         patch('github_pr._github.fetch_pr_head_sha', return_value='stub-head-sha'),
     ):
         yield
+
+
 def _stage_make_args(pr_number: int, plan_id: str):
     class _Args:
         pr_number: int
@@ -59,6 +65,8 @@ def _stage_make_args(pr_number: int, plan_id: str):
     a.pr_number = pr_number
     a.plan_id = plan_id
     return a
+
+
 _SOURCERY_1014_REFUSAL = (
     'Sourcery was unable to review this pull request because '
     'your pull request is larger than the review limit of 150000 characters. '
@@ -102,12 +110,16 @@ _GENUINE_REVIEW_MENTIONING_A_LIMIT = (
 )
 _REWORDED_REFUSAL = 'Skipping this one for now.'
 _SHORT_REVIEW_WITH_ANCHOR = 'Guard the bound at `src/Idx.java:12`.'
+
+
 class _StoreArgs:
     """The two attributes both verbs read off their namespace."""
 
     def __init__(self, pr_number, plan_id):
         self.pr_number = pr_number
         self.plan_id = plan_id
+
+
 _SUBSTANTIVE_COMMENT = {
     'id': 'C-store-1',
     'kind': 'inline',
@@ -360,6 +372,8 @@ class TestCommentsStageAuthorKindFields:
         q = query_findings('gh-pr-author-unknown', finding_type='pr-comment')
         assert q['filtered_count'] == 1
         assert q['findings'][0]['author'] == 'unknown'
+
+
 class TestPostResponses:
     """post_responses transmits each finding's disposition to its own thread, keyed by hash_id.
 
@@ -549,6 +563,8 @@ class TestPostResponses:
         assert 'thread not found' in result['untransmitted'][0]['reason']
         # NEVER re-routed into the batch.
         mock_post.assert_not_called()
+
+
 def test_post_responses_against_a_resolved_empty_store_is_a_genuine_success(plan_context):
     """Matched negative control: a resolved store with nothing to send still succeeds."""
     plan_id = 'gh-store-empty-respond'

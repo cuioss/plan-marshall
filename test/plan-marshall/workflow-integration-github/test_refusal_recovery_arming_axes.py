@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Cross-cutting suite: a NON-CodeRabbit refusal arms the right recovery.
 
 Detection answers per REGISTERED bot rather than for one privileged bot, and a
@@ -33,6 +34,7 @@ from the selector's own published ``RECOVERY_ACTIONS`` vocabulary, never
 hard-coded, so a bot added or reclassified in a standards doc is swept here
 automatically.
 """
+
 from __future__ import annotations
 
 import importlib
@@ -56,6 +58,8 @@ from _github_pr import (  # noqa: E402
 from conftest import get_script_path  # noqa: E402
 
 _ATTEMPTS_REMAINING = 2
+
+
 def _verdict(
     bot_kind: str,
     cause: str = _github_pr.REFUSAL_CAUSE_QUOTA,
@@ -82,9 +86,13 @@ def _verdict(
         window_expired=window_expired,
         attempts_remaining=attempts_remaining,
     )
+
+
 def _action(bot_kind: str, cause: str = _github_pr.REFUSAL_CAUSE_QUOTA, **kwargs) -> str:
     """The recovery ACTION the shipped selector derives for ``bot_kind``."""
     return str(_verdict(bot_kind, cause, **kwargs)['action'])
+
+
 def _reason(bot_kind: str, cause: str = _github_pr.REFUSAL_CAUSE_QUOTA, **kwargs) -> str:
     """The REASON the shipped selector publishes beside the action.
 
@@ -93,6 +101,8 @@ def _reason(bot_kind: str, cause: str = _github_pr.REFUSAL_CAUSE_QUOTA, **kwargs
     the reason says which remedies the operator should be offered.
     """
     return str(_verdict(bot_kind, cause, **kwargs)['reason'])
+
+
 def _declare_size_refusal(monkeypatch, bot_kind: str) -> str:
     """Make ``bot_kind`` declare a SIZE-caused refusal; return a body that matches it.
 
@@ -123,10 +133,14 @@ def _declare_size_refusal(monkeypatch, bot_kind: str) -> str:
         lambda kind, _r=cap_regex, _b=bot_kind: [_r] if kind == _b else [],
     )
     return f'{marker} — your pull request is larger than the review limit of 150,000 characters.'
+
+
 _STRUCTURAL_NOTICE_BODY = (
     '> [!WARNING] > ## Usage limit reached > '
     'This reviewer has reached its usage limit. Reviews will resume after the limit resets.'
 )
+
+
 def _wording_body(pattern: str) -> str:
     """Wrap a declared refusal ``pattern`` in a body carrying no notice SHAPE.
 
@@ -142,6 +156,8 @@ def _wording_body(pattern: str) -> str:
     headings, and any resume / reset / try-again / unable-to / paused phrasing.
     """
     return f'Context from the reviewer: {pattern}.'
+
+
 def _refusal_body(bot_kind: str) -> str:
     """A refusal body SOME arm recognises for ``bot_kind``.
 
@@ -160,11 +176,15 @@ def _refusal_body(bot_kind: str) -> str:
     if declared:
         return _wording_body(declared[0])
     return _STRUCTURAL_NOTICE_BODY
+
+
 _DECLARED_WORDING_PAIRS: list[tuple[str, str]] = [
     (bot_kind, pattern) for bot_kind in bot_registry.bot_kinds() for pattern in bot_registry.refusal_patterns(bot_kind)
 ]
 _DECLARED_WORDING_POPULATION_SIZE = len(_DECLARED_WORDING_PAIRS)
 _DECLARED_WORDING_POPULATION_BASELINE = 7
+
+
 def _quota_refusal_body(bot_kind: str) -> str:
     """A refusal body for ``bot_kind`` whose cause is QUOTA rather than size.
 
@@ -181,18 +201,26 @@ def _quota_refusal_body(bot_kind: str) -> str:
     if quota_markers:
         return f'This reviewer could not proceed: {quota_markers[0]} — please try again later.'
     return _STRUCTURAL_NOTICE_BODY
+
+
 def _login(bot_kind: str) -> str:
     """The author login that resolves back to ``bot_kind``, from the registry map."""
     for login, kind in bot_registry.login_to_bot_kind().items():
         if kind == bot_kind:
             return login
     raise AssertionError(f'{bot_kind} declares no author_login')
+
+
 def _registered_bots() -> list[str]:
     bots = bot_registry.bot_kinds()
     assert bots, 'registry must declare at least one bot'
     return bots
+
+
 def _comment(bot_kind: str, body: str, created_at: str = '2026-01-09T00:00:00Z') -> dict:
     return {'author': f'{_login(bot_kind)}[bot]', 'body': body, 'created_at': created_at}
+
+
 def _arm_enumerative(monkeypatch, max_chars: int = 200) -> None:
     """Give the enumerative arm a threshold, patched where the predicate READS it.
 
@@ -209,6 +237,8 @@ def _arm_enumerative(monkeypatch, max_chars: int = 200) -> None:
         'UNRECOGNISED_REFUSAL_MAX_CHARS',
         max_chars,
     )
+
+
 _PRODUCER_ONLY_FIELDS = {'rate_limited_bots': {'rate_limit_class'}, 'refusals': {'source'}}
 _AR_SKILL = (
     get_script_path('plan-marshall', 'workflow-integration-github', '_github_pr.py').parents[4]
@@ -307,6 +337,8 @@ class TestRecoveryArmingFollowsTheTwoAxisRule:
             action = _action(bot)
             assert action in github_re_review.RECOVERY_ACTIONS, bot
             assert action != github_re_review.RECOVERY_ACTION_UNMEASURED, bot
+
+
 class TestTheCauseAxisDominatesTheClassAxis:
     """A SIZE refusal escalates structurally, whatever the bot's class declares.
 
@@ -443,6 +475,8 @@ class TestTheCauseAxisDominatesTheClassAxis:
 
             assert 'cause' in detected[0], bot
             assert 'cap' in detected[0], bot
+
+
 class TestTheEnumerativeArmOnTheReReviewPath:
     """An unrecognised refusal is RECORDED here too — never admitted as a review.
 
@@ -547,6 +581,8 @@ class TestTheEnumerativeArmOnTheReReviewPath:
         ]
 
         assert _detect_rate_limited_bots(human) == []
+
+
 class TestUnreadRefusalNeverReportsAnAwaitableClass:
     """``refusal_class`` on the envelope, when an arm could not read the notice.
 

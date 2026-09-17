@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for cmd_pr_merge branch-delete refactor.
 
 After the refactor:
@@ -12,6 +13,7 @@ The worktree fork exercises the scenario ``gh pr merge --delete-branch``
 cannot serve: the merge must finish cleanly and the branch delete must
 round-trip purely through the REST leaf, never through local git.
 """
+
 import argparse
 import json
 from datetime import UTC, datetime
@@ -33,6 +35,8 @@ def _install_common(monkeypatch):
         'get_repo_info',
         lambda: ('octo', 'repo'),
     )
+
+
 def _install_probe(
     monkeypatch,
     *,
@@ -64,6 +68,8 @@ def _install_probe(
 
     monkeypatch.setattr(github_ops, '_probe_merge_queue_state', probe_stub)
     return captured
+
+
 def _pr_view_success_payload() -> dict:
     """Minimal ``view_pr_data`` success payload with a head branch."""
     return {
@@ -79,6 +85,8 @@ def _pr_view_success_payload() -> dict:
         'mergeable': 'mergeable',
         'merge_state': 'clean',
     }
+
+
 _CORROBORATION_PAYLOADS: dict[str, dict] = {
     # Landed merge — the only shape that corroborates.
     'merged': {
@@ -111,6 +119,8 @@ _CORROBORATION_PAYLOADS: dict[str, dict] = {
         'headRefOid': 'abc123',
     },
 }
+
+
 def _install_merge_preconditions(monkeypatch, *, view_payload: dict | None = None) -> dict:
     """Install the stubs ``cmd_pr_merge``'s own guards require.
 
@@ -122,8 +132,12 @@ def _install_merge_preconditions(monkeypatch, *, view_payload: dict | None = Non
     """
     monkeypatch.setattr(github_ops, 'view_pr_data', lambda head=None: view_payload or _pr_view_success_payload())
     return _install_probe(monkeypatch)
+
+
 def _branch_ns(branch: str) -> argparse.Namespace:
     return argparse.Namespace(branch=branch, remote_only=True)
+
+
 def _capture_branch_delete_run_gh(returncode: int = 0, stderr: str = ''):
     """Minimal run_gh stub for cmd_branch_delete tests."""
     captured: list[list[str]] = []
@@ -133,8 +147,12 @@ def _capture_branch_delete_run_gh(returncode: int = 0, stderr: str = ''):
         return returncode, '', stderr
 
     return run_gh_stub, captured
+
+
 def _auto_merge_ns(*, pr_number: int | None = 42, head: str | None = None, strategy: str = 'squash'):
     return argparse.Namespace(pr_number=pr_number, head=head, strategy=strategy)
+
+
 def _gate_run_gh(*, view, compare):
     """run_gh stub dispatching the gate's two query shapes.
 
@@ -155,6 +173,8 @@ def _gate_run_gh(*, view, compare):
         return 0, '', ''
 
     return run_gh_stub
+
+
 def _merge_queue_ns(*, pr_number: int | None = 42, head: str | None = None):
     """Build the argparse.Namespace cmd_pr_merge_queue expects.
 
@@ -163,6 +183,8 @@ def _merge_queue_ns(*, pr_number: int | None = 42, head: str | None = None):
     so the Namespace carries exactly those two attributes.
     """
     return argparse.Namespace(pr_number=pr_number, head=head)
+
+
 def _install_configured_queue(monkeypatch) -> dict:
     """Stub the base-branch probe as CONFIGURED so the enqueue may proceed.
 
@@ -204,6 +226,8 @@ def test_parse_merged_at_always_returns_aware(raw):
     # Every fixture above is dated in the past, so the relation is DEFINITE rather
     # than a tautology: a parse that returned a naive or wrongly-offset value fails here.
     assert parsed < datetime.now(UTC), raw
+
+
 def test_branch_delete_simple_branch_name_is_unchanged(monkeypatch):
     """Plain branch names (no reserved characters) pass through quote() as
     identity — nothing to encode, so the endpoint keeps its literal form.
@@ -218,6 +242,8 @@ def test_branch_delete_simple_branch_name_is_unchanged(monkeypatch):
 
     endpoint = captured[0][-1]
     assert endpoint == 'repos/octo/repo/git/refs/heads/main', endpoint
+
+
 def test_pr_auto_merge_reports_enabled_disposition_when_base_unconfigured(monkeypatch):
     """No queue on the base branch → plain auto-merge → ``disposition: enabled``."""
     _install_common(monkeypatch)
@@ -241,6 +267,8 @@ def test_pr_auto_merge_reports_enabled_disposition_when_base_unconfigured(monkey
     merge_call = next(c for c in captured if c[:2] == ['pr', 'merge'])
     assert '--auto' in merge_call, merge_call
     assert '--admin' not in merge_call, merge_call
+
+
 def test_pr_auto_merge_reports_queue_disposition_when_base_configured(monkeypatch):
     """A configured queue on the base branch → the PR is ENQUEUED, not merely enabled.
 
@@ -272,6 +300,8 @@ def test_pr_auto_merge_reports_queue_disposition_when_base_configured(monkeypatc
     # The probe ran against the PR's OWN base branch, before the gh call.
     assert probe['branch'] == 'main', probe
     assert probe['calls'] == 1, probe
+
+
 def test_stuck_state_gate_all_requirements_met(monkeypatch):
     """Approved + all checks SUCCESS + behind_by 0 → gate passes."""
     _install_common(monkeypatch)
@@ -298,6 +328,8 @@ def test_stuck_state_gate_all_requirements_met(monkeypatch):
 
     assert ok is True, reason
     assert reason is None
+
+
 def test_stuck_state_gate_failing_required_check(monkeypatch):
     """A non-SUCCESS required check fails the gate closed."""
     _install_common(monkeypatch)
@@ -322,6 +354,8 @@ def test_stuck_state_gate_failing_required_check(monkeypatch):
 
     assert ok is False
     assert 'verify' in reason and 'FAILURE' in reason
+
+
 def test_stuck_state_gate_query_failure_fails_closed(monkeypatch):
     """A failed gate query fails closed rather than permitting the admin merge."""
     _install_common(monkeypatch)
@@ -336,6 +370,8 @@ def test_stuck_state_gate_query_failure_fails_closed(monkeypatch):
 
     assert ok is False
     assert 'gate query failed' in reason
+
+
 def test_stuck_state_gate_non_list_rollup_fails_closed(monkeypatch):
     """A statusCheckRollup that is not a list fails closed."""
     _install_common(monkeypatch)
@@ -360,6 +396,8 @@ def test_stuck_state_gate_non_list_rollup_fails_closed(monkeypatch):
 
     assert ok is False
     assert 'not a list' in reason
+
+
 def test_pr_merge_queue_enqueues_auto_only(monkeypatch):
     """The enqueue command is exactly ``['pr', 'merge', <id>, '--auto']``.
 
@@ -397,6 +435,8 @@ def test_pr_merge_queue_enqueues_auto_only(monkeypatch):
     # None of the strategy method flags leak either.
     for method_flag in ('--merge', '--squash', '--rebase'):
         assert method_flag not in merge_call, merge_call
+
+
 def test_pr_merge_queue_never_sends_flag_gh_would_reject(monkeypatch):
     """Fixture mirrors the real ``gh`` rejection: ``--delete-branch`` with a
     merge queue enabled fails with "Cannot use --delete-branch when merge queue
@@ -426,6 +466,8 @@ def test_pr_merge_queue_never_sends_flag_gh_would_reject(monkeypatch):
     assert result['enqueued'] is True
     merge_call = captured[0]
     assert merge_call == ['pr', 'merge', '42', '--auto'], merge_call
+
+
 def test_pr_merge_queue_head_identifier(monkeypatch):
     """A ``--head`` identifier still enqueues via ``pr merge <branch> --auto``."""
     _install_common(monkeypatch)
@@ -446,6 +488,8 @@ def test_pr_merge_queue_head_identifier(monkeypatch):
     assert merge_call == ['pr', 'merge', 'feature/x', '--auto'], merge_call
     assert '--delete-branch' not in merge_call, merge_call
     assert '--strategy' not in merge_call, merge_call
+
+
 @pytest.mark.parametrize(
     'discriminator',
     [
@@ -488,6 +532,8 @@ def test_cmd_pr_merge_queue_returns_error_when_base_has_no_configured_queue(monk
     # The refusal is derived from exactly ONE probe, not from a retry loop that
     # happened to settle on an error: the base-branch state is read once and acted on.
     assert probe['calls'] == 1, probe
+
+
 def test_cmd_pr_merge_queue_probe_error_fails_closed(monkeypatch):
     """An unresolvable queue state refuses the enqueue rather than guessing."""
     _install_common(monkeypatch)

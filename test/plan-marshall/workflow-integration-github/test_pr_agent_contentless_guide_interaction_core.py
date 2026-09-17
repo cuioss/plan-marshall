@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 # ruff: noqa: E402
 """End-to-end regression tests for PR-Agent's contentless Guide, producer + aggregator.
 
@@ -62,6 +63,7 @@ aggregator ships as a project-local script under ``.claude/skills/`` which
 ``PROJECT_ROOT``-relative ``sys.path`` prologue ``test_review_retrospective.py``
 uses.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -93,6 +95,8 @@ _findings_core = load_script_module('plan-marshall', 'manage-findings', '_findin
 query_findings = _findings_core.query_findings
 _PR_AGENT_LOGIN = 'cuioss-review-bot'
 _PR_AGENT_REQUIRED_MARKERS = bot_registry.contentless_review_markers('cuioss-review-bot')
+
+
 def _guide_comment(body, comment_id='guide-1', *, created_at=None, updated_at=None):
     """A ``cuioss-review-bot`` issue_comment carrying ``body`` — PR-Agent's one shape.
 
@@ -115,6 +119,8 @@ def _guide_comment(body, comment_id='guide-1', *, created_at=None, updated_at=No
     if updated_at is not None:
         comment['updated_at'] = updated_at
     return comment
+
+
 def _patch_provider(monkeypatch, comments, head_sha='deadbeef', head_committed_at=''):
     """Monkeypatch only the GitHub provider surface — the findings store stays real.
 
@@ -143,6 +149,8 @@ def _patch_provider(monkeypatch, comments, head_sha='deadbeef', head_committed_a
         },
     )
     monkeypatch.setattr(github_pr._github, 'fetch_pr_head_sha', lambda pr_number: head_sha)
+
+
 def _run_fetch(pr_number, plan_id):
     """Run the producer's FIND verb against ``plan_id``, with its plan directory present.
 
@@ -162,8 +170,12 @@ def _run_fetch(pr_number, plan_id):
     (get_base_dir() / 'plans' / plan_id).mkdir(parents=True, exist_ok=True)
     args = argparse.Namespace(pr_number=pr_number, plan_id=plan_id)
     return github_pr.cmd_fetch_findings(args)
+
+
 def _stored(plan_id):
     return query_findings(plan_id, finding_type='pr-comment')['findings']
+
+
 _CREATED_AT = '2026-07-30T09:00:00Z'
 _EDITED_AT = '2026-07-30T11:30:00Z'
 _HEAD_A = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
@@ -202,6 +214,8 @@ def test_clean_guide_is_dropped_but_still_credits_participation(plan_context, mo
     assert result['refused_bots'] == []
 
     assert _stored(plan_id) == []
+
+
 @pytest.mark.parametrize(
     ('rendering', 'body'),
     [
@@ -243,6 +257,8 @@ def test_clean_guide_is_dropped_in_either_emphasis_rendering(plan_context, monke
     assert result['count_skipped_noise'] == 1
     assert result['producer_mismatch_hash_id'] is None
     assert _stored(plan_id) == []
+
+
 def test_second_fetch_of_an_unchanged_guide_at_the_same_head_stays_credited(plan_context, monkeypatch):
     """A dropped clean Guide credits PR-Agent the same way however many times it is fetched.
 
@@ -283,6 +299,8 @@ def test_second_fetch_of_an_unchanged_guide_at_the_same_head_stays_credited(plan
     assert first['stale_participation_bots'] == []
     assert second['participated_bots'] == credited
     assert second['stale_participation_bots'] == []
+
+
 def test_dropped_guide_goes_stale_once_head_advances(plan_context, monkeypatch):
     """The matched control: after a force-push the dropped Guide is STALE, not credited.
 
@@ -305,6 +323,8 @@ def test_dropped_guide_goes_stale_once_head_advances(plan_context, monkeypatch):
     second = _run_fetch(1207, plan_id)
     assert second['participated_bots'] == []
     assert second['stale_participation_bots'] == [{'bot_kind': 'cuioss-review-bot', 'evidence_kind': 'issue_comment'}]
+
+
 def test_guide_edited_after_head_advance_credits_participation_again(plan_context, monkeypatch):
     """An in-place edit after a HEAD advance IS a fresh review, so PR-Agent is credited again.
 
@@ -333,6 +353,8 @@ def test_guide_edited_after_head_advance_credits_participation_again(plan_contex
     assert second['count_skipped_noise'] == 1
     assert second['producer_mismatch_hash_id'] is None
     assert {'bot_kind': 'cuioss-review-bot', 'evidence_kind': 'issue_comment'} in second['participated_bots']
+
+
 def test_suppressed_guide_produces_no_reviewer_row_at_all(plan_context, monkeypatch):
     """With its only comment dropped, PR-Agent contributes zero records — so no score.
 
@@ -353,6 +375,8 @@ def test_suppressed_guide_produces_no_reviewer_row_at_all(plan_context, monkeypa
     assert report['total_findings'] == 0
     assert report['reviewer_count'] == 0
     assert report['reviewers'] == []
+
+
 def test_surviving_guide_record_scores_neither_false_positive_nor_vacuous_zero():
     """The second half: a surviving Guide resolved ``accepted`` is not a wrong claim.
 

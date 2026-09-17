@@ -1,9 +1,11 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for github.py script.
 
 Tests command structure and argument parsing.
 Note: Actual gh CLI operations require authentication and network.
 These tests focus on the script interface, not live operations.
 """
+
 import pytest
 
 from conftest import get_script_path, run_script
@@ -66,6 +68,8 @@ _MISSING_REQUIRED = [
     ((), None),
 ]
 _STRUCTURED_REFUSAL = [(('checks', 'status'),), (('pr', 'merge'),)]
+
+
 def _assert_single_body_source(bundle: str, skill: str, script: str) -> None:
     """Assert ``cmd_pr_create`` in the named script has exactly one body source."""
     import ast  # local import: only this structural check needs it
@@ -124,6 +128,8 @@ def test_missing_required_argument_is_a_nonzero_exit(argv, names):
     if names:
         combined = result.stderr.lower()
         assert names in combined or 'required' in combined, combined
+
+
 def test_pr_create_handler_has_a_single_body_source():
     """Provider parity: one store call, and no surviving ``body_file`` path.
 

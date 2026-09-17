@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Cross-cutting suite: a NON-CodeRabbit refusal arms the right recovery.
 
 Detection answers per REGISTERED bot rather than for one privileged bot, and a
@@ -33,6 +34,7 @@ from the selector's own published ``RECOVERY_ACTIONS`` vocabulary, never
 hard-coded, so a bot added or reclassified in a standards doc is swept here
 automatically.
 """
+
 from __future__ import annotations
 
 import importlib
@@ -65,10 +67,14 @@ _DECLARED_WORDING_PAIRS: list[tuple[str, str]] = [
 ]
 _DECLARED_WORDING_POPULATION_SIZE = len(_DECLARED_WORDING_PAIRS)
 _DECLARED_WORDING_POPULATION_BASELINE = 7
+
+
 def _registered_bots() -> list[str]:
     bots = bot_registry.bot_kinds()
     assert bots, 'registry must declare at least one bot'
     return bots
+
+
 _PRODUCER_ONLY_FIELDS = {'rate_limited_bots': {'rate_limit_class'}, 'refusals': {'source'}}
 _AR_SKILL = (
     get_script_path('plan-marshall', 'workflow-integration-github', '_github_pr.py').parents[4]
@@ -123,6 +129,8 @@ class TestTriggerSemanticsIsDeclaredByEveryBot:
         monkeypatch.setitem(bot_registry.REGISTRY._by_kind, bot, record)
 
         assert bot_registry.trigger_semantics(bot) == bot_registry.TRIGGER_SEMANTICS_REQUIRES_EXPLICIT_TRIGGER
+
+
 class TestTheEtaExtractorCannotRaise:
     """A registry pattern that COMPILES but captures nothing must not crash the poll.
 

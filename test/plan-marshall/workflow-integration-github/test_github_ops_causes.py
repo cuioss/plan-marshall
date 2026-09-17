@@ -1,8 +1,10 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for github_ops.py --head flag routing.
 
 Verifies that branch-aware operations forward the --head value to gh and that
 the --pr-number/--head dual-flag validation works as expected.
 """
+
 import argparse
 
 import ci_base
@@ -18,6 +20,8 @@ _CORROBORATION_JSON_MARKER = 'mergedAt'
 _CORROBORATED_MERGE_PAYLOAD = (
     '{"state": "MERGED", "mergedAt": "2026-01-01T00:00:00Z", "baseRefName": "main", "headRefOid": "abc123"}'
 )
+
+
 def _capture_run_gh():
     """Return a (run_gh_stub, captured_args_list) pair."""
     captured: list[list[str]] = []
@@ -40,6 +44,8 @@ def _capture_run_gh():
         return 0, '', ''
 
     return run_gh_stub, captured
+
+
 _PROVIDERS = (github_ops, gitlab_ops)
 _PROVIDER_IDS = ('github', 'gitlab')
 _PROVIDER_FIXTURES = {
@@ -53,8 +59,12 @@ _PROVIDER_FIXTURES = {
     },
 }
 _CREATE_PR_DOC = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-6-finalize' / 'workflow' / 'create-pr.md'
+
+
 def _wait_for_comments_args(timeout=2, interval=1):
     return argparse.Namespace(pr_number=42, timeout=timeout, interval=interval)
+
+
 def _patch_graphql(monkeypatch, pull_request):
     """Patch auth, repo resolution, and the GraphQL call for fetch_pr_comments_data."""
     monkeypatch.setattr(github_ops, 'check_auth', _ok_auth)
@@ -64,12 +74,18 @@ def _patch_graphql(monkeypatch, pull_request):
         'run_graphql',
         lambda query, variables: (0, {'repository': {'pullRequest': pull_request}}, ''),
     )
+
+
 def _comment_record(result, comment_id):
     """Return the projected comment record carrying ``comment_id``."""
     return next(c for c in result['comments'] if c['id'] == comment_id)
+
+
 _GO_ZERO_GH = '0001-01-01T00:00:00Z'
 _REUSABLE_LINK = 'https://github.com/octo/repo/actions/runs/123/job/456'
 _RUN_ONLY_LINK = 'https://github.com/octo/repo/actions/runs/123'
+
+
 def _prepare_issue_comment_body(tmp_path, monkeypatch, body_text='Milestone reached', plan_id='p'):
     """Seed PLAN_BASE_DIR with a prepared issue-comment body scratch file."""
     monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
@@ -120,6 +136,8 @@ def test_create_pr_doc_creates_only_on_the_no_pr_cause():
         assert 'Do NOT create' in stopping or 'do NOT create' in stopping, (
             f'create-pr.md does not forbid creation on {cause}: {stopping}'
         )
+
+
 def test_create_pr_doc_treats_an_absent_cause_as_unanswered():
     """A missing discriminator must not fall through to creation.
 
@@ -136,6 +154,8 @@ def test_create_pr_doc_treats_an_absent_cause_as_unanswered():
     )
     absent_line = next(line for line in text.splitlines() if '`error_cause` absent' in line)
     assert 'STOP' in absent_line, absent_line
+
+
 def test_fetch_pr_reviews_with_commits_skips_non_dict_rows(monkeypatch):
     """Non-dict entries in the reviews page array are filtered out."""
     monkeypatch.setattr(github_ops, 'get_repo_info', lambda: ('octo', 'repo'))
@@ -151,6 +171,8 @@ def test_fetch_pr_reviews_with_commits_skips_non_dict_rows(monkeypatch):
     assert result['status'] == 'success'
     assert result['review_count'] == 1
     assert result['reviews'][0]['user'] == 'bot'
+
+
 def test_fetch_pr_reviews_with_commits_unparseable_json(monkeypatch):
     """Malformed gh api JSON surfaces as a parse error envelope."""
     monkeypatch.setattr(github_ops, 'get_repo_info', lambda: ('octo', 'repo'))
@@ -160,6 +182,8 @@ def test_fetch_pr_reviews_with_commits_unparseable_json(monkeypatch):
 
     assert result['status'] == 'error'
     assert 'Failed to parse' in result['error']
+
+
 def test_fetch_pr_comments_data_updated_at_degrades_to_empty_string(monkeypatch):
     """A provider payload omitting ``updatedAt`` yields ``''``, never a missing key.
 
@@ -189,6 +213,8 @@ def test_fetch_pr_comments_data_updated_at_degrades_to_empty_string(monkeypatch)
     record = _comment_record(result, 'IC_2')
     assert record['updated_at'] == ''
     assert record['created_at'] == '2026-07-26T09:00:00Z'
+
+
 def test_pr_wait_for_comments_returns_error_when_initial_fetch_fails(monkeypatch):
     """Error path: baseline fetch fails → returns status: error before polling starts."""
     monkeypatch.setattr(github_ops, 'check_auth', _ok_auth)
@@ -203,6 +229,8 @@ def test_pr_wait_for_comments_returns_error_when_initial_fetch_fails(monkeypatch
     assert result['status'] == 'error', result
     assert result['operation'] == 'pr_wait_for_comments'
     assert 'Initial unresolved-comment fetch failed' in result['error']
+
+
 def test_main_without_project_dir_leaves_cwd_untouched(tmp_path, monkeypatch):
     """Omitting --project-dir must not mutate the process-global default cwd.
 
@@ -241,6 +269,8 @@ def test_main_without_project_dir_leaves_cwd_untouched(tmp_path, monkeypatch):
     github_ops.main()
     # Unchanged sentinel — pre-parse did not clobber an existing default.
     assert ci_base.get_default_cwd() == sentinel
+
+
 def test_main_emits_mutually_exclusive_error_on_both_flags(monkeypatch, capsys):
     """github_ops.main() with both --plan-id and --project-dir → mutually_exclusive_args."""
     monkeypatch.setattr(
@@ -262,9 +292,13 @@ def test_main_emits_mutually_exclusive_error_on_both_flags(monkeypatch, capsys):
     assert exc_info.value.code == 2
     captured = capsys.readouterr()
     assert 'mutually_exclusive_args' in captured.out
+
+
 def test_extract_job_id_from_link_none_and_empty():
     assert github_ops._extract_job_id_from_link(None) == ''
     assert github_ops._extract_job_id_from_link('') == ''
+
+
 def test_fetch_failed_run_log_forwards_job_flag_when_job_id_present(monkeypatch):
     captured: list[list[str]] = []
 
@@ -281,6 +315,8 @@ def test_fetch_failed_run_log_forwards_job_flag_when_job_id_present(monkeypatch)
     assert argv[:4] == ['run', 'view', '123', '--log-failed']
     assert '--job' in argv
     assert argv[argv.index('--job') + 1] == '456'
+
+
 def test_cmd_issue_comment_posts_prepared_body(monkeypatch, tmp_path):
     """cmd_issue_comment posts the prepared body via `gh issue comment {n} --body`."""
     run_gh_stub, captured = _capture_run_gh()
@@ -295,6 +331,8 @@ def test_cmd_issue_comment_posts_prepared_body(monkeypatch, tmp_path):
     assert result['operation'] == 'issue_comment'
     assert result['issue_number'] == '42'
     assert captured[-1] == ['issue', 'comment', '42', '--body', 'Outline ready']
+
+
 def test_cmd_issue_prepare_comment_allocates_path(monkeypatch, tmp_path):
     """_cmd_issue_prepare_comment allocates an issue-comment scratch path."""
     monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))

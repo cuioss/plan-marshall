@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for cmd_pr_merge branch-delete refactor.
 
 After the refactor:
@@ -12,6 +13,7 @@ The worktree fork exercises the scenario ``gh pr merge --delete-branch``
 cannot serve: the merge must finish cleanly and the branch delete must
 round-trip purely through the REST leaf, never through local git.
 """
+
 import argparse
 import json
 from datetime import UTC, datetime
@@ -33,6 +35,8 @@ def _install_common(monkeypatch):
         'get_repo_info',
         lambda: ('octo', 'repo'),
     )
+
+
 def _install_probe(
     monkeypatch,
     *,
@@ -64,6 +68,8 @@ def _install_probe(
 
     monkeypatch.setattr(github_ops, '_probe_merge_queue_state', probe_stub)
     return captured
+
+
 def _pr_view_success_payload() -> dict:
     """Minimal ``view_pr_data`` success payload with a head branch."""
     return {
@@ -79,6 +85,8 @@ def _pr_view_success_payload() -> dict:
         'mergeable': 'mergeable',
         'merge_state': 'clean',
     }
+
+
 _CORROBORATION_PAYLOADS: dict[str, dict] = {
     # Landed merge — the only shape that corroborates.
     'merged': {
@@ -111,6 +119,8 @@ _CORROBORATION_PAYLOADS: dict[str, dict] = {
         'headRefOid': 'abc123',
     },
 }
+
+
 def _install_merge_preconditions(monkeypatch, *, view_payload: dict | None = None) -> dict:
     """Install the stubs ``cmd_pr_merge``'s own guards require.
 
@@ -122,6 +132,8 @@ def _install_merge_preconditions(monkeypatch, *, view_payload: dict | None = Non
     """
     monkeypatch.setattr(github_ops, 'view_pr_data', lambda head=None: view_payload or _pr_view_success_payload())
     return _install_probe(monkeypatch)
+
+
 def _merge_ns(*, delete_branch: bool, pr_number: int | None = 42, head: str | None = None):
     return argparse.Namespace(
         pr_number=pr_number,
@@ -129,8 +141,12 @@ def _merge_ns(*, delete_branch: bool, pr_number: int | None = 42, head: str | No
         strategy='merge',
         delete_branch=delete_branch,
     )
+
+
 def _auto_merge_ns(*, pr_number: int | None = 42, head: str | None = None, strategy: str = 'squash'):
     return argparse.Namespace(pr_number=pr_number, head=head, strategy=strategy)
+
+
 def _gate_run_gh(*, view, compare):
     """run_gh stub dispatching the gate's two query shapes.
 
@@ -185,6 +201,8 @@ def test_pr_merge_squash_rejects_ancestry_only_evidence(monkeypatch):
     # The compare endpoint was never consulted — ancestry is not admissible here.
     compare_calls = [c for c in captured if c[:1] == ['api']]
     assert compare_calls == [], compare_calls
+
+
 def test_pr_merge_rebase_accepts_ancestry_evidence(monkeypatch):
     """A rebase merge IS corroborated by base-contains-head ancestry.
 
@@ -212,6 +230,8 @@ def test_pr_merge_rebase_accepts_ancestry_evidence(monkeypatch):
     assert result['status'] == 'success', result
     assert result['merged'] is True, result
     assert 'contains head' in result['merge_corroboration'], result
+
+
 @pytest.mark.parametrize('compare_status', ['ahead', 'diverged', 'identical'])
 def test_pr_merge_ancestry_arm_reads_compare_status(monkeypatch, compare_status):
     """The ancestry arm asserts the compare STATUS value, not the response's shape.
@@ -243,6 +263,8 @@ def test_pr_merge_ancestry_arm_reads_compare_status(monkeypatch, compare_status)
         assert result['merged'] is True, result
     else:
         assert result['status'] == 'error', result
+
+
 def test_pr_auto_merge_probe_error_fails_closed(monkeypatch):
     """An unresolvable queue state is an error, never a guessed disposition."""
     _install_common(monkeypatch)
@@ -267,6 +289,8 @@ def test_pr_auto_merge_probe_error_fails_closed(monkeypatch):
     assert 'scope' in result['error'], result
     # The probe precedes the call, so no auto-merge was scheduled as a side effect.
     assert captured == [], captured
+
+
 def test_stuck_state_gate_review_not_approved(monkeypatch):
     """A non-approved review decision fails the gate closed."""
     _install_common(monkeypatch)
@@ -291,6 +315,8 @@ def test_stuck_state_gate_review_not_approved(monkeypatch):
 
     assert ok is False
     assert 'not approved' in reason
+
+
 def test_stuck_state_gate_check_not_concluded(monkeypatch):
     """An in-progress (no-conclusion) required check fails the gate closed."""
     _install_common(monkeypatch)
@@ -315,6 +341,8 @@ def test_stuck_state_gate_check_not_concluded(monkeypatch):
 
     assert ok is False
     assert 'has not concluded' in reason
+
+
 def test_stuck_state_gate_unparseable_json_fails_closed(monkeypatch):
     """Unparseable gate-query JSON fails closed."""
     _install_common(monkeypatch)
@@ -329,6 +357,8 @@ def test_stuck_state_gate_unparseable_json_fails_closed(monkeypatch):
 
     assert ok is False
     assert 'could not be parsed' in reason
+
+
 def test_behind_by_zero_compare_missing_field_fails_closed(monkeypatch):
     """A compare response missing behind_by fails closed."""
     _install_common(monkeypatch)

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Cross-cutting suite: a NON-CodeRabbit refusal arms the right recovery.
 
 Detection answers per REGISTERED bot rather than for one privileged bot, and a
@@ -33,6 +34,7 @@ from the selector's own published ``RECOVERY_ACTIONS`` vocabulary, never
 hard-coded, so a bot added or reclassified in a standards doc is swept here
 automatically.
 """
+
 from __future__ import annotations
 
 import importlib
@@ -60,6 +62,8 @@ _STRUCTURAL_NOTICE_BODY = (
     '> [!WARNING] > ## Usage limit reached > '
     'This reviewer has reached its usage limit. Reviews will resume after the limit resets.'
 )
+
+
 def _wording_body(pattern: str) -> str:
     """Wrap a declared refusal ``pattern`` in a body carrying no notice SHAPE.
 
@@ -75,6 +79,8 @@ def _wording_body(pattern: str) -> str:
     headings, and any resume / reset / try-again / unable-to / paused phrasing.
     """
     return f'Context from the reviewer: {pattern}.'
+
+
 def _refusal_body(bot_kind: str) -> str:
     """A refusal body SOME arm recognises for ``bot_kind``.
 
@@ -93,23 +99,33 @@ def _refusal_body(bot_kind: str) -> str:
     if declared:
         return _wording_body(declared[0])
     return _STRUCTURAL_NOTICE_BODY
+
+
 _DECLARED_WORDING_PAIRS: list[tuple[str, str]] = [
     (bot_kind, pattern) for bot_kind in bot_registry.bot_kinds() for pattern in bot_registry.refusal_patterns(bot_kind)
 ]
 _DECLARED_WORDING_POPULATION_SIZE = len(_DECLARED_WORDING_PAIRS)
 _DECLARED_WORDING_POPULATION_BASELINE = 7
+
+
 def _login(bot_kind: str) -> str:
     """The author login that resolves back to ``bot_kind``, from the registry map."""
     for login, kind in bot_registry.login_to_bot_kind().items():
         if kind == bot_kind:
             return login
     raise AssertionError(f'{bot_kind} declares no author_login')
+
+
 def _registered_bots() -> list[str]:
     bots = bot_registry.bot_kinds()
     assert bots, 'registry must declare at least one bot'
     return bots
+
+
 def _comment(bot_kind: str, body: str, created_at: str = '2026-01-09T00:00:00Z') -> dict:
     return {'author': f'{_login(bot_kind)}[bot]', 'body': body, 'created_at': created_at}
+
+
 _PRODUCER_ONLY_FIELDS = {'rate_limited_bots': {'rate_limit_class'}, 'refusals': {'source'}}
 _AR_SKILL = (
     get_script_path('plan-marshall', 'workflow-integration-github', '_github_pr.py').parents[4]
@@ -174,6 +190,8 @@ class TestNonCodeRabbitRefusalIsDetected:
             for marker in bot_registry.ignore_patterns(bot):
                 detected = _detect_rate_limited_bots([_comment(bot, marker)])
                 assert detected == [], f'{bot}: ignore marker {marker!r} read as a refusal'
+
+
 class TestTheProvenanceSeam:
     """``refusal_layers`` tells the arms apart where the boolean cannot."""
 
@@ -229,6 +247,8 @@ class TestTheProvenanceSeam:
         assert refusal_layers(_STRUCTURAL_NOTICE_BODY, None) == [REFUSAL_LAYER_STRUCTURAL]
         for _bot, pattern in _DECLARED_WORDING_PAIRS:
             assert refusal_layers(_wording_body(pattern), None) == []
+
+
 class TestRefusalIsNeverABareTimeout:
     """End-to-end: a detected refusal is reported AS a refusal, not as silence."""
 

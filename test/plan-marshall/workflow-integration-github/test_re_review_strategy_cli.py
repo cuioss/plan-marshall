@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for github_re_review.py — the bot_kind-keyed re-review strategy registry.
 
 Covers the three concerns of the post-merge re-review registry:
@@ -74,6 +75,7 @@ works" from "this machine's store happens to hold no claim", and the negative
 control alone proves only that a claim CAN refuse, not that it is suppressed by
 default.
 """
+
 import argparse
 import sys
 import time
@@ -98,6 +100,8 @@ _EXPIRED_WINDOW = {
     'seconds_remaining': 0.0,
 }
 _LIVE_WINDOW_READER = github_re_review.read_rate_window
+
+
 def _window_reader(observation):
     """Build a ``(plan_id, bot_kind, pr_number) -> dict`` reader for ``observation``.
 
@@ -109,6 +113,8 @@ def _window_reader(observation):
         return dict(observation)
 
     return _read
+
+
 @pytest.fixture(autouse=True)
 def _neutralize_rate_window(monkeypatch):
     """Hold the trigger guard's window read at NO STORED RECORD for every test here.
@@ -127,6 +133,8 @@ def _neutralize_rate_window(monkeypatch):
     named in the module docstring is what keeps this fixture honest.
     """
     monkeypatch.setattr(github_re_review, 'read_rate_window', _window_reader(_NO_RECORD_WINDOW))
+
+
 @pytest.fixture(autouse=True)
 def _no_provider_comments(monkeypatch):
     """Default every test to an empty provider comment list.
@@ -141,6 +149,8 @@ def _no_provider_comments(monkeypatch):
         'fetch_pr_comments_data',
         lambda pr_number, unresolved_only=False: {'status': 'success', 'comments': []},
     )
+
+
 def _patch_comments(monkeypatch, comments):
     """Override the provider comment list for the comment-signal tests."""
     monkeypatch.setattr(
@@ -148,10 +158,14 @@ def _patch_comments(monkeypatch, comments):
         'fetch_pr_comments_data',
         lambda pr_number, unresolved_only=False: {'status': 'success', 'comments': list(comments)},
     )
+
+
 def _noop_sleep(monkeypatch):
     """Make poll_until's sleep a no-op so timeout-path tests finish fast."""
     monkeypatch.setattr(ci_base.time, 'sleep', lambda *_a, **_kw: None)
     monkeypatch.setattr(time, 'sleep', lambda *_a, **_kw: None)
+
+
 def _review(commit_sha, submitted_at, *, user='coderabbit[bot]', state='COMMENTED', body=''):
     """Build a review row in the shape fetch_pr_reviews_with_commits returns.
 
@@ -167,6 +181,8 @@ def _review(commit_sha, submitted_at, *, user='coderabbit[bot]', state='COMMENTE
         'commit_sha': commit_sha,
         'body': body,
     }
+
+
 def _comment(author, *, created_at, updated_at='', body='## PR Reviewer Guide', kind='issue_comment'):
     """Build a comment row in the shape fetch_pr_comments_data returns."""
     return {
@@ -181,12 +197,16 @@ def _comment(author, *, created_at, updated_at='', body='## PR Reviewer Guide', 
         'created_at': created_at,
         'updated_at': updated_at,
     }
+
+
 _GUARD_SWEEP_POPULATION: list[str] = bot_registry.bot_kinds()
 _GUARD_SWEEP_POPULATION_SIZE = len(_GUARD_SWEEP_POPULATION)
 _GUARD_PR_NUMBER = 42
 _GUARD_PUSH_TIME = '2026-01-01T00:00:00Z'
 _PR_AGENT_LOGIN = 'cuioss-review-bot'
 _TRIGGER = '2026-01-01T00:02:00Z'
+
+
 def _await_with_comments(monkeypatch, comments, *, reviews=None, bot_kind='cuioss-review-bot', head_sha='headsha'):
     """Run ``await_fresh_review`` over a fixed comment (and review) set.
 
@@ -203,11 +223,15 @@ def _await_with_comments(monkeypatch, comments, *, reviews=None, bot_kind='cuios
     _patch_comments(monkeypatch, comments)
     strategy = github_re_review.resolve_strategy(bot_kind)
     return strategy.await_fresh_review(42, head_sha, _TRIGGER, bot_kind=bot_kind, timeout=1, interval=0)
+
+
 _HEAD_SHA = 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678'
 _OTHER_SHA = '0f1e2d3c4b5a69788796a5b4c3d2e1f098765432'
 _HEAD_SHA_URL = f'https://github.com/cuioss/plan-marshall/commit/{_HEAD_SHA}'
 _OTHER_SHA_URL = f'https://github.com/cuioss/plan-marshall/commit/{_OTHER_SHA}'
 _OBSERVED_REVIEW_BOT_SHA = '4d6738e2d96150706cda6b682109336c5c0c383b'
+
+
 def _guide_body(sha: str) -> str:
     """The Guide body shape observed live, naming ``sha`` as the reviewed commit.
 
@@ -218,6 +242,8 @@ def _guide_body(sha: str) -> str:
     Guide that the bot EDITS — the body always arrives with it attached.
     """
     return f'## PR Reviewer Guide 🔍 (Review updated until commit https://github.com/cuioss/plan-marshall/commit/{sha})'
+
+
 _VERIFYING_REFERENCE = f'[{_HEAD_SHA[:7]}]({_HEAD_SHA_URL})'
 _NON_VERIFYING_REFERENCE = 'the latest push'
 _SOURCERY_LOGIN = 'sourcery-ai'
@@ -252,6 +278,8 @@ _CODERABBIT_GENUINE_COMMENT = (
 _CODERABBIT_REFUSAL_WITH_ETA = (
     '> [!WARNING] > ## Review limit reached > Please wait 12 minutes and 30 seconds before requesting another review.'
 )
+
+
 def _arm_enumerative(monkeypatch, max_chars: int = 200) -> None:
     """Give the enumerative arm a threshold, patched where the predicate READS it.
 
@@ -265,7 +293,11 @@ def _arm_enumerative(monkeypatch, max_chars: int = 200) -> None:
         'UNRECOGNISED_REFUSAL_MAX_CHARS',
         max_chars,
     )
+
+
 _UNRECOGNISED_REFUSAL = 'Not reviewing this one.'
+
+
 def _re_review_args(
     *,
     pr_number=42,
@@ -282,6 +314,8 @@ def _re_review_args(
         timeout=timeout,
         plan_id=None,
     )
+
+
 def _run_recovery_action(monkeypatch, capsys, *extra: str) -> dict:
     """Drive ``main()`` through the ``recovery-action`` verb; return the parsed TOON.
 
@@ -306,6 +340,8 @@ def test_author_login_map_derives_from_bot_registry():
     import bot_registry
 
     assert github_re_review._AUTHOR_LOGIN_TO_BOT_KIND == bot_registry.login_to_bot_kind()
+
+
 def test_the_bare_token_shape_still_verifies_after_the_widening():
     """The widening is a SUPERSET: the shape that already worked still works.
 
@@ -318,6 +354,8 @@ def test_the_bare_token_shape_still_verifies_after_the_widening():
     assert github_re_review._references_head_sha(_HEAD_SHA_URL, _HEAD_SHA) is True
     assert github_re_review._references_head_sha('headsha', 'headsha') is True
     assert github_re_review._references_head_sha(_OTHER_SHA, _HEAD_SHA) is False
+
+
 def test_the_extractor_reads_no_sha_out_of_a_longer_hex_run():
     """A 64-hex digest yields no spurious 40-character prefix match.
 
@@ -332,10 +370,14 @@ def test_the_extractor_reads_no_sha_out_of_a_longer_hex_run():
     assert len(digest) == 64
     assert digest.startswith(_HEAD_SHA)
     assert github_re_review._references_head_sha(digest, _HEAD_SHA) is False
+
+
 def test_the_extractor_fails_closed_on_an_absent_head_sha():
     """An empty head SHA verifies nothing — answering True would verify everything."""
     assert github_re_review._references_head_sha(_HEAD_SHA_URL, '') is False
     assert github_re_review._references_head_sha('', _HEAD_SHA) is False
+
+
 def test_the_comment_and_review_paths_share_ONE_predicate():
     """The verification rule is the same function on both paths, over both fields.
 
@@ -351,6 +393,8 @@ def test_the_comment_and_review_paths_share_ONE_predicate():
     assert github_re_review._verifies_head_sha('issue_comment', comment, _OTHER_SHA) is False
     # Fail-closed: nothing matched, so nothing is verified.
     assert github_re_review._verifies_head_sha('', None, _HEAD_SHA) is False
+
+
 def test_structural_fallback_rejects_an_uncaptured_refusal_on_the_review_path(monkeypatch):
     """A shaped refusal that no refusal_patterns entry matches is still rejected."""
     result = _await_with_comments(
@@ -370,6 +414,8 @@ def test_structural_fallback_rejects_an_uncaptured_refusal_on_the_review_path(mo
     assert result['matched'] is False
     assert result['matched_signal'] == ''
     assert result['head_sha_verified'] is False
+
+
 def test_structural_fallback_rejects_an_uncaptured_refusal_on_the_comment_path(monkeypatch):
     """The same uncaptured refusal is rejected when it arrives as a comment."""
     result = _await_with_comments(
@@ -386,6 +432,8 @@ def test_structural_fallback_rejects_an_uncaptured_refusal_on_the_comment_path(m
 
     assert result['matched'] is False
     assert result['matched_signal'] == ''
+
+
 def test_structurally_detected_refusal_records_the_fallback_layer(monkeypatch):
     """The record names WHICH arm fired, so a reader can tell how much is KNOWN.
 
@@ -408,6 +456,8 @@ def test_structurally_detected_refusal_records_the_fallback_layer(monkeypatch):
 
     assert result['refusal_detected'] is True
     assert result['refusals'][0]['layer'] == _github_pr.REFUSAL_LAYER_STRUCTURAL
+
+
 def test_a_registry_recognised_size_refusal_records_its_cause_and_stated_cap():
     """⛔ The producer's OWN unit-level pin for the two-axis keys.
 
@@ -424,6 +474,8 @@ def test_a_registry_recognised_size_refusal_records_its_cause_and_stated_cap():
     assert record['layer'] == _github_pr.REFUSAL_LAYER_REGISTRY
     assert record['cause'] == _github_pr.REFUSAL_CAUSE_SIZE
     assert record['cap'] == '150000 characters'
+
+
 def test_recorded_refusal_body_is_a_single_truncated_line():
     """The record rides a TOON envelope, whose scalars are single-line — a
     multi-line body would be silently clipped at the transport layer."""
@@ -438,6 +490,8 @@ def test_recorded_refusal_body_is_a_single_truncated_line():
     # so this quota refusal states no ceiling — empty, never a fabricated figure.
     assert record['cause'] == _github_pr.REFUSAL_CAUSE_QUOTA
     assert record['cap'] == ''
+
+
 def test_the_envelope_publishes_the_declared_layer_population(monkeypatch):
     """The envelope carries the vocabulary, and the population is non-empty.
 
@@ -459,6 +513,8 @@ def test_the_envelope_publishes_the_declared_layer_population(monkeypatch):
         _github_pr.REFUSAL_LAYER_ENUMERATIVE,
     ):
         assert member in published
+
+
 @pytest.mark.parametrize(
     'body',
     [
@@ -487,11 +543,15 @@ def test_a_body_an_earlier_arm_recognised_keeps_its_own_layer(body, monkeypatch)
     # the stated ceiling are properties of the notice, not of which arm read it.
     assert live['cause'] == inert['cause']
     assert live['cap'] == inert['cap']
+
+
 def test_cmd_re_review_unknown_bot_kind_errors():
     result = github_re_review.cmd_re_review(_re_review_args(bot_kind='copilot'))
 
     assert result['status'] == 'error'
     assert 'copilot' in result['error']
+
+
 def test_cmd_re_review_short_circuits_on_request_failure(monkeypatch):
     """A failed cuioss-review-bot trigger post aborts before await is ever called."""
     _noop_sleep(monkeypatch)
@@ -509,18 +569,26 @@ def test_cmd_re_review_short_circuits_on_request_failure(monkeypatch):
     result = github_re_review.cmd_re_review(_re_review_args(bot_kind='cuioss-review-bot'))
 
     assert result['status'] == 'error'
+
+
 def test_parse_iso_empty_string_returns_none():
     """An empty timestamp parses to None (the early-return guard)."""
     assert github_re_review._parse_iso('') is None
+
+
 def test_parse_iso_unparseable_returns_none():
     """A non-ISO timestamp parses to None rather than raising."""
     assert github_re_review._parse_iso('not-a-timestamp') is None
+
+
 def test_parse_iso_normalizes_trailing_z():
     """A GitHub ``...Z`` timestamp is normalized and parsed to a UTC datetime."""
     parsed = github_re_review._parse_iso('2026-01-01T00:00:00Z')
 
     assert parsed is not None
     assert parsed.utcoffset().total_seconds() == 0
+
+
 def test_parse_iso_naive_datetime_is_normalized_to_utc():
     """A timezone-naive ISO timestamp is coerced to UTC rather than returning None.
 
@@ -532,9 +600,13 @@ def test_parse_iso_naive_datetime_is_normalized_to_utc():
 
     assert parsed is not None
     assert parsed.utcoffset().total_seconds() == 0
+
+
 def test_bot_kind_for_author_human_returns_none():
     """A human (non-bot) author login resolves to None."""
     assert github_re_review.bot_kind_for_author('octocat') is None
+
+
 def test_main_parses_timeout_flag_and_threads_it(monkeypatch):
     """main() must parse ``--timeout`` and thread the value into the handler.
 
@@ -571,6 +643,8 @@ def test_main_parses_timeout_flag_and_threads_it(monkeypatch):
 
     assert rc == 0
     assert captured['timeout'] == 77
+
+
 def test_main_recovery_action_derives_a_registered_bots_verdict(monkeypatch, capsys):
     """MATCHED CONTROL — a REGISTERED kind travels the same verb to a real verdict.
 

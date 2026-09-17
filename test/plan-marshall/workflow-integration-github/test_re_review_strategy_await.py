@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for github_re_review.py — the bot_kind-keyed re-review strategy registry.
 
 Covers the three concerns of the post-merge re-review registry:
@@ -74,6 +75,7 @@ works" from "this machine's store happens to hold no claim", and the negative
 control alone proves only that a claim CAN refuse, not that it is suppressed by
 default.
 """
+
 import argparse
 import sys
 import time
@@ -98,6 +100,8 @@ _EXPIRED_WINDOW = {
     'seconds_remaining': 0.0,
 }
 _LIVE_WINDOW_READER = github_re_review.read_rate_window
+
+
 def _window_reader(observation):
     """Build a ``(plan_id, bot_kind, pr_number) -> dict`` reader for ``observation``.
 
@@ -109,6 +113,8 @@ def _window_reader(observation):
         return dict(observation)
 
     return _read
+
+
 @pytest.fixture(autouse=True)
 def _neutralize_rate_window(monkeypatch):
     """Hold the trigger guard's window read at NO STORED RECORD for every test here.
@@ -127,6 +133,8 @@ def _neutralize_rate_window(monkeypatch):
     named in the module docstring is what keeps this fixture honest.
     """
     monkeypatch.setattr(github_re_review, 'read_rate_window', _window_reader(_NO_RECORD_WINDOW))
+
+
 @pytest.fixture(autouse=True)
 def _no_provider_comments(monkeypatch):
     """Default every test to an empty provider comment list.
@@ -141,6 +149,8 @@ def _no_provider_comments(monkeypatch):
         'fetch_pr_comments_data',
         lambda pr_number, unresolved_only=False: {'status': 'success', 'comments': []},
     )
+
+
 def _patch_comments(monkeypatch, comments):
     """Override the provider comment list for the comment-signal tests."""
     monkeypatch.setattr(
@@ -148,10 +158,14 @@ def _patch_comments(monkeypatch, comments):
         'fetch_pr_comments_data',
         lambda pr_number, unresolved_only=False: {'status': 'success', 'comments': list(comments)},
     )
+
+
 def _noop_sleep(monkeypatch):
     """Make poll_until's sleep a no-op so timeout-path tests finish fast."""
     monkeypatch.setattr(ci_base.time, 'sleep', lambda *_a, **_kw: None)
     monkeypatch.setattr(time, 'sleep', lambda *_a, **_kw: None)
+
+
 def _review(commit_sha, submitted_at, *, user='coderabbit[bot]', state='COMMENTED', body=''):
     """Build a review row in the shape fetch_pr_reviews_with_commits returns.
 
@@ -167,6 +181,8 @@ def _review(commit_sha, submitted_at, *, user='coderabbit[bot]', state='COMMENTE
         'commit_sha': commit_sha,
         'body': body,
     }
+
+
 def _comment(author, *, created_at, updated_at='', body='## PR Reviewer Guide', kind='issue_comment'):
     """Build a comment row in the shape fetch_pr_comments_data returns."""
     return {
@@ -181,10 +197,14 @@ def _comment(author, *, created_at, updated_at='', body='## PR Reviewer Guide', 
         'created_at': created_at,
         'updated_at': updated_at,
     }
+
+
 _GUARD_SWEEP_POPULATION: list[str] = bot_registry.bot_kinds()
 _GUARD_SWEEP_POPULATION_SIZE = len(_GUARD_SWEEP_POPULATION)
 _GUARD_PR_NUMBER = 42
 _GUARD_PUSH_TIME = '2026-01-01T00:00:00Z'
+
+
 def _record_posts(monkeypatch) -> list[tuple]:
     """Replace ``post_pr_comment`` with a recorder; return the list it appends to.
 
@@ -201,6 +221,8 @@ def _record_posts(monkeypatch) -> list[tuple]:
 
     monkeypatch.setattr(github_re_review._github, 'post_pr_comment', fake_post)
     return posted
+
+
 def _simulate_store(monkeypatch, observation) -> dict:
     """Put ``observation`` in the store the LIVE reader delegates to, and count reads.
 
@@ -224,8 +246,12 @@ def _simulate_store(monkeypatch, observation) -> dict:
 
     monkeypatch.setattr(merge_lock, 'run_rate_window', fake_run_rate_window)
     return reads
+
+
 _PR_AGENT_LOGIN = 'cuioss-review-bot'
 _TRIGGER = '2026-01-01T00:02:00Z'
+
+
 def _await_with_comments(monkeypatch, comments, *, reviews=None, bot_kind='cuioss-review-bot', head_sha='headsha'):
     """Run ``await_fresh_review`` over a fixed comment (and review) set.
 
@@ -242,11 +268,15 @@ def _await_with_comments(monkeypatch, comments, *, reviews=None, bot_kind='cuios
     _patch_comments(monkeypatch, comments)
     strategy = github_re_review.resolve_strategy(bot_kind)
     return strategy.await_fresh_review(42, head_sha, _TRIGGER, bot_kind=bot_kind, timeout=1, interval=0)
+
+
 _HEAD_SHA = 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678'
 _OTHER_SHA = '0f1e2d3c4b5a69788796a5b4c3d2e1f098765432'
 _HEAD_SHA_URL = f'https://github.com/cuioss/plan-marshall/commit/{_HEAD_SHA}'
 _OTHER_SHA_URL = f'https://github.com/cuioss/plan-marshall/commit/{_OTHER_SHA}'
 _OBSERVED_REVIEW_BOT_SHA = '4d6738e2d96150706cda6b682109336c5c0c383b'
+
+
 def _guide_body(sha: str) -> str:
     """The Guide body shape observed live, naming ``sha`` as the reviewed commit.
 
@@ -257,6 +287,8 @@ def _guide_body(sha: str) -> str:
     Guide that the bot EDITS — the body always arrives with it attached.
     """
     return f'## PR Reviewer Guide 🔍 (Review updated until commit https://github.com/cuioss/plan-marshall/commit/{sha})'
+
+
 def _republished_comment(reference, *, created_at='2026-01-01T00:00:00Z', updated_at='2026-01-01T00:05:00Z'):
     """A CodeRabbit in-place-republished summary naming ``reference`` in its body.
 
@@ -266,6 +298,8 @@ def _republished_comment(reference, *, created_at='2026-01-01T00:00:00Z', update
     """
     body = f'Review updated until commit {reference}. No actionable comments were generated.'
     return _comment(_CODERABBIT_LOGIN, created_at=created_at, updated_at=updated_at, body=body)
+
+
 _VERIFYING_REFERENCE = f'[{_HEAD_SHA[:7]}]({_HEAD_SHA_URL})'
 _NON_VERIFYING_REFERENCE = 'the latest push'
 _SOURCERY_LOGIN = 'sourcery-ai'
@@ -301,6 +335,8 @@ _CODERABBIT_REFUSAL_WITH_ETA = (
     '> [!WARNING] > ## Review limit reached > Please wait 12 minutes and 30 seconds before requesting another review.'
 )
 _UNRECOGNISED_REFUSAL = 'Not reviewing this one.'
+
+
 def _re_review_args(
     *,
     pr_number=42,
@@ -327,6 +363,8 @@ def test_strategy_triggers_derive_from_bot_registry():
         strategy = github_re_review.resolve_strategy(bot_kind)
         assert strategy is not None
         assert strategy.trigger_comment == bot_registry.trigger_comment(bot_kind)
+
+
 @pytest.mark.parametrize('bot_kind', _GUARD_SWEEP_POPULATION)
 def test_the_refusal_envelope_names_the_holder_and_the_seconds_remaining(bot_kind, monkeypatch):
     """The refusal is a RETURNED value naming who holds the window and for how long.
@@ -347,6 +385,8 @@ def test_the_refusal_envelope_names_the_holder_and_the_seconds_remaining(bot_kin
     assert result['pr_number'] == _GUARD_PR_NUMBER
     assert result['holder'] == _OPEN_WINDOW['holder']
     assert result['seconds_remaining'] == _OPEN_WINDOW['seconds_remaining']
+
+
 def test_the_neutralized_guard_posts_despite_a_claimed_window_in_the_store(monkeypatch):
     """POSITIVE ARM — the autouse fixture is engaged, so an ambient claim is ignored.
 
@@ -371,6 +411,8 @@ def test_the_neutralized_guard_posts_despite_a_claimed_window_in_the_store(monke
         'reached the live store route, so every test in this module that drives '
         'request_fresh_review is silently dependent on machine-global lock state'
     )
+
+
 def test_the_unneutralized_guard_refuses_on_the_same_claimed_window(monkeypatch):
     """NEGATIVE CONTROL — with the fixture disengaged, the SAME claim refuses.
 
@@ -395,6 +437,8 @@ def test_the_unneutralized_guard_refuses_on_the_same_claimed_window(monkeypatch)
     )
     assert result['status'] == 'refused'
     assert posted == []
+
+
 def test_await_prefers_the_review_signal_when_both_are_present(monkeypatch):
     """A matching review WINS over a matching comment, and verifies the HEAD.
 
@@ -413,6 +457,8 @@ def test_await_prefers_the_review_signal_when_both_are_present(monkeypatch):
     assert result['matched_review']['commit_sha'] == 'headsha'
     # The comment slot stays empty — the review signal won.
     assert result['matched_comment'] == {}
+
+
 def test_await_records_a_url_embedded_sha_as_a_verified_review(monkeypatch):
     """POSITIVE, at the field a consumer actually reads: ``head_sha_verified: true``.
 
@@ -432,6 +478,8 @@ def test_await_records_a_url_embedded_sha_as_a_verified_review(monkeypatch):
     assert result['matched_signal'] == 'review'
     assert result['head_sha_verified'] is True
     assert result['timed_out'] is False
+
+
 def test_await_does_not_verify_a_review_naming_a_different_commit(monkeypatch):
     """NEGATIVE control at the envelope: a genuinely different commit stays unverified.
 
@@ -451,6 +499,8 @@ def test_await_does_not_verify_a_review_naming_a_different_commit(monkeypatch):
     assert result['matched_signal'] == ''
     assert result['head_sha_verified'] is False
     assert result['timed_out'] is True
+
+
 def test_await_verifies_a_comment_whose_body_names_the_awaited_commit(monkeypatch):
     """POSITIVE: the live defect, pinned at the field both consumers branch on.
 
@@ -473,6 +523,8 @@ def test_await_verifies_a_comment_whose_body_names_the_awaited_commit(monkeypatc
     assert result['matched_signal'] == 'issue_comment'
     assert result['head_sha_verified'] is True
     assert result['timed_out'] is False
+
+
 def test_await_does_not_verify_a_comment_naming_a_different_commit(monkeypatch):
     """NEGATIVE control: the same body shape naming another commit stays unverified.
 
@@ -493,6 +545,8 @@ def test_await_does_not_verify_a_comment_naming_a_different_commit(monkeypatch):
     assert result['matched'] is True
     assert result['matched_signal'] == 'issue_comment'
     assert result['head_sha_verified'] is False
+
+
 def test_await_does_not_verify_a_comment_naming_no_commit_at_all(monkeypatch):
     """The genuine DECLINE survives the correction unchanged.
 
@@ -510,6 +564,8 @@ def test_await_does_not_verify_a_comment_naming_no_commit_at_all(monkeypatch):
     assert result['matched'] is True
     assert result['matched_signal'] == 'issue_comment'
     assert result['head_sha_verified'] is False
+
+
 def test_await_verifies_a_republished_comment_naming_the_awaited_head(monkeypatch):
     """POSITIVE: a comment whose body links the awaited HEAD reports ``head_sha_verified: true``.
 
@@ -528,6 +584,8 @@ def test_await_verifies_a_republished_comment_naming_the_awaited_head(monkeypatc
     assert result['head_sha_verified'] is True
     assert result['matched_review'] == {}
     assert result['refusal_detected'] is False
+
+
 @pytest.mark.parametrize(
     'reference',
     [
@@ -553,6 +611,8 @@ def test_await_does_not_verify_a_republished_comment_not_naming_the_awaited_head
     assert result['matched'] is True
     assert result['matched_signal'] == 'issue_comment'
     assert result['head_sha_verified'] is False
+
+
 @pytest.mark.parametrize(
     'verifying_first',
     [
@@ -586,6 +646,8 @@ def test_await_selects_the_head_verifying_comment_whatever_the_list_order(verify
     # The SELECTED record is the verifying one, not merely a true verdict computed
     # off some other comment — the envelope hands this record to the caller.
     assert result['matched_comment']['body'] == verifying['body']
+
+
 def test_await_does_not_credit_the_coderabbit_command_reply_as_a_review(monkeypatch):
     """⛔ The reply to OUR OWN trigger is a refusal, not a completion.
 
@@ -620,6 +682,8 @@ def test_await_does_not_credit_the_coderabbit_command_reply_as_a_review(monkeypa
     assert result['refusals'][0]['bot_kind'] == 'coderabbit'
     assert result['refusals'][0]['source'] == 'issue_comment'
     assert result['refusals'][0]['layer'] == _github_pr.REFUSAL_LAYER_REGISTRY
+
+
 def test_a_refusal_naming_the_awaited_head_is_still_never_selected(monkeypatch):
     """⛔ The HEAD-verifying preference reorders ELIGIBLE comments; it re-admits no refusal.
 
@@ -655,6 +719,8 @@ def test_a_refusal_naming_the_awaited_head_is_still_never_selected(monkeypatch):
     assert result['refusal_detected'] is True
     assert result['refusals'][0]['source'] == 'issue_comment'
     assert result['refusals'][0]['layer'] == _github_pr.REFUSAL_LAYER_REGISTRY
+
+
 def test_await_does_not_credit_the_command_reply_delivered_as_a_review(monkeypatch):
     """The same reply submitted as a REVIEW object is likewise not a completed review.
 
@@ -681,6 +747,8 @@ def test_await_does_not_credit_the_command_reply_delivered_as_a_review(monkeypat
     assert result['head_sha_verified'] is False
     assert result['refusal_detected'] is True
     assert result['refusals'][0]['layer'] == _github_pr.REFUSAL_LAYER_REGISTRY
+
+
 def test_cmd_re_review_coderabbit_posts_then_awaits(monkeypatch):
     """coderabbit: posts @coderabbitai review, then awaits the fresh review for HEAD."""
     _noop_sleep(monkeypatch)
@@ -705,6 +773,8 @@ def test_cmd_re_review_coderabbit_posts_then_awaits(monkeypatch):
     assert result['bot_kind'] == 'coderabbit'
     assert result['head_sha'] == 'headsha'
     assert post_calls['args'] == [(42, '@coderabbitai review')]
+
+
 def test_cmd_re_review_pr_agent_posts_then_awaits(monkeypatch):
     """cuioss-review-bot: posts /review, then awaits a fresh review for HEAD."""
     _noop_sleep(monkeypatch)
@@ -728,6 +798,8 @@ def test_cmd_re_review_pr_agent_posts_then_awaits(monkeypatch):
     assert result['matched'] is True
     assert result['bot_kind'] == 'cuioss-review-bot'
     assert post_calls['args'] == [(42, '/review')]
+
+
 def test_cmd_re_review_threads_bot_kind_into_await(monkeypatch):
     """The resolved ``bot_kind`` MUST reach ``await_fresh_review``.
 
@@ -752,6 +824,8 @@ def test_cmd_re_review_threads_bot_kind_into_await(monkeypatch):
 
     assert result['status'] == 'success'
     assert captured['bot_kind'] == 'cuioss-review-bot'
+
+
 def test_cmd_re_review_sourcery_posts_then_awaits(monkeypatch):
     """sourcery: posts @sourcery-ai review, then awaits a fresh review for HEAD."""
     _noop_sleep(monkeypatch)
@@ -775,6 +849,8 @@ def test_cmd_re_review_sourcery_posts_then_awaits(monkeypatch):
     assert result['matched'] is True
     assert result['bot_kind'] == 'sourcery'
     assert post_calls['args'] == [(42, '@sourcery-ai review')]
+
+
 def test_cmd_re_review_short_circuits_on_await_failure(monkeypatch):
     """request succeeds but await errors → the await error envelope is returned.
 
@@ -800,6 +876,8 @@ def test_cmd_re_review_short_circuits_on_await_failure(monkeypatch):
     assert result['operation'] == 'await_fresh_review'
     # bot_kind is only stamped on a successful await envelope.
     assert 'bot_kind' not in result
+
+
 def test_cmd_re_review_threads_timeout_into_await(monkeypatch):
     """The CLI ``--timeout`` value must reach ``await_fresh_review`` verbatim.
 
@@ -824,6 +902,8 @@ def test_cmd_re_review_threads_timeout_into_await(monkeypatch):
 
     assert result['status'] == 'success'
     assert captured['timeout'] == 37
+
+
 def test_cmd_re_review_threads_default_timeout_into_await(monkeypatch):
     """When the default timeout is supplied, that exact default reaches await.
 

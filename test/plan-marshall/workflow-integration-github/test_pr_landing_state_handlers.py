@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the ``ci pr landing-state`` verb — the foreign done-ness discriminator.
 
 Three layers:
@@ -17,6 +18,7 @@ Three layers:
   DOCUMENTED copies were not, and that document is the surface a consumer reads
   to decide what to branch on.
 """
+
 import argparse
 import json
 import re
@@ -37,6 +39,8 @@ _CASE_PER_STATE: dict[str, tuple[list[str], bool]] = {
     'unpushed': ([], False),
 }
 _TIP_SHA = 'deadbeefcafebabefeedface00000000deadbeef'
+
+
 def _install_primitives(
     monkeypatch,
     *,
@@ -84,6 +88,8 @@ def _install_primitives(
 
     monkeypatch.setattr(github_ops, 'run_gh', fake_run_gh)
     monkeypatch.setattr(github_ops, 'run_git', fake_run_git)
+
+
 _API_CONTRACT: Path = (
     PROJECT_ROOT
     / 'marketplace'
@@ -105,6 +111,8 @@ def test_handler_reports_pushed_flag(monkeypatch):
     result = github_ops.cmd_pr_landing_state(argparse.Namespace(branch='feature/x'))
     assert result['pushed'] is True
     assert result['landing_state'] == 'pushed_no_pr'
+
+
 def test_handler_resolves_current_branch_when_branch_omitted(monkeypatch):
     monkeypatch.setattr(github_ops, 'check_auth', lambda: (True, ''))
 
@@ -135,12 +143,16 @@ def test_handler_resolves_current_branch_when_branch_omitted(monkeypatch):
     assert result['status'] == 'success'
     assert result['branch'] == 'feature/resolved'
     assert result['landing_state'] == 'pr_open'
+
+
 def test_handler_refuses_detached_head(monkeypatch):
     monkeypatch.setattr(github_ops, 'check_auth', lambda: (True, ''))
     monkeypatch.setattr(github_ops, 'run_git', lambda args, timeout=60: (0, 'HEAD\n', ''))
     result = github_ops.cmd_pr_landing_state(argparse.Namespace(branch=None))
     assert result['status'] == 'error'
     assert 'detached' in result.get('error', '').lower()
+
+
 def test_handler_errors_on_auth_failure_rather_than_downgrading(monkeypatch):
     # An unauthenticated gh must not silently become pushed_no_pr — a merged/open
     # verdict would be lost. The handler errors instead.
@@ -148,12 +160,16 @@ def test_handler_errors_on_auth_failure_rather_than_downgrading(monkeypatch):
     monkeypatch.setattr(github_ops, 'run_git', lambda args, timeout=60: (0, f'{_TIP_SHA}\n', ''))
     result = github_ops.cmd_pr_landing_state(argparse.Namespace(branch='feature/x'))
     assert result['status'] == 'error'
+
+
 def test_handler_errors_on_unparseable_gh_output(monkeypatch):
     monkeypatch.setattr(github_ops, 'check_auth', lambda: (True, ''))
     monkeypatch.setattr(github_ops, 'run_git', lambda args, timeout=60: (0, f'{_TIP_SHA}\n', ''))
     monkeypatch.setattr(github_ops, 'run_gh', lambda args, capture_json=False, timeout=60: (0, 'not json', ''))
     result = github_ops.cmd_pr_landing_state(argparse.Namespace(branch='feature/x'))
     assert result['status'] == 'error'
+
+
 def test_handler_errors_on_gh_list_failure(monkeypatch):
     monkeypatch.setattr(github_ops, 'check_auth', lambda: (True, ''))
     monkeypatch.setattr(github_ops, 'run_git', lambda args, timeout=60: (0, f'{_TIP_SHA}\n', ''))

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the PR-wide ``not_triggered`` observable (github_ops pull-request-runs).
 
 The observable answers one question: does ANY workflow run triggered by the
@@ -43,6 +44,7 @@ breaks identity assertions elsewhere and, worse, means a monkeypatch applied her
 targets globals the code under test does not read. The sibling suites
 (``test_github_ops_wait.py``) import these modules plainly for the same reason.
 """
+
 import inspect
 import json
 import re
@@ -53,6 +55,8 @@ import pytest
 
 _HEAD_BRANCH = 'feature/some-work'
 _DETECTION_MODULES = (github_ops, _github_checks)
+
+
 def _module_level_functions():
     """Every function defined in either path module, keyed by name."""
     own = {m.__name__ for m in _DETECTION_MODULES}
@@ -62,9 +66,13 @@ def _module_level_functions():
             if inspect.isfunction(obj) and obj.__module__ in own:
                 found.setdefault(name, obj)
     return found
+
+
 def _calls_in(func):
     """The identifiers ``func`` calls, as a set."""
     return set(re.findall(r'\b([A-Za-z_][A-Za-z0-9_]*)\s*\(', inspect.getsource(func)))
+
+
 def _detection_path_functions():
     """Derive the detection-path function set by walking the entry point's calls.
 
@@ -101,12 +109,18 @@ def _detection_path_functions():
                 callers[callee].add(caller)
 
     return tuple(sorted(name for name in reachable if callers[name] <= reachable))
+
+
 def _run(event, conclusion='success'):
     """One workflow-run record in the shape the actions/runs API returns."""
     return {'id': 12345, 'event': event, 'status': 'completed', 'conclusion': conclusion}
+
+
 def _page(runs):
     """One page envelope of the actions/runs response."""
     return {'total_count': len(runs), 'workflow_runs': list(runs)}
+
+
 def _patch_provider(monkeypatch, pages, *, pr_extras=None, capture=None):
     """Patch the provider surface beneath ``pull_request_runs_result``.
 
@@ -137,7 +151,11 @@ def _patch_provider(monkeypatch, pages, *, pr_extras=None, capture=None):
         return 0, json.dumps(pages), ''
 
     monkeypatch.setattr(github_ops, 'run_gh', _run_gh)
+
+
 _DETECTION_PATH_FUNCS = _detection_path_functions()
+
+
 def _patch_envelope(monkeypatch, raw_stdout):
     """Patch the provider beneath ``fetch_branch_workflow_runs`` with raw stdout.
 
@@ -157,6 +175,8 @@ def test_a_successful_pull_request_run_is_not_not_triggered(monkeypatch):
 
     assert result['not_triggered'] is False
     assert result['has_pull_request_run'] is True
+
+
 def test_a_poisoned_mergeable_state_does_not_move_the_verdict(monkeypatch):
     """Behavioural counterpart: the field is present and hostile, and ignored.
 
@@ -176,6 +196,8 @@ def test_a_poisoned_mergeable_state_does_not_move_the_verdict(monkeypatch):
     # The envelope does not re-export the field either.
     assert 'merge_state' not in result
     assert 'mergeable' not in result
+
+
 def test_unconfigured_provider_fails_loud_and_claims_nothing(monkeypatch):
     """An unauthenticated gh yields ``unconfigured``, never ``not_triggered: true``.
 
@@ -190,6 +212,8 @@ def test_unconfigured_provider_fails_loud_and_claims_nothing(monkeypatch):
     assert result['status'] == 'unconfigured'
     assert 'not_triggered' not in result
     assert 'has_pull_request_run' not in result
+
+
 def test_an_unparseable_response_is_an_error_not_a_confident_answer(monkeypatch):
     """A response that could not be read must not resolve to ``not_triggered: true``.
 
@@ -210,6 +234,8 @@ def test_an_unparseable_response_is_an_error_not_a_confident_answer(monkeypatch)
 
     assert result['status'] == 'error'
     assert 'not_triggered' not in result
+
+
 def test_malformed_list_elements_are_skipped_without_crashing(monkeypatch):
     """A malformed element is neither counted as evidence nor allowed to abort the scan.
 
@@ -238,6 +264,8 @@ def test_malformed_list_elements_are_skipped_without_crashing(monkeypatch):
     assert result['status'] == 'success'
     assert result['not_triggered'] is False
     assert result['pull_request_run_count'] == 1
+
+
 def test_malformed_elements_alone_do_not_fabricate_a_pull_request_run(monkeypatch):
     """The other direction: garbage is never READ as evidence a review ran.
 
@@ -253,6 +281,8 @@ def test_malformed_elements_alone_do_not_fabricate_a_pull_request_run(monkeypatc
     assert result['status'] == 'success'
     assert result['not_triggered'] is True
     assert result['pull_request_run_count'] == 0
+
+
 @pytest.mark.parametrize(
     ('label', 'payload'),
     [
@@ -296,6 +326,8 @@ def test_a_malformed_envelope_returns_none_not_an_empty_run_list(label, payload,
 
     assert runs is None, f'{label} was accepted as a readable run set'
     assert error, f'{label} returned no error message alongside the None'
+
+
 def test_a_malformed_envelope_reaches_the_handler_as_an_error(monkeypatch):
     """End-to-end: the handler reports ``error``, never a confident ``not_triggered``.
 

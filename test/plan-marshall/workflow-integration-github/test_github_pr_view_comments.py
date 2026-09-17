@@ -1,9 +1,11 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for github.py script.
 
 Tests command structure and argument parsing.
 Note: Actual gh CLI operations require authentication and network.
 These tests focus on the script interface, not live operations.
 """
+
 import pytest
 
 from conftest import get_script_path, run_script
@@ -66,6 +68,8 @@ _MISSING_REQUIRED = [
     ((), None),
 ]
 _STRUCTURED_REFUSAL = [(('checks', 'status'),), (('pr', 'merge'),)]
+
+
 def _install_github_ops_stubs(monkeypatch, pull_request_payload: dict):
     """Install standard auth/repo/graphql stubs on github_ops for pr_comments tests.
 
@@ -86,6 +90,8 @@ def _install_github_ops_stubs(monkeypatch, pull_request_payload: dict):
     monkeypatch.setattr(github_ops, 'get_repo_info', fake_get_repo_info)
     monkeypatch.setattr(github_ops, 'run_graphql', fake_run_graphql)
     return github_ops
+
+
 def _inline_thread_payload(body: str = 'Inline feedback', resolved: bool = False) -> dict:
     return {
         'reviewThreads': {
@@ -121,6 +127,8 @@ def test_either_or_flags_missing_emits_a_structured_error(argv):
     assert 'pr-number' in combined or 'head' in combined or 'auth' in combined, (
         f'Expected pr-number/head/auth in output, got: {combined}'
     )
+
+
 def test_pr_submit_review_calls_submit_mutation(monkeypatch):
     """Regression: cmd_pr_submit_review must call submitPullRequestReview with
     exactly {reviewId, event} variables and return the state field."""
@@ -155,6 +163,8 @@ def test_pr_submit_review_calls_submit_mutation(monkeypatch):
     assert set(captured['variables'].keys()) == {'reviewId', 'event'}
     assert result['state'] == 'COMMENTED'
     assert result['review_id'] == 'PRR_xyz'
+
+
 def test_pr_comments_no_body_truncation():
     """Regression: comment body must not be truncated (was [:100]).
 
@@ -169,6 +179,8 @@ def test_pr_comments_no_body_truncation():
     )
     # Sanity: unified schema discriminator is present in the source
     assert "'kind'" in source, 'Unified comment schema kind field missing from github_ops'
+
+
 def test_pr_comments_includes_review_body(monkeypatch):
     """New: top-level review submission bodies are emitted as kind=review_body."""
     import argparse
@@ -200,6 +212,8 @@ def test_pr_comments_includes_review_body(monkeypatch):
     assert comment['body'] == 'Overall looks good, a few nits'
     assert comment['path'] == ''
     assert comment['line'] == 0
+
+
 def test_pr_comments_includes_issue_comment(monkeypatch):
     """New: PR issue-level comments are emitted as kind=issue_comment."""
     import argparse
@@ -230,6 +244,8 @@ def test_pr_comments_includes_issue_comment(monkeypatch):
     assert comment['author'] == 'random-user'
     assert comment['body'] == 'CI is flaky, please rerun'
     assert comment['path'] == ''
+
+
 def test_pr_comments_skips_empty_review_body(monkeypatch):
     """New: reviews with empty body must not appear as review_body entries."""
     import argparse
@@ -262,6 +278,8 @@ def test_pr_comments_skips_empty_review_body(monkeypatch):
     assert result['status'] == 'success', result
     assert result['total'] == 0
     assert result['comments'] == []
+
+
 def test_pr_comments_kind_field_on_inline(monkeypatch):
     """New: inline review thread comments are emitted as kind=inline with path/line."""
     import argparse

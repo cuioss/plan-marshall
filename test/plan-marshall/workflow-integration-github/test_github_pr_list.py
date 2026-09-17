@@ -1,9 +1,11 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for github.py script.
 
 Tests command structure and argument parsing.
 Note: Actual gh CLI operations require authentication and network.
 These tests focus on the script interface, not live operations.
 """
+
 import pytest
 
 from conftest import get_script_path, run_script
@@ -66,6 +68,8 @@ _MISSING_REQUIRED = [
     ((), None),
 ]
 _STRUCTURED_REFUSAL = [(('checks', 'status'),), (('pr', 'merge'),)]
+
+
 def _prepare_thread_reply_body(tmp_path, monkeypatch, body_text='Fixed it', plan_id='p'):
     """Seed PLAN_BASE_DIR with a prepared thread-reply body scratch file."""
     monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
@@ -78,6 +82,8 @@ def _prepare_thread_reply_body(tmp_path, monkeypatch, body_text='Fixed it', plan
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(body_text, encoding='utf-8')
     return plan_id
+
+
 def _run_pr_list(monkeypatch, rows, **overrides):
     """Drive ``cmd_pr_list`` over a stubbed ``gh``; return ``(result, captured_argv)``.
 
@@ -105,6 +111,8 @@ def _run_pr_list(monkeypatch, rows, **overrides):
     result = github_ops.cmd_pr_list(argparse.Namespace(**fields))
     assert len(captured) == 1, f'expected exactly one gh invocation, got {captured}'
     return result, captured[0]
+
+
 def _pr_row(number: int) -> dict:
     return {
         'number': number,
@@ -161,6 +169,8 @@ def test_pr_thread_reply_uses_thread_reply_mutation(monkeypatch, tmp_path):
     assert 'inReplyTo' not in reply_call[1]
     # NO gh pr view call
     assert not any(c[:2] == ['pr', 'view'] for c in gh_calls), f'Unexpected gh pr view call: {gh_calls}'
+
+
 def test_pr_list_reports_a_short_listing_as_untruncated(monkeypatch):
     """A row count BELOW the requested bound is a complete enumeration.
 
@@ -173,6 +183,8 @@ def test_pr_list_reports_a_short_listing_as_untruncated(monkeypatch):
     assert result['total'] == 2
     assert result['limit'] == 5
     assert result['truncated'] is False
+
+
 def test_pr_list_reports_a_limit_filling_listing_as_truncated(monkeypatch):
     """A row count that REACHES the requested bound is reported as unenumerable.
 
@@ -187,6 +199,8 @@ def test_pr_list_reports_a_limit_filling_listing_as_truncated(monkeypatch):
     assert result['total'] == 3
     assert result['limit'] == 3
     assert result['truncated'] is True
+
+
 def test_pr_list_passes_the_requested_limit_into_the_gh_invocation(monkeypatch):
     """``--limit`` reaches the constructed ``gh pr list`` argument vector.
 
@@ -200,6 +214,8 @@ def test_pr_list_passes_the_requested_limit_into_the_gh_invocation(monkeypatch):
     assert argv[:2] == ['pr', 'list'], argv
     assert '--limit' in argv, argv
     assert argv[argv.index('--limit') + 1] == '50', argv
+
+
 def test_pr_list_sends_the_documented_default_when_no_limit_is_supplied(monkeypatch):
     """A caller supplying no bound still gets an EXPLICIT one of ``100``.
 
@@ -213,6 +229,8 @@ def test_pr_list_sends_the_documented_default_when_no_limit_is_supplied(monkeypa
     assert '--limit' in argv, argv
     assert argv[argv.index('--limit') + 1] == '100', argv
     assert result['limit'] == 100
+
+
 def test_pr_list_limit_is_accepted_at_verb_scope():
     """``--limit`` parses where it is declared — on the ``pr list`` subparser.
 
@@ -223,6 +241,8 @@ def test_pr_list_limit_is_accepted_at_verb_scope():
     result = run_script(SCRIPT_PATH, 'pr', 'list', '--limit', '50', '--help')
 
     assert result.success, f'pr list rejected a verb-scoped --limit: {result.stderr}'
+
+
 def test_pr_list_limit_is_refused_at_router_scope():
     """The ROOT parser refuses ``--limit``, so it cannot drift up to the router.
 

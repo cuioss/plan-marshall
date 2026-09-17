@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the PR-wide ``not_triggered`` observable (github_ops pull-request-runs).
 
 The observable answers one question: does ANY workflow run triggered by the
@@ -43,6 +44,7 @@ breaks identity assertions elsewhere and, worse, means a monkeypatch applied her
 targets globals the code under test does not read. The sibling suites
 (``test_github_ops_wait.py``) import these modules plainly for the same reason.
 """
+
 import inspect
 import json
 import re
@@ -53,6 +55,8 @@ import pytest
 
 _HEAD_BRANCH = 'feature/some-work'
 _DETECTION_MODULES = (github_ops, _github_checks)
+
+
 def _module_level_functions():
     """Every function defined in either path module, keyed by name."""
     own = {m.__name__ for m in _DETECTION_MODULES}
@@ -62,9 +66,13 @@ def _module_level_functions():
             if inspect.isfunction(obj) and obj.__module__ in own:
                 found.setdefault(name, obj)
     return found
+
+
 def _calls_in(func):
     """The identifiers ``func`` calls, as a set."""
     return set(re.findall(r'\b([A-Za-z_][A-Za-z0-9_]*)\s*\(', inspect.getsource(func)))
+
+
 def _detection_path_functions():
     """Derive the detection-path function set by walking the entry point's calls.
 
@@ -101,12 +109,18 @@ def _detection_path_functions():
                 callers[callee].add(caller)
 
     return tuple(sorted(name for name in reachable if callers[name] <= reachable))
+
+
 def _run(event, conclusion='success'):
     """One workflow-run record in the shape the actions/runs API returns."""
     return {'id': 12345, 'event': event, 'status': 'completed', 'conclusion': conclusion}
+
+
 def _page(runs):
     """One page envelope of the actions/runs response."""
     return {'total_count': len(runs), 'workflow_runs': list(runs)}
+
+
 def _patch_provider(monkeypatch, pages, *, pr_extras=None, capture=None):
     """Patch the provider surface beneath ``pull_request_runs_result``.
 
@@ -137,7 +151,11 @@ def _patch_provider(monkeypatch, pages, *, pr_extras=None, capture=None):
         return 0, json.dumps(pages), ''
 
     monkeypatch.setattr(github_ops, 'run_gh', _run_gh)
+
+
 _DETECTION_PATH_FUNCS = _detection_path_functions()
+
+
 def _run_for_pr(event, pr_numbers, conclusion='success'):
     """A workflow run carrying an explicit ``pull_requests`` association."""
     run = _run(event, conclusion=conclusion)
@@ -162,6 +180,8 @@ def test_the_detection_path_derivation_is_not_vacuous():
     # walk is not actually following the path it claims to follow.
     for helper in ('_pull_request_event_runs_for_pr', '_run_names_a_different_pr'):
         assert helper in _DETECTION_PATH_FUNCS, f'{helper} is on the detection path but the derivation missed it'
+
+
 def test_a_failed_fetch_is_an_error_not_a_confident_answer(monkeypatch):
     """A non-zero gh exit is likewise an error, never a silent negative."""
     monkeypatch.setattr(github_ops, 'check_auth', lambda: (True, ''))
@@ -177,6 +197,8 @@ def test_a_failed_fetch_is_an_error_not_a_confident_answer(monkeypatch):
 
     assert result['status'] == 'error'
     assert 'not_triggered' not in result
+
+
 def test_another_prs_run_on_the_same_branch_does_not_suppress_not_triggered(monkeypatch):
     """Two PRs, one branch: PR 42 never triggered, so the remedy must stay reachable.
 
@@ -194,6 +216,8 @@ def test_another_prs_run_on_the_same_branch_does_not_suppress_not_triggered(monk
     assert result['pull_request_run_count'] == 0
     # The run was still READ — only its attribution excluded it.
     assert result['run_count'] == 1
+
+
 @pytest.mark.parametrize(
     ('label', 'association'),
     [
@@ -233,6 +257,8 @@ def test_an_unreliable_association_never_fabricates_not_triggered(label, associa
     assert result['status'] == 'success'
     assert result['not_triggered'] is False, f'{label} fabricated a not_triggered verdict'
     assert result['has_pull_request_run'] is True
+
+
 def test_a_push_run_attributed_to_this_pr_is_still_not_a_pull_request_run(monkeypatch):
     """The event predicate is not weakened by the boundary filter.
 
@@ -245,6 +271,8 @@ def test_a_push_run_attributed_to_this_pr_is_still_not_a_pull_request_run(monkey
 
     assert result['not_triggered'] is True
     assert result['pull_request_run_count'] == 0
+
+
 @pytest.mark.parametrize(
     ('label', 'runs', 'expected'),
     [

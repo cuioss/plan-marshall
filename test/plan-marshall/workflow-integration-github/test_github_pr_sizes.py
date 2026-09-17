@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """``github_pr.cmd_fetch_findings``: cross-iteration dedup, classification, and participation.
 
 The producer-side dedup keys on ``(bot_kind, comment_id)`` for every bot kind,
@@ -11,6 +12,7 @@ The findings store is REAL (isolated via the autouse ``plan_context``
 ``fetch_pr_comments_data``, ``fetch_pr_head_sha``) is monkeypatched, so the dedup
 path exercises the genuine ``_findings_core`` add/query round-trip.
 """
+
 import argparse
 import json
 import sys
@@ -84,9 +86,13 @@ PLAN_IDS: tuple[str, ...] = (
     'p',
 )
 PLAN_IDS += tuple(f'gh-pr-preupgrade-dedup-{bot_kind}' for bot_kind in CURRENCY_SUBJECT_BOTS)
+
+
 def _evidence_plan_id(prefix: str, bot_kind: str, shape: str) -> str:
     """The kebab-case plan id a per-(bot, shape) evidence-gate case files against."""
     return f'gh-pr-evidence-{prefix}-{bot_kind}-{shape.replace("_", "-")}'
+
+
 PLAN_IDS += tuple(
     _evidence_plan_id(prefix, bot_kind, shape)
     for bot_kind, shape, _marker in MARKER_GATED_EVIDENCE
@@ -135,6 +141,8 @@ _COMMENTS = [
         'resolved': False,
     },
 ]
+
+
 def _patch_provider(monkeypatch, comments, head_sha='deadbeef', head_committed_at=''):
     """Monkeypatch the GitHub provider surface ``github_pr`` reaches through ``_github``.
 
@@ -176,6 +184,8 @@ def _patch_provider(monkeypatch, comments, head_sha='deadbeef', head_committed_a
         'run_gh',
         lambda *_a, **_k: (0, '{"additions": 900, "deletions": 340}', ''),
     )
+
+
 def _run_fetch(pr_number, plan_id):
     """Run the producer's FIND verb against ``plan_id``, with its plan directory present.
 
@@ -198,6 +208,8 @@ def _run_fetch(pr_number, plan_id):
     (get_base_dir() / 'plans' / plan_id).mkdir(parents=True, exist_ok=True)
     args = argparse.Namespace(pr_number=pr_number, plan_id=plan_id)
     return github_pr.cmd_fetch_findings(args)
+
+
 def _live_findings_core():
     """Return the ``_findings_core`` module object the SUT will actually import.
 
@@ -212,9 +224,13 @@ def _live_findings_core():
     time targets the very globals ``add_finding`` reads.
     """
     return sys.modules['_findings_core']
+
+
 def _at(second):
     """ISO-8601 ``created_at`` on a fixed day — only the relative order matters."""
     return f'2026-07-29T10:{second:02d}:00Z'
+
+
 _RATE_LIMIT_NOTICES = {
     # CodeRabbit: ``## Rate limit exceeded`` callout + body sentence.
     'coderabbit': (
@@ -303,6 +319,8 @@ _CLASSIFICATION_FLAGS = derive_bot_flags(
     'fetch_findings',
 )
 assert _CLASSIFICATION_FLAGS, 'derive_bot_flags found no classification flags on fetch_findings'
+
+
 def _parsed_fetch_args(monkeypatch, argv):
     """Return the ``argparse.Namespace`` ``github_pr.main`` built for ``argv``.
 
@@ -321,9 +339,13 @@ def _parsed_fetch_args(monkeypatch, argv):
     monkeypatch.setattr(sys, 'argv', ['github_pr.py', *argv])
     github_pr.main()
     return captured['args']
+
+
 _PR_AGENT_REQUIRED_MARKERS = bot_registry.contentless_review_markers('cuioss-review-bot')
 assert _PR_AGENT_REQUIRED_MARKERS, 'bot_registry declares no contentless review markers for cuioss-review-bot'
 _BOT_KIND_TO_LOGIN = {kind: login for login, kind in bot_registry.login_to_bot_kind().items()}
+
+
 def _publish_comment(bot_kind, comment_id, *, created_at, updated_at=None, body=None):
     """A comment in ``bot_kind``'s FIRST declared publish shape.
 
@@ -343,16 +365,22 @@ def _publish_comment(bot_kind, comment_id, *, created_at, updated_at=None, body=
         'created_at': created_at,
         'updated_at': updated_at or created_at,
     }
+
+
 _HEAD_A = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
 _HEAD_B = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
 _HEAD_C = 'cccccccccccccccccccccccccccccccccccccccc'
 _GUIDE_CLEAN_BODY = 'Nothing further to report on this pass; the change reads consistently.'
 _GUIDE_FINDING_BODY = 'The retry helper drops the final attempt when max_attempts is 1.'
+
+
 def _edit_term_comment(bot_kind, *, body, updated_at=None):
     """One persistent comment of ``bot_kind``, re-published with a new body/timestamp."""
     comment = _publish_comment(bot_kind, 'guide-persistent', created_at=_at(1), body=body)
     comment['updated_at'] = updated_at if updated_at is not None else _at(1)
     return comment
+
+
 _LEGACY_LEDGER_FILENAME = 'pr-noise-dropped-comments.jsonl'
 _CONTRACT_DOC = get_skill_dir('plan-marshall', 'automatic-review') / 'standards' / 'bot-participation-contract.md'
 _CONTRACT_TEXT = _CONTRACT_DOC.read_text(encoding='utf-8')
@@ -378,6 +406,8 @@ def test_pr_number_detail_matcher_reads_the_producer_written_shape():
     assert github_pr._detail_field(producer_shape, github_pr._PR_NUMBER_DETAIL) == '1036'
     # A detail block with no pr_number line yields '' (drives the fail-closed skip).
     assert github_pr._detail_field('kind: inline\ncomment_id: c1', github_pr._PR_NUMBER_DETAIL) == ''
+
+
 def test_rejected_mismatch_persist_surfaces_field_without_flipping_status(plan_context, monkeypatch):
     """A rejected mismatch persist sets qgate_persist_failed and leaves status success.
 
@@ -410,6 +440,8 @@ def test_rejected_mismatch_persist_surfaces_field_without_flipping_status(plan_c
     assert '(producer-mismatch)' in failure['title']
     assert 'count_stored=0' in failure['detail']
     assert 'Invalid finding type' in failure['message']
+
+
 class TestBareClassificationFlags:
     """Both classification flags accept a bare form that reads as the empty list."""
 
@@ -547,6 +579,8 @@ class TestBareClassificationFlags:
         stored = query_findings(plan_id, finding_type='pr-comment')['findings']
         assert len(stored) == len(_COMMENTS)
         assert {f.get('bot_kind') for f in stored} >= {'coderabbit', 'cuioss-review-bot', 'sourcery'}
+
+
 def test_registry_markers_are_stripped_before_matching(monkeypatch):
     """Incidental whitespace around a registry value must not break the match.
 
@@ -572,6 +606,8 @@ def test_registry_markers_are_stripped_before_matching(monkeypatch):
     # The disqualifying marker is stripped on the same path — a padded veto entry
     # must still veto, not silently stop matching.
     assert github_pr._is_contentless_boilerplate(GUIDE_WITH_FINDING, 'cuioss-review-bot') is False
+
+
 @pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
 def test_second_fetch_at_the_same_head_stays_participated(bot_kind, plan_context, monkeypatch):
     """Re-evaluating at an UNCHANGED HEAD returns the same verdict — the observer-effect regression.
@@ -599,6 +635,8 @@ def test_second_fetch_at_the_same_head_stays_participated(bot_kind, plan_context
     # Idempotent: the second evaluation matches the first, byte for byte.
     assert second['participated_bots'] == first['participated_bots']
     assert second['stale_participation_bots'] == first['stale_participation_bots']
+
+
 @pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
 def test_a_fresh_edit_at_an_unreadable_head_blocks_on_both_fetches(bot_kind, plan_context, monkeypatch):
     """An unreadable head fails closed on the EDIT arm too, and writes no poisoned row.
@@ -634,6 +672,8 @@ def test_a_fresh_edit_at_an_unreadable_head_blocks_on_both_fetches(bot_kind, pla
     ledger = github_pr._recorded_currency_records(plan_id)
     assert ledger == ledger_after_credit
     assert not any(isinstance(v, github_pr._InvalidLegacyRecord) for v in ledger.values())
+
+
 @pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
 def test_a_pre_upgrade_finding_without_an_edit_term_does_not_refile_history(bot_kind, plan_context, monkeypatch):
     """A finding stored before the edit term existed still dedupes, against ANY term.
@@ -675,6 +715,8 @@ def test_a_pre_upgrade_finding_without_an_edit_term_does_not_refile_history(bot_
     # the two-term fallback is what deduped it, rather than the row having been
     # rewritten or replaced by a three-term one.
     assert github_pr._detail_field(stored[0].get('detail'), github_pr._EDIT_TERM_DETAIL) == ''
+
+
 @pytest.mark.parametrize(
     ('updated_at', 'created_at', 'why'),
     [
@@ -706,6 +748,8 @@ def test_comment_predates_commit_withholds_when_the_timestamps_do_not_compare(up
     comment = {'updated_at': updated_at, 'created_at': created_at}
 
     assert github_pr._comment_predates_commit(comment, _ISO_COMMIT_AT) is False, why
+
+
 def test_comment_predates_commit_withholds_on_an_uncomparable_commit_timestamp():
     """The guard is symmetric: a non-``Z`` COMMIT stamp is equally undecidable.
 
@@ -715,6 +759,8 @@ def test_comment_predates_commit_withholds_on_an_uncomparable_commit_timestamp()
     comment = {'updated_at': '2026-08-25T09:00:00Z', 'created_at': '2026-08-25T09:00:00Z'}
 
     assert github_pr._comment_predates_commit(comment, '2026-08-25T12:00:00+02:00') is False
+
+
 def test_comment_predates_commit_still_decides_two_comparable_timestamps():
     """Matched positive control — a comment that really does predate still reports True.
 
@@ -724,6 +770,8 @@ def test_comment_predates_commit_still_decides_two_comparable_timestamps():
     comment = {'updated_at': '2026-08-25T09:00:00Z', 'created_at': '2026-08-25T08:00:00Z'}
 
     assert github_pr._comment_predates_commit(comment, _ISO_COMMIT_AT) is True
+
+
 def test_comment_predates_commit_reports_false_for_a_comment_after_the_commit():
     """Matched negative control — the comparable, NOT-predating case stays False.
 

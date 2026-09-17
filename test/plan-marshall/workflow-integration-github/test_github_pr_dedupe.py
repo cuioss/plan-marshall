@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """``github_pr.cmd_fetch_findings``: cross-iteration dedup, classification, and participation.
 
 The producer-side dedup keys on ``(bot_kind, comment_id)`` for every bot kind,
@@ -11,6 +12,7 @@ The findings store is REAL (isolated via the autouse ``plan_context``
 ``fetch_pr_comments_data``, ``fetch_pr_head_sha``) is monkeypatched, so the dedup
 path exercises the genuine ``_findings_core`` add/query round-trip.
 """
+
 import argparse
 import json
 import sys
@@ -84,9 +86,13 @@ PLAN_IDS: tuple[str, ...] = (
     'p',
 )
 PLAN_IDS += tuple(f'gh-pr-preupgrade-dedup-{bot_kind}' for bot_kind in CURRENCY_SUBJECT_BOTS)
+
+
 def _evidence_plan_id(prefix: str, bot_kind: str, shape: str) -> str:
     """The kebab-case plan id a per-(bot, shape) evidence-gate case files against."""
     return f'gh-pr-evidence-{prefix}-{bot_kind}-{shape.replace("_", "-")}'
+
+
 PLAN_IDS += tuple(
     _evidence_plan_id(prefix, bot_kind, shape)
     for bot_kind, shape, _marker in MARKER_GATED_EVIDENCE
@@ -135,6 +141,8 @@ _COMMENTS = [
         'resolved': False,
     },
 ]
+
+
 def _patch_provider(monkeypatch, comments, head_sha='deadbeef', head_committed_at=''):
     """Monkeypatch the GitHub provider surface ``github_pr`` reaches through ``_github``.
 
@@ -176,6 +184,8 @@ def _patch_provider(monkeypatch, comments, head_sha='deadbeef', head_committed_a
         'run_gh',
         lambda *_a, **_k: (0, '{"additions": 900, "deletions": 340}', ''),
     )
+
+
 def _run_fetch(pr_number, plan_id):
     """Run the producer's FIND verb against ``plan_id``, with its plan directory present.
 
@@ -198,6 +208,8 @@ def _run_fetch(pr_number, plan_id):
     (get_base_dir() / 'plans' / plan_id).mkdir(parents=True, exist_ok=True)
     args = argparse.Namespace(pr_number=pr_number, plan_id=plan_id)
     return github_pr.cmd_fetch_findings(args)
+
+
 def _live_findings_core():
     """Return the ``_findings_core`` module object the SUT will actually import.
 
@@ -212,9 +224,13 @@ def _live_findings_core():
     time targets the very globals ``add_finding`` reads.
     """
     return sys.modules['_findings_core']
+
+
 def _at(second):
     """ISO-8601 ``created_at`` on a fixed day — only the relative order matters."""
     return f'2026-07-29T10:{second:02d}:00Z'
+
+
 _RATE_LIMIT_NOTICES = {
     # CodeRabbit: ``## Rate limit exceeded`` callout + body sentence.
     'coderabbit': (
@@ -270,8 +286,12 @@ _SOURCERY_SIZE_REFUSAL = (
     f'{bot_registry.refusal_patterns("sourcery")[0]} 150000 characters. '
     'Reduce the size of the pull request and request another review.'
 )
+
+
 def _drift_records(result):
     return {(r['bot_kind'], r['layer']) for r in result['refusal_pattern_drift']}
+
+
 _PUBLISH_SHAPE_VOCABULARY: tuple[str, ...] = tuple(
     sorted({shape for bot in bot_registry.bot_kinds() for shape in bot_registry.participation_evidence(bot)})
 )
@@ -290,6 +310,8 @@ _REWORDED_SOURCERY_REFUSAL = (
     f'Sorry, {_SOURCERY_DECLARED_REFUSAL_MARKER.replace("larger than", "over")} our current plan.'
 )
 _RECOGNISED_SOURCERY_REFUSAL = f'Sorry, {_SOURCERY_DECLARED_REFUSAL_MARKER} our current plan.'
+
+
 def _stage_respondable(plan_id, *, pr_number, comment_id, thread_id, resolution_detail, kind='review_body'):
     """Add a pr-comment finding already resolved by triage; return its ``hash_id``.
 
@@ -316,9 +338,13 @@ def _stage_respondable(plan_id, *, pr_number, comment_id, thread_id, resolution_
     hash_id = add_result['hash_id']
     _findings_core.resolve_finding(plan_id, hash_id, 'accepted', detail=resolution_detail)
     return hash_id
+
+
 def _run_post_responses(pr_number, plan_id):
     args = argparse.Namespace(pr_number=pr_number, plan_id=plan_id)
     return github_pr.cmd_post_responses(args)
+
+
 class _PostSpy:
     """Records every ``post_pr_comment`` call and returns a fixed outcome."""
 
@@ -331,6 +357,8 @@ class _PostSpy:
         if self._succeed:
             return {'status': 'success', 'operation': 'post_pr_comment', 'pr_number': pr_number}
         return {'status': 'error', 'operation': 'post_pr_comment', 'detail': 'gh rejected the comment'}
+
+
 def _resolved_pr_comment_finding(hash_id, pr_number, *, thread_id='', comment_id='cid', pr_line=True):
     """Build a resolved pr-comment finding shaped exactly as cmd_fetch_findings writes it.
 
@@ -356,6 +384,8 @@ def _resolved_pr_comment_finding(hash_id, pr_number, *, thread_id='', comment_id
         'resolution': 'fixed',
         'resolution_detail': f'disposition body for {hash_id}',
     }
+
+
 def _patch_respond_surface(monkeypatch, findings, posted, replied):
     """Patch the provider surface + the live findings store cmd_post_responses reads.
 
@@ -381,6 +411,8 @@ def _patch_respond_surface(monkeypatch, findings, posted, replied):
 
     monkeypatch.setattr(github_pr._github, 'run_graphql', _run_graphql)
     monkeypatch.setattr(github_pr._github, 'post_pr_comment', _post_pr_comment)
+
+
 def _pr_comment_finding_with_detail(hash_id, detail):
     """Build a resolved threadless pr-comment finding carrying a hand-written detail block.
 
@@ -394,6 +426,8 @@ def _pr_comment_finding_with_detail(hash_id, detail):
         'resolution': 'fixed',
         'resolution_detail': f'disposition body for {hash_id}',
     }
+
+
 _BAD_KIND_COMMENT = {
     'id': 'cbad',
     'author': 'coderabbitai',
@@ -412,6 +446,8 @@ assert _CLASSIFICATION_FLAGS, 'derive_bot_flags found no classification flags on
 _PR_AGENT_REQUIRED_MARKERS = bot_registry.contentless_review_markers('cuioss-review-bot')
 assert _PR_AGENT_REQUIRED_MARKERS, 'bot_registry declares no contentless review markers for cuioss-review-bot'
 _BOT_KIND_TO_LOGIN = {kind: login for login, kind in bot_registry.login_to_bot_kind().items()}
+
+
 def _publish_comment(bot_kind, comment_id, *, created_at, updated_at=None, body=None):
     """A comment in ``bot_kind``'s FIRST declared publish shape.
 
@@ -431,16 +467,22 @@ def _publish_comment(bot_kind, comment_id, *, created_at, updated_at=None, body=
         'created_at': created_at,
         'updated_at': updated_at or created_at,
     }
+
+
 _HEAD_A = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
 _HEAD_B = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
 _HEAD_C = 'cccccccccccccccccccccccccccccccccccccccc'
 _GUIDE_CLEAN_BODY = 'Nothing further to report on this pass; the change reads consistently.'
 _GUIDE_FINDING_BODY = 'The retry helper drops the final attempt when max_attempts is 1.'
+
+
 def _edit_term_comment(bot_kind, *, body, updated_at=None):
     """One persistent comment of ``bot_kind``, re-published with a new body/timestamp."""
     comment = _publish_comment(bot_kind, 'guide-persistent', created_at=_at(1), body=body)
     comment['updated_at'] = updated_at if updated_at is not None else _at(1)
     return comment
+
+
 _LEGACY_LEDGER_FILENAME = 'pr-noise-dropped-comments.jsonl'
 _CONTRACT_DOC = get_skill_dir('plan-marshall', 'automatic-review') / 'standards' / 'bot-participation-contract.md'
 _CONTRACT_TEXT = _CONTRACT_DOC.read_text(encoding='utf-8')
@@ -481,6 +523,8 @@ def test_second_fetch_dedupes_all_bot_kinds(plan_context, monkeypatch):
     assert second['count_skipped_duplicate'] == len(_COMMENTS)
     assert second['producer_mismatch_hash_id'] is None
     assert len(query_findings(plan_id, finding_type='pr-comment')['findings']) == len(_COMMENTS)
+
+
 def test_a_deduped_comment_is_still_credited_as_participating(plan_context, monkeypatch):
     """A bot deduped on STORAGE is still credited as participating.
 
@@ -534,6 +578,8 @@ def test_a_deduped_comment_is_still_credited_as_participating(plan_context, monk
     # This is the decoupling: a storage-hygiene drop can no longer flip a merge verdict.
     assert second['participated_bots'] == first['participated_bots']
     assert second['producer_mismatch_hash_id'] is None
+
+
 def test_same_comment_id_distinct_bots_not_collided(plan_context, monkeypatch):
     """Two bots reusing the same numeric comment_id stay distinct across fetches.
 
@@ -579,6 +625,8 @@ def test_same_comment_id_distinct_bots_not_collided(plan_context, monkeypatch):
     stored = query_findings(plan_id, finding_type='pr-comment')['findings']
     assert len(stored) == 2
     assert {f.get('bot_kind') for f in stored} == {'coderabbit', 'sourcery'}
+
+
 def test_fetch_findings_dedupes_drift_per_bot_and_layer(plan_context, monkeypatch):
     """Drift is a property of the declared WORDING, not of each comment carrying it.
 
@@ -603,6 +651,8 @@ def test_fetch_findings_dedupes_drift_per_bot_and_layer(plan_context, monkeypatc
 
     assert _drift_records(result) == {('coderabbit', _github_pr.REFUSAL_LAYER_STRUCTURAL)}
     assert len(result['refusal_pattern_drift']) == 1
+
+
 def test_post_responses_transmits_only_the_target_prs_findings(monkeypatch):
     """A multi-PR store transmits only the rows owned by the PR being responded to.
 
@@ -635,6 +685,8 @@ def test_post_responses_transmits_only_the_target_prs_findings(monkeypatch):
     assert 'comment_id: `a`' in body
     assert 'comment_id: `b`' in body
     assert 'comment_id: `f`' not in body
+
+
 def test_post_responses_does_not_reply_to_foreign_threads(monkeypatch):
     """A thread-bearing row owned by another PR is not replied to or resolved.
 
@@ -662,6 +714,8 @@ def test_post_responses_does_not_reply_to_foreign_threads(monkeypatch):
     assert {entry['hash_id'] for entry in result['skipped']} == {'foreign-thread'}
     # No threadless rows survived the gate, so no batched comment was posted.
     assert posted == []
+
+
 def test_post_responses_skips_a_row_whose_pr_number_was_never_recorded(monkeypatch):
     """An unattributable row is skipped, not defaulted onto the current PR.
 
@@ -687,6 +741,8 @@ def test_post_responses_skips_a_row_whose_pr_number_was_never_recorded(monkeypat
     assert result['count_untransmitted'] == 0
     assert result['status'] == 'success'
     assert 'comment_id: `o`' not in posted[0][1]
+
+
 def test_post_responses_skips_a_row_whose_pr_number_marker_is_not_the_first_line(monkeypatch):
     """A ``pr_number:`` marker appearing later in the detail block does not attribute the row.
 
@@ -716,6 +772,8 @@ def test_post_responses_skips_a_row_whose_pr_number_marker_is_not_the_first_line
     assert result['skipped'] == [{'hash_id': 'late-marker', 'reason': 'pr_number_unrecorded'}]
     assert result['status'] == 'success'
     assert 'comment_id: `L`' not in posted[0][1]
+
+
 def test_post_responses_skips_a_row_whose_pr_number_marker_is_not_numeric(monkeypatch):
     """A non-numeric ``pr_number`` value does not attribute the row to any PR.
 
@@ -743,6 +801,8 @@ def test_post_responses_skips_a_row_whose_pr_number_marker_is_not_numeric(monkey
     assert result['skipped'] == [{'hash_id': 'non-numeric', 'reason': 'pr_number_unrecorded'}]
     assert result['status'] == 'success'
     assert 'comment_id: `N`' not in posted[0][1]
+
+
 def test_post_responses_batches_thread_less_dispositions_into_one_comment(plan_context, monkeypatch):
     """Two thread-less dispositions are transmitted by exactly ONE batched PR comment.
 
@@ -782,6 +842,8 @@ def test_post_responses_batches_thread_less_dispositions_into_one_comment(plan_c
         assert by_hash[hash_id]['transmit_mode'] == 'batched_issue_comment'
         # No thread exists on this path — claiming a resolve would be a false signal.
         assert by_hash[hash_id]['resolved_on_provider'] is False
+
+
 def test_post_responses_missing_resolution_detail_is_skipped_not_untransmitted(plan_context, monkeypatch):
     """A disposition with no body lands in ``skipped``, never in ``untransmitted``.
 
@@ -804,6 +866,8 @@ def test_post_responses_missing_resolution_detail_is_skipped_not_untransmitted(p
     assert result['count_skipped'] == 1
     assert result['count_untransmitted'] == 0
     assert result['skipped'] == [{'hash_id': hash_id, 'reason': 'no_resolution_detail'}]
+
+
 def test_post_responses_batch_post_failure_untransmits_whole_batch(plan_context, monkeypatch):
     """When the single batched post fails, EVERY finding in it is reported untransmitted.
 
@@ -833,6 +897,8 @@ def test_post_responses_batch_post_failure_untransmits_whole_batch(plan_context,
     assert untransmitted_hashes == {hash_a, hash_b}
     for entry in result['untransmitted']:
         assert 'batched-comment post failed' in entry['reason']
+
+
 def test_post_responses_all_thread_bearing_keeps_reply_then_resolve_sequence(plan_context, monkeypatch):
     """A thread-bearing finding still gets thread-reply THEN resolve, and reports success.
 
@@ -877,6 +943,8 @@ def test_post_responses_all_thread_bearing_keeps_reply_then_resolve_sequence(pla
             'resolved_on_provider': True,
         }
     ]
+
+
 def test_post_responses_thread_reply_failure_is_untransmitted(plan_context, monkeypatch):
     """A failed thread-reply is an UNTRANSMITTED disposition, not a silent skip."""
     plan_id = 'gh-pr-respond-thread-fails'
@@ -893,6 +961,8 @@ def test_post_responses_thread_reply_failure_is_untransmitted(plan_context, monk
     assert result['count_untransmitted'] == 1
     assert result['untransmitted'][0]['hash_id'] == hash_id
     assert 'thread-reply failed' in result['untransmitted'][0]['reason']
+
+
 def test_post_responses_second_round_transmits_only_newly_resolved_dispositions(plan_context, monkeypatch):
     """The observed defect: round 2 must re-transmit NOTHING already sent.
 
@@ -947,6 +1017,8 @@ def test_post_responses_second_round_transmits_only_newly_resolved_dispositions(
         assert f'r2-{i}' in round2_body
     for i in range(4):
         assert f'r1-{i}' not in round2_body
+
+
 def test_post_responses_retransmits_a_changed_disposition(plan_context, monkeypatch):
     """A disposition CHANGED between rounds must transmit again — the fix is a KEY.
 
@@ -980,6 +1052,8 @@ def test_post_responses_retransmits_a_changed_disposition(plan_context, monkeypa
     assert changed['count_responded'] == 1
     assert changed['responded'][0]['hash_id'] == hash_id
     assert 'Rejected: on reflection, out of scope.' in spy.calls[-1][1]
+
+
 def test_post_responses_count_responded_names_this_rounds_transmits(plan_context, monkeypatch):
     """The count-field family names what it counts — non-empty-asserted and covered.
 
@@ -1023,6 +1097,8 @@ def test_post_responses_count_responded_names_this_rounds_transmits(plan_context
     # The five already-satisfied are named as already-responded, not counted as work.
     already = [entry['hash_id'] for entry in result['skipped'] if entry['reason'] == 'already responded']
     assert set(already) == set(prior)
+
+
 def test_post_responses_thread_reply_path_is_idempotent_across_rounds(plan_context, monkeypatch):
     """The thread-reply branch stamps and honours the ``responded`` marker too.
 
@@ -1062,6 +1138,8 @@ def test_post_responses_thread_reply_path_is_idempotent_across_rounds(plan_conte
     ]
     # No further GraphQL traffic — the thread was not re-replied or re-resolved.
     assert len(mutations) == 2
+
+
 def test_deduplicated_mismatch_persist_stays_benign(plan_context, monkeypatch):
     """A ``deduplicated`` mismatch persist is benign — it never reads as a rejection.
 
@@ -1084,6 +1162,8 @@ def test_deduplicated_mismatch_persist_stays_benign(plan_context, monkeypatch):
     assert 'qgate_persist_failed' not in second
     # Dedup returns the SAME record — still in the store, so still a hash id.
     assert second['producer_mismatch_hash_id'] == first['producer_mismatch_hash_id']
+
+
 @pytest.mark.parametrize('missing', _PR_AGENT_REQUIRED_MARKERS)
 def test_removing_any_single_required_marker_fails_the_conjunction(missing):
     """The predicate is ``all(required)`` — one absent marker is enough to keep the comment.
@@ -1098,6 +1178,8 @@ def test_removing_any_single_required_marker_fails_the_conjunction(missing):
 
     assert missing not in body
     assert github_pr._is_contentless_boilerplate(body, 'cuioss-review-bot') is False
+
+
 @pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
 def test_unresolvable_head_sha_fails_closed_and_stays_idempotent(bot_kind, plan_context, monkeypatch):
     """An unreadable merge-candidate SHA withholds the credit AND returns the same answer twice.
@@ -1134,6 +1216,8 @@ def test_unresolvable_head_sha_fails_closed_and_stays_idempotent(bot_kind, plan_
     assert second['participated_bots'] == first['participated_bots']
     assert second['stale_participation_bots'] == first['stale_participation_bots']
     assert second['undecidable_participation_bots'] == first['undecidable_participation_bots']
+
+
 @pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
 def test_an_unchanged_comment_still_dedupes_under_the_widened_key(bot_kind, plan_context, monkeypatch):
     """The widening must not turn every re-fetch into a re-file.

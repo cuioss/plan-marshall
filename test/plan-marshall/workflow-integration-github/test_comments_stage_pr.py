@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for workflow-integration-github github_pr.py — two-verb provider contract.
 
 The provider surface is exactly two pure verbs (plus the raw ``fetch-comments``):
@@ -17,6 +18,7 @@ the hash_id-keyed post_responses respond loop, the ``--project-dir`` plumbing,
 and the CLI surface contract (the retired ``triage`` / ``triage-batch`` /
 ``comments-stage`` subcommands MUST be gone).
 """
+
 import io
 import sys
 from contextlib import redirect_stdout
@@ -34,6 +36,8 @@ get_current_pr_number = github_pr.get_current_pr_number
 _is_obvious_noise = github_pr._is_obvious_noise
 cmd_fetch_findings = github_pr.cmd_fetch_findings
 cmd_post_responses = github_pr.cmd_post_responses
+
+
 @pytest.fixture(autouse=True)
 def _stub_provider_calls():
     """Stub the auth check and PR HEAD-SHA fetch so fetch_findings tests never hit ``gh``.
@@ -50,6 +54,8 @@ def _stub_provider_calls():
         patch('github_pr._github.fetch_pr_head_sha', return_value='stub-head-sha'),
     ):
         yield
+
+
 def _stage_make_args(pr_number: int, plan_id: str):
     class _Args:
         pr_number: int
@@ -59,6 +65,8 @@ def _stage_make_args(pr_number: int, plan_id: str):
     a.pr_number = pr_number
     a.plan_id = plan_id
     return a
+
+
 _SOURCERY_1014_REFUSAL = (
     'Sourcery was unable to review this pull request because '
     'your pull request is larger than the review limit of 150000 characters. '
@@ -265,6 +273,8 @@ class TestCommentsStageReviewedShaAndBotKind:
         # author is still recorded; bot_kind is simply absent (not 'unknown').
         assert stored['author'] == 'human-reviewer'
         assert 'bot_kind' not in stored
+
+
 class TestPRProjectDirPlumbing:
     """Verify github_pr.main() strips --project-dir and forwards cwd."""
 
@@ -298,6 +308,8 @@ class TestPRProjectDirPlumbing:
         finally:
             sys.argv = saved_argv
             ci_base.set_default_cwd(saved_cwd)
+
+
 class TestPRTwoStateRoutingContract:
     """Two-state ``--plan-id`` / ``--project-dir`` routing for github_pr.main().
 

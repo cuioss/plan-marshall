@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the ``rate_limited_bots[]`` discriminator on ``pr wait-for-comments``.
 
 ``cmd_pr_wait_for_comments`` (in ``_github_pr.py``, dispatched via ``github_ops``)
@@ -52,6 +53,7 @@ Tests never shell out to the real ``gh`` CLI: ``check_auth``,
 ``fetch_pr_comments_data``, and ``poll_until`` are monkeypatched so the handler
 runs deterministically in constant time.
 """
+
 import argparse
 import importlib
 import re
@@ -62,8 +64,12 @@ from conftest import get_script_path
 
 _github_pr = importlib.import_module('_github_pr')
 github_re_review = importlib.import_module('github_re_review')
+
+
 def _ok_auth():
     return True, ''
+
+
 _CODERABBIT_NOTICE = {
     'author': 'coderabbitai[bot]',
     'body': (
@@ -110,8 +116,12 @@ _HUMAN_COMMENT = {
     'body': 'Please add a test for the rate limit exceeded branch.',
     'created_at': '2026-01-01T00:00:00Z',
 }
+
+
 def _wait_comments_args(*, pr_number=123, timeout=5, interval=0):
     return argparse.Namespace(pr_number=pr_number, timeout=timeout, interval=interval)
+
+
 def _wire(monkeypatch, *, post_comments):
     """Monkeypatch auth / fetch / poll so the handler runs deterministically.
 
@@ -142,8 +152,12 @@ def _wire(monkeypatch, *, post_comments):
         return {'timed_out': False, 'duration_sec': 1, 'polls': 1, 'last_data': {'unresolved': 2}}
 
     monkeypatch.setattr(github_ops, 'poll_until', fake_poll)
+
+
 def _records_by_kind(result):
     return {record['bot_kind']: record for record in result['rate_limited_bots']}
+
+
 _FIELD_SET_RE = re.compile(r'\{bot_kind,\s*rate_limit_class,[^}]*\}')
 _BUNDLES = get_script_path('plan-marshall', 'workflow-integration-github', '_github_pr.py').parents[4]
 
@@ -187,6 +201,8 @@ def test_non_coderabbit_bot_rate_limit_is_detected(monkeypatch):
     # the movement arm matched nothing. A refusing bot must never register as a
     # re-review arrival — the two signals stay orthogonal.
     assert result['movement_matched_bots'] == []
+
+
 def test_notice_stating_no_eta_yields_empty_eta(monkeypatch):
     # CodeRabbit's CURRENT refusal phrasing carries neither the old heading nor the
     # old body sentence (asserted here so the fixture cannot silently drift back to
@@ -210,6 +226,8 @@ def test_notice_stating_no_eta_yields_empty_eta(monkeypatch):
             'body': _CODERABBIT_REVIEW_LIMIT_REACHED['body'],
         }
     ]
+
+
 def test_a_long_multiline_notice_is_carried_as_the_refusals_excerpt(monkeypatch):
     # ``body`` is the SAME excerpt ``refusals[]`` carries: whitespace-collapsed to one
     # TOON-safe line and truncated, never the raw multi-line notice. Asserted against
@@ -229,6 +247,8 @@ def test_a_long_multiline_notice_is_carried_as_the_refusals_excerpt(monkeypatch)
     assert (
         record['body'] == github_re_review._ReReviewStrategy._refusal_record(raw, 'coderabbit', 'issue_comment')['body']
     )
+
+
 def test_several_rate_limited_bots_each_yield_their_own_record(monkeypatch):
     # The scalar could only ever answer for one bot. The list answers per bot, and
     # each record carries that bot's own class — which is the whole point: the
@@ -245,6 +265,8 @@ def test_several_rate_limited_bots_each_yield_their_own_record(monkeypatch):
     assert records['coderabbit']['rate_limit_class'] == 'awaitable_window'
     assert records['sourcery']['rate_limit_class'] == 'hard_quota'
     assert records['cuioss-review-bot']['rate_limit_class'] == 'unknown'
+
+
 def test_no_rate_limited_bot_yields_empty_list(monkeypatch):
     _wire(monkeypatch, post_comments=[_HUMAN_COMMENT, _CODERABBIT_GENUINE_REVIEW])
 
@@ -256,6 +278,8 @@ def test_no_rate_limited_bot_yields_empty_list(monkeypatch):
     assert 'rate_limited_bots' in result
     assert result['rate_limited_bots'] == []
     assert result['new_count'] == 1
+
+
 def test_human_comment_quoting_a_refusal_is_not_a_notice(monkeypatch):
     # A human quoting "rate limit exceeded" resolves to no bot_kind at all, so it
     # can never contribute a record regardless of its body.
@@ -264,6 +288,8 @@ def test_human_comment_quoting_a_refusal_is_not_a_notice(monkeypatch):
     result = github_ops.cmd_pr_wait_for_comments(_wait_comments_args())
 
     assert result['rate_limited_bots'] == []
+
+
 def test_genuine_review_mentioning_a_rate_limit_in_prose_is_not_a_notice(monkeypatch):
     # Precision guard on the shared classifier, unchanged by the generalization: a
     # GENUINE review whose body merely QUOTES the phrase in prose — no notice shape

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for workflow-integration-github github_pr.py — two-verb provider contract.
 
 The provider surface is exactly two pure verbs (plus the raw ``fetch-comments``):
@@ -17,6 +18,7 @@ the hash_id-keyed post_responses respond loop, the ``--project-dir`` plumbing,
 and the CLI surface contract (the retired ``triage`` / ``triage-batch`` /
 ``comments-stage`` subcommands MUST be gone).
 """
+
 import io
 import sys
 from contextlib import redirect_stdout
@@ -34,6 +36,8 @@ get_current_pr_number = github_pr.get_current_pr_number
 _is_obvious_noise = github_pr._is_obvious_noise
 cmd_fetch_findings = github_pr.cmd_fetch_findings
 cmd_post_responses = github_pr.cmd_post_responses
+
+
 @pytest.fixture(autouse=True)
 def _stub_provider_calls():
     """Stub the auth check and PR HEAD-SHA fetch so fetch_findings tests never hit ``gh``.
@@ -50,6 +54,8 @@ def _stub_provider_calls():
         patch('github_pr._github.fetch_pr_head_sha', return_value='stub-head-sha'),
     ):
         yield
+
+
 def _stage_make_args(pr_number: int, plan_id: str):
     class _Args:
         pr_number: int
@@ -59,6 +65,8 @@ def _stage_make_args(pr_number: int, plan_id: str):
     a.pr_number = pr_number
     a.plan_id = plan_id
     return a
+
+
 _SOURCERY_1014_REFUSAL = (
     'Sourcery was unable to review this pull request because '
     'your pull request is larger than the review limit of 150000 characters. '
@@ -102,12 +110,16 @@ _GENUINE_REVIEW_MENTIONING_A_LIMIT = (
 )
 _REWORDED_REFUSAL = 'Skipping this one for now.'
 _SHORT_REVIEW_WITH_ANCHOR = 'Guard the bound at `src/Idx.java:12`.'
+
+
 class _StoreArgs:
     """The two attributes both verbs read off their namespace."""
 
     def __init__(self, pr_number, plan_id):
         self.pr_number = pr_number
         self.plan_id = plan_id
+
+
 def _fetch_over(comments, args):
     """Run ``cmd_fetch_findings`` over a fixed provider comment list."""
     with patch('github_pr._github.fetch_pr_comments_data') as mock_fetch:
@@ -119,6 +131,8 @@ def _fetch_over(comments, args):
             'unresolved': len(comments),
         }
         return cmd_fetch_findings(args)
+
+
 _SUBSTANTIVE_COMMENT = {
     'id': 'C-store-1',
     'kind': 'inline',
@@ -128,6 +142,8 @@ _SUBSTANTIVE_COMMENT = {
     'line': 12,
     'thread_id': 'gh-thread-store-1',
 }
+
+
 def _assert_store_refusal(payload, root):
     """Assert ``payload`` is the store's own refusal, naming the root it looked under."""
     assert payload.get('status') == 'error', payload
@@ -176,6 +192,8 @@ class TestFetchCommentsWrapper:
             result = fetch_comments(123)
 
         assert result['status'] == 'error'
+
+
 class TestPerBotIgnoreFilter:
     """The producer noise pre-filter layers shared regexes with per-bot registry markers.
 
@@ -311,6 +329,8 @@ class TestPerBotIgnoreFilter:
         assert result['status'] == 'success'
         assert result['count_stored'] == 1
         assert result['count_skipped_noise'] == 0
+
+
 class TestRefusalNoticeProducerFilter:
     """Every reviewer bot's refusal is RECOGNIZED as a refusal by some arm of the stack.
 
@@ -668,6 +688,8 @@ class TestRefusalNoticeProducerFilter:
         ]
 
         assert _detect_rate_limited_bots(comments) == []
+
+
 class TestFailLoudUnconfigured:
     """Both verbs return a typed ``unconfigured`` status when GitHub is not authed."""
 
@@ -691,6 +713,8 @@ class TestFailLoudUnconfigured:
 
         assert result['status'] == 'unconfigured'
         assert result['operation'] == 'post_responses'
+
+
 def test_fetch_findings_refuses_a_plan_absent_from_the_resolved_root(plan_context):
     """Positive control: the dedup read refuses instead of reading an empty key set.
 
@@ -712,6 +736,8 @@ def test_fetch_findings_refuses_a_plan_absent_from_the_resolved_root(plan_contex
         'a refused fetch must publish no count — a count computed against a store '
         'nobody reached is exactly the defect under test'
     )
+
+
 def test_fetch_findings_against_a_resolved_empty_store_is_a_genuine_success(plan_context):
     """Matched negative control: a resolved store that has filed nothing still fetches.
 
@@ -730,6 +756,8 @@ def test_fetch_findings_against_a_resolved_empty_store_is_a_genuine_success(plan
         'the comment must still be filed — the guard keys on the unreached store, never on an empty finding list'
     )
     assert result['count_skipped_duplicate'] == 0
+
+
 def test_fetch_findings_still_dedupes_on_a_resolved_populated_store(plan_context):
     """Matched positive control on the happy path: the read still feeds the dedup.
 

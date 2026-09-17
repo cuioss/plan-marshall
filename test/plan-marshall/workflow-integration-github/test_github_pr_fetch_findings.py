@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """``github_pr.cmd_fetch_findings``: cross-iteration dedup, classification, and participation.
 
 The producer-side dedup keys on ``(bot_kind, comment_id)`` for every bot kind,
@@ -11,6 +12,7 @@ The findings store is REAL (isolated via the autouse ``plan_context``
 ``fetch_pr_comments_data``, ``fetch_pr_head_sha``) is monkeypatched, so the dedup
 path exercises the genuine ``_findings_core`` add/query round-trip.
 """
+
 import argparse
 import json
 import sys
@@ -84,9 +86,13 @@ PLAN_IDS: tuple[str, ...] = (
     'p',
 )
 PLAN_IDS += tuple(f'gh-pr-preupgrade-dedup-{bot_kind}' for bot_kind in CURRENCY_SUBJECT_BOTS)
+
+
 def _evidence_plan_id(prefix: str, bot_kind: str, shape: str) -> str:
     """The kebab-case plan id a per-(bot, shape) evidence-gate case files against."""
     return f'gh-pr-evidence-{prefix}-{bot_kind}-{shape.replace("_", "-")}'
+
+
 PLAN_IDS += tuple(
     _evidence_plan_id(prefix, bot_kind, shape)
     for bot_kind, shape, _marker in MARKER_GATED_EVIDENCE
@@ -135,6 +141,8 @@ _COMMENTS = [
         'resolved': False,
     },
 ]
+
+
 def _patch_provider(monkeypatch, comments, head_sha='deadbeef', head_committed_at=''):
     """Monkeypatch the GitHub provider surface ``github_pr`` reaches through ``_github``.
 
@@ -176,6 +184,8 @@ def _patch_provider(monkeypatch, comments, head_sha='deadbeef', head_committed_a
         'run_gh',
         lambda *_a, **_k: (0, '{"additions": 900, "deletions": 340}', ''),
     )
+
+
 def _run_fetch(pr_number, plan_id):
     """Run the producer's FIND verb against ``plan_id``, with its plan directory present.
 
@@ -198,6 +208,8 @@ def _run_fetch(pr_number, plan_id):
     (get_base_dir() / 'plans' / plan_id).mkdir(parents=True, exist_ok=True)
     args = argparse.Namespace(pr_number=pr_number, plan_id=plan_id)
     return github_pr.cmd_fetch_findings(args)
+
+
 def _run_fetch_classified(pr_number, plan_id, *, required_bots=None, optional_bots=None):
     """Invoke ``cmd_fetch_findings`` with explicit participation-classification lists.
 
@@ -215,6 +227,8 @@ def _run_fetch_classified(pr_number, plan_id, *, required_bots=None, optional_bo
         optional_bots=optional_bots,
     )
     return github_pr.cmd_fetch_findings(args)
+
+
 _RATE_LIMIT_NOTICES = {
     # CodeRabbit: ``## Rate limit exceeded`` callout + body sentence.
     'coderabbit': (
@@ -273,6 +287,8 @@ _SOURCERY_SIZE_REFUSAL = (
 _PUBLISH_SHAPE_VOCABULARY: tuple[str, ...] = tuple(
     sorted({shape for bot in bot_registry.bot_kinds() for shape in bot_registry.participation_evidence(bot)})
 )
+
+
 def _undeclared_shape_pairs() -> list[tuple[str, str]]:
     """Every ``(bot_kind, publish_shape)`` pairing the registry leaves UNDECLARED.
 
@@ -287,6 +303,8 @@ def _undeclared_shape_pairs() -> list[tuple[str, str]]:
         for shape in _PUBLISH_SHAPE_VOCABULARY
         if shape not in bot_registry.participation_evidence(bot)
     ]
+
+
 _LOGIN_FOR_KIND: dict[str, str] = {kind: login for login, kind in bot_registry.login_to_bot_kind().items()}
 _CODERABBIT_CLEAN_VERDICT = (
     f'{bot_registry.participation_evidence_marker("coderabbit", "issue_comment")}  '
@@ -355,6 +373,8 @@ def test_classification_union_spans_both_lists(plan_context, monkeypatch):
     stored = query_findings(plan_id, finding_type='pr-comment')['findings']
     bot_kinds = {f.get('bot_kind') for f in stored}
     assert {'coderabbit', 'cuioss-review-bot', 'sourcery'} <= bot_kinds
+
+
 def test_fetch_findings_reports_drift_when_only_the_structural_arm_matched(plan_context, monkeypatch):
     """⛔ A refusal caught by SHAPE alone names the bot whose wording has drifted.
 
@@ -388,6 +408,8 @@ def test_fetch_findings_reports_drift_when_only_the_structural_arm_matched(plan_
     assert result['refused_bots'] == ['coderabbit']
     # ...and the drift is reported, naming the arm that fired ALONE.
     assert result['refusal_pattern_drift'] == [{'bot_kind': 'coderabbit', 'layer': _github_pr.REFUSAL_LAYER_STRUCTURAL}]
+
+
 def test_fetch_findings_reports_no_drift_when_only_the_registry_arm_matched(plan_context, monkeypatch):
     """⛔ MATCHED NEGATIVE CONTROL: a registry-only match is the DESIGN, not decay.
 
@@ -438,6 +460,8 @@ def test_fetch_findings_reports_no_drift_when_only_the_registry_arm_matched(plan
     # ...and NO drift is reported: the registry arm matching alone is the designed
     # state for this whole class of refusal, so there is no stale record to name.
     assert result['refusal_pattern_drift'] == []
+
+
 def test_fetch_findings_reports_no_drift_when_both_arms_agree(plan_context, monkeypatch):
     """⛔ Matched control: agreement is silence, so the record means something.
 
@@ -463,6 +487,8 @@ def test_fetch_findings_reports_no_drift_when_both_arms_agree(plan_context, monk
 
     assert result['refused_bots'] == ['coderabbit']
     assert result['refusal_pattern_drift'] == []
+
+
 def test_fetch_findings_reports_no_drift_outside_a_declared_publish_shape(plan_context, monkeypatch):
     """Scoped to the bot's declared ``participation_evidence`` shapes.
 
@@ -502,6 +528,8 @@ def test_fetch_findings_reports_no_drift_outside_a_declared_publish_shape(plan_c
     # Still recognised as a refusal — only the DRIFT channel is scoped.
     assert result['refused_bots'] == [bot_kind]
     assert result['refusal_pattern_drift'] == []
+
+
 def test_clean_guide_fixture_carries_every_declared_required_marker():
     """The fixture stays in step with the registry it is meant to exercise.
 
@@ -513,6 +541,8 @@ def test_clean_guide_fixture_carries_every_declared_required_marker():
     assert _PR_AGENT_REQUIRED_MARKERS
     for marker in _PR_AGENT_REQUIRED_MARKERS:
         assert marker in OBSERVED_CLEAN_GUIDE
+
+
 @pytest.mark.parametrize('bot_kind', ['coderabbit', 'sourcery', 'not-a-registered-bot', None])
 def test_empty_required_markers_short_circuit_to_false(bot_kind):
     """A bot declaring no clean shape can never have a comment dropped by layer 3.
@@ -525,9 +555,13 @@ def test_empty_required_markers_short_circuit_to_false(bot_kind):
     """
     assert bot_registry.contentless_review_markers(bot_kind or '') == []
     assert github_pr._is_contentless_boilerplate(OBSERVED_CLEAN_GUIDE, bot_kind) is False
+
+
 def test_clean_guide_is_contentless_boilerplate():
     """Every required marker present and no disqualifying marker — the drop case."""
     assert github_pr._is_contentless_boilerplate(OBSERVED_CLEAN_GUIDE, 'cuioss-review-bot') is True
+
+
 def test_any_actionable_marker_vetoes_the_drop():
     """A ``<details>`` finding disqualifies the drop even with every clean marker present.
 
@@ -540,6 +574,8 @@ def test_any_actionable_marker_vetoes_the_drop():
     assert '<details>' in GUIDE_WITH_FINDING
 
     assert github_pr._is_contentless_boilerplate(GUIDE_WITH_FINDING, 'cuioss-review-bot') is False
+
+
 def test_obvious_noise_drops_the_clean_guide_via_layer_three():
     """``_is_obvious_noise`` returns True for the clean Guide and False for the finding-bearing one.
 
@@ -548,6 +584,8 @@ def test_obvious_noise_drops_the_clean_guide_via_layer_three():
     """
     assert github_pr._is_obvious_noise(OBSERVED_CLEAN_GUIDE, 'cuioss-review-bot') is True
     assert github_pr._is_obvious_noise(GUIDE_WITH_FINDING, 'cuioss-review-bot') is False
+
+
 def test_layer_three_is_consulted_only_after_layers_one_and_two_miss(monkeypatch):
     """Ordering: a body already matched by layer 1 or layer 2 never reaches layer 3.
 
@@ -576,6 +614,8 @@ def test_layer_three_is_consulted_only_after_layers_one_and_two_miss(monkeypatch
     # Neither matches — only now is layer 3 consulted.
     assert github_pr._is_obvious_noise(OBSERVED_CLEAN_GUIDE, 'cuioss-review-bot') is True
     assert calls == ['cuioss-review-bot']
+
+
 def test_fetch_findings_size_cause_is_sticky(plan_context, monkeypatch):
     """A bot that posted BOTH a quota notice and a size ceiling records cause=size.
 
@@ -608,6 +648,8 @@ def test_fetch_findings_size_cause_is_sticky(plan_context, monkeypatch):
     assert result['refused_bots'] == ['sourcery']
     # Both notices are quota-and-size for the same bot; size wins (more actionable).
     assert result['refused_causes'] == [{'bot_kind': 'sourcery', 'cause': 'size'}]
+
+
 def test_fetch_findings_size_cause_is_sticky_size_first(plan_context, monkeypatch):
     """Sticky-size holds under the reverse order too: size first, then quota, stays size.
 
@@ -638,6 +680,8 @@ def test_fetch_findings_size_cause_is_sticky_size_first(plan_context, monkeypatc
     result = _run_fetch(108, plan_id)
     assert result['status'] == 'success'
     assert result['refused_causes'] == [{'bot_kind': 'sourcery', 'cause': 'size'}]
+
+
 def test_fetch_findings_reports_an_unmeasurable_diff_as_unknown_never_zero(plan_context, monkeypatch):
     """A failed measurement stays empty. ``0`` would read as an empty diff refused."""
     plan_id = 'gh-pr-size-refusal-unmeasurable'

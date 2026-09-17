@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """``github_pr.cmd_fetch_findings``: cross-iteration dedup, classification, and participation.
 
 The producer-side dedup keys on ``(bot_kind, comment_id)`` for every bot kind,
@@ -11,6 +12,7 @@ The findings store is REAL (isolated via the autouse ``plan_context``
 ``fetch_pr_comments_data``, ``fetch_pr_head_sha``) is monkeypatched, so the dedup
 path exercises the genuine ``_findings_core`` add/query round-trip.
 """
+
 import argparse
 import json
 import sys
@@ -84,9 +86,13 @@ PLAN_IDS: tuple[str, ...] = (
     'p',
 )
 PLAN_IDS += tuple(f'gh-pr-preupgrade-dedup-{bot_kind}' for bot_kind in CURRENCY_SUBJECT_BOTS)
+
+
 def _evidence_plan_id(prefix: str, bot_kind: str, shape: str) -> str:
     """The kebab-case plan id a per-(bot, shape) evidence-gate case files against."""
     return f'gh-pr-evidence-{prefix}-{bot_kind}-{shape.replace("_", "-")}'
+
+
 PLAN_IDS += tuple(
     _evidence_plan_id(prefix, bot_kind, shape)
     for bot_kind, shape, _marker in MARKER_GATED_EVIDENCE
@@ -135,6 +141,8 @@ _COMMENTS = [
         'resolved': False,
     },
 ]
+
+
 def _patch_provider(monkeypatch, comments, head_sha='deadbeef', head_committed_at=''):
     """Monkeypatch the GitHub provider surface ``github_pr`` reaches through ``_github``.
 
@@ -176,6 +184,8 @@ def _patch_provider(monkeypatch, comments, head_sha='deadbeef', head_committed_a
         'run_gh',
         lambda *_a, **_k: (0, '{"additions": 900, "deletions": 340}', ''),
     )
+
+
 def _run_fetch(pr_number, plan_id):
     """Run the producer's FIND verb against ``plan_id``, with its plan directory present.
 
@@ -198,6 +208,8 @@ def _run_fetch(pr_number, plan_id):
     (get_base_dir() / 'plans' / plan_id).mkdir(parents=True, exist_ok=True)
     args = argparse.Namespace(pr_number=pr_number, plan_id=plan_id)
     return github_pr.cmd_fetch_findings(args)
+
+
 def _run_fetch_classified(pr_number, plan_id, *, required_bots=None, optional_bots=None):
     """Invoke ``cmd_fetch_findings`` with explicit participation-classification lists.
 
@@ -215,9 +227,13 @@ def _run_fetch_classified(pr_number, plan_id, *, required_bots=None, optional_bo
         optional_bots=optional_bots,
     )
     return github_pr.cmd_fetch_findings(args)
+
+
 def _at(second):
     """ISO-8601 ``created_at`` on a fixed day — only the relative order matters."""
     return f'2026-07-29T10:{second:02d}:00Z'
+
+
 _RATE_LIMIT_NOTICES = {
     # CodeRabbit: ``## Rate limit exceeded`` callout + body sentence.
     'coderabbit': (
@@ -291,6 +307,8 @@ _REWORDED_SOURCERY_REFUSAL = (
     f'Sorry, {_SOURCERY_DECLARED_REFUSAL_MARKER.replace("larger than", "over")} our current plan.'
 )
 _RECOGNISED_SOURCERY_REFUSAL = f'Sorry, {_SOURCERY_DECLARED_REFUSAL_MARKER} our current plan.'
+
+
 def _run_gh_returning(rc, stdout, stderr=''):
     """Return a ``run_gh`` stub yielding a fixed ``(rc, stdout, stderr)`` tuple."""
 
@@ -298,12 +316,18 @@ def _run_gh_returning(rc, stdout, stderr=''):
         return (rc, stdout, stderr)
 
     return _run_gh
+
+
 def _checks_json(*checks):
     """Serialize ``(name, state, bucket)`` triples as the ``gh pr checks --json`` array."""
     return json.dumps([{'name': name, 'state': state, 'bucket': bucket} for name, state, bucket in checks])
+
+
 def _run_bot_completion(pr_number, bot_kind):
     args = argparse.Namespace(pr_number=pr_number, bot_kind=bot_kind)
     return github_pr.cmd_bot_completion(args)
+
+
 _BAD_KIND_COMMENT = {
     'id': 'cbad',
     'author': 'coderabbitai',
@@ -322,6 +346,8 @@ assert _CLASSIFICATION_FLAGS, 'derive_bot_flags found no classification flags on
 _PR_AGENT_REQUIRED_MARKERS = bot_registry.contentless_review_markers('cuioss-review-bot')
 assert _PR_AGENT_REQUIRED_MARKERS, 'bot_registry declares no contentless review markers for cuioss-review-bot'
 _BOT_KIND_TO_LOGIN = {kind: login for login, kind in bot_registry.login_to_bot_kind().items()}
+
+
 def _publish_comment(bot_kind, comment_id, *, created_at, updated_at=None, body=None):
     """A comment in ``bot_kind``'s FIRST declared publish shape.
 
@@ -341,16 +367,22 @@ def _publish_comment(bot_kind, comment_id, *, created_at, updated_at=None, body=
         'created_at': created_at,
         'updated_at': updated_at or created_at,
     }
+
+
 _HEAD_A = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
 _HEAD_B = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
 _HEAD_C = 'cccccccccccccccccccccccccccccccccccccccc'
 _GUIDE_CLEAN_BODY = 'Nothing further to report on this pass; the change reads consistently.'
 _GUIDE_FINDING_BODY = 'The retry helper drops the final attempt when max_attempts is 1.'
+
+
 def _edit_term_comment(bot_kind, *, body, updated_at=None):
     """One persistent comment of ``bot_kind``, re-published with a new body/timestamp."""
     comment = _publish_comment(bot_kind, 'guide-persistent', created_at=_at(1), body=body)
     comment['updated_at'] = updated_at if updated_at is not None else _at(1)
     return comment
+
+
 _LEGACY_LEDGER_FILENAME = 'pr-noise-dropped-comments.jsonl'
 _CONTRACT_DOC = get_skill_dir('plan-marshall', 'automatic-review') / 'standards' / 'bot-participation-contract.md'
 _CONTRACT_TEXT = _CONTRACT_DOC.read_text(encoding='utf-8')
@@ -382,6 +414,8 @@ def test_empty_classification_lists_still_ingest_every_bot(plan_context, monkeyp
 
     stored = query_findings(plan_id, finding_type='pr-comment')['findings']
     assert len(stored) == len(_COMMENTS)
+
+
 def test_bot_completion_slow_bot_in_progress_then_completed(monkeypatch):
     """A slow bot reports in_progress on the first poll and completed on the next.
 
@@ -412,6 +446,8 @@ def test_bot_completion_slow_bot_in_progress_then_completed(monkeypatch):
     second = _run_bot_completion(200, 'coderabbit')
     assert second['in_progress'] is False
     assert second['completed'] is True
+
+
 def test_bot_completion_no_check_name_for_markerless_bot(monkeypatch):
     """A bot with no registry completion_check_name reports ``no_check_name``.
 
@@ -425,6 +461,8 @@ def test_bot_completion_no_check_name_for_markerless_bot(monkeypatch):
     assert result['status'] == 'no_check_name'
     assert result['in_progress'] is False
     assert result['completed'] is False
+
+
 def test_bot_completion_check_absent_yields_not_found(monkeypatch):
     """A completion check not yet posted on the PR yields ``not_found`` (keep polling)."""
     monkeypatch.setattr(github_pr._github, 'check_auth', lambda: (True, ''))
@@ -438,6 +476,8 @@ def test_bot_completion_check_absent_yields_not_found(monkeypatch):
     assert result['status'] == 'not_found'
     assert result['in_progress'] is False
     assert result['completed'] is False
+
+
 def test_bot_completion_no_checks_at_all_yields_not_found(monkeypatch):
     """Empty gh output (PR has no checks) resolves to ``not_found``, not an error."""
     monkeypatch.setattr(github_pr._github, 'check_auth', lambda: (True, ''))
@@ -446,12 +486,16 @@ def test_bot_completion_no_checks_at_all_yields_not_found(monkeypatch):
     result = _run_bot_completion(200, 'coderabbit')
     assert result['status'] == 'not_found'
     assert result['completed'] is False
+
+
 def test_bot_completion_unconfigured_fails_loud(monkeypatch):
     """When GitHub is not authenticated, ``bot_completion`` fails loud (never a silent no-op)."""
     monkeypatch.setattr(github_pr._github, 'check_auth', lambda: (False, 'Not authenticated'))
 
     result = _run_bot_completion(200, 'coderabbit')
     assert result['status'] == 'unconfigured'
+
+
 @pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
 def test_an_edited_comment_is_filed_as_new_information(bot_kind, plan_context, monkeypatch):
     """A moved ``updated_at`` with a changed body files a NEW finding, never a duplicate.

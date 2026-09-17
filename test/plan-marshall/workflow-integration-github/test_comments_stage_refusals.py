@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for workflow-integration-github github_pr.py — two-verb provider contract.
 
 The provider surface is exactly two pure verbs (plus the raw ``fetch-comments``):
@@ -17,6 +18,7 @@ the hash_id-keyed post_responses respond loop, the ``--project-dir`` plumbing,
 and the CLI surface contract (the retired ``triage`` / ``triage-batch`` /
 ``comments-stage`` subcommands MUST be gone).
 """
+
 import io
 import sys
 from contextlib import redirect_stdout
@@ -34,6 +36,8 @@ get_current_pr_number = github_pr.get_current_pr_number
 _is_obvious_noise = github_pr._is_obvious_noise
 cmd_fetch_findings = github_pr.cmd_fetch_findings
 cmd_post_responses = github_pr.cmd_post_responses
+
+
 @pytest.fixture(autouse=True)
 def _stub_provider_calls():
     """Stub the auth check and PR HEAD-SHA fetch so fetch_findings tests never hit ``gh``.
@@ -50,6 +54,8 @@ def _stub_provider_calls():
         patch('github_pr._github.fetch_pr_head_sha', return_value='stub-head-sha'),
     ):
         yield
+
+
 def _stage_make_args(pr_number: int, plan_id: str):
     class _Args:
         pr_number: int
@@ -59,6 +65,8 @@ def _stage_make_args(pr_number: int, plan_id: str):
     a.pr_number = pr_number
     a.plan_id = plan_id
     return a
+
+
 _SOURCERY_1014_REFUSAL = (
     'Sourcery was unable to review this pull request because '
     'your pull request is larger than the review limit of 150000 characters. '
@@ -102,12 +110,16 @@ _GENUINE_REVIEW_MENTIONING_A_LIMIT = (
 )
 _REWORDED_REFUSAL = 'Skipping this one for now.'
 _SHORT_REVIEW_WITH_ANCHOR = 'Guard the bound at `src/Idx.java:12`.'
+
+
 class _StoreArgs:
     """The two attributes both verbs read off their namespace."""
 
     def __init__(self, pr_number, plan_id):
         self.pr_number = pr_number
         self.plan_id = plan_id
+
+
 _SUBSTANTIVE_COMMENT = {
     'id': 'C-store-1',
     'kind': 'inline',
@@ -117,6 +129,8 @@ _SUBSTANTIVE_COMMENT = {
     'line': 12,
     'thread_id': 'gh-thread-store-1',
 }
+
+
 def _assert_store_refusal(payload, root):
     """Assert ``payload`` is the store's own refusal, naming the root it looked under."""
     assert payload.get('status') == 'error', payload
@@ -469,6 +483,8 @@ class TestCommentsStage:
             m.group('id') for m in (github_pr._COMMENT_ID_DETAIL.search(f['detail'] or '') for f in q['findings']) if m
         }
         assert stored_ids == {'RB1', 'RB2'}
+
+
 class TestRefusalLayerVocabulary:
     """The layer vocabulary is ONE shared object, and its members are stable."""
 
@@ -529,6 +545,8 @@ class TestRefusalLayerVocabulary:
             _github_pr.REFUSAL_LAYER_REGISTRY,
             _github_pr.REFUSAL_LAYER_STRUCTURAL,
         )
+
+
 class TestUnrecognisedRefusalPredicate:
     """``_is_unrecognised_refusal`` recognises a refusal no earlier arm matched.
 
@@ -675,6 +693,8 @@ class TestUnrecognisedRefusalPredicate:
             monkeypatch.setattr(_github_pr, 'UNRECOGNISED_REFUSAL_MAX_CHARS', 500)
             live = _github_pr._is_refusal_notice(body, bot_kind)
             assert inert == live, (bot_kind, body[:40])
+
+
 def test_post_responses_refuses_a_plan_absent_from_the_resolved_root(plan_context):
     """Positive control: an unreached store is a refusal, not "nothing to transmit"."""
     plan_id = 'gh-store-absent-respond'

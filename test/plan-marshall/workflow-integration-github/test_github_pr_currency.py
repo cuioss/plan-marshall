@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """``github_pr.cmd_fetch_findings``: cross-iteration dedup, classification, and participation.
 
 The producer-side dedup keys on ``(bot_kind, comment_id)`` for every bot kind,
@@ -11,6 +12,7 @@ The findings store is REAL (isolated via the autouse ``plan_context``
 ``fetch_pr_comments_data``, ``fetch_pr_head_sha``) is monkeypatched, so the dedup
 path exercises the genuine ``_findings_core`` add/query round-trip.
 """
+
 import argparse
 import json
 import sys
@@ -84,9 +86,13 @@ PLAN_IDS: tuple[str, ...] = (
     'p',
 )
 PLAN_IDS += tuple(f'gh-pr-preupgrade-dedup-{bot_kind}' for bot_kind in CURRENCY_SUBJECT_BOTS)
+
+
 def _evidence_plan_id(prefix: str, bot_kind: str, shape: str) -> str:
     """The kebab-case plan id a per-(bot, shape) evidence-gate case files against."""
     return f'gh-pr-evidence-{prefix}-{bot_kind}-{shape.replace("_", "-")}'
+
+
 PLAN_IDS += tuple(
     _evidence_plan_id(prefix, bot_kind, shape)
     for bot_kind, shape, _marker in MARKER_GATED_EVIDENCE
@@ -135,6 +141,8 @@ _COMMENTS = [
         'resolved': False,
     },
 ]
+
+
 def _patch_provider(monkeypatch, comments, head_sha='deadbeef', head_committed_at=''):
     """Monkeypatch the GitHub provider surface ``github_pr`` reaches through ``_github``.
 
@@ -176,6 +184,8 @@ def _patch_provider(monkeypatch, comments, head_sha='deadbeef', head_committed_a
         'run_gh',
         lambda *_a, **_k: (0, '{"additions": 900, "deletions": 340}', ''),
     )
+
+
 def _run_fetch(pr_number, plan_id):
     """Run the producer's FIND verb against ``plan_id``, with its plan directory present.
 
@@ -198,6 +208,8 @@ def _run_fetch(pr_number, plan_id):
     (get_base_dir() / 'plans' / plan_id).mkdir(parents=True, exist_ok=True)
     args = argparse.Namespace(pr_number=pr_number, plan_id=plan_id)
     return github_pr.cmd_fetch_findings(args)
+
+
 def _run_fetch_classified(pr_number, plan_id, *, required_bots=None, optional_bots=None):
     """Invoke ``cmd_fetch_findings`` with explicit participation-classification lists.
 
@@ -215,9 +227,13 @@ def _run_fetch_classified(pr_number, plan_id, *, required_bots=None, optional_bo
         optional_bots=optional_bots,
     )
     return github_pr.cmd_fetch_findings(args)
+
+
 def _at(second):
     """ISO-8601 ``created_at`` on a fixed day — only the relative order matters."""
     return f'2026-07-29T10:{second:02d}:00Z'
+
+
 _RATE_LIMIT_NOTICES = {
     # CodeRabbit: ``## Rate limit exceeded`` callout + body sentence.
     'coderabbit': (
@@ -286,6 +302,8 @@ _CODERABBIT_WALKTHROUGH = (
     '## Walkthrough\n'
     'The change gates participation credit on a per-shape content marker.'
 )
+
+
 def _evidence_comment(bot_kind, shape, comment_id, body, **extra):
     """One comment authored by ``bot_kind`` in publish shape ``shape``."""
     comment = {
@@ -298,11 +316,15 @@ def _evidence_comment(bot_kind, shape, comment_id, body, **extra):
     }
     comment.update(extra)
     return comment
+
+
 _SOURCERY_DECLARED_REFUSAL_MARKER = bot_registry.refusal_patterns('sourcery')[0]
 _REWORDED_SOURCERY_REFUSAL = (
     f'Sorry, {_SOURCERY_DECLARED_REFUSAL_MARKER.replace("larger than", "over")} our current plan.'
 )
 _RECOGNISED_SOURCERY_REFUSAL = f'Sorry, {_SOURCERY_DECLARED_REFUSAL_MARKER} our current plan.'
+
+
 def _sourcery_comment(comment_id, body):
     """A sourcery comment in its declared publish shape (``review_body``)."""
     return {
@@ -313,6 +335,8 @@ def _sourcery_comment(comment_id, body):
         'body': body,
         'resolved': False,
     }
+
+
 def _arm_the_enumerative_arm(monkeypatch, max_chars=400):
     """Give the enumerative arm a threshold so it can fire.
 
@@ -334,6 +358,8 @@ def _arm_the_enumerative_arm(monkeypatch, max_chars=400):
         'UNRECOGNISED_REFUSAL_MAX_CHARS',
         max_chars,
     )
+
+
 _BAD_KIND_COMMENT = {
     'id': 'cbad',
     'author': 'coderabbitai',
@@ -352,6 +378,8 @@ assert _CLASSIFICATION_FLAGS, 'derive_bot_flags found no classification flags on
 _PR_AGENT_REQUIRED_MARKERS = bot_registry.contentless_review_markers('cuioss-review-bot')
 assert _PR_AGENT_REQUIRED_MARKERS, 'bot_registry declares no contentless review markers for cuioss-review-bot'
 _BOT_KIND_TO_LOGIN = {kind: login for login, kind in bot_registry.login_to_bot_kind().items()}
+
+
 def _publish_comment(bot_kind, comment_id, *, created_at, updated_at=None, body=None):
     """A comment in ``bot_kind``'s FIRST declared publish shape.
 
@@ -371,9 +399,13 @@ def _publish_comment(bot_kind, comment_id, *, created_at, updated_at=None, body=
         'created_at': created_at,
         'updated_at': updated_at or created_at,
     }
+
+
 _HEAD_A = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
 _HEAD_B = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
 _HEAD_C = 'cccccccccccccccccccccccccccccccccccccccc'
+
+
 def _two_evidence_comments(bot_kind):
     """Two unchanged evidence comments of one bot, both in a declared publish shape."""
     return [
@@ -385,9 +417,13 @@ def _two_evidence_comments(bot_kind):
             body='A second observation: the retry budget is read before the config is loaded.',
         ),
     ]
+
+
 _GUIDE_CLEAN_BODY = 'Nothing further to report on this pass; the change reads consistently.'
 _GUIDE_FINDING_BODY = 'The retry helper drops the final attempt when max_attempts is 1.'
 _LEGACY_LEDGER_FILENAME = 'pr-noise-dropped-comments.jsonl'
+
+
 def _write_ledger_row(path, bot_kind, comment_id, sha, updated_at):
     """Append one currency-ledger row to ``path`` in the producer's own row shape."""
     from jsonl_store import append_jsonl
@@ -401,6 +437,8 @@ def _write_ledger_row(path, bot_kind, comment_id, sha, updated_at):
             'updated_at': updated_at,
         },
     )
+
+
 _CONTRACT_DOC = get_skill_dir('plan-marshall', 'automatic-review') / 'standards' / 'bot-participation-contract.md'
 _CONTRACT_TEXT = _CONTRACT_DOC.read_text(encoding='utf-8')
 _SOURCERY_SIZE_NOTICE = (
@@ -423,6 +461,8 @@ def test_the_gate_populations_are_non_empty_and_disjoint():
     assert MARKER_GATED_EVIDENCE_COUNT == len(gated_pairs)
     assert UNGATED_EVIDENCE_COUNT == len(set(UNGATED_EVIDENCE))
     assert gated_pairs.isdisjoint(UNGATED_EVIDENCE)
+
+
 @pytest.mark.parametrize(
     ('bot_kind', 'shape', 'marker'),
     MARKER_GATED_EVIDENCE,
@@ -437,6 +477,8 @@ def test_a_gated_shape_credits_the_marker_bearing_comment(plan_context, monkeypa
 
     assert result['status'] == 'success'
     assert result['participated_bots'] == [{'bot_kind': bot_kind, 'evidence_kind': shape}]
+
+
 @pytest.mark.parametrize(
     ('bot_kind', 'shape', 'marker'),
     MARKER_GATED_EVIDENCE,
@@ -460,6 +502,8 @@ def test_a_gated_shape_without_the_marker_credits_nothing(plan_context, monkeypa
     assert result['participated_bots'] == []
     assert result['stale_participation_bots'] == []
     assert result['undecidable_participation_bots'] == []
+
+
 @pytest.mark.parametrize(
     ('bot_kind', 'shape'),
     UNGATED_EVIDENCE,
@@ -480,6 +524,8 @@ def test_an_ungated_shape_credits_on_the_shape_alone(plan_context, monkeypatch, 
 
     assert result['status'] == 'success'
     assert result['participated_bots'] == [{'bot_kind': bot_kind, 'evidence_kind': shape}]
+
+
 def test_a_coderabbit_clean_verdict_comment_credits_participation(plan_context, monkeypatch):
     """CodeRabbit's clean verdict, published as its ONLY comment, credits it — and files nothing.
 
@@ -502,6 +548,8 @@ def test_a_coderabbit_clean_verdict_comment_credits_participation(plan_context, 
     assert result['count_stored'] == 0
     assert result['count_skipped_noise'] == 1
     assert result['producer_mismatch_hash_id'] is None
+
+
 def test_a_coderabbit_walkthrough_alone_credits_nothing(plan_context, monkeypatch):
     """⛔ MATCHED NEGATIVE CONTROL: the pre-review walkthrough is the same shape and credits nothing.
 
@@ -523,6 +571,8 @@ def test_a_coderabbit_walkthrough_alone_credits_nothing(plan_context, monkeypatc
     assert result['stale_participation_bots'] == []
     assert result['undecidable_participation_bots'] == []
     assert result['count_skipped_noise'] == 1
+
+
 def test_a_rejected_comment_stages_no_currency_row_so_its_later_verdict_edit_is_credited(plan_context, monkeypatch):
     """The gate runs BEFORE the currency test, so a rejected walkthrough anchors nothing.
 
@@ -559,6 +609,8 @@ def test_a_rejected_comment_stages_no_currency_row_so_its_later_verdict_edit_is_
     assert github_pr._recorded_currency_records(plan_id) == {
         ('coderabbit', 'cr-summary'): ('deadbeef', '2026-09-01T10:20:00Z'),
     }
+
+
 def test_the_mutated_fixture_reaches_neither_earlier_arm():
     """Anti-vacuity guard, asserted BEFORE any behavioural case depends on it.
 
@@ -577,6 +629,8 @@ def test_the_mutated_fixture_reaches_neither_earlier_arm():
     assert _github_pr._is_rate_limit_notice(_REWORDED_SOURCERY_REFUSAL) is False
     # ...while the unmutated control is still recognised by the registry arm.
     assert _github_pr._is_refusal_notice(_RECOGNISED_SOURCERY_REFUSAL, 'sourcery') is True
+
+
 def test_the_record_carries_a_reachable_remedy_not_a_description(plan_context, monkeypatch):
     """Splitting out a state owes a REACHABLE remedy — the record carries the mechanism.
 
@@ -598,6 +652,8 @@ def test_the_record_carries_a_reachable_remedy_not_a_description(plan_context, m
     assert record['registry_field'] == 'refusal_patterns'
     assert 'refusal_patterns' in record['remedy']
     assert 'sourcery.md' in record['remedy']
+
+
 def test_a_bot_with_any_genuine_review_keeps_its_credit(plan_context, monkeypatch):
     """Matched negative control for the subtraction: credit is denied only when EVERY
     publish-shape comment was an unrecognised refusal.
@@ -638,6 +694,8 @@ def test_a_bot_with_any_genuine_review_keeps_its_credit(plan_context, monkeypatc
     # The unrecognised refusal is still REPORTED — it is a diagnostic, not a silent drop.
     assert len(result['unrecognised_refusal']) == 1
     assert result['producer_mismatch_hash_id'] is None
+
+
 def test_with_no_threshold_the_producer_behaves_exactly_as_before(plan_context, monkeypatch):
     """At the SHIPPED value the arm never fires, so the producer is unchanged.
 
@@ -659,6 +717,8 @@ def test_with_no_threshold_the_producer_behaves_exactly_as_before(plan_context, 
     assert result['count_stored'] == 1
     assert result['unrecognised_refusal'] == []
     assert result['participated_bots'] == [{'bot_kind': 'sourcery', 'evidence_kind': 'review_body'}]
+
+
 def test_unregistered_bot_login_is_filed_unattributed(plan_context, monkeypatch):
     """A comment from a login absent from the registry is filed, never dropped.
 
@@ -698,6 +758,8 @@ def test_unregistered_bot_login_is_filed_unattributed(plan_context, monkeypatch)
     # not refuse — an unattributable login contributes to neither observation set.
     assert result['participated_bots'] == []
     assert result['refused_bots'] == []
+
+
 def test_unregistered_bot_login_is_not_reported_unclassified(plan_context, monkeypatch):
     """An unattributable login is filed, and is NOT named as an unclassified bot.
 
@@ -730,6 +792,8 @@ def test_unregistered_bot_login_is_not_reported_unclassified(plan_context, monke
     stored = query_findings(plan_id, finding_type='pr-comment')['findings']
     assert len(stored) == 1
     assert stored[0].get('bot_kind') in (None, '')
+
+
 def test_the_currency_subject_population_guard_is_exercised():
     """The population's import-time vacuity guard admits the real set and rejects an empty one.
 
@@ -743,6 +807,8 @@ def test_the_currency_subject_population_guard_is_exercised():
     assert guard_non_empty(CURRENCY_SUBJECT_BOTS, 'CURRENCY_SUBJECT_BOTS', 'the registry')
     with pytest.raises(VacuousPopulationError, match='reporting clean while covering nothing'):
         guard_non_empty((), 'CURRENCY_SUBJECT_BOTS', 'a registry declaring no such bot')
+
+
 def test_currency_anchor_is_recorded_in_the_ledger_on_credit(plan_context, monkeypatch):
     """The currency anchor is DERIVED from the production ledger, not hand-listed — D4(d).
 
@@ -770,6 +836,8 @@ def test_currency_anchor_is_recorded_in_the_ledger_on_credit(plan_context, monke
     record = ledger.get((bot, 'c-ledger'))
     assert record == (_HEAD_A, comment['updated_at'])
     assert not isinstance(record, github_pr._InvalidLegacyRecord)
+
+
 @pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
 def test_edit_at_one_commit_does_not_credit_a_later_commit(bot_kind, plan_context, monkeypatch):
     """An in-place edit credits the commit it was made against, NOT every later HEAD.
@@ -800,6 +868,8 @@ def test_edit_at_one_commit_does_not_credit_a_later_commit(bot_kind, plan_contex
     at_c = _run_fetch(135, plan_id)
     assert at_c['participated_bots'] == []
     assert at_c['stale_participation_bots'] == [{'bot_kind': bot_kind, 'evidence_kind': edited['kind']}]
+
+
 @pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
 def test_review_predating_the_merge_candidate_is_stale(bot_kind, plan_context, monkeypatch):
     """After HEAD advances past the reviewed commit, the unchanged comment is STALE — D4(a).
@@ -824,6 +894,8 @@ def test_review_predating_the_merge_candidate_is_stale(bot_kind, plan_context, m
     second = _run_fetch(131, plan_id)
     assert second['participated_bots'] == []
     assert second['stale_participation_bots'] == [{'bot_kind': bot_kind, 'evidence_kind': comment['kind']}]
+
+
 @pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
 def test_in_place_edit_credits_participation_after_a_head_advance(bot_kind, plan_context, monkeypatch):
     """An in-place EDIT re-credits the bot even after HEAD advances past the recorded commit.
@@ -847,6 +919,8 @@ def test_in_place_edit_credits_participation_after_a_head_advance(bot_kind, plan
     assert second['status'] == 'success'
     assert second['participated_bots'] == [{'bot_kind': bot_kind, 'evidence_kind': edited['kind']}]
     assert second['stale_participation_bots'] == []
+
+
 @pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
 def test_a_fresh_comment_outranks_a_stale_one_through_the_subtraction(bot_kind, plan_context, monkeypatch):
     """One stale and one fresh comment resolves ``participated``, never both states.
@@ -876,6 +950,8 @@ def test_a_fresh_comment_outranks_a_stale_one_through_the_subtraction(bot_kind, 
     assert second['status'] == 'success'
     assert second['participated_bots'] == [{'bot_kind': bot_kind, 'evidence_kind': fresh['kind']}]
     assert second['stale_participation_bots'] == []
+
+
 @pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
 def test_two_unchanged_evidence_comments_are_stale_at_an_advanced_head(bot_kind, plan_context, monkeypatch):
     """Neither of a bot's two unchanged comments credits it once HEAD advances.
@@ -901,6 +977,8 @@ def test_two_unchanged_evidence_comments_are_stale_at_an_advanced_head(bot_kind,
     assert at_b['status'] == 'success'
     assert at_b['participated_bots'] == []
     assert at_b['stale_participation_bots'] == [{'bot_kind': bot_kind, 'evidence_kind': comments[0]['kind']}]
+
+
 @pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
 def test_a_rejecting_fetch_stages_no_ledger_row_so_the_verdict_holds(bot_kind, plan_context, monkeypatch):
     """A third fetch at the UNCHANGED advanced HEAD returns the identical verdict.
@@ -933,6 +1011,8 @@ def test_a_rejecting_fetch_stages_no_ledger_row_so_the_verdict_holds(bot_kind, p
     ledger = github_pr._recorded_currency_records(plan_id)
     assert ledger[(bot_kind, 'guide-a')][0] == _HEAD_A
     assert ledger[(bot_kind, 'guide-b')][0] == _HEAD_A
+
+
 @pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
 def test_a_comment_predating_the_merge_candidate_is_stale_on_first_observation(bot_kind, plan_context, monkeypatch):
     """A comment older than the commit cannot be an observation of it — even unseen.
@@ -954,6 +1034,8 @@ def test_a_comment_predating_the_merge_candidate_is_stale_on_first_observation(b
     # A withheld credit stages no anchor either — otherwise the next fetch would read
     # the comment as SHA-current and credit what this fetch refused.
     assert github_pr._recorded_currency_records(plan_id) == {}
+
+
 @pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
 def test_a_pre_upgrade_key_only_ledger_row_resolves_stale_not_participated(bot_kind, plan_context, monkeypatch):
     """A row carrying no reviewed SHA is REFUSED, never read as a first observation.
@@ -988,6 +1070,8 @@ def test_a_pre_upgrade_key_only_ledger_row_resolves_stale_not_participated(bot_k
     # ...and the mechanism that produced it: the row survived the read as the stated
     # third state rather than being dropped or coerced into a usable-looking anchor.
     assert github_pr._recorded_currency_records(plan_id)[(bot_kind, 'guide-1')] is github_pr.INVALID_LEGACY_RECORD
+
+
 @pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
 def test_a_credited_bot_becomes_undecidable_when_the_head_read_fails(bot_kind, plan_context, monkeypatch):
     """A resolved-then-unresolved sequence moves the bot to undecidable, not to stale.
@@ -1018,6 +1102,8 @@ def test_a_credited_bot_becomes_undecidable_when_the_head_read_fails(bot_kind, p
     assert unread['participated_bots'] == []
     assert unread['stale_participation_bots'] == []
     assert unread['undecidable_participation_bots'] == [{'bot_kind': bot_kind, 'evidence_kind': comment['kind']}]
+
+
 def test_the_pre_rename_ledger_filename_is_the_literal_real_plans_carry():
     """The migration target is an exact on-disk name, so it is pinned as a literal.
 
@@ -1031,6 +1117,8 @@ def test_the_pre_rename_ledger_filename_is_the_literal_real_plans_carry():
     assert 'currency' in github_pr._CURRENCY_LEDGER_ARTIFACT
     assert 'dropped' not in github_pr._CURRENCY_LEDGER_ARTIFACT
     assert github_pr._CURRENCY_LEDGER_ARTIFACT != github_pr._LEGACY_CURRENCY_LEDGER_ARTIFACT
+
+
 @pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
 def test_a_ledger_written_under_the_pre_rename_filename_is_still_read(bot_kind, plan_context, monkeypatch):
     """An anchor recorded under the OLD filename still denies a credit at an advanced HEAD.
@@ -1062,6 +1150,8 @@ def test_a_ledger_written_under_the_pre_rename_filename_is_still_read(bot_kind, 
         _HEAD_A,
         comment['updated_at'],
     )
+
+
 @pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
 def test_the_same_fetch_with_no_ledger_at_all_credits_the_comment(bot_kind, plan_context, monkeypatch):
     """Matched negative control: without the legacy row, that very fetch CREDITS the bot.
@@ -1080,6 +1170,8 @@ def test_the_same_fetch_with_no_ledger_at_all_credits_the_comment(bot_kind, plan
     assert result['status'] == 'success'
     assert result['participated_bots'] == [{'bot_kind': bot_kind, 'evidence_kind': comment['kind']}]
     assert result['stale_participation_bots'] == []
+
+
 @pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
 def test_a_populated_current_ledger_does_not_hide_the_pre_rename_rows(bot_kind, plan_context, monkeypatch):
     """⛔ The per-FILE fallback shape is refuted here: both files are read, always.
@@ -1126,6 +1218,8 @@ def test_a_populated_current_ledger_does_not_hide_the_pre_rename_rows(bot_kind, 
     ledger = github_pr._recorded_currency_records(plan_id)
     assert ledger[(bot_kind, 'guide-a')] == (_HEAD_A, guide_a['updated_at'])
     assert ledger[(bot_kind, 'guide-b')] == (_HEAD_A, guide_b['updated_at'])
+
+
 @pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
 def test_a_credit_is_written_only_under_the_current_filename(bot_kind, plan_context, monkeypatch):
     """The pre-rename file is READ and never written — the migration is one-directional.
@@ -1142,6 +1236,8 @@ def test_a_credit_is_written_only_under_the_current_filename(bot_kind, plan_cont
     assert result['participated_bots'] == [{'bot_kind': bot_kind, 'evidence_kind': comment['kind']}]
     assert github_pr._currency_ledger_path(plan_id).exists()
     assert not github_pr._legacy_currency_ledger_path(plan_id).exists()
+
+
 def test_the_currency_blind_population_is_derived_and_guarded():
     """The complement is non-empty and disjoint from the currency-subject population.
 
@@ -1158,6 +1254,8 @@ def test_the_currency_blind_population_is_derived_and_guarded():
 
     assert not set(CURRENCY_BLIND_BOTS) & set(CURRENCY_SUBJECT_BOTS)
     assert set(CURRENCY_BLIND_BOTS) | set(CURRENCY_SUBJECT_BOTS) == set(bot_registry.bot_kinds())
+
+
 def test_the_contract_records_the_currency_blind_gap_rather_than_leaving_it_inferable():
     """The bounded gap is WRITTEN DOWN — reason, bound, and revisit condition.
 
@@ -1177,6 +1275,8 @@ def test_the_contract_records_the_currency_blind_gap_rather_than_leaving_it_infe
     assert 'Why the gap is accepted' in _CONTRACT_TEXT
     assert 'What bounds it' in _CONTRACT_TEXT
     assert 'When it is revisited' in _CONTRACT_TEXT
+
+
 @pytest.mark.parametrize('bot_kind', CURRENCY_BLIND_BOTS)
 def test_an_append_per_review_bot_stays_credited_after_a_head_advance(bot_kind, plan_context, monkeypatch):
     """The documented behaviour, asserted as a REACH DIFFERENCE on one identical fixture.

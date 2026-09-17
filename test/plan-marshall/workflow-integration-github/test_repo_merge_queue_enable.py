@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the GitHub `repo merge-queue` probe/enable handlers.
 
 All fixtures are API-shape-faithful (no live gh). The probe reads the evaluated
@@ -6,6 +7,7 @@ each result to the shared eligibility discriminator; enable creates a
 ``merge_queue`` ruleset via ``POST /repos/{owner}/{repo}/rulesets`` and is
 idempotent.
 """
+
 import argparse
 import json
 
@@ -30,6 +32,8 @@ def _hermetic_bypass_config(monkeypatch):
 
     monkeypatch.setattr(_config_core, 'is_initialized', lambda: True)
     monkeypatch.setattr(_config_core, 'load_config', lambda: {})
+
+
 def _make_run_gh(*, rules=None, post_rc=0, repo_rc=0, repo_err='', rules_rc=0, rules_err='', rulesets=None):
     """Build a run_gh stub that routes on the gh api endpoint, plus the capture list."""
     captured: list[list[str]] = []
@@ -57,10 +61,14 @@ def _make_run_gh(*, rules=None, post_rc=0, repo_rc=0, repo_err='', rules_rc=0, r
         return 0, '', ''
 
     return stub, captured
+
+
 def _install(monkeypatch, stub):
     monkeypatch.setattr(github_ops, 'check_auth', lambda: (True, ''))
     monkeypatch.setattr(github_ops, 'get_repo_info', lambda: ('owner', 'repo'))
     monkeypatch.setattr(github_ops, 'run_gh', stub)
+
+
 def _make_enable_stubs(
     *,
     rules,
@@ -100,11 +108,15 @@ def _make_enable_stubs(
         return 0, '{"id": 99}', ''
 
     return run_gh_stub, body_stub, captured, bodies
+
+
 def _install_enable(monkeypatch, run_gh_stub, body_stub):
     monkeypatch.setattr(github_ops, 'check_auth', lambda: (True, ''))
     monkeypatch.setattr(github_ops, 'get_repo_info', lambda: ('owner', 'repo'))
     monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
     monkeypatch.setattr(github_ops, '_gh_api_json_body', body_stub)
+
+
 def _branch_cleanup_config(pr_merge_strategy):
     return {
         'plan': {
@@ -131,6 +143,8 @@ def test_enable_idempotent_when_configured(monkeypatch):
     # No mutation was issued (idempotent no-op).
     assert not any(c[:3] == ['api', '-X', 'POST'] for c in captured)
     assert not any(c[:3] == ['api', '-X', 'PUT'] for c in captured)
+
+
 def test_enable_creates_ruleset_when_unconfigured(monkeypatch):
     stub, captured = _make_run_gh(rules=[{'type': 'pull_request'}])
     _install(monkeypatch, stub)
@@ -145,6 +159,8 @@ def test_enable_creates_ruleset_when_unconfigured(monkeypatch):
     post = post_calls[0]
     assert post[3] == 'repos/owner/repo/rulesets'
     assert '--input' in post
+
+
 def test_enable_error_when_post_fails(monkeypatch):
     stub, _ = _make_run_gh(rules=[{'type': 'pull_request'}], post_rc=1)
     _install(monkeypatch, stub)
@@ -152,10 +168,14 @@ def test_enable_error_when_post_fails(monkeypatch):
     result = github_ops.cmd_repo_merge_queue_enable(argparse.Namespace())
     assert result['status'] == 'error'
     assert result['operation'] == 'repo_merge_queue_enable'
+
+
 def test_enable_auth_failure(monkeypatch):
     monkeypatch.setattr(github_ops, 'check_auth', lambda: (False, 'not authed'))
     result = github_ops.cmd_repo_merge_queue_enable(argparse.Namespace())
     assert result['status'] == 'error'
+
+
 def test_enable_config_only_weaves_actor_without_orgs_call(monkeypatch):
     run_gh_stub, body_stub, captured, bodies = _make_enable_stubs(rules=[{'type': 'pull_request'}])
     _install_enable(monkeypatch, run_gh_stub, body_stub)
@@ -171,6 +191,8 @@ def test_enable_config_only_weaves_actor_without_orgs_call(monkeypatch):
     assert [a['actor_id'] for a in payload['bypass_actors']] == [12345]
     # Config-only path issues NO org-installations lookup.
     assert not any(c == ['api', 'orgs/owner/installations'] for c in captured)
+
+
 def test_enable_org_list_fallback_matches_app_slug(monkeypatch):
     run_gh_stub, body_stub, captured, bodies = _make_enable_stubs(
         rules=[{'type': 'pull_request'}],
@@ -187,6 +209,8 @@ def test_enable_org_list_fallback_matches_app_slug(monkeypatch):
     payload = [b for b in bodies if b[0] == 'POST'][0][2]
     assert [a['actor_id'] for a in payload['bypass_actors']] == [777]
     assert any(c == ['api', 'orgs/owner/installations'] for c in captured)
+
+
 def test_enable_org_list_no_match_leaves_payload_unchanged(monkeypatch):
     run_gh_stub, body_stub, _captured, bodies = _make_enable_stubs(
         rules=[{'type': 'pull_request'}],
@@ -199,6 +223,8 @@ def test_enable_org_list_no_match_leaves_payload_unchanged(monkeypatch):
     assert result['status'] == 'success'
     payload = [b for b in bodies if b[0] == 'POST'][0][2]
     assert 'bypass_actors' not in payload
+
+
 def test_enable_org_list_precondition_failure_is_graceful(monkeypatch):
     run_gh_stub, body_stub, _captured, bodies = _make_enable_stubs(
         rules=[{'type': 'pull_request'}],
@@ -213,6 +239,8 @@ def test_enable_org_list_precondition_failure_is_graceful(monkeypatch):
     assert result['status'] == 'success'
     payload = [b for b in bodies if b[0] == 'POST'][0][2]
     assert 'bypass_actors' not in payload
+
+
 def test_enable_self_heal_patches_missing_actor(monkeypatch):
     run_gh_stub, body_stub, _captured, bodies = _make_enable_stubs(
         rules=[{'type': 'merge_queue'}],
@@ -230,6 +258,8 @@ def test_enable_self_heal_patches_missing_actor(monkeypatch):
     method, endpoint, payload = puts[0]
     assert endpoint == 'repos/owner/repo/rulesets/5'
     assert [a['actor_id'] for a in payload['bypass_actors']] == [999]
+
+
 def test_enable_self_heal_noop_when_actor_present(monkeypatch):
     run_gh_stub, body_stub, _captured, bodies = _make_enable_stubs(
         rules=[{'type': 'merge_queue'}],
@@ -247,6 +277,8 @@ def test_enable_self_heal_noop_when_actor_present(monkeypatch):
     assert result['status'] == 'success'
     assert result['changed'] is False
     assert not any(b[0] == 'PUT' for b in bodies)
+
+
 def test_enable_self_heal_filters_non_dict_existing_actor(monkeypatch):
     # A non-dict entry in the fetched ruleset's bypass_actors must be dropped
     # from the merged PUT body — echoing it back would corrupt the payload.
@@ -275,6 +307,8 @@ def test_enable_self_heal_filters_non_dict_existing_actor(monkeypatch):
     assert all(isinstance(a, dict) for a in payload['bypass_actors'])
     # The pre-existing valid actor is retained and the missing one is added.
     assert {a['actor_id'] for a in payload['bypass_actors']} == {111, 999}
+
+
 def test_enable_self_heal_regrants_actor_with_wrong_mode(monkeypatch):
     # An actor_id present but carrying the WRONG bypass_mode/actor_type (exactly
     # the GH013 scenario) must be treated as missing and re-granted the correct
@@ -304,6 +338,8 @@ def test_enable_self_heal_regrants_actor_with_wrong_mode(monkeypatch):
     assert len(actors_999) == 1
     assert actors_999[0]['actor_type'] == 'Integration'
     assert actors_999[0]['bypass_mode'] == 'always'
+
+
 def test_enable_self_heal_noop_when_no_id_resolved(monkeypatch):
     # The merge-method reconcile now ALWAYS fetches the named ruleset on the
     # configured path (the historical "never fetches the ruleset" assertion no
@@ -328,6 +364,8 @@ def test_enable_self_heal_noop_when_no_id_resolved(monkeypatch):
     assert any(c == ['api', 'repos/owner/repo/rulesets'] for c in captured)
     # …but no drift on either concern → no PUT.
     assert not any(b[0] == 'PUT' for b in bodies)
+
+
 def test_enable_slugs_only_shortcircuits_org_list_when_actor_present(monkeypatch):
     # slugs-only config on an already-configured repo whose ruleset already
     # carries an Integration/always bypass actor must NOT issue the (expensive)
@@ -351,6 +389,8 @@ def test_enable_slugs_only_shortcircuits_org_list_when_actor_present(monkeypatch
     # and no PUT was issued.
     assert not any(c == ['api', 'orgs/owner/installations'] for c in captured)
     assert not any(b[0] == 'PUT' for b in bodies)
+
+
 def test_enable_self_heal_put_preserves_rules_and_conditions(monkeypatch):
     # The self-heal PUT sends the full ruleset object (name/target/enforcement/
     # conditions/rules echoed back alongside the merged bypass_actors) so a
@@ -391,6 +431,8 @@ def test_enable_self_heal_put_preserves_rules_and_conditions(monkeypatch):
     assert 'created_at' not in payload
     assert 'node_id' not in payload
     assert 'id' not in payload
+
+
 def test_enable_unconfigured_post_carries_resolved_method(monkeypatch):
     import _config_core
 
@@ -406,6 +448,8 @@ def test_enable_unconfigured_post_carries_resolved_method(monkeypatch):
     payload = posts[0][2]
     merge_queue_rules = [r for r in payload['rules'] if r.get('type') == 'merge_queue']
     assert merge_queue_rules[0]['parameters']['merge_method'] == 'REBASE'
+
+
 def test_enable_445_reproduction_squash_config_provisions_squash_queue(monkeypatch):
     # The reproduction shape: pr_merge_strategy=squash configured, repo unconfigured —
     # the provisioned queue must merge with SQUASH, not the historical MERGE.
@@ -422,6 +466,8 @@ def test_enable_445_reproduction_squash_config_provisions_squash_queue(monkeypat
     merge_queue_rules = [r for r in payload['rules'] if r.get('type') == 'merge_queue']
     assert merge_queue_rules[0]['parameters']['merge_method'] == 'SQUASH'
     assert merge_queue_rules[0]['parameters']['merge_method'] != 'MERGE'
+
+
 def test_enable_configured_method_mismatch_issues_single_corrective_put(monkeypatch):
     # Configured queue carrying MERGE while the resolved strategy is squash —
     # exactly one PUT with the corrected merge_method and the echoed
@@ -459,6 +505,8 @@ def test_enable_configured_method_mismatch_issues_single_corrective_put(monkeypa
     # Sibling parameters and conditions are echoed back, not dropped.
     assert merge_queue_rules[0]['parameters']['max_entries_to_build'] == 5
     assert payload['conditions']['ref_name']['include'] == ['refs/heads/main']
+
+
 def test_enable_configured_method_match_returns_unchanged_without_put(monkeypatch):
     run_gh_stub, body_stub, _captured, bodies = _make_enable_stubs(
         rules=[{'type': 'merge_queue'}],
@@ -476,6 +524,8 @@ def test_enable_configured_method_match_returns_unchanged_without_put(monkeypatc
     assert result['status'] == 'success'
     assert result['changed'] is False
     assert not any(b[0] == 'PUT' for b in bodies)
+
+
 def test_enable_create_with_bypass_grants_actor_and_emits_no_warning(monkeypatch):
     # Bypass ids resolved: the POST payload carries the Integration/always grant
     # and the success return omits the warnings key entirely (happy-path shape
@@ -494,6 +544,8 @@ def test_enable_create_with_bypass_grants_actor_and_emits_no_warning(monkeypatch
     assert actors[0]['actor_type'] == 'Integration'
     assert actors[0]['bypass_mode'] == 'always'
     assert 'warnings' not in result
+
+
 def test_enable_external_queue_under_foreign_name_never_mutates(monkeypatch):
     # A configured merge queue whose ruleset carries a name other than
     # plan-marshall-merge-queue is externally managed: reported, never touched.
@@ -514,6 +566,8 @@ def test_enable_external_queue_under_foreign_name_never_mutates(monkeypatch):
     # Zero mutating API calls of any kind reached the gh boundary.
     mutating = [c for c in captured if c[:2] == ['api', '-X']]
     assert mutating == []
+
+
 def test_enable_create_without_bypass_still_creates_and_warns_gh013(monkeypatch):
     # No bypass id resolves: the create is NOT refused — the ruleset is still
     # created (without a bypass_actors key) and the return carries exactly one

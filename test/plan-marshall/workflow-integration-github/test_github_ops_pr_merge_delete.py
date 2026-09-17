@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for cmd_pr_merge branch-delete refactor.
 
 After the refactor:
@@ -12,6 +13,7 @@ The worktree fork exercises the scenario ``gh pr merge --delete-branch``
 cannot serve: the merge must finish cleanly and the branch delete must
 round-trip purely through the REST leaf, never through local git.
 """
+
 import argparse
 import json
 from datetime import UTC, datetime
@@ -33,6 +35,8 @@ def _install_common(monkeypatch):
         'get_repo_info',
         lambda: ('octo', 'repo'),
     )
+
+
 def _install_probe(
     monkeypatch,
     *,
@@ -64,6 +68,8 @@ def _install_probe(
 
     monkeypatch.setattr(github_ops, '_probe_merge_queue_state', probe_stub)
     return captured
+
+
 def _pr_view_success_payload() -> dict:
     """Minimal ``view_pr_data`` success payload with a head branch."""
     return {
@@ -79,6 +85,8 @@ def _pr_view_success_payload() -> dict:
         'mergeable': 'mergeable',
         'merge_state': 'clean',
     }
+
+
 _CORROBORATION_PAYLOADS: dict[str, dict] = {
     # Landed merge — the only shape that corroborates.
     'merged': {
@@ -111,6 +119,8 @@ _CORROBORATION_PAYLOADS: dict[str, dict] = {
         'headRefOid': 'abc123',
     },
 }
+
+
 def _capture_run_gh(
     *,
     merge_ok: bool = True,
@@ -166,6 +176,8 @@ def _capture_run_gh(
         return 0, '', ''
 
     return run_gh_stub, captured
+
+
 def _install_merge_preconditions(monkeypatch, *, view_payload: dict | None = None) -> dict:
     """Install the stubs ``cmd_pr_merge``'s own guards require.
 
@@ -177,6 +189,8 @@ def _install_merge_preconditions(monkeypatch, *, view_payload: dict | None = Non
     """
     monkeypatch.setattr(github_ops, 'view_pr_data', lambda head=None: view_payload or _pr_view_success_payload())
     return _install_probe(monkeypatch)
+
+
 def _merge_ns(*, delete_branch: bool, pr_number: int | None = 42, head: str | None = None):
     return argparse.Namespace(
         pr_number=pr_number,
@@ -184,10 +198,14 @@ def _merge_ns(*, delete_branch: bool, pr_number: int | None = 42, head: str | No
         strategy='merge',
         delete_branch=delete_branch,
     )
+
+
 def _assert_no_delete_branch_flag(captured_calls: list[list[str]]) -> None:
     """No ``--delete-branch`` may appear in ANY captured gh invocation."""
     for call in captured_calls:
         assert '--delete-branch' not in call, f'cmd_pr_merge leaked --delete-branch into gh args: {call}'
+
+
 def _gate_run_gh(*, view, compare):
     """run_gh stub dispatching the gate's two query shapes.
 
@@ -239,6 +257,8 @@ def test_pr_merge_delete_branch_happy_path(monkeypatch):
     assert delete_calls[0][-1].endswith('/git/refs/heads/feature%2Fx')
 
     _assert_no_delete_branch_flag(captured)
+
+
 def test_pr_merge_delete_branch_already_gone_422(monkeypatch):
     _install_common(monkeypatch)
     run_gh_stub, captured = _capture_run_gh(merge_ok=True, delete_mode='gone')
@@ -254,6 +274,8 @@ def test_pr_merge_delete_branch_already_gone_422(monkeypatch):
     assert 'branch_delete_error' not in result
 
     _assert_no_delete_branch_flag(captured)
+
+
 def test_pr_merge_delete_branch_already_gone_404(monkeypatch):
     _install_common(monkeypatch)
     run_gh_stub, captured = _capture_run_gh(merge_ok=True, delete_mode='notfound')
@@ -269,6 +291,8 @@ def test_pr_merge_delete_branch_already_gone_404(monkeypatch):
     assert 'branch_delete_error' not in result
 
     _assert_no_delete_branch_flag(captured)
+
+
 def test_pr_merge_delete_branch_api_error_produces_compound_result(monkeypatch):
     _install_common(monkeypatch)
     run_gh_stub, captured = _capture_run_gh(merge_ok=True, delete_mode='error')
@@ -285,6 +309,8 @@ def test_pr_merge_delete_branch_api_error_produces_compound_result(monkeypatch):
     assert 'already_gone' not in result
 
     _assert_no_delete_branch_flag(captured)
+
+
 def test_pr_merge_without_delete_branch_leaves_branch_untouched(monkeypatch):
     """A merge without --delete-branch still reports a corroborated verdict.
 
@@ -322,6 +348,8 @@ def test_pr_merge_without_delete_branch_leaves_branch_untouched(monkeypatch):
     assert pr_view_calls['count'] == 1, pr_view_calls
 
     _assert_no_delete_branch_flag(captured)
+
+
 def test_pr_merge_delete_branch_does_not_touch_local_git(monkeypatch):
     """``--delete-branch`` deletes the head remotely, never through local git.
 
@@ -373,6 +401,8 @@ def test_pr_merge_delete_branch_does_not_touch_local_git(monkeypatch):
     assert result['already_gone'] is False
 
     _assert_no_delete_branch_flag(captured)
+
+
 def test_stuck_state_gate_behind_base(monkeypatch):
     """A branch behind its base (behind_by != 0) fails the gate closed."""
     _install_common(monkeypatch)
@@ -397,6 +427,8 @@ def test_stuck_state_gate_behind_base(monkeypatch):
 
     assert ok is False
     assert 'behind base by 3' in reason
+
+
 def test_stuck_state_gate_non_dict_payload_fails_closed(monkeypatch):
     """A non-dict gate-query payload fails closed rather than raising."""
     _install_common(monkeypatch)

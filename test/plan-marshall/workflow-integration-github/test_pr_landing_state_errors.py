@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the ``ci pr landing-state`` verb — the foreign done-ness discriminator.
 
 Three layers:
@@ -17,6 +18,7 @@ Three layers:
   DOCUMENTED copies were not, and that document is the surface a consumer reads
   to decide what to branch on.
 """
+
 import argparse
 import json
 import re
@@ -51,8 +53,12 @@ _CAUSE_TABLE_HEADER = '| `error_cause` |'
 _LANDING_POPULATION_RE = re.compile(r'own declared population \(([^)]*)\)')
 _MEMBER_RE = re.compile(r'`([a-z_]+)`')
 _SEPARATOR_RE = re.compile(r'^\|[\s:|-]+$')
+
+
 def _api_contract_text() -> str:
     return _API_CONTRACT.read_text(encoding='utf-8')
+
+
 def _documented_pr_view_causes(text: str) -> set[str]:
     """The ``error_cause`` members the api-contract cause table names."""
     lines = text.splitlines()
@@ -78,6 +84,8 @@ def _documented_pr_view_causes(text: str) -> set[str]:
         )
         members.add(matched.group(1))
     return members
+
+
 def _documented_landing_states(text: str) -> set[str]:
     """The ``landing_state`` members the api-contract field-semantics sentence names."""
     matched = _LANDING_POPULATION_RE.search(text)
@@ -94,6 +102,8 @@ def test_cause_parity_rejects_a_renamed_member():
     mutated = text.replace('`no_pr_found`', '`no_pr_found_x`')
     assert mutated != text, 'the rename mutation did not apply; the control proves nothing'
     assert _documented_pr_view_causes(mutated) != set(PR_VIEW_CAUSES)
+
+
 def test_cause_parity_rejects_an_extra_documented_member():
     lines = _api_contract_text().splitlines()
     header_at = next(i for i, line in enumerate(lines) if line.startswith(_CAUSE_TABLE_HEADER))
@@ -101,11 +111,15 @@ def test_cause_parity_rejects_an_extra_documented_member():
     documented = _documented_pr_view_causes('\n'.join(lines))
     assert 'invented_cause' in documented
     assert documented != set(PR_VIEW_CAUSES)
+
+
 def test_cause_parity_rejects_a_dropped_documented_member():
     kept = [line for line in _api_contract_text().splitlines() if not line.startswith('| `no_pr_found` |')]
     documented = _documented_pr_view_causes('\n'.join(kept))
     assert 'no_pr_found' not in documented
     assert documented != set(PR_VIEW_CAUSES)
+
+
 def test_landing_parity_rejects_a_renamed_member():
     text = _api_contract_text()
     mutated = _LANDING_POPULATION_RE.sub(
@@ -115,6 +129,8 @@ def test_landing_parity_rejects_a_renamed_member():
     )
     assert mutated != text, 'the rename mutation did not apply; the control proves nothing'
     assert _documented_landing_states(mutated) != set(LANDING_STATES)
+
+
 def test_landing_parity_rejects_a_dropped_member():
     text = _api_contract_text()
     mutated = _LANDING_POPULATION_RE.sub('own declared population (`merged`, `pr_open`, `pushed_no_pr`)', text, count=1)

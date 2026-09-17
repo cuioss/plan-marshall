@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for github_re_review.py — the bot_kind-keyed re-review strategy registry.
 
 Covers the three concerns of the post-merge re-review registry:
@@ -74,6 +75,7 @@ works" from "this machine's store happens to hold no claim", and the negative
 control alone proves only that a claim CAN refuse, not that it is suppressed by
 default.
 """
+
 import argparse
 import sys
 import time
@@ -98,6 +100,8 @@ _EXPIRED_WINDOW = {
     'seconds_remaining': 0.0,
 }
 _LIVE_WINDOW_READER = github_re_review.read_rate_window
+
+
 def _window_reader(observation):
     """Build a ``(plan_id, bot_kind, pr_number) -> dict`` reader for ``observation``.
 
@@ -109,6 +113,8 @@ def _window_reader(observation):
         return dict(observation)
 
     return _read
+
+
 @pytest.fixture(autouse=True)
 def _neutralize_rate_window(monkeypatch):
     """Hold the trigger guard's window read at NO STORED RECORD for every test here.
@@ -127,6 +133,8 @@ def _neutralize_rate_window(monkeypatch):
     named in the module docstring is what keeps this fixture honest.
     """
     monkeypatch.setattr(github_re_review, 'read_rate_window', _window_reader(_NO_RECORD_WINDOW))
+
+
 @pytest.fixture(autouse=True)
 def _no_provider_comments(monkeypatch):
     """Default every test to an empty provider comment list.
@@ -141,6 +149,8 @@ def _no_provider_comments(monkeypatch):
         'fetch_pr_comments_data',
         lambda pr_number, unresolved_only=False: {'status': 'success', 'comments': []},
     )
+
+
 def _patch_comments(monkeypatch, comments):
     """Override the provider comment list for the comment-signal tests."""
     monkeypatch.setattr(
@@ -148,10 +158,14 @@ def _patch_comments(monkeypatch, comments):
         'fetch_pr_comments_data',
         lambda pr_number, unresolved_only=False: {'status': 'success', 'comments': list(comments)},
     )
+
+
 def _noop_sleep(monkeypatch):
     """Make poll_until's sleep a no-op so timeout-path tests finish fast."""
     monkeypatch.setattr(ci_base.time, 'sleep', lambda *_a, **_kw: None)
     monkeypatch.setattr(time, 'sleep', lambda *_a, **_kw: None)
+
+
 def _review(commit_sha, submitted_at, *, user='coderabbit[bot]', state='COMMENTED', body=''):
     """Build a review row in the shape fetch_pr_reviews_with_commits returns.
 
@@ -167,6 +181,8 @@ def _review(commit_sha, submitted_at, *, user='coderabbit[bot]', state='COMMENTE
         'commit_sha': commit_sha,
         'body': body,
     }
+
+
 def _comment(author, *, created_at, updated_at='', body='## PR Reviewer Guide', kind='issue_comment'):
     """Build a comment row in the shape fetch_pr_comments_data returns."""
     return {
@@ -181,12 +197,18 @@ def _comment(author, *, created_at, updated_at='', body='## PR Reviewer Guide', 
         'created_at': created_at,
         'updated_at': updated_at,
     }
+
+
 _GUARD_SWEEP_POPULATION: list[str] = bot_registry.bot_kinds()
 _GUARD_SWEEP_POPULATION_SIZE = len(_GUARD_SWEEP_POPULATION)
 _GUARD_PR_NUMBER = 42
 _GUARD_PUSH_TIME = '2026-01-01T00:00:00Z'
+
+
 def _parse(value):
     return github_re_review._parse_iso(value)
+
+
 def _match_review(reviews, head_sha, trigger_dt, bot_kind, refusals=None):
     """Call ``_match_review`` with a throwaway refusal accumulator.
 
@@ -198,6 +220,8 @@ def _match_review(reviews, head_sha, trigger_dt, bot_kind, refusals=None):
     return github_re_review._ReReviewStrategy._match_review(
         reviews, head_sha, trigger_dt, bot_kind, [] if refusals is None else refusals
     )
+
+
 def _match_bot_comment(comments, head_sha, bot_kind, trigger_dt, refusals=None):
     """Call ``_match_bot_comment`` with a throwaway refusal accumulator.
 
@@ -208,8 +232,12 @@ def _match_bot_comment(comments, head_sha, bot_kind, trigger_dt, refusals=None):
     return github_re_review._ReReviewStrategy._match_bot_comment(
         comments, head_sha, bot_kind, trigger_dt, [] if refusals is None else refusals
     )
+
+
 _PR_AGENT_LOGIN = 'cuioss-review-bot'
 _TRIGGER = '2026-01-01T00:02:00Z'
+
+
 def _await_with_comments(monkeypatch, comments, *, reviews=None, bot_kind='cuioss-review-bot', head_sha='headsha'):
     """Run ``await_fresh_review`` over a fixed comment (and review) set.
 
@@ -226,11 +254,15 @@ def _await_with_comments(monkeypatch, comments, *, reviews=None, bot_kind='cuios
     _patch_comments(monkeypatch, comments)
     strategy = github_re_review.resolve_strategy(bot_kind)
     return strategy.await_fresh_review(42, head_sha, _TRIGGER, bot_kind=bot_kind, timeout=1, interval=0)
+
+
 _HEAD_SHA = 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678'
 _OTHER_SHA = '0f1e2d3c4b5a69788796a5b4c3d2e1f098765432'
 _HEAD_SHA_URL = f'https://github.com/cuioss/plan-marshall/commit/{_HEAD_SHA}'
 _OTHER_SHA_URL = f'https://github.com/cuioss/plan-marshall/commit/{_OTHER_SHA}'
 _OBSERVED_REVIEW_BOT_SHA = '4d6738e2d96150706cda6b682109336c5c0c383b'
+
+
 def _republished_comment(reference, *, created_at='2026-01-01T00:00:00Z', updated_at='2026-01-01T00:05:00Z'):
     """A CodeRabbit in-place-republished summary naming ``reference`` in its body.
 
@@ -240,6 +272,8 @@ def _republished_comment(reference, *, created_at='2026-01-01T00:00:00Z', update
     """
     body = f'Review updated until commit {reference}. No actionable comments were generated.'
     return _comment(_CODERABBIT_LOGIN, created_at=created_at, updated_at=updated_at, body=body)
+
+
 _VERIFYING_REFERENCE = f'[{_HEAD_SHA[:7]}]({_HEAD_SHA_URL})'
 _NON_VERIFYING_REFERENCE = 'the latest push'
 _SOURCERY_LOGIN = 'sourcery-ai'
@@ -274,6 +308,8 @@ _CODERABBIT_GENUINE_COMMENT = (
 _CODERABBIT_REFUSAL_WITH_ETA = (
     '> [!WARNING] > ## Review limit reached > Please wait 12 minutes and 30 seconds before requesting another review.'
 )
+
+
 def _arm_enumerative(monkeypatch, max_chars: int = 200) -> None:
     """Give the enumerative arm a threshold, patched where the predicate READS it.
 
@@ -287,6 +323,8 @@ def _arm_enumerative(monkeypatch, max_chars: int = 200) -> None:
         'UNRECOGNISED_REFUSAL_MAX_CHARS',
         max_chars,
     )
+
+
 _UNRECOGNISED_REFUSAL = 'Not reviewing this one.'
 
 
@@ -295,12 +333,16 @@ def test_no_hardcoded_trigger_constants_remain():
     assert not hasattr(github_re_review, 'CODERABBIT_TRIGGER_COMMENT')
     assert not hasattr(github_re_review, 'SOURCERY_TRIGGER_COMMENT')
     assert not hasattr(github_re_review, 'PR_AGENT_TRIGGER_COMMENT')
+
+
 def test_strategies_are_distinct_objects():
     """coderabbit and cuioss-review-bot must not collapse onto the same strategy object."""
     coderabbit = github_re_review.resolve_strategy('coderabbit')
     pr_agent = github_re_review.resolve_strategy('cuioss-review-bot')
 
     assert coderabbit is not pr_agent
+
+
 def test_match_review_matches_when_sha_and_time_satisfy():
     """A review matching HEAD and post-dating the trigger is returned."""
     reviews = [_review('headsha', '2026-01-01T00:05:00Z')]
@@ -310,24 +352,32 @@ def test_match_review_matches_when_sha_and_time_satisfy():
 
     assert matched is not None
     assert matched['commit_sha'] == 'headsha'
+
+
 def test_match_review_rejects_wrong_commit_sha():
     """A review on a stale commit never matches even if it post-dates trigger."""
     reviews = [_review('oldsha', '2026-01-01T00:05:00Z')]
     trigger_dt = _parse('2026-01-01T00:00:00Z')
 
     assert _match_review(reviews, 'headsha', trigger_dt, 'coderabbit') is None
+
+
 def test_match_review_rejects_review_at_or_before_trigger_time():
     """A review submitted before the trigger (a pre-existing review) never matches."""
     reviews = [_review('headsha', '2026-01-01T00:00:00Z')]
     trigger_dt = _parse('2026-01-01T00:05:00Z')
 
     assert _match_review(reviews, 'headsha', trigger_dt, 'coderabbit') is None
+
+
 def test_match_review_fail_closed_on_unparseable_submitted_at():
     """A review whose submitted_at cannot be parsed never matches (fail-closed)."""
     reviews = [_review('headsha', 'not-a-timestamp')]
     trigger_dt = _parse('2026-01-01T00:00:00Z')
 
     assert _match_review(reviews, 'headsha', trigger_dt, 'coderabbit') is None
+
+
 def test_match_review_returns_first_eligible_among_many():
     """The first SHA-and-time eligible review is returned."""
     reviews = [
@@ -341,6 +391,8 @@ def test_match_review_returns_first_eligible_among_many():
 
     assert matched is not None
     assert matched['submitted_at'] == '2026-01-01T00:06:00Z'
+
+
 def test_await_matches_bot_issue_comment_when_no_review_exists(monkeypatch):
     """A bot-authored comment post-dating the trigger satisfies await with no review.
 
@@ -360,6 +412,8 @@ def test_await_matches_bot_issue_comment_when_no_review_exists(monkeypatch):
     # The review slot stays empty — no review was matched.
     assert result['matched_review'] == {}
     assert result['timed_out'] is False
+
+
 def test_await_does_not_match_a_different_bots_comment(monkeypatch):
     """A comment from a DIFFERENT registered bot does not satisfy this bot's await."""
     result = _await_with_comments(monkeypatch, [_comment('coderabbitai', created_at='2026-01-01T00:05:00Z')])
@@ -367,6 +421,8 @@ def test_await_does_not_match_a_different_bots_comment(monkeypatch):
     assert result['matched'] is False
     assert result['matched_signal'] == ''
     assert result['timed_out'] is True
+
+
 def test_await_does_not_match_a_human_comment(monkeypatch):
     """A human comment post-dating the trigger does not satisfy await.
 
@@ -377,12 +433,16 @@ def test_await_does_not_match_a_human_comment(monkeypatch):
 
     assert result['matched'] is False
     assert result['matched_signal'] == ''
+
+
 def test_await_does_not_match_a_comment_predating_the_trigger(monkeypatch):
     """A pre-existing bot comment (older than the trigger) does not satisfy await."""
     result = _await_with_comments(monkeypatch, [_comment(_PR_AGENT_LOGIN, created_at='2026-01-01T00:00:00Z')])
 
     assert result['matched'] is False
     assert result['matched_signal'] == ''
+
+
 def test_await_does_not_match_a_rate_limit_notice_from_the_awaited_bot(monkeypatch):
     """A rate-limit / service notice from the awaited bot is NOT a completed review.
 
@@ -403,6 +463,8 @@ def test_await_does_not_match_a_rate_limit_notice_from_the_awaited_bot(monkeypat
 
     assert result['matched'] is False
     assert result['matched_signal'] == ''
+
+
 def test_await_matches_an_edited_persistent_comment_via_updated_at(monkeypatch):
     """A comment created BEFORE but edited AFTER the trigger matches on ``updated_at``.
 
@@ -424,6 +486,8 @@ def test_await_matches_an_edited_persistent_comment_via_updated_at(monkeypatch):
     assert result['matched'] is True
     assert result['matched_signal'] == 'issue_comment'
     assert result['head_sha_verified'] is False
+
+
 def test_await_without_bot_kind_never_matches_a_comment(monkeypatch):
     """Omitting ``bot_kind`` fails closed to review-only matching.
 
@@ -447,17 +511,23 @@ def test_await_without_bot_kind_never_matches_a_comment(monkeypatch):
 
     assert result['matched'] is False
     assert result['matched_signal'] == ''
+
+
 def test_match_bot_comment_fail_closed_on_unparseable_timestamps():
     """A comment whose only timestamps are unparseable never matches (fail-closed)."""
     trigger_dt = _parse(_TRIGGER)
     comments = [_comment(_PR_AGENT_LOGIN, created_at='not-a-timestamp', updated_at='')]
 
     assert _match_bot_comment(comments, 'headsha', 'cuioss-review-bot', trigger_dt) is None
+
+
 def test_match_bot_comment_fail_closed_on_missing_trigger_time():
     """An unparseable trigger time yields no comment match (fail-closed)."""
     comments = [_comment(_PR_AGENT_LOGIN, created_at='2026-01-01T00:05:00Z')]
 
     assert _match_bot_comment(comments, 'headsha', 'cuioss-review-bot', None) is None
+
+
 def test_match_review_verifies_a_sha_carried_only_inside_a_commit_url():
     """POSITIVE: the reviewed commit is recognised when its SHA sits inside a URL.
 
@@ -471,6 +541,8 @@ def test_match_review_verifies_a_sha_carried_only_inside_a_commit_url():
 
     assert matched is not None
     assert matched['commit_sha'] == _HEAD_SHA_URL
+
+
 def test_match_review_rejects_a_commit_url_naming_a_different_commit():
     """NEGATIVE control for the case above: a different commit still does not match.
 
@@ -483,6 +555,8 @@ def test_match_review_rejects_a_commit_url_naming_a_different_commit():
     trigger_dt = _parse('2026-01-01T00:00:00Z')
 
     assert _match_review(reviews, _HEAD_SHA, trigger_dt, 'coderabbit') is None
+
+
 def test_match_review_rejects_an_abbreviated_reference_to_the_awaited_commit():
     """Equality, never prefix — the widening moved WHERE the SHA may sit, not WHICH.
 
@@ -497,6 +571,8 @@ def test_match_review_rejects_an_abbreviated_reference_to_the_awaited_commit():
     trigger_dt = _parse('2026-01-01T00:00:00Z')
 
     assert _match_review(reviews, _HEAD_SHA, trigger_dt, 'coderabbit') is None
+
+
 def test_await_still_matches_when_no_eligible_comment_names_the_awaited_head(monkeypatch):
     """MATCHED CONTROL — the preference reorders eligible comments, it does not filter them.
 
@@ -517,6 +593,8 @@ def test_await_still_matches_when_no_eligible_comment_names_the_awaited_head(mon
     # The fallback is the FIRST eligible comment — the pre-existing behaviour, kept
     # intact for the case where the preference finds nothing to prefer.
     assert result['matched_comment']['body'] == first['body']
+
+
 def test_await_still_matches_a_genuine_coderabbit_comment(monkeypatch):
     """⛔ NEGATIVE CONTROL: real CodeRabbit feedback still completes the await.
 
@@ -539,6 +617,8 @@ def test_await_still_matches_a_genuine_coderabbit_comment(monkeypatch):
     assert result['matched'] is True
     assert result['matched_signal'] == 'issue_comment'
     assert result['refusal_detected'] is False
+
+
 def test_await_does_not_match_a_refusal_delivered_as_a_review(monkeypatch):
     """A refusal submitted as a REVIEW object is not a completed review.
 
@@ -567,6 +647,8 @@ def test_await_does_not_match_a_refusal_delivered_as_a_review(monkeypatch):
     assert result['matched_signal'] == ''
     assert result['head_sha_verified'] is False
     assert result['timed_out'] is True
+
+
 def test_await_does_not_match_a_refusal_delivered_as_a_comment(monkeypatch):
     """The same refusal delivered as an issue comment is likewise not a response."""
     result = _await_with_comments(
@@ -578,6 +660,8 @@ def test_await_does_not_match_a_refusal_delivered_as_a_comment(monkeypatch):
     assert result['matched'] is False
     assert result['matched_signal'] == ''
     assert result['timed_out'] is True
+
+
 def test_await_still_matches_a_genuine_review(monkeypatch):
     """Precision guard: a real review still completes the await on the strong signal."""
     result = _await_with_comments(
@@ -598,6 +682,8 @@ def test_await_still_matches_a_genuine_review(monkeypatch):
     assert result['matched_signal'] == 'review'
     assert result['head_sha_verified'] is True
     assert result['timed_out'] is False
+
+
 def test_await_still_matches_a_genuine_comment(monkeypatch):
     """Precision guard: a real comment still completes the await on the weaker signal."""
     result = _await_with_comments(
@@ -615,6 +701,8 @@ def test_await_still_matches_a_genuine_comment(monkeypatch):
     assert result['matched'] is True
     assert result['matched_signal'] == 'issue_comment'
     assert result['head_sha_verified'] is False
+
+
 def test_refusal_surfaces_the_parsed_eta_when_the_registry_patterns_match(monkeypatch):
     """The bot's own stated reset time is surfaced, so the recovery sequence can
     size the window instead of guessing at it."""
@@ -634,6 +722,8 @@ def test_refusal_surfaces_the_parsed_eta_when_the_registry_patterns_match(monkey
     assert result['refusal_class'] == 'awaitable_window'
     assert result['refusal_eta'] == '12 minutes and 30 seconds'
     assert result['refusals'][0]['eta'] == '12 minutes and 30 seconds'
+
+
 def test_matched_review_reports_no_refusal(monkeypatch):
     """Precision guard: a genuine review leaves the refusal fields empty."""
     result = _await_with_comments(
@@ -653,6 +743,8 @@ def test_matched_review_reports_no_refusal(monkeypatch):
     assert result['matched'] is True
     assert result['refusal_detected'] is False
     assert result['refusals'] == []
+
+
 def test_an_unrecognised_refusal_on_the_review_path_is_recorded_and_not_matched(monkeypatch):
     """⛔ The false-green this deliverable closes, pinned directly.
 
@@ -690,6 +782,8 @@ def test_an_unrecognised_refusal_on_the_review_path_is_recorded_and_not_matched(
     assert len(result['refusals']) == 1
     assert result['refusals'][0]['layer'] == _github_pr.REFUSAL_LAYER_ENUMERATIVE
     assert result['refusals'][0]['source'] == 'review'
+
+
 def test_an_unrecognised_refusal_on_the_comment_path_is_recorded_and_not_matched(monkeypatch):
     """The same body arriving as an issue comment is likewise recorded, not matched."""
     _arm_enumerative(monkeypatch)
@@ -710,6 +804,8 @@ def test_an_unrecognised_refusal_on_the_comment_path_is_recorded_and_not_matched
     assert result['refusal_detected'] is True
     assert result['refusals'][0]['layer'] == _github_pr.REFUSAL_LAYER_ENUMERATIVE
     assert result['refusals'][0]['source'] == 'issue_comment'
+
+
 def test_a_genuine_short_review_with_a_code_anchor_still_matches(monkeypatch):
     """Matched negative control: the arm does not swallow a real short review.
 
@@ -739,6 +835,8 @@ def test_a_genuine_short_review_with_a_code_anchor_still_matches(monkeypatch):
     assert result['head_sha_verified'] is True
     assert result['refusal_detected'] is False
     assert result['refusals'] == []
+
+
 def test_match_review_without_bot_kind_applies_only_the_structural_layer():
     """With no ``bot_kind`` only the structural arm can fire — the review still matches.
 

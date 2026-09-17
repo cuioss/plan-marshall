@@ -1,8 +1,10 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for github_ops.py --head flag routing.
 
 Verifies that branch-aware operations forward the --head value to gh and that
 the --pr-number/--head dual-flag validation works as expected.
 """
+
 import argparse
 
 import ci_base
@@ -18,6 +20,8 @@ _CORROBORATION_JSON_MARKER = 'mergedAt'
 _CORROBORATED_MERGE_PAYLOAD = (
     '{"state": "MERGED", "mergedAt": "2026-01-01T00:00:00Z", "baseRefName": "main", "headRefOid": "abc123"}'
 )
+
+
 def _capture_run_gh():
     """Return a (run_gh_stub, captured_args_list) pair."""
     captured: list[list[str]] = []
@@ -40,6 +44,8 @@ def _capture_run_gh():
         return 0, '', ''
 
     return run_gh_stub, captured
+
+
 _PROVIDERS = (github_ops, gitlab_ops)
 _PROVIDER_IDS = ('github', 'gitlab')
 _PROVIDER_FIXTURES = {
@@ -53,11 +59,17 @@ _PROVIDER_FIXTURES = {
     },
 }
 _CREATE_PR_DOC = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-6-finalize' / 'workflow' / 'create-pr.md'
+
+
 def _wait_for_comments_args(timeout=2, interval=1):
     return argparse.Namespace(pr_number=42, timeout=timeout, interval=interval)
+
+
 _GO_ZERO_GH = '0001-01-01T00:00:00Z'
 _REUSABLE_LINK = 'https://github.com/octo/repo/actions/runs/123/job/456'
 _RUN_ONLY_LINK = 'https://github.com/octo/repo/actions/runs/123'
+
+
 def _prepare_issue_comment_body(tmp_path, monkeypatch, body_text='Milestone reached', plan_id='p'):
     """Seed PLAN_BASE_DIR with a prepared issue-comment body scratch file."""
     monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
@@ -84,6 +96,8 @@ def test_fetch_pr_head_sha_returns_sha_on_success(monkeypatch):
     assert sha == 'abc123def'
     # The wrapper forwards to gh pr view --json headRefOid for the PR.
     assert captured == [['pr', 'view', '42', '--json', 'headRefOid']]
+
+
 def test_post_pr_comment_success(monkeypatch):
     """A successful gh pr comment returns a success envelope with the output."""
     captured: list[list[str]] = []
@@ -101,6 +115,8 @@ def test_post_pr_comment_success(monkeypatch):
     assert result['pr_number'] == 42
     assert result['output'] == 'https://github.com/octo/repo/pull/42#issuecomment-1'
     assert captured == [['pr', 'comment', '42', '--body', '/review']]
+
+
 def test_fetch_pr_reviews_with_commits_success(monkeypatch):
     """Reviews are projected to {user, state, submitted_at, commit_sha, body} rows."""
     captured: list[list[str]] = []
@@ -134,6 +150,8 @@ def test_fetch_pr_reviews_with_commits_success(monkeypatch):
     ]
     # REST /reviews endpoint is consulted with --paginate --slurp.
     assert captured == [['api', 'repos/octo/repo/pulls/42/reviews', '--paginate', '--slurp']]
+
+
 def test_fetch_pr_reviews_with_commits_non_list_payload(monkeypatch):
     """A non-list reviews payload surfaces as an unexpected-shape error."""
     monkeypatch.setattr(github_ops, 'get_repo_info', lambda: ('octo', 'repo'))
@@ -143,6 +161,8 @@ def test_fetch_pr_reviews_with_commits_non_list_payload(monkeypatch):
 
     assert result['status'] == 'error'
     assert 'Unexpected reviews payload shape' in result['error']
+
+
 def test_pr_wait_for_comments_returns_when_new_comment_arrives(monkeypatch):
     """Happy path: baseline=1, second poll sees count=2 → returns timed_out: false, new_count: 1."""
     monkeypatch.setattr(github_ops, 'check_auth', _ok_auth)
@@ -193,6 +213,8 @@ def test_pr_wait_for_comments_returns_when_new_comment_arrives(monkeypatch):
     # signal, and the key is always present so consumers can rely on it
     assert 'rate_limited_bots' in result
     assert result['rate_limited_bots'] == []
+
+
 def test_main_project_dir_sets_default_cwd(tmp_path, monkeypatch, capsys):
     """github_ops.main() strips --project-dir from argv and installs it as the
     process-global default cwd used by ci_base.run_cli.
@@ -241,6 +263,8 @@ def test_main_project_dir_sets_default_cwd(tmp_path, monkeypatch, capsys):
     assert ci_base.get_default_cwd() == worktree
     # argv was stripped so argparse never saw --project-dir.
     assert '--project-dir' not in sys.argv
+
+
 def test_format_checks_toon_clamps_runaway_aggregate(monkeypatch, capsys):
     """Defense-in-depth: if compute_total_elapsed somehow returns a runaway
     value, format_checks_toon clamps to the caller-supplied ceiling and warns.
@@ -277,9 +301,13 @@ def test_format_checks_toon_clamps_runaway_aggregate(monkeypatch, capsys):
 
     # Ensure ci_base import survives the patching (sanity).
     assert ci_base is not None
+
+
 def test_extract_job_id_from_link_without_job_segment():
     # A run-only link (no nested /job/ segment) yields the empty string.
     assert github_ops._extract_job_id_from_link(_RUN_ONLY_LINK) == ''
+
+
 def test_build_failing_check_entry_empty_job_id_for_run_only_link():
     check = {
         'name': 'build',
@@ -292,9 +320,13 @@ def test_build_failing_check_entry_empty_job_id_for_run_only_link():
     entry = github_ops._build_failing_check_entry(check)
     assert entry['run_id'] == '123'
     assert entry['job_id'] == ''
+
+
 def test_fetch_failed_run_log_returns_none_on_nonzero_exit(monkeypatch):
     monkeypatch.setattr(github_ops, 'run_gh', lambda args, capture_json=False, timeout=60: (1, '', 'boom'))
     assert github_ops._fetch_failed_run_log('123', '456') is None
+
+
 def test_cmd_issue_comment_deletes_body_on_success(monkeypatch, tmp_path):
     """The prepared scratch body is removed only after a successful post."""
     from ci_base import BODY_KIND_ISSUE_COMMENT, get_body_path
@@ -312,6 +344,8 @@ def test_cmd_issue_comment_deletes_body_on_success(monkeypatch, tmp_path):
 
     assert result['status'] == 'success', result
     assert not body_path.exists()
+
+
 def test_cmd_issue_comment_normalizes_full_url(monkeypatch, tmp_path):
     """A full issue URL in --issue is normalized to the bare number for gh and the return."""
     run_gh_stub, captured = _capture_run_gh()

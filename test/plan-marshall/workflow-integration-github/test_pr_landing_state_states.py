@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the ``ci pr landing-state`` verb — the foreign done-ness discriminator.
 
 Three layers:
@@ -17,6 +18,7 @@ Three layers:
   DOCUMENTED copies were not, and that document is the surface a consumer reads
   to decide what to branch on.
 """
+
 import argparse
 import json
 import re
@@ -37,6 +39,8 @@ _CASE_PER_STATE: dict[str, tuple[list[str], bool]] = {
     'unpushed': ([], False),
 }
 _TIP_SHA = 'deadbeefcafebabefeedface00000000deadbeef'
+
+
 def _install_primitives(
     monkeypatch,
     *,
@@ -84,6 +88,8 @@ def _install_primitives(
 
     monkeypatch.setattr(github_ops, 'run_gh', fake_run_gh)
     monkeypatch.setattr(github_ops, 'run_git', fake_run_git)
+
+
 _API_CONTRACT: Path = (
     PROJECT_ROOT
     / 'marketplace'
@@ -98,8 +104,12 @@ _CAUSE_TABLE_HEADER = '| `error_cause` |'
 _LANDING_POPULATION_RE = re.compile(r'own declared population \(([^)]*)\)')
 _MEMBER_RE = re.compile(r'`([a-z_]+)`')
 _SEPARATOR_RE = re.compile(r'^\|[\s:|-]+$')
+
+
 def _api_contract_text() -> str:
     return _API_CONTRACT.read_text(encoding='utf-8')
+
+
 def _documented_pr_view_causes(text: str) -> set[str]:
     """The ``error_cause`` members the api-contract cause table names."""
     lines = text.splitlines()
@@ -125,6 +135,8 @@ def _documented_pr_view_causes(text: str) -> set[str]:
         )
         members.add(matched.group(1))
     return members
+
+
 def _documented_landing_states(text: str) -> set[str]:
     """The ``landing_state`` members the api-contract field-semantics sentence names."""
     matched = _LANDING_POPULATION_RE.search(text)
@@ -134,6 +146,8 @@ def _documented_landing_states(text: str) -> set[str]:
         f'{len(LANDING_STATES)} state(s): {sorted(LANDING_STATES)}.'
     )
     return set(_MEMBER_RE.findall(matched.group(1)))
+
+
 GUARD_POPULATION_LABEL = 'api-contract parity members (pr_view_causes + landing_states)'
 GUARD_POPULATION_SIZE = len(PR_VIEW_CAUSES) + len(LANDING_STATES)
 
@@ -142,32 +156,48 @@ def test_declared_set_is_non_empty():
     # Non-vacuity guard: a derived-population sweep over an empty set would pass
     # every "for state in LANDING_STATES" assertion while testing nothing.
     assert len(LANDING_STATES) >= 1
+
+
 def test_case_table_matches_the_declared_state_set():
     # The verb's declared population is the source of truth; the case table must
     # cover exactly it, so a future state added to LANDING_STATES fails here
     # until a case is supplied rather than going silently untested.
     assert set(_CASE_PER_STATE) == set(LANDING_STATES)
+
+
 @pytest.mark.parametrize('expected_state', LANDING_STATES)
 def test_each_declared_state_is_produced_by_its_case(expected_state):
     pr_states, pushed = _CASE_PER_STATE[expected_state]
     assert derive_landing_state(pr_states, pushed) == expected_state
+
+
 def test_produced_states_cover_exactly_the_declared_set():
     produced = {derive_landing_state(prs, pushed) for prs, pushed in _CASE_PER_STATE.values()}
     assert produced  # non-vacuity
     assert produced == set(LANDING_STATES)
+
+
 def test_merged_wins_over_open_when_both_reference_the_branch():
     assert derive_landing_state(['OPEN', 'MERGED'], True) == 'merged'
+
+
 def test_merged_is_authoritative_even_when_branch_looks_unpushed():
     # A merged PR whose head branch was deleted by the merge reports merged even
     # though remote containment is now False — PR state precedes push state.
     assert derive_landing_state(['MERGED'], False) == 'merged'
+
+
 def test_closed_unmerged_pr_collapses_to_pushed_no_pr():
     # A closed-but-unmerged PR leaves the change stranded on a remote branch with
     # nothing carrying it to merge — the blocking state, not pr_open/merged.
     assert derive_landing_state(['CLOSED'], True) == 'pushed_no_pr'
+
+
 def test_state_spelling_is_case_insensitive():
     assert derive_landing_state(['merged'], True) == 'merged'
     assert derive_landing_state(['open'], True) == 'pr_open'
+
+
 @pytest.mark.parametrize('expected_state', LANDING_STATES)
 def test_handler_produces_each_declared_state(monkeypatch, expected_state):
     pr_states, pushed = _CASE_PER_STATE[expected_state]
@@ -181,6 +211,8 @@ def test_handler_produces_each_declared_state(monkeypatch, expected_state):
     # from the code rather than re-listing it.
     assert result['landing_states'] == list(LANDING_STATES)
     assert result['tip_sha'] == _TIP_SHA
+
+
 def test_stale_merged_pr_for_an_earlier_tip_is_not_merged(monkeypatch):
     # A merged PR whose head is an OLD tip on a reused branch name must not report
     # merged for the current tip's new, unlanded commits.
@@ -194,17 +226,23 @@ def test_stale_merged_pr_for_an_earlier_tip_is_not_merged(monkeypatch):
     assert result['status'] == 'success'
     assert result['pr_count'] == 0  # the stale PR is filtered out
     assert result['landing_state'] == 'pushed_no_pr'
+
+
 def test_truncated_pr_list_fails_closed(monkeypatch):
     _install_primitives(monkeypatch, pr_states=['OPEN'] * _github_pr._PR_LIST_LIMIT, pushed=True)
     result = github_ops.cmd_pr_landing_state(argparse.Namespace(branch='feature/x'))
     assert result['status'] == 'error'
     assert 'truncated' in result.get('error', '').lower()
+
+
 def test_git_containment_failure_fails_closed_when_verdict_depends_on_it(monkeypatch):
     # No PR carries the branch, so the verdict rests on remote containment; a git
     # failure there is unreadable evidence and must not become a clearing state.
     _install_primitives(monkeypatch, pr_states=[], pushed=True, git_contain_rc=1)
     result = github_ops.cmd_pr_landing_state(argparse.Namespace(branch='feature/x'))
     assert result['status'] == 'error'
+
+
 def test_git_containment_failure_tolerated_when_a_merged_pr_exists(monkeypatch):
     # A tip-matching merged PR settles the verdict without git, so a containment
     # failure is irrelevant and must not turn a merged change into an error.
@@ -212,12 +250,16 @@ def test_git_containment_failure_tolerated_when_a_merged_pr_exists(monkeypatch):
     result = github_ops.cmd_pr_landing_state(argparse.Namespace(branch='feature/x'))
     assert result['status'] == 'success'
     assert result['landing_state'] == 'merged'
+
+
 def test_unresolvable_tip_fails_closed(monkeypatch):
     monkeypatch.setattr(github_ops, 'check_auth', lambda: (True, ''))
     monkeypatch.setattr(github_ops, 'run_git', lambda args, timeout=60: (128, '', 'unknown revision'))
     result = github_ops.cmd_pr_landing_state(argparse.Namespace(branch='feature/x'))
     assert result['status'] == 'error'
     assert 'tip sha' in result.get('error', '').lower()
+
+
 def test_malformed_pr_entry_fails_closed(monkeypatch):
     monkeypatch.setattr(github_ops, 'check_auth', lambda: (True, ''))
     monkeypatch.setattr(github_ops, 'run_git', lambda args, timeout=60: (0, f'{_TIP_SHA}\n', ''))
@@ -226,6 +268,8 @@ def test_malformed_pr_entry_fails_closed(monkeypatch):
     )
     result = github_ops.cmd_pr_landing_state(argparse.Namespace(branch='feature/x'))
     assert result['status'] == 'error'
+
+
 def test_pr_entry_without_state_fails_closed(monkeypatch):
     monkeypatch.setattr(github_ops, 'check_auth', lambda: (True, ''))
     monkeypatch.setattr(github_ops, 'run_git', lambda args, timeout=60: (0, f'{_TIP_SHA}\n', ''))
@@ -236,17 +280,23 @@ def test_pr_entry_without_state_fails_closed(monkeypatch):
     )
     result = github_ops.cmd_pr_landing_state(argparse.Namespace(branch='feature/x'))
     assert result['status'] == 'error'
+
+
 def test_landing_states_is_the_authoritative_population_reference():
     # ci_base owns the declared population; the verb and its gate read it from
     # here. (Not a mirrored-literal assertion — it names the single source.)
     assert ci_base.LANDING_STATES is LANDING_STATES
     assert 'pushed_no_pr' in LANDING_STATES
+
+
 def test_both_declared_populations_are_non_empty():
     # Non-vacuity: a set-equality guard over two empty sets passes while measuring
     # nothing, and the published total would then read as a healthy zero.
     assert len(PR_VIEW_CAUSES) >= 1
     assert len(LANDING_STATES) >= 1
     assert GUARD_POPULATION_SIZE == len(PR_VIEW_CAUSES) + len(LANDING_STATES)
+
+
 def test_api_contract_names_exactly_the_declared_pr_view_causes():
     documented = _documented_pr_view_causes(_api_contract_text())
     declared = set(PR_VIEW_CAUSES)
@@ -255,6 +305,8 @@ def test_api_contract_names_exactly_the_declared_pr_view_causes():
         f'{sorted(documented - declared)}, declared-only {sorted(declared - documented)}. '
         f'Measured sizes: doc={len(documented)}, code={len(declared)}.'
     )
+
+
 def test_api_contract_names_exactly_the_declared_landing_states():
     documented = _documented_landing_states(_api_contract_text())
     declared = set(LANDING_STATES)

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for workflow-integration-github github_pr.py — two-verb provider contract.
 
 The provider surface is exactly two pure verbs (plus the raw ``fetch-comments``):
@@ -17,6 +18,7 @@ the hash_id-keyed post_responses respond loop, the ``--project-dir`` plumbing,
 and the CLI surface contract (the retired ``triage`` / ``triage-batch`` /
 ``comments-stage`` subcommands MUST be gone).
 """
+
 import io
 import sys
 from contextlib import redirect_stdout
@@ -34,6 +36,8 @@ get_current_pr_number = github_pr.get_current_pr_number
 _is_obvious_noise = github_pr._is_obvious_noise
 cmd_fetch_findings = github_pr.cmd_fetch_findings
 cmd_post_responses = github_pr.cmd_post_responses
+
+
 @pytest.fixture(autouse=True)
 def _stub_provider_calls():
     """Stub the auth check and PR HEAD-SHA fetch so fetch_findings tests never hit ``gh``.
@@ -50,6 +54,8 @@ def _stub_provider_calls():
         patch('github_pr._github.fetch_pr_head_sha', return_value='stub-head-sha'),
     ):
         yield
+
+
 _SOURCERY_1014_REFUSAL = (
     'Sourcery was unable to review this pull request because '
     'your pull request is larger than the review limit of 150000 characters. '
@@ -93,12 +99,16 @@ _GENUINE_REVIEW_MENTIONING_A_LIMIT = (
 )
 _REWORDED_REFUSAL = 'Skipping this one for now.'
 _SHORT_REVIEW_WITH_ANCHOR = 'Guard the bound at `src/Idx.java:12`.'
+
+
 class _StoreArgs:
     """The two attributes both verbs read off their namespace."""
 
     def __init__(self, pr_number, plan_id):
         self.pr_number = pr_number
         self.plan_id = plan_id
+
+
 def _fetch_over(comments, args):
     """Run ``cmd_fetch_findings`` over a fixed provider comment list."""
     with patch('github_pr._github.fetch_pr_comments_data') as mock_fetch:
@@ -110,6 +120,8 @@ def _fetch_over(comments, args):
             'unresolved': len(comments),
         }
         return cmd_fetch_findings(args)
+
+
 _SUBSTANTIVE_COMMENT = {
     'id': 'C-store-1',
     'kind': 'inline',
@@ -139,6 +151,8 @@ class TestIsObviousNoise:
         body = 'This needs to be fixed because of a security issue with input validation.'
 
         assert not _is_obvious_noise(body)
+
+
 class TestPRMain:
     """Test github_pr.py main entry point (CLI plumbing)."""
 
@@ -171,6 +185,8 @@ class TestPRMain:
         result = run_script(SCRIPT_PATH, *argv)
 
         assert result.returncode != 0
+
+
 @pytest.mark.parametrize(
     'verb',
     [

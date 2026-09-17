@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the PR-wide ``not_triggered`` observable (github_ops pull-request-runs).
 
 The observable answers one question: does ANY workflow run triggered by the
@@ -43,6 +44,7 @@ breaks identity assertions elsewhere and, worse, means a monkeypatch applied her
 targets globals the code under test does not read. The sibling suites
 (``test_github_ops_wait.py``) import these modules plainly for the same reason.
 """
+
 import inspect
 import json
 import re
@@ -53,6 +55,8 @@ import pytest
 
 _HEAD_BRANCH = 'feature/some-work'
 _DETECTION_MODULES = (github_ops, _github_checks)
+
+
 def _module_level_functions():
     """Every function defined in either path module, keyed by name."""
     own = {m.__name__ for m in _DETECTION_MODULES}
@@ -62,9 +66,13 @@ def _module_level_functions():
             if inspect.isfunction(obj) and obj.__module__ in own:
                 found.setdefault(name, obj)
     return found
+
+
 def _calls_in(func):
     """The identifiers ``func`` calls, as a set."""
     return set(re.findall(r'\b([A-Za-z_][A-Za-z0-9_]*)\s*\(', inspect.getsource(func)))
+
+
 def _detection_path_functions():
     """Derive the detection-path function set by walking the entry point's calls.
 
@@ -101,12 +109,18 @@ def _detection_path_functions():
                 callers[callee].add(caller)
 
     return tuple(sorted(name for name in reachable if callers[name] <= reachable))
+
+
 def _run(event, conclusion='success'):
     """One workflow-run record in the shape the actions/runs API returns."""
     return {'id': 12345, 'event': event, 'status': 'completed', 'conclusion': conclusion}
+
+
 def _page(runs):
     """One page envelope of the actions/runs response."""
     return {'total_count': len(runs), 'workflow_runs': list(runs)}
+
+
 def _patch_provider(monkeypatch, pages, *, pr_extras=None, capture=None):
     """Patch the provider surface beneath ``pull_request_runs_result``.
 
@@ -137,7 +151,11 @@ def _patch_provider(monkeypatch, pages, *, pr_extras=None, capture=None):
         return 0, json.dumps(pages), ''
 
     monkeypatch.setattr(github_ops, 'run_gh', _run_gh)
+
+
 _DETECTION_PATH_FUNCS = _detection_path_functions()
+
+
 def _patch_envelope(monkeypatch, raw_stdout):
     """Patch the provider beneath ``fetch_branch_workflow_runs`` with raw stdout.
 
@@ -147,6 +165,8 @@ def _patch_envelope(monkeypatch, raw_stdout):
     """
     monkeypatch.setattr(github_ops, 'get_repo_info', lambda: ('cuioss', 'plan-marshall'))
     monkeypatch.setattr(github_ops, 'run_gh', lambda args, capture_json=False, timeout=60: (0, raw_stdout, ''))
+
+
 def _run_for_pr(event, pr_numbers, conclusion='success'):
     """A workflow run carrying an explicit ``pull_requests`` association."""
     run = _run(event, conclusion=conclusion)
@@ -171,6 +191,8 @@ def test_a_skipped_pull_request_run_is_not_not_triggered(monkeypatch):
     assert result['not_triggered'] is False
     assert result['has_pull_request_run'] is True
     assert result['pull_request_run_count'] == 1
+
+
 def test_a_run_on_the_second_page_is_still_found(monkeypatch):
     """The unslurped-pagination regression guard, asserted on the OUTCOME.
 
@@ -192,6 +214,8 @@ def test_a_run_on_the_second_page_is_still_found(monkeypatch):
     # Every page's runs are assembled, not just the matching one.
     assert result['run_count'] == 3
     assert result['pull_request_run_count'] == 1
+
+
 def test_the_pagination_flags_are_actually_passed(monkeypatch):
     """The MECHANISM behind the case above, asserted at the lowest primitive.
 
@@ -213,6 +237,8 @@ def test_the_pagination_flags_are_actually_passed(monkeypatch):
     # The endpoint targets the PR's own head branch, not the whole repo.
     assert any('actions/runs' in token for token in argv)
     assert any(_HEAD_BRANCH.replace('/', '%2F') in token or _HEAD_BRANCH in token for token in argv)
+
+
 def test_a_well_formed_slurped_envelope_still_reads_every_page(monkeypatch):
     """The positive control: valid shapes are not caught by the validation above.
 
@@ -226,6 +252,8 @@ def test_a_well_formed_slurped_envelope_still_reads_every_page(monkeypatch):
     assert error == ''
     assert runs is not None
     assert len(runs) == 2
+
+
 def test_a_skipped_run_for_this_pr_still_counts_as_triggered(monkeypatch):
     """The `skipped` carve-out survives the PR-boundary filter.
 
@@ -238,6 +266,8 @@ def test_a_skipped_run_for_this_pr_still_counts_as_triggered(monkeypatch):
 
     assert result['not_triggered'] is False
     assert result['pull_request_run_count'] == 1
+
+
 def test_an_unusable_requested_pr_number_does_not_exclude_anything():
     """A non-numeric PR identifier fails safe at the predicate itself.
 

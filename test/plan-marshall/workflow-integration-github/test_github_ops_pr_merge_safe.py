@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for cmd_pr_merge branch-delete refactor.
 
 After the refactor:
@@ -12,6 +13,7 @@ The worktree fork exercises the scenario ``gh pr merge --delete-branch``
 cannot serve: the merge must finish cleanly and the branch delete must
 round-trip purely through the REST leaf, never through local git.
 """
+
 import argparse
 import json
 from datetime import UTC, datetime
@@ -33,6 +35,8 @@ def _install_common(monkeypatch):
         'get_repo_info',
         lambda: ('octo', 'repo'),
     )
+
+
 def _install_probe(
     monkeypatch,
     *,
@@ -64,6 +68,8 @@ def _install_probe(
 
     monkeypatch.setattr(github_ops, '_probe_merge_queue_state', probe_stub)
     return captured
+
+
 def _pr_view_success_payload() -> dict:
     """Minimal ``view_pr_data`` success payload with a head branch."""
     return {
@@ -79,6 +85,8 @@ def _pr_view_success_payload() -> dict:
         'mergeable': 'mergeable',
         'merge_state': 'clean',
     }
+
+
 _CORROBORATION_PAYLOADS: dict[str, dict] = {
     # Landed merge — the only shape that corroborates.
     'merged': {
@@ -111,6 +119,8 @@ _CORROBORATION_PAYLOADS: dict[str, dict] = {
         'headRefOid': 'abc123',
     },
 }
+
+
 def _capture_run_gh(
     *,
     merge_ok: bool = True,
@@ -166,6 +176,8 @@ def _capture_run_gh(
         return 0, '', ''
 
     return run_gh_stub, captured
+
+
 def _install_merge_preconditions(monkeypatch, *, view_payload: dict | None = None) -> dict:
     """Install the stubs ``cmd_pr_merge``'s own guards require.
 
@@ -177,6 +189,8 @@ def _install_merge_preconditions(monkeypatch, *, view_payload: dict | None = Non
     """
     monkeypatch.setattr(github_ops, 'view_pr_data', lambda head=None: view_payload or _pr_view_success_payload())
     return _install_probe(monkeypatch)
+
+
 def _merge_ns(*, delete_branch: bool, pr_number: int | None = 42, head: str | None = None):
     return argparse.Namespace(
         pr_number=pr_number,
@@ -184,12 +198,18 @@ def _merge_ns(*, delete_branch: bool, pr_number: int | None = 42, head: str | No
         strategy='merge',
         delete_branch=delete_branch,
     )
+
+
 def _assert_no_delete_branch_flag(captured_calls: list[list[str]]) -> None:
     """No ``--delete-branch`` may appear in ANY captured gh invocation."""
     for call in captured_calls:
         assert '--delete-branch' not in call, f'cmd_pr_merge leaked --delete-branch into gh args: {call}'
+
+
 def _branch_ns(branch: str) -> argparse.Namespace:
     return argparse.Namespace(branch=branch, remote_only=True)
+
+
 def _capture_branch_delete_run_gh(returncode: int = 0, stderr: str = ''):
     """Minimal run_gh stub for cmd_branch_delete tests."""
     captured: list[list[str]] = []
@@ -199,6 +219,8 @@ def _capture_branch_delete_run_gh(returncode: int = 0, stderr: str = ''):
         return returncode, '', stderr
 
     return run_gh_stub, captured
+
+
 def _safe_merge_ns(
     *,
     pr_number: int | None = 42,
@@ -223,6 +245,8 @@ def _safe_merge_ns(
         poll_timeout=poll_timeout,
         poll_interval=poll_interval,
     )
+
+
 def _pr_view_payload(merge_state: str, *, state: str | None = None) -> dict:
     """A ``view_pr_data`` success payload with the given ``merge_state``.
 
@@ -236,6 +260,8 @@ def _pr_view_payload(merge_state: str, *, state: str | None = None) -> dict:
     if state is not None:
         payload['state'] = state
     return payload
+
+
 def _sequenced_view_pr_data(states: list[str]):
     """Build a stateful ``view_pr_data`` stub returning ``states`` in order.
 
@@ -255,8 +281,12 @@ def _sequenced_view_pr_data(states: list[str]):
         return _pr_view_payload(states[-1], state='merged')
 
     return stub, calls
+
+
 def _stuck_gate_ok(_identifier):
     return True, None
+
+
 def _stuck_gate_fail(_identifier):
     return False, 'required check verify has not concluded'
 
@@ -267,6 +297,8 @@ def test_parse_merged_at_rejects_unusable_values(raw):
     import _github_pr
 
     assert _github_pr._parse_merged_at(raw) is None, raw
+
+
 def test_branch_delete_url_encodes_slash_in_branch_name(monkeypatch):
     """Branch names containing ``/`` are URL-encoded into a single path
     segment — ``feature/x`` → ``feature%2Fx`` — otherwise the REST path
@@ -290,6 +322,8 @@ def test_branch_delete_url_encodes_slash_in_branch_name(monkeypatch):
     assert endpoint == 'repos/octo/repo/git/refs/heads/feature%2Fx', endpoint
     # Raw unencoded slash must NOT appear in the branch segment.
     assert '/feature/x' not in endpoint, endpoint
+
+
 def test_branch_delete_url_encodes_special_characters(monkeypatch):
     """Branch names with reserved characters (``#``, ``?``, space) must be
     percent-encoded so the REST path stays a single well-formed segment.
@@ -305,6 +339,8 @@ def test_branch_delete_url_encodes_special_characters(monkeypatch):
     endpoint = captured[0][-1]
     # ``/`` → %2F, ``#`` → %23, ``?`` → %3F, space → %20.
     assert endpoint == 'repos/octo/repo/git/refs/heads/feat%2Fbug%2342%3Fx%20y', endpoint
+
+
 def test_safe_merge_clean_on_first_poll(monkeypatch):
     """A PR already ``clean`` merges on the first poll via the normal path."""
     _install_common(monkeypatch)
@@ -328,6 +364,8 @@ def test_safe_merge_clean_on_first_poll(monkeypatch):
     merge_call = next(c for c in captured if c[:2] == ['pr', 'merge'])
     assert '--admin' not in merge_call, merge_call
     _assert_no_delete_branch_flag(captured)
+
+
 def test_safe_merge_blocked_then_clean(monkeypatch):
     """A PR that is ``blocked`` then ``clean`` keeps polling, then merges."""
     _install_common(monkeypatch)
@@ -347,6 +385,8 @@ def test_safe_merge_blocked_then_clean(monkeypatch):
     # No admin fallback was needed.
     merge_call = next(c for c in captured if c[:2] == ['pr', 'merge'])
     assert '--admin' not in merge_call, merge_call
+
+
 def test_safe_merge_stuck_blocked_no_admin_returns_error(monkeypatch):
     """Timed-out while blocked, admin fallback NOT enabled → error, no merge."""
     _install_common(monkeypatch)
@@ -375,6 +415,8 @@ def test_safe_merge_stuck_blocked_no_admin_returns_error(monkeypatch):
     # No merge was attempted at all.
     merge_calls = [c for c in captured if c[:2] == ['pr', 'merge']]
     assert merge_calls == [], merge_calls
+
+
 def test_safe_merge_admin_fallback_on_stuck_blocked(monkeypatch):
     """Stuck blocked + knob on + gate provably met → admin merge fallback."""
     _install_common(monkeypatch)
@@ -407,6 +449,8 @@ def test_safe_merge_admin_fallback_on_stuck_blocked(monkeypatch):
     assert '--admin' in merge_call, merge_call
     assert '--merge' in merge_call, merge_call
     assert '42' in merge_call, merge_call
+
+
 def test_safe_merge_admin_fallback_blocked_by_unmet_gate(monkeypatch):
     """Stuck blocked + knob on but ruleset NOT provably met → refuse, no merge."""
     _install_common(monkeypatch)
@@ -434,6 +478,8 @@ def test_safe_merge_admin_fallback_blocked_by_unmet_gate(monkeypatch):
     # The gate failed closed — no merge of any kind was attempted.
     merge_calls = [c for c in captured if c[:2] == ['pr', 'merge']]
     assert merge_calls == [], merge_calls
+
+
 def test_safe_merge_admin_fallback_only_for_blocked_state(monkeypatch):
     """Timed out while NOT blocked (e.g. behind) → admin fallback does not apply."""
     _install_common(monkeypatch)
@@ -458,6 +504,8 @@ def test_safe_merge_admin_fallback_only_for_blocked_state(monkeypatch):
     assert 'applies only to a stuck blocked state' in result['error'], result
     merge_calls = [c for c in captured if c[:2] == ['pr', 'merge']]
     assert merge_calls == [], merge_calls
+
+
 def test_safe_merge_admin_fallback_deletes_branch(monkeypatch):
     """Admin fallback honours --delete-branch via the REST leaf follow-up."""
     _install_common(monkeypatch)
@@ -488,6 +536,8 @@ def test_safe_merge_admin_fallback_deletes_branch(monkeypatch):
     delete_calls = [c for c in captured if c[:3] == ['api', '-X', 'DELETE']]
     assert len(delete_calls) == 1, delete_calls
     assert delete_calls[0][-1].endswith('/git/refs/heads/feature%2Fx')
+
+
 def test_safe_merge_poll_failure_propagates(monkeypatch):
     """A check_fn failure during the readiness poll is surfaced as an error."""
     _install_common(monkeypatch)
@@ -513,6 +563,8 @@ def test_safe_merge_poll_failure_propagates(monkeypatch):
     assert 'Readiness poll failed' in result['error'], result
     merge_calls = [c for c in captured if c[:2] == ['pr', 'merge']]
     assert merge_calls == [], merge_calls
+
+
 @pytest.mark.parametrize('post_merge_state', ['closed', 'open', 'merged_without_timestamp'])
 def test_safe_merge_polled_clean_closed_without_merge_is_error(monkeypatch, post_merge_state):
     """Merge reports success but the post-merge state does not corroborate → error.
@@ -537,6 +589,8 @@ def test_safe_merge_polled_clean_closed_without_merge_is_error(monkeypatch, post
     # A merge WAS attempted (the false success), but the result is converted.
     merge_calls = [c for c in captured if c[:2] == ['pr', 'merge']]
     assert len(merge_calls) == 1, merge_calls
+
+
 def test_safe_merge_polled_clean_merged_refetch_succeeds(monkeypatch):
     """Merge reports success and the re-fetch confirms merged → success shape."""
     _install_common(monkeypatch)
@@ -549,6 +603,8 @@ def test_safe_merge_polled_clean_merged_refetch_succeeds(monkeypatch):
 
     assert result['status'] == 'success', result
     assert result['merge_path'] == 'polled_clean', result
+
+
 def test_pr_merge_unaffected_no_admin_or_safe_merge_fields(monkeypatch):
     """cmd_pr_merge carries no safe-merge-only fields and never uses --admin."""
     _install_common(monkeypatch)

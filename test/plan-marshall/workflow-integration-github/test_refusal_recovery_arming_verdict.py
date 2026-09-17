@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Cross-cutting suite: a NON-CodeRabbit refusal arms the right recovery.
 
 Detection answers per REGISTERED bot rather than for one privileged bot, and a
@@ -33,6 +34,7 @@ from the selector's own published ``RECOVERY_ACTIONS`` vocabulary, never
 hard-coded, so a bot added or reclassified in a standards doc is swept here
 automatically.
 """
+
 from __future__ import annotations
 
 import importlib
@@ -56,6 +58,8 @@ from _github_pr import (  # noqa: E402
 from conftest import get_script_path  # noqa: E402
 
 _ATTEMPTS_REMAINING = 2
+
+
 def _verdict(
     bot_kind: str,
     cause: str = _github_pr.REFUSAL_CAUSE_QUOTA,
@@ -82,9 +86,13 @@ def _verdict(
         window_expired=window_expired,
         attempts_remaining=attempts_remaining,
     )
+
+
 def _action(bot_kind: str, cause: str = _github_pr.REFUSAL_CAUSE_QUOTA, **kwargs) -> str:
     """The recovery ACTION the shipped selector derives for ``bot_kind``."""
     return str(_verdict(bot_kind, cause, **kwargs)['action'])
+
+
 def _reason(bot_kind: str, cause: str = _github_pr.REFUSAL_CAUSE_QUOTA, **kwargs) -> str:
     """The REASON the shipped selector publishes beside the action.
 
@@ -93,10 +101,14 @@ def _reason(bot_kind: str, cause: str = _github_pr.REFUSAL_CAUSE_QUOTA, **kwargs
     the reason says which remedies the operator should be offered.
     """
     return str(_verdict(bot_kind, cause, **kwargs)['reason'])
+
+
 _STRUCTURAL_NOTICE_BODY = (
     '> [!WARNING] > ## Usage limit reached > '
     'This reviewer has reached its usage limit. Reviews will resume after the limit resets.'
 )
+
+
 def _wording_body(pattern: str) -> str:
     """Wrap a declared refusal ``pattern`` in a body carrying no notice SHAPE.
 
@@ -112,6 +124,8 @@ def _wording_body(pattern: str) -> str:
     headings, and any resume / reset / try-again / unable-to / paused phrasing.
     """
     return f'Context from the reviewer: {pattern}.'
+
+
 def _refusal_body(bot_kind: str) -> str:
     """A refusal body SOME arm recognises for ``bot_kind``.
 
@@ -130,31 +144,45 @@ def _refusal_body(bot_kind: str) -> str:
     if declared:
         return _wording_body(declared[0])
     return _STRUCTURAL_NOTICE_BODY
+
+
 def _bots_declaring_no_wording() -> list[str]:
     """The registered bots whose declared-wording coverage is ZERO."""
     return [b for b in _registered_bots() if not bot_registry.refusal_patterns(b)]
+
+
 _DECLARED_WORDING_PAIRS: list[tuple[str, str]] = [
     (bot_kind, pattern) for bot_kind in bot_registry.bot_kinds() for pattern in bot_registry.refusal_patterns(bot_kind)
 ]
 _DECLARED_WORDING_POPULATION_SIZE = len(_DECLARED_WORDING_PAIRS)
 _DECLARED_WORDING_POPULATION_BASELINE = 7
+
+
 def _login(bot_kind: str) -> str:
     """The author login that resolves back to ``bot_kind``, from the registry map."""
     for login, kind in bot_registry.login_to_bot_kind().items():
         if kind == bot_kind:
             return login
     raise AssertionError(f'{bot_kind} declares no author_login')
+
+
 def _registered_bots() -> list[str]:
     bots = bot_registry.bot_kinds()
     assert bots, 'registry must declare at least one bot'
     return bots
+
+
 def _comment(bot_kind: str, body: str, created_at: str = '2026-01-09T00:00:00Z') -> dict:
     return {'author': f'{_login(bot_kind)}[bot]', 'body': body, 'created_at': created_at}
+
+
 def _bots_of_class(rate_class: str) -> list[str]:
     """The registered bots declaring ``rate_class``, asserted non-empty."""
     bots = [b for b in _registered_bots() if bot_registry.rate_limit_class(b) == rate_class]
     assert bots, f'registry must declare at least one {rate_class} bot for this to discriminate'
     return bots
+
+
 def _set_trigger_semantics(monkeypatch, bot_kind: str, value: str) -> None:
     """Re-declare ``bot_kind``'s ``trigger_semantics`` in the parsed registry record.
 
@@ -165,6 +193,8 @@ def _set_trigger_semantics(monkeypatch, bot_kind: str, value: str) -> None:
     record = dict(bot_registry.REGISTRY._by_kind[bot_kind])
     record['trigger_semantics'] = value
     monkeypatch.setitem(bot_registry.REGISTRY._by_kind, bot_kind, record)
+
+
 _PRODUCER_ONLY_FIELDS = {'rate_limited_bots': {'rate_limit_class'}, 'refusals': {'source'}}
 _AR_SKILL = (
     get_script_path('plan-marshall', 'workflow-integration-github', '_github_pr.py').parents[4]
@@ -175,6 +205,8 @@ _AR_SKILL = (
 )
 _DISCLOSED = {'producer', 'layer', 'eta', 'body'}
 _LOGGED = _DISCLOSED - {'body'}
+
+
 def _section(heading_prefix: str) -> str:
     """Return the ``automatic-review`` SKILL.md section whose heading starts ``heading_prefix``.
 
@@ -195,6 +227,8 @@ def _section(heading_prefix: str) -> str:
         if not in_fence and re.match(rf'#{{1,{level}}} ', line):
             return '\n'.join(lines[start:end])
     return '\n'.join(lines[start:])
+
+
 def _armed_line() -> str:
     """The ARMED decision-log ``--message`` line in Branch 2."""
     matches = [line for line in _section('#### Branch 2').splitlines() if 'refusal recovery ARMED' in line]
@@ -316,6 +350,8 @@ class TestTheDeclaredWordingSweep:
             assert refusal_layers(_STRUCTURAL_NOTICE_BODY, bot) == [REFUSAL_LAYER_STRUCTURAL]
             # And a shape-free body reaches NO arm at this position.
             assert refusal_layers('Skipping this one.', bot) == []
+
+
 class TestTheRecoveryActionSelectorDerivesItsVerdict:
     """``resolve_recovery_action`` reads the registry rather than assuming a bot.
 
@@ -516,6 +552,8 @@ class TestTheRecoveryActionSelectorDerivesItsVerdict:
         assert reached | {github_re_review.RECOVERY_ACTION_GENERATE_TRIGGER} == set(
             github_re_review.RECOVERY_ACTIONS
         ), f'arms reached {sorted(reached)} of {sorted(github_re_review.RECOVERY_ACTIONS)}'
+
+
 class TestBothProducersCarryOneObservationShape:
     """``rate_limited_bots[]`` and ``refusals[]`` record a refusal in ONE shape.
 
@@ -569,6 +607,8 @@ class TestBothProducersCarryOneObservationShape:
             assert '\n' not in record['body']
             assert record['body'].endswith('...')
         assert detected['body'] == refusal['body']
+
+
 class TestTheArmingDisclosureIsEmittedOnlyWhenAWaitIsArmed:
     """The emit / no-emit control pair over the ``automatic-review`` step contract.
 

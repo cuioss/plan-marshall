@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for github_re_review.py — the bot_kind-keyed re-review strategy registry.
 
 Covers the three concerns of the post-merge re-review registry:
@@ -74,6 +75,7 @@ works" from "this machine's store happens to hold no claim", and the negative
 control alone proves only that a claim CAN refuse, not that it is suppressed by
 default.
 """
+
 import argparse
 import sys
 import time
@@ -98,6 +100,8 @@ _EXPIRED_WINDOW = {
     'seconds_remaining': 0.0,
 }
 _LIVE_WINDOW_READER = github_re_review.read_rate_window
+
+
 def _window_reader(observation):
     """Build a ``(plan_id, bot_kind, pr_number) -> dict`` reader for ``observation``.
 
@@ -109,6 +113,8 @@ def _window_reader(observation):
         return dict(observation)
 
     return _read
+
+
 @pytest.fixture(autouse=True)
 def _neutralize_rate_window(monkeypatch):
     """Hold the trigger guard's window read at NO STORED RECORD for every test here.
@@ -127,6 +133,8 @@ def _neutralize_rate_window(monkeypatch):
     named in the module docstring is what keeps this fixture honest.
     """
     monkeypatch.setattr(github_re_review, 'read_rate_window', _window_reader(_NO_RECORD_WINDOW))
+
+
 @pytest.fixture(autouse=True)
 def _no_provider_comments(monkeypatch):
     """Default every test to an empty provider comment list.
@@ -141,10 +149,14 @@ def _no_provider_comments(monkeypatch):
         'fetch_pr_comments_data',
         lambda pr_number, unresolved_only=False: {'status': 'success', 'comments': []},
     )
+
+
 def _noop_sleep(monkeypatch):
     """Make poll_until's sleep a no-op so timeout-path tests finish fast."""
     monkeypatch.setattr(ci_base.time, 'sleep', lambda *_a, **_kw: None)
     monkeypatch.setattr(time, 'sleep', lambda *_a, **_kw: None)
+
+
 def _review(commit_sha, submitted_at, *, user='coderabbit[bot]', state='COMMENTED', body=''):
     """Build a review row in the shape fetch_pr_reviews_with_commits returns.
 
@@ -160,10 +172,14 @@ def _review(commit_sha, submitted_at, *, user='coderabbit[bot]', state='COMMENTE
         'commit_sha': commit_sha,
         'body': body,
     }
+
+
 _GUARD_SWEEP_POPULATION: list[str] = bot_registry.bot_kinds()
 _GUARD_SWEEP_POPULATION_SIZE = len(_GUARD_SWEEP_POPULATION)
 _GUARD_PR_NUMBER = 42
 _GUARD_PUSH_TIME = '2026-01-01T00:00:00Z'
+
+
 def _record_posts(monkeypatch) -> list[tuple]:
     """Replace ``post_pr_comment`` with a recorder; return the list it appends to.
 
@@ -180,6 +196,8 @@ def _record_posts(monkeypatch) -> list[tuple]:
 
     monkeypatch.setattr(github_re_review._github, 'post_pr_comment', fake_post)
     return posted
+
+
 _PR_AGENT_LOGIN = 'cuioss-review-bot'
 _TRIGGER = '2026-01-01T00:02:00Z'
 _HEAD_SHA = 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678'
@@ -229,11 +247,15 @@ def test_no_bot_specific_strategy_classes_remain():
     assert not hasattr(github_re_review, '_CodeRabbitStrategy')
     assert not hasattr(github_re_review, '_SourceryStrategy')
     assert not hasattr(github_re_review, '_PrAgentStrategy')
+
+
 def test_sourcery_is_a_valid_bot_kind():
     """``sourcery`` is a first-class member of the canonical BOT_KINDS enum."""
     from _findings_core import BOT_KINDS
 
     assert 'sourcery' in BOT_KINDS
+
+
 def test_coderabbit_request_fresh_review_posts_trigger_comment(monkeypatch):
     """CodeRabbit posts exactly ``@coderabbitai review`` as the explicit trigger."""
     post_calls = {'args': []}
@@ -252,6 +274,8 @@ def test_coderabbit_request_fresh_review_posts_trigger_comment(monkeypatch):
     # trigger comes from the registry data block, not a hard-coded constant).
     assert post_calls['args'] == [(42, strategy.trigger_comment)]
     assert strategy.trigger_comment == '@coderabbitai review'
+
+
 def test_coderabbit_request_fresh_review_trigger_time_is_post_time_not_push_time(monkeypatch):
     """CodeRabbit's trigger time is the comment-post time, never the push time."""
     monkeypatch.setattr(
@@ -267,6 +291,8 @@ def test_coderabbit_request_fresh_review_trigger_time_is_post_time_not_push_time
     assert result['trigger_time'] == '2026-06-01T12:00:00+00:00'
     # The supplied push_time is deliberately discarded.
     assert result['trigger_time'] != '2020-01-01T00:00:00Z'
+
+
 def test_coderabbit_request_fresh_review_propagates_post_failure(monkeypatch):
     """A failed trigger-comment post surfaces as an error envelope."""
     monkeypatch.setattr(
@@ -280,6 +306,8 @@ def test_coderabbit_request_fresh_review_propagates_post_failure(monkeypatch):
 
     assert result['status'] == 'error'
     assert result['operation'] == 'request_fresh_review'
+
+
 def test_pr_agent_request_fresh_review_posts_trigger_comment(monkeypatch):
     """PR-Agent does NOT auto-review on push — it posts exactly ``/review``."""
     post_calls = {'args': []}
@@ -297,6 +325,8 @@ def test_pr_agent_request_fresh_review_posts_trigger_comment(monkeypatch):
     # Exactly one comment posted, with the exact trigger literal (registry-derived).
     assert post_calls['args'] == [(99, strategy.trigger_comment)]
     assert strategy.trigger_comment == '/review'
+
+
 def test_pr_agent_request_fresh_review_trigger_time_is_post_time_not_push_time(monkeypatch):
     """PR-Agent's trigger time is the comment-post time, never the push time."""
     monkeypatch.setattr(
@@ -312,6 +342,8 @@ def test_pr_agent_request_fresh_review_trigger_time_is_post_time_not_push_time(m
     assert result['trigger_time'] == '2026-06-01T12:00:00+00:00'
     # The supplied push_time is deliberately discarded.
     assert result['trigger_time'] != '2020-01-01T00:00:00Z'
+
+
 def test_pr_agent_request_fresh_review_propagates_post_failure(monkeypatch):
     """A failed trigger-comment post surfaces as an error envelope."""
     monkeypatch.setattr(
@@ -325,6 +357,8 @@ def test_pr_agent_request_fresh_review_propagates_post_failure(monkeypatch):
 
     assert result['status'] == 'error'
     assert result['operation'] == 'request_fresh_review'
+
+
 def test_sourcery_request_fresh_review_posts_trigger_comment(monkeypatch):
     """Sourcery posts exactly ``@sourcery-ai review`` as the explicit trigger."""
     post_calls = {'args': []}
@@ -342,6 +376,8 @@ def test_sourcery_request_fresh_review_posts_trigger_comment(monkeypatch):
     # Exactly one comment posted, with the exact trigger literal (registry-derived).
     assert post_calls['args'] == [(77, strategy.trigger_comment)]
     assert strategy.trigger_comment == '@sourcery-ai review'
+
+
 def test_sourcery_request_fresh_review_trigger_time_is_post_time_not_push_time(monkeypatch):
     """Sourcery's trigger time is the comment-post time, never the push time."""
     monkeypatch.setattr(
@@ -357,6 +393,8 @@ def test_sourcery_request_fresh_review_trigger_time_is_post_time_not_push_time(m
     assert result['trigger_time'] == '2026-06-01T12:00:00+00:00'
     # The supplied push_time is deliberately discarded.
     assert result['trigger_time'] != '2020-01-01T00:00:00Z'
+
+
 def test_sourcery_request_fresh_review_propagates_post_failure(monkeypatch):
     """A failed trigger-comment post surfaces as an error envelope."""
     monkeypatch.setattr(
@@ -370,6 +408,8 @@ def test_sourcery_request_fresh_review_propagates_post_failure(monkeypatch):
 
     assert result['status'] == 'error'
     assert result['operation'] == 'request_fresh_review'
+
+
 @pytest.mark.parametrize('bot_kind', _GUARD_SWEEP_POPULATION)
 def test_an_unexpired_claimed_window_posts_no_trigger_comment(bot_kind, monkeypatch):
     """⛔ The load-bearing case: a live claim means NO comment reaches the PR.
@@ -392,6 +432,8 @@ def test_an_unexpired_claimed_window_posts_no_trigger_comment(bot_kind, monkeypa
     )
     assert result['status'] == 'refused'
     assert result['reason'] == 'window_open'
+
+
 @pytest.mark.parametrize('bot_kind', _GUARD_SWEEP_POPULATION)
 def test_an_expired_window_posts_the_trigger_comment(bot_kind, monkeypatch):
     """MATCHED CONTROL — a claim whose clock ran out permits the post.
@@ -410,6 +452,8 @@ def test_an_expired_window_posts_the_trigger_comment(bot_kind, monkeypatch):
 
     assert result['status'] == 'success'
     assert posted == [(_GUARD_PR_NUMBER, strategy.trigger_comment)]
+
+
 @pytest.mark.parametrize('bot_kind', _GUARD_SWEEP_POPULATION)
 def test_a_bot_with_no_stored_record_posts_the_trigger_comment(bot_kind, monkeypatch):
     """The ORDINARY post-merge path: a re-review that followed no refusal at all.
@@ -429,6 +473,8 @@ def test_a_bot_with_no_stored_record_posts_the_trigger_comment(bot_kind, monkeyp
 
     assert result['status'] == 'success'
     assert posted == [(_GUARD_PR_NUMBER, strategy.trigger_comment)]
+
+
 @pytest.mark.parametrize('bot_kind', _GUARD_SWEEP_POPULATION)
 def test_an_unreadable_window_read_posts_the_trigger_comment(bot_kind, monkeypatch):
     """A read that could not be performed carries no ``expired`` key, so it permits.
@@ -449,6 +495,8 @@ def test_an_unreadable_window_read_posts_the_trigger_comment(bot_kind, monkeypat
 
     assert result['status'] == 'success'
     assert posted == [(_GUARD_PR_NUMBER, strategy.trigger_comment)]
+
+
 def test_await_fresh_review_returns_matched_when_review_lands(monkeypatch):
     """await_fresh_review polls until a fresh review for HEAD lands → matched=True."""
     _noop_sleep(monkeypatch)
@@ -472,6 +520,8 @@ def test_await_fresh_review_returns_matched_when_review_lands(monkeypatch):
     assert result['matched_review']['commit_sha'] == 'headsha'
     assert result['timed_out'] is False
     assert call_counts['fetch'] >= 2
+
+
 def test_await_fresh_review_times_out_when_no_fresh_review_lands(monkeypatch):
     """When only stale reviews ever exist, await times out with matched=False."""
     _noop_sleep(monkeypatch)
@@ -488,6 +538,8 @@ def test_await_fresh_review_times_out_when_no_fresh_review_lands(monkeypatch):
     assert result['status'] == 'success'
     assert result['matched'] is False
     assert result['timed_out'] is True
+
+
 def test_await_fresh_review_propagates_fetch_failure(monkeypatch):
     """A fetch error short-circuits await with an error envelope."""
     _noop_sleep(monkeypatch)
@@ -502,9 +554,13 @@ def test_await_fresh_review_propagates_fetch_failure(monkeypatch):
 
     assert result['status'] == 'error'
     assert result['operation'] == 'await_fresh_review'
+
+
 def test_bot_kind_for_author_sourcery_strips_bot_suffix():
     """A ``[bot]``-suffixed sourcery login is normalized before lookup."""
     assert github_re_review.bot_kind_for_author('sourcery-ai[bot]') == 'sourcery'
+
+
 def test_main_re_review_accepts_sourcery_bot_kind(monkeypatch, capsys):
     """main() accepts ``--bot-kind sourcery`` through argparse and posts its trigger.
 
@@ -551,6 +607,8 @@ def test_main_re_review_accepts_sourcery_bot_kind(monkeypatch, capsys):
     assert 'success' in out
     assert 'sourcery' in out
     assert post_calls['args'] == [(42, '@sourcery-ai review')]
+
+
 def test_main_recovery_action_still_rejects_an_omitted_bot_kind(monkeypatch):
     """POSITIVE CONTROL — argparse rejection IS reachable through this entry point.
 
