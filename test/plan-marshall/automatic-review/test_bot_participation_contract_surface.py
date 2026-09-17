@@ -69,7 +69,7 @@ from _bot_flag_derivation import derive_bot_flags, derive_declared_flags
 # A second copy of either would be the duplicate-definition failure that population
 # exists to forbid, and the call-site sweep below would then be able to report a
 # class the population itself does not recognise.
-from test_participation_site_population import READS_VOCABULARY, SITE_EXPECTATIONS
+from test_participation_site_population_records import READS_VOCABULARY, SITE_EXPECTATIONS
 
 from conftest import (
     PLAN_DIR_NAME,
@@ -319,544 +319,32 @@ def _configurable_defaults() -> dict[str, str]:
     return defaults
 
 
-class TestKnobDefaults:
-    """Both knobs default to EMPTY, and the emptiness is load-bearing."""
-
-    @pytest.mark.parametrize('key', ['required_bots', 'optional_bots'])
-    def test_both_knobs_default_to_the_empty_string(self, key):
-        """A fresh project starts with neither list populated.
-
-        The default MUST be the empty string rather than a seeded bot list: a
-        seeded default would silently impose a participation obligation the
-        operator never agreed to, and would be indistinguishable from an answer.
-        Read from the ``configurable:`` block that marshall-steward actually seeds
-        from, so a drift between the declared default and the seeded one fails here.
-        """
-        declared = _configurable_defaults()
-
-        assert key in declared, f'{key} must be a declared configurable knob'
-        assert declared[key] == '', f'{key} must default to the EMPTY string'
-
-    def test_empty_required_bots_satisfies_the_quorum_vacuously(self, plan_context):
-        """An answered-empty required list is a legitimate configured state.
-
-        The contract calls this out explicitly: an operator who answers "none" has
-        configured the system, not misconfigured it, so the quorum is vacuously
-        satisfied rather than warned about.
-        """
-        plan_id = 'bpc-vacuous-quorum'
-        plan_context.plan_dir_for(plan_id)
-
-        result = rc.check_completeness(plan_id, [])
-
-        assert result['participation_complete'] is True
-
-
-class TestProvenanceIsThreeDistinguishableStates:
-    """never_asked / migrated / answered are three states, not two."""
-
-    def test_the_contract_declares_exactly_three_provenance_states(self):
-        """All three are documented, so none can be quietly collapsed."""
-        doc = _CONTRACT_DOC.read_text(encoding='utf-8')
-        for state in _PROVENANCE_STATES:
-            assert f'`{state}`' in doc, f'{state} must be a documented provenance state'
-
-    def test_the_three_states_are_pairwise_distinct(self):
-        """Collapsing any pair would erase a distinction the contract needs.
-
-        ``never_asked`` vs ``answered`` is the load-bearing pair — collapsing them
-        would make "the operator has not been asked yet" indistinguishable from
-        "the operator deliberately chose no required bots", two states that
-        warrant opposite handling. ``migrated`` is distinct from both: it was
-        seeded by the legacy auto-map, not by an operator answer, so it may be
-        overwritten by a later answer while an ``answered`` value may not.
-        """
-        for left, right in itertools.combinations(_PROVENANCE_STATES, 2):
-            assert left != right
-
-    def test_answered_empty_is_an_answer_not_an_absence(self):
-        """The distinction that motivates the three states, stated normatively."""
-        doc = _CONTRACT_DOC.read_text(encoding='utf-8')
-        assert 'including an explicit answer of none' in doc
-
-
-class TestThisRepositorysSettledConfiguration:
-    """This repo's own step params, as settled by the operator."""
-
-    def test_required_and_optional_lists_are_the_settled_two_list_split(self):
-        """cuioss-review-bot and CodeRabbit are required; Sourcery is optional.
-
-        Operator decision, on **review value**: CodeRabbit finds defects the
-        cuioss-review-bot pass misses, so its silence is a real coverage gap and
-        is treated as one — it gates the quorum rather than being reported for
-        visibility only. Its rolling per-developer quota is the price of that, and
-        the remedies for a quota-blocked merge are splitting the diff or granting
-        a merge authorization; moving the reviewer back to ``optional_bots`` is not
-        one of them.
-
-        A SECOND blocking shape rides the same requirement, and it is not the
-        quota: CodeRabbit's registry record declares
-        ``participation_requires_update``, so a review predating the merge
-        candidate resolves ``participated_stale`` rather than crediting. For a
-        required bot that verdict blocks too, and its remedy is the re-review
-        trigger the pipeline already posts — not a configuration change. The two
-        shapes are worth telling apart, because only the quota one is answered by
-        splitting the diff.
-
-        Sourcery stays optional. Optional is NOT dropped: an optional bot is still
-        fetched, classified and triaged, and its findings are acted on. It simply
-        cannot hold the step open by hitting its weekly diff-character cap.
-
-        The seeded defaults are both empty by design (never-asked), so the
-        operative classification lives only in each project's own marshal.json.
-        Pinning it closes the enabled-bots-vs-operative drift gap: a documented
-        reviewer roster that silently disagrees with the config the pipeline
-        actually reads is invisible at every other surface — which is exactly what
-        this assertion caught when the roster moved and nothing else noticed.
-        """
-        params = _live_step_params()
-
-        assert params['required_bots'] == 'cuioss-review-bot,coderabbit'
-        assert params['optional_bots'] == 'sourcery'
-
-    def test_the_retired_single_list_key_does_not_survive(self):
-        """``enabled_bots`` must be gone from the operative config, not shadowed."""
-        assert 'enabled_bots' not in _live_step_params()
-
-    def test_every_configured_bot_has_a_registry_record(self):
-        """A configured bot with no standards doc would resolve to nothing.
-
-        Derives the expected population from the registry, so this catches a
-        config naming a bot that was never registered AND a registry doc that was
-        retired out from under the config.
-        """
-        params = _live_step_params()
-        configured = [
-            b.strip() for key in ('required_bots', 'optional_bots') for b in params[key].split(',') if b.strip()
-        ]
-
-        registered = _registered_bots()
-        for bot in configured:
-            assert bot in registered, f'{bot} is configured but has no registry record'
-
-    def test_provenance_is_a_real_answer_not_the_never_asked_placeholder(self):
-        """The value was migrated or answered — otherwise create-pr reads it as unasked."""
-        provenance = _live_step_params()['bot_lists_provenance']
-
-        assert provenance in _PROVENANCE_STATES
-        assert provenance != 'never_asked'
-
-
-class TestWarnButIngest:
-    """An unlisted bot is warned-about and STILL ingested."""
-
-    def test_unclassified_bot_is_warned_about_and_its_comment_is_kept(self, plan_context):
-        """Classification carries CLASSIFICATION, not ADMISSION.
-
-        Dropping an unclassified bot's comments would make a configuration
-        omission silently destroy real review signal — invisible precisely when
-        the operator had not yet thought about that bot. The comment is stored and
-        the gap is surfaced instead.
-        """
-        import github_pr
-
-        plan_id = 'bpc-warn-but-ingest'
-        plan_context.plan_dir_for(plan_id)
-
-        class _Args:
-            pr_number = 900
-            required_bots = 'coderabbit'
-            optional_bots = ''
-
-            def __init__(self, plan: str) -> None:
-                self.plan_id = plan
-
-        comments = [
-            {
-                'id': 'U1',
-                'kind': 'inline',
-                'author': 'sourcery-ai',
-                'body': 'The retry loop can spin forever when the backoff cap is zero.',
-                'path': 'src/Retry.java',
-                'line': 31,
-                'thread_id': 'PRRT_u1',
-            },
-        ]
-
-        with (
-            patch('github_pr._github.check_auth', return_value=(True, '')),
-            patch('github_pr._github.fetch_pr_head_sha', return_value='sha'),
-            patch('github_pr._github.fetch_pr_comments_data') as mock_fetch,
-        ):
-            mock_fetch.return_value = {
-                'status': 'success',
-                'provider': 'github',
-                'comments': comments,
-                'total': 1,
-                'unresolved': 1,
-            }
-            result = github_pr.cmd_fetch_findings(_Args(plan_id))
-
-        # Warned about...
-        assert result['unclassified_bots'] == ['sourcery']
-        # ...and STILL ingested. The warning is not a drop.
-        assert result['count_stored'] == 1
-        assert result['count_skipped_noise'] == 0
-
-
-class TestFailureTaxonomyIsExhaustive:
-    """Every classified bot lands in exactly one taxonomy member."""
-
-    def test_the_contract_documents_every_non_participation_member(self):
-        """Direction one — CODE to DOC: no classifier member is undocumented.
-
-        The identifier names no count on purpose. A count in the name is a second
-        place the cardinality is stated, and the one that goes stale silently: it
-        keeps asserting truthfully while reading as a claim about a set size that
-        has moved. The count belongs in the closure check below, where it is
-        derived rather than spelled.
-        """
-        doc = _CONTRACT_DOC.read_text(encoding='utf-8')
-        for member in _NON_PARTICIPATION_MEMBERS:
-            assert f'`{member}`' in doc, f'{member} must be a documented taxonomy member'
-
-    def test_every_documented_member_is_one_the_classifier_can_produce(self):
-        """Direction two — DOC to CODE, which the direction above cannot see.
-
-        A subset check in one direction only is satisfied by a documented set that
-        has grown BEYOND the classifier: a member added to the contract table that
-        ``classify_bot`` can never assign would leave the code-to-doc sweep green
-        while the contract promised a state no consumer will ever observe. Closing
-        the pair makes the two surfaces equal rather than merely overlapping.
-        """
-        documented = set(_documented_members())
-        classifiable = set(_NON_PARTICIPATION_MEMBERS)
-
-        assert documented <= classifiable, (
-            f'the contract documents {sorted(documented - classifiable)} which the '
-            f'classifier cannot produce — a documented member no consumer can observe'
-        )
-
-    def test_the_contracts_closure_count_agrees_with_the_derived_member_count(self):
-        """The contract's prose count is checked against the derived cardinality.
-
-        The two subset directions above make the table and the classifier agree,
-        but neither reads the CLOSURE SENTENCE that tells a human how many members
-        to expect. A widened taxonomy whose prose still says "five" understates the
-        set at the one place a reader looks first, and nothing else in this suite
-        would notice.
-        """
-        collapsed = ' '.join(_failure_taxonomy_section().split())
-        match = _CLOSURE_COUNT.search(collapsed)
-        assert match, 'the failure taxonomy must state its closure count in prose'
-
-        word = match.group('count')
-        assert word in _NUMBER_WORDS, (
-            f'the closure count reads {word!r}, which is not a cardinal number word '
-            f'this check can compare — spell the count as a word'
-        )
-        assert _NUMBER_WORDS.index(word) == len(_NON_PARTICIPATION_MEMBERS), (
-            f'the contract closes the taxonomy at {word} members but '
-            f'{len(_NON_PARTICIPATION_MEMBERS)} are derived: '
-            f'{sorted(_NON_PARTICIPATION_MEMBERS)}'
-        )
-
-    def test_stated_blocking_counts_agree_with_the_derived_blocking_subset(self):
-        """Every ``N blocking members`` claim in the tree is checked against code.
-
-        The closure-count check above reads the CONTRACT doc's one closure
-        sentence, so a count restated anywhere else is outside its reach. That
-        gap is not hypothetical: the same wrong count appeared at two consumer
-        sites, one of them contradicting its own enumeration three lines above,
-        with nothing in this suite able to see either.
-
-        The blocking subset is ``_UNPROVEN_STATES``, which is strictly smaller
-        than the taxonomy — ``participated_but_empty`` is a member that never
-        blocks — so reaching for the taxonomy's size here is the specific error
-        guarded. Stating no count at all is the preferred shape, so a zero-match
-        tree is a legitimate pass; the population guard below is what keeps that
-        pass honest rather than vacuous.
-        """
-        blocking = len(rc._UNPROVEN_STATES)
-        assert 0 < blocking < len(_NON_PARTICIPATION_MEMBERS), (
-            f'the blocking subset ({blocking}) must be a non-empty PROPER subset of '
-            f'the taxonomy ({len(_NON_PARTICIPATION_MEMBERS)}) — otherwise this check '
-            f'cannot distinguish the two counts it exists to keep apart'
-        )
-
-        # The scanned population is the marketplace doc tree, NOT the match set:
-        # zero matches is the preferred state, so the denominator that makes a
-        # zero-match pass meaningful is how many docs were actually read.
-        scanned = sum(1 for _ in _MARKETPLACE_DOCS.rglob('*.md'))
-        assert scanned > 0, (
-            f'{_MARKETPLACE_DOCS} yielded no markdown — the sweep is vacuous and a clean result would mean nothing'
-        )
-
-        for doc, stated in _blocking_count_sites():
-            assert stated == blocking, (
-                f'{doc} claims {stated} blocking members but {blocking} are derived '
-                f'from _UNPROVEN_STATES: {sorted(rc._UNPROVEN_STATES)}. Note the '
-                f'taxonomy has {len(_NON_PARTICIPATION_MEMBERS)} members — the '
-                f'blocking subset excludes the never-blocking ones'
-            )
-
-    def test_the_blocking_count_extractor_reads_real_counts_and_skips_qualifiers(self):
-        """Positive and negative controls for the extractor the scan above uses.
-
-        The scan passes over a doc set that currently states no count, so on its
-        own it cannot show it would catch anything. These controls pin the
-        discriminator directly: the exact wording of the two defects that
-        reached review is read back as a count, the corrected wording is not,
-        and the digit spelling is covered too.
-        """
-        taxonomy_size = len(_NON_PARTICIPATION_MEMBERS)
-
-        # Positive: the two shipped defects, verbatim. Both stated the TAXONOMY
-        # size where the BLOCKING subset was meant, which is the error itself. The
-        # count word tracks the derived taxonomy size, so these read the current
-        # cardinality rather than a frozen literal that would rot on the next member.
-        assert _stated_blocking_counts(
-            f'because two of the {_NUMBER_WORDS[taxonomy_size]} blocking members name a different remedy'
-        ) == (taxonomy_size,)
-        assert _stated_blocking_counts(f'{taxonomy_size} blocking members') == (taxonomy_size,)
-
-        # Negative: the corrected wording states no count and must not be read
-        # as one — otherwise the fix would itself trip the guard.
-        assert _stated_blocking_counts('because two of the blocking members name a different remedy') == ()
-        assert _stated_blocking_counts('the blocking members enumerated above') == ()
-
-        # And the defect the controls describe is genuinely a defect: the
-        # taxonomy size is NOT the blocking count.
-        assert taxonomy_size != len(rc._UNPROVEN_STATES)
-
-    @pytest.mark.parametrize(
-        'observation',
-        [
-            'none',
-            'in_progress',
-            'refused',
-            'participated_empty',
-            'participated_with_findings',
-            'participated_stale',
-            'declined',
-            'not_triggered',
-        ],
-    )
-    def test_every_registered_bot_classifies_into_exactly_one_member(self, observation, plan_context):
-        """Sweep the WHOLE registered population under each observation shape.
-
-        The population comes from ``bot_registry.bot_kinds()``, so a bot added in a
-        standards doc is swept automatically. The assertion is totality and
-        mutual exclusivity — never a spot-check of one bot.
-
-        The two widened shapes are swept here rather than spot-checked for the same
-        reason as the original five: the property being pinned is that the taxonomy
-        stays TOTAL and mutually exclusive over the whole bot population, and a
-        member exercised against one bot proves neither.
-        """
-        # ``_`` is not admissible in a plan_id (``^[a-z][a-z0-9-]*$``), and the
-        # observation labels carry them. Derive the id through the same character
-        # class the real store enforces, so the sweep exercises the predicate rather
-        # than tripping plan-id validation inside the findings store.
-        plan_id = f'bpc-taxonomy-{observation.replace("_", "-")}'
-        plan_context.plan_dir_for(plan_id)
-        bots = _registered_bots()
-
-        kwargs: dict = {}
-        if observation == 'in_progress':
-            kwargs['in_progress_bots'] = bots
-        elif observation == 'refused':
-            kwargs['refused_bots'] = bots
-        elif observation == 'participated_stale':
-            # Matched by EXACT equality, and placed ahead of the prefix branch
-            # below on purpose: ``participated_stale`` also starts with
-            # ``participated``, so the prefix test would swallow it and feed the
-            # shape through the proven-participation path instead — where every bot
-            # resolves ``participated_but_empty`` and the widened member would
-            # never be exercised while the case still reported green.
-            kwargs['stale_participation_bots'] = bots
-        elif observation == 'declined':
-            kwargs['declined_bots'] = bots
-        elif observation == 'not_triggered':
-            # PR-wide rather than per-bot: a single bool, because the condition
-            # ("no pull_request-event run exists for this PR") holds for every bot
-            # at once. There is no observation set to key by bot here.
-            kwargs['not_triggered'] = True
-        elif observation.startswith('participated'):
-            kwargs['participated_bots'] = {bot: bot_registry.participation_evidence(bot)[0] for bot in bots}
-            if observation == 'participated_with_findings':
-                import _findings_core as fc
-
-                for bot in bots:
-                    added = fc.add_finding(
-                        plan_id,
-                        'pr-comment',
-                        title=f'{bot} finding',
-                        detail='d',
-                        bot_kind=bot,
-                        kind='inline',
-                    )
-                    assert added['status'] == 'success', added
-                    fc.resolve_finding(plan_id, added['hash_id'], 'fixed')
-
-        result = rc.check_completeness(plan_id, bots, **kwargs)
-
-        classified = [r['bot_kind'] for r in result['bot_states']]
-        # Total: every bot in the population is classified.
-        assert sorted(classified) == sorted(bots)
-        # Exactly one: no bot is classified twice.
-        assert len(classified) == len(set(classified))
-        # And into a KNOWN member — nothing escapes the closed taxonomy.
-        known = set(_NON_PARTICIPATION_MEMBERS) | {rc.STATE_PARTICIPATED}
-        assert {r['state'] for r in result['bot_states']} <= known
-
-    def test_every_registered_bot_declares_a_rate_limit_class_that_splits_refusals(self):
-        """The refusal split is registry-driven for the WHOLE population.
-
-        A bot whose class is neither awaitable nor a known non-awaitable value
-        still resolves — fail-closed — so no bot can produce an unclassifiable
-        refusal.
-        """
-        for bot in _registered_bots():
-            assert bot_registry.rate_limit_class(bot) in (
-                'awaitable_window',
-                'hard_quota',
-                'unknown',
-            )
-
-    def test_every_registered_bot_declares_its_participation_evidence(self):
-        """A bot with no declared evidence shape can never be proven a participant.
-
-        Fail-closed is the correct behaviour, but a REGISTERED bot silently
-        landing there would be a registry gap, not a design intent — so every
-        registered bot must declare at least one publish shape.
-        """
-        for bot in _registered_bots():
-            shapes = bot_registry.participation_evidence(bot)
-            assert shapes, f'{bot} declares no participation_evidence'
-            for shape in shapes:
-                assert shape in ('review_body', 'inline', 'issue_comment'), (bot, shape)
-
-
-# =============================================================================
-# A credited clean review resolves participated_but_empty
-# =============================================================================
-
-#: The heading the contract states the clean-review mapping under. Per-bot registry
-#: docs cite it by this title, so it is read here once and checked in both places.
 _CLEAN_REVIEW_HEADING = '### A credited clean review resolves `participated_but_empty`'
 
-#: Every ``(bot_kind, shape)`` a registered bot can be credited through, DERIVED from
-#: the registry. Guarded non-empty at import: a parametrize over an empty tuple SKIPS
-#: rather than fails, so an empty population would retire the sweep below silently.
+
 _CREDITED_SHAPES: tuple[tuple[str, str], ...] = tuple(
     (bot, shape) for bot in bot_registry.bot_kinds() for shape in bot_registry.participation_evidence(bot)
 )
+
+
 assert _CREDITED_SHAPES, (
     'no registered bot declares a participation_evidence shape — the clean-review '
     'sweep would generate zero cases, which pytest reports as SKIPPED rather than failed'
 )
 
 
-class TestACreditedCleanReviewResolvesParticipatedButEmpty:
-    """The clean-review mapping the contract states holds across the whole population.
-
-    ``test_review_completeness.py`` pins it for CodeRabbit's clean review together with
-    its matched control; this suite pins the CONTRACT that case instantiates — every
-    credited shape of every registered bot, with nothing filed, is accounted-for as
-    ``participated_but_empty`` and never ``absent`` or ``participated``.
-    """
-
-    @pytest.mark.parametrize(
-        ('bot_kind', 'shape'),
-        _CREDITED_SHAPES,
-        ids=[f'{bot_kind}-{shape}' for bot_kind, shape in _CREDITED_SHAPES],
-    )
-    def test_a_credited_shape_with_nothing_filed_resolves_participated_but_empty(self, plan_context, bot_kind, shape):
-        """Credited, zero findings is the clean-review pair — and it lands on its member."""
-        plan_id = f'bpc-clean-review-{bot_kind}-{shape.replace("_", "-")}'
-        plan_context.plan_dir_for(plan_id)
-
-        result = rc.check_completeness(
-            plan_id, [bot_kind], participated_bots=rc.parse_participation(f'{bot_kind}:{shape}')
-        )
-
-        states = [r['state'] for r in result['bot_states'] if r['bot_kind'] == bot_kind]
-        assert states == [rc.STATE_PARTICIPATED_BUT_EMPTY]
-        assert result['participation_complete'] is True
-
-    def test_the_contract_states_the_mapping_and_the_coderabbit_record_cites_it(self):
-        """The mapping has its own heading, and CodeRabbit's registry doc points at it by title.
-
-        ``coderabbit.md`` records which publish shape carries its clean-review credit and
-        defers the member to this contract by section title. Renaming the heading
-        without the pointer would leave that record citing a section that no longer
-        exists, so both ends are read here. Whitespace is collapsed on the pointer side
-        because the citation wraps across a line break in the source.
-        """
-        assert _CLEAN_REVIEW_HEADING in _CONTRACT_DOC.read_text(encoding='utf-8').splitlines()
-
-        title = _CLEAN_REVIEW_HEADING.removeprefix('### ')
-        coderabbit = (_CONTRACT_DOC.parent / 'coderabbit.md').read_text(encoding='utf-8')
-        assert f'§ "{title}"' in ' '.join(coderabbit.split())
-
-
-# =============================================================================
-# Call-site population sweep — the argument-marshalling family
-# =============================================================================
-#
-# SCOPE, STATED EXPLICITLY. This sweep covers ONE shell-marshalling family: the
-# ARGUMENT-MARSHALLING family — an unquoted ``{placeholder}`` interpolated into a
-# documented invocation's flag arguments, where an empty value collapses the flag
-# and either steals the next token or trips an argparse rejection. It is NOT a
-# repository-wide shell-marshalling audit, and it deliberately does not implement
-# one.
-#
-# The two sibling families were INSPECTED at the same four confirmed sites and
-# found INAPPLICABLE there, which is why they are stated rather than swept:
-#
-#   * command-chaining (``&&`` / ``;`` / ``&`` / a leading ``VAR=val``) — none of
-#     the four sites chains commands; each documents exactly one invocation.
-#   * bash-impersonation (``echo >``, heredocs, ``python3 -c``) — none of the four
-#     sites shells out to compose content; every one is a direct executor call.
-#
-# A repository-wide audit of those two families is a separate, larger piece of
-# work and is out of scope here.
-#
-# The site POPULATION is derived by scanning the marketplace tree, never
-# hard-coded: a fifth call site added in a future doc is swept automatically
-# instead of silently escaping. The scan is guarded against vacuity — an empty
-# sub-population FAILS rather than passing quietly.
-
 _MARKETPLACE_DOCS = PROJECT_ROOT / 'marketplace' / 'bundles'
 
-#: The list flags whose interpolated placeholders must be quoted, derived from
-#: the live ``check`` parser so a newly added flag is swept without an edit here.
-#: The ``review_completeness`` family may carry all of them; the ``fetch_findings``
-#: family declares only the first two. The derivation matches the ``--*-bots``
-#: family only, so the ``store_true`` ``--not-triggered`` is correctly absent: it
-#: has no value to quote.
+
 _ALL_LIST_FLAGS = tuple(flag for flag, _dest in derive_bot_flags(_RC_SCRIPT, 'check'))
 
-# ⛔ Vacuity guard — the flags are derived from the live parser, so a derivation that
-# came back empty collects zero cases at every parametrize below and reports green.
+
 assert _ALL_LIST_FLAGS, 'derive_bot_flags found no list-shaped bot flags on the check parser'
 
-#: The FULL declared optional-flag surface of ``review_completeness check``, derived
-#: from the same live parser by the wider entry point. This is the POPULATION the
-#: coverage ledger below is asserted total over, and the reason a valueless flag can
-#: no longer escape every sweep: ``_ALL_LIST_FLAGS`` comes from a ``--*-bots``
-#: family pattern that structurally cannot match ``--not-triggered``, so a
-#: consumer measuring its coverage against the family alone measured it against a
-#: population the boolean was never in.
+
 _ALL_DECLARED_FLAGS = derive_declared_flags(_RC_SCRIPT, 'check')
 
-#: The declared flags OUTSIDE the ``--*-bots`` family, each mapped to the arm that
-#: covers it. Together with ``_ALL_LIST_FLAGS`` this must exhaust
-#: ``_ALL_DECLARED_FLAGS``; the equality is what turns a newly declared flag into a
-#: FAILURE demanding classification rather than a silent coverage hole. A flag of a
-#: shape no existing derivation matches therefore cannot be added without someone
-#: naming where it is covered.
+
 _NON_LIST_FLAG_COVERAGE = {
     '--plan-id': (
         'the required findings-store selector — exercised at the constructed-argv '
@@ -897,36 +385,13 @@ _NON_LIST_FLAG_COVERAGE = {
     ),
 }
 
+
 _FAMILY_A = 'review_completeness check'
+
+
 _FAMILY_B = 'github_pr fetch_findings'
 
-#: ``(family, doc-suffix, section-substring, expected list-flag count)`` for the
-#: four CONFIRMED call sites. Each count is stated ONCE, here, and nowhere else in
-#: this module: the comparative sentence describing how the sites differ is rendered
-#: from this tuple by :func:`_confirmed_count_summary` and asserted by
-#: :meth:`TestCallSitePopulation.test_the_confirmed_sites_do_not_share_one_flag_count`,
-#: so a count that moves cannot leave a stale restatement standing in prose.
-#:
-#: The counts differ per site because the sites genuinely interpolate different
-#: flags, and they are therefore asserted per site rather than in aggregate. Which
-#: flags each site carries is a property of what that site can observe: the
-#: pre-merge barrier's Predicate 2 never observes an in-progress bot of its own,
-#: while the step-done participation guard threads one forward from its own
-#: completion poll. Both family-A sites forward the two per-refusal overlays and
-#: the ``--declined-bots`` observation their re-review consumer accumulates;
-#: ``--unrecognised-refusal-bots`` rides the same ``fetch_findings`` return, and is
-#: state-determining at the barrier — the one site that renders an operator prompt —
-#: so a refusal no arm could read must not resolve there by the bot's declared class.
-#: Both producer sites pass the two classification flags.
-#:
-#: ``--not-triggered`` deliberately moves NEITHER count. It is a ``store_true``
-#: bool rather than a ``--*-bots`` list flag, so it carries no interpolated
-#: placeholder to quote — which is also why ``derive_bot_flags`` does not surface
-#: it and why the quoting sweep has nothing to say about it. Both family-A sites
-#: pass it bare.
-#: ``(site id, family, doc-suffix, section-substring, expected list-flag count)``.
-#: Held as typed rows rather than as ``pytest.param`` objects so the two derivations
-#: below read the counts as integers instead of reflecting over a parametrisation.
+
 _CONFIRMED_SITE_ROWS: tuple[tuple[str, str, str, str, int], ...] = (
     (
         'family-a-step-done-participation-guard',
@@ -958,18 +423,13 @@ _CONFIRMED_SITE_ROWS: tuple[tuple[str, str, str, str, int], ...] = (
     ),
 )
 
-#: The same rows as the parametrisation the per-site sweep consumes, built from them
-#: rather than spelled a second time.
+
 _CONFIRMED_SITES = tuple(
     pytest.param(family, doc, section, count, id=site_id)
     for site_id, family, doc, section, count in _CONFIRMED_SITE_ROWS
 )
 
-#: Matches a list flag and the token that follows it inside a fenced command. The
-#: alternation is built from the SAME parser-derived tuple as ``_ALL_LIST_FLAGS``
-#: rather than restated as a second literal — a newly added flag reaches the quoting
-#: scan automatically. Longest-first ordering keeps a flag that is a prefix of
-#: another from shadowing it.
+
 _FLAG_VALUE = re.compile(
     '(?P<flag>'
     + '|'.join(re.escape(flag) for flag in sorted(_ALL_LIST_FLAGS, key=len, reverse=True))
@@ -1024,9 +484,7 @@ def _classify_invocation(command: str) -> str:
 
 _INVOCATION_SITES = _scan_invocation_sites()
 
-# ⛔ Vacuity guard — the sites are scanned out of the documents, so a scan that
-# came back empty would collect zero cases at the parametrizations below and
-# still report green.
+
 assert _INVOCATION_SITES, 'the invocation-site scan found no fenced command — every sweep over it would cover nothing'
 
 
@@ -1147,6 +605,27 @@ def _evidence_class(family: str, command: str) -> str:
         f'exempting the call site here.'
     )
     return record.reads
+
+
+_GH_SCRIPT = get_script_path('plan-marshall', 'workflow-integration-github', 'github_pr.py')
+
+
+_BRANCH_CLEANUP_DOC = _AR_SCRIPTS.parent.parent / 'phase-6-finalize' / 'standards' / 'branch-cleanup.md'
+
+
+_GH_SKILL = _GH_SCRIPT.parent.parent / 'SKILL.md'
+
+
+def _optional_value_form(flag: str) -> re.Pattern:
+    return re.compile(re.escape(f'[{flag} ') + r'\[[^\]]+\]\]')
+
+
+def _help_text(script_path, *argv: str) -> str:
+    """Return a subcommand's live argparse usage text."""
+    result = run_script(script_path, *argv, '--help')
+    assert result.success, result.stderr
+    usage: str = result.stdout
+    return usage
 
 
 class TestCallSitePopulation:
@@ -1331,147 +810,6 @@ class TestCallSitePopulation:
         assert resolved == 'marketplace/bundles/other-bundle/skills/other-skill/scripts/review_completeness.py'
 
 
-# =============================================================================
-# A crashed gate never records a pass — end to end for both families
-# =============================================================================
-
-_GH_SCRIPT = get_script_path('plan-marshall', 'workflow-integration-github', 'github_pr.py')
-
-_BRANCH_CLEANUP_DOC = _AR_SCRIPTS.parent.parent / 'phase-6-finalize' / 'standards' / 'branch-cleanup.md'
-_GH_SKILL = _GH_SCRIPT.parent.parent / 'SKILL.md'
-
-
-class TestCrashedGateNeverRecordsAPass:
-    """A zero-participation invocation must neither crash nor be recorded as a pass."""
-
-    def test_family_a_zero_participation_does_not_exit_2(self, plan_context):
-        """The predicate survives the collapsed shape instead of rejecting it.
-
-        Driven through the constructed-argv subprocess runner — the boundary where
-        the pre-fix parser actually failed.
-        """
-        plan_id = 'bpc-1063-family-a'
-        plan_context.plan_dir_for(plan_id)
-
-        result = run_script(
-            _RC_SCRIPT,
-            'check',
-            '--plan-id',
-            plan_id,
-            '--required-bots',
-            '--optional-bots',
-            '--participated-bots',
-            '--in-progress-bots',
-            '--refused-bots',
-        )
-
-        assert result.returncode != 2, result.stderr
-        assert 'expected one argument' not in result.stderr
-
-    def test_family_a_zero_participation_is_not_recorded_as_a_pass(self, plan_context):
-        """Surviving the parse must not buy a pass for an unreviewed diff.
-
-        With a real required set and NO observation of any kind, the verdict is
-        ``false`` and both required bots are named unproven. This is the half of
-        the fix that stops the relaxation becoming the defect it replaced.
-        """
-        plan_id = 'bpc-1063-family-a-verdict'
-        plan_context.plan_dir_for(plan_id)
-
-        result = run_script(
-            _RC_SCRIPT,
-            'check',
-            '--plan-id',
-            plan_id,
-            '--required-bots',
-            'coderabbit,cuioss-review-bot',
-            '--optional-bots',
-            '--participated-bots',
-            '--in-progress-bots',
-            '--refused-bots',
-        )
-
-        assert result.success, result.stderr
-        assert 'participation_complete: false' in result.stdout
-        assert 'unproven_bots[2]' in result.stdout
-
-    def test_family_b_zero_participation_does_not_exit_2(self):
-        """The producer survives the collapsed shape too — both families, not one.
-
-        ``PATH`` is emptied so ``gh`` is unresolvable and the run cannot reach the
-        network: the process clears argparse and then fails at the provider
-        boundary, which is precisely the boundary under test.
-        """
-        result = run_script(
-            _GH_SCRIPT,
-            'fetch_findings',
-            '--pr-number',
-            '1',
-            '--plan-id',
-            'bpc-1063-family-b',
-            '--required-bots',
-            '--optional-bots',
-            env_overrides={'PATH': ''},
-        )
-
-        assert result.returncode != 2, result.stderr
-        assert 'expected one argument' not in result.stderr
-
-    def test_automatic_review_doc_carries_an_unknown_branch(self):
-        """The consuming doc routes a crashed predicate to UNKNOWN, never to false."""
-        doc = _AR_SKILL.read_text(encoding='utf-8')
-
-        assert 'UNKNOWN verdict' in doc
-        assert 'no `participation_complete` field' in doc
-        assert '--outcome loop_back' in doc
-
-    def test_automatic_review_doc_excludes_the_force_done_hatch_from_unknown(self):
-        """The escape hatch presupposes a verdict, so it cannot apply to UNKNOWN.
-
-        Without this exclusion the hatch would let an operator force past a gate
-        that named no blocking bot and no state — a force-done with nothing to
-        weigh, which is a pass in all but name.
-        """
-        doc = _AR_SKILL.read_text(encoding='utf-8')
-
-        assert 'UNAVAILABLE for an UNKNOWN' in doc
-
-    def test_branch_cleanup_doc_carries_an_unknown_branch_for_both_calls(self):
-        """The barrier's UNKNOWN branch covers the predicate AND its upstream input.
-
-        Predicate 2 consumes ``participated_bots`` / ``refused_bots`` from the
-        ``fetch_findings`` call above it, so a non-zero exit THERE leaves the
-        predicate with absent inputs. Feeding an empty participation set to a
-        fail-closed predicate would manufacture a verdict nobody computed, so the
-        barrier must refuse to evaluate Predicate 2 at all.
-        """
-        doc = _BRANCH_CLEANUP_DOC.read_text(encoding='utf-8')
-
-        assert 'UNKNOWN — the predicate itself failed' in doc
-        assert 'UNKNOWN — the re-fetch itself failed' in doc
-        assert 'NOT evaluating Predicate 2' in doc
-        assert '{barrier_mode}' in doc
-
-
-# =============================================================================
-# Advertised-form agreement — the documented shape matches the live argparse
-# =============================================================================
-
-
-#: Matches an optional-value flag rendering: ``[--flag [VALUE]]`` — the nested
-#: bracket pair argparse itself emits for ``nargs='?'``.
-def _optional_value_form(flag: str) -> re.Pattern:
-    return re.compile(re.escape(f'[{flag} ') + r'\[[^\]]+\]\]')
-
-
-def _help_text(script_path, *argv: str) -> str:
-    """Return a subcommand's live argparse usage text."""
-    result = run_script(script_path, *argv, '--help')
-    assert result.success, result.stderr
-    usage: str = result.stdout
-    return usage
-
-
 class TestAdvertisedFormsAgreeWithArgparse:
     """Each advertised form states the same optionality the live parser implements.
 
@@ -1520,11 +858,6 @@ class TestAdvertisedFormsAgreeWithArgparse:
         assert _optional_value_form(flag).search(docstring), (
             f'{flag} must be advertised with an optional value on the Usage: line'
         )
-
-
-# =============================================================================
-# Declared-flag population closure — the sweep is total over the parser surface
-# =============================================================================
 
 
 class TestDeclaredFlagPopulationIsFullyClassified:

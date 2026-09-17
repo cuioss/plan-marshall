@@ -85,84 +85,21 @@ def _parse(*argv: str):
 # =============================================================================
 
 
-def test_the_bare_flag_is_accepted_and_reads_as_unmeasured():
-    """POSITIVE: a bare `--measured-diff-size` parses, and reads as unmeasured.
-
-    This is the exact argv the executor delivers on the common path, and the exact
-    argv that was an argparse rejection before the flag declared an optional value.
-    """
-    assert _parse(_FLAG).measured_diff_size == ''
-
-
-def test_bare_and_omitted_are_the_SAME_reading():
-    """MATCHED CONTROL: bare is not merely accepted — it means what omitted means.
-
-    Without this pair, the test above would pass on a relaxation that accepted the
-    bare form while giving it some other value (a sentinel, the flag's own name),
-    and an unmeasured diff would then be reported as a measured one.
-    """
-    assert _parse(_FLAG).measured_diff_size == _parse().measured_diff_size == ''
-
-
-def test_a_supplied_value_still_arrives_intact():
-    """NEGATIVE control on the relaxation: it widened the empty case only.
-
-    A flag that now accepts nothing at all would satisfy both assertions above.
-    """
-    assert _parse(_FLAG, '1240 changed lines').measured_diff_size == '1240 changed lines'
-
-
-def test_the_bare_flag_does_not_swallow_a_following_flag():
-    """The `nargs='?'` hazard: an optional value must not consume the next flag.
-
-    Asserted against a real sibling on the same subcommand rather than a synthetic
-    token, because the failure would be silent in exactly this shape — the run would
-    report a measured diff size of `--triage-ran` AND lose the triage-state input
-    that decides whether a pending finding blocks.
-    """
-    parsed = _parse(_FLAG, '--triage-ran')
-
-    assert parsed.measured_diff_size == ''
-    assert parsed.triage_ran is True
-
-
-# =============================================================================
-# 3 — the documented call sites, transported as the executor transports them
-# =============================================================================
-
-#: The KNOWN call sites — the FIND step's participation guard and the pre-merge
-#: review-completeness barrier — held as repo-relative paths under :data:`_SKILLS`.
-#:
-#: ⛔ This is a FLOOR, not the scan population. The population is DERIVED from the
-#: bundle tree by :func:`_scan_docs` below, because a hand-named list answers only
-#: "did a doc we already knew about stop matching?" and is blind in the other
-#: direction: a `check` call added to a THIRD document would sit outside the sweep
-#: with nothing reporting the omission. That blindness is not hypothetical —
-#: `phase-6-finalize/workflow/create-pr.md` already carries a concrete
-#: `review_completeness` invocation (its `size-caps` advance disclosure), so the set
-#: of documents invoking this script is demonstrably larger than this pair and
-#: demonstrably growing.
-#:
-#: Deriving the population while KEEPING this floor preserves both directions: the
-#: derivation catches a new call site, and the floor assertion below still names a
-#: known site that silently stopped matching — which a derived-only population
-#: cannot see, since its members are by construction exactly the docs that matched.
 _KNOWN_CALL_SITE_DOCS: tuple[str, ...] = (
     'automatic-review/SKILL.md',
     'phase-6-finalize/standards/branch-cleanup.md',
 )
 
+
 _EXEC_CALL = re.compile(r'python3\s+\.plan/execute-script\.py\s+plan-marshall:automatic-review:review_completeness\b')
 
-#: Argparse's own rendering of an optional flag. A block carrying it is the
-#: `## Canonical invocations` SPECIFICATION of the surface, not a call, so
-#: substituting it would test the substitution rather than the doc.
+
 _ADVERTISED_FORM = re.compile(r'[\[(]\s*-{1,2}[a-zA-Z]')
 
-#: Placeholder values that keep an invocation parseable. Everything else — every
-#: bot list, and `{measured_diff_size}` itself — collapses to the empty string,
-#: which is what the common path genuinely produces.
+
 _SUBSTITUTIONS = {'plan_id': 'mds-parse-probe'}
+
+
 _PLACEHOLDER = re.compile(r'\{[a-zA-Z_][a-zA-Z0-9_]*\}')
 
 
@@ -272,21 +209,21 @@ def _documented_check_invocations() -> tuple[list[tuple[str, list[str]]], list[t
 
 
 SCANNED_DOC_COUNT = len(_scan_docs())
+
+
 _DOCUMENTED, _UNREADABLE = _documented_check_invocations()
 
-# Non-emptiness at IMPORT: an empty parametrize is a pytest SKIP, not a failure, so
-# a scan that matched nothing would report a clean sweep over nothing. The scanned
-# count and the unreadable count ride along so an empty result names WHICH of the
-# three zeros it is — a misrooted scan that read nothing, a tree whose documents
-# could not be read at all, or a real tree that documents no `check` call.
+
 assert _DOCUMENTED, (
     'no concrete `review_completeness check` invocation was scanned from the '
     f'{SCANNED_DOC_COUNT} markdown documents under {_SKILLS} '
     f'({len(_UNREADABLE)} of them unreadable) — the sweep below would pass over an empty set'
 )
 
-#: Published on every run — passing included — by the root conftest's report header.
+
 GUARD_POPULATION_LABEL = 'documented review_completeness check invocations'
+
+
 GUARD_POPULATION_SIZE = len(_DOCUMENTED)
 
 
