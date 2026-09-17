@@ -2398,7 +2398,10 @@ def _router_plan_id_value(argv: list) -> str | None:
 # Verbs that declare their own required ``--plan-id`` after the verb. When the
 # router consumed a pre-verb ``--plan-id`` and the remaining argv carries one
 # of these verbs without its own ``--plan-id``, the consumed value is
-# re-injected so the router position is accepted.
+# re-injected so the router position is accepted. This surface declares a
+# required `--plan-id` only on `fetch_findings` and `post_responses` — the
+# `reply` / `thread-reply` / `comment` body consumers live on the `ci` surface
+# (`ci_base.BODY_CONSUMER_VERBS`), so no additional verb applies here.
 _BODY_CONSUMER_VERBS = frozenset({'fetch_findings', 'post_responses'})
 
 

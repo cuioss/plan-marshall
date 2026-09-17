@@ -783,3 +783,24 @@ def test_always_accepted_flags_and_their_arity_share_one_definition(
     assert set(executor._ALWAYS_ACCEPTED_FLAGS) == set(executor._ALWAYS_ACCEPTED_FLAG_ARITY)
     assert executor._ALWAYS_ACCEPTED_FLAG_ARITY['project-dir'] == 1
     assert executor._ALWAYS_ACCEPTED_FLAG_ARITY['help'] == 0
+
+
+def test_sibling_verbs_empty_chain_returns_no_siblings(executor_with_mock_log_entry):
+    """An empty chain (no verb resolved) reports no siblings.
+
+    Reachable via a non-allowlisted root-level unknown flag: the root children
+    are not siblings of a verb that was never selected, so reporting `read`
+    there is a false hint.
+    """
+    executor, _mock = executor_with_mock_log_entry
+    root = {'children': {'read': {'flags': ['plan-id']}}}
+
+    assert executor._sibling_verbs_with_flag(root, [], 'plan-id') == []
+
+
+def test_sibling_verbs_nonempty_chain_still_reports_sibling(executor_with_mock_log_entry):
+    """Control: a resolved verb still names a sibling declaring the same flag."""
+    executor, _mock = executor_with_mock_log_entry
+    root = {'children': {'read': {'flags': ['plan-id']}, 'list': {'flags': ['plan-id']}}}
+
+    assert executor._sibling_verbs_with_flag(root, ['read'], 'plan-id') == ['list']

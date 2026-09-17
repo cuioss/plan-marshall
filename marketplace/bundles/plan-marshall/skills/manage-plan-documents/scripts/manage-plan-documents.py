@@ -142,12 +142,22 @@ def build_parser() -> argparse.ArgumentParser:
         allow_abbrev=False,
     )
     add_plan_id_arg(read_redirect_parser)
-    read_redirect_parser.add_argument(
-        '--document',
-        default='request',
-        choices=sorted(available_types) if available_types else ['request'],
-        help='Document type to read (default: request). Redirects to "<type> read".',
-    )
+    sorted_types = sorted(available_types)
+    redirect_default = 'request' if 'request' in available_types else None
+    if redirect_default is not None:
+        read_redirect_parser.add_argument(
+            '--document',
+            default=redirect_default,
+            choices=sorted_types,
+            help='Document type to read (default: request). Redirects to "<type> read".',
+        )
+    else:
+        read_redirect_parser.add_argument(
+            '--document',
+            required=True,
+            choices=sorted_types,
+            help='Document type to read. Redirects to "<type> read".',
+        )
     read_redirect_parser.add_argument('--raw', action='store_true', help='Output raw content')
     read_redirect_parser.add_argument('--section', help='Read specific section (e.g., clarified_request)')
     read_redirect_parser.set_defaults(func=lambda args: cmd_read(args.document, args))

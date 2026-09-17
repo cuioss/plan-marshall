@@ -40,6 +40,7 @@ import sys
 from pathlib import Path
 
 from ci_base import (
+    BODY_CONSUMER_VERBS,
     extract_project_dir,
     extract_routing_args,
     output_error,
@@ -136,7 +137,9 @@ def _router_plan_id_value(argv: list[str]) -> str | None:
 # consumers). When the router consumed a pre-verb ``--plan-id`` and the
 # remaining argv carries one of these verbs without its own ``--plan-id``,
 # the consumed value is re-injected so the router position is accepted.
-_BODY_CONSUMER_VERBS = frozenset({'prepare-body', 'prepare-comment', 'create', 'edit'})
+# Imported from `ci_base` beside `add_body_consumer_args` so the reinjection
+# set cannot drift from the parser registrations it mirrors.
+_BODY_CONSUMER_VERBS = BODY_CONSUMER_VERBS
 
 
 def main() -> int:

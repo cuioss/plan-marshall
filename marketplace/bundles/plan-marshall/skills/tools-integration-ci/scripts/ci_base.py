@@ -368,6 +368,18 @@ def add_body_consumer_args(subparser: argparse.ArgumentParser) -> None:
     )
 
 
+# Leaf verbs that declare their own required `--plan-id` downstream of the
+# router: every subcommand wired via `add_body_consumer_args` above
+# (`create`, `edit`, `reply`, `thread-reply`, `comment`) plus the `prepare-*`
+# allocators that declare `--plan-id` via `add_plan_id_arg`. The CI router
+# (`ci.py`) reinjects a router-position `--plan-id` for exactly this set, so
+# the set lives here beside the registration helper it mirrors and cannot
+# drift from it.
+BODY_CONSUMER_VERBS = frozenset(
+    {'create', 'edit', 'reply', 'thread-reply', 'comment', 'prepare-body', 'prepare-comment'}
+)
+
+
 # Shared defaults for CI polling operations.
 #
 # `DEFAULT_CI_TIMEOUT` is resolved at module load via `_resolve_ci_timeout()`:

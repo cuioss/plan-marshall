@@ -931,3 +931,58 @@ def test_cli_request_mark_clarified_subcommand(plan_context):
     assert result.success, f'Script failed: {result.stderr}'
     data = parse_toon(result.stdout)
     assert data['status'] == 'success'
+
+
+def _load_redirect_module():
+    """Load manage-plan-documents.py fresh without registering in sys.modules."""
+    return load_script_module('plan-marshall', 'manage-plan-documents', _SCRIPT, '_mpd_redirect', register=False)
+
+
+def test_read_redirect_default_request_when_registered():
+    """Redirect defaults to request and offers registered choices when present."""
+    mod = _load_redirect_module()
+    parser = mod.build_parser()
+    args = parser.parse_args(['read', '--plan-id', 'x'])
+    assert args.document == 'request'
+    for action in parser._actions:
+        if isinstance(action, argparse._SubParsersAction):
+            read_redirect = action.choices['read']
+            break
+    else:  # pragma: no cover
+        raise AssertionError('read redirect subparser missing')
+    for action in read_redirect._actions:
+        if '--document' in action.option_strings:
+            document_action = action
+            break
+    else:  # pragma: no cover
+        raise AssertionError('--document flag missing')
+    assert document_action.default == 'request'
+    assert document_action.choices == ['request']
+    assert not document_action.required
+
+
+def test_read_redirect_requires_document_when_request_unregistered(monkeypatch):
+    """Without request registered, omitted and explicit request fail at parse time."""
+    mod = _load_redirect_module()
+    monkeypatch.setattr(mod, 'get_available_types', lambda: ['alpha'])
+    parser = mod.build_parser()
+    for action in parser._actions:
+        if isinstance(action, argparse._SubParsersAction):
+            read_redirect = action.choices['read']
+            break
+    else:  # pragma: no cover
+        raise AssertionError('read redirect subparser missing')
+    for action in read_redirect._actions:
+        if '--document' in action.option_strings:
+            document_action = action
+            break
+    else:  # pragma: no cover
+        raise AssertionError('--document flag missing')
+    assert document_action.choices == ['alpha']
+    assert document_action.required
+    with pytest.raises(SystemExit):
+        parser.parse_args(['read', '--plan-id', 'x'])
+    with pytest.raises(SystemExit):
+        parser.parse_args(['read', '--plan-id', 'x', '--document', 'request'])
+    args = parser.parse_args(['read', '--plan-id', 'x', '--document', 'alpha'])
+    assert args.document == 'alpha'

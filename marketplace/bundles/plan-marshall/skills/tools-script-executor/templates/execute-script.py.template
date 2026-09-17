@@ -933,9 +933,14 @@ def _sibling_verbs_with_flag(root: dict, chain: list, flag: str) -> list:
 
     Returns an empty list when the parent cannot be resolved or no sibling
     declares the flag — the caller then falls back to the declared-set
-    corrective without a sibling hint.
+    corrective without a sibling hint. An empty chain (no verb resolved,
+    reachable via a non-allowlisted root-level unknown flag) also returns an
+    empty list: the root children are not siblings of a verb that was never
+    selected.
     """
     try:
+        if not chain:
+            return []
         parent = root
         for step in chain[:-1]:
             children = parent.get('children') or {}
