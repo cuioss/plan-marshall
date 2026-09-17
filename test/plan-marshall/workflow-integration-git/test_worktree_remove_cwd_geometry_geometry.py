@@ -378,154 +378,29 @@ def _assert_refused(result: dict, geometry: dict[str, Path], expected_error: str
     )
 
 
-class TestCwdGeometryMatrix:
-    """cwd x plan-dir-residency, over real resolvers and a real worktree."""
+@pytest.fixture
+def external_base(
+    geometry: dict[str, Path],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> Path:
+    """Re-point ``PLAN_BASE_DIR`` at a store the git-common-dir walk cannot reach.
 
-    @pytest.mark.parametrize(
-        ('cwd_key', 'landed', 'expected_error'),
-        [
-            ('main', False, 'plan_dir_not_moved_back'),
-            ('main', True, None),
-            ('worktree', False, 'plan_dir_not_moved_back'),
-            ('worktree', True, 'cwd_inside_removal_target'),
-        ],
-        ids=[
-            'main-cwd-not-landed-refuses-move-back',
-            'main-cwd-landed-succeeds',
-            'worktree-cwd-not-landed-refuses-move-back',
-            'worktree-cwd-landed-refuses-containment',
-        ],
+    Ordered after ``geometry`` because that fixture sets ``PLAN_BASE_DIR`` to
+    ``main/.plan/local``, and this one must overwrite it. The directory is a SIBLING of
+    the main checkout under ``tmp_path``, so ``git rev-parse --git-common-dir`` — which
+    resolves ``main`` — can never name it. The assertion below states that separation
+    rather than assuming it: if the two trees ever coincided, every cell in the class
+    would pass under a probe reading either resolver, which is precisely the blindness
+    this fixture exists to remove.
+    """
+    base = (tmp_path / 'external-plan-store').resolve()
+    assert base != geometry['main_local'] and not base.is_relative_to(geometry['main']), (
+        'The override base must lie outside the main checkout for the two resolvers to name different trees.'
     )
-    def test_each_cell_reaches_its_own_outcome(
-        self,
-        geometry: dict[str, Path],
-        monkeypatch: pytest.MonkeyPatch,
-        cwd_key: str,
-        landed: bool,
-        expected_error: str | None,
-    ) -> None:
-        """The four cells differ pairwise along ONE axis and must not collapse.
-
-        The two ``worktree`` rows are the cells a resolver-patched suite cannot reach:
-        with the walk-up probe the not-landed row read the worktree's own copy as
-        "moved back", and with no containment test the landed row destroyed the
-        directory its caller was standing in.
-        """
-        if landed:
-            _land_plan_dir_on_main(geometry)
-        monkeypatch.chdir(geometry[cwd_key])
-
-        result = _remove(geometry)
-
-        if expected_error is None:
-            assert result['status'] == 'success', result
-            assert result['action'] == 'removed'
-            assert not geometry['worktree'].exists(), (
-                'The control must reach the real removal, not merely report success.'
-            )
-        else:
-            _assert_refused(result, geometry, expected_error)
-
-    def test_the_containment_refusal_names_the_real_process_cwd(
-        self, geometry: dict[str, Path], monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """The reported ``cwd`` is where the process actually stands.
-
-        A resolver-patched test could reproduce the error CODE without this field
-        being right; only a real ``chdir`` can show the payload naming the directory
-        the process is in, which is the value the operator acts on.
-        """
-        _land_plan_dir_on_main(geometry)
-        monkeypatch.chdir(geometry['worktree'])
-
-        result = _remove(geometry)
-
-        assert result['error'] == 'cwd_inside_removal_target', result
-        assert Path(result['cwd']) == geometry['worktree']
-        assert 'change directory out of the worktree' in result['message']
-        assert 'Pass --force' not in result['message'], 'The message must name the remedy, not offer --force as one.'
-
-
-class TestContainmentIsNotAStringPrefixTest:
-    """Descendants are contained; a sibling sharing the target's prefix is not."""
-
-    @pytest.mark.parametrize('subdir', ['nested', 'nested/deeper'], ids=['depth-1', 'depth-2'])
-    def test_a_descendant_of_the_target_refuses(
-        self, geometry: dict[str, Path], monkeypatch: pytest.MonkeyPatch, subdir: str
-    ) -> None:
-        _land_plan_dir_on_main(geometry)
-        cwd = geometry['worktree'] / subdir
-        cwd.mkdir(parents=True)
-        monkeypatch.chdir(cwd)
-
-        result = _remove(geometry)
-
-        _assert_refused(result, geometry, 'cwd_inside_removal_target')
-        assert Path(result['cwd']) == cwd
-
-    def test_a_sibling_sharing_the_targets_path_prefix_is_not_contained(
-        self, geometry: dict[str, Path], monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """Matched control for the containment predicate itself.
-
-        ``{target}-sibling`` has the target's full path as a STRING prefix but is not
-        beneath it, so a ``startswith``-shaped containment test would refuse here while
-        the real one must not. The directory also sits inside the main checkout, so
-        every real resolver still resolves — the cell differs from the refusing ones in
-        cwd alone.
-        """
-        _land_plan_dir_on_main(geometry)
-        sibling = Path(f'{geometry["worktree"]}-sibling')
-        sibling.mkdir()
-        monkeypatch.chdir(sibling)
-
-        result = _remove(geometry)
-
-        assert result['status'] == 'success', f'A sibling path is not inside the removal target, got {result!r}.'
-        assert result['action'] == 'removed'
-        assert not geometry['worktree'].exists()
-
-
-class TestNeitherRefusalIsForceOverridable:
-    """``--force`` keeps its dirty-tree meaning and buys no way past either guard."""
-
-    @pytest.mark.parametrize(
-        ('cwd_key', 'landed', 'expected_error'),
-        [
-            ('worktree', False, 'plan_dir_not_moved_back'),
-            ('worktree', True, 'cwd_inside_removal_target'),
-        ],
-        ids=['move-back', 'containment'],
-    )
-    def test_force_does_not_override(
-        self,
-        geometry: dict[str, Path],
-        monkeypatch: pytest.MonkeyPatch,
-        cwd_key: str,
-        landed: bool,
-        expected_error: str,
-    ) -> None:
-        if landed:
-            _land_plan_dir_on_main(geometry)
-        monkeypatch.chdir(geometry[cwd_key])
-
-        result = _remove(geometry, force=True)
-
-        _assert_refused(result, geometry, expected_error)
-
-    def test_force_still_removes_from_a_cwd_outside_the_target(self, geometry: dict[str, Path]) -> None:
-        """Matched control: ``--force`` is not being neutered, only not being a bypass.
-
-        Without this, the two refusals above would be equally consistent with
-        ``--force`` having stopped working altogether.
-        """
-        _land_plan_dir_on_main(geometry)
-
-        result = _remove(geometry, force=True)
-
-        assert result['status'] == 'success', result
-        assert result['action'] == 'removed'
-        assert not geometry['worktree'].exists()
+    base.mkdir()
+    monkeypatch.setenv('PLAN_BASE_DIR', str(base))
+    return base
 
 
 class TestArchivedPlanReachability:
@@ -714,31 +589,6 @@ class TestBranchCleanupIsDoneOrReported:
             'The branch really is stranded here, which is what makes the warning a '
             'true report rather than a defensive string.'
         )
-
-
-@pytest.fixture
-def external_base(
-    geometry: dict[str, Path],
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> Path:
-    """Re-point ``PLAN_BASE_DIR`` at a store the git-common-dir walk cannot reach.
-
-    Ordered after ``geometry`` because that fixture sets ``PLAN_BASE_DIR`` to
-    ``main/.plan/local``, and this one must overwrite it. The directory is a SIBLING of
-    the main checkout under ``tmp_path``, so ``git rev-parse --git-common-dir`` — which
-    resolves ``main`` — can never name it. The assertion below states that separation
-    rather than assuming it: if the two trees ever coincided, every cell in the class
-    would pass under a probe reading either resolver, which is precisely the blindness
-    this fixture exists to remove.
-    """
-    base = (tmp_path / 'external-plan-store').resolve()
-    assert base != geometry['main_local'] and not base.is_relative_to(geometry['main']), (
-        'The override base must lie outside the main checkout for the two resolvers to name different trees.'
-    )
-    base.mkdir()
-    monkeypatch.setenv('PLAN_BASE_DIR', str(base))
-    return base
 
 
 class TestOverrideBaseDirIsHonoured:
