@@ -235,6 +235,7 @@ import sys
 import bot_registry
 from _findings_core import query_findings
 from _findings_store_state import as_unresolved_store_error
+from review_gate_delta import should_await_refusal
 from toon_parser import serialize_toon
 
 # The state every classified bot resolves to. Every member below except
@@ -625,12 +626,14 @@ def _refusal_state(rate_limit_class: str, cause: str | None = None, unrecognised
       render ``refused_awaitable``, asserting a reset window nobody observed and
       steering the operator to wait on a notice no layer could even parse. The
       declared-ignorance member is the only honest one.
-    - otherwise the awaitability split, total and injective over the three declared
-      classes so no value is collapsed into another:
-      ``awaitable_window`` -> ``refused_awaitable`` (the window reopens on its own),
+    - otherwise the awaitability split, routed through the production await
+      policy (``review_gate_delta.should_await_refusal``) rather than a direct
+      class comparison, so the flag owns the await decision in one place:
+      awaitable-and-awaited -> ``refused_awaitable`` (the window reopens on its own),
       ``hard_quota`` -> ``refused_hard`` (a budget that does not usefully reopen),
-      ``unknown`` / anything else -> ``refused_unknown`` (the registry declares
-      ignorance, so whether waiting helps is genuinely not known).
+      ``unknown`` / anything else (including awaitable-but-not-awaited) ->
+      ``refused_unknown`` (the registry declares ignorance, so whether waiting
+      helps is genuinely not known).
 
     **The two overrides CAN both hold, and the order is what decides that case.** They
     would be contradictory only if they described the SAME refusal — a ``size`` cause is
@@ -679,7 +682,7 @@ def _refusal_state(rate_limit_class: str, cause: str | None = None, unrecognised
         return STATE_REFUSED_STRUCTURAL
     if unrecognised:
         return STATE_REFUSED_UNKNOWN
-    if rate_limit_class == 'awaitable_window':
+    if should_await_refusal(rate_limit_class):
         return STATE_REFUSED_AWAITABLE
     if rate_limit_class == 'hard_quota':
         return STATE_REFUSED_HARD
