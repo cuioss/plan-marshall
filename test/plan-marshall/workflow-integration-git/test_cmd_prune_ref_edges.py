@@ -245,13 +245,13 @@ class TestCmdPruneRefCli:
         assert parsed['status'] == 'error'
         assert parsed['error_type'] == 'project_dir_not_a_git_repo'
 
-    def test_local_only_mode_accepted(self, tmp_path: Path) -> None:
+    def test_local_only_mode_accepted(self, outside_repo_dir: Path) -> None:
         """--mode local_only is accepted by argparse (no exit code 2)."""
         result = run_script(
             _SCRIPT_PATH,
             'prune-local-and-remote-ref',
             '--project-dir',
-            str(tmp_path),
+            str(outside_repo_dir),
             '--head',
             'feature/x',
             '--mode',

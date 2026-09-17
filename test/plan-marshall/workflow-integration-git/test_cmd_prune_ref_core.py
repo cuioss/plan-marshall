@@ -182,8 +182,8 @@ class TestCmdPruneRefEscapeHatch:
         assert result['local_deleted'] is False
         assert 'currently checked-out' in result['message']
 
-    def test_branch_delete_failure_returns_error(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """git branch -D failure → branch_delete_failed with local_deleted=False."""
+    def test_deleted_local_proceeds_to_remote_prune(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Already-absent local proceeds to remote-ref pruning (tolerated delete)."""
         _init_repo(tmp_path, branch='main')
         orig = _mod.run_git
 
@@ -199,9 +199,9 @@ class TestCmdPruneRefEscapeHatch:
 
         result = cmd_prune_ref(args)
 
-        assert result['status'] == 'error'
-        assert result['error_type'] == 'branch_delete_failed'
-        assert result['local_deleted'] is False
+        assert result['local_deleted'] is True
+        assert 'local_delete_warning' in result
+        assert 'already deleted' in result['local_delete_warning']
 
     def test_local_only_mode_skips_remote_ref(self, tmp_path: Path) -> None:
         """local_only mode deletes branch and returns remote_ref_deleted=False."""
