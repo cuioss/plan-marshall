@@ -25,7 +25,7 @@ CONTRACT the components jointly implement:
 * every DOCUMENTED call site additionally resolves to a recorded EVIDENCE CLASS —
   the ``reads`` axis of the participation-site population's own expectation record
   for the script the site's executor notation names — so a call site that invokes a
-  participation script for which ``test_participation_site_population.py`` holds no
+  participation script for which ``test_participation_site_population_records.py`` holds no
   record fails here instead of escaping both populations;
 * a crashed participation gate is an UNKNOWN verdict at both families and at both
   consuming documents — never a recorded pass;
@@ -599,7 +599,7 @@ def _evidence_class(family: str, command: str) -> str:
     record = SITE_EXPECTATIONS.get(path)
     assert record is not None, (
         f'{path} is invoked by a documented call site but carries no recorded evidence '
-        f'class — test_participation_site_population.py holds no SITE_EXPECTATIONS '
+        f'class — test_participation_site_population_records.py holds no SITE_EXPECTATIONS '
         f'record for it. A participation script reachable from a documented invocation '
         f'must be a member of that population; add its record there rather than '
         f'exempting the call site here.'
@@ -732,7 +732,7 @@ class TestCallSitePopulation:
         The scan already derived which script every site invokes and then said
         nothing about it — the derived-but-unasserted axis this closes. Resolving it
         binds the two populations together: a documented invocation of a
-        participation script that ``test_participation_site_population.py`` holds no
+        participation script that ``test_participation_site_population_records.py`` holds no
         ``SITE_EXPECTATIONS`` record for is a surface neither sweep covers, and both
         report green over it today.
 
