@@ -922,3 +922,20 @@ def rate_limit_eta_patterns(bot_kind: str) -> list[str]:
 def severity_map(bot_kind: str) -> dict[str, str]:
     """The per-bot marker->severity map for ``bot_kind`` (``{}`` if unknown)."""
     return REGISTRY.severity_map(bot_kind)
+
+
+#: The awaitable refusal class the required-bot plus await pair decision relies on.
+#: A refusal in this class reopens on its own, so awaiting the reset is productive.
+AWAITABLE_REFUSAL_CLASS = 'awaitable_window'
+
+
+def is_awaitable_refusal_class(rate_limit_class_value: str) -> bool:
+    """Return True when ``rate_limit_class_value`` is the awaitable refusal class.
+
+    The pair decision (PLAN-03): ``review_rate_window_await`` is turned on for
+    this class with CodeRabbit required. Demotion of CodeRabbit back to optional
+    is explicitly rejected: CodeRabbit refusals are the awaitable kind, so
+    awaiting the window recovers coverage that demotion would silently discard.
+    Keeping the bot required preserves the quorum signal the await relies on.
+    """
+    return rate_limit_class_value == AWAITABLE_REFUSAL_CLASS

@@ -3129,3 +3129,66 @@ class TestEmittedToonRoundTrips:
         assert [row['structural_cap'] for row in emitted['size_capped_reviewers']] == [
             bool(row['structural_cap']) for row in declared
         ]
+
+
+# =============================================================================
+# PLAN-03 D1 — SHA-compared currency verdict, reachable HEAD read, Trigger-B
+# =============================================================================
+
+
+class TestPlan03ReviewCurrencyHelpers:
+    """D1 single test surface for the review-currency and await-pair fix.
+
+    Covers the SHA-compared currency verdict, the reachable issue_comment HEAD
+    read, Trigger-B stale-bot selection, and the required-bot plus await pair
+    semantics sharing the D1 surface.
+    """
+
+    def test_bot_claimed_sha_match_credits_current_review(self):
+        """A body naming the merge HEAD verifies; a force-pushed HEAD does not."""
+        gpr = load_script_module('plan-marshall', 'workflow-integration-github', '_github_pr.py', register=False)
+
+        head = 'a' * 40
+        other = 'b' * 40
+        assert gpr.bot_claimed_sha_matches_head(f'reviewed {head}', head) is True
+        assert gpr.bot_claimed_sha_matches_head(f'reviewed {other}', head) is False
+        assert gpr.bot_claimed_sha_matches_head('no sha here', head) is False
+        assert gpr.bot_claimed_sha_matches_head(f'reviewed {head}', '') is False
+
+    def test_issue_comment_verifies_head_for_current_review(self):
+        """An issue_comment naming the HEAD reads as approving, never weakened."""
+        gci = load_script_module('plan-marshall', 'workflow-integration-github', '_github_ci.py', register=False)
+
+        head = 'c' * 40
+        assert gci.issue_comment_verifies_head(f'see .../commit/{head}', head) is True
+        assert gci.issue_comment_verifies_head('walkthrough only', head) is False
+
+    def test_currency_verdict_carries_to_check_state(self):
+        """A current review maps to SUCCESS; a stale one maps to STALE failure."""
+        gchk = load_script_module('plan-marshall', 'workflow-integration-github', '_github_checks.py', register=False)
+
+        assert gchk.carry_currency_verdict_to_check_state(True) == 'SUCCESS'
+        assert gchk.carry_currency_verdict_to_check_state(False) == 'STALE'
+
+    def test_trigger_selects_actually_stale_bot(self):
+        """Trigger-B reaches the stale bot, not only the newest finding kind."""
+        assert rc.select_stale_bot_for_trigger(['sourcery'], 'coderabbit') == 'sourcery'
+        assert rc.select_stale_bot_for_trigger(['coderabbit'], 'coderabbit') == 'coderabbit'
+        assert rc.select_stale_bot_for_trigger([], 'coderabbit') == 'coderabbit'
+        assert rc.select_stale_bot_for_trigger([], None) == ''
+
+    def test_awaitable_refusal_class_is_awaited_with_coderabbit_required(self):
+        """The awaitable class awaits; CodeRabbit stays required by registry."""
+        assert rc.bot_registry.is_awaitable_refusal_class('awaitable_window') is True
+        assert rc.bot_registry.is_awaitable_refusal_class('hard_quota') is False
+        assert rc.bot_registry.is_awaitable_refusal_class('unknown') is False
+        assert 'coderabbit' in rc.bot_registry.bot_kinds()
+
+    def test_gate_delta_awaits_only_awaitable_refusal(self):
+        """The gate delta awaits the window reset, never a hard quota."""
+        rgd = load_script_module('plan-marshall', 'automatic-review', 'review_gate_delta.py', register=False)
+
+        assert rgd.REVIEW_RATE_WINDOW_AWAIT is True
+        assert rgd.should_await_refusal('awaitable_window') is True
+        assert rgd.should_await_refusal('hard_quota') is False
+        assert rgd.should_await_refusal('unknown') is False

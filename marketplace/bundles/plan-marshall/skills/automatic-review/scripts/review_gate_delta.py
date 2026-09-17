@@ -171,6 +171,24 @@ WITHHELD_PARTIAL_COVERAGE = 'partial_reviewer_coverage'
 WITHHELD_UNPARTITIONED = 'unpartitioned_escapes'
 WITHHELD_NO_ESCAPES = 'no_escapes_to_partition'
 
+#: Whether the review rate-window await behaviour is on for the awaitable refusal
+#: class. PLAN-03 pair decision: turned on with CodeRabbit required. Demotion of
+#: CodeRabbit back to optional is explicitly rejected with rationale: the awaitable
+#: refusal recovers by waiting, so demotion would discard recoverable coverage and
+#: hide the await signal this gate delta records for audit.
+REVIEW_RATE_WINDOW_AWAIT = True
+
+
+def should_await_refusal(rate_limit_class_value: str) -> bool:
+    """Return True when a refusal in ``rate_limit_class_value`` should be awaited.
+
+    Awaitable refusals reopen on their own, so the gate awaits the window reset
+    instead of advising demotion. Non-awaitable classes never await. The decision
+    is auditable alongside the gate delta rather than hidden in orchestration.
+    """
+    return REVIEW_RATE_WINDOW_AWAIT and rate_limit_class_value == 'awaitable_window'
+
+
 _PROVENANCE = (
     'escapes are the actionable pr-comment findings filed against a tree the '
     'in-house gates had already passed — gate verdict green AND gate_head_sha == '

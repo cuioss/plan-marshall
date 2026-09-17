@@ -317,6 +317,31 @@ def refusal_layers(body: str, bot_kind: str | None = None) -> list[str]:
     return layers
 
 
+_SHA_TOKEN = re.compile(r'\b[0-9a-f]{40}\b', re.IGNORECASE)
+
+
+def bot_claimed_sha_matches_head(body: str, head_sha: str) -> bool:
+    """Return True when the bot-claimed reviewed SHA equals the merge HEAD.
+
+    SHA-comparison currency guard (PLAN-03): the guard compares the SHA the bot
+    says it reviewed — a bare 40-hex token or a ``.../commit/{sha}`` permalink
+    embedded in the comment body — against the merge HEAD instead of
+    ordering comment timestamps. A force-push after a bot review therefore no
+    longer credits the stale review as current, while the current-review path
+    keeps crediting when the SHAs match. No SHA token means no claim, never a
+    match.
+    """
+    if not body or not head_sha:
+        return False
+    candidate = head_sha.strip().lower()
+    if not candidate:
+        return False
+    for token in _SHA_TOKEN.findall(body):
+        if token.lower() == candidate:
+            return True
+    return False
+
+
 # ---------------------------------------------------------------------------
 # The enumerative arm — recognising a refusal no earlier arm matched
 # ---------------------------------------------------------------------------

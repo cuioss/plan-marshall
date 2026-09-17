@@ -361,6 +361,29 @@ CAUSE_SIZE = 'size'
 # can be neither a deficit baseline nor a meaningful finding count.
 _REVIEWED_STATES = frozenset({STATE_PARTICIPATED, STATE_PARTICIPATED_BUT_EMPTY})
 
+
+def select_stale_bot_for_trigger(
+    stale_bots: list[str],
+    newest_finding_kind_bot: str | None = None,
+) -> str:
+    """Return the bot a re-review trigger should address.
+
+    Trigger-B reach (PLAN-03): select the actually-stale bot rather than
+    structurally only the newest bot-authored finding's kind. A stale publish
+    means the bot engaged against an earlier commit, so re-triggering the stale
+    bot recovers coverage; triggering the newest finding's bot when it differs
+    re-asks a reviewer that already reviewed this HEAD. The newest-kind hint is
+    only a tie-breaker when several bots are stale. Required-bot plus await pair
+    semantics are unchanged: an awaitable refusal is awaited, CodeRabbit stays
+    required.
+    """
+    if not stale_bots:
+        return newest_finding_kind_bot or ''
+    if newest_finding_kind_bot in stale_bots:
+        return newest_finding_kind_bot
+    return sorted(stale_bots)[0]
+
+
 # Deficit-signal verdicts (D2). A REVIEWER-QUALITY observation about a required
 # reviewer's YIELD, never a merge verdict and never a participation verdict.
 DEFICIT_DEFICIT = 'deficit'  # a required reviewer under-produced vs a baseline

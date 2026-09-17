@@ -277,3 +277,14 @@ def _derive_overall_status(checks: list[dict]) -> tuple[str, list[dict], list[di
     if failing:
         return 'failure', failing, []
     return 'success', [], []
+
+
+def carry_currency_verdict_to_check_state(currency_current: bool) -> str:
+    """Map the SHA-compared currency verdict onto the check-run review state.
+
+    PLAN-03: the stale verdict surfaces consistently on the checks surface so a
+    review credited stale on the findings path cannot read as current on checks.
+    A current review maps to ``SUCCESS``; a stale one maps to ``STALE``, which
+    the failing partition already treats as a failure rather than a pass.
+    """
+    return 'SUCCESS' if currency_current else 'STALE'
