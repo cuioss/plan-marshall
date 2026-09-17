@@ -204,6 +204,7 @@ _precond = _load_module('ci_complete_precondition_test', 'ci_complete_preconditi
 
 resolve = _precond.resolve
 
+
 def _load_manifest_module(name: str):
     """Load the manage-execution-manifest entry script.
 
@@ -219,6 +220,7 @@ def _load_manifest_module(name: str):
         'plan-marshall', 'manage-execution-manifest', 'manage-execution-manifest.py', name, register=False
     )
 
+
 class _StubCiWait:
     """Return a canned ``ci wait`` envelope."""
 
@@ -227,6 +229,7 @@ class _StubCiWait:
 
     def __call__(self, *_args, **_kwargs) -> dict:
         return self.envelope
+
 
 def test_classify_check_failure_precedes_deadline_exceeded():
     """A concluded build failure stays a build failure even under a wait deadline."""

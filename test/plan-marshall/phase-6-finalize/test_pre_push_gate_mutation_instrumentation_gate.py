@@ -196,6 +196,7 @@ def _ticks(*values: float):
 
     return _monotonic
 
+
 @pytest.fixture
 def recorded_argv(monkeypatch) -> list[list[str]]:
     """Capture every argv at the LOWEST subprocess primitive, running nothing.
@@ -219,9 +220,11 @@ def recorded_argv(monkeypatch) -> list[list[str]]:
     monkeypatch.setattr(build.time, 'monotonic', _ticks(100.0, 130.0))
     return calls
 
+
 def _gate_fields(*keys: str) -> dict:
     """Read the gate's frontmatter through the registry's OWN extraction primitive."""
     return extension_discovery._read_frontmatter_fields(_GATE_DOC, keys)
+
 
 def _settle_band_order_bound() -> int:
     """Read the settle-band order bound off ``verdict-currency.md``'s trigger table.
@@ -236,6 +239,7 @@ def _settle_band_order_bound() -> int:
         'expected form, so the enrolment conjunction below cannot be derived'
     )
     return int(match.group(1))
+
 
 def test_dirty_unrelated_file_is_swept_into_the_instrumentation_commit(seeded_repo: Path):
     """An unrelated dirty tracked file lands in the instrumentation commit.

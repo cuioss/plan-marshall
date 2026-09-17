@@ -456,6 +456,7 @@ def _pool_docs() -> list:
         docs.extend(sorted(root.rglob('*.md')))
     return docs
 
+
 def _widening_obligated() -> list[tuple[str, list[str]]]:
     """Return `(relative_path, non_manage_notations)` for every doc the sweep obligates.
 
@@ -470,6 +471,7 @@ def _widening_obligated() -> list[tuple[str, list[str]]]:
             obligated.append((str(doc.relative_to(MARKETPLACE_ROOT)), non_manage))
     return obligated
 
+
 _WIDENING_OBLIGATED = _widening_obligated()
 
 assert _WIDENING_OBLIGATED, (
@@ -477,6 +479,7 @@ assert _WIDENING_OBLIGATED, (
     f'{[str(r.name) for r in _POOL_ROOTS]} was found to invoke a non-manage-* script — the '
     'widening population is vacuous and the sweep would pass over an empty set'
 )
+
 
 def _ci_invocation_sections() -> list[tuple[str, str, bool]]:
     """Return `(relative_path, section_heading, has_shape_requirement)` per `ci`-invoking section.
@@ -506,19 +509,23 @@ def _ci_invocation_sections() -> list[tuple[str, str, bool]]:
                 )
     return found
 
+
 _CI_SECTIONS = _ci_invocation_sections()
 
 assert _CI_SECTIONS, (
     'no `ci` invocation was scanned from the finalize doc pool — the discharge sweep would pass over an empty set'
 )
 
+
 def _obligated_id(item: tuple[str, list[str]]) -> str:
     return re.sub(r'[^A-Za-z0-9]+', '-', item[0]).strip('-').lower()
+
 
 def _ci_section_id(item: tuple[str, str, bool]) -> str:
     path, heading, _shape = item
     stem = f'{path.rsplit("/", 1)[-1]}--{heading.lstrip("# ")}'
     return re.sub(r'[^A-Za-z0-9]+', '-', stem).strip('-').lower()[:80]
+
 
 _REVIEW_COMPLETENESS = _SKILLS / 'automatic-review' / 'scripts' / 'review_completeness.py'
 
@@ -529,11 +536,13 @@ _FORM_ROUTE_RE = re.compile(
 
 _LIST_FLAG_RE = re.compile(r"add_argument\(\s*'(--[a-z-]+)'[^)]*?nargs\s*=\s*'\?'", re.DOTALL)
 
+
 def _function_body(source: str, name: str) -> str:
     """The text of top-level ``def name`` up to the next top-level ``def``."""
     start = source.index(f'def {name}(')
     end = source.find('\ndef ', start)
     return source[start:] if end == -1 else source[start:end]
+
 
 def _derive_form_sets() -> tuple[frozenset[str], frozenset[str]]:
     """``(pair_form, bare_form)`` read off ``_parse_bot_observations``'s routing."""
@@ -544,6 +553,7 @@ def _derive_form_sets() -> tuple[frozenset[str], frozenset[str]]:
         target = bare if match.group('fn') == '_split_bots' else pair
         target.add(match.group('flag'))
     return frozenset(pair), frozenset(bare)
+
 
 def _declared_list_flags() -> frozenset[str]:
     """Every bot-list flag the shared adder declares, matched by shape.
@@ -563,6 +573,7 @@ def _declared_list_flags() -> frozenset[str]:
     )
     return flags
 
+
 PAIR_FORM_FLAGS, BARE_FORM_FLAGS = _derive_form_sets()
 
 _PAIR_MARKER = 'PAIRS'
@@ -572,6 +583,7 @@ _BARE_MARKER = 'BARE'
 _PROSE_FLAG_RE = re.compile(r'`(--[a-z][a-z-]*)`')
 
 _FORM_PROSE_DOCS = (_BARRIER_DOC, _REVIEW_DOC)
+
 
 def _form_paragraph(doc) -> str:
     """The single paragraph in *doc* that enumerates the two form sets."""
@@ -585,6 +597,7 @@ def _form_paragraph(doc) -> str:
     )
     return paragraphs[0]
 
+
 def _named_form_sets(paragraph: str) -> tuple[frozenset[str], frozenset[str]]:
     """The ``(pair, bare)`` flag sets *paragraph* names, split at the BARE marker."""
     marker_at = paragraph.find(_BARE_MARKER)
@@ -596,6 +609,7 @@ def _named_form_sets(paragraph: str) -> tuple[frozenset[str], frozenset[str]]:
         frozenset(_PROSE_FLAG_RE.findall(paragraph[:marker_at])),
         frozenset(_PROSE_FLAG_RE.findall(paragraph[marker_at:])),
     )
+
 
 class TestWideningReachesTheWholeFinalizePool:
     """Every finalize doc that invokes a non-``manage-*`` script carries the widened convention.

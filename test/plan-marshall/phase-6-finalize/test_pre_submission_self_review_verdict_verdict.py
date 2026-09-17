@@ -242,6 +242,7 @@ _TASK_SPAWN = re.compile(r'^\s*Task:\s+plan-marshall:', re.MULTILINE)
 
 _ACCEPTANCE_TOKEN = 'acceptance: accepted'
 
+
 def _optional_section(text: str, heading: str) -> str:
     """Return a heading-bounded section, or the empty string when absent.
 
@@ -253,6 +254,7 @@ def _optional_section(text: str, heading: str) -> str:
     if not any(line.strip() == heading for line in text.splitlines()):
         return ''
     return '\n'.join(section_lines(text, heading, _STOP_PREFIXES))
+
 
 def _table_rows(text: str, header_literal: str) -> list[list[str]]:
     """Return the body rows of the table whose first header cell is ``header_literal``.
@@ -285,6 +287,7 @@ def _table_rows(text: str, header_literal: str) -> list[list[str]]:
         index = row_index
     return rows
 
+
 def _declared_roles(section: str) -> dict[str, str]:
     """Map each declared role name to the context its row says it runs in.
 
@@ -300,11 +303,13 @@ def _declared_roles(section: str) -> dict[str, str]:
         roles[name] = row[-1]
     return roles
 
+
 def _independence_is_implemented(doc: str) -> bool:
     """Whether the workflow doc implements the role-separated arrangement."""
     declares_roles = bool(_optional_section(doc, _INDEPENDENCE_HEADING))
     dispatches_verifier = bool(_optional_section(doc, _VERIFIER_STEP_HEADING))
     return declares_roles and dispatches_verifier
+
 
 def _limitation_is_recorded(doc: str, surfacer_doc: str) -> bool:
     """Whether the honest-alternative arrangement is recorded in BOTH docs.
@@ -315,6 +320,7 @@ def _limitation_is_recorded(doc: str, surfacer_doc: str) -> bool:
     """
     return _SAME_PARTY_MARKER in doc.lower() and _SAME_PARTY_MARKER in surfacer_doc.lower()
 
+
 _STOP_ANSWER_YES = 'may_close: yes'
 
 _AUTHOR_PREDICATE = 'findings list is empty'
@@ -324,6 +330,7 @@ _BRANCH_LABEL = re.compile(r'^\*\*Branch ([A-Z]) — (.+?)\*\*', re.MULTILINE)
 _RECORDED_OUTCOME = re.compile(r'--outcome\s+([a-z_]+)')
 
 _CARVE_OUT_MARKER = 'zero-generator fallback'
+
 
 def _slice_branches(section: str) -> dict[str, str]:
     """Map each branch letter to the text between its label and the next label.
@@ -340,11 +347,14 @@ def _slice_branches(section: str) -> dict[str, str]:
         bodies[match.group(1)] = section[match.start() : end]
     return bodies
 
+
 def _branch_label(body: str) -> str:
     """The label line of a branch body — the line its selector is written on."""
     return body.split('\n', 1)[0]
 
+
 _BRANCH_PRECONDITION = re.compile(r'^\*\*Precondition.*$', re.MULTILINE)
+
 
 def _branch_precondition(body: str) -> str:
     """The branch's own Precondition paragraph(s), joined.
@@ -353,6 +363,7 @@ def _branch_precondition(body: str) -> str:
     the label rather than assuming every branch carries a Precondition line.
     """
     return '\n'.join(_BRANCH_PRECONDITION.findall(body))
+
 
 def _branch_selector(body: str) -> str:
     """The text a branch's routing decision is actually keyed on.
@@ -363,17 +374,21 @@ def _branch_selector(body: str) -> str:
     """
     return _branch_label(body) + '\n' + _branch_precondition(body)
 
+
 def _branch_bodies() -> dict[str, str]:
     """The Step 4 branch bodies of the real workflow document."""
     return _slice_branches(_optional_section(_doc_text(), _BRANCH_A_SECTION_HEADING))
+
 
 def _branches_recording(bodies: dict[str, str], outcome: str) -> dict[str, str]:
     """The branches whose own text records ``--outcome {outcome}``."""
     return {letter: body for letter, body in bodies.items() if outcome in _RECORDED_OUTCOME.findall(body)}
 
+
 def _branches_recording_done() -> dict[str, str]:
     """The Step 4 branches whose own text records `--outcome done`."""
     return _branches_recording(_branch_bodies(), 'done')
+
 
 def test_output_section_is_present_and_non_empty():
     section = _section(_OUTPUT_HEADING)

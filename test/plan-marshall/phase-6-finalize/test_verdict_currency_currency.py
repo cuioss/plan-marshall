@@ -92,6 +92,7 @@ _EXT_POINT = 'plan-marshall:extension-api/standards/ext-point-finalize-step'
 def _patch_declaration(monkeypatch, globs, head_dependent, unresolved):
     monkeypatch.setattr(_mod, 'resolve_verdict_inputs', lambda _step: (globs, head_dependent, unresolved))
 
+
 def _git(repo: Path, *args: str) -> str:
     completed = subprocess.run(
         ['git', '-C', str(repo), *args],
@@ -100,6 +101,7 @@ def _git(repo: Path, *args: str) -> str:
         check=True,
     )
     return completed.stdout.strip()
+
 
 @pytest.fixture
 def git_repo(tmp_path: Path) -> Path:
@@ -114,6 +116,7 @@ def git_repo(tmp_path: Path) -> Path:
     _git(repo, 'config', 'commit.gpgsign', 'false')
     return repo
 
+
 def _commit(repo: Path, relative: str, body: str) -> str:
     target = repo / relative
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -121,6 +124,7 @@ def _commit(repo: Path, relative: str, body: str) -> str:
     _git(repo, 'add', relative)
     _git(repo, 'commit', '--quiet', '-m', f'touch {relative}')
     return _git(repo, 'rev-parse', 'HEAD')
+
 
 def _declared_surfaces() -> dict[str, tuple[list[str], bool]]:
     """Map every discovered step to its (verdict_inputs, head_dependent) facts."""
@@ -137,11 +141,14 @@ def _declared_surfaces() -> dict[str, tuple[list[str], bool]]:
         surfaces[str(record.get('name', ''))] = (globs, bool(fields.get('head_dependent', False)))
     return surfaces
 
+
 _GLOB_METACHARACTERS = ('*', '?')
+
 
 def _is_wildcard_free(glob: str) -> bool:
     """True when a declared glob names one literal path rather than a family."""
     return not any(char in glob for char in _GLOB_METACHARACTERS)
+
 
 def _tracked_paths() -> frozenset[str]:
     """Every git-tracked path in the repository, repo-relative and slash-separated."""
@@ -152,6 +159,7 @@ def _tracked_paths() -> frozenset[str]:
         check=True,
     )
     return frozenset(entry for entry in result.stdout.split('\0') if entry)
+
 
 def _wildcard_free_offenders(
     surfaces: dict[str, tuple[list[str], bool]],
@@ -185,6 +193,7 @@ def _wildcard_free_offenders(
                 offenders.append(f'{step} declares {glob!r} — {reason}')
     return offenders, examined
 
+
 _VERDICT_CURRENCY_DOC = get_skill_dir('plan-marshall', 'phase-6-finalize') / 'standards' / 'verdict-currency.md'
 
 _REFUSAL_HEADING = 'Verdict-input surface — deliberately undeclared'
@@ -192,6 +201,7 @@ _REFUSAL_HEADING = 'Verdict-input surface — deliberately undeclared'
 _REFUSAL_HEADING_RE = re.compile(rf'^(#{{1,6}})\s+{re.escape(_REFUSAL_HEADING)}\s*$', re.MULTILINE)
 
 _REFUSAL_HEADING_LEVELS = frozenset({'##', '###'})
+
 
 def _refusal_heading_level(body: str) -> str | None:
     """The ATX level of the refusal heading in ``body``, or ``None`` if absent.
@@ -203,6 +213,7 @@ def _refusal_heading_level(body: str) -> str | None:
     match = _REFUSAL_HEADING_RE.search(body)
     return match.group(1) if match else None
 
+
 def _tabled_refusals() -> list[str]:
     """Derive the step ids named in verdict-currency.md's refusal table.
 
@@ -213,6 +224,7 @@ def _tabled_refusals() -> list[str]:
     return [
         m.group(1) for m in re.finditer(r'^\|\s*`((?:default|project|plan-marshall):[^`]+)`\s*\|', text, re.MULTILINE)
     ]
+
 
 def test_disjoint_change_preserves_the_verdict():
     """A change touching nothing in the surface cannot alter the verdict."""

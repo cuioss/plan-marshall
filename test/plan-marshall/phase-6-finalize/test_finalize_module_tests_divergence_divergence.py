@@ -194,6 +194,7 @@ def _gate_text() -> str:
     text: str = _GATE_DOC.read_text(encoding='utf-8')
     return text
 
+
 def _lock_step_sites() -> dict[str, str]:
     """Return the named sites that must all describe the same guard set.
 
@@ -222,6 +223,7 @@ def _lock_step_sites() -> dict[str, str]:
             sites.setdefault('branch-b-display-detail', stripped)
     return sites
 
+
 def _section(heading: str) -> list[str]:
     """Return the body lines under ``heading``, up to the next heading.
 
@@ -240,15 +242,19 @@ def _section(heading: str) -> list[str]:
         body.append(line)
     return body
 
+
 def _default_scope_quality_gate_resolves(lines: list[str]) -> list[str]:
     """Return the ``quality-gate`` resolves carrying NO ``--module`` argument."""
     return [line for line in lines if _QG_RESOLVE.search(line) and not _MODULE_ARG.search(line)]
 
+
 def _names_all_three_dimensions(text: str) -> bool:
     return all(dimension in text for dimension in _WHOLE_TREE_ONLY_DIMENSIONS)
 
+
 def _is_emitted_warning(line: str) -> bool:
     return _EMITTED_WARNING in line
+
 
 def _degradation_warning_lines() -> list[str]:
     """Return the WARNINGs the gate EMITS on the whole-tree quality-gate skip path.
@@ -265,6 +271,7 @@ def _degradation_warning_lines() -> list[str]:
         for line in _gate_text().splitlines()
         if _is_emitted_warning(line) and _WHOLE_TREE_QUALITY_GATE.search(line)
     ]
+
 
 def _worked_example_block() -> list[str]:
     """Return the fenced block rendering the degradation template for this repo.
@@ -290,6 +297,7 @@ def _worked_example_block() -> list[str]:
             block.append(line)
     return block
 
+
 def _degradation_template_block() -> list[str]:
     """Return the lines declaring the two renderings of the degradation template.
 
@@ -314,6 +322,7 @@ def _degradation_template_block() -> list[str]:
         block.append(line)
     return block
 
+
 def _enumerated_dimension_items() -> list[str]:
     """Return the numbered items of the gate document's own dimension enumeration.
 
@@ -333,6 +342,7 @@ def _enumerated_dimension_items() -> list[str]:
             items.append(line)
     return items
 
+
 _NON_RUN_LIST_LABEL = '**Branch A does not mean every arm ran.**'
 
 _NON_RUN_LIST_TERMINATOR = '**A non-finish is not on that list'
@@ -350,6 +360,7 @@ _MODULE_TESTS_DEGRADATION_TOKENS = ('module-tests DEGRADED', 'module-tests UN-GA
 _MODULE_TESTS_DETAIL_VARIANT_HEADING = re.compile(r'\*\*Detail variant — module-tests ')
 
 _FORBIDDEN_GREEN_CLAIM = 'module-tests green'
+
 
 def _non_run_list_items() -> list[str]:
     """Return the numbered items of Branch A's derived non-run path list.
@@ -369,6 +380,7 @@ def _non_run_list_items() -> list[str]:
             items.append(line)
     return items
 
+
 def _module_tests_degradation_payloads() -> list[str]:
     """Return every documented `display_detail` payload reporting a non-run module-tests arm."""
     return [
@@ -376,6 +388,7 @@ def _module_tests_degradation_payloads() -> list[str]:
         for payload in _DISPLAY_DETAIL_PAYLOAD.findall(_gate_text())
         if any(token in payload for token in _MODULE_TESTS_DEGRADATION_TOKENS)
     ]
+
 
 @pytest.mark.parametrize(
     'footprint',

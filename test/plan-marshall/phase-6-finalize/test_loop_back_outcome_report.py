@@ -169,6 +169,7 @@ def _args(
 
 _TRIAGE_MD = get_skill_dir('plan-marshall', 'plan-marshall') / 'workflow' / 'triage.md'
 
+
 def test_dispatcher_re_fires_on_loop_back(plan_context):
     """Pre-seed loop_back; verify the persisted record matches the dispatcher's
     re-fire predicate documented in phase-6-finalize/SKILL.md Resumability.

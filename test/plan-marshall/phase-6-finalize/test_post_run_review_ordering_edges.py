@@ -189,6 +189,7 @@ _TRACKED_PLAN_STATE = '.plan/local/status.json'
 
 _UNTRACKED_PLAN_STATE = '.plan/local/logs/work.log'
 
+
 def _git(repo: Path, *args: str) -> subprocess.CompletedProcess:
     """Run one git command against ``repo`` with a pinned, hermetic identity.
 
@@ -216,12 +217,14 @@ def _git(repo: Path, *args: str) -> subprocess.CompletedProcess:
         check=True,
     )
 
+
 def _write(repo: Path, rel_path: str, content: str) -> Path:
     """Write ``content`` to ``repo/rel_path``, creating parents as needed."""
     target = repo / rel_path
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(content, encoding='utf-8')
     return target
+
 
 @pytest.fixture
 def committed_repo(tmp_path: Path) -> Path:
@@ -242,6 +245,7 @@ def committed_repo(tmp_path: Path) -> Path:
     _git(repo, 'add', '-f', _TRACKED_SOURCE, _TRACKED_PLAN_STATE)
     _git(repo, 'commit', '-m', 'chore: seed worktree')
     return repo
+
 
 @pytest.mark.parametrize('member', _REQUIRED_MEMBERS)
 def test_derived_set_contains_required_member(member):

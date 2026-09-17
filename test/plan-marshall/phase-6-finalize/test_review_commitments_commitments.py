@@ -65,6 +65,7 @@ index 1111111..2222222 100644
      omega
 """
 
+
 def test_a_fixed_finding_commits_to_its_line():
     """`fixed` means the review asked and the run changed the code — a commitment."""
     commitments = derive_commitments([_finding(resolution='fixed')])

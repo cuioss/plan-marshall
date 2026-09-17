@@ -65,6 +65,7 @@ index 1111111..2222222 100644
      omega
 """
 
+
 def test_acknowledged_dispositions_commit_too():
     """`accepted` / `taken_into_account` absorbed the reviewer's point — also commitments.
 

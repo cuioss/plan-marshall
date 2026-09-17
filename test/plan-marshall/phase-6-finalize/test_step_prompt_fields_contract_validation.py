@@ -294,6 +294,7 @@ _INPUT_TABLE_HEADER = 'prompt-body field'
 
 _REQUIRED_AFFIRMATIVE = frozenset({'yes'})
 
+
 def _table_cells(line: str) -> list[str]:
     """Split one markdown table row into stripped cells."""
     stripped = line.strip()
@@ -303,10 +304,13 @@ def _table_cells(line: str) -> list[str]:
         stripped = stripped[:-1]
     return [cell.strip() for cell in stripped.split('|')]
 
+
 def _is_delimiter_row(cells: list[str]) -> bool:
     return bool(cells) and all(re.fullmatch(r':?-{2,}:?', cell) for cell in cells)
 
+
 _EMPHASIS_PAIR = re.compile(r'^([*_]{1,3})(.+?)\1$')
+
 
 def _strip_emphasis(cell: str) -> str:
     """A table cell with every wrapping layer of markdown emphasis removed.
@@ -321,6 +325,7 @@ def _strip_emphasis(cell: str) -> str:
         text = match.group(2).strip()
     return text
 
+
 def _normalize_key(cell: str) -> str:
     """A table row's key cell reduced to a bare field name.
 
@@ -329,6 +334,7 @@ def _normalize_key(cell: str) -> str:
     """
     key = _strip_emphasis(cell).strip('`').strip()
     return re.sub(r'\[[^\]]*\]$', '', key)
+
 
 def _required_table_keys(doc_path: Path) -> set[str]:
     """The keys a doc's prompt-body-field table(s) mark Required.
@@ -367,9 +373,11 @@ def _required_table_keys(doc_path: Path) -> set[str]:
         index = row_index
     return keys
 
+
 def _table_step_specific_keys(doc_path: Path) -> set[str]:
     """The Required input-table keys that are step-specific (outside the exempt set)."""
     return _required_table_keys(doc_path) - _EXEMPT_FIELDS
+
 
 def _ext_point_doc() -> Path:
     """Resolve the ext-point standard's own path from :data:`_EXT_POINT`.
@@ -389,6 +397,7 @@ def _ext_point_doc() -> Path:
     )
     return path
 
+
 _EMPHASIS_SPELLINGS = ('*{}*', '_{}_', '**{}**', '__{}__')
 
 _SYNTH_TABLE_DOC = (
@@ -396,6 +405,7 @@ _SYNTH_TABLE_DOC = (
     '|---|---|:--------:|---|\n'
     '| `candidates` | toon | Yes | the surfaced candidates |\n'
 )
+
 
 def _differing_lines(left: Path, right: Path) -> list[int]:
     """Indices of the lines on which two same-length fixtures differ."""
@@ -406,6 +416,7 @@ def _differing_lines(left: Path, right: Path) -> list[int]:
         f'outcome cannot be attributed to the header cell alone.'
     )
     return [index for index, (one, other) in enumerate(zip(left_lines, right_lines, strict=True)) if one != other]
+
 
 _SYNTH_CALLER_PHASE = (
     'Task: plan-marshall:{target}\n'
@@ -459,12 +470,14 @@ _SYNTH_CANDIDATES = (
     '    WORKTREE: {worktree_path}\n'
 )
 
+
 def _synthetic_carried(block_text: str) -> set[str]:
     """Step-specific fields of a single synthetic block (no file I/O)."""
     carried: set[str] = set()
     for block in _prompt_blocks(block_text):
         carried |= _block_prompt_fields(block)
     return carried - _EXEMPT_FIELDS
+
 
 def test_at_least_one_declaring_doc_has_a_parseable_dispatch_block():
     """Vacuity guard for the CONDITIONAL ∃-direction.

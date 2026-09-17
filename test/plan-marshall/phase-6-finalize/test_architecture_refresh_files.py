@@ -437,11 +437,13 @@ authorise.
 
 _SHELL_EXTRACTION = re.compile(r'(?:^|\s)(?:rm|mkdir|tar)\s|\bgit\b[^\n]*\barchive\b')
 
+
 def _scan_shell_extraction(text: str) -> tuple[list[str], int]:
     """Return ``(extraction command lines, fenced command lines examined)``."""
     commands = fenced_command_lines(text)
     offenders = [line.strip() for line in commands if _SHELL_EXTRACTION.search(line)]
     return offenders, len(commands)
+
 
 _REMOVED_EXTRACTION_BLOCK = """\
 ```bash
@@ -461,13 +463,16 @@ tar -xf {worktree_path}/.plan/temp/architecture-baseline.tar -C {worktree_path}/
 ```
 """
 
+
 def _restated_classes(text: str) -> list[str]:
     """Delta-class names written as code spans — the form a restated class table takes."""
     return [name for name in DELTA_CLASSES if f'`{name}`' in text]
 
+
 _CLASS_TABLE_HEADER = '| Class | Attribution | Detected when |'
 
 _CLASS_TABLE_ROW = re.compile(r'^\|\s*`([^`]+)`\s*\|\s*([^|]+?)\s*\|')
+
 
 def _published_class_attributions(text: str) -> dict[str, str]:
     """Parse ``class -> attribution`` out of the published delta-class table.
@@ -512,6 +517,7 @@ def _published_class_attributions(text: str) -> dict[str, str]:
             parsed[class_name] = attribution
     return parsed
 
+
 _MATRIX_CASES = [
     # baseline absent, tier-0 enabled — Branch A short-circuit.
     (False, 'enabled', 'prompt', 'feature', False, 'A', 'no committed origin/main', None),
@@ -537,6 +543,7 @@ _MATRIX_CASES = [
     # tier-0 enabled, drift, tier-1 prompt declined — Branch F.
     (True, 'enabled', 'prompt', 'feature', True, 'F', 're-enrichment deferred', 'Skip — note in PR'),
 ]
+
 
 class TestTier0EnabledMatrix:
     """Step 3 — deterministic discover + diff against the extracted baseline."""

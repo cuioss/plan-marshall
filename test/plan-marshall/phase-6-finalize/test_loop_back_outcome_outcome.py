@@ -169,6 +169,7 @@ def _args(
 
 _TRIAGE_MD = get_skill_dir('plan-marshall', 'plan-marshall') / 'workflow' / 'triage.md'
 
+
 def test_iteration_1_fix_records_loop_back_outcome(plan_context):
     """Driving the FIX-disposition path records ``loop_back`` on disk.
 

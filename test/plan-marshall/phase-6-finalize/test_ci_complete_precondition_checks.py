@@ -211,6 +211,7 @@ class _CapturingSubprocessRun:
         self.captured_kwargs = dict(kwargs)
         return subprocess.CompletedProcess(args=cmd, returncode=0, stdout=self.stdout, stderr='')
 
+
 def _raise_timeout_expired(
     cmd, *args, **kwargs
 ):  # deliberately unannotated: it accepts whatever subprocess.run is called with
@@ -220,6 +221,7 @@ def _raise_timeout_expired(
     kwarg into the exception so the message can name the breached ceiling.
     """
     raise subprocess.TimeoutExpired(cmd=cmd, timeout=kwargs.get('timeout'))
+
 
 class _StubTimeoutGetSeeded:
     """Deterministic ``run_config timeout get`` substitute.
@@ -236,6 +238,7 @@ class _StubTimeoutGetSeeded:
         self.calls.append(default_seconds)
         return self.seeded_value
 
+
 class _StubTimeoutGetMissing:
     """Models a run-configuration.json with no ci:wait entry — the helper
     echoes the supplied default straight back.
@@ -248,7 +251,9 @@ class _StubTimeoutGetMissing:
         self.calls.append(default_seconds)
         return default_seconds
 
+
 _FIXTURE_DIR = PROJECT_ROOT / 'test' / 'plan-marshall' / 'phase-6-finalize' / 'fixtures' / 'ci-wait'
+
 
 def _load_parse_toon():
     """Import parse_toon from the ref-toon-format skill.
@@ -259,7 +264,9 @@ def _load_parse_toon():
     """
     return load_script_module('plan-marshall', 'ref-toon-format', 'toon_parser.py', register=False).parse_toon
 
+
 _parse_toon = _load_parse_toon()
+
 
 def _make_fixture_wait_runner(parsed: dict):
     """Build a ci_wait_runner stub that returns the parsed-fixture dict."""
@@ -270,6 +277,7 @@ def _make_fixture_wait_runner(parsed: dict):
         return parsed
 
     return _runner
+
 
 def _run_fixture_through_resolver(fixture_path, plan_id):
     """Parse a fixture file and feed the parsed dict through resolve()."""
@@ -290,6 +298,7 @@ def _run_fixture_through_resolver(fixture_path, plan_id):
         timeout_set_runner=_StubTimeoutSet(),
     )
 
+
 def _sonar_red_ci_envelope() -> dict:
     """A terminal CI envelope that is red ONLY via the Sonar check.
 
@@ -305,6 +314,7 @@ def _sonar_red_ci_envelope() -> dict:
         ],
         'wait_outcome': 'completed',
     }
+
 
 def test_cache_miss_then_hit_does_not_repoll(plan_context):
     plan_id = 'ci-precond-cache-miss-then-hit'

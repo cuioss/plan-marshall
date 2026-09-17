@@ -155,6 +155,7 @@ _MARSHAL_JSON_REFERENCE_MD = (
 
 _MANAGE_CONFIG_SKILL_MD = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'manage-config' / 'SKILL.md'
 
+
 class TestManifestApiContract:
     """The shape phase-6-finalize reads via ``manage-execution-manifest read``."""
 

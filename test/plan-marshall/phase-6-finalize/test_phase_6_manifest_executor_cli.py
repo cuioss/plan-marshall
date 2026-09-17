@@ -155,6 +155,7 @@ _MARSHAL_JSON_REFERENCE_MD = (
 
 _MANAGE_CONFIG_SKILL_MD = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'manage-config' / 'SKILL.md'
 
+
 class TestResumableReentry:
     def test_done_step_skipped_on_reentry(self, plan_context):
         """A step marked outcome=done MUST be skipped on the next dispatch."""

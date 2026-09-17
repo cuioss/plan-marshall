@@ -164,6 +164,7 @@ def _artifact_lists(doc_path: Path, key: str) -> list[str]:
         return []
     return [str(item) for item in (value if isinstance(value, list) else [value])]
 
+
 def derive_artifact_edges() -> list[dict]:
     """Derive read-before-destroy edges from the ``reads`` / ``destroys`` vocabulary.
 
@@ -202,11 +203,13 @@ def derive_artifact_edges() -> list[dict]:
         if d_artifact == artifact
     ]
 
+
 _PR_PRODUCER = 'default:create-pr'
 
 _ERA_STAMP_STEP = 'project:finalize-step-era-stamp-fill'
 
 _CI_CONSUMER = 'default:ci-verify'
+
 
 def _order_of(step_name: str) -> int:
     """Read one discovered step's ``order`` off the registry, never a literal."""
@@ -223,7 +226,9 @@ def _order_of(step_name: str) -> int:
         f'era-stamp adjacency assertion has nothing to read and would pass vacuously.'
     )
 
+
 _PUSH_BARRIER = 'default:push'
+
 
 def _push_barrier_order() -> int | None:
     for record in _finalize_records():
@@ -231,6 +236,7 @@ def _push_barrier_order() -> int | None:
             order = record.get('order')
             return order if isinstance(order, int) else None
     return None
+
 
 def derive_push_barrier_edges() -> list[dict]:
     """Derive the ``step → barrier`` edges the push contract implies.
@@ -269,6 +275,7 @@ def derive_push_barrier_edges() -> list[dict]:
                 }
             )
     return edges
+
 
 def test_edge_set_is_derived_and_non_empty():
     """The derivation resolves a non-empty edge set — every later assertion depends on it."""

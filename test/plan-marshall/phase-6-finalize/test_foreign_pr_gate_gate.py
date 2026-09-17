@@ -97,6 +97,7 @@ _FOREIGN_OUTLINE_DELIVERABLES = """### 1. Change a foreign repository
 - `/foreign/other/Mutated.java`
 """
 
+
 def test_pushed_no_pr_foreign_deliverable_is_refused_at_archive():
     deliverables = [_deliverable(3, foreign=True, paths=['/foreign/repo/src/Foo.java'])]
     result = _run(

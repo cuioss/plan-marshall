@@ -351,6 +351,7 @@ _ARM_BOUNDARY_RE = re.compile(r'^(?:[ \t]*(?:-|\d+\.)[ \t]+\*\*|#{1,6}[ \t])', r
 
 _RE_REVIEW_NOTATION = 'workflow-integration-github:github_re_review'
 
+
 def _re_review_dispatchers() -> list[Path]:
     """Every marketplace document that DISPATCHES ``github_re_review re-review``.
 
@@ -369,6 +370,7 @@ def _re_review_dispatchers() -> list[Path]:
         )
     )
 
+
 def _outcome_arms(text: str) -> list[tuple[str, str]]:
     """``(antecedent, body)`` for every outcome arm in ``text``.
 
@@ -384,9 +386,11 @@ def _outcome_arms(text: str) -> list[tuple[str, str]]:
         arms.append((match.group('antecedent'), text[match.end() : end]))
     return arms
 
+
 def _matched_arms(text: str) -> list[tuple[str, str]]:
     """The outcome arms whose antecedent fires on a ``matched: true`` return."""
     return [(ante, body) for ante, body in _outcome_arms(text) if 'matched: true' in ante]
+
 
 def _decline_routing_defects(text: str) -> list[str]:
     """Every way ``text``'s ``matched`` arms fail the decline-routing contract.
@@ -410,9 +414,11 @@ def _decline_routing_defects(text: str) -> list[str]:
             defects.append(f'{label!r}: a VERIFIED review is accumulated as a decline')
     return defects
 
+
 _RE_REVIEW_CONSUMERS: list[Path] = [doc for doc in _re_review_dispatchers() if _matched_arms(_read(doc))]
 
 assert _RE_REVIEW_CONSUMERS, 'no re-review dispatcher document carried a matched arm'
+
 
 def _registry_keys(provider: str) -> list[tuple[str, ...]]:
     """Every ``(group, verb[, sub])`` key in a provider's ``HandlerMap`` literal.
@@ -428,9 +434,11 @@ def _registry_keys(provider: str) -> list[tuple[str, ...]]:
     """
     return registry_keys(_read(_PROVIDER_MODULES[provider]))
 
+
 def _registry_handler_names(provider: str) -> dict[tuple[str, ...], str]:
     """Map each registry key to the handler symbol it is bound to."""
     return registry_handler_names(_read(_PROVIDER_MODULES[provider]))
+
 
 def _provider_sources(provider: str) -> ProviderSources:
     """One provider's derivation inputs as text; path resolution stays local."""
@@ -438,6 +446,7 @@ def _provider_sources(provider: str) -> ProviderSources:
         registry_text=_read(_PROVIDER_MODULES[provider]),
         handler_texts=tuple(_read(path) for path in _PROVIDER_HANDLER_SOURCES[provider]),
     )
+
 
 def _merge_shaped_registry_keys(provider: str) -> list[tuple[str, ...]]:
     """The merge-shaped subset of a provider's registry — derived by BEHAVIOUR.
@@ -462,6 +471,7 @@ def _merge_shaped_registry_keys(provider: str) -> list[tuple[str, ...]]:
     population = derive_population({provider: _provider_sources(provider)})
     return [('pr', verb) for _provider, verb, _symbol in population.members]
 
+
 _REGISTRY_SIZES: dict[str, int] = {p: len(_registry_keys(p)) for p in _PROVIDER_MODULES}
 
 _MERGE_SHAPED: dict[str, list[tuple[str, ...]]] = {p: _merge_shaped_registry_keys(p) for p in _PROVIDER_MODULES}
@@ -474,6 +484,7 @@ GUARD_POPULATION_LABEL = 'merge-shaped registry members'
 
 GUARD_POPULATION_SIZE = _MERGE_SHAPED_TOTAL
 
+
 def _handler_source(provider: str, symbol: str) -> str:
     """The source text of one handler function, across the provider's modules.
 
@@ -485,6 +496,7 @@ def _handler_source(provider: str, symbol: str) -> str:
     have no ``def`` line. Path resolution stays here.
     """
     return handler_source(symbol, tuple(_read(path) for path in _PROVIDER_HANDLER_SOURCES[provider]))
+
 
 def _code_without_prose(source: str) -> str:
     """``source`` with every comment and docstring blanked to spaces.
@@ -530,6 +542,7 @@ def _code_without_prose(source: str) -> str:
             )
     return ''.join(chars)
 
+
 _PROSE_ONLY_HANDLER = '''
 def cmd_pr_prose_only(args):
     """Handle 'pr prose-only' — talks about the merge queue and the merge train.
@@ -556,12 +569,14 @@ def cmd_pr_guarded(args):
     }
 '''
 
+
 def _declared_params() -> list[str]:
     """The step's declared param population, from its ``configurable:`` frontmatter."""
     text = _read(_BRANCH_CLEANUP)
     _, _, after = text.partition('configurable:')
     front, _, _ = after.partition('\n---')
     return _CONFIGURABLE_KEY_RE.findall(front)
+
 
 def _one_stop_enumerated_params() -> list[str]:
     """The params the one-stop ``step-params get`` sentence enumerates.
@@ -574,6 +589,7 @@ def _one_stop_enumerated_params() -> list[str]:
     if match is None:
         return []
     return [token for token in _BACKTICKED_RE.findall(match.group(1)) if '_' in token]
+
 
 _VOCAB_SENTENCE_RE = re.compile(
     r"an `overall_status` drawn from the handler's vocabulary\s*[—-]\s*(`.+?)\.",
@@ -588,6 +604,7 @@ _API_LOGIC_BLOCK_RE = re.compile(r'\*\*Overall Status Logic\*\*:\n((?:- `[a-z_]+
 
 _DERIVE_FN_NAME = '_derive_overall_status'
 
+
 def _vocabulary_definition_modules() -> list[Path]:
     """Every bundle module that DEFINES ``_derive_overall_status``.
 
@@ -597,6 +614,7 @@ def _vocabulary_definition_modules() -> list[Path]:
     """
     needle = f'def {_DERIVE_FN_NAME}('
     return sorted(path for path in _SKILLS.rglob('*.py') if needle in path.read_text(encoding='utf-8'))
+
 
 def _returned_status_literals(path: Path) -> frozenset[str]:
     """The set of first-tuple-element string literals ``_derive_overall_status`` returns.
@@ -618,12 +636,14 @@ def _returned_status_literals(path: Path) -> frozenset[str]:
                 values.add(value.value)
     return frozenset(values)
 
+
 _VOCAB_DEFINITION_MODULES = _vocabulary_definition_modules()
 
 assert _VOCAB_DEFINITION_MODULES, (
     f'no module under {_SKILLS} defines {_DERIVE_FN_NAME} — the vocabulary-parity '
     'population is vacuous and every assertion below would pass over an empty set'
 )
+
 
 def _branch_cleanup_vocabulary() -> frozenset[str]:
     """The values the branch-cleanup positive-shape requirement names."""
@@ -636,6 +656,7 @@ def _branch_cleanup_vocabulary() -> frozenset[str]:
         'dropping the parity check.'
     )
     return frozenset(_BACKTICKED_RE.findall(match.group(1)))
+
 
 def _api_contract_schema_vocabulary() -> frozenset[str]:
     """The values the `checks status` response schema declares as an alternation."""
@@ -651,6 +672,7 @@ def _api_contract_schema_vocabulary() -> frozenset[str]:
     )
     return frozenset(matches[0].split('|'))
 
+
 def _api_contract_logic_vocabulary() -> frozenset[str]:
     """The values the `Overall Status Logic` bullet block enumerates."""
     text = _CI_API_CONTRACT.read_text(encoding='utf-8')
@@ -662,11 +684,13 @@ def _api_contract_logic_vocabulary() -> frozenset[str]:
     )
     return frozenset(_BACKTICKED_RE.findall(match.group(1)))
 
+
 _DOC_VOCABULARY_SITES: dict[str, Callable[[], frozenset[str]]] = {
     f'{_BRANCH_CLEANUP.name} § positive-shape requirement': _branch_cleanup_vocabulary,
     f'{_CI_API_CONTRACT.name} § checks status response schema': (_api_contract_schema_vocabulary),
     f'{_CI_API_CONTRACT.name} § Overall Status Logic': _api_contract_logic_vocabulary,
 }
+
 
 def test_the_re_review_consumer_set_is_derived_and_plural():
     """The polarity sweep below runs over a NON-EMPTY, multi-document population.

@@ -97,6 +97,7 @@ _FOREIGN_OUTLINE_DELIVERABLES = """### 1. Change a foreign repository
 - `/foreign/other/Mutated.java`
 """
 
+
 def test_merged_foreign_deliverable_clears():
     deliverables = [_deliverable(1, foreign=True, paths=['/foreign/repo/a.py'])]
     result = _run(deliverables, roots={'/foreign/repo/a.py': '/foreign/repo'}, landings={'/foreign/repo': 'merged'})

@@ -235,6 +235,7 @@ def _doc_blocks(record: dict) -> list[str]:
 
 _TERMINAL_OUTCOMES = frozenset({'done', 'loop_back'})
 
+
 def _sonar_branch_c_block() -> str:
     """The sonar-roundtrip no-scan call site, identified by its rendered detail."""
     record = _record_for(_OPERATOR_ADDED_STEP)
@@ -245,6 +246,7 @@ def _sonar_branch_c_block() -> str:
         f'the branch it asserts over.'
     )
     return candidates[0]
+
 
 _PRE_FIX_BRANCH_A = (
     'python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \\\n'
@@ -264,6 +266,7 @@ _PROSE_NAMING_BOTH_TOKENS = (
     'immediately before the `mark-step-done` call and forward it via '
     '`--head-at-completion {sha}`.'
 )
+
 
 def test_declared_obligation_population_is_non_empty():
     """(1) Checked first and alone — everything below depends on it."""

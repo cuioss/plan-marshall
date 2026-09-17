@@ -119,9 +119,11 @@ _TABLE_START = '### Built-in Step Dispatch Table'
 
 _TABLE_END = '### Interface Contract for External Steps'
 
+
 def _built_in_records() -> list[dict]:
     """The authoritative built-in step records, straight from discovery."""
     return [record for record in find_implementors(_EXT_POINT) if record.get('source') == _BUILT_IN_SOURCE]
+
 
 def _dispatch_table_rows() -> list[tuple[str, str]]:
     """Parse the Built-in Step Dispatch Table into ``(step_name, doc_path)`` pairs.
@@ -143,6 +145,7 @@ def _dispatch_table_rows() -> list[tuple[str, str]]:
         rows.append((cells[0].strip('`'), cells[1].strip('`')))
     return rows
 
+
 def _missing_from_table(row_names: set[str]) -> list[str]:
     """The membership predicate under test: which built-in steps the table omits.
 
@@ -151,6 +154,7 @@ def _missing_from_table(row_names: set[str]) -> list[str]:
     check that actually runs.
     """
     return sorted(record['name'] for record in _built_in_records() if record['name'] not in row_names)
+
 
 class TestDetectionSeam:
     def test_should_classify_the_pointer_shape_phase_1_init_emits(self):

@@ -155,6 +155,7 @@ _MARSHAL_JSON_REFERENCE_MD = (
 
 _MANAGE_CONFIG_SKILL_MD = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'manage-config' / 'SKILL.md'
 
+
 class TestExecutorDispatchScenarios:
     def test_listed_steps_fire_in_manifest_order(self, plan_context):
         """Every step in manifest.phase_6.steps must dispatch, in order."""
