@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 # ruff: noqa: I001
-"""Tests for sonar_rest — client surface and read endpoints.
-"""
+"""Tests for sonar_rest — client surface and read endpoints."""
 
 from __future__ import annotations
 
@@ -267,4 +266,3 @@ class TestSonarHotspotsLogic:
         output = capsys.readouterr().out
         assert 'success' in output
         assert 'total_hotspots_fetched' in output
-

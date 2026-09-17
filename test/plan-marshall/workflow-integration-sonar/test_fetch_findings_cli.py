@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 # ruff: noqa: I001
-"""Tests for sonar fetch_findings — transmission verbs and dispatch surface.
-"""
+"""Tests for sonar fetch_findings — transmission verbs and dispatch surface."""
 
 from __future__ import annotations
 
@@ -356,4 +355,3 @@ class TestFetchFindingsRouting:
         for token in argv:
             assert token in remaining
         assert _resolved is None
-

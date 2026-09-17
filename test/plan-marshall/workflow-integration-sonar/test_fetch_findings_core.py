@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 # ruff: noqa: I001
-"""Tests for sonar fetch_findings — fetch semantics, counts, and scoping.
-"""
+"""Tests for sonar fetch_findings — fetch semantics, counts, and scoping."""
 
 from __future__ import annotations
 
@@ -383,4 +382,3 @@ class TestPrScoping:
         assert result['pull_request'] == 'none'
         rows = _read_scan_summary_rows('sonar-no-pr')
         assert rows[0]['pr'] is None
-

@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 # ruff: noqa: I001
-"""Tests for sonar fetch_findings — classification vocabulary and readiness guards.
-"""
+"""Tests for sonar fetch_findings — classification vocabulary and readiness guards."""
 
 from __future__ import annotations
 
@@ -341,4 +340,3 @@ class TestRejectedMismatchPersist:
         assert 'qgate_persist_failed' not in second
         # Dedup returns the SAME record — still in the store, so still a hash id.
         assert second['producer_mismatch_hash_id'] == first['producer_mismatch_hash_id']
-

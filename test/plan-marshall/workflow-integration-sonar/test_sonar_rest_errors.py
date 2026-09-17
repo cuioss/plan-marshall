@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 # ruff: noqa: I001
-"""Tests for sonar_rest — quality-gate and compute-engine state handling.
-"""
+"""Tests for sonar_rest — quality-gate and compute-engine state handling."""
 
 from __future__ import annotations
 
@@ -208,4 +207,3 @@ class TestSonarCeStatusLogic:
         output = capsys.readouterr().out
         assert 'current_status' in output
         assert 'none' in output
-
