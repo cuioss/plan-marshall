@@ -205,7 +205,30 @@ _COMPLETED_TASKS = 3
 _STEP = 'automatic-review'
 
 
-_HEAD_SHA = 'e' * 40
+#: The anchor carried by the terminal `done` below. `mark-step-done` resolves
+#: a supplied anchor against the object store (unfabricable-anchor rule), so
+#: the fixture must carry a SHA the local repo actually holds — resolved once
+#: from the live HEAD at import. A fixed literal would be refused as
+#: fabricated.
+def _resolve_head_sha() -> str:
+    import subprocess
+
+    proc = subprocess.run(
+        ['git', 'rev-parse', 'HEAD'],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert proc.returncode == 0, (
+        f'Cannot resolve a real HEAD SHA for the anchor fixture: {proc.stderr.strip()}'
+    )
+    sha = proc.stdout.strip()
+    assert sha
+    return sha
+
+
+_HEAD_SHA = _resolve_head_sha()
 
 
 # ---------------------------------------------------------------------------

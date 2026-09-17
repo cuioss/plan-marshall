@@ -44,6 +44,29 @@ def _make_plan(plan_id: str) -> None:
     )
 
 
+def _real_head(rev: str = 'HEAD') -> str:
+    """Resolve ``rev`` against the live repo — a real anchor for `done` records.
+
+    `mark-step-done` resolves a supplied `--head-at-completion` against the
+    object store (unfabricable-anchor rule) and refuses fabricated SHAs, so
+    fixtures that record a `done` with an anchor must carry SHAs the local
+    repo actually holds. A fixed literal is refused as fabricated.
+    """
+    import subprocess
+
+    proc = subprocess.run(
+        ['git', 'rev-parse', rev],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert proc.returncode == 0, f'Cannot resolve {rev!r} for the anchor fixture: {proc.stderr.strip()}'
+    sha = proc.stdout.strip()
+    assert sha
+    return sha
+
+
 def _args(
     plan_id: str,
     phase: str,
