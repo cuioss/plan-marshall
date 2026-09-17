@@ -1087,11 +1087,17 @@ def pytest_collection_modifyitems(items):
 #: therefore still reported — as an ``UNLISTED`` entry — rather than being
 #: silent on exactly the run its population matters on, the passing one.
 _ROUTING_GUARD_MODULES: tuple[tuple[str, str], ...] = (
-    ('offrouting-merge-shape', 'plan-marshall/tools-integration-ci/test_merge_shaped_offrouting_refusal_merge_shape.py'),
+    (
+        'offrouting-merge-shape',
+        'plan-marshall/tools-integration-ci/test_merge_shaped_offrouting_refusal_merge_shape.py',
+    ),
     ('offrouting-offrouting', 'plan-marshall/tools-integration-ci/test_merge_shaped_offrouting_refusal_offrouting.py'),
     ('branch-cleanup-routing', 'plan-marshall/phase-6-finalize/test_branch_cleanup_merge_queue_routing_routing.py'),
     ('branch-cleanup-cleanup', 'plan-marshall/phase-6-finalize/test_branch_cleanup_merge_queue_routing_cleanup.py'),
-    ('branch-cleanup-queue-state', 'plan-marshall/phase-6-finalize/test_branch_cleanup_merge_queue_routing_queue_state.py'),
+    (
+        'branch-cleanup-queue-state',
+        'plan-marshall/phase-6-finalize/test_branch_cleanup_merge_queue_routing_queue_state.py',
+    ),
     ('review-merge-contract', 'plan-marshall/phase-6-finalize/test_review_merge_invocation_contract_contract.py'),
     ('review-merge-invocation', 'plan-marshall/phase-6-finalize/test_review_merge_invocation_contract_invocation.py'),
     (
