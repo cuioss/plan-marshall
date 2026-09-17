@@ -38,7 +38,10 @@ returned an empty set would satisfy every whole-tree assertion here and silently
 disarm the guard, so each shape is additionally fed a synthetic module carrying
 it and asserted to be caught. The population each scan examined is asserted
 non-zero for the same reason, and a module that failed to parse is asserted to
-arrive as unmeasured coverage rather than as a clean read.
+arrive as unmeasured coverage rather than as a clean read. Every armed-guard
+failure reports the finding count beside the scanned and unclassifiable counts
+plus the exact command that reproduces the scan, so a red run is a diagnosis,
+not just a report.
 """
 
 from __future__ import annotations
@@ -59,6 +62,32 @@ _PREDICATES = (
 # ⛔ Vacuity guard — every loop below iterates this table, so an empty one would
 # make each of them pass while checking no shape at all.
 assert _PREDICATES, 'no shape predicate is armed'
+
+
+def _reproduce_command(test_name: str) -> str:
+    """The exact command that replays one guard of this module, by test nodeid.
+
+    Appended to every armed-guard failure message: a count without a reproducer is
+    a report, not a diagnosis. The nodeid is passed by the caller rather than read
+    off the running test, so the message states how to reproduce even when the
+    failure is raised outside a pytest run.
+    """
+    return f'python3 -m pytest test/test_harness_shape_guards.py::{test_name} -q'
+
+
+def _guard_report(noun: str, result: shape_scan.ScanResult, test_name: str) -> str:
+    """The failure line an armed guard reports: findings, scanned and unclassifiable counts, reproducer.
+
+    All four travel together because each one alone misleads: a hit count without
+    the scanned population is a numerator without a denominator, a population
+    without the unparseable count reads unmeasured coverage as clean, and either
+    without the reproducing command leaves the reader to reconstruct the invocation.
+    """
+    return (
+        f'{len(result.hits)} {noun} over {result.modules_examined} module(s), '
+        f'{len(result.unparseable)} unparseable: {result.hits}. '
+        f'Reproduce: {_reproduce_command(test_name)}'
+    )
 
 
 def _write(directory: Path, name: str, source: str) -> Path:
@@ -144,8 +173,8 @@ def test_no_test_module_pins_another_slices_filename() -> None:
     """The armed guard: the tree carries no cross-slice path literal."""
     result = shape_scan.r1_cross_slice_filename_pins()
 
-    assert not result.hits, (
-        f'{len(result.hits)} cross-slice filename pin(s) over {result.modules_examined} module(s): {result.hits}'
+    assert result.clean, _guard_report(
+        'cross-slice filename pin(s)', result, 'test_no_test_module_pins_another_slices_filename'
     )
 
 
@@ -197,6 +226,29 @@ def test_r1_reads_a_relative_caller_against_its_own_resolved_directory(tmp_path:
     assert len(cross.hits) == 1, f'R1 missed a cross-slice pin reached by a relative path: {cross}'
 
 
+def test_r1_reads_an_absolute_caller_against_its_own_resolved_directory(tmp_path: Path, monkeypatch) -> None:
+    """Matched pair for the directory comparison, both arms reached by an ABSOLUTE path.
+
+    The mirror of the relative-path pair above: the same-directory reference a slice
+    is entitled to make must pass, and the cross-slice pin must fire, when the caller
+    hands an absolute path. Resolving the caller parent meets the absolute-and-resolved
+    candidate side on both spellings, so the exemption stays reachable however the
+    caller spells its own path. R4 and R5 carry no path comparisons at all — the only
+    resolved/unresolved site the sweep found is R1's own-directory check — so this
+    pair and the relative one above exhaust the spellings the fix must hold over.
+    """
+    _two_slice_root(tmp_path)
+    monkeypatch.setattr(shape_scan, 'REPO_ROOT', tmp_path)
+    _write(tmp_path / 'slice_a', 'synthetic_r1_own_abs.py', "PINNED = 'slice_a/test_victim.py'\n")
+    _write(tmp_path / 'slice_b', 'synthetic_r1_cross_abs.py', "PINNED = 'slice_a/test_victim.py'\n")
+
+    own = shape_scan.r1_cross_slice_filename_pins([tmp_path / 'slice_a/synthetic_r1_own_abs.py'])
+    cross = shape_scan.r1_cross_slice_filename_pins([tmp_path / 'slice_b/synthetic_r1_cross_abs.py'])
+
+    assert not own.hits, f'R1 reported a slice naming a module in its own directory: {own.hits}'
+    assert len(cross.hits) == 1, f'R1 missed a cross-slice pin reached by an absolute path: {cross}'
+
+
 # =============================================================================
 # R4 — presence-keyed restore
 # =============================================================================
@@ -206,8 +258,8 @@ def test_no_teardown_restores_state_on_one_arm_only() -> None:
     """The armed guard: the tree carries no leaking restore."""
     result = shape_scan.r4_presence_keyed_restores()
 
-    assert not result.hits, (
-        f'{len(result.hits)} presence-keyed restore(s) over {result.modules_examined} module(s): {result.hits}'
+    assert result.clean, _guard_report(
+        'presence-keyed restore(s)', result, 'test_no_teardown_restores_state_on_one_arm_only'
     )
 
 
@@ -348,9 +400,8 @@ def test_no_runtime_derived_parametrize_is_unguarded() -> None:
     """The armed guard: every derived parameter set is asserted non-empty."""
     result = shape_scan.r5_unguarded_runtime_parametrize()
 
-    assert not result.hits, (
-        f'{len(result.hits)} unguarded runtime-derived parametrize binding(s) over '
-        f'{result.modules_examined} module(s): {result.hits}'
+    assert result.clean, _guard_report(
+        'unguarded runtime-derived parametrize binding(s)', result, 'test_no_runtime_derived_parametrize_is_unguarded'
     )
 
 

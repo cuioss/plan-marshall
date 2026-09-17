@@ -13,16 +13,20 @@ so an interrupted discover run never leaves a half-written tree behind.
 """
 
 import argparse
+import copy
+import json
 import re
 import shutil
 import subprocess
 from pathlib import Path
 from typing import Any
 
+import _descriptor_delta as delta
 from _architecture_core import (
     GENERATION_FIELD,
     LEGACY_CONCEPT_TYPE,
     DataNotFoundError,
+    InvalidConceptTypeError,
     ModuleNotFoundInProjectError,
     _write_json,
     crawl_all_modules,
@@ -578,12 +582,24 @@ def _resolve_repo_root_name(project_path: Path) -> str:
     return repo_root_name or project_path.name
 
 
+def _package_bridge(module_name: str, modules: dict[str, dict[str, Any]]) -> dict[str, str]:
+    """The module's dotted package name → bridge path map from its derived ``packages``."""
+    derived_packages = (modules.get(module_name) or {}).get('packages')
+    if not isinstance(derived_packages, dict):
+        return {}
+    return {
+        name: entry['path']
+        for name, entry in derived_packages.items()
+        if isinstance(entry, dict) and isinstance(entry.get('path'), str) and entry['path']
+    }
+
+
 def _migrated_key_packages(
     document: dict[str, Any],
     module_name: str,
     modules: dict[str, dict[str, Any]],
     project_dir: str,
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], list[str]]:
     """Return ``document`` with its ``key_packages`` keys migrated to repo-relative paths.
 
     ``discover`` is where the dotted→path migration can actually run: it holds
@@ -597,13 +613,17 @@ def _migrated_key_packages(
     exactly as it was — the migration is an improvement to apply where the
     evidence supports it, and failing the whole discover write over a key that
     cannot be resolved would trade a cosmetic identity defect for a broken store.
-    Unresolved keys come back on the reported list and are logged as a WARNING.
+    Unresolved keys are returned alongside the document (the caller reports them
+    in its output) and are logged as a WARNING.
 
     Never mutates the caller's dict.
+
+    Returns:
+        A ``(document, unresolved_keys)`` pair.
     """
     key_packages = document.get('key_packages')
     if not isinstance(key_packages, dict) or not key_packages:
-        return document
+        return document, []
 
     derived_packages = (modules.get(module_name) or {}).get('packages')
     if not isinstance(derived_packages, dict):
@@ -615,7 +635,7 @@ def _migrated_key_packages(
 
     result = dict(document)
     result['key_packages'] = migrated
-    return result
+    return result, unresolved
 
 
 def _log_unresolved_key_packages(module_name: str, unresolved: list[str]) -> None:
@@ -639,7 +659,104 @@ def _log_unresolved_key_packages(module_name: str, unresolved: list[str]) -> Non
         pass
 
 
-def api_discover(project_dir: str = '.', force: bool = False, regenerate_description: bool = False) -> dict[str, Any]:
+def _read_pre_state(project_dir: str) -> delta.TreeState:
+    """Read the descriptor tree as it stands on disk, before discover writes.
+
+    Captures ``_project.json`` and every module ``enriched.json`` as raw bytes
+    plus their parsed form. A file that does not parse keeps its bytes and has
+    no parsed form, so the classifier can name it instead of the read failing.
+    """
+    meta_path = get_project_meta_path(project_dir)
+    meta: dict[str, Any] | None = None
+    meta_bytes: bytes | None = None
+    if meta_path.is_file():
+        meta_bytes = meta_path.read_bytes()
+        meta = _parse_json_object(meta_bytes)
+
+    documents: dict[str, dict[str, Any]] = {}
+    document_bytes: dict[str, bytes] = {}
+    data_dir = get_data_dir(project_dir)
+    if data_dir.is_dir():
+        for entry in sorted(data_dir.iterdir()):
+            document_file = entry / DIR_PER_MODULE_ENRICHED
+            if not entry.is_dir() or not document_file.is_file():
+                continue
+            raw = document_file.read_bytes()
+            document_bytes[entry.name] = raw
+            parsed = _parse_json_object(raw)
+            if parsed is not None:
+                documents[entry.name] = parsed
+    return delta.TreeState(meta=meta, meta_bytes=meta_bytes, documents=documents, document_bytes=document_bytes)
+
+
+def _parse_json_object(raw: bytes) -> dict[str, Any] | None:
+    """Parse ``raw`` as a JSON object, or ``None`` when it is not one."""
+    try:
+        parsed = json.loads(raw.decode('utf-8'))
+    except (UnicodeDecodeError, ValueError):
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def _regenerate_document(
+    existing: dict[str, Any],
+    module_name: str,
+    modules: dict[str, dict[str, Any]],
+    project_dir: str,
+) -> tuple[dict[str, Any] | None, list[str]]:
+    """Rebuild one module's concept document from the content already on disk.
+
+    Returns ``(document, unresolved_key_package_keys)``, or ``(None, [])`` when
+    the concept-model gate REFUSES the existing document's ``type``. That refusal
+    is reported rather than raised: an unusable document is a condition the
+    caller classifies against the pre-state, not one that aborts the whole
+    discover call before any classification happens.
+
+    The generation header is carried, never re-stamped: an existing document
+    keeps its own header, and one with no header is back-filled with
+    :func:`unknown_generation` so its unrecorded vintage is not restamped as
+    generated against the current tree.
+    """
+    preserved = existing.get(GENERATION_FIELD)
+    generation = preserved if isinstance(preserved, dict) and preserved else unknown_generation()
+    migrated, unresolved = _migrated_key_packages(existing, module_name, modules, project_dir)
+    try:
+        document = stamp_concept_document(migrated, project_dir, generation=generation)
+    except InvalidConceptTypeError:
+        return None, []
+    return document, sorted(unresolved)
+
+
+def _carried_index_entry(pre_index: dict[str, Any], module_name: str) -> dict[str, Any]:
+    """The ``_project.json`` index entry to keep for a module with no usable document.
+
+    The entry is derived from its document, so nothing new can be derived for a
+    module whose document this call could not consume. The entry the pre-state
+    already carried is kept verbatim; a module the pre-state had no entry for
+    gets an empty one. Deriving a fresh entry here would describe a document that
+    was never read.
+    """
+    entry = pre_index.get(module_name)
+    return copy.deepcopy(entry) if isinstance(entry, dict) else {}
+
+
+def _stage_tree(tmp_dir: Path, staged: delta.StagedTree) -> None:
+    """Write a staged tree under ``tmp_dir``: bytes verbatim, documents as JSON."""
+    for relative_path, content in sorted(staged.items()):
+        target = tmp_dir / relative_path
+        if isinstance(content, bytes):
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(content)
+        else:
+            _write_json(target, content)
+
+
+def api_discover(
+    project_dir: str = '.',
+    force: bool = False,
+    regenerate_description: bool = False,
+    apply: str = delta.APPLY_ALL,
+) -> dict[str, Any]:
     """Run extension API discovery and persist non-derived results per-module.
 
     Writes ``_project.json`` plus per-module ``enriched.json`` stubs into
@@ -649,6 +766,17 @@ def api_discover(project_dir: str = '.', force: bool = False, regenerate_descrip
     on demand by ``crawl_module_derived`` against the live worktree filesystem.
     ``enriched.json`` is seeded as an empty stub so downstream readers can
     treat it as present-by-default.
+
+    Attribution: every call reads the on-disk pre-state first and classifies
+    the regenerated tree against it via ``_descriptor_delta`` (the class table
+    and verdict set live there). ``apply`` decides what is written:
+
+    * ``all`` (the default) stages and swaps the full regenerated tree on every
+      call, whatever the verdict;
+    * ``plan`` / ``migration`` stage the pre-state plus only that kind of class.
+      Nothing is staged on ``undecidable``, on ``no_baseline``, or when no class
+      of the requested kind exists, and the swap is skipped when the projection
+      equals the pre-state.
 
     The discovery + crawl pass still runs in-memory to populate
     ``_project.json``'s ``modules`` index; ``--force`` continues to regenerate
@@ -670,11 +798,23 @@ def api_discover(project_dir: str = '.', force: bool = False, regenerate_descrip
         force: Overwrite existing ``project-architecture/`` tree
         regenerate_description: When True, blank ``description`` /
             ``description_reasoning`` instead of preserving the existing values
+        apply: ``all`` | ``plan`` | ``migration`` — which part of the
+            regenerated tree is written (see above)
 
     Returns:
         Dict with status, modules_discovered, output_file (the new
-        ``_project.json`` path)
+        ``_project.json`` path), attribution (the verdict), applied
+        (``all|plan|migration|none``), delta_classes, unclassified_fields,
+        unresolved_key_packages, unresolved_key_packages_count and
+        modules_examined
     """
+    if apply not in delta.APPLY_MODES:
+        return {
+            'status': 'error',
+            'error': 'invalid_apply',
+            'message': f'Unknown --apply value {apply!r}. Accepted: {", ".join(delta.APPLY_MODES)}',
+        }
+
     real_dir = get_data_dir(project_dir)
     project_meta_path = get_project_meta_path(project_dir)
 
@@ -685,15 +825,12 @@ def api_discover(project_dir: str = '.', force: bool = False, regenerate_descrip
             'message': 'Use --force to overwrite',
         }
 
-    # Load the existing descriptor (if any) BEFORE the crawl so the identity
-    # fields can be carried forward. ``load_project_meta`` raises when absent;
-    # an absent descriptor is the first-run case (empty existing meta).
-    existing_meta: dict[str, Any] = {}
-    if project_meta_path.exists():
-        try:
-            existing_meta = load_project_meta(project_dir)
-        except (DataNotFoundError, OSError, ValueError):
-            existing_meta = {}
+    # Read the on-disk pre-state BEFORE the crawl: the identity fields are
+    # carried forward from it, and the regenerated tree is classified against
+    # it. An absent or unreadable descriptor yields empty existing meta — the
+    # first-run case.
+    pre_state = _read_pre_state(project_dir)
+    existing_meta: dict[str, Any] = pre_state.meta or {}
 
     # Crawl the live worktree filesystem to enumerate modules. A single
     # discover_project_modules call gives us both the module data and
@@ -743,29 +880,50 @@ def api_discover(project_dir: str = '.', force: bool = False, regenerate_descrip
     #     manufacture a ``fresh`` verdict nothing established;
     #   * a fresh (first-seen) module IS authored here, so its empty stub takes a
     #     real current-tree stamp.
+    #
+    # The existing content comes from the tolerant pre-state read above, NOT from
+    # a second read of the same file. Re-reading it through the strict loader is
+    # what used to raise HERE — a present-but-unparseable document on a bare
+    # ``json.load``, a refused ``type`` on the concept-model gate — before
+    # ``classify_delta`` below could name it. That made the documented
+    # ``undecidable`` / write-nothing outcome unreachable for such a document and
+    # left the classifier's unreadable-document branch with no production input.
+    # A document this call cannot consume is therefore recorded in
+    # ``unusable_modules`` and carried through untouched: it is classified as
+    # unreadable, and ``--apply all`` re-stages its original bytes rather than
+    # blanking curated enrichment into an empty stub.
     module_documents: dict[str, dict[str, Any]] = {}
     module_index: dict[str, dict[str, Any]] = {}
+    unresolved_key_packages: list[dict[str, str]] = []
+    unusable_modules: set[str] = set()
+    pre_index_raw = existing_meta.get('modules')
+    pre_index: dict[str, Any] = pre_index_raw if isinstance(pre_index_raw, dict) else {}
     for module_name in sorted(modules.keys()):
-        existing = load_module_enriched_or_empty(module_name, project_dir)
-        if existing:
-            preserved = existing.get(GENERATION_FIELD)
-            generation = preserved if isinstance(preserved, dict) and preserved else unknown_generation()
-            document = stamp_concept_document(
-                _migrated_key_packages(existing, module_name, modules, project_dir),
-                project_dir,
-                generation=generation,
+        document: dict[str, Any] | None
+        if module_name in pre_state.documents:
+            document, unresolved = _regenerate_document(
+                pre_state.documents[module_name], module_name, modules, project_dir
             )
+            unresolved_key_packages.extend({'module': module_name, 'key': key} for key in unresolved)
+        elif module_name in pre_state.document_bytes:
+            # Present on disk but it did not parse — no parsed form exists to
+            # rebuild from.
+            document = None
         else:
             document = stamp_concept_document(_empty_module_enrichment(), project_dir)
+
+        if document is None:
+            unusable_modules.add(module_name)
+            module_documents[module_name] = {}
+            module_index[module_name] = _carried_index_entry(pre_index, module_name)
+            continue
+
         module_documents[module_name] = document
-        # The index entry is a read-side pre-flight surface: a consumer reads
-        # _project.json alone to see each module's description and generation
-        # header, deciding which concept documents to open and whether each is
-        # stale — without opening any concept body.
-        module_index[module_name] = {
-            'description': document.get('responsibility', '') or '',
-            GENERATION_FIELD: document.get(GENERATION_FIELD, {}),
-        }
+        # The index entry is DERIVED from the document, and the derivation lives
+        # once in ``_descriptor_delta`` — the classifier decides whether an entry
+        # matches the document that implies it, so the writer and the classifier
+        # must agree by construction rather than by two copies staying in step.
+        module_index[module_name] = delta.derive_index_entry(document)
 
     # Build the project-meta document. The ``modules`` index is the record of
     # "which modules existed at last discover" AND the description/generation
@@ -780,31 +938,79 @@ def api_discover(project_dir: str = '.', force: bool = False, regenerate_descrip
         'modules': module_index,
     }
 
-    # Stage the new layout under .tmp/ so the swap is atomic.
-    tmp_dir = get_tmp_data_dir(project_dir)
-    if tmp_dir.exists():
-        shutil.rmtree(tmp_dir)
-    tmp_dir.mkdir(parents=True, exist_ok=True)
+    # Classify the regenerated tree against the pre-state on every call, so the
+    # attribution is reported whichever part is written.
+    #
+    # The classifier compares against the documents this call could actually
+    # consume. A document whose ``type`` the concept gate refused parsed as JSON
+    # but is no more usable than one that did not parse, so it is withheld from
+    # the parsed view and reported the same way — as an unreadable document —
+    # instead of as a field-by-field diff against a document never rebuilt.
+    classification_state = delta.TreeState(
+        meta=pre_state.meta,
+        meta_bytes=pre_state.meta_bytes,
+        documents={name: doc for name, doc in pre_state.documents.items() if name not in unusable_modules},
+        document_bytes=pre_state.document_bytes,
+    )
+    report = delta.classify_delta(
+        classification_state,
+        project_meta,
+        module_documents,
+        {module_name: _package_bridge(module_name, modules) for module_name in modules},
+    )
 
-    # Write _project.json via the shared helper to keep encoding/formatting
-    # consistent with non-tmp paths.
-    project_meta_tmp = tmp_dir / FILE_PROJECT_META
-    _write_json(project_meta_tmp, project_meta)
+    # Decide what to stage. ``all`` stages the full regenerated tree regardless
+    # of the verdict; ``plan`` / ``migration`` decide in memory and stage only
+    # their projection, or nothing.
+    staged: delta.StagedTree | None
+    if apply == delta.APPLY_ALL:
+        staged = {FILE_PROJECT_META: project_meta}
+        # Per-module enriched.json only — derived.json is ephemeral under the
+        # on-demand crawl model.
+        for module_name in sorted(modules.keys()):
+            if module_name in unusable_modules:
+                # No document was rebuilt for this module, so its original bytes
+                # are re-staged verbatim. Writing the empty stub instead would
+                # blank curated enrichment on the strength of a read that failed.
+                staged[delta.document_path(module_name)] = pre_state.document_bytes[module_name]
+            else:
+                staged[delta.document_path(module_name)] = module_documents[module_name]
+    else:
+        wanted = delta.ATTRIBUTION_PLAN if apply == delta.APPLY_PLAN else delta.ATTRIBUTION_MIGRATION
+        build = delta.build_plan_projection if apply == delta.APPLY_PLAN else delta.build_migration_projection
+        staged = None
+        if report.verdict not in (delta.VERDICT_UNDECIDABLE, delta.VERDICT_NO_BASELINE) and report.has_attribution(
+            wanted
+        ):
+            projection = build(classification_state, project_meta, module_documents, report)
+            if not delta.projection_equals_pre_state(projection, classification_state):
+                staged = projection
 
-    # Write per-module enriched.json stubs only — derived.json is ephemeral
-    # under the on-demand crawl model.
-    for module_name in sorted(modules.keys()):
-        module_tmp = tmp_dir / module_name
-        module_tmp.mkdir(parents=True, exist_ok=True)
-        _write_json(module_tmp / DIR_PER_MODULE_ENRICHED, module_documents[module_name])
-
-    # Atomically swap the staged tree into place.
-    swap_data_dir(tmp_dir, project_dir)
+    applied = delta.APPLY_NONE
+    if staged is not None:
+        # Stage the new layout under .tmp/ so the swap is atomic, then swap it
+        # into place.
+        tmp_dir = get_tmp_data_dir(project_dir)
+        if tmp_dir.exists():
+            shutil.rmtree(tmp_dir)
+        tmp_dir.mkdir(parents=True, exist_ok=True)
+        _stage_tree(tmp_dir, staged)
+        swap_data_dir(tmp_dir, project_dir)
+        applied = apply
 
     return {
         'status': 'success',
         'modules_discovered': len(modules),
         'output_file': str(real_dir / FILE_PROJECT_META),
+        'attribution': report.verdict,
+        'applied': applied,
+        'delta_classes': report.delta_classes(),
+        'unclassified_fields': [
+            {'document': document, 'field': field_name} for document, field_name in report.unclassified_fields
+        ],
+        'unresolved_key_packages': unresolved_key_packages,
+        'unresolved_key_packages_count': len(unresolved_key_packages),
+        'modules_examined': report.modules_examined,
     }
 
 
@@ -952,7 +1158,7 @@ def list_modules(project_dir: str = '.') -> list[str]:
 def cmd_discover(args: argparse.Namespace) -> dict[str, Any]:
     """CLI handler for discover command."""
     try:
-        return api_discover(args.project_dir, args.force, args.regenerate_description)
+        return api_discover(args.project_dir, args.force, args.regenerate_description, args.apply)
     except Exception as e:
         return {'status': 'error', 'error': str(e)}
 

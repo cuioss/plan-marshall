@@ -152,8 +152,8 @@ The `architecture_refresh` section holds two enum knobs consumed by the `phase-6
 
 | Field | Type | Allowed Values | Default | Description |
 |-------|------|----------------|---------|-------------|
-| `tier_0` | string (enum) | `enabled`, `disabled` | `enabled` | Controls the deterministic `architecture discover --force` + `diff-modules --pre` step. When `disabled`, the entire architecture-refresh finalize step exits early. |
-| `tier_1` | string (enum) | `prompt`, `auto`, `disabled` | `prompt` | Controls LLM re-enrichment after Tier 0 detects affected modules. `prompt` (default) asks the user via AskUserQuestion; `auto` runs re-enrichment unattended; `disabled` only commits the deterministic refresh and notes the module list in the PR body. |
+| `tier_0` | string (enum) | `enabled`, `disabled` | `enabled` | Controls the deterministic `architecture discover --force --apply plan` + `diff-modules --pre-ref origin/main` step, which reads the `origin/main` baseline by ref and commits only the plan-attributable part of the descriptor delta. When `disabled`, the step skips Tier 0 and computes no affected-module set. |
+| `tier_1` | string (enum) | `prompt`, `auto`, `disabled` | `prompt` | Controls LLM re-enrichment after Tier 0 detects affected modules. `prompt` (default) asks the user via AskUserQuestion; `auto` runs re-enrichment unattended; `disabled` commits the deterministic refresh and records the deferred module list in the decision log. |
 
 ### Example — Section After `set-tier-0 --value disabled`
 

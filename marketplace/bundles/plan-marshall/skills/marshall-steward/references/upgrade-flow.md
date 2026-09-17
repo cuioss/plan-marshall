@@ -1,8 +1,8 @@
 # Upgrade Flow
 
 The `upgrade` verb runs the full post-change reconciliation in ONE flow after a
-change: regenerate the target tree and/or executor, reconcile `marshal.json`,
-verify, then run the existing landing cycle. The verb is pure orchestration glue
+change: regenerate the target tree and/or executor, reconcile `marshal.json` and
+migrate the architecture descriptors, verify, then run the existing landing cycle. The verb is pure orchestration glue
 over already-shipped machinery — it FIRST calls the deterministic planner
 `upgrade.py plan` to obtain the fixed four-stage plan with per-stage gate
 dispositions AND per-stage `sub_steps`, then drives each stage's existing
@@ -50,6 +50,7 @@ sub-steps on a consumer).
                                 └─ nested gate: cache-retention-prune (still prompts)
   Stage 2  reconcile-config     both:     reconcile-marshal-json + migrate-bot-lists    [mutating]
                                           + validate-bot-lists
+                                          + migrate-architecture-descriptors
                                 └─ nested gate: build-map re-seed (still prompts)
   Stage 3  verify               meta:     executor-preflight + content-drift-report     [read-only]
                                 consumer: executor-preflight
@@ -323,8 +324,9 @@ tree and both leave superseded version dirs behind. The sweep and its
 
 Honor the Stage 2 top-level gate, then run exactly the Stage 2 `sub_steps` the
 plan emitted. That list is kind-invariant — `reconcile-marshal-json`, then
-`migrate-bot-lists`, then `validate-bot-lists` — and all three sub-steps are
-expanded below, in that order. The
+`migrate-bot-lists`, then `validate-bot-lists`, then
+`migrate-architecture-descriptors` — and all four sub-steps are expanded below,
+in that order. The
 prose enumerates the emitted set: a sub-step the planner emits but this section
 never names is one a reader completes the documented upgrade without ever
 running.
@@ -443,6 +445,104 @@ of completes the upgrade reporting nothing, and learns about it only when a
 finalize run stalls at the participation barrier — after a pull request exists,
 where the same one-line config edit costs a full re-review cycle.
 
+### Sub-step `migrate-architecture-descriptors`
+
+Run after `validate-bot-lists` and before the `build-map` drift gate below,
+matching the emitted order. It runs for **both** project kinds: every project
+that was ever discovered carries a `.plan/project-architecture/` tree an older
+tool version may have written under an older contract.
+
+This sub-step is the sanctioned home of the architecture-descriptor tool
+migration. A plan's `architecture-refresh` finalize step writes only the
+plan-attributable part of a `discover --force` rewrite and leaves every
+migration class unwritten; this sub-step writes exactly the migration part, so
+the migration lands on the steward's own PR and never rides along on a plan's.
+The delta classes, their attribution and the verdicts they reduce to are
+published once, in
+[`manage-architecture/standards/manage-api.md`](../../manage-architecture/standards/manage-api.md)
+§ discover — see that section; this sub-step consumes the verdict and does not
+restate the table.
+
+**(1) Refuse to mix in uncommitted descriptor edits.** Check the descriptor tree
+first:
+
+```bash
+git -C {repo_root} status --porcelain .plan/project-architecture
+```
+
+When the output is non-empty, report the sub-step **skipped because uncommitted
+descriptor edits are present** and continue with the next Stage 2 step. Never
+run the migration over them: the migration's write would carry those edits into
+the steward's PR under a migration it did not cause, and a later reader could
+not tell the two apart.
+
+**(2) Write the migration projection.**
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
+  --project-dir {repo_root} discover --force --apply migration
+```
+
+Parse `attribution`, `applied`, `delta_classes[]{class,attribution,module_count}`,
+`unclassified_fields[]{document,field}`, `unresolved_key_packages[]{module,key}`,
+`unresolved_key_packages_count` and `modules_examined`, then branch on
+`attribution` and report the outcome:
+
+- **`no_baseline`** — the project was never discovered, so there is nothing to
+  migrate. Report a no-op.
+- **`clean`** — the regenerated tree carries nothing the on-disk tree lacks.
+  Report a no-op together with `modules_examined`, so the clean verdict states
+  how many modules it covered.
+- **`plan_attributable`** — only structural drift, which is a plan's to commit,
+  not the steward's. Nothing was written; report the plan classes as structural
+  drift left for a plan finalize.
+- **`migration_only`** / **`mixed`** — the migration classes were written
+  (`applied: migration`; `none` when the projection already equals the on-disk
+  tree). Report the migration classes and `unresolved_key_packages_count`, and
+  list `unresolved_key_packages[]`: each is a `key_packages` key the migration
+  kept dotted, which an operator resolves with `architecture enrich package`.
+  On `mixed`, also report the plan classes as structural drift left for a plan
+  finalize — they were not written.
+- **`undecidable`** — at least one difference no class explains. Nothing was
+  written; report `unclassified_fields[]` so the operator can see which fields
+  the tool could not attribute.
+
+**(3) Gate a written migration on the regression check.** When `applied` is
+`migration`, compare the migrated tree against the committed `HEAD` baseline:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
+  --project-dir {repo_root} descriptor-regression-check --pre-ref HEAD
+```
+
+- **`status: error`** — the check could not run, so nothing is known about the
+  migrated tree; this is NOT a regression verdict. The payload carries none of
+  the success-response fields to name — the error shapes are documented in
+  `manage-architecture/standards/client-api.md` § descriptor-regression-check.
+  STOP the flow per "Partial-failure and abort handling" below, reporting the
+  payload's `error` field together with the rest of the payload, and leave the
+  migrated descriptor uncommitted in the working tree for the operator to
+  inspect.
+- **`regressive: true`** — the migration lost curated content. STOP the flow per
+  "Partial-failure and abort handling" below, naming the `violations[].field`
+  values, and leave the migrated descriptor uncommitted in the working tree for
+  the operator to inspect.
+- **`regressive: false`** — report `migrations[]`, `unresolved_keys[]` and
+  `examined_fields` together with `modules_examined` and `modules_unreadable[]`,
+  so the green verdict names both what it covered and what it could not read.
+
+When `applied` is `none`, nothing was written and there is nothing to check.
+
+**(4) Leave the migration for Stage 4.** This sub-step creates no commit of its
+own. The written migration stays in the working tree and lands through Stage 4's
+existing landing cycle together with the upgrade's other changes, on the
+plan-less `chore/` branch PR — never on a plan's PR.
+
+Reaching Stage 3 without running this sub-step is the concrete loss it guards: a
+project whose descriptors predate the current contract keeps that migration
+pending, and the next plan's finalize is left holding a delta it must refuse to
+commit.
+
 ### Nested gate — `build-map` re-seed (STILL prompts under `integrate=true`)
 
 The gate belongs to the stage, not to any one sub-step: it runs once, after every
@@ -545,7 +645,8 @@ machinery exits non-zero or reports an error) OR an operator **Abort**:
 2. **Report the partial state** — which stages completed, which stage stopped
    the flow, and the specific failure (e.g. the failing command and its error).
 3. **Report the manual resume path** — any already-completed stages' mutations
-   remain on disk (regenerated target/executor, reconciled config); the operator
+   remain on disk (regenerated target/executor, reconciled config, migrated
+   architecture descriptors); the operator
    can re-run `/marshall-steward upgrade` after resolving the failure to continue
    from a clean state, or run the remaining stages' machinery by hand.
 

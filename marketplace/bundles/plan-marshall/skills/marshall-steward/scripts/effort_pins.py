@@ -302,7 +302,11 @@ def main(argv: list[str] | None = None) -> int:
         type=str,
         choices=('open', 'claude'),
         default='open',
-        help="Active harness. 'claude' returns untouched (guarded).",
+        help=(
+            "Harness CLASS, not a runtime.target name: 'open' covers every "
+            "open-model-set harness (opencode and any future one); 'claude' is "
+            'the fixed alias-palette class and returns untouched (guarded).'
+        ),
     )
 
     args = parser.parse_args(argv)
