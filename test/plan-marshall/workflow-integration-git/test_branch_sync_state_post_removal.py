@@ -21,19 +21,15 @@ git_workflow = load_script_module(
 BRANCH = 'feature/sync-plan'
 
 
-def _git_init_with_identity(work: Path) -> None:
-    subprocess.run(['git', 'init', '-q', '-b', 'main', str(work)], check=True)
-    subprocess.run(['git', '-C', str(work), 'config', 'user.email', 't@t.test'], check=True)
-    subprocess.run(['git', '-C', str(work), 'config', 'user.name', 'Test'], check=True)
-
-
 def _seed_merged_and_deleted(tmp_path: Path) -> Path:
     origin = tmp_path / 'origin.git'
     origin.mkdir()
     subprocess.run(['git', 'init', '--bare'], cwd=origin, capture_output=True)
     work = tmp_path / 'work'
     work.mkdir()
-    _git_init_with_identity(work)
+    subprocess.run(['git', 'init', '-q', '-b', 'main', str(work)], check=True)
+    subprocess.run(['git', '-C', str(work), 'config', 'user.email', 't@t.test'], check=True)
+    subprocess.run(['git', '-C', str(work), 'config', 'user.name', 'Test'], check=True)
     (work / '.gitignore').write_text('.plan/\n')
     (work / 'file.txt').write_text('one')
     subprocess.run(['git', 'add', '.'], cwd=work, capture_output=True)
