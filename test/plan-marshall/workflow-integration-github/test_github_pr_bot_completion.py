@@ -86,6 +86,7 @@ PLAN_IDS: tuple[str, ...] = (
     'p',
 )
 PLAN_IDS += tuple(f'gh-pr-preupgrade-dedup-{bot_kind}' for bot_kind in CURRENCY_SUBJECT_BOTS)
+assert CURRENCY_SUBJECT_BOTS, 'the registry declares no currency-subject bots — every parametrize below would be vacuous'
 
 
 def _evidence_plan_id(prefix: str, bot_kind: str, shape: str) -> str:

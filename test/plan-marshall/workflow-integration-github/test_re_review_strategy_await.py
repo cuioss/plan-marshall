@@ -201,6 +201,7 @@ def _comment(author, *, created_at, updated_at='', body='## PR Reviewer Guide', 
 
 _GUARD_SWEEP_POPULATION: list[str] = bot_registry.bot_kinds()
 _GUARD_SWEEP_POPULATION_SIZE = len(_GUARD_SWEEP_POPULATION)
+assert _GUARD_SWEEP_POPULATION, 'the registry declares no bots — every chokepoint sweep below would be vacuous'
 _GUARD_PR_NUMBER = 42
 _GUARD_PUSH_TIME = '2026-01-01T00:00:00Z'
 

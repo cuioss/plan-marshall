@@ -179,6 +179,7 @@ def _patch_provider(monkeypatch, pages, *, pr_extras=None, capture=None):
 
 
 _DETECTION_PATH_FUNCS = _detection_path_functions()
+assert _DETECTION_PATH_FUNCS, 'the detection-path derivation is empty — every parametrize below would be vacuous'
 
 
 def _patch_envelope(monkeypatch, raw_stdout):

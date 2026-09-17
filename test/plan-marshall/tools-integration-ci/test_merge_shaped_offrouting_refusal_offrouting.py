@@ -139,6 +139,7 @@ _SIDE_EFFECT_SAMPLES: dict[tuple[str, str], list[str]] = {
 }
 
 _IDS = [f'{provider}:{verb}' for provider, verb, _handler in _MEMBERS]
+assert _MEMBERS, 'the derived member population is empty — every parametrize below would be vacuous'
 
 #: Published on EVERY run — passing included — by the root conftest's
 #: ``pytest_report_header``. A population guard that only reports its size in a

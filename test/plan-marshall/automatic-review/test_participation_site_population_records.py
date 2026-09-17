@@ -391,6 +391,7 @@ def _vocabulary_candidates(module_path: Path) -> set[str]:
 # Import-time guards. A gap in either is a collection error, not a silent skip.
 guard_non_empty(PARTICIPATION_SITES, 'PARTICIPATION_SITES', f'{SCANNED_FILE_COUNT} scanned files')
 guard_every_site_recorded(PARTICIPATION_SITES, SITE_EXPECTATIONS)
+assert PARTICIPATION_SITES, 'the participation-site population is empty — every parametrize below would be vacuous'
 
 
 @pytest.mark.parametrize('site', PARTICIPATION_SITES)
