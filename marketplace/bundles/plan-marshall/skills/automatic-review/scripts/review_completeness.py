@@ -125,6 +125,7 @@ Usage:
     review_completeness.py check --plan-id <id> [--required-bots [<csv>]] [--optional-bots [<csv>]] [--participated-bots [<csv>]] [--in-progress-bots [<csv>]] [--refused-bots [<csv>]] [--stale-participation-bots [<csv>]] [--declined-bots [<csv>]] [--unrecognised-refusal-bots [<csv>]] [--not-triggered] [--triage-ran] [--refused-causes [<csv>]] [--refusal-size-caps [<csv>]] [--measured-diff-size [<s>]]
     review_completeness.py deficit --plan-id <id> [--required-bots [<csv>]] [--optional-bots [<csv>]] [--participated-bots [<csv>]] [--in-progress-bots [<csv>]] [--refused-bots [<csv>]] [--stale-participation-bots [<csv>]] [--declined-bots [<csv>]] [--unrecognised-refusal-bots [<csv>]] [--not-triggered] [--refused-causes [<csv>]] [--refusal-size-caps [<csv>]] [--min-deficit <n>]
     review_completeness.py size-caps
+    review_completeness.py trigger-bot --plan-id <id> [--stale-bots [<csv>]] [--newest-kind [<kind>]]
     review_completeness.py --help
 
 Every list flag above takes an OPTIONAL value: it may be supplied bare (the flag
@@ -1705,6 +1706,26 @@ def cmd_deficit(args: argparse.Namespace) -> int:
     return 0 if payload.get('status') == 'success' else 1
 
 
+def cmd_trigger_bot(args: argparse.Namespace) -> int:
+    """Resolve the Trigger-B re-review target through the stale-bot selector.
+
+    Production entry point for the automatic-review Trigger-B workflow: the
+    caller supplies the stale-bot set (the distinct bot-authored ``bot_kind``
+    values whose reviews predate the advanced HEAD) and the newest
+    bot-authored finding's kind as a tie-breaker hint, and this command
+    returns the bot the re-review registry must be invoked for. It is a thin
+    CLI wrapper over :func:`select_stale_bot_for_trigger` — the selection
+    rule lives there once, and this command only transports its inputs and
+    publishes its output as TOON, so the workflow never re-derives the rule
+    from a second copy.
+    """
+    stale_bots = _split_bots(args.stale_bots, '--stale-bots')
+    newest_kind = (args.newest_kind or '').strip() or None
+    selected = select_stale_bot_for_trigger(stale_bots, newest_kind)
+    print(serialize_toon({'status': 'success', 'selected_bot_kind': selected}))
+    return 0
+
+
 def _add_bot_observation_flags(sub: argparse.ArgumentParser) -> None:
     """Add the observation flags shared by the ``check`` and ``deficit`` subcommands.
 
@@ -1995,6 +2016,41 @@ def main(argv: list[str] | None = None) -> int:
         allow_abbrev=False,
     )
     size_caps_parser.set_defaults(func=cmd_size_caps)
+
+    trigger_bot_parser = subparsers.add_parser(
+        'trigger-bot',
+        help=(
+            'Resolve the Trigger-B re-review target: select the actually-stale '
+            'bot through select_stale_bot_for_trigger rather than only the '
+            'newest finding kind'
+        ),
+        allow_abbrev=False,
+    )
+    trigger_bot_parser.add_argument('--plan-id', required=True)
+    trigger_bot_parser.add_argument(
+        '--stale-bots',
+        nargs='?',
+        const='',
+        default='',
+        help=(
+            'Comma-separated bot_kinds whose reviews predate the advanced HEAD '
+            '— the stale-bot set select_stale_bot_for_trigger selects from, '
+            'with --newest-kind only as the tie-breaker. May be supplied bare '
+            '(no value), which reads as the empty list.'
+        ),
+    )
+    trigger_bot_parser.add_argument(
+        '--newest-kind',
+        nargs='?',
+        const='',
+        default='',
+        help=(
+            'The newest bot-authored finding\u2019s bot_kind — the tie-breaker '
+            'hint when several bots are stale, never the selection on its own. '
+            'May be supplied bare (no value), which reads as no hint.'
+        ),
+    )
+    trigger_bot_parser.set_defaults(func=cmd_trigger_bot)
 
     args = parser.parse_args(argv)
     rc: int = args.func(args)
