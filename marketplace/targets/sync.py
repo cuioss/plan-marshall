@@ -41,7 +41,6 @@ Exit codes:
 from __future__ import annotations
 
 import argparse
-import os
 import shutil
 import sys
 from dataclasses import dataclass
@@ -89,9 +88,7 @@ TARGET_CONFIGS: dict[str, TargetSyncConfig] = {
         source_skills_dir='skill',
         source_agents_dir='agent',
         source_commands_dir='command',
-        root_assets=(
-            ('opencode.json', 'config', False),
-        ),
+        root_assets=(('opencode.json', 'config', False),),
         extra_count_key='config_count',
     ),
 }

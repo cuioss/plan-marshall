@@ -195,7 +195,7 @@ touching unmanaged user entries or agents, and reports its actions as a TOON
 document. It is the exact counterpart of `/sync-plugin-cache` for the OpenCode
 target, and like that command it is project-level — consumer projects never
 generate OpenCode output. See `.opencode/commands/sync-opencode.md` and
-`.opencode/scripts/sync_opencode.py` for the source-of-truth statement and
+`marketplace/targets/sync.py` for the source-of-truth statement and
 parameters.
 
 The reopen-closed loop is then the same as Claude's: edit source, regenerate,
@@ -246,6 +246,98 @@ The Antigravity inner loop mirrors OpenCode and Claude Code, via the project-lev
 ```
 
 The middle hop (`target/antigravity/`) is produced by the Antigravity generator (`marketplace/targets/antigravity/`). `/sync-antigravity` deploys that tree into the Antigravity plugin directory (`~/.gemini/config/plugins/plan-marshall/` or custom `--target-dir`), removes stale **managed** entries (those in the `{bundle}-{skill}` namespace of the bundles being synced) while never touching unmanaged user entries or agents, and reports its actions as a TOON document. It is the exact counterpart of `/sync-opencode` for the Antigravity target, backed by the shared deploy engine in `marketplace/targets/sync.py`, and like that command it is project-level — consumer projects never generate Antigravity output. See `.agents/commands/sync-antigravity.md` and `marketplace/targets/sync.py` for parameters and flags.
+
+== Unified Target Synchronization Engine (sync.py)
+
+`marketplace/targets/sync.py` provides a unified, declarative synchronization engine that powers local developer deployments for distribution targets (currently `antigravity` and `opencode`). Instead of maintaining fragmented, ad-hoc sync scripts across different target subdirectories, the engine consolidates all target deployment, path normalization, safety boundaries, stale pruning, and reporting into a single tested module.
+
+=== Architecture & Workflow
+
+The sync engine operates at the tail of the distribution pipeline:
+
+```text
+marketplace/bundles/  ──[ ./pw generate --target {name} ]──>  target/{name}/  ──[ sync.py --target {name} ]──>  Platform Config/Plugin Dir
+```
+
+Each target runtime has its own developer command (`/sync-antigravity`, `/sync-opencode`) which is a thin wrapper calling the engine, also accessible directly via the `./pw sync` wrapper:
+
+```bash
+./pw sync --target {name} "$@"
+```
+
+=== Declarative Configuration Contract (`TargetSyncConfig`)
+
+To add sync support for a new distribution target, define and register a `TargetSyncConfig` in `marketplace/targets/sync.py::TARGET_CONFIGS`:
+
+[source,python]
+----
+@dataclass(frozen=True)
+class TargetSyncConfig:
+    name: str                                        # Target key matching CLI --target {name}
+    default_dest: Path                               # Default user/global destination path
+    source_skills_dir: str                           # Skill directory under target/{name}/ ('skills' or 'skill')
+    source_agents_dir: str                           # Agent directory under target/{name}/ ('agents' or 'agent')
+    source_commands_dir: str                         # Command directory under target/{name}/ ('commands' or 'command')
+    root_assets: tuple[tuple[str, str, bool], ...]   # (filename, kind, is_executable) deployed to destination root
+    extra_count_key: str                             # Metric key name for root assets in TOON output
+----
+
+Example registration:
+
+[source,python]
+----
+TARGET_CONFIGS['my-target'] = TargetSyncConfig(
+    name='my-target',
+    default_dest=Path.home() / '.config' / 'my-target',
+    source_skills_dir='skills',                      # or 'skill' if generated layout is singular
+    source_agents_dir='agents',
+    source_commands_dir='commands',
+    root_assets=(
+        ('plugin.json', 'config', False),
+        ('install.sh', 'asset', True),               # automatically sets 0o755 permissions
+        ('README.adoc', 'asset', False),
+    ),
+    extra_count_key='assets_count',
+)
+----
+
+=== Safety & Managed Pruning Boundaries
+
+Target directories often co-locate user-defined extensions, third-party skills, or personal agent configurations. The sync engine enforces rigorous safety boundaries:
+
+* **Longest-Prefix Bundle Derivation**: Rather than splitting blindly on the first hyphen, the engine reads the canonical bundle list from `marketplace/bundles/` and uses longest-prefix matching. Multi-hyphen bundles (e.g. `pm-dev-frontend-css` vs `pm-dev-frontend`) are mapped precisely to their owning bundle.
+* **Unmanaged Asset Protection**: Destination skills and commands that do not match the namespace of synced bundles are never pruned or altered.
+* **Agent Preservation**: Subagents in `agents/` are deployed, but stale agent pruning is deliberately omitted to prevent deleting local or runtime-discovered agents.
+* **Bundle-Scoped Isolation**: Passing `--bundles <bundle1,bundle2>` confines deployment and pruning exclusively to the specified bundles, preserving all other managed bundles in the destination directory.
+* **Dry-Run Preview**: Passing `--dry-run` performs source enumeration and destination pruning analysis without mutating the filesystem.
+
+=== Structured TOON Output
+
+The engine emits execution results as a compact TOON document parsed via `toon_parser.serialize_toon`:
+
+[source,text]
+----
+status: success
+target: antigravity
+source: /Users/.../target/antigravity
+destination: /Users/.../.gemini/config/plugins/plan-marshall
+skills_count: 53
+agents_count: 10
+commands_count: 1
+assets_count: 3
+deployed_count: 67
+removed_count: 0
+summary_message: "Deployed 67 items (53 skills, 10 agents, 1 commands, 3 assets) to /Users/.../.gemini/config/plugins/plan-marshall"
+----
+
+When stale managed components are detected and pruned, the report enumerates them:
+
+[source,text]
+----
+removed_count: 1
+removed[1]{kind,name}:
+  skills,plan-marshall-stale-skill
+----
 
 == Registered marketplace path
 
