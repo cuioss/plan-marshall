@@ -197,24 +197,42 @@ def cmd_prune_ref(args) -> dict:
         }
 
     # Invariant §5.3.2 — force-delete the local branch.
+    # Tolerated-delete path: when the local branch is already absent (verified
+    # via show-ref), record local_deleted True with a warning and continue to
+    # the show-ref-guarded remote-tracking ref deletion instead of aborting
+    # with branch_delete_failed. Branch-cleanup removes the worktree before
+    # deleting the branch, so a re-entry or an externally deleted branch must
+    # still prune refs/remotes/origin/{head_branch}.
+    local_delete_warning: str | None = None
     rc, _out, err = run_git(['-C', str(project_path), 'branch', '-D', head_branch])
     if rc != 0:
-        return {
-            **envelope,
-            'status': 'error',
-            'error_type': 'branch_delete_failed',
-            'local_deleted': False,
-            'message': f'git branch -D {head_branch} failed: {err.strip() or "non-zero exit"}',
-        }
+        rc_v, _v_out, _v_err = run_git(
+            ['-C', str(project_path), 'show-ref', '--verify', '--quiet', f'refs/heads/{head_branch}']
+        )
+        if rc_v != 0:
+            local_delete_warning = (
+                f'local branch {head_branch} was already deleted — continuing to remote-tracking ref cleanup'
+            )
+        else:
+            return {
+                **envelope,
+                'status': 'error',
+                'error_type': 'branch_delete_failed',
+                'local_deleted': False,
+                'message': f'git branch -D {head_branch} failed: {err.strip() or "non-zero exit"}',
+            }
 
     # Invariant §5.3.5 — local_only mode: skip remote-tracking ref operations.
     if mode == 'local_only':
-        return {
+        payload: dict = {
             **envelope,
             'status': 'success',
             'local_deleted': True,
             'remote_ref_deleted': False,
         }
+        if local_delete_warning is not None:
+            payload['local_delete_warning'] = local_delete_warning
+        return payload
 
     # Invariant §5.3.3 — show-ref guard before update-ref -d.
     ref_path = f'refs/remotes/origin/{head_branch}'
@@ -222,18 +240,21 @@ def cmd_prune_ref(args) -> dict:
 
     if rc_sr != 0:
         # Remote-tracking ref is already absent — graceful no-op.
-        return {
+        payload_noop: dict = {
             **envelope,
             'status': 'partial',
             'local_deleted': True,
             'remote_ref_deleted': False,
             'remote_ref_warning': (f'remote-tracking ref {ref_path} was already absent — no-op'),
         }
+        if local_delete_warning is not None:
+            payload_noop['local_delete_warning'] = local_delete_warning
+        return payload_noop
 
     # Invariant §5.3.4 — targeted ref deletion only.
     rc_ud, _ud_out, ud_err = run_git(['-C', str(project_path), 'update-ref', '-d', ref_path])
     if rc_ud != 0:
-        return {
+        payload_ref_error: dict = {
             **envelope,
             'status': 'error',
             'error_type': 'unexpected_ref_error',
@@ -241,10 +262,16 @@ def cmd_prune_ref(args) -> dict:
             'remote_ref_deleted': False,
             'message': f'update-ref -d failed after show-ref confirmed ref exists: {ud_err.strip()}',
         }
+        if local_delete_warning is not None:
+            payload_ref_error['local_delete_warning'] = local_delete_warning
+        return payload_ref_error
 
-    return {
+    payload_done: dict = {
         **envelope,
         'status': 'success',
         'local_deleted': True,
         'remote_ref_deleted': True,
     }
+    if local_delete_warning is not None:
+        payload_done['local_delete_warning'] = local_delete_warning
+    return payload_done

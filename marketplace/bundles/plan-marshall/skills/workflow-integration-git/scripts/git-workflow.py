@@ -1400,11 +1400,28 @@ def cmd_branch_sync_state(args):
     re-deriving the state→action mapping in prose. The error payloads carry no
     ``barrier_action``: an unresolvable state is not a verdict to map, and the
     consumer's own ``status: error`` branch (fail toward pushing) governs it.
+
+    Post-removal fallback: when the dedicated worktree no longer resolves
+    (branch-cleanup removed it via move-back then remove-worktree then
+    delete-branch), the probe falls back to the main checkout
+    (``main_checkout_root()``) for the ``origin/{branch}`` and
+    ``origin/{base}`` containment reads, so the verb still returns
+    ``remote_absent_landed``/``remote_absent_unverified`` with the correct
+    ``barrier_action`` (``skip``, never re-fire for a merged-and-deleted
+    branch) instead of ``plan_resolution_failed``.
     """
     plan_id = args.plan_id
     worktree, error = _resolve_worktree_path_for_plan(plan_id)
+    probe_source = 'worktree'
     if error is not None:
-        return error
+        try:
+            fallback = main_checkout_root()
+        except RuntimeError:
+            return error
+        if not fallback.is_dir():
+            return error
+        worktree = fallback
+        probe_source = 'main_checkout_fallback'
 
     branch = _read_metadata_field(plan_id, 'worktree_branch')
     if not branch:
@@ -1435,6 +1452,7 @@ def cmd_branch_sync_state(args):
             'barrier_action': push_barrier_action(state),
             'head_sha': head_sha,
             'remote_sha': remote_sha,
+            'probe_source': probe_source,
         }
 
     # origin/{branch} does not resolve — the ambiguous case. Disambiguate via
@@ -1450,6 +1468,7 @@ def cmd_branch_sync_state(args):
             'barrier_action': push_barrier_action('remote_absent_landed'),
             'head_sha': head_sha,
             'base_branch': base_branch,
+            'probe_source': probe_source,
         }
 
     return {
@@ -1460,6 +1479,7 @@ def cmd_branch_sync_state(args):
         'barrier_action': push_barrier_action('remote_absent_unverified'),
         'head_sha': head_sha,
         'base_branch': base_branch,
+        'probe_source': probe_source,
     }
 
 
