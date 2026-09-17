@@ -33,9 +33,7 @@ def _init_repo(path: Path, branch: str = 'main') -> None:
 
 
 class TestPruneRefDeletedLocal:
-    def test_deleted_local_still_prunes_remote_ref(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_deleted_local_still_prunes_remote_ref(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         _init_repo(tmp_path, branch='main')
         orig = _mod.run_git
 
@@ -53,9 +51,7 @@ class TestPruneRefDeletedLocal:
             return orig(args, **kwargs)
 
         monkeypatch.setattr(_mod, 'run_git', fake_run_git)
-        args = Namespace(
-            plan_id=None, project_dir=str(tmp_path), head='feature/x', mode='local_and_remote'
-        )
+        args = Namespace(plan_id=None, project_dir=str(tmp_path), head='feature/x', mode='local_and_remote')
 
         result = cmd_prune_ref(args)
 

@@ -52,9 +52,7 @@ def _seed_merged_and_deleted(tmp_path: Path) -> Path:
 
 
 class TestBranchSyncStatePostRemoval:
-    def test_post_removal_returns_landed_with_skip(
-        self, tmp_path: Path, monkeypatch
-    ) -> None:
+    def test_post_removal_returns_landed_with_skip(self, tmp_path: Path, monkeypatch) -> None:
         work = _seed_merged_and_deleted(tmp_path)
 
         def _unresolved(plan_id: str):
@@ -66,9 +64,7 @@ class TestBranchSyncStatePostRemoval:
             }
 
         monkeypatch.setattr(git_workflow, '_resolve_worktree_path_for_plan', _unresolved)
-        monkeypatch.setattr(
-            git_workflow, '_read_metadata_field', lambda plan_id, field: BRANCH
-        )
+        monkeypatch.setattr(git_workflow, '_read_metadata_field', lambda plan_id, field: BRANCH)
         monkeypatch.setattr(git_workflow, 'main_checkout_root', lambda: work)
 
         result = git_workflow.cmd_branch_sync_state(Namespace(plan_id='sync-plan'))
