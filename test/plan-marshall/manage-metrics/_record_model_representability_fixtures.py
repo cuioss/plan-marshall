@@ -220,9 +220,7 @@ def _resolve_head_sha() -> str:
         timeout=30,
         check=False,
     )
-    assert proc.returncode == 0, (
-        f'Cannot resolve a real HEAD SHA for the anchor fixture: {proc.stderr.strip()}'
-    )
+    assert proc.returncode == 0, f'Cannot resolve a real HEAD SHA for the anchor fixture: {proc.stderr.strip()}'
     sha = proc.stdout.strip()
     assert sha
     return sha

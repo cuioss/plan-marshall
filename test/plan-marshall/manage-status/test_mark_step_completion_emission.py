@@ -29,9 +29,9 @@ step identity, so the step name is immaterial to what is under test.
 
 from argparse import Namespace
 
+from _mark_step_done_fixtures import _real_head
 from plan_logging import read_work_log
 
-from _mark_step_done_fixtures import _real_head
 from conftest import load_script_module
 
 _lifecycle = load_script_module('plan-marshall', 'manage-status', '_cmd_lifecycle.py', '_emit_lifecycle')

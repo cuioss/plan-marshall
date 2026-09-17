@@ -90,14 +90,14 @@ def _mirror_verdict_to_stderr(command: str, result: dict) -> None:
     if status not in ('drift', 'error'):
         return
     parts = [
-        f"phase_handshake verify: status={status}",
-        f"phase={result.get('phase')}",
-        f"plan={result.get('plan_id')}",
+        f'phase_handshake verify: status={status}',
+        f'phase={result.get("phase")}',
+        f'plan={result.get("plan_id")}',
     ]
     if result.get('error'):
-        parts.append(f"error={result.get('error')}")
+        parts.append(f'error={result.get("error")}')
     if result.get('drift_count') is not None:
-        parts.append(f"drift_count={result.get('drift_count')}")
+        parts.append(f'drift_count={result.get("drift_count")}')
     print(' '.join(parts), file=sys.stderr)
 
 
