@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Labels cluster — issue_wait_for_label."""
 
-
 import argparse
 import re
 from datetime import UTC, datetime, timedelta
@@ -419,5 +418,3 @@ def test_issue_wait_for_label_rejects_invalid_mode_value():
 # * supplying only ``--plan-id`` → manage-status get-worktree-path resolves
 # * supplying only ``--project-dir`` → returned verbatim (legacy escape hatch)
 # * supplying neither → returns (None, argv)
-
-

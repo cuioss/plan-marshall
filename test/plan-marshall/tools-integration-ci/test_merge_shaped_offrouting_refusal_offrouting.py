@@ -3,7 +3,6 @@
 # ruff: noqa: I001
 """Offrouting cluster — refusal classification."""
 
-
 from __future__ import annotations
 
 import argparse

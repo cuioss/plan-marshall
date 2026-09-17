@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Contract cluster — provider, barrier core, TOON contracts."""
 
-
 import json
 
 # Import the ci router module directly for unit tests of private helpers.
@@ -349,5 +348,3 @@ def test_router_barrier_unknown_name_is_soft_error(tmp_path):
 # (until budget exhaustion), and — being pure — returns the identical decision
 # whether awaited detached or via the synchronous fallback. These tests frame
 # that decision surface deterministically.
-
-

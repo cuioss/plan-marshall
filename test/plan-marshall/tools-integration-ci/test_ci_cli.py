@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """CLI cluster — barrier router dispatch, body consumers, reinjection."""
 
-
 import json
 
 # Import the ci router module directly for unit tests of private helpers.

@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Primitives cluster — constants, elapsed computation, truncation, poll_until."""
 
-
 import argparse
 import re
 from datetime import UTC, datetime, timedelta
@@ -406,7 +405,6 @@ _GO_ZERO = '0001-01-01T00:00:00Z'
         'pre_1971_sentinel',
     ],
 )
-
 def test_compute_elapsed_parameterized(started_at, completed_at, expected):
     """Parameterized matrix of compute_elapsed contract cases."""
     result = compute_elapsed(started_at, completed_at, _NOW)
@@ -518,7 +516,6 @@ def test_compute_total_elapsed_parse_failures_skipped():
     ],
     ids=['aware_start_naive_now', 'naive_start_aware_now'],
 )
-
 def test_compute_total_elapsed_timezone_mismatch_returns_zero(started_at, now):
     """A naive/aware mismatch returns the documented 0 instead of raising."""
     result = compute_total_elapsed([started_at], now)
@@ -536,7 +533,6 @@ def test_compute_total_elapsed_timezone_mismatch_returns_zero(started_at, now):
     ],
     ids=['both_aware', 'both_naive'],
 )
-
 def test_compute_total_elapsed_matching_awareness_still_computes(started_at, now):
     """Negative control: a consistent pairing still returns the real delta.
 
@@ -661,5 +657,3 @@ def test_poll_until_eventual_success():
 # =============================================================================
 # --head flag registration tests
 # =============================================================================
-
-

@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Polling cluster — wait_for_status_flip, pull_request_runs, adaptive wait, issue wait_for_close."""
 
-
 import argparse
 import re
 from datetime import UTC, datetime, timedelta
@@ -812,5 +811,3 @@ def test_adaptive_wait_timeout_set_swallows_failure(monkeypatch):
 
     # Must not raise.
     ci_base._adaptive_wait_timeout_set(415)
-
-

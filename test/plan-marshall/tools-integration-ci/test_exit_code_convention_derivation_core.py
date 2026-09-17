@@ -3,7 +3,6 @@
 # ruff: noqa: E402
 """Core cluster — retention and classification semantics."""
 
-
 from __future__ import annotations
 
 import sys
@@ -380,5 +379,3 @@ def test_body_sweep_finds_the_single_document_stating_the_contract(tmp_path):
         f'The sweep scanned {sweep.coverage.files_scanned} of 3 documents, so the single-body '
         'result covers less than the tree.'
     )
-
-

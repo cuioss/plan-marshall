@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Checks cluster — health checks, registry, liveness, provider detection."""
 
-
 import json
 from argparse import Namespace
 from unittest.mock import patch
@@ -439,5 +438,3 @@ def test_ci_health_imports_run_cli_from_ci_base():
 # =============================================================================
 # Tier 3: Subprocess tests for CLI plumbing
 # =============================================================================
-
-

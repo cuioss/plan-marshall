@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Parser cluster — extract_project_dir, router project_dir and body flags."""
 
-
 import json
 
 # Import the ci router module directly for unit tests of private helpers.
@@ -300,5 +299,3 @@ def test_router_accepts_plan_id_only_flag(tmp_path):
 # The three finalize-wait barrier signals, per phase-6-finalize.
 _H1 = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'  # settled HEAD
 _H2 = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'  # post-re-settle HEAD
-
-

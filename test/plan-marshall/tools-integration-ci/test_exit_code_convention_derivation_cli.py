@@ -3,7 +3,6 @@
 # ruff: noqa: E402
 """CLI cluster — coverage, body sweep, disjointness."""
 
-
 from __future__ import annotations
 
 import sys

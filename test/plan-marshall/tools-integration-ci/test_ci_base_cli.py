@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """CLI cluster — parser surface, body path, run_cli."""
 
-
 import argparse
 import re
 from datetime import UTC, datetime, timedelta

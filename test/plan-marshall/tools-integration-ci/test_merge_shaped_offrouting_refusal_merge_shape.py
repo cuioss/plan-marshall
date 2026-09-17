@@ -3,7 +3,6 @@
 # ruff: noqa: I001
 """Merge-shape cluster — behaviour-shaped vocabulary."""
 
-
 from __future__ import annotations
 
 import argparse
@@ -439,5 +438,3 @@ def test_published_population_size_matches_the_swept_population():
         'parametrization used.'
     )
     assert GUARD_POPULATION_LABEL, 'the published population needs a name to be readable'
-
-
