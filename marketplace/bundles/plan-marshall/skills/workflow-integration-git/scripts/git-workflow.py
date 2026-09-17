@@ -1413,6 +1413,14 @@ def cmd_branch_sync_state(args):
     plan_id = args.plan_id
     worktree, error = _resolve_worktree_path_for_plan(plan_id)
     probe_source = 'worktree'
+    if error is None and worktree is not None and not worktree.is_dir():
+        error = {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'plan_resolution_failed',
+            'message': f'worktree path {worktree} is not a directory — falling back to main checkout',
+        }
+        worktree = None
     if error is not None:
         try:
             fallback = main_checkout_root()

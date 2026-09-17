@@ -68,3 +68,21 @@ class TestBranchSyncStatePostRemoval:
         assert result['state'] == 'remote_absent_landed'
         assert result['barrier_action'] == 'skip'
         assert result['probe_source'] == 'main_checkout_fallback'
+
+    def test_missing_path_with_no_error_falls_back(self, tmp_path: Path, monkeypatch) -> None:
+        work = _seed_merged_and_deleted(tmp_path)
+        missing = tmp_path / 'gone-worktree'
+
+        def _missing_with_no_error(plan_id: str):
+            return missing, None
+
+        monkeypatch.setattr(git_workflow, '_resolve_worktree_path_for_plan', _missing_with_no_error)
+        monkeypatch.setattr(git_workflow, '_read_metadata_field', lambda plan_id, field: BRANCH)
+        monkeypatch.setattr(git_workflow, 'main_checkout_root', lambda: work)
+
+        result = git_workflow.cmd_branch_sync_state(Namespace(plan_id='sync-plan'))
+
+        assert result['status'] == 'success'
+        assert result['state'] == 'remote_absent_landed'
+        assert result['barrier_action'] == 'skip'
+        assert result['probe_source'] == 'main_checkout_fallback'
