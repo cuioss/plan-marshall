@@ -247,10 +247,14 @@ def cmd_prune_ref(args) -> dict:
         return payload
 
     # Invariant §5.3.3 — show-ref guard before update-ref -d.
+    # Only exit code 1 means the ref is absent (git show-ref contract).
+    # run_git synthesizes 124 on timeout and 127 when git is unavailable —
+    # both are inconclusive (no verdict rendered) and must surface as error,
+    # never as an absent-ref no-op.
     ref_path = f'refs/remotes/origin/{head_branch}'
     rc_sr, _sr_out, _sr_err = run_git(['-C', str(project_path), 'show-ref', '--quiet', ref_path])
 
-    if rc_sr != 0:
+    if rc_sr == 1:
         # Remote-tracking ref is already absent — graceful no-op.
         payload_noop: dict = {
             **envelope,
@@ -262,6 +266,19 @@ def cmd_prune_ref(args) -> dict:
         if local_delete_warning is not None:
             payload_noop['local_delete_warning'] = local_delete_warning
         return payload_noop
+
+    if rc_sr != 0:
+        payload_guard_error: dict = {
+            **envelope,
+            'status': 'error',
+            'error_type': 'unexpected_ref_error',
+            'local_deleted': True,
+            'remote_ref_deleted': False,
+            'message': (f'show-ref guard inconclusive (exit {rc_sr}): {_sr_err.strip() or "no verdict"}'),
+        }
+        if local_delete_warning is not None:
+            payload_guard_error['local_delete_warning'] = local_delete_warning
+        return payload_guard_error
 
     # Invariant §5.3.4 — targeted ref deletion only.
     rc_ud, _ud_out, ud_err = run_git(['-C', str(project_path), 'update-ref', '-d', ref_path])
