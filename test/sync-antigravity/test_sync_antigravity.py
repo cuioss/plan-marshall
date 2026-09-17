@@ -274,6 +274,25 @@ def test_sync_antigravity_bundles_flag_preserves_unselected_bundle_entries(tmp_p
     assert (dest / 'skills' / 'other-bundle-stuff' / 'SKILL.md').is_file()
 
 
+def test_sync_antigravity_bundles_flag_deploys_exact_bundle_named_command(tmp_path: Path):
+    source = tmp_path / 'src' / 'antigravity'
+    dest = tmp_path / 'dest'
+    _make_source(source)
+    # Add a command named exactly {bundle}.md (e.g. plan-marshall.md)
+    _write(source / 'commands' / 'plan-marshall.md', '---\nname: plan-marshall\n---\n')
+
+    result = _run(
+        '--source',
+        str(source),
+        '--target-dir',
+        str(dest),
+        '--bundles',
+        'plan-marshall',
+    )
+    assert result.returncode == 0, result.stderr
+    assert (dest / 'commands' / 'plan-marshall.md').is_file()
+
+
 # ---------------------------------------------------------------------------
 # Prefix-ambiguous bundle derivation
 # ---------------------------------------------------------------------------

@@ -169,7 +169,7 @@ def _enumerate_source_commands(source: Path, only_bundle: str | None) -> list[Pa
         return []
     commands = sorted(p for p in command_dir.iterdir() if p.is_file() and p.suffix == '.md')
     if only_bundle is not None:
-        commands = [c for c in commands if c.name.startswith(f'{only_bundle}-')]
+        commands = [c for c in commands if c.name == f'{only_bundle}.md' or c.name.startswith(f'{only_bundle}-')]
     return commands
 
 
