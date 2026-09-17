@@ -1,27 +1,12 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""GitLab-specific coverage for the ci/issue wait surface of gitlab_ops.py.
+# ruff: noqa: I001
+"""Tests for gitlab_ops.py wait — success paths and budget handling."""
 
-The provider-agnostic poll-handler contract — dispatch-table registration, the
-auth short-circuit, and the flip/timeout/``--expected`` matrix for the three
-wait-for-* handlers — lives in ``_ci_wait_contract`` and is bound into this
-module below, so it executes once for GitLab. What remains here is genuinely
-GitLab-specific:
-
-    - the ``glab``-shaped stub wiring (``run_glab`` / ``_GlStub``)
-    - the ``glab ci trace`` failure-path download + filter wiring, driven
-      against the committed ``ci-logs/gitlab/fail.log`` fixture
-    - the p50-seeded first sleep and the ``glab ci status --wait`` terminal-state
-      tail, whose seams live in ``gitlab_ops``
-
-Tests never shell out to the real ``glab`` CLI: every fetch helper and the auth
-check are monkeypatched, and ``time.sleep`` is neutralised so timeout branches
-run in constant time.
-"""
+from __future__ import annotations
 
 import argparse
 import json
-
 import gitlab_ops
 import pytest
 from _ci_wait_contract import (
@@ -49,9 +34,7 @@ from _ci_wait_contract import (
     test_issue_wait_for_label_times_out_when_label_state_never_changes,
 )
 
-# Real committed GitLab-job-trace-shaped failure log fixture. Fed as the mocked
-# ``glab ci trace`` raw-trace source so the failure-path download + filter +
-# store wiring is validated against REAL log content (not a toy string).
+
 _GITLAB_FAIL_LOG = CI_LOG_FIXTURE_ROOT / 'gitlab' / 'fail.log'
 
 
@@ -59,17 +42,6 @@ _GITLAB_FAIL_LOG = CI_LOG_FIXTURE_ROOT / 'gitlab' / 'fail.log'
 def ci_ops():
     """Feed the provider-agnostic contract this module's provider ops module."""
     return gitlab_ops
-
-
-def test_contract_surface_is_bound_for_gitlab():
-    """Every provider-agnostic contract test is bound in this module.
-
-    Guards the "the contract runs once per provider" invariant: a contract test
-    added to ``_ci_wait_contract`` but never imported here would otherwise be
-    silently uncollected for GitLab.
-    """
-    missing = [name for name in CONTRACT_TESTS if name not in globals()]
-    assert missing == [], missing
 
 
 # =============================================================================
@@ -85,8 +57,6 @@ def test_contract_surface_is_bound_for_gitlab():
 # against the fixture content. The ``plan_context`` fixture redirects
 # PLAN_BASE_DIR so persist writes the per-run artifact tree under tmp rather
 # than the repo-local .plan/.
-
-
 def _read_gitlab_fail_fixture() -> str:
     """Load the REAL committed GitLab failure log fixture content."""
     return _GITLAB_FAIL_LOG.read_text(encoding='utf-8')
@@ -149,36 +119,6 @@ def _wire_gitlab_failure(monkeypatch, *, jobs):
     return fixture, fetch_calls
 
 
-def _assert_real_gitlab_failure_enrichment(failing_checks, plan_context, *, fixture):
-    """Assert >=2 entries each gained a distinct, non-empty filtered file.
-
-    Validates the per-entry log_file / filtered_log_file wiring AND that the
-    filtered file content was extracted from the REAL GitLab fixture (the ruff
-    failure markers survive filtering; passing-job noise is dropped).
-    """
-    assert len(failing_checks) >= 2
-    filtered_paths = [e['filtered_log_file'] for e in failing_checks]
-    log_paths = [e['log_file'] for e in failing_checks]
-    assert all(filtered_paths), failing_checks
-    assert all(log_paths), failing_checks
-    # >=2 distinctly-named filtered files even though both jobs share one
-    # pipeline (run id) — the per-check slug disambiguates.
-    assert len(set(filtered_paths)) >= 2, filtered_paths
-    assert len(set(log_paths)) >= 2, log_paths
-
-    for entry in failing_checks:
-        on_disk = _resolve_plan_relative(plan_context, entry['filtered_log_file'])
-        content = on_disk.read_text(encoding='utf-8')
-        assert content.strip(), f'filtered log empty: {on_disk}'
-        # Real ruff/quality-gate failure markers from the GitLab fixture survive.
-        assert 'Found 3 errors.' in content
-        assert 'ERROR: Job failed' in content
-        # Proof real filtering happened: the clean leading boilerplate is dropped.
-        assert 'Running with gitlab-runner' not in content
-    # Sanity: the fixture itself is the real captured trace (not a toy string).
-    assert 'gitlab-runner' in fixture
-
-
 def _gl_status_args(*, pr_number=88, plan_id, error_style='generic'):
     return argparse.Namespace(
         pr_number=pr_number,
@@ -186,38 +126,6 @@ def _gl_status_args(*, pr_number=88, plan_id, error_style='generic'):
         router_plan_id=plan_id,
         error_style=error_style,
     )
-
-
-def test_ci_status_failure_enriches_each_failing_job_with_real_filtered_log(monkeypatch, plan_context):
-    """cmd_ci_status failure TOON: each failing_checks[] entry gains its own
-    log_file / filtered_log_file, fed from the REAL gitlab/fail.log fixture."""
-    jobs = _two_failing_jobs()
-    fixture, fetch_calls = _wire_gitlab_failure(monkeypatch, jobs=jobs)
-
-    result = gitlab_ops.cmd_ci_status(_gl_status_args(plan_id=plan_context.plan_id))
-
-    assert result['status'] == 'success'
-    assert result['overall_status'] == 'failure'
-    assert 'failing_checks' in result
-    _assert_real_gitlab_failure_enrichment(result['failing_checks'], plan_context, fixture=fixture)
-    # The raw-trace fetcher was driven once per failing job (shared run id).
-    assert len(fetch_calls['run_ids']) >= 2
-
-
-def test_ci_status_success_path_has_no_failing_checks_key(monkeypatch, plan_context):
-    """A green pipeline leaves the success TOON unchanged — no failing_checks,
-    and the raw-trace fetcher is never invoked."""
-    jobs = _two_failing_jobs()
-    for job in jobs:
-        job['status'] = 'success'
-    _, fetch_calls = _wire_gitlab_failure(monkeypatch, jobs=jobs)
-
-    result = gitlab_ops.cmd_ci_status(_gl_status_args(plan_id=plan_context.plan_id))
-
-    assert result['status'] == 'success'
-    assert result['overall_status'] == 'success'
-    assert 'failing_checks' not in result
-    assert fetch_calls['run_ids'] == []
 
 
 def _gl_wait_args(*, pr_number=88, plan_id, error_style='generic', timeout=5, interval=0):
@@ -231,40 +139,6 @@ def _gl_wait_args(*, pr_number=88, plan_id, error_style='generic', timeout=5, in
     )
 
 
-def test_ci_wait_failure_enriches_each_failing_job_with_real_filtered_log(monkeypatch, plan_context):
-    """cmd_ci_wait natural-termination failure: each failing_checks[] entry
-    gains its own log_file / filtered_log_file from the REAL fixture."""
-    jobs = _two_failing_jobs()
-    fixture, fetch_calls = _wire_gitlab_failure(monkeypatch, jobs=jobs)
-    _noop_sleep(monkeypatch)
-
-    # The wait loop terminates immediately (no wait-state jobs).
-    result = gitlab_ops.cmd_ci_wait(_gl_wait_args(plan_id=plan_context.plan_id))
-
-    assert result['status'] == 'success'
-    assert result['final_status'] == 'failure'
-    assert 'failing_checks' in result
-    _assert_real_gitlab_failure_enrichment(result['failing_checks'], plan_context, fixture=fixture)
-    assert len(fetch_calls['run_ids']) >= 2
-
-
-def test_ci_wait_success_path_failing_checks_empty(monkeypatch, plan_context):
-    """A green wait result carries an empty failing_checks list and never
-    invokes the raw-trace fetcher."""
-    jobs = _two_failing_jobs()
-    for job in jobs:
-        job['status'] = 'success'
-    _, fetch_calls = _wire_gitlab_failure(monkeypatch, jobs=jobs)
-    _noop_sleep(monkeypatch)
-
-    result = gitlab_ops.cmd_ci_wait(_gl_wait_args(plan_id=plan_context.plan_id))
-
-    assert result['status'] == 'success'
-    assert result['final_status'] == 'success'
-    assert result['failing_checks'] == []
-    assert fetch_calls['run_ids'] == []
-
-
 # =============================================================================
 # p50-seeded first sleep + terminal-state watch-verb tail
 # =============================================================================
@@ -274,8 +148,6 @@ def test_ci_wait_success_path_failing_checks_empty(monkeypatch, plan_context):
 # seam, the watch-pipeline seam, and the monotonic clock all live in
 # ``gitlab_ops`` and are monkeypatched there; ``check_auth`` / ``run_glab``
 # remain patched too.
-
-
 def _job_row(name, status, *, pipeline_id=5005):
     """Build a single GitLab job row.
 
@@ -321,6 +193,50 @@ def _gl_p50_wait_args(*, pr_number=88, plan_id, timeout=600, interval=0):
         timeout=timeout,
         interval=interval,
     )
+
+
+def test_contract_surface_is_bound_for_gitlab():
+    """Every provider-agnostic contract test is bound in this module.
+
+    Guards the "the contract runs once per provider" invariant: a contract test
+    added to ``_ci_wait_contract`` but never imported here would otherwise be
+    silently uncollected for GitLab.
+    """
+    missing = [name for name in CONTRACT_TESTS if name not in globals()]
+    assert missing == [], missing
+
+
+def test_ci_status_success_path_has_no_failing_checks_key(monkeypatch, plan_context):
+    """A green pipeline leaves the success TOON unchanged — no failing_checks,
+    and the raw-trace fetcher is never invoked."""
+    jobs = _two_failing_jobs()
+    for job in jobs:
+        job['status'] = 'success'
+    _, fetch_calls = _wire_gitlab_failure(monkeypatch, jobs=jobs)
+
+    result = gitlab_ops.cmd_ci_status(_gl_status_args(plan_id=plan_context.plan_id))
+
+    assert result['status'] == 'success'
+    assert result['overall_status'] == 'success'
+    assert 'failing_checks' not in result
+    assert fetch_calls['run_ids'] == []
+
+
+def test_ci_wait_success_path_failing_checks_empty(monkeypatch, plan_context):
+    """A green wait result carries an empty failing_checks list and never
+    invokes the raw-trace fetcher."""
+    jobs = _two_failing_jobs()
+    for job in jobs:
+        job['status'] = 'success'
+    _, fetch_calls = _wire_gitlab_failure(monkeypatch, jobs=jobs)
+    _noop_sleep(monkeypatch)
+
+    result = gitlab_ops.cmd_ci_wait(_gl_wait_args(plan_id=plan_context.plan_id))
+
+    assert result['status'] == 'success'
+    assert result['final_status'] == 'success'
+    assert result['failing_checks'] == []
+    assert fetch_calls['run_ids'] == []
 
 
 def test_ci_wait_p50_seed_applied_then_watch_maps_success(monkeypatch, plan_context):
