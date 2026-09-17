@@ -1087,16 +1087,20 @@ def pytest_collection_modifyitems(items):
 #: therefore still reported — as an ``UNLISTED`` entry — rather than being
 #: silent on exactly the run its population matters on, the passing one.
 _ROUTING_GUARD_MODULES: tuple[tuple[str, str], ...] = (
-    ('offrouting', 'plan-marshall/tools-integration-ci/test_merge_shaped_offrouting_refusal.py'),
-    ('branch-cleanup', 'plan-marshall/phase-6-finalize/test_branch_cleanup_merge_queue_routing.py'),
-    ('review-merge', 'plan-marshall/phase-6-finalize/test_review_merge_invocation_contract.py'),
+    ('offrouting-merge-shape', 'plan-marshall/tools-integration-ci/test_merge_shaped_offrouting_refusal_merge_shape.py'),
+    ('offrouting-offrouting', 'plan-marshall/tools-integration-ci/test_merge_shaped_offrouting_refusal_offrouting.py'),
+    ('branch-cleanup-routing', 'plan-marshall/phase-6-finalize/test_branch_cleanup_merge_queue_routing_routing.py'),
+    ('branch-cleanup-cleanup', 'plan-marshall/phase-6-finalize/test_branch_cleanup_merge_queue_routing_cleanup.py'),
+    ('branch-cleanup-queue-state', 'plan-marshall/phase-6-finalize/test_branch_cleanup_merge_queue_routing_queue_state.py'),
+    ('review-merge-contract', 'plan-marshall/phase-6-finalize/test_review_merge_invocation_contract_contract.py'),
+    ('review-merge-invocation', 'plan-marshall/phase-6-finalize/test_review_merge_invocation_contract_invocation.py'),
     (
         'envelope-plan-id',
         'plan-marshall/tools-integration-ci/test_envelope_contract_plan_id_placement.py',
     ),
     (
         'api-contract-parity',
-        'plan-marshall/workflow-integration-github/test_pr_landing_state.py',
+        'plan-marshall/workflow-integration-github/test_pr_landing_state_states.py',
     ),
     (
         'gate-derivation',
@@ -1132,8 +1136,16 @@ _ROUTING_GUARD_MODULES: tuple[tuple[str, str], ...] = (
         'plan-marshall/tools-script-executor/test_population_derived_surface_guard.py',
     ),
     (
-        'roster-correctness-coverage',
-        'plan-marshall/phase-6-finalize/test_dispatch_roster_closure.py',
+        'roster-correctness-roster',
+        'plan-marshall/phase-6-finalize/test_dispatch_roster_closure_roster.py',
+    ),
+    (
+        'roster-correctness-closure',
+        'plan-marshall/phase-6-finalize/test_dispatch_roster_closure_closure.py',
+    ),
+    (
+        'roster-correctness-cli',
+        'plan-marshall/phase-6-finalize/test_dispatch_roster_closure_cli.py',
     ),
     (
         'call-graph-dispatch-classes',
@@ -1141,7 +1153,7 @@ _ROUTING_GUARD_MODULES: tuple[tuple[str, str], ...] = (
     ),
     (
         'measured-diff-size-call-sites',
-        'plan-marshall/automatic-review/test_measured_diff_size_bare_flag.py',
+        'plan-marshall/automatic-review/test_measured_diff_size_bare_flag_scan.py',
     ),
 )
 
