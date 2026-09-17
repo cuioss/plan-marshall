@@ -155,14 +155,42 @@ The emitted `target/antigravity` tree contains:
 4. **Uninstallation**:
    `--uninstall` removes the target plugin directory cleanly without residue.
 
+== Developer Inner Loop (`sync-antigravity`)
+
+For contributors iterating on Plan Marshall bundles, the Antigravity developer workflow matches Claude Code and OpenCode:
+
+1. Edit bundle sources under `marketplace/bundles/`.
+2. Regenerate the Antigravity distribution target:
++
+[source,bash]
+----
+./pw generate-antigravity
+----
+3. Deploy into the local Antigravity plugin installation:
++
+[source,bash]
+----
+/sync-antigravity
+----
+
+The project-level command (`.agents/commands/sync-antigravity.md`) invokes `.agents/scripts/sync_antigravity.py`. The deploy engine:
+* Deploys `skills/`, `agents/`, `commands/`, `plugin.json`, `install.sh`, and `README.adoc` to `~/.gemini/config/plugins/plan-marshall/` (or `--target-dir`).
+* Prunes stale managed entries in `skills/` and `commands/` belonging to the synced bundles while preserving unmanaged user files and agents.
+* Supports `--bundles <name>` for scoped deployments and `--dry-run` for non-destructive preview.
+* Emits a structured TOON report summarizing deployed and removed counts.
+
 == Verification & Test Coverage
 
-The test suite at `test/marketplace/targets/antigravity/` provides complete coverage across:
+The test suite provides complete coverage across:
 
-* `test_target.py`: Target registration, capability inspection, and singular-to-plural layout emission.
-* `test_config_files.py`: JSON schema validation for `mapping.json` and `frontmatter-rules.json`.
-* `test_frontmatter.py`: Tool transformation, model resolution, and fail-closed error handling (`UnmappedToolError`, `UnmappedFrontmatterError`).
-* `test_body_transforms.py`: Directive rewriting and slash command expansion.
-* `test_emitter.py`: Bundle traversal, verbatim directory copying (`standards/`, `references/`, `templates/`, `scripts/`), and stale artifact pruning.
-* `test_variant_emitter.py`: Role-eligible subagent variant generation and ADR-021 model pin application.
-* `test_level_table_lockstep.py`: Table object identity assertion against Claude target and model alias validity.
+* `test/marketplace/targets/antigravity/`:
+  ** `test_target.py`: Target registration, capability inspection, and layout emission.
+  ** `test_config_files.py`: JSON schema validation for `mapping.json` and `frontmatter-rules.json`.
+  ** `test_frontmatter.py`: Tool transformation, model resolution, and fail-closed error handling (`UnmappedToolError`, `UnmappedFrontmatterError`).
+  ** `test_body_transforms.py`: Directive rewriting and slash command expansion.
+  ** `test_emitter.py`: Bundle traversal, verbatim directory copying (`standards/`, `references/`, `templates/`, `scripts/`), and stale artifact pruning.
+  ** `test_variant_emitter.py`: Role-eligible subagent variant generation and ADR-021 model pin application.
+  ** `test_level_table_lockstep.py`: Table object identity assertion against Claude target and model alias validity.
+* `test/sync-antigravity/`:
+  ** `test_sync_antigravity.py`: Component deployment, root asset handling, dry run semantics, managed entry pruning, unmanaged entry preservation, prefix ambiguity resolution, and error exit codes.
+

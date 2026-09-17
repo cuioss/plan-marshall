@@ -370,9 +370,7 @@ def test_emit_bundles_still_emits_and_prunes_to_a_legitimate_output_dir(
     assert not stale.exists(), 'the stale-output prune must still run on a legitimate emit'
 
 
-def test_emit_bundles_emits_install_script_and_readme(
-    fixture_bundle: Path, tmp_path: Path, opencode_config_dir: Path
-):
+def test_emit_bundles_emits_install_script_and_readme(fixture_bundle: Path, tmp_path: Path, opencode_config_dir: Path):
     out = tmp_path / 'out'
     written = emit_bundles(fixture_bundle, out, opencode_config_dir)
 
