@@ -1,0 +1,569 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
+# ruff: noqa: I001
+"""Contract tests for the finalize orchestration routing split.
+
+Named for the finalize *routing split* rather than for one step, because it pins
+EVERY lesson-emitting write-site. In orchestration context every finalize step
+that emits lesson-shaped output routes to the epic's ``inbox/`` OUTBOX and makes
+zero global-lessons-store writes; a non-orchestrated plan's finalize behaviour is
+untouched.
+
+Covered:
+
+- **Detection reuses the shipped seam** — ``classify_source_id`` over the pointer
+  shape ``phase-1-init`` emits.
+- **Zero global-store writes at EVERY write-site** — the orchestrated branch of
+  ``workflow/lessons-capture.md``, of ``plan-retrospective/SKILL.md`` Step 5b, AND
+  of ``standards/finalize-step-preference-emitter.md`` Step 4. Every assertion is
+  required: with only the first, the criterion is a vacuous guard that passes green
+  while a sibling path leaks — which is exactly how the preference-emitter site went
+  unnoticed until the registered-step sweep below caught it.
+- **The write-site set is closed** — a sweep over every registered
+  ``phase-6-finalize`` step body. **Scope**: the sweep covers the registered
+  finalize step set only (``marshal.json`` -> ``plan.phase-6-finalize.steps``).
+  It fails when a future FINALIZE step gains an unbranched ``manage-lessons add``
+  call site. The two out-of-scope mid-flight call sites (``phase-4-plan/SKILL.md``
+  and ``execute-task/SKILL.md``, which fire in phases 4 and 5 before the plan has
+  a landing to report) are known and deliberately excluded — a green sweep means
+  no *registered finalize step* leaks the global store, NOT that the global store
+  is unreachable from an orchestrated plan generally.
+- **Retrospective input contract**, **non-orchestrated path unchanged**, and the
+  **short-circuit carve-out**.
+- **The routing registries are derived, not hand-maintained** — the SKILL.md
+  "Built-in Step Dispatch Table" and ``_manifest_core.DEFAULT_PHASE_6_STEPS`` are
+  both restatements of the same authoritative source (each step doc's own
+  frontmatter, read through ``find_implementors``). Nothing structurally prevents
+  either from drifting from it, so both are pinned here: the table's row SET and
+  its per-row DOCUMENT PATHS, and the default candidate tuple's membership and
+  ascending-``order`` sequence. Drift then fails at quality-gate rather than
+  silently at dispatch.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+from pathlib import Path
+
+import _manifest_core
+import extension_discovery
+from conftest import MARKETPLACE_ROOT, PROJECT_ROOT, load_script_module
+from extension_discovery import find_implementors
+
+_inbox = load_script_module('plan-marshall', 'plan-orchestrator', '_orchestrator_inbox.py', 'orchestrator_inbox')
+classify_source_id = _inbox.classify_source_id
+
+_PLAN_MARSHALL = MARKETPLACE_ROOT / 'plan-marshall' / 'skills'
+_FINALIZE = _PLAN_MARSHALL / 'phase-6-finalize'
+_FINALIZE_SKILL = _FINALIZE / 'SKILL.md'
+_LESSONS_CAPTURE = _FINALIZE / 'workflow' / 'lessons-capture.md'
+_LESSONS_INTEGRATION = _FINALIZE / 'standards' / 'lessons-integration.md'
+_PREFERENCE_EMITTER = _FINALIZE / 'standards' / 'finalize-step-preference-emitter.md'
+_RETROSPECTIVE = _PLAN_MARSHALL / 'plan-retrospective' / 'SKILL.md'
+_MARSHAL_JSON = PROJECT_ROOT / '.plan' / 'marshal.json'
+
+#: The exact executor invocation form of a global-lessons-store write.
+_ADD_CALL = re.compile(r'manage-lessons:manage-lessons\s+add\b')
+
+#: The per-module architecture-hints write the orchestrated branch also forbids.
+_ENRICH_CALL = re.compile(r'architecture\s+enrich\b')
+
+#: The inbox write verb the orchestrated branch uses instead.
+_INBOX_WRITE = re.compile(r'orchestrator\s+inbox\s+write\b')
+
+
+def _read(path: Path) -> str:
+    return path.read_text(encoding='utf-8')
+
+
+def _between(text: str, start_marker: str, end_marker: str) -> str:
+    """Return the text between two literal markers (both must be present)."""
+    start = text.find(start_marker)
+    assert start != -1, f'start marker not found: {start_marker!r}'
+    end = text.find(end_marker, start + len(start_marker))
+    assert end != -1, f'end marker not found: {end_marker!r}'
+    return text[start:end]
+
+
+def _registered_finalize_steps() -> list[str]:
+    data = json.loads(_read(_MARSHAL_JSON))
+    return list(data['plan']['phase-6-finalize']['steps'].keys())
+
+
+def _step_documents(step_key: str) -> list[Path]:
+    """Resolve a registered finalize step key to its on-disk body document(s)."""
+    if step_key.startswith('project:'):
+        name = step_key.split(':', 1)[1]
+        return [PROJECT_ROOT / '.claude' / 'skills' / name / 'SKILL.md']
+    if step_key.startswith('default:'):
+        name = step_key.split(':', 1)[1]
+        return [
+            _FINALIZE / 'standards' / f'{name}.md',
+            _FINALIZE / 'workflow' / f'{name}.md',
+        ]
+    bundle, skill = step_key.split(':', 1)
+    return [MARKETPLACE_ROOT / bundle / 'skills' / skill / 'SKILL.md']
+
+
+# =============================================================================
+# Detection reuses the shipped seam
+# =============================================================================
+
+
+_EXT_POINT = 'plan-marshall:extension-api/standards/ext-point-finalize-step'
+
+_BUILT_IN_SOURCE = 'built-in'
+
+_TABLE_START = '### Built-in Step Dispatch Table'
+
+_TABLE_END = '### Interface Contract for External Steps'
+
+def _built_in_records() -> list[dict]:
+    """The authoritative built-in step records, straight from discovery."""
+    return [record for record in find_implementors(_EXT_POINT) if record.get('source') == _BUILT_IN_SOURCE]
+
+def _dispatch_table_rows() -> list[tuple[str, str]]:
+    """Parse the Built-in Step Dispatch Table into ``(step_name, doc_path)`` pairs.
+
+    Reads the live SKILL.md rather than a fixture, so the guard observes the
+    table a dispatcher would actually consult. The header and separator rows are
+    dropped by requiring the first cell to be backtick-quoted, which every data
+    row is and neither structural row is.
+    """
+    block = _between(_read(_FINALIZE_SKILL), _TABLE_START, _TABLE_END)
+    rows: list[tuple[str, str]] = []
+    for line in block.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith('|'):
+            continue
+        cells = [cell.strip() for cell in stripped.strip('|').split('|')]
+        if len(cells) < 2 or not cells[0].startswith('`'):
+            continue
+        rows.append((cells[0].strip('`'), cells[1].strip('`')))
+    return rows
+
+def _missing_from_table(row_names: set[str]) -> list[str]:
+    """The membership predicate under test: which built-in steps the table omits.
+
+    Factored out so the mutation guard drives the SAME predicate the assertion
+    uses — a guard that re-implemented the check would prove nothing about the
+    check that actually runs.
+    """
+    return sorted(record['name'] for record in _built_in_records() if record['name'] not in row_names)
+
+class TestZeroGlobalStoreWritesLessonsCapture:
+    def _branch(self) -> str:
+        """The emission region — every invocation the orchestrated branch issues."""
+        return _between(
+            _read(_LESSONS_CAPTURE),
+            '#### Orchestrated emission contract',
+            '### Non-orchestrated execution',
+        )
+
+    def _declaration(self) -> str:
+        """The branch-selection prose that states what the branch may NOT call."""
+        return _between(
+            _read(_LESSONS_CAPTURE),
+            '### Orchestration branch (evaluate FIRST)',
+            '#### Orchestrated emission contract',
+        )
+
+    def test_orchestrated_branch_makes_no_global_lessons_write(self):
+        assert _ADD_CALL.search(self._branch()) is None
+        assert 'zero** `manage-lessons add` calls' in self._declaration()
+
+    def test_orchestrated_branch_makes_no_architecture_enrich_call(self):
+        """Both halves are required, and neither is redundant.
+
+        The regex half proves the emission region issues no enrich call; the
+        declaration half proves the branch-selection prose SAYS so. Without the
+        prose half the guard goes vacuous the moment the region is renamed or
+        split — the regex would then search an empty span and pass.
+
+        The declaration now states the fact for the WHOLE body rather than for the
+        orchestrated branch alone: the step is ``post_run_review: true``, so no
+        branch of it can reach the hints store (see the KNOWLEDGE routing section,
+        which files the hint as owed instead of writing it).
+        """
+        assert _ENRICH_CALL.search(self._branch()) is None
+        assert 'No branch of this body calls `architecture enrich`' in self._declaration()
+
+    def test_declaration_leaves_the_non_orchestrated_path_unchanged(self):
+        declaration = self._declaration()
+
+        assert '**`orchestrated: false`**' in declaration
+        assert 'unchanged' in declaration
+
+    def test_orchestrated_branch_uses_the_inbox_write_verb(self):
+        assert _INBOX_WRITE.search(self._branch()) is not None
+
+    def test_orchestrated_branch_emits_candidate_lessons_only(self):
+        """Plan 302 D1: the landing moved to the dedicated emit-landing step.
+
+        lessons-capture's orchestrated branch keeps the candidate-lesson stream but
+        no longer emits the ``kind: landing`` message — a landing from here too
+        would put two landings on one run.
+        """
+        branch = self._branch()
+
+        assert 'kind: candidate-lesson' in branch
+        assert 'emits **NO `kind: landing` message**' in branch
+        assert 'emit-landing' in branch
+
+    def test_orchestrated_branch_no_longer_emits_the_landing(self):
+        """The landing is unconditional, but it is emit-landing's, not this step's."""
+        branch = self._branch()
+
+        # The one landing an orchestrated run owes is now the terminal step's.
+        assert (
+            'The one landing an orchestrated finalize run owes its epic is emitted by the dedicated `emit-landing`'
+            in branch
+        )
+
+    def test_orchestrated_branch_performs_no_classification(self):
+        assert 'no** global-vs-epic classification' in self._branch()
+
+    def test_branch_b4_and_output_field_are_declared(self):
+        text = _read(_LESSONS_CAPTURE)
+
+        assert '**Branch B4 — routed to epic inbox' in text
+        assert 'inbox_messages_written: {N}' in text
+        assert 'inbox message(s) -> epic {epic}' in text
+
+    def test_output_declares_the_b4_consumer_rule(self):
+        text = _read(_LESSONS_CAPTURE)
+
+        assert 'non-zero `inbox_messages_written`' in text
+        assert 'leaves both `0`' in text
+
+
+class TestZeroGlobalStoreWritesPreferenceEmitter:
+    """The third write-site: the owed-hint filing in Step 4.
+
+    Mirrors ``TestZeroGlobalStoreWritesRetrospective`` in shape, and keeps BOTH
+    halves of the no-global-write assertion for the same anti-vacuity reason
+    ``test_orchestrated_branch_makes_no_architecture_enrich_call`` does: the regex
+    half proves the emission region issues no ``manage-lessons add``, the
+    declaration half proves the branch-selection prose SAYS so. Without the prose
+    half the guard goes vacuous the moment the region is renamed or split — the
+    regex would then search an empty span and pass.
+    """
+
+    def _declaration(self) -> str:
+        """The branch-selection prose that states what the branch may NOT call."""
+        return _between(
+            _read(_PREFERENCE_EMITTER),
+            '#### Orchestration branch (evaluate FIRST)',
+            '##### Orchestrated emission contract',
+        )
+
+    def _branch(self) -> str:
+        """The emission region — every invocation the orchestrated branch issues."""
+        return _between(
+            _read(_PREFERENCE_EMITTER),
+            '##### Orchestrated emission contract',
+            '##### Non-orchestrated filing',
+        )
+
+    def _non_orchestrated(self) -> str:
+        return _between(
+            _read(_PREFERENCE_EMITTER),
+            '##### Non-orchestrated filing',
+            '### Step 5: Mark step done',
+        )
+
+    def test_orchestrated_branch_makes_no_global_lessons_write(self):
+        assert _ADD_CALL.search(self._branch()) is None
+        assert 'zero** `manage-lessons add` calls' in self._declaration()
+
+    def test_orchestrated_branch_uses_the_inbox_write_verb(self):
+        assert _INBOX_WRITE.search(self._branch()) is not None
+
+    def test_orchestrated_branch_routes_every_owed_hint_as_candidate_lesson(self):
+        assert '--kind candidate-lesson' in self._branch()
+
+    def test_orchestrated_branch_emits_no_landing_message(self):
+        # The one landing per orchestrated run is the emit-landing terminal step's;
+        # a second one from here would put two landings on a single run.
+        assert 'emits NO `kind: landing` message' in self._branch()
+
+    def test_declaration_leaves_the_non_orchestrated_path_unchanged(self):
+        declaration = self._declaration()
+
+        assert '**`orchestrated: false`**' in declaration
+        assert 'unchanged' in declaration
+
+    def test_non_orchestrated_filing_still_writes_the_global_store(self):
+        # Positive control. Without it the branch could satisfy every assertion
+        # above by deleting the global-store route outright rather than branching
+        # around it — that would break every non-orchestrated plan silently.
+        assert _ADD_CALL.search(self._non_orchestrated()) is not None
+
+    def test_inputs_declare_both_runtime_inputs_as_forwarded(self):
+        text = _read(_PREFERENCE_EMITTER)
+
+        assert '- `orchestrated` — bool;' in text
+        assert '- `epic` — string;' in text
+        assert 'MUST NOT re-issue either resolution call' in text
+
+
+class TestWriteSiteSetIsClosed:
+    def test_every_registered_step_key_resolves_to_a_body_document(self):
+        unresolved = [
+            step for step in _registered_finalize_steps() if not any(doc.is_file() for doc in _step_documents(step))
+        ]
+
+        # `lessons-capture` and friends resolve via standards/ OR workflow/; a key
+        # that resolves to neither means the sweep below would silently skip it.
+        assert unresolved == []
+
+    def test_no_registered_finalize_step_writes_the_global_store_unbranched(self):
+        leaking: list[str] = []
+        for step in _registered_finalize_steps():
+            for doc in _step_documents(step):
+                if not doc.is_file():
+                    continue
+                text = _read(doc)
+                if _ADD_CALL.search(text) is None:
+                    continue
+                branched = 'orchestrated' in text and _INBOX_WRITE.search(text)
+                if not branched:
+                    leaking.append(step)
+
+        assert leaking == []
+
+    def test_the_two_out_of_scope_call_sites_are_not_finalize_steps(self):
+        registered = set(_registered_finalize_steps())
+
+        assert 'plan-marshall:phase-4-plan' not in registered
+        assert 'plan-marshall:execute-task' not in registered
+
+
+class TestNonOrchestratedPathUnchanged:
+    def test_lessons_capture_keeps_the_three_gate_policy_reference(self):
+        text = _read(_LESSONS_CAPTURE)
+
+        assert 'lesson-creation-policy.md' in text
+        assert 'Gate 1 (dedup against the existing corpus), Gate 2' in text
+
+    def test_lessons_capture_keeps_the_three_step_path_allocate_flow(self):
+        text = _read(_LESSONS_CAPTURE)
+
+        assert 'manage-lessons:manage-lessons add' in text
+        assert 'Step 2 — Stage the body via the Write tool' in text
+        assert 'manage-lessons:manage-lessons set-body' in text
+
+    def test_lessons_capture_keeps_the_exact_branch_display_details(self):
+        text = _read(_LESSONS_CAPTURE)
+
+        for detail in (
+            '"{N} lesson(s) recorded ({lesson_ids})"',
+            '"no lessons recorded"',
+            '"folded into existing lesson/plan, no new lesson"',
+            # Branch B3 no longer routes the fact to architecture — a
+            # post-merge-ordered step cannot reach the hints store, so the hint is
+            # FILED AS OWED and the detail reports what was actually done.
+            '"{N} owed architecture hint(s) filed"',
+        ):
+            assert detail in text, detail
+
+    def test_lessons_capture_keeps_the_actionable_knowledge_partition(self):
+        """The partition survives, and KNOWLEDGE routes to the OWED-hint artifact.
+
+        Anchored on the route rather than on ``_ENRICH_CALL`` matching somewhere in
+        the document: the body now FORBIDS that call, so its only remaining
+        occurrences are the prose forbidding it — a regex that matches the
+        prohibition would report the route as present no matter what the route
+        became.
+        """
+        text = _read(_LESSONS_CAPTURE)
+
+        assert 'Classify each candidate signal: ACTIONABLE vs KNOWLEDGE' in text
+        assert 'The hints store is unreachable from here, so the hint is OWED, not written.' in text
+        assert 'Owed architecture hint: {module}' in text
+
+    def test_retrospective_keeps_the_step_5a_dedup_gate(self):
+        text = _read(_RETROSPECTIVE)
+
+        assert 'Step 5b: Record (gated by 5a)' in text
+        assert 'Only `status: new` proposals reach `manage-lessons add`' in text
+
+    def test_retrospective_keeps_new_merge_into_already_closed_handling(self):
+        branch = _between(
+            _read(_RETROSPECTIVE),
+            '**`orchestrated: false` — unchanged.**',
+            '## Related',
+        )
+
+        assert '`merge_into` proposals are applied via `Edit`' in branch
+        assert '`already_closed` proposals are surfaced in the report' in branch
+
+
+class TestBuiltInStepDispatchTableMatchesDiscovery:
+    """Pins the SKILL.md table (finding 9fdfcf) to the discovered step set.
+
+    The compose-time step-resolution gate already fails loud with
+    ``unresolvable_step`` when a built-in's standards doc is MISSING, so a
+    deleted doc cannot reach dispatch. The residual this class covers is
+    narrower and genuinely uncovered: a row naming a doc path that MOVED, and a
+    row set that has diverged from the authoritative step set in either
+    direction.
+    """
+
+    def test_table_is_non_empty(self):
+        """Anti-vacuity: every assertion below is over the parsed rows.
+
+        A parser that silently returned nothing — because the section was
+        renamed or the table reformatted — would make the set comparison
+        trivially satisfiable from one side, so emptiness is rejected on its own
+        before anything else is asserted.
+        """
+        assert _dispatch_table_rows(), (
+            f'No data rows parsed between {_TABLE_START!r} and {_TABLE_END!r} in '
+            f'{_FINALIZE_SKILL}. Every assertion in this class reads those rows, '
+            'so an empty parse would make them vacuous.'
+        )
+
+    def test_discovery_finds_built_in_steps(self):
+        """Anti-vacuity for the other side of the comparison."""
+        assert _built_in_records(), (
+            f'find_implementors({_EXT_POINT!r}) discovered no records with '
+            f'source == {_BUILT_IN_SOURCE!r}, so the table has nothing to be '
+            'compared against.'
+        )
+
+    def test_table_rows_are_exactly_the_discovered_built_in_steps(self):
+        row_names = {name for name, _ in _dispatch_table_rows()}
+        discovered = {record['name'] for record in _built_in_records()}
+
+        assert row_names == discovered, (
+            'The Built-in Step Dispatch Table has drifted from the discovered '
+            'built-in step set. Missing rows (the step exists but the table '
+            f'does not route it): {sorted(discovered - row_names)}. Stale rows '
+            '(the table routes a step discovery does not know about): '
+            f'{sorted(row_names - discovered)}'
+        )
+
+    def test_table_has_no_duplicate_rows(self):
+        names = [name for name, _ in _dispatch_table_rows()]
+
+        assert len(names) == len(set(names)), (
+            'The table lists a step more than once. Two rows for one step can '
+            'disagree on the document path, and the set comparison above cannot '
+            f'see the duplication: {sorted({n for n in names if names.count(n) > 1})}'
+        )
+
+    def test_each_row_document_path_is_the_discovered_document(self):
+        """The MOVED-doc residual: a row path that resolves elsewhere, or nowhere.
+
+        Compared against the discovered record's own ``path``, not merely
+        against "some file exists there" — a row pointing at a real but
+        different document is exactly as wrong as one pointing at nothing, and
+        an existence-only check would pass it.
+        """
+        discovered_paths = {record['name']: Path(record['path']).resolve() for record in _built_in_records()}
+
+        mismatches = []
+        for name, doc in _dispatch_table_rows():
+            expected = discovered_paths.get(name)
+            if expected is None:
+                continue  # Reported by the set comparison above.
+            actual = (_FINALIZE / doc).resolve()
+            if actual != expected:
+                mismatches.append(f'{name}: table says {doc} -> {actual}, discovery says {expected}')
+
+        assert mismatches == [], (
+            "These table rows name a document that is not the step's "
+            'authoritative doc. A moved doc is the residual the compose-time '
+            'unresolvable_step gate does NOT cover, because that gate fires on a '
+            f'missing built-in, not on a mis-pointed table row: {mismatches}'
+        )
+
+    def test_each_row_is_independently_load_bearing(self):
+        """Mutation guard: dropping any ONE row is detected on its own.
+
+        Removing a single row from the parsed set must make the membership
+        predicate report exactly that step. This proves the check is sensitive
+        to each row independently, so a table that silently lost one row while
+        keeping the rest could never read as green — a claim a single set
+        equality cannot make about itself.
+
+        The population is derived inside the test body rather than at
+        parametrize time on purpose: a collection-time derivation that resolved
+        to nothing would produce zero test cases and report green, which is the
+        same vacuity this guard exists to rule out.
+        """
+        row_names = {name for name, _ in _dispatch_table_rows()}
+        required = [record['name'] for record in _built_in_records()]
+        assert required, 'Precondition failed — see test_discovery_finds_built_in_steps.'
+
+        undetected = []
+        for omitted in required:
+            assert omitted in row_names, (
+                f'Mutation guard precondition failed: {omitted} is not a table '
+                'row, so removing it proves nothing. Fix the table first.'
+            )
+            if _missing_from_table(row_names - {omitted}) != [omitted]:
+                undetected.append(omitted)
+
+        assert undetected == [], (
+            'The membership predicate did not isolate these steps when each was '
+            'removed on its own. A predicate that cannot detect every row '
+            'independently can pass while silently missing one: '
+            f'{undetected}'
+        )
+
+
+class TestNoTwoFinalizeStepsShareAnOrder:
+    """The collision rule (plan 300 D3): no two same-ext-point finalize steps share an `order`.
+
+    The finalize-step ext-point is the phase discriminator — `find_implementors(_EXT_POINT)`
+    returns finalize steps only, and the composer sorts exactly that one population — so a
+    collision is two steps in that population sharing an order. A cross-phase coincidence (a
+    phase-5 verify-step order equal to a phase-6 finalize-step order) is NOT a collision and is
+    invisible here, because the phase-5 doc declares a different ext-point and never enters this
+    population.
+
+    A collision is a defect because the composer's sort resolves equal orders only by an
+    UNDECLARED tie-break: `_sort_steps_by_frontmatter_order` is a stable sort, so two equal-order
+    steps keep their input list position (the `DEFAULT_PHASE_6_STEPS` sequence for defaults, the
+    on-disk keyed-map order for a configured plan). The ascending-order assertion
+    (`check_emitted_steps_ascending_order`) treats equal orders as non-decreasing and so does NOT
+    catch a collision — this check is what closes that gap. The population is derived from
+    `find_implementors`, so a step added later is covered with no edit here. Contract:
+    extension-api/standards/finalize-step-order-bands.md § "The collision rule".
+    """
+
+    def _orders_by_name(self) -> list[tuple[int, str]]:
+        return [
+            (record['order'], record['name'])
+            for record in find_implementors(_EXT_POINT)
+            if isinstance(record.get('order'), int)
+        ]
+
+    def test_discovery_is_non_empty(self):
+        """Anti-vacuity: the collision assertion below is over the discovered population.
+
+        A discovery that resolved to nothing would make the no-collision assertion trivially
+        true, so emptiness is rejected on its own first.
+        """
+        assert self._orders_by_name(), (
+            f'find_implementors({_EXT_POINT!r}) resolved no order-bearing finalize steps, so '
+            'the collision check below would be vacuous.'
+        )
+
+    def test_no_two_steps_share_an_order(self):
+        by_order: dict[int, list[str]] = {}
+        for order, name in self._orders_by_name():
+            by_order.setdefault(order, []).append(name)
+        collisions = {order: sorted(names) for order, names in by_order.items() if len(names) > 1}
+
+        assert not collisions, (
+            'Two or more finalize steps share an `order`. The composer sort '
+            '(`_sort_steps_by_frontmatter_order`) is stable, so it would resolve them only by '
+            'their input list position — an undeclared, emergent tie-break the banded allocation '
+            "contract forbids. Give each colliding step a distinct order from its band's reserved "
+            f'gaps. Colliding orders: {collisions}. See '
+            'extension-api/standards/finalize-step-order-bands.md § "The collision rule".'
+        )
