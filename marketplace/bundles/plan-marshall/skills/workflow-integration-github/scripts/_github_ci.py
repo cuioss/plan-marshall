@@ -64,6 +64,28 @@ def fetch_pr_head_sha(pr_number: int | str) -> str:
     return _fetch_pr_head_sha(pr_number)
 
 
+def issue_comment_verifies_head(comment_body: str, head_sha: str) -> bool:
+    """Return True when an issue_comment body names the merge HEAD.
+
+    PLAN-03 issue-comment path repair: the HEAD-verification signal is reachable
+    on the issue_comment publish path by running the same SHA-reference predicate
+    the review path uses over the comment body, so a bot that reviewed the merge
+    HEAD reads as approving. A current review never advises weakening the gate;
+    only a body that names no commit reads as declined.
+    """
+    import re
+
+    if not comment_body or not head_sha:
+        return False
+    candidate = head_sha.strip().lower()
+    if not candidate:
+        return False
+    for token in re.findall(r'\b[0-9a-f]{40}\b', comment_body, re.IGNORECASE):
+        if token.lower() == candidate:
+            return True
+    return False
+
+
 def fetch_pr_head_committed_at(pr_number: int | str) -> str:
     """Resolve the merge-candidate commit's own timestamp, or ``''`` when unreadable.
 

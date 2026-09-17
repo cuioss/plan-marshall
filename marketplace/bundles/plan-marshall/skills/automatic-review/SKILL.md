@@ -220,14 +220,23 @@ Read `re_review_on_loopback` off the returned `params` object (default: `false`)
 
 **When `re_review_on_loopback == true`**, evaluate the HEAD-vs-`reviewed_commit_sha` advance:
 
-1. Read the most recent **bot-authored** `pr-comment` finding's `reviewed_commit_sha` and `bot_kind`. Scan the staged findings from newest to oldest and select the most recent one with a non-empty `bot_kind` — a later human-authored comment (which carries no `bot_kind`) must NOT suppress re-review of an older bot review that went stale after the HEAD advance. Query the store:
+1. Read the most recent **bot-authored** `pr-comment` finding's `reviewed_commit_sha` and newest `bot_kind`, plus the stale-bot set. Scan the staged findings from newest to oldest and select the most recent one with a non-empty `bot_kind` — a later human-authored comment (which carries no `bot_kind`) must NOT suppress re-review of an older bot review that went stale after the HEAD advance. Query the store:
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings list \
      --plan-id {plan_id} --type pr-comment
    ```
 
-   Walk `findings` newest-first and capture `{reviewed_commit_sha}` and `{bot_kind}` from the first finding whose `bot_kind` is non-empty. If no bot-authored finding exists (the list is empty, or every finding is human-authored), there is no prior bot review to re-trigger — skip this section and proceed to "Wait for review-bot comments".
+   Walk `findings` newest-first and capture `{reviewed_commit_sha}` and `{newest_bot_kind}` from the first finding whose `bot_kind` is non-empty. Collect `{stale_bots}` as the distinct non-empty `bot_kind` values across ALL staged findings — every bot-authored review on record predates the advanced HEAD, so each is stale for the new tree, not only the newest one. If no bot-authored finding exists (the list is empty, or every finding is human-authored), there is no prior bot review to re-trigger — skip this section and proceed to "Wait for review-bot comments".
+
+   Resolve the re-review target through the stale-bot selector rather than using the newest kind on its own — the newest finding's bot may already be current while another bot is stale, and triggering only the newest leaves that stale review unrefreshed:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:automatic-review:review_completeness trigger-bot \
+     --plan-id {plan_id} --stale-bots {stale_bots} --newest-kind {newest_bot_kind}
+   ```
+
+   Read `selected_bot_kind` from the returned TOON and capture it as `{trigger_bot_kind}`. `{newest_bot_kind}` is only the tie-breaker hint when several bots are stale — never the selection on its own.
 
 2. Resolve the current worktree HEAD SHA:
 
@@ -237,23 +246,23 @@ Read `re_review_on_loopback` off the returned `params` object (default: `false`)
 
    Capture stdout as `{head_sha}`. **When `{head_sha} == {reviewed_commit_sha}`**, HEAD has NOT advanced past the reviewed commit — there is nothing new to re-review. Skip this section and proceed to "Wait for review-bot comments".
 
-3. **When `{head_sha} != {reviewed_commit_sha}`** (HEAD advanced past the reviewed commit) AND `{bot_kind}` is set AND `{bot_kind}` is present in `required_bots ∪ optional_bots`: capture the loop-back fix-commit push time as `{push_time}` (the ISO-8601 commit/push time of the HEAD commit — `git -C {worktree_path} show -s --format=%cI HEAD`; passed to the registry's required `--push-time` argument for routing uniformity, but every registered bot now derives the trigger lower bound from the comment-post time), then invoke the D2 re-review registry for the new HEAD. Read `re_review_await_timeout_seconds` off the same `params` object returned by the `step-params get` call above (default: 600) and pass it as `--timeout {re_review_await_timeout_seconds}` so the await budget is operator-configurable rather than the hardcoded `DEFAULT_CI_TIMEOUT`. The registry posts the bot's `trigger_comment` (from its registry doc) and awaits either completion signal: a fresh review, or a fresh issue comment. The comment signal is not a fallback nicety — `cuioss-review-bot` publishes a persistent issue comment rather than a review, and updates it in place. See [`workflow-integration-github` SKILL.md § Canonical invocations → `github_re_review re-review`](../workflow-integration-github/SKILL.md#github_re_review-re-review):
+3. **When `{head_sha} != {reviewed_commit_sha}`** (HEAD advanced past the reviewed commit) AND `{trigger_bot_kind}` is set AND `{trigger_bot_kind}` is present in `required_bots ∪ optional_bots`: capture the loop-back fix-commit push time as `{push_time}` (the ISO-8601 commit/push time of the HEAD commit — `git -C {worktree_path} show -s --format=%cI HEAD`; passed to the registry's required `--push-time` argument for routing uniformity, but every registered bot now derives the trigger lower bound from the comment-post time), then invoke the D2 re-review registry for the new HEAD. Read `re_review_await_timeout_seconds` off the same `params` object returned by the `step-params get` call above (default: 600) and pass it as `--timeout {re_review_await_timeout_seconds}` so the await budget is operator-configurable rather than the hardcoded `DEFAULT_CI_TIMEOUT`. The registry posts the bot's `trigger_comment` (from its registry doc) and awaits either completion signal: a fresh review, or a fresh issue comment. The comment signal is not a fallback nicety — `cuioss-review-bot` publishes a persistent issue comment rather than a review, and updates it in place. See [`workflow-integration-github` SKILL.md § Canonical invocations → `github_re_review re-review`](../workflow-integration-github/SKILL.md#github_re_review-re-review):
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_re_review re-review \
-     --pr-number {pr_number} --bot-kind {bot_kind} --head-sha {head_sha} --push-time {push_time} --timeout {re_review_await_timeout_seconds} --plan-id {plan_id}
+     --pr-number {pr_number} --bot-kind {trigger_bot_kind} --head-sha {head_sha} --push-time {push_time} --timeout {re_review_await_timeout_seconds} --plan-id {plan_id}
    ```
 
    Read `matched`, **`head_sha_verified`**, AND `timed_out` from the returned TOON. `head_sha_verified` is load-bearing and MUST be consulted: `await_fresh_review` matches on EITHER the **review** signal OR the **issue comment** signal, and `head_sha_verified` is decided independently of which one fired. The match conditions AND the rule that decides `head_sha_verified` are stated ONCE, by the producer — see [`workflow-integration-github` SKILL.md § Workflow 3](../workflow-integration-github/SKILL.md#workflow-3-re-review-after-a-head-advancing-branch-operation) signal table; do not restate them here, because a copy left behind is a consumer acting on a predicate the producer no longer implements. ⛔ In particular, do NOT pair a signal with a verdict: pinning the comment signal to a fixed negative verdict is exactly the copy that went stale, and it manufactured a decline for a bot whose only publish shape is a comment naming its reviewed commit. Branch on `head_sha_verified` itself — it is the field that says whether this HEAD was reviewed. Reading `matched` alone credits a review that never happened — see [`standards/bot-participation-contract.md`](standards/bot-participation-contract.md) § "Detecting a decline — the bot answered without reviewing this commit".
 
    - **When `matched: true` AND `head_sha_verified: true`**, the fresh review is now on the PR; proceed to "Wait for review-bot comments" and "Producer: FIND — file PR comments to the ledger" below, which re-runs `fetch_findings` — this re-stamps every finding's `reviewed_commit_sha` to the new HEAD and re-files the new comments for the dispatcher-owned unified triage to consume. The `reviewed_commit_sha` is updated implicitly by that fresh `fetch_findings` run; no separate update call is needed.
 
-   - **When `matched: true` AND `head_sha_verified: false`**, the bot answered the re-review with a comment that does **not** reference `{head_sha}` — it named no reviewed commit at all, or named a different one — an **incremental-review decline**. It did NOT review `{head_sha}`, so this is **not** a completed re-review and MUST NOT be treated as one. Add `{bot_kind}` to the accumulating `{declined_bots}` set (the comma-joined bot_kind list forwarded to the step-done participation guard's `--declined-bots`, where it resolves to the blocking `declined` member), log the decline, and proceed to "On re-review timeout (trigger B)" below — re-triggering a bot that just declined produces another decline, so the decline takes the same disposition path as a timeout (`proceed` / `defer` / `ask`) rather than looping the trigger. This mirrors the treatment [`../phase-6-finalize/standards/branch-cleanup-rereview.md`](../phase-6-finalize/standards/branch-cleanup-rereview.md) § "Re-review the rebased HEAD (trigger A)" applies to the same producer field, so both consumers of that field follow one shape:
+    - **When `matched: true` AND `head_sha_verified: false`**, the bot answered the re-review with a comment that does **not** reference `{head_sha}` — it named no reviewed commit at all, or named a different one — an **incremental-review decline**. It did NOT review `{head_sha}`, so this is **not** a completed re-review and MUST NOT be treated as one. Add `{trigger_bot_kind}` to the accumulating `{declined_bots}` set (the comma-joined bot_kind list forwarded to the step-done participation guard's `--declined-bots`, where it resolves to the blocking `declined` member), log the decline, and proceed to "On re-review timeout (trigger B)" below — re-triggering a bot that just declined produces another decline, so the decline takes the same disposition path as a timeout (`proceed` / `defer` / `ask`) rather than looping the trigger. This mirrors the treatment [`../phase-6-finalize/standards/branch-cleanup-rereview.md`](../phase-6-finalize/standards/branch-cleanup-rereview.md) § "Re-review the rebased HEAD (trigger A)" applies to the same producer field, so both consumers of that field follow one shape:
 
-     ```bash
-     python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-       work --plan-id {plan_id} --level WARNING --message "[WARNING] (plan-marshall:automatic-review) re-review (trigger B) of head_sha={head_sha} returned a comment that does not reference {head_sha} (head_sha_verified=false, bot_kind={bot_kind}) — recorded as declined, NOT a completed review"
-     ```
+      ```bash
+      python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+        work --plan-id {plan_id} --level WARNING --message "[WARNING] (plan-marshall:automatic-review) re-review (trigger B) of head_sha={head_sha} returned a comment that does not reference {head_sha} (head_sha_verified=false, bot_kind={trigger_bot_kind}) — recorded as declined, NOT a completed review"
+      ```
 
    - **When `timed_out: true` (and `matched: false`)**, the await budget expired with no fresh bot review for the new HEAD — proceed to "On re-review timeout (trigger B)" below instead of falling through silently.
 

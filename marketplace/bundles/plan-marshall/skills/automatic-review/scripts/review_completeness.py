@@ -125,6 +125,7 @@ Usage:
     review_completeness.py check --plan-id <id> [--required-bots [<csv>]] [--optional-bots [<csv>]] [--participated-bots [<csv>]] [--in-progress-bots [<csv>]] [--refused-bots [<csv>]] [--stale-participation-bots [<csv>]] [--declined-bots [<csv>]] [--unrecognised-refusal-bots [<csv>]] [--not-triggered] [--triage-ran] [--refused-causes [<csv>]] [--refusal-size-caps [<csv>]] [--measured-diff-size [<s>]]
     review_completeness.py deficit --plan-id <id> [--required-bots [<csv>]] [--optional-bots [<csv>]] [--participated-bots [<csv>]] [--in-progress-bots [<csv>]] [--refused-bots [<csv>]] [--stale-participation-bots [<csv>]] [--declined-bots [<csv>]] [--unrecognised-refusal-bots [<csv>]] [--not-triggered] [--refused-causes [<csv>]] [--refusal-size-caps [<csv>]] [--min-deficit <n>]
     review_completeness.py size-caps
+    review_completeness.py trigger-bot --plan-id <id> [--stale-bots [<csv>]] [--newest-kind [<kind>]]
     review_completeness.py --help
 
 Every list flag above takes an OPTIONAL value: it may be supplied bare (the flag
@@ -234,6 +235,7 @@ import sys
 import bot_registry
 from _findings_core import query_findings
 from _findings_store_state import as_unresolved_store_error
+from review_gate_delta import should_await_refusal
 from toon_parser import serialize_toon
 
 # The state every classified bot resolves to. Every member below except
@@ -360,6 +362,29 @@ CAUSE_SIZE = 'size'
 # state is a non-review (a refusal, an absence, a stale or in-flight publish), so it
 # can be neither a deficit baseline nor a meaningful finding count.
 _REVIEWED_STATES = frozenset({STATE_PARTICIPATED, STATE_PARTICIPATED_BUT_EMPTY})
+
+
+def select_stale_bot_for_trigger(
+    stale_bots: list[str],
+    newest_finding_kind_bot: str | None = None,
+) -> str:
+    """Return the bot a re-review trigger should address.
+
+    Trigger-B reach (PLAN-03): select the actually-stale bot rather than
+    structurally only the newest bot-authored finding's kind. A stale publish
+    means the bot engaged against an earlier commit, so re-triggering the stale
+    bot recovers coverage; triggering the newest finding's bot when it differs
+    re-asks a reviewer that already reviewed this HEAD. The newest-kind hint is
+    only a tie-breaker when several bots are stale. Required-bot plus await pair
+    semantics are unchanged: an awaitable refusal is awaited, CodeRabbit stays
+    required.
+    """
+    if not stale_bots:
+        return newest_finding_kind_bot or ''
+    if newest_finding_kind_bot in stale_bots:
+        return newest_finding_kind_bot
+    return sorted(stale_bots)[0]
+
 
 # Deficit-signal verdicts (D2). A REVIEWER-QUALITY observation about a required
 # reviewer's YIELD, never a merge verdict and never a participation verdict.
@@ -601,12 +626,14 @@ def _refusal_state(rate_limit_class: str, cause: str | None = None, unrecognised
       render ``refused_awaitable``, asserting a reset window nobody observed and
       steering the operator to wait on a notice no layer could even parse. The
       declared-ignorance member is the only honest one.
-    - otherwise the awaitability split, total and injective over the three declared
-      classes so no value is collapsed into another:
-      ``awaitable_window`` -> ``refused_awaitable`` (the window reopens on its own),
+    - otherwise the awaitability split, routed through the production await
+      policy (``review_gate_delta.should_await_refusal``) rather than a direct
+      class comparison, so the flag owns the await decision in one place:
+      awaitable-and-awaited -> ``refused_awaitable`` (the window reopens on its own),
       ``hard_quota`` -> ``refused_hard`` (a budget that does not usefully reopen),
-      ``unknown`` / anything else -> ``refused_unknown`` (the registry declares
-      ignorance, so whether waiting helps is genuinely not known).
+      ``unknown`` / anything else (including awaitable-but-not-awaited) ->
+      ``refused_unknown`` (the registry declares ignorance, so whether waiting
+      helps is genuinely not known).
 
     **The two overrides CAN both hold, and the order is what decides that case.** They
     would be contradictory only if they described the SAME refusal — a ``size`` cause is
@@ -655,7 +682,7 @@ def _refusal_state(rate_limit_class: str, cause: str | None = None, unrecognised
         return STATE_REFUSED_STRUCTURAL
     if unrecognised:
         return STATE_REFUSED_UNKNOWN
-    if rate_limit_class == 'awaitable_window':
+    if should_await_refusal(rate_limit_class):
         return STATE_REFUSED_AWAITABLE
     if rate_limit_class == 'hard_quota':
         return STATE_REFUSED_HARD
@@ -1682,6 +1709,26 @@ def cmd_deficit(args: argparse.Namespace) -> int:
     return 0 if payload.get('status') == 'success' else 1
 
 
+def cmd_trigger_bot(args: argparse.Namespace) -> int:
+    """Resolve the Trigger-B re-review target through the stale-bot selector.
+
+    Production entry point for the automatic-review Trigger-B workflow: the
+    caller supplies the stale-bot set (the distinct bot-authored ``bot_kind``
+    values whose reviews predate the advanced HEAD) and the newest
+    bot-authored finding's kind as a tie-breaker hint, and this command
+    returns the bot the re-review registry must be invoked for. It is a thin
+    CLI wrapper over :func:`select_stale_bot_for_trigger` — the selection
+    rule lives there once, and this command only transports its inputs and
+    publishes its output as TOON, so the workflow never re-derives the rule
+    from a second copy.
+    """
+    stale_bots = _split_bots(args.stale_bots, '--stale-bots')
+    newest_kind = (args.newest_kind or '').strip() or None
+    selected = select_stale_bot_for_trigger(stale_bots, newest_kind)
+    print(serialize_toon({'status': 'success', 'selected_bot_kind': selected}))
+    return 0
+
+
 def _add_bot_observation_flags(sub: argparse.ArgumentParser) -> None:
     """Add the observation flags shared by the ``check`` and ``deficit`` subcommands.
 
@@ -1972,6 +2019,41 @@ def main(argv: list[str] | None = None) -> int:
         allow_abbrev=False,
     )
     size_caps_parser.set_defaults(func=cmd_size_caps)
+
+    trigger_bot_parser = subparsers.add_parser(
+        'trigger-bot',
+        help=(
+            'Resolve the Trigger-B re-review target: select the actually-stale '
+            'bot through select_stale_bot_for_trigger rather than only the '
+            'newest finding kind'
+        ),
+        allow_abbrev=False,
+    )
+    trigger_bot_parser.add_argument('--plan-id', required=True)
+    trigger_bot_parser.add_argument(
+        '--stale-bots',
+        nargs='?',
+        const='',
+        default='',
+        help=(
+            'Comma-separated bot_kinds whose reviews predate the advanced HEAD '
+            '— the stale-bot set select_stale_bot_for_trigger selects from, '
+            'with --newest-kind only as the tie-breaker. May be supplied bare '
+            '(no value), which reads as the empty list.'
+        ),
+    )
+    trigger_bot_parser.add_argument(
+        '--newest-kind',
+        nargs='?',
+        const='',
+        default='',
+        help=(
+            'The newest bot-authored finding\u2019s bot_kind — the tie-breaker '
+            'hint when several bots are stale, never the selection on its own. '
+            'May be supplied bare (no value), which reads as no hint.'
+        ),
+    )
+    trigger_bot_parser.set_defaults(func=cmd_trigger_bot)
 
     args = parser.parse_args(argv)
     rc: int = args.func(args)
