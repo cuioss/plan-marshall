@@ -209,17 +209,29 @@ def cmd_prune_ref(args) -> dict:
         rc_v, _v_out, _v_err = run_git(
             ['-C', str(project_path), 'show-ref', '--verify', '--quiet', f'refs/heads/{head_branch}']
         )
-        if rc_v != 0:
+        if rc_v == 1:
             local_delete_warning = (
                 f'local branch {head_branch} was already deleted — continuing to remote-tracking ref cleanup'
             )
-        else:
+        elif rc_v == 0:
             return {
                 **envelope,
                 'status': 'error',
                 'error_type': 'branch_delete_failed',
                 'local_deleted': False,
                 'message': f'git branch -D {head_branch} failed: {err.strip() or "non-zero exit"}',
+            }
+        else:
+            return {
+                **envelope,
+                'status': 'error',
+                'error_type': 'branch_delete_failed',
+                'local_deleted': False,
+                'message': (
+                    f'git branch -D {head_branch} failed: {err.strip() or "non-zero exit"}; '
+                    f'show-ref verification inconclusive (exit {rc_v}): '
+                    f'{_v_err.strip() or "no verdict"}'
+                ),
             }
 
     # Invariant §5.3.5 — local_only mode: skip remote-tracking ref operations.
