@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import json
 import shutil
+import stat
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -366,3 +368,39 @@ def test_emit_bundles_still_emits_and_prunes_to_a_legitimate_output_dir(
     assert written
     assert (out / 'agent' / 'demo-agent.md').is_file()
     assert not stale.exists(), 'the stale-output prune must still run on a legitimate emit'
+
+
+def test_emit_bundles_emits_install_script_and_readme(
+    fixture_bundle: Path, tmp_path: Path, opencode_config_dir: Path
+):
+    out = tmp_path / 'out'
+    written = emit_bundles(fixture_bundle, out, opencode_config_dir)
+
+    # 1. install.sh emission & permissions
+    install_sh = out / 'install.sh'
+    assert install_sh.is_file(), 'install.sh was not emitted'
+    assert install_sh in written
+    assert install_sh.stat().st_mode & stat.S_IXUSR, 'install.sh must be executable'
+
+    # 2. Syntax validation
+    subprocess.run(['bash', '-n', str(install_sh)], check=True)
+
+    # 3. Help flag
+    res = subprocess.run([str(install_sh), '--help'], check=True, capture_output=True, text=True)
+    assert 'Plan Marshall - OpenCode Component Installer' in res.stdout
+
+    # 4. Local install & uninstall execution
+    test_dest = tmp_path / 'installed_opencode'
+    subprocess.run([str(install_sh), '--target-dir', str(test_dest)], check=True)
+    assert (test_dest / 'skills').is_dir()
+    assert (test_dest / 'agents').is_dir()
+    assert (test_dest / 'commands').is_dir()
+
+    subprocess.run([str(install_sh), '--target-dir', str(test_dest), '--uninstall'], check=True)
+    assert not any((test_dest / 'skills').glob('plan-marshall*'))
+
+    # 5. README.adoc emission
+    readme = out / 'README.adoc'
+    assert readme.is_file(), 'README.adoc was not emitted'
+    assert readme in written
+    assert '= Installation (OpenCode)' in readme.read_text(encoding='utf-8')
