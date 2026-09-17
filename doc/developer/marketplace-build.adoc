@@ -235,6 +235,18 @@ against expectations. Option (c) is different — it installs from a distributio
 ref, which only a live client can exercise — so it stays explicitly pending
 live-client validation.
 
+== Antigravity inner loop (meta-project only)
+
+The Antigravity inner loop mirrors OpenCode and Claude Code, via the project-level `/sync-antigravity` command
+(`.agents/commands/sync-antigravity.md`):
+
+```bash
+./pw generate-antigravity
+/sync-antigravity
+```
+
+The middle hop (`target/antigravity/`) is produced by the Antigravity generator (`marketplace/targets/antigravity/`). `/sync-antigravity` deploys that tree into the Antigravity plugin directory (`~/.gemini/config/plugins/plan-marshall/` or custom `--target-dir`), removes stale **managed** entries (those in the `{bundle}-{skill}` namespace of the bundles being synced) while never touching unmanaged user entries or agents, and reports its actions as a TOON document. It is the exact counterpart of `/sync-opencode` for the Antigravity target, and like that command it is project-level — consumer projects never generate Antigravity output. See `.agents/commands/sync-antigravity.md` and `.agents/scripts/sync_antigravity.py` for parameters and flags.
+
 == Registered marketplace path
 
 The Claude Code marketplace registration MUST point at `target/claude/`, not at the source `marketplace/` directory. The source `marketplace/bundles/<bundle>/.claude-plugin/plugin.json` declares only the canonical agent files; the build target expands each role-eligible agent into per-level variants (`{name}-level-1.md` through `{name}-level-7.md` — seven suffix variants, with `-level-6` and `-level-7` alias-capability-gated) under `target/claude/<bundle>/agents/` and emits a variant-aware `plugin.json` plus a top-level `target/claude/.claude-plugin/marketplace.json`. Registering the source path makes Claude Code's plugin loader install only the canonicals, so every dispatch site that resolves to `execution-context-{level}` fails with `Agent type not found`.
