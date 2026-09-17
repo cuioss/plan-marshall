@@ -542,10 +542,13 @@ def test_claude_target_emits_readme(tmp_path: Path):
 
 def test_claude_target_raises_on_missing_readme_source(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """Verify that ClaudeTarget().generate raises FileNotFoundError if README source is missing."""
-    import marketplace.targets.claude.target as claude_target
+    orig_is_file = Path.is_file
 
-    monkeypatch.setattr(claude_target, '_PROJECT_ROOT', tmp_path / 'nonexistent')
-    bogus_marketplace = tmp_path / 'bundles'
-    bogus_marketplace.mkdir()
+    def fake_is_file(self: Path) -> bool:
+        if self.name == 'install-claude.adoc':
+            return False
+        return orig_is_file(self)
+
+    monkeypatch.setattr(Path, 'is_file', fake_is_file)
     with pytest.raises(FileNotFoundError, match='Required README source not found'):
-        ClaudeTarget().generate(bogus_marketplace, tmp_path / 'out', bundles=['plan-marshall'])
+        ClaudeTarget().generate(_REAL_MARKETPLACE_BUNDLES, tmp_path / 'out', bundles=['plan-marshall'])

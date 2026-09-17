@@ -72,8 +72,16 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+# Detect whether running locally or remotely
+SCRIPT_DIR=""
+if [ -n "${BASH_SOURCE[0]:-}" ] && [ -f "${BASH_SOURCE[0]}" ]; then
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+fi
+
 if [ -z "$TARGET_DIR" ]; then
-  if [ "$SCOPE" = "workspace" ]; then
+  if [ -n "$SCRIPT_DIR" ] && [ -f "$SCRIPT_DIR/plan-marshall-install.sh" ] && [ "$UNINSTALL" = true ]; then
+    TARGET_DIR="$SCRIPT_DIR"
+  elif [ "$SCOPE" = "workspace" ]; then
     TARGET_DIR="${DEFAULT_WORKSPACE_DIR}"
   else
     TARGET_DIR="${DEFAULT_GLOBAL_DIR}"
@@ -120,12 +128,6 @@ if [ "$UNINSTALL" = true ]; then
     echo "No directory found at: $TARGET_DIR"
   fi
   exit 0
-fi
-
-# Detect whether running locally or remotely
-SCRIPT_DIR=""
-if [ -n "${BASH_SOURCE[0]:-}" ] && [ -f "${BASH_SOURCE[0]}" ]; then
-  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 fi
 
 CLEANUP_TMP=false
