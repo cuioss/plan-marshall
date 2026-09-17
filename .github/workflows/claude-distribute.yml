@@ -46,6 +46,11 @@ jobs:
             dist_tag_prefix: opencode
             publish_dir: target/opencode
             generator_target_flag: opencode
+          - target_name: antigravity
+            branch_name: dist-antigravity
+            dist_tag_prefix: antigravity
+            publish_dir: target/antigravity
+            generator_target_flag: antigravity
     steps:
       - name: Generate Release Bot Token
         id: release-token

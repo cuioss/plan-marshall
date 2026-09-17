@@ -47,38 +47,19 @@ Refresh later with `/plugin marketplace update plan-marshall` followed by `/relo
 
 ## Installation (OpenCode)
 
-Plan Marshall ships an OpenCode target tree alongside the Claude Code marketplace. The pinned consumption path is a generate-then-deploy flow: generate the tree from this repository, then sync it into the OpenCode config directory. Full walkthrough: [User Guide › OpenCode Installation](doc/user/install-opencode.adoc).
-
-### Deploy (OBSERVED)
+Plan Marshall installs directly into OpenCode from the published `dist-opencode` distribution branch via a one-line installer. Full walkthrough: [User Guide › OpenCode Installation](doc/user/install-opencode.adoc).
 
 ```bash
-./pw generate --target opencode --output target/opencode
-python3 .opencode/scripts/sync_opencode.py
+curl -fsSL https://raw.githubusercontent.com/cuioss/plan-marshall/dist-opencode/install.sh | bash
 ```
-
-**Step 1 — Generate** (OBSERVED): Run the generator from the repository root. It emits skills, agents, commands, and `opencode.json` into `target/opencode/`. Verified on opencode 1.18.30.
-
-**Step 2 — Sync** (OBSERVED): Run the sync engine from the repository root with no arguments. It deploys the emitted tree into `~/.config/opencode/` (singular → plural directory rename; only managed entries are pruned). Verified end-to-end: 399 entries deployed into a clean config dir; `opencode debug skill` then lists the `plan-marshall-*` skills from that directory.
-
-Refresh later by re-running both steps after a `git pull`.
-
-### Tried and rejected (OBSERVED)
-
-- `opencode plugin plan-marshall` — npm 404 Not Found. The bundle is not published as an npm package. (HYPOTHESIS: works once the bundle is published; tried-and-rejected today.)
 
 ## Installation (Google Antigravity)
 
-Plan Marshall ships a Google Antigravity target tree alongside Claude Code and OpenCode. Generate the target tree and link or copy the skills into your Antigravity customization path. Full walkthrough: [User Guide › Antigravity Installation](doc/user/install-antigravity.adoc).
-
-### Deploy
+Plan Marshall installs directly into Google Antigravity as a plugin from the published `dist-antigravity` distribution branch via a one-line installer. Full walkthrough: [User Guide › Antigravity Installation](doc/user/install-antigravity.adoc).
 
 ```bash
-./pw generate --target antigravity --output target/antigravity
-mkdir -p ~/.gemini/antigravity/skills
-cp -R target/antigravity/skills/* ~/.gemini/antigravity/skills/
+curl -fsSL https://raw.githubusercontent.com/cuioss/plan-marshall/dist-antigravity/install.sh | bash
 ```
-
-Verified with the Antigravity CLI (`agy`) and Antigravity chat interface.
 
 ## Getting Started
 

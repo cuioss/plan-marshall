@@ -526,3 +526,29 @@ def test_emit_marker_fingerprint_non_empty_for_real_worktree(tmp_path: Path):
         '``repo_root = marketplace_dir.parent.parent`` (NOT '
         '``marketplace_dir.parent``).'
     )
+
+
+def test_claude_target_emits_readme(tmp_path: Path):
+    """Verify that ClaudeTarget().generate emits README.adoc copied from doc/user/install-claude.adoc."""
+    output_dir = tmp_path / 'out'
+    written = ClaudeTarget().generate(_REAL_MARKETPLACE_BUNDLES, output_dir, bundles=['plan-marshall'])
+
+    readme = output_dir / 'README.adoc'
+    assert readme.is_file(), 'README.adoc was not emitted at output root'
+    assert readme in written, 'README.adoc not returned in emitted paths'
+    content = readme.read_text(encoding='utf-8')
+    assert '= Installation (Claude Code)' in content
+
+
+def test_claude_target_raises_on_missing_readme_source(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Verify that ClaudeTarget().generate raises FileNotFoundError if README source is missing."""
+    orig_is_file = Path.is_file
+
+    def fake_is_file(self: Path) -> bool:
+        if self.name == 'install-claude.adoc':
+            return False
+        return orig_is_file(self)
+
+    monkeypatch.setattr(Path, 'is_file', fake_is_file)
+    with pytest.raises(FileNotFoundError, match='Required README source not found'):
+        ClaudeTarget().generate(_REAL_MARKETPLACE_BUNDLES, tmp_path / 'out', bundles=['plan-marshall'])

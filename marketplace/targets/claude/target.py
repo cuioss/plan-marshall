@@ -38,6 +38,7 @@ The TOON return contains ``status``, ``emitted_count``,
 from __future__ import annotations
 
 import json
+import shutil
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -257,6 +258,20 @@ class ClaudeTarget(TargetBase):
         target_marketplace_json.parent.mkdir(parents=True, exist_ok=True)
         target_marketplace_json.write_text(generate_marketplace_json(marketplace_src), encoding='utf-8')
         emitted.append(target_marketplace_json)
+
+        # Emit root README.adoc copied from doc/user/install-claude.adoc
+        # so GitHub renders user installation guide on the dist-claude branch.
+        repo_root = marketplace_dir.parent.parent
+        doc_src = repo_root / 'doc' / 'user' / 'install-claude.adoc'
+        if not doc_src.is_file():
+            fallback_src = _PROJECT_ROOT / 'doc' / 'user' / 'install-claude.adoc'
+            if fallback_src.is_file():
+                doc_src = fallback_src
+        if not doc_src.is_file():
+            raise FileNotFoundError(f'Required README source not found: {doc_src}')
+        target_readme = output_dir / 'README.adoc'
+        shutil.copyfile(doc_src, target_readme)
+        emitted.append(target_readme)
 
         # Run equality check after emit so emit_count reflects bytes written
         # AND so the equality engine has fresh artifacts to compare against.

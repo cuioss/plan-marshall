@@ -59,9 +59,10 @@ from marketplace.targets.opencode.frontmatter import (
 )
 from marketplace.targets.opencode.variant_emitter import emit_agent_variants
 
-# Path to the wrapper template used by user-invocable dual-emit.
+# Path to templates used by emitter.
 _TEMPLATES_DIR = Path(__file__).resolve().parent / 'templates'
 _USER_INVOCABLE_TEMPLATE = _TEMPLATES_DIR / 'user-invocable-command.md'
+_INSTALL_SCRIPT_TEMPLATE = _TEMPLATES_DIR / 'install.sh'
 
 #: This target's registry name — the value a component's ``targets:``
 #: declaration must contain for the OpenCode target to emit it. Defined
@@ -610,12 +611,35 @@ def emit_bundles(
                 continue
             _emit_command(bundle_name, command_md, output_dir, rules, transform_body, written)
 
+    # Emit root installer script from template
+    if not _INSTALL_SCRIPT_TEMPLATE.is_file():
+        raise FileNotFoundError(f'Required install.sh template not found: {_INSTALL_SCRIPT_TEMPLATE}')
+    install_target = output_dir / 'install.sh'
+    shutil.copyfile(_INSTALL_SCRIPT_TEMPLATE, install_target)
+    install_target.chmod(0o755)
+    written.append(install_target)
+
+    # Emit root README.adoc copied from doc/user/install-opencode.adoc
+    # so GitHub renders user installation guide on the dist-opencode branch.
+    repo_root = marketplace_dir.parent.parent
+    doc_src = repo_root / 'doc' / 'user' / 'install-opencode.adoc'
+    if not doc_src.is_file():
+        fallback_src = Path(__file__).resolve().parents[3] / 'doc' / 'user' / 'install-opencode.adoc'
+        if fallback_src.is_file():
+            doc_src = fallback_src
+    if not doc_src.is_file():
+        raise FileNotFoundError(f'Required README source not found: {doc_src}')
+    readme_target = output_dir / 'README.adoc'
+    shutil.copyfile(doc_src, readme_target)
+    written.append(readme_target)
+
+    written.append(_generate_opencode_json(output_dir, agent_index))
+
     # Prune stale outputs so a component removed from source leaves no emitted
     # artifact behind. Full regenerations only (see _prune_stale_outputs).
     if bundle_list is None:
         _prune_stale_outputs(output_dir, written)
 
-    written.append(_generate_opencode_json(output_dir, agent_index))
     return written
 
 
