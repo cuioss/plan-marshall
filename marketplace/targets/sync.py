@@ -412,6 +412,7 @@ def sync_target(
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description='Deploy a generated target tree into the platform configuration directory.',
+        allow_abbrev=False,
     )
     parser.add_argument(
         '--target',
