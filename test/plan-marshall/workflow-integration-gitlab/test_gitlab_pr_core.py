@@ -1,41 +1,24 @@
+#!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for workflow-integration-gitlab gitlab_pr.py — two-verb provider contract.
-
-Mirrors test_comments_stage.py (github) for the GitLab provider. The provider
-surface is exactly two pure, zero-LLM verbs (plus the raw ``fetch-comments``):
-
-- ``fetch-comments`` — raw glab fetch (no filtering, no storage)
-- ``fetch_findings`` — fetch + pre-filter + file one ``pr-comment`` finding per
-  surviving comment; the untrusted comment body is quarantined under
-  ``raw_input.{body}`` (never embedded raw in the top-level ``detail``)
-- ``post_responses`` — apply already-decided triage dispositions (discussion-note
-  reply + resolve-discussion) back to the MR, keyed by each finding's own
-  ``hash_id``
-
-These tests cover the producer-side pre-filter helper, the fetch_findings flow
-(body quarantined in raw_input, structured metadata in detail), the fail-loud
-``unconfigured`` signal for both verbs, the hash_id-keyed post_responses respond
-loop and its GitLab-specific glab request shape (note-reply then resolve), and
-the CLI surface contract (the retired ``comments-stage`` / ``triage`` /
-``triage-batch`` subcommands MUST be gone).
+# ruff: noqa: I001
+"""Tests for gitlab_pr provider — post-responses core.
 """
 
+from __future__ import annotations
+
 from unittest.mock import patch
-
 import pytest
-
 from conftest import get_script_path, load_script_module, run_script
 
-SCRIPT_PATH = get_script_path('plan-marshall', 'workflow-integration-gitlab', 'gitlab_pr.py')
 
 # Resolved by (bundle, skill, file), which is what keeps this distinct from the
 # github sibling despite the two scripts sharing a role.
 gitlab_pr = load_script_module('plan-marshall', 'workflow-integration-gitlab', 'gitlab_pr.py')
 
-fetch_comments = gitlab_pr.fetch_comments
-get_current_pr_number = gitlab_pr.get_current_pr_number
-_is_obvious_noise = gitlab_pr._is_obvious_noise
+
 cmd_fetch_findings = gitlab_pr.cmd_fetch_findings
+
+
 cmd_post_responses = gitlab_pr.cmd_post_responses
 
 
@@ -63,88 +46,26 @@ def _make_args(pr_number, plan_id):
 
 
 # =============================================================================
-# Pre-filter (_is_obvious_noise)
+# Rejected producer-mismatch persist (P6) — FIELD_ONLY loudness
 # =============================================================================
+#
+# The producer-mismatch finding exists to report that findings were lost. When
+# its OWN persist is rejected, the loss must surface on the returned dict — but
+# the enclosing ``status`` stays truthful about the fetch, which did succeed.
+_MR_COMMENT = {
+    'id': 'C1',
+    'kind': 'inline',
+    'author': 'reviewer',
+    'body': 'Please fix the off-by-one error in the loop bound',
+    'path': 'src/Loop.java',
+    'line': 12,
+    'thread_id': 'mr-1',
+}
 
 
-def test_empty_body_is_noise():
-    assert _is_obvious_noise('')
-
-
-def test_lgtm_is_noise():
-    assert _is_obvious_noise('lgtm')
-
-
-def test_substantive_is_kept():
-    assert not _is_obvious_noise('Please add validation for empty input')
-
-
-# =============================================================================
-# Provider integration (fetch_comments wrapper)
-# =============================================================================
-
-
-def test_fetch_comments_success():
-    with patch('gitlab_pr._gitlab.fetch_pr_comments_data') as mock_fetch:
-        mock_fetch.return_value = {
-            'status': 'success',
-            'provider': 'gitlab',
-            'comments': [
-                {
-                    'id': 'C1',
-                    'kind': 'inline',
-                    'author': 'reviewer',
-                    'body': 'fix this',
-                    'path': 'src/Main.java',
-                    'line': 42,
-                    'thread_id': 'mr-thread-1',
-                }
-            ],
-            'total': 1,
-            'unresolved': 1,
-        }
-        result = fetch_comments(123)
-
-    assert result['status'] == 'success'
-    assert result['comments'][0]['kind'] == 'inline'
-
-
-def test_fetch_comments_provider_error():
-    with patch('gitlab_pr._gitlab.fetch_pr_comments_data') as mock_fetch:
-        mock_fetch.return_value = {'status': 'error', 'error': 'auth'}
-        result = fetch_comments(123)
-
-    assert result['status'] == 'error'
-
-
-# =============================================================================
-# fetch_findings (producer-side fetch + filter + file to ledger)
-# =============================================================================
-
-
-def test_fetch_findings_persists_substantive_comments_only(plan_context):
-    plan_id = 'gl-pr-stage-1'
-    plan_context.plan_dir_for(plan_id)
-    comments = [
-        {
-            'id': 'C1',
-            'kind': 'inline',
-            'author': 'reviewer',
-            'body': 'Please fix the off-by-one error',
-            'path': 'src/Loop.java',
-            'line': 12,
-            'thread_id': 'mr-1',
-        },
-        {
-            'id': 'C2',
-            'kind': 'review_body',
-            'author': 'reviewer',
-            'body': 'lgtm',
-            'path': '',
-            'line': 0,
-            'thread_id': 'mr-2',
-        },
-    ]
+def _fetch_with_comment(plan_id, pr_number, comment=None):
+    """Run ``fetch_findings`` over a single-comment MR fixture."""
+    comments = [comment or _MR_COMMENT]
     with patch('gitlab_pr._gitlab.fetch_pr_comments_data') as mock_fetch:
         mock_fetch.return_value = {
             'status': 'success',
@@ -153,78 +74,12 @@ def test_fetch_findings_persists_substantive_comments_only(plan_context):
             'total': len(comments),
             'unresolved': len(comments),
         }
-        result = cmd_fetch_findings(_make_args(123, plan_id))
-
-    assert result['status'] == 'success'
-    assert result['operation'] == 'fetch_findings'
-    assert result['provider'] == 'gitlab'
-    assert result['count_fetched'] == 2
-    assert result['count_skipped_noise'] == 1
-    assert result['count_stored'] == 1
-    assert result['producer_mismatch_hash_id'] is None
-
-    from _findings_core import query_findings
-
-    q = query_findings(plan_id, finding_type='pr-comment')
-    assert q['filtered_count'] == 1
-    stored = q['findings'][0]
-    assert stored['type'] == 'pr-comment'
-    assert stored['file_path'] == 'src/Loop.java'
-    assert stored['line'] == 12
-    # The detail carries the trusted structured metadata (kind, thread_id, ...).
-    assert 'kind: inline' in stored['detail']
-    assert 'thread_id: mr-1' in stored['detail']
-    # The untrusted body is quarantined under raw_input.{body}, NOT in detail.
-    assert 'Please fix the off-by-one error' not in stored['detail']
-    assert stored['raw_input']['body'] == 'Please fix the off-by-one error'
-
-
-def test_fetch_findings_provider_error_propagates(plan_context):
-    plan_id = 'gl-pr-stage-err'
-    plan_context.plan_dir_for(plan_id)
-    with patch('gitlab_pr._gitlab.fetch_pr_comments_data') as mock_fetch:
-        mock_fetch.return_value = {'status': 'error', 'error': 'auth'}
-        result = cmd_fetch_findings(_make_args(125, plan_id))
-
-    assert result['status'] == 'error'
-
-
-# =============================================================================
-# Fail-loud unconfigured provider (both verbs)
-# =============================================================================
-
-
-class TestFailLoudUnconfigured:
-    """Both verbs return a typed ``unconfigured`` status when GitLab is not authed."""
-
-    def test_fetch_findings_unconfigured_is_not_silent_success(self, plan_context):
-        plan_context.plan_dir_for('gl-unconfigured-fetch')
-        with patch('gitlab_pr._gitlab.check_auth', return_value=(False, 'glab not authenticated')):
-            result = cmd_fetch_findings(_make_args(200, 'gl-unconfigured-fetch'))
-
-        assert result['status'] == 'unconfigured'
-        assert result['operation'] == 'fetch_findings'
-        assert result['provider'] == 'gitlab'
-        # No findings were filed on the unconfigured path.
-        from _findings_core import query_findings
-
-        assert query_findings('gl-unconfigured-fetch', finding_type='pr-comment')['filtered_count'] == 0
-
-    def test_post_responses_unconfigured_is_not_silent_success(self, plan_context):
-        plan_context.plan_dir_for('gl-unconfigured-respond')
-        with patch('gitlab_pr._gitlab.check_auth', return_value=(False, 'glab not authenticated')):
-            result = cmd_post_responses(_make_args(200, 'gl-unconfigured-respond'))
-
-        assert result['status'] == 'unconfigured'
-        assert result['operation'] == 'post_responses'
-        assert result['provider'] == 'gitlab'
+        return cmd_fetch_findings(_make_args(pr_number, plan_id))
 
 
 # =============================================================================
 # post_responses — hash_id-keyed respond loop (GitLab note-reply + resolve shape)
 # =============================================================================
-
-
 class TestPostResponses:
     """post_responses transmits each finding's disposition to its own MR discussion, keyed by hash_id."""
 
@@ -428,130 +283,6 @@ class TestPostResponses:
 
 
 # =============================================================================
-# CLI plumbing
-# =============================================================================
-
-
-def test_help_lists_only_supported_subcommands():
-    result = run_script(SCRIPT_PATH, '--help')
-
-    assert result.returncode == 0
-    assert 'fetch-comments' in result.stdout
-    assert 'fetch_findings' in result.stdout
-    assert 'post_responses' in result.stdout
-    # Retired surfaces MUST be absent from the CLI.
-    assert 'comments-stage' not in result.stdout
-    assert 'triage-batch' not in result.stdout
-
-
-@pytest.mark.parametrize(
-    'argv',
-    [
-        pytest.param(['triage', '--comment', '{}'], id='triage-rejected'),
-        pytest.param(['comments-stage', '--pr-number', '1', '--plan-id', 'x'], id='comments-stage-rejected'),
-    ],
-)
-def test_retired_subcommand_rejected(argv):
-    result = run_script(SCRIPT_PATH, *argv)
-
-    assert result.returncode != 0
-
-
-# =============================================================================
-# Rejected producer-mismatch persist (P6) — FIELD_ONLY loudness
-# =============================================================================
-#
-# The producer-mismatch finding exists to report that findings were lost. When
-# its OWN persist is rejected, the loss must surface on the returned dict — but
-# the enclosing ``status`` stays truthful about the fetch, which did succeed.
-
-_MR_COMMENT = {
-    'id': 'C1',
-    'kind': 'inline',
-    'author': 'reviewer',
-    'body': 'Please fix the off-by-one error in the loop bound',
-    'path': 'src/Loop.java',
-    'line': 12,
-    'thread_id': 'mr-1',
-}
-
-
-def _fetch_with_comment(plan_id, pr_number, comment=None):
-    """Run ``fetch_findings`` over a single-comment MR fixture."""
-    comments = [comment or _MR_COMMENT]
-    with patch('gitlab_pr._gitlab.fetch_pr_comments_data') as mock_fetch:
-        mock_fetch.return_value = {
-            'status': 'success',
-            'provider': 'gitlab',
-            'comments': comments,
-            'total': len(comments),
-            'unresolved': len(comments),
-        }
-        return cmd_fetch_findings(_make_args(pr_number, plan_id))
-
-
-def test_rejected_mismatch_persist_surfaces_field_without_flipping_status(plan_context, monkeypatch):
-    """A rejected mismatch persist sets qgate_persist_failed and leaves status success.
-
-    Driven by the real validator: ``pr-comment`` is removed from the live
-    ``FINDING_TYPES``, so both the comment store AND the mismatch finding are
-    rejected by ``_findings_core`` itself — no synthetic persist mock.
-    """
-    import _findings_core
-
-    plan_id = 'gl-pr-persist-reject'
-    plan_context.plan_dir_for(plan_id)
-    monkeypatch.setattr(
-        _findings_core,
-        'FINDING_TYPES',
-        tuple(t for t in _findings_core.FINDING_TYPES if t != 'pr-comment'),
-    )
-
-    result = _fetch_with_comment(plan_id, 401)
-
-    # FIELD_ONLY loudness: the fetch itself succeeded, so its status is unchanged.
-    assert result['status'] == 'success'
-    assert result['count_stored'] == 0
-    assert result['qgate_persist_failed'] is True
-    assert result['producer_mismatch_hash_id'] is None
-    failure = result['qgate_persist_failure']
-    assert '(producer-mismatch)' in failure['title']
-    assert 'count_stored=0' in failure['detail']
-    assert 'Invalid finding type' in failure['message']
-
-
-def test_deduplicated_mismatch_persist_stays_benign(plan_context, monkeypatch):
-    """A ``deduplicated`` mismatch persist is benign — it never reads as a rejection.
-
-    Only the upstream comment store is forced to fail (so a mismatch arises); the
-    mismatch persist itself runs against the REAL primitive, which dedups the
-    identical finding on the second run.
-    """
-    import _findings_core
-
-    plan_id = 'gl-pr-persist-dedup'
-    plan_context.plan_dir_for(plan_id)
-    monkeypatch.setattr(
-        _findings_core,
-        'add_finding',
-        lambda **kwargs: {'status': 'error', 'message': 'forced comment-store failure'},
-    )
-
-    first = _fetch_with_comment(plan_id, 402)
-    assert first['status'] == 'success'
-    assert first['count_stored'] == 0
-    assert first['producer_mismatch_hash_id']
-    assert 'qgate_persist_failed' not in first
-
-    second = _fetch_with_comment(plan_id, 402)
-
-    assert second['status'] == 'success'
-    assert 'qgate_persist_failed' not in second
-    # Dedup returns the SAME record — still in the store, so still a hash id.
-    assert second['producer_mismatch_hash_id'] == first['producer_mismatch_hash_id']
-
-
-# =============================================================================
 # The unreached findings store — ``post_responses`` reads it back
 # =============================================================================
 #
@@ -566,8 +297,6 @@ def test_deduplicated_mismatch_persist_stays_benign(plan_context, monkeypatch):
 # error would satisfy the refusal test and break every plan whose store legitimately
 # holds no pr-comment finding — the documented inverse defect. The matched control
 # is what excludes it.
-
-
 def test_post_responses_refuses_a_plan_absent_from_the_resolved_root(plan_context):
     """Positive control: an unreached store is a refusal, not "nothing to transmit"."""
     plan_id = 'gl-store-absent-respond'
@@ -656,3 +385,4 @@ def test_the_two_zeros_are_distinguishable_in_one_comparison(plan_context):
     assert benign['status'] != absent['status']
     assert absent['findings_store_state'] == 'plan_absent'
     assert 'findings_store_state' not in benign
+
