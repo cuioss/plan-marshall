@@ -1,0 +1,969 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
+"""Tests for git-workflow.py baseline-reconcile subcommand.
+
+The subcommand is the mechanical predicate for phase-2-refine Step 3d:
+fetches origin/{base_branch}, lists upstream commits since the
+**merge-base of HEAD and origin/{base_branch}** (recomputed per call, never
+read from a stored SHA), and runs ``git merge-tree`` to detect potential
+conflicts. It **moves no refs and touches no working-tree file** on any path
+— though it is not side-effect-free: on the stale-base path it rewrites
+``base_branch`` in ``references.json`` and emits a decision-log entry. Each
+conflicted file becomes a Q-Gate finding (under --source qgate) so the
+existing phase-2-refine iterate-to-confidence loop addresses the drift.
+"""
+
+from __future__ import annotations
+
+import argparse
+import ast
+import json
+import re
+import subprocess
+from argparse import Namespace
+from pathlib import Path
+
+import file_ops
+from _resolve_project_dir_fixtures import patch_query_worktree_path
+
+from conftest import PROJECT_ROOT, get_script_path, load_script_module
+
+_mod = load_script_module(
+    'plan-marshall',
+    'workflow-integration-git',
+    '_cmd_baseline_reconcile.py',
+    '_cmd_baseline_reconcile_under_test',
+    register=False,
+)
+cmd_baseline_reconcile = _mod.cmd_baseline_reconcile
+
+
+# =============================================================================
+# Helpers — git fixtures
+# =============================================================================
+
+
+def _git(cwd: Path, *args: str) -> None:
+    """Run a git command in ``cwd``; fail the test on non-zero exit."""
+    subprocess.run(
+        ['git', '-C', str(cwd), *args],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
+def _git_init_repo(repo: Path, *, default_branch: str = 'main') -> None:
+    repo.mkdir(parents=True, exist_ok=True)
+    _git(repo, 'init', '-q', '-b', default_branch)
+    _git(repo, 'config', 'user.email', 'tests@example.com')
+    _git(repo, 'config', 'user.name', 'Test')
+
+
+def _commit_file(repo: Path, name: str, content: str, message: str) -> str:
+    (repo / name).write_text(content, encoding='utf-8')
+    _git(repo, 'add', name)
+    _git(repo, 'commit', '-q', '-m', message)
+    return subprocess.run(
+        ['git', '-C', str(repo), 'rev-parse', 'HEAD'],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+
+def _setup_remote_and_worktree(
+    fixture_root: Path,
+    *,
+    base_branch: str = 'main',
+    upstream_commits: int = 0,
+    upstream_conflicts: bool = False,
+) -> tuple[Path, Path, str]:
+    """Build a (bare-remote, local-clone) fixture and return paths + baseline SHA.
+
+    The local clone simulates the worktree: it cloned at ``baseline_sha``
+    and may have diverged on its branch. ``upstream_commits`` add commits
+    on the remote-tracking branch after the clone; ``upstream_conflicts``
+    additionally rewrites the same line in ``shared.txt`` on the local
+    side so ``git merge-tree`` reports a conflict.
+    """
+    remote = fixture_root / 'remote.git'
+    seed = fixture_root / 'seed'
+    worktree = fixture_root / 'worktree'
+
+    # Seed repo (used to bootstrap the remote with one commit).
+    _git_init_repo(seed, default_branch=base_branch)
+    _commit_file(seed, 'shared.txt', 'line 1\n', 'seed: initial')
+
+    # Build the bare remote from the seed.
+    subprocess.run(
+        ['git', 'clone', '--bare', '-q', str(seed), str(remote)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    # Local clone — this is what the test passes as worktree_path.
+    subprocess.run(
+        ['git', 'clone', '-q', str(remote), str(worktree)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    _git(worktree, 'config', 'user.email', 'tests@example.com')
+    _git(worktree, 'config', 'user.name', 'Test')
+    baseline_sha = subprocess.run(
+        ['git', '-C', str(worktree), 'rev-parse', 'HEAD'],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+    # Optionally diverge the local branch (line conflict).
+    if upstream_conflicts:
+        _commit_file(worktree, 'shared.txt', 'line 1 (local edit)\n', 'local: edit shared')
+
+    # Optionally land commits on the remote after the local cloned.
+    if upstream_commits > 0:
+        # Push from the seed repo (still on default_branch).
+        for i in range(upstream_commits):
+            new_content = 'line 1 (upstream)\n' if upstream_conflicts else f'extra {i}\n'
+            target = 'shared.txt' if upstream_conflicts else f'upstream-{i}.txt'
+            _commit_file(seed, target, new_content, f'upstream: change {i}')
+        _git(seed, 'push', '-q', str(remote), base_branch)
+
+        # The local clone needs to fetch — done by the script.
+
+    return remote, worktree, baseline_sha
+
+
+# =============================================================================
+# Tests
+# =============================================================================
+
+
+
+# =============================================================================
+# status.json helpers
+# =============================================================================
+
+
+def _write_status(plan_dir: Path, worktree: Path, baseline_sha: str) -> None:
+    plan_dir.mkdir(parents=True, exist_ok=True)
+    (plan_dir / 'status.json').write_text(
+        json.dumps(
+            {
+                'plan_id': plan_dir.name,
+                'phases': [],
+                'metadata': {
+                    'use_worktree': True,
+                    'worktree_path': str(worktree),
+                    'worktree_branch': 'feature/test',
+                    'worktree_sha': baseline_sha,
+                },
+            }
+        ),
+        encoding='utf-8',
+    )
+
+
+def _write_status_main_checkout(plan_dir: Path) -> None:
+    plan_dir.mkdir(parents=True, exist_ok=True)
+    (plan_dir / 'status.json').write_text(
+        json.dumps(
+            {
+                'plan_id': plan_dir.name,
+                'phases': [],
+                'metadata': {'use_worktree': False},
+            }
+        ),
+        encoding='utf-8',
+    )
+
+
+# =============================================================================
+# Classification tests
+# =============================================================================
+
+
+def _setup_overlap_no_conflict(fixture_root: Path) -> tuple[Path, Path, str]:
+    """Build a fixture where upstream and in-flight touch the SAME file but
+    different lines, so merge-tree predicts no conflict yet there is overlap.
+    """
+    remote = fixture_root / 'remote.git'
+    seed = fixture_root / 'seed'
+    worktree = fixture_root / 'worktree'
+
+    _git_init_repo(seed, default_branch='main')
+    _commit_file(
+        seed,
+        'shared.txt',
+        'A\nB\nC\nD\nE\nF\nG\nH\n',
+        'seed: initial',
+    )
+    subprocess.run(
+        ['git', 'clone', '--bare', '-q', str(seed), str(remote)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    subprocess.run(
+        ['git', 'clone', '-q', str(remote), str(worktree)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    _git(worktree, 'config', 'user.email', 'tests@example.com')
+    _git(worktree, 'config', 'user.name', 'Test')
+    baseline_sha = subprocess.run(
+        ['git', '-C', str(worktree), 'rev-parse', 'HEAD'],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+    # In-flight change: edit the FIRST line of shared.txt.
+    _commit_file(
+        worktree,
+        'shared.txt',
+        'A-local\nB\nC\nD\nE\nF\nG\nH\n',
+        'local: edit first line',
+    )
+    # Upstream change: edit the LAST line of shared.txt — non-overlapping.
+    _commit_file(
+        seed,
+        'shared.txt',
+        'A\nB\nC\nD\nE\nF\nG\nH-upstream\n',
+        'upstream: edit last line',
+    )
+    _git(seed, 'push', '-q', str(remote), 'main')
+
+    return remote, worktree, baseline_sha
+
+
+# =============================================================================
+# Merge-base anchor + non-mutation (D1–D5)
+# =============================================================================
+
+
+def _setup_disjoint_upstream_and_local(fixture_root: Path) -> tuple[Path, Path, str]:
+    """A disjoint fixture: upstream edits ``upstream.txt``; the branch edits
+    ``local.txt``. Returns ``(remote, worktree, baseline_sha)``.
+
+    The worktree carries ONE in-flight commit on ``local.txt``; the remote main
+    carries ONE upstream commit on ``upstream.txt`` landed after the clone. The
+    two file sets are disjoint, so a correct classifier reports ``no_overlap``.
+    """
+    remote = fixture_root / 'remote.git'
+    seed = fixture_root / 'seed'
+    worktree = fixture_root / 'worktree'
+
+    _git_init_repo(seed, default_branch='main')
+    _commit_file(seed, 'base.txt', 'base\n', 'seed: initial')
+    subprocess.run(
+        ['git', 'clone', '--bare', '-q', str(seed), str(remote)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    subprocess.run(
+        ['git', 'clone', '-q', str(remote), str(worktree)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    _git(worktree, 'config', 'user.email', 'tests@example.com')
+    _git(worktree, 'config', 'user.name', 'Test')
+    baseline_sha = subprocess.run(
+        ['git', '-C', str(worktree), 'rev-parse', 'HEAD'],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+    # In-flight: the branch adds local.txt.
+    _commit_file(worktree, 'local.txt', 'local change\n', 'local: add local.txt')
+    # Upstream: a disjoint commit adds upstream.txt on the remote main.
+    _commit_file(seed, 'upstream.txt', 'upstream change\n', 'upstream: add upstream.txt')
+    _git(seed, 'push', '-q', str(remote), 'main')
+    return remote, worktree, baseline_sha
+
+
+def _behind_count(worktree: Path) -> int:
+    """Number of commits ``origin/main`` is ahead of HEAD (the branch's behind-count)."""
+    out = subprocess.run(
+        ['git', '-C', str(worktree), 'rev-list', '--count', 'HEAD..origin/main'],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    return int(out)
+
+
+# =============================================================================
+# The documented reason / error vocabularies are BOUND to the emitting script (D4)
+# =============================================================================
+#
+# ``workflow-integration-git/SKILL.md`` tables every ``status: skipped`` reason and
+# every ``status: error`` token this subcommand can return. Nothing compared the
+# two: a token added, renamed, or removed in ``_cmd_baseline_reconcile.py`` left
+# the table quietly wrong, and a reader consulting the documented vocabulary would
+# act on a token the script no longer emits — or miss one it does.
+#
+# Both sides are DERIVED. The documented side is parsed out of the tables (a
+# transcription here would be a third copy that can drift from both); the emitted
+# side is read from the module's own AST (a second literal list would be exactly
+# the restatement this guard exists to forbid).
+
+_SKILL_DOC = (
+    PROJECT_ROOT / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'workflow-integration-git' / 'SKILL.md'
+)
+
+_RECONCILE_SOURCE = get_script_path('plan-marshall', 'workflow-integration-git', '_cmd_baseline_reconcile.py')
+
+#: The function whose ``return None, '<token>'`` tuples ARE the worktree-resolution
+#: skip reasons. Six of the eleven documented reasons reach the payload only
+#: through this helper, so an emitted-side derivation that looked solely at
+#: ``'reason': …`` dict literals would miss them and pass while the table drifted.
+_SKIP_REASON_FUNCTION = '_worktree_target'
+
+
+def _table_tokens(heading_cell: str, doc_text: str | None = None) -> set[str]:
+    """Parse the backticked tokens from the first column of one SKILL.md table.
+
+    ``heading_cell`` is the table's first header cell (``reason`` / ``error``),
+    which is what distinguishes the two tables from every other table in the doc.
+
+    A first column may group several tokens in ONE slash-joined cell — the
+    worktree-resolution row does exactly that, listing four reasons together — so
+    every backticked run in the cell is collected rather than the cell being read
+    as a single token. A parser that took the cell verbatim would yield one
+    unmatchable string and make the comparison vacuous for those four.
+
+    ``doc_text`` overrides the document read, and exists so the control below can
+    drive THIS parser over an injected row rather than restating set algebra over
+    a locally-built set. The default is the real doc, so every caller that omits
+    it is unaffected.
+    """
+    lines = (doc_text or _SKILL_DOC.read_text(encoding='utf-8')).splitlines()
+    tokens: set[str] = set()
+    index = 0
+    while index < len(lines):
+        line = lines[index].strip()
+        if line.startswith('|') and index + 1 < len(lines):
+            cells = [c.strip() for c in line.strip('|').split('|')]
+            delimiter = lines[index + 1].strip()
+            if (
+                cells
+                and cells[0].strip('`') == heading_cell
+                and delimiter.startswith('|')
+                and set(delimiter) <= set('|-: ')
+            ):
+                row = index + 2
+                while row < len(lines) and lines[row].strip().startswith('|'):
+                    first = lines[row].strip().strip('|').split('|')[0]
+                    tokens.update(re.findall(r'`([a-z0-9_]+)`', first))
+                    row += 1
+                index = row
+                continue
+        index += 1
+    return tokens
+
+
+def _emitted_tokens(source_text: str | None = None) -> tuple[set[str], set[str]]:
+    """The ``reason`` and ``error`` tokens the script actually emits, from its AST.
+
+    Three emission shapes are recognised, which together cover every site:
+
+    * a ``{'reason': '<token>'}`` / ``{'error': '<token>'}`` dict entry — including
+      the ``skip_reason or '<fallback>'`` form, whose constant operand is the
+      fallback reason;
+    * a ``payload['error'] = '<token>'`` subscript assignment;
+    * a ``return None, '<token>'`` tuple inside :data:`_SKIP_REASON_FUNCTION`, the
+      helper that owns the six worktree-resolution reasons.
+
+    ``source_text`` overrides the source read, and exists so the control below can
+    drive THIS AST derivation over an injected emission site. The default is the
+    real script, so every caller that omits it is unaffected.
+    """
+    tree = ast.parse(source_text or _RECONCILE_SOURCE.read_text(encoding='utf-8'))
+    reasons: set[str] = set()
+    errors: set[str] = set()
+
+    def _constants(node: ast.AST) -> list[str]:
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            return [node.value]
+        if isinstance(node, ast.BoolOp):
+            found: list[str] = []
+            for operand in node.values:
+                found.extend(_constants(operand))
+            return found
+        return []
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Dict):
+            for key, value in zip(node.keys, node.values, strict=True):
+                if not (isinstance(key, ast.Constant) and isinstance(key.value, str)):
+                    continue
+                if key.value == 'reason':
+                    reasons.update(_constants(value))
+                elif key.value == 'error':
+                    errors.update(_constants(value))
+        elif isinstance(node, ast.Assign):
+            for target in node.targets:
+                if (
+                    isinstance(target, ast.Subscript)
+                    and isinstance(target.slice, ast.Constant)
+                    and target.slice.value in ('reason', 'error')
+                ):
+                    bucket = reasons if target.slice.value == 'reason' else errors
+                    bucket.update(_constants(node.value))
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef) and node.name == _SKIP_REASON_FUNCTION:
+            for inner in ast.walk(node):
+                if isinstance(inner, ast.Return) and isinstance(inner.value, ast.Tuple):
+                    elements = inner.value.elts
+                    if len(elements) == 2:
+                        reasons.update(_constants(elements[1]))
+
+    return reasons, errors
+
+
+
+def test_classification_no_overlap(plan_context):
+    """Upstream commits touch disjoint files -> classification: no_overlap."""
+    plan_dir = plan_context.plan_dir_for('br-class-none')
+    fixture_root = plan_dir / 'fixture'
+    fixture_root.mkdir(parents=True, exist_ok=True)
+    # upstream_commits=2 with upstream_conflicts=False writes
+    # upstream-0.txt and upstream-1.txt; the local clone has no
+    # in-flight commits, so the in-flight set is empty -> no_overlap.
+    _, worktree, baseline_sha = _setup_remote_and_worktree(
+        fixture_root,
+        upstream_commits=2,
+        upstream_conflicts=False,
+    )
+    _write_status(plan_dir, worktree, baseline_sha)
+    args = Namespace(
+        plan_id='br-class-none',
+        base_branch='main',
+        worktree_path=str(worktree),
+        no_emit=True,
+        skip_fetch=False,
+    )
+    result = cmd_baseline_reconcile(args)
+    assert result['status'] == 'success'
+    assert result['classification'] == 'no_overlap'
+    assert result['auto_reconcilable'] is False
+    assert result['findings_emitted'] == 0
+
+
+
+def test_classification_overlap_no_content_conflict_is_non_mutating(plan_context):
+    """Same-file non-overlapping line edits -> overlap_no_content_conflict and
+    auto_reconcilable, but the probe performs NO merge: HEAD is unchanged, no
+    merge_commit_sha is reported, and the working tree is untouched.
+
+    ``auto_reconcilable`` is a truthful capability signal (the overlap CAN be
+    reconciled cleanly), never a claim that a merge happened — the reconcile is
+    owned by the caller's rebase step, not by this classifier.
+    """
+    plan_dir = plan_context.plan_dir_for('br-class-overlap-ok')
+    fixture_root = plan_dir / 'fixture'
+    fixture_root.mkdir(parents=True, exist_ok=True)
+    _, worktree, baseline_sha = _setup_overlap_no_conflict(fixture_root)
+    _write_status(plan_dir, worktree, baseline_sha)
+    head_before = subprocess.run(
+        ['git', '-C', str(worktree), 'rev-parse', 'HEAD'],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    args = Namespace(
+        plan_id='br-class-overlap-ok',
+        base_branch='main',
+        worktree_path=str(worktree),
+        no_emit=False,  # would emit if classification mis-routed
+        skip_fetch=False,
+    )
+    result = cmd_baseline_reconcile(args)
+    assert result['status'] == 'success'
+    assert result['classification'] == 'overlap_no_content_conflict'
+    assert result['auto_reconcilable'] is True
+    assert result['findings_emitted'] == 0
+    # Non-mutating: the real-merge focused-reconcile was removed, so there is no
+    # merge commit and the ref never moved.
+    assert 'merge_commit_sha' not in result
+    head_after = subprocess.run(
+        ['git', '-C', str(worktree), 'rev-parse', 'HEAD'],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    assert head_before == head_after, 'the probe moved HEAD on overlap_no_content_conflict'
+    # The worktree file still carries only the local edit — the upstream edit
+    # was NOT merged in.
+    head_text = (worktree / 'shared.txt').read_text(encoding='utf-8')
+    assert 'A-local' in head_text
+    assert 'H-upstream' not in head_text
+
+
+
+def test_classification_overlap_with_content_conflict_keeps_loop_entry(plan_context):
+    """Conflicting line edits -> classification stays overlap_with_content_conflict,
+    findings emitted, no auto-reconcile (worktree unchanged).
+    """
+    plan_dir = plan_context.plan_dir_for('br-class-overlap-conflict')
+    fixture_root = plan_dir / 'fixture'
+    fixture_root.mkdir(parents=True, exist_ok=True)
+    _, worktree, baseline_sha = _setup_remote_and_worktree(
+        fixture_root,
+        upstream_commits=1,
+        upstream_conflicts=True,
+    )
+    _write_status(plan_dir, worktree, baseline_sha)
+    head_before = subprocess.run(
+        ['git', '-C', str(worktree), 'rev-parse', 'HEAD'],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    args = Namespace(
+        plan_id='br-class-overlap-conflict',
+        base_branch='main',
+        worktree_path=str(worktree),
+        no_emit=False,
+        skip_fetch=False,
+    )
+    result = cmd_baseline_reconcile(args)
+    assert result['status'] == 'success'
+    assert result['classification'] == 'overlap_with_content_conflict'
+    assert result['auto_reconcilable'] is False
+    assert result['findings_emitted'] >= 1
+    # Worktree HEAD must be unchanged (no merge attempted).
+    head_after = subprocess.run(
+        ['git', '-C', str(worktree), 'rev-parse', 'HEAD'],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    assert head_before == head_after
+    # A landed conflict finding reports no persist failure.
+    assert 'qgate_persist_failed' not in result
+
+
+
+# =============================================================================
+# Rejected persist (P4) — the conflict finding IS this path's primary output
+# =============================================================================
+
+
+def test_rejected_persist_flips_status_and_carries_finding_content(plan_context, monkeypatch):
+    """A REJECTED conflict-finding persist flips the status and inlines the finding.
+
+    The conflict finding IS this path's primary output, so a lost persist must
+    surface as an error carrying the rejected content inline — never a clean
+    result with findings_emitted: 0 (fail-closed rule f, write direction). The
+    probe no longer performs a real merge, so its only emitted finding_type
+    (``triage``) is valid; the store-rejection path is exercised by stubbing the
+    persist call, which is the boundary the rule actually governs.
+    """
+    plan_dir = plan_context.plan_dir_for('br-persist-reject')
+    fixture_root = plan_dir / 'fixture'
+    fixture_root.mkdir(parents=True, exist_ok=True)
+    _, worktree, baseline_sha = _setup_remote_and_worktree(
+        fixture_root,
+        upstream_commits=1,
+        upstream_conflicts=True,
+    )
+    _write_status(plan_dir, worktree, baseline_sha)
+
+    def _reject(**kwargs):
+        return {'status': 'error', 'message': 'Simulated store rejection'}
+
+    monkeypatch.setattr(_mod, 'add_qgate_finding', _reject)
+
+    args = Namespace(
+        plan_id='br-persist-reject',
+        base_branch='main',
+        worktree_path=str(worktree),
+        no_emit=False,
+        skip_fetch=False,
+    )
+    result = cmd_baseline_reconcile(args)
+
+    assert result['classification'] == 'overlap_with_content_conflict'
+    # The finding is this path's primary output — a lost persist is an error,
+    # never a clean result with findings_emitted: 0.
+    assert result['status'] == 'error'
+    assert result['error'] == 'finding_persist_failed'
+    assert result['qgate_persist_failed'] is True
+    assert result['findings_emitted'] == 0
+
+    failure = result['qgate_persist_failures'][0]
+    assert failure['finding_type'] == 'triage'
+    assert 'Simulated store rejection' in failure['message']
+    # The rejected finding's own content travels inline.
+    assert 'merge conflict' in failure['title']
+    assert 'origin/main' in failure['detail']
+
+
+
+def test_deduplicated_conflict_finding_stays_benign(plan_context):
+    """A ``deduplicated`` re-persist is benign and must not read as a rejection."""
+    plan_dir = plan_context.plan_dir_for('br-persist-dedup')
+    fixture_root = plan_dir / 'fixture'
+    fixture_root.mkdir(parents=True, exist_ok=True)
+    _, worktree, baseline_sha = _setup_remote_and_worktree(
+        fixture_root,
+        upstream_commits=1,
+        upstream_conflicts=True,
+    )
+    _write_status(plan_dir, worktree, baseline_sha)
+    args = Namespace(
+        plan_id='br-persist-dedup',
+        base_branch='main',
+        worktree_path=str(worktree),
+        no_emit=False,
+        skip_fetch=False,
+    )
+
+    first = cmd_baseline_reconcile(args)
+    assert first['status'] == 'success'
+    assert first['findings_emitted'] >= 1
+
+    second = cmd_baseline_reconcile(args)
+
+    # Re-detection dedups: the record is still in the store, so the run stays
+    # a clean success — the benign zero must never collapse onto a rejection.
+    assert second['status'] == 'success'
+    assert 'error' not in second
+    assert 'qgate_persist_failed' not in second
+    assert second['findings_emitted'] == 0
+
+
+
+def test_two_calls_after_reconcile_agree_zero_upstream_no_overlap(plan_context):
+    """D5(a) + D5(d): after a focused reconcile leaves the branch 0 commits
+    behind, BOTH call sites report zero upstream and ``no_overlap``, and the two
+    verdicts do not contradict.
+
+    Pre-fix (stale stored anchor) the second call — issued after ``origin/main``
+    was merged into HEAD — re-lists the merged-in upstream commit as still
+    upstream and flips ``no_overlap`` -> ``overlap_no_content_conflict``,
+    contradicting the first call AND misreporting a 0-behind branch as 1
+    upstream. Post-fix (merge-base anchor) both calls agree: 0 upstream,
+    ``no_overlap``.
+    """
+    plan_dir = plan_context.plan_dir_for('br-two-call')
+    fixture_root = plan_dir / 'fixture'
+    fixture_root.mkdir(parents=True, exist_ok=True)
+    _, worktree, baseline_sha = _setup_disjoint_upstream_and_local(fixture_root)
+    _write_status(plan_dir, worktree, baseline_sha)
+
+    args = Namespace(
+        plan_id='br-two-call',
+        base_branch='main',
+        worktree_path=str(worktree),
+        no_emit=True,
+        skip_fetch=False,
+    )
+
+    # First call (the baseline-sync analog), BEFORE the reconcile: the branch is
+    # genuinely 1 behind and the file sets are disjoint.
+    first = cmd_baseline_reconcile(args)
+    assert first['status'] == 'success'
+    assert first['classification'] == 'no_overlap'
+    assert first['upstream_commit_count'] == 1
+
+    # Simulate the focused reconcile: merge origin/main into HEAD. The branch is
+    # now 0 commits behind origin/main — the exact ground truth of the live run.
+    _git(worktree, 'merge', 'origin/main', '--no-edit')
+    assert _behind_count(worktree) == 0, 'fixture precondition: 0 behind after the reconcile'
+
+    # Second call (the branch-cleanup analog) against the SAME unchanged state.
+    second = cmd_baseline_reconcile(args)
+    assert second['status'] == 'success'
+    # D5(a): a 0-behind branch reports zero upstream and no overlap.
+    assert second['upstream_commit_count'] == 0, (
+        'a 0-behind branch reported upstream commits — the anchor re-listed the merged-in commit as upstream'
+    )
+    assert second['classification'] == 'no_overlap'
+    # D5(d): the two verdicts against one unchanged state do not contradict.
+    assert first['classification'] == second['classification']
+
+
+
+def test_in_flight_set_excludes_files_the_plan_never_touched(plan_context):
+    """D5(b): after a reconcile brings origin/main into HEAD, the in-flight set
+    contains only the plan's own file (``local.txt``) — never the upstream file
+    the plan never touched (``upstream.txt``).
+
+    A stale anchor would diff ``{init SHA}..HEAD``, folding in the merged-in
+    upstream file and inflating the in-flight set with a file the plan never
+    touched.
+    """
+    plan_dir = plan_context.plan_dir_for('br-inflight')
+    fixture_root = plan_dir / 'fixture'
+    fixture_root.mkdir(parents=True, exist_ok=True)
+    _, worktree, baseline_sha = _setup_disjoint_upstream_and_local(fixture_root)
+    _write_status(plan_dir, worktree, baseline_sha)
+
+    args = Namespace(
+        plan_id='br-inflight',
+        base_branch='main',
+        worktree_path=str(worktree),
+        no_emit=True,
+        skip_fetch=False,
+    )
+    cmd_baseline_reconcile(args)  # first call fetches origin/main
+    _git(worktree, 'merge', 'origin/main', '--no-edit')  # focused reconcile
+    result = cmd_baseline_reconcile(args)
+
+    assert result['status'] == 'success'
+    assert 'in_flight_files' in result
+    assert 'local.txt' in result['in_flight_files']
+    assert 'upstream.txt' not in result['in_flight_files'], (
+        'the in-flight set folded in an upstream file the plan never touched — the anchor is stale, not the merge-base'
+    )
+
+
+
+def test_merge_base_recomputed_not_read_from_stored_status(plan_context):
+    """D5(c): a bogus stored ``worktree_sha`` is ignored — the anchor is the
+    recomputed merge-base, so the upstream count is correct despite the poison.
+
+    If the resolver still read ``status.metadata.worktree_sha``, the all-zero
+    SHA below would make ``{sha}..origin/main`` fail and the branch read as
+    0-behind. The correct answer (1 upstream) can only come from a recomputed
+    merge-base.
+    """
+    plan_dir = plan_context.plan_dir_for('br-recompute')
+    fixture_root = plan_dir / 'fixture'
+    fixture_root.mkdir(parents=True, exist_ok=True)
+    _, worktree, _ = _setup_disjoint_upstream_and_local(fixture_root)
+    # Poison the stored anchor.
+    _write_status(plan_dir, worktree, '0' * 40)
+
+    args = Namespace(
+        plan_id='br-recompute',
+        base_branch='main',
+        worktree_path=str(worktree),
+        no_emit=True,
+        skip_fetch=False,
+    )
+    result = cmd_baseline_reconcile(args)
+
+    assert result['status'] == 'success'
+    assert result['upstream_commit_count'] == 1, (
+        'the anchor came from the poisoned stored worktree_sha, not the recomputed merge-base'
+    )
+    assert result.get('merge_base_source') == 'merge_base'
+
+
+
+def test_classify_only_never_moves_head_on_every_classification(plan_context):
+    """D5(e): the probe leaves HEAD byte-for-byte unchanged on EVERY
+    classification — including overlap_no_content_conflict, which previously ran
+    a real merge that moved the ref.
+    """
+    cases = [
+        (
+            'no_overlap',
+            lambda root: _setup_remote_and_worktree(root, upstream_commits=2, upstream_conflicts=False),
+        ),
+        ('overlap_no_content_conflict', _setup_overlap_no_conflict),
+        (
+            'overlap_with_content_conflict',
+            lambda root: _setup_remote_and_worktree(root, upstream_commits=1, upstream_conflicts=True),
+        ),
+    ]
+    for expected, builder in cases:
+        plan_dir = plan_context.plan_dir_for(f'br-nomut-{expected}')
+        fixture_root = plan_dir / 'fixture'
+        fixture_root.mkdir(parents=True, exist_ok=True)
+        _, worktree, baseline_sha = builder(fixture_root)
+        _write_status(plan_dir, worktree, baseline_sha)
+        head_before = subprocess.run(
+            ['git', '-C', str(worktree), 'rev-parse', 'HEAD'],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        args = Namespace(
+            plan_id=f'br-nomut-{expected}',
+            base_branch='main',
+            worktree_path=str(worktree),
+            no_emit=True,
+            skip_fetch=False,
+        )
+        result = cmd_baseline_reconcile(args)
+        head_after = subprocess.run(
+            ['git', '-C', str(worktree), 'rev-parse', 'HEAD'],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        assert result['status'] == 'success'
+        assert result['classification'] == expected
+        assert head_before == head_after, f'the probe moved HEAD on {expected}'
+
+
+
+def test_d3_guard_fires_when_probe_moves_head(plan_context, monkeypatch):
+    """D3: a deliberate ref move DURING the probe is caught AT the probe as a
+    fail-loud ``probe_mutated_head`` error — not discovered later at the landing.
+
+    A guard never seen to fail is indistinguishable from one that cannot, so
+    this test injects a ref move mid-classification (via a stubbed
+    ``_detect_merge_conflicts``) and confirms the post-probe assertion fires.
+    """
+    plan_dir = plan_context.plan_dir_for('br-guard')
+    fixture_root = plan_dir / 'fixture'
+    fixture_root.mkdir(parents=True, exist_ok=True)
+    _, worktree, baseline_sha = _setup_remote_and_worktree(fixture_root)
+    _write_status(plan_dir, worktree, baseline_sha)
+
+    real_detect = _mod._detect_merge_conflicts
+
+    def _moving_detect(worktree_path, base_branch):
+        # Regression stand-in: move HEAD mid-probe.
+        (Path(worktree_path) / 'sneaky.txt').write_text('x\n', encoding='utf-8')
+        subprocess.run(
+            ['git', '-C', worktree_path, 'add', 'sneaky.txt'],
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ['git', '-C', worktree_path, 'commit', '-q', '-m', 'sneaky mid-probe commit'],
+            check=True,
+            capture_output=True,
+        )
+        return real_detect(worktree_path, base_branch)
+
+    monkeypatch.setattr(_mod, '_detect_merge_conflicts', _moving_detect)
+
+    args = Namespace(
+        plan_id='br-guard',
+        base_branch='main',
+        worktree_path=str(worktree),
+        no_emit=True,
+        skip_fetch=False,
+    )
+    result = cmd_baseline_reconcile(args)
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'probe_mutated_head'
+    assert result['head_before'] != result['head_after']
+
+
+
+# ---------------------------------------------------------------------------
+# The stale-base auto-update is authoritative for the NEXT call
+# ---------------------------------------------------------------------------
+#
+# Raised by automated review on the PR that added the return-contract docs:
+# `_maybe_auto_update_stale_base_branch` persisted a corrected `base_branch`
+# into references.json, but `_resolve_base_branch` read only the marshal config
+# and never the references file. The write was therefore inert -- every call
+# re-resolved the stale configured branch, re-detected it as stale, and
+# rewrote the same correction, so the "auto-update" never governed anything.
+#
+# These pin the resolution ORDER rather than one call's return value, because
+# the defect was only observable across two calls.
+
+
+def test_persisted_base_branch_outranks_the_configured_one(monkeypatch):
+    """The value the auto-update wrote is what the next call resolves.
+
+    This is the regression: with resolution reading only the config, the
+    persisted correction is invisible and this returns the stale configured
+    branch instead.
+    """
+    monkeypatch.setattr(_mod, '_read_references_base_branch', lambda plan_id: 'release-2')
+    monkeypatch.setattr(
+        _mod,
+        'load_config',
+        lambda: {'plan': {'phase-2-refine': {'base_branch': 'stale-main'}}},
+        raising=False,
+    )
+
+    branch, source = _mod._resolve_base_branch('some-plan', None)
+
+    assert (branch, source) == ('release-2', 'plan_references'), (
+        'the persisted per-plan base_branch must outrank the project-wide config, '
+        'otherwise the stale-base auto-update can never become authoritative'
+    )
+
+
+
+def test_cli_override_still_outranks_the_persisted_value(monkeypatch):
+    """An explicit operator argument beats persisted state.
+
+    The control on the test above: raising the reference above the config must
+    not raise it above `--base-branch`, which is the one source a human typed.
+    """
+    monkeypatch.setattr(_mod, '_read_references_base_branch', lambda plan_id: 'release-2')
+
+    assert _mod._resolve_base_branch('some-plan', 'explicit') == ('explicit', 'cli')
+
+
+
+def test_resolution_falls_through_to_config_when_no_reference_is_persisted(monkeypatch):
+    """A plan with no persisted base_branch still resolves from the config.
+
+    Anti-regression for the fail-soft path: reading references must not become a
+    precondition, or every plan without a references entry would resolve to the
+    hardcoded default and silently ignore its configured branch.
+    """
+    import _config_core
+
+    monkeypatch.setattr(_mod, '_read_references_base_branch', lambda plan_id: None)
+    # `load_config` is imported INSIDE `_resolve_base_branch`, so the patch has to
+    # land on the source module -- patching `_mod.load_config` is silently
+    # ineffective and would make this test pass for the wrong reason.
+    monkeypatch.setattr(
+        _config_core,
+        'load_config',
+        lambda: {'plan': {'phase-2-refine': {'base_branch': 'configured'}}},
+    )
+
+    branch, source = _mod._resolve_base_branch('some-plan', None)
+
+    assert (branch, source) == ('configured', 'plan_config')
+
+
+
+def test_reader_is_fail_soft_on_every_unavailability_path(monkeypatch):
+    """A missing, unreadable or malformed references body yields None, never a raise.
+
+    The probe must stay usable on a plan that has no references file; an
+    exception here would turn a soft fallback into a hard failure of the whole
+    baseline-reconcile call.
+    """
+    import _references_core
+
+    # `read_references` is imported INSIDE the function, so the patch must land on
+    # `_references_core` -- patching `_mod.read_references` sets a module attribute
+    # nothing reads, and every assertion below would pass without exercising the
+    # bodies at all. That vacuous form shipped once and was caught in review; the
+    # sibling config test carries the same warning for the same reason.
+    #
+    # Every exception the guard catches is raised here, not just the first. A test
+    # named "every unavailability path" that exercises one of three is the same
+    # over-claim in a different shape: a narrowed `except FileNotFoundError` would
+    # let the other two escape as hard failures and this test would stay green.
+    for exc in (FileNotFoundError, OSError, ValueError):
+
+        def _raises(plan_id, e=exc):
+            raise e(plan_id)
+
+        monkeypatch.setattr(_references_core, 'read_references', _raises)
+        assert _mod._read_references_base_branch('absent-plan') is None, (
+            f'{exc.__name__} must be caught and yield None, not propagate'
+        )
+
+    for body in ({}, {'base_branch': ''}, {'base_branch': '   '}, {'base_branch': 42}, []):
+        monkeypatch.setattr(_references_core, 'read_references', lambda plan_id, b=body: b)
+        assert _mod._read_references_base_branch('p') is None, f'body {body!r} must yield None'

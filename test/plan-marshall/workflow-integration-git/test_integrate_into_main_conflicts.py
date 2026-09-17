@@ -171,213 +171,41 @@ def isolated_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict:
 # =============================================================================
 
 
-class TestIntegrateHappyPath:
-    def test_moves_plan_dir_back_folds_logs_and_releases_lock(self, isolated_env: dict) -> None:
-        env = isolated_env
-        result = integrate_into_main.run_integrate_into_main(Namespace(plan_id=env['plan_id']))
-
-        assert result['status'] == 'success', result
-        assert result['action'] == 'integrated'
-
-        # Plan dir is now resident on main as a real directory...
-        assert env['main_plan_dir'].is_dir()
-        assert not env['main_plan_dir'].is_symlink()
-        assert (env['main_plan_dir'] / 'status.json').is_file()
-        # ...and GONE from the worktree (moved, not copied).
-        assert not env['wt_plan_dir'].exists()
-
-        # The plan's global logs were folded into the plan dir's logs/.
-        folded = env['main_plan_dir'] / 'logs' / 'work.log'
-        assert folded.is_file()
-        assert 'work.log' in result['folded_logs']
-
-        # The lock was acquired AND released.
-        assert env['fake_lock'].acquired == 1
-        assert env['fake_lock'].released == 1
-
-        # The success payload carries NO regen fields — integrate does not
-        # regenerate the executor.
-        assert 'regenerated' not in result
-        assert 'regen_detail' not in result
-
-    def test_does_not_change_cwd(self, isolated_env: dict) -> None:
-        env = isolated_env
-        cwd_before = os.getcwd()
-        integrate_into_main.run_integrate_into_main(Namespace(plan_id=env['plan_id']))
-        assert os.getcwd() == cwd_before
-
-    def test_does_not_remove_worktree(self, isolated_env: dict) -> None:
-        env = isolated_env
-        integrate_into_main.run_integrate_into_main(Namespace(plan_id=env['plan_id']))
-        # The worktree directory itself survives — branch-cleanup owns removal.
-        assert env['worktree_path'].is_dir()
-
-    def test_executor_never_touched_by_integrate(self, isolated_env: dict) -> None:
-        """Integrate neither moves nor regenerates any executor.
-        Stage both a main-resident executor and a worktree-bound one, and assert
-        both are left byte-for-byte untouched across the move-back — integrate has
-        no executor responsibility at all.
-        """
-        env = isolated_env
-        # Stage a main-resident executor (it must stay present and unchanged)...
-        main_executor = env['main'] / '.plan' / 'execute-script.py'
-        main_executor.write_text('# main executor — must stay untouched\n')
-        # ...and a worktree-bound one (it must NOT travel to main).
-        wt_executor = env['worktree_path'] / '.plan' / 'execute-script.py'
-        wt_executor.write_text('# worktree-bound executor — MUST NOT reach main\n')
-
-        integrate_into_main.run_integrate_into_main(Namespace(plan_id=env['plan_id']))
-
-        # Main's executor is present and byte-for-byte unchanged (never regenerated).
-        assert main_executor.read_text() == '# main executor — must stay untouched\n'
-        # The worktree-bound executor is left where it was (worktree removal handles it),
-        # never file-moved onto a fresh main slot.
-        assert wt_executor.is_file()
-
 
 # =============================================================================
-# Merge-lock title-token suppression
+# cwd-independent SOURCE resolution — structural probe + channel/probe fallback
+# (the moved-in-from-main case)
 # =============================================================================
 
 
-class TestIntegrateSuppressesMergeLockTitleToken:
-    """The move-back merge lock is a brief, finalize-internal mutex — flashing a
-    ⏳/🔒 glyph into the terminal title is spurious noise. integrate forwards
-    ``set_title_token=False`` on BOTH the acquire and the release so no merge-lock
-    glyph reaches the title during integration."""
+def _stage_worktree_at_canonical_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, plan_id: str) -> Path:
+    """Stage a worktree at the canonical ``get_worktree_root() / {plan_id}`` layout.
 
-    def test_acquire_forwards_set_title_token_false(self, isolated_env: dict) -> None:
-        env = isolated_env
-        integrate_into_main.run_integrate_into_main(Namespace(plan_id=env['plan_id']))
-        # The single acquire forwarded set_title_token=False (not absent, not True).
-        assert env['fake_lock'].acquire_set_title_tokens == [False]
-
-    def test_release_forwards_set_title_token_false(self, isolated_env: dict) -> None:
-        env = isolated_env
-        integrate_into_main.run_integrate_into_main(Namespace(plan_id=env['plan_id']))
-        # The single release forwarded set_title_token=False (mirrors the acquire).
-        assert env['fake_lock'].release_set_title_tokens == [False]
-
-    def test_rollback_release_also_forwards_set_title_token_false(
-        self, isolated_env: dict, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """The release on the rollback (move-back-failure) exit path also forwards
-        ``set_title_token=False`` — every release path mirrors the suppressed
-        acquire so a crashed move-back never leaves a clear targeting an unset token."""
-        env = isolated_env
-
-        def boom(src: Path, dst: Path) -> None:
-            raise OSError('simulated move-back failure')
-
-        monkeypatch.setattr(integrate_into_main, '_move_back_dir', boom)
-
-        result = integrate_into_main.run_integrate_into_main(Namespace(plan_id=env['plan_id']))
-        assert result['status'] == 'error'
-        assert env['fake_lock'].acquire_set_title_tokens == [False]
-        assert env['fake_lock'].release_set_title_tokens == [False]
-
-
-# =============================================================================
-# cwd-independence regression
-# =============================================================================
-
-
-class TestIntegrateCwdIndependent:
-    """Regression suite for the false-``noop``-from-worktree-cwd defect.
-
-    The historical bug resolved both SOURCE and DESTINATION cwd-relatively
-    (``get_worktree_root()`` / ``get_plan_dir()``), so invoking integrate from the
-    worktree cwd resolved the DESTINATION inside the worktree, found the plan dir
-    "already there", and returned a false ``action: noop`` — the move-back never
-    happened. These tests pin cwd to the WORKTREE and assert an actual move,
-    WITHOUT mocking the DESTINATION resolver (the real ``resolve_main_anchored_path``
-    runs, driven through ``PLAN_BASE_DIR``).
+    Drives the DESTINATION resolver (``resolve_main_anchored_path``) via
+    ``PLAN_BASE_DIR`` pointing at a staged main ``.plan/local``, AND pins the SOURCE
+    probe's ``get_worktree_root()`` seam at ``{main}/worktrees`` so the worktree
+    resolves deterministically regardless of the autouse ``PLAN_BASE_DIR`` sandbox or
+    the process cwd. Materializes
+    ``{root}/{plan_id}/.plan/local/plans/{plan_id}/status.json`` — exactly the
+    on-disk shape :func:`_structural_worktree_probe` keys on. Returns the staged
+    worktree path (``get_worktree_root() / plan_id``).
     """
+    main_local = tmp_path / 'main' / '.plan' / 'local'
+    main_local.mkdir(parents=True)
+    monkeypatch.setenv('PLAN_BASE_DIR', str(main_local))
 
-    def test_move_back_from_worktree_cwd_is_not_noop(self, isolated_env: dict, monkeypatch: pytest.MonkeyPatch) -> None:
-        env = isolated_env
-        # Re-pin cwd to the WORKTREE — the misuse that triggered the false noop.
-        monkeypatch.chdir(env['worktree_path'])
+    worktree_root = main_local / 'worktrees'
+    # Pin the SOURCE probe's worktree-root seam directly (rather than relying on
+    # the env-var-derived get_base_dir(), which the autouse sandbox also sets):
+    # the probe calls the module-bound ``get_worktree_root`` in integrate_into_main.
+    monkeypatch.setattr(integrate_into_main, 'get_worktree_root', lambda: worktree_root)
 
-        result = integrate_into_main.run_integrate_into_main(Namespace(plan_id=env['plan_id']))
+    worktree_path = worktree_root / plan_id
+    status_json = worktree_path / '.plan' / 'local' / 'plans' / plan_id / 'status.json'
+    status_json.parent.mkdir(parents=True)
+    status_json.write_text('{}\n')
+    return worktree_path
 
-        # An ACTUAL move-back, never noop — the DESTINATION resolved to the staged
-        # main via the REAL resolver despite cwd being the worktree.
-        assert result['status'] == 'success', result
-        assert result['action'] == 'integrated', result
-        # Plan dir now resident at MAIN (not inside the worktree)...
-        assert env['main_plan_dir'].is_dir()
-        assert (env['main_plan_dir'] / 'status.json').is_file()
-        # ...and ABSENT from the worktree.
-        assert not env['wt_plan_dir'].exists()
-
-    def test_destination_resolver_is_real_not_mocked(self, isolated_env: dict, monkeypatch: pytest.MonkeyPatch) -> None:
-        """The DESTINATION resolution must run the real resolve_main_anchored_path.
-
-        Guard against a regression where the test stubs the resolver and so cannot
-        catch the cwd-dependence defect: assert the resolved main_plan_dir lands
-        exactly under the PLAN_BASE_DIR-staged main, computed by the real resolver.
-        """
-        env = isolated_env
-        monkeypatch.chdir(env['worktree_path'])
-
-        # Sanity: the real resolver targets the staged main, cwd notwithstanding.
-        resolved = integrate_into_main.resolve_main_anchored_path(f'plans/{env["plan_id"]}')
-        assert resolved == env['main_plan_dir']
-
-        integrate_into_main.run_integrate_into_main(Namespace(plan_id=env['plan_id']))
-        assert env['main_plan_dir'].is_dir()
-
-
-# =============================================================================
-# Idempotent re-run
-# =============================================================================
-
-
-class TestIntegrateIdempotent:
-    def test_rerun_is_noop_success_without_acquiring_lock(self, isolated_env: dict) -> None:
-        env = isolated_env
-        first = integrate_into_main.run_integrate_into_main(Namespace(plan_id=env['plan_id']))
-        assert first['status'] == 'success'
-        assert first['action'] == 'integrated'
-
-        # A re-run observes the plan dir already on main (and gone from the worktree)
-        # and short-circuits WITHOUT acquiring the lock.
-        acquired_before = env['fake_lock'].acquired
-        second = integrate_into_main.run_integrate_into_main(Namespace(plan_id=env['plan_id']))
-        assert second['status'] == 'success'
-        assert second['action'] == 'noop'
-        assert env['fake_lock'].acquired == acquired_before  # no new acquire
-
-
-# =============================================================================
-# Rollback-on-partial-failure
-# =============================================================================
-
-
-class TestIntegrateRollback:
-    def test_move_back_failure_rolls_back_to_worktree_and_releases_lock(
-        self, isolated_env: dict, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        env = isolated_env
-
-        def boom(src: Path, dst: Path) -> None:
-            raise OSError('simulated move-back failure')
-
-        monkeypatch.setattr(integrate_into_main, '_move_back_dir', boom)
-
-        result = integrate_into_main.run_integrate_into_main(Namespace(plan_id=env['plan_id']))
-
-        assert result['status'] == 'error', result
-        assert 'rolled back' in result['error']
-
-        # Plan dir is still WHOLLY in the worktree (rolled back / never moved).
-        assert env['wt_plan_dir'].is_dir()
-        assert (env['wt_plan_dir'] / 'status.json').is_file()
-        assert not env['main_plan_dir'].exists()
-
-        # The lock was released even on the rollback path.
-        assert env['fake_lock'].released == 1
 
 
 # =============================================================================
@@ -401,6 +229,7 @@ class TestIntegrateLockFailure:
         assert not env['main_plan_dir'].exists()
         assert failing_lock.acquired == 1
         assert failing_lock.released == 0
+
 
 
 # =============================================================================
@@ -500,6 +329,7 @@ class TestIntegrateWhenMergeLockAlreadySelfHeld:
         assert other['action'] == 'acquired'
 
 
+
 # =============================================================================
 # Not-found / missing worktree-resident plan dir
 # =============================================================================
@@ -540,6 +370,7 @@ class TestIntegrateNotFound:
         assert result['status'] == 'error'
         assert result.get('error_code') == integrate_into_main.ErrorCode.NOT_FOUND
         assert env['fake_lock'].acquired == 0
+
 
 
 # =============================================================================
@@ -666,40 +497,6 @@ class TestIntegrateReclaimOrphan:
         assert env['fake_lock'].released == 1
 
 
-# =============================================================================
-# cwd-independent SOURCE resolution — structural probe + channel/probe fallback
-# (the moved-in-from-main case)
-# =============================================================================
-
-
-def _stage_worktree_at_canonical_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, plan_id: str) -> Path:
-    """Stage a worktree at the canonical ``get_worktree_root() / {plan_id}`` layout.
-
-    Drives the DESTINATION resolver (``resolve_main_anchored_path``) via
-    ``PLAN_BASE_DIR`` pointing at a staged main ``.plan/local``, AND pins the SOURCE
-    probe's ``get_worktree_root()`` seam at ``{main}/worktrees`` so the worktree
-    resolves deterministically regardless of the autouse ``PLAN_BASE_DIR`` sandbox or
-    the process cwd. Materializes
-    ``{root}/{plan_id}/.plan/local/plans/{plan_id}/status.json`` — exactly the
-    on-disk shape :func:`_structural_worktree_probe` keys on. Returns the staged
-    worktree path (``get_worktree_root() / plan_id``).
-    """
-    main_local = tmp_path / 'main' / '.plan' / 'local'
-    main_local.mkdir(parents=True)
-    monkeypatch.setenv('PLAN_BASE_DIR', str(main_local))
-
-    worktree_root = main_local / 'worktrees'
-    # Pin the SOURCE probe's worktree-root seam directly (rather than relying on
-    # the env-var-derived get_base_dir(), which the autouse sandbox also sets):
-    # the probe calls the module-bound ``get_worktree_root`` in integrate_into_main.
-    monkeypatch.setattr(integrate_into_main, 'get_worktree_root', lambda: worktree_root)
-
-    worktree_path = worktree_root / plan_id
-    status_json = worktree_path / '.plan' / 'local' / 'plans' / plan_id / 'status.json'
-    status_json.parent.mkdir(parents=True)
-    status_json.write_text('{}\n')
-    return worktree_path
-
 
 class TestStructuralWorktreeProbe:
     """Direct coverage of :func:`_structural_worktree_probe`.
@@ -740,6 +537,7 @@ class TestStructuralWorktreeProbe:
 
         monkeypatch.setattr(integrate_into_main, 'get_worktree_root', boom)
         assert integrate_into_main._structural_worktree_probe('any-plan') is None
+
 
 
 class TestResolveWorktreePathFallback:
@@ -848,205 +646,3 @@ class TestResolveWorktreePathFallback:
         path, err = integrate_into_main._resolve_worktree_path_for_plan(plan_id)
         assert path is None
         assert err is recoverable
-
-
-class TestResolveWorktreePathViaStatusChannel:
-    """Direct coverage of the CHANNEL itself, against the single resolver seam.
-
-    Previously this layer had no direct tests — every case stubbed the channel
-    wholesale, so nothing exercised the code that talks to the resolver. That is
-    exactly the layer the migration rewrote, and the layer whose classification
-    the probe ladder above depends on.
-
-    The load-bearing property pinned here: the recoverable
-    "no worktree configured" verdict is derived STRUCTURALLY from the resolver's
-    ``has_worktree`` face, not by matching the resolver's error text. A textual
-    derivation would silently unhook the structural-probe fallback the moment
-    the resolver reworded an error.
-    """
-
-    def test_resolves_the_path_through_the_resolver_seam(self, tmp_path: Path) -> None:
-        worktree = tmp_path / 'wt'
-        worktree.mkdir()
-
-        with patch_query_worktree_path(True, str(worktree)) as mock:
-            path, err = integrate_into_main._resolve_worktree_path_via_status_channel('ok-plan')
-
-        assert err is None, err
-        assert path == worktree
-        assert mock.call_count == 1
-
-    def test_no_worktree_verdict_is_structural_and_recoverable(self) -> None:
-        """``use_worktree=false`` yields the verbatim recoverable message.
-
-        The message is emitted off ``has_worktree``, so it is a constant this
-        module owns rather than resolver text — which is what keeps it inside
-        ``_EXPECTED_ERROR_SUBSTRINGS`` and the probe fallback reachable.
-        """
-        with patch_query_worktree_path(False):
-            path, err = integrate_into_main._resolve_worktree_path_via_status_channel('no-wt')
-
-        assert path is None
-        assert err is not None
-        message = str(err.get('error') or err.get('message') or '').lower()
-        assert 'no worktree configured' in message
-        assert any(s in message for s in integrate_into_main._EXPECTED_ERROR_SUBSTRINGS), (
-            'the no-worktree verdict fell outside the recoverable set, which '
-            'makes the structural-probe fallback unreachable'
-        )
-
-    def test_resolution_failure_surfaces_the_resolver_message(self, monkeypatch) -> None:
-        """A resolver failure is surfaced verbatim, never rewritten."""
-        import file_ops  # local import: the handle is needed only to patch a seam here
-
-        def _raise(_plan_id):
-            raise file_ops.WorktreeResolutionError('status.json not found for plan')
-
-        monkeypatch.setattr(file_ops, '_query_worktree_path', _raise)
-
-        path, err = integrate_into_main._resolve_worktree_path_via_status_channel('gone-plan')
-
-        assert path is None
-        assert err is not None
-        assert 'status.json not found' in str(err.get('error') or err.get('message'))
-
-    def test_no_plan_sentinel_is_refused_without_shelling_out(self) -> None:
-        """``NO_PLAN`` has no dedicated worktree, so the move-back refuses it.
-
-        The resolver ACCEPTS the sentinel (it resolves to the main checkout);
-        the refusal belongs here, because there is no worktree to move a plan
-        dir back FROM. Asserting the zero call-count also pins that the sentinel
-        never pays a ``get-worktree-path`` round trip.
-        """
-        with patch_query_worktree_path(True) as mock:
-            path, err = integrate_into_main._resolve_worktree_path_via_status_channel(NO_PLAN_SENTINEL)
-
-        assert path is None
-        assert err is not None
-        assert 'no worktree configured' in str(err.get('error') or err.get('message')).lower()
-        assert mock.call_count == 0, 'the sentinel must never reach get-worktree-path'
-
-
-class TestIntegrateFromMainViaStructuralProbe:
-    """End-to-end move-back driven from MAIN cwd through the REAL fallback ladder.
-
-    This is the moved-in-from-main case at the script level: the channel
-    (``_resolve_worktree_path_via_status_channel``) returns a recoverable
-    NOT_FOUND (main's status.json has MOVED into the worktree), and the REAL
-    structural probe resolves the SOURCE from the canonical worktree layout —
-    WITHOUT stubbing ``_resolve_worktree_path_for_plan`` wholesale. The DESTINATION
-    is the REAL ``resolve_main_anchored_path`` via ``PLAN_BASE_DIR``. cwd is pinned
-    to MAIN (not the worktree), exactly the invocation the fallback makes correct.
-    """
-
-    def _build_env(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict:
-        plan_id = 'main-probe-plan'
-
-        # Stage main + the worktree at the canonical get_worktree_root()/{plan_id}
-        # layout so the REAL structural probe can resolve the SOURCE.
-        worktree_path = _stage_worktree_at_canonical_root(tmp_path, monkeypatch, plan_id)
-        main_local = tmp_path / 'main' / '.plan' / 'local'
-        main_plan_dir = main_local / 'plans' / plan_id
-        (main_local / 'plans').mkdir(parents=True, exist_ok=True)
-
-        wt_plan_dir = worktree_path / '.plan' / 'local' / 'plans' / plan_id
-        (wt_plan_dir / 'references.json').write_text(json.dumps({'modified_files': ['doc/foo.md']}))
-        wt_global_logs = worktree_path / '.plan' / 'local' / 'logs'
-        wt_global_logs.mkdir(parents=True)
-        (wt_global_logs / 'work.log').write_text('[STATUS] hello\n')
-
-        # cwd is MAIN — the moved-in-from-main invocation. (PLAN_BASE_DIR, not cwd,
-        # drives resolution, but pinning cwd to main proves cwd-independence.)
-        monkeypatch.chdir(tmp_path / 'main')
-
-        # SOURCE channel returns a recoverable NOT_FOUND (main's status.json moved
-        # into the worktree); the REAL structural probe must rescue it.
-        recoverable = integrate_into_main.make_error(
-            'No worktree configured for this plan — status.metadata.use_worktree is false or worktree_path is unset',
-            code=integrate_into_main.ErrorCode.NOT_FOUND,
-            plan_id=plan_id,
-        )
-        monkeypatch.setattr(
-            integrate_into_main,
-            '_resolve_worktree_path_via_status_channel',
-            lambda pid: (None, recoverable),
-        )
-
-        fake_lock = _FakeMergeLock()
-        monkeypatch.setattr(integrate_into_main, '_load_merge_lock', lambda: fake_lock)
-
-        return {
-            'plan_id': plan_id,
-            'main_plan_dir': main_plan_dir,
-            'worktree_path': worktree_path,
-            'wt_plan_dir': wt_plan_dir,
-            'fake_lock': fake_lock,
-        }
-
-    def test_move_back_from_main_resolves_source_via_probe_and_integrates(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        env = self._build_env(tmp_path, monkeypatch)
-
-        result = integrate_into_main.run_integrate_into_main(Namespace(plan_id=env['plan_id']))
-
-        # An ACTUAL move-back driven from main cwd — the structural probe resolved
-        # the SOURCE worktree from status.json, never a false noop / NOT_FOUND.
-        assert result['status'] == 'success', result
-        assert result['action'] == 'integrated', result
-
-        # Plan dir now resident at MAIN...
-        assert env['main_plan_dir'].is_dir()
-        assert (env['main_plan_dir'] / 'status.json').is_file()
-        # ...and GONE from the worktree (moved, not copied).
-        assert not env['wt_plan_dir'].exists()
-
-        # The folded global log travelled to the plan dir.
-        assert (env['main_plan_dir'] / 'logs' / 'work.log').is_file()
-        assert 'work.log' in result['folded_logs']
-
-        # Lock acquired AND released — the probe path is a real move-back.
-        assert env['fake_lock'].acquired == 1
-        assert env['fake_lock'].released == 1
-
-    def test_probe_resolved_source_is_not_clobbered_by_a_critical_channel_error(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """When the channel returns a CRITICAL error (not the recoverable
-        moved-in-from-main shape), the probe is skipped and integrate surfaces the
-        critical error verbatim — no move-back is attempted."""
-        env = self._build_env(tmp_path, monkeypatch)
-
-        critical = integrate_into_main.make_error(
-            'manage-status get-worktree-path failed: boom',
-            code=integrate_into_main.ErrorCode.NOT_FOUND,
-            plan_id=env['plan_id'],
-        )
-        monkeypatch.setattr(
-            integrate_into_main,
-            '_resolve_worktree_path_via_status_channel',
-            lambda pid: (None, critical),
-        )
-
-        result = integrate_into_main.run_integrate_into_main(Namespace(plan_id=env['plan_id']))
-
-        assert result['status'] == 'error', result
-        # No move-back happened; the worktree-resident plan dir is untouched and the
-        # merge lock was never acquired (resolution failed before lock acquisition).
-        assert env['wt_plan_dir'].is_dir()
-        assert not env['main_plan_dir'].exists()
-        assert env['fake_lock'].acquired == 0
-
-
-# =============================================================================
-# CLI argparse plumbing
-# =============================================================================
-
-
-class TestIntegrateCli:
-    def test_integrate_requires_plan_id(self) -> None:
-        from conftest import run_script
-
-        result = run_script(SCRIPT_PATH, 'integrate')
-        assert result.returncode != 0
-        assert '--plan-id' in result.stderr or '--plan-id' in result.stdout

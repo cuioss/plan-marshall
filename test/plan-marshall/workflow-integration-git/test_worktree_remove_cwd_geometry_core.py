@@ -378,6 +378,33 @@ def _assert_refused(result: dict, geometry: dict[str, Path], expected_error: str
     )
 
 
+
+@pytest.fixture
+def external_base(
+    geometry: dict[str, Path],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> Path:
+    """Re-point ``PLAN_BASE_DIR`` at a store the git-common-dir walk cannot reach.
+
+    Ordered after ``geometry`` because that fixture sets ``PLAN_BASE_DIR`` to
+    ``main/.plan/local``, and this one must overwrite it. The directory is a SIBLING of
+    the main checkout under ``tmp_path``, so ``git rev-parse --git-common-dir`` — which
+    resolves ``main`` — can never name it. The assertion below states that separation
+    rather than assuming it: if the two trees ever coincided, every cell in the class
+    would pass under a probe reading either resolver, which is precisely the blindness
+    this fixture exists to remove.
+    """
+    base = (tmp_path / 'external-plan-store').resolve()
+    assert base != geometry['main_local'] and not base.is_relative_to(geometry['main']), (
+        'The override base must lie outside the main checkout for the two resolvers to name different trees.'
+    )
+    base.mkdir()
+    monkeypatch.setenv('PLAN_BASE_DIR', str(base))
+    return base
+
+
+
 class TestCwdGeometryMatrix:
     """cwd x plan-dir-residency, over real resolvers and a real worktree."""
 
@@ -446,6 +473,7 @@ class TestCwdGeometryMatrix:
         assert 'Pass --force' not in result['message'], 'The message must name the remedy, not offer --force as one.'
 
 
+
 class TestContainmentIsNotAStringPrefixTest:
     """Descendants are contained; a sibling sharing the target's prefix is not."""
 
@@ -484,6 +512,7 @@ class TestContainmentIsNotAStringPrefixTest:
         assert result['status'] == 'success', f'A sibling path is not inside the removal target, got {result!r}.'
         assert result['action'] == 'removed'
         assert not geometry['worktree'].exists()
+
 
 
 class TestNeitherRefusalIsForceOverridable:
@@ -526,300 +555,3 @@ class TestNeitherRefusalIsForceOverridable:
         assert result['status'] == 'success', result
         assert result['action'] == 'removed'
         assert not geometry['worktree'].exists()
-
-
-class TestArchivedPlanReachability:
-    """The structural-probe fallback restores REACHABILITY, never a bypass.
-
-    Every cell runs with the manage-status channel refusing — the archived-plan state —
-    so the probe is the only thing that can produce a target. The matched pair differs
-    in ONE thing: whether main carries the archived record the widened move-back
-    predicate accepts.
-    """
-
-    def test_an_archived_plan_is_removable_through_the_structural_probe(self, geometry: dict[str, Path]) -> None:
-        """Positive: archived record on main, worktree present ⇒ removal proceeds.
-
-        Before the fallback existed the resolver's refusal ended the verb here, so the
-        worktree of every archived plan was unreachable — the exact tree an operator
-        needs to clean up once finalize has archived the record.
-        """
-        archived = _archive_plan_record_on_main(geometry)
-        assert not (geometry['main_local'] / 'plans' / _PLAN_ID).exists(), (
-            'The archived cell must carry NO live plan dir on main — otherwise the '
-            'live half of the predicate would decide the outcome and the archived '
-            'half would go unexercised.'
-        )
-
-        result = _remove_unresolvable(geometry)
-
-        assert result['status'] == 'success', result
-        assert result['action'] == 'removed'
-        assert result['resolution'] == 'structural_probe', (
-            'The payload must name the path taken so an operator can tell an '
-            f'archived-plan recovery from a routine removal; got {result!r}.'
-        )
-        assert result['worktree_path'] == str(geometry['worktree'])
-        assert not geometry['worktree'].exists(), (
-            'The positive cell must reach the real removal, not merely report success.'
-        )
-        assert (archived / 'status.json').is_file(), (
-            'The archived record lives on main and must be untouched by the removal.'
-        )
-        assert result['branch'] == _BRANCH, (
-            f'The archived route must resolve the branch name, not fall through to an empty one; got {result!r}.'
-        )
-        assert 'branch_warning' not in result, (
-            f'The branch was deletable here, so nothing should be warned about: {result!r}.'
-        )
-        assert _BRANCH not in _local_branches(geometry['main']), (
-            'The branch must really be gone from the repository the fixture built. '
-            'This assertion is the one the class previously lacked, and its absence '
-            'is why the archived route shipped skipping the delete in silence.'
-        )
-
-    def test_a_plan_still_resident_in_its_worktree_is_still_refused(self, geometry: dict[str, Path]) -> None:
-        """Negative control: the probe hits, and the guard still refuses.
-
-        The load-bearing half of the pair. The probe reaches the SAME worktree as the
-        positive cell — the only difference is that main holds no record of the plan,
-        live or archived, so its sole authoritative copy is still inside the tree the
-        removal would destroy. A fallback that reached the worktree and skipped the
-        guard would pass the positive cell just as well as the real one does.
-        """
-        assert not (geometry['main_local'] / 'plans' / _PLAN_ID).exists()
-        assert not (geometry['main_local'] / 'archived-plans').exists()
-
-        result = _remove_unresolvable(geometry)
-
-        _assert_refused(result, geometry, 'plan_dir_not_moved_back')
-
-    def test_the_probe_path_refusal_is_not_force_overridable(self, geometry: dict[str, Path]) -> None:
-        """``--force`` buys no way past the guard on the probe path either.
-
-        Force-independence was established for the metadata resolution path; the probe
-        path reaches the same guard by a different route, and a route is exactly the
-        kind of thing a guard gets accidentally bypassed along.
-        """
-        result = _remove_unresolvable(geometry, force=True)
-
-        _assert_refused(result, geometry, 'plan_dir_not_moved_back')
-
-    def test_a_missed_probe_still_propagates_the_resolvers_own_diagnosis(
-        self, geometry: dict[str, Path], monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """Matched control for the probe itself: no worktree ⇒ nothing is invented.
-
-        With the canonical slot emptied the probe misses, so the resolver's own
-        ``plan_resolution_failed`` must survive verbatim rather than being replaced by
-        a worse-informed refusal — and no git call may run against a target the verb
-        could not resolve.
-        """
-        _archive_plan_record_on_main(geometry)
-        subprocess.run(
-            [
-                'git',
-                '-C',
-                str(geometry['main']),
-                'worktree',
-                'remove',
-                '--force',
-                str(geometry['worktree']),
-            ],
-            check=True,
-            capture_output=True,
-        )
-        assert not geometry['worktree'].exists()
-
-        called: list[list[str]] = []
-
-        def trap_run_git(args):
-            called.append(list(args))
-            return 0, '', ''
-
-        monkeypatch.setattr(git_workflow, 'run_git', trap_run_git)
-
-        result = _remove_unresolvable(geometry)
-
-        assert result['status'] == 'error', result
-        assert result['error'] == 'plan_resolution_failed'
-        assert called == [], 'no git call may run after a resolution failure the probe missed'
-
-
-class TestBranchCleanupIsDoneOrReported:
-    """No success payload leaves a stranded branch unmentioned.
-
-    ``cmd_worktree_remove`` resolves the branch name by two channels and deletes the
-    ref best-effort. Before the main-anchored fallback existed the archived route
-    resolved NO name at all: ``manage-status`` looks under ``{base}/plans/{plan_id}``
-    with no archived fallback, so the read returned ``''`` by construction for every
-    archived plan. The delete was then skipped, and because the warning only fired
-    when a name HAD been read and ``git branch -D`` then failed, the payload carried
-    neither ``branch`` nor ``branch_warning`` — a clean-removal report over a stranded
-    branch.
-
-    Each cell states its claim against the real git repository the fixture built, not
-    against the payload alone: reporting a branch and the branch really being gone are
-    two different claims, and only the second one is about the defect.
-    """
-
-    def test_the_metadata_route_still_deletes_the_branch(self, geometry: dict[str, Path]) -> None:
-        """Matched control: the ordinary route is not what the archived fix repaired.
-
-        Without it, the archived cell in ``TestArchivedPlanReachability`` is equally
-        consistent with a regression that broke the canonical channel and left the
-        fallback carrying every removal — the fallback would look like it worked while
-        the route it is a fallback FOR had silently stopped answering.
-        """
-        _land_plan_dir_on_main(geometry)
-        assert _BRANCH in _local_branches(geometry['main']), (
-            "Precondition: the fixture's real git worktree add created the branch, so "
-            'a later absence is a deletion rather than a branch that never existed.'
-        )
-
-        with _manage_status_serves_branch(_BRANCH):
-            result = _remove(geometry)
-
-        assert result['status'] == 'success', result
-        assert result['resolution'] == 'metadata', (
-            f'This cell must exercise the canonical channel, not the probe: {result!r}.'
-        )
-        assert result['branch'] == _BRANCH
-        assert 'branch_warning' not in result, result
-        assert _BRANCH not in _local_branches(geometry['main'])
-
-    def test_an_unresolvable_branch_name_is_reported_not_silently_skipped(self, geometry: dict[str, Path]) -> None:
-        """The floor: a skip the verb cannot avoid must still be a skip it declares.
-
-        The archived record carries no ``worktree_branch`` and the canonical channel
-        has no record to read it from, so NEITHER channel resolves a name. The removal
-        still succeeds — the worktree is gone and branch cleanup stays recoverable —
-        but the branch it did not clean up has to be named.
-        """
-        _archive_plan_record_on_main(geometry, branch=None)
-
-        result = _remove_unresolvable(geometry)
-
-        assert result['status'] == 'success', result
-        assert result['action'] == 'removed'
-        assert 'branch' not in result, f'No name was resolved, so none may be reported as deleted: {result!r}.'
-        warning = result.get('branch_warning')
-        assert warning, (
-            'A success payload that mentions the branch nowhere is indistinguishable '
-            f'from one that had no branch to delete; got {result!r}.'
-        )
-        assert 'no worktree_branch could be resolved' in warning
-        assert _PLAN_ID in warning, 'the warning must name the plan it is about'
-        assert _BRANCH in _local_branches(geometry['main']), (
-            'The branch really is stranded here, which is what makes the warning a '
-            'true report rather than a defensive string.'
-        )
-
-
-@pytest.fixture
-def external_base(
-    geometry: dict[str, Path],
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> Path:
-    """Re-point ``PLAN_BASE_DIR`` at a store the git-common-dir walk cannot reach.
-
-    Ordered after ``geometry`` because that fixture sets ``PLAN_BASE_DIR`` to
-    ``main/.plan/local``, and this one must overwrite it. The directory is a SIBLING of
-    the main checkout under ``tmp_path``, so ``git rev-parse --git-common-dir`` — which
-    resolves ``main`` — can never name it. The assertion below states that separation
-    rather than assuming it: if the two trees ever coincided, every cell in the class
-    would pass under a probe reading either resolver, which is precisely the blindness
-    this fixture exists to remove.
-    """
-    base = (tmp_path / 'external-plan-store').resolve()
-    assert base != geometry['main_local'] and not base.is_relative_to(geometry['main']), (
-        'The override base must lie outside the main checkout for the two resolvers to name different trees.'
-    )
-    base.mkdir()
-    monkeypatch.setenv('PLAN_BASE_DIR', str(base))
-    return base
-
-
-class TestOverrideBaseDirIsHonoured:
-    """The guard reads the OVERRIDE tree, which is the tree the move-back writes.
-
-    Every other class in this file runs where the override tree and the git-derived
-    tree are the same directory, so none of them can observe which resolver the guard
-    uses. These cells pull the two apart and assert the guard follows the override in
-    BOTH directions — the direction a pure-git probe gets wrong, and the mirror a
-    pure-override probe would get wrong.
-    """
-
-    def test_a_plan_landed_under_the_override_base_satisfies_the_guard(
-        self, geometry: dict[str, Path], external_base: Path
-    ) -> None:
-        """Positive: state landed where the move-back writes it ⇒ removal proceeds.
-
-        This is the cell a ``main_checkout_root()``-derived probe fails. It would look
-        under ``main/.plan/local/plans/`` — a tree the move-back never wrote to when an
-        override is active — find nothing, and refuse ``plan_dir_not_moved_back``
-        against a plan whose state genuinely did land. Because that refusal is
-        deliberately not ``--force``-overridable, the failure has no escape hatch.
-        """
-        landed = _land_plan_dir_under(external_base)
-        assert not (geometry['main_local'] / 'plans' / _PLAN_ID).exists(), (
-            'The git-derived tree must be EMPTY here, or the cell would pass under a '
-            'probe that never consulted the override.'
-        )
-
-        result = _remove(geometry)
-
-        assert result['status'] == 'success', result
-        assert result['action'] == 'removed'
-        assert not geometry['worktree'].exists(), (
-            'The positive cell must reach the real removal, not merely report success.'
-        )
-        assert (landed / 'status.json').is_file(), (
-            'The landed plan state lives outside the worktree and must survive it.'
-        )
-
-    def test_a_plan_landed_only_under_the_git_derived_tree_is_still_refused(
-        self, geometry: dict[str, Path], external_base: Path
-    ) -> None:
-        """Mirror control: the guard must not fall back to the git-derived tree.
-
-        The same two trees as the cell above, with the plan state in the OTHER one.
-        A probe that consulted only ``main_checkout_root()`` — or one that accepted a
-        hit from either tree — passes here, and passing here means authorising the
-        destruction of a worktree whose plan state the move-back never moved. Without
-        this mirror the positive cell alone is equally consistent with a guard that had
-        simply been weakened.
-        """
-        _land_plan_dir_on_main(geometry)
-        assert not (external_base / 'plans' / _PLAN_ID).exists()
-
-        result = _remove(geometry)
-
-        _assert_refused(result, geometry, 'plan_dir_not_moved_back')
-
-    def test_the_archived_scan_follows_the_override_base_too(
-        self, geometry: dict[str, Path], external_base: Path
-    ) -> None:
-        """The archived half is resolved by the same rule as the live half.
-
-        ``manage-status archive`` writes through ``get_archive_dir()`` —
-        ``base_path(DIR_ARCHIVED)``, which honours the same override — so a guard whose
-        live probe followed the override while its archive scan did not would refuse
-        every archived plan under an override. The two halves are separate lookups in
-        the predicate and need separate evidence.
-        """
-        archived = external_base / 'archived-plans' / f'{_ARCHIVE_DATE}-{_PLAN_ID}'
-        archived.mkdir(parents=True)
-        (archived / 'status.json').write_text('{"sentinel": "archived-override"}\n')
-        assert not (external_base / 'plans' / _PLAN_ID).exists(), (
-            'No live plan dir under the override base, or the live half of the '
-            'predicate would decide the outcome and the archived half go unexercised.'
-        )
-
-        result = _remove(geometry)
-
-        assert result['status'] == 'success', result
-        assert result['action'] == 'removed'
-        assert not geometry['worktree'].exists()
-        assert (archived / 'status.json').is_file()

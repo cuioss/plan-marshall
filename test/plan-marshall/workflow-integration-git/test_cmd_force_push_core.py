@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for _cmd_force_push.py — force-push-with-lease verb.
 
@@ -81,6 +82,37 @@ def _create_feature_branch(path: Path, branch: str) -> None:
 # ---------------------------------------------------------------------------
 
 
+
+# ---------------------------------------------------------------------------
+# Tier 2: cmd_force_push — push failure error mapping
+# ---------------------------------------------------------------------------
+
+
+def _patch_run_git(monkeypatch: pytest.MonkeyPatch, responses: dict) -> None:
+    """Patch _mod.run_git to return canned responses keyed by an args tuple.
+
+    Any git call whose argv contains all elements of a ``responses`` key returns
+    the mapped triple; everything else falls through to the real ``run_git`` (so
+    e.g. ``rev-parse --verify`` branch-existence checks run for real).
+    """
+    orig_run_git = _mod.run_git
+
+    def fake_run_git(args, **kwargs):
+        key = tuple(args)
+        for pattern, response in responses.items():
+            if all(p in key for p in pattern):
+                return response
+        return orig_run_git(args, **kwargs)
+
+    monkeypatch.setattr(_mod, 'run_git', fake_run_git)
+
+
+
+# ---------------------------------------------------------------------------
+# Tier 2: _verify_git_repo
+# ---------------------------------------------------------------------------
+
+
 class TestVerifyGitRepo:
     """Direct-import tests for the git-repo verification helper."""
 
@@ -100,6 +132,7 @@ class TestVerifyGitRepo:
 
         assert result is not None
         assert 'working tree' in result
+
 
 
 # ---------------------------------------------------------------------------
@@ -140,6 +173,7 @@ class TestResolveBranchAndPath:
         assert branch is None
         assert path is None
         assert error is not None
+
 
 
 # ---------------------------------------------------------------------------
@@ -217,112 +251,6 @@ class TestCmdForcePushEscapeHatch:
 
         assert 'plan_id' not in result
 
-
-# ---------------------------------------------------------------------------
-# Tier 2: cmd_force_push — push failure error mapping
-# ---------------------------------------------------------------------------
-
-
-def _patch_run_git(monkeypatch: pytest.MonkeyPatch, responses: dict) -> None:
-    """Patch _mod.run_git to return canned responses keyed by an args tuple.
-
-    Any git call whose argv contains all elements of a ``responses`` key returns
-    the mapped triple; everything else falls through to the real ``run_git`` (so
-    e.g. ``rev-parse --verify`` branch-existence checks run for real).
-    """
-    orig_run_git = _mod.run_git
-
-    def fake_run_git(args, **kwargs):
-        key = tuple(args)
-        for pattern, response in responses.items():
-            if all(p in key for p in pattern):
-                return response
-        return orig_run_git(args, **kwargs)
-
-    monkeypatch.setattr(_mod, 'run_git', fake_run_git)
-
-
-class TestCmdForcePushPushFailures:
-    """Test push error categorization by monkeypatching run_git."""
-
-    def test_non_fast_forward_rejection_mapped_to_push_rejected(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """Lease violation with 'rejected' + 'non-fast-forward' → push_rejected_non_fast_forward."""
-        _init_repo(tmp_path)
-        _create_feature_branch(tmp_path, 'feature/x')
-        _patch_run_git(
-            monkeypatch,
-            {
-                ('push', 'origin'): (
-                    1,
-                    '',
-                    'error: failed to push some refs\n! [rejected] feature/x -> feature/x (non-fast-forward)',
-                ),
-            },
-        )
-        args = Namespace(plan_id=None, project_dir=str(tmp_path), branch='feature/x')
-
-        result = cmd_force_push(args)
-
-        assert result['status'] == 'rejected'
-        assert result['error_type'] == 'push_rejected_non_fast_forward'
-
-    def test_generic_push_failure_mapped_to_push_failed(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Non-rejection push failure → push_failed."""
-        _init_repo(tmp_path)
-        _create_feature_branch(tmp_path, 'feature/x')
-        _patch_run_git(
-            monkeypatch,
-            {
-                ('push', 'origin'): (1, '', 'error: could not connect to remote'),
-            },
-        )
-        args = Namespace(plan_id=None, project_dir=str(tmp_path), branch='feature/x')
-
-        result = cmd_force_push(args)
-
-        assert result['status'] == 'error'
-        assert result['error_type'] == 'push_failed'
-
-    def test_success_path_returns_success_status(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Successful push returns status=success and branch/remote fields."""
-        _init_repo(tmp_path)
-        _create_feature_branch(tmp_path, 'feature/x')
-        _patch_run_git(
-            monkeypatch,
-            {
-                ('push', 'origin'): (0, '', ''),
-                ('ls-remote', 'origin'): (0, 'abc123\trefs/heads/feature/x\n', ''),
-            },
-        )
-        args = Namespace(plan_id=None, project_dir=str(tmp_path), branch='feature/x')
-
-        result = cmd_force_push(args)
-
-        assert result['status'] == 'success'
-        assert result['branch'] == 'feature/x'
-        assert result['remote'] == 'origin'
-        assert 'remote_sha' in result
-        assert result['remote_sha'] == 'abc123'
-
-    def test_success_without_ls_remote_omits_remote_sha(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """When ls-remote fails, remote_sha is absent (not None or empty)."""
-        _init_repo(tmp_path)
-        _create_feature_branch(tmp_path, 'feature/x')
-        _patch_run_git(
-            monkeypatch,
-            {
-                ('push', 'origin'): (0, '', ''),
-                ('ls-remote', 'origin'): (1, '', 'connection failed'),
-            },
-        )
-        args = Namespace(plan_id=None, project_dir=str(tmp_path), branch='feature/x')
-
-        result = cmd_force_push(args)
-
-        assert result['status'] == 'success'
-        assert 'remote_sha' not in result
 
 
 # ---------------------------------------------------------------------------
@@ -450,40 +378,3 @@ class TestResolveBranchAndPathViaResolver:
         assert error['error_type'] == 'worktree_not_materialized'
         assert path_mock.call_count == 0, 'the sentinel must never reach get-worktree-path'
         assert branch_mock.call_count == 0, 'the sentinel must never reach get-worktree-path'
-
-
-# ---------------------------------------------------------------------------
-# Tier 3: CLI plumbing
-# ---------------------------------------------------------------------------
-
-
-class TestCmdForcePushCli:
-    """Subprocess tests for CLI plumbing of force-push-with-lease."""
-
-    def test_missing_plan_id_and_project_dir_exits_with_error(self) -> None:
-        """Neither --plan-id nor --project-dir produces a structured error."""
-        result = run_script(_SCRIPT_PATH, 'force-push-with-lease')
-
-        # Expected: exit 0 with TOON error (argparse supplies both as optional).
-        parsed = parse_toon(result.stdout)
-        assert parsed['status'] == 'error'
-
-    def test_project_dir_requires_branch(self, tmp_path: Path) -> None:
-        """--project-dir without --branch returns missing_required_arg error."""
-        result = run_script(
-            _SCRIPT_PATH,
-            'force-push-with-lease',
-            '--project-dir',
-            str(tmp_path),
-        )
-
-        parsed = parse_toon(result.stdout)
-        assert parsed['status'] == 'error'
-        assert parsed['error_type'] == 'missing_required_arg'
-
-    def test_help_flag_shows_force_push_subcommand(self) -> None:
-        """--help lists force-push-with-lease in output."""
-        result = run_script(_SCRIPT_PATH, '--help')
-
-        assert result.returncode == 0
-        assert 'force-push-with-lease' in result.stdout

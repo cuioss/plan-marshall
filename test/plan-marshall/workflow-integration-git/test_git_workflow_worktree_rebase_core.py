@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for git_workflow.py worktree-rebase-to subcommand.
 
@@ -200,6 +201,12 @@ def _invoke_rebase(
 # ---------------------------------------------------------------------------
 
 
+
+# ---------------------------------------------------------------------------
+# State 1 — clean
+# ---------------------------------------------------------------------------
+
+
 class TestRebaseToClean:
     """Branch already at base — rebase is a no-op success."""
 
@@ -216,6 +223,7 @@ class TestRebaseToClean:
         assert result['head_branch'] == 'feature/clean'
         assert result['ahead'] == 0
         assert result['behind'] == 0
+
 
 
 # ---------------------------------------------------------------------------
@@ -240,6 +248,7 @@ class TestRebaseToDirty:
         # No rebase should have been attempted, so no rebase-merge dir.
         assert not (rebase_env['worktree'] / '.git' / 'rebase-merge').exists()
         assert not (rebase_env['worktree'] / '.git' / 'rebase-apply').exists()
+
 
 
 # ---------------------------------------------------------------------------
@@ -301,6 +310,7 @@ class TestRebaseToAhead:
         assert result['action'] == 'noop'
 
 
+
 # ---------------------------------------------------------------------------
 # State 4 — behind
 # ---------------------------------------------------------------------------
@@ -327,6 +337,7 @@ class TestRebaseToBehind:
         assert result['behind'] == 1
         # The new base commit's file should now be reachable from the worktree HEAD.
         assert (rebase_env['worktree'] / 'main_only.txt').exists()
+
 
 
 # ---------------------------------------------------------------------------
@@ -358,195 +369,3 @@ class TestRebaseToConflict:
             rebase_env['worktree'] / '.git' / 'rebase-apply'
         ).exists()
         assert rebase_in_progress, 'conflict state must leave rebase in progress'
-
-
-# ---------------------------------------------------------------------------
-# State 6 — detached
-# ---------------------------------------------------------------------------
-
-
-class TestRebaseToDetached:
-    """HEAD detached in the worktree — reject without attempting rebase."""
-
-    def test_detached_state_rejects_with_error(self, rebase_env: dict, monkeypatch: pytest.MonkeyPatch) -> None:
-        _create_branch_worktree(rebase_env['main_repo'], rebase_env['worktree'], 'feature/detached')
-        # Detach HEAD by checking out the commit SHA explicitly.
-        head_sha = _git(rebase_env['worktree'], 'rev-parse', 'HEAD').stdout.strip()
-        _git(rebase_env['worktree'], 'checkout', '--detach', head_sha)
-
-        result = _invoke_rebase(rebase_env, monkeypatch)
-
-        assert result['status'] == 'error'
-        assert result['state'] == 'detached'
-        assert result['error'] == 'detached_head'
-        assert 'detached' in result['message'].lower()
-        # No rebase should have started.
-        assert not (rebase_env['worktree'] / '.git' / 'rebase-merge').exists()
-
-
-# ---------------------------------------------------------------------------
-# State 7 — missing-base
-# ---------------------------------------------------------------------------
-
-
-class TestRebaseToMissingBase:
-    """``--base`` does not resolve — short-circuit error before rebase."""
-
-    def test_missing_base_returns_error(self, rebase_env: dict, monkeypatch: pytest.MonkeyPatch) -> None:
-        _create_branch_worktree(rebase_env['main_repo'], rebase_env['worktree'], 'feature/missing-base')
-
-        result = _invoke_rebase(rebase_env, monkeypatch, base='nonexistent-branch')
-
-        assert result['status'] == 'error'
-        assert result['state'] == 'missing-base'
-        assert result['error'] == 'missing_base'
-        assert 'nonexistent-branch' in result['message']
-
-
-# ---------------------------------------------------------------------------
-# State 8 — missing-target
-# ---------------------------------------------------------------------------
-
-
-class TestRebaseToMissingTarget:
-    """Two flavours of missing-target: directory absent vs. plan unresolved."""
-
-    def test_missing_target_directory_returns_error(self, rebase_env: dict, monkeypatch: pytest.MonkeyPatch) -> None:
-        # Resolver succeeds and points at a path that does not exist on disk.
-        # ``main_root`` still resolves so the dispatcher reaches
-        # ``_detect_worktree_state`` and sees the missing directory.
-        bogus = rebase_env['tmp_root'] / 'never-created'
-
-        result = _invoke_rebase(rebase_env, monkeypatch, resolver_target=bogus)
-
-        assert result['status'] == 'error'
-        assert result['state'] == 'missing-target'
-        assert result['error'] == 'missing_target'
-        assert str(bogus) in result['message']
-        assert result['worktree_path'] == str(bogus)
-
-    def test_missing_plan_resolution_returns_error(self, rebase_env: dict, monkeypatch: pytest.MonkeyPatch) -> None:
-        # Resolver short-circuits with the same error shape that
-        # ``manage-status get-worktree-path`` would return for an unknown plan.
-        # The rebase command must propagate it verbatim and never attempt to
-        # inspect the worktree.
-        resolver_error = {
-            'status': 'error',
-            'plan_id': 'plan-x',
-            'error': 'no_worktree_configured',
-            'message': 'No worktree configured for this plan',
-        }
-
-        result = _invoke_rebase(rebase_env, monkeypatch, resolver_target=None, resolver_error=resolver_error)
-
-        assert result['status'] == 'error'
-        assert result['error'] == 'no_worktree_configured'
-        assert result['plan_id'] == 'plan-x'
-
-
-# ---------------------------------------------------------------------------
-# Stale-local-base regression
-# ---------------------------------------------------------------------------
-
-
-class TestRebaseToStaleLocalBaseRegression:
-    """origin/{base} advanced past the worktree's local {base} — one rebase lands it.
-
-    The defect: rebasing onto the bare local ``{base}`` ref left the branch behind
-    ``origin/{base}`` (the orchestrator only fetched origin, never advanced local
-    base), failing branch protection's "up to date with base" check. The fix
-    fetches and rebases onto ``origin/{base}`` so a SINGLE invocation lands the
-    branch up-to-date with the remote tip: ``git log HEAD..origin/{base}`` is empty
-    after one rebase.
-    """
-
-    def test_single_rebase_lands_branch_on_advanced_origin_base(
-        self, rebase_env: dict, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        _create_branch_worktree(rebase_env['main_repo'], rebase_env['worktree'], 'feature/stale-base')
-        # The branch has its own commit (so it is not a trivial fast-forward).
-        _commit_file(rebase_env['worktree'], 'feature.txt', 'feature\n', 'feat: add feature')
-        # Advance ORIGIN's main with a DISJOINT file (no conflict) WITHOUT advancing
-        # the worktree's local ``main`` — the stale-local-base scenario.
-        _advance_origin_main(rebase_env['main_repo'], 'upstream.txt', 'upstream\n', 'feat: advance origin main')
-
-        # The worktree's local ``main`` is still at the original commit; only
-        # ``origin/main`` (after the production fetch) carries the upstream commit.
-        result = _invoke_rebase(rebase_env, monkeypatch)
-
-        assert result['status'] == 'success', result
-        assert result['action'] == 'rebased'
-        assert result['rebase_ref'] == 'origin/main'
-
-        # The decisive assertion: after a SINGLE rebase, the branch contains the
-        # upstream commit — HEAD..origin/main is empty.
-        log_out = _git(rebase_env['worktree'], 'log', '--oneline', 'HEAD..origin/main').stdout.strip()
-        assert log_out == '', f'branch still behind origin/main after one rebase: {log_out!r}'
-        # Both the upstream file and the branch's own commit are present.
-        assert (rebase_env['worktree'] / 'upstream.txt').exists()
-        assert (rebase_env['worktree'] / 'feature.txt').exists()
-
-
-# ---------------------------------------------------------------------------
-# No-origin fallback to the local {base} ref
-# ---------------------------------------------------------------------------
-
-
-class TestRebaseToNoRemoteFallback:
-    """A worktree with no ``origin`` remote falls back to rebasing onto local {base}."""
-
-    def test_no_origin_remote_rebases_onto_local_base(self, rebase_env: dict, monkeypatch: pytest.MonkeyPatch) -> None:
-        main_repo = rebase_env['main_repo']
-        # Build a feature branch in the main repo with NO origin remote. The
-        # worktree IS the main repo here (no clone, no origin); resolver and
-        # base-ref resolution both point at this single repo.
-        _git(main_repo, 'checkout', '-q', '-b', 'feature/no-remote', 'main')
-        # Advance local ``main`` so the branch is behind it (the only base ref
-        # available without a remote).
-        _advance_main_via_branch_switch(
-            main_repo, 'main_only.txt', 'main only\n', 'feat: advance local main', 'feature/no-remote'
-        )
-
-        result = _invoke_rebase(rebase_env, monkeypatch, base='main', resolver_target=main_repo, main_root=main_repo)
-
-        assert result['status'] == 'success', result
-        assert result['action'] == 'rebased'
-        # No origin remote → rebase_ref falls back to the bare local ``main``.
-        assert result['rebase_ref'] == 'main'
-        assert (main_repo / 'main_only.txt').exists()
-
-
-# ---------------------------------------------------------------------------
-# Direct unit coverage of _detect_worktree_state — pins the contract that
-# cmd_worktree_rebase_to relies on for dispatching to the eight states.
-# ---------------------------------------------------------------------------
-
-
-class TestDetectWorktreeState:
-    """Probe ``_detect_worktree_state`` directly for each label."""
-
-    def test_detect_missing_target(self, rebase_env: dict) -> None:
-        bogus = rebase_env['tmp_root'] / 'never-created'
-
-        state, evidence = _detect_worktree_state(bogus, 'main', rebase_env['main_repo'])
-
-        assert state == 'missing-target'
-        assert evidence['worktree_path'] == str(bogus)
-
-    def test_detect_missing_base(self, rebase_env: dict) -> None:
-        _create_branch_worktree(rebase_env['main_repo'], rebase_env['worktree'], 'feature/x')
-
-        state, evidence = _detect_worktree_state(rebase_env['worktree'], 'no-such-ref', rebase_env['main_repo'])
-
-        assert state == 'missing-base'
-        assert evidence['base'] == 'no-such-ref'
-
-    def test_detect_clean(self, rebase_env: dict) -> None:
-        _create_branch_worktree(rebase_env['main_repo'], rebase_env['worktree'], 'feature/x')
-
-        state, evidence = _detect_worktree_state(rebase_env['worktree'], 'main', rebase_env['main_repo'])
-
-        assert state == 'clean'
-        assert evidence['ahead'] == 0
-        assert evidence['behind'] == 0
-        assert evidence['head_branch'] == 'feature/x'
