@@ -106,7 +106,6 @@ def _init_repo_with_linked_worktree(root: Path) -> tuple[Path, Path]:
 # ---------------------------------------------------------------------------
 
 
-
 # ---------------------------------------------------------------------------
 # Tier 2: _verify_git_repo
 # ---------------------------------------------------------------------------
@@ -129,7 +128,6 @@ class TestVerifyGitRepo:
 
         assert result is not None
         assert 'working tree' in result
-
 
 
 # ---------------------------------------------------------------------------
@@ -156,7 +154,6 @@ class TestResolveProjectDir:
         assert path is None
         assert error is not None
         assert error['error_type'] == 'missing_required_arg'
-
 
 
 # ---------------------------------------------------------------------------

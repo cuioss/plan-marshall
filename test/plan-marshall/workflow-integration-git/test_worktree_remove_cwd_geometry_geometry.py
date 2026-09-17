@@ -378,7 +378,6 @@ def _assert_refused(result: dict, geometry: dict[str, Path], expected_error: str
     )
 
 
-
 @pytest.fixture
 def external_base(
     geometry: dict[str, Path],
@@ -402,7 +401,6 @@ def external_base(
     base.mkdir()
     monkeypatch.setenv('PLAN_BASE_DIR', str(base))
     return base
-
 
 
 class TestArchivedPlanReachability:
@@ -523,7 +521,6 @@ class TestArchivedPlanReachability:
         assert called == [], 'no git call may run after a resolution failure the probe missed'
 
 
-
 class TestBranchCleanupIsDoneOrReported:
     """No success payload leaves a stranded branch unmentioned.
 
@@ -592,7 +589,6 @@ class TestBranchCleanupIsDoneOrReported:
             'The branch really is stranded here, which is what makes the warning a '
             'true report rather than a defensive string.'
         )
-
 
 
 class TestOverrideBaseDirIsHonoured:

@@ -138,7 +138,6 @@ def isolated_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict:
 # =============================================================================
 
 
-
 # =============================================================================
 # Worktree-executor production: on-disk post-assertion + copy-from-main fallback
 # =============================================================================
@@ -195,7 +194,6 @@ class TestExecutorLanded:
         assert prepare_execute._executor_landed(target) is False
 
 
-
 class TestMainExecutorPathResolution:
     """Coverage of the copy-from-main source resolver (behavior 2 primitive)."""
 
@@ -218,7 +216,6 @@ class TestMainExecutorPathResolution:
         resolved = prepare_execute._main_executor_path(env['plan_id'])
         assert resolved is not None
         assert resolved == env['main'] / '.plan' / 'execute-script.py'
-
 
 
 class TestCopyMainExecutor:
@@ -285,7 +282,6 @@ class TestCopyMainExecutor:
         assert 'copied from main' in detail
         wt_exec = worktree_path / '.plan' / 'execute-script.py'
         assert wt_exec.read_text() == main_content
-
 
 
 class TestGenerateWorktreeExecutorSuccessAndFailurePaths:
@@ -405,7 +401,6 @@ class TestGenerateWorktreeExecutorSuccessAndFailurePaths:
         assert produced is False
         assert 'generator not found' in detail
         assert 'no main executor available' in detail
-
 
 
 class TestGenerateWorktreeExecutorPostAssertion:
@@ -532,7 +527,6 @@ class TestGenerateWorktreeExecutorPostAssertion:
         assert (worktree_path / '.plan' / 'execute-script.py').is_file()
 
 
-
 # =============================================================================
 # Self-heal on re-run (FIX 3)
 # =============================================================================
@@ -635,7 +629,6 @@ class TestPrepareExecuteSelfHeal:
         assert not wt_exec.exists()
 
 
-
 # =============================================================================
 # Non-fatal generation contract at the run_prepare_execute integration level
 # =============================================================================
@@ -677,7 +670,6 @@ class TestPrepareExecuteNonFatalGeneration:
         assert result['worktree_executor_generated'] is False
         assert 'executor_detail' in result
         assert not (env['worktree_path'] / '.plan' / 'execute-script.py').exists()
-
 
 
 # =============================================================================

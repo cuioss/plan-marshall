@@ -129,7 +129,6 @@ def _assert_plan_state_excluded_control_safe(result: dict) -> None:
     )
 
 
-
 # The identity an unconfigured checkout commits under. Owned by
 # manage-run-config (COMMIT_TRAILER_*_DEFAULT) and documented in CLAUDE.md
 # § "Commit Trailer"; restated here as the executable form of it.
@@ -211,7 +210,6 @@ def _tracked_trailer_lines() -> tuple[list[tuple[str, str]], int]:
     return occurrences, scanned
 
 
-
 class TestIgnoreExclusionHelpers:
     """Unit coverage for the ignore-set partitioning and prefix-aware exclusion.
 
@@ -229,7 +227,6 @@ class TestIgnoreExclusionHelpers:
         # every descendant must still be treated as ignored.
         ignored_dirs = ('.plan/local/worktrees/EXAMPLE-PLAN/',)
         assert git_workflow._is_ignored('.plan/local/worktrees/EXAMPLE-PLAN/logs/work.log', set(), ignored_dirs)
-
 
 
 class TestIgnoreQueryHonesty:
@@ -316,7 +313,6 @@ class TestIgnoreQueryHonesty:
         monkeypatch.setattr(git_workflow.subprocess, 'run', _raise_timeout)
 
         assert git_workflow.get_gitignored_files(tmp_path) is None
-
 
 
 class TestTrackednessOraclePathSpelling:
@@ -493,7 +489,6 @@ class TestTrackednessOraclePathSpelling:
         assert not git_workflow._is_nested_git_boundary(str(plain))
 
 
-
 class TestArtifactConfigLoading:
     """Test that artifact patterns are loaded from artifact-patterns.json config."""
 
@@ -528,7 +523,6 @@ class TestArtifactConfigLoading:
                 )
 
 
-
 class TestToonContract:
     """Verify output matches the contract documented in SKILL.md."""
 
@@ -540,7 +534,6 @@ class TestToonContract:
         assert required_fields - set(result.keys()) == set()
         assert 'valid' in result['validation']
         assert 'warnings' in result['validation']
-
 
 
 class TestWorktreeRemoveMoveBackPrecondition:
@@ -761,7 +754,6 @@ class TestWorktreeRemoveMoveBackPrecondition:
         assert not worktree.exists()
 
 
-
 # =============================================================================
 # Subprocess (Tier 3) tests -- CLI plumbing only
 # =============================================================================
@@ -790,7 +782,6 @@ class TestMain:
 
         assert code != 0
         assert '--type' in stderr
-
 
 
 class TestCoAuthorTrailerConvention:

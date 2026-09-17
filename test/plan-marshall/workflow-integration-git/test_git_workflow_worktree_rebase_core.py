@@ -201,7 +201,6 @@ def _invoke_rebase(
 # ---------------------------------------------------------------------------
 
 
-
 # ---------------------------------------------------------------------------
 # State 1 — clean
 # ---------------------------------------------------------------------------
@@ -223,7 +222,6 @@ class TestRebaseToClean:
         assert result['head_branch'] == 'feature/clean'
         assert result['ahead'] == 0
         assert result['behind'] == 0
-
 
 
 # ---------------------------------------------------------------------------
@@ -248,7 +246,6 @@ class TestRebaseToDirty:
         # No rebase should have been attempted, so no rebase-merge dir.
         assert not (rebase_env['worktree'] / '.git' / 'rebase-merge').exists()
         assert not (rebase_env['worktree'] / '.git' / 'rebase-apply').exists()
-
 
 
 # ---------------------------------------------------------------------------
@@ -310,7 +307,6 @@ class TestRebaseToAhead:
         assert result['action'] == 'noop'
 
 
-
 # ---------------------------------------------------------------------------
 # State 4 — behind
 # ---------------------------------------------------------------------------
@@ -337,7 +333,6 @@ class TestRebaseToBehind:
         assert result['behind'] == 1
         # The new base commit's file should now be reachable from the worktree HEAD.
         assert (rebase_env['worktree'] / 'main_only.txt').exists()
-
 
 
 # ---------------------------------------------------------------------------

@@ -142,7 +142,6 @@ def _setup_remote_and_worktree(
 # =============================================================================
 
 
-
 # =============================================================================
 # status.json helpers
 # =============================================================================
@@ -430,7 +429,6 @@ def _emitted_tokens(source_text: str | None = None) -> tuple[set[str], set[str]]
     return reasons, errors
 
 
-
 def test_classification_no_overlap(plan_context):
     """Upstream commits touch disjoint files -> classification: no_overlap."""
     plan_dir = plan_context.plan_dir_for('br-class-none')
@@ -457,7 +455,6 @@ def test_classification_no_overlap(plan_context):
     assert result['classification'] == 'no_overlap'
     assert result['auto_reconcilable'] is False
     assert result['findings_emitted'] == 0
-
 
 
 def test_classification_overlap_no_content_conflict_is_non_mutating(plan_context):
@@ -509,7 +506,6 @@ def test_classification_overlap_no_content_conflict_is_non_mutating(plan_context
     assert 'H-upstream' not in head_text
 
 
-
 def test_classification_overlap_with_content_conflict_keeps_loop_entry(plan_context):
     """Conflicting line edits -> classification stays overlap_with_content_conflict,
     findings emitted, no auto-reconcile (worktree unchanged).
@@ -551,7 +547,6 @@ def test_classification_overlap_with_content_conflict_keeps_loop_entry(plan_cont
     assert head_before == head_after
     # A landed conflict finding reports no persist failure.
     assert 'qgate_persist_failed' not in result
-
 
 
 # =============================================================================
@@ -609,7 +604,6 @@ def test_rejected_persist_flips_status_and_carries_finding_content(plan_context,
     assert 'origin/main' in failure['detail']
 
 
-
 def test_deduplicated_conflict_finding_stays_benign(plan_context):
     """A ``deduplicated`` re-persist is benign and must not read as a rejection."""
     plan_dir = plan_context.plan_dir_for('br-persist-dedup')
@@ -641,7 +635,6 @@ def test_deduplicated_conflict_finding_stays_benign(plan_context):
     assert 'error' not in second
     assert 'qgate_persist_failed' not in second
     assert second['findings_emitted'] == 0
-
 
 
 def test_two_calls_after_reconcile_agree_zero_upstream_no_overlap(plan_context):
@@ -694,7 +687,6 @@ def test_two_calls_after_reconcile_agree_zero_upstream_no_overlap(plan_context):
     assert first['classification'] == second['classification']
 
 
-
 def test_in_flight_set_excludes_files_the_plan_never_touched(plan_context):
     """D5(b): after a reconcile brings origin/main into HEAD, the in-flight set
     contains only the plan's own file (``local.txt``) — never the upstream file
@@ -729,7 +721,6 @@ def test_in_flight_set_excludes_files_the_plan_never_touched(plan_context):
     )
 
 
-
 def test_merge_base_recomputed_not_read_from_stored_status(plan_context):
     """D5(c): a bogus stored ``worktree_sha`` is ignored — the anchor is the
     recomputed merge-base, so the upstream count is correct despite the poison.
@@ -760,7 +751,6 @@ def test_merge_base_recomputed_not_read_from_stored_status(plan_context):
         'the anchor came from the poisoned stored worktree_sha, not the recomputed merge-base'
     )
     assert result.get('merge_base_source') == 'merge_base'
-
 
 
 def test_classify_only_never_moves_head_on_every_classification(plan_context):
@@ -810,7 +800,6 @@ def test_classify_only_never_moves_head_on_every_classification(plan_context):
         assert head_before == head_after, f'the probe moved HEAD on {expected}'
 
 
-
 def test_d3_guard_fires_when_probe_moves_head(plan_context, monkeypatch):
     """D3: a deliberate ref move DURING the probe is caught AT the probe as a
     fail-loud ``probe_mutated_head`` error — not discovered later at the landing.
@@ -858,7 +847,6 @@ def test_d3_guard_fires_when_probe_moves_head(plan_context, monkeypatch):
     assert result['head_before'] != result['head_after']
 
 
-
 # ---------------------------------------------------------------------------
 # The stale-base auto-update is authoritative for the NEXT call
 # ---------------------------------------------------------------------------
@@ -897,7 +885,6 @@ def test_persisted_base_branch_outranks_the_configured_one(monkeypatch):
     )
 
 
-
 def test_cli_override_still_outranks_the_persisted_value(monkeypatch):
     """An explicit operator argument beats persisted state.
 
@@ -907,7 +894,6 @@ def test_cli_override_still_outranks_the_persisted_value(monkeypatch):
     monkeypatch.setattr(_mod, '_read_references_base_branch', lambda plan_id: 'release-2')
 
     assert _mod._resolve_base_branch('some-plan', 'explicit') == ('explicit', 'cli')
-
 
 
 def test_resolution_falls_through_to_config_when_no_reference_is_persisted(monkeypatch):
@@ -932,7 +918,6 @@ def test_resolution_falls_through_to_config_when_no_reference_is_persisted(monke
     branch, source = _mod._resolve_base_branch('some-plan', None)
 
     assert (branch, source) == ('configured', 'plan_config')
-
 
 
 def test_reader_is_fail_soft_on_every_unavailability_path(monkeypatch):

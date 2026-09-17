@@ -85,7 +85,6 @@ def _create_branch(path: Path, branch: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-
 # ---------------------------------------------------------------------------
 # Tier 2: cmd_prune_ref — project-dir escape-hatch path
 # ---------------------------------------------------------------------------
@@ -98,7 +97,6 @@ def _patch_run_git(monkeypatch: pytest.MonkeyPatch, fake_run_git) -> None:
     default arg) to fall through to the real git binary for un-intercepted calls.
     """
     monkeypatch.setattr(_mod, 'run_git', fake_run_git)
-
 
 
 # ---------------------------------------------------------------------------
@@ -207,7 +205,6 @@ class TestResolveProjectDirAndHeadViaResolver:
         assert error is not None
         assert error['error_type'] == 'worktree_not_materialized'
         assert branch_mock.call_count == 0, 'the sentinel must never reach get-worktree-path'
-
 
 
 # ---------------------------------------------------------------------------

@@ -85,7 +85,6 @@ def _create_branch(path: Path, branch: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-
 # ---------------------------------------------------------------------------
 # Tier 2: cmd_prune_ref — project-dir escape-hatch path
 # ---------------------------------------------------------------------------
@@ -98,7 +97,6 @@ def _patch_run_git(monkeypatch: pytest.MonkeyPatch, fake_run_git) -> None:
     default arg) to fall through to the real git binary for un-intercepted calls.
     """
     monkeypatch.setattr(_mod, 'run_git', fake_run_git)
-
 
 
 # ---------------------------------------------------------------------------
@@ -119,7 +117,6 @@ class TestVerifyGitRepo:
 
         assert result is not None
         assert 'working tree' in result
-
 
 
 # ---------------------------------------------------------------------------
@@ -156,7 +153,6 @@ class TestResolveProjectDirAndHead:
         assert head is None
         assert error is not None
         assert error['error_type'] == 'missing_required_arg'
-
 
 
 class TestCmdPruneRefEscapeHatch:

@@ -137,7 +137,6 @@ def _init_repo(repo: Path) -> None:
 # =============================================================================
 
 
-
 # =============================================================================
 # worktree-remove — worktree first, then branch ref
 # =============================================================================
@@ -264,7 +263,6 @@ def _run_removal(worktree: Path, plan_id: str) -> dict:
         return dict(cmd_worktree_remove(Namespace(plan_id=plan_id, force=False)))
 
 
-
 # =============================================================================
 # No-symlink contract for the worktree .plan/local materializer
 # =============================================================================
@@ -330,7 +328,6 @@ class TestEnsureWorktreePlanLocalReal:
         assert not link.is_symlink()
 
 
-
 # =============================================================================
 # CLI argparse rejection — missing --plan-id
 # =============================================================================
@@ -362,7 +359,6 @@ class TestWorktreeRequiresPlanId:
         result = run_script(SCRIPT_PATH, 'worktree-remove')
         assert result.returncode != 0
         assert '--plan-id' in result.stderr or '--plan-id' in result.stdout
-
 
 
 # =============================================================================
@@ -426,7 +422,6 @@ class TestWorktreePathResolution:
         assert result['status'] == 'error'
         assert result['error'] == 'plan_resolution_failed'
         assert 'plan not found' in result['message']
-
 
 
 # =============================================================================

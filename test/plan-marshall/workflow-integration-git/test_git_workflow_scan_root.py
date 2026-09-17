@@ -129,7 +129,6 @@ def _assert_plan_state_excluded_control_safe(result: dict) -> None:
     )
 
 
-
 # The identity an unconfigured checkout commits under. Owned by
 # manage-run-config (COMMIT_TRAILER_*_DEFAULT) and documented in CLAUDE.md
 # § "Commit Trailer"; restated here as the executable form of it.
@@ -211,7 +210,6 @@ def _tracked_trailer_lines() -> tuple[list[tuple[str, str]], int]:
     return occurrences, scanned
 
 
-
 class TestScanRootPlanStateExclusion:
     """The scan ROOT's own plan state is excluded independent of every ignore mechanism.
 
@@ -259,7 +257,6 @@ class TestScanRootPlanStateExclusion:
         result = scan_artifacts(tmp_path, respect_gitignore=True)
 
         _assert_plan_state_excluded_control_safe(result)
-
 
 
 class TestCollapsedIgnoredDirPrefixBranch:

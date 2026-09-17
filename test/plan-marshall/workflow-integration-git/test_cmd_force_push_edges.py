@@ -82,7 +82,6 @@ def _create_feature_branch(path: Path, branch: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-
 # ---------------------------------------------------------------------------
 # Tier 2: cmd_force_push — push failure error mapping
 # ---------------------------------------------------------------------------
@@ -105,7 +104,6 @@ def _patch_run_git(monkeypatch: pytest.MonkeyPatch, responses: dict) -> None:
         return orig_run_git(args, **kwargs)
 
     monkeypatch.setattr(_mod, 'run_git', fake_run_git)
-
 
 
 class TestCmdForcePushPushFailures:
@@ -189,7 +187,6 @@ class TestCmdForcePushPushFailures:
 
         assert result['status'] == 'success'
         assert 'remote_sha' not in result
-
 
 
 # ---------------------------------------------------------------------------

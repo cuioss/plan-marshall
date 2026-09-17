@@ -137,7 +137,6 @@ def _init_repo(repo: Path) -> None:
 # =============================================================================
 
 
-
 # =============================================================================
 # worktree-remove — worktree first, then branch ref
 # =============================================================================
@@ -264,7 +263,6 @@ def _run_removal(worktree: Path, plan_id: str) -> dict:
         return dict(cmd_worktree_remove(Namespace(plan_id=plan_id, force=False)))
 
 
-
 # =============================================================================
 # worktree-list — filter from manage-status list by use_worktree==true
 # =============================================================================
@@ -336,7 +334,6 @@ class TestWorktreeList:
         result = cmd_worktree_list(Namespace())
         assert result['status'] == 'error'
         assert result['error'] == 'plan_resolution_failed'
-
 
 
 # =============================================================================
@@ -505,7 +502,6 @@ class TestLocatePlanCheckout:
         assert result['location'] == 'not_found'
 
 
-
 class TestLocatePlanCheckoutCli:
     """CLI argparse: ``locate-plan-checkout`` rejects a missing ``--plan-id``."""
 
@@ -513,7 +509,6 @@ class TestLocatePlanCheckoutCli:
         result = run_script(SCRIPT_PATH, 'locate-plan-checkout')
         assert result.returncode != 0
         assert '--plan-id' in result.stderr or '--plan-id' in result.stdout
-
 
 
 # =============================================================================

@@ -378,7 +378,6 @@ def _assert_refused(result: dict, geometry: dict[str, Path], expected_error: str
     )
 
 
-
 @pytest.fixture
 def external_base(
     geometry: dict[str, Path],
@@ -402,7 +401,6 @@ def external_base(
     base.mkdir()
     monkeypatch.setenv('PLAN_BASE_DIR', str(base))
     return base
-
 
 
 class TestCwdGeometryMatrix:
@@ -473,7 +471,6 @@ class TestCwdGeometryMatrix:
         assert 'Pass --force' not in result['message'], 'The message must name the remedy, not offer --force as one.'
 
 
-
 class TestContainmentIsNotAStringPrefixTest:
     """Descendants are contained; a sibling sharing the target's prefix is not."""
 
@@ -512,7 +509,6 @@ class TestContainmentIsNotAStringPrefixTest:
         assert result['status'] == 'success', f'A sibling path is not inside the removal target, got {result!r}.'
         assert result['action'] == 'removed'
         assert not geometry['worktree'].exists()
-
 
 
 class TestNeitherRefusalIsForceOverridable:

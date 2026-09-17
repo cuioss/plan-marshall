@@ -201,7 +201,6 @@ def _invoke_rebase(
 # ---------------------------------------------------------------------------
 
 
-
 # ---------------------------------------------------------------------------
 # State 6 — detached
 # ---------------------------------------------------------------------------
@@ -226,7 +225,6 @@ class TestRebaseToDetached:
         assert not (rebase_env['worktree'] / '.git' / 'rebase-merge').exists()
 
 
-
 # ---------------------------------------------------------------------------
 # State 7 — missing-base
 # ---------------------------------------------------------------------------
@@ -244,7 +242,6 @@ class TestRebaseToMissingBase:
         assert result['state'] == 'missing-base'
         assert result['error'] == 'missing_base'
         assert 'nonexistent-branch' in result['message']
-
 
 
 # ---------------------------------------------------------------------------
@@ -286,7 +283,6 @@ class TestRebaseToMissingTarget:
         assert result['status'] == 'error'
         assert result['error'] == 'no_worktree_configured'
         assert result['plan_id'] == 'plan-x'
-
 
 
 # ---------------------------------------------------------------------------
@@ -332,7 +328,6 @@ class TestRebaseToStaleLocalBaseRegression:
         assert (rebase_env['worktree'] / 'feature.txt').exists()
 
 
-
 # ---------------------------------------------------------------------------
 # No-origin fallback to the local {base} ref
 # ---------------------------------------------------------------------------
@@ -360,7 +355,6 @@ class TestRebaseToNoRemoteFallback:
         # No origin remote → rebase_ref falls back to the bare local ``main``.
         assert result['rebase_ref'] == 'main'
         assert (main_repo / 'main_only.txt').exists()
-
 
 
 # ---------------------------------------------------------------------------

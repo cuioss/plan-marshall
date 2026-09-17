@@ -129,7 +129,6 @@ def _assert_plan_state_excluded_control_safe(result: dict) -> None:
     )
 
 
-
 # The identity an unconfigured checkout commits under. Owned by
 # manage-run-config (COMMIT_TRAILER_*_DEFAULT) and documented in CLAUDE.md
 # § "Commit Trailer"; restated here as the executable form of it.
@@ -209,7 +208,6 @@ def _tracked_trailer_lines() -> tuple[list[tuple[str, str]], int]:
                 continue
             occurrences.append((rel, trailer))
     return occurrences, scanned
-
 
 
 class TestFormatCommit:
@@ -351,7 +349,6 @@ class TestFormatCommit:
 
         assert not result['validation']['valid']
         assert any('Header' in w for w in result['validation']['warnings'])
-
 
 
 class TestWrapText:

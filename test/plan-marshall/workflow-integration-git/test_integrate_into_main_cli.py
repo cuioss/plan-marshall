@@ -171,7 +171,6 @@ def isolated_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict:
 # =============================================================================
 
 
-
 # =============================================================================
 # cwd-independent SOURCE resolution — structural probe + channel/probe fallback
 # (the moved-in-from-main case)
@@ -205,7 +204,6 @@ def _stage_worktree_at_canonical_root(tmp_path: Path, monkeypatch: pytest.Monkey
     status_json.parent.mkdir(parents=True)
     status_json.write_text('{}\n')
     return worktree_path
-
 
 
 class TestResolveWorktreePathViaStatusChannel:
@@ -283,7 +281,6 @@ class TestResolveWorktreePathViaStatusChannel:
         assert err is not None
         assert 'no worktree configured' in str(err.get('error') or err.get('message')).lower()
         assert mock.call_count == 0, 'the sentinel must never reach get-worktree-path'
-
 
 
 class TestIntegrateFromMainViaStructuralProbe:
@@ -395,7 +392,6 @@ class TestIntegrateFromMainViaStructuralProbe:
         assert env['wt_plan_dir'].is_dir()
         assert not env['main_plan_dir'].exists()
         assert env['fake_lock'].acquired == 0
-
 
 
 # =============================================================================

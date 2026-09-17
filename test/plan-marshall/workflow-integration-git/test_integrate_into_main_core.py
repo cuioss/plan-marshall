@@ -171,7 +171,6 @@ def isolated_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict:
 # =============================================================================
 
 
-
 # =============================================================================
 # cwd-independent SOURCE resolution — structural probe + channel/probe fallback
 # (the moved-in-from-main case)
@@ -205,7 +204,6 @@ def _stage_worktree_at_canonical_root(tmp_path: Path, monkeypatch: pytest.Monkey
     status_json.parent.mkdir(parents=True)
     status_json.write_text('{}\n')
     return worktree_path
-
 
 
 # =============================================================================
@@ -277,7 +275,6 @@ class TestIntegrateHappyPath:
         assert wt_executor.is_file()
 
 
-
 # =============================================================================
 # Merge-lock title-token suppression
 # =============================================================================
@@ -318,7 +315,6 @@ class TestIntegrateSuppressesMergeLockTitleToken:
         assert result['status'] == 'error'
         assert env['fake_lock'].acquire_set_title_tokens == [False]
         assert env['fake_lock'].release_set_title_tokens == [False]
-
 
 
 # =============================================================================
@@ -373,7 +369,6 @@ class TestIntegrateCwdIndependent:
         assert env['main_plan_dir'].is_dir()
 
 
-
 # =============================================================================
 # Idempotent re-run
 # =============================================================================
@@ -393,7 +388,6 @@ class TestIntegrateIdempotent:
         assert second['status'] == 'success'
         assert second['action'] == 'noop'
         assert env['fake_lock'].acquired == acquired_before  # no new acquire
-
 
 
 # =============================================================================

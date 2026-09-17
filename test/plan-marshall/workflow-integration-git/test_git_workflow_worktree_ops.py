@@ -137,7 +137,6 @@ def _init_repo(repo: Path) -> None:
 # =============================================================================
 
 
-
 # =============================================================================
 # worktree-remove — worktree first, then branch ref
 # =============================================================================
@@ -262,7 +261,6 @@ def _record_run_git(monkeypatch: pytest.MonkeyPatch, worktree: Path, *, rc: int 
 def _run_removal(worktree: Path, plan_id: str) -> dict:
     with patch_query_worktree_path(True, str(worktree)):
         return dict(cmd_worktree_remove(Namespace(plan_id=plan_id, force=False)))
-
 
 
 class TestWorktreeRemove:
@@ -427,7 +425,6 @@ class TestWorktreeRemove:
         )
 
 
-
 class TestRemovalBudgetReachesGit:
     """The derived budget is what ``git worktree remove`` is actually given.
 
@@ -552,7 +549,6 @@ class TestRemovalBudgetReachesGit:
             assert budget == max(1, min(entries, git_workflow._REMOVAL_TIMEOUT_CEILING_SECONDS))
 
 
-
 class TestRemovalTimeoutIsItsOwnFailure:
     """An expired budget is NOT ``worktree_remove_failed``.
 
@@ -625,7 +621,6 @@ class TestRemovalTimeoutIsItsOwnFailure:
         )
 
 
-
 class TestScratchClearingNeverLeavesTheTarget:
     """The clearing deletes regenerable scratch, and only inside the target."""
 
@@ -658,7 +653,6 @@ class TestScratchClearingNeverLeavesTheTarget:
         assert result['scratch_entries_removed'] == 0
         assert 'symlink' in result['scratch_note']
         assert (outside / 'keep.txt').is_file(), 'the symlink target lives outside the removal target and must survive'
-
 
 
 class TestRemovalBudgetDerivation:
@@ -697,7 +691,6 @@ class TestRemovalBudgetDerivation:
         measurement.
         """
         assert git_workflow._derive_removal_timeout(entries, basis) == git_workflow._REMOVAL_TIMEOUT_CEILING_SECONDS
-
 
 
 class TestTreeMeasurement:

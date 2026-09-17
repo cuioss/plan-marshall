@@ -142,7 +142,6 @@ def _setup_remote_and_worktree(
 # =============================================================================
 
 
-
 # =============================================================================
 # status.json helpers
 # =============================================================================
@@ -430,7 +429,6 @@ def _emitted_tokens(source_text: str | None = None) -> tuple[set[str], set[str]]
     return reasons, errors
 
 
-
 # =============================================================================
 # Tests
 # =============================================================================
@@ -460,7 +458,6 @@ def test_clean_no_upstream_commits(plan_context):
     assert result['findings_emitted'] == 0
 
 
-
 def test_upstream_commits_listed_no_conflicts(plan_context):
     """N non-conflicting upstream commits → listed but no conflicts."""
     plan_dir = plan_context.plan_dir_for('br-noncfl')
@@ -488,7 +485,6 @@ def test_upstream_commits_listed_no_conflicts(plan_context):
     files_seen = {f for c in result['upstream_commits'] for f in c['files']}
     assert {'upstream-0.txt', 'upstream-1.txt'}.issubset(files_seen)
     assert result['conflict_count'] == 0
-
 
 
 def test_known_conflict_emits_finding(plan_context):
@@ -525,7 +521,6 @@ def test_known_conflict_emits_finding(plan_context):
     assert any('shared.txt' in rec.get('title', '') for rec in records)
 
 
-
 def test_main_checkout_flow_skips(plan_context):
     """``use_worktree=false`` skips entirely with reason=main_checkout_flow.
 
@@ -555,7 +550,6 @@ def test_main_checkout_flow_skips(plan_context):
     )
 
 
-
 def test_unresolvable_plan_skips_as_status_not_found(plan_context, monkeypatch):
     """An unresolvable plan maps to ``status_not_found``, derived structurally.
 
@@ -582,7 +576,6 @@ def test_unresolvable_plan_skips_as_status_not_found(plan_context, monkeypatch):
 
     assert result['status'] == 'skipped'
     assert result['reason'] == 'status_not_found'
-
 
 
 def test_unmaterialized_worktree_skips_as_not_materialized(plan_context):
@@ -616,7 +609,6 @@ def test_unmaterialized_worktree_skips_as_not_materialized(plan_context):
     )
 
 
-
 def test_non_directory_worktree_path_skips_as_not_a_directory(plan_context):
     """A NON-EMPTY path that is not a directory is the guard's reachable case.
 
@@ -639,7 +631,6 @@ def test_non_directory_worktree_path_skips_as_not_a_directory(plan_context):
 
     assert result['status'] == 'skipped'
     assert result['reason'] == 'worktree_path_not_a_directory'
-
 
 
 def test_worktree_path_override_bypasses_the_resolver_entirely(plan_context):
@@ -672,7 +663,6 @@ def test_worktree_path_override_bypasses_the_resolver_entirely(plan_context):
     )
 
 
-
 def test_worktree_path_override_used_without_status(plan_context):
     """Explicit --worktree-path bypasses the status.json read."""
     plan_dir = plan_context.plan_dir_for('br-override')
@@ -692,7 +682,6 @@ def test_worktree_path_override_used_without_status(plan_context):
     assert result['worktree_path'] == str(worktree)
 
 
-
 def test_no_remote_skips(plan_context):
     """A repo without a remote configures returns skipped: no_remote."""
     plan_dir = plan_context.plan_dir_for('br-noremote')
@@ -710,7 +699,6 @@ def test_no_remote_skips(plan_context):
     result = cmd_baseline_reconcile(args)
     assert result['status'] == 'skipped'
     assert result['reason'] == 'no_remote'
-
 
 
 def test_stale_base_branch_auto_updated_to_remote_default(plan_context):
@@ -752,7 +740,6 @@ def test_stale_base_branch_auto_updated_to_remote_default(plan_context):
     assert refs['base_branch'] == 'main'
 
 
-
 def test_current_base_branch_not_updated(plan_context):
     """When ``origin/{base_branch}`` resolves, ``base_branch_updated`` stays False."""
     plan_dir = plan_context.plan_dir_for('br-current')
@@ -774,7 +761,6 @@ def test_current_base_branch_not_updated(plan_context):
     assert result['base_branch_updated'] is False
     assert 'original_base_branch' not in result
     assert result['base_branch'] == 'main'
-
 
 
 def test_stale_base_branch_no_detectable_default(plan_context):
@@ -836,7 +822,6 @@ def test_stale_base_branch_no_detectable_default(plan_context):
     assert result['base_branch'] == 'feature/x'
     assert result['base_branch_updated'] is True
     assert result['original_base_branch'] == 'main'
-
 
 
 def test_default_base_branch_is_main(plan_context):

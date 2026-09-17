@@ -129,7 +129,6 @@ def _assert_plan_state_excluded_control_safe(result: dict) -> None:
     )
 
 
-
 # The identity an unconfigured checkout commits under. Owned by
 # manage-run-config (COMMIT_TRAILER_*_DEFAULT) and documented in CLAUDE.md
 # § "Commit Trailer"; restated here as the executable form of it.
@@ -209,7 +208,6 @@ def _tracked_trailer_lines() -> tuple[list[tuple[str, str]], int]:
                 continue
             occurrences.append((rel, trailer))
     return occurrences, scanned
-
 
 
 class TestDetectArtifacts:
@@ -377,7 +375,6 @@ class TestDetectArtifacts:
         assert get_tracked_files(tmp_path) == set()
 
 
-
 class TestTrackedFileFilter:
     """Test that tracked files matching safe patterns are demoted to uncertain."""
 
@@ -423,7 +420,6 @@ class TestTrackedFileFilter:
         assert 'debug.log' not in result['safe']
 
 
-
 class TestDetectArtifactsGitignore:
     """Test detect-artifacts with gitignore integration (subprocess-dependent)."""
 
@@ -458,7 +454,6 @@ class TestDetectArtifactsGitignore:
         result = parse_toon(stdout)
         safe_files = result['safe']
         assert any('.class' in f for f in safe_files), f'.class should be present with --no-gitignore: {safe_files}'
-
 
 
 class TestDetectArtifactsLivePlanArtifacts:
@@ -571,7 +566,6 @@ class TestDetectArtifactsLivePlanArtifacts:
             f"live plan's work.log offered as safe without gitignore: {result['safe']}"
         )
         assert 'scratch.temp' in result['safe'], f'control artifact missing from safe: {result["safe"]}'
-
 
 
 class TestDetectArtifactsIndeterminateIgnoreSet:

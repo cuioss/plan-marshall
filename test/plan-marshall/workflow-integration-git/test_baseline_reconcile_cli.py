@@ -142,7 +142,6 @@ def _setup_remote_and_worktree(
 # =============================================================================
 
 
-
 # =============================================================================
 # status.json helpers
 # =============================================================================
@@ -430,7 +429,6 @@ def _emitted_tokens(source_text: str | None = None) -> tuple[set[str], set[str]]
     return reasons, errors
 
 
-
 def test_baseline_reconcile_registered_in_git_workflow_cli():
     """argparse subparser routes 'baseline-reconcile' to cmd_baseline_reconcile."""
     git_workflow = load_script_module(
@@ -446,7 +444,6 @@ def test_baseline_reconcile_registered_in_git_workflow_cli():
     leaf.set_defaults(func=git_workflow.cmd_baseline_reconcile)
     ns = parser.parse_args(['baseline-reconcile'])
     assert ns.func is git_workflow.cmd_baseline_reconcile
-
 
 
 def test_documented_reason_and_error_vocabularies_match_the_script():
@@ -497,7 +494,6 @@ def test_documented_reason_and_error_vocabularies_match_the_script():
     )
 
 
-
 def test_the_slash_joined_reason_row_expands_to_every_token_it_groups():
     """The grouped cell is expanded, not read as one unmatchable string.
 
@@ -524,7 +520,6 @@ def test_the_slash_joined_reason_row_expands_to_every_token_it_groups():
         'the grouped row is no longer slash-joined, so this test no longer '
         'demonstrates that the parser expands such a cell'
     )
-
 
 
 #: A table row injected into the doc for a reason the script never emits. Written

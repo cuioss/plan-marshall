@@ -138,7 +138,6 @@ def isolated_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict:
 # =============================================================================
 
 
-
 # =============================================================================
 # Happy path
 # =============================================================================
@@ -250,7 +249,6 @@ class TestPrepareExecuteHappyPath:
         assert result.get('error_code') == prepare_execute.ErrorCode.INVALID_INPUT
 
 
-
 # =============================================================================
 # Idempotent re-run
 # =============================================================================
@@ -272,7 +270,6 @@ class TestPrepareExecuteIdempotent:
         assert second['status'] == 'success'
         assert second['action'] == 'noop'
         assert second['worktree_path'] == first['worktree_path']
-
 
 
 class TestPrepareExecuteReentryIdempotence:
@@ -400,7 +397,6 @@ class TestPrepareExecuteReentryIdempotence:
         assert prepare_execute._worktree_holds_moved_in_plan(worktree_path, plan_id) is False
 
 
-
 # =============================================================================
 # Rollback-on-partial-failure
 # =============================================================================
@@ -451,7 +447,6 @@ class TestPrepareExecuteRollback:
         )
         assert result['status'] == 'error'
         assert result.get('error_code') == prepare_execute.ErrorCode.NOT_FOUND
-
 
 
 # =============================================================================

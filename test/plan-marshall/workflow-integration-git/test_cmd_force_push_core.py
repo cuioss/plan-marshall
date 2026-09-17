@@ -82,7 +82,6 @@ def _create_feature_branch(path: Path, branch: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-
 # ---------------------------------------------------------------------------
 # Tier 2: cmd_force_push — push failure error mapping
 # ---------------------------------------------------------------------------
@@ -105,7 +104,6 @@ def _patch_run_git(monkeypatch: pytest.MonkeyPatch, responses: dict) -> None:
         return orig_run_git(args, **kwargs)
 
     monkeypatch.setattr(_mod, 'run_git', fake_run_git)
-
 
 
 # ---------------------------------------------------------------------------
@@ -132,7 +130,6 @@ class TestVerifyGitRepo:
 
         assert result is not None
         assert 'working tree' in result
-
 
 
 # ---------------------------------------------------------------------------
@@ -173,7 +170,6 @@ class TestResolveBranchAndPath:
         assert branch is None
         assert path is None
         assert error is not None
-
 
 
 # ---------------------------------------------------------------------------
@@ -250,7 +246,6 @@ class TestCmdForcePushEscapeHatch:
         result = cmd_force_push(args)
 
         assert 'plan_id' not in result
-
 
 
 # ---------------------------------------------------------------------------

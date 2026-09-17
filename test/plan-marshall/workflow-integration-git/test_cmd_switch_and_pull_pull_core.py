@@ -106,7 +106,6 @@ def _init_repo_with_linked_worktree(root: Path) -> tuple[Path, Path]:
 # ---------------------------------------------------------------------------
 
 
-
 # ---------------------------------------------------------------------------
 # Tier 2: _resolve_project_dir — the --plan-id resolver path
 # ---------------------------------------------------------------------------
@@ -267,7 +266,6 @@ class TestResolveProjectDirViaResolver:
         assert error is None, error
         assert path == Path(MAIN_CHECKOUT_ROOT)
         assert path_mock.call_count == 0, 'the sentinel must never reach get-worktree-path'
-
 
 
 # ---------------------------------------------------------------------------

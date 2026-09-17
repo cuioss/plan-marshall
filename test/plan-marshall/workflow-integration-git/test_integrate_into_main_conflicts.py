@@ -171,7 +171,6 @@ def isolated_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict:
 # =============================================================================
 
 
-
 # =============================================================================
 # cwd-independent SOURCE resolution — structural probe + channel/probe fallback
 # (the moved-in-from-main case)
@@ -207,7 +206,6 @@ def _stage_worktree_at_canonical_root(tmp_path: Path, monkeypatch: pytest.Monkey
     return worktree_path
 
 
-
 # =============================================================================
 # Lock acquisition failure
 # =============================================================================
@@ -229,7 +227,6 @@ class TestIntegrateLockFailure:
         assert not env['main_plan_dir'].exists()
         assert failing_lock.acquired == 1
         assert failing_lock.released == 0
-
 
 
 # =============================================================================
@@ -329,7 +326,6 @@ class TestIntegrateWhenMergeLockAlreadySelfHeld:
         assert other['action'] == 'acquired'
 
 
-
 # =============================================================================
 # Not-found / missing worktree-resident plan dir
 # =============================================================================
@@ -370,7 +366,6 @@ class TestIntegrateNotFound:
         assert result['status'] == 'error'
         assert result.get('error_code') == integrate_into_main.ErrorCode.NOT_FOUND
         assert env['fake_lock'].acquired == 0
-
 
 
 # =============================================================================
@@ -497,7 +492,6 @@ class TestIntegrateReclaimOrphan:
         assert env['fake_lock'].released == 1
 
 
-
 class TestStructuralWorktreeProbe:
     """Direct coverage of :func:`_structural_worktree_probe`.
 
@@ -537,7 +531,6 @@ class TestStructuralWorktreeProbe:
 
         monkeypatch.setattr(integrate_into_main, 'get_worktree_root', boom)
         assert integrate_into_main._structural_worktree_probe('any-plan') is None
-
 
 
 class TestResolveWorktreePathFallback:
