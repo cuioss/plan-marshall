@@ -7,9 +7,9 @@ xref:../../README.md[Plan Marshall] » xref:README.adoc[Developer Guide]
 
 == Overview
 
-`plan-marshall` publishes each of its distribution targets to refs on `cuioss/plan-marshall`. The `claude` target publishes to two refs: the `dist-claude` orphan branch (snapshot, force-updated on every push to `main`) and the immutable dist tag `claude/v{x.y.z}` (per-release). Each ref's root holds a `.claude-plugin/marketplace.json` and the expanded bundle tree, so Claude Code's `/plugin marketplace add` against the ref registers the marketplace directly — no intermediate fetch, no asset extraction. The `opencode` and `antigravity` targets publish the same way under `dist-opencode` / `opencode/v*` and `dist-antigravity` / `antigravity/v*` (see _Multi-target architecture_ below); their supported consumption path is the local generate-and-deploy workflow (xref:../user/install-opencode.adoc[Installation (OpenCode)], xref:../user/install-antigravity.adoc[Installation (Google Antigravity)]).
+`plan-marshall` publishes each of its distribution targets to refs on `cuioss/plan-marshall`. The `claude` target publishes to the `dist-claude` orphan branch (snapshot, force-updated on every push to `main`) and the immutable dist tag `claude/v{x.y.z}` (per-release). Each ref's root holds `.claude-plugin/marketplace.json`, a root `README.adoc` rendered on GitHub, and the expanded bundle tree, so Claude Code's `/plugin marketplace add` against the ref registers the marketplace directly. The `opencode` and `antigravity` targets publish to `dist-opencode` / `opencode/v*` and `dist-antigravity` / `antigravity/v*`. Each carries a root `README.adoc` and a self-contained `install.sh` script providing one-line installation (`curl -fsSL ... | bash`), workspace scoping, and uninstallation (xref:../user/install-opencode.adoc[Installation (OpenCode)], xref:../user/install-antigravity.adoc[Installation (Google Antigravity)]).
 
-The install commands that follow are Claude-specific (`/plugin marketplace add`, `/reload-plugins`), with the full walkthrough at xref:../user/install-claude.adoc[Installation (Claude Code)]. The OpenCode and Antigravity target consumption path is the local generate-and-deploy against a checkout — verified end-to-end — see _Multi-target architecture_ for the verification status.
+The install commands that follow are Claude-specific (`/plugin marketplace add`, `/reload-plugins`), with the full walkthrough at xref:../user/install-claude.adoc[Installation (Claude Code)].
 
 == Installing — snapshot (bleeding edge)
 
@@ -103,16 +103,7 @@ The publish workflow is target-parametrized via a GitHub Actions `strategy.matri
 | `--target antigravity`
 |===
 
-The `opencode` entry's **refs-based install path** is unverified on a live client: the workflow publishes
-its `dist-opencode` branch and `opencode/v*` tags from the generator output, but
-no live OpenCode client has consumed those refs end-to-end. Validation of that
-refs path is pending (see `marketplace-build.adoc` → _OpenCode inner loop_ →
-deploy option (c)); until the validation protocol runs, treat the OpenCode
-distribution refs as unconfirmed install sources. The supported OpenCode
-consumption path — deploy options (a) and (b) in `marketplace-build.adoc` — is
-the local generate-and-sync deploy against a checkout
-(xref:../user/install-opencode.adoc[Installation (OpenCode)]), which is
-verified end-to-end on a live client.
+Both `dist-opencode` and `dist-antigravity` branches carry root `README.adoc` guides and `install.sh` scripts that allow consumers to install components without cloning the monorepo or running local generators. For contributors and CI pipelines, the local `./pw generate --target ...` workflow remains authoritative for emitting and validating target trees.
 
 The single source `v{x.y.z}` tag drives all targets; versioning stays unified
 across the marketplace. Adding another future target is not a config-only

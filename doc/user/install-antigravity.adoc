@@ -8,7 +8,7 @@
 
 xref:../../README.md[Plan Marshall] » xref:README.adoc[User Guide]
 
-Plan Marshall ships a Google Antigravity target tree alongside the Claude Code marketplace and OpenCode target. Installs are generate-and-deploy operations against a local checkout: the multi-target generator emits the Antigravity tree (`skills`, `agents`, `commands`, `plugin.json`), which is then linked or deployed into the Antigravity configuration directory.
+Plan Marshall installs into Google Antigravity as a native plugin containing skills, agents, and commands. Installation is performed directly from the published `dist-antigravity` distribution branch or immutable release tags (`antigravity/v*`), either via a one-line installer script or manual clone.
 
 == Prerequisites
 
@@ -26,73 +26,112 @@ python3 --version
 
 The platform requirement is assistant-independent and stated once in xref:install-claude.adoc[Installation (Claude Code) › Supported platforms]: a single POSIX runtime, macOS and Linux native, Windows exclusively inside WSL2. On Windows, install Antigravity inside the WSL distro alongside the rest of the runtime.
 
-== Deploy (generate + link)
+== Fast Installation (Recommended)
 
-The consumption path is a two-step flow:
-
-[source,bash]
-----
-./pw generate --target antigravity --output target/antigravity
-----
-
-=== Step 1 — Generate
-
-Run the generator from the repository root. It emits skills, agents, commands, and `plugin.json` into `target/antigravity/`:
-
-* `skills/`: Individual skill directories (`plan-marshall-*`, etc.) containing `SKILL.md` and verbatim resources (`standards/`, `references/`, `templates/`, `scripts/`).
-* `agents/`: Subagent definition markdown files (`execution-context.md`, `execution-context-reader.md`, and ordinal level variants `level-1` through `level-7`).
-* `commands/`: Markdown wrappers exposing user-invocable workflows.
-* `plugin.json`: Antigravity bundle manifest and metadata.
-
-=== Step 2 — Deploy into Antigravity
-
-Antigravity discovers customizations from global and workspace-scoped locations. You can install the emitted artifacts globally or per-project:
-
-==== Global Installation (Recommended)
-
-Link or copy the emitted skills into the Antigravity global customization directory (`~/.gemini/antigravity/skills/`):
+Run the one-line installer script directly in your terminal:
 
 [source,bash]
 ----
-mkdir -p ~/.gemini/antigravity/skills
-cp -R target/antigravity/skills/* ~/.gemini/antigravity/skills/
+curl -fsSL https://raw.githubusercontent.com/cuioss/plan-marshall/dist-antigravity/install.sh | bash
 ----
 
-Alternatively, use symlinks during development so updates to `target/antigravity` are immediately visible without copying:
+This script automatically downloads the latest snapshot from `dist-antigravity` and installs the plugin into the standard global Antigravity plugin directory:
+`~/.gemini/config/plugins/plan-marshall/`
+
+Restart Antigravity or open a new conversation. Antigravity automatically discovers the installed skills and agents.
+
+== Pinned Release (Specific Version)
+
+To install a specific immutable release tag instead of tracking the `main` snapshot, pass `--ref`:
 
 [source,bash]
 ----
-mkdir -p ~/.gemini/antigravity/skills
-for skill in target/antigravity/skills/*; do
-  ln -s "$(pwd)/$skill" ~/.gemini/antigravity/skills/"$(basename "$skill")"
-done
+curl -fsSL https://raw.githubusercontent.com/cuioss/plan-marshall/dist-antigravity/install.sh | bash -s -- --ref antigravity/v0.1.0
 ----
 
-==== Workspace-Scoped Installation
+== Workspace-Scoped Installation
 
-For projects that bundle their skills directly in the workspace, copy or link into `.gemini/skills/` or `.agent/skills/` at the project root:
+To install Plan Marshall into a specific project repository rather than globally, pass `--workspace` (or `-w`):
 
 [source,bash]
 ----
-mkdir -p .gemini/skills
-cp -R target/antigravity/skills/* .gemini/skills/
+cd /path/to/my-project
+curl -fsSL https://raw.githubusercontent.com/cuioss/plan-marshall/dist-antigravity/install.sh | bash -s -- --workspace
 ----
 
-=== Step 3 — Verification
+This installs into `<project-root>/.agents/plugins/plan-marshall/`, making the plugin available to anyone working in that workspace.
 
-Start an Antigravity chat session or invoke the CLI:
+== Manual Installation (Clone or Download)
+
+If you prefer to inspect the files or install offline, clone the `dist-antigravity` branch directly:
 
 [source,bash]
 ----
-agy --help
+git clone -b dist-antigravity https://github.com/cuioss/plan-marshall.git ~/.gemini/config/plugins/plan-marshall
 ----
 
-In the chat interface, verify that the skills are listed in the available skills overview (or invoke them directly via conversational prompts).
+Alternatively, download and extract the branch tarball:
 
-== Next step
+[source,bash]
+----
+mkdir -p ~/.gemini/config/plugins/plan-marshall
+curl -fsSL https://github.com/cuioss/plan-marshall/archive/refs/heads/dist-antigravity.tar.gz | tar -xz -C ~/.gemini/config/plugins/plan-marshall --strip-components=1
+----
+
+== Updating
+
+=== Snapshot Users
+
+Re-run the installer script:
+
+[source,bash]
+----
+curl -fsSL https://raw.githubusercontent.com/cuioss/plan-marshall/dist-antigravity/install.sh | bash
+----
+
+If installed via `git clone`:
+
+[source,bash]
+----
+cd ~/.gemini/config/plugins/plan-marshall && git pull
+----
+
+=== Pinned Users
+
+Run the installer specifying the new release tag:
+
+[source,bash]
+----
+curl -fsSL https://raw.githubusercontent.com/cuioss/plan-marshall/dist-antigravity/install.sh | bash -s -- --ref antigravity/v0.1.1
+----
+
+== Uninstallation
+
+To remove the installed plugin, pass `--uninstall`:
+
+[source,bash]
+----
+curl -fsSL https://raw.githubusercontent.com/cuioss/plan-marshall/dist-antigravity/install.sh | bash -s -- --uninstall
+----
+
+Or if you have the local installation:
+
+[source,bash]
+----
+~/.gemini/config/plugins/plan-marshall/install.sh --uninstall
+----
+
+For a workspace-scoped install:
+
+[source,bash]
+----
+./install.sh --workspace --uninstall
+----
+
+== Next Step
 
 Run xref:getting-started.adoc[`/marshall-steward`] in your target repository to configure the project workspace and initialize `marshal.json`.
 
-== Distribution contract
+== Distribution Contract
 
 Publish triggers, source-vs-dist tag semantics, and the multi-target architecture are documented under xref:../developer/distribution.adoc[Developer Guide › Distribution]. Further details on the Antigravity port architecture are in xref:../developer/antigravity.adoc[Developer Guide › Antigravity Target Port].

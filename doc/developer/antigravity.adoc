@@ -130,6 +130,31 @@ Analysis of `.claude/skills/cloud-plan-lane/SKILL.md` and live execution in the 
 * In isolated worktrees, symlinking `.plan/execute-script.py` from the main repository satisfies `conftest.py` preflight checks.
 * `plugin-doctor` caches argparse surfaces on disk at `.plan/temp/plugin-doctor-help-cache/`. When new subcommands or CLI flags are added upstream, deleting this temporary cache directory triggers fresh derivation of script surfaces.
 
+== Consumer Distribution & Installer Mechanics
+
+Plan Marshall provides a consumer installation experience on par with Claude Code's marketplace via the `dist-antigravity` branch.
+
+=== Branch Assets
+
+The emitted `target/antigravity` tree contains:
+* `README.adoc`: Copied from `doc/user/install-antigravity.adoc`, rendered directly on GitHub at `cuioss/plan-marshall/tree/dist-antigravity`.
+* `install.sh`: A self-contained bash installer script with executable permissions.
+* `plugin.json`: Standard Antigravity plugin descriptor.
+* `skills/`, `agents/`, `commands/`: Standard Antigravity component directories.
+
+=== Installer Modes
+
+1. **Remote Execution (`curl -fsSL ... | bash`)**:
+   Downloads the branch tarball (`dist-antigravity.tar.gz` or release tag) from GitHub, extracts into a temporary directory, and stages into the destination.
+2. **Local Execution (`./install.sh`)**:
+   Detects local components sibling to `install.sh` and stages them directly.
+3. **Destinations**:
+   * Global (default): `~/.gemini/config/plugins/plan-marshall`
+   * Workspace (`--workspace` / `-w`): `<cwd>/.agents/plugins/plan-marshall`
+   * Custom (`--target-dir <path>`): User-specified directory
+4. **Uninstallation**:
+   `--uninstall` removes the target plugin directory cleanly without residue.
+
 == Verification & Test Coverage
 
 The test suite at `test/marketplace/targets/antigravity/` provides complete coverage across:
