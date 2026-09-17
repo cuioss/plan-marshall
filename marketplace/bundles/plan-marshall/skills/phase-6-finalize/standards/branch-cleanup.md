@@ -1694,7 +1694,7 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workf
 
 Parse the TOON output:
 
-- `status: success` → both local branch and remote-tracking ref deleted. A `local_delete_warning` present means the local branch was already absent and the verb continued to the remote-tracking ref prune.
+- `status: success` → local branch is absent and remote-tracking ref was deleted. A `local_delete_warning` present means the local branch was already absent and the verb continued to the remote-tracking ref prune.
 - `status: partial` → local branch deleted; remote-tracking ref was already absent (graceful no-op — expected on `state == merged` re-entry or external prune).
 - `status: error, error_type: branch_delete_failed` → log warning and continue (genuine delete failure with the local branch still present, e.g. checked-out-branch guard; an already-deleted local no longer reaches this error — it returns `success`/`partial` with `local_delete_warning`).
 - `status: error, error_type: unexpected_ref_error` → log warning and continue (ref-db lock contention; cleanup gap is detection-friendly, not a hard blocker).
