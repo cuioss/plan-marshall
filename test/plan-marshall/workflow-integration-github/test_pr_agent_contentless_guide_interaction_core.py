@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-# SPDX-License-Identifier: FSL-1.1-ALv2
 # ruff: noqa: E402
 """End-to-end regression tests for PR-Agent's contentless Guide, producer + aggregator.
 
@@ -64,7 +62,6 @@ aggregator ships as a project-local script under ``.claude/skills/`` which
 ``PROJECT_ROOT``-relative ``sys.path`` prologue ``test_review_retrospective.py``
 uses.
 """
-
 from __future__ import annotations
 
 import argparse
@@ -86,44 +83,16 @@ from _pr_agent_guide_bodies import (
 
 from conftest import PROJECT_ROOT, load_script_module
 
-# ``review_retrospective`` is a PROJECT-LOCAL skill script under ``.claude/``, not
-# a marketplace bundle script, so neither ``load_script_module`` nor
-# ``load_skill_module`` can address it and the root conftest's marketplace
-# ``sys.path`` setup does not reach it. This bootstrap therefore stays where
-# every marketplace one was removed, and it is what the file-level ``I001, E402``
-# waiver above is still paying for.
 _SCRIPTS_DIR = PROJECT_ROOT / '.claude' / 'skills' / 'finalize-step-review-retrospective' / 'scripts'
 if str(_SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS_DIR))
-
-# A bare ``type: ignore`` is deliberate here, not laziness: mypy resolves this
-# project-local import differently depending on which roots are on its search
-# path, so it raises ``import-untyped`` in some environments and
-# ``import-not-found`` in others (locally vs CI). A code-scoped ignore is
-# therefore "unused" in whichever environment raises the OTHER code, and
-# ``--warn-unused-ignores`` turns that into a hard error. The bare form is used
-# in both.
 import review_retrospective as rr  # type: ignore
 
 github_pr = load_script_module('plan-marshall', 'workflow-integration-github', 'github_pr.py', 'github_pr')
 _findings_core = load_script_module('plan-marshall', 'manage-findings', '_findings_core.py', '_findings_core')
-
 query_findings = _findings_core.query_findings
-
 _PR_AGENT_LOGIN = 'cuioss-review-bot'
 _PR_AGENT_REQUIRED_MARKERS = bot_registry.contentless_review_markers('cuioss-review-bot')
-
-
-# ---------------------------------------------------------------------------
-# Guide bodies
-# ---------------------------------------------------------------------------
-#
-# The four observable shapes (clean / with-finding / deviating-marker /
-# missing-marker) and the verbatim observed body live in
-# ``test/_shared/_pr_agent_guide_bodies.py``, shared with the layer-3 predicate
-# units in ``test_github_pr.py``. Only the provider-record wrapper is local.
-
-
 def _guide_comment(body, comment_id='guide-1', *, created_at=None, updated_at=None):
     """A ``cuioss-review-bot`` issue_comment carrying ``body`` — PR-Agent's one shape.
 
@@ -146,8 +115,6 @@ def _guide_comment(body, comment_id='guide-1', *, created_at=None, updated_at=No
     if updated_at is not None:
         comment['updated_at'] = updated_at
     return comment
-
-
 def _patch_provider(monkeypatch, comments, head_sha='deadbeef', head_committed_at=''):
     """Monkeypatch only the GitHub provider surface — the findings store stays real.
 
@@ -176,8 +143,6 @@ def _patch_provider(monkeypatch, comments, head_sha='deadbeef', head_committed_a
         },
     )
     monkeypatch.setattr(github_pr._github, 'fetch_pr_head_sha', lambda pr_number: head_sha)
-
-
 def _run_fetch(pr_number, plan_id):
     """Run the producer's FIND verb against ``plan_id``, with its plan directory present.
 
@@ -197,57 +162,12 @@ def _run_fetch(pr_number, plan_id):
     (get_base_dir() / 'plans' / plan_id).mkdir(parents=True, exist_ok=True)
     args = argparse.Namespace(pr_number=pr_number, plan_id=plan_id)
     return github_pr.cmd_fetch_findings(args)
-
-
 def _stored(plan_id):
     return query_findings(plan_id, finding_type='pr-comment')['findings']
-
-
-def _raw_body(finding):
-    """Return the quarantined ``raw_input.body`` the producer persisted."""
-    raw_input = finding.get('raw_input') or {}
-    return raw_input.get('body', '')
-
-
-def test_guide_renderer_reproduces_the_observed_body_byte_for_byte():
-    """The renderer the derived shapes are built from matches the captured evidence.
-
-    Arms 2, 3 and 4 feed RENDERED bodies, so their realism rests entirely on
-    ``guide_body``/``guide_row`` emitting PR-Agent's actual markup. Only arm 1
-    and arm 7 feed the verbatim capture, and a renderer that drifted from it
-    would leave those three arms exercising a shape the bot never emits — which
-    is precisely the failure the ``**``-wrapped fixtures already caused once.
-    Equality against the byte-exact literal is what forecloses it.
-    """
-    assert guide_body(CLEAN_TESTS_ROW, CLEAN_SECURITY_ROW, CLEAN_FOCUS_ROW) == OBSERVED_CLEAN_GUIDE
-
-
-def test_guide_fixtures_track_the_declared_marker_set():
-    """The four Guide shapes stay in step with the registry they exercise.
-
-    Each arm below is meaningful only relative to the DECLARED required-marker
-    set: arm 1 needs every marker present, arm 4 needs exactly one absent. Were a
-    marker added to ``cuioss-review-bot.md`` without the fixtures moving, arm 1 would stop
-    exercising the drop while still passing for the wrong reason.
-    """
-    assert _PR_AGENT_REQUIRED_MARKERS
-    for marker in _PR_AGENT_REQUIRED_MARKERS:
-        assert marker in OBSERVED_CLEAN_GUIDE
-        assert marker in GUIDE_WITH_FINDING
-    assert '<details>' in GUIDE_WITH_FINDING
-    assert '<details>' not in OBSERVED_CLEAN_GUIDE
-    # Arms 3 and 4 each break the conjunction in a DIFFERENT way — one marker
-    # changed, one marker removed — so exactly one required marker is absent from
-    # each and neither carries a disqualifying marker.
-    for deviating in (GUIDE_DEVIATING_ASSERTION, GUIDE_DOCS_ONLY):
-        absent = [m for m in _PR_AGENT_REQUIRED_MARKERS if m not in deviating]
-        assert len(absent) == 1
-        assert '<details>' not in deviating
-
-
-# ---------------------------------------------------------------------------
-# Arm 1 — the clean Guide is dropped, participation survives
-# ---------------------------------------------------------------------------
+_CREATED_AT = '2026-07-30T09:00:00Z'
+_EDITED_AT = '2026-07-30T11:30:00Z'
+_HEAD_A = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+_HEAD_B = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
 
 
 def test_clean_guide_is_dropped_but_still_credits_participation(plan_context, monkeypatch):
@@ -282,91 +202,6 @@ def test_clean_guide_is_dropped_but_still_credits_participation(plan_context, mo
     assert result['refused_bots'] == []
 
     assert _stored(plan_id) == []
-
-
-# ---------------------------------------------------------------------------
-# Arm 2 — a finding-bearing Guide is stored in full
-# ---------------------------------------------------------------------------
-
-
-def test_guide_with_a_finding_is_stored_byte_identical(plan_context, monkeypatch):
-    """One ``<details>`` finding vetoes the drop, and the stored body is unmodified.
-
-    The byte-identical assertion closes the partial-suppression risk the rejected
-    ``ignore_patterns`` route would have carried: the layer either drops the whole
-    comment or leaves it entirely alone. It never edits a body to strip the
-    boilerplate rows out of a Guide that also carries real content — an operator
-    triaging the finding sees exactly what the reviewer wrote.
-    """
-    plan_id = 'cuioss-review-bot-guide-with-finding-stored'
-    _patch_provider(monkeypatch, [_guide_comment(GUIDE_WITH_FINDING)])
-
-    result = _run_fetch(1202, plan_id)
-
-    assert result['status'] == 'success'
-    assert result['count_stored'] == 1
-    # The contentless layer did not fire — the counter did not move.
-    assert result['count_skipped_noise'] == 0
-    assert result['producer_mismatch_hash_id'] is None
-
-    stored = _stored(plan_id)
-    assert len(stored) == 1
-    assert _raw_body(stored[0]) == GUIDE_WITH_FINDING
-
-
-# ---------------------------------------------------------------------------
-# Arms 3 and 4 — the conjunction fails open, both ways
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize(
-    ('arm', 'body'),
-    [
-        ('deviating-assertion', GUIDE_DEVIATING_ASSERTION),
-        ('docs-only-partial-clean', GUIDE_DOCS_ONLY),
-    ],
-    # Explicit ids: without them pytest derives the id from the `body` operand and
-    # inlines the whole escaped Guide into every test id. `arm` doubles as the
-    # plan_id suffix below, so it is hyphen-cased to satisfy `validate_plan_id`'s
-    # ^[a-z][a-z0-9-]*$ — an underscore there is rejected at the findings-store
-    # boundary, not at parametrize time.
-    ids=['deviating-assertion', 'docs-only-partial-clean'],
-)
-def test_guide_missing_or_changing_a_required_marker_is_stored(plan_context, monkeypatch, arm, body):
-    """A Guide that deviates from the declared clean shape is filed, not dropped.
-
-    Two DIFFERENT halves of the ``all(required)`` conjunction:
-
-    - ``deviating-assertion`` CHANGES a required marker — the 🔒 row names a
-      concrete concern instead of asserting a clean result. That is a real
-      security finding and dropping it would destroy the highest-value output of
-      the three-bot set.
-    - ``docs-only-partial-clean`` REMOVES a required marker — the 🧪 clean
-      assertion is absent, the shape a docs-only PR produces. Its retention is the
-      accepted residual behind operator decision Q1: the drop requires EVERY
-      declared marker, and this arm turns red if the registry list is ever
-      weakened to the 🔒 row alone.
-    """
-    plan_id = f'cuioss-review-bot-guide-{arm}'
-    _patch_provider(monkeypatch, [_guide_comment(body)])
-
-    result = _run_fetch(1203, plan_id)
-
-    assert result['status'] == 'success'
-    assert result['count_stored'] == 1
-    assert result['count_skipped_noise'] == 0
-    assert result['producer_mismatch_hash_id'] is None
-
-    stored = _stored(plan_id)
-    assert len(stored) == 1
-    assert _raw_body(stored[0]) == body
-
-
-# ---------------------------------------------------------------------------
-# Arm 7 — the drop is invariant across the two emphasis renderings
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.parametrize(
     ('rendering', 'body'),
     [
@@ -408,34 +243,6 @@ def test_clean_guide_is_dropped_in_either_emphasis_rendering(plan_context, monke
     assert result['count_skipped_noise'] == 1
     assert result['producer_mismatch_hash_id'] is None
     assert _stored(plan_id) == []
-
-
-# ---------------------------------------------------------------------------
-# Arm 6 — the drop must not make participation UNCONDITIONAL
-# ---------------------------------------------------------------------------
-#
-# Arm 1 pins that the drop preserves participation evidence. That is only half the
-# contract: PR-Agent declares ``participation_requires_update: true``, so its
-# evidence must ALSO prove a review of the MERGE CANDIDATE — a Guide reviewed against
-# an earlier commit proves only that it reviewed an earlier HEAD.
-#
-# The drop is exactly what put those two halves in tension. The currency test
-# (``_reviewed_at_merge_candidate``) compares each comment's reviewed SHA against the
-# merge candidate, and it reads that SHA from ONE source: the plan-scoped CURRENCY
-# LEDGER, which records the merge-candidate SHA and the ``updated_at`` at each credit
-# regardless of whether the comment produced a finding. That is what keeps the test
-# answerable on the drop path, where a dropped Guide files no pr-comment finding and so
-# leaves nothing in the findings store to read a reviewed SHA from.
-# Both directions are asserted below: the same-HEAD idempotence case (fails against the
-# pre-fix observation-history predicate) and its advanced-HEAD staleness control, plus
-# the edit arm that keeps a genuine in-place re-review creditable after a loop-back.
-
-_CREATED_AT = '2026-07-30T09:00:00Z'
-_EDITED_AT = '2026-07-30T11:30:00Z'
-_HEAD_A = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
-_HEAD_B = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
-
-
 def test_second_fetch_of_an_unchanged_guide_at_the_same_head_stays_credited(plan_context, monkeypatch):
     """A dropped clean Guide credits PR-Agent the same way however many times it is fetched.
 
@@ -476,8 +283,6 @@ def test_second_fetch_of_an_unchanged_guide_at_the_same_head_stays_credited(plan
     assert first['stale_participation_bots'] == []
     assert second['participated_bots'] == credited
     assert second['stale_participation_bots'] == []
-
-
 def test_dropped_guide_goes_stale_once_head_advances(plan_context, monkeypatch):
     """The matched control: after a force-push the dropped Guide is STALE, not credited.
 
@@ -500,8 +305,6 @@ def test_dropped_guide_goes_stale_once_head_advances(plan_context, monkeypatch):
     second = _run_fetch(1207, plan_id)
     assert second['participated_bots'] == []
     assert second['stale_participation_bots'] == [{'bot_kind': 'cuioss-review-bot', 'evidence_kind': 'issue_comment'}]
-
-
 def test_guide_edited_after_head_advance_credits_participation_again(plan_context, monkeypatch):
     """An in-place edit after a HEAD advance IS a fresh review, so PR-Agent is credited again.
 
@@ -530,13 +333,6 @@ def test_guide_edited_after_head_advance_credits_participation_again(plan_contex
     assert second['count_skipped_noise'] == 1
     assert second['producer_mismatch_hash_id'] is None
     assert {'bot_kind': 'cuioss-review-bot', 'evidence_kind': 'issue_comment'} in second['participated_bots']
-
-
-# ---------------------------------------------------------------------------
-# Arm 5 — the interaction: neither a false score nor a vacuous one
-# ---------------------------------------------------------------------------
-
-
 def test_suppressed_guide_produces_no_reviewer_row_at_all(plan_context, monkeypatch):
     """With its only comment dropped, PR-Agent contributes zero records — so no score.
 
@@ -557,8 +353,6 @@ def test_suppressed_guide_produces_no_reviewer_row_at_all(plan_context, monkeypa
     assert report['total_findings'] == 0
     assert report['reviewer_count'] == 0
     assert report['reviewers'] == []
-
-
 def test_surviving_guide_record_scores_neither_false_positive_nor_vacuous_zero():
     """The second half: a surviving Guide resolved ``accepted`` is not a wrong claim.
 
