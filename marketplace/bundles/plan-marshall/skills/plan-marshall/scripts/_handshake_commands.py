@@ -608,7 +608,12 @@ def cmd_verify(args: Any) -> dict[str, Any]:
         # Treat observed blocking findings as drift on the
         # ``pending_findings_blocking_count`` column so callers see a
         # structured difference rather than a hard error. ``--strict``
-        # turns this into a non-zero exit.
+        # turns this into a non-zero exit. The envelope carries the same
+        # ``blocking_findings_present`` verdict key and counts the
+        # ``capture`` / ``findings-check`` verbs publish for the identical
+        # tree state — one verdict vocabulary per state, whichever verb
+        # hit it — so a reader matching the error key cannot tell the
+        # verbs apart by shape.
         diffs = [
             {
                 'invariant': 'pending_findings_blocking_count',
@@ -620,9 +625,14 @@ def cmd_verify(args: Any) -> dict[str, Any]:
         ]
         return {
             'status': 'drift',
+            'error': 'blocking_findings_present',
             'plan_id': plan_id,
             'phase': phase,
             'override': captured_row.get('override', False),
+            'blocking_count': exc.blocking_count,
+            'blocking_types': exc.blocking_types,
+            'per_type': exc.per_type,
+            'message': str(exc),
             'drift_count': len(diffs),
             'diffs': diffs,
         }

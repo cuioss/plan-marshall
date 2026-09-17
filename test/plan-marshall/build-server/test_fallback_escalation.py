@@ -149,6 +149,9 @@ def test_record_resolution_escalates_to_one_error_after_the_streak(captured, cap
     warnings = [c for c in captured if c[2] == 'WARNING']
     assert len(warnings) == factory._FALLBACK_WARN_STREAK
     assert all('resolved=in_process' in c[3] for c in warnings)
+    # Every fallback names its serialization state from the first one — a
+    # down daemon never reads as a normally-scheduled build.
+    assert all('serialization=fallback-slot' in c[3] for c in warnings)
 
     captured.clear()
     # The crossing fallback captures ONE ERROR transition — not another WARNING.
@@ -157,6 +160,10 @@ def test_record_resolution_escalates_to_one_error_after_the_streak(captured, cap
     log_type, plan_id, level, message = captured[0]
     assert (log_type, plan_id, level) == ('work', 'p', 'ERROR')
     assert 'marshalld unreachable' in message
+    # The one-time transition names the serialization loss: without daemon
+    # scheduling, concurrent suites run unserialized and may OOM.
+    assert 'serialization' in message or 'serializer' in message
+    assert 'OOM' in message
     # The stderr parity line is still present for THIS build.
     assert '[BUILD-SERVER] resolved build' in capsys.readouterr().err
 
@@ -185,3 +192,21 @@ def test_plan_less_escalation_reaches_stderr_only(captured, capsys):
     assert captured == []
     err = capsys.readouterr().err
     assert 'marshalld unreachable' in err
+
+
+def test_routed_build_names_daemon_scheduling(captured, capsys):
+    """A daemon-routed build names `serialization=daemon-scheduled`.
+
+    Pairs with the fallback assertion above: without it, a resolution line
+    carrying no serialization token would satisfy the fallback pin while a
+    routed build stayed indistinguishable from it.
+    """
+    factory._record_resolution('auto', 'routed', None, _NOTATION, 'p')
+
+    assert len(captured) == 1
+    _log_type, _plan_id, level, message = captured[0]
+    assert level == 'INFO'
+    assert 'serialization=daemon-scheduled' in message
+    assert 'serialization=fallback-slot' not in message
+    err = capsys.readouterr().err
+    assert 'serialization=daemon-scheduled' in err

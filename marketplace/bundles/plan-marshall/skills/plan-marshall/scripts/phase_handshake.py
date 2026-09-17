@@ -11,7 +11,10 @@ Usage:
 
 All subcommands emit TOON to stdout. `verify` with ``--strict`` exits 1 on
 ``status: drift`` and on the boundary-refusal error codes enumerated in
-main() so callers can gate progress at the CLI level.
+main() so callers can gate progress at the CLI level. Every ``verify``
+``drift`` / ``error`` verdict is ALSO mirrored to stderr as one greppable
+``phase_handshake verify: status=…`` line — a caller that swallows TOON
+output still sees what failed, and the mirror never changes the exit code.
 
 ``findings-check`` is a read-only single-invariant gate: it evaluates ONLY the
 ``pending_findings_blocking_count`` invariant (never ``phase_steps_complete``)
@@ -52,6 +55,7 @@ a boundary that still needs it.
 from __future__ import annotations
 
 import argparse
+import sys
 
 from _handshake_commands import (
     cmd_capture,
@@ -66,6 +70,35 @@ from input_validation import (
     add_plan_id_arg,
     parse_args_with_toon_errors,
 )
+
+
+def _mirror_verdict_to_stderr(command: str, result: dict) -> None:
+    """Mirror a non-clean ``verify`` verdict to stderr.
+
+    A ``verify`` that reports ``drift`` or ``error`` exits non-zero under
+    ``--strict`` (and always carries the verdict in its stdout TOON), but a
+    caller that swallows TOON output saw only a bare exit code with an empty
+    stderr — unactionable and untriagable. This prints one greppable line
+    naming the verdict (status, error key, drift count) so the failure is
+    audible on the console whatever the caller does with stdout. It never
+    changes the exit code: the ``--strict`` contract below is preserved
+    verbatim.
+    """
+    if command != 'verify':
+        return
+    status = result.get('status')
+    if status not in ('drift', 'error'):
+        return
+    parts = [
+        f"phase_handshake verify: status={status}",
+        f"phase={result.get('phase')}",
+        f"plan={result.get('plan_id')}",
+    ]
+    if result.get('error'):
+        parts.append(f"error={result.get('error')}")
+    if result.get('drift_count') is not None:
+        parts.append(f"drift_count={result.get('drift_count')}")
+    print(' '.join(parts), file=sys.stderr)
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -121,6 +154,8 @@ def main() -> int:
         return 2
 
     output_toon(result)
+
+    _mirror_verdict_to_stderr(args.command, result)
 
     if args.command == 'verify' and getattr(args, 'strict', False):
         if result.get('status') == 'drift':

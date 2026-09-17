@@ -21,8 +21,12 @@ vertical-steps block) can surface user-facing step summaries. An optional
 ``--head-at-completion`` SHA is persisted alongside the outcome so resumable
 phase dispatchers (e.g., phase-6-finalize Step 3 for ``pre-push-quality-gate``)
 can detect when the worktree HEAD has advanced past the SHA at which the
-previous run completed and re-fire the gate accordingly. The SHA is treated as
-informational metadata: re-call with same outcome+display_detail but a
+previous run completed and re-fire the gate accordingly. A supplied SHA is
+resolved against the local object store (``git cat-file -e {sha}^{commit}``)
+before anything is persisted: a SHA resolving to no commit is refused
+fail-closed with ``error: unknown_head_at_completion`` and writes NOTHING, so
+a fabricated anchor can never enter the record. Re-call with same
+outcome+display_detail but a
 different head_at_completion is a "changed" overwrite without requiring
 ``--force``.
 
@@ -71,6 +75,7 @@ byte-identical historical record. An unchanged re-call still reports
 """
 
 import argparse
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -143,6 +148,32 @@ def _derive_head_dependence(step: str) -> tuple[bool, str | None]:
         return bool(fields.get(_HEAD_DEPENDENT_KEY, False)), None
 
     return False, None
+
+
+def _head_resolves_to_commit(sha: str) -> bool:
+    """Return True when ``sha`` resolves to a commit in the local object store.
+
+    Runs ``git cat-file -e {sha}^{commit}`` in the inherited cwd — the tree
+    the step ran in (the pinned worktree in phase-5+, the main checkout
+    otherwise) — so the anchor is validated against the object store the
+    completion claims to describe. The ``^{commit}`` peel requires the SHA to
+    resolve to a commit object: a blob/tree SHA, a truncated ambiguous prefix
+    with no commit behind it, or a wholly fabricated hex string all fail. Any
+    git failure (not a repo, object store unreadable) reads as unresolvable —
+    an anchor nobody can locate in history must not be persisted, whatever the
+    reason it cannot be found.
+    """
+    try:
+        proc = subprocess.run(
+            ['git', 'cat-file', '-e', f'{sha}^{{commit}}'],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return proc.returncode == 0
 
 
 def _parse_facts(raw: list[str] | None) -> tuple[dict[str, str] | None, str | None]:
@@ -341,6 +372,20 @@ def cmd_mark_step_done(args: argparse.Namespace) -> dict | None:
                     'worktree HEAD immediately before this call and pass it as '
                     '--head-at-completion {sha}. See the ext-point-finalize-step.md '
                     '"head_dependent" field contract for the fail-closed obligation.'
+                ),
+            }
+        if head_at_completion and not _head_resolves_to_commit(head_at_completion):
+            return {
+                'status': 'error',
+                'plan_id': args.plan_id,
+                'error': 'unknown_head_at_completion',
+                'phase': phase,
+                'step': step,
+                'message': (
+                    f'--head-at-completion {head_at_completion!r} resolves to no commit '
+                    'in the local object store. Nothing was written. Resolve the '
+                    'worktree HEAD immediately before this call and pass the real SHA — '
+                    'a fabricated anchor records a verdict nobody can locate in history.'
                 ),
             }
 
