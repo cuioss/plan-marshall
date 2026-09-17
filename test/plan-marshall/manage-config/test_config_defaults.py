@@ -1326,45 +1326,37 @@ def test_plan_phase_2_refine_get_simplicity_returns_lean_default(plan_context):
 def test_built_in_finalize_steps_places_simplify_before_push():
     """default:finalize-step-simplify sits BEFORE default:push in the discovered seed.
 
-    simplify is a mutates_source step (order 8) and push is the pure barrier
-    (order 11), so simplify precedes push. The canonical head order is
-    default:finalize-step-sync-baseline (index 0, order 3 — the early baseline
-    rebase that runs before the local quality gates),
-    default:pre-push-quality-gate (index 1, order 5),
-    default:pre-submission-self-review (index 2, order 7 — the default-on
-    built-in structural self-review that runs between the pre-push quality gate
-    and the simplify pass), default:finalize-step-simplify (index 3, order 8),
-    then the two former order-9 settle steps, now de-collided by plan 300 D2:
-    default:finalize-step-security-audit (index 4, order 9, mutates source) runs
-    ahead of default:architecture-refresh (index 5, order 10 — the D3 move into the
-    pre-push settle band, ordered LAST in that band so its descriptor refresh
-    captures the code-mutating settle edits). D2 fixed the order here: the two
-    shared order 9 and the accidental alphabetical tie-break ran architecture-refresh
-    FIRST, contradicting its documented "sorts last" intent — security-audit's
-    hardening edits went uncaptured. Then default:push (index 6, order 11) — matching
-    the plain `order:` values. The seed is discovered via find_implementors, not a
+    The settle head order is sync-baseline (index 0, order 3 — the early baseline
+    rebase), finalize-step-simplify (index 1, order 5 — the first code-mutating
+    settle step), finalize-step-security-audit (index 2, order 7, mutates source),
+    pre-submission-self-review (index 3, order 8 — the structural self-review that
+    runs after the mutators so it examines the settled tree),
+    architecture-refresh (index 4, order 9 — the derived-state refresh that captures
+    the code-mutating settle edits), pre-push-quality-gate (index 5, order 10 —
+    sorts LAST in the settle band so its head_at_completion anchors the exact tree
+    the push ships), then default:push (index 6, order 11) — matching the plain
+    `order:` values. The seed is discovered via find_implementors, not a
     constant.
     """
     steps = _discovered_seed_step_ids()
 
-    # presence and relative head order (self-review order 7 nests between the
-    # pre-push quality gate (5) and simplify (8); the two former order-9 settle
-    # steps security-audit (9) and architecture-refresh (10, de-collided by D2 and
-    # ordered LAST in the settle band) sit between simplify (8) and push (11))
+    # presence and relative head order (simplify (5) and security-audit (7) run
+    # before the self-review (8); the derived-state refresh (9) and the quality
+    # gate (10, last in the settle band) sit between the review and push (11))
     assert 'default:finalize-step-simplify' in steps, (
         'default:finalize-step-simplify must be discovered into the default-on seed'
     )
     assert steps[0] == 'default:finalize-step-sync-baseline'
-    assert steps[1] == 'default:pre-push-quality-gate'
-    assert steps[2] == 'default:pre-submission-self-review'
-    assert steps[3] == 'default:finalize-step-simplify'
-    assert steps[4] == 'default:finalize-step-security-audit'
-    assert steps[5] == 'default:architecture-refresh'
+    assert steps[1] == 'default:finalize-step-simplify'
+    assert steps[2] == 'default:finalize-step-security-audit'
+    assert steps[3] == 'default:pre-submission-self-review'
+    assert steps[4] == 'default:architecture-refresh'
+    assert steps[5] == 'default:pre-push-quality-gate'
     assert steps[6] == 'default:push'
-    # The D3 settle-before-push invariant: architecture-refresh (order 10, last in
+    # The settle-before-push invariant: the quality gate (order 10, last in
     # the settle band after the mutating steps) sits ahead of the push barrier.
-    assert steps.index('default:architecture-refresh') < steps.index('default:push')
-    # D2 intended order: the derived-state refresh runs AFTER the source-mutating
+    assert steps.index('default:pre-push-quality-gate') < steps.index('default:push')
+    # The derived-state refresh runs AFTER the source-mutating
     # security-audit, so its descriptor snapshot captures the hardening edits.
     assert steps.index('default:finalize-step-security-audit') < steps.index('default:architecture-refresh')
 
@@ -1384,7 +1376,7 @@ def test_built_in_finalize_step_descriptions_includes_finalize_step_simplify():
 def test_built_in_finalize_steps_orders_simplify_then_push():
     """Canonical order: simplify before push.
 
-    simplify is a mutates_source step (order 8) and push is the pure barrier
+    simplify is a mutates_source step (order 5) and push is the pure barrier
     (order 11), so the canonical chain is simplify < push.
     """
     steps = _discovered_seed_step_ids()

@@ -7,7 +7,7 @@ commitments" section of
 ``phase-6-finalize/standards/finalize-step-simplify.md``.
 
 **The gap it closes.** ``automatic-review`` (``order: 30``) and
-``finalize-step-simplify`` (``order: 8``) both run inside one finalize pass, and
+``finalize-step-simplify`` (``order: 5``) both run inside one finalize pass, and
 simplify declares ``head_dependent: true`` — so a loop-back fix commit answering a
 review comment advances HEAD and **re-fires the simplification sweep over the very
 lines that fix produced**. Simplify's brief is to delete surplus structure, and a

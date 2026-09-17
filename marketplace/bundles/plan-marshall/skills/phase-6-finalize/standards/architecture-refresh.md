@@ -4,7 +4,7 @@ lane:
   cost_size: S
 name: default:architecture-refresh
 description: Refresh architecture descriptors in the pre-push settle stage — tier-0 deterministic discover gated on the attribution verdict, tier-1 LLM re-enrichment
-order: 10
+order: 9
 default_on: true
 presets: []
 implements: plan-marshall:extension-api/standards/ext-point-finalize-step
@@ -270,7 +270,7 @@ git -C {worktree_path} commit -m "chore(architecture): refresh derived data afte
 
 The commit message intentionally does NOT name the affected modules — the modules list is derivable from the commit's diff and from the diff-modules log line above. Naming them inline would duplicate the audit trail and inflate the subject when many modules change.
 
-**This step does NOT push.** It commits and stops. `default:push` (order 11) is a **pure push barrier** that runs immediately after this step (order 10) and ships the converged branch — including this commit — so the refresh lands on the same PR as the plan's substantive commits without this step pushing anything. Pushing here would be a second push of the same branch from a step the single-push contract does not authorise; see `push.md`, which states that the barrier "asserts the tree is clean and pushes the converged branch to remote" and "produces NO commit". The division is exact: this step produces the commit, the barrier ships it.
+**This step does NOT push.** It commits and stops. `default:push` (order 11) is a **pure push barrier** that ships the converged branch — including this commit — so the refresh lands on the same PR as the plan's substantive commits without this step pushing anything. Pushing here would be a second push of the same branch from a step the single-push contract does not authorise; see `push.md`, which states that the barrier "asserts the tree is clean and pushes the converged branch to remote" and "produces NO commit". The division is exact: this step produces the commit, the barrier ships it. (`default:pre-push-quality-gate` at order 10 runs between this step and the barrier, so the gate certifies the refreshed descriptors together with the code.)
 
 Log the artifact:
 
@@ -347,7 +347,7 @@ With `affected_modules` non-empty and `change_type` not in the shortcut list, di
 The user has chosen to never re-enrich automatically, so the affected-module list must be recorded somewhere a future contributor (or `/marshall-steward` Step 13) will find it.
 
 > **⚠ Owed follow-up — the PR-body note cannot be written from this step, and is not prescribed here.**
-> This branch previously prescribed `ci pr view` → `ci pr prepare-body --for edit` → `ci pr edit --pr-number {pr_number}`. **No PR exists when this step runs.** `default:architecture-refresh` is order **10**; `default:create-pr` is order **20**. There is therefore no `{pr_number}` to resolve at order 10 — the "resolved earlier in finalize by the `create-pr` step's outcome record" the old text relied on refers to a step that has not run yet — and every one of those three calls would fail against a PR that does not exist.
+> This branch previously prescribed `ci pr view` → `ci pr prepare-body --for edit` → `ci pr edit --pr-number {pr_number}`. **No PR exists when this step runs.** `default:architecture-refresh` is order **9**; `default:create-pr` is order **20**. There is therefore no `{pr_number}` to resolve at order 9 — the "resolved earlier in finalize by the `create-pr` step's outcome record" the old text relied on refers to a step that has not run yet — and every one of those three calls would fail against a PR that does not exist.
 >
 > The fix is a **re-homing**, not a rewrite of this branch: the deferred-enrichment note belongs in a surface that runs after `default:create-pr` (order 20) — either appended by a post-`create-pr` step, or carried as a fact this step records and a later step consumes when it edits the PR body. Re-homing it is deliberately **out of scope here** and is recorded as owed rather than left standing as a prescription that cannot succeed. Until it lands, the deferral is recorded in the decision log and the step's `display_detail` (below), both of which are readable without a PR.
 >
@@ -696,7 +696,7 @@ if len(affected) == 0:            # tier_0 enabled but no added/removed
 
 switch tier_1:
     case "disabled":
-        # No PR exists at order 10 (default:create-pr is order 20), so no PR-body
+        # No PR exists at order 9 (default:create-pr is order 20), so no PR-body
         # write is prescribed here. Re-homing the note to a post-create-pr surface
         # is recorded as an owed follow-up in the `disabled` branch above.
         log decision: "Tier 1 disabled — re-enrichment deferred for: {csv}"

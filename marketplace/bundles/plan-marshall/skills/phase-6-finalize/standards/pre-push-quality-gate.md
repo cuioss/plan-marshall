@@ -4,7 +4,7 @@ lane:
   cost_size: S
 name: default:pre-push-quality-gate
 description: Run quality-gate per affected bundle then one whole-tree quality-gate, then whole-tree test-compile, then gate whole-tree module-tests on scoped-vs-whole-tree divergence risk, as the last gate before push
-order: 5
+order: 10
 mutates_source: true
 head_dependent: true
 reads:
@@ -48,6 +48,10 @@ An open question sat behind the two unconditional whole-tree arms: after a loop-
 Both settlements are scoping decisions only. The existing **honest-degradation branch** (the whole-tree invocation cannot run at all in this project) and its mandatory **per-dimension WARNING** are unchanged by this section — they remain the only sanctioned path on which the whole-tree `quality-gate` arm does not run.
 
 The module-tests gate consults the callable scope-resolution seam — the `resolve-test-scope` verb of whichever `build-{tool}` skill the project's `module-tests` canonical resolves to (in this repository `build-pyproject`, backed by the pure `_test_scope_divergence.resolve_test_scope`) — and runs a real whole-tree `module-tests` only when divergence is possible — mirroring the escalate-only-on-trigger discipline of the `finalize-step-plugin-doctor` reference behavior (PLAN-02), so whole-tree cost is paid only where a scoped run could miss a cross-module regression.
+
+## Settle-band position — the single-pass anchor
+
+This gate sorts LAST in the settle band (`order: 10`, immediately before `default:push` at `order: 11`), after every code-mutating settle step (`finalize-step-simplify`, `finalize-step-security-audit`) and after the derived-state refresh (`architecture-refresh`). That position IS the single-pass HEAD anchor: the `head_at_completion` this step persists on its Branch A `mark-step-done` call names the exact tree the push barrier ships, because no settle step ordered after it can advance HEAD again. Every `mutates_source: true` step ordered below it commits before the ledger row its own build calls write, so those commits are covered by this run and produce no re-stale — the intra-pass re-arm loop (an early gate certifying one SHA while a later simplify advanced HEAD past it) is structurally impossible rather than merely unlikely. The `default:push` freshness precondition (`pre-commit-verify-freshness`) verifies the anchor before shipping: it permits on a `kind=build` ledger entry carrying the current worktree SHA, which only this gate's just-completed builds can have written for the settled tree.
 
 ## Coverage parity with CI, freshness, and honest coverage
 

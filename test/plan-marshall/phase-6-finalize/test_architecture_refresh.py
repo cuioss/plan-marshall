@@ -81,10 +81,10 @@ _PHASE_1_INIT_SKILL_MD = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-
 
 
 # ---------------------------------------------------------------------------
-# Retired PR-body-write prescription scan (order-10 contract).
+# Retired PR-body-write prescription scan (order-9 contract).
 # ---------------------------------------------------------------------------
 #
-# ``default:architecture-refresh`` is order 10 and ``default:create-pr`` is
+# ``default:architecture-refresh`` is order 9 and ``default:create-pr`` is
 # order 20, so NO PR exists while this step runs, and the PR-body-write
 # sequence this branch used to prescribe (``ci pr view`` -> ``ci pr
 # prepare-body`` -> ``ci pr edit``) cannot be prescribed here. The standard
@@ -1168,14 +1168,14 @@ class TestNarrativeContract:
         assert 'chore(architecture): refresh derived data after' in standard_text
 
     def test_documents_no_push_invocation(self, standard_text: str):
-        """A step at order 10 must NOT push — the order-11 barrier ships its commit.
+        """A step at order 9 must NOT push — the order-11 barrier ships its commit.
 
         This is the inverse of the assertion that stood here before, and it is
         the matched positive control for the D6 fix. The old form asserted
         ``count('git -C {worktree_path} push') >= 2`` — it REQUIRED the very
         push this standard has no authority to perform. ``default:push``
         (order 11) is a pure push barrier: it carries no commit logic, asserts a
-        clean tree, and ships the converged branch. A push from order 10 is a
+        clean tree, and ships the converged branch. A push from order 9 is a
         second push of the same branch, outside the single-push contract the
         barrier exists to hold.
 
@@ -1193,7 +1193,7 @@ class TestNarrativeContract:
             '— the scan resolved nothing, so a clean result would be vacuous.'
         )
         assert offenders == [], (
-            f'architecture-refresh.md (order 10) prescribes {len(offenders)} git '
+            f'architecture-refresh.md (order 9) prescribes {len(offenders)} git '
             f'push invocation(s) across {examined} examined command lines, but it '
             f'sits BELOW the order-11 default:push barrier that ships its commit. '
             f'Offending lines: {offenders}'
@@ -1226,12 +1226,12 @@ class TestNarrativeContract:
         assert '`prompt`' in standard_text
 
     def test_documents_deferred_enrichment_branch(self, standard_text: str):
-        """The Tier-1 deferral records the module list somewhere readable at order 10.
+        """The Tier-1 deferral records the module list somewhere readable at order 9.
 
         The previous form asserted the branch documented `prepare-body --for
         edit`, i.e. the `ci pr view` -> `prepare-body` -> `pr edit` pattern.
         That pattern cannot run here: `default:architecture-refresh` is order
-        10 and `default:create-pr` is order 20, so no PR exists to view or
+        9 and `default:create-pr` is order 20, so no PR exists to view or
         edit. The assertion now pins what the branch CAN do — record the
         affected-module list in the decision log — and the standard's own
         record of the owed re-homing.
@@ -1241,7 +1241,7 @@ class TestNarrativeContract:
         # The deferral is recorded where it is readable without a PR.
         assert 're-enrichment deferred for' in standard_text, (
             'The Tier-1 deferral branch must record the affected-module list in '
-            'the decision log — that is the only surface available at order 10.'
+            'the decision log — that is the only surface available at order 9.'
         )
         # The owed re-homing is recorded rather than left as a dead prescription.
         assert 'No PR exists when this step runs' in standard_text, (
@@ -1249,7 +1249,7 @@ class TestNarrativeContract:
             'so the gap reads as owed follow-up rather than an omission.'
         )
 
-    def test_does_not_prescribe_a_pr_body_write_at_order_10(self, standard_text: str):
+    def test_does_not_prescribe_a_pr_body_write_at_order_9(self, standard_text: str):
         """No `pr view` / `prepare-body` / `pr edit` CALL may be prescribed here.
 
         The literals still appear in the standard, but only inside the
@@ -1270,7 +1270,7 @@ class TestNarrativeContract:
             f'command lines (scope: pr view / prepare-body / pr edit)'
         )
         assert offenders == [], (
-            f'architecture-refresh.md (order 10) prescribes {len(offenders)} retired '
+            f'architecture-refresh.md (order 9) prescribes {len(offenders)} retired '
             f'PR-body-write call(s) (pr view / prepare-body / pr edit) across '
             f'{examined} examined command lines, but default:create-pr is order 20 '
             f'— no PR exists yet. Offenders: {offenders}'
@@ -1309,7 +1309,7 @@ class TestNarrativeContract:
         )
 
         # NEGATIVE 2: the same text as a fenced comment -> not flagged.
-        as_comment = f'{standard_text}\n\n```text\n# no PR at order 10: {retired_call}\n```\n'
+        as_comment = f'{standard_text}\n\n```text\n# no PR at order 9: {retired_call}\n```\n'
         comment_offenders, _ = _scan_pr_operation_prescriptions(as_comment)
         assert comment_offenders == [], (
             f'The guard flagged {retired_call!r} written as a fenced COMMENT '
@@ -1529,8 +1529,7 @@ git -C {worktree_path} push
 #: detector.
 _TIER_0_BLOCK_WITHOUT_PUSH = """\
 **This step does NOT push.** It commits and stops. `default:push` (order 11) is
-a **pure push barrier** that runs immediately after this step (order 10) and
-ships the converged branch — including this commit. Pushing here would be a
+a **pure push barrier** that ships the converged branch — including this commit. Pushing here would be a
 second push of the same branch from a step the single-push contract does not
 authorise.
 
@@ -1907,13 +1906,12 @@ class TestCrossReferences:
 
     def test_standard_frontmatter_declares_order(self, standard_text: str):
         """Frontmatter `order:` makes the manifest composer sort deterministically."""
-        # The D3 mutation-settling reorder moved architecture-refresh from the
-        # post-push region (order 25) into the pre-push settle band; plan 300 D2
-        # then de-collided it from finalize-step-security-audit (they shared 9) by
-        # giving it order 10, so this derived-state refresh sorts LAST in the settle
-        # band (after the mutating steps) and still settles BEFORE the single push
-        # barrier (order 11). Pin `order: 10` to detect accidental edits.
-        assert 'order: 10' in standard_text
+        # This derived-state refresh sorts after the code-mutating settle steps
+        # and still settles BEFORE the single push barrier (order 11), so the
+        # descriptors describe the settled tree and the quality gate at order 10
+        # certifies them together with the code. Pin `order: 9` to detect
+        # accidental edits.
+        assert 'order: 9' in standard_text
 
     def test_standard_frontmatter_declares_default_on_true(
         self,

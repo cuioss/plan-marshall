@@ -4,7 +4,7 @@ lane:
   cost_size: L
 name: default:pre-submission-self-review
 description: Pre-submission structural self-review (symmetric pairs, regex over-fit, wording, duplication, contract drift, producer-without-consumer, source-of-truth drift, same-document contradiction, description-vs-body drift, unguarded boundary, stale count-prose, touched-claim re-check, ordinal-reference re-check, unreachable guard behind a scan-derived key, worked-example clause mismatch, duplicate-claimable key, discard-without-report) before push
-order: 7
+order: 8
 mutates_source: false
 head_dependent: true
 default_on: true
@@ -66,6 +66,10 @@ Skills the caller MUST forward in `skills[]`: none (the workflow reads files wit
 The only thing that releases a branch from FORWARDING the value is the capture itself failing. Branch C is reached by `git_unavailable` among others, so its `rev-parse` can return no SHA; it then omits the flag rather than passing an unresolved placeholder (§ Step 4 Branch C). That is not a branch exempted from the rule — it is the rule with nothing to hand it, and it is available only because the `missing_head_at_completion` refusal is scoped to the `done` outcome.
 
 The recorded SHA carries a **second, independent** load: it is the **delta anchor** the next round scopes itself against (Step 1 reads it back and passes it as `--since-ref`). That is why its absence on a `done` record is now REFUSED rather than tolerated — `manage-status mark-step-done` returns `error: missing_head_at_completion` and writes nothing when a `head_dependent: true` step records `done` without it. An unanchored record would leave the following round unable to define its delta, silently degrading it to a full re-sweep.
+
+## Settle-band position — review runs after the mutators
+
+This step sorts AFTER the code-mutating settle steps (`order: 8`, behind `finalize-step-simplify` at 5 and `finalize-step-security-audit` at 7) and BEFORE the derived-state refresh (9) and the quality gate (10). That position resolves the simplify-placement question: the review examines the post-simplification, post-hardening tree rather than a diff a later simplify pass rewrites. It does NOT cover what the two later steps commit — the refreshed descriptors and any gate auto-fix edits: the descriptors are certified by the quality gate that runs after them, and the gate's own trailing commit is covered by the push reconciliation record, never by this review. A loop-back fix commit still advances HEAD past the recorded `head_at_completion`, and the re-fire then scopes itself as a delta round via `--since-ref`, so only the fix's own paths are re-examined rather than the whole diff re-swept. This step declares `mutates_source: false`, so its position after the mutators adds no commit of its own and moves no SHA the gate must then cover.
 
 ## Author and verifier are different parties
 

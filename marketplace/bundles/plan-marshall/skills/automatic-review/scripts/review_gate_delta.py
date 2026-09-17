@@ -8,26 +8,33 @@ GATES, never a merge verdict and never a statement about a reviewer.
 
 Why the delta needs no per-finding gate attribution
 ---------------------------------------------------
-The in-house gates run BEFORE review: ``pre-push-quality-gate`` at ``order: 5`` and
-``pre-submission-self-review`` at ``order: 7``, while ``automatic-review`` is
+The in-house gates run BEFORE review: ``pre-submission-self-review`` at ``order: 8`` and
+``pre-push-quality-gate`` at ``order: 10``, while ``automatic-review`` is
 ``order: 30``. So a finding review files against a tree the gates already passed is
 something the gates ran over and did not report — a gate escape — with no
 per-finding attribution needed. That is why the signal arrives free on every PR
 rather than needing a bespoke corpus.
 
 **But "the gates passed" is not the same claim as "the gates saw this tree", and
-the difference is not hypothetical here.** Source-mutating steps run BETWEEN the
-gates and review — ``finalize-step-simplify`` (``order: 8``) and
-``finalize-step-security-audit`` (``order: 9``), and the gate itself (``order: 5``),
-whose own item-5f commit lands after the tree it just certified — and the
+the difference is not hypothetical here.** The gate itself (``order: 10``) commits
+its own auto-fix output via the dispatcher's item-5f instrumentation, so that commit
+lands after the tree it just certified; post-push mutating steps (loop-back fixes,
+``finalize-step-era-stamp-fill``) likewise advance HEAD after the gate. The
 dispatcher's re-entry check (``phase-6-finalize/SKILL.md`` Step 3 item 1) only
-re-fires a step the loop REACHES. A forward pass runs 5 → 7 → 8 → 9 → 11 → 20 → 30
-monotonically and never returns to order 5, so lines those steps introduce reach
-the reviewer having never been gated. No count is pinned here: membership is
+re-fires a step the loop REACHES. No count is pinned here: membership is
 whatever each step's declared ``mutates_source`` makes it, so a step that declares
 the fact later is covered by its own declaration. Counting a finding on such a line
 as a gate escape would attribute to the gates a miss they were never given the
 chance to make, and would bias the share in an unknown direction.
+
+Within the settle band itself the ordering now closes the old gap: the code-mutating
+settle steps (``finalize-step-simplify`` at ``order: 5``,
+``finalize-step-security-audit`` at ``order: 7``) sort strictly BEFORE both gates,
+and the derived-state refresh (``architecture-refresh`` at ``order: 9``) sorts before
+the quality gate too — so a forward pass runs 5 → 7 → 8 → 9 → 10 → 11 → 20 → 30 and
+the gates certify the settled tree including the mutators' edits. What remains is
+only the gate's own trailing commit and post-push advances, which the SHA-equality
+inputs below exclude.
 
 The escape claim therefore rests on THREE inputs, each of which fails closed:
 
@@ -39,9 +46,10 @@ The escape claim therefore rests on THREE inputs, each of which fails closed:
 
 The two SHAs must be EQUAL, proven rather than assumed. An absent SHA is not
 evidence of sameness, and a mismatch is positive evidence of the gap above; both
-resolve to ``excluded`` rather than to a confident zero. (The unblocking condition
-is for the gate to re-fire after the mutating steps — that is a change to the
-finalize step ordering, deliberately not made here.)
+resolve to ``excluded`` rather than to a confident zero. (The settle-band half of
+the gap was closed by moving the gates after the mutating settle steps; what remains
+— the gate's own trailing commit and post-push advances — is excluded by this
+equality check, not by re-ordering.)
 
 Two properties that keep the signal from becoming harmful
 ---------------------------------------------------------

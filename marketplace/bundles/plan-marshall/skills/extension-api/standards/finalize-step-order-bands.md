@@ -48,8 +48,9 @@ without renumbering a neighbour:
 
 - **Settle — pre-push (1–11)** — **no guaranteed insertion room.** Every integer from 3 to 11 is
   occupied (`finalize-step-sync-baseline` 3, `finalize-step-lessons-housekeeping` 4,
-  `pre-push-quality-gate` 5, `finalize-step-plugin-doctor` 6, `pre-submission-self-review` 7,
-  `finalize-step-simplify` 8, `finalize-step-security-audit` 9, `architecture-refresh` 10, `push` 11),
+  `finalize-step-simplify` 5, `finalize-step-plugin-doctor` 6,
+  `finalize-step-security-audit` 7, `pre-submission-self-review` 8,
+  `architecture-refresh` 9, `pre-push-quality-gate` 10, `push` 11),
   leaving only 1–2 free below the whole cluster. The post-push gaps below CANNOT absorb a pre-push step:
   every one of them is numbered above `push`, so a step placed there runs after the branch has already
   shipped. The sanctioned remedy for a new pre-push step is therefore a **deliberate re-space of the
@@ -105,7 +106,7 @@ The canonical `destroys` declarations anchor the vocabulary, and both sides of i
   why it is the terminus and why every plan-file reader must precede it.
 - `default:branch-cleanup` declares `destroys: [worktree]` — the merge gate removes the linked worktree,
   so a step that `reads: [worktree]` is mis-ordered if it runs after the gate. Its readers today are
-  `default:finalize-step-sync-baseline` (3), `default:pre-push-quality-gate` (5) and
+  `default:finalize-step-sync-baseline` (3), `default:pre-push-quality-gate` (10) and
   `project:finalize-step-plugin-doctor` (6) — each inspects the worktree's state as an input to its own
   verdict, and each is ordered well below the gate.
 - On the `metrics` side, `default:finalize-step-print-phase-breakdown` (999) and `default:emit-landing`
@@ -127,8 +128,8 @@ derivation — that half remains a documented convention rather than a checked f
 ## Renumbering is a consequence, not the deliverable
 
 The contract above is the deliverable. Making the existing steps conform to it is a consequence, applied
-only where a gap did not already exist: the **terminal slot**. Existing settle, post-merge, and post-run
-steps already sit within their bands with free insertion room, so they are left in place; only
-`default:archive-plan` moved (to the terminus at 1100) to open the reserved terminal-emission band
-(1000–1099). A future step that must land in a band with no interior gap is renumbered into the reserved
+where a gap did not already exist: the **terminal slot** (`default:archive-plan` at the terminus at 1100,
+opening the reserved terminal-emission band 1000–1099) and the **settle sub-cluster**, which carries no
+insertion room and was therefore re-spaced deliberately as this contract's sanctioned remedy. A future step
+that must land in a band with no interior gap is renumbered into the reserved
 room this contract guarantees, never by pushing a neighbour.

@@ -1104,7 +1104,7 @@ def test_find_implementors_promoted_self_review_replaces_project_wrapper():
     self_review = by_name['default:pre-submission-self-review']
     assert self_review['source'] == 'built-in'
     assert self_review['default_on'] is True
-    assert self_review['order'] == 7
+    assert self_review['order'] == 8
 
     assert 'project:finalize-step-pre-submission-self-review' not in by_name, (
         'the retired project self-review wrapper must not surface after deletion'
