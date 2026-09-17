@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 # ruff: noqa: I001
-"""Tests for gitlab_ops.py — ops forwarding and success paths.
-"""
+"""Tests for gitlab_ops.py — ops forwarding and success paths."""
 
 from __future__ import annotations
 
@@ -333,4 +332,3 @@ def test_cmd_issue_comment_normalizes_full_url(monkeypatch, tmp_path):
     assert result['status'] == 'success', result
     assert result['issue_number'] == '42'
     assert captured[-1] == ['issue', 'note', '42', '--message', 'Outline ready']
-

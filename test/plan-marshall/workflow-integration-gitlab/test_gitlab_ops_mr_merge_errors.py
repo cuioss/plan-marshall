@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 # ruff: noqa: I001
-"""Tests for gitlab_ops.py mr-merge — refusals and failure envelopes.
-"""
+"""Tests for gitlab_ops.py mr-merge — refusals and failure envelopes."""
 
 from __future__ import annotations
 
@@ -464,4 +463,3 @@ def test_safe_merge_known_path_refusal_names_the_concrete_project(monkeypatch, a
     assert 'octo/repo' in message, result
     assert view_calls['i'] == 0, view_calls
     assert captured == [], captured
-

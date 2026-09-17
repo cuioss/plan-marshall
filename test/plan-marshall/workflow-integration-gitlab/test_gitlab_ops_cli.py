@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 # ruff: noqa: I001
-"""Tests for gitlab_ops.py — CLI surface and formatting.
-"""
+"""Tests for gitlab_ops.py — CLI surface and formatting."""
 
 from __future__ import annotations
 
@@ -273,4 +272,3 @@ def test_gitlab_main_routes_plan_id_via_extract_routing_args(monkeypatch):
 
     assert get_default_cwd() == '/tmp/wt-gitlab-resolved'
     set_default_cwd(None)
-

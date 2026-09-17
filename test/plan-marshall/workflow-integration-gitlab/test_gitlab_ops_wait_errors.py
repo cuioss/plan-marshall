@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 # ruff: noqa: I001
-"""Tests for gitlab_ops.py wait — failure enrichment.
-"""
+"""Tests for gitlab_ops.py wait — failure enrichment."""
 
 from __future__ import annotations
 
@@ -201,4 +200,3 @@ def test_ci_wait_failure_enriches_each_failing_job_with_real_filtered_log(monkey
     assert 'failing_checks' in result
     _assert_real_gitlab_failure_enrichment(result['failing_checks'], plan_context, fixture=fixture)
     assert len(fetch_calls['run_ids']) >= 2
-

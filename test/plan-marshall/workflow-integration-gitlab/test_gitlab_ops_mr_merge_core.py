@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 # ruff: noqa: I001
-"""Tests for gitlab_ops.py mr-merge — happy path, polling, and auto-merge.
-"""
+"""Tests for gitlab_ops.py mr-merge — happy path, polling, and auto-merge."""
 
 from __future__ import annotations
 
@@ -390,4 +389,3 @@ def test_mr_auto_merge_probe_error_fails_closed(monkeypatch):
     assert 'probe failed' in result['error'], result
     # The probe precedes the call, so no auto-merge was scheduled as a side effect.
     assert captured == [], captured
-

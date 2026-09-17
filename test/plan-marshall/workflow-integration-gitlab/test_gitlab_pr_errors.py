@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 # ruff: noqa: I001
-"""Tests for gitlab_pr provider — error envelopes and CLI surface.
-"""
+"""Tests for gitlab_pr provider — error envelopes and CLI surface."""
 
 from __future__ import annotations
 
@@ -196,4 +195,3 @@ def test_deduplicated_mismatch_persist_stays_benign(plan_context, monkeypatch):
     assert 'qgate_persist_failed' not in second
     # Dedup returns the SAME record — still in the store, so still a hash id.
     assert second['producer_mismatch_hash_id'] == first['producer_mismatch_hash_id']
-

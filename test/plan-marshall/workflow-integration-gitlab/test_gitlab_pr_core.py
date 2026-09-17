@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 # ruff: noqa: I001
-"""Tests for gitlab_pr provider — post-responses core.
-"""
+"""Tests for gitlab_pr provider — post-responses core."""
 
 from __future__ import annotations
 
@@ -385,4 +384,3 @@ def test_the_two_zeros_are_distinguishable_in_one_comparison(plan_context):
     assert benign['status'] != absent['status']
     assert absent['findings_store_state'] == 'plan_absent'
     assert 'findings_store_state' not in benign
-

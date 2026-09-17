@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 # ruff: noqa: I001
-"""Tests for gitlab_ops.py wait — success paths and budget handling.
-"""
+"""Tests for gitlab_ops.py wait — success paths and budget handling."""
 
 from __future__ import annotations
 
@@ -377,4 +376,3 @@ def test_ci_wait_deadline_exceeded_preserved_when_still_pending(monkeypatch, pla
     assert 'failing_checks' in result
     assert result['run_id'] == '5005'
     assert recorded == []
-

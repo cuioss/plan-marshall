@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 # ruff: noqa: I001
-"""Tests for gitlab_ops.py merge-queue — refusals and failure envelopes.
-"""
+"""Tests for gitlab_ops.py merge-queue — refusals and failure envelopes."""
 
 from __future__ import annotations
 
@@ -316,4 +315,3 @@ def test_repo_merge_queue_enable_refuses_when_ineligible(monkeypatch):
     assert result['operation'] == 'repo_merge_queue_enable'
     message = ' '.join(str(v) for v in result.values()).lower()
     assert 'merge train' in message
-

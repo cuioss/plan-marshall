@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 # ruff: noqa: I001
-"""Tests for gitlab_ops.py mr-merge — delete-branch handling.
-"""
+"""Tests for gitlab_ops.py mr-merge — delete-branch handling."""
 
 from __future__ import annotations
 
@@ -386,4 +385,3 @@ def test_mr_merge_uncorroborated_when_view_fails(monkeypatch):
     assert result['status'] == 'error', result
     delete_calls = [c for c in captured if c[:3] == ['api', '-X', 'DELETE']]
     assert delete_calls == [], delete_calls
-

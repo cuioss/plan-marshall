@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 # ruff: noqa: I001
-"""Tests for gitlab_ops.py merge-queue — probe and enable happy paths.
-"""
+"""Tests for gitlab_ops.py merge-queue — probe and enable happy paths."""
 
 from __future__ import annotations
 
@@ -183,4 +182,3 @@ def test_gitlab_ops_exposes_repo_merge_queue_handlers():
     assert callable(gitlab_ops.cmd_repo_merge_queue_probe)
     assert callable(gitlab_ops.cmd_repo_merge_queue_enable)
     assert callable(gitlab_ops.cmd_pr_merge_queue)
-

@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 # ruff: noqa: I001
-"""Tests for gitlab_ops.py — failure envelopes, validation errors, and output guards.
-"""
+"""Tests for gitlab_ops.py — failure envelopes, validation errors, and output guards."""
 
 from __future__ import annotations
 
@@ -243,4 +242,3 @@ def test_gitlab_main_project_dir_only_keeps_legacy_path(monkeypatch):
     with _pytest.raises(SystemExit):
         gitlab_ops.main()
     assert get_default_cwd() == '/tmp/wt-gitlab-explicit'
-

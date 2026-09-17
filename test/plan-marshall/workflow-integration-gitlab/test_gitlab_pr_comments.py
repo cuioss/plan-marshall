@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 # ruff: noqa: I001
-"""Tests for gitlab_pr provider — comment parsing and findings persistence.
-"""
+"""Tests for gitlab_pr provider — comment parsing and findings persistence."""
 
 from __future__ import annotations
 
@@ -167,4 +166,3 @@ def test_fetch_findings_provider_error_propagates(plan_context):
         result = cmd_fetch_findings(_make_args(125, plan_id))
 
     assert result['status'] == 'error'
-
