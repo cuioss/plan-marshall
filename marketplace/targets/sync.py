@@ -147,22 +147,41 @@ def _enumerate_source_commands(source: Path, config: TargetSyncConfig, only_bund
 
 
 def _derive_synced_bundles(skills: list[Path], commands: list[Path], only_bundle: str | None) -> set[str]:
-    if only_bundle:
+    """Derive the set of bundle names being synced.
+
+    When ``only_bundle`` is given, it is returned directly. Otherwise:
+    1. Read known bundle names from ``marketplace/bundles/`` if present.
+    2. Match each source skill/command against the known bundles using
+       the longest matching prefix.
+    3. Fall back to first-hyphen splitting only when ``marketplace/bundles/``
+       is missing or has no subdirectories (e.g. in test fixtures that isolate
+       the destination directory).
+    """
+    if only_bundle is not None:
         return {only_bundle}
+
+    bundles_dir = Path.cwd() / 'marketplace' / 'bundles'
+    if not bundles_dir.is_dir():
+        bundles_dir = Path(__file__).resolve().parents[2] / 'marketplace' / 'bundles'
+    if bundles_dir.is_dir():
+        known_bundles = {p.name for p in bundles_dir.iterdir() if p.is_dir()}
+        if known_bundles:
+            matched: set[str] = set()
+            for path in list(skills) + list(commands):
+                name = path.name.removesuffix('.md')
+                matches = [kb for kb in known_bundles if name == kb or name.startswith(f'{kb}-')]
+                if matches:
+                    matched.add(max(matches, key=len))
+            if matched:
+                return matched
+
     bundles: set[str] = set()
-    for s in skills:
-        parts = s.name.split('-', 1)
-        if len(parts) == 2 and parts[0]:
-            bundles.add(parts[0])
-        elif s.name:
-            bundles.add(s.name)
-    for c in commands:
-        stem = c.stem
-        parts = stem.split('-', 1)
-        if len(parts) == 2 and parts[0]:
-            bundles.add(parts[0])
-        elif stem:
-            bundles.add(stem)
+    for path in list(skills) + list(commands):
+        name = path.name.removesuffix('.md')
+        if '-' in name:
+            bundles.add(name.split('-', 1)[0])
+        elif name:
+            bundles.add(name)
     return bundles
 
 

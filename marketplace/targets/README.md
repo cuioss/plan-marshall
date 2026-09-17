@@ -17,6 +17,7 @@ marketplace/targets/
 ├── __init__.py                   # TARGET_REGISTRY + register_target()
 ├── base.py                       # TargetBase ABC
 ├── generate.py                   # CLI entry point
+├── sync.py                       # Unified sync engine (antigravity/opencode)
 ├── body_transform_engine.py      # Target-shared data-driven body rewrites
 ├── component_targets.py          # `targets:` frontmatter scope filter
 ├── fs_safety.py                  # Containment primitives for destructive emits
