@@ -20,7 +20,6 @@ disjoint assertions).
 """
 
 from _manage_metrics_fixtures import ns
-
 from _manage_metrics_module_fixtures import (
     _seed_guarded_plan_dirs,
     cmd_enrich,
