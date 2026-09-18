@@ -951,8 +951,21 @@ class TestDocContract:
     def test_drain_semantics_records_the_read_side_of_the_consume_marker(self):
         section = _section(_INBOX_ENVELOPE.read_text(encoding='utf-8'), '## Drain semantics')
 
-        assert 'Archival is the consume marker' in section
+        assert "Archival is the QUEUE's consume marker" in section
         assert 'inbox validate` resolves the archive' in section
+
+    def test_drain_semantics_keeps_the_two_consume_markers_apart(self):
+        # Archival retires a QUEUE message by relocating it; the addressee
+        # mailbox records consumption in the ENVELOPE and leaves the message at
+        # its delivered path. The section must keep both halves of that
+        # distinction, because a doc that named archival as THE consume marker
+        # would describe a mailbox consumption as a relocation — the very move
+        # that collapses a consumed delivery into a delivery that never
+        # happened.
+        section = _section(_INBOX_ENVELOPE.read_text(encoding='utf-8'), '## Drain semantics')
+
+        assert 'The addressee mailbox records consumption differently' in section
+        assert 'Message-state vocabulary' in section
 
     def test_validator_error_code_table_is_not_read_as_exhaustive(self):
         section = _section(_INBOX_ENVELOPE.read_text(encoding='utf-8'), '## Validator error codes')
