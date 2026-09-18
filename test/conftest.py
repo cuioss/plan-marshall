@@ -1100,7 +1100,6 @@ _ROUTING_GUARD_MODULES: tuple[tuple[str, str], ...] = (
     ('counted-list-coverage', 'pm-plugin-development/ext-self-review-plan-marshall/test_self_review_check_coverage.py'),
     ('surface-guard-notations', 'plan-marshall/tools-script-executor/test_population_derived_surface_guard.py'),
     ('call-graph-dispatch-classes', 'plan-marshall/manage-metrics/test_dispatch_boundary_ledger_population.py'),
-    ('measured-diff-size-call-sites', 'plan-marshall/automatic-review/test_measured_diff_size_bare_flag.py'),
     ('branch-cleanup-routing', 'plan-marshall/phase-6-finalize/test_branch_cleanup_merge_queue_routing_routing.py'),
     ('branch-cleanup-cleanup', 'plan-marshall/phase-6-finalize/test_branch_cleanup_merge_queue_routing_cleanup.py'),
     (
@@ -1112,6 +1111,7 @@ _ROUTING_GUARD_MODULES: tuple[tuple[str, str], ...] = (
     ('roster-correctness-roster', 'plan-marshall/phase-6-finalize/test_dispatch_roster_closure_roster.py'),
     ('roster-correctness-closure', 'plan-marshall/phase-6-finalize/test_dispatch_roster_closure_closure.py'),
     ('roster-correctness-cli', 'plan-marshall/phase-6-finalize/test_dispatch_roster_closure_cli.py'),
+    ('measured-diff-size-call-sites', 'plan-marshall/automatic-review/test_measured_diff_size_bare_flag_scan.py'),
 )
 
 
