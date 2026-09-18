@@ -361,20 +361,25 @@ def test_head_advance_invalidates_cache(plan_context):
 def test_deadline_exceeded_records_measured_elapsed_via_timeout_set(plan_context):
     """A synthetic deadline envelope WITHOUT duration_sec records the
     measured elapsed-at-deadline (>= the ceiling) via the timeout_set seam.
+
+    Requested ceiling and injected elapsed stay strictly below
+    ``_MAX_INNER_WAIT_SECONDS`` so no clamping intervenes: the reported
+    elapsed is a genuinely reachable measurement, not a value the harness
+    ceiling could never produce.
     """
     plan_id = 'ci-precond-elapsed-record'
     git_stub = _StubGitHead(_SHA_A)
     timeout_set_stub = _StubTimeoutSet()
     # No duration_sec — the elapsed fallback drives the record.
     wait_stub = _StubCiWait([{'status': 'timeout', 'wait_outcome': 'deadline_exceeded'}])
-    # clock ticks [0, 605] → measured elapsed 605s, >= the 600s ceiling.
-    clock = _StubClock([0.0, 605.0])
+    # clock ticks [0, 301] → measured elapsed 301s, >= the 300s ceiling.
+    clock = _StubClock([0.0, 301.0])
 
     result = resolve(
         plan_id=plan_id,
         worktree_path=_WORKTREE,
         pr_number=_PR,
-        timeout_seconds=600,
+        timeout_seconds=300,
         ci_wait_runner=wait_stub,
         git_head_resolver=git_stub,
         timeout_set_runner=timeout_set_stub,
@@ -383,7 +388,7 @@ def test_deadline_exceeded_records_measured_elapsed_via_timeout_set(plan_context
 
     assert result['status'] == 'wait_failed'
     assert result['ci_final_status'] == 'timeout'
-    assert timeout_set_stub.recorded == [605], (
+    assert timeout_set_stub.recorded == [301], (
         'The measured elapsed-at-deadline must be recorded so the ci:wait ceiling ratchets upward'
     )
 
@@ -392,36 +397,39 @@ def test_repeated_deadline_exceeded_ratchets_upward(plan_context):
     """Across finalizes, each deadline_exceeded records its elapsed-at-deadline;
     as the run-config mechanism grows the ceiling between calls, the recorded
     observations grow with it — proving resolve feeds the upward ratchet.
+
+    Both rounds stay strictly below ``_MAX_INNER_WAIT_SECONDS`` so the
+    elapsed values are genuinely reachable (see the test above).
     """
     git_stub = _StubGitHead(_SHA_A)
     timeout_set_stub = _StubTimeoutSet()
 
-    # Finalize 1: ceiling 600, elapsed 601 → records 601.
+    # Finalize 1: ceiling 300, elapsed 301 → records 301.
     resolve(
         plan_id='ci-precond-ratchet',
         worktree_path=_WORKTREE,
         pr_number=_PR,
-        timeout_seconds=600,
+        timeout_seconds=300,
         ci_wait_runner=_StubCiWait([{'status': 'timeout', 'wait_outcome': 'deadline_exceeded'}]),
         git_head_resolver=git_stub,
         timeout_set_runner=timeout_set_stub,
-        monotonic_clock=_StubClock([0.0, 601.0]),
+        monotonic_clock=_StubClock([0.0, 301.0]),
     )
 
-    # Finalize 2: the ceiling has grown to 750 (the run-config ratchet);
-    # a fresh deadline at elapsed 751 → records 751.
+    # Finalize 2: the ceiling has grown to 400 (the run-config ratchet);
+    # a fresh deadline at elapsed 401 → records 401.
     resolve(
         plan_id='ci-precond-ratchet',
         worktree_path=_WORKTREE,
         pr_number=_PR,
-        timeout_seconds=750,
+        timeout_seconds=400,
         ci_wait_runner=_StubCiWait([{'status': 'timeout', 'wait_outcome': 'deadline_exceeded'}]),
         git_head_resolver=git_stub,
         timeout_set_runner=timeout_set_stub,
-        monotonic_clock=_StubClock([0.0, 751.0]),
+        monotonic_clock=_StubClock([0.0, 401.0]),
     )
 
-    assert timeout_set_stub.recorded == [601, 751]
+    assert timeout_set_stub.recorded == [301, 401]
     assert timeout_set_stub.recorded[1] > timeout_set_stub.recorded[0], (
         'The recorded elapsed observations must grow as the ceiling ratchets up'
     )
@@ -635,35 +643,21 @@ def test_consume_failures_mode_preserves_timeout_envelope(plan_context):
 
 
 def test_fixture_dir_present():
-    """Every declared fixture — the base captures plus the six stressor
+    """Every catalogued fixture — the base captures plus the six stressor
     categories (a-f) — is present on disk.
 
-    The set is pinned exactly, so a fixture added without updating this list,
-    or removed while still referenced, fails here rather than silently
-    narrowing what the fixture-driven tests below cover.
+    The roster is DERIVED from the ``## Fixture catalogue`` section of the
+    fixtures README (the authoritative catalogue), never transcribed: a
+    fixture added on disk but not documented, or documented but missing,
+    fails here rather than silently narrowing what the fixture-driven tests
+    below cover. The derivation asserts non-empty so an unparseable README
+    cannot pass vacuously.
     """
     assert _FIXTURE_DIR.is_dir(), f'Fixture directory missing: {_FIXTURE_DIR}'
-    expected = {
-        # Base captures.
-        'green-success.toon',
-        'failure-with-failing-checks.toon',
-        'no-checks.toon',
-        'timeout-deadline-exceeded.toon',
-        'pending-then-cancelled.toon',
-        'mixed-success-failure.toon',
-        'skipped-checks.toon',
-        'single-check-success.toon',
-        'many-checks-success.toon',
-        # Stress fixtures added per Q-Gate finding e2c3ee (stressors a-f).
-        'url-with-commas-and-quotes.toon',  # (a) commas/quotes in URL
-        'check-name-special-chars.toon',  # (b) special chars in name
-        'multi-line-error-summary.toon',  # (c) multi-line | content
-        'older-gh-envelope.toon',  # (d) older gh format
-        'huge-checks-block.toon',  # (e) >50 rows
-        'mixed-skipped-cancelled-neutral.toon',  # (f) SKIPPED+CANCELLED+NEUTRAL
-        # Additional failure-mode regression fixture surfaced by (b).
-        'failing-checks-with-colon-names.toon',
-    }
+    catalogue_text = (_FIXTURE_DIR / 'README.md').read_text(encoding='utf-8')
+    section = catalogue_text.split('## Fixture catalogue', 1)[1].split('\n## ', 1)[0]
+    expected = set(re.findall(r'`([\w][\w.\-]*\.toon)`', section))
+    assert expected, 'README fixture catalogue yielded no fixture names — the derivation is vacuous'
     found = {f.name for f in _FIXTURE_DIR.iterdir() if f.is_file() and f.suffix == '.toon'}
     assert expected == found, f'Fixture directory out of sync. Missing: {expected - found}, Extra: {found - expected}'
 
