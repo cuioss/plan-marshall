@@ -1140,7 +1140,7 @@ class TestConsumptionMarker:
         assert (won['status'], repeated['status']) == ('success', 'success')
         assert (won['already_consumed'], repeated['already_consumed']) == (False, True)
 
-    def test_consume_reports_file_not_found_when_nothing_was_delivered(self, plan_context, tmp_path):
+    def test_consume_reports_file_not_found_when_nothing_was_delivered(self, plan_context):
         cmd_scaffold(_SCAFFOLD_ARGS)
 
         result = consume_message(EPIC, READER, f'{SENDER}-001.md')
@@ -1148,7 +1148,7 @@ class TestConsumptionMarker:
         assert result['status'] == 'error'
         assert result['error'] == 'file_not_found'
 
-    def test_consume_refuses_an_unsafe_address_or_message_name(self, plan_context, tmp_path):
+    def test_consume_refuses_an_unsafe_address_or_message_name(self, plan_context):
         cmd_scaffold(_SCAFFOLD_ARGS)
 
         assert consume_message('../evil', READER, f'{SENDER}-001.md')['error'] == 'invalid_slug'
@@ -1198,7 +1198,7 @@ class TestThreeDeliveryStates:
         assert consumed['consumed_count'] == 1
         assert never['consumed_count'] == 0
 
-    def test_an_unreadable_message_leaves_the_verdict_unmeasured(self, plan_context, tmp_path):
+    def test_an_unreadable_message_leaves_the_verdict_unmeasured(self, plan_context):
         # A message whose marker was never read cannot establish "fully consumed",
         # and reporting it as unconsumed would state a fact the read never made.
         cmd_scaffold(_SCAFFOLD_ARGS)

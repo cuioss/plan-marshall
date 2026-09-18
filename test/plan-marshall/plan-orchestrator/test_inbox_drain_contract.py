@@ -788,16 +788,16 @@ def _malformed_message(sender: str = READ_SENDER, epic: str = READ_EPIC) -> str:
     )
 
 
-def _arrange_no_epic(plan_context, tmp_path) -> None:
+def _arrange_no_epic(plan_context) -> None:
     """Nothing at all — the epic was never scaffolded."""
 
 
-def _arrange_no_mailbox(plan_context, tmp_path) -> None:
+def _arrange_no_mailbox(plan_context) -> None:
     """The epic exists; nothing was ever delivered to this plan."""
     _scaffold(plan_context)
 
 
-def _arrange_unlistable_mailbox(plan_context, tmp_path) -> None:
+def _arrange_unlistable_mailbox(plan_context) -> None:
     """The mailbox PATH exists but cannot be listed — it is a file, not a directory.
 
     Chosen over a permission bit because it is deterministic on every platform
@@ -809,7 +809,7 @@ def _arrange_unlistable_mailbox(plan_context, tmp_path) -> None:
     mailbox.write_text('not a directory\n', encoding='utf-8')
 
 
-def _arrange_unreadable_message(plan_context, tmp_path) -> None:
+def _arrange_unreadable_message(plan_context) -> None:
     """A delivered message whose bytes are not UTF-8."""
     _scaffold(plan_context)
     mailbox = _mailbox_dir(plan_context)
@@ -817,7 +817,7 @@ def _arrange_unreadable_message(plan_context, tmp_path) -> None:
     (mailbox / f'{READ_SENDER}-001.md').write_bytes(b'\xff\xfe not valid utf-8 \xff')
 
 
-def _arrange_malformed_envelope(plan_context, tmp_path) -> None:
+def _arrange_malformed_envelope(plan_context) -> None:
     """A delivered message that reads cleanly but fails envelope validation."""
     _scaffold(plan_context)
     mailbox = _mailbox_dir(plan_context)
@@ -890,8 +890,8 @@ class TestReadIsFailOpen:
     """Every read-side failure returns success carrying a discriminator."""
 
     @pytest.mark.parametrize('mode', sorted(FAIL_OPEN_ARRANGEMENTS))
-    def test_every_failure_mode_returns_success_with_a_discriminator(self, mode, plan_context, tmp_path):
-        FAIL_OPEN_ARRANGEMENTS[mode](plan_context, tmp_path)
+    def test_every_failure_mode_returns_success_with_a_discriminator(self, mode, plan_context):
+        FAIL_OPEN_ARRANGEMENTS[mode](plan_context)
 
         result = _read(plan_context)
         data = result.toon()
@@ -904,8 +904,8 @@ class TestReadIsFailOpen:
         assert data['mailbox_state'] in MAILBOX_STATES, mode
 
     @pytest.mark.parametrize('mode', sorted(FAIL_OPEN_EXPECTED_STATE))
-    def test_each_could_not_look_mode_names_its_own_discriminator(self, mode, plan_context, tmp_path):
-        FAIL_OPEN_ARRANGEMENTS[mode](plan_context, tmp_path)
+    def test_each_could_not_look_mode_names_its_own_discriminator(self, mode, plan_context):
+        FAIL_OPEN_ARRANGEMENTS[mode](plan_context)
 
         data = _read(plan_context).toon()
 
@@ -913,8 +913,8 @@ class TestReadIsFailOpen:
         assert data['mailbox_state'] in MAILBOX_COULD_NOT_LOOK_STATES, mode
         assert data['count'] == 0, mode
 
-    def test_an_unreadable_message_rides_a_row_rather_than_faulting(self, plan_context, tmp_path):
-        _arrange_unreadable_message(plan_context, tmp_path)
+    def test_an_unreadable_message_rides_a_row_rather_than_faulting(self, plan_context):
+        _arrange_unreadable_message(plan_context)
 
         data = _read(plan_context).toon()
 
@@ -923,8 +923,8 @@ class TestReadIsFailOpen:
         assert data['invalid_count'] == 1
         assert [row['error'] for row in data['messages']] == ['unreadable']
 
-    def test_a_malformed_envelope_rides_a_row_rather_than_faulting(self, plan_context, tmp_path):
-        _arrange_malformed_envelope(plan_context, tmp_path)
+    def test_a_malformed_envelope_rides_a_row_rather_than_faulting(self, plan_context):
+        _arrange_malformed_envelope(plan_context)
 
         data = _read(plan_context).toon()
 
@@ -975,11 +975,11 @@ class TestReadZerosStayDistinguishable:
             'was looked at and held nothing — the fail-open read renders as a confident empty'
         )
 
-    def test_a_mailbox_holding_only_broken_mail_is_not_an_empty_mailbox(self, plan_context, tmp_path):
+    def test_a_mailbox_holding_only_broken_mail_is_not_an_empty_mailbox(self, plan_context):
         # The third zero: mail IS addressed here, but none of it is actionable.
         # Reading live_count alone would call this empty and claim a clean read
         # over messages that were never understood.
-        _arrange_unreadable_message(plan_context, tmp_path)
+        _arrange_unreadable_message(plan_context)
 
         data = _read(plan_context).toon()
 
