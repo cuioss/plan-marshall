@@ -282,3 +282,65 @@ def test_health_check(runtime: AntigravityRuntime, monkeypatch, tmp_path: Path):
     result = _parse(runtime.health_check('permissions'))
     assert result['target'] == 'antigravity'
     assert result['status'] in ('healthy', 'warning')
+
+
+# =============================================================================
+# Permission Fix & Ensure Wildcards
+# =============================================================================
+
+
+def test_permission_fix_add_and_remove(
+    runtime: AntigravityRuntime, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """permission_fix add and remove manipulate the permissions.allow list."""
+    monkeypatch.chdir(tmp_path)
+    res_add = _parse(runtime.permission_fix('project', 'ensure', ['python3 custom.py *'], False))
+    assert res_add['status'] == 'success'
+    assert res_add['operation'] == 'permission fix'
+    assert res_add['added'] == 1
+
+    res_rem = _parse(runtime.permission_fix('project', 'remove', ['python3 custom.py *'], False))
+    assert res_rem['status'] == 'success'
+    assert res_rem['removed'] == 1
+
+
+def test_permission_fix_consolidate(
+    runtime: AntigravityRuntime, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """permission_fix consolidate deduplicates grants in Antigravity."""
+    monkeypatch.chdir(tmp_path)
+    result = _parse(runtime.permission_fix('project', 'consolidate', [], False))
+    assert result['status'] == 'success'
+    assert result['operation'] == 'permission fix'
+
+
+def test_permission_fix_protect_path_noop(runtime: AntigravityRuntime) -> None:
+    """permission_fix protect-path returns honest no-op since Antigravity has no deny list."""
+    result = _parse(runtime.permission_fix('project', 'protect-path', ['/tmp/creds'], False))
+    assert result['status'] == 'no-op'
+    assert result['operation'] == 'permission fix'
+    assert 'Antigravity' in result['reason']
+
+
+def test_permission_fix_invalid_scope(runtime: AntigravityRuntime) -> None:
+    """permission_fix with invalid scope returns error."""
+    result = _parse(runtime.permission_fix('invalid', 'ensure', [], False))
+    assert result['status'] == 'error'
+    assert result['error'] == 'invalid_scope'
+
+
+def test_permission_fix_invalid_operation(runtime: AntigravityRuntime) -> None:
+    """permission_fix with invalid operation returns error."""
+    result = _parse(runtime.permission_fix('project', 'invalid-op', [], False))
+    assert result['status'] == 'error'
+    assert result['error'] == 'invalid_operation'
+
+
+def test_permission_ensure_wildcards(
+    runtime: AntigravityRuntime, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """permission_ensure_wildcards ensures default commands in Antigravity."""
+    monkeypatch.chdir(tmp_path)
+    result = _parse(runtime.permission_ensure_wildcards('project', 'marketplace/', False))
+    assert result['status'] == 'success'
+    assert result['operation'] == 'permission ensure-wildcards'

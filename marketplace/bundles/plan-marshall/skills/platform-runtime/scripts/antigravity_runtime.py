@@ -575,7 +575,7 @@ class AntigravityRuntime(Runtime):
             return toon_success(
                 'permission fix',
                 {
-                    'operation': operation,
+                    'fix_operation': operation,
                     'scope': scope,
                     'added': added,
                     'dry_run': dry_run,
@@ -594,7 +594,7 @@ class AntigravityRuntime(Runtime):
             return toon_success(
                 'permission fix',
                 {
-                    'operation': operation,
+                    'fix_operation': operation,
                     'scope': scope,
                     'removed': removed,
                     'dry_run': dry_run,
@@ -611,7 +611,7 @@ class AntigravityRuntime(Runtime):
             return toon_success(
                 'permission fix',
                 {
-                    'operation': operation,
+                    'fix_operation': operation,
                     'scope': scope,
                     'removed_duplicates': removed,
                     'total_grants': len(deduped),
@@ -619,12 +619,19 @@ class AntigravityRuntime(Runtime):
                 },
             )
 
+        if operation == 'protect-path':
+            return toon_noop(
+                'permission fix',
+                'Antigravity has no path-protection or deny-list mechanism',
+                'Protect sensitive files using filesystem permissions or outside the workspace',
+            )
+
         return toon_success(
             'permission fix',
             {
-                'operation': operation,
+                'fix_operation': operation,
                 'scope': scope,
-                'status': 'no-op',
+                'action': 'no-op',
                 'dry_run': dry_run,
             },
         )

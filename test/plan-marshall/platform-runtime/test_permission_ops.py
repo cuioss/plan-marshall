@@ -10,8 +10,8 @@ Asserts the re-scoped contract:
 2. The four permission scripts (``permission_common``, ``permission_doctor``,
    ``permission_fix``, ``permission_web``) DELEGATE settings path-resolution +
    load/save to the runtime layer rather than owning it.
-3. ``opencode_runtime`` permission ops return an honest ``no-op`` (reason +
-   alternative), never a fabricated success that claims a write happened.
+3. ``opencode_runtime`` permission ops configure and persist OpenCode-native
+   permissions in ``opencode.json``.
 
 conftest.py sets up PYTHONPATH so the cross-skill imports resolve without manual
 sys.path manipulation.
@@ -448,54 +448,59 @@ class TestScriptsDelegateToRuntime:
 # =============================================================================
 
 
-class TestOpenCodePermissionsHonestNoop:
-    """OpenCode has no validated permission backend — every op is an honest no-op."""
+class TestOpenCodePermissionsBackend:
+    """OpenCode has a validated permission backend configuring opencode.json."""
 
     runtime = OpenCodeRuntime()
 
-    def _assert_noop(self, result: dict[str, Any]) -> None:
-        assert result['status'] == 'no-op'
-        assert 'reason' in result
-        assert 'alternative' in result
-        assert 'OpenCode' in result['reason']
-        # Never fabricate a write-happened count.
-        assert 'permissions_written' not in result
-        assert 'changes_applied' not in result
-        assert 'domains_added' not in result
-        assert 'domains_removed' not in result
-        assert 'wildcards_added' not in result
+    def test_configure_succeeds(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.chdir(tmp_path)
+        result = _parse(self.runtime.permission_configure('project', [{'kind': 'path', 'tool': 'Read', 'path': '**'}]))
+        assert result['status'] == 'success'
+        assert result['grants_added'] >= 1
 
-    def test_configure_is_honest_noop(self) -> None:
-        self._assert_noop(
-            _parse(self.runtime.permission_configure('project', [{'kind': 'path', 'tool': 'Read', 'path': '**'}]))
+    def test_analyze_succeeds(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.chdir(tmp_path)
+        result = _parse(self.runtime.permission_analyze('both', ['all'], None))
+        assert result['status'] == 'success'
+        assert 'analysis' in result
+
+    def test_fix_succeeds(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.chdir(tmp_path)
+        result = _parse(
+            self.runtime.permission_fix('project', 'add', [{'kind': 'path', 'tool': 'Read', 'path': '**'}], False)
         )
+        assert result['status'] == 'success'
+        assert result['added'] >= 1
 
-    def test_analyze_is_honest_noop(self) -> None:
-        self._assert_noop(_parse(self.runtime.permission_analyze('both', ['all'], None)))
+    def test_ensure_wildcards_succeeds(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.chdir(tmp_path)
+        result = _parse(self.runtime.permission_ensure_wildcards('project', 'marketplace/', False))
+        assert result['status'] == 'success'
+        assert result['operation'] == 'permission ensure-wildcards'
 
-    def test_fix_is_honest_noop(self) -> None:
-        self._assert_noop(
-            _parse(
-                self.runtime.permission_fix('project', 'add', [{'kind': 'path', 'tool': 'Read', 'path': '**'}], False)
-            )
-        )
-
-    def test_ensure_wildcards_is_honest_noop(self) -> None:
-        self._assert_noop(_parse(self.runtime.permission_ensure_wildcards('project', 'marketplace/', False)))
-
-    def test_ensure_steps_is_honest_noop(self, tmp_path: Path) -> None:
+    def test_ensure_steps_succeeds(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.chdir(tmp_path)
         marshal = tmp_path / 'marshal.json'
         marshal.write_text('{}', encoding='utf-8')
-        self._assert_noop(_parse(self.runtime.permission_ensure_steps(str(marshal), 'project', False)))
+        result = _parse(self.runtime.permission_ensure_steps(str(marshal), 'project', False))
+        assert result['status'] == 'success'
+        assert result['steps_added'] == 0
 
-    def test_web_analyze_is_honest_noop(self) -> None:
-        self._assert_noop(_parse(self.runtime.permission_web_analyze('global')))
+    def test_web_analyze_succeeds(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.chdir(tmp_path)
+        result = _parse(self.runtime.permission_web_analyze('global'))
+        assert result['status'] == 'success'
+        assert 'webfetch_permission' in result
 
-    def test_web_apply_is_honest_noop(self) -> None:
-        self._assert_noop(_parse(self.runtime.permission_web_apply('project', add=['a.com'], remove=[], dry_run=False)))
+    def test_web_apply_succeeds(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.chdir(tmp_path)
+        result = _parse(self.runtime.permission_web_apply('project', add=['a.com'], remove=[], dry_run=False))
+        assert result['status'] == 'success'
+        assert result['changed'] is True
 
-    def test_invalid_scope_still_errors_before_noop(self) -> None:
-        """Scope validation still runs first — invalid scope is an error, not a no-op."""
+    def test_invalid_scope_still_errors(self) -> None:
+        """Scope validation still runs first — invalid scope is an error."""
         result = _parse(
             self.runtime.permission_configure('workspace', [{'kind': 'path', 'tool': 'Read', 'path': '**'}])
         )

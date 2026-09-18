@@ -52,6 +52,7 @@ from permission_common import (  # noqa: E402
     get_settings_path,
     is_antigravity_target,
     is_claude_target,
+    is_opencode_target,
     load_settings,
     load_settings_path,
     resolve_scope_to_paths,
@@ -214,6 +215,24 @@ def cmd_apply_fixes(args: argparse.Namespace) -> dict:
             'dry_run': args.dry_run,
         }
 
+    if is_opencode_target():
+        settings_path = resolve_settings_arg(args)
+        settings, error = load_settings(settings_path)
+        if error:
+            return {'status': 'error', 'error': error}
+        defaults = ensure_default_permissions(settings, settings_path, args.dry_run)
+        return {
+            'status': 'success',
+            'settings_file': settings_path,
+            'duplicates_removed': 0,
+            'paths_fixed': 0,
+            'defaults_added': defaults.get('defaults_added', []),
+            'defaults_added_count': defaults.get('defaults_added_count', 0),
+            'defaults_removed': defaults.get('defaults_removed', []),
+            'defaults_removed_count': defaults.get('defaults_removed_count', 0),
+            'dry_run': args.dry_run,
+        }
+
     if not is_claude_target():
         return _decline_non_claude('apply-fixes')
 
@@ -355,6 +374,51 @@ def cmd_ensure(args: argparse.Namespace) -> dict:
 
         permissions = [to_antigravity_grant(p) for p in permissions]
 
+    if is_opencode_target():
+        from opencode_runtime import to_opencode_grant
+
+        perm = settings.setdefault('permission', {})
+        if not isinstance(perm, dict):
+            perm = {}
+            settings['permission'] = perm
+
+        bash_map = perm.setdefault('bash', {})
+        if not isinstance(bash_map, dict):
+            bash_map = {}
+            perm['bash'] = bash_map
+
+        added = []
+        already_exists = []
+        for p in permissions:
+            cat, pat, act = to_opencode_grant(p)
+            if cat == 'bash':
+                if bash_map.get(pat) == act:
+                    already_exists.append(pat)
+                else:
+                    bash_map[pat] = act
+                    added.append(pat)
+            else:
+                if perm.get(cat) == act:
+                    already_exists.append(cat)
+                else:
+                    perm[cat] = act
+                    added.append(cat)
+
+        result = {
+            'settings_file': str(settings_path),
+            'added': added,
+            'already_exists': already_exists,
+            'added_count': len(added),
+            'total_permissions': len(bash_map),
+        }
+        if added:
+            result['success'] = save_settings(str(settings_path), settings)
+            if not result['success']:
+                result['error'] = 'Failed to save settings'
+        else:
+            result['success'] = True
+        return result
+
     added = []
     already_exists = []
 
@@ -458,6 +522,20 @@ def cmd_consolidate(args: argparse.Namespace) -> dict:
             'settings_file': settings_path,
             'consolidations_count': 0,
             'permissions_removed': removed,
+            'wildcards_added': 0,
+            'dry_run': args.dry_run,
+        }
+
+    if is_opencode_target():
+        settings_path = resolve_settings_arg(args)
+        settings, error = load_settings(settings_path)
+        if error:
+            return {'status': 'error', 'error': error}
+        return {
+            'status': 'success',
+            'settings_file': settings_path,
+            'consolidations_count': 0,
+            'permissions_removed': 0,
             'wildcards_added': 0,
             'dry_run': args.dry_run,
         }
@@ -615,6 +693,42 @@ def cmd_ensure_wildcards(args: argparse.Namespace) -> dict:
                     allow_list.append(grant)
         if added and not args.dry_run:
             allow_list.sort()
+            save_settings(settings_path, settings)
+        return {
+            'status': 'success',
+            'settings_file': settings_path,
+            'added': added,
+            'already_exists': already_exists,
+            'added_count': len(added),
+            'dry_run': args.dry_run,
+        }
+
+    if is_opencode_target():
+        from opencode_runtime import OPENCODE_DEFAULT_PERMISSIONS
+
+        settings_path = resolve_settings_arg(args)
+        settings, error = load_settings(settings_path)
+        if error:
+            return {'status': 'error', 'error': error}
+        perm = settings.setdefault('permission', {})
+        if not isinstance(perm, dict):
+            perm = {}
+            settings['permission'] = perm
+        bash_map = perm.setdefault('bash', {})
+        if not isinstance(bash_map, dict):
+            bash_map = {}
+            perm['bash'] = bash_map
+
+        added = []
+        already_exists = []
+        for grant in OPENCODE_DEFAULT_PERMISSIONS:
+            if bash_map.get(grant) == 'allow':
+                already_exists.append(grant)
+            else:
+                added.append(grant)
+                if not args.dry_run:
+                    bash_map[grant] = 'allow'
+        if added and not args.dry_run:
             save_settings(settings_path, settings)
         return {
             'status': 'success',
@@ -1153,6 +1267,50 @@ def cmd_ensure_executor(args: argparse.Namespace) -> dict:
         if not args.dry_run:
             allow_list.append(antigravity_executor)
             allow_list.sort()
+            if save_settings(str(settings_path), settings):
+                result['action'] = 'added'
+                result['success'] = True
+            else:
+                result['error'] = 'Failed to save settings'
+                result['success'] = False
+        else:
+            result['action'] = 'would_add'
+            result['success'] = True
+
+        result['status'] = 'success' if result.get('success', True) else 'error'
+        return result
+
+    if is_opencode_target():
+        opencode_executor = 'python3 .plan/execute-script.py *'
+        settings_path = get_settings_path(args.target)
+        settings = load_settings_path(settings_path)
+        perm = settings.setdefault('permission', {})
+        if not isinstance(perm, dict):
+            perm = {}
+            settings['permission'] = perm
+
+        bash_map = perm.get('bash')
+        if not isinstance(bash_map, dict):
+            if bash_map == 'allow':
+                bash_map = None
+            else:
+                bash_map = {}
+                perm['bash'] = bash_map
+
+        result = {
+            'executor_permission': f'bash({opencode_executor})',
+            'settings_file': str(settings_path),
+            'dry_run': args.dry_run,
+        }
+
+        if bash_map is None or bash_map.get(opencode_executor) == 'allow':
+            result['action'] = 'already_exists'
+            result['success'] = True
+            result.setdefault('status', 'success')
+            return result
+
+        if not args.dry_run:
+            bash_map[opencode_executor] = 'allow'
             if save_settings(str(settings_path), settings):
                 result['action'] = 'added'
                 result['success'] = True

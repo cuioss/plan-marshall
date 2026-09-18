@@ -132,6 +132,7 @@ This ensures script execution works without prompting, independent of global set
 **Target Variations:**
 - On **Claude Code**, permissions use `Bash(python3 .plan/execute-script.py *)` stored in `.claude/settings.local.json` (or `.claude/settings.json`).
 - On **Google Antigravity**, permissions use `command(python3 .plan/execute-script.py)` stored in `~/.gemini/config/projects/<project_uuid>.json` (project-scoped `permissionGrants.permissionGrants.allow`). `permission_fix` handles target detection and grammar automatically.
+- On **OpenCode**, permissions use `"bash": { "python3 .plan/execute-script.py *": "allow" }` stored in `opencode.json` (or `.opencode/opencode.json` or `~/.config/opencode/opencode.json`). `permission_fix` handles target detection and configuration automatically.
 
 ---
 

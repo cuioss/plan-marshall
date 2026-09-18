@@ -58,8 +58,31 @@ def is_antigravity_target() -> bool:
     return isinstance(_active_runtime(), AntigravityRuntime)
 
 
+def is_opencode_target() -> bool:
+    """True when the active runtime is the OpenCode target."""
+    from opencode_runtime import OpenCodeRuntime
+
+    return isinstance(_active_runtime(), OpenCodeRuntime)
+
+
+def get_opencode_allow_list(settings: dict[str, Any]) -> list[str]:
+    """Extract allow list strings from OpenCode settings."""
+    allows: list[str] = []
+    perm = settings.get('permission', {})
+    if not isinstance(perm, dict):
+        return allows
+    for cat, val in perm.items():
+        if cat == 'bash' and isinstance(val, dict):
+            for pattern, action in val.items():
+                if action == 'allow':
+                    allows.append(f'bash({pattern})')
+        elif val == 'allow':
+            allows.append(f'{cat}(*)')
+    return allows
+
+
 def get_settings_allow_list(settings: dict[str, Any]) -> list[str]:
-    """Extract mutable allow list from settings, supporting Claude and Antigravity."""
+    """Extract mutable allow list from settings, supporting Claude, Antigravity, and OpenCode."""
     allows: Any
     if 'userSettings' in settings and isinstance(settings['userSettings'], dict):
         allows = settings['userSettings'].setdefault('globalPermissionGrants', {}).setdefault('allow', [])
@@ -69,6 +92,8 @@ def get_settings_allow_list(settings: dict[str, Any]) -> list[str]:
             allows = pg['permissionGrants'].setdefault('allow', [])
         else:
             allows = pg.setdefault('allow', [])
+    elif 'permission' in settings and isinstance(settings['permission'], dict):
+        return get_opencode_allow_list(settings)
     else:
         allows = settings.setdefault('permissions', {}).setdefault('allow', [])
     return cast(list[str], allows)

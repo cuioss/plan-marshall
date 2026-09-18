@@ -422,3 +422,15 @@ def test_cmd_get_root_error_antigravity_hint(monkeypatch):
 
     assert result['status'] == 'error'
     assert 'gemini' in result['hint']
+
+
+def test_resolve_bundle_path_opencode_singular_layout(tmp_path: Path):
+    """resolve_bundle_path resolves skills in OpenCode singular directory layout."""
+    plugin_root = tmp_path / 'plugin'
+    skill_dir = plugin_root / 'skill' / 'plan-marshall-manage-tasks'
+    skill_dir.mkdir(parents=True)
+    (skill_dir / 'SKILL.md').write_text('# Tasks')
+    (plugin_root / 'opencode.json').write_text('{"$schema": "https://opencode.ai/config.json"}')
+
+    resolved = bp.resolve_bundle_path(plugin_root, 'plan-marshall', 'skills/manage-tasks/SKILL.md')
+    assert resolved == skill_dir / 'SKILL.md'

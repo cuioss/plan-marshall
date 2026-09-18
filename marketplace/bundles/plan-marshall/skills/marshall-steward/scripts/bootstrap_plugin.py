@@ -322,6 +322,22 @@ def resolve_bundle_path(plugin_root: Path, bundle: str, relative_path: str) -> P
                         return cand
             elif (plugin_root / relative_path).exists():
                 return plugin_root / relative_path
+
+        # Handle OpenCode singular layout (plugin_root / skill / {bundle}-{skill} / ...)
+        if (plugin_root / 'opencode.json').is_file() or (plugin_root / 'skill').is_dir():
+            if relative_path.startswith('skills/'):
+                parts = relative_path.split('/', 2)
+                if len(parts) >= 2:
+                    skill_name = parts[1]
+                    rest = parts[2] if len(parts) > 2 else ''
+                    cand = plugin_root / 'skill' / f'{bundle}-{skill_name}'
+                    if rest:
+                        cand = cand / rest
+                    if cand.exists():
+                        return cand
+            elif (plugin_root / relative_path).exists():
+                return plugin_root / relative_path
+
         return None
 
     # Select the NEWEST versioned directory that carries relative_path. The old
@@ -372,7 +388,11 @@ def cmd_get_root(args: argparse.Namespace) -> dict:
 
 def cmd_resolve(args: argparse.Namespace) -> dict:
     """Handle the 'resolve' subcommand."""
-    plugin_root, _ = get_plugin_root()
+    target = getattr(args, 'target', None)
+    if target is not None:
+        plugin_root, _ = get_plugin_root(target=target)
+    else:
+        plugin_root, _ = get_plugin_root()
 
     if not plugin_root:
         return {'status': 'error', 'error': 'Plugin root not found'}
