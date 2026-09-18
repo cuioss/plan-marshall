@@ -6,7 +6,7 @@ Pins the transcript-gated routing at the ``manage-metrics enrich`` script seam:
 
 * transcript-capable target (Claude) with absent session identity preserves the
   abort/error — the broken-hook signal survived the D1 fix.
-* transcript-less target (opencode) with absent session identity proceeds
+* transcript-less targets (opencode, antigravity) with absent session identity proceed
   unenriched with the population-carrying gap flag and the logged-decision
   message — the hard-block is closed there.
 
@@ -41,10 +41,29 @@ def test_regression_claude_absent_identity_preserves_abort(plan_context, monkeyp
 
 
 def test_regression_transcript_less_absent_identity_proceeds_unenriched(plan_context, monkeypatch):
-    """Transcript-less path: absent identity proceeds unenriched with gap flag and decision."""
+    """Transcript-less path (opencode): absent identity proceeds unenriched with gap flag and decision."""
     plan_id = 'finalize-routing-transcript-less'
     manage_metrics.write_metrics(plan_id, {'plan_id': plan_id})
     monkeypatch.setattr(manage_metrics, '_resolve_runtime_target', lambda: 'opencode')
+
+    result = cmd_enrich(ns('enrich', '--plan-id', plan_id))
+
+    assert result['status'] == 'success'
+    assert result.get('enriched') is False
+    assert result.get('skipped') is True
+    assert result.get('gap') == manage_metrics.ENRICH_SKIP_REASON_NO_SESSION_TRANSCRIPT_LESS
+    assert result.get('population') == manage_metrics.ENRICH_SKIP_POPULATION_UNENRICHED
+    assert 'unenriched' in result.get('message', '')
+    stored = manage_metrics.read_metrics_raw(plan_id)
+    assert str(stored.get('enrichment_skipped')).lower() == 'true'
+    assert stored.get('enrichment_gap_population') == manage_metrics.ENRICH_SKIP_POPULATION_UNENRICHED
+
+
+def test_regression_antigravity_absent_identity_proceeds_unenriched(plan_context, monkeypatch):
+    """Transcript-less path (antigravity): absent identity skips with gap flag, not the hard block."""
+    plan_id = 'finalize-routing-antigravity'
+    manage_metrics.write_metrics(plan_id, {'plan_id': plan_id})
+    monkeypatch.setattr(manage_metrics, '_resolve_runtime_target', lambda: 'antigravity')
 
     result = cmd_enrich(ns('enrich', '--plan-id', plan_id))
 

@@ -286,6 +286,25 @@ def test_enrich_absent_session_id_transcript_capable_errors(plan_context, monkey
     assert result.get('error') == 'missing_session_id'
 
 
+def test_enrich_absent_session_id_antigravity_skips_with_gap_flag(plan_context, monkeypatch):
+    """Absent session id on antigravity (transcript-less) skips unenriched with the gap flag."""
+    plan_id = 'enrich-skip-03'
+    manage_metrics.write_metrics(plan_id, {'plan_id': plan_id})
+    monkeypatch.setattr(manage_metrics, '_resolve_runtime_target', lambda: 'antigravity')
+
+    result = cmd_enrich(ns('enrich', '--plan-id', plan_id))
+
+    assert result['status'] == 'success'
+    assert result.get('enriched') is False
+    assert result.get('skipped') is True
+    assert result.get('gap') == manage_metrics.ENRICH_SKIP_REASON_NO_SESSION_TRANSCRIPT_LESS
+    assert result.get('population') == manage_metrics.ENRICH_SKIP_POPULATION_UNENRICHED
+    stored = manage_metrics.read_metrics_raw(plan_id)
+    assert str(stored.get('enrichment_skipped')).lower() == 'true'
+    assert stored.get('enrichment_gap_reason') == manage_metrics.ENRICH_SKIP_REASON_NO_SESSION_TRANSCRIPT_LESS
+    assert stored.get('enrichment_gap_population') == manage_metrics.ENRICH_SKIP_POPULATION_UNENRICHED
+
+
 # =============================================================================
 # Test: format_duration (via generate output) (Tier 2 - direct import)
 # =============================================================================

@@ -3813,7 +3813,7 @@ def _inline_main_context_sum(phase_row: dict) -> int:
 # live ``runtime.target`` in ``.plan/marshal.json`` at the point of use, never
 # from a documented default. ``claude`` (the default target) is transcript-
 # capable and is deliberately absent here.
-_TRANSCRIPT_LESS_TARGETS = frozenset({'opencode'})
+_TRANSCRIPT_LESS_TARGETS = frozenset({'opencode', 'antigravity'})
 
 # Gap flag persisted when enrichment is skipped on a transcript-less target.
 # It publishes the population so an unenriched total is never read as measured.

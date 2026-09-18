@@ -587,7 +587,14 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metada
 
 - **Late capture succeeded** (`status: success` and `value` now populated): use the captured value as the resolved `session_id` and proceed with the dispatch below.
 - **Late capture also failed** (`status: error` or `value` still empty): resolve transcript availability from the live runtime target at the point of use — read `runtime.target` from `.plan/marshal.json` (absent means the default transcript-capable target, never a documented transcript-less default) — then branch:
-  - **Transcript-less target** (no session transcript can exist there; `session capture` is a capture no-op and `metrics normalized-tokens` answers `transcript_not_found`): do NOT abort. Proceed unenriched with a logged decision naming the absent identity and the transcript-less target, dispatch finalize WITHOUT a `session_id`, and let `default:record-metrics` skip `enrich` carrying the population-carrying gap flag.
+  - **Transcript-less target** (no session transcript can exist there; `session capture` is a capture no-op and `metrics normalized-tokens` answers `transcript_not_found`): do NOT abort. Log the decision naming the absent identity and the transcript-less target, then dispatch finalize WITHOUT a `session_id`, and let `default:record-metrics` skip `enrich` carrying the population-carrying gap flag:
+
+    ```bash
+    python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+      decision --plan-id {plan_id} --level INFO \
+      --message "(plan-marshall:plan-marshall) Transcript-less finalize: no session identity on target {runtime_target}; proceeding unenriched without session_id"
+    ```
+
   - **Transcript-capable target**: abort the finalize phase with a clear message naming the missing identity, the blocked finalize dispatch, and the remedy (re-run session capture, check the SessionStart hook) — do **not** invent a filler value and do **not** reach for any `$VAR` expansion. See `phase-6-finalize/SKILL.md` → "How to obtain session_id" for the full resolver contract and forbidden patterns.
 
 The retry runs at most once — never loop the capture call.
@@ -596,11 +603,21 @@ Seam attribution: the abort lives HERE in this resolver (the late-capture-failur
 
 **Dispatch the skill:**
 
+With a resolved `session_id` (late capture succeeded):
+
 ```text
 Skill: plan-marshall:phase-6-finalize
 operation: finalize
 plan_id: {plan_id}
 session_id: {resolved session_id from resolver above}
+```
+
+Without a `session_id` (transcript-less late-capture-failure branch only — the decision above is already logged):
+
+```text
+Skill: plan-marshall:phase-6-finalize
+operation: finalize
+plan_id: {plan_id}
 ```
 
 > **Placeholder contract**: every `{}` in a `Skill:` dispatch template in this workflow must have a documented resolver adjacent to it. `{plan_id}` is the top-level workflow parameter; `{session_id}` is resolved by the script above. Do not add new `{}` placeholders without naming the resolver alongside.
