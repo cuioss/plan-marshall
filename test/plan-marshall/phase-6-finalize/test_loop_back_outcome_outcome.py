@@ -280,7 +280,7 @@ def test_fix_path_posts_thread_reply_before_terminal_done():
     assert '--outcome loop_back' in window
 
 
-def test_loop_back_commit_re_fires_pre_submission_self_review():
+def test_loop_back_commit_re_fires_pre_submission_self_review(plan_context):
     """A loop-back HEAD advance invalidates a recorded self-review verdict.
 
     ``pre-submission-self-review`` is one of the three members the retired
