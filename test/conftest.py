@@ -1087,7 +1087,6 @@ def pytest_collection_modifyitems(items):
 #: therefore still reported — as an ``UNLISTED`` entry — rather than being
 #: silent on exactly the run its population matters on, the passing one.
 _ROUTING_GUARD_MODULES: tuple[tuple[str, str], ...] = (
-    ('offrouting', 'plan-marshall/tools-integration-ci/test_merge_shaped_offrouting_refusal.py'),
     ('envelope-plan-id', 'plan-marshall/tools-integration-ci/test_envelope_contract_plan_id_placement.py'),
     ('api-contract-parity', 'plan-marshall/workflow-integration-github/test_pr_landing_state.py'),
     ('gate-derivation', 'plan-marshall/phase-6-finalize/test_gate_derivation_diagnosability.py'),
@@ -1112,6 +1111,11 @@ _ROUTING_GUARD_MODULES: tuple[tuple[str, str], ...] = (
     ('roster-correctness-closure', 'plan-marshall/phase-6-finalize/test_dispatch_roster_closure_closure.py'),
     ('roster-correctness-cli', 'plan-marshall/phase-6-finalize/test_dispatch_roster_closure_cli.py'),
     ('measured-diff-size-call-sites', 'plan-marshall/automatic-review/test_measured_diff_size_bare_flag_scan.py'),
+    (
+        'offrouting-merge-shape',
+        'plan-marshall/tools-integration-ci/test_merge_shaped_offrouting_refusal_merge_shape.py',
+    ),
+    ('offrouting-offrouting', 'plan-marshall/tools-integration-ci/test_merge_shaped_offrouting_refusal_offrouting.py'),
 )
 
 
