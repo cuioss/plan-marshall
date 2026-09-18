@@ -71,7 +71,7 @@ operation groups against the main-anchored orchestrator store
   evidence, and the population it was derived from, plus the floor over the
   participating rows and the sample instant. An unreadable or disagreeing
   observation resolves to ``indeterminate`` and never to ``not_ready``.
-- ``inbox {write,amend,supersede,close-stream,validate,list,archive,
+- ``inbox {write,amend,supersede,close-stream,validate,list,read,archive,
   migrate-archive,detect,landing-check}`` — the epic's plan-writable channel and
   its orchestrator-side drain: append one ``inbox/{sender_id}-{NNN}.md`` message
   to the epic queue — or, when ``--target-plan`` names a plan that is currently

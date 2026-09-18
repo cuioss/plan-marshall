@@ -160,7 +160,7 @@ The **sole enumeration** of the mailbox check-point set: every moment at which a
 Both check-points are **additive**. Neither gates the transition or the dispatch it rides on, and both inherit the mailbox reader's fail-open contract in full: a mailbox that cannot be read degrades what the check-point reports, never what it rides on.
 
 - `phase-transition` — `ref-workflow-architecture/standards/phase-lifecycle.md` § "Phase Completion Protocol" → Step 1, where the `manage-status transition` payload's `mailbox` block is read.
-- `subagent-return` — `plan-marshall/workflow/planning.md` § "2-Refine Phase", where the orchestrator reads a dispatched sub-agent's return TOON.
+- `subagent-return` — `plan-marshall/workflow/planning.md` § "Action: init" → "Planning-lane dispatch (light vs deep)", at the **Mailbox check-point (`subagent-return`)** block that follows the phase-2-refine dispatch, where the orchestrator reads a dispatched sub-agent's return TOON.
 
 ---
 
