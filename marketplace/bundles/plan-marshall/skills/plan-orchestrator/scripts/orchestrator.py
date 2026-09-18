@@ -190,12 +190,84 @@ FILE_STATUS = 'status.json'
 # creation — by ``decompose`` or by ``--add-row`` — and never patched.
 PLAN_ROW_FIELDS = frozenset({'plan_marshall_plan_id', 'pr', 'landing'})
 
-# The closed status vocabulary ``queue --transition --status`` may write and
-# ``queue --add-row --status`` may seed. Mirrors the ``PLAN_ROW_FIELDS`` pattern:
-# defined once here as a ``frozenset`` (membership, no order), published in
-# ``plan-orchestrator/SKILL.md`` under the machine-locatable status-vocabulary
-# anchor, and validated by :func:`cmd_queue` with the ``invalid_field`` error.
-VALID_STATUS_VOCABULARY = frozenset({'staged', 'launched', 'running', 'parked', 'shipped', 'landed'})
+# --- the plan-queue status vocabulary ---------------------------------------
+#
+# The three sets below are the DECLARING sources. Every other status set in this
+# module is derived from them by construction, so a status added to one of them
+# cannot be legal in one place and unknown in another. Which statuses are legal
+# at all is an operator-level decision settled against the live ledger and
+# recorded in ``persona-plan-orchestrator/standards/orchestration-model.md``
+# § Plan-Status Vocabulary; this module enacts that decision and does not take it.
+
+#: The statuses at which a plan row is still LIVE — its work is unfinished, so
+#: the row belongs in the Ordered Queue and may still transition. ``parked`` is
+#: live by the same reading: paused work is unfinished work, and a parked plan
+#: resumes onto the surface it declared.
+LIVE_PLAN_STATUSES = ('staged', 'launched', 'running', 'parked')
+
+#: The terminal statuses at which a row SHIPPED. These and ONLY these owe the
+#: result links :data:`SHIPPED_REQUIRED_FIELDS`, so they alone drive the
+#: completeness gap marker — a row that closed without shipping has no PR and no
+#: landing record to point at, and marking one incomplete would report a gap that
+#: cannot exist. ``analyze`` writes ``shipped``; ``landed`` is the legal
+#: alternative spelling a landing-stamped row may carry. Nothing is asserted here
+#: about which of the two the live corpus currently holds: such a claim goes stale
+#: the moment a row is written, and the tally is derivable from the ledger itself.
+SHIPPED_PLAN_STATUSES = ('shipped', 'landed')
+
+#: The terminal statuses at which a row closed WITHOUT shipping. Four distinct end
+#: states, each owing its reader a different remedy and none expressible by any
+#: other member: ``superseded`` — the work was absorbed by a named successor row;
+#: ``transferred`` — it moved to another epic's ledger; ``retired`` — it was
+#: withdrawn and no successor carries it; ``resolved`` — the defect closed with no
+#: plan work at all. Recording one of these as ``parked`` keeps the row clear of
+#: ``next`` while saying something untrue about it, and that substitution is what
+#: this set exists to remove.
+CLOSED_UNSHIPPED_PLAN_STATUSES = ('superseded', 'transferred', 'retired', 'resolved')
+
+#: Statuses at which a plan row is FINISHED, by union of the two terminal sets
+#: above so neither can be omitted from it. A terminal row never returns to the
+#: live queue; whether it additionally owes result links is
+#: :data:`SHIPPED_PLAN_STATUSES`' question, not this one.
+TERMINAL_PLAN_STATUSES = (*SHIPPED_PLAN_STATUSES, *CLOSED_UNSHIPPED_PLAN_STATUSES)
+
+#: The closed status vocabulary ``queue --transition --status`` may write and
+#: ``queue --add-row --status`` may seed. DERIVED by union from the live and
+#: terminal sets rather than re-listed, so a status added to either is legal here
+#: by construction. Declared as a ``frozenset`` (membership, no order) like
+#: :data:`PLAN_ROW_FIELDS`, published in ``plan-orchestrator/SKILL.md`` under the
+#: machine-locatable status-vocabulary anchor, and validated by :func:`cmd_queue`
+#: with the ``invalid_field`` error.
+VALID_STATUS_VOCABULARY = frozenset((*LIVE_PLAN_STATUSES, *TERMINAL_PLAN_STATUSES))
+
+#: The result links a SHIPPED row must carry, in the fixed order the gap marker
+#: names them.
+SHIPPED_REQUIRED_FIELDS = ('pr', 'landing')
+
+#: The three declaring sets, named so the construction check below can report
+#: WHICH ones it compared rather than only that they disagreed.
+_DECLARED_STATUS_SETS = {
+    'LIVE_PLAN_STATUSES': LIVE_PLAN_STATUSES,
+    'SHIPPED_PLAN_STATUSES': SHIPPED_PLAN_STATUSES,
+    'CLOSED_UNSHIPPED_PLAN_STATUSES': CLOSED_UNSHIPPED_PLAN_STATUSES,
+}
+_DECLARED_STATUS_COUNT = sum(len(members) for members in _DECLARED_STATUS_SETS.values())
+
+# The three declaring sets must be pairwise disjoint and free of repeats, and
+# NOTHING above derives that: the union that builds VALID_STATUS_VOCABULARY is a
+# frozenset, so a status listed twice — in one set or across two — is absorbed
+# silently and the vocabulary still reads correct. The damage lands downstream,
+# where one token would be simultaneously live and excluded from the live queue,
+# or simultaneously owe result links and be exempt from them. Comparing the
+# summed membership against the distinct union catches BOTH shapes in one check,
+# because either drops the union's size. Checked at construction for the same
+# reason the GENERATED_BLOCKS pair below is: neither direction can pass silently.
+assert _DECLARED_STATUS_COUNT == len(VALID_STATUS_VOCABULARY), (
+    f'the declaring status sets {_DECLARED_STATUS_SETS} carry {_DECLARED_STATUS_COUNT} '
+    f'member(s) but resolve to {len(VALID_STATUS_VOCABULARY)} distinct status(es): a status '
+    'is repeated within one set or shared between two, and the frozenset union absorbs the '
+    'difference silently'
+)
 
 #: The fields one appended ``plans[]`` row is seeded with, in the order
 #: ``--add-row`` writes them: the three identity fields the caller supplies, the
@@ -256,16 +328,6 @@ SPEC_PRESENCE_UNLISTABLE = 'unlistable'
 STATUS_DOC_ABSENT = 'absent'
 STATUS_DOC_NON_OBJECT = 'non_object'
 STATUS_DOC_OBJECT = 'object'
-
-# Statuses at which a plan row is finished, so its result links are expected to
-# be present. A terminal row missing one is the reconciliation gap the summary's
-# completeness marker surfaces. Both spellings are live in the corpus:
-# ``analyze`` writes ``shipped``, while archived ledgers carry ``landed``.
-TERMINAL_PLAN_STATUSES = ('shipped', 'landed')
-
-# The result links a terminal row must carry, in the fixed order the gap marker
-# names them.
-TERMINAL_REQUIRED_FIELDS = ('pr', 'landing')
 
 # --- corpus group ----------------------------------------------------------
 
@@ -516,7 +578,14 @@ NO_CLAIM_INDEX = -1
 #: The count claims a rendered START-HERE block can assert about the plan queue,
 #: each paired with the derivation it is checked against. ``row``/``plan`` are
 #: the whole population; the rest are per-status tallies read from ``plans[]``.
-COUNT_CLAIM_NOUNS = ('rows', 'plans', 'staged', 'shipped', 'running', 'parked', 'landed')
+#:
+#: The per-status members are DERIVED from :data:`VALID_STATUS_VOCABULARY` rather
+#: than re-listed, so the detector's population is exactly the set of statuses a
+#: row may legally carry. A status legal in the vocabulary but absent from this
+#: tuple would yield no divergence check for it — a claim about it would pass
+#: unexamined — and the sorted order keeps the derived alternation stable across
+#: runs rather than riding the ``frozenset`` iteration order.
+COUNT_CLAIM_NOUNS = ('rows', 'plans', *sorted(VALID_STATUS_VOCABULARY))
 
 #: The noun alternation, DERIVED from :data:`COUNT_CLAIM_NOUNS` so that tuple is the
 #: single source defining the population. A noun that is already plural (ends in
@@ -603,9 +672,13 @@ FILE_SETTLED = 'settled.md'
 #: already sealed, and compaction is a live-epic operation only.
 CLOSED_PHASE = 'closed'
 
-#: Plan statuses whose row belongs in a landing record, not the LIVE Ordered
-#: Queue. Shares :data:`TERMINAL_PLAN_STATUSES`' membership by construction so
-#: the two never drift; named apart to document the queue-exclusion intent.
+#: Plan statuses whose row no longer belongs in the LIVE Ordered Queue — a
+#: shipped row belongs in its landing record, and a row that closed without
+#: shipping is finished either way. Shares :data:`TERMINAL_PLAN_STATUSES`'
+#: membership by construction so the two never drift; named apart to document the
+#: queue-exclusion intent. The alias is deliberately over the FINISHED set rather
+#: than the shipped one: exclusion asks whether the work is done, never whether
+#: it produced a PR.
 LIVE_QUEUE_EXCLUDED_STATUSES = TERMINAL_PLAN_STATUSES
 
 #: The two GENERATED marker pairs the compact stage regenerates, each keyed by
@@ -1411,14 +1484,16 @@ def cmd_queue(args: argparse.Namespace) -> dict[str, Any]:
 def _format_plan_line(plan: dict[str, Any]) -> str:
     """Render one plan as a summary line, appending the non-empty link fields.
 
-    A row whose status is in :data:`TERMINAL_PLAN_STATUSES` and that is missing
-    any of :data:`TERMINAL_REQUIRED_FIELDS` also carries a deterministic ASCII
+    A row whose status is in :data:`SHIPPED_PLAN_STATUSES` and that is missing
+    any of :data:`SHIPPED_REQUIRED_FIELDS` also carries a deterministic ASCII
     gap marker — ``(!) missing: pr, landing`` — naming the absent fields in that
-    fixed order. The marker is a TERMINAL-status signal, not a general emptiness
-    signal: a staged or running row with empty links is mid-flight, not
-    incomplete, and renders no marker. A fully-stamped terminal row also renders
-    no marker, so correct data renders exactly as it did before the marker
-    existed.
+    fixed order. The marker is a SHIPPED-status signal, not a general emptiness
+    signal and not a terminal-status one: a staged or running row with empty
+    links is mid-flight, not incomplete, and a
+    :data:`CLOSED_UNSHIPPED_PLAN_STATUSES` row never had a PR or a landing record
+    to point at — marking either would report a gap that cannot exist. A
+    fully-stamped shipped row also renders no marker, so correct data renders
+    exactly as it did before the marker existed.
     """
     parts = [f'{plan.get("id", "?")} ({plan.get("workstream", "?")})']
     if plan.get('plan_marshall_plan_id'):
@@ -1427,8 +1502,8 @@ def _format_plan_line(plan: dict[str, Any]) -> str:
         parts.append(f'PR {plan["pr"]}')
     if plan.get('landing'):
         parts.append(f'landing={plan["landing"]}')
-    if plan.get('status') in TERMINAL_PLAN_STATUSES:
-        missing = [field for field in TERMINAL_REQUIRED_FIELDS if not plan.get(field)]
+    if plan.get('status') in SHIPPED_PLAN_STATUSES:
+        missing = [field for field in SHIPPED_REQUIRED_FIELDS if not plan.get(field)]
         if missing:
             parts.append(f'(!) missing: {", ".join(missing)}')
     return ' — '.join(parts)
@@ -3916,8 +3991,9 @@ def _row_surface(spec: Path | None, repo_root: Path) -> str:
 def _build_ordered_queue(status_doc: dict[str, Any], root: Path) -> str:
     """Render the LIVE Ordered Queue table, derived from status.json + specs.
 
-    Only non-terminal rows appear: a shipped/landed row belongs in its landing
-    record, not the live queue (:data:`LIVE_QUEUE_EXCLUDED_STATUSES`). The five
+    Only non-terminal rows appear: a shipped row belongs in its landing record
+    and a row that closed without shipping is finished either way, so neither is
+    live (:data:`LIVE_QUEUE_EXCLUDED_STATUSES`). The five
     columns are all derivable — order, plan id, workstream and status from
     ``status.json``; the surface from each row's spec. Per-row narrative (a
     sequencing caveat, a park reason) is NOT here — it lives in the annotation
@@ -4062,7 +4138,7 @@ def _invariant_no_terminal_in_live_queue(queue_body: str) -> dict[str, Any]:
             f'terminal status leaked into the live queue: {", ".join(leaked)}',
             population,
         )
-    return _invariant('no_terminal_in_live_queue', 'ok', 'no shipped/landed row in the live queue', population)
+    return _invariant('no_terminal_in_live_queue', 'ok', 'no terminal row in the live queue', population)
 
 
 def _settled_headings(text: str) -> set[str]:

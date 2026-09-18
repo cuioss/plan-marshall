@@ -21,7 +21,19 @@ group's envelope schema and handler surface have theirs
   one — the first is seeded, the second refused with nothing written — and both
   arms are asserted for the same reason. It also carries the three-valued
   spec-presence probe, whose ``absent`` and ``unlistable`` verdicts are asserted
-  apart so a measured negative is never confused with an unobserved one.
+  apart so a measured negative is never confused with an unobserved one. The
+  settled status vocabulary is pinned as a matched pair — every member of
+  ``VALID_STATUS_VOCABULARY`` transitions, and a plausible non-member is still
+  refused with nothing written — because the acceptance arm alone would pass for
+  a validator that accepted anything.
+- status vocabulary: the construction the settled set rests on — the three
+  declaring sets partition ``VALID_STATUS_VOCABULARY`` exactly (summed against
+  distinct, so a repeat the ``frozenset`` union absorbs is still seen),
+  ``TERMINAL_PLAN_STATUSES`` is the two terminal sets joined, and
+  ``LIVE_QUEUE_EXCLUDED_STATUSES`` is asserted to be the SAME OBJECT rather than
+  an equal copy. Both count-claim directions are covered over the whole noun
+  population: every legal status is a checkable noun, and every noun both
+  matches the derived alternation and resolves to a ``_derive_counts`` key.
 - doc contract: ALL THREE enumerations SKILL.md mirrors are extracted through one
   shared anchored reader and asserted EQUAL to their declaring constants in both
   directions — the ``--field`` whitelist against ``PLAN_ROW_FIELDS``, which
@@ -33,7 +45,11 @@ group's envelope schema and handler surface have theirs
   that tuple's order is the key order an appended row is written in; the
   whitelist's ``frozenset`` declares no order and none is pinned for it.
 - ``resume-summary``: START-HERE block generation derived purely from
-  status.json (resume anchor, phase, running/parked plans, ordered queue), plus
+  status.json (resume anchor, phase, running/parked plans, ordered queue),
+  including the two questions the terminal statuses answer separately — a
+  closed-without-shipping row is excluded from the live queue like a shipped one
+  but carries no ``(!) missing: …`` marker, asserted per rendered LINE so the
+  pair is a control rather than a whole-block substring test — plus
   the render-time-derived inbox counts — which come from the epic's ``inbox/``
   directory rather than from the anchor's prose, keep the two zeros
   (``present`` / ``missing``) distinct, and sit beside a stale anchor sentence
@@ -92,6 +108,21 @@ EPIC_SUBDIRS = _orch.EPIC_SUBDIRS
 PLAN_ROW_FIELDS = _orch.PLAN_ROW_FIELDS
 ADD_ROW_SEED_FIELDS = _orch.ADD_ROW_SEED_FIELDS
 VALID_STATUS_VOCABULARY = _orch.VALID_STATUS_VOCABULARY
+LIVE_PLAN_STATUSES = _orch.LIVE_PLAN_STATUSES
+SHIPPED_PLAN_STATUSES = _orch.SHIPPED_PLAN_STATUSES
+CLOSED_UNSHIPPED_PLAN_STATUSES = _orch.CLOSED_UNSHIPPED_PLAN_STATUSES
+TERMINAL_PLAN_STATUSES = _orch.TERMINAL_PLAN_STATUSES
+LIVE_QUEUE_EXCLUDED_STATUSES = _orch.LIVE_QUEUE_EXCLUDED_STATUSES
+COUNT_CLAIM_NOUNS = _orch.COUNT_CLAIM_NOUNS
+
+#: The count-claim machinery is reached through its private names deliberately:
+#: the KeyError this module pins is raised INSIDE ``_count_divergences`` at
+#: ``derived[key]``, so the join it would fail on — noun to alternation to
+#: derivation key — is what has to be exercised, not the rendered payload the
+#: detector's own test module already drives.
+_derive_counts = _orch._derive_counts
+_claim_key = _orch._claim_key
+_COUNT_CLAIM_RE = _orch._COUNT_CLAIM_RE
 
 FIXED_TIMESTAMP = '2020-01-01T00:00:00Z'
 
@@ -435,6 +466,52 @@ class TestQueueTransition:
         assert result['error'] == 'file_not_found'
 
 
+class TestQueueTransitionStatusVocabulary:
+    """Every vocabulary member transitions, and a non-member is still refused.
+
+    The matched pair the settled vocabulary needs. The positive arm alone would
+    pass for a validator that accepted anything at all, and the negative arm
+    alone would pass for one that had never been widened; only the two together
+    say that the set grew AND stayed closed.
+
+    The positive arm's cases are DERIVED from ``VALID_STATUS_VOCABULARY`` rather
+    than listed, so a member added to the constant is exercised here without an
+    edit — and the population is asserted non-empty first, because a
+    parametrization over an emptied constant would collect no cases and report
+    green over nothing.
+    """
+
+    def test_the_parametrized_vocabulary_population_is_not_empty(self):
+        assert VALID_STATUS_VOCABULARY, (
+            'VALID_STATUS_VOCABULARY is empty (population 0), so the '
+            'parametrized acceptance arm below would generate no cases at all '
+            'and pass by collecting nothing'
+        )
+
+    @pytest.mark.parametrize('status', sorted(VALID_STATUS_VOCABULARY))
+    def test_should_accept_every_vocabulary_member(self, plan_context, status):
+        slug = f'vocab-{status}-epic'
+        status_path = _write_status(plan_context, slug, plans=[_make_plan('PLAN-01', status='launched')])
+
+        result = cmd_queue(_queue_args(slug, transition='PLAN-01', status=status))
+
+        assert result['status'] == 'success'
+        assert result['new_status'] == status
+        assert _read_status_file(status_path)['plans'][0]['status'] == status
+
+    def test_should_refuse_a_non_member_leaving_the_row_untouched(self, plan_context):
+        # ``abandoned`` is plausible and deliberately outside the settled set:
+        # widening the vocabulary to cover the ledger's real end states must not
+        # have widened it to any end state someone can name.
+        status_path = _write_status(plan_context, 'vocab-reject-epic', plans=[_make_plan('PLAN-01')])
+
+        result = cmd_queue(_queue_args('vocab-reject-epic', transition='PLAN-01', status='abandoned'))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'invalid_field'
+        assert _read_status_file(status_path)['plans'][0]['status'] == 'staged'
+
+
 # =============================================================================
 # queue — set-row
 # =============================================================================
@@ -545,6 +622,107 @@ class TestQueueSetRow:
 
         assert result['status'] == 'error'
         assert result['error'] == 'file_not_found'
+
+
+# =============================================================================
+# the status vocabulary — construction, and the consumers derived from it
+# =============================================================================
+
+
+class TestStatusVocabularyConstruction:
+    """The vocabulary is DERIVED from three declaring sets, and they partition it.
+
+    The derivation is what makes a status added later reach every consumer or
+    none. Two properties carry it and neither is self-evident from reading the
+    constants: the three declaring sets must partition the vocabulary exactly
+    (the ``frozenset`` union absorbs a repeat silently, so a summed-versus-
+    distinct comparison is the only thing that sees one), and the live-queue
+    exclusion must remain the SAME OBJECT as the terminal set rather than an
+    equal copy that a later edit could move independently.
+    """
+
+    def test_the_declaring_sets_partition_the_vocabulary_exactly(self):
+        declared = [*LIVE_PLAN_STATUSES, *SHIPPED_PLAN_STATUSES, *CLOSED_UNSHIPPED_PLAN_STATUSES]
+
+        assert set(declared) == set(VALID_STATUS_VOCABULARY), (
+            f'the declaring sets resolve to {sorted(set(declared))} but the vocabulary is '
+            f'{sorted(VALID_STATUS_VOCABULARY)}'
+        )
+        assert len(declared) == len(VALID_STATUS_VOCABULARY), (
+            f'the declaring sets carry {len(declared)} member(s) but only '
+            f'{len(VALID_STATUS_VOCABULARY)} are distinct: a status is repeated within one '
+            'set or shared between two, which the frozenset union would absorb silently'
+        )
+
+    def test_terminal_is_the_two_terminal_sets_joined_in_order(self):
+        assert TERMINAL_PLAN_STATUSES == (*SHIPPED_PLAN_STATUSES, *CLOSED_UNSHIPPED_PLAN_STATUSES)
+
+    def test_live_queue_exclusion_is_the_terminal_set_itself(self):
+        # IDENTITY, not equality. An equal copy satisfies ``==`` on the day it is
+        # written and drifts the moment one of the two is edited; sharing one
+        # object is what makes the two names unable to disagree at all.
+        assert LIVE_QUEUE_EXCLUDED_STATUSES is TERMINAL_PLAN_STATUSES
+
+    def test_no_live_status_is_excluded_from_the_live_queue(self):
+        overlap = sorted(set(LIVE_PLAN_STATUSES) & set(LIVE_QUEUE_EXCLUDED_STATUSES))
+
+        assert not overlap, (
+            f'{overlap} is both a LIVE status and excluded from the live queue, so a row at '
+            'that status would be unfinished and invisible at the same time'
+        )
+
+
+class TestCountClaimNounsCoverTheSettledVocabulary:
+    """Every legal status is a checkable count claim, and every noun has a key.
+
+    The module's own comment records the two failure directions this pins. A
+    status legal in the vocabulary but absent from ``COUNT_CLAIM_NOUNS`` yields
+    NO divergence check for it — a claim about it passes unexamined, which is
+    the silent half. A noun the alternation matches but ``_derive_counts``
+    builds no key for raises ``KeyError`` at ``derived[key]`` — the loud half.
+    Both are checked over the whole noun population rather than over a sample,
+    and the population is asserted non-empty first so an emptied constant
+    collects no cases and fails instead of passing.
+    """
+
+    def test_the_noun_population_is_not_empty(self):
+        assert COUNT_CLAIM_NOUNS, (
+            'COUNT_CLAIM_NOUNS is empty (population 0), so the parametrized arms below would '
+            'generate no cases at all and pass by collecting nothing'
+        )
+
+    def test_every_legal_status_is_a_count_claim_noun(self):
+        unchecked = sorted(set(VALID_STATUS_VOCABULARY) - set(COUNT_CLAIM_NOUNS))
+
+        assert not unchecked, (
+            f'{unchecked} is a legal status with no count-claim noun, so a rendered block '
+            'claiming a number of them is never compared against its derivation'
+        )
+
+    def test_the_whole_population_nouns_ride_alongside_the_per_status_ones(self):
+        # ``rows``/``plans`` count the whole queue rather than a status tally, so
+        # they are NOT derivable from the vocabulary and would be lost by a
+        # derivation that replaced the tuple instead of extending it.
+        assert {'rows', 'plans'} <= set(COUNT_CLAIM_NOUNS)
+
+    @pytest.mark.parametrize('noun', COUNT_CLAIM_NOUNS)
+    def test_every_noun_resolves_to_a_derivation_key(self, noun):
+        derived = _derive_counts({'plans': []})
+
+        assert _claim_key(noun) in derived, (
+            f'{noun!r} is a count-claim noun whose derivation key {_claim_key(noun)!r} is '
+            f'absent from {sorted(derived)}; _count_divergences would raise KeyError on it'
+        )
+
+    @pytest.mark.parametrize('noun', COUNT_CLAIM_NOUNS)
+    def test_every_noun_is_matched_by_the_derived_alternation(self, noun):
+        # The other direction: a noun in the tuple that the DERIVED alternation
+        # does not match contributes no check either, and does so without
+        # raising — the non-vacuity guard on the derivation itself.
+        match = _COUNT_CLAIM_RE.search(f'the block claims 3 {noun} today')
+
+        assert match is not None, f'the derived alternation matches no claim written with {noun!r}'
+        assert _claim_key(match.group('noun')) == _claim_key(noun)
 
 
 # =============================================================================
@@ -1314,6 +1492,83 @@ class TestResumeSummary:
 
         assert result['status'] == 'error'
         assert result['error'] == 'invalid_slug'
+
+
+# =============================================================================
+# resume-summary — the gap marker is a SHIPPED signal, not a terminal one
+# =============================================================================
+
+
+#: The completeness marker a shipped row missing BOTH result links renders.
+_GAP_MARKER = '(!) missing: pr, landing'
+
+
+def _summary_line_for(summary: str, plan_id: str) -> str:
+    """The one rendered START-HERE line naming ``plan_id``.
+
+    Asserting per LINE rather than over the whole block is what makes the pair
+    below a matched control: both rows render into one summary, so a
+    whole-block substring test could be satisfied by the marker belonging to
+    either of them and would prove nothing about which row carried it.
+    """
+    lines = [line for line in summary.split('\n') if plan_id in line]
+
+    assert len(lines) == 1, f'expected exactly ONE rendered line naming {plan_id}, found {len(lines)}: {lines}'
+    return lines[0]
+
+
+class TestResumeSummaryGapMarkerIsAShippedSignal:
+    """The completeness marker fires on SHIPPED, never on terminal-at-large.
+
+    A row that closed WITHOUT shipping is finished, so it is excluded from the
+    live queue exactly as a shipped row is — but it never had a PR or a landing
+    record to point at, so marking it incomplete would report a gap that cannot
+    exist. The two questions are answered by two different sets, and each test
+    below is a matched pair over ONE rendering differing in exactly one
+    variable: the second row's status.
+    """
+
+    def test_the_two_terminal_populations_are_non_empty_and_disjoint(self):
+        assert SHIPPED_PLAN_STATUSES, 'SHIPPED_PLAN_STATUSES is empty (population 0)'
+        assert CLOSED_UNSHIPPED_PLAN_STATUSES, (
+            'CLOSED_UNSHIPPED_PLAN_STATUSES is empty (population 0), so the '
+            'parametrized arms below would generate no cases at all'
+        )
+        overlap = set(SHIPPED_PLAN_STATUSES) & set(CLOSED_UNSHIPPED_PLAN_STATUSES)
+        assert not overlap, (
+            f'the shipped and closed-unshipped terminal sets share {sorted(overlap)}; '
+            'a status in both would make every pair below compare a row with itself'
+        )
+
+    @pytest.mark.parametrize('closed_status', CLOSED_UNSHIPPED_PLAN_STATUSES)
+    def test_should_mark_the_shipped_row_and_not_its_closed_unshipped_twin(self, plan_context, closed_status):
+        slug = f'gap-unshipped-{closed_status}-epic'
+        _write_status(
+            plan_context,
+            slug,
+            plans=[_make_plan('PLAN-01', status='shipped'), _make_plan('PLAN-02', status=closed_status)],
+        )
+
+        summary = cmd_resume_summary(_variant(_RESUME_SUMMARY_ARGS, slug=slug))['summary']
+
+        assert _GAP_MARKER in _summary_line_for(summary, 'PLAN-01')
+        assert _GAP_MARKER not in _summary_line_for(summary, 'PLAN-02')
+
+    @pytest.mark.parametrize('closed_status', CLOSED_UNSHIPPED_PLAN_STATUSES)
+    def test_should_leave_a_closed_unshipped_row_out_of_the_live_queue(self, plan_context, closed_status):
+        # The staged row is the positive control: without it a table that
+        # rendered nothing at all would satisfy the exclusion assertion.
+        slug = f'oq-unshipped-{closed_status}-epic'
+        _write_status(
+            plan_context,
+            slug,
+            plans=[_make_plan('PLAN-01', status=closed_status), _make_plan('PLAN-02', status='staged')],
+        )
+
+        queue = cmd_resume_summary(_variant(_RESUME_SUMMARY_ARGS, slug=slug))['ordered_queue']
+
+        assert 'PLAN-02' in queue
+        assert 'PLAN-01' not in queue
 
 
 # =============================================================================
