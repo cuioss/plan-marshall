@@ -1,0 +1,312 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
+"""Tests for _cmd_switch_and_pull.py — switch-and-pull verb.
+
+Tier 2 (direct import) tests covering:
+* _resolve_project_dir — --project-dir escape-hatch path
+* _verify_git_repo     — non-git path detection
+* cmd_switch_and_pull  — remote branch not found, merge_conflict on checkout,
+                         pull failure, success path with commits_pulled, and
+                         success path with zero commits_pulled
+
+Tier 3 (subprocess CLI plumbing) tests:
+* Missing --base arg is rejected
+* --project-dir with --base produces a structured error (non-git path)
+
+Resolver-migration note
+-----------------------
+The private ``_find_executor`` helper this file used to exercise is GONE, along
+with the hand-rolled ``manage-status get-worktree-path`` shell-out it served.
+``_resolve_project_dir`` KEEPS its name — it is the CLI argument adapter that
+owns this verb's ``--project-dir`` escape hatch — but under ``--plan-id`` the
+plan id is a VALIDITY GATE rather than a path source: the plan is resolved
+through ``file_ops.resolve_plan_context`` so an unresolvable id fails loudly,
+and the returned path is the MAIN checkout root, resolved main-anchored by
+``marketplace_paths.main_checkout_root``. ``TestResolveProjectDirViaResolver``
+below pins both halves — the gate-not-source distinction, and that the path is
+main-anchored rather than cwd-relative.
+"""
+
+from __future__ import annotations
+
+import subprocess
+from argparse import Namespace
+from pathlib import Path
+from unittest.mock import MagicMock
+
+import pytest
+from _resolve_project_dir_fixtures import (
+    CANONICAL_WORKTREE,
+    MAIN_CHECKOUT_ROOT,
+    NO_PLAN_SENTINEL,
+    patch_worktree_faces,
+)
+from toon_parser import parse_toon
+
+from conftest import get_script_path, load_script_module, run_script
+
+# ---------------------------------------------------------------------------
+# Load module under test
+# ---------------------------------------------------------------------------
+
+_SWITCH_AND_PULL_PATH = get_script_path('plan-marshall', 'workflow-integration-git', '_cmd_switch_and_pull.py')
+_SCRIPT_PATH = get_script_path('plan-marshall', 'workflow-integration-git', 'git-workflow.py')
+
+_mod = load_script_module(
+    'plan-marshall', 'workflow-integration-git', '_cmd_switch_and_pull.py', '_cmd_switch_and_pull'
+)
+
+cmd_switch_and_pull = _mod.cmd_switch_and_pull
+_resolve_project_dir = _mod._resolve_project_dir
+_verify_git_repo = _mod._verify_git_repo
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _init_repo(path: Path) -> str:
+    """Initialise a minimal git repo on main, return the initial HEAD SHA."""
+    subprocess.run(['git', 'init', '-q', '-b', 'main', str(path)], check=True)
+    subprocess.run(['git', '-C', str(path), 'config', 'user.email', 't@t.test'], check=True)
+    subprocess.run(['git', '-C', str(path), 'config', 'user.name', 'Test'], check=True)
+    (path / 'README.md').write_text('initial\n')
+    subprocess.run(['git', '-C', str(path), 'add', 'README.md'], check=True)
+    subprocess.run(['git', '-C', str(path), 'commit', '-m', 'init'], check=True)
+    result = subprocess.run(
+        ['git', '-C', str(path), 'rev-parse', 'HEAD'],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return result.stdout.strip()
+
+
+def _init_repo_with_linked_worktree(root: Path) -> tuple[Path, Path]:
+    """Create a main checkout plus a linked worktree; return ``(main, worktree)``.
+
+    Reproduces the phase-5+ topology this verb actually runs in: the plan's
+    working directory is a LINKED worktree while the tree the verb must act on
+    is the main checkout.
+    """
+    main = root / 'main-checkout'
+    main.mkdir()
+    _init_repo(main)
+    worktree = root / 'linked-worktree'
+    subprocess.run(
+        ['git', '-C', str(main), 'worktree', 'add', '-q', '-b', 'feature/probe', str(worktree)],
+        check=True,
+    )
+    return main, worktree
+
+
+# ---------------------------------------------------------------------------
+# Tier 2: _verify_git_repo
+# ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# Tier 2: _resolve_project_dir — the --plan-id resolver path
+# ---------------------------------------------------------------------------
+
+
+class TestResolveProjectDirViaResolver:
+    """Under ``--plan-id`` the plan id is a VALIDITY GATE, not a path source.
+
+    ``switch-and-pull`` brings the MAIN checkout to its base branch, so the
+    resolved target is main — obtained main-anchored via ``git rev-parse
+    --git-common-dir`` (``marketplace_paths.main_checkout_root``), which names
+    main from anywhere in the repository.
+
+    The target is deliberately NOT the cwd checkout. From phase-5 onward the
+    caller's cwd is pinned to the plan's worktree (ADR-002), so a cwd-relative
+    target would aim ``git checkout {base}`` at the worktree and be refused with
+    ``main is already used by worktree`` — at exactly the moment main is stale.
+    The plan id is still validated (a typo'd id is a caller error worth failing
+    on), it just supplies no path.
+    """
+
+    def test_plan_id_is_validated_through_the_resolver(self, monkeypatch) -> None:
+        """A resolvable plan id reaches the resolver seam exactly once."""
+        monkeypatch.setattr(_mod, 'main_checkout_root', lambda: Path(MAIN_CHECKOUT_ROOT))
+        args = Namespace(plan_id='sp-plan', project_dir=None)
+
+        with patch_worktree_faces(True) as (path_mock, _branch_mock):
+            path, error = _resolve_project_dir(args)
+
+        assert error is None, error
+        assert path_mock.call_count == 1, 'the plan id was not validated via the resolver'
+
+    def test_resolved_path_is_the_main_checkout_not_the_plan_worktree(self, monkeypatch) -> None:
+        """The returned path is the main checkout root, never the worktree path.
+
+        Returning the plan's worktree would point the switch at the very tree
+        this verb exists to move AWAY from — and at a directory that may already
+        have been removed.
+        """
+        monkeypatch.setattr(_mod, 'main_checkout_root', lambda: Path(MAIN_CHECKOUT_ROOT))
+        args = Namespace(plan_id='sp-plan', project_dir=None)
+
+        with patch_worktree_faces(True):
+            path, error = _resolve_project_dir(args)
+
+        assert error is None, error
+        assert path == Path(MAIN_CHECKOUT_ROOT)
+        assert path != Path(CANONICAL_WORKTREE)
+
+    def test_resolution_is_main_anchored_not_cwd_relative(self, monkeypatch) -> None:
+        """The main checkout is resolved MAIN-ANCHORED, never from cwd.
+
+        Both resolvers can name main, so asserting the returned path alone does
+        not separate them. The load-bearing half is the negative: the
+        cwd-relative resolver must not be consulted at all, because it only
+        lands on main when cwd is already there — which from phase-5 onward it
+        is not.
+        """
+        import file_ops  # local import: the handle is needed only to patch a seam here
+
+        cwd_probe = MagicMock(return_value='/tmp/test-some-other-tree')
+        monkeypatch.setattr(file_ops, 'cwd_checkout_root', cwd_probe)
+        main_probe = MagicMock(return_value=Path(MAIN_CHECKOUT_ROOT))
+        monkeypatch.setattr(_mod, 'main_checkout_root', main_probe)
+        args = Namespace(plan_id='sp-plan', project_dir=None)
+
+        with patch_worktree_faces(True):
+            path, error = _resolve_project_dir(args)
+
+        assert error is None, error
+        assert path == Path(MAIN_CHECKOUT_ROOT)
+        assert main_probe.call_count == 1, 'the main-anchored resolver was not consulted'
+        assert not cwd_probe.called, (
+            'the verb resolved its target from cwd; switch-and-pull must be '
+            'main-anchored or it aims at the worktree from phase-5 onward'
+        )
+
+    def test_resolves_main_from_inside_a_linked_worktree(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """(REAL RESOLVER) cwd pinned to a worktree still resolves the main checkout.
+
+        No path resolver is stubbed here — ``git rev-parse --git-common-dir``
+        runs for real against a real linked worktree, which is the phase-5+
+        topology the verb executes in. A cwd-relative resolver cannot return the
+        main root from this working directory.
+        """
+        main, worktree = _init_repo_with_linked_worktree(tmp_path)
+        monkeypatch.chdir(worktree)
+        args = Namespace(plan_id='sp-plan', project_dir=None)
+
+        with patch_worktree_faces(True):
+            path, error = _resolve_project_dir(args)
+
+        assert error is None, error
+        assert path is not None
+        assert path.resolve() == main.resolve()
+        assert path.resolve() != worktree.resolve()
+
+    def test_unresolvable_main_checkout_is_a_typed_error(self, monkeypatch) -> None:
+        """A ``RuntimeError`` from the resolver becomes ``project_dir_not_a_git_repo``.
+
+        ``main_checkout_root`` raises where the previous cwd-relative resolver
+        did not, so the new failure mode is routed onto the verb's EXISTING
+        typed error rather than escaping as a traceback — the documented error
+        set stays closed.
+        """
+
+        def _raise() -> Path:
+            raise RuntimeError('cannot resolve main checkout via git common dir')
+
+        monkeypatch.setattr(_mod, 'main_checkout_root', _raise)
+        args = Namespace(plan_id='sp-plan', project_dir=None)
+
+        with patch_worktree_faces(True):
+            path, error = _resolve_project_dir(args)
+
+        assert path is None
+        assert error is not None
+        assert error['error_type'] == 'project_dir_not_a_git_repo'
+        assert 'git common dir' in error['message']
+        assert error['plan_id'] == 'sp-plan'
+
+    def test_unresolvable_plan_id_fails_loudly(self, monkeypatch) -> None:
+        """An unresolvable plan id is an error, not a silent fallback.
+
+        This is the whole point of keeping the resolver call in a verb that does
+        not use its result as a path: without it, a typo'd plan id would still
+        switch and pull a checkout.
+        """
+        import file_ops  # local import: the handle is needed only to patch a seam here
+
+        def _raise(_plan_id):
+            raise file_ops.WorktreeResolutionError('plan metadata is corrupt')
+
+        monkeypatch.setattr(file_ops, '_query_worktree_path', _raise)
+        monkeypatch.setattr(_mod, 'main_checkout_root', lambda: Path(MAIN_CHECKOUT_ROOT))
+        args = Namespace(plan_id='sp-corrupt', project_dir=None)
+
+        path, error = _resolve_project_dir(args)
+
+        assert path is None
+        assert error is not None
+        assert error['error_type'] == 'plan_not_found'
+        assert 'plan metadata is corrupt' in error['message']
+
+    def test_no_plan_sentinel_resolves_to_the_main_checkout(self, monkeypatch) -> None:
+        """``NO_PLAN`` is accepted and resolves without shelling out.
+
+        Unlike the branch-taking verbs, ``switch-and-pull`` needs no feature
+        branch, so the sentinel is a legitimate plan-less invocation: it passes
+        the validity gate in-process and still targets the main checkout.
+        """
+        monkeypatch.setattr(_mod, 'main_checkout_root', lambda: Path(MAIN_CHECKOUT_ROOT))
+        args = Namespace(plan_id=NO_PLAN_SENTINEL, project_dir=None)
+
+        with patch_worktree_faces(True) as (path_mock, _branch_mock):
+            path, error = _resolve_project_dir(args)
+
+        assert error is None, error
+        assert path == Path(MAIN_CHECKOUT_ROOT)
+        assert path_mock.call_count == 0, 'the sentinel must never reach get-worktree-path'
+
+
+# ---------------------------------------------------------------------------
+# Tier 3: CLI plumbing
+# ---------------------------------------------------------------------------
+
+
+class TestCmdSwitchAndPullCli:
+    """Subprocess tests for switch-and-pull CLI plumbing."""
+
+    def test_missing_base_arg_exits_nonzero(self, tmp_path: Path) -> None:
+        """--base is required; omitting it produces argparse error (exit != 0)."""
+        result = run_script(
+            _SCRIPT_PATH,
+            'switch-and-pull',
+            '--project-dir',
+            str(tmp_path),
+        )
+
+        assert result.returncode != 0
+
+    def test_non_git_project_dir_returns_toon_error(self, outside_repo_dir: Path) -> None:
+        """Non-git --project-dir + --base produces structured TOON error."""
+        # Must be OUTSIDE the repo: pytest's tmp_path now roots under the
+        # repo-local --basetemp, which IS a git repo.
+        result = run_script(
+            _SCRIPT_PATH,
+            'switch-and-pull',
+            '--project-dir',
+            str(outside_repo_dir),
+            '--base',
+            'main',
+        )
+
+        parsed = parse_toon(result.stdout)
+        assert parsed['status'] == 'error'
+        assert parsed['error_type'] == 'project_dir_not_a_git_repo'
+
+    def test_help_shows_switch_and_pull(self) -> None:
+        """--help lists switch-and-pull subcommand."""
+        result = run_script(_SCRIPT_PATH, '--help')
+
+        assert result.returncode == 0
+        assert 'switch-and-pull' in result.stdout
