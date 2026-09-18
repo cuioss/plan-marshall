@@ -26,3 +26,16 @@ Scenarios covered (see `test_test_conventions_rule2.py`):
   line numbers.
 - `test_missing_test_root_returns_empty` — missing root yields zero
   findings.
+- `test_m_module_invocation_passes` — `-m` stdlib invocation (e.g.
+  `py_compile`) exempt; negative control of the `-m` class.
+- `test_m_neighbor_bare_run_without_m_still_flagged` — genuine-violation
+  neighbor of the `-m` class still fires.
+- `test_deliberate_env_scrub_comprehension_passes` — env scrubbed of
+  `PYTHONPATH` via an `os.environ.items()` comprehension with a `not in`
+  guard exempt; negative control of the scrub class.
+- `test_scrub_neighbor_env_comprehension_without_guard_still_flagged` —
+  genuine-violation neighbor of the scrub class still fires.
+- `test_helper_built_env_passes` — env built by a helper call exempt;
+  negative control of the helper class.
+- `test_helper_env_neighbor_inline_dict_without_pythonpath_still_flagged` —
+  genuine-violation neighbor of the helper class still fires.

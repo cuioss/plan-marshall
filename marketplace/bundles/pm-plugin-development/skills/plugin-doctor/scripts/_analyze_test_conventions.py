@@ -241,9 +241,11 @@ def analyze_subprocess_pythonpath(test_root: Path) -> list[dict]:
     AST scan of every ``*.py`` under ``test_root`` for ``subprocess.run``
     calls whose first positional argument is a list starting with
     ``sys.executable``. Such calls MUST either route through
-    ``conftest.run_script(...)`` or pass an ``env=`` keyword that propagates
-    ``PYTHONPATH`` from ``sys.path``. Calls missing both safeguards are
-    flagged.
+    ``conftest.run_script(...)``, pass an ``env=`` keyword that propagates
+    ``PYTHONPATH`` from ``sys.path``, or match one of the exempt shapes:
+    a deliberate env scrub (``PYTHONPATH`` removed from a copied env), a
+    helper-supplied env (built by a call), or a ``-m`` stdlib invocation.
+    Calls matching none of these are flagged.
     """
     if not test_root.is_dir():
         return []
@@ -280,6 +282,7 @@ def _imports_bare_run(tree: ast.AST) -> bool:
 
 def _scan_module_for_subprocess_pythonpath(path: Path, tree: ast.AST, bare_run_imported: bool) -> list[dict]:
     results: list[dict] = []
+    bindings = _collect_env_bindings(tree)
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
             continue
@@ -289,10 +292,28 @@ def _scan_module_for_subprocess_pythonpath(path: Path, tree: ast.AST, bare_run_i
             continue
         if _is_run_script_call(node):
             continue
-        if _has_pythonpath_env_kwarg(node):
+        if _is_m_invocation_without_repo_import(node):
+            continue
+        if _has_pythonpath_env_kwarg(node, bindings):
             continue
         results.append(_build_subprocess_pythonpath_finding(path, node))
     return results
+
+
+def _collect_env_bindings(tree: ast.AST) -> dict[str, ast.AST]:
+    """Collect ``name = value`` assignments that could supply an ``env=`` kwarg.
+
+    The detector is a static shape scan and cannot see through helper calls or
+    reassignments, so it conservatively trusts a Name whose binding is itself a
+    recognized env-construction shape. The last binding wins.
+    """
+    bindings: dict[str, ast.AST] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign) and len(node.targets) == 1:
+            target = node.targets[0]
+            if isinstance(target, ast.Name):
+                bindings[target.id] = node.value
+    return bindings
 
 
 def _is_subprocess_run_call(node: ast.Call, bare_run_imported: bool) -> bool:
@@ -331,8 +352,85 @@ def _is_run_script_call(node: ast.Call) -> bool:
     return False
 
 
-def _has_pythonpath_env_kwarg(node: ast.Call) -> bool:
-    """Heuristic: env= kwarg whose value introduces PYTHONPATH from sys.path."""
+def _is_m_invocation_without_repo_import(node: ast.Call) -> bool:
+    """Class 3: second list element is the literal ``-m`` stdlib invocation.
+
+    A ``[sys.executable, '-m', 'py_compile', ...]`` shape launches a stdlib
+    module that imports nothing from the tree, so ``PYTHONPATH`` cannot be
+    consumed by repository code.
+    """
+    first = node.args[0]
+    if not isinstance(first, ast.List) or len(first.elts) < 2:
+        return False
+    second = first.elts[1]
+    return isinstance(second, ast.Constant) and second.value == '-m'
+
+
+def _iterates_os_environ(iter_node: ast.AST) -> bool:
+    """Return True when a comprehension iterable derives from ``os.environ``."""
+    if isinstance(iter_node, ast.Call):
+        func = iter_node.func
+        return (
+            isinstance(func, ast.Attribute)
+            and func.attr in {'items', 'keys'}
+            and isinstance(func.value, ast.Attribute)
+            and func.value.attr == 'environ'
+            and isinstance(func.value.value, ast.Name)
+            and func.value.value.id == 'os'
+        )
+    return (
+        isinstance(iter_node, ast.Attribute)
+        and iter_node.attr == 'environ'
+        and isinstance(iter_node.value, ast.Name)
+        and iter_node.value.id == 'os'
+    )
+
+
+def _contains_pythonpath(node: ast.AST) -> bool:
+    """Return True when a constant or constant container holds ``PYTHONPATH``."""
+    if isinstance(node, ast.Constant):
+        return node.value == 'PYTHONPATH'
+    if isinstance(node, (ast.Set, ast.List, ast.Tuple)):
+        return any(_contains_pythonpath(el) for el in node.elts)
+    return False
+
+
+def _is_deliberate_env_scrub(value: ast.AST) -> bool:
+    """Class 1: env is a comprehension over ``os.environ`` excluding ``PYTHONPATH``.
+
+    The shape is ``{k: v for k, v in os.environ.items() if k not in
+    {'PYTHONPATH', ...}}`` — PYTHONPATH is deliberately removed from a copied
+    environment, which is the opposite of a propagation defect.
+    """
+    if not isinstance(value, ast.DictComp) or len(value.generators) != 1:
+        return False
+    gen = value.generators[0]
+    if not _iterates_os_environ(gen.iter):
+        return False
+    if not gen.ifs:
+        return False
+    target = gen.target
+    if isinstance(target, ast.Name):
+        target_names = {target.id}
+    elif isinstance(target, ast.Tuple):
+        target_names = {el.id for el in target.elts if isinstance(el, ast.Name)}
+    else:
+        return False
+    for guard in gen.ifs:
+        if not isinstance(guard, ast.Compare):
+            continue
+        if not isinstance(guard.left, ast.Name) or guard.left.id not in target_names:
+            continue
+        if not any(isinstance(op, ast.NotIn) for op in guard.ops):
+            continue
+        for comp in guard.comparators:
+            if _contains_pythonpath(comp):
+                return True
+    return False
+
+
+def _has_pythonpath_env_kwarg(node: ast.Call, bindings: dict[str, ast.AST]) -> bool:
+    """Heuristic: env= kwarg that introduces, trusts, or deliberately strips PYTHONPATH."""
     env_value = None
     for kw in node.keywords:
         if kw.arg == 'env':
@@ -348,6 +446,16 @@ def _has_pythonpath_env_kwarg(node: ast.Call) -> bool:
     if isinstance(env_value, ast.Name) and env_value.id in {'env', 'subprocess_env', 'child_env'}:
         return True
 
+    # env=helper_call(...) — Class 2: the env is built by a call, so the
+    # detector cannot see inside it and trusts the helper to construct
+    # PYTHONPATH (or deliberately omit it, as _clean_env does).
+    if isinstance(env_value, ast.Call):
+        return True
+
+    # Class 1 (inline form): deliberate env scrub comprehension.
+    if _is_deliberate_env_scrub(env_value):
+        return True
+
     # env={"PYTHONPATH": ..., **os.environ} dict literal
     if isinstance(env_value, ast.Dict):
         for key in env_value.keys:
@@ -361,6 +469,25 @@ def _has_pythonpath_env_kwarg(node: ast.Call) -> bool:
                 for key in side.keys:
                     if isinstance(key, ast.Constant) and key.value == 'PYTHONPATH':
                         return True
+
+    # env=name whose binding is itself a trusted shape (last binding wins).
+    if isinstance(env_value, ast.Name):
+        bound = bindings.get(env_value.id)
+        if bound is not None:
+            if isinstance(bound, ast.Call):
+                return True
+            if _is_deliberate_env_scrub(bound):
+                return True
+            if isinstance(bound, ast.Dict):
+                for key in bound.keys:
+                    if isinstance(key, ast.Constant) and key.value == 'PYTHONPATH':
+                        return True
+            if isinstance(bound, ast.BinOp) and isinstance(bound.op, ast.BitOr):
+                for side in (bound.left, bound.right):
+                    if isinstance(side, ast.Dict):
+                        for key in side.keys:
+                            if isinstance(key, ast.Constant) and key.value == 'PYTHONPATH':
+                                return True
 
     return False
 
