@@ -160,6 +160,21 @@ INBOX_SUBDIR = 'inbox'
 #: ``EPIC_SUBDIRS``, so no existing scaffold assertion moves.
 INBOX_ARCHIVE_SUBDIR = 'archive'
 
+#: Where a message DELIVERED to a plan lives, relative to ``inbox/``: one
+#: mailbox per addressee under ``inbox/to/{plan_id}/``. Like
+#: :data:`INBOX_ARCHIVE_SUBDIR` it is created on first use and is deliberately
+#: not an ``EPIC_SUBDIRS`` member, so no scaffold assertion moves.
+#:
+#: The segment is RESERVED at that level for the same reason ``archive`` is:
+#: parking every addressee under one reserved name keeps the sibling namespace
+#: closed, rather than opening it to every plan id. It also keeps the addressee
+#: tree disjoint from both the flat sender-keyed queue
+#: (``inbox/{sender}-{NNN}.md``) and the per-sender archive
+#: (``inbox/archive/{sender}/``), so no existing tally changes meaning:
+#: :func:`list_messages` is non-recursive and admits only FILES matching
+#: :data:`_MESSAGE_NAME_RE`, so this directory is invisible to the drain.
+INBOX_DELIVERY_SUBDIR = 'to'
+
 #: The closed vocabulary :func:`resolve_message_path` reports. ``queued`` and
 #: ``archived`` are the two RESOLUTION outcomes a caller can act on; ``missing``
 #: is the third, which :func:`cmd_inbox_validate` surfaces as ``file_not_found``.
@@ -316,6 +331,87 @@ def _mutate_epic_root(slug: str) -> Path:
     path instead, which the caller refuses with ``epic_not_found``.
     """
     return get_store_dir(ORCHESTRATOR_STORE, slug)
+
+
+class ChannelAddress(NamedTuple):
+    """The channel's single address: an epic tree, and the plan addressed in it.
+
+    Both halves become path components, so both are path-safety validated by
+    :func:`resolve_channel_address` before an address is ever built from caller
+    input. Carrying them as ONE value is what lets the write side and the read
+    side compose the same location from the same thing, instead of from two
+    parallel argument pairs that can drift apart.
+    """
+
+    epic_slug: str
+    plan_id: str
+
+
+def resolve_channel_address(epic_slug: str, plan_id: str) -> tuple[ChannelAddress | None, dict[str, Any] | None]:
+    """Validate both halves of a channel address, refusing before any path join.
+
+    Returns ``(address, None)`` when both identifiers are path-safe and
+    ``(None, error_envelope)`` otherwise — the module's two-state shape, so a
+    caller branches on the returned error rather than on an exception. The
+    refusal reuses the channel's EXISTING error vocabulary rather than adding a
+    parallel one: ``invalid_slug`` for the epic half and ``invalid_target_plan``
+    for the plan half, which are already the codes :func:`cmd_inbox_write`
+    returns for those two values.
+
+    Validation lives HERE rather than inside the composition helpers because
+    this is the ONLY function that builds a :class:`ChannelAddress` from raw
+    strings. The helpers take an already-validated address, so there is no route
+    by which an unchecked value reaches a filesystem join.
+    """
+    invalid = _validate_identifier(epic_slug)
+    if invalid:
+        return None, _error('invalid_slug', invalid, slug=epic_slug)
+    invalid = _validate_identifier(plan_id)
+    if invalid:
+        return None, _error('invalid_target_plan', invalid, slug=epic_slug, target_plan=plan_id)
+    return ChannelAddress(epic_slug, plan_id), None
+
+
+def _delivery_dir(address: ChannelAddress, *, allow_archived: bool) -> Path:
+    """Compose the addressee mailbox for ``address`` — the ONE composition rule.
+
+    Both public helpers below route through this function, so the write side and
+    the read side cannot disagree about where a message lives: they differ in
+    exactly one argument — the archived-tree read fallback — and in nothing
+    about the shape of the path. A second composition rule is what this single
+    seam exists to prevent.
+
+    The epic root comes from :func:`file_ops.get_store_dir` rather than a
+    hand-rolled join, so containment of ``epic_slug`` is inherited from the
+    single shared resolver instead of being re-checked per entry point.
+    """
+    root = get_store_dir(ORCHESTRATOR_STORE, address.epic_slug, allow_archived=allow_archived)
+    return root / INBOX_SUBDIR / INBOX_DELIVERY_SUBDIR / address.plan_id
+
+
+def delivery_dir_for_write(address: ChannelAddress) -> Path:
+    """The addressee mailbox as a MUTATING verb resolves it.
+
+    Strict resolution, mirroring :func:`_mutate_epic_root`: delivery creates a
+    file, so it must never resolve into ``archived-orchestrators/{slug}`` and
+    write inside an epic's frozen audit record. An epic whose active tree is
+    gone yields the (absent) active path, which the caller refuses with
+    ``epic_not_found``.
+    """
+    return _delivery_dir(address, allow_archived=False)
+
+
+def delivery_dir_for_read(address: ChannelAddress) -> Path:
+    """The addressee mailbox as a READ-side verb resolves it.
+
+    Opts into :func:`file_ops.get_store_dir`'s ``allow_archived=True``
+    fallback, mirroring :func:`_read_epic_root`, so a plan can still read a
+    mailbox whose epic tree has since been archived. For a LIVE epic the
+    fallback never fires, so this returns the identical path
+    :func:`delivery_dir_for_write` composes for the same address — which is the
+    symmetry the channel rests on.
+    """
+    return _delivery_dir(address, allow_archived=True)
 
 
 def _render_envelope(header: dict[str, str], payload_body: str) -> str:

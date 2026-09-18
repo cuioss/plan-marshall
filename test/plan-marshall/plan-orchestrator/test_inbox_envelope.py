@@ -67,6 +67,7 @@ Three further groups were read and judged NOT to be families:
 
 import argparse
 import copy
+import inspect
 import os
 import shutil
 from pathlib import Path
@@ -82,12 +83,18 @@ _orch = load_script_module('plan-marshall', 'plan-orchestrator', 'orchestrator.p
 DETECTION_TOKENS = _inbox.DETECTION_TOKENS
 ENVELOPE_VERSION = _inbox.ENVELOPE_VERSION
 HEADER_FIELDS = _inbox.HEADER_FIELDS
+INBOX_DELIVERY_SUBDIR = _inbox.INBOX_DELIVERY_SUBDIR
 INBOX_STATES = _inbox.INBOX_STATES
+INBOX_SUBDIR = _inbox.INBOX_SUBDIR
 KINDS = _inbox.KINDS
 MESSAGE_LOCATIONS = _inbox.MESSAGE_LOCATIONS
 SENDER_TYPES = _inbox.SENDER_TYPES
+ChannelAddress = _inbox.ChannelAddress
 allocate_message_path = _inbox.allocate_message_path
 classify_source_id = _inbox.classify_source_id
+delivery_dir_for_read = _inbox.delivery_dir_for_read
+delivery_dir_for_write = _inbox.delivery_dir_for_write
+resolve_channel_address = _inbox.resolve_channel_address
 cmd_inbox_archive = _inbox.cmd_inbox_archive
 cmd_inbox_detect = _inbox.cmd_inbox_detect
 cmd_inbox_list = _inbox.cmd_inbox_list
@@ -1333,3 +1340,137 @@ class TestInboxDetect:
         assert result['epic'] == ''
         assert result['plan_spec'] == ''
         assert result['detection'] == 'unrecognised_id'
+
+
+# =============================================================================
+# The (epic_slug, plan_id) channel address — one symmetric composition rule
+# =============================================================================
+
+
+TARGET_PLAN = 'demo-target-plan'
+
+
+def _archived_epic_dir(plan_context, slug: str = EPIC) -> Path:
+    """The archived sibling of :func:`_epic_dir`, per the store's own layout."""
+    return Path(plan_context.fixture_dir) / 'archived-orchestrators' / slug
+
+
+class TestChannelAddressComposition:
+    """The write side and the read side compose ONE location from ONE address.
+
+    The symmetry assertion and the read-vs-mutate assertion are each other's
+    matched controls, and BOTH are needed: symmetry alone is satisfiable by
+    collapsing the two helpers onto one resolver, which would silently drop the
+    archived-tree split a delivery path depends on, while the split alone says
+    nothing about the two agreeing on a live epic.
+    """
+
+    def test_should_compose_an_identical_path_from_both_sides(self, plan_context):
+        cmd_scaffold(_SCAFFOLD_ARGS)
+        address, error = resolve_channel_address(EPIC, TARGET_PLAN)
+
+        assert error is None
+        assert delivery_dir_for_write(address) == delivery_dir_for_read(address)
+        # Anchored to the isolated store, so the equality cannot be satisfied by
+        # two helpers that both escaped it.
+        assert delivery_dir_for_write(address).is_relative_to(Path(plan_context.fixture_dir))
+
+    def test_should_compose_the_addressee_mailbox_inside_the_epic_inbox(self, plan_context):
+        # Grounds the symmetry above: two helpers agreeing on the WRONG location
+        # would satisfy equality just as well, so the shared answer is pinned to
+        # the layout the address claims rather than only to itself.
+        cmd_scaffold(_SCAFFOLD_ARGS)
+        address, _ = resolve_channel_address(EPIC, TARGET_PLAN)
+
+        composed = delivery_dir_for_write(address)
+
+        assert composed == _inbox_dir(plan_context) / INBOX_DELIVERY_SUBDIR / TARGET_PLAN
+
+    def test_should_derive_both_paths_from_the_address_alone(self):
+        # The by-construction containment the module docstring claims for the
+        # channel's other write surfaces, stated over the delivery composers: the
+        # parameter list IS the population of inputs a caller can reach, so an
+        # output-path argument threaded in later fails here rather than passing
+        # unnoticed because no test happened to name it. Asserted as an equality
+        # over the whole list rather than an absence check, so it also fails if
+        # the address parameter itself is dropped. No fixture: signatures are
+        # static and touch no store.
+        assert list(inspect.signature(delivery_dir_for_write).parameters) == ['address']
+        assert list(inspect.signature(delivery_dir_for_read).parameters) == ['address']
+
+    def test_should_keep_the_addressee_tree_invisible_to_the_drain(self, plan_context, tmp_path):
+        # The reserved segment is disjoint from the sender-keyed queue: an
+        # addressee mailbox holding a message-shaped file adds nothing to
+        # `inbox list`, whose scan is non-recursive and file-only.
+        cmd_scaffold(_SCAFFOLD_ARGS)
+        cmd_inbox_write(_write_args(payload_file=_payload(tmp_path)))
+        address, _ = resolve_channel_address(EPIC, TARGET_PLAN)
+        mailbox = delivery_dir_for_write(address)
+        mailbox.mkdir(parents=True)
+        (mailbox / f'{SENDER}-001.md').write_text('delivered\n', encoding='utf-8')
+
+        result = cmd_inbox_list(_LIST_ARGS)
+
+        assert result['count'] == 1
+        assert [row['name'] for row in result['messages']] == [f'{SENDER}-001.md']
+
+    def test_should_split_read_and_mutate_over_the_archived_tree(self, plan_context):
+        # The matched control for the symmetry test: against an epic that exists
+        # ONLY at the archived path the two helpers deliberately DISAGREE — the
+        # read side follows the archived fallback while the write side stays on
+        # the (absent) active path, so delivery can never write inside a frozen
+        # audit record.
+        archived_root = _archived_epic_dir(plan_context)
+        archived_root.mkdir(parents=True)
+        address, _ = resolve_channel_address(EPIC, TARGET_PLAN)
+
+        read_dir = delivery_dir_for_read(address)
+        write_dir = delivery_dir_for_write(address)
+
+        assert read_dir != write_dir
+        assert read_dir == archived_root / INBOX_SUBDIR / INBOX_DELIVERY_SUBDIR / TARGET_PLAN
+        assert write_dir == _epic_dir(plan_context) / INBOX_SUBDIR / INBOX_DELIVERY_SUBDIR / TARGET_PLAN
+
+
+class TestChannelAddressValidation:
+    """Both halves are refused before an address — and so a join — can exist."""
+
+    @pytest.mark.parametrize(
+        ('epic_slug', 'plan_id', 'expected_error'),
+        [
+            ('../escape', TARGET_PLAN, 'invalid_slug'),
+            (EPIC, '../escape', 'invalid_target_plan'),
+        ],
+        ids=['unsafe epic half', 'unsafe plan half'],
+    )
+    def test_should_refuse_an_unsafe_half_before_any_join(self, epic_slug, plan_id, expected_error):
+        address, error = resolve_channel_address(epic_slug, plan_id)
+
+        # No address is returned at all, so there is nothing a caller could
+        # compose a path from — the refusal precedes the join by construction
+        # rather than by an ordering the helpers have to remember.
+        assert address is None
+        assert error['status'] == 'error'
+        assert error['error'] == expected_error
+
+    def test_should_reuse_the_write_verbs_existing_error_vocabulary(self, plan_context, tmp_path):
+        # Population-derived rather than a re-listed literal: the codes are
+        # compared against the ones `cmd_inbox_write` already returns for the
+        # same two bad values, so a divergence in either surface fails here.
+        cmd_scaffold(_SCAFFOLD_ARGS)
+        _, slug_error = resolve_channel_address('../escape', TARGET_PLAN)
+        _, plan_error = resolve_channel_address(EPIC, '../escape')
+
+        write_slug = cmd_inbox_write(_write_args(slug='../escape', payload_file=_payload(tmp_path)))
+        write_plan = cmd_inbox_write(_variant(_write_args(payload_file=_payload(tmp_path)), target_plan='../escape'))
+
+        assert slug_error['error'] == write_slug['error']
+        assert plan_error['error'] == write_plan['error']
+
+    def test_should_accept_two_safe_halves(self):
+        # The positive arm, so the refusals above cannot pass by rejecting
+        # everything. No fixture: validation is pure and touches no store.
+        address, error = resolve_channel_address(EPIC, TARGET_PLAN)
+
+        assert error is None
+        assert address == ChannelAddress(EPIC, TARGET_PLAN)
