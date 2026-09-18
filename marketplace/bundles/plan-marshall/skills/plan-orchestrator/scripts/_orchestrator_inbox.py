@@ -1041,7 +1041,7 @@ def allocate_message_path(inbox_dir: Path, sender_id: str, text: str) -> Path:
     and the same primitive ``_locks_core`` uses.
 
     Args:
-        inbox_dir: The epic's ``inbox/`` directory (created when absent).
+        inbox_dir: The directory the message is allocated in (created when absent).
         sender_id: Sender identifier — the filename's ``{sender}`` segment.
         text: The full message text to write.
 

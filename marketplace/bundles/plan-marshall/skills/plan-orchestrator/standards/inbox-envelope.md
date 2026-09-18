@@ -74,9 +74,9 @@ Delivery does not widen the ledger write-boundary carve-out. `--target-plan` nev
 | Segment | Rule |
 |---------|------|
 | `{sender_id}` | The sender's identifier — a plan id for a `plan` sender, an epic slug for an `orchestrator` sender. Kebab-case; validated as a path-safe identifier before use. |
-| `{NNN}` | Zero-padded, three-digit-minimum sequence, allocated per sender, starting at `001` and growing past three digits when a sender exceeds 999 messages. |
+| `{NNN}` | Zero-padded, three-digit-minimum sequence, allocated per sender within the directory the message is written to, starting at `001` and growing past three digits when a sender exceeds 999 messages. |
 
-Sequence allocation is a **claim, not a scan-then-write**: the next free number is proposed by scanning the live queue (`inbox/`), the sender's foldered archive subdirectory (`inbox/archive/{sender_id}/`), AND any un-migrated flat twin directly under `inbox/archive/` — so a sender whose messages have been retired never re-uses a number an archived twin already holds, in EITHER archive layout — but the exclusive create (`O_CREAT | O_EXCL`) is the atomic step, and it stays scoped to `inbox/` alone. A collision advances to the next sequence and retries, so a concurrent or re-entered finalize cannot clobber an existing message. Reading both archive layouts is what keeps this guarantee across the foldering migration: a partly-foldered archive re-opens no retired sequence.
+Sequence allocation is a **claim, not a scan-then-write**: the next free number is proposed by scanning the directory the message is written to, together with that directory's flat and per-sender `archive/` layouts — so a sender whose messages have been retired never re-uses a number an archived twin already holds, in EITHER archive layout — but the exclusive create (`O_CREAT | O_EXCL`) is the atomic step, and it stays scoped to that same directory. A collision advances to the next sequence and retries, so a concurrent or re-entered finalize cannot clobber an existing message. Reading both archive layouts is what keeps this guarantee across the foldering migration: a partly-foldered archive re-opens no retired sequence.
 
 ## Message shape
 
