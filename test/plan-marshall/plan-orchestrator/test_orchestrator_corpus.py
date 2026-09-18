@@ -10,7 +10,11 @@ Covers the four sub-verbs against a SCAFFOLDED FIXTURE EPIC under
   riding beside the population it was computed over.
 - ``corpus cross-check``: the cross-ledger duplication arm — this epic's specs
   scored against sibling epics (active and archived), the live plan set, and
-  this epic's own corpus, on the two ``sibling-collision-check`` classes.
+  this epic's own corpus, on the two ``sibling-collision-check`` classes. BOTH
+  sides of that comparison publish a whole-vocabulary derivation tally: the spec
+  side over ``SURFACE_STATES``, and the candidate side per ``candidate_kind``
+  over ``CANDIDATE_DERIVATION_STATES``, each riding with the candidate
+  population it was computed over.
 - ``corpus verdicts``: the sole interpreter of the re-grounding verdict field —
   one control per row of the admission table in
   ``persona-plan-orchestrator/standards/orchestration-model.md``
@@ -122,6 +126,15 @@ SURFACE_PROSE = _orch.SURFACE_PROSE
 SURFACE_ABSENT = _orch.SURFACE_ABSENT
 SURFACE_UNREADABLE = _orch.SURFACE_UNREADABLE
 SURFACE_INDETERMINATE_STATES = _orch.SURFACE_INDETERMINATE_STATES
+CANDIDATE_KINDS = _orch.CANDIDATE_KINDS
+CANDIDATE_KIND_SIBLING_EPIC_SPEC = _orch.CANDIDATE_KIND_SIBLING_EPIC_SPEC
+CANDIDATE_KIND_LIVE_PLAN = _orch.CANDIDATE_KIND_LIVE_PLAN
+CANDIDATE_KIND_CORPUS_SPEC = _orch.CANDIDATE_KIND_CORPUS_SPEC
+CANDIDATE_DERIVATION_STATES = _orch.CANDIDATE_DERIVATION_STATES
+CANDIDATE_COMPARABLE = _orch.CANDIDATE_COMPARABLE
+CANDIDATE_INDETERMINATE = _orch.CANDIDATE_INDETERMINATE
+CANDIDATE_UNREADABLE = _orch.CANDIDATE_UNREADABLE
+CANDIDATE_NON_CONTRIBUTING_STATES = _orch.CANDIDATE_NON_CONTRIBUTING_STATES
 CURRENCY_AGREE = _orch.CURRENCY_AGREE
 CURRENCY_DISAGREE = _orch.CURRENCY_DISAGREE
 CURRENCY_VACUOUS = _orch.CURRENCY_VACUOUS
@@ -2345,6 +2358,340 @@ class TestCrossCheckPublishesTheComparedPopulation:
         )
 
 
+# =============================================================================
+# corpus cross-check — the CANDIDATE side of the same disclosure
+# =============================================================================
+#
+# ``spec_surface_states`` measures this epic's own specs over the whole
+# derivation vocabulary, so the SPEC side of the comparison is fully published.
+# The candidate side had no counterpart at all, which left
+# ``file_overlap_match_count: 0`` unable to distinguish *every candidate was
+# compared and none overlapped* from *no candidate surface was derivable and
+# nothing was compared* — the precise failure ADR-019 names, on the half of the
+# comparison the spec-side tally cannot see.
+#
+# Each control below carries its matched partner, because the two readings
+# produce the SAME zero overlap count and are separable only by the published
+# candidate population: the unchecked negative (a non-zero indeterminate tally
+# beside an empty match list) is pinned against the checked one (a comparable
+# candidate that simply did not intersect).
+
+
+def _candidate_tally(result: Any) -> dict:
+    """The per-(kind, state) candidate tally, keyed for direct lookup."""
+    return {
+        (row['candidate_kind'], row['derivation_status']): row['count'] for row in result['candidate_derivation_states']
+    }
+
+
+def _candidate_population(result: Any) -> dict:
+    """The per-kind candidate population the tally above was computed over."""
+    return {row['candidate_kind']: row['population'] for row in result['candidate_population']}
+
+
+class TestCrossCheckPublishesTheCandidatePopulation:
+    """The candidate side spans its whole vocabulary, per ``candidate_kind``."""
+
+    def test_the_tally_spans_the_whole_kind_and_state_cross_product(self, plan_context):
+        # Only two of the three kinds are populated by this fixture, so the third
+        # is the one that must still appear — as stated zeros across every state.
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
+        _write_live_plan(plan_context, LIVE_PLAN_ID, affected_files=[SHARED_PATH])
+
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        assert result['candidate_kinds'] == list(CANDIDATE_KINDS)
+        assert [(row['candidate_kind'], row['derivation_status']) for row in result['candidate_derivation_states']] == [
+            (kind, state) for kind in CANDIDATE_KINDS for state in CANDIDATE_DERIVATION_STATES
+        ], (
+            'the tally must span the WHOLE cross-product in declared order, so a kind with no '
+            'candidate and a state no candidate is in publish stated zeros instead of vanishing'
+        )
+        tally = _candidate_tally(result)
+        assert tally[(CANDIDATE_KIND_LIVE_PLAN, CANDIDATE_COMPARABLE)] == 1
+        assert tally[(CANDIDATE_KIND_CORPUS_SPEC, CANDIDATE_COMPARABLE)] == 1
+        assert all(tally[(CANDIDATE_KIND_SIBLING_EPIC_SPEC, state)] == 0 for state in CANDIDATE_DERIVATION_STATES), (
+            'the unpopulated kind must still report a row per state'
+        )
+
+    def test_every_kind_tally_reconciles_with_its_own_population(self, plan_context):
+        # A corpus carrying all three kinds at once, so the identity is asserted
+        # over a population where each kind is non-empty rather than only one.
+        _write_status(plan_context, [_row('PLAN-01'), _row('PLAN-02')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
+        _write_spec(plan_context, 'PLAN-02-beta.md', surface_lines=_surface(OTHER_PATH))
+        _write_spec(
+            plan_context,
+            'PLAN-77-sibling.md',
+            epic_dir=_epic_dir(plan_context, SIBLING_SLUG),
+            surface_lines=_surface(SHARED_PATH),
+        )
+        _write_live_plan(plan_context, LIVE_PLAN_ID, affected_files=[SHARED_PATH])
+
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        tally = _candidate_tally(result)
+        population = _candidate_population(result)
+        assert population == {
+            CANDIDATE_KIND_SIBLING_EPIC_SPEC: 1,
+            CANDIDATE_KIND_LIVE_PLAN: 1,
+            CANDIDATE_KIND_CORPUS_SPEC: 2,
+        }, 'the candidate populations did not materialize'
+        for kind in CANDIDATE_KINDS:
+            assert sum(tally[(kind, state)] for state in CANDIDATE_DERIVATION_STATES) == population[kind], (
+                f'{kind} tally does not reconcile with the population it was computed over'
+            )
+        assert result['candidates_total'] == sum(population.values())
+        assert result['candidates_comparable'] + result['candidates_indeterminate'] == result['candidates_total']
+
+    def test_the_corpus_spec_population_counts_every_own_spec(self, plan_context):
+        # The own corpus is a candidate population too, and it is counted over
+        # ``specs_total`` — the unreadable own spec included, since it is a
+        # candidate that could not be read rather than one that is absent.
+        _write_status(plan_context, [_row('PLAN-01'), _row('PLAN-02')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
+        broken = _epic_dir(plan_context) / 'plans' / 'PLAN-02-broken.md'
+        broken.write_bytes(b'\xff\xfe \xff')
+
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        tally = _candidate_tally(result)
+        assert _candidate_population(result)[CANDIDATE_KIND_CORPUS_SPEC] == result['specs_total'] == 2
+        assert tally[(CANDIDATE_KIND_CORPUS_SPEC, CANDIDATE_COMPARABLE)] == 1
+        assert tally[(CANDIDATE_KIND_CORPUS_SPEC, CANDIDATE_UNREADABLE)] == 1
+
+    def test_the_payload_names_its_candidate_governing_authority(self, plan_context):
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
+
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        assert 'ADR-019' in result['candidate_governing_authority']
+        assert 'unchecked negative' in result['candidate_governing_authority']
+
+
+class TestCrossCheckCandidateZeroStatesWhichZeroItIs:
+    """The matched pair: an UNCHECKED zero overlap against a CHECKED one."""
+
+    def test_an_indeterminate_candidate_leaves_a_zero_overlap_unchecked(self, plan_context):
+        # Positive control. The live candidate has no captured footprint, so it
+        # contributes no row to the matcher at all — the overlap count is zero
+        # because nothing was compared, and the candidate tally has to say so.
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
+        _write_live_plan(plan_context, LIVE_PLAN_ID, affected_files=[])
+
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        tally = _candidate_tally(result)
+        assert result['file_overlap_match_count'] == 0
+        assert tally[(CANDIDATE_KIND_LIVE_PLAN, CANDIDATE_INDETERMINATE)] == 1
+        assert tally[(CANDIDATE_KIND_LIVE_PLAN, CANDIDATE_COMPARABLE)] == 0
+        assert result['candidates_indeterminate'] >= 1, (
+            'a zero overlap beside a non-zero candidate-indeterminate count is an UNCHECKED '
+            'negative, and the payload has to say so'
+        )
+
+    def test_a_comparable_candidate_that_does_not_intersect_leaves_it_checked(self, plan_context):
+        # Matched negative control: the SAME zero overlap count, reached the other
+        # way. Without this pair the assertion above is equally consistent with a
+        # tally that reported every candidate indeterminate.
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
+        _write_live_plan(plan_context, LIVE_PLAN_ID, affected_files=[OTHER_PATH])
+
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        tally = _candidate_tally(result)
+        assert result['file_overlap_match_count'] == 0
+        assert tally[(CANDIDATE_KIND_LIVE_PLAN, CANDIDATE_COMPARABLE)] == 1
+        assert tally[(CANDIDATE_KIND_LIVE_PLAN, CANDIDATE_INDETERMINATE)] == 0
+        assert result['candidates_indeterminate'] == 0, (
+            'every candidate declared a comparable surface, so this zero overlap IS a checked negative'
+        )
+
+    def test_an_unreadable_candidate_is_held_apart_from_an_indeterminate_one(self, plan_context):
+        # The two different zeros, in ONE payload: a sibling spec nothing could
+        # read, and a live plan that was read and declared nothing comparable.
+        # Collapsing them would report an unread candidate as a read-and-empty one.
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
+        broken = _epic_dir(plan_context, SIBLING_SLUG) / 'plans' / 'PLAN-77-broken.md'
+        broken.parent.mkdir(parents=True, exist_ok=True)
+        broken.write_bytes(b'\xff\xfe \xff')
+        _write_live_plan(plan_context, LIVE_PLAN_ID, affected_files=[])
+
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        tally = _candidate_tally(result)
+        assert tally[(CANDIDATE_KIND_SIBLING_EPIC_SPEC, CANDIDATE_UNREADABLE)] == 1
+        assert tally[(CANDIDATE_KIND_SIBLING_EPIC_SPEC, CANDIDATE_INDETERMINATE)] == 0
+        assert tally[(CANDIDATE_KIND_LIVE_PLAN, CANDIDATE_INDETERMINATE)] == 1
+        assert tally[(CANDIDATE_KIND_LIVE_PLAN, CANDIDATE_UNREADABLE)] == 0
+        assert result['candidates_indeterminate'] == 2, (
+            'both non-contributing states roll up into the indeterminate total, which is what '
+            'makes the empty match list readable as unchecked'
+        )
+
+    def test_an_indeterminate_spec_candidate_is_counted_apart_from_a_comparable_one(self, plan_context):
+        # The corpus_spec kind's own pair: one own spec declaring a resolvable
+        # surface, one declaring none at all.
+        _write_status(plan_context, [_row('PLAN-01'), _row('PLAN-02')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
+        _write_spec_without_surface_section(plan_context, 'PLAN-02-beta.md')
+
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        tally = _candidate_tally(result)
+        assert tally[(CANDIDATE_KIND_CORPUS_SPEC, CANDIDATE_COMPARABLE)] == 1
+        assert tally[(CANDIDATE_KIND_CORPUS_SPEC, CANDIDATE_INDETERMINATE)] == 1
+        assert tally[(CANDIDATE_KIND_CORPUS_SPEC, CANDIDATE_UNREADABLE)] == 0
+
+
+class TestCandidateTallyReportsUnobservedStatesAndStandsAlone:
+    """An unobserved state still reports a row, and the payload needs no sibling read."""
+
+    def test_a_state_the_producer_can_never_reach_still_reports_a_row(self, plan_context):
+        # The sharpest unobserved-state case in the whole tally. A live plan is
+        # built from a directory walk that degrades an unreadable plan to an EMPTY
+        # surface rather than to no record, so the ``live_plan``/``unreadable``
+        # cell is structurally unreachable — and it is exactly the cell a tally
+        # derived from the states actually OBSERVED would silently omit. Deriving
+        # from the declared vocabulary is what turns it into a stated zero, which
+        # a reader can tell apart from a missing row.
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
+        _write_live_plan(plan_context, LIVE_PLAN_ID, affected_files=[SHARED_PATH])
+
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        unreachable = [
+            row
+            for row in result['candidate_derivation_states']
+            if row['candidate_kind'] == CANDIDATE_KIND_LIVE_PLAN and row['derivation_status'] == CANDIDATE_UNREADABLE
+        ]
+        assert len(unreachable) == 1, (
+            'the structurally unreachable cell must still be present as one row — its absence '
+            'and a measured zero are the two readings this tally exists to separate'
+        )
+        assert unreachable[0]['count'] == 0
+        assert _candidate_population(result)[CANDIDATE_KIND_LIVE_PLAN] == 1, (
+            'the stated zero is only meaningful beside a non-empty population for that kind'
+        )
+
+    def test_a_kind_with_no_candidate_at_all_still_reports_every_state(self, plan_context):
+        # The same property one level up: this fixture registers no sibling epic,
+        # so the whole ``sibling_epic_spec`` kind is unobserved. Its rows must
+        # still be there, and its population must read as the measured zero it is.
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
+
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        sibling_rows = [
+            row
+            for row in result['candidate_derivation_states']
+            if row['candidate_kind'] == CANDIDATE_KIND_SIBLING_EPIC_SPEC
+        ]
+        assert [row['derivation_status'] for row in sibling_rows] == list(CANDIDATE_DERIVATION_STATES)
+        assert all(row['count'] == 0 for row in sibling_rows)
+        assert _candidate_population(result)[CANDIDATE_KIND_SIBLING_EPIC_SPEC] == 0
+
+    def test_the_two_zeros_are_separable_from_this_payload_alone(self, plan_context):
+        # The self-sufficiency requirement, asserted as such: both readings are
+        # produced from the SAME verb in one test, and the discriminating fields
+        # are read off ``cmd_corpus_cross_check``'s own payload — no ``corpus
+        # surfaces`` row, no ``corpus verdicts`` row, no second call. A reader
+        # holding only this payload can tell them apart.
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
+        _write_live_plan(plan_context, 'fixture-live-unmeasured', affected_files=[])
+        unchecked = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        _write_live_plan(plan_context, 'fixture-live-disjoint', affected_files=[OTHER_PATH])
+        both = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        assert unchecked['file_overlap_match_count'] == both['file_overlap_match_count'] == 0, (
+            'the two readings must share the overlap count, or the discrimination is trivial'
+        )
+        assert unchecked['candidates_indeterminate'] == 1
+        assert unchecked['candidates_comparable'] == 1, 'the own spec is the comparable candidate here'
+        assert both['candidates_indeterminate'] == 1
+        assert both['candidates_comparable'] == 2, (
+            'adding a comparable live plan must move the comparable roll-up, so the two counts '
+            'together — and not the overlap count — are what separate an unchecked negative '
+            'from a checked one'
+        )
+
+    def test_the_candidate_total_is_not_the_scanned_count(self, plan_context):
+        # The two near-synonyms, pinned apart on a population where they differ.
+        # ``candidates_scanned`` counts the sibling and live candidates that were
+        # READ into the matcher's pair list; ``candidates_total`` is the whole
+        # candidate population the tally was computed over — own specs included,
+        # and an unreadable candidate counted rather than dropped.
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
+        broken = _epic_dir(plan_context, SIBLING_SLUG) / 'plans' / 'PLAN-77-broken.md'
+        broken.parent.mkdir(parents=True, exist_ok=True)
+        broken.write_bytes(b'\xff\xfe \xff')
+
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        assert result['candidates_scanned'] == 0, 'an unreadable candidate never enters the pair list'
+        assert result['candidates_total'] == 2, (
+            'the unreadable sibling and this epic own spec are both in the candidate population'
+        )
+
+
+class TestCandidateVocabularyIsDerivedNotHandListed:
+    """The candidate vocabulary owns its own bindings and derives its subsets."""
+
+    def test_every_non_comparable_state_is_non_contributing(self):
+        # Derived by subtraction, so a state added later is non-contributing
+        # unless it is explicitly ``comparable`` — a new class cannot default
+        # into counting as checked by being forgotten.
+        assert CANDIDATE_NON_CONTRIBUTING_STATES == frozenset(CANDIDATE_DERIVATION_STATES) - {CANDIDATE_COMPARABLE}
+        assert CANDIDATE_COMPARABLE not in CANDIDATE_NON_CONTRIBUTING_STATES
+        for state in (CANDIDATE_INDETERMINATE, CANDIDATE_UNREADABLE):
+            assert state in CANDIDATE_NON_CONTRIBUTING_STATES
+
+    def test_the_candidate_vocabulary_has_its_own_binding(self):
+        # It coincides in spelling with the verdict and readiness vocabularies,
+        # so a single shared name would let a change to any one silently move the
+        # others. The value equality is asserted alongside the separation so this
+        # reads as "three names, same spelling" rather than as a divergence.
+        assert CANDIDATE_INDETERMINATE == _orch.VERDICT_INDETERMINATE == _orch.READINESS_INDETERMINATE
+        assert {'CANDIDATE_INDETERMINATE', 'VERDICT_INDETERMINATE', 'READINESS_INDETERMINATE'} <= set(dir(_orch)), (
+            'each vocabulary owns its own name — a missing one means two of them were merged'
+        )
+        assert not hasattr(_orch, 'INDETERMINATE'), (
+            'a shared binding is back — a change to any one vocabulary would silently move the others'
+        )
+
+    def test_the_kind_vocabulary_matches_the_kinds_the_matcher_emits(self, plan_context):
+        # Population-derived rather than asserted: the kinds the collision rows
+        # actually carry must be members of the declared tuple, so a fourth kind
+        # added at a call site without a tuple entry cannot slip past the tally.
+        _write_status(plan_context, [_row('PLAN-01'), _row('PLAN-02')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
+        _write_spec(plan_context, 'PLAN-02-beta.md', surface_lines=_surface(SHARED_PATH))
+        _write_spec(
+            plan_context,
+            'PLAN-77-sibling.md',
+            epic_dir=_epic_dir(plan_context, SIBLING_SLUG),
+            surface_lines=_surface(SHARED_PATH),
+        )
+        _write_live_plan(plan_context, LIVE_PLAN_ID, affected_files=[SHARED_PATH])
+
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        emitted_kinds = {row['candidate_kind'] for row in result['file_overlap_matches']}
+        assert emitted_kinds == set(CANDIDATE_KINDS), (
+            f'the fixture must exercise every declared kind, got {sorted(emitted_kinds)}'
+        )
+
+
 class TestCorpusSurfacesRefusals:
     def test_an_unsafe_slug_is_refused(self):
         result = cmd_corpus_surfaces(_variant(_SURFACES_ARGS, slug='../escape'))
@@ -3620,6 +3967,11 @@ class TestCorpusCli:
         assert 'plans_scanned: 1' in result.stdout
         assert 'file_overlap_match_count: 1' in result.stdout
         assert 'collision_detected: true' in result.stdout
+        # The candidate-side tally survives the TOON serialization boundary as a
+        # whole-vocabulary table — nine rows for three kinds by three states — so
+        # a stated zero reaches the reader rather than being dropped in transit.
+        assert 'candidate_derivation_states[9]{candidate_kind,derivation_status,count}:' in result.stdout
+        assert 'candidates_indeterminate: 0' in result.stdout
 
     def test_should_set_and_read_a_verdict_through_cli(self, plan_context):
         env = {'PLAN_BASE_DIR': str(plan_context.fixture_dir)}

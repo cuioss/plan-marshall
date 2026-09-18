@@ -80,6 +80,8 @@ Count `R`, the plans currently in `launched` status, and select up to `N − R` 
 
   ⛔ **An absent or unresolvable declaration is `indeterminate`, never `disjoint`.** `admits_disjointness_check` is `true` only for a `declarative` surface; every other `derivation_status` (`derived`, `prose`, `absent`, `unreadable`) leaves the candidate with no comparable path set, so it contributes NO row to the overlap matcher and its clean reading is SILENCE rather than a checked negative. Such a candidate is sequenced with a surface-side shortfall reason — it is never emitted on the strength of an overlap check that had nothing to compare. Governing authority: **ADR-019** (*An audit separates what it could not evaluate from what it evaluated and found wanting*, `doc/adr/`), the same rule the payload names in its own `governing_authority` field.
 
+  ⛔ **The same rule binds the OTHER side of the comparison.** A candidate that declared nothing comparable is just as invisible to the overlap matcher as a spec that did, and the silence looks identical from the spec's row. `corpus cross-check` therefore publishes `candidate_derivation_states[]` — a `comparable` / `indeterminate` / `unreadable` tally broken down per `candidate_kind` (`sibling_epic_spec`, `live_plan`, `corpus_spec`) — beside `candidate_population[]`, the candidate count each kind's tally was computed over. Both span their whole vocabularies, so a kind this epic has no candidate of, and a state no candidate is in, report stated zeros rather than vanishing. **Read `file_overlap_matches[]` together with `candidates_indeterminate`:** an empty match list beside a non-zero indeterminate count is an UNCHECKED negative and never a clean pass, and a candidate's own derivation status is the reason. The payload names that rule in `candidate_governing_authority` (ADR-019 again). `indeterminate` and `unreadable` are held apart because they are two different zeros — a candidate that was read and declared nothing comparable, and a candidate nothing could read at all.
+
   This is the exact defect the gate carried: a spec declaring only directories or globs resolved to zero paths under the retired reader, so the machine reported no collision against it and the gate read that silence as disjoint. A plan the gate cannot see is a plan the gate cannot serialize.
 - **Prep-ready** — decided from the PARSER, not from a reader's judgement over the spec prose. Read the corpus's verdicts once:
 
@@ -192,6 +194,22 @@ surface_states[5]{derivation_status,count}:
   unreadable,{W}
 surface_admitting_count: {D}
 surface_indeterminate_count: {I}
+candidate_population[3]{candidate_kind,population}:
+  sibling_epic_spec,{SP}
+  live_plan,{LP}
+  corpus_spec,{CP}
+candidate_derivation_states[9]{candidate_kind,derivation_status,count}:
+  sibling_epic_spec,comparable,{SC}
+  sibling_epic_spec,indeterminate,{SI}
+  sibling_epic_spec,unreadable,{SX}
+  live_plan,comparable,{LC}
+  live_plan,indeterminate,{LI}
+  live_plan,unreadable,{LX}
+  corpus_spec,comparable,{CC}
+  corpus_spec,indeterminate,{CI}
+  corpus_spec,unreadable,{CX}
+candidates_comparable: {CM}
+candidates_indeterminate: {CU}
 emitted[E]{plan,command}:
   PLAN-NN,/plan-marshall task="implement .plan/local/orchestrator/{slug}/plans/PLAN-NN-{plan_slug}.md"
 shortfall[S]{plan,reason}:
@@ -209,3 +227,5 @@ stale_verdicts[T]{plan,claim_index,sha}:
 `specs_scanned`, `claim_section_states[]` and `unreadable_claim_section_count` are forwarded from the same `corpus verdicts` read, so the reader sees how much of each section the parser could read and over what population that was computed. The tally spans the whole four-member vocabulary, so a state no spec is in reports a stated zero rather than being absent — `unreadable_claim_section_count: 0` beside a non-zero `specs_scanned` is a measured "nothing unreadable", never an unasked question.
 
 `surface_states[]`, `surface_admitting_count` and `surface_indeterminate_count` are the disjointness half of the same disclosure, forwarded from the `corpus surfaces` read. The tally likewise spans its whole five-member vocabulary, so a class no spec is in reports a stated zero. Together they are what makes a `shortfall[]` of zero legible: a round that emitted every slot with `surface_indeterminate_count: 0` checked every candidate's surface, whereas the same empty shortfall beside a non-zero indeterminate count means some candidate's disjointness was never checkable — and only the published population tells those two apart.
+
+`candidate_population[]`, `candidate_derivation_states[]`, `candidates_comparable` and `candidates_indeterminate` complete that disclosure on the CANDIDATE side, forwarded from the `corpus cross-check` read. The surface tally measures what THIS epic's specs declared; these measure what the specs were compared AGAINST, per `candidate_kind`, and each tally rides with the candidate population it was computed over. Both spans are whole-vocabulary, so a kind with no candidate — and a state no candidate is in — reports a stated zero. The two halves answer different questions and neither substitutes for the other: `surface_indeterminate_count: 0` says every candidate's own declaration was resolvable, while `candidates_indeterminate: 0` says everything it was compared against declared a comparable surface. An emitted block with no overlap shortfall is a checked negative only when BOTH are zero; a non-zero `candidates_indeterminate` means some part of the comparison never happened, whatever the spec side reported.

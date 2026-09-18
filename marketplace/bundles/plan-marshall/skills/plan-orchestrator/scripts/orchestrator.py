@@ -388,6 +388,74 @@ SURFACE_GOVERNING_AUTHORITY = (
     'ADR-019 — an absent or unresolvable declaration resolves to indeterminate, never to disjoint'
 )
 
+# --- the CANDIDATE side of the cross-check comparison ------------------------
+#
+# ``SURFACE_STATES`` above measures the SPEC side of ``corpus cross-check``: every
+# own spec is tallied over the whole derivation vocabulary, so a class no spec is
+# in publishes a stated zero. The two constants below give the OTHER half of the
+# comparison the same treatment. Without them a ``file_overlap_match_count: 0``
+# cannot distinguish *every candidate was compared and none overlapped* from *no
+# candidate surface was derivable and nothing was compared* — an unchecked
+# negative wearing a clean verdict's clothes.
+
+#: The three CANDIDATE classes one spec is scored against, named once and in
+#: reporting order. ``sibling_epic_spec`` and ``corpus_spec`` are spec candidates
+#: resolved through :func:`_spec_record`; ``live_plan`` is the cross-ledger
+#: candidate whose surface is an active plan's ``references.json``
+#: ``affected_files``. The per-kind tally is derived from this tuple rather than
+#: from the kinds a given corpus happens to hold, so a kind with no candidates
+#: publishes stated zeros instead of vanishing from the breakdown.
+CANDIDATE_KIND_SIBLING_EPIC_SPEC = 'sibling_epic_spec'
+CANDIDATE_KIND_LIVE_PLAN = 'live_plan'
+CANDIDATE_KIND_CORPUS_SPEC = 'corpus_spec'
+CANDIDATE_KINDS = (
+    CANDIDATE_KIND_SIBLING_EPIC_SPEC,
+    CANDIDATE_KIND_LIVE_PLAN,
+    CANDIDATE_KIND_CORPUS_SPEC,
+)
+
+#: The CANDIDATE-side derivation vocabulary: whether one candidate contributed a
+#: comparable surface to the file-overlap matcher, and — when it did not — which
+#: of the two different zeros it is. ``indeterminate`` is a candidate that WAS
+#: read and declared nothing comparable (a spec in any
+#: :data:`SURFACE_INDETERMINATE_STATES` state, or a live plan with no captured
+#: footprint); ``unreadable`` is a candidate nothing could read at all. Collapsing
+#: them would report an unread candidate as a read-and-empty one.
+#:
+#: This vocabulary is INDEPENDENT of :data:`SURFACE_STATES` — it measures
+#: contribution to the matcher, not how a declaration was authored — so it
+#: carries its own bindings for the same reason :data:`READINESS_INDETERMINATE`
+#: does: one binding shared across two vocabularies lets a change to either
+#: silently move the other.
+CANDIDATE_COMPARABLE = 'comparable'
+CANDIDATE_INDETERMINATE = 'indeterminate'
+CANDIDATE_UNREADABLE = 'unreadable'
+
+#: The WHOLE vocabulary, ordered from most to least resolved. The per-kind tally
+#: is derived from this tuple rather than from the states actually observed,
+#: mirroring the :data:`SURFACE_STATES` / :data:`CLAIM_SECTION_STATES`
+#: construction (ADR-014: an aggregation names its producers and suppresses no
+#: element silently).
+CANDIDATE_DERIVATION_STATES = (
+    CANDIDATE_COMPARABLE,
+    CANDIDATE_INDETERMINATE,
+    CANDIDATE_UNREADABLE,
+)
+
+#: The candidate states that contributed NO row to the file-overlap matcher.
+#: Derived by subtraction so a state added to the vocabulary later is
+#: non-contributing unless it is explicitly ``comparable`` — a new class cannot
+#: default into counting as checked by being forgotten here.
+CANDIDATE_NON_CONTRIBUTING_STATES = frozenset(CANDIDATE_DERIVATION_STATES) - {CANDIDATE_COMPARABLE}
+
+#: Named once so the candidate-side payload states its governing authority rather
+#: than leaving a reader to infer the rule from the field names, exactly as the
+#: surface side already does.
+CANDIDATE_GOVERNING_AUTHORITY = (
+    'ADR-019 — a file-overlap count of 0 beside a non-zero candidate-indeterminate '
+    'count is an unchecked negative, never a clean pass'
+)
+
 # --- declaration-currency (cross-spec reconciliation) -----------------------
 #
 # The per-spec comparison states for ``corpus declaration-currency``. They mirror
@@ -3130,6 +3198,41 @@ def _collision_rows(
     return origin_row, overlap_row
 
 
+def _spec_candidate_state(record: dict[str, Any] | None) -> str:
+    """Classify one SPEC candidate into :data:`CANDIDATE_DERIVATION_STATES`.
+
+    ``None`` is :func:`_spec_record`'s unreadable return, so it maps to
+    :data:`CANDIDATE_UNREADABLE` — the state held apart from
+    :data:`CANDIDATE_INDETERMINATE` because a candidate nothing could READ and a
+    candidate that was read and declared nothing comparable are different facts.
+
+    Comparability is decided from the record's ``derivation_status`` and NOT from
+    the truthiness of its ``paths`` set, so this classification agrees with
+    ``corpus surfaces``' published ``admits_disjointness_check`` for the same
+    spec. A ``declarative`` spec that happens to resolve zero entries is
+    ``comparable`` — it was compared and matched nothing, which is a checked
+    negative rather than an unchecked one.
+    """
+    if record is None:
+        return CANDIDATE_UNREADABLE
+    if record['derivation_status'] in SURFACE_INDETERMINATE_STATES:
+        return CANDIDATE_INDETERMINATE
+    return CANDIDATE_COMPARABLE
+
+
+def _live_candidate_state(record: dict[str, Any]) -> str:
+    """Classify one LIVE-PLAN candidate into the same vocabulary.
+
+    Reads the ``comparable`` flag :func:`_live_plan_records` already derives, so
+    the live side's contribution rule lives in one place. ``unreadable`` is
+    structurally unreachable here — that walk degrades an unreadable plan
+    directory to an empty surface rather than to no record — which is exactly why
+    the tally is derived from the whole vocabulary: the live kind's ``unreadable``
+    row is a STATED zero rather than a missing row a reader must interpret.
+    """
+    return CANDIDATE_COMPARABLE if record.get('comparable', bool(record['paths'])) else CANDIDATE_INDETERMINATE
+
+
 def cmd_corpus_cross_check(args: argparse.Namespace) -> dict[str, Any]:
     """Cross-check this epic's specs against sibling epics and live plans.
 
@@ -3137,6 +3240,19 @@ def cmd_corpus_cross_check(args: argparse.Namespace) -> dict[str, Any]:
     enumerated and each is NAMED in the payload — sibling epics (active and
     archived), the live plan set, and this epic's own corpus for the
     within-corpus direction — so a ``count: 0`` states which zero it is.
+
+    BOTH sides of the comparison publish a derivation-status tally over their
+    whole state vocabulary. The spec side is ``spec_surface_states`` over
+    :data:`SURFACE_STATES`; the candidate side is ``candidate_derivation_states``
+    over the cross-product of :data:`CANDIDATE_KINDS` and
+    :data:`CANDIDATE_DERIVATION_STATES`, with ``candidate_population`` stating
+    what each kind's tally was computed over. Both are derived from the declared
+    tuples rather than from the kinds and states actually observed, so a kind
+    holding no candidate — and a state no candidate is in — publishes a stated
+    zero instead of vanishing. That is what makes ``file_overlap_match_count: 0``
+    readable: beside a non-zero ``candidates_indeterminate`` it is an UNCHECKED
+    negative, and the payload names that rule in
+    ``candidate_governing_authority``.
 
     Reports candidates and applies nothing: superseding is the workflow doc's
     inline, ledger-writing act, and no spec file is ever deleted.
@@ -3148,11 +3264,28 @@ def cmd_corpus_cross_check(args: argparse.Namespace) -> dict[str, Any]:
     if not root.is_dir():
         return _error(args.slug, 'not_found', f'epic {args.slug!r} has no store tree')
     repo_root = Path(cwd_checkout_root())
+    # The candidate-side tally and the population each kind's tally was computed
+    # over, both keyed by the WHOLE :data:`CANDIDATE_KINDS` vocabulary and seeded
+    # with the WHOLE :data:`CANDIDATE_DERIVATION_STATES` vocabulary, so a kind
+    # this corpus holds no candidate of publishes stated zeros rather than
+    # vanishing from the breakdown.
+    candidate_tally: dict[str, dict[str, int]] = {
+        kind: dict.fromkeys(CANDIDATE_DERIVATION_STATES, 0) for kind in CANDIDATE_KINDS
+    }
+    candidate_population = dict.fromkeys(CANDIDATE_KINDS, 0)
     own_paths = _spec_paths(root)
     own: list[dict[str, Any]] = []
     unreadable: list[dict[str, str]] = []
     for path in own_paths:
         record = _spec_record(args.slug, path, repo_root)
+        # Every own spec is a corpus_spec CANDIDATE for the other own specs, so
+        # the population is counted here — over ``own_paths``, including the
+        # unreadable ones, which is the population the tally must reconcile with.
+        # The figure states how many own specs DECLARED a comparable surface, not
+        # how many pairs formed: a single-spec corpus reports population 1 while
+        # forming no pair at all, because self-comparison is excluded below.
+        candidate_population[CANDIDATE_KIND_CORPUS_SPEC] += 1
+        candidate_tally[CANDIDATE_KIND_CORPUS_SPEC][_spec_candidate_state(record)] += 1
         if record is None:
             unreadable.append({'spec': path.name, 'error': 'unreadable'})
         else:
@@ -3162,16 +3295,29 @@ def cmd_corpus_cross_check(args: argparse.Namespace) -> dict[str, Any]:
     for sibling_root in sibling_roots:
         for path in _spec_paths(sibling_root):
             record = _spec_record(sibling_root.name, path, repo_root)
+            candidate_population[CANDIDATE_KIND_SIBLING_EPIC_SPEC] += 1
+            candidate_tally[CANDIDATE_KIND_SIBLING_EPIC_SPEC][_spec_candidate_state(record)] += 1
             if record is None:
                 unreadable.append({'spec': f'{sibling_root.name}/{path.name}', 'error': 'unreadable'})
             else:
-                candidates.append(('sibling_epic_spec', {**record, 'name': f'{sibling_root.name}/{path.name}'}))
+                candidates.append(
+                    (
+                        CANDIDATE_KIND_SIBLING_EPIC_SPEC,
+                        {**record, 'name': f'{sibling_root.name}/{path.name}'},
+                    )
+                )
     live = _live_plan_records()
-    candidates.extend(('live_plan', record) for record in live)
+    for record in live:
+        candidate_population[CANDIDATE_KIND_LIVE_PLAN] += 1
+        candidate_tally[CANDIDATE_KIND_LIVE_PLAN][_live_candidate_state(record)] += 1
+    candidates.extend((CANDIDATE_KIND_LIVE_PLAN, record) for record in live)
     origin_matches: list[dict[str, Any]] = []
     overlap_matches: list[dict[str, Any]] = []
     for spec in own:
-        pairs = [*candidates, *(('corpus_spec', other) for other in own if other['name'] != spec['name'])]
+        pairs = [
+            *candidates,
+            *((CANDIDATE_KIND_CORPUS_SPEC, other) for other in own if other['name'] != spec['name']),
+        ]
         for kind, candidate in pairs:
             origin_row, overlap_row = _collision_rows(spec, candidate, kind)
             if origin_row is not None:
@@ -3211,9 +3357,9 @@ def cmd_corpus_cross_check(args: argparse.Namespace) -> dict[str, Any]:
         record['name'] for record in live if not record.get('comparable', bool(record['paths']))
     )
     live_comparable_records = [record for record in live if record.get('comparable', bool(record['paths']))]
-    live_matched_names = {row['candidate'] for row in origin_matches if row.get('candidate_kind') == 'live_plan'} | {
-        row['candidate'] for row in overlap_matches if row.get('candidate_kind') == 'live_plan'
-    }
+    live_matched_names = {
+        row['candidate'] for row in origin_matches if row.get('candidate_kind') == CANDIDATE_KIND_LIVE_PLAN
+    } | {row['candidate'] for row in overlap_matches if row.get('candidate_kind') == CANDIDATE_KIND_LIVE_PLAN}
     live_checked_and_clean = sorted(
         record['name'] for record in live_comparable_records if record['name'] not in live_matched_names
     )
@@ -3245,6 +3391,38 @@ def cmd_corpus_cross_check(args: argparse.Namespace) -> dict[str, Any]:
         'live_checked_and_clean_count': len(live_checked_and_clean),
         'live_checked_and_clean': live_checked_and_clean,
         'live_could_not_check_count': len(live_indeterminate_plans),
+        # The CANDIDATE side of the same disclosure, broken down per
+        # candidate_kind and derived from the whole state vocabulary — so a kind
+        # holding no candidate, and a state no candidate is in, publish stated
+        # zeros. ``candidate_population`` states what each kind's tally was
+        # computed over, so every count is readable beside its denominator.
+        # ``candidates_indeterminate > 0`` beside ``file_overlap_match_count: 0``
+        # is an unchecked negative, never a clean pass — the rule the payload
+        # names in ``candidate_governing_authority``.
+        #
+        # ``candidates_total`` is NOT ``candidates_scanned`` under another name,
+        # and the two are deliberately both published. ``candidates_scanned``
+        # counts the sibling and live candidates that were successfully READ and
+        # entered the matcher's pair list; ``candidates_total`` is the whole
+        # candidate population the tally was computed over — all three kinds,
+        # this epic's own corpus included, and an unreadable candidate counted
+        # rather than dropped. A reader comparing them sees how much of the
+        # candidate population never reached the comparison.
+        'candidate_governing_authority': CANDIDATE_GOVERNING_AUTHORITY,
+        'candidate_kinds': list(CANDIDATE_KINDS),
+        'candidate_population': [
+            {'candidate_kind': kind, 'population': candidate_population[kind]} for kind in CANDIDATE_KINDS
+        ],
+        'candidate_derivation_states': [
+            {'candidate_kind': kind, 'derivation_status': state, 'count': candidate_tally[kind][state]}
+            for kind in CANDIDATE_KINDS
+            for state in CANDIDATE_DERIVATION_STATES
+        ],
+        'candidates_total': sum(candidate_population.values()),
+        'candidates_comparable': sum(candidate_tally[kind][CANDIDATE_COMPARABLE] for kind in CANDIDATE_KINDS),
+        'candidates_indeterminate': sum(
+            candidate_tally[kind][state] for kind in CANDIDATE_KINDS for state in CANDIDATE_NON_CONTRIBUTING_STATES
+        ),
         'source_origin_match_count': len(origin_matches),
         'source_origin_matches': origin_matches,
         'file_overlap_match_count': len(overlap_matches),
