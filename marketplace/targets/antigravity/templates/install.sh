@@ -154,8 +154,21 @@ if [ -f "$SOURCE_DIR/install.sh" ]; then
   chmod 0755 "$STAGE_DIR/install.sh"
 fi
 
-rm -rf "$TARGET_DIR"
-mv "$STAGE_DIR" "$TARGET_DIR"
+BACKUP_DIR="${TARGET_DIR}.bak.$$"
+if [ -d "$TARGET_DIR" ]; then
+  mv "$TARGET_DIR" "$BACKUP_DIR"
+fi
+
+if mv "$STAGE_DIR" "$TARGET_DIR"; then
+  rm -rf "$BACKUP_DIR"
+else
+  echo "Error: Failed to move $STAGE_DIR to $TARGET_DIR" >&2
+  if [ -d "$BACKUP_DIR" ]; then
+    echo "Rolling back to previous installation..." >&2
+    mv "$BACKUP_DIR" "$TARGET_DIR"
+  fi
+  exit 1
+fi
 
 echo "Plan Marshall Antigravity plugin successfully installed at: $TARGET_DIR"
 echo ""

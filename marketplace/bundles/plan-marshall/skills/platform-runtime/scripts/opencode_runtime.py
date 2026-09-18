@@ -415,13 +415,23 @@ class OpenCodeRuntime(Runtime):
 
         settings_path = self.permission_settings_path(scope, write=True)
         settings = self.permission_load_settings(settings_path)
+        if 'error' in settings:
+            return toon_error(
+                'permission configure',
+                'load_error',
+                f"Failed to load settings from {settings_path}: {settings['error']}",
+            )
         perm = settings.setdefault('permission', {})
         if not isinstance(perm, dict):
             perm = {}
             settings['permission'] = perm
 
-        bash_map = perm.setdefault('bash', {})
-        if not isinstance(bash_map, dict):
+        bash_val = perm.get('bash')
+        if isinstance(bash_val, dict):
+            bash_map = bash_val
+        elif bash_val == 'allow':
+            bash_map = None
+        else:
             bash_map = {}
             perm['bash'] = bash_map
 
@@ -430,16 +440,35 @@ class OpenCodeRuntime(Runtime):
             rule = g.get('rule') or g.get('command') or str(g)
             cat, pat, act = to_opencode_grant(str(rule))
             if cat == 'bash':
-                if bash_map.get(pat) != act:
-                    bash_map[pat] = act
-                    added += 1
+                if bash_map is not None:
+                    if bash_map.get(pat) != act:
+                        bash_map[pat] = act
+                        added += 1
             else:
-                if perm.get(cat) != act:
-                    perm[cat] = act
-                    added += 1
+                cat_val = perm.get(cat)
+                if pat and pat != '*':
+                    if not isinstance(cat_val, dict):
+                        cat_map = {}
+                        if isinstance(cat_val, str):
+                            cat_map['*'] = cat_val
+                        perm[cat] = cat_map
+                    else:
+                        cat_map = cat_val
+                    if cat_map.get(pat) != act:
+                        cat_map[pat] = act
+                        added += 1
+                else:
+                    if cat_val != act:
+                        perm[cat] = act
+                        added += 1
 
         if added:
-            self.permission_save_settings(settings_path, settings)
+            if not self.permission_save_settings(settings_path, settings):
+                return toon_error(
+                    'permission configure',
+                    'save_error',
+                    f'Failed to write settings to {settings_path}',
+                )
 
         return toon_success(
             'permission configure',
@@ -686,6 +715,12 @@ class OpenCodeRuntime(Runtime):
             )
         settings_path = self.permission_settings_path(scope, write=not dry_run)
         settings = self.permission_load_settings(settings_path)
+        if 'error' in settings:
+            return toon_error(
+                'permission web-apply',
+                'load_error',
+                f"Failed to load settings from {settings_path}: {settings['error']}",
+            )
         perm = settings.setdefault('permission', {})
         if not isinstance(perm, dict):
             perm = {}
@@ -702,7 +737,12 @@ class OpenCodeRuntime(Runtime):
             changed = True
 
         if changed and not dry_run:
-            self.permission_save_settings(settings_path, settings)
+            if not self.permission_save_settings(settings_path, settings):
+                return toon_error(
+                    'permission web-apply',
+                    'save_error',
+                    f'Failed to write settings to {settings_path}',
+                )
 
         return toon_success(
             'permission web-apply',
@@ -796,6 +836,15 @@ class OpenCodeRuntime(Runtime):
         dry_run: bool = False,
     ) -> dict[str, Any]:
         """Ensure default Plan Marshall executor permissions exist in OpenCode settings."""
+        if 'error' in settings:
+            return {
+                'defaults_added': [],
+                'defaults_added_count': 0,
+                'defaults_removed': [],
+                'defaults_removed_count': 0,
+                'applied': False,
+                'error': settings['error'],
+            }
         perm = settings.setdefault('permission', {})
         if not isinstance(perm, dict):
             perm = {}
@@ -821,15 +870,16 @@ class OpenCodeRuntime(Runtime):
                 if not dry_run:
                     bash_map[cmd] = 'allow'
 
+        saved = False
         if added and not dry_run:
-            self.permission_save_settings(settings_path, settings)
+            saved = self.permission_save_settings(settings_path, settings)
 
         return {
             'defaults_added': added,
             'defaults_added_count': len(added),
             'defaults_removed': [],
             'defaults_removed_count': 0,
-            'applied': bool(added and not dry_run),
+            'applied': bool(added and not dry_run and saved),
         }
 
     def permission_check_skill_coverage(self, skill: str, allow_list: list[str]) -> str | None:
@@ -1111,7 +1161,7 @@ class OpenCodeRuntime(Runtime):
 
                 has_executor = _has_exec(g_settings) or _has_exec(p_settings)
                 has_file = Path(global_path).is_file() or Path(project_path).is_file()
-                healthy = has_executor or has_file
+                healthy = has_file and has_executor
                 detail = (
                     'OpenCode settings present'
                     + (' with executor permission' if has_executor else ' (missing executor permission)')

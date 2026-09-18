@@ -57,8 +57,8 @@ python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission_fi
 
 **Interpret results**:
 - `status: skipped` → Non-Claude target (permission wildcards not applicable) PASS
-- `added: []` → All wildcards present PASS
-- `added: [...]` → Missing wildcards, offer to add them
+- `added: []` (or `defaults_added_count: 0`) → All wildcards/defaults present PASS
+- `added: [...]` (or `defaults_added_count: > 0`) → Missing wildcards/defaults, offer to add them
 
 ### Sub-check: Project-step permission rules
 

@@ -2602,10 +2602,10 @@ def main() -> int:
     gen_parser.add_argument(
         '--target',
         default=None,
-        choices=['claude', 'opencode'],
+        choices=['claude', 'opencode', 'antigravity'],
         metavar='TARGET',
         help=(
-            'Platform target for the embedded target-aware resolver (claude or opencode). '
+            'Platform target for the embedded target-aware resolver (claude, opencode, or antigravity). '
             'Overrides the value read from .plan/marshal.json. '
             'When omitted, the target is read from marshal.json (defaulting to claude).'
         ),
@@ -2667,7 +2667,7 @@ def main() -> int:
     preflight_parser.add_argument(
         '--target',
         default=None,
-        choices=['claude', 'opencode'],
+        choices=['claude', 'opencode', 'antigravity'],
         metavar='TARGET',
         help=(
             'Platform target used when a stale executor is regenerated. '

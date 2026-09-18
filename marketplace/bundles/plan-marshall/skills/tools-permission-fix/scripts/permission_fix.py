@@ -211,7 +211,8 @@ def cmd_apply_fixes(args: argparse.Namespace) -> dict:
         allow_list.extend(deduped)
         defaults = ensure_default_permissions(settings, settings_path, args.dry_run)
         if not args.dry_run and dups > 0:
-            save_settings(settings_path, settings)
+            if not save_settings(settings_path, settings):
+                return {'status': 'error', 'error': f'Failed to write settings to {settings_path}'}
         return {
             'status': 'success',
             'settings_file': settings_path,
@@ -391,8 +392,12 @@ def cmd_ensure(args: argparse.Namespace) -> dict:
             perm = {}
             settings['permission'] = perm
 
-        bash_map = perm.setdefault('bash', {})
-        if not isinstance(bash_map, dict):
+        bash_val = perm.get('bash')
+        if isinstance(bash_val, dict):
+            bash_map = bash_val
+        elif bash_val == 'allow':
+            bash_map = None
+        else:
             bash_map = {}
             perm['bash'] = bash_map
 
@@ -401,24 +406,42 @@ def cmd_ensure(args: argparse.Namespace) -> dict:
         for p in permissions:
             cat, pat, act = to_opencode_grant(p)
             if cat == 'bash':
-                if bash_map.get(pat) == act:
+                if bash_map is not None:
+                    if bash_map.get(pat) == act:
+                        already_exists.append(pat)
+                    else:
+                        bash_map[pat] = act
+                        added.append(pat)
+                else:
                     already_exists.append(pat)
-                else:
-                    bash_map[pat] = act
-                    added.append(pat)
             else:
-                if perm.get(cat) == act:
-                    already_exists.append(cat)
+                cat_val = perm.get(cat)
+                if pat and pat != '*':
+                    if not isinstance(cat_val, dict):
+                        cat_map: dict[str, str] = {}
+                        if isinstance(cat_val, str):
+                            cat_map['*'] = cat_val
+                        perm[cat] = cat_map
+                    else:
+                        cat_map = cat_val
+                    if cat_map.get(pat) == act:
+                        already_exists.append(f'{cat}({pat})')
+                    else:
+                        cat_map[pat] = act
+                        added.append(f'{cat}({pat})')
                 else:
-                    perm[cat] = act
-                    added.append(cat)
+                    if cat_val == act:
+                        already_exists.append(cat)
+                    else:
+                        perm[cat] = act
+                        added.append(cat)
 
         result = {
             'settings_file': str(settings_path),
             'added': added,
             'already_exists': already_exists,
             'added_count': len(added),
-            'total_permissions': len(bash_map),
+            'total_permissions': len(bash_map) if bash_map is not None else 1,
         }
         if added:
             result['success'] = save_settings(str(settings_path), settings)
@@ -525,7 +548,8 @@ def cmd_consolidate(args: argparse.Namespace) -> dict:
         if not args.dry_run and removed > 0:
             allow_list.clear()
             allow_list.extend(deduped)
-            save_settings(settings_path, settings)
+            if not save_settings(settings_path, settings):
+                return {'status': 'error', 'error': f'Failed to write settings to {settings_path}'}
         return {
             'status': 'success',
             'settings_file': settings_path,
@@ -702,7 +726,8 @@ def cmd_ensure_wildcards(args: argparse.Namespace) -> dict:
                     allow_list.append(grant)
         if added and not args.dry_run:
             allow_list.sort()
-            save_settings(settings_path, settings)
+            if not save_settings(settings_path, settings):
+                return {'status': 'error', 'error': f'Failed to write settings to {settings_path}'}
         return {
             'status': 'success',
             'settings_file': settings_path,
@@ -723,22 +748,30 @@ def cmd_ensure_wildcards(args: argparse.Namespace) -> dict:
         if not isinstance(perm, dict):
             perm = {}
             settings['permission'] = perm
-        bash_map = perm.setdefault('bash', {})
-        if not isinstance(bash_map, dict):
+        bash_val = perm.get('bash')
+        if isinstance(bash_val, dict):
+            bash_map = bash_val
+        elif bash_val == 'allow':
+            bash_map = None
+        else:
             bash_map = {}
             perm['bash'] = bash_map
 
         added = []
         already_exists = []
         for grant in OPENCODE_DEFAULT_PERMISSIONS:
-            if bash_map.get(grant) == 'allow':
-                already_exists.append(grant)
+            if bash_map is not None:
+                if bash_map.get(grant) == 'allow':
+                    already_exists.append(grant)
+                else:
+                    added.append(grant)
+                    if not args.dry_run:
+                        bash_map[grant] = 'allow'
             else:
-                added.append(grant)
-                if not args.dry_run:
-                    bash_map[grant] = 'allow'
+                already_exists.append(grant)
         if added and not args.dry_run:
-            save_settings(settings_path, settings)
+            if not save_settings(settings_path, settings):
+                return {'status': 'error', 'error': f'Failed to write settings to {settings_path}'}
         return {
             'status': 'success',
             'settings_file': settings_path,

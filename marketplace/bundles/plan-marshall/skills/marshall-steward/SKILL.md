@@ -830,8 +830,9 @@ because the emitted agent set may have changed.
 > On Claude the directive is `/reload-plugins`, which refreshes the
 > session-pinned registry live — only registered monitors force a full
 > session restart, and plan-marshall registers none. On Antigravity or OpenCode the seam
-> returns a `no-op` whose alternative is a full session restart. The WHY
-> rationale (registry is session-pinned at startup) is unchanged and is
+> returns a `no-op` (Antigravity automatically discovers updated plugins in
+> `~/.gemini/config/plugins/` upon `/sync-antigravity`, while OpenCode requires a session restart).
+> The WHY rationale (registry is session-pinned at startup) is unchanged and is
 > documented at the sister surfaces — `/sync-plugin-cache`,
 > `variant_emitter.py`, and `ext-point-dynamic-level-executor.md` — and
 > MUST stay convergent across all four surfaces.

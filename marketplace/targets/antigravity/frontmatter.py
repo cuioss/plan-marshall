@@ -161,6 +161,15 @@ def _split_tools(raw: str) -> list[str]:
     return [token.strip() for token in raw.split(',') if token.strip()]
 
 
+def _yaml_quote(value: str) -> str:
+    """Safely quote a string for inclusion as a YAML scalar value."""
+    if not value:
+        return '""'
+    if any(c in value for c in (':', '"', "'", '#', '\n', '@', '`', '*', '&', '{', '}', '[', ']')) or value.startswith(('-', '?', ':', ' ')):
+        return json.dumps(value)
+    return value
+
+
 def transform_skill_frontmatter(
     fm: dict[str, str],
     bundle: str,
@@ -177,7 +186,7 @@ def transform_skill_frontmatter(
     lines = [
         '---',
         f'name: {bundle}-{skill_name}',
-        f'description: {desc}',
+        f'description: {_yaml_quote(desc)}',
         'compatibility: Adapted from plan-marshall marketplace (Claude Code native)',
         '---',
     ]
@@ -195,7 +204,7 @@ def transform_agent_frontmatter(
     _ensure_required(fm, rules, source_label)
 
     desc = fm.get('description', '').splitlines()[0].strip() if fm.get('description') else ''
-    lines = ['---', f'description: {desc}', 'mode: subagent']
+    lines = ['---', f'description: {_yaml_quote(desc)}', 'mode: subagent']
 
     model_value = fm.get('model', '')
     if model_value:

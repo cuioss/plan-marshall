@@ -35,7 +35,7 @@ marketplace/targets/
 ├── antigravity/                  # Google Antigravity build target
 │   ├── __init__.py               # Registers AntigravityTarget
 │   ├── target.py                 # AntigravityTarget(TargetBase)
-│   ├── emitter.py                # Singular-layout emit + plugin.json
+│   ├── emitter.py                # Plural-layout emit + plugin.json
 │   ├── frontmatter.py            # Frontmatter transform + fail-closed validation
 │   ├── variant_emitter.py        # Per-level agent variant emission
 │   ├── mapping.json              # Tool/model maps
@@ -187,7 +187,7 @@ missing flag, generator error, plugin.json drift, unmapped tool, etc.).
    included), so a target that skips this step fails the suite rather than
    shipping components it was told not to.
 7. **If the target supports local developer deployment (`sync.py`), register a `TargetSyncConfig`.**
-   Targets that support syncing generated bundles into local developer environments (like Claude Code's `/sync-plugin-cache`, Antigravity's `/sync-antigravity`, or OpenCode's `/sync-opencode`) hook into the declarative `marketplace/targets/sync.py` engine.
+   Targets that support syncing generated bundles into local developer environments (such as Antigravity's `/sync-antigravity` or OpenCode's `/sync-opencode`) hook into the declarative `marketplace/targets/sync.py` engine (Claude Code uses native rsync cache sync via `/sync-plugin-cache`).
    Add a `TargetSyncConfig` entry to `TARGET_CONFIGS` in `marketplace/targets/sync.py`:
 
    ```python

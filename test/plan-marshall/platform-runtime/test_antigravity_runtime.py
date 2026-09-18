@@ -344,3 +344,44 @@ def test_permission_ensure_wildcards(
     result = _parse(runtime.permission_ensure_wildcards('project', 'marketplace/', False))
     assert result['status'] == 'success'
     assert result['operation'] == 'permission ensure-wildcards'
+
+
+def test_project_install_hook_merge_existing(runtime: AntigravityRuntime, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """project_install_hook merges plan-marshall-guard into existing hooks.json."""
+    monkeypatch.chdir(tmp_path)
+    hooks_dir = tmp_path / '.agents'
+    hooks_dir.mkdir(parents=True)
+    hooks_file = hooks_dir / 'hooks.json'
+    existing = {'user-hook': {'enabled': True, 'matcher': 'custom'}}
+    hooks_file.write_text(json.dumps(existing), encoding='utf-8')
+
+    res = _parse(runtime.project_install_hook('antigravity'))
+    assert res['status'] == 'success'
+    assert res['installed'] is True
+
+    updated = json.loads(hooks_file.read_text(encoding='utf-8'))
+    assert 'user-hook' in updated
+    assert 'plan-marshall-guard' in updated
+
+    # Calling again is idempotent
+    res2 = _parse(runtime.project_install_hook('antigravity'))
+    assert res2['status'] == 'success'
+    assert res2['installed'] is False
+
+
+def test_to_antigravity_grant_structured():
+    """to_antigravity_grant translates structured grant dictionaries."""
+    from antigravity_runtime import to_antigravity_grant
+
+    assert to_antigravity_grant({'tool': 'read', 'path': 'src/**'}) == 'read_file(src/**)'
+    assert to_antigravity_grant({'tool': 'write', 'path': 'out.txt'}) == 'write_file(out.txt)'
+    assert to_antigravity_grant({'tool': 'webfetch', 'url': 'https://api.github.com'}) == 'read_url(https://api.github.com)'
+    assert to_antigravity_grant({'tool': 'command', 'command': 'python3 -m pytest'}) == 'command(python3 -m pytest)'
+    assert to_antigravity_grant({'rule': 'Bash(git status *)'}) == 'command(git status)'
+
+
+def test_permission_ensure_defaults_with_error(runtime: AntigravityRuntime):
+    """permission_ensure_defaults returns error when settings has error key."""
+    res = runtime.permission_ensure_defaults({'error': 'JSON decode error'}, '/tmp/settings.json')
+    assert res['applied'] is False
+    assert res['error'] == 'JSON decode error'

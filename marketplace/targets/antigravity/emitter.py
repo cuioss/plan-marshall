@@ -149,8 +149,10 @@ def _is_user_invocable(fm: dict[str, str]) -> bool:
 def _render_user_invocable_template(description: str, skill_id: str) -> str:
     if not _USER_INVOCABLE_TEMPLATE.is_file():
         raise FileNotFoundError(f'Antigravity user-invocable template not found: {_USER_INVOCABLE_TEMPLATE}')
+    from marketplace.targets.antigravity.frontmatter import _yaml_quote
+
     text = _USER_INVOCABLE_TEMPLATE.read_text(encoding='utf-8')
-    text = text.replace('{{description}}', description)
+    text = text.replace('{{description}}', _yaml_quote(description))
     text = text.replace('{{skill_id}}', skill_id)
     return text
 
