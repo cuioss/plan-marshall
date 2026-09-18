@@ -405,6 +405,7 @@ def _resolve_env_binding(
     best: ast.AST | None = None
     best_pos: tuple[int, int] = (-1, -1)
     for node in ast.walk(tree):
+        binding: ast.Assign | ast.AnnAssign | None = None
         value: ast.AST | None = None
         target_id: str | None = None
         if isinstance(node, ast.Assign) and len(node.targets) == 1:
@@ -412,11 +413,13 @@ def _resolve_env_binding(
             if isinstance(target, ast.Name):
                 target_id = target.id
                 value = node.value
+                binding = node
         elif isinstance(node, ast.AnnAssign) and node.value is not None:
             if isinstance(node.target, ast.Name):
                 target_id = node.target.id
                 value = node.value
-        if target_id != name or value is None:
+                binding = node
+        if target_id != name or value is None or binding is None:
             continue
         node_func = _innermost_function(node, parent_map)
         if call_func is not None:
@@ -427,7 +430,7 @@ def _resolve_env_binding(
         node_pos = (getattr(node, 'lineno', 0), getattr(node, 'col_offset', 0))
         if node_pos >= call_pos:
             continue
-        if _binding_is_unreachable(node, parent_map):
+        if _binding_is_unreachable(binding, parent_map):
             continue
         if node_pos > best_pos:
             best = value
@@ -549,9 +552,7 @@ def _is_deliberate_env_scrub(value: ast.AST) -> bool:
     return False
 
 
-def _has_pythonpath_env_kwarg(
-    node: ast.Call, tree: ast.AST, parent_map: dict[int, ast.AST]
-) -> bool:
+def _has_pythonpath_env_kwarg(node: ast.Call, tree: ast.AST, parent_map: dict[int, ast.AST]) -> bool:
     """Heuristic: env= kwarg that introduces, trusts, or deliberately strips PYTHONPATH.
 
     A bare ``env=name`` resolves per call site via :func:`_resolve_env_binding`
