@@ -1,69 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 # ruff: noqa: I001
-"""Population-complete BEHAVIOURAL guard for the merge-shaped off-routing refusal.
-
-This is the deliverable of plan
-``060-a-prose-routing-table-is-not-an-enforcement-boundary``. It generalises the
-shipped one-site fix — the base-branch/project queue preflight every merge-shaped
-verb now carries — into a guard bound to the DERIVED population rather than to a
-hand-listed set of verbs.
-
-**Why a new test when per-verb behavioural tests already exist.** The provider
-suites already prove each merge-shaped verb's refusal one hand-written test
-function at a time (``test_pr_merge_refuses_when_base_merge_queue_required`` and
-its siblings). A hand-list is a *sample*: it says nothing about a NEW merge-shaped
-verb added to a registry without a guard, which is exactly the shape that
-under-counted this population twice. This module instead DERIVES the population
-from both providers' ``handlers: HandlerMap`` registry literals (via the shared
-:mod:`_merge_shaped_roster`, the single-source pattern :mod:`_dispatch_roster`
-established) and asserts the off-routing behaviour of EVERY derived member. A
-merge-shaped verb added to a registry without an off-routing scenario fails
-``test_every_derived_member_has_an_offrouting_scenario``; one added without a
-working guard fails the behavioural parametrization.
-
-**Membership is decided by BEHAVIOUR.** A registry key is a member when the
-handler it binds reaches the platform queue/train surface in its own executable
-code, derived over EVERY registered ``('pr', verb)`` key — not over four
-pre-named verbs. ``MERGE_SHAPED_VERBS`` is a mirror of that derivation and is
-asserted against it bidirectionally by
-:func:`test_vocabulary_mirror_matches_the_behaviour_derivation`; it never narrows
-the population. No size literal is transcribed anywhere in this module: the size
-comes from the derivation, and what is *asserted* is that the two independent
-sides agree, that every provider contributes, and that no registered handler was
-left unclassified. A derivation that collapsed on one provider fails the
-per-provider arm rather than reporting a smaller green — the empty-population trap
-this epic has been bitten by repeatedly.
-
-**The off-routing scenarios, and the ONE sanctioned exception.** The documented
-route (``branch-cleanup.md`` § "Merge routing (``use_merge_queue``)") dispatches
-only ``safe-merge`` / ``merge-queue`` and declares ``merge`` / ``auto-merge``
-unreachable from it. The callee-side handling of an off-routing dispatch is:
-
-* ``merge`` / ``safe-merge`` — an IMMEDIATE merge against a base that REQUIRES a
-  platform queue/train is the close-unmerged signature; the callee REFUSES
-  (``status: error``).
-* ``merge-queue`` — an enqueue against a base with NO queue/train configured
-  would silently degrade to plain auto-merge; the callee REFUSES.
-* ``auto-merge`` — the **sanctioned exception**. ``gh pr merge --auto`` /
-  ``glab mr merge --when-pipeline-succeeds`` self-routes: on a queued base it
-  ENQUEUES (the safe outcome), on an unqueued base it enables plain auto-merge.
-  It is therefore never in the close-unmerged unsafe state, and a blanket refusal
-  would break the legitimate enqueue-via-auto-merge path. The callee-side handling
-  that prevents the incident here is PROBE-AND-REPORT: it reports the
-  ``disposition`` it actually produced and NEVER a bare/false ``merged: true``.
-  This module asserts that sanctioned handling (success + ``disposition:
-  enqueued`` + no ``merged`` key), not a refusal.
-
-**Falsifiability, measured by mutation.** The behavioural arms are proven to fail
-against a mutant — deleting a handler's guard call (e.g. dropping the
-``_refuse_on_required_merge_queue`` preflight from ``cmd_pr_merge``) makes that
-member's off-routing dispatch merge blind, so the refusal assertion goes red for
-it while the live tree stays green. The plan's run report records the mutation
-run. The population arm's falsifiability is structural: shrink the derived
-population and the size assertion fails; add an unclassified verb and the scenario
-arm fails.
-"""
+"""Offrouting cluster — refusal classification."""
 
 from __future__ import annotations
 
@@ -201,6 +139,7 @@ _SIDE_EFFECT_SAMPLES: dict[tuple[str, str], list[str]] = {
 }
 
 _IDS = [f'{provider}:{verb}' for provider, verb, _handler in _MEMBERS]
+assert _MEMBERS, 'the derived member population is empty — every parametrize below would be vacuous'
 
 #: Published on EVERY run — passing included — by the root conftest's
 #: ``pytest_report_header``. A population guard that only reports its size in a
@@ -381,125 +320,6 @@ def _dispatch(monkeypatch, provider: str, verb: str, handler: str, mode: str) ->
 #: condition that removed it. A stale entry is a failure too; see the third arm of
 #: :func:`test_vocabulary_mirror_matches_the_behaviour_derivation`.
 _DRIFT_EXEMPTIONS: dict[tuple[str, str], str] = {}
-
-
-def test_derived_population_is_behaviour_shaped_and_covers_every_provider():
-    """The population is non-empty, per-provider non-empty, and fully classified.
-
-    Asserted first and on its own: every behavioural parametrization below iterates
-    ``_MEMBERS``, so a derivation that silently collapsed would make those checks
-    pass vacuously. Three arms, each closing a distinct collapse:
-
-    * **Non-empty overall** — the ``handlers: HandlerMap`` literal stopped matching
-      on both providers at once.
-    * **Non-empty per provider** — it stopped matching on ONE provider. A total-size
-      arm cannot see this: a halved population is still a population, and comparing
-      it against a size derived from the same collapsed read compares a number with
-      itself.
-    * **Nothing unresolved** — every registered ``('pr', verb)`` key's handler was
-      located and classified. A handler whose source cannot be read is a member the
-      derivation cannot speak about, and recording it as "not merge-shaped" would
-      assert an absence never established.
-
-    No size literal is transcribed: the sizes here are reported, and what is
-    asserted about them is a property (non-emptiness, total classification), not a
-    remembered number.
-    """
-    assert _MEMBERS, (
-        'The behaviour-derived merge-shaped population is EMPTY. Every behavioural '
-        'assertion below would pass vacuously. Either both registry literals stopped '
-        f'matching, or no handler reaches the queue/train surface. Classified: '
-        f'{len(_POPULATION.members)} member(s), {len(_POPULATION.inert)} inert, '
-        f'{len(_POPULATION.unresolved)} unresolved.'
-    )
-
-    by_provider: dict[str, list[str]] = {}
-    for provider, verb, _handler in _MEMBERS:
-        by_provider.setdefault(provider, []).append(verb)
-    for provider in PROVIDERS:
-        assert by_provider.get(provider), (
-            f'{provider} contributes ZERO merge-shaped members, while the population as a '
-            f'whole has {len(_MEMBERS)} ({by_provider}). Both providers register the '
-            "merge-shaped surface, so an empty side means this provider's registry or "
-            'handler sources stopped resolving — and every parametrized arm below silently '
-            'stopped covering it.'
-        )
-
-    assert not _POPULATION.unresolved, (
-        f'{len(_POPULATION.unresolved)} registered `pr` handler(s) could not be located in '
-        f'the supplied provider sources: {_POPULATION.unresolved}. An unresolvable handler '
-        'is NOT evidence of an absent guard — it is an absence of evidence, and folding it '
-        'into the inert bucket would drop a possible member with nothing reported.'
-    )
-
-
-def test_vocabulary_mirror_matches_the_behaviour_derivation():
-    """``MERGE_SHAPED_VERBS`` mirrors the derivation in BOTH directions.
-
-    The constant is a mirror, not a filter. Reading only one direction catches a
-    vocabulary that lost a verb the handlers still guard, or one that kept a verb
-    they no longer do — never both, and the two are different defects:
-
-    * **unnamed** — a handler reaches the queue/train surface under a verb the
-      vocabulary does not list. Under the old vocabulary-filtered derivation this
-      member was dropped from the population before any guard saw it, with nothing
-      reported. Registering a queue-guarded ``('pr', 'queue-merge')`` handler in
-      either registry lands here and NAMES the verb.
-    * **stale** — a verb the vocabulary lists is registered, but its handler
-      reaches no queue/train symbol. The vocabulary claims a guard the code does
-      not perform.
-
-    The third arm rejects a stale exemption, so an entry cannot outlive the
-    divergence it was written for and quietly pre-authorise a future one.
-    """
-    drift = mirror_drift(_POPULATION)
-    unnamed = {(provider, verb): handler for provider, verb, handler in drift.unnamed}
-    stale = {(provider, verb): handler for provider, verb, handler in drift.stale}
-
-    unexplained_unnamed = sorted(key for key in unnamed if key not in _DRIFT_EXEMPTIONS)
-    assert not unexplained_unnamed, (
-        f'{len(unexplained_unnamed)} verb(s) are merge-shaped BY BEHAVIOUR but absent from '
-        f'MERGE_SHAPED_VERBS {sorted(MERGE_SHAPED_VERBS)}: '
-        f'{ {key: unnamed[key] for key in unexplained_unnamed} }. Their handlers reach the '
-        'platform queue/train surface, so they carry the same close-unmerged risk as the '
-        'named verbs. Add the verb to the mirror and give it an off-routing scenario, or '
-        'record it in _DRIFT_EXEMPTIONS with a reason — never leave it diverging silently. '
-        f'Population: {len(_MEMBERS)} member(s), {len(_POPULATION.inert)} inert.'
-    )
-
-    unexplained_stale = sorted(key for key in stale if key not in _DRIFT_EXEMPTIONS)
-    assert not unexplained_stale, (
-        f'{len(unexplained_stale)} verb(s) in MERGE_SHAPED_VERBS are registered but their '
-        f'handlers reach NO queue/train symbol: '
-        f'{ {key: stale[key] for key in unexplained_stale} }. The mirror claims a guard the '
-        'handler does not perform — either the guard was removed (a regression) or the verb '
-        'was never merge-shaped (a stale mirror entry). Fix the handler, drop the verb from '
-        'the mirror, or record it in _DRIFT_EXEMPTIONS with a reason.'
-    )
-
-    divergent = set(unnamed) | set(stale)
-    stale_exemptions = sorted(key for key in _DRIFT_EXEMPTIONS if key not in divergent)
-    assert not stale_exemptions, (
-        f'_DRIFT_EXEMPTIONS carries {len(stale_exemptions)} entry/entries for verbs that no '
-        f'longer diverge: {stale_exemptions}. An exemption that outlives its cause silently '
-        'pre-authorises the next divergence on the same verb. Remove it.'
-    )
-
-
-def test_published_population_size_matches_the_swept_population():
-    """The size conftest publishes is the size THIS module sweeps.
-
-    The header entry is only worth reading if it tracks the parametrization. A
-    constant that drifted from ``_MEMBERS`` would publish a reassuring number
-    over a sweep of a different size — the reporting equivalent of the vacuous
-    green this whole module exists to prevent.
-    """
-    assert GUARD_POPULATION_SIZE == len(_MEMBERS) == len(_IDS), (
-        f'published size {GUARD_POPULATION_SIZE} disagrees with the swept population '
-        f'{len(_MEMBERS)} (ids: {len(_IDS)}). The header would report a number no '
-        'parametrization used.'
-    )
-    assert GUARD_POPULATION_LABEL, 'the published population needs a name to be readable'
 
 
 def test_every_derived_member_has_an_offrouting_scenario():
