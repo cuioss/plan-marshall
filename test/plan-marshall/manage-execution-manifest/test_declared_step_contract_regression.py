@@ -465,7 +465,7 @@ class TestPreviewAgreesWithCompose:
         composed = _persisted_phase_6_steps('dsc-agree-discriminator')
 
         candidates = [_mem.canonicalize_step_key(k) for k in self._CONFIG_DECIDED_SEED]
-        raw_kept, _dropped, _warnings = _mem._apply_lane_resolution(candidates, 'full', None, 'dsc-agree-discriminator')
+        raw_kept, _dropped, _warnings = _mem._apply_lane_resolution(candidates, 'full', None)
         assert raw_kept != composed, 'seed must be inverted for this discriminator to bite'
 
         preview = cmd_lanes_preview(Namespace(plan_id='dsc-agree-discriminator', phase_6_steps=None))

@@ -1617,7 +1617,6 @@ def _apply_lane_resolution(
     phase_6_steps: list[str],
     posture: str,
     marshal_phase_6_map: dict[str, dict] | None,
-    plan_id: str,
 ) -> tuple[list[str], list[dict[str, str]], list[tuple[str, str]]]:
     """Resolve the phase-6 step list under ``posture`` — returns (kept, dropped, warnings).
 
@@ -1785,8 +1784,25 @@ def cmd_lanes_preview(args: argparse.Namespace) -> dict[str, Any] | None:
     outright.
 
     The cost sum for each posture is ``Σ(resolved element cost_size → table)``.
+
+    **The declared-vs-effective report.** ``lane_report[]`` answers the question
+    an operator cannot otherwise ask without running a plan: *is the lane I
+    stored actually in force?* One row per lane-participating candidate carries
+    the ``declared`` value (``-`` when none is stored), the ``effective`` value,
+    whether the declaration ``binds``, and the verbatim neutralization ``reason``
+    when it does not. The effective value is resolved PER STEP rather than read
+    off a posture pass, because the ``full`` posture short-circuits that pass
+    without resolving anything — sourcing it there would report every
+    full-posture element as unexamined.
+
+    **``--plan-id`` is OPTIONAL and selects the channel coverage.** Supplied, the
+    step map is the merged plan-local-over-marshal source, so both declaration
+    channels are reported; omitted, only the project-wide marshal.json channel is
+    read. ``channels_covered`` states which, so a report over one channel is
+    never mistaken for a report over both.
     """
-    plan_id = require_valid_plan_id(args)
+    raw_plan_id = getattr(args, 'plan_id', None)
+    plan_id = require_valid_plan_id(args) if raw_plan_id is not None else None
 
     marshal_phase_6 = _read_marshal_phase_steps('phase-6-finalize')
     if marshal_phase_6 is not None:
@@ -1794,7 +1810,16 @@ def cmd_lanes_preview(args: argparse.Namespace) -> dict[str, Any] | None:
     else:
         candidates = _split_csv(getattr(args, 'phase_6_steps', None), DEFAULT_PHASE_6_STEPS)
     candidates = [canonicalize_step_key(s) for s in candidates]
-    marshal_phase_6_map = _read_marshal_phase_step_map('phase-6-finalize')
+    # With a plan id the merged plan-local-over-marshal map is the declaration
+    # source — the same one every compose-side per-element reader consults — so a
+    # plan-scoped answer is visible here too. Without one there is no plan-local
+    # map to merge, and the project-wide channel stands alone.
+    if plan_id is not None:
+        marshal_phase_6_map = _read_merged_phase_6_step_map(plan_id)
+        channels_covered = ['project', 'plan_local']
+    else:
+        marshal_phase_6_map = _read_marshal_phase_step_map('phase-6-finalize')
+        channels_covered = ['project']
     table = _read_cost_size_token_table()
 
     # Composer pre-filter 6 — decided by marshal config plus provider presence
@@ -1805,8 +1830,15 @@ def cmd_lanes_preview(args: argparse.Namespace) -> dict[str, Any] | None:
 
     lanes: dict[str, Any] = {}
     plan_input_dependent: set[str] = set()
+    # The lane pass's SECOND and THIRD return values are consumed rather than
+    # discarded: the warnings are the verbatim neutralization reasons the report
+    # quotes, and the per-posture drops are surfaced beside each posture's kept
+    # set so a step missing from a lane is diagnosable from this one payload.
+    neutralization_reason: dict[str, str] = {}
     for posture in LANE_TIERS:
-        kept, _dropped, _warnings = _apply_lane_resolution(candidates, posture, marshal_phase_6_map, plan_id)
+        kept, dropped, warnings = _apply_lane_resolution(candidates, posture, marshal_phase_6_map)
+        for warned_step, warning in warnings:
+            neutralization_reason.setdefault(warned_step, warning)
         # Same ordering authority the composer applies to its final list.
         kept = _sort_steps_by_frontmatter_order(kept)
         plan_input_dependent.update(s for s in kept if s in _PLAN_INPUT_DEPENDENT_PHASE_6_STEPS)
@@ -1814,14 +1846,41 @@ def cmd_lanes_preview(args: argparse.Namespace) -> dict[str, Any] | None:
             'phase_6_steps': kept,
             'phase_6_steps_count': len(kept),
             'cost_sum_tokens': _sum_lane_cost(kept, table),
+            'dropped': dropped,
         }
 
-    return {
+    lane_report: list[dict[str, Any]] = []
+    for step in candidates:
+        lane = _resolve_element_lane(step)
+        if not lane or 'class' not in lane:
+            # Not lane-participating: the resolver reaches no class for it, so
+            # there is no effective lane to compare a declaration against.
+            continue
+        override = _lane_override_for(step, marshal_phase_6_map)
+        effective, is_off = _effective_lane_tier(lane, override)
+        reason = neutralization_reason.get(step, '')
+        lane_report.append(
+            {
+                'step': step,
+                'declared': override if override is not None else '-',
+                'effective': 'off' if is_off else (effective or '-'),
+                # A declaration binds when one was made AND nothing neutralized it.
+                'binds': override is not None and not reason,
+                'reason': reason,
+            }
+        )
+
+    result: dict[str, Any] = {
         'status': 'success',
-        'plan_id': plan_id,
         'lanes': lanes,
+        'lane_report': lane_report,
+        'lane_report_count': len(lane_report),
+        'channels_covered': channels_covered,
         'plan_input_dependent_steps': sorted(plan_input_dependent),
     }
+    if plan_id is not None:
+        result['plan_id'] = plan_id
+    return result
 
 
 def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
@@ -2314,7 +2373,7 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     # The q-gate is never a phase-6 finalize step, so it is never lane-pruned here.
     execution_profile = _read_execution_profile(plan_id)
     lane_kept, lane_dropped, lane_warnings = _apply_lane_resolution(
-        body['phase_6']['steps'], execution_profile, marshal_phase_6_map, plan_id
+        body['phase_6']['steps'], execution_profile, marshal_phase_6_map
     )
     body['phase_6']['steps'] = lane_kept
 
@@ -3502,7 +3561,18 @@ def _build_parser() -> argparse.ArgumentParser:
         help='Resolve minimal/standard/full phase-6 step sets + cost sums in one TOON',
         allow_abbrev=False,
     )
-    add_plan_id_arg(lanes_preview)
+    # --plan-id is OPTIONAL here, unlike every other verb on this parser: the
+    # preview is a READ of configuration at rest and answers usefully with no
+    # plan at all. Supplied, it widens the declaration source to the merged
+    # plan-local-over-marshal map; omitted, the project-wide channel stands
+    # alone and `channels_covered` says so.
+    lanes_preview.add_argument(
+        '--plan-id',
+        default=None,
+        help='Plan identifier (OPTIONAL). Supplied, the report covers both declaration '
+        'channels (plan-local over marshal); omitted, only the project-wide marshal.json '
+        'channel is read and channels_covered reports that.',
+    )
     lanes_preview.add_argument(
         '--phase-6-steps',
         default=None,

@@ -453,6 +453,24 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 When `ask_steps` is empty (every ask element was already resolved on a prior
 run), skip the prompts — there is nothing left to resolve.
 
+**Then show which lane settings are actually in force.** A stored lane is a
+request, and the composer does not grant every one of them: an `off` on a
+mandatory-floor element is neutralized and the step keeps running. Read the
+declared-versus-effective report and display its rows, so the operator sees the
+outcome of what they just persisted rather than only the request:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest \
+  lanes preview
+```
+
+`--plan-id` is omitted deliberately: this is project-wide configuration, so the
+report covers the project channel alone and its `channels_covered` field says so.
+Display each `lane_report[]` row as `{step}: asked for {declared}, running at
+{effective}`, and for any row whose `binds` is `false` AND whose `reason` is
+non-empty, show the `reason` verbatim — that is the one case where a stored
+setting is not doing what it appears to say.
+
 ---
 
 ## Configuration: Skill Domains

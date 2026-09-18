@@ -18,7 +18,7 @@ from pathlib import Path
 import pytest
 from _execution_manifest_fixtures import fake_lane_blocks
 
-from conftest import get_script_path, load_script_module, run_script
+from conftest import create_marshal_json, get_script_path, load_script_module, run_script
 
 # Script path for subprocess (CLI plumbing) tests.
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-execution-manifest', 'manage-execution-manifest.py')
@@ -4437,7 +4437,7 @@ def _dropped_steps(dropped: list[dict[str, str]]) -> set[str]:
 def test_apply_lane_resolution_full_is_noop(monkeypatch):
     """The full posture keeps every element (no pruning)."""
     _patch_element_lane(monkeypatch)
-    kept, dropped, warnings = _apply_lane_resolution(_LANE_STEPS, 'full', None, 'p')
+    kept, dropped, warnings = _apply_lane_resolution(_LANE_STEPS, 'full', None)
 
     assert kept == _LANE_STEPS
     assert dropped == []
@@ -4447,7 +4447,7 @@ def test_apply_lane_resolution_full_is_noop(monkeypatch):
 def test_apply_lane_resolution_minimal_keeps_only_floor(monkeypatch):
     """Minimal keeps only the tier-minimal floor; standard/full-tier elements drop."""
     _patch_element_lane(monkeypatch)
-    kept, dropped, _warnings = _apply_lane_resolution(_LANE_STEPS, 'minimal', None, 'p')
+    kept, dropped, _warnings = _apply_lane_resolution(_LANE_STEPS, 'minimal', None)
 
     assert kept == ['push', 'archive-plan', 'project:finalize-step-deploy-target']
     assert _dropped_steps(dropped) == {
@@ -4460,7 +4460,7 @@ def test_apply_lane_resolution_minimal_keeps_only_floor(monkeypatch):
 def test_apply_lane_resolution_standard_drops_only_full_tier(monkeypatch):
     """Standard keeps minimal + standard tiers and drops the two full-tier elements."""
     _patch_element_lane(monkeypatch)
-    kept, dropped, _warnings = _apply_lane_resolution(_LANE_STEPS, 'standard', None, 'p')
+    kept, dropped, _warnings = _apply_lane_resolution(_LANE_STEPS, 'standard', None)
 
     assert _dropped_steps(dropped) == {
         'finalize-step-security-audit',
@@ -4479,7 +4479,7 @@ def test_apply_lane_resolution_every_drop_carries_a_reason(monkeypatch):
     effective tier above the posture cutoff.
     """
     _patch_element_lane(monkeypatch)
-    _kept, dropped, _warnings = _apply_lane_resolution(_LANE_STEPS, 'minimal', None, 'p')
+    _kept, dropped, _warnings = _apply_lane_resolution(_LANE_STEPS, 'minimal', None)
 
     assert dropped, 'the minimal posture must drop something for this case to mean anything'
     for record in dropped:
@@ -4498,7 +4498,7 @@ def test_apply_lane_resolution_off_override_reason_names_the_opt_out(monkeypatch
     """
     _patch_element_lane(monkeypatch)
     overrides = {'sonar-roundtrip': {'lane': 'off'}}
-    _kept, dropped, _warnings = _apply_lane_resolution(_LANE_STEPS, 'auto', overrides, 'p')
+    _kept, dropped, _warnings = _apply_lane_resolution(_LANE_STEPS, 'auto', overrides)
 
     reason = next(r['reason'] for r in dropped if r['step'] == 'sonar-roundtrip')
     assert "'off'" in reason
@@ -4508,7 +4508,7 @@ def test_apply_lane_resolution_off_override_reason_names_the_opt_out(monkeypatch
 def test_apply_lane_resolution_keeps_unblocked_elements(monkeypatch):
     """An element with no lane: block is not lane-participating and is always kept."""
     monkeypatch.setattr(_mem, '_resolve_element_lane', lambda step: None)
-    kept, dropped, _warnings = _apply_lane_resolution(['no-block-step'], 'minimal', None, 'p')
+    kept, dropped, _warnings = _apply_lane_resolution(['no-block-step'], 'minimal', None)
 
     assert kept == ['no-block-step']
     assert dropped == []
@@ -4519,7 +4519,7 @@ def test_apply_lane_resolution_derived_state_off_override_is_immune(monkeypatch)
     element is KEPT with an informational warning (the mandatory floor cannot be weakened)."""
     _patch_element_lane(monkeypatch)
     overrides = {'project:finalize-step-deploy-target': {'lane': 'off'}}
-    kept, dropped, warnings = _apply_lane_resolution(_LANE_STEPS, 'minimal', overrides, 'p')
+    kept, dropped, warnings = _apply_lane_resolution(_LANE_STEPS, 'minimal', overrides)
 
     assert 'project:finalize-step-deploy-target' in kept
     assert kept == ['push', 'archive-plan', 'project:finalize-step-deploy-target']
@@ -4532,7 +4532,7 @@ def test_apply_lane_resolution_adversarial_off_override_drops_cleanly(monkeypatc
     warning — the opt-out is a real drop (standard posture would otherwise keep it)."""
     _patch_element_lane(monkeypatch)
     overrides = {'sonar-roundtrip': {'lane': 'off'}}
-    kept, dropped, warnings = _apply_lane_resolution(_LANE_STEPS, 'standard', overrides, 'p')
+    kept, dropped, warnings = _apply_lane_resolution(_LANE_STEPS, 'standard', overrides)
 
     assert 'sonar-roundtrip' in _dropped_steps(dropped)
     assert 'sonar-roundtrip' not in kept
@@ -4542,7 +4542,7 @@ def test_apply_lane_resolution_adversarial_off_override_drops_cleanly(monkeypatc
 def test_meta_project_minimal_keeps_derived_state_without_override(monkeypatch):
     """Meta-project invariant: a minimal posture keeps derived-state by default (never SILENTLY dropped)."""
     _patch_element_lane(monkeypatch)
-    kept, dropped, warnings = _apply_lane_resolution(['project:finalize-step-deploy-target'], 'minimal', None, 'p')
+    kept, dropped, warnings = _apply_lane_resolution(['project:finalize-step-deploy-target'], 'minimal', None)
 
     assert kept == ['project:finalize-step-deploy-target']
     assert dropped == []
@@ -4597,7 +4597,7 @@ def test_lanes_preview_membership_agrees_with_apply_lane_resolution(plan_context
     assert result is not None
 
     for posture in ('minimal', 'standard', 'full'):
-        kept, _dropped, _warnings = _apply_lane_resolution(_LANE_STEPS, posture, None, 'lanes-agree')
+        kept, _dropped, _warnings = _apply_lane_resolution(_LANE_STEPS, posture, None)
         assert set(result['lanes'][posture]['phase_6_steps']) == set(kept)
 
 
@@ -4615,7 +4615,7 @@ def test_lanes_preview_applies_the_composer_ordering_authority(plan_context, mon
     assert result is not None
 
     for posture in ('minimal', 'standard', 'full'):
-        kept, _dropped, _warnings = _apply_lane_resolution(_LANE_STEPS, posture, None, 'lanes-order')
+        kept, _dropped, _warnings = _apply_lane_resolution(_LANE_STEPS, posture, None)
         assert result['lanes'][posture]['phase_6_steps'] == _mem._sort_steps_by_frontmatter_order(kept)
 
     # Concretely, for the full posture the sort places the order-resolvable steps
@@ -4664,6 +4664,256 @@ def test_lanes_preview_reports_empty_advisory_when_nothing_is_plan_input_depende
 
     assert result is not None
     assert result['plan_input_dependent_steps'] == []
+
+
+# --- cmd_lanes_preview: the declared-vs-effective report ---------------------
+#
+# ``lane_report[]`` answers the question an operator otherwise cannot ask without
+# running a plan: is the lane I stored actually in force? A stored value and an
+# effective value are DIFFERENT facts, and the pair that motivates the report is
+# the inert one — a declaration that was accepted and stored but neutralized on
+# resolution. Every control below therefore asserts the two values TOGETHER with
+# ``binds`` and ``reason``, because ``declared`` alone cannot distinguish an
+# override that took effect from one that was overruled.
+#
+# These cases source their candidate list from a marshal.json fixture rather than
+# the ``--phase-6-steps`` CSV the section above uses: a declaration channel can
+# only be read off a config that exists on disk, so a CSV-driven preview has no
+# declaration to report on at all.
+
+#: The project-wide declaration fixture. Two of the six steps carry an ``off``,
+#: chosen to sit on opposite sides of the floor-immunity rule so the report's two
+#: outcomes are both exercised against a real resolution rather than one being
+#: asserted in isolation:
+#:
+#: * ``sonar-roundtrip`` is ``prunable`` — a non-floor class, so its ``off`` is a
+#:   real opt-out that BINDS.
+#: * ``project:finalize-step-deploy-target`` is ``derived-state`` — a floor class
+#:   immune to a weakening ``off``, so its ``off`` is stored but INERT.
+#:
+#: The remaining four declare nothing, and are the matched negative control: a
+#: row with no declaration must be distinguishable from a row whose declaration
+#: was neutralized, and both report ``binds: false``.
+_LANE_REPORT_MARSHAL_STEPS: dict[str, dict] = {
+    'default:push': {},
+    'default:archive-plan': {},
+    'default:sonar-roundtrip': {'lane': 'off'},
+    'default:finalize-step-security-audit': {},
+    'plan-marshall:plan-retrospective': {},
+    'project:finalize-step-deploy-target': {'lane': 'off'},
+}
+
+
+def _seed_lane_report_marshal(plan_context, steps: dict[str, dict] | None = None) -> None:
+    """Write the project-wide declaration channel: marshal.json's phase-6 step map.
+
+    ``nest_in_plan_dir=False`` is the layout ``plan_context`` sets up — it points
+    ``MARSHAL_PATH`` at ``fixture_dir/'marshal.json'`` directly, so a nested write
+    would land where the script under test never looks.
+    """
+    create_marshal_json(
+        plan_context.fixture_dir,
+        config={
+            'skill_domains': {'system': {}},
+            'system': {'retention': {}},
+            'plan': {
+                'phase-6-finalize': {
+                    'steps': dict(_LANE_REPORT_MARSHAL_STEPS if steps is None else steps),
+                },
+            },
+        },
+        nest_in_plan_dir=False,
+    )
+
+
+def _seed_plan_local_lane(plan_context, plan_id: str, overrides: dict[str, dict]) -> None:
+    """Write the plan-local declaration channel: ``status.metadata.finalize_step_overrides``."""
+    status_path = plan_context.plan_dir_for(plan_id) / 'status.json'
+    status_path.write_text(
+        json.dumps({'metadata': {'finalize_step_overrides': overrides}}, indent=2),
+        encoding='utf-8',
+    )
+
+
+def _lane_report_ns(plan_id: str | None = None) -> Namespace:
+    """Preview namespace whose ``plan_id`` is OPTIONAL — ``None`` is the no-plan read."""
+    return Namespace(plan_id=plan_id, phase_6_steps=None)
+
+
+def _lane_report_row(result: dict, step: str) -> dict:
+    """Return the one ``lane_report`` row for ``step``.
+
+    Asserts the row is unique rather than taking the first match: a duplicated row
+    would let a later assertion pass against whichever copy happened to be first.
+    """
+    rows: list[dict] = [row for row in result['lane_report'] if row['step'] == step]
+    assert len(rows) == 1, f'expected exactly one lane_report row for {step}, got {len(rows)}'
+    return rows[0]
+
+
+def test_lane_report_names_an_inert_off_with_its_reason(plan_context, monkeypatch):
+    """A stored ``off`` a floor class neutralizes is reported as stored AND inert.
+
+    This is the pair the report exists for: ``declared`` still says ``off``
+    (the value was accepted and persisted), ``effective`` says the element runs
+    anyway at its class-default tier, ``binds`` is false, and ``reason`` carries
+    the verbatim neutralization text. Reporting only ``declared`` would tell the
+    operator the override is set; only ``effective`` would hide that they set one.
+    """
+    _patch_element_lane(monkeypatch)
+    _seed_lane_report_marshal(plan_context)
+
+    result = cmd_lanes_preview(_lane_report_ns())
+
+    assert result is not None and result['status'] == 'success'
+    row = _lane_report_row(result, 'project:finalize-step-deploy-target')
+    assert row['declared'] == 'off'
+    assert row['effective'] == 'minimal'
+    assert row['binds'] is False
+    assert 'immune' in row['reason']
+    assert 'derived-state' in row['reason']
+
+
+def test_lane_report_reports_binds_true_for_a_live_off(plan_context, monkeypatch):
+    """A stored ``off`` on a non-immune element BINDS — and carries no reason.
+
+    The matched positive control for the inert case above: same declared value,
+    same fixture, same preview call, and the only difference is the element's lane
+    class. An empty ``reason`` here is what makes the neutralization text in the
+    sibling case evidence of neutralization rather than boilerplate every row
+    carries.
+    """
+    _patch_element_lane(monkeypatch)
+    _seed_lane_report_marshal(plan_context)
+
+    result = cmd_lanes_preview(_lane_report_ns())
+
+    assert result is not None
+    row = _lane_report_row(result, 'sonar-roundtrip')
+    assert row['declared'] == 'off'
+    assert row['effective'] == 'off'
+    assert row['binds'] is True
+    assert row['reason'] == ''
+
+
+def test_lane_report_distinguishes_no_declaration_from_a_neutralized_one(plan_context, monkeypatch):
+    """A step nobody spoke for reports ``-``, not a fabricated value.
+
+    Both this row and the inert-``off`` row report ``binds: false``, so ``binds``
+    alone cannot tell "the operator declared nothing" from "the operator declared
+    something that was overruled". ``declared`` and ``reason`` are what separate
+    them, and an undeclared row must carry neither a value nor a reason.
+    """
+    _patch_element_lane(monkeypatch)
+    _seed_lane_report_marshal(plan_context)
+
+    result = cmd_lanes_preview(_lane_report_ns())
+
+    assert result is not None
+    row = _lane_report_row(result, 'push')
+    assert row['declared'] == '-'
+    assert row['effective'] == 'minimal'
+    assert row['binds'] is False
+    assert row['reason'] == ''
+
+
+def test_lane_report_sees_a_plan_local_declaration(plan_context, monkeypatch):
+    """A plan-local declaration is visible to the preview — the merged-map regression.
+
+    ``cmd_lanes_preview`` sources its declaration map from the SAME merged
+    plan-local-over-marshal read every compose-side per-element reader consults,
+    so an answer stored for this plan alone is reported here too. The
+    project-wide-only read of the same fixture is asserted alongside it: without
+    that contrast a passing plan-scoped assertion could equally be satisfied by a
+    marshal-side declaration, which is precisely the reading the regression had.
+    """
+    plan_id = 'lane-report-plan-local'
+    _patch_element_lane(monkeypatch)
+    _seed_lane_report_marshal(plan_context)
+    _seed_plan_local_lane(plan_context, plan_id, {'finalize-step-security-audit': {'lane': 'off'}})
+
+    with_plan = cmd_lanes_preview(_lane_report_ns(plan_id))
+    project_only = cmd_lanes_preview(_lane_report_ns())
+
+    assert with_plan is not None and project_only is not None
+    plan_scoped_row = _lane_report_row(with_plan, 'finalize-step-security-audit')
+    assert plan_scoped_row['declared'] == 'off'
+    # adversarial is a non-floor class, so the plan-local off is a real opt-out.
+    assert plan_scoped_row['binds'] is True
+    # The project-wide channel carries no declaration for this step at all.
+    assert _lane_report_row(project_only, 'finalize-step-security-audit')['declared'] == '-'
+
+
+def test_lane_report_channels_covered_states_which_sweep_ran(plan_context, monkeypatch):
+    """``channels_covered`` names the sweep, so one channel is never read as both.
+
+    ``--plan-id`` is optional on this verb, and its presence widens the
+    declaration source rather than merely labelling the output. A report over the
+    project-wide channel alone is a narrower answer than a report over both, and
+    the field is what keeps the two distinguishable at the consumer.
+    """
+    _patch_element_lane(monkeypatch)
+    _seed_lane_report_marshal(plan_context)
+
+    project_only = cmd_lanes_preview(_lane_report_ns())
+    both = cmd_lanes_preview(_lane_report_ns('lane-report-channels'))
+
+    assert project_only is not None and both is not None
+    assert project_only['channels_covered'] == ['project']
+    assert both['channels_covered'] == ['project', 'plan_local']
+    # ``plan_id`` rides the payload only when one was supplied — a project-wide
+    # report never carries a plan id it was not given.
+    assert 'plan_id' not in project_only
+    assert both['plan_id'] == 'lane-report-channels'
+
+
+def test_lane_report_covers_every_lane_participating_candidate_and_no_other(plan_context, monkeypatch):
+    """The report's population is the lane-participating candidates, and it says so.
+
+    A step the resolver reaches no lane class for has no effective lane to compare
+    a declaration against, so it is omitted rather than reported with an empty
+    verdict — even when it carries a stored ``lane``, as the extra candidate here
+    deliberately does. ``lane_report_count`` publishes the population the report
+    was computed over, so a short report is countable rather than silent.
+    """
+    _patch_element_lane(monkeypatch)
+    steps = dict(_LANE_REPORT_MARSHAL_STEPS)
+    steps['default:no-lane-block-step'] = {'lane': 'off'}
+    _seed_lane_report_marshal(plan_context, steps)
+
+    result = cmd_lanes_preview(_lane_report_ns())
+
+    assert result is not None
+    reported = {row['step'] for row in result['lane_report']}
+    assert reported == set(_LANE_STEPS)
+    assert 'no-lane-block-step' not in reported
+    assert result['lane_report_count'] == len(result['lane_report'])
+
+
+def test_lanes_preview_surfaces_each_postures_drops_beside_its_kept_set(plan_context, monkeypatch):
+    """Each posture reports what it dropped, not only what it kept.
+
+    A step missing from a lane is then diagnosable from this one payload — with
+    the per-step reason the resolver already produces — instead of requiring the
+    consumer to re-derive the difference against the candidate list and guess why.
+    """
+    _patch_element_lane(monkeypatch)
+
+    result = cmd_lanes_preview(_lanes_preview_ns('lanes-dropped', _LANE_STEPS))
+
+    assert result is not None
+    minimal = result['lanes']['minimal']
+    assert _dropped_steps(minimal['dropped']) == {
+        'sonar-roundtrip',
+        'finalize-step-security-audit',
+        'plan-marshall:plan-retrospective',
+    }
+    # Kept and dropped partition the candidate set — nothing falls out unreported.
+    assert set(minimal['phase_6_steps']) | _dropped_steps(minimal['dropped']) == set(_LANE_STEPS)
+    for record in minimal['dropped']:
+        assert record['reason']
+    # The full posture prunes nothing, so its drop list is empty rather than absent.
+    assert result['lanes']['full']['dropped'] == []
 
 
 # --- compose integration -----------------------------------------------------

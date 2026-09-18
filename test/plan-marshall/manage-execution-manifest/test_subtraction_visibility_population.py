@@ -283,7 +283,7 @@ def _run_lane_resolution(monkeypatch) -> SiteRun:
     lanes = {'sonar-roundtrip': {'class': 'prunable', 'tier': 'full', 'cost_size': 'L'}}
     monkeypatch.setattr(_mem, '_resolve_element_lane', lambda step: lanes.get(step))
     before = ['sonar-roundtrip', 'archive-plan']
-    kept, records, _warnings = _mem._apply_lane_resolution(list(before), 'minimal', None, 'a-plan')
+    kept, records, _warnings = _mem._apply_lane_resolution(list(before), 'minimal', None)
     return SiteRun(before, kept, 'records', records)
 
 
