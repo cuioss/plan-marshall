@@ -87,10 +87,14 @@ operation groups against the main-anchored orchestrator store
   the write boundary is enforced by construction there (no caller-supplied
   output path exists). ``landing-check`` additionally carries the drain-time
   surface-expansion delta as a first-class field: the landing's realized
-   footprint (``--realized-paths``, from the merged diff) reconciled against
-   its declared surface (``--declared-paths``) with the footprint base anchor
-   reported beside the counts, so an in-flight expansion is detectable at
-   drain time with no manual diff.
+  footprint (``--realized-paths``, from the merged diff) reconciled against
+  its declared surface (``--declared-paths``) with the footprint base anchor
+  reported beside the counts, so an in-flight expansion is detectable at
+  drain time with no manual diff. The owed-landing verdict
+  (``classify_owed_landing`` / ``reconcile_queue_vs_landings``) rides the
+  existing ``list`` / ``landing-check`` payloads through the same handlers —
+  no new verb, same CLI shape — so the drain distinguishes owed (a live plan
+  with an unconsumed landing message) from no-news from drain state alone.
 - ``preflight --plan-id ID`` — invoke ``platform_runtime runtime-info`` and
   write the returned payload as the per-plan ``client.toon`` pre-flight
   artifact, settling the plan's title state best-effort on the way.

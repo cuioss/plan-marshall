@@ -1571,6 +1571,23 @@ def cmd_inbox_list(args: Any) -> dict[str, Any]:
             if row['valid'] and row['lifecycle'] == LIFECYCLE_STREAM_END and row['sender_id']
         }
     )
+    queued_landing_senders = {
+        row['sender_id']
+        for row in messages
+        if row['valid'] and row['lifecycle'] == LIFECYCLE_LIVE and row['kind'] == 'landing' and row['sender_id']
+    }
+    live_plan_ids = _running_plan_ids(root)
+    owed_verdict = classify_owed_landing(live_plan_ids, queued_landing_senders)
+    queue_ids: set[str] = set()
+    try:
+        _queue_data = read_json(root / STATUS_FILE)
+        if isinstance(_queue_data, dict):
+            _rows = _queue_data.get('plans')
+            if isinstance(_rows, list):
+                queue_ids = {str(r.get('id', '')) for r in _rows if isinstance(r, dict) and str(r.get('id', ''))}
+    except Exception:
+        queue_ids = set()
+    queue_reconciliation = reconcile_queue_vs_landings(queue_ids, queued_landing_senders)
     return {
         'status': 'success',
         'operation': 'inbox-list',
@@ -1583,6 +1600,8 @@ def cmd_inbox_list(args: Any) -> dict[str, Any]:
         'closed_senders': closed_senders,
         'invalid_count': sum(1 for row in messages if not row['valid']),
         'messages': messages,
+        'owed_landing': owed_verdict,
+        'queue_reconciliation': queue_reconciliation,
     }
 
 
@@ -2297,4 +2316,81 @@ def cmd_inbox_landing_check(args: Any) -> dict[str, Any]:
         'complete': complete,
         'missing_keys': missing,
         'surface_delta': delta,
+    }
+
+
+# --- owed-landing drain-time verdict --------------------------------------
+#
+# Defect 1: a merged plan is invisible until landing with no owed notion, so
+# shipped work is re-emitted in the window. The drain must distinguish
+# owed-landing (an unconsumed landing-expectant message for a live plan is
+# still queued) from no-news (nothing queued and nothing owed) from drain
+# state alone, without reading narrative prose.
+#
+# A landing-expectant message is a queued, valid, live ``kind == landing``
+# message. Queue rows are the epic ``status.json`` plan ids; drained landing
+# messages are the landing-kind senders observed in the queue. Reconciliation
+# runs in both directions so neither an awaiting slow landing nor an orphan
+# landing is invisible.
+
+#: Drain verdict when a live plan still owns an unconsumed landing message.
+OWED_LANDING = 'owed'
+
+#: Drain verdict when nothing is queued and nothing is owed.
+OWED_NO_NEWS = 'no-news'
+
+#: Drain verdict vocabulary for the owed-landing classifier.
+OWED_STATES: tuple[str, ...] = (OWED_LANDING, OWED_NO_NEWS)
+
+
+def classify_owed_landing(
+    live_plan_ids: set[str],
+    queued_landing_senders: set[str],
+) -> dict[str, Any]:
+    """Classify the drain-time owed-landing state from sets alone.
+
+    Pure, deterministic, side-effect-free so the drain and its tests share
+    one seam. ``live_plan_ids`` are the epic queue ids still executing;
+    ``queued_landing_senders`` are the senders of queued, valid, live
+    ``landing`` messages. A live plan with a queued landing message is owed
+    (awaiting a slow landing, never re-emit); anything else is no-news.
+
+    Returns a dict carrying ``state`` (one of :data:`OWED_STATES`), the
+    ``owed_plans`` sorted list (live plans with a queued landing), and the
+    ``awaiting_plans`` sorted list (live plans with no landing yet — the
+    slow-landing window).
+    """
+    owed = sorted(live_plan_ids & queued_landing_senders)
+    awaiting = sorted(live_plan_ids - queued_landing_senders)
+    state = OWED_LANDING if owed else OWED_NO_NEWS
+    return {
+        'state': state,
+        'owed_plans': owed,
+        'awaiting_plans': awaiting,
+        'live_count': len(live_plan_ids),
+        'landing_queued_count': len(queued_landing_senders),
+    }
+
+
+def reconcile_queue_vs_landings(
+    queue_plan_ids: set[str],
+    landing_sender_ids: set[str],
+) -> dict[str, Any]:
+    """Reconcile queue rows against drained landing messages both ways.
+
+    ``queue_without_landing`` are queue rows with no landing message (the
+    owed / slow-landing direction); ``landing_without_queue`` are landing
+    messages with no queue row (the orphan direction). Both ride sorted
+    lists with their own counts naming the population each was computed
+    over, so a drain that compared nothing never renders as clean.
+    """
+    queue_only = sorted(queue_plan_ids - landing_sender_ids)
+    landing_only = sorted(landing_sender_ids - queue_plan_ids)
+    return {
+        'queue_count': len(queue_plan_ids),
+        'landing_count': len(landing_sender_ids),
+        'queue_without_landing_count': len(queue_only),
+        'landing_without_queue_count': len(landing_only),
+        'queue_without_landing': queue_only,
+        'landing_without_queue': landing_only,
     }

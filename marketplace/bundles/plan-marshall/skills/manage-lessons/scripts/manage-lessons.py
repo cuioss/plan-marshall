@@ -54,6 +54,7 @@ from _lessons_aggregate import (
     _group_by_signals,
     _pick_primary,
     _truncate_preview,
+    deduplicate_candidates_at_drain,
 )
 from _lessons_crud import (
     COVERAGE_VERDICTS,
@@ -1516,6 +1517,45 @@ def main() -> int:
     result = args.func(args)
     output_toon(result)
     return 0
+
+
+def drain_dedup_gate(
+    candidates: list[dict],
+    corpus_by_id: dict[str, dict],
+) -> dict:
+    """Drain-time dedup gate wiring the aggregate classifier into filing.
+
+    Filing path (orchestrator drain, batch imports) must consult this before
+    allocating: candidates grouped with the corpus via
+    :func:`deduplicate_candidates_at_drain`, strongest-wins, recurrences
+    counted instead of bodies duplicated. Returns the same ``to_file`` /
+    ``recurrences`` plan the aggregate seam produces.
+    """
+    return deduplicate_candidates_at_drain(candidates, corpus_by_id)
+
+
+def post_housekeeping_created_counts(
+    emitted_count: int,
+    filed_ids: list[str],
+    recurrence_counts: dict[str, int],
+) -> dict:
+    """Report post-housekeeping created counts for landing narratives.
+
+    Landing narratives must carry created entries (files actually allocated
+    after dedup + supersede housekeeping), never emitted candidate counts.
+    ``emitted_count`` is the drain's candidate total; ``filed_ids`` are the
+    ids actually filed; ``recurrence_counts`` maps every surviving id to its
+    absorbed recurrence total. The created total is ``len(filed_ids)``; the
+    absorbed total is the recurrences sum.
+    """
+    created = len(filed_ids)
+    absorbed = sum(int(v) for v in recurrence_counts.values())
+    return {
+        'emitted_count': emitted_count,
+        'created_count': created,
+        'absorbed_count': absorbed,
+        'filed_ids': sorted(filed_ids),
+    }
 
 
 if __name__ == '__main__':
