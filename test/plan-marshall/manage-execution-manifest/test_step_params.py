@@ -15,11 +15,16 @@ Covers:
 - ``step-params set`` writes a per-plan override that round-trips through
   ``step-params get`` and wins over the marshal.json compose-time default.
 - The absent-step-id / missing-manifest / invalid-phase error paths.
+- The ``lane`` / ``lane_requested`` pair: the snapshot records the EFFECTIVE
+  lane, preserving a request that did not bind beside it, so a step present in
+  ``phase_6.steps`` never carries a bare ``lane: off``.
 """
 
 import json
 from argparse import Namespace
 from pathlib import Path
+
+from _execution_manifest_fixtures import fake_lane_blocks
 
 # Tier 2 direct imports, resolved by (bundle, skill, script).
 from conftest import load_script_module
@@ -454,3 +459,158 @@ def test_compose_then_read_manifest_ownerless_steps_read_as_empty_dict(plan_cont
         'final_merge_without_asking': False,
         'auto_rebase_threshold': 'no_overlap_only',
     }
+
+
+# =============================================================================
+# `lane` is the outcome; `lane_requested` is the request
+# =============================================================================
+#
+# A stored `lane` is a REQUEST, and the lane machinery does not always grant it:
+# a weakening `off` on a `core` / `derived-state` floor element is neutralized,
+# so the element is kept and resolves at its class-default tier while the stored
+# value still reads `off`. Snapshotting the request verbatim produced a manifest
+# whose two halves disagreed — the step was listed in `phase_6.steps` while its
+# `step_params` recorded `lane: off`. The snapshot therefore records the
+# EFFECTIVE lane under `lane` and preserves the request under `lane_requested`
+# only when the two differ.
+
+#: Canned `lane:` frontmatter blocks for these tests. The shared fixture table
+#: supplies the four classes and both tier deviations; `lessons-capture` is added
+#: here because it is the floor element the immunity rule protects — `core` with
+#: NO declared tier, so its effective lane is the class default (`minimal`) and a
+#: neutralized `off` is visibly different from what was requested.
+_LANE_BLOCKS: dict[str, dict[str, str]] = {
+    **fake_lane_blocks(),
+    'lessons-capture': {'class': 'core', 'cost_size': 'M'},
+}
+
+
+def _seed_marshal_with_lane_overrides(fixture_dir: Path, lanes: dict[str, str]) -> None:
+    """Write a marshal.json whose phase-6 steps map carries per-step ``lane`` overrides.
+
+    ``lanes`` maps a FULL-prefixed key of the seeded candidate set to the ``lane``
+    value stored for that step; every other candidate keeps the param object the
+    sibling seed helper writes. The candidate set is identical to
+    :func:`_seed_marshal_with_branch_cleanup_params`'s, because a marshal.json
+    ``steps`` map is the AUTHORITATIVE candidate list (preferred over the
+    ``--phase-6-steps`` CSV) and every key in it must resolve to a real step doc.
+    """
+    steps: dict[str, dict] = {
+        'default:push': {},
+        'default:create-pr': {},
+        'plan-marshall:automatic-review': {'review_bot_buffer_seconds': 240},
+        'default:sonar-roundtrip': {'touched_file_cleanup': 'new_code_only'},
+        'default:lessons-capture': {},
+        'default:branch-cleanup': {'pr_merge_strategy': 'squash'},
+        'default:record-metrics': {},
+        'default:archive-plan': {},
+    }
+    for key, lane in lanes.items():
+        steps[key] = {**steps.get(key, {}), 'lane': lane}
+    (fixture_dir / 'marshal.json').write_text(
+        json.dumps({'plan': {'phase-6-finalize': {'steps': steps}}}), encoding='utf-8'
+    )
+
+
+def _patch_lane_resolution(monkeypatch, posture: str) -> None:
+    """Drive the lane pass from the canned block table under ``posture``.
+
+    Both seams are patched through ``monkeypatch`` so each is restored on BOTH
+    arms — the element-lane resolver (so the cutoff is exercised without
+    depending on the shipped docs' real frontmatter) and the posture read (so the
+    profile is the test's variable rather than a fixture's status.json).
+    """
+    monkeypatch.setattr(_mem, '_resolve_element_lane', lambda step_id: _LANE_BLOCKS.get(step_id))
+    monkeypatch.setattr(_mem, '_read_execution_profile', lambda plan_id: posture)
+
+
+def test_neutralized_off_snapshots_the_class_default_and_records_the_request(plan_context, monkeypatch):
+    """A step kept despite a neutralized ``off`` snapshots its class-default tier.
+
+    ``lessons-capture`` is ``core`` — a floor class immune to a weakening ``off``
+    — so the element is KEPT at the class default and the stored ``off`` never
+    bound. The snapshot must say so from both sides: ``lane`` names the tier it
+    actually runs at, ``lane_requested`` preserves what was asked for.
+    """
+    _seed_marshal_with_lane_overrides(plan_context.fixture_dir, {'default:lessons-capture': 'off'})
+    _patch_lane_resolution(monkeypatch, 'standard')
+
+    cmd_compose(_compose_ns('sp-lane-neutralized'))
+
+    manifest = read_manifest('sp-lane-neutralized')
+    assert manifest is not None
+    # precondition: the off did NOT remove the floor element
+    assert 'lessons-capture' in manifest['phase_6']['steps']
+    params = manifest['phase_6']['step_params']['lessons-capture']
+    assert params['lane'] == 'minimal'
+    assert params['lane_requested'] == 'off'
+
+
+def test_binding_lane_snapshots_the_stored_value_with_no_lane_requested_key(plan_context, monkeypatch):
+    """A stored lane that BINDS snapshots that value and adds no ``lane_requested``.
+
+    ``sonar-roundtrip`` is ``prunable`` with a declared ``standard`` tier, so a
+    stored ``minimal`` genuinely overrides the declaration — request and outcome
+    agree, and an unremarkable step must gain no extra key.
+    """
+    _seed_marshal_with_lane_overrides(plan_context.fixture_dir, {'default:sonar-roundtrip': 'minimal'})
+    _patch_lane_resolution(monkeypatch, 'standard')
+
+    cmd_compose(_compose_ns('sp-lane-binds'))
+
+    manifest = read_manifest('sp-lane-binds')
+    assert manifest is not None
+    params = manifest['phase_6']['step_params']['sonar-roundtrip']
+    # the override wins over the declared ``standard`` tier — so it IS the outcome
+    assert params['lane'] == 'minimal'
+    assert 'lane_requested' not in params
+
+
+def test_full_posture_keeps_the_step_and_still_records_no_bare_off(plan_context, monkeypatch):
+    """Under ``full`` the step survives, so its ``off`` must still not be recorded bare.
+
+    ``full`` keeps everything — the lane pass short-circuits and drops nothing —
+    so a ``prunable`` element carrying ``off`` stays in ``phase_6.steps``. That is
+    precisely the case a value read off the lane pass would miss, so the snapshot
+    must still report the tier the element runs at. The ``standard``-posture arm
+    is the matched negative control: there the same ``off`` DOES drop the step,
+    which is what proves the posture is what this test varies.
+    """
+    _seed_marshal_with_lane_overrides(plan_context.fixture_dir, {'default:sonar-roundtrip': 'off'})
+    _patch_lane_resolution(monkeypatch, 'full')
+
+    cmd_compose(_compose_ns('sp-lane-full'))
+
+    manifest = read_manifest('sp-lane-full')
+    assert manifest is not None
+    assert 'sonar-roundtrip' in manifest['phase_6']['steps']
+    params = manifest['phase_6']['step_params']['sonar-roundtrip']
+    assert params['lane'] == 'standard'
+    assert params['lane_requested'] == 'off'
+
+    # Negative control: the same stored ``off`` on the same element is a real
+    # opt-out under a pruning posture, so the step is dropped and never snapshotted.
+    _patch_lane_resolution(monkeypatch, 'standard')
+    cmd_compose(_compose_ns('sp-lane-standard-control'))
+
+    control = read_manifest('sp-lane-standard-control')
+    assert control is not None
+    assert 'sonar-roundtrip' not in control['phase_6']['steps']
+    assert 'sonar-roundtrip' not in control['phase_6']['step_params']
+
+
+def test_lane_snapshot_leaves_an_ownerless_step_as_null(plan_context, monkeypatch):
+    """An ownerless step still snapshots as ``null`` once lanes are resolved.
+
+    The lane rewrite must not materialize a param object for a step that owns
+    none — ``push`` carries no params at all, so the no-empty-``{}`` contract is
+    unchanged by the effective-lane pass.
+    """
+    _seed_marshal_with_lane_overrides(plan_context.fixture_dir, {'default:lessons-capture': 'off'})
+    _patch_lane_resolution(monkeypatch, 'standard')
+
+    cmd_compose(_compose_ns('sp-lane-ownerless'))
+
+    raw = get_manifest_path('sp-lane-ownerless').read_text(encoding='utf-8')
+    parsed = _mem.parse_toon(raw)
+    assert parsed['phase_6']['step_params'].get('push') is None

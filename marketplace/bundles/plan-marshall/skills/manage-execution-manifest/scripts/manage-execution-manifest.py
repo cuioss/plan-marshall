@@ -1574,6 +1574,45 @@ def _is_security_class_step(step_id: str) -> bool:
     return _read_frontmatter_scalar(_resolve_standards_path(step_id), 'persona') == _SECURITY_CLASS_PERSONA
 
 
+def _resolve_effective_lane(step_id: str, marshal_phase_6_map: dict[str, dict] | None) -> str | None:
+    """Resolve the lane an element ACTUALLY runs at, for a step that survived selection.
+
+    The stored ``lane`` is a REQUEST; this is the outcome. Composed from the same
+    three primitives the lane pass uses — :func:`_resolve_element_lane` for the
+    element's declared block, :func:`_lane_override_for` for the stored override,
+    and :func:`_effective_lane_tier` for the precedence rule — evaluated PER STEP.
+
+    It is deliberately NOT read off :func:`_apply_lane_resolution`: that pass
+    early-returns ``(all, [], [])`` under the ``full`` posture, so a full-posture
+    plan would carry exactly the bare ``lane: off`` this resolver exists to
+    remove.
+
+    Two fall-throughs cover the ``effective is None`` states, and both rest on the
+    same fact: this is only ever called for a step that IS in the final list, so
+    whatever the override asked for, it did not remove the element.
+
+    - ``is_off`` with a resolvable class — the ``off`` did not drop the element
+      (the ``full`` posture keeps everything), so the tier it runs at is the
+      resolution with the override neutralized: declared ``tier`` ▸ class default.
+    - no resolvable class at all — :func:`_apply_lane_resolution` keeps such an
+      element unconditionally under EVERY posture, which is operationally what
+      ``minimal`` means, so ``minimal`` is reported rather than the request.
+
+    Returns the effective lane, or ``None`` when the element is not lane-participating
+    and carries no ``off`` request — nothing about its stored value is then
+    contradicted, so the caller leaves it untouched.
+    """
+    lane = _resolve_element_lane(step_id) or {}
+    override = _lane_override_for(step_id, marshal_phase_6_map)
+    effective, is_off = _effective_lane_tier(lane, override)
+    if effective is not None:
+        return effective
+    if not is_off:
+        return None
+    neutralized, _ = _effective_lane_tier(lane, None)
+    return neutralized if neutralized is not None else 'minimal'
+
+
 def _apply_lane_resolution(
     phase_6_steps: list[str],
     posture: str,
@@ -2483,7 +2522,20 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     body['phase_5']['step_params'] = _snapshot_step_params(
         list(body['phase_5'].get('verification_steps', [])), marshal_phase_5_map
     )
-    body['phase_6']['step_params'] = _snapshot_step_params(list(body['phase_6'].get('steps', [])), marshal_phase_6_map)
+    # The effective lane per FINAL phase-6 step, resolved per step rather than read
+    # off the lane pass — see _resolve_effective_lane for why the ``full``-posture
+    # early return makes that pass unusable as the source. A step whose stored lane
+    # differs from its effective lane snapshots the EFFECTIVE value under ``lane``
+    # and preserves the request under ``lane_requested``, so the manifest can never
+    # list a step as running while recording its lane as ``off``.
+    phase_6_effective_lanes = {
+        step: effective
+        for step in body['phase_6'].get('steps', [])
+        if (effective := _resolve_effective_lane(step, marshal_phase_6_map)) is not None
+    }
+    body['phase_6']['step_params'] = _snapshot_step_params(
+        list(body['phase_6'].get('steps', [])), marshal_phase_6_map, phase_6_effective_lanes
+    )
     # The pre-subtraction candidate set (captured above), persisted so a later
     # ``reconcile`` can diff live config against what this compose actually
     # chose FROM. See the capture site for why the emitted list cannot serve.
