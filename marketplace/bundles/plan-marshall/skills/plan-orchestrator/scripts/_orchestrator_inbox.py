@@ -257,8 +257,11 @@ INBOX_STATES = frozenset({'present', 'missing'})
 #:   is the ONLY zero that means *looked, and there was nothing addressed here*.
 #: - ``no_epic`` — no epic tree resolved at all, so nothing was looked at.
 #: - ``no_mailbox`` — the epic tree is there but this plan has no mailbox
-#:   directory: nothing has ever been delivered to it (or every delivery has
-#:   since been consumed).
+#:   directory: nothing has ever been delivered to it. Consumption marks a
+#:   message in place rather than removing it, so a delivery that was taken
+#:   leaves the directory THERE — an absent mailbox is therefore a positive
+#:   fact about delivery, which is why :func:`derive_delivery_state` reads this
+#:   state as ``never_delivered`` rather than ``unmeasured``.
 #: - ``unreadable`` — the mailbox path exists but could not be listed (a
 #:   permission failure, or a path that is not a directory). Distinct from
 #:   ``no_mailbox`` because *absent* and *unlistable* are different facts, and a

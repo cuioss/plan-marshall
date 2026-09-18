@@ -120,7 +120,7 @@ Where `{phase_key}` is: `1-init`, `2-refine`, `3-outline`, `4-plan`, `5-execute`
 
 - Branch on `mailbox.probe` **before** any count. Only `probe: read` reached the mailbox at all; `not_orchestrated` and `unresolved` publish no count keys, so there is no number to act on and nothing to report as empty.
 - On `probe: read`, a `live_count` above zero means mail is waiting for this plan. Surface it to the user in the phase-completion summary (Step 2) and carry on — the check-point is **advisory**. It never gates the transition, and a mailbox that could not be read degrades this block rather than the phase.
-- On `probe: read` with `live_count: 0`, read `state` before calling it empty: only `state: present` means *looked, and nothing is addressed here*.
+- On `probe: read` with `live_count: 0`, read `state` AND `invalid_count` before calling it empty — the block publishes both on the read branch. Only `state: present` **together with** `invalid_count: 0` means *looked, and nothing is addressed here*; `state: present` with `invalid_count > 0` is BLOCKED, not empty — mail IS addressed to this plan and none of it is actionable. Any other `state` enumerated nothing at all.
 
 The block's field contract is owned by [`manage-status/SKILL.md`](../../manage-status/SKILL.md) § `transition`; do not restate it.
 
