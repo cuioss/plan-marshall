@@ -83,16 +83,17 @@ def flatten_tool_result(content: Any) -> str:
     return '\n'.join(parts)
 
 
-def extract_gate_decisions(content: Any, decision_ids: set[str]) -> list[str]:
-    """Return the operator gate decisions carried by a ``user`` turn's blocks.
+def extract_gate_decision_hits(content: Any, decision_ids: set[str]) -> list[tuple[str, bool]]:
+    """Return ``(decision_text, matched_by_tool_use_id)`` pairs per decision.
 
-    A ``tool_result`` is an operator decision when it answers an
+    The pairing rule is identical to :func:`extract_gate_decisions` — a
+    ``tool_result`` is an operator decision when it answers an
     :data:`OPERATOR_DECISION_TOOL` call (matched by tool-use id) or when it
-    carries one of the verbatim :data:`OPERATOR_REFUSAL_MARKERS`. Both tests
-    are narrow on purpose: a counter of operator signal must fail toward NOT
-    counting, so ordinary tool output is never mistaken for a decision.
+    carries a verbatim refusal marker — with the provenance attached: the
+    flag is ``True`` for the matched arm and ``False`` for a refusal-marker
+    arm with no tool-use id, which carries no tool-use arm to pair with.
     """
-    decisions: list[str] = []
+    hits: list[tuple[str, bool]] = []
     for block in _iter_blocks(content):
         if block.get('type') != 'tool_result':
             continue
@@ -104,5 +105,18 @@ def extract_gate_decisions(content: Any, decision_ids: set[str]) -> list[str]:
         head = text.lstrip()
         refused = any(head.startswith(marker) for marker in OPERATOR_REFUSAL_MARKERS)
         if answered_prompt or refused:
-            decisions.append(text)
+            hits.append((text, answered_prompt))
+    return hits
+
+
+def extract_gate_decisions(content: Any, decision_ids: set[str]) -> list[str]:
+    """Return the operator gate decisions carried by a ``user`` turn's blocks.
+
+    A ``tool_result`` is an operator decision when it answers an
+    :data:`OPERATOR_DECISION_TOOL` call (matched by tool-use id) or when it
+    carries one of the verbatim :data:`OPERATOR_REFUSAL_MARKERS`. Both tests
+    are narrow on purpose: a counter of operator signal must fail toward NOT
+    counting, so ordinary tool output is never mistaken for a decision.
+    """
+    decisions: list[str] = [text for text, _matched in extract_gate_decision_hits(content, decision_ids)]
     return decisions

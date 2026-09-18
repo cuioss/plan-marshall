@@ -273,3 +273,62 @@ def _truncate_preview(text: str, limit: int) -> str:
     if len(text) <= limit:
         return text
     return text[:limit]
+
+
+def deduplicate_candidates_at_drain(
+    candidates: list[dict],
+    corpus_by_id: dict[str, dict],
+) -> dict:
+    """Dedup lesson candidates at the drain before filing.
+
+    Drain-time gate behind the filing path: candidates are grouped with the
+    corpus via :func:`_group_by_signals` on cross-ref / shared-component
+    signals, strongest-wins via :func:`_pick_primary`. Groups whose primary
+    is a corpus lesson file nothing and count one recurrence; groups whose
+    primary is a candidate file once with recurrences counted. Bodies are
+    never duplicated — recurrences ride counts, not copied prose.
+    """
+    by_id: dict[str, dict] = dict(corpus_by_id)
+    for cand in candidates:
+        by_id[cand['id']] = cand
+    norm: dict[str, dict] = {}
+    for lid, lesson in by_id.items():
+        norm[lid] = {
+            'id': lid,
+            'component': (lesson.get('component') or ''),
+            'standards_dir': (lesson.get('standards_dir') or ''),
+            'workflow_boundary': _derive_workflow_boundary(lesson.get('component') or ''),
+            'cross_refs': _extract_cross_refs(lid, lesson.get('body') or ''),
+            'recurrence_count': int(lesson.get('recurrence_count') or 0),
+            'title': (lesson.get('title') or ''),
+            'body': (lesson.get('body') or ''),
+        }
+    groups = _group_by_signals(list(norm.values()))
+    grouped: set[str] = set()
+    for group in groups:
+        grouped.update(group['members'])
+    to_file: list[str] = []
+    recurrences: dict[str, int] = {}
+    cand_ids = {cand['id'] for cand in candidates}
+    for group in groups:
+        primary = _pick_primary(group['members'], norm)
+        # Recurrence counts absorbed CANDIDATES only: pre-existing corpus
+        # lessons grouped together without any candidate present must not
+        # register drain-time recurrences against each other.
+        absorbed_candidates = [mid for mid in group['members'] if mid != primary and mid in cand_ids]
+        if primary in corpus_by_id:
+            if absorbed_candidates:
+                recurrences[primary] = recurrences.get(primary, 0) + len(absorbed_candidates)
+        else:
+            if primary not in to_file:
+                to_file.append(primary)
+            if absorbed_candidates:
+                recurrences[primary] = recurrences.get(primary, 0) + len(absorbed_candidates)
+    for cand in candidates:
+        if cand['id'] not in grouped and cand['id'] not in to_file:
+            to_file.append(cand['id'])
+    return {
+        'to_file': sorted(to_file),
+        'recurrences': dict(sorted(recurrences.items())),
+        'groups_evaluated': len(groups),
+    }

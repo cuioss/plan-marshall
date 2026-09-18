@@ -1065,6 +1065,29 @@ def footprint_derivation_record(fragments: dict[str, Any], plan_dir: Path) -> di
     }
 
 
+def assemble_post_housekeeping_counts(fragments: dict[str, Any]) -> dict[str, Any]:
+    """Surface post-housekeeping created counts verbatim, never recomputed.
+
+    Any fragment carrying a ``created_count`` (or ``created_counts`` mapping)
+    already records the manage-lessons post-housekeeping filing total. The
+    assembler republishes those totals under one keyed mapping without
+    re-judging them: emitted candidate totals are never substituted, and a
+    fragment carrying no count contributes nothing rather than a zero.
+    """
+    assembled: dict[str, Any] = {}
+    for key, fragment in fragments.items():
+        if not isinstance(fragment, dict):
+            continue
+        if 'created_count' in fragment:
+            try:
+                assembled[str(key)] = int(fragment['created_count'] or 0)
+            except (TypeError, ValueError):
+                continue
+        elif isinstance(fragment.get('created_counts'), dict):
+            assembled[str(key)] = dict(fragment['created_counts'])
+    return assembled
+
+
 def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
     plan_dir = resolve_plan_dir(args.mode, args.plan_id, args.archived_plan_path)
     if not plan_dir.exists():
@@ -1103,6 +1126,12 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
             file=sys.stderr,
         )
 
+    # Post-housekeeping created counts ride the report verbatim: any fragment
+    # carrying ``created_count`` (the manage-lessons post-housekeeping filing
+    # total, never the emitted candidate total) is surfaced without
+    # re-judging. Pure assembler discipline — the compiler never recomputes
+    # filing totals, it only republishes what the filing path recorded.
+    lessons_created_counts = assemble_post_housekeeping_counts(fragments)
     # A dropped section is content the aspect produced and the report lost —
     # ride the signal on the TOON status so the caller cannot mistake it for a
     # clean run. The process exit code stays 0: the document was written.
@@ -1121,6 +1150,7 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
         # no record was derived. Published so a caller can branch on the signal
         # without re-parsing the rendered document.
         'footprint_derivation_state': (derivation_record['state'] if derivation_record is not None else None),
+        'lessons_created_counts': lessons_created_counts,
     }
     if dropped:
         result['message'] = 'Dropped non-empty sections from the compiled report: ' + ', '.join(dropped)

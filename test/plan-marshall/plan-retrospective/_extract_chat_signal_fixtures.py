@@ -31,6 +31,11 @@ def _runtime_record(
     reduced_transcript: str = '',
     transcript_path: str = '/transcripts/project/session.jsonl',
     session_id: str = SESSION_ID,
+    kept_text_chars: int = 0,
+    kept_text_bytes: int = 0,
+    signal_gate_population: int = 0,
+    residual_counts: dict | None = None,
+    symmetric_pair_dropped: int = 0,
 ) -> dict:
     """Build a runtime ``success`` payload exactly as the op reports it.
 
@@ -48,6 +53,11 @@ def _runtime_record(
         'gate_decision_count': gate_decision_count,
         'reduced_bytes': reduced_bytes,
         'no_signal': no_signal,
+        'kept_text_chars': kept_text_chars,
+        'kept_text_bytes': kept_text_bytes,
+        'signal_gate_population': signal_gate_population,
+        'residual_counts': dict(residual_counts) if residual_counts is not None else {},
+        'symmetric_pair_dropped': symmetric_pair_dropped,
     }
 
 

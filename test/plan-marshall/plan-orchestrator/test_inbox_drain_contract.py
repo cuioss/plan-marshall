@@ -486,3 +486,153 @@ class TestOrdinalDriftGuard:
                 f'{", ".join(sorted(headings))}) — an ordinal drifted when the '
                 f'workflow doc was edited'
             )
+
+
+# =============================================================================
+# (8) Owed-landing: queued-but-unlanded reads owed, unknown reads no-news
+# =============================================================================
+
+
+class TestOwedLanding:
+    def test_queued_landing_for_live_plan_reads_owed(self):
+        verdict = _inbox.classify_owed_landing({'plan-a'}, {'plan-a'})
+
+        assert verdict['state'] == 'owed'
+        assert verdict['owed_plans'] == ['plan-a']
+        assert verdict['awaiting_plans'] == []
+
+    def test_live_plan_without_landing_reads_awaiting_not_no_news(self):
+        verdict = _inbox.classify_owed_landing({'plan-a'}, set())
+
+        assert verdict['state'] == 'no-news'
+        assert verdict['awaiting_plans'] == ['plan-a']
+        assert verdict['owed_plans'] == []
+
+    def test_unknown_plan_with_no_queue_reads_no_news(self):
+        verdict = _inbox.classify_owed_landing(set(), set())
+
+        assert verdict['state'] == 'no-news'
+        assert verdict['owed_plans'] == []
+        assert verdict['awaiting_plans'] == []
+
+    def test_queue_reconciliation_runs_both_directions(self):
+        report = _inbox.reconcile_queue_vs_landings({'plan-a', 'plan-b'}, {'plan-b', 'plan-c'})
+
+        assert report['queue_without_landing'] == ['plan-a']
+        assert report['landing_without_queue'] == ['plan-c']
+        assert report['queue_without_landing_count'] == 1
+        assert report['landing_without_queue_count'] == 1
+
+    def test_surface_delta_rides_beside_counts(self):
+        delta = _inbox.compute_surface_delta({'a.py'}, {'a.py', 'b.py'})
+
+        assert delta['state'] == 'expansion_detected'
+        assert delta['added'] == ['b.py']
+        assert delta['declared_count'] == 1
+        assert delta['realized_count'] == 2
+
+
+# =============================================================================
+# (9) Dedup-at-drain: duplicate candidates file once, recurrence counted
+# =============================================================================
+
+_aggregate = load_script_module('plan-marshall', 'manage-lessons', '_lessons_aggregate.py', 'lessons_aggregate_drain')
+
+
+class TestDedupAtDrain:
+    def test_duplicate_candidates_file_once_with_recurrence(self):
+        corpus = {
+            '2026-09-01-01-001': {
+                'component': 'plan-marshall:phase-5-execute',
+                'standards_dir': '',
+                'body': 'Canonical body about drain state.',
+                'title': 'Drain state',
+                'recurrence_count': 0,
+            },
+        }
+        candidates = [
+            {
+                'id': '2026-09-02-01-001',
+                'component': 'plan-marshall:phase-5-execute',
+                'standards_dir': '',
+                'body': 'Canonical body about drain state retold.',
+                'title': 'Drain state again',
+                'recurrence_count': 0,
+            },
+        ]
+        plan = _aggregate.deduplicate_candidates_at_drain(candidates, corpus)
+
+        assert plan['groups_evaluated'] >= 1
+        assert plan['to_file'] == [] or '2026-09-02-01-001' in plan['to_file']
+        total_recurrence = sum(plan['recurrences'].values())
+        assert total_recurrence >= 1
+
+    def test_distinct_candidates_both_file(self):
+        plan = _aggregate.deduplicate_candidates_at_drain(
+            [
+                {
+                    'id': '2026-09-03-01-001',
+                    'component': 'plan-marshall:phase-5-execute',
+                    'standards_dir': '',
+                    'body': 'First distinct body with no shared signals.',
+                    'title': 'First',
+                    'recurrence_count': 0,
+                },
+                {
+                    'id': '2026-09-03-01-002',
+                    'component': 'plan-marshall:manage-tasks',
+                    'standards_dir': 'other-dir',
+                    'body': 'Second distinct body with no shared signals.',
+                    'title': 'Second',
+                    'recurrence_count': 0,
+                },
+            ],
+            {},
+        )
+
+        assert sorted(plan['to_file']) == ['2026-09-03-01-001', '2026-09-03-01-002']
+
+    def test_corpus_only_group_counts_no_recurrence(self):
+        """Corpus lessons grouped without any candidate count no recurrence.
+
+        Recurrence is a drain-time candidate signal: pre-existing corpus
+        lessons grouped together register nothing against each other.
+        """
+        corpus = {
+            '2026-09-01-01-001': {
+                'component': 'plan-marshall:phase-5-execute',
+                'standards_dir': '',
+                'body': 'Canonical body about drain state.',
+                'title': 'Drain state',
+                'recurrence_count': 0,
+            },
+            '2026-09-01-01-002': {
+                'component': 'plan-marshall:phase-5-execute',
+                'standards_dir': '',
+                'body': 'Canonical body about drain state retold.',
+                'title': 'Drain state again',
+                'recurrence_count': 0,
+            },
+        }
+        plan = _aggregate.deduplicate_candidates_at_drain([], corpus)
+
+        assert plan['to_file'] == []
+        assert sum(plan['recurrences'].values()) == 0
+
+
+# =============================================================================
+# (10) Queue availability: unreadable reads unavailable, never empty
+# =============================================================================
+
+
+class TestQueueAvailability:
+    def test_unreadable_queue_marks_unavailable(self):
+        report = _inbox._reconcile_queue_with_availability(set(), {'plan-c'}, False)
+
+        assert report['queue_readable'] is False
+
+    def test_readable_queue_marks_readable(self):
+        report = _inbox._reconcile_queue_with_availability({'plan-a'}, set(), True)
+
+        assert report['queue_readable'] is True
+        assert report['queue_without_landing'] == ['plan-a']

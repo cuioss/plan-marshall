@@ -63,7 +63,7 @@ from _chat_gate_decisions import (
     OPERATOR_DECISION_ROLE,
     OPERATOR_DECISION_TOOL,
     decision_tool_use_ids,
-    extract_gate_decisions,
+    extract_gate_decision_hits,
 )
 from _chat_provenance import is_operator_authored
 
@@ -96,6 +96,11 @@ class Reduction:
         operator_turn_count: Free-form operator-authored ``user`` turns.
         gate_decision_count: Operator decisions recovered from the tool-result
             channel.
+        kept_text_chars: Characters across kept turn texts, so counts describe
+            the kept text rather than the intact transcript.
+        kept_text_bytes: UTF-8 bytes across kept turn texts.
+        residual_counts: Dropped-turn classification by residual class.
+        symmetric_pair_dropped: Lone arms removed by the symmetric-pair guard.
     """
 
     turns: list[dict[str, str]] = field(default_factory=list)
@@ -103,6 +108,10 @@ class Reduction:
     kept_raw_count: int = 0
     operator_turn_count: int = 0
     gate_decision_count: int = 0
+    kept_text_chars: int = 0
+    kept_text_bytes: int = 0
+    residual_counts: dict[str, int] = field(default_factory=dict)
+    symmetric_pair_dropped: int = 0
 
     @property
     def dropped_turn_count(self) -> int:
@@ -113,6 +122,79 @@ class Reduction:
     def has_operator_signal(self) -> bool:
         """True when the transcript carried operator signal of either kind."""
         return bool(self.operator_turn_count or self.gate_decision_count)
+
+    @property
+    def signal_gate_population(self) -> int:
+        """Operator-authored population behind the gate verdict.
+
+        Keyed on operator-authored counts (operator turns + gate decisions),
+        never on the survivor count, so injected instruction text the filter
+        fails to recognise cannot inflate reported health.
+        """
+        return self.operator_turn_count + self.gate_decision_count
+
+
+#: Residual classes for dropped turns — every dropped turn classifies into
+#: exactly one, so the residual population is accounted, never silent.
+RESIDUAL_HARNESS_INJECTION = 'harness_injection'
+RESIDUAL_UNMARKED_ASSISTANT = 'unmarked_assistant'
+RESIDUAL_NON_TURN = 'non_turn'
+RESIDUAL_EMPTY_USER = 'empty_user'
+
+RESIDUAL_CLASSES: tuple[str, ...] = (
+    RESIDUAL_HARNESS_INJECTION,
+    RESIDUAL_UNMARKED_ASSISTANT,
+    RESIDUAL_NON_TURN,
+    RESIDUAL_EMPTY_USER,
+)
+
+
+def classify_residual(role: str, text: str) -> str:
+    """Classify one dropped turn into its residual class."""
+    if role == 'assistant':
+        return RESIDUAL_UNMARKED_ASSISTANT
+    if role == 'user':
+        if not text.strip():
+            return RESIDUAL_EMPTY_USER
+        return RESIDUAL_HARNESS_INJECTION
+    return RESIDUAL_NON_TURN
+
+
+def enforce_symmetric_pair_guard(
+    turns: list[dict[str, str]],
+    decision_ids_seen: set[str],
+    decisions_recovered: int,
+    decision_matched: list[bool] | None = None,
+) -> tuple[list[dict[str, str]], int]:
+    """Enforce the symmetric-pair guard over gate-decision arms.
+
+    Both arms of a tool_use / tool_result pair survive together or neither
+    is claimed: a recovered gate decision without its tool_use arm, or a
+    tool_use arm with no recovered decision, is dropped and counted. The
+    walk recovers decisions only from previously seen tool_use ids, so the
+    guard holds by construction on well-formed transcripts; this seam makes
+    the invariant explicit and countable rather than implicit.
+
+    ``decision_matched`` is the per-recovered-decision provenance parallel
+    to the ``OPERATOR_DECISION_ROLE`` turns in order (``True`` when the
+    decision answered a seen tool_use id, ``False`` for a refusal-marker
+    arm with no tool-use id). When supplied, unmatched arms drop first —
+    a refusal-marker result carries no tool-use arm to pair with, so it is
+    the arm the invariant cannot vouch for — newest-first within each
+    class. When omitted, the legacy newest-first order applies.
+    """
+    if decisions_recovered <= len(decision_ids_seen):
+        return turns, 0
+    excess = decisions_recovered - len(decision_ids_seen)
+    decision_positions = [i for i, turn in enumerate(turns) if turn.get('role') == OPERATOR_DECISION_ROLE]
+    if decision_matched is not None and len(decision_matched) == len(decision_positions):
+        matched_by_position = dict(zip(decision_positions, decision_matched, strict=True))
+        ordered = sorted(decision_positions, key=lambda i: (matched_by_position[i], -i))
+    else:
+        ordered = sorted(decision_positions, reverse=True)
+    drop_positions = set(ordered[:excess])
+    kept = [turn for i, turn in enumerate(turns) if i not in drop_positions]
+    return kept, len(drop_positions)
 
 
 def extract_text(content: Any) -> str:
@@ -214,9 +296,11 @@ def reduce_transcript(lines: list[str]) -> Reduction:
     """
     result = Reduction()
     decision_ids: set[str] = set()
+    decision_provenance: list[bool] = []
     for line in lines:
         message = parse_message(line)
         if message is None:
+            result.residual_counts[RESIDUAL_NON_TURN] = result.residual_counts.get(RESIDUAL_NON_TURN, 0) + 1
             continue
         result.raw_turn_count += 1
         role = str(message['role'])
@@ -224,8 +308,9 @@ def reduce_transcript(lines: list[str]) -> Reduction:
         if role == 'assistant':
             decision_ids |= decision_tool_use_ids(content)
         if role == 'user':
-            for decision in extract_gate_decisions(content, decision_ids):
+            for decision, matched in extract_gate_decision_hits(content, decision_ids):
                 result.turns.append({'role': OPERATOR_DECISION_ROLE, 'text': decision})
+                decision_provenance.append(matched)
                 result.gate_decision_count += 1
         text = extract_text(content)
         if is_signal_bearing(role, text):
@@ -233,6 +318,22 @@ def reduce_transcript(lines: list[str]) -> Reduction:
             result.kept_raw_count += 1
             if role == 'user':
                 result.operator_turn_count += 1
+        else:
+            residual = classify_residual(role, text)
+            result.residual_counts[residual] = result.residual_counts.get(residual, 0) + 1
+    result.turns, result.symmetric_pair_dropped = enforce_symmetric_pair_guard(
+        result.turns, decision_ids, result.gate_decision_count, decision_provenance
+    )
+    # The gate count is intentionally NOT decremented by the drop: it
+    # measures recovered decisions (a lone refusal-marker IS operator
+    # signal — see test_operator_refusal_is_a_gate_decision), while
+    # ``turns`` measures renderable paired arms. Collapsing the two
+    # would report a refusal-driven run as silent.
+    result.kept_text_chars = sum(len(turn['text']) for turn in result.turns)
+    # Bytes across kept turn texts only: the rendered form adds role labels
+    # and separators, so measuring the render would report transcript
+    # overhead as kept signal.
+    result.kept_text_bytes = sum(len(turn['text'].encode('utf-8')) for turn in result.turns)
     return result
 
 
@@ -281,4 +382,9 @@ def reduce_chat_signal(transcript_path: Path) -> dict[str, Any]:
         'gate_decision_count': reduction.gate_decision_count,
         'reduced_bytes': len(reduced_text.encode('utf-8')),
         'no_signal': not reduction.has_operator_signal,
+        'kept_text_chars': reduction.kept_text_chars,
+        'kept_text_bytes': reduction.kept_text_bytes,
+        'signal_gate_population': reduction.signal_gate_population,
+        'residual_counts': dict(sorted(reduction.residual_counts.items())),
+        'symmetric_pair_dropped': reduction.symmetric_pair_dropped,
     }
