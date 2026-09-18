@@ -48,7 +48,9 @@ from permission_common import (  # noqa: E402
     EXIT_SUCCESS,
     ensure_default_permissions,
     get_project_settings_path,
+    get_settings_allow_list,
     get_settings_path,
+    is_antigravity_target,
     is_claude_target,
     load_settings,
     load_settings_path,
@@ -187,6 +189,31 @@ def resolve_settings_arg(args: argparse.Namespace) -> str:
 
 def cmd_apply_fixes(args: argparse.Namespace) -> dict:
     """Handle apply-fixes subcommand."""
+    if is_antigravity_target():
+        settings_path = resolve_settings_arg(args)
+        settings, error = load_settings(settings_path)
+        if error:
+            return {'status': 'error', 'error': error}
+        allow_list = get_settings_allow_list(settings)
+        deduped = sorted(dict.fromkeys(allow_list))
+        dups = len(allow_list) - len(deduped)
+        allow_list.clear()
+        allow_list.extend(deduped)
+        defaults = ensure_default_permissions(settings, settings_path, args.dry_run)
+        if not args.dry_run and dups > 0:
+            save_settings(settings_path, settings)
+        return {
+            'status': 'success',
+            'settings_file': settings_path,
+            'duplicates_removed': dups,
+            'paths_fixed': 0,
+            'defaults_added': defaults.get('defaults_added', []),
+            'defaults_added_count': defaults.get('defaults_added_count', 0),
+            'defaults_removed': defaults.get('defaults_removed', []),
+            'defaults_removed_count': defaults.get('defaults_removed_count', 0),
+            'dry_run': args.dry_run,
+        }
+
     if not is_claude_target():
         return _decline_non_claude('apply-fixes')
 
@@ -320,9 +347,13 @@ def cmd_ensure(args: argparse.Namespace) -> dict:
     """Handle ensure subcommand."""
     settings_path = get_settings_path(args.target)
     settings = load_settings_path(settings_path)
-    allow_list = settings['permissions']['allow']
+    allow_list = get_settings_allow_list(settings)
 
     permissions = [p.strip() for p in args.permissions.split(',')]
+    if is_antigravity_target():
+        from antigravity_runtime import to_antigravity_grant
+
+        permissions = [to_antigravity_grant(p) for p in permissions]
 
     added = []
     already_exists = []
@@ -410,6 +441,27 @@ def generate_wildcard(parsed_permissions: list[dict]) -> str:
 
 def cmd_consolidate(args: argparse.Namespace) -> dict:
     """Handle consolidate subcommand."""
+    if is_antigravity_target():
+        settings_path = resolve_settings_arg(args)
+        settings, error = load_settings(settings_path)
+        if error:
+            return {'status': 'error', 'error': error}
+        allow_list = get_settings_allow_list(settings)
+        deduped = sorted(dict.fromkeys(allow_list))
+        removed = len(allow_list) - len(deduped)
+        if not args.dry_run and removed > 0:
+            allow_list.clear()
+            allow_list.extend(deduped)
+            save_settings(settings_path, settings)
+        return {
+            'status': 'success',
+            'settings_file': settings_path,
+            'consolidations_count': 0,
+            'permissions_removed': removed,
+            'wildcards_added': 0,
+            'dry_run': args.dry_run,
+        }
+
     if not is_claude_target():
         return _decline_non_claude('consolidate')
 
@@ -544,6 +596,35 @@ def generate_required_wildcards(marketplace: dict) -> list[str]:
 
 def cmd_ensure_wildcards(args: argparse.Namespace) -> dict:
     """Handle ensure-wildcards subcommand."""
+    if is_antigravity_target():
+        from antigravity_runtime import ANTIGRAVITY_DEFAULT_PERMISSIONS
+
+        settings_path = resolve_settings_arg(args)
+        settings, error = load_settings(settings_path)
+        if error:
+            return {'status': 'error', 'error': error}
+        allow_list = get_settings_allow_list(settings)
+        added = []
+        already_exists = []
+        for grant in ANTIGRAVITY_DEFAULT_PERMISSIONS:
+            if grant in allow_list:
+                already_exists.append(grant)
+            else:
+                added.append(grant)
+                if not args.dry_run:
+                    allow_list.append(grant)
+        if added and not args.dry_run:
+            allow_list.sort()
+            save_settings(settings_path, settings)
+        return {
+            'status': 'success',
+            'settings_file': settings_path,
+            'added': added,
+            'already_exists': already_exists,
+            'added_count': len(added),
+            'dry_run': args.dry_run,
+        }
+
     if not is_claude_target():
         return _decline_non_claude('ensure-wildcards')
 
@@ -1051,6 +1132,40 @@ def cmd_generate_wildcards(args: argparse.Namespace) -> dict:
 
 def cmd_ensure_executor(args: argparse.Namespace) -> dict:
     """Handle ensure-executor subcommand."""
+    if is_antigravity_target():
+        antigravity_executor = 'command(python3 .plan/execute-script.py)'
+        settings_path = get_settings_path(args.target)
+        settings = load_settings_path(settings_path)
+        allow_list = get_settings_allow_list(settings)
+
+        result = {
+            'executor_permission': antigravity_executor,
+            'settings_file': str(settings_path),
+            'dry_run': args.dry_run,
+        }
+
+        if antigravity_executor in allow_list:
+            result['action'] = 'already_exists'
+            result['success'] = True
+            result.setdefault('status', 'success')
+            return result
+
+        if not args.dry_run:
+            allow_list.append(antigravity_executor)
+            allow_list.sort()
+            if save_settings(str(settings_path), settings):
+                result['action'] = 'added'
+                result['success'] = True
+            else:
+                result['error'] = 'Failed to save settings'
+                result['success'] = False
+        else:
+            result['action'] = 'would_add'
+            result['success'] = True
+
+        result['status'] = 'success' if result.get('success', True) else 'error'
+        return result
+
     if not is_claude_target():
         return _decline_non_claude('ensure-executor')
 

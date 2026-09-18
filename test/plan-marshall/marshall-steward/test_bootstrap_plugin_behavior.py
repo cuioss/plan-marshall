@@ -360,3 +360,65 @@ def test_main_resolve_dispatch(tmp_path: Path, monkeypatch, capsys):
 
     assert exc.value.code in (0, None)
     assert 'resolved_path' in capsys.readouterr().out
+
+
+# =============================================================================
+# Antigravity target tests
+# =============================================================================
+
+
+def test_detect_antigravity_root_workspace(tmp_path: Path, monkeypatch):
+    """_detect_antigravity_root finds workspace plugin under .agents/plugins/plan-marshall."""
+    ws = tmp_path / 'ws'
+    plugin_dir = ws / '.agents' / 'plugins' / 'plan-marshall'
+    plugin_dir.mkdir(parents=True)
+    (plugin_dir / 'plugin.json').write_text('{"name": "plan-marshall"}')
+    monkeypatch.chdir(ws)
+
+    root = bp._detect_antigravity_root()
+    assert root == plugin_dir
+
+
+def test_detect_antigravity_root_global(tmp_path: Path, monkeypatch):
+    """_detect_antigravity_root finds global plugin under <gemini_config>/plugins/plan-marshall."""
+    cfg = tmp_path / 'gemini' / 'config'
+    plugin_dir = cfg / 'plugins' / 'plan-marshall'
+    plugin_dir.mkdir(parents=True)
+    (plugin_dir / 'plugin.json').write_text('{"name": "plan-marshall"}')
+    monkeypatch.setenv('GEMINI_CONFIG_DIR', str(cfg))
+    empty_ws = tmp_path / 'empty'
+    empty_ws.mkdir()
+    monkeypatch.chdir(empty_ws)
+
+    root = bp._detect_antigravity_root()
+    assert root == plugin_dir
+
+
+def test_detect_plugin_root_routes_to_antigravity(monkeypatch):
+    """detect_plugin_root delegates to the Antigravity resolver for that target."""
+    sentinel = Path('/fake/antigravity')
+    monkeypatch.setattr(bp, '_detect_antigravity_root', lambda: sentinel)
+
+    assert bp.detect_plugin_root(target='antigravity') == sentinel
+
+
+def test_resolve_bundle_path_antigravity_flat_layout(tmp_path: Path):
+    """resolve_bundle_path resolves skills in Antigravity flat directory layout."""
+    plugin_root = tmp_path / 'plugin'
+    skill_dir = plugin_root / 'skills' / 'plan-marshall-manage-tasks'
+    skill_dir.mkdir(parents=True)
+    (skill_dir / 'SKILL.md').write_text('# Tasks')
+    (plugin_root / 'plugin.json').write_text('{"name": "plan-marshall"}')
+
+    resolved = bp.resolve_bundle_path(plugin_root, 'plan-marshall', 'skills/manage-tasks/SKILL.md')
+    assert resolved == skill_dir / 'SKILL.md'
+
+
+def test_cmd_get_root_error_antigravity_hint(monkeypatch):
+    """cmd_get_root returns the Antigravity-specific hint when not found for that target."""
+    monkeypatch.setattr(bp, 'get_plugin_root', lambda refresh, target: (None, 'not_found'))
+
+    result = bp.cmd_get_root(argparse.Namespace(refresh=False, target='antigravity'))
+
+    assert result['status'] == 'error'
+    assert 'gemini' in result['hint']

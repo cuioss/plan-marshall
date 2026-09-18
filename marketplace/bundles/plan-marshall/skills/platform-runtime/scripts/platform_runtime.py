@@ -177,6 +177,7 @@ _bootstrap_glob_discover()
 # value to keep the two in sync without a hard circular import.
 # ---------------------------------------------------------------------------
 
+from antigravity_runtime import AntigravityRuntime  # noqa: E402
 from claude_runtime import ClaudeRuntime  # noqa: E402
 from opencode_runtime import OpenCodeRuntime  # noqa: E402
 from runtime_base import (  # noqa: E402
@@ -189,6 +190,17 @@ from runtime_base import (  # noqa: E402
 # --- single registration record ------------------------------------------------
 
 _TARGET_RECORDS: dict[str, dict[str, Any]] = {
+    'antigravity': {
+        'runtime_class': AntigravityRuntime,
+        'bootstrap_libs': (
+            'tools-file-ops',
+            'tools-permission-doctor',
+            'tools-permission-fix',
+            'workflow-permission-web',
+            'script-shared',
+        ),
+        'default': False,
+    },
     'claude': {
         'runtime_class': ClaudeRuntime,
         'bootstrap_libs': (
