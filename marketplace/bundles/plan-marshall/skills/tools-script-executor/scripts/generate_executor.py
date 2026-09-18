@@ -621,6 +621,72 @@ def _resolve_notation_by_target(notation: str) -> str | None:
 '''
 
 
+# Template for the Antigravity target-aware resolver.
+# Resolves ``{bundle}:{skill}:{script}`` by walking standard Antigravity roots,
+# using the dash-namespaced ``{bundle}-{skill}`` directory layout emitted by the
+# Antigravity build target. Paths are always converted to absolute form before
+# return to sidestep cwd ambiguity.
+_ANTIGRAVITY_RESOLVER_TEMPLATE = '''\
+def _resolve_notation_by_target(notation: str) -> str | None:
+    """Antigravity target: resolve notation via root walk.
+
+    Searches Antigravity skill discovery roots in priority order for
+    ``{bundle}-{skill}/scripts/{script}.py`` (dash-namespaced layout per
+    Antigravity target convention). The first match is returned as an
+    absolute path.
+
+    Roots searched in order:
+      1. $GEMINI_CONFIG_DIR/plugins/plan-marshall/skills/  (env-var override)
+      2. .agents/skills/                                   (project-local)
+      3. .agents/plugins/plan-marshall/skills/             (project-local plugin)
+      4. ~/.gemini/config/plugins/plan-marshall/skills/    (user-global plugin)
+      5. ~/.gemini/antigravity/skills/                     (user-global cross-compat)
+      6. ~/.gemini/config/skills/                          (user-global skills)
+      7. .claude/skills/                                   (project-local cross-compat)
+
+    Args:
+        notation: Three-part notation ``{bundle}:{skill}:{script}``.
+
+    Returns:
+        Absolute path string, or ``None`` when no match is found.
+    """
+    parts = notation.split(':')
+    if len(parts) != 3:
+        return None
+    bundle, skill, script = parts
+    dir_name = f'{bundle}-{skill}'
+    script_file = f'{script}.py'
+
+    try:
+        home = Path.home()
+    except (OSError, RuntimeError):
+        return None
+
+    _env_config_dir = os.environ.get('GEMINI_CONFIG_DIR', '')
+    roots = [
+        (str(Path(_env_config_dir) / 'plugins' / 'plan-marshall' / 'skills') if _env_config_dir else ''),
+        '.agents/skills',
+        '.agents/plugins/plan-marshall/skills',
+        str(home / '.gemini' / 'config' / 'plugins' / 'plan-marshall' / 'skills'),
+        str(home / '.gemini' / 'antigravity' / 'skills'),
+        str(home / '.gemini' / 'config' / 'skills'),
+        '.claude/skills',
+    ]
+
+    for root in roots:
+        if not root:
+            continue
+        try:
+            candidate = Path(root) / dir_name / 'scripts' / script_file
+            if candidate.is_file():
+                return str(candidate.resolve())
+        except (OSError, ValueError):
+            continue
+
+    return None
+'''
+
+
 def read_marshal_target(cwd: Path | None = None) -> str:
     """Read ``runtime.target`` from ``.plan/marshal.json``.
 
@@ -632,7 +698,7 @@ def read_marshal_target(cwd: Path | None = None) -> str:
             ``Path.cwd()``.
 
     Returns:
-        Target string (e.g. ``"claude"`` or ``"opencode"``), or the
+        Target string (e.g. ``"claude"``, ``"antigravity"``, or ``"opencode"``), or the
         fallback ``"claude"`` when the file is absent, malformed, or the
         ``runtime.target`` key is missing.
     """
@@ -671,19 +737,23 @@ def generate_target_aware_resolver_code(target: str) -> str:
 
     - ``claude``:  glob-based resolver using the Claude plugin-cache
       (``~/.claude/plugins/cache/plan-marshall/*/skills/{skill}/scripts/{script}.py``).
+    - ``antigravity``:  root walk using the Antigravity dash-namespaced directory
+      layout (``{bundle}-{skill}/scripts/{script}.py``).
     - ``opencode``:  7-root walk using the OpenCode dash-namespaced directory
       layout (``{bundle}-{skill}/scripts/{script}.py``).
 
     Unknown targets fall back to the Claude resolver.
 
     Args:
-        target: Runtime target string (e.g. ``"claude"`` or ``"opencode"``).
+        target: Runtime target string (e.g. ``"claude"``, ``"antigravity"``, or ``"opencode"``).
 
     Returns:
         Python source code string (no leading/trailing blank lines).
     """
     if target == 'opencode':
         return _OPENCODE_RESOLVER_TEMPLATE.strip()
+    if target == 'antigravity':
+        return _ANTIGRAVITY_RESOLVER_TEMPLATE.strip()
     # Default / unknown target → Claude resolver
     return _CLAUDE_RESOLVER_TEMPLATE.strip()
 
@@ -1939,9 +2009,11 @@ def find_installed_manifest_path(base_path: Path | None = None, target: str = 'c
         idx = base_str.find(marker)
         if idx >= 0:
             repo_root = Path(base_str[:idx])
-            candidates.append(repo_root / 'target' / target / 'dist-manifest.json')
-        candidates.append(base_path / 'dist-manifest.json')
-        candidates.append(base_path.parent / 'dist-manifest.json')
+            for fname in ('dist-manifest.json', 'plugin.json', 'opencode.json'):
+                candidates.append(repo_root / 'target' / target / fname)
+        for fname in ('dist-manifest.json', 'plugin.json', 'opencode.json'):
+            candidates.append(base_path / fname)
+            candidates.append(base_path.parent / fname)
         # (4) Marketplace clone root: a plugin-cache install keeps the manifest
         # at ``.../plugins/marketplaces/<marketplace>/`` rather than inside the
         # cache tree, so map the ``/plugins/cache/<marketplace>`` segment to

@@ -179,6 +179,77 @@ The project-level command (`.agents/commands/sync-antigravity.md`) invokes the u
 * Supports `--bundles <name>` for scoped deployments and `--dry-run` for non-destructive preview.
 * Emits a compact, structured TOON report summarizing deployed component counts (`skills_count`, `agents_count`, `commands_count`, `assets_count`, `deployed_count`) and pruned entries.
 
+== Runtime Abstraction & Permission Configuration
+
+Beyond static generation, Plan Marshall integrates Antigravity as a first-class execution target (`runtime.target: antigravity` in `.plan/marshal.json`) through the platform abstraction layer (`platform-runtime`), permission tooling (`tools-permission-fix`, `tools-permission-doctor`), and project setup (`marshall-steward`).
+
+=== AntigravityRuntime (`platform-runtime`)
+
+The `AntigravityRuntime` subclass implements target operations:
+
+* **Layout Resolution**:
+  ** `layout_skill_roots()`: Returns `['.agents/skills', '.agents/plugins/plan-marshall/skills']`.
+  ** `layout_bundle_cache_root()`: Returns `['~/.gemini/config/plugins/plan-marshall/skills', '~/.gemini/antigravity/skills']`.
+* **Harness Constraints**: Enforces a 600-second ceiling for bash execution timeouts.
+* **Health Check**: Inspects presence of `~/.gemini/config/config.json` and the installed plugin directory.
+* **Session Metrics**: Tracks tokens and lifecycle phase transitions.
+
+=== Permission Architecture & Configuration Storage
+
+Antigravity models permissions using a two-tier configuration hierarchy:
+
+1. **Global Configuration (`~/.gemini/config/config.json`)**:
+   Holds machine-wide permissions under `userSettings.globalPermissionGrants.allow`.
+2. **Project-Scoped Configuration (`~/.gemini/config/projects/<project_uuid>.json`)**:
+   Holds project-specific grants under `permissionGrants.permissionGrants.allow`.
+
+=== Project UUID Resolution
+
+Project configuration files in `~/.gemini/config/projects/*.json` are mapped to workspaces by matching their resource URI:
+
+[source,json]
+----
+{
+  "projectResources": {
+    "resources": [
+      {
+        "gitFolder": {
+          "folderUri": "file:///path/to/project"
+        }
+      }
+    ]
+  },
+  "permissionGrants": {
+    "permissionGrants": {
+      "allow": [
+        "command(python3 .plan/execute-script.py)",
+        "command(./pw)"
+      ]
+    }
+  }
+}
+----
+
+When configuring project-local permissions, `AntigravityRuntime.permission_settings_path("project")` scans existing project manifests for a matching `file://<project_dir>` URI. If absent, a new project manifest with a generated UUID is initialized.
+
+=== Permission Grant Grammar
+
+Antigravity permissions use function-call syntax:
+
+* `command(<pattern>)`: Authorizes CLI command prefixes (e.g. `command(python3 .plan/execute-script.py)`, `command(./pw)`).
+* `read_file(<pattern>)`: Authorizes file read access.
+* `write_file(<pattern>)`: Authorizes file creation and editing.
+* `read_url(<pattern>)`: Authorizes network URL fetch access.
+
+`permission_fix` (`ensure-executor`, `ensure`, `apply-fixes`) translates abstract requests into the Antigravity grammar when `runtime.target == 'antigravity'`, ensuring zero-prompt execution for the Plan Marshall executor and build tools.
+
+=== Marshall Steward Integration
+
+`bootstrap_plugin.py` supports the `antigravity` target:
+
+* `--target antigravity`: Probes workspace-local (`.agents/plugins/plan-marshall`) and global (`~/.gemini/config/plugins/plan-marshall`) plugin roots.
+* Path resolution in `resolve_bundle_path`: Transparently maps bundle-relative paths (e.g. `skills/manage-tasks/SKILL.md`) into Antigravity's flat skill layout (`skills/plan-marshall-manage-tasks/SKILL.md`).
+
 == Verification & Test Coverage
 
 The test suite provides complete coverage across:
@@ -193,4 +264,8 @@ The test suite provides complete coverage across:
   ** `test_level_table_lockstep.py`: Table object identity assertion against Claude target and model alias validity.
 * `test/sync-antigravity/`:
   ** `test_sync_antigravity.py`: Component deployment, root asset handling, dry run semantics, managed entry pruning, unmanaged entry preservation, prefix ambiguity resolution, and error exit codes.
+* `test/plan-marshall/platform-runtime/`:
+  ** `test_antigravity_runtime.py`: `AntigravityRuntime` unit tests covering layout, permission paths, settings I/O, default grants, and health checks.
+* `test/plan-marshall/marshall-steward/`:
+  ** `test_bootstrap_plugin_behavior.py`: Antigravity plugin-root detection and bundle path resolution tests.
 

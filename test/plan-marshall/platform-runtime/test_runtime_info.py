@@ -201,16 +201,16 @@ def test_opencode_provider_reports_opencode_harness() -> None:
     assert result['harness'] == 'opencode'
 
 
-def test_antigravity_is_an_example_harness_value_only() -> None:
-    """The collector accepts antigravity as a string while the registry rejects it."""
+def test_custom_harness_is_an_example_harness_value_only() -> None:
+    """The collector accepts arbitrary harness strings while the registry rejects unregistered ones."""
     info = runtime_info.collect_runtime_info(
-        'antigravity',
+        'custom-harness',
         env={},
         marketplace_root=Path('/nonexistent'),
     )
-    assert info['harness'] == 'antigravity'
-    assert 'antigravity' not in platform_runtime._REGISTRY
-    assert platform_runtime._make_runtime('antigravity') is None
+    assert info['harness'] == 'custom-harness'
+    assert 'custom-harness' not in platform_runtime._REGISTRY
+    assert platform_runtime._make_runtime('custom-harness') is None
 
 
 def test_router_rejects_unknown_target() -> None:

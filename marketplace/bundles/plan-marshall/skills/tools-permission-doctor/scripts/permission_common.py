@@ -18,7 +18,7 @@ decline on a non-Claude target. The module holds no direct import of
 
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 # Bootstrap sys.path so the platform-runtime library resolves without the
 # executor. Walk up to the skills/ root and append platform-runtime/scripts.
@@ -49,6 +49,54 @@ def is_claude_target() -> bool:
     from _claude_runtime_impl import ClaudeRuntime
 
     return isinstance(_active_runtime(), ClaudeRuntime)
+
+
+def is_antigravity_target() -> bool:
+    """True when the active runtime is the Antigravity target."""
+    from antigravity_runtime import AntigravityRuntime
+
+    return isinstance(_active_runtime(), AntigravityRuntime)
+
+
+def is_opencode_target() -> bool:
+    """True when the active runtime is the OpenCode target."""
+    from opencode_runtime import OpenCodeRuntime
+
+    return isinstance(_active_runtime(), OpenCodeRuntime)
+
+
+def get_opencode_allow_list(settings: dict[str, Any]) -> list[str]:
+    """Extract allow list strings from OpenCode settings."""
+    allows: list[str] = []
+    perm = settings.get('permission', {})
+    if not isinstance(perm, dict):
+        return allows
+    for cat, val in perm.items():
+        if cat == 'bash' and isinstance(val, dict):
+            for pattern, action in val.items():
+                if action == 'allow':
+                    allows.append(f'bash({pattern})')
+        elif val == 'allow':
+            allows.append(f'{cat}(*)')
+    return allows
+
+
+def get_settings_allow_list(settings: dict[str, Any]) -> list[str]:
+    """Extract mutable allow list from settings, supporting Claude, Antigravity, and OpenCode."""
+    allows: Any
+    if 'userSettings' in settings and isinstance(settings['userSettings'], dict):
+        allows = settings['userSettings'].setdefault('globalPermissionGrants', {}).setdefault('allow', [])
+    elif 'permissionGrants' in settings and isinstance(settings['permissionGrants'], dict):
+        pg = settings['permissionGrants']
+        if isinstance(pg.get('permissionGrants'), dict):
+            allows = pg['permissionGrants'].setdefault('allow', [])
+        else:
+            allows = pg.setdefault('allow', [])
+    elif 'permission' in settings and isinstance(settings['permission'], dict):
+        return get_opencode_allow_list(settings)
+    else:
+        allows = settings.setdefault('permissions', {}).setdefault('allow', [])
+    return cast(list[str], allows)
 
 
 def _active_runtime() -> Runtime:

@@ -407,7 +407,8 @@ class TestPermissionFixProtectPath:
         opencode = _parse(OpenCodeRuntime().permission_fix('global', operation, args, True))
 
         assert claude['status'] == 'success', operation
-        assert opencode['status'] == 'no-op', operation
+        expected_opencode_status = 'no-op' if operation == 'protect-path' else 'success'
+        assert opencode['status'] == expected_opencode_status, operation
 
 
 class TestEveryMutatingBranchReportsAFailedWrite:

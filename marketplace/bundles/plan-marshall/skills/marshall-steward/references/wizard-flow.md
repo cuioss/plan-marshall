@@ -112,8 +112,7 @@ Interpret the consult result before deciding whether to widen:
 **Widen only when the consult shows the permission is absent.** Do NOT issue the write unconditionally — the consult above is the gate that authorizes it. When the consult shows the permission is absent, invoke the resolved script to add it:
 
 ```bash
-python3 "{PERMISSION_FIX}" ensure \
-  --permissions "Bash(python3 .plan/execute-script.py *)" \
+python3 "{PERMISSION_FIX}" ensure-executor \
   --target project
 ```
 
@@ -127,10 +126,12 @@ settings_file	/path/to/.claude/settings.local.json
 
 | status | Meaning |
 |--------|---------|
-| `added` | Permission added to project settings |
-| `exists` | Permission already present |
-
 This ensures script execution works without prompting, independent of global settings.
+
+**Target Variations:**
+- On **Claude Code**, permissions use `Bash(python3 .plan/execute-script.py *)` stored in `.claude/settings.local.json` (or `.claude/settings.json`).
+- On **Google Antigravity**, permissions use `command(python3 .plan/execute-script.py)` stored in `~/.gemini/config/projects/<project_uuid>.json` (project-scoped `permissionGrants.permissionGrants.allow`). `permission_fix` handles target detection and grammar automatically.
+- On **OpenCode**, permissions use `"bash": { "python3 .plan/execute-script.py *": "allow" }` stored in `opencode.json` (or `.opencode/opencode.json` or `~/.config/opencode/opencode.json`). `permission_fix` handles target detection and configuration automatically.
 
 ---
 
@@ -192,7 +193,7 @@ The script auto-detects the plugin cache location and generates `.plan/execute-s
 
 **Verify syntax**:
 ```bash
-python3 -m py_compile .plan/execute-script.py && echo "Executor syntax OK"
+python3 -m py_compile .plan/execute-script.py
 ```
 
 **Output**: "Executor ready with N script mappings"
@@ -246,7 +247,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config init -
 
 **Output**: "Created .plan/marshal.json with defaults"
 
-**Note**: marshal.json contains configuration only. The module list comes from `_project.json["modules"]` (Step 8), which is the source of truth — per-module derived data is computed lazily off that index on demand by `crawl_module_derived`.
+**Note**: marshal.json contains configuration only. The module list comes from `_project.json["modules"]` (Step 8), which is the source of truth — per-module derived data is computed lazily off that index on demand by `crawl_module_derived`. Supported `runtime.target` values include `claude` (default), `opencode`, and `antigravity`.
 
 **Effort defaults are seeded at init**: `get_default_config()` seeds per-phase `effort` keys (`plan.<phase>.effort`) plus the plan-wide `plan.effort` fallback, mirroring the `economic` named preset's expanded shape. A freshly-initialized project therefore gets per-phase model tuning out of the box — `effort resolve-target` resolves a concrete `execution-context-{level}` rather than silently falling back to `level: inherit`. The post-wizard **Effort menu** (see [effort-menu.md](../standards/effort-menu.md)) still tunes these after init via `apply-preset` or per-phase edits; init seeding and the menu are complementary (seed-then-tune), not redundant.
 

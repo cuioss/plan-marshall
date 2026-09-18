@@ -253,3 +253,31 @@ class TestResolveScopeToPaths:
 
 def test_exit_codes():
     assert EXIT_SUCCESS == 0
+
+
+def test_get_settings_allow_list_opencode():
+    """get_settings_allow_list parses OpenCode permission mapping."""
+    from permission_common import get_settings_allow_list
+
+    settings = {
+        'permission': {
+            'bash': {
+                'python3 .plan/execute-script.py *': 'allow',
+                'rm -rf /': 'deny',
+            },
+            'read': 'allow',
+        }
+    }
+    allows = get_settings_allow_list(settings)
+    assert 'bash(python3 .plan/execute-script.py *)' in allows
+    assert 'bash(rm -rf /)' not in allows
+    assert 'read(*)' in allows
+
+
+def test_is_opencode_target(monkeypatch):
+    """is_opencode_target returns True when runtime is OpenCodeRuntime."""
+    from opencode_runtime import OpenCodeRuntime
+    from permission_common import is_opencode_target
+
+    monkeypatch.setattr('permission_common._active_runtime', lambda: OpenCodeRuntime())
+    assert is_opencode_target() is True

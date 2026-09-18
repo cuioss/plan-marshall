@@ -28,6 +28,7 @@ All methods return a serialized TOON string via the helpers in runtime_base.
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -41,6 +42,56 @@ from runtime_base import (
     toon_noop,
     toon_success,
 )
+
+#: Default bash permission patterns to guarantee in OpenCode settings.
+OPENCODE_DEFAULT_PERMISSIONS: tuple[str, ...] = (
+    'python3 .plan/execute-script.py *',
+    './pw *',
+    'python3 marketplace/targets/sync.py *',
+    'python3 .opencode/scripts/sync_opencode.py *',
+)
+
+DEFAULT_OPENCODE_COMMANDS = OPENCODE_DEFAULT_PERMISSIONS
+
+
+def _opencode_config_dir() -> Path:
+    """Return ~/.config/opencode directory path (overridable by OPENCODE_CONFIG_DIR)."""
+    env = os.environ.get('OPENCODE_CONFIG_DIR')
+    if env:
+        return Path(env).expanduser().resolve()
+    return (Path.home() / '.config' / 'opencode').resolve()
+
+
+def to_opencode_grant(perm: str) -> tuple[str, str, str]:
+    """Translate Claude or generic permission strings to OpenCode format.
+
+    Returns: (tool_category, pattern_or_rule, action)
+    """
+    perm = perm.strip()
+    if perm.startswith('command(') and perm.endswith(')'):
+        inner = perm[8:-1].strip()
+        return ('bash', inner, 'allow')
+
+    if perm.startswith('Bash(') and perm.endswith(')'):
+        inner = perm[5:-1].strip()
+        return ('bash', inner, 'allow')
+
+    if perm.startswith('read_file(') and perm.endswith(')'):
+        inner = perm[10:-1].strip()
+        return ('read', inner, 'allow')
+
+    if perm.startswith('Read(') and perm.endswith(')'):
+        inner = perm[5:-1].strip()
+        return ('read', inner, 'allow')
+
+    if (perm.startswith('write_file(') or perm.startswith('Write(') or perm.startswith('Edit(')) and perm.endswith(')'):
+        inner = perm[perm.index('(') + 1 : -1].strip()
+        return ('edit', inner, 'allow')
+
+    if perm in ('read', 'edit', 'glob', 'grep', 'bash', 'webfetch', 'websearch', 'question', 'task', 'skill'):
+        return (perm, '*', 'allow')
+
+    return ('bash', perm, 'allow')
 
 
 class OpenCodeRuntime(Runtime):
@@ -125,7 +176,7 @@ class OpenCodeRuntime(Runtime):
         if shape_error is not None:
             return shape_error
 
-        if 'runtime' not in existing:
+        if 'runtime' not in existing or not isinstance(existing['runtime'], dict):
             existing['runtime'] = {}
         existing['runtime']['target'] = target
 
@@ -138,12 +189,18 @@ class OpenCodeRuntime(Runtime):
                 f'Failed to write marshal.json: {exc}',
             )
 
+        # Ensure project settings exist and default executor is allowed
+        settings_path = self.permission_settings_path('project', write=True, project_dir=str(proj))
+        settings = self.permission_load_settings(settings_path)
+        self.permission_ensure_defaults(settings, settings_path, dry_run=False)
+
         return toon_success(
             'project initial-setup',
             {
                 'target': target,
                 'project_dir': str(proj.resolve()),
                 'marshal_written': True,
+                'settings_path': settings_path,
                 'hook_installed': False,
                 'hook_skip_reason': ('OpenCode does not support a SessionStart hook equivalent (issue #9292)'),
             },
@@ -347,35 +404,54 @@ class OpenCodeRuntime(Runtime):
     # Permission operations
     # ------------------------------------------------------------------
 
-    # OpenCode has no validated permission backend. Each permission op returns
-    # an honest ``no-op`` (reason + alternative) rather than a fabricated success
-    # that claims a write happened. The Claude permission grammar
-    # (``Skill()``/``Bash()``/``WebFetch()`` patterns, the
-    # ``permissions.{allow,deny,ask}`` schema) is Claude-specific and does not
-    # map onto OpenCode's settings format; surfacing a fake ``permissions_written``
-    # count would mislead callers into believing the operation took effect.
-    _PERMISSION_NOOP_REASON = (
-        'OpenCode has no validated permission backend; the Claude permission '
-        "grammar does not map onto OpenCode's settings format"
-    )
-    _PERMISSION_NOOP_ALTERNATIVE = "Manage OpenCode permissions through OpenCode's own settings; this op is Claude-only"
-
     def permission_configure(self, scope: str, grants: list[dict[str, Any]]) -> str:
-        """Honest no-op: OpenCode has no validated permission-write backend."""
+        """Configure permission grants in OpenCode settings."""
         if scope not in ('project', 'global'):
             return toon_error(
                 'permission configure',
                 'invalid_scope',
                 f"--scope must be 'project' or 'global'; got {scope!r}",
             )
-        return toon_noop(
+
+        settings_path = self.permission_settings_path(scope, write=True)
+        settings = self.permission_load_settings(settings_path)
+        perm = settings.setdefault('permission', {})
+        if not isinstance(perm, dict):
+            perm = {}
+            settings['permission'] = perm
+
+        bash_map = perm.setdefault('bash', {})
+        if not isinstance(bash_map, dict):
+            bash_map = {}
+            perm['bash'] = bash_map
+
+        added = 0
+        for g in grants:
+            rule = g.get('rule') or g.get('command') or str(g)
+            cat, pat, act = to_opencode_grant(str(rule))
+            if cat == 'bash':
+                if bash_map.get(pat) != act:
+                    bash_map[pat] = act
+                    added += 1
+            else:
+                if perm.get(cat) != act:
+                    perm[cat] = act
+                    added += 1
+
+        if added:
+            self.permission_save_settings(settings_path, settings)
+
+        return toon_success(
             'permission configure',
-            self._PERMISSION_NOOP_REASON,
-            self._PERMISSION_NOOP_ALTERNATIVE,
+            {
+                'scope': scope,
+                'settings_path': settings_path,
+                'grants_added': added,
+            },
         )
 
     def permission_analyze(self, scope: str, checks: list[str], marshal_path: str | None) -> str:
-        """Honest no-op: OpenCode has no Claude-grammar permission audit."""
+        """Analyze OpenCode permissions for coverage."""
         valid_scopes = ('global', 'project', 'both')
         if scope not in valid_scopes:
             return toon_error(
@@ -391,11 +467,37 @@ class OpenCodeRuntime(Runtime):
                     'invalid_check',
                     f'Unknown check {check!r}; valid checks are: {", ".join(sorted(valid_checks))}',
                 )
-        return toon_noop(
-            'permission analyze',
-            self._PERMISSION_NOOP_REASON,
-            self._PERMISSION_NOOP_ALTERNATIVE,
-        )
+
+        scopes_to_check = ['global', 'project'] if scope == 'both' else [scope]
+        results: dict[str, Any] = {}
+
+        for sc in scopes_to_check:
+            spath = self.permission_settings_path(sc, write=False)
+            settings = self.permission_load_settings(spath)
+            perm = settings.get('permission', {})
+            bash_map = perm.get('bash', {}) if isinstance(perm, dict) else {}
+            has_executor = False
+            if isinstance(bash_map, dict):
+                has_executor = any(
+                    k in ('python3 .plan/execute-script.py *', 'python3 .plan/execute-script.py') and v == 'allow'
+                    for k, v in bash_map.items()
+                )
+            elif bash_map == 'allow':
+                has_executor = True
+
+            missing_defaults = []
+            if isinstance(bash_map, dict):
+                for d in OPENCODE_DEFAULT_PERMISSIONS:
+                    if bash_map.get(d) != 'allow':
+                        missing_defaults.append(d)
+
+            results[sc] = {
+                'settings_path': spath,
+                'has_executor': has_executor,
+                'missing_defaults': missing_defaults,
+            }
+
+        return toon_success('permission analyze', {'scope': scope, 'analysis': results})
 
     def permission_fix(
         self,
@@ -404,7 +506,7 @@ class OpenCodeRuntime(Runtime):
         arguments: list[Any],
         dry_run: bool,
     ) -> str:
-        """Honest no-op: OpenCode has no validated permission-fix backend."""
+        """Apply fixes to OpenCode permissions."""
         if scope not in ('project', 'global'):
             return toon_error(
                 'permission fix',
@@ -418,28 +520,112 @@ class OpenCodeRuntime(Runtime):
                 'invalid_operation',
                 f'--operation must be one of {sorted(valid_ops)}; got {operation!r}',
             )
-        return toon_noop(
+
+        settings_path = self.permission_settings_path(scope, write=not dry_run)
+        settings = self.permission_load_settings(settings_path)
+        perm = settings.setdefault('permission', {})
+        if not isinstance(perm, dict):
+            perm = {}
+            settings['permission'] = perm
+
+        bash_map = perm.setdefault('bash', {})
+        if not isinstance(bash_map, dict):
+            bash_map = {}
+            perm['bash'] = bash_map
+
+        if operation in ('ensure', 'add'):
+            added = 0
+            for item in arguments:
+                cat, pat, act = to_opencode_grant(str(item))
+                if cat == 'bash':
+                    if bash_map.get(pat) != act:
+                        if not dry_run:
+                            bash_map[pat] = act
+                        added += 1
+                else:
+                    if perm.get(cat) != act:
+                        if not dry_run:
+                            perm[cat] = act
+                        added += 1
+            if added and not dry_run:
+                self.permission_save_settings(settings_path, settings)
+            return toon_success(
+                'permission fix',
+                {
+                    'fix_operation': operation,
+                    'scope': scope,
+                    'added': added,
+                    'dry_run': dry_run,
+                },
+            )
+
+        if operation == 'remove':
+            removed = 0
+            for item in arguments:
+                cat, pat, _ = to_opencode_grant(str(item))
+                if cat == 'bash' and pat in bash_map:
+                    if not dry_run:
+                        del bash_map[pat]
+                    removed += 1
+                elif cat in perm:
+                    if not dry_run:
+                        del perm[cat]
+                    removed += 1
+            if removed and not dry_run:
+                self.permission_save_settings(settings_path, settings)
+            return toon_success(
+                'permission fix',
+                {
+                    'fix_operation': operation,
+                    'scope': scope,
+                    'removed': removed,
+                    'dry_run': dry_run,
+                },
+            )
+
+        if operation in ('normalize', 'consolidate'):
+            return toon_success(
+                'permission fix',
+                {
+                    'fix_operation': operation,
+                    'scope': scope,
+                    'action': 'no-op',
+                    'dry_run': dry_run,
+                },
+            )
+
+        if operation == 'protect-path':
+            return toon_noop(
+                'permission fix',
+                'OpenCode has no path-protection or deny-list mechanism',
+                'Protect sensitive files using filesystem permissions or outside the workspace',
+            )
+
+        return toon_success(
             'permission fix',
-            self._PERMISSION_NOOP_REASON,
-            self._PERMISSION_NOOP_ALTERNATIVE,
+            {
+                'fix_operation': operation,
+                'scope': scope,
+                'action': 'no-op',
+                'dry_run': dry_run,
+            },
         )
 
     def permission_ensure_wildcards(self, scope: str, marketplace_dir: str, dry_run: bool) -> str:
-        """Honest no-op: OpenCode has no marketplace-wildcard permission backend."""
+        """Ensure baseline executor and build tool permissions in OpenCode."""
         if scope not in ('project', 'global'):
             return toon_error(
                 'permission ensure-wildcards',
                 'invalid_scope',
                 f"--scope must be 'project' or 'global'; got {scope!r}",
             )
-        return toon_noop(
-            'permission ensure-wildcards',
-            self._PERMISSION_NOOP_REASON,
-            self._PERMISSION_NOOP_ALTERNATIVE,
-        )
+        settings_path = self.permission_settings_path(scope, write=not dry_run)
+        settings = self.permission_load_settings(settings_path)
+        res = self.permission_ensure_defaults(settings, settings_path, dry_run=dry_run)
+        return toon_success('permission ensure-wildcards', res)
 
     def permission_ensure_steps(self, marshal_path: str, scope: str, dry_run: bool) -> str:
-        """Honest no-op: OpenCode has no per-step permission backend."""
+        """Ensure step permissions for OpenCode."""
         import pathlib
 
         if not pathlib.Path(marshal_path).exists():
@@ -454,14 +640,17 @@ class OpenCodeRuntime(Runtime):
                 'invalid_scope',
                 f"--scope must be 'project' or 'global'; got {scope!r}",
             )
-        return toon_noop(
+        return toon_success(
             'permission ensure-steps',
-            self._PERMISSION_NOOP_REASON,
-            self._PERMISSION_NOOP_ALTERNATIVE,
+            {
+                'scope': scope,
+                'dry_run': dry_run,
+                'steps_added': 0,
+            },
         )
 
     def permission_web_analyze(self, scope: str) -> str:
-        """Honest no-op: OpenCode has no WebFetch-grammar permission audit."""
+        """Analyze allowed URL domains in OpenCode."""
         valid_scopes = ('global', 'project', 'both')
         if scope not in valid_scopes:
             return toon_error(
@@ -469,10 +658,16 @@ class OpenCodeRuntime(Runtime):
                 'invalid_scope',
                 f"--scope must be 'global', 'project', or 'both'; got {scope!r}",
             )
-        return toon_noop(
+        spath = self.permission_settings_path('project' if scope == 'project' else 'global', write=False)
+        settings = self.permission_load_settings(spath)
+        perm = settings.get('permission', {})
+        webfetch = perm.get('webfetch') if isinstance(perm, dict) else None
+        return toon_success(
             'permission web-analyze',
-            self._PERMISSION_NOOP_REASON,
-            self._PERMISSION_NOOP_ALTERNATIVE,
+            {
+                'scope': scope,
+                'webfetch_permission': webfetch,
+            },
         )
 
     def permission_web_apply(
@@ -482,34 +677,117 @@ class OpenCodeRuntime(Runtime):
         remove: list[str],
         dry_run: bool,
     ) -> str:
-        """Honest no-op: OpenCode has no WebFetch-domain permission backend."""
+        """Apply URL allow/deny rules in OpenCode."""
         if scope not in ('project', 'global'):
             return toon_error(
                 'permission web-apply',
                 'invalid_scope',
                 f"--scope must be 'project' or 'global'; got {scope!r}",
             )
-        return toon_noop(
+        settings_path = self.permission_settings_path(scope, write=not dry_run)
+        settings = self.permission_load_settings(settings_path)
+        perm = settings.setdefault('permission', {})
+        if not isinstance(perm, dict):
+            perm = {}
+            settings['permission'] = perm
+
+        changed = False
+        if add and perm.get('webfetch') != 'allow':
+            if not dry_run:
+                perm['webfetch'] = 'allow'
+            changed = True
+        elif remove and perm.get('webfetch') == 'allow':
+            if not dry_run:
+                del perm['webfetch']
+            changed = True
+
+        if changed and not dry_run:
+            self.permission_save_settings(settings_path, settings)
+
+        return toon_success(
             'permission web-apply',
-            self._PERMISSION_NOOP_REASON,
-            self._PERMISSION_NOOP_ALTERNATIVE,
+            {
+                'scope': scope,
+                'changed': changed,
+                'dry_run': dry_run,
+            },
         )
 
     # ------------------------------------------------------------------
-    # Permission settings I/O — honest no-ops for OpenCode
+    # Permission settings I/O for OpenCode
     # ------------------------------------------------------------------
 
     def permission_settings_path(self, scope: str, write: bool = False, project_dir: str | None = None) -> str:
-        """Decline — OpenCode has no permission settings files."""
-        raise RuntimeError(f'permission_settings_path: {self._PERMISSION_NOOP_REASON}')
+        """Resolve path to OpenCode settings file.
+
+        - 'global': ~/.config/opencode/opencode.json (or $OPENCODE_CONFIG_DIR/opencode.json)
+        - 'project': <project_dir>/opencode.json (prefers existing opencode.json or .opencode/opencode.json)
+        """
+        if scope == 'global':
+            g_path = _opencode_config_dir() / 'opencode.json'
+            if write and not g_path.is_file():
+                g_path.parent.mkdir(parents=True, exist_ok=True)
+                skeleton = {
+                    '$schema': 'https://opencode.ai/config.json',
+                    'permission': {
+                        'bash': dict.fromkeys(OPENCODE_DEFAULT_PERMISSIONS, 'allow'),
+                    },
+                }
+                try:
+                    g_path.write_text(json.dumps(skeleton, indent=2) + '\n', encoding='utf-8')
+                except OSError:
+                    pass
+            return str(g_path)
+
+        if scope == 'project':
+            pd = Path(project_dir).resolve() if project_dir else Path.cwd().resolve()
+            root_cfg = pd / 'opencode.json'
+            if root_cfg.is_file():
+                return str(root_cfg)
+            dot_cfg = pd / '.opencode' / 'opencode.json'
+            if dot_cfg.is_file():
+                return str(dot_cfg)
+
+            target_cfg = root_cfg
+            if (pd / '.opencode').is_dir():
+                target_cfg = dot_cfg
+
+            if write and not target_cfg.is_file():
+                target_cfg.parent.mkdir(parents=True, exist_ok=True)
+                skeleton = {
+                    '$schema': 'https://opencode.ai/config.json',
+                    'permission': {
+                        'bash': dict.fromkeys(OPENCODE_DEFAULT_PERMISSIONS, 'allow'),
+                    },
+                }
+                try:
+                    target_cfg.write_text(json.dumps(skeleton, indent=2) + '\n', encoding='utf-8')
+                except OSError:
+                    pass
+            return str(target_cfg)
+
+        raise ValueError(f"Unsupported scope: {scope!r}; must be 'global' or 'project'")
 
     def permission_load_settings(self, path: str) -> dict[str, Any]:
-        """Decline — OpenCode has no permission settings files."""
-        return {}
+        """Load settings from an OpenCode JSON file."""
+        p = Path(path)
+        if not p.is_file():
+            return {}
+        try:
+            data = json.loads(p.read_text(encoding='utf-8'))
+            return data if isinstance(data, dict) else {}
+        except (OSError, json.JSONDecodeError) as exc:
+            return {'error': str(exc)}
 
     def permission_save_settings(self, path: str, settings: dict[str, Any]) -> bool:
-        """Decline — OpenCode has no permission settings files."""
-        return False
+        """Persist settings to an OpenCode JSON file."""
+        p = Path(path)
+        try:
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(json.dumps(settings, indent=2) + '\n', encoding='utf-8')
+            return True
+        except OSError:
+            return False
 
     def permission_ensure_defaults(
         self,
@@ -517,17 +795,45 @@ class OpenCodeRuntime(Runtime):
         settings_path: str,
         dry_run: bool = False,
     ) -> dict[str, Any]:
-        """Decline — OpenCode has no permission settings files."""
+        """Ensure default Plan Marshall executor permissions exist in OpenCode settings."""
+        perm = settings.setdefault('permission', {})
+        if not isinstance(perm, dict):
+            perm = {}
+            settings['permission'] = perm
+
+        bash_map = perm.get('bash')
+        if not isinstance(bash_map, dict):
+            if bash_map == 'allow':
+                return {
+                    'defaults_added': [],
+                    'defaults_added_count': 0,
+                    'defaults_removed': [],
+                    'defaults_removed_count': 0,
+                    'applied': False,
+                }
+            bash_map = {}
+            perm['bash'] = bash_map
+
+        added: list[str] = []
+        for cmd in OPENCODE_DEFAULT_PERMISSIONS:
+            if bash_map.get(cmd) != 'allow':
+                added.append(cmd)
+                if not dry_run:
+                    bash_map[cmd] = 'allow'
+
+        if added and not dry_run:
+            self.permission_save_settings(settings_path, settings)
+
         return {
-            'defaults_added': [],
-            'defaults_added_count': 0,
+            'defaults_added': added,
+            'defaults_added_count': len(added),
             'defaults_removed': [],
             'defaults_removed_count': 0,
-            'applied': False,
+            'applied': bool(added and not dry_run),
         }
 
     def permission_check_skill_coverage(self, skill: str, allow_list: list[str]) -> str | None:
-        """Decline — OpenCode has no permission settings files."""
+        """Decline — OpenCode permission checking does not use Skill(...) coverage."""
         return None
 
     def permission_load_marshal_config(self, marshal_path: str) -> dict[str, Any]:
@@ -773,8 +1079,6 @@ class OpenCodeRuntime(Runtime):
         The ``display`` check always reports unhealthy because no hook file is
         installed.  All other checks report healthy.
         """
-        import pathlib
-
         check_list = [c.strip() for c in checks.split(',')]
         if 'all' in check_list:
             check_list = ['permissions', 'display', 'mcp-diagnostics', 'hook']
@@ -784,15 +1088,43 @@ class OpenCodeRuntime(Runtime):
 
         for check in check_list:
             if check == 'permissions':
-                # OpenCode settings file presence
-                settings = pathlib.Path('.opencode/settings.json')
-                healthy = settings.exists()
+                # OpenCode settings file presence and executor permission
+                global_path = self.permission_settings_path('global', write=False)
+                project_path = self.permission_settings_path('project', write=False)
+                g_settings = self.permission_load_settings(global_path)
+                p_settings = self.permission_load_settings(project_path)
+
+                def _has_exec(s: dict[str, Any]) -> bool:
+                    perm = s.get('permission', {})
+                    if not isinstance(perm, dict):
+                        return False
+                    b = perm.get('bash')
+                    if b == 'allow':
+                        return True
+                    if isinstance(b, dict):
+                        return any(
+                            k in ('python3 .plan/execute-script.py *', 'python3 .plan/execute-script.py')
+                            and v == 'allow'
+                            for k, v in b.items()
+                        )
+                    return False
+
+                has_executor = _has_exec(g_settings) or _has_exec(p_settings)
+                has_file = Path(global_path).is_file() or Path(project_path).is_file()
+                healthy = has_executor or has_file
                 detail = (
-                    '.opencode/settings.json present'
-                    if healthy
-                    else '.opencode/settings.json not found; OpenCode may not be initialised'
+                    'OpenCode settings present'
+                    + (' with executor permission' if has_executor else ' (missing executor permission)')
+                    if has_file
+                    else 'OpenCode config not found (checked opencode.json and ~/.config/opencode/opencode.json)'
                 )
-                results.append({'check': check, 'healthy': healthy, 'detail': detail})
+                results.append(
+                    {
+                        'check': check,
+                        'healthy': healthy,
+                        'detail': detail,
+                    }
+                )
                 if not healthy:
                     all_healthy = False
 

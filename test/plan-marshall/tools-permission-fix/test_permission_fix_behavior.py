@@ -1272,6 +1272,16 @@ class TestPermissionDslDeclinesOnNonClaude:
         monkeypatch.setattr(permission_common, '_runtime_for_target', lambda: OpenCodeRuntime())
 
     @staticmethod
+    def _force_unsupported_runtime(monkeypatch):
+        """Point the runtime-resolution seam at a runtime without permission support."""
+        from unittest.mock import MagicMock
+
+        import permission_common
+
+        mock_rt = MagicMock()
+        monkeypatch.setattr(permission_common, '_runtime_for_target', lambda: mock_rt)
+
+    @staticmethod
     def _assert_declines(result):
         assert result.get('status') == 'no-op'
         assert 'reason' in result
@@ -1281,14 +1291,14 @@ class TestPermissionDslDeclinesOnNonClaude:
         assert 'Skill(' not in serialized
         assert 'SlashCommand(' not in serialized
 
-    def test_apply_fixes_declines_on_opencode(self, monkeypatch, tmp_path):
-        """apply-fixes on a non-Claude target returns a no-op, not a normalized render."""
+    def test_apply_fixes_declines_on_unsupported_runtime(self, monkeypatch, tmp_path):
+        """apply-fixes on an unsupported non-Claude target returns a no-op, not a normalized render."""
         settings_file = tmp_path / 'settings.json'
         _write_settings(
             settings_file, ['Read(target/build-2025-11-20-174411.log)', 'Read(target/build-2025-11-20-174411.log)']
         )
 
-        self._force_opencode(monkeypatch)
+        self._force_unsupported_runtime(monkeypatch)
 
         result = pf.cmd_apply_fixes(
             parse_ns(
@@ -1304,14 +1314,35 @@ class TestPermissionDslDeclinesOnNonClaude:
 
         self._assert_declines(result)
 
-    def test_consolidate_declines_on_opencode(self, monkeypatch, tmp_path):
-        """consolidate on a non-Claude target returns a no-op, not timestamp wildcards."""
+    def test_apply_fixes_succeeds_on_opencode(self, monkeypatch, tmp_path):
+        """apply-fixes on OpenCode succeeds and ensures defaults."""
+        settings_file = tmp_path / 'opencode.json'
+        settings_file.write_text('{"permission": {}}')
+        self._force_opencode(monkeypatch)
+
+        result = pf.cmd_apply_fixes(
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'apply-fixes',
+                '--settings',
+                str(settings_file),
+                '--dry-run',
+            )
+        )
+
+        assert result['status'] == 'success'
+        assert result['defaults_added_count'] > 0
+
+    def test_consolidate_declines_on_unsupported_runtime(self, monkeypatch, tmp_path):
+        """consolidate on an unsupported non-Claude target returns a no-op, not timestamp wildcards."""
         settings_file = tmp_path / 'settings.json'
         _write_settings(
             settings_file, ['Read(target/build-2025-11-20-174411.log)', 'Read(target/build-2025-11-20-174412.log)']
         )
 
-        self._force_opencode(monkeypatch)
+        self._force_unsupported_runtime(monkeypatch)
 
         result = pf.cmd_consolidate(
             parse_ns(
@@ -1327,14 +1358,34 @@ class TestPermissionDslDeclinesOnNonClaude:
 
         self._assert_declines(result)
 
-    def test_ensure_wildcards_declines_on_opencode(self, monkeypatch, tmp_path):
-        """ensure-wildcards on a non-Claude target returns a no-op, not Skill(...) rules."""
+    def test_consolidate_succeeds_on_opencode(self, monkeypatch, tmp_path):
+        """consolidate on OpenCode returns success."""
+        settings_file = tmp_path / 'opencode.json'
+        settings_file.write_text('{"permission": {}}')
+        self._force_opencode(monkeypatch)
+
+        result = pf.cmd_consolidate(
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'consolidate',
+                '--settings',
+                str(settings_file),
+                '--dry-run',
+            )
+        )
+
+        assert result['status'] == 'success'
+
+    def test_ensure_wildcards_declines_on_unsupported_runtime(self, monkeypatch, tmp_path):
+        """ensure-wildcards on an unsupported non-Claude target returns a no-op, not Skill(...) rules."""
         settings_file = tmp_path / 'settings.json'
         _write_settings(settings_file, [])
         marketplace_file = tmp_path / 'marketplace.json'
         marketplace_file.write_text(json.dumps({'bundles': {'plan-marshall': {'skills': {'manage-files': {}}}}}))
 
-        self._force_opencode(monkeypatch)
+        self._force_unsupported_runtime(monkeypatch)
 
         result = pf.cmd_ensure_wildcards(
             parse_ns(
@@ -1351,6 +1402,30 @@ class TestPermissionDslDeclinesOnNonClaude:
         )
 
         self._assert_declines(result)
+
+    def test_ensure_wildcards_succeeds_on_opencode(self, monkeypatch, tmp_path):
+        """ensure-wildcards on OpenCode succeeds and ensures defaults."""
+        settings_file = tmp_path / 'opencode.json'
+        settings_file.write_text('{"permission": {}}')
+        marketplace_file = tmp_path / 'marketplace.json'
+        marketplace_file.write_text(json.dumps({'bundles': {}}))
+        self._force_opencode(monkeypatch)
+
+        result = pf.cmd_ensure_wildcards(
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'ensure-wildcards',
+                '--settings',
+                str(settings_file),
+                '--marketplace-json',
+                str(marketplace_file),
+                '--dry-run',
+            )
+        )
+
+        assert result['status'] == 'success'
 
     def test_generate_wildcards_declines_on_opencode(self, monkeypatch, tmp_path):
         """generate-wildcards on a non-Claude target returns a no-op, not wildcard lists."""
@@ -1379,9 +1454,9 @@ class TestPermissionDslDeclinesOnNonClaude:
 
         self._assert_declines(result)
 
-    def test_ensure_executor_declines_on_opencode(self, monkeypatch, tmp_path, in_tmp_cwd):
-        """ensure-executor on a non-Claude target returns a no-op, not the executor permission."""
-        self._force_opencode(monkeypatch)
+    def test_ensure_executor_declines_on_unsupported_runtime(self, monkeypatch, tmp_path, in_tmp_cwd):
+        """ensure-executor on an unsupported non-Claude target returns a no-op, not the executor permission."""
+        self._force_unsupported_runtime(monkeypatch)
 
         result = pf.cmd_ensure_executor(
             parse_ns(
@@ -1396,6 +1471,25 @@ class TestPermissionDslDeclinesOnNonClaude:
         )
 
         self._assert_declines(result)
+
+    def test_ensure_executor_succeeds_on_opencode(self, monkeypatch, tmp_path, in_tmp_cwd):
+        """ensure-executor on OpenCode succeeds and sets executor permission."""
+        self._force_opencode(monkeypatch)
+
+        result = pf.cmd_ensure_executor(
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'ensure-executor',
+                '--target',
+                'project',
+                '--dry-run',
+            )
+        )
+
+        assert result['status'] == 'success'
+        assert 'python3 .plan/execute-script.py *' in result['executor_permission']
 
     def test_cleanup_scripts_declines_on_opencode(self, monkeypatch, tmp_path, in_tmp_cwd):
         """cleanup-scripts on a non-Claude target returns a no-op, not removal lists."""

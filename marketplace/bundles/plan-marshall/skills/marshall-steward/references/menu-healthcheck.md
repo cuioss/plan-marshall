@@ -56,6 +56,7 @@ python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission_fi
 ```
 
 **Interpret results**:
+- `status: skipped` → Non-Claude target (permission wildcards not applicable) PASS
 - `added: []` → All wildcards present PASS
 - `added: [...]` → Missing wildcards, offer to add them
 
@@ -253,7 +254,7 @@ Detect finalize steps absent from `marshal.json::plan.phase-6-finalize.steps` �
 python3 .plan/execute-script.py plan-marshall:marshall-steward:determine_mode check-missing-finalize-steps
 ```
 
-The check discovers shipped `project:` steps from `<project-root>/.claude/skills/finalize-step-*` (each `finalize-step-<name>/SKILL.md` maps to `project:finalize-step-<name>`) and compares them against the configured steps. **Interpret results**:
+The check discovers shipped `project:` steps from project skill roots (e.g. `<project-root>/.claude/skills/finalize-step-*`, `<project-root>/.agents/skills/finalize-step-*`, or `<project-root>/.opencode/skills/finalize-step-*`, each `finalize-step-<name>/SKILL.md` mapping to `project:finalize-step-<name>`) and compares them against the configured steps. **Interpret results**:
 
 - `status: ok` → No dropped finalize steps PASS
 - `status: missing` → One or both of:
@@ -263,7 +264,7 @@ The check discovers shipped `project:` steps from `<project-root>/.claude/skills
 When `missing_project_finalize_steps` is non-empty, show:
 
 ```text
-[WARN] Project-local finalize steps shipped under .claude/skills/ are missing from
+[WARN] Project-local finalize steps shipped under project skill roots are missing from
        phase-6-finalize.steps: {missing_project_finalize_steps}. These are hand-maintained
        on the meta-project (presets are consumer-scoped and never seed project: steps).
        Re-add them to plan.phase-6-finalize.steps to restore the dropped steps.

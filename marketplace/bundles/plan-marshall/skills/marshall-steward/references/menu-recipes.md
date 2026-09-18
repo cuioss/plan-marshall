@@ -5,7 +5,7 @@ Recipes are deterministic plan templates that bypass the iterative refine → ou
 This reference describes the recipes available in the wizard. Recipes are discovered at runtime from three sources:
 
 1. **Built-in** — registered via `provides_recipes()` in extension modules (e.g., `plan-marshall-plugin/extension.py`).
-2. **Project-local** — `recipe-*` skills under `.claude/skills/`.
+2. **Project-local** — `recipe-*` skills under project skill roots (e.g. `.claude/skills/`, `.agents/skills/`, `.opencode/skills/`).
 3. **Extension-provided** — `provides_recipes()` callbacks from any active extension.
 
 Use `manage-config list-recipes` to enumerate everything currently visible to the steward, or `manage-config resolve-recipe --recipe <key>` to inspect a single recipe declaration.
@@ -82,4 +82,4 @@ To add a new built-in recipe to plan-marshall:
 5. Add an entry to this file (`menu-recipes.md`) describing the recipe for wizard users.
 6. Run `/sync-plugin-cache` then `/marshall-steward` to regenerate the executor with the new skill notation.
 
-For project-local (single-project) recipes, drop a `recipe-*` skill under `.claude/skills/` instead — the steward discovers it automatically via Source 2 in `_discover_all_recipes`. Project recipes do not require `plugin.json` registration.
+For project-local (single-project) recipes, drop a `recipe-*` skill under your project skill root (e.g. `.claude/skills/`, `.agents/skills/`, or `.opencode/skills/`) instead — the steward discovers it automatically via Source 2 in `_discover_all_recipes`. Project recipes do not require plugin registration.

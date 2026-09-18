@@ -78,7 +78,7 @@ Modules discovered: 10
 
 ## Document Build Commands in the Agent-Instructions File
 
-**Purpose**: Add resolved build commands to the project's agent-instructions file so agents invoke builds via canonical names, not hard-coded tool commands. The write target is the **active target's** agent-instructions file — `CLAUDE.md` on Claude, `AGENTS.md` on OpenCode — resolved through the shared per-target lookup (`marketplace_paths.agent_instructions_filename()`), never a hardcoded `CLAUDE.md`.
+**Purpose**: Add resolved build commands to the project's agent-instructions file so agents invoke builds via canonical names, not hard-coded tool commands. The write target is the **active target's** agent-instructions file — `CLAUDE.md` on Claude, `AGENTS.md` on Antigravity or OpenCode — resolved through the shared per-target lookup (`marketplace_paths.agent_instructions_filename()`), never a hardcoded `CLAUDE.md`.
 
 **Prerequisite**: Discovery completed (architecture API is available).
 
@@ -114,7 +114,7 @@ Collect the `executable` value from each successful resolution. Track which cano
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture resolve --command {canonical} --module {module_name}
 ```
 
-**Add to the agent-instructions file** (the active target's file — `CLAUDE.md` on Claude, `AGENTS.md` on OpenCode) under the heading `### Build Commands` (in a "Development Notes" section) with bullets: a "Never hard-code" preamble, one bullet per resolved canonical command (`Compile`, `Quality gate`, `Tests`, `Full verify`, plus `Integration tests`, `E2E`, `Coverage`, `Benchmark` only when resolved on default), one bullet per child-module-only command in the form `{Canonical} ({module_name}): {executable} — only on {module_name}`, a reminder to use a Bash timeout resolved through the platform-runtime `harness bash-timeout-ceiling` seam for the active target (600000ms on Claude, 120000ms on OpenCode — write the resolved value, never a fixed literal), and a reminder to analyze each build's TOON result (`status`, `errors[N]{file,line,message,category}`, `log_file`).
+**Add to the agent-instructions file** (the active target's file — `CLAUDE.md` on Claude, `AGENTS.md` on Antigravity or OpenCode) under the heading `### Build Commands` (in a "Development Notes" section) with bullets: a "Never hard-code" preamble, one bullet per resolved canonical command (`Compile`, `Quality gate`, `Tests`, `Full verify`, plus `Integration tests`, `E2E`, `Coverage`, `Benchmark` only when resolved on default), one bullet per child-module-only command in the form `{Canonical} ({module_name}): {executable} — only on {module_name}`, a reminder to use a Bash timeout resolved through the platform-runtime `harness bash-timeout-ceiling` seam for the active target (600000ms on Claude and Antigravity, 120000ms on OpenCode — write the resolved value, never a fixed literal), and a reminder to analyze each build's TOON result (`status`, `errors[N]{file,line,message,category}`, `log_file`).
 
 Only include commands that resolved successfully.
 

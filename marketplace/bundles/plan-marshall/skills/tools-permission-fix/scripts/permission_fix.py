@@ -30,26 +30,38 @@ from typing import Any
 # Step 1: locate script-shared/scripts via identity walk so we can import the
 # shared anchor helper. Step 2: use resolve_skills_root to derive _SKILLS_DIR.
 for _ancestor in Path(__file__).resolve().parents:
-    if _ancestor.name == 'skills' and (_ancestor.parent / '.claude-plugin' / 'plugin.json').is_file():
-        _shared_scripts = str(_ancestor / 'script-shared' / 'scripts')
-        if _shared_scripts not in sys.path:
-            sys.path.insert(0, _shared_scripts)
+    if _ancestor.name in ('skills', 'skill') and (
+        (_ancestor.parent / '.claude-plugin' / 'plugin.json').is_file()
+        or (_ancestor.parent / 'plugin.json').is_file()
+        or (_ancestor.parent / 'opencode.json').is_file()
+    ):
+        for _cand_name in ('script-shared', 'plan-marshall-script-shared'):
+            _shared_scripts = _ancestor / _cand_name / 'scripts'
+            if _shared_scripts.is_dir():
+                if str(_shared_scripts) not in sys.path:
+                    sys.path.insert(0, str(_shared_scripts))
+                break
         break
 
 from marketplace_bundles import resolve_skills_root  # noqa: E402
 
 _SKILLS_DIR = resolve_skills_root(Path(__file__))
 for _lib in ('ref-toon-format', 'tools-file-ops', 'tools-permission-doctor'):
-    _lib_path = str(_SKILLS_DIR / _lib / 'scripts')
-    if _lib_path not in sys.path:
-        sys.path.insert(0, _lib_path)
+    _lib_path = _SKILLS_DIR / _lib / 'scripts'
+    if not _lib_path.is_dir():
+        _lib_path = _SKILLS_DIR / f'plan-marshall-{_lib}' / 'scripts'
+    if _lib_path.is_dir() and str(_lib_path) not in sys.path:
+        sys.path.insert(0, str(_lib_path))
 
 from permission_common import (  # noqa: E402
     EXIT_SUCCESS,
     ensure_default_permissions,
     get_project_settings_path,
+    get_settings_allow_list,
     get_settings_path,
+    is_antigravity_target,
     is_claude_target,
+    is_opencode_target,
     load_settings,
     load_settings_path,
     resolve_scope_to_paths,
@@ -187,6 +199,49 @@ def resolve_settings_arg(args: argparse.Namespace) -> str:
 
 def cmd_apply_fixes(args: argparse.Namespace) -> dict:
     """Handle apply-fixes subcommand."""
+    if is_antigravity_target():
+        settings_path = resolve_settings_arg(args)
+        settings, error = load_settings(settings_path)
+        if error:
+            return {'status': 'error', 'error': error}
+        allow_list = get_settings_allow_list(settings)
+        deduped = sorted(dict.fromkeys(allow_list))
+        dups = len(allow_list) - len(deduped)
+        allow_list.clear()
+        allow_list.extend(deduped)
+        defaults = ensure_default_permissions(settings, settings_path, args.dry_run)
+        if not args.dry_run and dups > 0:
+            save_settings(settings_path, settings)
+        return {
+            'status': 'success',
+            'settings_file': settings_path,
+            'duplicates_removed': dups,
+            'paths_fixed': 0,
+            'defaults_added': defaults.get('defaults_added', []),
+            'defaults_added_count': defaults.get('defaults_added_count', 0),
+            'defaults_removed': defaults.get('defaults_removed', []),
+            'defaults_removed_count': defaults.get('defaults_removed_count', 0),
+            'dry_run': args.dry_run,
+        }
+
+    if is_opencode_target():
+        settings_path = resolve_settings_arg(args)
+        settings, error = load_settings(settings_path)
+        if error:
+            return {'status': 'error', 'error': error}
+        defaults = ensure_default_permissions(settings, settings_path, args.dry_run)
+        return {
+            'status': 'success',
+            'settings_file': settings_path,
+            'duplicates_removed': 0,
+            'paths_fixed': 0,
+            'defaults_added': defaults.get('defaults_added', []),
+            'defaults_added_count': defaults.get('defaults_added_count', 0),
+            'defaults_removed': defaults.get('defaults_removed', []),
+            'defaults_removed_count': defaults.get('defaults_removed_count', 0),
+            'dry_run': args.dry_run,
+        }
+
     if not is_claude_target():
         return _decline_non_claude('apply-fixes')
 
@@ -320,9 +375,58 @@ def cmd_ensure(args: argparse.Namespace) -> dict:
     """Handle ensure subcommand."""
     settings_path = get_settings_path(args.target)
     settings = load_settings_path(settings_path)
-    allow_list = settings['permissions']['allow']
+    allow_list = get_settings_allow_list(settings)
 
     permissions = [p.strip() for p in args.permissions.split(',')]
+    if is_antigravity_target():
+        from antigravity_runtime import to_antigravity_grant
+
+        permissions = [to_antigravity_grant(p) for p in permissions]
+
+    if is_opencode_target():
+        from opencode_runtime import to_opencode_grant
+
+        perm = settings.setdefault('permission', {})
+        if not isinstance(perm, dict):
+            perm = {}
+            settings['permission'] = perm
+
+        bash_map = perm.setdefault('bash', {})
+        if not isinstance(bash_map, dict):
+            bash_map = {}
+            perm['bash'] = bash_map
+
+        added = []
+        already_exists = []
+        for p in permissions:
+            cat, pat, act = to_opencode_grant(p)
+            if cat == 'bash':
+                if bash_map.get(pat) == act:
+                    already_exists.append(pat)
+                else:
+                    bash_map[pat] = act
+                    added.append(pat)
+            else:
+                if perm.get(cat) == act:
+                    already_exists.append(cat)
+                else:
+                    perm[cat] = act
+                    added.append(cat)
+
+        result = {
+            'settings_file': str(settings_path),
+            'added': added,
+            'already_exists': already_exists,
+            'added_count': len(added),
+            'total_permissions': len(bash_map),
+        }
+        if added:
+            result['success'] = save_settings(str(settings_path), settings)
+            if not result['success']:
+                result['error'] = 'Failed to save settings'
+        else:
+            result['success'] = True
+        return result
 
     added = []
     already_exists = []
@@ -410,6 +514,41 @@ def generate_wildcard(parsed_permissions: list[dict]) -> str:
 
 def cmd_consolidate(args: argparse.Namespace) -> dict:
     """Handle consolidate subcommand."""
+    if is_antigravity_target():
+        settings_path = resolve_settings_arg(args)
+        settings, error = load_settings(settings_path)
+        if error:
+            return {'status': 'error', 'error': error}
+        allow_list = get_settings_allow_list(settings)
+        deduped = sorted(dict.fromkeys(allow_list))
+        removed = len(allow_list) - len(deduped)
+        if not args.dry_run and removed > 0:
+            allow_list.clear()
+            allow_list.extend(deduped)
+            save_settings(settings_path, settings)
+        return {
+            'status': 'success',
+            'settings_file': settings_path,
+            'consolidations_count': 0,
+            'permissions_removed': removed,
+            'wildcards_added': 0,
+            'dry_run': args.dry_run,
+        }
+
+    if is_opencode_target():
+        settings_path = resolve_settings_arg(args)
+        settings, error = load_settings(settings_path)
+        if error:
+            return {'status': 'error', 'error': error}
+        return {
+            'status': 'success',
+            'settings_file': settings_path,
+            'consolidations_count': 0,
+            'permissions_removed': 0,
+            'wildcards_added': 0,
+            'dry_run': args.dry_run,
+        }
+
     if not is_claude_target():
         return _decline_non_claude('consolidate')
 
@@ -544,6 +683,71 @@ def generate_required_wildcards(marketplace: dict) -> list[str]:
 
 def cmd_ensure_wildcards(args: argparse.Namespace) -> dict:
     """Handle ensure-wildcards subcommand."""
+    if is_antigravity_target():
+        from antigravity_runtime import ANTIGRAVITY_DEFAULT_PERMISSIONS
+
+        settings_path = resolve_settings_arg(args)
+        settings, error = load_settings(settings_path)
+        if error:
+            return {'status': 'error', 'error': error}
+        allow_list = get_settings_allow_list(settings)
+        added = []
+        already_exists = []
+        for grant in ANTIGRAVITY_DEFAULT_PERMISSIONS:
+            if grant in allow_list:
+                already_exists.append(grant)
+            else:
+                added.append(grant)
+                if not args.dry_run:
+                    allow_list.append(grant)
+        if added and not args.dry_run:
+            allow_list.sort()
+            save_settings(settings_path, settings)
+        return {
+            'status': 'success',
+            'settings_file': settings_path,
+            'added': added,
+            'already_exists': already_exists,
+            'added_count': len(added),
+            'dry_run': args.dry_run,
+        }
+
+    if is_opencode_target():
+        from opencode_runtime import OPENCODE_DEFAULT_PERMISSIONS
+
+        settings_path = resolve_settings_arg(args)
+        settings, error = load_settings(settings_path)
+        if error:
+            return {'status': 'error', 'error': error}
+        perm = settings.setdefault('permission', {})
+        if not isinstance(perm, dict):
+            perm = {}
+            settings['permission'] = perm
+        bash_map = perm.setdefault('bash', {})
+        if not isinstance(bash_map, dict):
+            bash_map = {}
+            perm['bash'] = bash_map
+
+        added = []
+        already_exists = []
+        for grant in OPENCODE_DEFAULT_PERMISSIONS:
+            if bash_map.get(grant) == 'allow':
+                already_exists.append(grant)
+            else:
+                added.append(grant)
+                if not args.dry_run:
+                    bash_map[grant] = 'allow'
+        if added and not args.dry_run:
+            save_settings(settings_path, settings)
+        return {
+            'status': 'success',
+            'settings_file': settings_path,
+            'added': added,
+            'already_exists': already_exists,
+            'added_count': len(added),
+            'dry_run': args.dry_run,
+        }
+
     if not is_claude_target():
         return _decline_non_claude('ensure-wildcards')
 
@@ -1051,6 +1255,84 @@ def cmd_generate_wildcards(args: argparse.Namespace) -> dict:
 
 def cmd_ensure_executor(args: argparse.Namespace) -> dict:
     """Handle ensure-executor subcommand."""
+    if is_antigravity_target():
+        antigravity_executor = 'command(python3 .plan/execute-script.py)'
+        settings_path = get_settings_path(args.target)
+        settings = load_settings_path(settings_path)
+        allow_list = get_settings_allow_list(settings)
+
+        result = {
+            'executor_permission': antigravity_executor,
+            'settings_file': str(settings_path),
+            'dry_run': args.dry_run,
+        }
+
+        if antigravity_executor in allow_list:
+            result['action'] = 'already_exists'
+            result['success'] = True
+            result.setdefault('status', 'success')
+            return result
+
+        if not args.dry_run:
+            allow_list.append(antigravity_executor)
+            allow_list.sort()
+            if save_settings(str(settings_path), settings):
+                result['action'] = 'added'
+                result['success'] = True
+            else:
+                result['error'] = 'Failed to save settings'
+                result['success'] = False
+        else:
+            result['action'] = 'would_add'
+            result['success'] = True
+
+        result['status'] = 'success' if result.get('success', True) else 'error'
+        return result
+
+    if is_opencode_target():
+        opencode_executor = 'python3 .plan/execute-script.py *'
+        settings_path = get_settings_path(args.target)
+        settings = load_settings_path(settings_path)
+        perm = settings.setdefault('permission', {})
+        if not isinstance(perm, dict):
+            perm = {}
+            settings['permission'] = perm
+
+        bash_map = perm.get('bash')
+        if not isinstance(bash_map, dict):
+            if bash_map == 'allow':
+                bash_map = None
+            else:
+                bash_map = {}
+                perm['bash'] = bash_map
+
+        result = {
+            'executor_permission': f'bash({opencode_executor})',
+            'settings_file': str(settings_path),
+            'dry_run': args.dry_run,
+        }
+
+        if bash_map is None or bash_map.get(opencode_executor) == 'allow':
+            result['action'] = 'already_exists'
+            result['success'] = True
+            result.setdefault('status', 'success')
+            return result
+
+        if not args.dry_run:
+            bash_map[opencode_executor] = 'allow'
+            if save_settings(str(settings_path), settings):
+                result['action'] = 'added'
+                result['success'] = True
+            else:
+                result['error'] = 'Failed to save settings'
+                result['success'] = False
+        else:
+            result['action'] = 'would_add'
+            result['success'] = True
+
+        result['status'] = 'success' if result.get('success', True) else 'error'
+        return result
+
     if not is_claude_target():
         return _decline_non_claude('ensure-executor')
 

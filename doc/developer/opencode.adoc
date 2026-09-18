@@ -1,0 +1,226 @@
+= OpenCode Target Port Architecture & Findings
+:nofooter:
+:toc: left
+:toclevels: 3
+:toc-title: Table of Contents
+:sectnums:
+:source-highlighter: highlight.js
+
+xref:../../README.md[Plan Marshall] » xref:README.adoc[Developer Guide]
+
+This document records the architectural design, directory layout, tool mappings, permission model, and operational runtime integration for the OpenCode distribution target in Plan Marshall.
+
+== Overview
+
+The `opencode` target generator (`marketplace/targets/opencode/`) compiles Plan Marshall's native Claude Code marketplace bundles into artifacts consumable by OpenCode (`opencode`).
+
+Source format remains Claude Code native; the OpenCode target is an export derived from it via the multi-target generator framework.
+
+== Target Architecture
+
+The target is registered in `TARGET_REGISTRY` (`marketplace/targets/__init__.py`) and participates in the `./pw generate` workflow:
+
+[source,bash]
+----
+./pw generate --target opencode --output target/opencode
+----
+
+=== Output Layout
+
+OpenCode adheres to a distinct **singular** directory structure (`skill/`, `agent/`, `command/`), in contrast to Claude Code or Antigravity's plural conventions:
+
+[source,text]
+----
+target/opencode/
+├── skill/
+│   ├── plan-marshall-execute-task/
+│   │   ├── SKILL.md
+│   │   ├── standards/
+│   │   ├── references/
+│   │   └── scripts/
+│   └── ...
+├── agent/
+│   ├── execution-context.md
+│   ├── execution-context-level-1.md ... level-7.md
+│   └── execution-context-reader.md
+├── command/
+│   ├── plan-marshall-plan-marshall.md
+│   └── ...
+├── opencode.json
+└── dist-manifest.json
+----
+
+=== Filesystem Safety
+
+The emitter strictly enforces containment invariants via `marketplace/targets/fs_safety.py`:
+
+* `refuse_tree_overlap(output_dir, marketplace_dir)`: Refuses generation if the output directory overlaps the source marketplace in either direction.
+* Stale output pruning: Removes old bundle artifacts while preserving untouched target outputs.
+
+== Tool & Permission Mapping
+
+OpenCode operates with a native set of agent tools. The mappings are declared in `marketplace/targets/opencode/mapping.json`:
+
+[cols="1,1,2", options="header"]
+|===
+| Claude Code Tool | OpenCode Tool | Operational Semantics
+| `Bash` | `bash` | Execute shell commands in POSIX runtime.
+| `Read` | `read` | Read local file contents.
+| `Write` | `edit` | Create or overwrite files.
+| `Edit` | `edit` | Precision contiguous edits on files.
+| `Glob` | `glob` | Filename search using pattern matching.
+| `Grep` | `grep` | Content regex and literal searching.
+| `AskUserQuestion` | `question` | Interactive user prompts and clarification questions.
+| `Task` | `task` | Spawns subagent execution tasks.
+| `NotebookEdit` | _None (null)_ | Target-absent sentinel: OpenCode provides no native notebook editing tool; fail-closed omit.
+| `WebFetch` | `webfetch` | Web content retrieval.
+| `WebSearch` | `websearch` | Web search querying.
+|===
+
+== Model Selection & ADR-021 Alignment
+
+Plan Marshall uses dynamic-level execution variants (`execution-context-level-1` through `level-7`). The OpenCode emitter aligns with ADR-021:
+
+=== Level Palette Synchronization
+
+The OpenCode variant emitter reuses the canonical `LEVEL_TABLE` from `marketplace/targets/claude/variant_emitter.py`. The targets cannot drift because they share the identical table object (enforced by `test_level_table_lockstep.py`).
+
+=== Model Map
+
+Claude Code model aliases map to OpenCode model identifiers:
+
+[cols="1,1,2", options="header"]
+|===
+| Alias | OpenCode Model | Description
+| `opus` | `openai/o1` | High-capability reasoning model
+| `sonnet` | `anthropic/claude-3-5-sonnet` | Fast, high-efficiency development model
+| `haiku` | `anthropic/claude-3-5-haiku` | Lightweight model for quick lookups
+| `fable` | `anthropic/claude-3-5-sonnet` | Balanced development tier
+|===
+
+=== Pinned vs Unpinned Variants
+
+* **Unpinned (Default)**: Emitted level variants omit the `model:` frontmatter property. The subagent inherits the calling session's active model (`inherit` behavior).
+* **Pinned (`level_pins`)**: When materialized pins are supplied via ADR-021 (`emit_bundles(..., level_pins=...)`), the configured model alias is resolved through `mapping.json::model_map` and emitted into the variant frontmatter (e.g. `model: openai/o1`).
+
+== Body Transformations
+
+Skill and agent markdown bodies undergo deterministic transformation before emission:
+
+1. **Skill Directives**:
+   `Skill: {bundle}:{skill}` is rewritten to:
+   `Call the \`read\` tool on \`{bundle}-{skill}/SKILL.md\` before continuing.`
+2. **Read Directives**:
+   `Read: {path}` is rewritten to:
+   `Call the \`read\` tool with \`{ path: "{path}" }\` before continuing.`
+3. **Slash Commands**:
+   `/{name}` invocations are normalized to registered bundle-prefixed command names.
+
+== OpenCode Permission Architecture & Configuration
+
+OpenCode defines a structured configuration format governing tool execution permissions.
+
+=== Configuration Locations & Precedence
+
+OpenCode resolves configuration from three tiered locations:
+
+1. **Project Root (`<project_dir>/opencode.json`)**: Highest precedence project configuration.
+2. **Project Subdirectory (`<project_dir>/.opencode/opencode.json`)**: Alternative project-local configuration folder.
+3. **Global User Configuration (`~/.config/opencode/opencode.json`)**: User-global configuration. Can be overridden via the `OPENCODE_CONFIG_DIR` environment variable.
+
+=== Permission Schema
+
+OpenCode permissions are declared under the `"permission"` object conforming to `https://opencode.ai/config.json`:
+
+[source,json]
+----
+{
+  "$schema": "https://opencode.ai/config.json",
+  "permission": {
+    "bash": {
+      "python3 .plan/execute-script.py *": "allow",
+      "./pw *": "allow",
+      "python3 marketplace/targets/sync.py *": "allow",
+      "python3 .opencode/scripts/sync_opencode.py *": "allow"
+    },
+    "read": "allow",
+    "edit": "allow"
+  }
+}
+----
+
+The `"bash"` property may be a blanket action (`"allow"`, `"ask"`, `"deny"`) or an explicit dictionary of command prefix patterns mapped to actions.
+
+=== Baseline Executor Grants
+
+Plan Marshall requires non-interactive execution for its generated scripts and wrapper toolchain. The default permission set includes:
+
+* `python3 .plan/execute-script.py *` — The universal script execution proxy.
+* `./pw *` — The Pyprojectx build toolchain wrapper.
+* `python3 marketplace/targets/sync.py *` — The multi-target deployment sync tool.
+* `python3 .opencode/scripts/sync_opencode.py *` — Project-level sync script.
+
+== Runtime Abstraction & Platform Integration
+
+Plan Marshall integrates OpenCode as a first-class runtime (`runtime.target: opencode` in `.plan/marshal.json`) through `platform-runtime`, permission utilities (`tools-permission-fix`, `tools-permission-doctor`), and project setup (`marshall-steward`).
+
+=== OpenCodeRuntime (`platform-runtime`)
+
+The `OpenCodeRuntime` subclass implements target operations:
+
+* **Filesystem Layout**:
+  ** `layout_skill_roots()`: Walks discovery roots (`$OPENCODE_CONFIG_DIR/skills`, `.opencode/skills`, `.claude/skills`, `.agents/skills`, `~/.config/opencode/skills`, `~/.claude/skills`, `~/.agents/skills`).
+  ** `layout_bundle_cache_root()`: Probes global cache roots.
+* **Harness Ceiling**: Resolves 120 seconds as OpenCode's bash timeout ceiling.
+* **Permission Management**:
+  ** `permission_settings_path(scope, write, project_dir)`: Resolves global or project settings paths. When `write=True` and the target file is absent, initializes a valid `opencode.json` skeleton with schema and baseline grants.
+  ** `permission_load_settings(path)` / `permission_save_settings(path, settings)`: Safe JSON I/O.
+  ** `permission_ensure_defaults(settings, settings_path, dry_run)`: Ensures baseline command patterns exist under `permission.bash`.
+  ** `permission_configure(scope, grants)`: Appends or updates grants translated via `to_opencode_grant()`.
+  ** `permission_fix(scope, operation, arguments, dry_run)`: Supports `ensure`, `add`, `remove`, `consolidate`, and `normalize`.
+* **Health Check**: Inspects presence of `opencode.json` (or global config) and verifies that `python3 .plan/execute-script.py *` is permitted.
+* **Project Initial Setup**:
+  ** Scaffolds `.plan/` and `.plan/temp/`.
+  ** Writes `runtime.target: opencode` to `.plan/marshal.json`.
+  ** Pre-configures project-level `opencode.json` with baseline executor permissions.
+
+=== Marshall Steward Integration
+
+`bootstrap_plugin.py` supports OpenCode discovery and path resolution:
+
+* `--target opencode`: Detects OpenCode roots by querying the runtime layout.
+* **Singular Layout Resolution (`resolve_bundle_path`)**:
+  Callers provide standard relative paths (e.g. `skills/manage-tasks/SKILL.md`). In OpenCode's singular directory layout, `bootstrap_plugin.py` automatically maps this to `skill/{bundle}-{skill}/SKILL.md` when `opencode.json` or `skill/` is detected at the plugin root.
+
+=== Developer Inner Loop (`sync-opencode`)
+
+For contributors iterating on OpenCode bundles:
+
+1. Edit bundle sources under `marketplace/bundles/`.
+2. Regenerate the OpenCode distribution target:
++
+[source,bash]
+----
+./pw generate-opencode
+----
+3. Sync into the project or global OpenCode skill discovery root:
++
+[source,bash]
+----
+/sync-opencode
+----
+
+The project-level command invokes `marketplace/targets/sync.py --target opencode` to deploy `skill/`, `agent/`, `command/`, and `opencode.json`.
+
+== Verification & Test Coverage
+
+The OpenCode target is verified by dedicated automated tests:
+
+* `test/marketplace/targets/opencode/`:
+  ** Target registration, frontmatter and tool transformations, body rewrites, singular layout emission.
+* `test/plan-marshall/platform-runtime/`:
+  ** `test_opencode_runtime.py`: Unit tests for `OpenCodeRuntime` covering layout resolution, project setup, permission settings paths, defaults injection, permission fix operations, and health checks.
+* `test/plan-marshall/marshall-steward/`:
+  ** `test_bootstrap_plugin_behavior.py`: Tests for OpenCode singular layout path resolution (`skill/{bundle}-{skill}/`).
+* `test/plan-marshall/tools-permission-fix/`:
+  ** `test_permission_fix_opencode.py` (and related): Tests for `ensure-executor`, `ensure`, `apply-fixes`, and `consolidate` on OpenCode targets.

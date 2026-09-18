@@ -13,7 +13,7 @@ bootstrap state is needed before the executor/config system is available,
 so it uses its own lightweight caching mechanism.
 
 Usage:
-    python3 bootstrap_plugin.py get-root [--target claude|opencode] [--refresh]
+    python3 bootstrap_plugin.py get-root [--target claude|opencode|antigravity] [--refresh]
     python3 bootstrap_plugin.py resolve --bundle <bundle> --path <path>
 
 Subcommands:
@@ -24,7 +24,7 @@ Output (TOON format):
     get-root:
         plugin_root	/Users/user/.claude/plugins/cache/plan-marshall
         source	cached|detected
-        target	claude|opencode
+        target	claude|opencode|antigravity
 
     resolve:
         resolved_path	/Users/user/.claude/plugins/cache/plan-marshall/plan-marshall/1.0.0/skills/...
@@ -43,19 +43,28 @@ from pathlib import Path
 # Step 1: locate script-shared/scripts via identity walk so we can import the
 # shared anchor helper. Step 2: use resolve_skills_root to derive _SKILLS_DIR.
 for _ancestor in Path(__file__).resolve().parents:
-    if _ancestor.name == 'skills' and (_ancestor.parent / '.claude-plugin' / 'plugin.json').is_file():
-        _shared_scripts = str(_ancestor / 'script-shared' / 'scripts')
-        if _shared_scripts not in sys.path:
-            sys.path.insert(0, _shared_scripts)
+    if _ancestor.name in ('skills', 'skill') and (
+        (_ancestor.parent / '.claude-plugin' / 'plugin.json').is_file()
+        or (_ancestor.parent / 'plugin.json').is_file()
+        or (_ancestor.parent / 'opencode.json').is_file()
+    ):
+        for _cand_name in ('script-shared', 'plan-marshall-script-shared'):
+            _shared_scripts = _ancestor / _cand_name / 'scripts'
+            if _shared_scripts.is_dir():
+                if str(_shared_scripts) not in sys.path:
+                    sys.path.insert(0, str(_shared_scripts))
+                break
         break
 
 from marketplace_bundles import _version_sort_key, resolve_skills_root  # noqa: E402
 
 _SKILLS_DIR = resolve_skills_root(Path(__file__))
 for _lib in ('ref-toon-format', 'tools-file-ops'):
-    _lib_path = str(_SKILLS_DIR / _lib / 'scripts')
-    if _lib_path not in sys.path:
-        sys.path.insert(0, _lib_path)
+    _lib_path = _SKILLS_DIR / _lib / 'scripts'
+    if not _lib_path.is_dir():
+        _lib_path = _SKILLS_DIR / f'plan-marshall-{_lib}' / 'scripts'
+    if _lib_path.is_dir() and str(_lib_path) not in sys.path:
+        sys.path.insert(0, str(_lib_path))
 
 from file_ops import get_base_dir, output_toon, safe_main  # noqa: E402
 
@@ -148,11 +157,14 @@ def detect_plugin_root(target: str | None = None) -> Path | None:
     skill-roots`` op) in priority order, returning the first root that
     contains at least one ``{PLUGIN_NAME}-*`` skill directory.
 
+    For ``antigravity``: checks workspace-local (.agents/plugins/plan-marshall)
+    and global (~/.gemini/config/plugins/plan-marshall) plugin directories.
+
     When ``target`` is ``None``, auto-detects by reading
     ``runtime.target`` from the nearest ``.plan/marshal.json``.
 
     Args:
-        target: Runtime target (``"claude"`` or ``"opencode"``).
+        target: Runtime target (``"claude"``, ``"opencode"``, or ``"antigravity"``).
 
     Returns:
         Path to plugin root, or ``None`` if not found.
@@ -162,8 +174,33 @@ def detect_plugin_root(target: str | None = None) -> Path | None:
 
     if target == 'opencode':
         return _detect_opencode_root()
+    if target == 'antigravity':
+        return _detect_antigravity_root()
 
     return _detect_claude_root()
+
+
+def _detect_antigravity_root() -> Path | None:
+    """Detect the plugin root in Antigravity locations.
+
+    Probes workspace-local (<cwd>/.agents/plugins/plan-marshall) first,
+    then global (~/.gemini/config/plugins/plan-marshall).
+    """
+    import os
+
+    workspace_plugin = Path.cwd() / '.agents' / 'plugins' / PLUGIN_NAME
+    if workspace_plugin.is_dir() and (
+        (workspace_plugin / 'plugin.json').is_file() or (workspace_plugin / 'skills').is_dir()
+    ):
+        return workspace_plugin
+
+    gemini_config = os.environ.get('GEMINI_CONFIG_DIR')
+    global_base = Path(gemini_config).expanduser().resolve() if gemini_config else Path.home() / '.gemini' / 'config'
+    global_plugin = global_base / 'plugins' / PLUGIN_NAME
+    if global_plugin.is_dir() and ((global_plugin / 'plugin.json').is_file() or (global_plugin / 'skills').is_dir()):
+        return global_plugin
+
+    return None
 
 
 def _detect_claude_root() -> Path | None:
@@ -202,18 +239,22 @@ def _detect_claude_root() -> Path | None:
 
 
 def _detect_opencode_root() -> Path | None:
-    """Walk the OpenCode project-local skill roots for plan-marshall skills.
+    """Walk OpenCode skill roots for plan-marshall skills.
 
-    The root set is the runtime-resolved ``layout skill-roots`` op output
-    (``get_project_skill_roots``) — the same single source the executor's
-    discovery uses — resolved here against the typical project base. Returns
-    the first root that contains at least one directory matching
+    Checks both project-local skill roots (``get_project_skill_roots``) and
+    user-global discovery roots (``get_bundle_cache_roots``). Returns the
+    first root that contains at least one directory matching
     ``{PLUGIN_NAME}-*``.
     """
     marker_prefix = f'{PLUGIN_NAME}-'
 
     base = Path.cwd()
-    for root in get_project_skill_roots():
+    all_roots: list[str] = list(get_project_skill_roots())
+    for r in get_bundle_cache_roots():
+        if r not in all_roots:
+            all_roots.append(r)
+
+    for root in all_roots:
         try:
             root_path = _resolve_skill_root(root, base).resolve()
             if not root_path.is_dir():
@@ -233,7 +274,7 @@ def get_plugin_root(refresh: bool = False, target: str | None = None) -> tuple[P
 
     Args:
         refresh: Force re-detection even if cached
-        target: Runtime target (``"claude"`` or ``"opencode"``).
+        target: Runtime target (``"claude"``, ``"opencode"``, or ``"antigravity"``).
             When ``None``, auto-detects from ``marshal.json``.
 
     Returns:
@@ -280,6 +321,36 @@ def resolve_bundle_path(plugin_root: Path, bundle: str, relative_path: str) -> P
     bundle_dir = plugin_root / bundle
 
     if not bundle_dir.exists():
+        # Handle Antigravity flat plugin layout (plugin_root / skills / {bundle}-{skill} / ...)
+        if (plugin_root / 'plugin.json').is_file():
+            if relative_path.startswith('skills/'):
+                parts = relative_path.split('/', 2)
+                if len(parts) >= 2:
+                    skill_name = parts[1]
+                    rest = parts[2] if len(parts) > 2 else ''
+                    cand = plugin_root / 'skills' / f'{bundle}-{skill_name}'
+                    if rest:
+                        cand = cand / rest
+                    if cand.exists():
+                        return cand
+            elif (plugin_root / relative_path).exists():
+                return plugin_root / relative_path
+
+        # Handle OpenCode singular layout (plugin_root / skill / {bundle}-{skill} / ...)
+        if (plugin_root / 'opencode.json').is_file() or (plugin_root / 'skill').is_dir():
+            if relative_path.startswith('skills/'):
+                parts = relative_path.split('/', 2)
+                if len(parts) >= 2:
+                    skill_name = parts[1]
+                    rest = parts[2] if len(parts) > 2 else ''
+                    cand = plugin_root / 'skill' / f'{bundle}-{skill_name}'
+                    if rest:
+                        cand = cand / rest
+                    if cand.exists():
+                        return cand
+            elif (plugin_root / relative_path).exists():
+                return plugin_root / relative_path
+
         return None
 
     # Select the NEWEST versioned directory that carries relative_path. The old
@@ -294,6 +365,9 @@ def resolve_bundle_path(plugin_root: Path, bundle: str, relative_path: str) -> P
     if candidates:
         newest = max(candidates, key=lambda d: _version_sort_key(d.name))
         return newest / relative_path
+
+    if (bundle_dir / relative_path).exists():
+        return bundle_dir / relative_path
 
     return None
 
@@ -311,11 +385,12 @@ def cmd_get_root(args: argparse.Namespace) -> dict:
         }
     else:
         target_hint = args.target or read_runtime_target()
-        hint = (
-            'Ensure plan-marshall plugin is installed via Claude Code'
-            if target_hint == 'claude'
-            else 'Ensure plan-marshall skills are deployed to an OpenCode discovery root'
-        )
+        if target_hint == 'claude':
+            hint = 'Ensure plan-marshall plugin is installed via Claude Code'
+        elif target_hint == 'antigravity':
+            hint = 'Ensure plan-marshall plugin is installed in ~/.gemini/config/plugins/plan-marshall or .agents/plugins/plan-marshall'
+        else:
+            hint = 'Ensure plan-marshall skills are deployed to an OpenCode discovery root'
         return {
             'status': 'error',
             'error': 'Plugin root not found',
@@ -326,7 +401,11 @@ def cmd_get_root(args: argparse.Namespace) -> dict:
 
 def cmd_resolve(args: argparse.Namespace) -> dict:
     """Handle the 'resolve' subcommand."""
-    plugin_root, _ = get_plugin_root()
+    target = getattr(args, 'target', None)
+    if target is not None:
+        plugin_root, _ = get_plugin_root(target=target)
+    else:
+        plugin_root, _ = get_plugin_root()
 
     if not plugin_root:
         return {'status': 'error', 'error': 'Plugin root not found'}
@@ -344,11 +423,11 @@ def main() -> int:
     parser = argparse.ArgumentParser(description='Bootstrap script for plugin root detection', allow_abbrev=False)
     parser.add_argument(
         '--target',
-        choices=('claude', 'opencode'),
+        choices=('claude', 'opencode', 'antigravity'),
         default=None,
         help=(
             'Runtime target. Auto-detected from .plan/marshal.json when omitted. '
-            'Use "opencode" for OpenCode discovery roots.'
+            'Use "opencode" for OpenCode discovery roots, or "antigravity" for Antigravity roots.'
         ),
     )
     subparsers = parser.add_subparsers(dest='command', required=True)
