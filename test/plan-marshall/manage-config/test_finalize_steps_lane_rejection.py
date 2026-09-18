@@ -113,11 +113,18 @@ _quality_mod = load_script_module(
 )
 _resolve_finalize_step_lane = _quality_mod._resolve_finalize_step_lane
 
+# ``register=False``: this module needs only the returned object — it reads
+# ``LANE_OVERRIDES`` and ``_IMMUNE_TO_OFF_CLASSES``, two module-level collections,
+# and nothing here depends on ``_manifest_lanes`` being reachable through
+# ``sys.modules`` (no dataclass ``__module__`` lookup, no pickle round-trip).
+# Registering it would publish a SECOND copy under a name a sibling test module
+# (``test_lane_class_off_immunity.py``) imports plainly, which is the
+# order-dependent collision ``test_no_new_shared_registration_collision`` guards.
 _lanes_mod = load_script_module(
     'plan-marshall',
     'manage-execution-manifest',
     '_manifest_lanes.py',
-    module_name='_manifest_lanes',
+    register=False,
 )
 
 #: A finalize step every discovery run knows about, used as the set-lane target.

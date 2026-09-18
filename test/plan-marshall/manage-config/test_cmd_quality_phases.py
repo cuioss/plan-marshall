@@ -1669,8 +1669,17 @@ def test_read_and_write_paths_agree_across_the_derived_field_population(plan_con
 # lane contract grants), and an UNRESOLVABLE class writes too — the writer fails
 # toward permitting rather than refusing on a class it never established.
 
+# ``register=False``: only the returned object is needed here — the fixture guard
+# below reads ``_IMMUNE_TO_OFF_CLASSES``, a module-level collection, and nothing in
+# this module depends on ``_manifest_lanes`` being reachable through ``sys.modules``.
+# Registering it would publish a SECOND copy under a name a sibling test module
+# (``test_lane_class_off_immunity.py``) imports plainly, which is the order-dependent
+# collision ``test_no_new_shared_registration_collision`` guards.
 _lanes = load_script_module(
-    'plan-marshall', 'manage-execution-manifest', '_manifest_lanes.py', module_name='_manifest_lanes'
+    'plan-marshall',
+    'manage-execution-manifest',
+    '_manifest_lanes.py',
+    register=False,
 )
 
 #: On the mandatory floor — its class is in ``_IMMUNE_TO_OFF_CLASSES``.
