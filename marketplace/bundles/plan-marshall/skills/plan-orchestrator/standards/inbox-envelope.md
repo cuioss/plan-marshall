@@ -171,6 +171,6 @@ The state checks (8–11) run AFTER the base checks (1–7), so the base rejecti
 ## Related
 
 - [`persona-plan-orchestrator/standards/orchestration-model.md`](../../persona-plan-orchestrator/standards/orchestration-model.md) — § Ledger Write-Boundary, the contract that sanctions this channel
-- [`../SKILL.md`](../SKILL.md) § Canonical invocations — the `inbox write` / `inbox amend` / `inbox supersede` / `inbox close-stream` / `inbox validate` / `inbox list` / `inbox archive` / `inbox migrate-archive` / `inbox detect` / `inbox landing-check` argument surfaces, one `### inbox {verb}` section each
+- [`../SKILL.md`](../SKILL.md) § Canonical invocations — the `inbox write` / `inbox amend` / `inbox supersede` / `inbox close-stream` / `inbox validate` / `inbox list` / `inbox read` / `inbox archive` / `inbox migrate-archive` / `inbox detect` / `inbox landing-check` argument surfaces, one `### inbox {verb}` section each
 - [`landing-payload-spec.md`](landing-payload-spec.md) — the machine-readable `landing` payload body contract (required fact keys, the report↔inbox delta)
 - [`manage-lessons/standards/file-format.md`](../../manage-lessons/standards/file-format.md) — the lesson body shape a `candidate-lesson` payload carries

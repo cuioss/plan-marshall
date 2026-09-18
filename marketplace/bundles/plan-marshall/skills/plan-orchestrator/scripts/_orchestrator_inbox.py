@@ -30,6 +30,17 @@ The archive is foldered per sender (``inbox/archive/{sender}/``);
 sequence allocator, the resolver, and the counter all read both layouts so no
 retired sequence number is ever re-opened during a partial migration.
 
+The plan-side read surface (:func:`cmd_inbox_read`) is the mailbox's other
+half: it resolves the SAME ``(epic_slug, plan_id)`` address the delivery route
+writes to, and returns the messages addressed to the reading plan. It is
+FAIL-OPEN by construction — an absent epic, an absent or unlistable mailbox, an
+unreadable message, and a malformed envelope all return ``status: success`` —
+because a mailbox is an advisory side channel and a plan blocked by an advisory
+it could not read would be worse off than one that never had the channel. It is
+not thereby vacuous: ``mailbox_state`` publishes WHICH KIND OF ZERO the read
+returned, so *could not look* and *looked, found nothing* never share a
+representation.
+
 The orchestrator-side drain surface (:func:`cmd_inbox_list`,
 :func:`cmd_inbox_archive`) is bounded by the same construction: both derive
 their target from the validated slug plus a bare message filename, and the only
@@ -53,6 +64,7 @@ schema itself is documented in
 import os
 import re
 import subprocess
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, NamedTuple
 
@@ -205,6 +217,44 @@ MESSAGE_LOCATIONS = frozenset({'queued', 'archived', 'missing'})
 #: stays non-faulting either way, so the two zeros are told apart by the
 #: PAYLOAD, never by the status.
 INBOX_STATES = frozenset({'present', 'missing'})
+
+#: The closed vocabulary :func:`cmd_inbox_read` reports as ``mailbox_state`` —
+#: the plan-side read's *which kind of zero* discriminator. The read verb is
+#: FAIL-OPEN, so every one of its failure modes returns ``status: success``;
+#: this field is what keeps that from collapsing into a confident empty, and it
+#: is why fail-open and vacuous-green are not the same thing here (ADR-019).
+#: Exactly one member says the mailbox was actually enumerated:
+#:
+#: - ``present`` — the mailbox directory was listed. A ``count: 0`` beside this
+#:   is the ONLY zero that means *looked, and there was nothing addressed here*.
+#: - ``no_epic`` — no epic tree resolved at all, so nothing was looked at.
+#: - ``no_mailbox`` — the epic tree is there but this plan has no mailbox
+#:   directory: nothing has ever been delivered to it (or every delivery has
+#:   since been consumed).
+#: - ``unreadable`` — the mailbox path exists but could not be listed (a
+#:   permission failure, or a path that is not a directory). Distinct from
+#:   ``no_mailbox`` because *absent* and *unlistable* are different facts, and a
+#:   reader that conflated them would report a settled empty over a mailbox it
+#:   was refused access to.
+MAILBOX_STATE_PRESENT = 'present'
+MAILBOX_STATE_NO_EPIC = 'no_epic'
+MAILBOX_STATE_NO_MAILBOX = 'no_mailbox'
+MAILBOX_STATE_UNREADABLE = 'unreadable'
+
+#: The whole mailbox-state vocabulary, in reporting order. Consumers assert
+#: against this tuple rather than re-listing the literals.
+MAILBOX_STATES: tuple[str, ...] = (
+    MAILBOX_STATE_PRESENT,
+    MAILBOX_STATE_NO_EPIC,
+    MAILBOX_STATE_NO_MAILBOX,
+    MAILBOX_STATE_UNREADABLE,
+)
+
+#: The mailbox states that mean NOTHING WAS ENUMERATED — the could-not-look
+#: half of :data:`MAILBOX_STATES`, derived by subtraction from the whole
+#: vocabulary rather than re-listed, so a member added above cannot silently
+#: default into the looked-and-found-nothing reading.
+MAILBOX_COULD_NOT_LOOK_STATES: frozenset[str] = frozenset(MAILBOX_STATES) - {MAILBOX_STATE_PRESENT}
 
 #: ``{sender_id}-{NNN}.md`` — the one message-file shape the channel allocates.
 #: The sender group is non-greedy so the LAST dash-separated all-digit run is
@@ -716,16 +766,41 @@ def list_messages(inbox_dir: Path) -> list[Path]:
     """
     if not inbox_dir.is_dir():
         return []
-    entries: list[tuple[str, int, Path]] = []
-    for entry in inbox_dir.iterdir():
-        if not entry.is_file():
+    return _sorted_message_paths(inbox_dir.iterdir())
+
+
+def _sorted_message_paths(entries: Iterable[Path]) -> list[Path]:
+    """Order message-shaped files by ``(sender, sequence)`` — the ONE ordering rule.
+
+    Both enumeration surfaces route through this function — the epic queue
+    (:func:`list_messages`) and the addressee mailbox (:func:`cmd_inbox_read`) —
+    so the two cannot disagree about which entries are messages or about the
+    order they come back in. A second ordering rule is what this seam exists to
+    prevent, exactly as :func:`_delivery_dir` prevents a second path-composition
+    rule.
+
+    The caller supplies the already-listed entries rather than a directory,
+    because the two callers differ in how they must react to an unlistable
+    directory: the queue side has already tested ``is_dir()``, while the
+    fail-open mailbox side needs the listing's own outcome as its discriminator.
+
+    An entry whose type cannot be determined — it vanished between the listing
+    and the ``is_file`` test under a concurrent drain — is skipped rather than
+    raising, so a message consumed mid-scan never aborts an enumeration.
+    """
+    ordered: list[tuple[str, int, Path]] = []
+    for entry in entries:
+        try:
+            if not entry.is_file():
+                continue
+        except OSError:
             continue
         match = _MESSAGE_NAME_RE.match(entry.name)
         if match is None:
             continue
-        entries.append((match.group('sender'), int(match.group('seq')), entry))
-    entries.sort(key=lambda item: (item[0], item[1]))
-    return [path for _, _, path in entries]
+        ordered.append((match.group('sender'), int(match.group('seq')), entry))
+    ordered.sort(key=lambda item: (item[0], item[1]))
+    return [path for _, _, path in ordered]
 
 
 class InboxCounts(NamedTuple):
@@ -1591,6 +1666,69 @@ def cmd_inbox_validate(args: Any) -> dict[str, Any]:
     }
 
 
+def _message_row(path: Path, expected_epic: str) -> dict[str, Any]:
+    """Build one enumeration row for a message file — the ONE row shape.
+
+    Shared by both enumeration surfaces, the epic queue (:func:`cmd_inbox_list`)
+    and the addressee mailbox (:func:`cmd_inbox_read`), so a message reports the
+    same fields and the same verdict whichever side reads it. Two rows of
+    differing shape for one message is precisely the drift this seam removes.
+
+    A message that cannot be READ at all — non-UTF-8 bytes, or the file vanishing
+    mid-scan under a concurrent drain — becomes a row carrying the distinct
+    ``unreadable`` code rather than aborting the enumeration or disappearing from
+    it. That code is deliberately outside the envelope-validation vocabulary, so
+    a failed read is never mistaken for a malformed envelope.
+
+    Args:
+        path: The message file.
+        expected_epic: The epic slug the message must be addressed to, fed to
+            :func:`validate_envelope` so ``epic_mismatch`` is reachable here.
+
+    Returns:
+        The row dict: the header context the reader routes on, plus ``valid``
+        and ``error``.
+    """
+    try:
+        text = path.read_text(encoding='utf-8')
+    except (OSError, UnicodeDecodeError):
+        return {
+            'name': path.name,
+            'sender_id': '',
+            'kind': '',
+            'created': '',
+            'lifecycle': '',
+            'revision': '',
+            'superseded_by': '',
+            'valid': False,
+            'error': 'unreadable',
+        }
+    ok, error_code, header = validate_envelope(text, expected_epic=expected_epic, filename=path.name)
+    return {
+        'name': path.name,
+        'sender_id': header.get('sender_id', ''),
+        'kind': header.get('kind', ''),
+        'created': header.get('created', ''),
+        'lifecycle': header.get(_LIFECYCLE_FIELD, LIFECYCLE_LIVE),
+        'revision': header.get(_REVISION_FIELD, '0'),
+        'superseded_by': header.get(_SUPERSEDED_BY_FIELD, ''),
+        'valid': ok,
+        'error': '' if ok else (error_code or 'invalid_envelope'),
+    }
+
+
+def _live_count(rows: list[dict[str, Any]]) -> int:
+    """Count the rows that are VALID and still presenting as ``live``.
+
+    The single definition of *drainable* / *actionable*, shared by the queue
+    enumeration and the mailbox read: a ``superseded`` message, a ``stream-end``
+    marker, and an INVALID message are all excluded. That last exclusion is why
+    a zero here never discriminates on its own — it must be read beside the
+    invalid count and the directory-state discriminator.
+    """
+    return sum(1 for row in rows if row['valid'] and row['lifecycle'] == LIFECYCLE_LIVE)
+
+
 def cmd_inbox_list(args: Any) -> dict[str, Any]:
     """Enumerate and validate every message queued in the epic's inbox.
 
@@ -1632,43 +1770,7 @@ def cmd_inbox_list(args: Any) -> dict[str, Any]:
         )
     inbox_dir = root / INBOX_SUBDIR
     inbox_present = inbox_dir.is_dir()
-    messages: list[dict[str, Any]] = []
-    for path in list_messages(inbox_dir):
-        try:
-            text = path.read_text(encoding='utf-8')
-        except (OSError, UnicodeDecodeError):
-            messages.append(
-                {
-                    'name': path.name,
-                    'sender_id': '',
-                    'kind': '',
-                    'created': '',
-                    'lifecycle': '',
-                    'revision': '',
-                    'superseded_by': '',
-                    'valid': False,
-                    'error': 'unreadable',
-                }
-            )
-            continue
-        ok, error_code, header = validate_envelope(
-            text,
-            expected_epic=args.slug,
-            filename=path.name,
-        )
-        messages.append(
-            {
-                'name': path.name,
-                'sender_id': header.get('sender_id', ''),
-                'kind': header.get('kind', ''),
-                'created': header.get('created', ''),
-                'lifecycle': header.get(_LIFECYCLE_FIELD, LIFECYCLE_LIVE),
-                'revision': header.get(_REVISION_FIELD, '0'),
-                'superseded_by': header.get(_SUPERSEDED_BY_FIELD, ''),
-                'valid': ok,
-                'error': '' if ok else (error_code or 'invalid_envelope'),
-            }
-        )
+    messages = [_message_row(path, args.slug) for path in list_messages(inbox_dir)]
     # ``live_count`` is the drainable set — VALID messages still presenting as
     # live, so a superseded message (resolvable but retired), a stream-end marker,
     # AND an invalid message are all excluded. That last exclusion is why
@@ -1684,7 +1786,7 @@ def cmd_inbox_list(args: Any) -> dict[str, Any]:
     # nobody has read, so reading it as empty claims a completed drain over
     # messages the drain declined. See ``standards/inbox-envelope.md`` § Drain
     # semantics, which is the same table for the drain's own reader.
-    live_count = sum(1 for row in messages if row['valid'] and row['lifecycle'] == LIFECYCLE_LIVE)
+    live_count = _live_count(messages)
     closed_senders = sorted(
         {
             row['sender_id']
@@ -1730,6 +1832,116 @@ def cmd_inbox_list(args: Any) -> dict[str, Any]:
         'messages': messages,
         'owed_landing': owed_verdict,
         'queue_reconciliation': queue_reconciliation,
+    }
+
+
+def _scan_mailbox(epic_root: Path, mailbox_dir: Path) -> tuple[str, list[Path]]:
+    """Capture the mailbox's read state and its message paths in ONE observation.
+
+    The plan-side counterpart of :func:`cmd_inbox_list`'s ``inbox_state``
+    capture, and stricter than it in one respect that matters for a fail-open
+    reader: the discriminator is the LISTING'S OWN OUTCOME rather than a
+    separate ``is_dir()`` probe taken beforehand. One syscall therefore produces
+    both the state and the entries, so the reported state is necessarily the
+    state the enumeration acted on — a concurrent drain removing the mailbox
+    between a probe and a listing can never make the payload pair a non-empty
+    message list with a could-not-look state.
+
+    The epic-root test runs first and is the only one that is a separate probe,
+    because ``no_epic`` and ``no_mailbox`` are different facts about different
+    directories and an absent epic must not be reported as a plan that merely
+    has no mail.
+
+    Returns:
+        ``(state, paths)`` where ``state`` is one of :data:`MAILBOX_STATES` and
+        ``paths`` is empty on every state but
+        :data:`MAILBOX_STATE_PRESENT`.
+    """
+    if not epic_root.is_dir():
+        return MAILBOX_STATE_NO_EPIC, []
+    try:
+        entries = list(mailbox_dir.iterdir())
+    except FileNotFoundError:
+        return MAILBOX_STATE_NO_MAILBOX, []
+    except OSError:
+        # The path exists but could not be listed — a permission failure, or a
+        # ``to/{plan_id}`` that is a FILE rather than a directory. Ordering is
+        # load-bearing: FileNotFoundError is an OSError subclass and MUST stay
+        # above this clause, or an absent mailbox would report as unreadable and
+        # the two facts would collapse.
+        return MAILBOX_STATE_UNREADABLE, []
+    return MAILBOX_STATE_PRESENT, _sorted_message_paths(entries)
+
+
+def cmd_inbox_read(args: Any) -> dict[str, Any]:
+    """Read the messages DELIVERED to one plan's mailbox — the plan-side read.
+
+    The read half of the channel's symmetric address. The source resolves
+    through :func:`delivery_dir_for_read`, the same ``(epic_slug, plan_id)``
+    composition :func:`cmd_inbox_write` delivers to, so there is exactly ONE
+    address rule and no second resolver for the read side to drift against.
+
+    **Fail-open by construction.** Every way the read can fail to see mail —
+    an absent epic tree, an absent mailbox directory, a mailbox that cannot be
+    listed, a message that cannot be read, a message whose envelope is
+    malformed — returns ``status: success``. It never raises and never faults.
+    This is a deliberate INVERSE of the fail-closed default (ADR-009), and the
+    justification is what makes it a bounded exception rather than a leak: the
+    mailbox is an ADVISORY side channel, so a plan blocked by an advisory it
+    could not read would be strictly worse off than a plan that never had the
+    channel at all. Failing closed here would let a broken mailbox stop work
+    the mailbox exists only to inform.
+
+    **Fail-open is not vacuous-green, so the verb publishes WHICH KIND OF ZERO
+    it returned** (ADR-019). ``mailbox_state`` carries one member of
+    :data:`MAILBOX_STATES`, captured with the enumeration itself by
+    :func:`_scan_mailbox`, and only ``present`` means the mailbox was actually
+    looked at — every other member is a member of
+    :data:`MAILBOX_COULD_NOT_LOOK_STATES`. Read beside ``count``,
+    ``live_count`` and ``invalid_count`` the zeros stay separately
+    representable, exactly as they do for the epic drain:
+
+    - ``mailbox_state`` in :data:`MAILBOX_COULD_NOT_LOOK_STATES`, ``count: 0``
+      — *could not look*, and the member names why.
+    - ``present`` + ``count: 0`` — *looked, and nothing is addressed here*. The
+      only trustworthy empty.
+    - ``present`` + ``live_count: 0`` + ``invalid_count > 0`` — mail IS
+      addressed here but none of it is actionable; reading that as an empty
+      mailbox would claim a clean read over messages that were never understood.
+
+    **Identifier validation stays fail-CLOSED, and the boundary is deliberate.**
+    An unsafe ``--slug`` or ``--plan-id`` is refused with ``status: error``
+    (``invalid_slug`` / ``invalid_target_plan``, the channel's existing codes,
+    reused through :func:`resolve_channel_address` rather than duplicated). That
+    is not one of the read failures above: it is a caller supplying a nonsense
+    address, not an advisory that could not be read, and both values become path
+    components — so admitting one would trade a path-safety guarantee for a
+    convenience the fail-open rationale never asked for.
+
+    **Reading a mailbox is not reading the ledger.** The scan is bounded to
+    ``inbox/to/{plan_id}/`` — messages addressed to this plan — and reaches no
+    other path in the epic tree. ``status.json``, ``epic.md``, ``workstreams/``,
+    ``plans/`` and ``landings/`` stay orchestrator-only.
+    """
+    address, address_error = resolve_channel_address(args.slug, args.plan_id)
+    if address_error is not None:
+        return address_error
+    assert address is not None  # address_error is None ⇒ address resolved
+    mailbox_dir = delivery_dir_for_read(address)
+    state, paths = _scan_mailbox(_read_epic_root(args.slug), mailbox_dir)
+    messages = [_message_row(path, args.slug) for path in paths]
+    return {
+        'status': 'success',
+        'operation': 'inbox-read',
+        'slug': args.slug,
+        'store': ORCHESTRATOR_STORE,
+        'plan_id': address.plan_id,
+        'mailbox_dir': str(mailbox_dir),
+        'mailbox_state': state,
+        'count': len(messages),
+        'live_count': _live_count(messages),
+        'invalid_count': sum(1 for row in messages if not row['valid']),
+        'messages': messages,
     }
 
 

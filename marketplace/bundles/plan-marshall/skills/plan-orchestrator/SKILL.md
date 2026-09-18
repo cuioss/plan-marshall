@@ -1,6 +1,6 @@
 ---
 name: plan-orchestrator
-description: Resumable epic-orchestration skill - decomposes epics into workstreams and staged plans, emits ready-to-run /plan-marshall commands, tracks plan lifecycles, analyzes landings, owns the append-only inbox channel executing plans write their structured messages to, reconciles the persisted orchestrator ledger, and reviews the epic spec corpus - re-grounding staged specs against HEAD into a persisted per-claim (or per-section) verdict field, cross-checking duplication across sibling epics and live plans, and reporting a restart-readiness verdict; orchestrates, never implements
+description: Resumable epic-orchestration skill - decomposes epics into workstreams and staged plans, emits ready-to-run /plan-marshall commands, tracks plan lifecycles, analyzes landings, owns the append-only inbox channel executing plans write their structured messages to and read their own delivered mailbox from, reconciles the persisted orchestrator ledger, and reviews the epic spec corpus - re-grounding staged specs against HEAD into a persisted per-claim (or per-section) verdict field, cross-checking duplication across sibling epics and live plans, and reporting a restart-readiness verdict; orchestrates, never implements
 user-invocable: true
 mode: workflow
 ---
@@ -382,6 +382,30 @@ Enumerates the epic's queued inbox messages — the drain's enumeration seam. Re
 | epic present, `inbox/` present, queue empty — *looked, found nothing* | `status: success`, `inbox_state: present`, `count: 0` |
 
 An absent `inbox/` is NOT a fault: the verb stays non-faulting so a drain is never aborted by it, and the discriminator rides the PAYLOAD rather than the status. `inbox_state` is drawn from the closed `INBOX_STATES` vocabulary (`present`, `missing`). Refuses an unsafe slug (`invalid_slug`) and an unscaffolded epic (`epic_not_found`).
+
+### inbox read
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator inbox read \
+  --slug SLUG --plan-id PLAN_ID
+```
+
+The plan-side read — the other half of the channel's symmetric address. It resolves `inbox/to/{plan-id}/`, the SAME `(epic, plan)` address `inbox write --target-plan` delivers to, so there is one address rule and no second resolver. Returns `plan_id`, `mailbox_dir`, `mailbox_state`, `count`, `live_count`, `invalid_count`, and a `messages[]` table whose rows carry the same fields `inbox list` returns (`name`, `sender_id`, `kind`, `created`, `lifecycle`, `revision`, `superseded_by`, `valid`, `error`), in the same deterministic (sender, sequence) order — both surfaces build their rows from one shared seam, so a message reads identically whichever side sees it.
+
+**Fail-open, deliberately inverting the fail-closed default.** Every way the read can fail to see mail returns `status: success`, and the verb neither faults nor raises: an absent epic tree, an absent mailbox, a mailbox that cannot be listed, a message that cannot be read, and a malformed envelope are all non-fatal. The mailbox is an ADVISORY side channel, so a plan blocked by an advisory it could not read would be strictly worse off than a plan that never had the channel at all.
+
+Fail-open is not vacuous-green, so `mailbox_state` names WHICH KIND OF ZERO the read returned, over the closed `MAILBOX_STATES` vocabulary. Exactly one member means the mailbox was enumerated:
+
+| `mailbox_state` | Meaning |
+|-----------------|---------|
+| `present` | The mailbox was listed. Beside `count: 0` this is the ONLY zero meaning *looked, and nothing is addressed here*. |
+| `no_epic` | No epic tree resolved — nothing was looked at. |
+| `no_mailbox` | The epic is there, but this plan has no mailbox: nothing was ever delivered, or every delivery has since been consumed. |
+| `unreadable` | The mailbox path exists but could not be listed (permission failure, or a path that is not a directory). Distinct from `no_mailbox` because *absent* and *unlistable* are different facts. |
+
+⛔ **`count: 0` on its own is not an empty mailbox.** Read it with `mailbox_state` — three of the four members mean nothing was enumerated — and with `invalid_count`: `present` with `live_count: 0` and `invalid_count > 0` means mail IS addressed here but none of it is actionable, which is not the same as nothing having arrived. The state and the message list come from ONE listing call, so the payload can never pair a non-empty `messages[]` with a could-not-look state under a concurrent drain.
+
+Identifier validation stays **fail-closed**, and that boundary is deliberate: an unsafe `--slug` or `--plan-id` is refused with `status: error` (`invalid_slug` / `invalid_target_plan` — the channel's existing codes, reused rather than duplicated). A nonsense address is a caller error, not an advisory that could not be read, and both values become path components. The scan reaches `inbox/to/{plan-id}/` and no other path in the epic tree, so a mailbox read is a read of messages addressed to that plan, never of the epic's own state — see [`standards/inbox-envelope.md`](standards/inbox-envelope.md) § Invariants.
 
 ### inbox archive
 

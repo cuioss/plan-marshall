@@ -81,6 +81,11 @@ operation groups against the main-anchored orchestrator store
   (``supersede`` — tombstone-style), mark a sender's stream ended
   (``close-stream``), validate an existing message against the envelope schema,
   enumerate the queued messages with their validation verdicts and lifecycle,
+  read the messages DELIVERED to one plan's mailbox (``read --plan-id`` —
+  fail-open: an absent epic, an absent or unlistable mailbox, an unreadable
+  message and a malformed envelope all return ``status: success``, with
+  ``mailbox_state`` naming which kind of zero, so an advisory that could not be
+  read never blocks the reading plan and never renders as a confident empty),
   retire a consumed message to ``inbox/archive/{sender}/``, fold a flat archive
   into that per-sender layout (``migrate-archive``), classify a plan's
   ``source_id`` pointer as orchestrated, or report whether a landing message
@@ -145,6 +150,7 @@ from _orchestrator_inbox import (
     cmd_inbox_landing_check,
     cmd_inbox_list,
     cmd_inbox_migrate_archive,
+    cmd_inbox_read,
     cmd_inbox_supersede,
     cmd_inbox_validate,
     cmd_inbox_write,
@@ -4375,8 +4381,8 @@ def _build_arg_parser() -> argparse.ArgumentParser:
             'the START-HERE resume summary, archive a closed epic, reconcile '
             'the staged spec corpus and its re-grounding verdicts, report the '
             'restart-readiness verdict, drive the plan-writable inbox '
-            'OUTBOX and its drain, and write the per-plan client.toon '
-            'pre-flight artifact.'
+            'OUTBOX, its drain and the plan-side mailbox read, and write the '
+            'per-plan client.toon pre-flight artifact.'
         ),
         allow_abbrev=False,
     )
@@ -4684,18 +4690,22 @@ def _add_inbox_group(subparsers: Any) -> None:
     """Register the ``inbox`` verb group.
 
     Sub-verbs, in registration order: ``write``, ``amend``, ``supersede``,
-    ``close-stream``, ``validate``, ``list``, ``archive``, ``migrate-archive``,
-    ``detect``, ``landing-check``. The handlers live in
+    ``close-stream``, ``validate``, ``list``, ``read``, ``archive``,
+    ``migrate-archive``, ``detect``, ``landing-check``. The handlers live in
     :mod:`_orchestrator_inbox`; this function only wires argv to them. Note what
     the surface deliberately does NOT expose: no output path, no sequence
-    number, and no inbox directory — the write and correction
+    number, and no inbox directory — the write, correction and read
     targets are derived from ``--slug`` plus ``--sender-id`` / a validated
-    ``--target-plan`` / a bare ``--message`` filename alone, which is what makes
+    ``--target-plan`` / a validated ``--plan-id`` / a bare ``--message``
+    filename alone, which is what makes
     the ledger write-boundary carve-out enforced by construction.
     ``--target-plan`` does not widen it either: it selects BETWEEN the epic
     queue and the addressee mailbox ``inbox/to/{plan_id}/``, and its value is a
     validated identifier that becomes one path component, never a path.
-    ``archive --as-name`` does not widen
+    ``read --plan-id`` is the same construction on the read side — it composes
+    the one mailbox address and reaches no other path in the epic tree, so the
+    plan-side read stays a read of messages addressed to that plan rather than
+    of the epic's own state. ``archive --as-name`` does not widen
     that carve-out: it is still a bare filename joined onto
     ``inbox/archive/{sender}/``, never a caller-supplied path, and it is
     additionally sender-constrained, so the archived name's sender provenance is
@@ -4706,9 +4716,9 @@ def _add_inbox_group(subparsers: Any) -> None:
         help=(
             'Epic inbox channel and drain: append (queued, or delivered to a '
             'running target plan), correct (amend/supersede), end a sender '
-            'stream, validate, list, archive or fold the archive per sender, '
-            "detect a plan's orchestration context, or check a landing's "
-            'required facts.'
+            "stream, validate, list, read a plan's delivered mailbox, archive "
+            "or fold the archive per sender, detect a plan's orchestration "
+            "context, or check a landing's required facts."
         ),
         allow_abbrev=False,
     )
@@ -4716,10 +4726,7 @@ def _add_inbox_group(subparsers: Any) -> None:
 
     write = actions.add_parser(
         'write',
-        help=(
-            'Append one {sender_id}-{NNN}.md message — to the epic queue, or to '
-            "a running --target-plan's mailbox."
-        ),
+        help=("Append one {sender_id}-{NNN}.md message — to the epic queue, or to a running --target-plan's mailbox."),
         allow_abbrev=False,
     )
     _add_slug_arg(write)
@@ -4838,6 +4845,27 @@ def _add_inbox_group(subparsers: Any) -> None:
     )
     _add_slug_arg(list_messages)
     list_messages.set_defaults(handler=cmd_inbox_list)
+
+    read = actions.add_parser(
+        'read',
+        help=(
+            "Read the messages delivered to one plan's mailbox at "
+            'inbox/to/{plan-id}/ (fail-open: never faults, and names which kind '
+            'of zero it returned).'
+        ),
+        allow_abbrev=False,
+    )
+    _add_slug_arg(read)
+    read.add_argument(
+        '--plan-id',
+        required=True,
+        help=(
+            'Plan id whose mailbox is read. Resolves the SAME (epic, plan) '
+            'address inbox write delivers to, and becomes one validated path '
+            'component — never a path.'
+        ),
+    )
+    read.set_defaults(handler=cmd_inbox_read)
 
     archive_message = actions.add_parser(
         'archive',
