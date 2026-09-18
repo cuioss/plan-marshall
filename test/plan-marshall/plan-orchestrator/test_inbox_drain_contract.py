@@ -591,3 +591,48 @@ class TestDedupAtDrain:
         )
 
         assert sorted(plan['to_file']) == ['2026-09-03-01-001', '2026-09-03-01-002']
+
+    def test_corpus_only_group_counts_no_recurrence(self):
+        """Corpus lessons grouped without any candidate count no recurrence.
+
+        Recurrence is a drain-time candidate signal: pre-existing corpus
+        lessons grouped together register nothing against each other.
+        """
+        corpus = {
+            '2026-09-01-01-001': {
+                'component': 'plan-marshall:phase-5-execute',
+                'standards_dir': '',
+                'body': 'Canonical body about drain state.',
+                'title': 'Drain state',
+                'recurrence_count': 0,
+            },
+            '2026-09-01-01-002': {
+                'component': 'plan-marshall:phase-5-execute',
+                'standards_dir': '',
+                'body': 'Canonical body about drain state retold.',
+                'title': 'Drain state again',
+                'recurrence_count': 0,
+            },
+        }
+        plan = _aggregate.deduplicate_candidates_at_drain([], corpus)
+
+        assert plan['to_file'] == []
+        assert sum(plan['recurrences'].values()) == 0
+
+
+# =============================================================================
+# (10) Queue availability: unreadable reads unavailable, never empty
+# =============================================================================
+
+
+class TestQueueAvailability:
+    def test_unreadable_queue_marks_unavailable(self):
+        report = _inbox._reconcile_queue_with_availability(set(), {'plan-c'}, False)
+
+        assert report['queue_readable'] is False
+
+    def test_readable_queue_marks_readable(self):
+        report = _inbox._reconcile_queue_with_availability({'plan-a'}, set(), True)
+
+        assert report['queue_readable'] is True
+        assert report['queue_without_landing'] == ['plan-a']

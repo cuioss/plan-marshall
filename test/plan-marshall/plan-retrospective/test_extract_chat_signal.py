@@ -63,6 +63,28 @@ class TestRouting:
         assert result['status'] == 'success'
         assert result['no_signal'] is True
 
+    def test_new_consumer_fields_forwarded_with_non_default_values(self, monkeypatch):
+        """The added kept-text / population / residual / guard fields map through.
+
+        Each new consumer field is asserted with a non-default value so the
+        test fails when the mapping drops the field rather than forwarding
+        the runtime record.
+        """
+        record = _runtime_record(
+            kept_text_chars=512,
+            kept_text_bytes=520,
+            signal_gate_population=4,
+            residual_counts={'harness_injection': 2},
+            symmetric_pair_dropped=1,
+        )
+        result = _run(monkeypatch, record, 'success')
+
+        assert result['kept_text_chars'] == 512
+        assert result['kept_text_bytes'] == 520
+        assert result['signal_gate_population'] == 4
+        assert result['residual_counts'] == {'harness_injection': 2}
+        assert result['symmetric_pair_dropped'] == 1
+
     def test_noop_routes_to_skipped_not_success(self, monkeypatch):
         """A runtime no-op (no transcript) is the canonical data-absence token."""
         result = _run(monkeypatch, None, 'no-op')

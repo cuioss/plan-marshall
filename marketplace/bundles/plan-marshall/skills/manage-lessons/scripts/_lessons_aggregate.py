@@ -309,15 +309,21 @@ def deduplicate_candidates_at_drain(
         grouped.update(group['members'])
     to_file: list[str] = []
     recurrences: dict[str, int] = {}
+    cand_ids = {cand['id'] for cand in candidates}
     for group in groups:
         primary = _pick_primary(group['members'], norm)
-        members = [mid for mid in group['members'] if mid != primary]
+        # Recurrence counts absorbed CANDIDATES only: pre-existing corpus
+        # lessons grouped together without any candidate present must not
+        # register drain-time recurrences against each other.
+        absorbed_candidates = [mid for mid in group['members'] if mid != primary and mid in cand_ids]
         if primary in corpus_by_id:
-            recurrences[primary] = recurrences.get(primary, 0) + len(members)
+            if absorbed_candidates:
+                recurrences[primary] = recurrences.get(primary, 0) + len(absorbed_candidates)
         else:
             if primary not in to_file:
                 to_file.append(primary)
-            recurrences[primary] = recurrences.get(primary, 0) + len(members)
+            if absorbed_candidates:
+                recurrences[primary] = recurrences.get(primary, 0) + len(absorbed_candidates)
     for cand in candidates:
         if cand['id'] not in grouped and cand['id'] not in to_file:
             to_file.append(cand['id'])

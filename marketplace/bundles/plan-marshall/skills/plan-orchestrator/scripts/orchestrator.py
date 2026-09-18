@@ -92,9 +92,11 @@ operation groups against the main-anchored orchestrator store
   reported beside the counts, so an in-flight expansion is detectable at
   drain time with no manual diff. The owed-landing verdict
   (``classify_owed_landing`` / ``reconcile_queue_vs_landings``) rides the
-  existing ``list`` / ``landing-check`` payloads through the same handlers —
-  no new verb, same CLI shape — so the drain distinguishes owed (a live plan
-  with an unconsumed landing message) from no-news from drain state alone.
+  existing ``list`` payload through the same handler — no new verb, same
+  CLI shape — so the drain distinguishes owed (a live plan with an
+  unconsumed landing message) from no-news from drain state alone.
+  (``landing-check`` carries only the surface-expansion delta; the
+  queue-wide owed verdict is a ``list``-payload field.)
 - ``preflight --plan-id ID`` — invoke ``platform_runtime runtime-info`` and
   write the returned payload as the per-plan ``client.toon`` pre-flight
   artifact, settling the plan's title state best-effort on the way.

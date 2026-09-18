@@ -1579,15 +1579,22 @@ def cmd_inbox_list(args: Any) -> dict[str, Any]:
     live_plan_ids = _running_plan_ids(root)
     owed_verdict = classify_owed_landing(live_plan_ids, queued_landing_senders)
     queue_ids: set[str] = set()
+    queue_readable = False
     try:
         _queue_data = read_json(root / STATUS_FILE)
         if isinstance(_queue_data, dict):
             _rows = _queue_data.get('plans')
             if isinstance(_rows, list):
                 queue_ids = {str(r.get('id', '')) for r in _rows if isinstance(r, dict) and str(r.get('id', ''))}
+                queue_readable = True
     except Exception:
         queue_ids = set()
-    queue_reconciliation = reconcile_queue_vs_landings(queue_ids, queued_landing_senders)
+    # An unreadable queue is UNAVAILABLE, never empty: the directional
+    # deltas below are uncomputed, so they ride an explicit
+    # ``queue_readable: False`` discriminator rather than a clean-looking
+    # empty diff that would file a queued landing under
+    # ``landing_without_queue``.
+    queue_reconciliation = _reconcile_queue_with_availability(queue_ids, queued_landing_senders, queue_readable)
     return {
         'status': 'success',
         'operation': 'inbox-list',
@@ -2394,3 +2401,20 @@ def reconcile_queue_vs_landings(
         'queue_without_landing': queue_only,
         'landing_without_queue': landing_only,
     }
+
+
+def _reconcile_queue_with_availability(
+    queue_plan_ids: set[str],
+    landing_sender_ids: set[str],
+    queue_readable: bool,
+) -> dict[str, Any]:
+    """Reconcile the queue, carrying whether the queue was readable.
+
+    An unreadable queue (missing, malformed, or unparsable ``status.json``)
+    is UNAVAILABLE, never empty: the directional deltas are uncomputed, so
+    the report rides ``queue_readable: False`` and consumers must not read
+    an empty ``landing_without_queue`` as proof no orphan landing exists.
+    """
+    report = reconcile_queue_vs_landings(queue_plan_ids, landing_sender_ids)
+    report['queue_readable'] = queue_readable
+    return report

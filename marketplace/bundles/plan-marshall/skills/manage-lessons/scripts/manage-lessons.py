@@ -1347,6 +1347,53 @@ def main() -> int:
     )
     aggregate_parser.set_defaults(func=cmd_aggregate)
 
+    # drain-dedup
+    drain_dedup_parser = subparsers.add_parser(
+        'drain-dedup',
+        help=(
+            'Dedup lesson candidates at the drain before filing: group '
+            'candidates with the corpus, strongest-wins, recurrences counted.'
+        ),
+        allow_abbrev=False,
+    )
+    drain_dedup_parser.add_argument(
+        '--candidates-file',
+        required=True,
+        help='Path to a JSON array of candidate lesson objects (each with id, component, body).',
+    )
+    drain_dedup_parser.add_argument(
+        '--corpus-file',
+        help='Path to a JSON object of corpus lessons keyed by id. Defaults to the live active corpus.',
+    )
+    drain_dedup_parser.set_defaults(func=cmd_drain_dedup)
+
+    # created-counts
+    created_counts_parser = subparsers.add_parser(
+        'created-counts',
+        help=(
+            'Report post-housekeeping created counts for landing narratives: '
+            'created entries actually filed, never emitted candidate totals.'
+        ),
+        allow_abbrev=False,
+    )
+    created_counts_parser.add_argument(
+        '--emitted-count',
+        type=int,
+        required=True,
+        help='Drain candidate total before dedup and housekeeping.',
+    )
+    created_counts_parser.add_argument(
+        '--filed-id',
+        action='append',
+        default=[],
+        help='Id actually filed (repeatable).',
+    )
+    created_counts_parser.add_argument(
+        '--recurrences-file',
+        help='Path to a JSON object mapping surviving ids to absorbed recurrence totals.',
+    )
+    created_counts_parser.set_defaults(func=cmd_created_counts)
+
     # from-error
     from_error_parser = subparsers.add_parser('from-error', help='Create from error context', allow_abbrev=False)
     from_error_parser.add_argument('--context', required=True, help='JSON error context')
@@ -1534,6 +1581,54 @@ def drain_dedup_gate(
     return deduplicate_candidates_at_drain(candidates, corpus_by_id)
 
 
+def _read_json_doc(path_str: str):
+    """Read a JSON document from disk, raising a structured caller error."""
+    path = Path(path_str)
+    try:
+        return json.loads(path.read_text(encoding='utf-8'))
+    except FileNotFoundError as exc:
+        raise ValueError(f'JSON file not found: {path_str}') from exc
+    except json.JSONDecodeError as exc:
+        raise ValueError(f'JSON file {path_str} is not valid JSON: {exc}') from exc
+
+
+def cmd_drain_dedup(args: argparse.Namespace) -> dict:
+    """Dedup lesson candidates at the drain before filing (read-only plan).
+
+    The filing path (orchestrator drain, batch imports) invokes this before
+    allocating any lesson: candidates are grouped with the corpus via
+    :func:`drain_dedup_gate`, strongest-wins, and only ``to_file`` ids are
+    subsequently allocated. Recurrences ride counts, never duplicated
+    bodies. Returns ``{status, to_file[], recurrences{}, groups_evaluated}``.
+    """
+    try:
+        raw_candidates = _read_json_doc(args.candidates_file)
+    except ValueError as exc:
+        return {'status': 'error', 'error': 'unreadable_candidates_file', 'message': str(exc)}
+    if not isinstance(raw_candidates, list):
+        return {
+            'status': 'error',
+            'error': 'invalid_candidates_file',
+            'message': f'Candidates file {args.candidates_file} must hold a JSON array.',
+        }
+    if args.corpus_file:
+        try:
+            raw_corpus = _read_json_doc(args.corpus_file)
+        except ValueError as exc:
+            return {'status': 'error', 'error': 'unreadable_corpus_file', 'message': str(exc)}
+        if not isinstance(raw_corpus, dict):
+            return {
+                'status': 'error',
+                'error': 'invalid_corpus_file',
+                'message': f'Corpus file {args.corpus_file} must hold a JSON object keyed by lesson id.',
+            }
+        corpus_by_id = dict(raw_corpus)
+    else:
+        corpus_by_id = {lesson['id']: lesson for lesson in _load_active_lessons_with_signals()}
+    plan = drain_dedup_gate(list(raw_candidates), corpus_by_id)
+    return {'status': 'success', 'operation': 'drain-dedup', **plan}
+
+
 def post_housekeeping_created_counts(
     emitted_count: int,
     filed_ids: list[str],
@@ -1556,6 +1651,36 @@ def post_housekeeping_created_counts(
         'absorbed_count': absorbed,
         'filed_ids': sorted(filed_ids),
     }
+
+
+def cmd_created_counts(args: argparse.Namespace) -> dict:
+    """Report post-housekeeping created counts for landing narratives.
+
+    Computes :func:`post_housekeeping_created_counts` over the drain's
+    emitted candidate total, the ids actually filed, and the surviving
+    recurrence totals. The landing narrative republishes this verb's
+    ``created_count`` (via the compile-report assembler) — never the
+    emitted candidate total. Returns ``{status, emitted_count,
+    created_count, absorbed_count, filed_ids[]}``.
+    """
+    recurrences: dict[str, int] = {}
+    if args.recurrences_file:
+        try:
+            raw_recurrences = _read_json_doc(args.recurrences_file)
+        except ValueError as exc:
+            return {'status': 'error', 'error': 'unreadable_recurrences_file', 'message': str(exc)}
+        if not isinstance(raw_recurrences, dict):
+            return {
+                'status': 'error',
+                'error': 'invalid_recurrences_file',
+                'message': f'Recurrences file {args.recurrences_file} must hold a JSON object.',
+            }
+        try:
+            recurrences = {str(k): int(v) for k, v in raw_recurrences.items()}
+        except (TypeError, ValueError) as exc:
+            return {'status': 'error', 'error': 'invalid_recurrences_file', 'message': str(exc)}
+    counts = post_housekeeping_created_counts(args.emitted_count, list(args.filed_id), recurrences)
+    return {'status': 'success', 'operation': 'created-counts', **counts}
 
 
 if __name__ == '__main__':

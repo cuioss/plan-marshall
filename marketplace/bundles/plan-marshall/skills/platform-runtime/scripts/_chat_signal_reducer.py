@@ -63,7 +63,7 @@ from _chat_gate_decisions import (
     OPERATOR_DECISION_ROLE,
     OPERATOR_DECISION_TOOL,
     decision_tool_use_ids,
-    extract_gate_decisions,
+    extract_gate_decision_hits,
 )
 from _chat_provenance import is_operator_authored
 
@@ -164,6 +164,7 @@ def enforce_symmetric_pair_guard(
     turns: list[dict[str, str]],
     decision_ids_seen: set[str],
     decisions_recovered: int,
+    decision_matched: list[bool] | None = None,
 ) -> tuple[list[dict[str, str]], int]:
     """Enforce the symmetric-pair guard over gate-decision arms.
 
@@ -173,19 +174,27 @@ def enforce_symmetric_pair_guard(
     walk recovers decisions only from previously seen tool_use ids, so the
     guard holds by construction on well-formed transcripts; this seam makes
     the invariant explicit and countable rather than implicit.
+
+    ``decision_matched`` is the per-recovered-decision provenance parallel
+    to the ``OPERATOR_DECISION_ROLE`` turns in order (``True`` when the
+    decision answered a seen tool_use id, ``False`` for a refusal-marker
+    arm with no tool-use id). When supplied, unmatched arms drop first —
+    a refusal-marker result carries no tool-use arm to pair with, so it is
+    the arm the invariant cannot vouch for — newest-first within each
+    class. When omitted, the legacy newest-first order applies.
     """
     if decisions_recovered <= len(decision_ids_seen):
         return turns, 0
     excess = decisions_recovered - len(decision_ids_seen)
-    kept: list[dict[str, str]] = []
-    dropped = 0
-    for turn in reversed(turns):
-        if dropped < excess and turn.get('role') == OPERATOR_DECISION_ROLE:
-            dropped += 1
-            continue
-        kept.append(turn)
-    kept.reverse()
-    return kept, dropped
+    decision_positions = [i for i, turn in enumerate(turns) if turn.get('role') == OPERATOR_DECISION_ROLE]
+    if decision_matched is not None and len(decision_matched) == len(decision_positions):
+        matched_by_position = dict(zip(decision_positions, decision_matched, strict=True))
+        ordered = sorted(decision_positions, key=lambda i: (matched_by_position[i], -i))
+    else:
+        ordered = sorted(decision_positions, reverse=True)
+    drop_positions = set(ordered[:excess])
+    kept = [turn for i, turn in enumerate(turns) if i not in drop_positions]
+    return kept, len(drop_positions)
 
 
 def extract_text(content: Any) -> str:
@@ -287,6 +296,7 @@ def reduce_transcript(lines: list[str]) -> Reduction:
     """
     result = Reduction()
     decision_ids: set[str] = set()
+    decision_provenance: list[bool] = []
     for line in lines:
         message = parse_message(line)
         if message is None:
@@ -298,8 +308,9 @@ def reduce_transcript(lines: list[str]) -> Reduction:
         if role == 'assistant':
             decision_ids |= decision_tool_use_ids(content)
         if role == 'user':
-            for decision in extract_gate_decisions(content, decision_ids):
+            for decision, matched in extract_gate_decision_hits(content, decision_ids):
                 result.turns.append({'role': OPERATOR_DECISION_ROLE, 'text': decision})
+                decision_provenance.append(matched)
                 result.gate_decision_count += 1
         text = extract_text(content)
         if is_signal_bearing(role, text):
@@ -311,10 +322,18 @@ def reduce_transcript(lines: list[str]) -> Reduction:
             residual = classify_residual(role, text)
             result.residual_counts[residual] = result.residual_counts.get(residual, 0) + 1
     result.turns, result.symmetric_pair_dropped = enforce_symmetric_pair_guard(
-        result.turns, decision_ids, result.gate_decision_count
+        result.turns, decision_ids, result.gate_decision_count, decision_provenance
     )
+    # The gate count is intentionally NOT decremented by the drop: it
+    # measures recovered decisions (a lone refusal-marker IS operator
+    # signal — see test_operator_refusal_is_a_gate_decision), while
+    # ``turns`` measures renderable paired arms. Collapsing the two
+    # would report a refusal-driven run as silent.
     result.kept_text_chars = sum(len(turn['text']) for turn in result.turns)
-    result.kept_text_bytes = len(render_reduced(result.turns).encode('utf-8'))
+    # Bytes across kept turn texts only: the rendered form adds role labels
+    # and separators, so measuring the render would report transcript
+    # overhead as kept signal.
+    result.kept_text_bytes = sum(len(turn['text'].encode('utf-8')) for turn in result.turns)
     return result
 
 
