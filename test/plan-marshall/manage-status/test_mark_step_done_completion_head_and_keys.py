@@ -10,7 +10,15 @@ Its sections, in order:
 """
 
 import pytest
-from _mark_step_done_fixtures import _args, _make_plan, _real_head, cmd_mark_step_done, read_status, write_status
+from _mark_step_done_fixtures import (
+    _args,
+    _make_plan,
+    _real_head,
+    _tmp_repo_two_heads,
+    cmd_mark_step_done,
+    read_status,
+    write_status,
+)
 
 
 def test_mark_step_failed_then_done_with_force(plan_context):
@@ -177,11 +185,15 @@ def test_mark_step_idempotent_when_head_at_completion_matches(plan_context):
     }
 
 
-def test_mark_step_head_at_completion_change_overwrites_without_force(plan_context):
-    """Re-call with same outcome+display_detail but different SHA is a 'changed' overwrite, no --force."""
+def test_mark_step_head_at_completion_change_overwrites_without_force(plan_context, tmp_path, monkeypatch):
+    """Re-call with same outcome+display_detail but different SHA is a 'changed' overwrite, no --force.
+
+    The two anchors come from a throwaway two-commit repo pinned as cwd —
+    never from the caller checkout's `HEAD~1`, which does not exist in CI's
+    depth-1 checkout.
+    """
     plan_id = 'mark-step-head-overwrite'
-    sha_old = _real_head('HEAD~1')
-    sha_new = _real_head('HEAD')
+    sha_new, sha_old = _tmp_repo_two_heads(tmp_path, monkeypatch)
     _make_plan(plan_id)
     cmd_mark_step_done(
         _args(

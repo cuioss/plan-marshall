@@ -29,6 +29,10 @@ These tests pin the resolution and its matched controls:
 (e) A ``done`` with NO anchor on a non-head-dependent step is written — the
     resolution only constrains a SUPPLIED anchor; absence is governed by the
     pre-existing ``missing_head_at_completion`` rule, unchanged here.
+(f) A SYMBOLIC anchor (``HEAD``, a branch name) persists as the RESOLVED
+    full-hex object ID, never the supplied spelling — a moving reference
+    must not stand as the delta anchor. A leading-``-`` revision is refused
+    before reaching git.
 
 The SHAs are derived from the LIVE repo (HEAD commit, HEAD tree), never
 hardcoded, so the suite cannot go vacuously green on a stale literal: the
@@ -192,6 +196,80 @@ def test_non_done_outcome_with_fabricated_anchor_is_written(plan_context):
 
     assert result['status'] == 'success'
     assert 'anchor-probe-step' in _recorded_steps(plan_id)
+
+
+# ---------------------------------------------------------------------------
+# (f) symbolic anchors persist as the resolved object ID, not the spelling
+# ---------------------------------------------------------------------------
+
+
+def test_done_with_head_spelling_persists_resolved_object_id(plan_context):
+    """`HEAD` is accepted but the record carries the commit it named.
+
+    Without canonicalization the record would carry the four characters
+    `HEAD`, and every later round scoping its delta against the record would
+    compare a moving reference rather than the tree the verdict examined.
+    """
+    plan_id = 'anchor-head-canonical'
+    _make_plan(plan_id)
+    expected = _git_rev_parse('HEAD^{commit}')
+
+    result = cmd_mark_step_done(_args(plan_id, 'done', head_at_completion='HEAD'))
+
+    assert result['status'] == 'success'
+    assert result['head_at_completion'] == expected
+    assert result['head_at_completion'] != 'HEAD'
+    assert _recorded_steps(plan_id)['anchor-probe-step']['head_at_completion'] == expected
+
+
+def test_done_with_branch_spelling_persists_resolved_object_id(plan_context):
+    """A branch name is accepted but the record carries its tip commit."""
+    import subprocess
+
+    plan_id = 'anchor-branch-canonical'
+    _make_plan(plan_id)
+    branch = 'tmp-anchor-canonical-branch'
+    create = subprocess.run(
+        ['git', 'branch', branch, 'HEAD'],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert create.returncode == 0, f'Cannot create temp branch for the anchor test: {create.stderr.strip()}'
+    try:
+        expected = _git_rev_parse('HEAD^{commit}')
+
+        result = cmd_mark_step_done(_args(plan_id, 'done', head_at_completion=branch))
+
+        assert result['status'] == 'success'
+        assert result['head_at_completion'] == expected
+        assert _recorded_steps(plan_id)['anchor-probe-step']['head_at_completion'] == expected
+    finally:
+        subprocess.run(
+            ['git', 'branch', '-D', branch],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+
+
+def test_leading_dash_anchor_is_refused_without_reaching_git(plan_context):
+    """A revision starting with `-` is refused as unresolvable.
+
+    The value can never name a commit, and passing it to git would risk
+    option-flag parsing — so it is rejected before any subprocess runs, and
+    nothing is written.
+    """
+    plan_id = 'anchor-leading-dash'
+    _make_plan(plan_id)
+
+    result = cmd_mark_step_done(_args(plan_id, 'done', head_at_completion='--upload-pack=touch'))
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'unknown_head_at_completion'
+    assert _recorded_steps(plan_id) == {}
 
 
 # ---------------------------------------------------------------------------

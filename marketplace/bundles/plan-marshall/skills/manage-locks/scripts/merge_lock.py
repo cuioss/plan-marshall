@@ -1789,12 +1789,19 @@ def run_budget_reclaim(args: Namespace) -> dict[str, Any]:
     ``invalid_hold_start`` / ``invalid_hold_budget`` before the lock is
     touched. The result carries ``elapsed_seconds`` and
     ``hold_budget_seconds`` on every branch so the caller can audit the
-    budget arithmetic. No title-token surface: the caller is the waiter, not
-    the holder, so no glyph is set or cleared here.
+    budget arithmetic — including the invalid-input refusals, where a
+    non-finite input reads as the ``0.0`` sentinel (documented here, never a
+    measurement) so the shape stays total. No title-token surface: the caller
+    is the waiter, not the holder, so no glyph is set or cleared here.
     """
     plan_id: str = args.plan_id
     hold_start: float = args.hold_start
     hold_budget_seconds: float = args.hold_budget_seconds
+
+    def _audit_seconds(value: float) -> float:
+        """Best-effort audit value: finite inputs pass through, anything else
+        reads as the ``0.0`` sentinel so the payload shape stays total."""
+        return value if math.isfinite(value) and value >= 0 else 0.0
 
     if not math.isfinite(hold_start) or hold_start < 0:
         return {
@@ -1802,6 +1809,8 @@ def run_budget_reclaim(args: Namespace) -> dict[str, Any]:
             'plan_id': plan_id,
             'error': 'invalid_hold_start',
             'message': f'--hold-start must be a finite non-negative epoch, got: {hold_start!r}',
+            'elapsed_seconds': 0.0,
+            'hold_budget_seconds': _audit_seconds(hold_budget_seconds),
         }
     if not math.isfinite(hold_budget_seconds) or hold_budget_seconds <= 0:
         return {
@@ -1809,6 +1818,8 @@ def run_budget_reclaim(args: Namespace) -> dict[str, Any]:
             'plan_id': plan_id,
             'error': 'invalid_hold_budget',
             'message': f'--hold-budget-seconds must be a finite positive number of seconds, got: {hold_budget_seconds!r}',
+            'elapsed_seconds': max(0.0, time.time() - hold_start),
+            'hold_budget_seconds': 0.0,
         }
 
     try:

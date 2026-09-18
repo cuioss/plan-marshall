@@ -500,7 +500,9 @@ Caller bugs fail before the lock is touched: a non-finite or negative
 `--hold-start` (`error: invalid_hold_start`) and a non-finite or
 non-positive `--hold-budget-seconds` (`error: invalid_hold_budget`) return
 `status: error`. Every branch carries `elapsed_seconds` and
-`hold_budget_seconds` for budget auditing. No title-token surface: the caller
+`hold_budget_seconds` for budget auditing — including the invalid-input
+refusals, where a non-finite input reads as the `0.0` sentinel (a shape
+totality marker, never a measurement). No title-token surface: the caller
 waits; it holds nothing.
 
 ### merge_lock — rate-window claim

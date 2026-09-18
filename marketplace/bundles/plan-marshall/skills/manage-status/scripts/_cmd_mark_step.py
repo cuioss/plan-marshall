@@ -22,9 +22,12 @@ vertical-steps block) can surface user-facing step summaries. An optional
 phase dispatchers (e.g., phase-6-finalize Step 3 for ``pre-push-quality-gate``)
 can detect when the worktree HEAD has advanced past the SHA at which the
 previous run completed and re-fire the gate accordingly. A supplied SHA is
-resolved against the local object store (``git cat-file -e {sha}^{commit}``)
-before anything is persisted: a SHA resolving to no commit is refused
-fail-closed with ``error: unknown_head_at_completion`` and writes NOTHING, so
+resolved against the local object store (``git rev-parse --verify
+{sha}^{commit}``) before anything is persisted, and the PERSISTED value is
+the resolved full-hex commit ID — never the supplied spelling — so symbolic
+anchors (HEAD, a branch, HEAD~1) cannot move under the record: a SHA
+resolving to no commit is refused fail-closed with
+``error: unknown_head_at_completion`` and writes NOTHING, so
 a fabricated anchor can never enter the record. Re-call with same
 outcome+display_detail but a
 different head_at_completion is a "changed" overwrite without requiring
@@ -150,30 +153,42 @@ def _derive_head_dependence(step: str) -> tuple[bool, str | None]:
     return False, None
 
 
-def _head_resolves_to_commit(sha: str) -> bool:
-    """Return True when ``sha`` resolves to a commit in the local object store.
+def _resolve_head_to_commit(sha: str) -> str | None:
+    """Resolve ``sha`` to its full-hex commit object ID, or ``None`` when unresolvable.
 
-    Runs ``git cat-file -e {sha}^{commit}`` in the inherited cwd — the tree
-    the step ran in (the pinned worktree in phase-5+, the main checkout
+    Runs ``git rev-parse --verify {sha}^{commit}`` in the inherited cwd — the
+    tree the step ran in (the pinned worktree in phase-5+, the main checkout
     otherwise) — so the anchor is validated against the object store the
-    completion claims to describe. The ``^{commit}`` peel requires the SHA to
-    resolve to a commit object: a blob/tree SHA, a truncated ambiguous prefix
-    with no commit behind it, or a wholly fabricated hex string all fail. Any
-    git failure (not a repo, object store unreadable) reads as unresolvable —
-    an anchor nobody can locate in history must not be persisted, whatever the
-    reason it cannot be found.
+    completion claims to describe, and the PERSISTED value is the resolved
+    full-hex object ID rather than the supplied spelling: ``HEAD``, a branch
+    name, or ``HEAD~1`` all persist as the commit they named, so a later
+    round scoping its delta against the record compares commits, never moving
+    references. The ``^{commit}`` peel requires the revision to resolve to a
+    commit object: a blob/tree SHA, an ambiguous abbreviation, or a wholly
+    fabricated string all fail. Any git failure (not a repo, object store
+    unreadable) reads as unresolvable — an anchor nobody can locate in
+    history must not be persisted, whatever the reason it cannot be found.
+
+    Injection guard: a revision starting with ``-`` is refused without ever
+    reaching git, so a crafted value can never be parsed as an option flag.
+    Every other value travels as a single argv element (no shell), and git
+    errors on anything it cannot parse — which reads as unresolvable here.
     """
+    if sha.startswith('-'):
+        return None
     try:
         proc = subprocess.run(
-            ['git', 'cat-file', '-e', f'{sha}^{{commit}}'],
+            ['git', 'rev-parse', '--verify', f'{sha}^{{commit}}'],
             capture_output=True,
             text=True,
             timeout=30,
             check=False,
         )
     except (OSError, subprocess.SubprocessError):
-        return False
-    return proc.returncode == 0
+        return None
+    if proc.returncode != 0:
+        return None
+    return proc.stdout.strip() or None
 
 
 def _parse_facts(raw: list[str] | None) -> tuple[dict[str, str] | None, str | None]:
@@ -374,20 +389,26 @@ def cmd_mark_step_done(args: argparse.Namespace) -> dict | None:
                     '"head_dependent" field contract for the fail-closed obligation.'
                 ),
             }
-        if head_at_completion and not _head_resolves_to_commit(head_at_completion):
-            return {
-                'status': 'error',
-                'plan_id': args.plan_id,
-                'error': 'unknown_head_at_completion',
-                'phase': phase,
-                'step': step,
-                'message': (
-                    f'--head-at-completion {head_at_completion!r} resolves to no commit '
-                    'in the local object store. Nothing was written. Resolve the '
-                    'worktree HEAD immediately before this call and pass the real SHA — '
-                    'a fabricated anchor records a verdict nobody can locate in history.'
-                ),
-            }
+        if head_at_completion:
+            resolved_head = _resolve_head_to_commit(head_at_completion)
+            if resolved_head is None:
+                return {
+                    'status': 'error',
+                    'plan_id': args.plan_id,
+                    'error': 'unknown_head_at_completion',
+                    'phase': phase,
+                    'step': step,
+                    'message': (
+                        f'--head-at-completion {head_at_completion!r} resolves to no commit '
+                        'in the local object store. Nothing was written. Resolve the '
+                        'worktree HEAD immediately before this call and pass the real SHA — '
+                        'a fabricated anchor records a verdict nobody can locate in history.'
+                    ),
+                }
+            # Persist the canonical object ID, not the supplied spelling: a
+            # symbolic anchor (HEAD, a branch, HEAD~1) would otherwise move
+            # under the record and break every later delta the record scopes.
+            head_at_completion = resolved_head
 
     metadata: dict[str, Any] = status.setdefault('metadata', {})
     phase_steps: dict[str, Any] = metadata.setdefault('phase_steps', {})

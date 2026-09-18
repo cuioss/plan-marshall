@@ -162,6 +162,9 @@ class TestBudgetReclaimInvalidInput:
 
         assert result['status'] == 'error'
         assert result['error'] == 'invalid_hold_start'
+        # The audit fields ride every branch, including refusals.
+        assert result['elapsed_seconds'] == 0.0
+        assert result['hold_budget_seconds'] == 3600.0
         assert lock_path.exists()
 
     def test_non_positive_budget_is_refused_and_leaves_lock_intact(self, isolated_base: dict) -> None:
@@ -172,4 +175,6 @@ class TestBudgetReclaimInvalidInput:
 
         assert result['status'] == 'error'
         assert result['error'] == 'invalid_hold_budget'
+        assert result['elapsed_seconds'] >= 0.0
+        assert result['hold_budget_seconds'] == 0.0
         assert lock_path.exists()

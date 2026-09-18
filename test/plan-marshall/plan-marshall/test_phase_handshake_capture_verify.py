@@ -580,3 +580,29 @@ def test_cmd_capture_pr_title_omitted_at_1_init(plan_context, only_pr_title_inva
     result = cmds.cmd_capture(_ns(plan_id='prt-init', phase='1-init'))
     assert result['status'] == 'success'
     assert 'pr_title_present' not in result['invariants']
+
+
+def test_cmd_verify_pr_title_missing_returns_structured_error(
+    plan_context, only_pr_title_invariant, stub_metadata
+) -> None:
+    """A verify whose re-capture loses `pr_title` returns the capture shape.
+
+    The captured row exists (title was present at capture time) but the live
+    re-capture raises `PrTitleMissing`. Without a handler the exception
+    propagates out of the verb and `safe_main` renders `error:
+    internal_error` — no structured TOON, no stderr verdict mirror. The
+    handler returns the same `pr_title_missing` envelope `cmd_capture`
+    publishes so the two verbs cannot drift apart on this state.
+    """
+    stub_metadata['pr_title'] = 'fix(create-pr): bind --title from persisted pr_title'
+    captured = cmds.cmd_capture(_ns(plan_id='prt-verify-missing', phase='2-refine'))
+    assert captured['status'] == 'success'
+
+    del stub_metadata['pr_title']
+    result = cmds.cmd_verify(_ns(plan_id='prt-verify-missing', phase='2-refine'))
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'pr_title_missing'
+    assert result['plan_id'] == 'prt-verify-missing'
+    assert result['phase'] == '2-refine'
+    assert 'pr_title' in result['message']
