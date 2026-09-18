@@ -692,6 +692,40 @@ _DOC_VOCABULARY_SITES: dict[str, Callable[[], frozenset[str]]] = {
 }
 
 
+def _overall_status_declaring_documents() -> set[str]:
+    """Documents normatively declaring overall_status value sets.
+
+    Discovered with the same anchored patterns the site extractors parse
+    (the TOON alternation, the Overall Status Logic block, the vocabulary
+    sentence) — a future declaration in another document that matches none
+    of these forms is a new statement shape, not a missed site, and extending
+    the patterns is part of covering it.
+    """
+    roots = (
+        _SKILLS / 'phase-6-finalize',
+        _SKILLS / 'tools-integration-ci',
+    )
+    found: set[str] = set()
+    for root in roots:
+        for path in sorted(root.rglob('*.md')):
+            try:
+                text = path.read_text(encoding='utf-8')
+            except OSError:
+                continue
+            if (
+                _API_TOON_ALTERNATION_RE.search(text)
+                or _API_LOGIC_BLOCK_RE.search(text)
+                or _VOCAB_SENTENCE_RE.search(text)
+            ):
+                found.add(path.name)
+    assert found, (
+        'no document declares overall_status vocabularies — the discovery '
+        'patterns stopped matching and every assertion below would pass over '
+        'an empty population'
+    )
+    return found
+
+
 def test_the_re_review_consumer_set_is_derived_and_plural():
     """The polarity sweep below runs over a NON-EMPTY, multi-document population.
 
@@ -932,6 +966,23 @@ class TestOverallStatusVocabularyParity:
             'protects that statement, not the closed set: the CI API contract declared a '
             'three-value set for this field, in two places, for as long as this guard read '
             'branch-cleanup.md alone. Add the site back rather than shrinking the coverage.'
+        )
+
+    def test_every_declaring_document_has_a_registry_site(self):
+        """Every document that normatively declares the set is registry-covered.
+
+        The registry is hand-listed passages; the discovery walks the skill
+        trees for the anchored declaration forms. A future declaration in a
+        fourth document with no registry site fails here rather than escaping
+        parity checks silently.
+        """
+        discovered = _overall_status_declaring_documents()
+        registered = {site.split(' § ')[0] for site in _DOC_VOCABULARY_SITES}
+        missing = discovered - registered
+        assert not missing, (
+            f'document(s) normatively declare overall_status vocabularies but carry '
+            f'no _DOC_VOCABULARY_SITES entry: {sorted(missing)} — add a site '
+            'extractor rather than leaving the declaration outside parity'
         )
 
     @pytest.mark.parametrize('site', sorted(_DOC_VOCABULARY_SITES))

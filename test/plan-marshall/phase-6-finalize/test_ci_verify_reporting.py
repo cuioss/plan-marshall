@@ -558,6 +558,18 @@ def test_force_push_supersession_invalidates_a_recorded_ci_verify_green():
 def test_standards_declares_ci_complete_precondition():
     """The ci-verify contract must declare ``requires: [ci-complete]`` so the
     dispatcher invokes the precondition resolver.
+
+    Parsed as YAML frontmatter, not substring-matched: the declaration only
+    takes effect from the frontmatter block, so prose mentioning the same
+    string must not satisfy this guard.
     """
+    import yaml
+
     content = _STANDARDS_PATH.read_text(encoding='utf-8')
-    assert 'requires: [ci-complete]' in content, 'ci-verify standards must declare requires: [ci-complete]'
+    assert content.startswith('---\n'), 'ci-verify standards must open with a YAML frontmatter block'
+    frontmatter_text = content[len('---\n') :].split('\n---\n', 1)[0]
+    frontmatter = yaml.safe_load(frontmatter_text)
+    assert isinstance(frontmatter, dict), 'ci-verify frontmatter must parse as a mapping'
+    assert 'ci-complete' in frontmatter.get('requires', []), (
+        'ci-verify standards frontmatter must declare requires: [ci-complete]'
+    )

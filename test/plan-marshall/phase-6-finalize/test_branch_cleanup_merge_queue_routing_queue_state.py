@@ -939,7 +939,11 @@ def test_merge_routing_decision_precedes_the_dispatch_it_selects():
     heading = '#### Merge routing (`use_merge_queue`)'
     start = text.find(heading)
     assert start != -1, f'{_BRANCH_CLEANUP.name} carries no {heading!r} section.'
-    section = text[start:]
+    # Bound the slice at the next heading of the same or higher level: a
+    # later merge dispatch outside this section must not satisfy the search.
+    rest = text[start + len(heading) :]
+    following = re.search(r'\n#{1,4} ', rest)
+    section = text[start : start + len(heading) + following.start()] if following else text[start:]
 
     log_at = section.find('Branch cleanup merge routing: use_merge_queue=')
     assert log_at != -1, (

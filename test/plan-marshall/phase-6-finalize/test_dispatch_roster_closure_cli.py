@@ -1247,3 +1247,51 @@ def test_step_5c_classification_table_matches_the_command_string():
         f'`--termination-cause` alternation accepts {_termination_causes_in_command(text)} '
         '— the two surfaces are one contract and must agree in membership AND order'
     )
+
+
+def test_dispatched_rows_declare_their_resolver_lookup():
+    """(d) Every row under ``## Dispatched steps`` declares its resolve-target lookup.
+
+    A row without the lookup resolves under no seam: its dispatch would fire
+    with no ``[DISPATCH]`` record, reintroducing the per-role blind spot for
+    exactly one step while every other row stays covered.
+    """
+    rows = _roster_rows(_DISPATCHED_HEADING)
+    assert rows, (
+        f'No rows parsed under {_DISPATCHED_HEADING!r} — the completeness check '
+        'would pass vacuously over an empty population.'
+    )
+    missing = [key for key, line in rows if not _row_declares_resolver_lookup(line)]
+    assert not missing, f'Roster row(s) under {_DISPATCHED_HEADING!r} declare no resolve-target lookup: {missing}'
+
+
+def test_termination_causes_match_the_independent_oracle():
+    """(g) The classification table's causes equal the independent oracle.
+
+    ``_TERMINATION_CAUSES`` is copied from the specification, not derived from
+    the document: a document that renames or reorders its own two surfaces
+    consistently still reddens here, while the table-vs-alternation check
+    alone would stay green on the same drift.
+    """
+    text = _SKILL_DOC.read_text(encoding='utf-8')
+    rows = _termination_cause_rows(text)
+    table_causes = [cause for cause, _rule in rows]
+    assert table_causes == list(_TERMINATION_CAUSES), (
+        f"item 5c's classification table lists {table_causes}, independent oracle expects {list(_TERMINATION_CAUSES)}"
+    )
+
+
+def test_boundary_record_command_is_present():
+    """(g) The boundary-recording invocation the flag belongs to exists.
+
+    The ``--termination-cause`` flag is asserted against the command string
+    that carries it; if that command is renamed, the flag assertions drift to
+    a string that governs nothing. Presence of the full invocation keeps the
+    flag anchored to a live command.
+    """
+    text = _SKILL_DOC.read_text(encoding='utf-8')
+    assert _BOUNDARY_RECORD_COMMAND in text, (
+        f'{_BOUNDARY_RECORD_COMMAND!r} not found — the boundary-recording '
+        'invocation was renamed or removed, leaving the `--termination-cause` '
+        'assertions anchored to nothing'
+    )

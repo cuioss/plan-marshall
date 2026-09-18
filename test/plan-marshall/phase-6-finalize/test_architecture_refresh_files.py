@@ -785,9 +785,20 @@ class TestCrossReferences:
         self,
         skill_md_text: str,
     ):
-        """The SKILL.md dispatch table must resolve default:architecture-refresh."""
-        assert 'default:architecture-refresh' in skill_md_text
-        assert 'standards/architecture-refresh.md' in skill_md_text
+        """The SKILL.md dispatch table must resolve default:architecture-refresh
+        to its standard IN THE SAME ROW: the token mapping to another file
+        while the expected path sits elsewhere in the table must fail."""
+        token = 'default:architecture-refresh'
+        path = 'standards/architecture-refresh.md'
+        rows = [
+            [cell.strip().strip('`') for cell in line.strip().strip('|').split('|')]
+            for line in skill_md_text.splitlines()
+            if line.strip().startswith('|')
+        ]
+        token_rows = [cells for cells in rows if token in cells]
+        assert token_rows, f'no dispatch-table row names {token!r} — the mapping the dispatcher resolves is gone'
+        for cells in token_rows:
+            assert path in cells, f'dispatch-table row maps {token!r} without {path!r} in the same row: {cells}'
 
     def test_skill_md_lists_architecture_refresh_in_inline_only_steps(
         self,

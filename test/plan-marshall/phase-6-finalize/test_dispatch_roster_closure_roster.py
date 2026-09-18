@@ -1252,3 +1252,28 @@ def test_step_5c_routes_a_findings_bearing_loop_back_away_from_error():
         '— without it the manifest execution log and the dispatch-boundary ledger '
         'agree only by coincidence'
     )
+
+
+def test_head_dependent_region_carries_no_step_count_claim():
+    """(c) No step-count claim survives in the SKILL.md HEAD-dependent region.
+
+    The roster-document sweep cannot see prose that lives in SKILL.md § "Step 3:
+    Execute Step Pipeline" — a count claim reintroduced there would pass every
+    roster-scoped check while restating the exact shape (c) exists to remove.
+    """
+    region = _head_dependent_region()
+    hits = _count_claims(region)
+    assert not hits, f'Step-count claim(s) reintroduced into the HEAD-dependent region: {hits}'
+
+
+def test_no_unpaired_seam_spawn_survives_on_the_real_corpus():
+    """(e) Every ``Task:`` spawn on the real corpus is preceded by its seam resolve.
+
+    The synthetic-shape tests prove the detector fires; this test proves the
+    tree is clean — a dispatch branch added without its resolve-target lookup
+    reddens here rather than shipping a record-less dispatch.
+    """
+    corpus = _seam_sweep_corpus()
+    assert corpus, 'Seam sweep corpus resolved empty — the check would pass vacuously.'
+    unpaired = [f'{rel}: {hit}' for rel, text in corpus for hit in _spawns_missing_seam_resolve(text)]
+    assert not unpaired, f'Task spawn(s) with no preceding resolve-target seam lookup: {unpaired}'
