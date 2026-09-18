@@ -667,6 +667,36 @@ def test_set_lane_plan_local_still_validates_the_step_id(plan_context):
     assert _overrides(status_path) == {}
 
 
+def test_set_lane_class_immunity_refusal_precedes_the_channel_selection(plan_context):
+    """A class-inert ``off`` leaves BOTH destinations untouched, whichever channel was selected.
+
+    The refusal sits ahead of the channel branch, so it is not enough to show that
+    the SELECTED destination was not written: the un-selected one must be untouched
+    too. A refusal placed inside one branch would satisfy a single-destination
+    assertion while the other branch still persisted the inert value. Both files
+    are compared byte-for-byte, the same shape the anti-leak assertion above uses.
+
+    ``default:push`` is a ``core`` floor step — the class the composer shields from
+    a weakening ``off`` — as distinct from the ``_LANE_STEP_ID`` every other test
+    here targets, whose class the resolver cannot reach and which is therefore
+    permitted.
+    """
+    # Arrange
+    marshal_path = plan_context.fixture_dir / 'marshal.json'
+    create_marshal_json(plan_context.fixture_dir)
+    status_path = _seed_status(plan_context, 'immune-both-channels')
+    marshal_before = marshal_path.read_bytes()
+    status_before = status_path.read_bytes()
+
+    # Act — the plan-local channel is selected, so marshal.json is the un-selected one.
+    result = cmd_finalize_steps_set_lane(_set_lane_args('default:push', 'off', plan_id='immune-both-channels'))
+
+    # Assert
+    assert result['status'] == 'error'
+    assert status_path.read_bytes() == status_before
+    assert marshal_path.read_bytes() == marshal_before
+
+
 def test_set_lane_cli_accepts_the_plan_id_flag(plan_context):
     """The argparse surface declares ``--plan-id`` on ``finalize-steps set-lane``.
 

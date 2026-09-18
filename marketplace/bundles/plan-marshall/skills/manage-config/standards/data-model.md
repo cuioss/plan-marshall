@@ -687,6 +687,18 @@ These fields live directly under `plan`, outside any phase block.
 
 **Per-element lane override** (`plan.<phase>.steps.<step>.lane`, value ∈ `off`\|`minimal`\|`standard`\|`full`\|`ask`, validated by `validate_lane_override` **on the `finalize-steps set-lane` verb**): pins any lane-participating element to a fixed posture cutoff via the same nested step-param channel finalize-step params use. `off` never runs an `adversarial`/`prunable` element (a real opt-out), but a weakening `off` on a `derived-state`/`core` floor element is **immune** — it is ignored at compose time, the element stays at its class-default tier, and an informational note records the neutralized override; `minimal` force-keeps it in every posture; `standard`/`full` pin its tier; `ask` always surfaces it individually in the init dialogue. Absent by default — the shipped per-element default lives in each element's frontmatter `lane:` block, and the override channels carry only the project / plan overrides.
 
+**A class-inert `off` is refused at the writer, so it is never stored.** Because a weakening `off` on a `derived-state` / `core` floor element is ignored at compose time, persisting one records a setting that can never take effect — the stored value and the element's actual behaviour disagree from the moment of the write. BOTH lane writers therefore reject it before persisting, through one shared predicate (`_cmd_quality_phases._inert_off_refusal`), so the generic per-element writer (`plan phase-6-finalize step set --param lane --value off`) and `finalize-steps set-lane` refuse identically and stay interchangeable. The message names the resolved class and the alternative:
+
+```text
+Cannot set lane 'off' on '<step>' — its lane.class is '<class>', a mandatory-floor
+class immune to a weakening off, so the composer would ignore the setting and keep
+running the step at its class-default tier. Set a tier ('minimal' / 'standard' /
+'full') instead, or reclassify the element in its own frontmatter if it does not
+belong on the floor.
+```
+
+The refusal **fails toward permitting**: a step whose `lane.class` cannot be resolved — an external `bundle:skill` step with no project-local source, a missing source doc, or a doc declaring no `lane:` block — is **permitted, not refused**, matching the composer, which keeps an element whose class it could not read. Only a class that RESOLVED and is in the immune set (`core` / `derived-state`, owned by [`../../extension-api/standards/ext-point-lane-element.md`](../../extension-api/standards/ext-point-lane-element.md)) triggers it, and only for the value `off`.
+
 **Two declaration channels, one merged source.** The marshal.json path above is the project-wide channel. Its plan-scoped sibling is `status.metadata.finalize_step_overrides` — the same id-keyed map of nested param objects, the same key forms, the same enum, but scoped to ONE plan and never written into marshal.json, so an answer given about one plan does not become policy for every later plan. Both are written by the single verb `manage-config finalize-steps set-lane`, where the optional `--plan-id` is the channel selector (see [api-reference.md § Noun: finalize-steps](api-reference.md#noun-finalize-steps)). The composer merges them **plan-local ▸ marshal**, per step key and per knob (shallow), into the one map every per-element reader consults — the lane resolution, the scope gate's declared-lane immunity, and the four finalize ceremony gates alike. The precedence ordering and the channel contract are owned by [`../../extension-api/standards/ext-point-lane-element.md`](../../extension-api/standards/ext-point-lane-element.md) § "Per-element override knob".
 
 ### phase-2-refine

@@ -193,7 +193,7 @@ changed) is a standalone improvement, not part of this contract; the lane only *
 | init · outline · plan · execute · push · create-pr · ci-verify · branch-cleanup · record-metrics · print-phase-breakdown · archive | core | minimal |
 | deploy-target · sync-plugin-cache *(meta-only)* | derived-state | minimal |
 | finalize-step-sync-baseline | core | minimal |
-| lessons-capture | core | minimal |
+| lessons-capture | prunable | standard |
 | lessons-housekeeping | prunable | **minimal** |
 | refine · 4-plan task-decomposition · simplify | prunable | standard |
 | outline/plan q-gate · self-review · automatic-review · sonar-roundtrip · plugin-doctor *(meta)* | adversarial | standard |
@@ -201,9 +201,11 @@ changed) is a standalone improvement, not part of this contract; the lane only *
 | security-audit | adversarial | **full** |
 | plan-retrospective *(meta)* | prunable | **full** |
 
-`lessons-capture` and `lessons-housekeeping` at `minimal` are part of the floor (always
-eligible); `lessons-housekeeping` is `prunable`, so it still smart-skips when the footprint
-touches no lesson's component. `security-audit` and `plan-retrospective` only run at `full`.
+`lessons-housekeeping` at `minimal` is part of the floor (always eligible); it is `prunable`, so
+it still smart-skips when the footprint touches no lesson's component. `lessons-capture` is
+`prunable` at the class-default `standard` tier — it is advisory, so an `off` on it is a real
+opt-out rather than a weakening of the correctness floor. `security-audit` and
+`plan-retrospective` only run at `full`.
 
 ## Cost sizing
 

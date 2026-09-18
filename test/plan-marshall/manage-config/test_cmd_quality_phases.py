@@ -1654,5 +1654,158 @@ def test_read_and_write_paths_agree_across_the_derived_field_population(plan_con
 
 
 # =============================================================================
+# Class-immunity set-time validation on `step set --param lane --value off`
+# =============================================================================
+#
+# A weakening `off` on a mandatory-floor element is NEUTRALIZED by the composer —
+# the element keeps running at its class-default tier — so persisting one records
+# a setting that can never take effect, and the stored config and the actual run
+# disagree from the moment of the write. The generic per-element writer therefore
+# refuses it, beside the probe-backed `use_merge_queue` validation that already
+# lived on this branch.
+#
+# The refusal is deliberately NARROW, and the three fixtures below partition it:
+# an immune class refuses, a non-immune class still writes (the real opt-out the
+# lane contract grants), and an UNRESOLVABLE class writes too — the writer fails
+# toward permitting rather than refusing on a class it never established.
+
+_lanes = load_script_module(
+    'plan-marshall', 'manage-execution-manifest', '_manifest_lanes.py', module_name='_manifest_lanes'
+)
+
+#: On the mandatory floor — its class is in ``_IMMUNE_TO_OFF_CLASSES``.
+_IMMUNE_LANE_STEP = 'default:push'
+
+#: Off the floor — a real opt-out. The matched positive control.
+_NON_IMMUNE_LANE_STEP = 'default:finalize-step-simplify'
+
+#: A ``bundle:skill`` id with no project-local source — class unresolvable.
+_UNRESOLVABLE_LANE_STEP = 'plan-marshall:automatic-review'
+
+
+def _set_lane_param(step_id: str, value: str) -> Namespace:
+    """Build the `step set --param lane` Namespace for ``step_id``."""
+    return Namespace(
+        sub_noun='phase-6-finalize',
+        verb='step',
+        step_verb='set',
+        step_id=step_id,
+        param='lane',
+        value=value,
+    )
+
+
+def _persisted_lane(fixture_dir, step_id: str):
+    """Return the persisted ``lane`` param for ``step_id``, or ``None``.
+
+    The ``phase-6-finalize`` lookup is absence-tolerant, in the same shape the
+    ``steps`` level below it already uses, because "nothing was persisted" is a
+    state the callers deliberately construct: a refusal case seeds a config with
+    no ``phase-6-finalize`` block at all — the block's absence IS the scenario —
+    and the helper must report that as ``None`` rather than raising before the
+    assertion it feeds is ever evaluated. ``plan`` stays a direct subscript: a
+    config carrying no ``plan`` block is not a scenario any caller constructs, and
+    tolerating it would hide a genuinely malformed fixture.
+    """
+    config = json.loads((fixture_dir / 'marshal.json').read_text())
+    steps = config['plan'].get('phase-6-finalize', {}).get('steps', {})
+    return steps.get(step_id, {}).get('lane')
+
+
+def test_the_three_lane_fixtures_occupy_the_three_classes_the_refusal_partitions():
+    """Anti-vacuity: each fixture's class is DERIVED from the live resolver.
+
+    Every verdict below turns on which side of the immune set a step's class falls
+    on. Reading that from memory rather than from the resolver would let the whole
+    section pass for a reason unrelated to the refusal.
+    """
+    immune = _cmd_quality_phases._resolve_finalize_step_lane(_IMMUNE_LANE_STEP)
+    assert immune and immune.get('class') in _lanes._IMMUNE_TO_OFF_CLASSES, (
+        f'{_IMMUNE_LANE_STEP} no longer resolves to an immune class ({immune}).'
+    )
+
+    non_immune = _cmd_quality_phases._resolve_finalize_step_lane(_NON_IMMUNE_LANE_STEP)
+    assert non_immune and non_immune.get('class') not in _lanes._IMMUNE_TO_OFF_CLASSES, (
+        f'{_NON_IMMUNE_LANE_STEP} no longer resolves to a NON-immune class ({non_immune}).'
+    )
+
+    assert _cmd_quality_phases._resolve_finalize_step_lane(_UNRESOLVABLE_LANE_STEP) is None, (
+        f'{_UNRESOLVABLE_LANE_STEP} now resolves a lane class, so it no longer exercises '
+        f'the fail-toward-permitting branch.'
+    )
+
+
+def test_step_set_refuses_an_off_on_an_immune_element(plan_context):
+    """The refusal names the class it resolved and persists nothing."""
+    create_marshal_json(plan_context.fixture_dir, _marshal_without_finalize_section())
+
+    result = cmd_plan(_set_lane_param(_IMMUNE_LANE_STEP, 'off'))
+
+    assert result['status'] == 'error'
+    assert _IMMUNE_LANE_STEP in result['error']
+    assert _cmd_quality_phases._resolve_finalize_step_lane(_IMMUNE_LANE_STEP)['class'] in result['error']
+    assert _persisted_lane(plan_context.fixture_dir, _IMMUNE_LANE_STEP) != 'off'
+
+
+def test_step_set_still_accepts_a_tier_on_the_same_immune_element(plan_context):
+    """MATCHED CONTROL on the VALUE axis: only ``off`` is refused on that step.
+
+    Same step, same call shape, differing only in the value. Without this, a guard
+    that refused every lane write on a floor element would satisfy the test above
+    while removing the operator's ability to pin its tier at all.
+    """
+    create_marshal_json(plan_context.fixture_dir, _marshal_without_finalize_section())
+
+    result = cmd_plan(_set_lane_param(_IMMUNE_LANE_STEP, 'full'))
+
+    assert result['status'] == 'success'
+    assert _persisted_lane(plan_context.fixture_dir, _IMMUNE_LANE_STEP) == 'full'
+
+
+def test_step_set_still_accepts_off_on_a_non_immune_element(plan_context):
+    """MATCHED CONTROL on the STEP axis: ``off`` remains a real opt-out.
+
+    Same call shape and the same value as the refusal above, differing only in the
+    target step. That isolation is what attributes the split to the element's
+    class rather than to anything incidental about the write.
+    """
+    create_marshal_json(plan_context.fixture_dir, _marshal_without_finalize_section())
+
+    result = cmd_plan(_set_lane_param(_NON_IMMUNE_LANE_STEP, 'off'))
+
+    assert result['status'] == 'success'
+    assert _persisted_lane(plan_context.fixture_dir, _NON_IMMUNE_LANE_STEP) == 'off'
+
+
+def test_step_set_permits_off_when_the_class_cannot_be_resolved(plan_context):
+    """Fail toward PERMITTING: an unreadable class is not evidence of immunity."""
+    create_marshal_json(plan_context.fixture_dir, _marshal_without_finalize_section())
+
+    result = cmd_plan(_set_lane_param(_UNRESOLVABLE_LANE_STEP, 'off'))
+
+    assert result['status'] == 'success'
+    assert _persisted_lane(plan_context.fixture_dir, _UNRESOLVABLE_LANE_STEP) == 'off'
+
+
+def test_a_non_lane_param_on_an_immune_element_is_untouched_by_the_refusal(plan_context):
+    """The guard is keyed on the ``lane`` param, not on the step being a floor element."""
+    create_marshal_json(plan_context.fixture_dir, _marshal_without_finalize_section())
+
+    result = cmd_plan(
+        Namespace(
+            sub_noun='phase-6-finalize',
+            verb='step',
+            step_verb='set',
+            step_id='default:branch-cleanup',
+            param='pr_merge_strategy',
+            value='off',
+        )
+    )
+
+    assert result['status'] == 'success'
+    assert result['params']['pr_merge_strategy'] == 'off'
+
+
+# =============================================================================
 # Main
 # =============================================================================

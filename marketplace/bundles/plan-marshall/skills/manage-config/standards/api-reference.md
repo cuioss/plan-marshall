@@ -327,6 +327,20 @@ manage-config plan phase-6-finalize step set \
 
 **Defer branch (`project.merge_queue_managed_externally`)**: when the project field `merge_queue_managed_externally` is `true`, the validation defers — the live probe is **not run at all** and the set is permitted unconditionally. The org owns the queue's provisioning, so a local probe verdict is not the authority over it, and an `ineligible` reading must not block the operator from declaring that the queue is in use. When the field is `false` or absent, the probe-backed behaviour above is unchanged.
 
+#### Class-immunity set-time validation (`lane: off`)
+
+`step set --param lane --value off` is **refused** when the target step's resolved `lane.class` is a mandatory-floor class (`core` / `derived-state`, the closed immune set owned by [`ext-point-lane-element.md`](../../extension-api/standards/ext-point-lane-element.md)). The composer ignores such an `off` and keeps running the element at its class-default tier, so storing it would accept a setting that can never take effect. The refusal names the resolved class and the alternative:
+
+```text
+Cannot set lane 'off' on '<step>' — its lane.class is '<class>', a mandatory-floor
+class immune to a weakening off, so the composer would ignore the setting and keep
+running the step at its class-default tier. Set a tier ('minimal' / 'standard' /
+'full') instead, or reclassify the element in its own frontmatter if it does not
+belong on the floor.
+```
+
+The check **fails toward permitting**: a step whose `lane.class` cannot be resolved — an external `bundle:skill` step with no project-local source, a missing source doc, or a doc declaring no `lane:` block — is **permitted, not refused**, matching the composer, which keeps an element whose class it could not read rather than pruning it. Only a class that RESOLVED and is in the immune set triggers the refusal, and only for the value `off`; every other lane value is unaffected. The same predicate backs `finalize-steps set-lane`, so the two writers refuse identically.
+
 ### Order-driven step verbs (phase-5-execute, phase-6-finalize)
 
 `set-steps`, `add-step`, and `remove-step` on these two phases operate on the id-keyed `steps` / `verification_steps` map's keys — preserving insertion order (= execution order) and any existing per-step params. `set-steps` and `add-step` derive each step's effective order exclusively from the step's authoritative `order` field (frontmatter for built-in standards / project-local `SKILL.md`, return-dict key for extension-contributed steps); the resulting map is persisted with keys ordered ascending by that order.
@@ -370,6 +384,8 @@ Write the `phase-6-finalize` step list from a named preset, and read/write the p
 The plan-scoped channel exists so an answer given about one plan does not silently become policy for every later plan. Both channels carry the same shape and the same enum, and the composer merges them (plan-local ▸ marshal, per step key, per knob) into the ONE map every per-element reader consults — see [`extension-api/standards/ext-point-lane-element.md`](../../extension-api/standards/ext-point-lane-element.md) § "Per-element override knob".
 
 `--lane` accepts `off` / `standard` / `full`. This writer enum is a deliberate SUBSET of the reader's `off|minimal|standard|full|ask`: those three are the resolved answers an operator dialogue produces, while `minimal` and `ask` are seed values only shipped frontmatter and marshal seeding emit. A writer emitting a subset of a valid enum is not reader-writer drift — both readers accept the full enum.
+
+**A class-inert `off` is refused on BOTH channels.** The value-space check above is one rejection axis; the target element's CLASS is a second, independent one. An `off` aimed at a step whose resolved `lane.class` is a mandatory-floor class (`core` / `derived-state`) is refused before either channel is written, through the SAME predicate the generic `step set --param lane` writer applies — see [Class-immunity set-time validation](#class-immunity-set-time-validation-lane-off) for the message and the fail-toward-permitting rule. That shared predicate is what keeps the two verbs interchangeable: neither will store an `off` the other would reject. A step whose class does not resolve is permitted here exactly as it is there.
 
 An existing declaration map that cannot be parsed as the documented shape is an explicit error, never a silent overwrite.
 

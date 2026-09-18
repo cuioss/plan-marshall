@@ -25,7 +25,10 @@ from _config_defaults import (
     validate_per_deliverable_build,
     validate_q_gate_validation,
 )
+from _manifest_lanes import _IMMUNE_TO_OFF_CLASSES, _read_frontmatter_lane
+from _manifest_validation import _REPO_ROOT, _is_external_step, _resolve_standards_path
 from constants import PHASES
+from marketplace_paths import resolve_project_skill_path
 
 # Valid phase sections - derived from centralized PHASES with 'phase-' prefix for marshal.json keys
 PHASE_SECTIONS = {f'phase-{p}' for p in PHASES}
@@ -281,6 +284,79 @@ def _validate_use_merge_queue(value, config: dict | None = None) -> str | None:
     return f"Cannot enable use_merge_queue — the platform merge queue is '{eligibility}'. {_MERGE_QUEUE_BOTH_REMEDIES}"
 
 
+def _resolve_finalize_step_lane(step_id: str) -> dict[str, str] | None:
+    """Resolve a phase-6-finalize step's ``lane:`` frontmatter block from its source doc.
+
+    Mirrors ``manage-execution-manifest``'s composer resolver
+    (``manage-execution-manifest.py`` ``_resolve_element_lane``) verbatim so this
+    module's inert-``off`` predicate and the materialized effective lane both read
+    exactly the composer's own view:
+
+    - Built-in steps (bare or ``default:``-prefixed) resolve via the phase-6
+      standards / workflow doc (:func:`_resolve_standards_path`).
+    - ``project:`` steps resolve via the project-local ``{bare}/SKILL.md``.
+    - Other ``bundle:skill`` external steps have no project-local source and
+      return ``None`` (not lane-participating).
+
+    This module is the single home of the resolver: both lane writers
+    (:func:`_inert_off_refusal` here and ``_cmd_finalize_steps``'s ``set-lane``)
+    and ``_cmd_sync_defaults``'s lane materializer import it from here, so no
+    second copy can drift from the composer's rule.
+
+    Returns the nested ``lane:`` sub-key dict (``class`` / ``tier`` / …), or
+    ``None`` when the source doc is missing, has no frontmatter, or declares no
+    ``lane:`` block.
+    """
+    if step_id.startswith('project:'):
+        bare = step_id[len('project:') :]
+        skill_path = resolve_project_skill_path(f'{bare}/SKILL.md', base=_REPO_ROOT)
+        return _read_frontmatter_lane(skill_path)
+    if _is_external_step(step_id):
+        return None
+    return _read_frontmatter_lane(_resolve_standards_path(step_id))
+
+
+def _inert_off_refusal(step_id: str, lane_value: object) -> str | None:
+    """Return the refusal message when ``lane_value`` is an ``off`` the element ignores.
+
+    An ``off`` on a class in :data:`_manifest_lanes._IMMUNE_TO_OFF_CLASSES` is
+    neutralized by the composer — the element keeps running at its class-default
+    tier — so storing it accepts a setting that can never take effect. The two
+    lane writers call this predicate so the refusal is identical on both, and the
+    immune-class set is imported from the sole lane authority rather than
+    re-listed here.
+
+    Fails toward PERMITTING: a step whose ``lane.class`` cannot be resolved (an
+    external ``bundle:skill`` step with no project-local source, a missing source
+    doc, or a doc declaring no ``lane:`` block) is NOT refused, exactly as the
+    composer keeps such an element rather than pruning it on a class it could not
+    read.
+
+    Args:
+        step_id: The step key being written, in whatever prefixed form the caller
+            holds it.
+        lane_value: The value about to be stored under the step's ``lane`` param.
+
+    Returns:
+        The actionable refusal message, or ``None`` when the write is permitted.
+    """
+    if lane_value != 'off':
+        return None
+    lane = _resolve_finalize_step_lane(step_id)
+    if not lane:
+        return None
+    element_class = lane.get('class')
+    if element_class not in _IMMUNE_TO_OFF_CLASSES:
+        return None
+    return (
+        f"Cannot set lane 'off' on '{step_id}' — its lane.class is '{element_class}', "
+        'a mandatory-floor class immune to a weakening off, so the composer would ignore '
+        'the setting and keep running the step at its class-default tier. Set a tier '
+        "('minimal' / 'standard' / 'full') instead, or reclassify the element in its own "
+        'frontmatter if it does not belong on the floor.'
+    )
+
+
 def _cmd_step(args, phase_section: str, section: dict, plan_config: dict, config: dict) -> dict:
     """Handle the one-stop ``step get`` / ``step set`` verb.
 
@@ -320,6 +396,15 @@ def _cmd_step(args, phase_section: str, section: dict, plan_config: dict, config
             merge_queue_error = _validate_use_merge_queue(value, config)
             if merge_queue_error:
                 return error_exit(merge_queue_error)
+        # Class-immunity set-time validation: an ``off`` on a mandatory-floor
+        # element is neutralized by the composer, so storing it would accept a
+        # setting that can never take effect. Refuses only when the element's
+        # class RESOLVES to an immune one — an unresolvable class permits, the
+        # same direction the composer takes.
+        if param == 'lane':
+            inert_error = _inert_off_refusal(step_id, value)
+            if inert_error:
+                return error_exit(inert_error)
         params = dict(steps[step_id])
         params[param] = value
         steps[step_id] = params
