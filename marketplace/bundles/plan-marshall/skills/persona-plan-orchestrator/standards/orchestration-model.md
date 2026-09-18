@@ -164,7 +164,7 @@ The grounds are re-derivable rather than restated: `orchestrator corpus enumerat
 
 **Shipped versus closed-unshipped** decides the completeness gap marker: only a shipped row OWES the result links `pr` and `landing`, so only a shipped row missing one is a reconciliation gap. A row that closed without shipping never had a PR or a landing record to point at, and marking one incomplete would report a gap that cannot exist.
 
-Collapsing the two questions into one set is what the earlier vocabulary did, and it is why extending the set could not be a matter of adding four tokens to one tuple. Each derived consumer is re-derived from the declaring sets by construction rather than maintained beside them, so a status added later reaches every consumer or none — never some.
+The two questions stay two declaring sets, never one. Each derived consumer is re-derived from those sets by construction rather than maintained beside them, so a status added later reaches every consumer or none — never some.
 
 ## Ledger Write-Boundary
 
