@@ -586,9 +586,13 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metada
 ```
 
 - **Late capture succeeded** (`status: success` and `value` now populated): use the captured value as the resolved `session_id` and proceed with the dispatch below.
-- **Late capture also failed** (`status: error` or `value` still empty): abort the finalize phase with a clear message — do **not** invent a filler value and do **not** reach for any `$VAR` expansion. See `phase-6-finalize/SKILL.md` → "How to obtain session_id" for the full resolver contract and forbidden patterns.
+- **Late capture also failed** (`status: error` or `value` still empty): resolve transcript availability from the live runtime target at the point of use — read `runtime.target` from `.plan/marshal.json` (absent means the default transcript-capable target, never a documented transcript-less default) — then branch:
+  - **Transcript-less target** (no session transcript can exist there; `session capture` is a capture no-op and `metrics normalized-tokens` answers `transcript_not_found`): do NOT abort. Proceed unenriched with a logged decision naming the absent identity and the transcript-less target, dispatch finalize WITHOUT a `session_id`, and let `default:record-metrics` skip `enrich` carrying the population-carrying gap flag.
+  - **Transcript-capable target**: abort the finalize phase with a clear message naming the missing identity, the blocked finalize dispatch, and the remedy (re-run session capture, check the SessionStart hook) — do **not** invent a filler value and do **not** reach for any `$VAR` expansion. See `phase-6-finalize/SKILL.md` → "How to obtain session_id" for the full resolver contract and forbidden patterns.
 
 The retry runs at most once — never loop the capture call.
+
+Seam attribution: the abort lives HERE in this resolver (the late-capture-failure branch above), NOT in `session_binding.bind` (bool-returning, never aborts); the `no_session_id` absence token lives in `_claude_runtime_impl.py`.
 
 **Dispatch the skill:**
 

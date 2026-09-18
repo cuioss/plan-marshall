@@ -1095,6 +1095,8 @@ error: io_error
 message: "Failed to write normalized-token result to <path>: <reason>"
 ```
 
+**Gate input signal (finalize session routing).** The finalize entry resolver gates its late-capture-failure abort on transcript availability read from the live runtime target at the point of use: a `session capture` no-op plus a `metrics normalized-tokens` `transcript_not_found` no-op marks a transcript-less target (proceed unenriched with a logged decision, `enrich` skipped carrying the gap flag); a transcript-capable target keeps the hard block on absent identity. No new operation — the existing no-op answers above ARE the signal.
+
 ---
 
 ### `chat extract-signal`
