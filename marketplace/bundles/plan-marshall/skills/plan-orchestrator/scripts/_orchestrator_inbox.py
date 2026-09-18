@@ -3,13 +3,16 @@
 """Inbox envelope schema, validation seam, and epic-store write/drain surface.
 
 Backs ``orchestrator.py``'s ``inbox`` verb group. The inbox is the epic tree's
-single plan-writable OUTBOX: an executing plan appends
-``inbox/{sender_id}-{NNN}.md`` messages to its governing epic and never touches
-any other path under ``.plan/local/orchestrator/{slug}/``. The carve-out is
-enforced here **by construction** — :func:`cmd_inbox_write` derives the target
-path solely from the validated slug and ``--sender-id`` and accepts no
-caller-supplied output path, so no argument value can reach ``status.json``,
-``epic.md``, ``workstreams/``, ``plans/``, or ``landings/``.
+single plan-writable channel, and it carries two locations: a sender appends
+``inbox/{sender_id}-{NNN}.md`` messages to its governing epic's QUEUE, and a
+message aimed at a RUNNING plan is DELIVERED to that plan's MAILBOX at
+``inbox/to/{plan_id}/`` instead. Neither location reaches any other path under
+``.plan/local/orchestrator/{slug}/``. The carve-out is enforced here **by
+construction** — :func:`cmd_inbox_write` derives the target path solely from
+the validated slug, ``--sender-id``, and (on the delivery route) the validated
+``--target-plan``, and accepts no caller-supplied output path, so no argument
+value can reach ``status.json``, ``epic.md``, ``workstreams/``, ``plans/``, or
+``landings/``.
 
 A filed message is corrected through the sanctioned surface, never by a direct
 file edit: :func:`cmd_inbox_amend` replaces a message's body in place while
@@ -74,9 +77,10 @@ STATUS_FILE = 'status.json'
 #: The plan-lifecycle status a plan row carries WHILE it is executing. This is
 #: the single source of the token: ``orchestrator.py`` imports it from here
 #: rather than re-declaring the literal, so the two modules cannot drift. A
-#: message aimed at a plan in this state is undeliverable — the inbox is drained
-#: BETWEEN plans, so a running plan will have finished before the next drain and
-#: never reads the message (see :func:`cmd_inbox_write`).
+#: message aimed at a plan in this state is ROUTED to that plan's mailbox
+#: (``inbox/to/{plan_id}/``) rather than queued: the epic queue is drained
+#: BETWEEN plans, so a running plan would have finished before the next drain
+#: ever reached the message (see :func:`cmd_inbox_write`).
 RUNNING_STATUS = 'running'
 
 #: Envelope schema version. A message carrying any other value is REJECTED
@@ -174,6 +178,18 @@ INBOX_ARCHIVE_SUBDIR = 'archive'
 #: :func:`list_messages` is non-recursive and admits only FILES matching
 #: :data:`_MESSAGE_NAME_RE`, so this directory is invisible to the drain.
 INBOX_DELIVERY_SUBDIR = 'to'
+
+#: The closed vocabulary :func:`cmd_inbox_write` reports as ``destination`` —
+#: WHICH of the channel's two locations the message was written to.
+#: ``queue`` is the epic-addressed queue (``inbox/{sender}-{NNN}.md``) the
+#: orchestrator drains between plans; ``mailbox`` is the addressee tree
+#: (``inbox/to/{plan_id}/``, :data:`INBOX_DELIVERY_SUBDIR`) a message aimed at a
+#: RUNNING plan is delivered to. Publishing the location as a closed-vocabulary
+#: member — rather than leaving a caller to infer it by pattern-matching
+#: ``path`` — is what makes delivery and queueing separately assertable.
+WRITE_DESTINATION_QUEUE = 'queue'
+WRITE_DESTINATION_MAILBOX = 'mailbox'
+WRITE_DESTINATIONS = frozenset({WRITE_DESTINATION_QUEUE, WRITE_DESTINATION_MAILBOX})
 
 #: The closed vocabulary :func:`resolve_message_path` reports. ``queued`` and
 #: ``archived`` are the two RESOLUTION outcomes a caller can act on; ``missing``
@@ -305,9 +321,10 @@ def _running_plan_ids(epic_root: Path) -> set[str]:
 
     A missing, unreadable, or malformed status document, or one carrying no
     ``plans[]`` array, yields an EMPTY set: with no readable queue there is no
-    plan whose running state can be confirmed, so the deliverability guard that
-    consumes this set does not fire on an unverifiable state (it refuses only a
-    plan it can positively read as running).
+    plan whose running state can be confirmed, so the routing decision that
+    consumes this set does not fire on an unverifiable state — it delivers only
+    to a plan it can POSITIVELY read as running, and every other message queues
+    for the epic drain.
     """
     data = read_json(epic_root / STATUS_FILE)
     if not isinstance(data, dict):
@@ -1384,17 +1401,30 @@ def find_stream_end_marker(inbox_dir: Path, epic: str, sender_id: str) -> str | 
 
 
 def cmd_inbox_write(args: Any) -> dict[str, Any]:
-    """Append one message to the epic's inbox.
+    """Append one message to the epic's inbox — queued, or delivered to a plan.
 
     The write boundary is enforced by construction: the target resolves
-    strictly to ``get_store_dir('orchestrator', slug) / 'inbox' /
-    '{sender_id}-{NNN}.md'``, both components are validated identifiers, and no
-    caller-supplied output path exists in the argument surface. The payload
-    arrives via ``--payload-file`` (staged with the Write tool) so no message
-    body ever passes through a shell argument.
+    strictly under ``get_store_dir('orchestrator', slug) / 'inbox'``, every path
+    component is a validated identifier, and no caller-supplied output path
+    exists in the argument surface. The payload arrives via ``--payload-file``
+    (staged with the Write tool) so no message body ever passes through a shell
+    argument.
+
+    Two destinations, reported over the closed :data:`WRITE_DESTINATIONS`
+    vocabulary:
+
+    - ``mailbox`` — ``--target-plan`` names a plan the epic's ``status.json``
+      POSITIVELY reads as :data:`RUNNING_STATUS`. The message is DELIVERED to
+      that plan's mailbox, resolved from the channel's ``(epic_slug, plan_id)``
+      address through :func:`delivery_dir_for_write` — the same composition the
+      plan-side read resolves, which is what makes the address symmetric rather
+      than two parallel path rules.
+    - ``queue`` — every other write: ``--target-plan`` absent, or naming a plan
+      that is landed, parked, or absent from the queue. The message queues as an
+      ordinary epic-addressed message the orchestrator drains between plans.
 
     Refuses a sender that has already closed its stream (``stream_closed``). The
-    check runs BEFORE the ``--target-plan`` deliverability guard, because it is
+    check runs BEFORE the ``--target-plan`` routing decision, because it is
     about whether this sender may write at all, which does not depend on where
     the message was aimed. Without it the ``stream-end`` marker declared a
     closure nothing enforced.
@@ -1442,35 +1472,28 @@ def cmd_inbox_write(args: Any) -> dict[str, Any]:
             sender_id=args.sender_id,
             marker=closed_by,
         )
-    # Deliverability guard. ``--target-plan`` NAMES a plan the message is aimed
-    # at, but the inbox is the epic's plan->orchestrator OUTBOX, drained BETWEEN
-    # plans; it has no delivery path to a plan, and a plan never reads it. When
-    # the named plan is currently RUNNING, the message is architecturally
-    # undeliverable — the plan will have finished before the orchestrator's next
-    # drain — so it is REFUSED at write time and never silently queued for a
-    # reader that will not exist. A message aimed at a plan that is NOT running
-    # (landed, parked, or absent from the queue) is not blocked: it queues as an
-    # ordinary epic-addressed message the orchestrator drains. Building a mid-run
-    # delivery channel is a larger design question and is deliberately NOT done
-    # here — this guard only makes the existing undeliverability visible.
+    # Routing decision. ``--target-plan`` NAMES a plan the message is aimed at.
+    # A plan the epic's status queue POSITIVELY reads as running gets the message
+    # DELIVERED to its mailbox — the channel's ``(epic_slug, plan_id)`` address,
+    # composed by the same seam the plan-side read resolves — because the epic
+    # queue is drained BETWEEN plans and a running plan would have finished
+    # before the next drain ever reached the message. Every other write queues:
+    # an absent ``--target-plan``, or one naming a plan that is landed, parked,
+    # or absent from the queue, is an ordinary epic-addressed message. The
+    # address is built through :func:`resolve_channel_address`, the single place
+    # a :class:`ChannelAddress` is constructed from raw strings, so the plan half
+    # is path-safety validated before it can reach a filesystem join.
+    destination = WRITE_DESTINATION_QUEUE
+    write_dir = root / INBOX_SUBDIR
     target_plan = getattr(args, 'target_plan', None)
     if target_plan is not None:
-        invalid = _validate_identifier(target_plan)
-        if invalid:
-            return _error('invalid_target_plan', invalid, slug=args.slug)
+        address, address_error = resolve_channel_address(args.slug, target_plan)
+        if address_error is not None:
+            return address_error
+        assert address is not None  # address_error is None ⇒ address resolved
         if target_plan in _running_plan_ids(root):
-            return _error(
-                'undeliverable_to_running_plan',
-                f'message names target plan {target_plan!r}, which is currently '
-                f'running in epic {args.slug!r}. The inbox is the epic OUTBOX, '
-                'drained by the orchestrator between plans; it has no delivery '
-                'path to a running plan, so this message would never be read. It '
-                'is refused at write time rather than silently queued. To reach a '
-                'running plan, do not aim a message at it — mid-run delivery is '
-                'not a channel this inbox provides.',
-                slug=args.slug,
-                target_plan=target_plan,
-            )
+            destination = WRITE_DESTINATION_MAILBOX
+            write_dir = delivery_dir_for_write(address)
     payload_path = Path(args.payload_file)
     if not payload_path.is_file():
         return _error(
@@ -1486,7 +1509,7 @@ def cmd_inbox_write(args: Any) -> dict[str, Any]:
             slug=args.slug,
         )
     text = compose_envelope(args.sender_type, args.sender_id, args.slug, args.kind, payload_body)
-    message_path = allocate_message_path(root / INBOX_SUBDIR, args.sender_id, text)
+    message_path = allocate_message_path(write_dir, args.sender_id, text)
     return {
         'status': 'success',
         'operation': 'inbox-write',
@@ -1495,6 +1518,8 @@ def cmd_inbox_write(args: Any) -> dict[str, Any]:
         'sender_type': args.sender_type,
         'sender_id': args.sender_id,
         'kind': args.kind,
+        'target_plan': target_plan or '',
+        'destination': destination,
         'message': message_path.name,
         'path': str(message_path),
     }

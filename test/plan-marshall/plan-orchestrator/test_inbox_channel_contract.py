@@ -15,6 +15,12 @@ point with constructed argv at the subprocess boundary (``run_script``), under
   once in ``test_inbox_envelope.py``'s in-process unit tests. This module's job
   at the CLI level is to prove the wiring (argv -> handler -> TOON ``error``)
   transports a rejection faithfully, not to re-enumerate the schema.
+- **``--target-plan`` routing**: a message aimed at a plan the epic's
+  ``status.json`` positively reads as ``running`` is DELIVERED to that plan's
+  mailbox at ``inbox/to/{plan_id}/`` rather than queued; every other target
+  queues. The sender-side ``stream_closed`` refusal is pinned to run AHEAD of
+  that routing decision by a matched pair whose two arms differ ONLY in whether
+  the sender closed its stream.
 - **``inbox validate`` resolves the archive**: a queued message reports
   ``location: queued`` with an empty ``archive_path``, a CONSUMED one reports
   ``location: archived`` with the resolved archived path, and ``file_not_found``
@@ -88,6 +94,17 @@ def _archived_epic_dir(plan_context, slug: str) -> Path:
     return Path(plan_context.fixture_dir) / 'archived-orchestrators' / slug
 
 
+def _mailbox_dir(plan_context, plan_id: str, slug: str = EPIC) -> Path:
+    """The addressee mailbox a DELIVERED message lands in.
+
+    The CLI-level expectation of the channel's ``(epic_slug, plan_id)`` address.
+    That the write side and the read side COMPOSE the identical path from that
+    address is pinned in-process in ``test_inbox_envelope.py``; this module
+    asserts the shape the CLI contract publishes.
+    """
+    return _epic_dir(plan_context, slug) / 'inbox' / 'to' / plan_id
+
+
 def _payload(tmp_path: Path, body: str = 'the landing narrative', name: str = 'p.md') -> str:
     path = tmp_path / name
     path.write_text(body, encoding='utf-8')
@@ -130,10 +147,25 @@ def _write(
 def _write_status(plan_context, plans: list[dict], slug: str = EPIC) -> None:
     """Write the epic's ``status.json`` with a ``plans[]`` queue.
 
-    The machine authority the deliverability guard reads to decide whether a
-    named target plan is currently running.
+    The machine authority the routing decision reads to decide whether a named
+    target plan is currently running — and therefore whether its message is
+    delivered to that plan's mailbox or queued for the epic drain.
     """
     (_epic_dir(plan_context, slug) / 'status.json').write_text(json.dumps({'plans': plans}), encoding='utf-8')
+
+
+def _close_stream(plan_context, sender: str = SENDER, slug: str = EPIC):
+    """File the sender's terminal ``lifecycle=stream-end`` marker."""
+    return run_script(
+        SCRIPT_PATH,
+        'inbox',
+        'close-stream',
+        '--slug',
+        slug,
+        '--sender-id',
+        sender,
+        env_overrides=_env(plan_context),
+    )
 
 
 def _list(plan_context, slug: str = EPIC):
@@ -277,37 +309,93 @@ class TestWellFormedMessage:
 
 
 # =============================================================================
-# Deliverability guard: a message aimed at a RUNNING plan has no reader
+# Routing: a message aimed at a RUNNING plan is DELIVERED to its mailbox
 # =============================================================================
 
 
 class TestTargetPlanDeliverability:
-    """``--target-plan`` makes an architecturally undeliverable write visible.
+    """``--target-plan`` routes a write between the queue and a plan mailbox.
 
-    The inbox is the epic's plan->orchestrator OUTBOX, drained BETWEEN plans, so
-    a message aimed at a plan that is currently running can never be read by it —
-    the plan finishes before the next drain. The guard reports that at write time
-    instead of silently queuing a message no reader will consume; it does NOT
-    build a mid-run delivery channel.
+    The epic QUEUE is drained BETWEEN plans, so a message left in it for a plan
+    that is currently running would never be read — that plan finishes before
+    the next drain reaches it. Rather than refuse such a message, the write verb
+    DELIVERS it to the addressee mailbox composed from the channel's
+    ``(epic_slug, plan_id)`` address, ``inbox/to/{plan_id}/``. Every other
+    target — landed, parked, absent from the queue, or unreadable — queues, and
+    the write names which location it used in ``destination``.
     """
 
-    def test_naming_a_running_plan_is_refused_as_undeliverable(self, plan_context, tmp_path):
+    def test_naming_a_running_plan_delivers_instead_of_queueing(self, plan_context, tmp_path):
         _scaffold(plan_context)
         _write_status(plan_context, [{'id': 'plan-alpha', 'status': 'running'}])
 
         result = _write(plan_context, _payload(tmp_path), kind='finding', target_plan='plan-alpha')
         data = result.toon()
 
-        assert data['status'] == 'error'
-        assert data['error'] == 'undeliverable_to_running_plan'
-        # The undeliverable write is REFUSED, not silently queued — no message
-        # file is left behind for a reader that will never exist.
+        assert data['status'] == 'success'
+        assert data['destination'] == 'mailbox'
+        assert data['target_plan'] == 'plan-alpha'
+        # Delivered, not queued: the epic queue a running plan never reads is
+        # left untouched, which is what makes `destination` load-bearing rather
+        # than a label on an unchanged write.
         assert not (_epic_dir(plan_context) / 'inbox' / f'{SENDER}-001.md').exists()
 
+    def test_the_delivered_message_lands_at_the_resolved_address(self, plan_context, tmp_path):
+        # The delivery-side counterpart: not merely "not queued", but written to
+        # the (epic_slug, plan_id) address a plan-side read resolves, with the
+        # payload body intact and `path` naming that same file.
+        _scaffold(plan_context)
+        _write_status(plan_context, [{'id': 'plan-alpha', 'status': 'running'}])
+
+        result = _write(
+            plan_context,
+            _payload(tmp_path, 'delivered body'),
+            kind='finding',
+            target_plan='plan-alpha',
+        )
+
+        delivered = _mailbox_dir(plan_context, 'plan-alpha') / f'{SENDER}-001.md'
+        assert delivered.is_file()
+        assert result.toon()['path'] == str(delivered)
+        assert delivered.read_text(encoding='utf-8').endswith('delivered body\n')
+
+    def test_a_delivered_message_is_invisible_to_the_epic_drain(self, plan_context, tmp_path):
+        # Delivery moves no existing tally: the mailbox tree is disjoint from
+        # the queue, and `inbox list` is non-recursive over files matching the
+        # message-name grammar, so the drain still reports a looked-and-empty
+        # queue rather than counting a delivered message.
+        _scaffold(plan_context)
+        _write_status(plan_context, [{'id': 'plan-alpha', 'status': 'running'}])
+        _write(plan_context, _payload(tmp_path), kind='finding', target_plan='plan-alpha')
+
+        parsed = _list(plan_context).toon()
+
+        assert parsed['inbox_state'] == 'present'
+        assert parsed['count'] == 0
+
+    def test_stream_closure_refuses_ahead_of_the_routing_decision(self, plan_context, tmp_path):
+        # Matched NEGATIVE control for `test_naming_a_running_plan_delivers_...`
+        # above: identical argv and identical running-plan queue, differing ONLY
+        # in that this sender closed its stream first. Without the paired
+        # positive, a `stream_closed` here would be equally explained by delivery
+        # never being reachable at all; with it, the refusal is pinned to run
+        # AHEAD of the routing decision, unchanged in ordering and meaning.
+        _scaffold(plan_context)
+        _write_status(plan_context, [{'id': 'plan-alpha', 'status': 'running'}])
+        _close_stream(plan_context)
+
+        result = _write(plan_context, _payload(tmp_path), kind='finding', target_plan='plan-alpha')
+        data = result.toon()
+
+        assert data['status'] == 'error'
+        assert data['error'] == 'stream_closed'
+        # Refused before routing, so nothing was delivered either.
+        assert not _mailbox_dir(plan_context, 'plan-alpha').exists()
+
     def test_naming_a_non_running_plan_queues_normally(self, plan_context, tmp_path):
-        # A landed (non-running) plan is deliverable to the orchestrator at the
-        # next drain, so the guard does not block it — the running distinction is
-        # load-bearing, not a blanket refusal of every target.
+        # A landed (non-running) plan is reachable by the orchestrator at the
+        # next drain, so its message QUEUES — the running distinction is
+        # load-bearing, not a blanket delivery of every target.
         _scaffold(plan_context)
         _write_status(plan_context, [{'id': 'plan-alpha', 'status': 'landed'}])
 
@@ -317,9 +405,9 @@ class TestTargetPlanDeliverability:
         assert (_epic_dir(plan_context) / 'inbox' / f'{SENDER}-001.md').is_file()
 
     def test_untargeted_write_is_unaffected_by_a_running_plan(self, plan_context, tmp_path):
-        # The guard fires ONLY on --target-plan. An ordinary epic-addressed
-        # write (a plan's own OUTBOX message) is never blocked by another plan
-        # being in flight — that is the primary, unbroken use case.
+        # The routing decision fires ONLY on --target-plan. An ordinary
+        # epic-addressed write is never re-routed by another plan being in
+        # flight — that is the primary, unbroken use case.
         _scaffold(plan_context)
         _write_status(plan_context, [{'id': 'plan-alpha', 'status': 'running'}])
 
@@ -750,12 +838,14 @@ class TestWriteBoundary:
         result = run_script(SCRIPT_PATH, 'inbox', 'write', '--help', env_overrides={})
 
         # The write TARGET (the message file path) must stay derived from
-        # --slug + --sender-id alone, so no caller-supplied output-PATH flag may
-        # appear. The trailing spaces are the metavar boundary that lets a
-        # precise flag through: `--target ` matches a bare `--target PATH`
-        # output arg but NOT `--target-plan TARGET_PLAN` (a plan IDENTIFIER used
-        # only for the deliverability guard, never as an output path), exactly as
-        # `--file ` admits `--payload-file` while forbidding a bare `--file`.
+        # --slug, --sender-id and a validated --target-plan alone, so no
+        # caller-supplied output-PATH flag may appear. The trailing spaces are
+        # the metavar boundary that lets a precise flag through: `--target `
+        # matches a bare `--target PATH` output arg but NOT `--target-plan
+        # TARGET_PLAN` (a plan IDENTIFIER that becomes ONE validated path
+        # component of the addressee mailbox, never a caller-supplied path),
+        # exactly as `--file ` admits `--payload-file` while forbidding a bare
+        # `--file`.
         for forbidden_flag in ('--path', '--output', '--target ', '--file '):
             assert forbidden_flag not in result.stdout, forbidden_flag
 

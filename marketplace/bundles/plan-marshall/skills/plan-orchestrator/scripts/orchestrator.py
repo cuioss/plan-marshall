@@ -72,8 +72,10 @@ operation groups against the main-anchored orchestrator store
   participating rows and the sample instant. An unreadable or disagreeing
   observation resolves to ``indeterminate`` and never to ``not_ready``.
 - ``inbox {write,amend,supersede,close-stream,validate,list,archive,
-  migrate-archive,detect,landing-check}`` — the epic's plan-writable OUTBOX and
-  its orchestrator-side drain: append one ``inbox/{sender_id}-{NNN}.md`` message,
+  migrate-archive,detect,landing-check}`` — the epic's plan-writable channel and
+  its orchestrator-side drain: append one ``inbox/{sender_id}-{NNN}.md`` message
+  to the epic queue — or, when ``--target-plan`` names a plan that is currently
+  RUNNING, DELIVER it to that plan's mailbox at ``inbox/to/{plan_id}/`` instead,
   correct a filed message body in place (``amend`` — preserves ``created``,
   stamps a monotonic ``revision``), retire a message in favour of a successor
   (``supersede`` — tombstone-style), mark a sender's stream ended
@@ -4687,9 +4689,13 @@ def _add_inbox_group(subparsers: Any) -> None:
     :mod:`_orchestrator_inbox`; this function only wires argv to them. Note what
     the surface deliberately does NOT expose: no output path, no sequence
     number, and no inbox directory — the write and correction
-    targets are derived from ``--slug`` plus ``--sender-id`` / a bare
-    ``--message`` filename alone, which is what makes the ledger write-boundary
-    carve-out enforced by construction. ``archive --as-name`` does not widen
+    targets are derived from ``--slug`` plus ``--sender-id`` / a validated
+    ``--target-plan`` / a bare ``--message`` filename alone, which is what makes
+    the ledger write-boundary carve-out enforced by construction.
+    ``--target-plan`` does not widen it either: it selects BETWEEN the epic
+    queue and the addressee mailbox ``inbox/to/{plan_id}/``, and its value is a
+    validated identifier that becomes one path component, never a path.
+    ``archive --as-name`` does not widen
     that carve-out: it is still a bare filename joined onto
     ``inbox/archive/{sender}/``, never a caller-supplied path, and it is
     additionally sender-constrained, so the archived name's sender provenance is
@@ -4698,10 +4704,11 @@ def _add_inbox_group(subparsers: Any) -> None:
     inbox = subparsers.add_parser(
         'inbox',
         help=(
-            'Epic inbox OUTBOX and drain: append, correct (amend/supersede), '
-            'end a sender stream, validate, list, archive or fold the archive '
-            "per sender, detect a plan's orchestration context, or check a "
-            "landing's required facts."
+            'Epic inbox channel and drain: append (queued, or delivered to a '
+            'running target plan), correct (amend/supersede), end a sender '
+            'stream, validate, list, archive or fold the archive per sender, '
+            "detect a plan's orchestration context, or check a landing's "
+            'required facts.'
         ),
         allow_abbrev=False,
     )
@@ -4709,7 +4716,10 @@ def _add_inbox_group(subparsers: Any) -> None:
 
     write = actions.add_parser(
         'write',
-        help='Append one inbox/{sender_id}-{NNN}.md message to the epic.',
+        help=(
+            'Append one {sender_id}-{NNN}.md message — to the epic queue, or to '
+            "a running --target-plan's mailbox."
+        ),
         allow_abbrev=False,
     )
     _add_slug_arg(write)
@@ -4735,11 +4745,11 @@ def _add_inbox_group(subparsers: Any) -> None:
         default=None,
         help=(
             'Optional plan id the message is aimed at. When it names a plan that '
-            'is currently RUNNING, the write is REFUSED as '
-            'undeliverable_to_running_plan: the inbox is drained between plans, '
-            'so a running plan never reads it. A non-running target does not '
-            'block the write. This flag makes the undeliverability visible; it '
-            'does NOT deliver a message to a plan.'
+            'is currently RUNNING, the message is DELIVERED to that plan mailbox '
+            'at inbox/to/{plan_id}/ (destination: mailbox) rather than queued, '
+            'because the epic queue is drained between plans. Any other value — '
+            'a landed, parked or unqueued plan, or the flag omitted — queues the '
+            'message for the epic drain (destination: queue).'
         ),
     )
     write.set_defaults(handler=cmd_inbox_write)
