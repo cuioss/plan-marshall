@@ -3,7 +3,15 @@
 """Tests for the mark-step-done subcommand of manage-status."""
 
 import pytest
-from _mark_step_done_fixtures import _args, _make_plan, cmd_mark_step_done, read_status, write_status
+from _mark_step_done_fixtures import (
+    _args,
+    _make_plan,
+    _real_head,
+    _tmp_repo_two_heads,
+    cmd_mark_step_done,
+    read_status,
+    write_status,
+)
 
 
 def test_mark_step_conflict_fires_against_stale_legacy_key(plan_context):
@@ -124,7 +132,7 @@ def test_mark_step_thrice_fired_step_retains_every_firing(plan_context):
             'done',
             force=True,
             display_detail='clean',
-            head_at_completion='c' * 40,
+            head_at_completion=_real_head(),
         )
     )
     assert third['status'] == 'success', third
@@ -134,7 +142,7 @@ def test_mark_step_thrice_fired_step_retains_every_firing(plan_context):
     # `outcome` still means the LATEST firing, and keeps its historical meaning.
     assert entry['outcome'] == 'done'
     assert entry['display_detail'] == 'clean'
-    assert entry['head_at_completion'] == 'c' * 40
+    assert entry['head_at_completion'] == _real_head()
     # A `done` outcome carries no loop_back_target — the key is absent, not stale.
     assert 'loop_back_target' not in entry
 
@@ -182,14 +190,19 @@ def test_mark_step_unchanged_recall_appends_no_firing(plan_context):
     assert 'prior_firings' not in entry
 
 
-def test_mark_step_trail_is_append_only_across_a_fourth_firing(plan_context):
+def test_mark_step_trail_is_append_only_across_a_fourth_firing(plan_context, tmp_path, monkeypatch):
     """A later firing EXTENDS the trail rather than rewriting it.
 
     Pins the append-only property directly: the trail observed after firing 3 is
     a strict prefix of the one observed after firing 4.
+
+    The terminal `done` anchor comes from a throwaway two-commit repo pinned
+    as cwd — never from the caller checkout's `HEAD~1`, which does not exist
+    in CI's depth-1 checkout.
     """
     plan_id = 'mark-step-firings-append'
     _make_plan(plan_id)
+    _, old_sha = _tmp_repo_two_heads(tmp_path, monkeypatch)
 
     # Every call's status is asserted: a refused write (e.g. the head-anchor
     # refusal on a `done`) writes NOTHING, which would silently leave the
@@ -217,7 +230,7 @@ def test_mark_step_trail_is_append_only_across_a_fourth_firing(plan_context):
             'done',
             force=True,
             display_detail='r4',
-            head_at_completion='d' * 40,
+            head_at_completion=old_sha,
         )
     )
     assert fourth['status'] == 'success', fourth

@@ -71,10 +71,31 @@ _EXT_POINT = 'plan-marshall:extension-api/standards/ext-point-finalize-step'
 #: The frontmatter key that IS the membership declaration.
 _FACT_KEY = 'head_dependent'
 
-#: A syntactically valid anchor. Its VALUE is never resolved by the handler —
-#: the obligation is presence, not reachability — so a fixed literal is honest
-#: here in a way a hardcoded step name would not be.
-_ANCHOR = 'a' * 40
+#: A syntactically valid anchor that resolves to a real commit. The handler
+#: resolves the VALUE against the object store (unfabricable-anchor rule), so
+#: the positive controls below must carry a SHA the local git repo actually
+#: holds — resolved once from the live HEAD. A fixed literal is no longer
+#: honest here: it would be refused as fabricated.
+_real_head_cache: str | None = None
+
+
+def _ANCHOR() -> str:
+    """Return the live HEAD SHA, cached per session."""
+    global _real_head_cache
+    if _real_head_cache is None:
+        import subprocess
+
+        proc = subprocess.run(
+            ['git', 'rev-parse', 'HEAD'],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+        assert proc.returncode == 0, f'Cannot resolve a real HEAD SHA for the anchor fixtures: {proc.stderr.strip()}'
+        _real_head_cache = proc.stdout.strip()
+    assert _real_head_cache
+    return _real_head_cache
 
 
 def _partition_steps() -> tuple[list[str], list[str]]:
@@ -241,11 +262,11 @@ def test_head_dependent_done_with_anchor_is_written(plan_context):
     _make_plan(plan_id)
     step = _a_head_dependent_step()
 
-    result = cmd_mark_step_done(_args(plan_id, step, 'done', head_at_completion=_ANCHOR))
+    result = cmd_mark_step_done(_args(plan_id, step, 'done', head_at_completion=_ANCHOR()))
 
     assert result['status'] == 'success'
-    assert result['head_at_completion'] == _ANCHOR
-    assert _recorded_steps(plan_id)[step]['head_at_completion'] == _ANCHOR
+    assert result['head_at_completion'] == _ANCHOR()
+    assert _recorded_steps(plan_id)[step]['head_at_completion'] == _ANCHOR()
 
 
 # ---------------------------------------------------------------------------
@@ -347,7 +368,7 @@ def test_ordinary_success_carries_no_warning_key(plan_context):
     _make_plan(plan_id)
     step = _a_head_dependent_step()
 
-    result = cmd_mark_step_done(_args(plan_id, step, 'done', head_at_completion=_ANCHOR))
+    result = cmd_mark_step_done(_args(plan_id, step, 'done', head_at_completion=_ANCHOR()))
 
     assert result['status'] == 'success'
     assert 'warning' not in result

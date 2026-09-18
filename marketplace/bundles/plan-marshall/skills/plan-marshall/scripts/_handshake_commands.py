@@ -595,6 +595,23 @@ def cmd_verify(args: Any) -> dict[str, Any]:
         # ``VERIFY_REFUSAL_ERRORS`` keeps it out of the loop-back
         # auto-override path.
         return _main_capture_read_the_worktree_payload(exc, plan_id, phase)
+    except PrTitleMissing as exc:
+        # The 2-refine capture without a persisted PR title is a boundary
+        # REFUSAL, not drift: there is no baseline row worth diffing against
+        # when the phase's own completion record is malformed. Without this
+        # handler the exception propagates out of the verb and ``safe_main``
+        # renders it as ``error: internal_error`` — the boundary still fails
+        # closed, but ``main()`` emits no structured TOON and no stderr
+        # verdict mirror, so the operator sees an internal error instead of
+        # the missing title. Same shape as ``cmd_capture`` so the two verbs
+        # cannot drift apart on this state.
+        return {
+            'status': 'error',
+            'error': 'pr_title_missing',
+            'plan_id': plan_id,
+            'phase': phase,
+            'message': str(exc),
+        }
     except TaskGraphInvalid as exc:
         # An invalid task graph is a boundary REFUSAL, not drift. Unlike
         # ``PhaseStepsIncomplete`` / ``BlockingFindingsPresent`` below — whose
@@ -608,7 +625,12 @@ def cmd_verify(args: Any) -> dict[str, Any]:
         # Treat observed blocking findings as drift on the
         # ``pending_findings_blocking_count`` column so callers see a
         # structured difference rather than a hard error. ``--strict``
-        # turns this into a non-zero exit.
+        # turns this into a non-zero exit. The envelope carries the same
+        # ``blocking_findings_present`` verdict key and counts the
+        # ``capture`` / ``findings-check`` verbs publish for the identical
+        # tree state — one verdict vocabulary per state, whichever verb
+        # hit it — so a reader matching the error key cannot tell the
+        # verbs apart by shape.
         diffs = [
             {
                 'invariant': 'pending_findings_blocking_count',
@@ -620,9 +642,14 @@ def cmd_verify(args: Any) -> dict[str, Any]:
         ]
         return {
             'status': 'drift',
+            'error': 'blocking_findings_present',
             'plan_id': plan_id,
             'phase': phase,
             'override': captured_row.get('override', False),
+            'blocking_count': exc.blocking_count,
+            'blocking_types': exc.blocking_types,
+            'per_type': exc.per_type,
+            'message': str(exc),
             'drift_count': len(diffs),
             'diffs': diffs,
         }

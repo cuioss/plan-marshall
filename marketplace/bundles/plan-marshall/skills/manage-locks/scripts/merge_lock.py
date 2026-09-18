@@ -35,7 +35,8 @@ this script no longer sleeps internally for the queue case. The ``O_EXCL`` mutex
 stays the final ``k=1`` grant — the FIFO layer decides WHO may attempt it, the
 kernel race decides the single winner.
 
-It exposes six actions — the three merge-mutex actions, the read-only
+It exposes seven actions — the three merge-mutex actions, the budget-aware
+``budget-reclaim`` recovery verb, the read-only
 ``queue-list`` inspection of the FIFO queue, the ``rate-window`` claim that
 co-tenants the same store, and the storeless ``poll-delay`` computation:
 
@@ -87,6 +88,13 @@ co-tenants the same store, and the storeless ``poll-delay`` computation:
     a blind unlink) and REFUSING (``status: refused``,
     ``reason: holder_not_provably_dead``) on a ``fresh`` or ``unknown`` verdict, so
     a holder live in a sibling worktree is never force-released.
+  * ``budget-reclaim`` — the waiter-side reclaim for the orchestrator-layer
+    ``merge_hold_budget_seconds`` bound: given the recorded ``--hold-start``
+    instant and ``--hold-budget-seconds``, a hold still blocked at/past budget
+    reclaims ONLY a provably ``stale`` holder through the same observed-file
+    eviction arbitration (and dequeues it from the FIFO front); a ``fresh`` or
+    ``unknown`` holder is refused, and a hold inside budget reports
+    ``not_due``. A live-but-slow holder is never force-released here.
   * ``rate-window {claim,check,release}`` — the cross-plan claim on ONE review
     bot's rate window, used by the automatic-review recovery sequence to stop two
     concurrently-finalizing plans from both re-triggering a rate-limited bot. State
@@ -1341,7 +1349,8 @@ def run_acquire(args: Namespace) -> dict[str, Any]:
     # return a structured `blocked` signal carrying `stale_holder_live_worktree`
     # so the EXISTING branch-cleanup budget-exhaustion escalation asks the operator
     # to confirm, rather than the primitive force-releasing a mid-recovery holder.
-    # No new force-release CLI verb is introduced.
+    # The deliberate reclaim path for a dead holder past its hold budget is the
+    # `budget-reclaim` verb (fail-closed on fresh/unknown), not this acquire leg.
     if holder_is_dead(holder) and holder_has_live_worktree(holder):
         _surface_lock_waiting(plan_id, set_title_token)
         log_lock_event(
@@ -1750,6 +1759,109 @@ def run_release(args: Namespace) -> dict[str, Any]:
     }
 
 
+def run_budget_reclaim(args: Namespace) -> dict[str, Any]:
+    """Budget-aware reclaim of a dead merge-lock holder past its hold budget.
+
+    The waiter-side counterpart to the orchestrator-layer
+    ``merge_hold_budget_seconds`` bound (branch-cleanup): the orchestrator
+    records the wall-clock instant of acquire as ``--hold-start`` and, when
+    the held duration reaches ``--hold-budget-seconds`` with admission still
+    blocked, calls this verb instead of only the holder releasing. The
+    decision is two-gated, in order:
+
+      * no lock file → ``status: success``, ``action: nothing_to_reclaim``
+        (idempotent — a concurrently-released lock is not an error);
+      * elapsed (``now - hold_start``) below budget → ``status: success``,
+        ``action: not_due`` (the holder still owns its budget; the waiter
+        keeps polling);
+      * elapsed at/past budget → delegate to the fail-closed stale-eviction
+        core (:func:`_run_conditional_release`): only a provably ``stale``
+        holder (main-anchored :func:`_locks_core.holder_staleness` verdict,
+        evicted through the observed-file sidecar arbitration, dequeued from
+        the FIFO front) is released; a ``fresh`` or ``unknown`` holder is
+        refused with ``status: refused`` / ``reason:
+        holder_not_provably_dead``. A live-but-slow holder past budget is
+        therefore never force-released by this verb — the orchestrator's
+        release + re-enqueue + escalate path owns that case.
+
+    ``--hold-start`` must be a finite non-negative epoch; ``--hold-budget-seconds``
+    must be finite and positive — caller bugs are refused with
+    ``invalid_hold_start`` / ``invalid_hold_budget`` before the lock is
+    touched. The result carries ``elapsed_seconds`` and
+    ``hold_budget_seconds`` on every branch so the caller can audit the
+    budget arithmetic — including the invalid-input refusals, where a
+    non-finite input reads as the ``0.0`` sentinel (documented here, never a
+    measurement) so the shape stays total. No title-token surface: the caller
+    is the waiter, not the holder, so no glyph is set or cleared here.
+    """
+    plan_id: str = args.plan_id
+    hold_start: float = args.hold_start
+    hold_budget_seconds: float = args.hold_budget_seconds
+
+    def _audit_seconds(value: float) -> float:
+        """Best-effort audit value: finite inputs pass through, anything else
+        reads as the ``0.0`` sentinel so the payload shape stays total."""
+        return value if math.isfinite(value) and value >= 0 else 0.0
+
+    if not math.isfinite(hold_start) or hold_start < 0:
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'invalid_hold_start',
+            'message': f'--hold-start must be a finite non-negative epoch, got: {hold_start!r}',
+            'elapsed_seconds': 0.0,
+            'hold_budget_seconds': _audit_seconds(hold_budget_seconds),
+        }
+    if not math.isfinite(hold_budget_seconds) or hold_budget_seconds <= 0:
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'invalid_hold_budget',
+            'message': f'--hold-budget-seconds must be a finite positive number of seconds, got: {hold_budget_seconds!r}',
+            'elapsed_seconds': max(0.0, time.time() - hold_start),
+            'hold_budget_seconds': 0.0,
+        }
+
+    try:
+        lock_path = _resolve_main_lock_path()
+    except RuntimeError as exc:
+        return make_error(str(exc), code=ErrorCode.NOT_FOUND, plan_id=plan_id)
+
+    if not lock_path.exists():
+        return {
+            'status': 'success',
+            'plan_id': plan_id,
+            'action': 'nothing_to_reclaim',
+            'lock_path': str(lock_path),
+            'elapsed_seconds': max(0.0, time.time() - hold_start),
+            'hold_budget_seconds': hold_budget_seconds,
+            'message': 'lock not held (already free)',
+        }
+
+    holder = _read_holder(lock_path)
+    elapsed = time.time() - hold_start
+    if elapsed < hold_budget_seconds:
+        return {
+            'status': 'success',
+            'plan_id': plan_id,
+            'action': 'not_due',
+            'holder': holder or None,
+            'staleness': holder_staleness(holder),
+            'lock_path': str(lock_path),
+            'elapsed_seconds': elapsed,
+            'hold_budget_seconds': hold_budget_seconds,
+            'message': f'held {elapsed:.1f}s of {hold_budget_seconds:.1f}s budget — holder keeps its budget',
+        }
+
+    # Budget exhausted — reclaim ONLY a provably stale holder through the
+    # shared fail-closed eviction core (sidecar arbitration + FIFO dequeue).
+    # Title-token surface suppressed: this caller waits; it holds nothing.
+    result = _run_conditional_release(plan_id, lock_path, False)
+    result['elapsed_seconds'] = elapsed
+    result['hold_budget_seconds'] = hold_budget_seconds
+    return result
+
+
 def _missing_pr_number(args: Namespace) -> dict[str, Any] | None:
     """Return the refusal payload when ``--pr-number`` is absent, else ``None``.
 
@@ -2077,7 +2189,7 @@ def run_rate_window(args: Namespace) -> dict[str, Any]:
 
 
 def main() -> int:
-    """Entry point — ``acquire`` / ``check`` / ``release`` / ``rate-window`` / ``poll-delay``."""
+    """Entry point — ``acquire`` / ``check`` / ``release`` / ``budget-reclaim`` / ``rate-window`` / ``poll-delay``."""
     parser = create_workflow_cli(
         description='Unified merge lock: the single main-anchored merge-to-main serializer with a FIFO admission queue',
         epilog="""
@@ -2085,6 +2197,7 @@ Examples:
   merge_lock.py acquire --plan-id EXAMPLE-PLAN [--timeout 0]
   merge_lock.py check --plan-id EXAMPLE-PLAN
   merge_lock.py release --plan-id EXAMPLE-PLAN
+  merge_lock.py budget-reclaim --plan-id WAITER-PLAN --hold-start 1699999999.0 --hold-budget-seconds 3600
   merge_lock.py rate-window claim --plan-id EXAMPLE-PLAN --bot-kind coderabbit --pr-number 42 [--window-seconds 3600] [--attempt-cap 6]
   merge_lock.py rate-window check --plan-id EXAMPLE-PLAN --bot-kind coderabbit --pr-number 42
   merge_lock.py rate-window release --plan-id EXAMPLE-PLAN --bot-kind coderabbit
@@ -2158,6 +2271,33 @@ Examples:
                         'dest': 'set_title_token',
                         'action': 'store_false',
                         'help': 'Suppress the terminal-title glyph clear (matches a --no-title-token acquire)',
+                    },
+                ],
+            },
+            {
+                'name': 'budget-reclaim',
+                'help': 'Waiter-side budget reclaim: past --hold-budget-seconds since --hold-start, evict ONLY a provably stale holder (refuse on fresh/unknown)',
+                'handler': run_budget_reclaim,
+                'args': [
+                    {
+                        'flags': ['--plan-id'],
+                        'dest': 'plan_id',
+                        'required': True,
+                        'help': 'Requesting waiter plan_id (mandatory; never force-releases on its own behalf)',
+                    },
+                    {
+                        'flags': ['--hold-start'],
+                        'dest': 'hold_start',
+                        'type': float,
+                        'required': True,
+                        'help': 'Wall-clock epoch of the lock acquire the budget is measured against (mandatory)',
+                    },
+                    {
+                        'flags': ['--hold-budget-seconds'],
+                        'dest': 'hold_budget_seconds',
+                        'type': float,
+                        'required': True,
+                        'help': 'Hold budget in seconds; elapsed at/past budget arms the stale-holder reclaim (mandatory)',
                     },
                 ],
             },

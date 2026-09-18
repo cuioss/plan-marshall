@@ -340,8 +340,12 @@ def _update_fallback_streak(resolved: str, reason: str | None, plan_id: str | No
                 f'[BUILD-SERVER] marshalld unreachable: last reachable at '
                 f'{state.get("last_reachable", "unknown")}, unreachable since '
                 f'{state.get("first_unreachable", now)}, {count} builds degraded to in-process '
-                f'(reason={reason}). Further identical fallbacks are suppressed until the daemon '
-                f'is reachable again.'
+                f'(reason={reason}). Daemon scheduling is unavailable for this streak: '
+                f'plan builds serialize through the machine-global fallback slot (single '
+                f'lane), while plan-less builds bypass the slot and run unserialized — '
+                f'concurrent suites without serialization may exhaust memory (OOM) where '
+                f'the daemon would have scheduled them. Further identical '
+                f'fallbacks are suppressed until the daemon is reachable again.'
             )
             return message, True
 
@@ -404,9 +408,27 @@ def _record_resolution(
         'fail-loud': 'no_build',
     }
     mechanism = _RESOLVED_TO_MECHANISM.get(resolved, 'in_process_fallback')
+    # The serialization state names which scheduler serialized this build:
+    # the daemon's cross-plan scheduling, the machine-global fallback slot,
+    # or nothing (the fail-loud refusal ran no build). A down daemon is
+    # greppable here from the first fallback — the degradation never reads
+    # as a normally-scheduled build. Two fail-closed rules keep the label
+    # honest: an unrecognized `resolved` value reports `unknown` (never a
+    # guessed lane — a new routing branch must extend this map), and a
+    # plan-less in-process build reports `unserialized` (it bypasses the
+    # machine-global fallback slot, which only real plans enter).
+    _RESOLVED_TO_SERIALIZATION = {
+        'routed': 'daemon-scheduled',
+        'in_process': 'fallback-slot',
+        'fail-loud': 'no_build',
+    }
+    serialization = _RESOLVED_TO_SERIALIZATION.get(resolved, 'unknown')
+    if resolved == 'in_process' and not names_real_plan(plan_id):
+        serialization = 'unserialized'
     message = (
         f'[BUILD-SERVER] resolved build (requested={requested}, resolved={resolved}, '
-        f'reason={reason}, notation={notation}, plan={plan_id}, mechanism={mechanism})'
+        f'reason={reason}, notation={notation}, plan={plan_id}, mechanism={mechanism}, '
+        f'serialization={serialization})'
     )
     # D5: fold a sustained run of daemon-unreachable fallbacks into ONE transition
     # ERROR instead of the N+1st identical WARNING (see _update_fallback_streak).

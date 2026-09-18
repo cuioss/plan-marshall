@@ -11,6 +11,7 @@ from _assert_step_recorded_fixtures import (
     read_status,
     write_status,
 )
+from _mark_step_done_fixtures import _real_head
 
 
 def test_phase_absent_returns_not_recorded(plan_context):
@@ -338,7 +339,7 @@ def test_promoted_alias_record_matches_bare_query(plan_context):
         '6-finalize',
         'plan-marshall:automatic-review',
         'done',
-        head_at_completion='d' * 40,
+        head_at_completion=_real_head(),
     )
 
     result = cmd_assert_step_recorded(_assert_args(plan_id, '6-finalize', 'automatic-review', require_terminal=True))

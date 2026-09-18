@@ -257,6 +257,13 @@ def test_verify_at_finalize_boundary_reports_drift_for_strict_mode(
     assert result['status'] == 'drift'
     diff_names = {d['invariant'] for d in result['diffs']}
     assert 'pending_findings_blocking_count' in diff_names
+    # One verdict vocabulary per tree state: the drift envelope carries the
+    # same blocking_findings_present key and counts the capture refusal and
+    # the findings-check gate publish for the identical state.
+    assert result['error'] == 'blocking_findings_present'
+    assert result['blocking_count'] == 1
+    assert result['per_type']['build-error'] == 1
+    assert result['blocking_types'] == list(inv._ACTIONABLE_FINDING_TYPES)
 
 
 # --- (c) knowledge types NEVER block (the fixed-rule exclusion) -----------
@@ -1021,3 +1028,75 @@ def test_assert_finalize_findings_clean_returns_none_when_unevaluable(
     monkeypatch.setattr(inv, '_query_pending_count_for_type', lambda _p, _t: None)
     result = inv.assert_finalize_findings_clean('af-unevaluable', {})
     assert result is None
+
+
+# =============================================================================
+# Audible verify verdicts: every non-clean verify verdict is mirrored to
+# stderr while the exit-code contract is preserved verbatim
+# =============================================================================
+
+
+def test_verify_drift_verdict_is_mirrored_to_stderr(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A ``drift`` verdict is audible on stderr, not just in stdout TOON.
+
+    A caller that swallows TOON output previously saw only a bare non-zero
+    exit with an empty stderr — unactionable. The mirror names the verdict
+    (status, error key, drift count) on the console; it changes no exit code.
+    Driven through the real ``main()`` with a stubbed verb so the assertion
+    covers the wiring, not just the helper.
+    """
+    import sys
+
+    from conftest import load_script_module
+
+    handshake = load_script_module('plan-marshall', 'plan-marshall', 'phase_handshake.py', 'handshake_mirror_drift')
+    drift = {
+        'status': 'drift',
+        'error': 'blocking_findings_present',
+        'plan_id': 'p',
+        'phase': '6-finalize',
+        'drift_count': 1,
+        'diffs': [],
+    }
+    monkeypatch.setattr(handshake, 'cmd_verify', lambda _args: drift)
+    monkeypatch.setattr(
+        sys, 'argv', ['phase_handshake.py', 'verify', '--plan-id', 'p', '--phase', '6-finalize', '--strict']
+    )
+
+    with pytest.raises(SystemExit) as excinfo:
+        handshake.main()
+
+    # Non-zero exit preserved AND the verdict is audible on stderr.
+    assert excinfo.value.code == 1
+    err = capsys.readouterr().err
+    assert 'phase_handshake verify' in err
+    assert 'status=drift' in err
+    assert 'error=blocking_findings_present' in err
+    assert 'drift_count=1' in err
+
+
+def test_verify_clean_verdict_mirrors_nothing_to_stderr(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Negative control: a clean ``verify`` leaves stderr empty.
+
+    Without it, a mirror that printed on every invocation would satisfy the
+    audibility assertion while noising every clean boundary.
+    """
+    import sys
+
+    from conftest import load_script_module
+
+    handshake = load_script_module('plan-marshall', 'plan-marshall', 'phase_handshake.py', 'handshake_mirror_clean')
+    monkeypatch.setattr(handshake, 'cmd_verify', lambda _args: {'status': 'ok', 'plan_id': 'p', 'phase': '5-execute'})
+    monkeypatch.setattr(
+        sys, 'argv', ['phase_handshake.py', 'verify', '--plan-id', 'p', '--phase', '5-execute', '--strict']
+    )
+
+    with pytest.raises(SystemExit) as excinfo:
+        handshake.main()
+
+    assert excinfo.value.code == 0
+    assert capsys.readouterr().err == ''

@@ -149,6 +149,9 @@ def test_record_resolution_escalates_to_one_error_after_the_streak(captured, cap
     warnings = [c for c in captured if c[2] == 'WARNING']
     assert len(warnings) == factory._FALLBACK_WARN_STREAK
     assert all('resolved=in_process' in c[3] for c in warnings)
+    # Every fallback names its serialization state from the first one — a
+    # down daemon never reads as a normally-scheduled build.
+    assert all('serialization=fallback-slot' in c[3] for c in warnings)
 
     captured.clear()
     # The crossing fallback captures ONE ERROR transition — not another WARNING.
@@ -157,6 +160,13 @@ def test_record_resolution_escalates_to_one_error_after_the_streak(captured, cap
     log_type, plan_id, level, message = captured[0]
     assert (log_type, plan_id, level) == ('work', 'p', 'ERROR')
     assert 'marshalld unreachable' in message
+    # The one-time transition names the accurate failure model: daemon
+    # scheduling unavailable, fallback-slot serialization active for plan
+    # builds, plan-less builds unserialized — and the OOM risk of running
+    # concurrent suites without serialization.
+    assert 'fallback slot' in message
+    assert 'unserialized' in message
+    assert 'OOM' in message
     # The stderr parity line is still present for THIS build.
     assert '[BUILD-SERVER] resolved build' in capsys.readouterr().err
 
@@ -185,3 +195,53 @@ def test_plan_less_escalation_reaches_stderr_only(captured, capsys):
     assert captured == []
     err = capsys.readouterr().err
     assert 'marshalld unreachable' in err
+
+
+def test_routed_build_names_daemon_scheduling(captured, capsys):
+    """A daemon-routed build names `serialization=daemon-scheduled`.
+
+    Pairs with the fallback assertion above: without it, a resolution line
+    carrying no serialization token would satisfy the fallback pin while a
+    routed build stayed indistinguishable from it.
+    """
+    factory._record_resolution('auto', 'routed', None, _NOTATION, 'p')
+
+    assert len(captured) == 1
+    _log_type, _plan_id, level, message = captured[0]
+    assert level == 'INFO'
+    assert 'serialization=daemon-scheduled' in message
+    assert 'serialization=fallback-slot' not in message
+    err = capsys.readouterr().err
+    assert 'serialization=daemon-scheduled' in err
+
+
+def test_plan_less_fallback_is_labeled_unserialized(captured, capsys):
+    """A plan-less in-process build bypasses the fallback slot, so it must
+    not be labeled `fallback-slot`.
+
+    Without this control, a label derived from `resolved` alone would report
+    a serialized lane for a build that ran with no serialization at all —
+    the exact failure model the OOM escalation warns about.
+    """
+    factory._record_resolution('auto', 'in_process', 'socket_absent', _NOTATION, None)
+
+    assert captured == []
+    err = capsys.readouterr().err
+    assert 'serialization=unserialized' in err
+    assert 'serialization=fallback-slot' not in err
+
+
+def test_unknown_routing_outcome_is_labeled_unknown(captured, capsys):
+    """An unrecognized `resolved` value reports `unknown`, never a lane.
+
+    A `.get()` default of a real lane would silently bless whatever new
+    routing branch added a value without extending the map — false
+    serialization metadata. `unknown` fails closed with an explicit state.
+    """
+    factory._record_resolution('auto', 'mystery-lane', None, _NOTATION, 'p')
+
+    assert len(captured) == 1
+    _log_type, _plan_id, _level, message = captured[0]
+    assert 'serialization=unknown' in message
+    err = capsys.readouterr().err
+    assert 'serialization=unknown' in err

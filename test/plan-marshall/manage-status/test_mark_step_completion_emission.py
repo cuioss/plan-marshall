@@ -29,6 +29,7 @@ step identity, so the step name is immaterial to what is under test.
 
 from argparse import Namespace
 
+from _mark_step_done_fixtures import _real_head
 from plan_logging import read_work_log
 
 from conftest import load_script_module
@@ -131,7 +132,7 @@ def test_no_completion_log_suppresses_the_re_stamp_emission(plan_context):
         '6-finalize',
         'step-d',
         'done',
-        head_at_completion='def456',
+        head_at_completion=_real_head(),
         no_completion_log=True,
     )
     assert restamp['status'] == 'success'

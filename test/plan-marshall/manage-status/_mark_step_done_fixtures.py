@@ -44,6 +44,69 @@ def _make_plan(plan_id: str) -> None:
     )
 
 
+def _real_head(rev: str = 'HEAD') -> str:
+    """Resolve ``rev`` against the live repo — a real anchor for `done` records.
+
+    `mark-step-done` resolves a supplied `--head-at-completion` against the
+    object store (unfabricable-anchor rule) and refuses fabricated SHAs, so
+    fixtures that record a `done` with an anchor must carry SHAs the local
+    repo actually holds. A fixed literal is refused as fabricated.
+    """
+    import subprocess
+
+    proc = subprocess.run(
+        ['git', 'rev-parse', rev],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert proc.returncode == 0, f'Cannot resolve {rev!r} for the anchor fixture: {proc.stderr.strip()}'
+    sha = proc.stdout.strip()
+    assert sha
+    return sha
+
+
+def _tmp_repo_two_heads(tmp_path, monkeypatch) -> tuple[str, str]:
+    """Create a throwaway repo with two commits and pin cwd into it.
+
+    Returns ``(new_sha, old_sha)`` — two DISTINCT real commits guaranteed to
+    exist regardless of the caller checkout's depth. Tests that assert on two
+    different anchors (overwrite, re-fire trails) must use this instead of
+    ``_real_head('HEAD~1')``: CI checks out with a depth-1 history where the
+    parent does not exist and the helper would assert. The cwd pin matters:
+    `mark-step-done` resolves anchors in the inherited cwd, so the two SHAs
+    must live in the repo the handler sees.
+    """
+    import subprocess
+
+    repo = tmp_path / 'two-heads-repo'
+    repo.mkdir(exist_ok=True)
+
+    def _git(*argv: str) -> None:
+        proc = subprocess.run(
+            ['git', *argv],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+        assert proc.returncode == 0, f'git {" ".join(argv)} failed: {proc.stderr.strip()}'
+
+    _git('init')
+    _git('config', 'user.email', 'fixture@example.test')
+    _git('config', 'user.name', 'fixture')
+    (repo / 'f.txt').write_text('one', encoding='utf-8')
+    _git('add', '.')
+    _git('commit', '-m', 'one')
+    (repo / 'f.txt').write_text('two', encoding='utf-8')
+    _git('add', '.')
+    _git('commit', '-m', 'two')
+    monkeypatch.chdir(repo)
+    return _real_head('HEAD'), _real_head('HEAD~1')
+
+
 def _args(
     plan_id: str,
     phase: str,
