@@ -1,38 +1,14 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Cross-cutting suite: a NON-CodeRabbit refusal arms the right recovery.
+"""``bot_registry.trigger_semantics`` declarations and ``_extract_rate_limit_eta`` cases.
 
-Detection answers per REGISTERED bot rather than for one privileged bot, and a
-detected refusal is REPORTED as a refusal rather than collapsing into an
-indistinguishable bare timeout. Both properties are swept over the whole registry
-population here, so no bot is detection-privileged and none is left uncovered.
+Every registered bot must DECLARE its trigger semantics (never merely inherit
+them), with the unknown-bot fallback pinned; the ETA extractor covers the
+declared phrasing shapes and cannot raise on adversarial bodies. The arming
+rule itself (cause dominance, window arms, disclosure) lives in the co-located
+arming suites; this module pins declarations and extraction only.
 
-Cross-cutting counterpart to the co-located suites: ``test_comments_stage.py``
-owns the producer's noise filters and ``test_re_review_strategy.py`` owns the
-discriminators' match/no-match behaviour and the trigger-chokepoint guard. This
-suite pins the ARMING — the recovery a detected refusal selects — with no
-bot-name literal in the path, and the DISCLOSURE of what armed it: both producers'
-refusal records carry one observation shape, and the ``automatic-review`` step
-discloses that observation only when a wait was actually armed.
-
-⛔ **The arming rule has exactly ONE definition, and it is the shipped selector.**
-Every case below reaches it through :func:`github_re_review.resolve_recovery_action`;
-this module keeps no class-to-recovery table of its own. A test-local model of the
-rule is a second definition that can agree with the docs while the shipped code
-does something else — the two drift apart silently, and the suite keeps reporting
-green on the model rather than on what ships.
-
-The selector consults the CAUSE axis first, and it dominates: a ``size`` refusal
-resolves ``escalate_structural`` whatever the bot's class declares, because a
-cause is observed per REFUSAL while a class is declared per BOT and one bot can
-refuse for both at one class. Only a ``quota`` cause falls through to the class,
-and only ``awaitable_window`` reaches the window arms — which additionally
-require BOTH a window observation and an attempt budget, so an unobserved input
-yields ``unmeasured`` rather than an authorizing verdict.
-
-The bot population and every expectation are DERIVED from ``bot_registry`` and
-from the selector's own published ``RECOVERY_ACTIONS`` vocabulary, never
-hard-coded, so a bot added or reclassified in a standards doc is swept here
-automatically.
+The bot population is DERIVED from ``bot_registry``, never hard-coded, so a bot
+added or reclassified in a standards doc is swept here automatically.
 """
 
 from __future__ import annotations

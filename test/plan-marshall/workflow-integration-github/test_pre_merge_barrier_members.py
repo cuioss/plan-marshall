@@ -1,43 +1,21 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Fixture-accurate provider tests for the D1 pre-merge comment-completeness barrier.
+"""Fixture-accurate provider tests for barrier member coverage.
 
 The barrier re-runs the ``github_pr fetch_findings`` producer immediately before
 merge/enqueue and then queries pending ``pr-comment`` findings; any pending
-finding blocks the merge. These tests exercise the two barrier-critical producer
+finding blocks the merge. These tests exercise the member-coverage producer
 properties end-to-end against the REAL findings store (isolated via the autouse
 ``plan_context`` PLAN_BASE_DIR sandbox), monkeypatching only the GitHub provider
 surface (``check_auth``, ``fetch_pr_comments_data``, ``fetch_pr_head_sha``):
 
-    (a) late-comment-after-triage — a comment posted after the prior fetch is
-        filed as a NEW pending pr-comment finding on the re-fetch (the
-        ``(bot_kind, comment_id)`` dedup does not suppress a genuinely-new
-        comment), so the barrier's pending query is non-empty and blocks.
-    (b) clean-path — a re-fetch whose comments were all already stored files
-        zero new findings, so the barrier query is empty and the merge proceeds.
-    (c) termination — once triage's own batched response comment is the only new
-        comment on the PR, the re-fetch excludes it, the barrier's pending query
-        stays EMPTY and the merge proceeds. Before the self-response exclusion
-        this reply was filed as a fresh pending finding, so the barrier blocked,
-        triage responded again, and the cycle never terminated.
-    (d) guard trips and reports — at ``_SELF_RESPONSE_LOOP_BOUND`` CONSECUTIVE
-        self-authored responses (the current cycle's unbroken run, not the PR's
-        lifetime total) the producer REPORTS exhaustion as a
-        ``(self-response-loop)`` Q-Gate finding instead of passing silently.
-    (e) stale-override refusal — an operator authorization granted at one HEAD
-        does NOT authorize a merge at a later HEAD carrying commits the ruling
-        never covered, and a re-grant at the new HEAD restores it, so the
-        escape hatch is BOUND rather than removed.
-    (f) cross-kind refusal — an authorization granted over a DIFFERENT gap at the
-        SAME HEAD (the ``pre-merge-consent`` the Pre-Merge Confirmation Gate
-        grants moments earlier) does NOT satisfy this barrier, while the
-        barrier's own ``barrier-ask-override`` at that same HEAD does.
-        HEAD-binding alone is not sufficient: admissibility is per-gap.
-    (g) widened-member parity — the two taxonomy members that refine ``absent``
-        (``participated_stale`` and ``not_triggered``) gate the merge EXACTLY as
-        ``absent`` does. The barrier-relevant projection of the verdict is compared
-        against the ``absent`` verdict for the SAME scenario rather than against a
-        transcribed expectation, with a matched ``participated`` negative control
-        proving the comparison can fail.
+    - absent-required-bot blocks the merge though no comment is pending.
+    - optional-bot silence does not block the merge.
+    - the swept members cover the taxonomy's blocking set, including the
+      structural member, with an explicit reason for every unproducible one.
+    - widened-member parity — the two taxonomy members that refine ``absent``
+      (``participated_stale`` and ``not_triggered``) gate the merge EXACTLY as
+      ``absent`` does, compared against the ``absent`` verdict for the SAME
+      scenario with a matched ``participated`` negative control.
 
 The provider response is built from a real fixture shape (mirroring
 ``test_github_pr.py``), so a green fixture cannot diverge from production
@@ -85,16 +63,6 @@ _INITIAL_COMMENTS = [
         'resolved': False,
     },
 ]
-_LATE_COMMENT = {
-    'id': 'c-late',
-    'author': 'coderabbitai',
-    'thread_id': 'PRRT_9',
-    'kind': 'inline',
-    'body': 'This newly-pushed branch introduces an off-by-one in the loop bound.',
-    'path': 'src/c.py',
-    'line': 42,
-    'resolved': False,
-}
 
 
 def _patch_provider(monkeypatch, comments):
@@ -168,10 +136,6 @@ _merge_auth = load_script_module(
     'plan-marshall', 'manage-status', '_cmd_merge_authorization.py', '_barrier_merge_auth_cmd'
 )
 _lifecycle = load_script_module('plan-marshall', 'manage-status', '_cmd_lifecycle.py', '_barrier_merge_auth_lifecycle')
-_DOCS_ONLY_HEAD = 'd0c50n1ya1b2c3d4e5f60718293a4b5c6d7e8f90'
-_REBASED_HEAD = '76c7200b6f1e2d3c4b5a69788796a5b4c3d2e1f0'
-_BARRIER_GAP = 'review-barrier-gap'
-_MERGE_ACTION_GAP = 'merge-action'
 
 
 def _state_of(verdict, bot):

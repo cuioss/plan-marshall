@@ -77,7 +77,6 @@ default.
 """
 
 import argparse
-import sys
 import time
 
 import _github_pr

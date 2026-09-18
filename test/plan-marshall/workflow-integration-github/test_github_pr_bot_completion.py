@@ -1,16 +1,14 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""``github_pr.cmd_fetch_findings``: cross-iteration dedup, classification, and participation.
+"""``github_pr`` bot-completion polling states and the answered-empty classification path.
 
-The producer-side dedup keys on ``(bot_kind, comment_id)`` for every bot kind,
-thread-bearing and thread_id-less alike. Covered here: re-fetch idempotence, the
-``(bot_kind, comment_id)`` collision boundary, the contentless-boilerplate
-pre-filter layer, the per-shape evidence content gate, and the
-``stale_participation_bots[]`` currency observation.
+Covered here: ``cmd_bot_completion`` polling states (slow/in-progress/completed,
+markerless, absent, unconfigured), the answered-empty classification path, and
+the edit-term filing case.
 
 The findings store is REAL (isolated via the autouse ``plan_context``
 ``PLAN_BASE_DIR`` sandbox); only the GitHub provider surface (``check_auth``,
-``fetch_pr_comments_data``, ``fetch_pr_head_sha``) is monkeypatched, so the dedup
-path exercises the genuine ``_findings_core`` add/query round-trip.
+``fetch_pr_comments_data``, ``fetch_pr_head_sha``) is monkeypatched, so the
+completion path exercises the genuine ``_findings_core`` add/query round-trip.
 """
 
 import argparse

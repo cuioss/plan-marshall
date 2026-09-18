@@ -27,6 +27,7 @@ _HELP_SURFACE = [
             'ready',
             'edit',
             'reviews',
+            'comments',
             'list',
         ),
         (),
@@ -179,6 +180,25 @@ def test_pr_comments_no_body_truncation():
     )
     # Sanity: unified schema discriminator is present in the source
     assert "'kind'" in source, 'Unified comment schema kind field missing from github_ops'
+
+
+def test_pr_comments_long_body_preserved_byte_identical(monkeypatch):
+    """Behavioural: a comment body longer than 100 chars passes through untruncated.
+
+    The structural guard above only rejects one spelling of the former
+    ``[:100]`` expression; an equivalent truncation anywhere else in the fetch
+    path would stay green. This test drives a 250-character body through the
+    fetch and asserts byte-identity on the emitted record.
+    """
+    body = 'x' * 250
+    payload = _inline_thread_payload(body=body)
+    github_ops = _install_github_ops_stubs(monkeypatch, payload)
+
+    result = github_ops.fetch_pr_comments_data(42)
+
+    assert result['status'] == 'success', f'Expected success, got: {result}'
+    bodies = [comment['body'] for comment in result['comments']]
+    assert bodies == [body], f'Long comment body was not preserved byte-identical: {bodies!r}'
 
 
 def test_pr_comments_includes_review_body(monkeypatch):

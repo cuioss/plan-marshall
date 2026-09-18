@@ -32,18 +32,11 @@ Covers the three concerns of the post-merge re-review registry:
        weakly the decline was recognized. The review signal wins when both are
        present. Fail-closed on every missing or unparseable input.
     4. Refusal RECORDING — a rejected refusal is not a bare ``continue``. Both
-       discriminators append every refusal they skip to an accumulator, and the
-       envelope surfaces ``refusal_detected`` / ``refusal_class`` /
-       ``refusal_eta`` / ``refusals[]`` so a caller can distinguish "the bot
-       refused, and here is the recovery this arms" from "the bot never
-       responded". A refusal still does not count as a completed review.
-    5. The refusal RE-TRIGGER GUARD at the trigger chokepoint — there is exactly
-       ONE ``_github.post_pr_comment`` call site in the module, and
-       ``request_fresh_review`` consults the rate window before reaching it. The
-       load-bearing assertion for every guard case is that ``post_pr_comment``
-       was NOT CALLED: the guard exists so that no comment reaches the PR, and a
-       test that only inspects the returned envelope passes just as well on an
-       implementation that posts first and computes the status afterwards.
+    discriminators append every refusal they skip to an accumulator, and the
+    envelope surfaces ``refusal_detected`` / ``refusal_class`` /
+    ``refusal_eta`` / ``refusals[]`` so a caller can distinguish "the bot
+    refused, and here is the recovery this arms" from "the bot never
+    responded". A refusal still does not count as a completed review.
 
 Plus the ``cmd_re_review`` CLI handler that wires request → await together.
 
@@ -65,15 +58,9 @@ machine. The fixture is default-on and structural: a test added later inherits i
 without remembering anything, and a test that needs the other side of the
 predicate injects its own ``window_reader`` rather than depending on the store.
 
-``test_the_neutralized_guard_posts_despite_a_claimed_window_in_the_store`` and
-``test_the_unneutralized_guard_refuses_on_the_same_claimed_window`` are a MATCHED
-PAIR standing guard over that fixture, and DELETING OR WEAKENING EITHER ARM
-SILENTLY VOIDS THE OTHER'S EVIDENTIARY VALUE. Both arms simulate a claimed,
-unexpired window in the store BELOW the fixture's seam; they differ only in
-whether the fixture is engaged. The positive arm alone cannot tell "the fixture
-works" from "this machine's store happens to hold no claim", and the negative
-control alone proves only that a claim CAN refuse, not that it is suppressed by
-default.
+The matched pair proving that fixture (neutralized-posts vs unneutralized-refuses
+over the same claimed window) lives in ``test_re_review_strategy_await.py``;
+this module relies on the same autouse fixture without re-proving it.
 """
 
 import argparse
@@ -87,19 +74,6 @@ import github_re_review
 import pytest
 
 _NO_RECORD_WINDOW = {'status': 'free', 'expired': True, 'holder': '', 'seconds_remaining': 0.0}
-_OPEN_WINDOW = {
-    'status': 'claimed',
-    'expired': False,
-    'holder': 'a-concurrently-finalizing-plan',
-    'seconds_remaining': 1800.0,
-}
-_EXPIRED_WINDOW = {
-    'status': 'claimed',
-    'expired': True,
-    'holder': 'a-concurrently-finalizing-plan',
-    'seconds_remaining': 0.0,
-}
-_LIVE_WINDOW_READER = github_re_review.read_rate_window
 
 
 def _window_reader(observation):
