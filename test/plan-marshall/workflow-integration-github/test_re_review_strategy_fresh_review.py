@@ -65,15 +65,9 @@ machine. The fixture is default-on and structural: a test added later inherits i
 without remembering anything, and a test that needs the other side of the
 predicate injects its own ``window_reader`` rather than depending on the store.
 
-``test_the_neutralized_guard_posts_despite_a_claimed_window_in_the_store`` and
-``test_the_unneutralized_guard_refuses_on_the_same_claimed_window`` are a MATCHED
-PAIR standing guard over that fixture, and DELETING OR WEAKENING EITHER ARM
-SILENTLY VOIDS THE OTHER'S EVIDENTIARY VALUE. Both arms simulate a claimed,
-unexpired window in the store BELOW the fixture's seam; they differ only in
-whether the fixture is engaged. The positive arm alone cannot tell "the fixture
-works" from "this machine's store happens to hold no claim", and the negative
-control alone proves only that a claim CAN refuse, not that it is suppressed by
-default.
+The matched pair proving that fixture (neutralized-posts vs unneutralized-refuses
+over the same claimed window) lives in ``test_re_review_strategy_await.py``;
+this module relies on the same autouse fixture without re-proving it.
 """
 
 import argparse

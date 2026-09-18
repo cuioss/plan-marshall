@@ -1,16 +1,16 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""``github_pr.cmd_fetch_findings``: cross-iteration dedup, classification, and participation.
+"""``github_pr`` refusal recognition, noise split, self-response exclusion, and cause axes.
 
-The producer-side dedup keys on ``(bot_kind, comment_id)`` for every bot kind,
-thread-bearing and thread_id-less alike. Covered here: re-fetch idempotence, the
-``(bot_kind, comment_id)`` collision boundary, the contentless-boilerplate
-pre-filter layer, the per-shape evidence content gate, and the
-``stale_participation_bots[]`` currency observation.
+Covered here: refusal recognition across every bot shape (registry, structural,
+rate-limit, empty-body, human-authored negatives), the noise-versus-refusal
+split, the self-response exclusion with its loop bound (converged/diverged
+histories, reviewer reopening), and the refusal cause axes (size patterns,
+cause stickiness, split/participating classification).
 
 The findings store is REAL (isolated via the autouse ``plan_context``
 ``PLAN_BASE_DIR`` sandbox); only the GitHub provider surface (``check_auth``,
-``fetch_pr_comments_data``, ``fetch_pr_head_sha``) is monkeypatched, so the dedup
-path exercises the genuine ``_findings_core`` add/query round-trip.
+``fetch_pr_comments_data``, ``fetch_pr_head_sha``) is monkeypatched, so the
+refusal path exercises the genuine ``_findings_core`` add/query round-trip.
 """
 
 import argparse

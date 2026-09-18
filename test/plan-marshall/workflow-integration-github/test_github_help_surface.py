@@ -27,6 +27,7 @@ _HELP_SURFACE = [
             'ready',
             'edit',
             'reviews',
+            'comments',
             'list',
         ),
         (),

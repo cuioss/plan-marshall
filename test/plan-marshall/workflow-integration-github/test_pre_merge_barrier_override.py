@@ -3,26 +3,11 @@
 
 The barrier re-runs the ``github_pr fetch_findings`` producer immediately before
 merge/enqueue and then queries pending ``pr-comment`` findings; any pending
-finding blocks the merge. These tests exercise the two barrier-critical producer
+finding blocks the merge. These tests exercise the override-bound producer
 properties end-to-end against the REAL findings store (isolated via the autouse
 ``plan_context`` PLAN_BASE_DIR sandbox), monkeypatching only the GitHub provider
 surface (``check_auth``, ``fetch_pr_comments_data``, ``fetch_pr_head_sha``):
 
-    (a) late-comment-after-triage — a comment posted after the prior fetch is
-        filed as a NEW pending pr-comment finding on the re-fetch (the
-        ``(bot_kind, comment_id)`` dedup does not suppress a genuinely-new
-        comment), so the barrier's pending query is non-empty and blocks.
-    (b) clean-path — a re-fetch whose comments were all already stored files
-        zero new findings, so the barrier query is empty and the merge proceeds.
-    (c) termination — once triage's own batched response comment is the only new
-        comment on the PR, the re-fetch excludes it, the barrier's pending query
-        stays EMPTY and the merge proceeds. Before the self-response exclusion
-        this reply was filed as a fresh pending finding, so the barrier blocked,
-        triage responded again, and the cycle never terminated.
-    (d) guard trips and reports — at ``_SELF_RESPONSE_LOOP_BOUND`` CONSECUTIVE
-        self-authored responses (the current cycle's unbroken run, not the PR's
-        lifetime total) the producer REPORTS exhaustion as a
-        ``(self-response-loop)`` Q-Gate finding instead of passing silently.
     (e) stale-override refusal — an operator authorization granted at one HEAD
         does NOT authorize a merge at a later HEAD carrying commits the ruling
         never covered, and a re-grant at the new HEAD restores it, so the
@@ -32,12 +17,6 @@ surface (``check_auth``, ``fetch_pr_comments_data``, ``fetch_pr_head_sha``):
         grants moments earlier) does NOT satisfy this barrier, while the
         barrier's own ``barrier-ask-override`` at that same HEAD does.
         HEAD-binding alone is not sufficient: admissibility is per-gap.
-    (g) widened-member parity — the two taxonomy members that refine ``absent``
-        (``participated_stale`` and ``not_triggered``) gate the merge EXACTLY as
-        ``absent`` does. The barrier-relevant projection of the verdict is compared
-        against the ``absent`` verdict for the SAME scenario rather than against a
-        transcribed expectation, with a matched ``participated`` negative control
-        proving the comparison can fail.
 
 The provider response is built from a real fixture shape (mirroring
 ``test_github_pr.py``), so a green fixture cannot diverge from production
@@ -208,56 +187,6 @@ def _authorization_check(plan_id, head):
     return _merge_auth.cmd_merge_authorization_check(
         argparse.Namespace(plan_id=plan_id, head=head, gap_class=_BARRIER_GAP)
     )
-
-
-_MEMBER_OBSERVATIONS = {
-    review_completeness.STATE_PARTICIPATED_STALE: {'stale_participation_bots': ['cuioss-review-bot']},
-    review_completeness.STATE_NOT_TRIGGERED: {'not_triggered': True},
-    review_completeness.STATE_DECLINED: {'declined_bots': ['cuioss-review-bot']},
-    review_completeness.STATE_IN_PROGRESS: {'in_progress_bots': ['cuioss-review-bot']},
-    # cuioss-review-bot's registry rate_limit_class is ``unknown``, so a bare refusal from it
-    # resolves to the declared-ignorance member.
-    review_completeness.STATE_REFUSED_UNKNOWN: {'refused_bots': ['cuioss-review-bot']},
-    # ...and the same refusal with an observed SIZE cause resolves structurally,
-    # because the cause axis dominates the class axis.
-    review_completeness.STATE_REFUSED_STRUCTURAL: {
-        'refused_bots': ['cuioss-review-bot'],
-        'refused_causes': {'cuioss-review-bot': 'size'},
-    },
-}
-
-
-def _parity_plan_id(member):
-    """The plan id the parity case for ``member`` files its findings against."""
-    return f'barrier-parity-{member.replace("_", "-")}'
-
-
-PLAN_IDS += tuple(_parity_plan_id(member) for member in _MEMBER_OBSERVATIONS)
-_UNPRODUCIBLE_MEMBERS = {
-    review_completeness.STATE_ABSENT: (
-        'the BASELINE every widened member is compared against, not a widened member itself'
-    ),
-    review_completeness.STATE_REFUSED_AWAITABLE: (
-        'requires a refusing bot whose registry rate_limit_class is awaitable_window; '
-        'the required bot in this scenario (cuioss-review-bot) declares unknown'
-    ),
-    review_completeness.STATE_REFUSED_HARD: (
-        'requires a refusing bot whose registry rate_limit_class is hard_quota; '
-        'the required bot in this scenario (cuioss-review-bot) declares unknown'
-    ),
-    review_completeness.STATE_UNREGISTERED_KIND: (
-        'decided from the CONFIGURATION, not from an observation: it requires the '
-        'required token to be absent from bot_registry.bot_kinds(), which no entry in '
-        '_MEMBER_OBSERVATIONS can produce because those are predicate observations and '
-        "this is a registry fact. Producing it would mean swapping the scenario's "
-        'required bot for an unregistered token — and that changes the bot whose state '
-        'the parity compares, so the absent baseline and the widened run would name '
-        'DIFFERENT bots in unproven_bots and the projection could never be equal. The '
-        'parity this sweep asserts is therefore not statable for this member here; the '
-        'barrier-relevant property (it blocks exactly as absent does) is covered by its '
-        'membership in _UNPROVEN_STATES, asserted in test_structural_refusal.py'
-    ),
-}
 
 
 def test_stale_override_does_not_satisfy_barrier_after_head_advances(plan_context, monkeypatch):

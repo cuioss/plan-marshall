@@ -27,6 +27,7 @@ _HELP_SURFACE = [
             'ready',
             'edit',
             'reviews',
+            'comments',
             'list',
         ),
         (),
@@ -104,6 +105,33 @@ def _assert_single_body_source(bundle: str, skill: str, script: str) -> None:
     }
     assert 'body_file' not in identifiers, f'{script}::cmd_pr_create retains a body_file local or attribute access'
     assert 'body_file' not in literals, f'{script}::cmd_pr_create retains a body_file lookup'
+
+    # The retired inline ``--body`` spelling can survive the same dormant ways
+    # as ``body_file``: an ``args.body`` attribute access, or a
+    # ``getattr(args, "body", ...)`` read reachable from a direct-Namespace
+    # caller. A bare ``body`` local is the store result itself and expected,
+    # so only the ``args``-bound spellings are rejected.
+    args_body_access = {
+        node.attr
+        for node in ast.walk(handler)
+        if isinstance(node, ast.Attribute)
+        and isinstance(node.value, ast.Name)
+        and node.value.id == 'args'
+        and node.attr == 'body'
+    }
+    assert not args_body_access, f'{script}::cmd_pr_create retains an args.body access'
+    body_getattr_read = any(
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == 'getattr'
+        and len(node.args) >= 2
+        and isinstance(node.args[0], ast.Name)
+        and node.args[0].id == 'args'
+        and isinstance(node.args[1], ast.Constant)
+        and node.args[1].value == 'body'
+        for node in ast.walk(handler)
+    )
+    assert not body_getattr_read, f'{script}::cmd_pr_create retains a getattr(args, "body") read'
 
 
 @pytest.mark.parametrize(

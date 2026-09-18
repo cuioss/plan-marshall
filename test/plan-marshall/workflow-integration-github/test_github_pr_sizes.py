@@ -34,7 +34,7 @@ from _github_pr_fixtures import (
 )
 from _pr_agent_guide_bodies import GUIDE_WITH_FINDING, OBSERVED_CLEAN_GUIDE
 
-from conftest import get_script_path, get_skill_dir, load_script_module, run_script
+from conftest import get_script_path, load_script_module, run_script
 
 PLAN_IDS: tuple[str, ...] = (
     'gh-pr-bare-flags',
@@ -385,8 +385,6 @@ def _edit_term_comment(bot_kind, *, body, updated_at=None):
 
 
 _LEGACY_LEDGER_FILENAME = 'pr-noise-dropped-comments.jsonl'
-_CONTRACT_DOC = get_skill_dir('plan-marshall', 'automatic-review') / 'standards' / 'bot-participation-contract.md'
-_CONTRACT_TEXT = _CONTRACT_DOC.read_text(encoding='utf-8')
 _SOURCERY_SIZE_NOTICE = (
     '> [!NOTE]\n'
     '> Sorry, your pull request is larger than the review limit of 150000 diff '
