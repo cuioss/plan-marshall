@@ -74,7 +74,12 @@ import sys
 from pathlib import Path
 
 # The PLAN-08 manifest-resolution order, imported rather than re-implemented.
-from generate_executor import _version_tuple, find_installed_manifest_path, read_installed_manifest
+from generate_executor import (
+    _version_tuple,
+    find_installed_manifest_path,
+    read_installed_manifest,
+    read_marshal_target,
+)
 from marketplace_bundles import _version_sort_key
 from marketplace_paths import get_plugin_cache_path
 
@@ -99,7 +104,7 @@ REMEDIATION = (
     "running '/plugin' and confirming plan-marshall reports the expected version, then "
     "reload the session's plugin set so the refreshed cache is visible to the running "
     "session — resolve the directive with 'platform_runtime session reload-directive' "
-    "(on Claude it is '/reload-plugins'; on OpenCode the seam returns a no-op whose "
+    "(on Claude it is '/reload-plugins'; on Antigravity or OpenCode the seam returns a no-op whose "
     'alternative is a full session restart).'
 )
 
@@ -144,6 +149,19 @@ def newest_cache_version(cache_root: Path) -> str:
             continue
         version_dirs.extend(child.name for child in children if child.is_dir() and _VERSION_DIR_RE.match(child.name))
     if not version_dirs:
+        # Fallback for unversioned / flat target installations (Antigravity, OpenCode)
+        import json
+
+        for candidate_dir in (cache_root, cache_root.parent):
+            for fname in ('dist-manifest.json', 'plugin.json', 'opencode.json'):
+                manifest_file = candidate_dir / fname
+                if manifest_file.is_file():
+                    try:
+                        data = json.loads(manifest_file.read_text(encoding='utf-8'))
+                        if isinstance(data, dict) and 'version' in data and data['version']:
+                            return str(data['version'])
+                    except (OSError, ValueError):
+                        pass
         return ''
     return max(version_dirs, key=_version_sort_key)
 
@@ -193,8 +211,9 @@ def check_freshness(cache_root: Path | None) -> dict:
             '',
         )
 
-    manifest_path = find_installed_manifest_path(cache_root)
-    manifest = read_installed_manifest(cache_root)
+    target = read_marshal_target()
+    manifest_path = find_installed_manifest_path(cache_root, target=target)
+    manifest = read_installed_manifest(cache_root, target=target)
     manifest_version = str(manifest.get('version', '') or '')
     if manifest_path is None or not manifest_version:
         return _unknown(

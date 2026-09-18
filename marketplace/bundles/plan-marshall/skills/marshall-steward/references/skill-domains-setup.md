@@ -45,7 +45,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 ## Discover and Attach Project-Level Skills
 
-Scan `.claude/skills/` for project-level skills and let the user assign them to configured domains.
+Scan project skill roots (e.g. `.claude/skills/`, `.agents/skills/`, `.opencode/skills/`) for project-level skills and let the user assign them to configured domains.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
@@ -107,7 +107,7 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture e
 Recipes are deterministic plan templates that bypass the iterative refine → outline → Q-Gate pipeline. The wizard does not "configure" recipes — they self-register at runtime via three sources:
 
 1. **Built-in** — `provides_recipes()` in `plan-marshall-plugin/extension.py` (always available).
-2. **Project-local** — `recipe-*` skills under `.claude/skills/` (zero-config; just drop the skill).
+2. **Project-local** — `recipe-*` skills under project skill roots (zero-config; just drop the skill).
 3. **Extension-provided** — `provides_recipes()` callbacks from any active extension's domain bundle.
 
 Enumerate the recipes currently visible to the steward to confirm the project picked up the expected ones:
@@ -126,8 +126,8 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config list-r
        └────────────────────┬─────────────────────────┘
                             │
        ┌──────────────────────────────────────────────┐
-       │ Source 2: .claude/skills/recipe-*/SKILL.md   │
-       │   (project-local recipes, no plugin.json)    │
+       │ Source 2: <skill-root>/recipe-*/SKILL.md     │
+       │   (project-local recipes, no plugin manifest)│
        └────────────────────┬─────────────────────────┘
                             │
        ┌──────────────────────────────────────────────┐
@@ -156,7 +156,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config list-r
 - `refactor-to-profile-standards` (codebase_wide, tech_debt) — Iterates packages across modules.
 - `lesson_cleanup` (single_lesson, change_type derived from lesson kind) — Auto-suggested by `phase-1-init` Step 5c when `source == lesson` and the lesson body is doc-shaped.
 
-**No wizard configuration is required for built-in recipes** — they are always available once the plugin is installed and the executor is generated. The wizard's only role is to surface them via `references/menu-recipes.md` so users know they exist. Project-local recipes (Source 2) require dropping a `recipe-*` skill under `.claude/skills/` and re-running `/marshall-steward` to regenerate the executor with the new notation.
+**No wizard configuration is required for built-in recipes** — they are always available once the plugin is installed and the executor is generated. The wizard's only role is to surface them via `references/menu-recipes.md` so users know they exist. Project-local recipes (Source 2) require dropping a `recipe-*` skill under a project skill root (e.g. `.claude/skills/`, `.agents/skills/`, or `.opencode/skills/`) and re-running `/marshall-steward` to regenerate the executor with the new notation.
 
 See [`references/menu-recipes.md`](menu-recipes.md) for the full catalog and the procedure to add a new built-in recipe.
 

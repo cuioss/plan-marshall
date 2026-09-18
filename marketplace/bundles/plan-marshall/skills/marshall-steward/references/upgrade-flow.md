@@ -183,16 +183,18 @@ plan emitted for the resolved kind:
   operator action this gate does not perform.
 
 - **`regenerate-target-tree`** (meta only — absent from a consumer plan) —
-  regenerate the Claude target tree:
+  regenerate the target tree for the project's target:
 
   ```bash
   ./pw generate-claude
   ```
 
+  (or `./pw generate-antigravity`, `./pw generate-opencode` depending on the active target).
+
   Always go through the `./pw` wrapper — `uv` is installed only into the
   project-local `.pyprojectx/` tree and is not on `PATH`, so a bare `uv run …`
-  fails outside it. The `generate-claude` alias carries the
-  `--target claude --output target/claude` arguments.
+  fails outside it. The target aliases carry the
+  `--target {target} --output target/{target}` arguments.
 
 - **`regenerate-executor`** (both kinds) — regenerate the executor. Invoke the
   post-change `generate_executor.py` **directly, by its resolved script path**
@@ -285,7 +287,7 @@ absent from its `sub_steps`.
 >
 > On Claude the seam returns `/reload-plugins` (which picks up the regenerated
 > executor / agent set live — only registered monitors would force a full
-> restart, and plan-marshall registers none); on OpenCode it returns a `no-op`
+> restart, and plan-marshall registers none); on Antigravity or OpenCode it returns a `no-op`
 > whose alternative is a full session restart. See [`../SKILL.md`](../SKILL.md) §
 > "Session Reload Directive After Executor / Agent Changes" for the WHY the
 > registry is session-pinned.
@@ -304,8 +306,8 @@ plugin cache current through `project:finalize-step-sync-plugin-cache`, which
 runs at the end of every plan's finalize phase and mirrors the freshly-generated
 `target/claude/` tree into the cache. That step is **meta-project-only** (the
 meta project's `sync-plugin-cache` surface — a project-local skill under
-`.claude/skills/`, not bundle content): it is a project-local skill under
-`.claude/skills/`, registered in the meta project's own `marshal.json`, and
+project skill roots, not bundle content): it is a project-local skill under
+project skill roots, registered in the meta project's own `marshal.json`, and
 consumer projects neither ship it nor have it seeded. So the mechanism that keeps
 the meta cache fresh is invisible to — and does not cover — a consumer, whose
 cache is refreshed only when the operator explicitly runs

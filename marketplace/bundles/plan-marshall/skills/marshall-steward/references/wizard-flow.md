@@ -112,8 +112,7 @@ Interpret the consult result before deciding whether to widen:
 **Widen only when the consult shows the permission is absent.** Do NOT issue the write unconditionally — the consult above is the gate that authorizes it. When the consult shows the permission is absent, invoke the resolved script to add it:
 
 ```bash
-python3 "{PERMISSION_FIX}" ensure \
-  --permissions "Bash(python3 .plan/execute-script.py *)" \
+python3 "{PERMISSION_FIX}" ensure-executor \
   --target project
 ```
 
@@ -194,7 +193,7 @@ The script auto-detects the plugin cache location and generates `.plan/execute-s
 
 **Verify syntax**:
 ```bash
-python3 -m py_compile .plan/execute-script.py && echo "Executor syntax OK"
+python3 -m py_compile .plan/execute-script.py
 ```
 
 **Output**: "Executor ready with N script mappings"

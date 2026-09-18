@@ -242,36 +242,40 @@ def resolve_bundles_root(script_file: Path) -> Path:
 
 
 def resolve_skills_root(script_file: Path) -> Path:
-    """Resolve the ``skills`` directory anchor by walking up from a script file.
+    """Resolve the skills directory anchor by walking up from a script file.
 
     Walks parents of ``script_file`` and returns the first ancestor named
-    ``skills`` whose parent contains a ``.claude-plugin/plugin.json`` (i.e. is
-    a bundle directory). Uses identity walking (no index arithmetic). Raises
-    ``RuntimeError`` with the full walked parent chain if no such ancestor
-    exists, so import-time misconfiguration fails loudly.
+    ``skills`` or ``skill`` whose parent contains a bundle or target manifest
+    (``.claude-plugin/plugin.json``, ``plugin.json``, or ``opencode.json``).
+    Uses identity walking (no index arithmetic). Raises ``RuntimeError`` with
+    the full walked parent chain if no such ancestor exists.
 
     Args:
         script_file: Path to the calling script (typically ``Path(__file__)``).
 
     Returns:
-        The ``skills`` directory inside the owning bundle.
+        The ``skills`` or ``skill`` directory inside the owning bundle or target.
 
     Raises:
-        RuntimeError: If no ``skills`` ancestor with a sibling bundle manifest
-            is found.
+        RuntimeError: If no skills ancestor with a bundle/target manifest is found.
     """
     start = Path(script_file).resolve()
     walked: list[Path] = []
     for ancestor in start.parents:
         walked.append(ancestor)
-        if ancestor.name != 'skills':
+        if ancestor.name not in ('skills', 'skill'):
             continue
-        if (ancestor.parent / '.claude-plugin' / 'plugin.json').is_file():
+        parent = ancestor.parent
+        if (
+            (parent / '.claude-plugin' / 'plugin.json').is_file()
+            or (parent / 'plugin.json').is_file()
+            or (parent / 'opencode.json').is_file()
+        ):
             return ancestor
     chain = '\n  '.join(str(p) for p in walked)
     raise RuntimeError(
-        f"resolve_skills_root: could not locate a 'skills' directory inside "
-        f'a bundle above {start}. Walked parents:\n  {chain}'
+        f"resolve_skills_root: could not locate a 'skills' or 'skill' directory inside "
+        f'a bundle or target above {start}. Walked parents:\n  {chain}'
     )
 
 

@@ -22,7 +22,7 @@ Project kinds:
 
 * ``meta``     — the plan-marshall meta-project itself (BOTH
   ``marketplace/targets/generate.py`` and ``marketplace/bundles/`` exist under
-  the root). It regenerates the ``target/claude`` tree AND the executor, and
+  the root). It regenerates the target tree AND the executor, and
   verifies with executor preflight AND a content-drift report.
 * ``consumer`` — a downstream project that consumes plan-marshall (the
   meta-only marketplace surface is absent). It gates on plugin-cache freshness

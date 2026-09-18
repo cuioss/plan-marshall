@@ -125,10 +125,17 @@ from pathlib import Path
 # Step 1: locate script-shared/scripts via identity walk so we can import the
 # shared anchor helper. Step 2: use resolve_skills_root to derive _SKILLS_DIR.
 for _ancestor in Path(__file__).resolve().parents:
-    if _ancestor.name == 'skills' and (_ancestor.parent / '.claude-plugin' / 'plugin.json').is_file():
-        _shared_scripts = str(_ancestor / 'script-shared' / 'scripts')
-        if _shared_scripts not in sys.path:
-            sys.path.insert(0, _shared_scripts)
+    if _ancestor.name in ('skills', 'skill') and (
+        (_ancestor.parent / '.claude-plugin' / 'plugin.json').is_file()
+        or (_ancestor.parent / 'plugin.json').is_file()
+        or (_ancestor.parent / 'opencode.json').is_file()
+    ):
+        for _cand_name in ('script-shared', 'plan-marshall-script-shared'):
+            _shared_scripts = _ancestor / _cand_name / 'scripts'
+            if _shared_scripts.is_dir():
+                if str(_shared_scripts) not in sys.path:
+                    sys.path.insert(0, str(_shared_scripts))
+                break
         break
 
 from marketplace_bundles import resolve_skills_root  # noqa: E402
@@ -136,9 +143,11 @@ from marketplace_paths import agent_instructions_filename, iter_project_skill_di
 
 _SKILLS_DIR = resolve_skills_root(Path(__file__))
 for _lib in ('ref-toon-format',):
-    _lib_path = str(_SKILLS_DIR / _lib / 'scripts')
-    if _lib_path not in sys.path:
-        sys.path.insert(0, _lib_path)
+    _lib_path = _SKILLS_DIR / _lib / 'scripts'
+    if not _lib_path.is_dir():
+        _lib_path = _SKILLS_DIR / f'plan-marshall-{_lib}' / 'scripts'
+    if _lib_path.is_dir() and str(_lib_path) not in sys.path:
+        sys.path.insert(0, str(_lib_path))
 
 # Content checks applied to project documentation files.
 # Each check has a key, the files it applies to, and a substring marker
@@ -1026,7 +1035,7 @@ def main() -> int:
         help=(
             'Detect finalize steps absent from an existing marshal.json — '
             'newly-added built-in defaults AND project: steps the repo ships '
-            '(under .claude/skills/) that were dropped from phase-6-finalize.steps.'
+            '(under project skill roots) that were dropped from phase-6-finalize.steps.'
         ),
         allow_abbrev=False,
     )
@@ -1040,7 +1049,9 @@ def main() -> int:
         '--project-root',
         type=str,
         default='.',
-        help=('Project root used to discover shipped project: finalize-step skills under .claude/skills/ (default: .)'),
+        help=(
+            'Project root used to discover shipped project: finalize-step skills under project skill roots (default: .)'
+        ),
     )
 
     # check-working-prefixes subcommand

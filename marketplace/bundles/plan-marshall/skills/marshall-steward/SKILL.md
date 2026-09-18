@@ -91,7 +91,7 @@ configure · verify · maintain
 
 The `/marshall-steward` command must locate `bootstrap_plugin.py` and detect the plugin root before loading this skill. `bootstrap_plugin.py` is the single deterministic resolver for every other bootstrap script path — locate it once, then route all post-`get-root` path lookups through its `resolve` verb instead of hand-globbing each script.
 
-1. **Locate `bootstrap_plugin.py` (the one unavoidable glob).** Resolve its path with the `Glob` tool against the **layout-agnostic** pattern `**/marshall-steward/scripts/bootstrap_plugin.py` and capture the first match as `${BOOTSTRAP}`. The recursive `**` prefix matches both deploy layouts — the flat `target/claude/plan-marshall/skills/…` tree and the versioned cache `…/plan-marshall/{version}/skills/…` tree — without a hand-placed `*` version level.
+1. **Locate `bootstrap_plugin.py` (the one unavoidable glob).** Resolve its path with the `Glob` tool against the **layout-agnostic** pattern `**/*marshall-steward/scripts/bootstrap_plugin.py` and capture the first match as `${BOOTSTRAP}`. The pattern matches across all target layouts — Claude (`skills/marshall-steward/…`), Antigravity (`skills/plan-marshall-marshall-steward/…`), and OpenCode (`skill/plan-marshall-marshall-steward/…`) — without a hand-placed `*` version level.
 2. **Detect the plugin root** and cache it:
 
    ```bash
@@ -320,7 +320,8 @@ static literals.
 Steps that are **meta-project-only** — e.g. running the multi-target
 generator and pushing the host plugin cache — are NOT default-on built-ins.
 They live as project-local skills under
-`.claude/skills/finalize-step-{name}/SKILL.md` in the meta-project that
+project skill roots (e.g. `.claude/skills/finalize-step-{name}/SKILL.md`,
+`.agents/skills/finalize-step-{name}/SKILL.md`, or `.opencode/skills/finalize-step-{name}/SKILL.md`) in the meta-project that
 needs them (discovered as `project:finalize-step-{name}` with `default_on: false`),
 and that meta-project's `marshal.json` registers them explicitly. Consumer
 projects don't see them and don't have them seeded.
@@ -828,7 +829,7 @@ because the emitted agent set may have changed.
 >
 > On Claude the directive is `/reload-plugins`, which refreshes the
 > session-pinned registry live — only registered monitors force a full
-> session restart, and plan-marshall registers none. On OpenCode the seam
+> session restart, and plan-marshall registers none. On Antigravity or OpenCode the seam
 > returns a `no-op` whose alternative is a full session restart. The WHY
 > rationale (registry is session-pinned at startup) is unchanged and is
 > documented at the sister surfaces — `/sync-plugin-cache`,

@@ -43,19 +43,28 @@ from pathlib import Path
 # Step 1: locate script-shared/scripts via identity walk so we can import the
 # shared anchor helper. Step 2: use resolve_skills_root to derive _SKILLS_DIR.
 for _ancestor in Path(__file__).resolve().parents:
-    if _ancestor.name == 'skills' and (_ancestor.parent / '.claude-plugin' / 'plugin.json').is_file():
-        _shared_scripts = str(_ancestor / 'script-shared' / 'scripts')
-        if _shared_scripts not in sys.path:
-            sys.path.insert(0, _shared_scripts)
+    if _ancestor.name in ('skills', 'skill') and (
+        (_ancestor.parent / '.claude-plugin' / 'plugin.json').is_file()
+        or (_ancestor.parent / 'plugin.json').is_file()
+        or (_ancestor.parent / 'opencode.json').is_file()
+    ):
+        for _cand_name in ('script-shared', 'plan-marshall-script-shared'):
+            _shared_scripts = _ancestor / _cand_name / 'scripts'
+            if _shared_scripts.is_dir():
+                if str(_shared_scripts) not in sys.path:
+                    sys.path.insert(0, str(_shared_scripts))
+                break
         break
 
 from marketplace_bundles import _version_sort_key, resolve_skills_root  # noqa: E402
 
 _SKILLS_DIR = resolve_skills_root(Path(__file__))
 for _lib in ('ref-toon-format', 'tools-file-ops'):
-    _lib_path = str(_SKILLS_DIR / _lib / 'scripts')
-    if _lib_path not in sys.path:
-        sys.path.insert(0, _lib_path)
+    _lib_path = _SKILLS_DIR / _lib / 'scripts'
+    if not _lib_path.is_dir():
+        _lib_path = _SKILLS_DIR / f'plan-marshall-{_lib}' / 'scripts'
+    if _lib_path.is_dir() and str(_lib_path) not in sys.path:
+        sys.path.insert(0, str(_lib_path))
 
 from file_ops import get_base_dir, output_toon, safe_main  # noqa: E402
 
@@ -230,18 +239,22 @@ def _detect_claude_root() -> Path | None:
 
 
 def _detect_opencode_root() -> Path | None:
-    """Walk the OpenCode project-local skill roots for plan-marshall skills.
+    """Walk OpenCode skill roots for plan-marshall skills.
 
-    The root set is the runtime-resolved ``layout skill-roots`` op output
-    (``get_project_skill_roots``) — the same single source the executor's
-    discovery uses — resolved here against the typical project base. Returns
-    the first root that contains at least one directory matching
+    Checks both project-local skill roots (``get_project_skill_roots``) and
+    user-global discovery roots (``get_bundle_cache_roots``). Returns the
+    first root that contains at least one directory matching
     ``{PLUGIN_NAME}-*``.
     """
     marker_prefix = f'{PLUGIN_NAME}-'
 
     base = Path.cwd()
-    for root in get_project_skill_roots():
+    all_roots: list[str] = list(get_project_skill_roots())
+    for r in get_bundle_cache_roots():
+        if r not in all_roots:
+            all_roots.append(r)
+
+    for root in all_roots:
         try:
             root_path = _resolve_skill_root(root, base).resolve()
             if not root_path.is_dir():
@@ -261,7 +274,7 @@ def get_plugin_root(refresh: bool = False, target: str | None = None) -> tuple[P
 
     Args:
         refresh: Force re-detection even if cached
-        target: Runtime target (``"claude"`` or ``"opencode"``).
+        target: Runtime target (``"claude"``, ``"opencode"``, or ``"antigravity"``).
             When ``None``, auto-detects from ``marshal.json``.
 
     Returns:

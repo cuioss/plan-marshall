@@ -82,7 +82,7 @@ import sys
 import time
 from pathlib import Path
 
-from generate_executor import read_installed_manifest
+from generate_executor import read_installed_manifest, read_marshal_target
 from marketplace_bundles import _version_sort_key
 from marketplace_paths import get_plugin_cache_path
 
@@ -286,7 +286,8 @@ def sweep(
             'summary_message': 'plugin-cache root could not be resolved; nothing was swept',
         }
 
-    manifest_version = str(read_installed_manifest(cache_root).get('version', '') or '')
+    target = read_marshal_target(project_root)
+    manifest_version = str(read_installed_manifest(cache_root, target=target).get('version', '') or '')
     provisioned_version = read_provisioned_version(project_root)
     executing_dir = _executing_version_dir()
     now = time.time()
@@ -327,6 +328,27 @@ def sweep(
             )
             if apply_changes:
                 shutil.rmtree(version_dir, ignore_errors=True)
+
+    if swept_count == 0:
+        is_unversioned = any(
+            (p / f).is_file()
+            for p in (cache_root, cache_root.parent)
+            for f in ('dist-manifest.json', 'plugin.json', 'opencode.json')
+        )
+        if is_unversioned:
+            return {
+                'status': 'success',
+                'applied': apply_changes,
+                'cache_root': str(cache_root),
+                'keep_versions': keep_versions,
+                'keep_days': keep_days,
+                'knob_source': knob_source,
+                'swept_count': 0,
+                'removed_count': 0,
+                'kept': [],
+                'removed': [],
+                'summary_message': 'Unversioned target layout; no version directories to sweep.',
+            }
 
     verb = 'removed' if apply_changes else 'would remove'
     summary = (
