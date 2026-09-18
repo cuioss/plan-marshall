@@ -26,10 +26,32 @@ exercised in-process against the ``_orchestrator_inbox`` handlers under
   so no retired sequence is re-opened (the D5(e) control), ``migrate-archive``
   folds a flat archive and reports the count moved per sender, and a sender
   unsafe as a directory name is refused rather than allowed to traverse.
+
+It then carries the CONSUMPTION half of the vocabulary — the marker a reader
+stamps on a message delivered to its mailbox:
+
+- **the marker**: ``consume_message`` stamps ``lifecycle=consumed`` plus
+  ``consumed_at`` on the delivered message and leaves it AT its delivered path,
+  body byte-for-byte intact; a taken message and its untaken twin share a body
+  and differ only in the envelope.
+- **the claim**: the marker is an ``os.link`` claim, so a repeat reports the
+  consumption that already happened rather than re-dating it, and **inode
+  identity** — not the token's presence — is what separates that idempotent
+  success from a ``consume_conflict`` over a token another file holds.
+- **three states**: ``delivery_state`` keeps *consumed*,
+  *delivered-but-unconsumed* and *never-delivered* separately representable, with
+  *unmeasured* for a read that established nothing. The pair that would otherwise
+  collapse — a consumed mailbox and one nothing ever reached — is asserted
+  against ITSELF, and the whole vocabulary is swept for reachability.
+- **one named predicate**: ``is_consumed`` is a MEANING test, pinned by the case
+  an inline presence check gets wrong (a stamp with no consumed lifecycle), and a
+  message written before the marker existed still validates with an unchanged
+  ``envelope_version``.
 """
 
 import argparse
 import copy
+import json
 from pathlib import Path
 from typing import Any
 
@@ -47,16 +69,37 @@ _orch = load_script_module(_ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT, 'orchestrato
 LIFECYCLE_LIVE = _inbox.LIFECYCLE_LIVE
 LIFECYCLE_SUPERSEDED = _inbox.LIFECYCLE_SUPERSEDED
 LIFECYCLE_STREAM_END = _inbox.LIFECYCLE_STREAM_END
+LIFECYCLE_CONSUMED = _inbox.LIFECYCLE_CONSUMED
 LIFECYCLES = _inbox.LIFECYCLES
 STREAM_END_KIND = _inbox.STREAM_END_KIND
+ENVELOPE_VERSION = _inbox.ENVELOPE_VERSION
+WRITE_DESTINATION_MAILBOX = _inbox.WRITE_DESTINATION_MAILBOX
+MAILBOX_CONSUMED_SUBDIR = _inbox.MAILBOX_CONSUMED_SUBDIR
+
+#: The consumption vocabularies, imported from the source of truth rather than
+#: re-listed: the per-MESSAGE states and the per-ADDRESS delivery states, the
+#: second of which is swept for reachability below.
+CONSUMPTION_CONSUMED = _inbox.CONSUMPTION_CONSUMED
+CONSUMPTION_UNCONSUMED = _inbox.CONSUMPTION_UNCONSUMED
+CONSUMPTION_UNKNOWN = _inbox.CONSUMPTION_UNKNOWN
+DELIVERY_STATES = _inbox.DELIVERY_STATES
+DELIVERY_STATE_CONSUMED = _inbox.DELIVERY_STATE_CONSUMED
+DELIVERY_STATE_DELIVERED_UNCONSUMED = _inbox.DELIVERY_STATE_DELIVERED_UNCONSUMED
+DELIVERY_STATE_NEVER_DELIVERED = _inbox.DELIVERY_STATE_NEVER_DELIVERED
+DELIVERY_STATE_UNMEASURED = _inbox.DELIVERY_STATE_UNMEASURED
+
 cmd_inbox_amend = _inbox.cmd_inbox_amend
 cmd_inbox_archive = _inbox.cmd_inbox_archive
 cmd_inbox_close_stream = _inbox.cmd_inbox_close_stream
 cmd_inbox_list = _inbox.cmd_inbox_list
 cmd_inbox_migrate_archive = _inbox.cmd_inbox_migrate_archive
+cmd_inbox_read = _inbox.cmd_inbox_read
 cmd_inbox_supersede = _inbox.cmd_inbox_supersede
 cmd_inbox_validate = _inbox.cmd_inbox_validate
 cmd_inbox_write = _inbox.cmd_inbox_write
+consume_message = _inbox.consume_message
+consumption_state = _inbox.consumption_state
+is_consumed = _inbox.is_consumed
 next_sequence = _inbox.next_sequence
 validate_envelope = _inbox.validate_envelope
 
@@ -65,6 +108,12 @@ cmd_scaffold = _orch.cmd_scaffold
 EPIC = 'demo-epic'
 SENDER = 'demo-plan'
 OTHER = 'other-plan'
+
+#: The addressed plans for the delivery/consumption cases. Two of them, because
+#: the states this deliverable must keep apart are compared between two
+#: addresses that differ in exactly one variable.
+READER = 'reader-plan'
+OTHER_READER = 'other-reader-plan'
 
 
 # =============================================================================
@@ -219,6 +268,19 @@ _MIGRATE_ARCHIVE_ARGS = parse_ns(
     register=False,
 )
 
+_READ_ARGS = parse_ns(
+    _ORCH_BUNDLE,
+    _ORCH_SKILL,
+    _ORCH_SCRIPT,
+    'inbox',
+    'read',
+    '--slug',
+    EPIC,
+    '--plan-id',
+    READER,
+    register=False,
+)
+
 
 def _epic_dir(plan_context, slug: str = EPIC) -> Path:
     return Path(plan_context.fixture_dir) / 'orchestrator' / slug
@@ -281,6 +343,46 @@ def _write_message(plan_context, tmp_path, body: str = 'the original body', name
 
 def _read(plan_context, message: str) -> str:
     return (_inbox_dir(plan_context) / message).read_text(encoding='utf-8')
+
+
+def _mailbox_dir(plan_context, plan_id: str = READER, slug: str = EPIC) -> Path:
+    return _inbox_dir(plan_context, slug) / 'to' / plan_id
+
+
+def _mark_running(plan_context, *plan_ids: str, slug: str = EPIC) -> None:
+    """Record the named plans as ``running`` in the epic's status queue.
+
+    Delivery fires only for a plan the epic's ``status.json`` POSITIVELY reads as
+    running, so a mailbox case that skipped this would silently QUEUE its message
+    and then assert against an empty mailbox — a green test over a delivery that
+    never happened. :func:`_deliver` pins the destination for that reason.
+    """
+    status = _epic_dir(plan_context, slug) / 'status.json'
+    data = json.loads(status.read_text(encoding='utf-8')) if status.is_file() else {}
+    data['plans'] = [{'id': plan_id, 'status': 'running'} for plan_id in plan_ids]
+    status.write_text(json.dumps(data), encoding='utf-8')
+
+
+def _deliver(
+    plan_context,
+    tmp_path,
+    plan_id: str = READER,
+    body: str = 'the delivered body',
+    name: str = 'd.md',
+) -> str:
+    """Deliver one message to ``plan_id``'s mailbox and return its filename."""
+    result = cmd_inbox_write(_variant(_WRITE_ARGS, payload_file=_payload(tmp_path, body, name), target_plan=plan_id))
+    assert result['destination'] == WRITE_DESTINATION_MAILBOX, (
+        f'the message was written to {result["destination"]!r}, not delivered — '
+        f'every assertion below would be measuring an empty mailbox'
+    )
+    message: str = result['message']
+    return message
+
+
+def _read_mailbox(plan_id: str = READER, slug: str = EPIC) -> dict[str, Any]:
+    payload: dict[str, Any] = cmd_inbox_read(_variant(_READ_ARGS, slug=slug, plan_id=plan_id))
+    return payload
 
 
 # =============================================================================
@@ -567,16 +669,42 @@ class TestStateFieldValidation:
 
         assert (ok, error_code) == (False, 'invalid_supersede_state')
 
+    def test_should_reject_the_consumed_lifecycle_without_a_stamp(self):
+        # The consumption marker's two halves move together, exactly as the
+        # amendment's counter and stamp do: a consumption nobody can date is a
+        # half-written marker, not a consumption.
+        ok, error_code, _ = validate_envelope(_state_message(lifecycle=LIFECYCLE_CONSUMED))
+
+        assert (ok, error_code) == (False, 'invalid_consume_state')
+
+    def test_should_reject_a_consumed_at_stamp_without_the_consumed_lifecycle(self):
+        ok, error_code, _ = validate_envelope(_state_message(consumed_at='2020-03-03T00:00:00Z'))
+
+        assert (ok, error_code) == (False, 'invalid_consume_state')
+
+    def test_should_accept_a_consistent_consumed_pair(self):
+        ok, error_code, _ = validate_envelope(
+            _state_message(lifecycle=LIFECYCLE_CONSUMED, consumed_at='2020-03-03T00:00:00Z')
+        )
+
+        assert (ok, error_code) == (True, None)
+
     def test_should_only_report_lifecycles_from_the_module_vocabulary(self):
         # Two-sided: every declared lifecycle is reachable through a real
-        # message, and none reports one outside the module's own frozenset.
+        # message, and none reports one outside the module's own frozenset. The
+        # set equality is what keeps this exhaustive — a member added to the
+        # vocabulary with no reachable message turns it red rather than passing
+        # over a state nothing produces.
         live = validate_envelope(_state_message())[2].get('lifecycle', LIFECYCLE_LIVE)
         superseded = validate_envelope(_state_message(lifecycle=LIFECYCLE_SUPERSEDED, superseded_by='x-002.md'))[2][
             'lifecycle'
         ]
         stream_end = validate_envelope(_state_message(lifecycle=LIFECYCLE_STREAM_END))[2]['lifecycle']
+        consumed = validate_envelope(_state_message(lifecycle=LIFECYCLE_CONSUMED, consumed_at='2020-03-03T00:00:00Z'))[
+            2
+        ]['lifecycle']
 
-        assert {live, superseded, stream_end} == LIFECYCLES
+        assert {live, superseded, stream_end, consumed} == LIFECYCLES
 
 
 # =============================================================================
@@ -884,3 +1012,277 @@ class TestFolderedArchive:
             f'{SENDER}-001.md',
             f'{SENDER}-002.md',
         ]
+
+
+# =============================================================================
+# Consumption — three states, never two
+# =============================================================================
+#
+# A delivered message that a reader took must not read like a message that was
+# never delivered. The two collapse into one absence the moment consumption is
+# recorded by REMOVING the message, so the marker rides the envelope and the
+# message stays where it was delivered. The cases below pin the marker itself,
+# the claim that makes it safe under two readers, and the three states the
+# address reports.
+
+
+class TestConsumptionMarker:
+    def test_consuming_stamps_the_marker_on_the_delivered_message(self, plan_context, tmp_path):
+        cmd_scaffold(_SCAFFOLD_ARGS)
+        _mark_running(plan_context, READER)
+        message = _deliver(plan_context, tmp_path)
+
+        result = consume_message(EPIC, READER, message)
+
+        assert result['status'] == 'success'
+        assert result['already_consumed'] is False
+        assert result['consumption'] == CONSUMPTION_CONSUMED
+        assert result['consumed_at']
+        text = (_mailbox_dir(plan_context) / message).read_text(encoding='utf-8')
+        assert f'lifecycle={LIFECYCLE_CONSUMED}' in text
+        assert f'consumed_at={result["consumed_at"]}' in text
+        # The marked message is still a VALID message — the marker is part of the
+        # envelope schema, not a fifth wheel bolted onto it.
+        assert validate_envelope(text, expected_epic=EPIC, filename=message)[:2] == (True, None)
+
+    def test_a_consumed_message_stays_at_its_delivered_path(self, plan_context, tmp_path):
+        # The load-bearing choice. A consumed message that left the mailbox would
+        # make the address indistinguishable from one nothing was ever delivered
+        # to — the exact collapse the marker exists to remove.
+        cmd_scaffold(_SCAFFOLD_ARGS)
+        _mark_running(plan_context, READER)
+        message = _deliver(plan_context, tmp_path)
+
+        consume_message(EPIC, READER, message)
+
+        assert (_mailbox_dir(plan_context) / message).is_file()
+        assert (_mailbox_dir(plan_context) / MAILBOX_CONSUMED_SUBDIR / message).is_file()
+        payload = _read_mailbox()
+        assert payload['count'] == 1  # still enumerated at the address...
+        assert payload['live_count'] == 0  # ...and no longer actionable
+
+    def test_consumption_preserves_the_body_byte_for_byte(self, plan_context, tmp_path):
+        # Consumption records state in the envelope and never touches the payload,
+        # exactly as supersede does.
+        cmd_scaffold(_SCAFFOLD_ARGS)
+        _mark_running(plan_context, READER)
+        message = _deliver(plan_context, tmp_path, body='the delivered narrative')
+        delivered = _mailbox_dir(plan_context) / message
+        body_before = delivered.read_text(encoding='utf-8').split('\n\n', 1)[1]
+
+        consume_message(EPIC, READER, message)
+
+        assert delivered.read_text(encoding='utf-8').split('\n\n', 1)[1] == body_before
+
+    def test_a_taken_message_and_its_untaken_twin_differ_only_in_the_marker(self, plan_context, tmp_path):
+        # The matched pair: two messages delivered to ONE address with the SAME
+        # body, differing in exactly one variable — whether a reader took it.
+        cmd_scaffold(_SCAFFOLD_ARGS)
+        _mark_running(plan_context, READER)
+        taken = _deliver(plan_context, tmp_path, body='identical body', name='a.md')
+        left = _deliver(plan_context, tmp_path, body='identical body', name='b.md')
+
+        consume_message(EPIC, READER, taken)
+
+        taken_text = (_mailbox_dir(plan_context) / taken).read_text(encoding='utf-8')
+        left_text = (_mailbox_dir(plan_context) / left).read_text(encoding='utf-8')
+        # The bodies are the same, so nothing but the envelope can tell them apart.
+        assert taken_text.split('\n\n', 1)[1] == left_text.split('\n\n', 1)[1]
+        taken_header, left_header = taken_text.split('\n\n', 1)[0], left_text.split('\n\n', 1)[0]
+        assert f'lifecycle={LIFECYCLE_CONSUMED}' in taken_header
+        assert 'consumed_at=' in taken_header
+        assert 'lifecycle=' not in left_header
+        assert 'consumed_at=' not in left_header
+        assert taken_header != left_header
+        rows = {row['name']: row for row in _read_mailbox()['messages']}
+        assert rows[taken]['consumption'] == CONSUMPTION_CONSUMED
+        assert rows[left]['consumption'] == CONSUMPTION_UNCONSUMED
+
+    def test_consume_is_idempotent_and_keeps_the_original_instant(self, plan_context, tmp_path):
+        # The claim's loser branch: the token is still there, and it is the SAME
+        # inode as the message, so the repeat reports the consumption that already
+        # happened rather than re-dating it.
+        cmd_scaffold(_SCAFFOLD_ARGS)
+        _mark_running(plan_context, READER)
+        message = _deliver(plan_context, tmp_path)
+
+        first = consume_message(EPIC, READER, message)
+        second = consume_message(EPIC, READER, message)
+
+        assert (first['already_consumed'], second['already_consumed']) == (False, True)
+        assert second['status'] == 'success'
+        assert second['consumed_at'] == first['consumed_at']
+
+    def test_a_claim_held_by_a_distinct_file_is_a_conflict(self, plan_context, tmp_path):
+        # Inode identity is the discriminator, not the token's mere presence: a
+        # token that is a DIFFERENT file is another message's consumption record
+        # and is never clobbered, while a token that is THIS message's own file is
+        # idempotent success. The two halves are asserted against each other so a
+        # presence-only check cannot satisfy both.
+        cmd_scaffold(_SCAFFOLD_ARGS)
+        _mark_running(plan_context, READER)
+        message = _deliver(plan_context, tmp_path)
+        claim = _mailbox_dir(plan_context) / MAILBOX_CONSUMED_SUBDIR / message
+        claim.parent.mkdir(parents=True, exist_ok=True)
+        claim.write_text('a different file entirely\n', encoding='utf-8')
+
+        conflicted = consume_message(EPIC, READER, message)
+
+        assert conflicted['status'] == 'error'
+        assert conflicted['error'] == 'consume_conflict'
+        # The refusal left the message unmarked — it refused, it did not half-act.
+        assert 'lifecycle=' not in (_mailbox_dir(plan_context) / message).read_text(encoding='utf-8')
+        # The matched control: with the foreign token gone, the same call wins and
+        # its repeat is idempotent success over the same token path.
+        claim.unlink()
+        won = consume_message(EPIC, READER, message)
+        repeated = consume_message(EPIC, READER, message)
+        assert (won['status'], repeated['status']) == ('success', 'success')
+        assert (won['already_consumed'], repeated['already_consumed']) == (False, True)
+
+    def test_consume_reports_file_not_found_when_nothing_was_delivered(self, plan_context, tmp_path):
+        cmd_scaffold(_SCAFFOLD_ARGS)
+
+        result = consume_message(EPIC, READER, f'{SENDER}-001.md')
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'file_not_found'
+
+    def test_consume_refuses_an_unsafe_address_or_message_name(self, plan_context, tmp_path):
+        cmd_scaffold(_SCAFFOLD_ARGS)
+
+        assert consume_message('../evil', READER, f'{SENDER}-001.md')['error'] == 'invalid_slug'
+        assert consume_message(EPIC, '../evil', f'{SENDER}-001.md')['error'] == 'invalid_target_plan'
+        assert consume_message(EPIC, READER, '../status.json')['error'] == 'invalid_message_name'
+
+
+class TestThreeDeliveryStates:
+    def test_the_three_states_are_separately_representable(self, plan_context, tmp_path):
+        cmd_scaffold(_SCAFFOLD_ARGS)
+        _mark_running(plan_context, READER)
+
+        never = _read_mailbox()['delivery_state']
+        message = _deliver(plan_context, tmp_path)
+        waiting = _read_mailbox()['delivery_state']
+        consume_message(EPIC, READER, message)
+        taken = _read_mailbox()['delivery_state']
+
+        assert never == DELIVERY_STATE_NEVER_DELIVERED
+        assert waiting == DELIVERY_STATE_DELIVERED_UNCONSUMED
+        assert taken == DELIVERY_STATE_CONSUMED
+        # No pair of them shares a representation.
+        assert len({never, waiting, taken}) == 3
+
+    def test_a_consumed_address_does_not_read_like_one_nothing_reached(self, plan_context, tmp_path):
+        """THE collapse this deliverable exists to prevent.
+
+        A plan that never received a message and a plan that received one and took
+        it agree on every field a two-state reading looks at. The two mailboxes are
+        therefore asserted against EACH OTHER rather than each in isolation, so a
+        payload that stopped telling them apart fails here.
+        """
+        cmd_scaffold(_SCAFFOLD_ARGS)
+        _mark_running(plan_context, READER, OTHER_READER)
+        message = _deliver(plan_context, tmp_path, plan_id=READER)
+        consume_message(EPIC, READER, message)
+
+        consumed = _read_mailbox(READER)
+        never = _read_mailbox(OTHER_READER)
+
+        # They agree on everything the two-state reading had to go on...
+        assert consumed['live_count'] == never['live_count'] == 0
+        assert consumed['unconsumed_count'] == never['unconsumed_count'] == 0
+        # ...and are told apart by the state that names what happened here.
+        assert consumed['delivery_state'] == DELIVERY_STATE_CONSUMED
+        assert never['delivery_state'] == DELIVERY_STATE_NEVER_DELIVERED
+        assert consumed['consumed_count'] == 1
+        assert never['consumed_count'] == 0
+
+    def test_an_unreadable_message_leaves_the_verdict_unmeasured(self, plan_context, tmp_path):
+        # A message whose marker was never read cannot establish "fully consumed",
+        # and reporting it as unconsumed would state a fact the read never made.
+        cmd_scaffold(_SCAFFOLD_ARGS)
+        _mark_running(plan_context, READER)
+        mailbox = _mailbox_dir(plan_context)
+        mailbox.mkdir(parents=True, exist_ok=True)
+        (mailbox / f'{SENDER}-009.md').write_bytes(b'\xff\xfe not utf-8 at all')
+
+        payload = _read_mailbox()
+
+        assert [row['consumption'] for row in payload['messages']] == [CONSUMPTION_UNKNOWN]
+        assert payload['delivery_state'] == DELIVERY_STATE_UNMEASURED
+        assert payload['consumed_count'] == 0
+        assert payload['unconsumed_count'] == 0
+
+    def test_a_waiting_message_settles_the_address_despite_an_unreadable_sibling(self, plan_context, tmp_path):
+        # The matched control for the case above: positive knowledge that mail is
+        # waiting settles the address whatever else could not be read, so
+        # ``unmeasured`` is reserved for the genuinely undecidable case.
+        cmd_scaffold(_SCAFFOLD_ARGS)
+        _mark_running(plan_context, READER)
+        _deliver(plan_context, tmp_path)
+        (_mailbox_dir(plan_context) / f'{SENDER}-009.md').write_bytes(b'\xff\xfe not utf-8 at all')
+
+        payload = _read_mailbox()
+
+        assert payload['delivery_state'] == DELIVERY_STATE_DELIVERED_UNCONSUMED
+        assert payload['unconsumed_count'] == 1
+        assert payload['invalid_count'] == 1
+
+    def test_every_delivery_state_is_reachable_and_none_is_outside_the_vocabulary(self, plan_context, tmp_path):
+        # Two-sided, like the lifecycle sweep above: every declared member is
+        # produced by a real read, and no read produces one outside the module's
+        # own tuple. A member added with nothing that reaches it turns this red
+        # rather than riding along as a state no observation ever reports.
+        cmd_scaffold(_SCAFFOLD_ARGS)
+        _mark_running(plan_context, READER)
+
+        never = _read_mailbox(OTHER_READER)['delivery_state']
+        message = _deliver(plan_context, tmp_path)
+        waiting = _read_mailbox()['delivery_state']
+        consume_message(EPIC, READER, message)
+        taken = _read_mailbox()['delivery_state']
+        no_epic = cmd_inbox_read(_variant(_READ_ARGS, slug='absent-epic', plan_id=READER))['delivery_state']
+
+        assert {never, waiting, taken, no_epic} == set(DELIVERY_STATES)
+
+
+class TestConsumptionPredicate:
+    def test_the_predicate_is_a_meaning_test_not_a_presence_test(self):
+        # ADR-015: one named predicate, and it tests MEANING. A truthy stamp with
+        # no consumed lifecycle is exactly what an inline presence check would
+        # read as a consumption — this is the case that separates the two.
+        marked = validate_envelope(_state_message(lifecycle=LIFECYCLE_CONSUMED, consumed_at='2020-03-03T00:00:00Z'))[2]
+        ok, error_code, stamp_only = validate_envelope(_state_message(consumed_at='2020-03-03T00:00:00Z'))
+
+        assert (ok, error_code) == (False, 'invalid_consume_state')
+        assert stamp_only['consumed_at']  # a presence test would say "consumed"...
+        assert is_consumed(stamp_only) is False  # ...and the meaning test does not.
+        assert is_consumed(marked) is True
+
+    def test_an_absent_consumption_is_reported_as_a_stated_value(self):
+        virgin = validate_envelope(_state_message())[2]
+        marked = validate_envelope(_state_message(lifecycle=LIFECYCLE_CONSUMED, consumed_at='2020-03-03T00:00:00Z'))[2]
+
+        # The FIELD is absent on a virgin message...
+        assert 'lifecycle' not in virgin
+        assert 'consumed_at' not in virgin
+        # ...and the STATE is still a named member rather than that bare absence.
+        assert consumption_state(virgin) == CONSUMPTION_UNCONSUMED
+        assert consumption_state(marked) == CONSUMPTION_CONSUMED
+
+    def test_a_message_written_before_the_marker_still_validates(self, plan_context, tmp_path):
+        # Backward compatibility, asserted on a real written message rather than a
+        # hand-built one: it carries none of the new fields, validates green, and
+        # its envelope_version is unchanged.
+        cmd_scaffold(_SCAFFOLD_ARGS)
+        message = _write_message(plan_context, tmp_path, 'pre-existing body', 'a.md')
+
+        text = _read(plan_context, message)
+        ok, error_code, header = validate_envelope(text, expected_epic=EPIC, filename=message)
+
+        assert (ok, error_code) == (True, None)
+        assert 'lifecycle=' not in text
+        assert 'consumed_at=' not in text
+        assert header['envelope_version'] == str(ENVELOPE_VERSION) == '1'
+        assert consumption_state(header) == CONSUMPTION_UNCONSUMED

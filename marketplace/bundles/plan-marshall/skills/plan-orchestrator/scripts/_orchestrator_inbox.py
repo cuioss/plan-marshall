@@ -22,8 +22,10 @@ named successor (tombstone-style — the retired message stays resolvable but
 stops presenting as live). Both make the post-filing mutation visible in the
 envelope, so a corrected message is never byte-indistinguishable from a virgin
 one. :func:`cmd_inbox_close_stream` files a terminal ``lifecycle=stream-end``
-marker so a sender can signal its stream ended, and the message-state vocabulary
-(``lifecycle`` ∈ :data:`LIFECYCLES`) carries all three concepts in ONE enum.
+marker so a sender can signal its stream ended, and :func:`consume_message`
+stamps ``lifecycle=consumed`` on a delivered message a reader has taken. The
+message-state vocabulary (``lifecycle`` ∈ :data:`LIFECYCLES`) carries every one
+of those concepts in ONE enum.
 
 The archive is foldered per sender (``inbox/archive/{sender}/``);
 :func:`cmd_inbox_migrate_archive` folds a flat archive into that layout, and the
@@ -39,7 +41,11 @@ because a mailbox is an advisory side channel and a plan blocked by an advisory
 it could not read would be worse off than one that never had the channel. It is
 not thereby vacuous: ``mailbox_state`` publishes WHICH KIND OF ZERO the read
 returned, so *could not look* and *looked, found nothing* never share a
-representation.
+representation. Beside it ``delivery_state`` (:data:`DELIVERY_STATES`) answers
+the other question the address is asked — whether anything was ever delivered
+here and whether a reader took it — so *consumed*, *delivered-but-unconsumed*
+and *never-delivered* stay three separately representable states rather than
+two.
 
 The orchestrator-side drain surface (:func:`cmd_inbox_list`,
 :func:`cmd_inbox_archive`) is bounded by the same construction: both derive
@@ -112,8 +118,8 @@ KINDS = frozenset({'landing', 'finding', 'candidate-lesson'})
 #: for message lifecycle. Derived from the ``manage-lessons`` ``status`` model
 #: (``active`` / ``superseded`` / ``removed``): a state field on the record that
 #: defaults to the live value when absent and lets a replaced record stay
-#: resolvable while it stops presenting as live. All THREE state concepts ride
-#: this one field so no second enum is introduced:
+#: resolvable while it stops presenting as live. EVERY state concept rides this
+#: one field so no second enum is introduced:
 #:
 #: - ``live`` — the message as filed and current (the default; an absent
 #:   ``lifecycle`` header reads as ``live``, so every message written by
@@ -125,10 +131,24 @@ KINDS = frozenset({'landing', 'finding', 'candidate-lesson'})
 #: - ``stream-end`` — a terminal control marker: the sender that filed it will
 #:   send no more. This is the stream-termination concept expressed as one more
 #:   value in THIS vocabulary rather than a parallel ``stream_status`` enum.
+#: - ``consumed`` — a reader has TAKEN this delivered message
+#:   (:func:`consume_message`), stamped with :data:`_CONSUMED_AT_FIELD`. Like the
+#:   two above it is one more value in this same vocabulary rather than a second
+#:   ``consumption`` enum, and the marked message stays exactly where it was
+#:   delivered — which is what keeps *consumed* distinguishable from
+#:   *never-delivered* instead of collapsing the two into one absence.
 LIFECYCLE_LIVE = 'live'
 LIFECYCLE_SUPERSEDED = 'superseded'
 LIFECYCLE_STREAM_END = 'stream-end'
-LIFECYCLES = frozenset({LIFECYCLE_LIVE, LIFECYCLE_SUPERSEDED, LIFECYCLE_STREAM_END})
+LIFECYCLE_CONSUMED = 'consumed'
+LIFECYCLES = frozenset(
+    {
+        LIFECYCLE_LIVE,
+        LIFECYCLE_SUPERSEDED,
+        LIFECYCLE_STREAM_END,
+        LIFECYCLE_CONSUMED,
+    }
+)
 
 #: The payload kind a stream-end control marker carries. A stream closure is an
 #: observation the epic should know about, so it rides the existing ``finding``
@@ -152,13 +172,21 @@ _AMENDED_FIELD = 'amended'
 _SUPERSEDED_BY_FIELD = 'superseded_by'
 _LIFECYCLE_FIELD = 'lifecycle'
 
+#: The consumption timestamp — the attribute :func:`consume_message` stamps
+#: beside ``lifecycle=consumed``, exactly as :data:`_AMENDED_FIELD` rides
+#: ``amend``. It is a TIMESTAMP, not an enum, so consumption needs no second
+#: state vocabulary; the STATE is the ``lifecycle`` member and this field is when
+#: it happened. The two move together — :func:`_validate_state_fields` rejects
+#: either one without the other — so the marker can never be half-written.
+_CONSUMED_AT_FIELD = 'consumed_at'
+
 #: Header fields, in the fixed order :func:`compose_envelope` emits them.
 #: Every field is required; a message missing any one is ``missing_header_field``.
 #: The state fields (:data:`_LIFECYCLE_FIELD`, :data:`_REVISION_FIELD`,
-#: :data:`_AMENDED_FIELD`, :data:`_SUPERSEDED_BY_FIELD`) are DELIBERATELY not
-#: here: they are optional-with-default, so a virgin message stays byte-identical
-#: to how it looked before this vocabulary existed and ``envelope_version`` need
-#: not bump.
+#: :data:`_AMENDED_FIELD`, :data:`_SUPERSEDED_BY_FIELD`,
+#: :data:`_CONSUMED_AT_FIELD`) are DELIBERATELY not here: they are
+#: optional-with-default, so a virgin message stays byte-identical to how it
+#: looked before this vocabulary existed and ``envelope_version`` need not bump.
 HEADER_FIELDS = (
     'envelope_version',
     'sender_type',
@@ -255,6 +283,66 @@ MAILBOX_STATES: tuple[str, ...] = (
 #: vocabulary rather than re-listed, so a member added above cannot silently
 #: default into the looked-and-found-nothing reading.
 MAILBOX_COULD_NOT_LOOK_STATES: frozenset[str] = frozenset(MAILBOX_STATES) - {MAILBOX_STATE_PRESENT}
+
+#: Where a consumption CLAIM token lives, relative to the addressee mailbox.
+#: Created on first use, and invisible to every enumeration for the same reason
+#: :data:`INBOX_ARCHIVE_SUBDIR` is: :func:`_sorted_message_paths` admits only
+#: FILES, so a subdirectory is never a message. The token is the atomic claim
+#: (see :func:`consume_message`), NOT the state — the state is the marked
+#: message, which stays at its delivered path.
+MAILBOX_CONSUMED_SUBDIR = 'consumed'
+
+#: The per-MESSAGE consumption vocabulary :func:`consumption_state` reports and
+#: every enumeration row carries as ``consumption``. An absent consumption is a
+#: STATED member (``unconsumed``) rather than an empty field, so no consumer has
+#: to read a bare absence as a meaning (ADR-015).
+#:
+#: - ``consumed`` — the message carries the marker: a reader took it.
+#: - ``unconsumed`` — the message was read and carries no marker. A settled fact,
+#:   not a gap.
+#: - ``unknown`` — the message file could not be READ at all, so its consumption
+#:   was never determined. Distinct from ``unconsumed`` because *not marked* and
+#:   *never looked at* are different facts, and reporting the second as the first
+#:   is the measured-zero defect this vocabulary exists to prevent.
+CONSUMPTION_CONSUMED = 'consumed'
+CONSUMPTION_UNCONSUMED = 'unconsumed'
+CONSUMPTION_UNKNOWN = 'unknown'
+
+#: The whole per-message consumption vocabulary, in reporting order.
+CONSUMPTION_STATES: tuple[str, ...] = (
+    CONSUMPTION_CONSUMED,
+    CONSUMPTION_UNCONSUMED,
+    CONSUMPTION_UNKNOWN,
+)
+
+#: The per-ADDRESS vocabulary :func:`derive_delivery_state` reports as
+#: ``delivery_state`` — the mailbox-level answer the per-message vocabulary
+#: above is derived into. The three substantive members are the three states the
+#: channel must keep apart, and the fourth is the could-not-look discriminator
+#: that keeps the other three from absorbing an unmeasured read:
+#:
+#: - ``consumed`` — mail was delivered here and every readable message carries
+#:   the marker.
+#: - ``delivered_unconsumed`` — mail is here and at least one message is
+#:   demonstrably unmarked, so a reader still has something to take.
+#: - ``never_delivered`` — nothing has ever been delivered to this address. This
+#:   is the member a two-state design loses: a plan that never received a message
+#:   and a plan that received one and took it must not read alike.
+#: - ``unmeasured`` — the address could not be inspected (no epic tree, or an
+#:   unlistable mailbox), or mail is present but an unreadable message leaves the
+#:   verdict undecidable. Never a claim about delivery.
+DELIVERY_STATE_CONSUMED = 'consumed'
+DELIVERY_STATE_DELIVERED_UNCONSUMED = 'delivered_unconsumed'
+DELIVERY_STATE_NEVER_DELIVERED = 'never_delivered'
+DELIVERY_STATE_UNMEASURED = 'unmeasured'
+
+#: The whole per-address delivery vocabulary, in reporting order.
+DELIVERY_STATES: tuple[str, ...] = (
+    DELIVERY_STATE_CONSUMED,
+    DELIVERY_STATE_DELIVERED_UNCONSUMED,
+    DELIVERY_STATE_NEVER_DELIVERED,
+    DELIVERY_STATE_UNMEASURED,
+)
 
 #: ``{sender_id}-{NNN}.md`` — the one message-file shape the channel allocates.
 #: The sender group is non-greedy so the LAST dash-separated all-digit run is
@@ -607,8 +695,10 @@ def validate_envelope(
     ``invalid_revision`` (a non-integer/negative ``revision``),
     ``revision_not_monotonic`` (an ``amended`` stamp and a ``revision >= 1`` must
     move together — a claimed amendment with no advanced revision, or an advanced
-    revision with no stamp, is rejected), and ``invalid_supersede_state`` (a
-    ``superseded_by`` pointer is present iff ``lifecycle`` is ``superseded``).
+    revision with no stamp, is rejected), ``invalid_supersede_state`` (a
+    ``superseded_by`` pointer is present iff ``lifecycle`` is ``superseded``),
+    and ``invalid_consume_state`` (a ``consumed_at`` stamp is present iff
+    ``lifecycle`` is ``consumed``).
 
     Args:
         text: The full message text.
@@ -671,7 +761,47 @@ def _validate_state_fields(header: dict[str, str]) -> str | None:
     superseded_by = header.get(_SUPERSEDED_BY_FIELD, '').strip()
     if (lifecycle == LIFECYCLE_SUPERSEDED) != bool(superseded_by):
         return 'invalid_supersede_state'
+    # The consumption marker's two halves move together, exactly as the
+    # amendment's counter and stamp do: a ``lifecycle=consumed`` message with no
+    # ``consumed_at``, or a ``consumed_at`` stamp on a message that is not
+    # consumed, is a half-written marker and is rejected rather than read as a
+    # consumption nobody can date.
+    if (lifecycle == LIFECYCLE_CONSUMED) != bool(header.get(_CONSUMED_AT_FIELD, '').strip()):
+        return 'invalid_consume_state'
     return None
+
+
+def is_consumed(header: dict[str, str]) -> bool:
+    """Whether ``header`` says a reader has TAKEN this message.
+
+    The ONE named predicate every consumption test goes through, so no caller
+    re-expresses consumption as an inline truthiness check on a header value
+    (ADR-015). The test is a MEANING test — the ``lifecycle`` field equals the
+    vocabulary's :data:`LIFECYCLE_CONSUMED` member — never a PRESENCE test on
+    :data:`_CONSUMED_AT_FIELD`: a presence test would read any non-empty string
+    as a consumption, which is the vacuous guard the ADR exists to remove, and
+    it would answer differently from this one on a half-written marker that
+    :func:`_validate_state_fields` already rejects.
+
+    An absent ``lifecycle`` reads as its stated default (``live``), so a virgin
+    message answers ``False`` from the same rule every other reader applies.
+    """
+    return header.get(_LIFECYCLE_FIELD, LIFECYCLE_LIVE) == LIFECYCLE_CONSUMED
+
+
+def consumption_state(header: dict[str, str]) -> str:
+    """Report ``header``'s consumption as a STATED member of the vocabulary.
+
+    The per-message half of the three-state answer: :data:`CONSUMPTION_CONSUMED`
+    or :data:`CONSUMPTION_UNCONSUMED`, both derived from :func:`is_consumed` so
+    the module has one consumption rule rather than two. Publishing
+    ``unconsumed`` as a value — rather than leaving the field empty and letting a
+    reader infer non-consumption from the absence — is what keeps an unmarked
+    message distinguishable from a message whose marker was never read; the
+    unread case is :data:`CONSUMPTION_UNKNOWN`, which only the enumeration that
+    failed to read the file can report (:func:`_message_row`).
+    """
+    return CONSUMPTION_CONSUMED if is_consumed(header) else CONSUMPTION_UNCONSUMED
 
 
 def _foldered_archive_dir(archive_dir: Path, sender_id: str) -> Path | None:
@@ -1663,6 +1793,8 @@ def cmd_inbox_validate(args: Any) -> dict[str, Any]:
         'revision': header.get(_REVISION_FIELD, '0'),
         'amended': header.get(_AMENDED_FIELD, ''),
         'superseded_by': header.get(_SUPERSEDED_BY_FIELD, ''),
+        'consumption': consumption_state(header),
+        'consumed_at': header.get(_CONSUMED_AT_FIELD, ''),
     }
 
 
@@ -1678,7 +1810,10 @@ def _message_row(path: Path, expected_epic: str) -> dict[str, Any]:
     mid-scan under a concurrent drain — becomes a row carrying the distinct
     ``unreadable`` code rather than aborting the enumeration or disappearing from
     it. That code is deliberately outside the envelope-validation vocabulary, so
-    a failed read is never mistaken for a malformed envelope.
+    a failed read is never mistaken for a malformed envelope. Such a row reports
+    ``consumption`` as :data:`CONSUMPTION_UNKNOWN` for the same reason: its
+    consumption was never determined, and reporting it as ``unconsumed`` would
+    state a fact the read never established.
 
     Args:
         path: The message file.
@@ -1700,6 +1835,8 @@ def _message_row(path: Path, expected_epic: str) -> dict[str, Any]:
             'lifecycle': '',
             'revision': '',
             'superseded_by': '',
+            'consumption': CONSUMPTION_UNKNOWN,
+            'consumed_at': '',
             'valid': False,
             'error': 'unreadable',
         }
@@ -1712,6 +1849,8 @@ def _message_row(path: Path, expected_epic: str) -> dict[str, Any]:
         'lifecycle': header.get(_LIFECYCLE_FIELD, LIFECYCLE_LIVE),
         'revision': header.get(_REVISION_FIELD, '0'),
         'superseded_by': header.get(_SUPERSEDED_BY_FIELD, ''),
+        'consumption': consumption_state(header),
+        'consumed_at': header.get(_CONSUMED_AT_FIELD, ''),
         'valid': ok,
         'error': '' if ok else (error_code or 'invalid_envelope'),
     }
@@ -1873,6 +2012,52 @@ def _scan_mailbox(epic_root: Path, mailbox_dir: Path) -> tuple[str, list[Path]]:
     return MAILBOX_STATE_PRESENT, _sorted_message_paths(entries)
 
 
+def derive_delivery_state(mailbox_state: str, rows: list[dict[str, Any]]) -> str:
+    """Derive the address-level delivery verdict from ONE mailbox observation.
+
+    The per-message :func:`consumption_state` answers *did a reader take THIS
+    message*; this function answers the question the ADDRESS is asked — *was
+    anything ever delivered here, and is any of it still waiting* — over
+    :data:`DELIVERY_STATES`. It reads only the state and the rows
+    :func:`_scan_mailbox` produced in one observation, so its verdict can never
+    describe a different mailbox than the one the enumeration saw.
+
+    The branches, in the order they are tested:
+
+    1. :data:`MAILBOX_STATE_NO_MAILBOX` → ``never_delivered``. The mailbox
+       directory is created BY the delivery that first writes into it, and
+       consumption marks a message in place rather than removing it, so nothing
+       that was ever delivered can leave the directory absent. This is the one
+       could-not-look mailbox state that is also a positive fact about delivery,
+       and reading it as ``unmeasured`` would make ``never_delivered``
+       unreachable in practice — a vocabulary member no observation produces.
+    2. Any other member of :data:`MAILBOX_COULD_NOT_LOOK_STATES` (no epic tree,
+       or an unlistable mailbox) → ``unmeasured``. *Absent* and *unlistable* are
+       different facts, and only the first says anything about delivery.
+    3. No rows → ``never_delivered``: the mailbox was listed and holds nothing.
+    4. A demonstrably unconsumed message → ``delivered_unconsumed``. Tested
+       BEFORE the unknown case, because a message positively known to be waiting
+       settles the address whatever else could not be read.
+    5. An unreadable message → ``unmeasured``: with nothing waiting that could be
+       confirmed, a file whose marker was never read leaves *fully consumed*
+       unestablished, and claiming it would be the unchecked negative this
+       vocabulary exists to prevent.
+    6. Otherwise → ``consumed``: every message here was read and every one
+       carries the marker.
+    """
+    if mailbox_state == MAILBOX_STATE_NO_MAILBOX:
+        return DELIVERY_STATE_NEVER_DELIVERED
+    if mailbox_state in MAILBOX_COULD_NOT_LOOK_STATES:
+        return DELIVERY_STATE_UNMEASURED
+    if not rows:
+        return DELIVERY_STATE_NEVER_DELIVERED
+    if any(row['consumption'] == CONSUMPTION_UNCONSUMED for row in rows):
+        return DELIVERY_STATE_DELIVERED_UNCONSUMED
+    if any(row['consumption'] == CONSUMPTION_UNKNOWN for row in rows):
+        return DELIVERY_STATE_UNMEASURED
+    return DELIVERY_STATE_CONSUMED
+
+
 def cmd_inbox_read(args: Any) -> dict[str, Any]:
     """Read the messages DELIVERED to one plan's mailbox — the plan-side read.
 
@@ -1909,6 +2094,18 @@ def cmd_inbox_read(args: Any) -> dict[str, Any]:
       addressed here but none of it is actionable; reading that as an empty
       mailbox would claim a clean read over messages that were never understood.
 
+    **``delivery_state`` answers the other question the address is asked.**
+    ``mailbox_state`` reports what the ENUMERATION could see; ``delivery_state``
+    (:data:`DELIVERY_STATES`, derived by :func:`derive_delivery_state`) reports
+    whether anything was ever delivered here and whether a reader took it, so
+    *consumed*, *delivered-but-unconsumed* and *never-delivered* are three
+    separately representable states rather than two. Without it a plan that never
+    received a message and a plan that received one and consumed it would read
+    alike — and that collapse is exactly what the consumption marker exists to
+    remove. ``consumed_count`` and ``unconsumed_count`` publish the per-message
+    populations the verdict was derived from, each row carrying its own stated
+    ``consumption``.
+
     **Identifier validation stays fail-CLOSED, and the boundary is deliberate.**
     An unsafe ``--slug`` or ``--plan-id`` is refused with ``status: error``
     (``invalid_slug`` / ``invalid_target_plan``, the channel's existing codes,
@@ -1938,11 +2135,200 @@ def cmd_inbox_read(args: Any) -> dict[str, Any]:
         'plan_id': address.plan_id,
         'mailbox_dir': str(mailbox_dir),
         'mailbox_state': state,
+        'delivery_state': derive_delivery_state(state, messages),
         'count': len(messages),
         'live_count': _live_count(messages),
         'invalid_count': sum(1 for row in messages if not row['valid']),
+        'consumed_count': sum(1 for row in messages if row['consumption'] == CONSUMPTION_CONSUMED),
+        'unconsumed_count': sum(1 for row in messages if row['consumption'] == CONSUMPTION_UNCONSUMED),
         'messages': messages,
     }
+
+
+def _marked_consumed_at(path: Path) -> str:
+    """Return the ``consumed_at`` stamp recorded at ``path``, or ``''``.
+
+    Reads the marker off the message itself rather than re-deriving it, so the
+    idempotent consume branch reports the ORIGINAL consumption instant instead of
+    the instant the repeat call observed it. A file that cannot be read yields
+    ``''`` — the stamp was not recovered, and inventing one would date a
+    consumption from a read that failed.
+    """
+    try:
+        header, _ = _split_message(path.read_text(encoding='utf-8'))
+    except (OSError, UnicodeDecodeError):
+        return ''
+    return header.get(_CONSUMED_AT_FIELD, '')
+
+
+def _consume_success(
+    address: ChannelAddress,
+    name: str,
+    claim: Path,
+    *,
+    already_consumed: bool,
+    consumed_at: str,
+) -> dict[str, Any]:
+    """Build the consume success envelope."""
+    return {
+        'status': 'success',
+        'operation': 'inbox-consume',
+        'slug': address.epic_slug,
+        'store': ORCHESTRATOR_STORE,
+        'plan_id': address.plan_id,
+        'message': name,
+        'consumption': CONSUMPTION_CONSUMED,
+        'consumed_at': consumed_at,
+        'already_consumed': already_consumed,
+        'claim_path': str(claim),
+    }
+
+
+def consume_message(epic_slug: str, plan_id: str, name: str) -> dict[str, Any]:
+    """Record that a reader has TAKEN one message from its addressee mailbox.
+
+    The consumption marker rides the message's own envelope —
+    ``lifecycle=consumed`` plus a :data:`_CONSUMED_AT_FIELD` stamp — and the
+    marked message stays exactly where it was delivered. Marking in place rather
+    than relocating is the load-bearing choice: a consumed message that left the
+    mailbox would leave the address looking like one nothing was ever delivered
+    to, which is the two-state collapse this marker exists to remove.
+
+    **The mark is a CLAIM, not a read-then-mark.** Two readers must not both
+    record a consumption of one message, so the destination
+    ``inbox/to/{plan_id}/consumed/{name}`` is claimed exactly as
+    :func:`cmd_inbox_archive` claims an archive path: :func:`os.link` never
+    replaces an existing file, so the create IS the claim and every answer below
+    is derived from that claim's own outcome rather than from a presence check a
+    racing caller could also clear. The winner then stamps the marker through the
+    claimed inode — :meth:`pathlib.Path.write_text` truncates the existing file
+    rather than replacing it, so the message and its claim token remain ONE file
+    and inode identity keeps discriminating for every later caller. An atomic
+    replace would break that, which is why it is not used here.
+
+    The branches, each derived from the claim:
+
+    - claim refused because the source is gone (``FileNotFoundError``) and the
+      claim token is present → idempotent success (``already_consumed``).
+    - claim refused because the source is gone and no token exists →
+      ``error: file_not_found``.
+    - claim refused because the token exists (``FileExistsError``) and it is the
+      SAME inode as the source → idempotent success: the token is this message's
+      own consumption record, whether a concurrent winner is still stamping it or
+      finished long ago.
+    - claim refused because the token exists and is a DISTINCT inode → the token
+      belongs to a different file that once held this name, so
+      ``error: consume_conflict`` rather than clobbering that record.
+    - claim refused for any other reason (a name that resolves to a directory) →
+      ``error: invalid_message_name``.
+    - claim won but the message could not be read or rewritten → the claim is
+      RELEASED and ``error: unreadable`` returned, so a message that was never
+      marked can never report as already consumed on the next call.
+
+    Identifier validation is fail-closed through :func:`resolve_channel_address`
+    (the read verb's contract, reusing the same codes), and the epic root
+    resolves strictly (:func:`_mutate_epic_root`): this verb MUTATES, so it never
+    reaches inside an archived epic's frozen record.
+    """
+    address, address_error = resolve_channel_address(epic_slug, plan_id)
+    if address_error is not None:
+        return address_error
+    assert address is not None  # address_error is None ⇒ address resolved
+    if not _is_bare_filename(name):
+        return _error(
+            'invalid_message_name',
+            f'--message must be a bare filename inside the mailbox, got: {name}',
+            slug=address.epic_slug,
+        )
+    root = _mutate_epic_root(address.epic_slug)
+    if not root.is_dir():
+        return _error(
+            'epic_not_found',
+            f'epic {address.epic_slug!r} has no active tree at {root}; refusing to consume inside an archived epic',
+            slug=address.epic_slug,
+        )
+    mailbox = delivery_dir_for_write(address)
+    source = mailbox / name
+    claim = mailbox / MAILBOX_CONSUMED_SUBDIR / name
+    # Created before the claim so a FileNotFoundError from os.link can only mean
+    # "the source is gone", never "the claim directory is missing" — the same
+    # ordering, and the same reason, as the archive's destination directory.
+    try:
+        claim.parent.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        return _error(
+            'consume_dir_unavailable',
+            f'could not create the mailbox consumption directory {claim.parent}: {exc}',
+            slug=address.epic_slug,
+            message_name=name,
+        )
+    try:
+        os.link(source, claim)
+    except FileNotFoundError:
+        if claim.is_file():
+            return _consume_success(
+                address,
+                name,
+                claim,
+                already_consumed=True,
+                consumed_at=_marked_consumed_at(claim),
+            )
+        return _error(
+            'file_not_found',
+            f'mailbox message not found: {source}',
+            slug=address.epic_slug,
+            message_name=name,
+        )
+    except FileExistsError:
+        try:
+            distinct = not source.samefile(claim)
+        except FileNotFoundError:
+            # One of the two paths vanished between the refused claim and this
+            # check, so there is no distinct record to protect — the same
+            # fall-through the archive takes for a plainly race-losing caller.
+            distinct = False
+        if distinct:
+            return _error(
+                'consume_conflict',
+                f'mailbox message {name} has a consumption claim at {claim} held by a different file; '
+                'refusing to clobber it',
+                slug=address.epic_slug,
+                message_name=name,
+                claim_path=str(claim),
+            )
+        return _consume_success(
+            address,
+            name,
+            claim,
+            already_consumed=True,
+            consumed_at=_marked_consumed_at(claim),
+        )
+    except OSError as exc:
+        # Ordering is load-bearing: both narrow clauses above are OSError
+        # subclasses and MUST stay above this one. A bare name that resolves to a
+        # DIRECTORY clears _is_bare_filename yet makes os.link raise a plain
+        # OSError that neither narrow clause catches.
+        return _error(
+            'invalid_message_name',
+            f'--message does not name a consumable file: {name} ({exc})',
+            slug=address.epic_slug,
+            message_name=name,
+        )
+    consumed_at = now_utc_iso()
+    try:
+        header, body = _split_message(source.read_text(encoding='utf-8'))
+        header[_LIFECYCLE_FIELD] = LIFECYCLE_CONSUMED
+        header[_CONSUMED_AT_FIELD] = consumed_at
+        source.write_text(_render_envelope(header, body), encoding='utf-8')
+    except (OSError, UnicodeDecodeError) as exc:
+        claim.unlink(missing_ok=True)
+        return _error(
+            'unreadable',
+            f'mailbox message {name} was claimed but could not be marked, so the claim was released: {exc}',
+            slug=address.epic_slug,
+            message_name=name,
+        )
+    return _consume_success(address, name, claim, already_consumed=False, consumed_at=consumed_at)
 
 
 def _archive_success(slug: str, name: str, dest: Path, already_archived: bool) -> dict[str, Any]:
