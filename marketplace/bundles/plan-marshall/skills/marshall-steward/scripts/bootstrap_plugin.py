@@ -286,7 +286,8 @@ def get_plugin_root(refresh: bool = False, target: str | None = None) -> tuple[P
 
     if not refresh:
         state = read_state()
-        if 'plugin_root' in state:
+        cached_target = state.get('target')
+        if 'plugin_root' in state and (cached_target is None or cached_target == target):
             cached_path = Path(state['plugin_root'])
             # Verify it still exists
             if cached_path.exists():
@@ -435,11 +436,23 @@ def main() -> int:
     # get-root subcommand
     root_parser = subparsers.add_parser('get-root', help='Get the plugin root path', allow_abbrev=False)
     root_parser.add_argument('--refresh', action='store_true', help='Force re-detection even if cached')
+    root_parser.add_argument(
+        '--target',
+        choices=('claude', 'opencode', 'antigravity'),
+        default=argparse.SUPPRESS,
+        help='Runtime target override',
+    )
 
     # resolve subcommand
     resolve_parser = subparsers.add_parser('resolve', help='Resolve a path relative to a bundle', allow_abbrev=False)
     resolve_parser.add_argument('--bundle', required=True, help="Bundle name (e.g., 'plan-marshall')")
     resolve_parser.add_argument('--path', required=True, help='Path relative to bundle root')
+    resolve_parser.add_argument(
+        '--target',
+        choices=('claude', 'opencode', 'antigravity'),
+        default=argparse.SUPPRESS,
+        help='Runtime target override',
+    )
 
     args = parser.parse_args()
 

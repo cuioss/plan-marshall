@@ -65,6 +65,11 @@ class TestTransformSkillFrontmatter:
         assert 'description: A test skill' in res
         assert 'compatibility:' in res
 
+    def test_description_with_special_chars_is_quoted(self, rules: dict):
+        fm = {'name': 'test-skill', 'description': 'Do something: important "quoted" task'}
+        res = transform_skill_frontmatter(fm, 'test-bundle', 'test-skill', rules)
+        assert 'description: "Do something: important \\"quoted\\" task"' in res
+
 
 class TestTransformAgentFrontmatter:
     def test_requires_description(self, mapping: dict, rules: dict):

@@ -54,39 +54,57 @@ def _gemini_projects_dir() -> Path:
     return _gemini_config_dir() / 'projects'
 
 
-def to_antigravity_grant(perm: str) -> str:
-    """Translate Claude or generic permission strings to Antigravity format."""
-    perm = perm.strip()
+def to_antigravity_grant(perm: Any) -> str:
+    """Translate Claude or generic permission strings or structured grants to Antigravity format."""
+    if isinstance(perm, dict):
+        if perm.get('rule'):
+            return to_antigravity_grant(str(perm['rule']))
+        tool = str(perm.get('tool') or perm.get('kind') or '').strip().lower()
+        arg = str(perm.get('path') or perm.get('pattern') or perm.get('command') or perm.get('url') or '').strip()
+        if tool in ('command', 'bash', 'run_command'):
+            cmd = arg.rstrip('*').strip()
+            return f'command({cmd})'
+        if tool in ('read_file', 'read'):
+            return f'read_file({arg})'
+        if tool in ('write_file', 'write', 'edit'):
+            return f'write_file({arg})'
+        if tool in ('read_url', 'webfetch'):
+            return f'read_url({arg})'
+        if arg:
+            return to_antigravity_grant(arg)
+        return str(perm)
+
+    perm_str = str(perm).strip()
     if (
-        perm.startswith('command(')
-        or perm.startswith('read_file(')
-        or perm.startswith('write_file(')
-        or perm.startswith('read_url(')
-    ) and perm.endswith(')'):
-        return perm
+        perm_str.startswith('command(')
+        or perm_str.startswith('read_file(')
+        or perm_str.startswith('write_file(')
+        or perm_str.startswith('read_url(')
+    ) and perm_str.endswith(')'):
+        return perm_str
 
     # Bash/command conversion
-    if perm.startswith('Bash(') and perm.endswith(')'):
-        inner = perm[5:-1].strip()
+    if perm_str.startswith('Bash(') and perm_str.endswith(')'):
+        inner = perm_str[5:-1].strip()
         cmd = inner.rstrip('*').strip()
         return f'command({cmd})'
 
     # File read conversion
-    if perm.startswith('Read(') and perm.endswith(')'):
-        inner = perm[5:-1].strip()
+    if perm_str.startswith('Read(') and perm_str.endswith(')'):
+        inner = perm_str[5:-1].strip()
         return f'read_file({inner})'
 
     # File write conversion
-    if (perm.startswith('Write(') or perm.startswith('Edit(')) and perm.endswith(')'):
-        inner = perm[perm.index('(') + 1 : -1].strip()
+    if (perm_str.startswith('Write(') or perm_str.startswith('Edit(')) and perm_str.endswith(')'):
+        inner = perm_str[perm_str.index('(') + 1 : -1].strip()
         return f'write_file({inner})'
 
     # Web fetch conversion
-    if perm.startswith('WebFetch(') and perm.endswith(')'):
-        inner = perm[9:-1].strip()
+    if perm_str.startswith('WebFetch(') and perm_str.endswith(')'):
+        inner = perm_str[9:-1].strip()
         return f'read_url({inner})'
 
-    return f'command({perm})'
+    return f'command({perm_str})'
 
 
 def get_antigravity_allow_list(settings: dict[str, Any]) -> list[str]:
@@ -199,28 +217,28 @@ class AntigravityRuntime(Runtime):
         hooks_dir = Path.cwd() / '.agents'
         hooks_file = hooks_dir / 'hooks.json'
 
+        guard_config = {
+            'enabled': True,
+            'PreToolUse': [
+                {
+                    'matcher': 'run_command',
+                    'hooks': [
+                        {
+                            'type': 'command',
+                            'command': 'python3 .plan/execute-script.py plan-marshall:tools-script-executor:generate_executor --check-only',
+                            'timeout': 10,
+                        }
+                    ],
+                }
+            ],
+        }
+
         # Antigravity hook skeleton if none exists
         if not hooks_file.exists():
             try:
                 hooks_dir.mkdir(parents=True, exist_ok=True)
-                skeleton = {
-                    'plan-marshall-guard': {
-                        'enabled': True,
-                        'PreToolUse': [
-                            {
-                                'matcher': 'run_command',
-                                'hooks': [
-                                    {
-                                        'type': 'command',
-                                        'command': 'python3 .plan/execute-script.py plan-marshall:tools-script-executor:generate_executor --check-only',
-                                        'timeout': 10,
-                                    }
-                                ],
-                            }
-                        ],
-                    }
-                }
-                hooks_file.write_text(json.dumps(skeleton, indent=2), encoding='utf-8')
+                skeleton = {'plan-marshall-guard': guard_config}
+                hooks_file.write_text(json.dumps(skeleton, indent=2) + '\n', encoding='utf-8')
                 return toon_success(
                     'project install-hook',
                     {
@@ -236,15 +254,38 @@ class AntigravityRuntime(Runtime):
                     f'Failed to write .agents/hooks.json: {exc}',
                 )
 
-        return toon_success(
-            'project install-hook',
-            {
-                'target': target,
-                'hooks_file': str(hooks_file),
-                'installed': False,
-                'message': 'Hooks already exist in .agents/hooks.json',
-            },
-        )
+        # Existing hooks file: merge plan-marshall-guard
+        try:
+            raw_text = hooks_file.read_text(encoding='utf-8')
+            data = json.loads(raw_text) if raw_text.strip() else {}
+            if not isinstance(data, dict):
+                data = {}
+            if data.get('plan-marshall-guard') == guard_config:
+                return toon_success(
+                    'project install-hook',
+                    {
+                        'target': target,
+                        'hooks_file': str(hooks_file),
+                        'installed': False,
+                        'message': 'plan-marshall-guard already installed in .agents/hooks.json',
+                    },
+                )
+            data['plan-marshall-guard'] = guard_config
+            hooks_file.write_text(json.dumps(data, indent=2) + '\n', encoding='utf-8')
+            return toon_success(
+                'project install-hook',
+                {
+                    'target': target,
+                    'hooks_file': str(hooks_file),
+                    'installed': True,
+                },
+            )
+        except (OSError, json.JSONDecodeError) as exc:
+            return toon_error(
+                'project install-hook',
+                'io_error',
+                f'Failed to update .agents/hooks.json: {exc}',
+            )
 
     # ------------------------------------------------------------------
     # Layout operations
@@ -453,6 +494,15 @@ class AntigravityRuntime(Runtime):
         dry_run: bool = False,
     ) -> dict[str, Any]:
         """Ensure default Plan Marshall executor permissions exist in Antigravity settings."""
+        if 'error' in settings:
+            return {
+                'defaults_added': [],
+                'defaults_added_count': 0,
+                'defaults_removed': [],
+                'defaults_removed_count': 0,
+                'applied': False,
+                'error': settings['error'],
+            }
         allow_list = get_antigravity_allow_list(settings)
         added: list[str] = []
 
@@ -462,16 +512,17 @@ class AntigravityRuntime(Runtime):
                 if not dry_run:
                     allow_list.append(grant)
 
+        saved = False
         if added and not dry_run:
             allow_list.sort()
-            self.permission_save_settings(settings_path, settings)
+            saved = self.permission_save_settings(settings_path, settings)
 
         return {
             'defaults_added': added,
             'defaults_added_count': len(added),
             'defaults_removed': [],
             'defaults_removed_count': 0,
-            'applied': bool(added and not dry_run),
+            'applied': bool(added and not dry_run and saved),
         }
 
     def permission_configure(self, scope: str, grants: list[dict[str, Any]]) -> str:
@@ -485,19 +536,29 @@ class AntigravityRuntime(Runtime):
 
         settings_path = self.permission_settings_path(scope, write=True)
         settings = self.permission_load_settings(settings_path)
+        if 'error' in settings:
+            return toon_error(
+                'permission configure',
+                'load_error',
+                f"Failed to load settings from {settings_path}: {settings['error']}",
+            )
         allow_list = get_antigravity_allow_list(settings)
 
         added = 0
         for g in grants:
-            rule = g.get('rule') or g.get('command') or str(g)
-            grant_str = to_antigravity_grant(rule)
+            grant_str = to_antigravity_grant(g)
             if grant_str not in allow_list:
                 allow_list.append(grant_str)
                 added += 1
 
         if added:
             allow_list.sort()
-            self.permission_save_settings(settings_path, settings)
+            if not self.permission_save_settings(settings_path, settings):
+                return toon_error(
+                    'permission configure',
+                    'save_error',
+                    f'Failed to write settings to {settings_path}',
+                )
 
         return toon_success(
             'permission configure',
@@ -525,6 +586,15 @@ class AntigravityRuntime(Runtime):
         for sc in scopes_to_check:
             spath = self.permission_settings_path(sc, write=False)
             settings = self.permission_load_settings(spath)
+            if 'error' in settings:
+                results[sc] = {
+                    'settings_path': spath,
+                    'error': settings['error'],
+                    'total_grants': 0,
+                    'missing_defaults': ANTIGRAVITY_DEFAULT_PERMISSIONS,
+                    'has_executor': False,
+                }
+                continue
             allow_list = get_antigravity_allow_list(settings)
 
             missing_defaults = [g for g in ANTIGRAVITY_DEFAULT_PERMISSIONS if g not in allow_list]
@@ -560,18 +630,29 @@ class AntigravityRuntime(Runtime):
 
         settings_path = self.permission_settings_path(scope, write=not dry_run)
         settings = self.permission_load_settings(settings_path)
+        if 'error' in settings:
+            return toon_error(
+                'permission fix',
+                'load_error',
+                f"Failed to load settings from {settings_path}: {settings['error']}",
+            )
         allow_list = get_antigravity_allow_list(settings)
 
         if operation in ('ensure', 'add'):
             added = 0
             for item in arguments:
-                grant = to_antigravity_grant(str(item))
+                grant = to_antigravity_grant(item)
                 if grant not in allow_list:
                     allow_list.append(grant)
                     added += 1
             if added and not dry_run:
                 allow_list.sort()
-                self.permission_save_settings(settings_path, settings)
+                if not self.permission_save_settings(settings_path, settings):
+                    return toon_error(
+                        'permission fix',
+                        'save_error',
+                        f'Failed to write settings to {settings_path}',
+                    )
             return toon_success(
                 'permission fix',
                 {
@@ -585,12 +666,17 @@ class AntigravityRuntime(Runtime):
         if operation == 'remove':
             removed = 0
             for item in arguments:
-                grant = to_antigravity_grant(str(item))
+                grant = to_antigravity_grant(item)
                 if grant in allow_list:
                     allow_list.remove(grant)
                     removed += 1
             if removed and not dry_run:
-                self.permission_save_settings(settings_path, settings)
+                if not self.permission_save_settings(settings_path, settings):
+                    return toon_error(
+                        'permission fix',
+                        'save_error',
+                        f'Failed to write settings to {settings_path}',
+                    )
             return toon_success(
                 'permission fix',
                 {
@@ -607,7 +693,12 @@ class AntigravityRuntime(Runtime):
             if not dry_run and removed > 0:
                 allow_list.clear()
                 allow_list.extend(deduped)
-                self.permission_save_settings(settings_path, settings)
+                if not self.permission_save_settings(settings_path, settings):
+                    return toon_error(
+                        'permission fix',
+                        'save_error',
+                        f'Failed to write settings to {settings_path}',
+                    )
             return toon_success(
                 'permission fix',
                 {
