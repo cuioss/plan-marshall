@@ -751,17 +751,7 @@ The lane mechanism's per-element vocabulary (the closed `lane.class` enum, the c
 
 **Per-element lane override** (`plan.<phase>.steps.<step>.lane`, value ∈ `off`\|`minimal`\|`standard`\|`full`\|`ask`, validated by `validate_lane_override`): pins any lane-participating element to a fixed posture cutoff via the same nested step-param channel finalize-step params use — `off` never runs it, `minimal` force-keeps it in every posture, `standard`/`full` pin its tier, `ask` always surfaces it individually in the init dialogue. Absent by default — the shipped per-element default lives in each element's frontmatter `lane:` block, and `marshal.json` carries only the project / meta overrides.
 
-**An `off` the element's class makes inert is REFUSED at the writer, not stored.** An `off` on an element whose `lane.class` is a mandatory-floor class (`core` / `derived-state` — the closed immune set owned by [`extension-api/standards/ext-point-lane-element.md`](../extension-api/standards/ext-point-lane-element.md)) is ignored by the composer: the element keeps running at its class-default tier. Storing such a value would accept a setting that can never take effect, so BOTH lane writers reject it with the same message, which names the resolved class and the alternative:
-
-```text
-Cannot set lane 'off' on '<step>' — its lane.class is '<class>', a mandatory-floor
-class immune to a weakening off, so the composer would ignore the setting and keep
-running the step at its class-default tier. Set a tier ('minimal' / 'standard' /
-'full') instead, or reclassify the element in its own frontmatter if it does not
-belong on the floor.
-```
-
-The refusal **fails toward permitting**: a step whose `lane.class` cannot be resolved — an external `bundle:skill` step with no project-local source, a missing source doc, or a doc declaring no `lane:` block — is **permitted, not refused**, the same direction the composer takes when it keeps an element whose class it could not read. The refusal fires only on a class that resolved AND is in the immune set.
+**An `off` the element's class makes inert is REFUSED at the writer, not stored.** An `off` on an element whose `lane.class` is a mandatory-floor class (`core` / `derived-state` — the closed immune set owned by [`extension-api/standards/ext-point-lane-element.md`](../extension-api/standards/ext-point-lane-element.md)) is ignored by the composer, so storing it would accept a setting that can never take effect. BOTH lane writers reject it through one shared predicate, and an unresolvable class is permitted rather than refused — see [api-reference.md § Class-immunity set-time validation](standards/api-reference.md#class-immunity-set-time-validation-lane-off) for the verbatim message and the fail-toward-permitting rule.
 
 **Flat finalize automation knobs (boolean, under `phase-6-finalize`):**
 
