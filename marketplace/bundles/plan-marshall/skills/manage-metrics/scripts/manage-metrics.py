@@ -23,7 +23,7 @@ Usage:
             [--total-tokens N] [--tool-uses N] [--duration-ms N] [--retrospective-tokens N]
 
     Enrich from JSONL transcript (per-phase subagent <usage>):
-        python3 manage-metrics.py enrich --plan-id <id> --session-id <sid>
+        python3 manage-metrics.py enrich --plan-id <id> [--session-id <sid>]
 
     Reconcile the row ledgers against each other (read-only):
         python3 manage-metrics.py reconcile-ledgers --plan-id <id> [--window-seconds N]
@@ -3807,13 +3807,87 @@ def _inline_main_context_sum(phase_row: dict) -> int:
     )
 
 
+# Targets that expose no session transcript. Enrichment is structurally
+# impossible there, so an absent session identity routes to the enrich-skip
+# branch rather than the missing-identity error. The set is read against the
+# live ``runtime.target`` in ``.plan/marshal.json`` at the point of use, never
+# from a documented default. ``claude`` (the default target) is transcript-
+# capable and is deliberately absent here.
+_TRANSCRIPT_LESS_TARGETS = frozenset({'opencode', 'antigravity'})
+
+# Gap flag persisted when enrichment is skipped on a transcript-less target.
+# It publishes the population so an unenriched total is never read as measured.
+ENRICH_SKIP_REASON_NO_SESSION_TRANSCRIPT_LESS = 'no_session_id_transcript_less'
+ENRICH_SKIP_POPULATION_UNENRICHED = 'unenriched'
+
+
+def _resolve_runtime_target() -> str:
+    """Resolve the live runtime target from ``.plan/marshal.json``.
+
+    Walks up from the current working directory to the nearest ``.plan``
+    directory, mirroring ``platform_runtime._read_marshal``. Returns the
+    declared ``runtime.target`` when present, otherwise the default target
+    (``claude`` — transcript-capable). Never raises: an unreadable or missing
+    marshal resolves to the default so a transcript-capable caller keeps the
+    hard missing-identity error rather than silently skipping.
+    """
+    cwd = Path.cwd()
+    for parent in [cwd, *cwd.parents]:
+        candidate = parent / '.plan' / 'marshal.json'
+        if not candidate.is_file():
+            continue
+        try:
+            data = json.loads(candidate.read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            return 'claude'
+        if not isinstance(data, dict):
+            return 'claude'
+        runtime = data.get('runtime')
+        if not isinstance(runtime, dict):
+            return 'claude'
+        target = runtime.get('target')
+        return str(target) if target else 'claude'
+    return 'claude'
+
+
 def cmd_enrich(args: argparse.Namespace) -> dict:
     plan_id = require_valid_plan_id(args)
-    session_id = args.session_id
+    session_id = getattr(args, 'session_id', None)
 
     guard_error = _guard_plan_exists(plan_id)
     if guard_error is not None:
         return guard_error
+
+    if not session_id:
+        target = _resolve_runtime_target()
+        if target in _TRANSCRIPT_LESS_TARGETS:
+            data = read_metrics_raw(plan_id)
+            data['enrichment_skipped'] = True
+            data['enrichment_gap_reason'] = ENRICH_SKIP_REASON_NO_SESSION_TRANSCRIPT_LESS
+            data['enrichment_gap_population'] = ENRICH_SKIP_POPULATION_UNENRICHED
+            data['updated'] = now_utc_iso()
+            write_metrics(plan_id, data)
+            return {
+                'status': 'success',
+                'plan_id': plan_id,
+                'enriched': False,
+                'skipped': True,
+                'gap': ENRICH_SKIP_REASON_NO_SESSION_TRANSCRIPT_LESS,
+                'population': ENRICH_SKIP_POPULATION_UNENRICHED,
+                'message': (
+                    'Skipped session enrichment: no session identity on '
+                    f'transcript-less target ({target}); proceeding unenriched'
+                ),
+            }
+        return {
+            'status': 'error',
+            'error': 'missing_session_id',
+            'plan_id': plan_id,
+            'message': (
+                'No session identity resolved; finalize dispatch blocked. '
+                'Re-run session capture and check the SessionStart hook.'
+            ),
+        }
 
     # Storage/aggregation role only: read this plan's own phase windows, hand them
     # to the platform-runtime transcript engine, and persist the normalized numbers
@@ -4234,7 +4308,7 @@ def main() -> int:
     # enrich
     enr = subparsers.add_parser('enrich', help='Enrich metrics from JSONL transcript', allow_abbrev=False)
     add_plan_id_arg(enr)
-    add_session_id_arg(enr)
+    add_session_id_arg(enr, required=False)
     enr.set_defaults(func=cmd_enrich)
 
     args = parse_args_with_toon_errors(parser)
