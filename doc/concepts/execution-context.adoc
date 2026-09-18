@@ -5,63 +5,104 @@
 
 xref:../../README.md[Plan Marshall] » xref:README.adoc[Concepts]
 
-Each subagent dispatch in a stock Claude Code session is a fresh ad-hoc invention — a different prompt shape, a different tool subset, a different skill load order, sometimes a different model. Reproducibility suffers, model-tier selection per workflow is impossible, and the prompt-body contract drifts with every refactor. Plan Marshall ships **exactly one role-eligible agent** — `plan-marshall:execution-context` — and every `Task:` invocation in the marketplace dispatches through it. One canonical agent file; six level-suffixed variants emitted at build time; a five-field prompt body that every workflow body declares against.
+Each subagent dispatch in a stock assistant session is often a fresh ad-hoc invention — a different prompt shape, an arbitrary tool subset, an inconsistent skill load order, and unmanaged model assignments. Reproducibility suffers, model-tier selection per workflow is impossible, and prompt contracts drift with every change.
+
+Plan Marshall solves this by shipping **exactly one role-eligible canonical agent** — `plan-marshall:execution-context` — and every `Task:` / subagent invocation in the marketplace dispatches through it. One canonical agent file; seven level-suffixed variants emitted at build time; and a structured prompt-body contract that every workflow body declares against.
 
 == One Generic Dispatcher
 
-`plan-marshall:execution-context` is the sole role-eligible canonical agent in the marketplace. It owns the dispatcher boilerplate (load `persona-plan-marshall-agent`, load caller-specified skills, locate the workflow doc, execute, emit return TOON) exactly once, and parameterises the workflow body at dispatch time. The caller passes five prompt-body fields:
+`plan-marshall:execution-context` is the sole role-eligible canonical agent in the marketplace. It encapsulates the dispatcher lifecycle (load `persona-plan-marshall-agent`, load caller-specified skills, locate the workflow doc, execute, emit return TOON) exactly once, parameterising the workflow body at dispatch time. The caller passes five prompt-body fields:
 
 * `name` — human label for logging and `mark-step-done`
 * `plan_id` — plan identifier (or the sentinel `none` for free-standing dispatches)
-* `skills[]` — caller-loaded skills, in load order
+* `skills[]` — caller-loaded skills, in deterministic load order
 * `workflow` — bundle-prefixed notation for the workflow doc to run (e.g. `plan-marshall:phase-3-outline/SKILL.md`, `plan-marshall:plan-marshall/workflow/triage.md`)
 * `WORKTREE` — repo-relative working directory (`.` for main checkout)
 
-The dispatcher loads `persona-plan-marshall-agent` implicitly, then the caller-specified `skills[]`, then reads the resolved workflow path and follows it. Workflow-specific runtime inputs (`finding_type`, `track`, `scope`, etc.) flow through additional prompt-body fields the workflow doc declares.
+The dispatcher loads `persona-plan-marshall-agent` implicitly, then the caller-specified `skills[]`, then reads the resolved workflow path and executes it. Workflow-specific runtime inputs (`finding_type`, `track`, `scope`, etc.) flow through additional prompt-body fields declared by the workflow doc.
 
-A new LLM-judgement workflow worth pinning its own model is added by writing a new workflow doc that declares `implements: ext-point-execution-context-workflow` and registering a new role key. No new agent file, no new emitted variants.
+A new LLM-judgement workflow worth pinning its own model is added simply by authoring a workflow doc that declares `implements: ext-point-execution-context-workflow` and registering a new role key. No new agent file and no new emitted variant families are required.
 
 [#level-variants]
-== Level Variants
+== Level Variants & The Two-Axis Model
 
-image::../resources/diagrams/variant-emission.svg[Variant emission — one canonical SKILL declares implements + levels; the build target reads it and emits the canonical no-suffix file plus six suffixed level variants with model and effort baked in, align=center]
+Plan Marshall models compute demand using an abstract seven-tier ordinal scale (`level-1` through `level-7`, plus `inherit`). Each level represents a coordinate in a **Two-Axis Effort Model**:
 
-The Claude target emits up to **seven** files from the single canonical source: the no-suffix link:../../marketplace/bundles/plan-marshall/agents/execution-context.md[`execution-context.md`] (inherit; `implements:` and `levels:` stripped) plus six level-suffixed files (`-low`, `-medium`, `-high`, `-xhigh`, `-xxhigh`, `-max`). Each suffixed variant has `model:` and `effort:` baked into its frontmatter from the canonical level → primitive mapping in link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/effort-levels.md[`effort-levels.md`]. The `-max` variant is Opus-4.8-only — the build emitter's guard skips it when the resolved alias does not accept `effort: xhigh`, leaving six files in that case.
+$$\text{Level} = (\text{Model Axis}, \text{Effort Axis})$$
 
-Dispatch sites resolve which variant to call via `manage-config effort resolve-target --phase <phase> [--role <subkey>]`, which returns the canonical name when the level is `inherit`/empty and the matching variant otherwise. The resolver reads `.plan/marshal.json` fresh per dispatch, so an edit to any `plan.<phase>.effort` attribute takes effect on the **next** call — no Claude Code restart required.
+* **Model Axis (Capacity)**: Selects the model class (e.g. fast/compact vs. frontier reasoning).
+* **Effort Axis (Reasoning Intensity)**: Controls the thinking budget or reasoning effort (e.g. `low`, `medium`, `high`, `max`).
+
+=== Target Realization & Local Ladders
+
+The project repository (`marshal.json`) configures only the target-neutral level intent. The concrete mapping of levels to native engine primitives is determined machine-locally via `.plan/local/effort-ladder.json` (git-ignored), with built-in defaults seeded by `marshall-steward`:
+
+[cols="1,2,2,2", options="header"]
+|===
+| Dimension | Claude Code | Google Antigravity | OpenCode
+
+| **Subagent Definition**
+| Emitted agent files (`target/claude/.../agents/execution-context-level-N.md`)
+| Emitted agent files (`target/antigravity/agents/execution-context-level-N.md`) deployed to `~/.gemini/config/plugins/...`
+| Emitted agent files (`target/opencode/agent/execution-context-level-N.md`) deployed to `~/.config/opencode/agent/`
+
+| **Frontmatter State**
+| Static (`model:`, `effort:`) baked at generate time
+| Static (`model:`, `effort:`) baked at generate time
+| Static frontmatter; unpinned (`inherit`) in all emitted variants
+
+| **Session Cache Lifecycle**
+| **Session-pinned**: Scanned once at session boot; mid-session variant changes require `/reload-plugins` or restart.
+| **File-backed**: Antigravity reads plugin files dynamically on dispatch.
+| **File-backed**: OpenCode reads markdown agent files dynamically on dispatch.
+
+| **Default Behavior**
+| Emits with canonical default ladder (`haiku` through `fable max`).
+| Emits with **Option 1 default ladder** (`flash low` through `pro high`).
+| **Stays at `inherit`**: Because agent files are static markdown definitions and OpenCode has no universal provider or built-in in-place re-emitter, all OpenCode level variants emit without `model:`, cleanly inheriting the caller's session model.
+|===
+
+=== Unconfigured Fallback
+
+If `.plan/local/effort-ladder.json` is absent or the active target is unconfigured, all variants emit unpinned (`inherit`) and a visible warning is logged.
 
 [#per-role-model-selection]
 == Per-Role Model Selection
 
-The "which model and effort level runs each LLM-judgement workflow" question reduces to three layered concepts — **Levels**, **Roles**, and **Variants**. Levels are the six ordinals (`low` through `max`) plus the `inherit` sentinel, each binding to a `(model, effort)` primitive. Roles are the phase-scoped registry of LLM-judgement workflows that may be pinned to a level — six phase groups, each polymorphic (a string shorthand for the whole phase, or an object whose recognised sub-keys are `default`, `verification-feedback`, `post-run-review`). Variants are the emitted agent files <<level-variants,described above>>; the resolver picks one per dispatch.
+The assignment of models and effort levels to LLM-judgement workflows reduces to three concepts:
 
-The runtime path: caller passes `--phase <phase>` and optionally `--role <subkey>` to `manage-config effort resolve-target`. The resolver bubbles `phase.subkey` → `phase.default` → `phase` shorthand → plan-wide `effort` → `inherit` and returns the first level it finds. The variant emitter has already produced an agent file for that level; the orchestrator dispatches that variant by name.
+1. **Levels**: The seven ordinal tiers (`level-1` through `level-7`) plus the `inherit` sentinel.
+2. **Roles**: The phase-scoped registry of LLM-judgement workflows that can be assigned a level — covering phases `phase-2-refine` through `phase-6-finalize`.
+3. **Variants**: The emitted agent files (`execution-context-level-1.md` .. `level-7.md`) and canonical dispatcher (`execution-context.md`).
 
-The canonical specs — link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/effort-levels.md[`effort-levels.md`], link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/effort-roles.md[`effort-roles.md`], link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/effort-variants.md[`effort-variants.md`] — live under `plan-marshall/standards/`. Operator-facing guidance (wizard presets, polymorphic `marshal.json` shape, worked example, troubleshooting) lives in xref:../user/efforts.adoc[User Guide › Efforts].
+The runtime path:
+* The caller invokes `manage-config effort resolve-target --phase <phase> [--role <subkey>]`.
+* The resolver walks: `phase.role` → `phase.default` → `phase` shorthand → plan-wide `effort` → `inherit`.
+* The resolver returns the variant agent name (e.g. `plan-marshall:execution-context-level-3`), which the orchestrator dispatches.
+
+Canonical specifications:
+* link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/effort-levels.md[`effort-levels.md`] — Ordinal scale & Two-Axis Model definition.
+* link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/effort-roles.md[`effort-roles.md`] — Phase-scoped role registry.
+* link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/effort-variants.md[`effort-variants.md`] — Resolver contract and configuration syntax.
+* xref:../developer/effort-ladders.adoc[Developer Guide › Effort Ladders] — Guide for implementing effort ladders on new platforms.
+* xref:../user/efforts.adoc[User Guide › Efforts] — Operator configuration guide and presets.
 
 == Granularity
 
 Not every step belongs in its own dispatch. The granularity heuristics in link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/dispatch-granularity.md[`extension-api:dispatch-granularity`] govern the call:
 
-* **Script-over-dispatch** — deterministic work (regex matches, structural checks, build invocations) belongs in a script. Dispatches are reserved for LLM judgement.
-* **Bundle-shared-context** — a multi-step LLM workflow runs inside ONE dispatch envelope rather than N sequential dispatches.
-* **Per-iteration only when parallel-or-different-models** — N parallel dispatches are justified only when each subagent runs independently. The sole such case in the marketplace is `enrich-module` dispatched under phase-6-finalize from architecture-refresh Tier-1.
+* **Script-over-dispatch**: Deterministic operations (regex matching, JSON manipulation, build calls) belong in scripts. Subagents are reserved for LLM judgement.
+* **Bundle-shared-context**: Multi-step LLM workflows run inside ONE dispatch envelope rather than multiple sequential dispatches.
+* **Parallel fan-out**: Subagent fan-out is justified only when each subagent performs independent parallel work.
 
-== Dispatch lifecycle
+== Dispatch Lifecycle
 
-The dispatch is synchronous. The orchestrator suspends on the `Task:` call for the entire duration of the subagent's run (skill loads, workflow read, internal loops, AskUserQuestion gates) and resumes only when the subagent returns its TOON record. No tokens are billed to the orchestrator during the suspension — only the subagent's `<usage>` is counted. The contract behind that — the eight-step sequence the dispatcher follows, the five-field prompt body, the deterministic skill-load order — is canonical in link:../../marketplace/bundles/plan-marshall/skills/ref-workflow-architecture/standards/dispatch-walkthrough.md[`dispatch-walkthrough.md`] along with three worked end-to-end traces (a single-workflow phase entry, a sub-dispatch by reference, and a parallel fan-out). The concept page stops at "synchronous, contracted, zero-token suspension"; the spec carries the steps.
+Dispatches are synchronous. The calling orchestrator suspends on the subagent invocation for the entire duration of the subagent run (skill loads, workflow execution, internal loops, user interactions) and resumes only when the subagent completes its task and returns its structured TOON record.
 
 == Related
 
-* xref:build-server.adoc[Concepts › Build Server] — when a project registers the build server, an orchestrator-tier build is submitted to the `marshalld` daemon and bounded-long-polled: the leaf/orchestrator polls a bounded wait instead of holding a long build inline, so a harness-reaped wait costs one re-poll.
-* link:../../marketplace/bundles/plan-marshall/agents/execution-context.md[`plan-marshall/agents/execution-context.md`] — the dispatcher itself
-* link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-dynamic-level-executor.md[`extension-api/standards/ext-point-dynamic-level-executor.md`] — agent-emission contract
-* link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-execution-context-workflow.md[`extension-api/standards/ext-point-execution-context-workflow.md`] — workflow-doc contract
-* link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/dispatch-granularity.md[`extension-api/standards/dispatch-granularity.md`] — granularity heuristics
-* link:../../marketplace/bundles/plan-marshall/skills/ref-workflow-architecture/standards/dispatch-walkthrough.md[`ref-workflow-architecture/standards/dispatch-walkthrough.md`] — worked dispatch example
-* link:../../marketplace/bundles/plan-marshall/skills/ref-workflow-architecture/standards/dispatch-logging.md[`ref-workflow-architecture/standards/dispatch-logging.md`] — dispatch logging contract
-* link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/effort-levels.md[`plan-marshall/standards/effort-levels.md`] — level → primitive binding
-* link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/effort-roles.md[`plan-marshall/standards/effort-roles.md`] — phase-scoped role registry
-* link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/effort-variants.md[`plan-marshall/standards/effort-variants.md`] — resolver contract (canonical user-facing guide)
-* link:../../marketplace/bundles/plan-marshall/skills/marshall-steward/standards/effort-menu.md[`marshall-steward/standards/effort-menu.md`] — wizard preset contract
-* xref:../user/efforts.adoc[User Guide › Efforts] — operator-side configuration, presets, worked example
+* xref:build-server.adoc[Concepts › Build Server] — daemon-backed long-polling build coordination.
+* link:../../marketplace/bundles/plan-marshall/agents/execution-context.md[`execution-context.md`] — the canonical dispatcher.
+* link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-dynamic-level-executor.md[`ext-point-dynamic-level-executor.md`] — agent-emission contract.
+* link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-execution-context-workflow.md[`ext-point-execution-context-workflow.md`] — workflow contract.
+* xref:../developer/effort-ladders.adoc[Developer Guide › Effort Ladders] — multi-target ladder architecture.

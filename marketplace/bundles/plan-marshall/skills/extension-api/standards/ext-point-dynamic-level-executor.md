@@ -4,29 +4,29 @@
 
 ## Overview
 
-The `ext-point-dynamic-level-executor` extension point declares that a marketplace agent participates in role-based variant emission. It is the only extension point in the `ext-point-*` family whose consumer is an **agent file** (not a skill); the implementor is the agent's frontmatter, and the producer is the build target (`marketplace/targets/claude/`).
+The `ext-point-dynamic-level-executor` extension point declares that a marketplace agent participates in role-based variant emission. It is the only extension point in the `ext-point-*` family whose consumer is an **agent file** (not a skill); the implementor is the agent's frontmatter, and the producers are the multi-target build targets (`marketplace/targets/{target}/`).
 
-When an agent declares this extension point, the build target emits one variant agent file per ordinal level (`level-1`, `level-2`, `level-3`, `level-4`, `level-5`, `level-6`, `level-7`) into `target/claude/{bundle}/agents/`, each variant pinned to a specific `(model, effort)` primitive. The canonical no-suffix file is also emitted (with `implements:` and `levels:` stripped) so the `inherit` resolution case dispatches the user-configured-or-default model. Dispatch sites resolve the role's level via `manage-config effort resolve-target --role <key>` (which returns the canonical name when level is `inherit`/empty, otherwise the per-level variant `execution-context-{level}`) and call the matching variant by name.
+When an agent declares this extension point, target emitters emit one variant agent file per ordinal level (`level-1`, `level-2`, `level-3`, `level-4`, `level-5`, `level-6`, `level-7`) into the target's agent directory, each variant pinned according to the target's ladder and the machine-local `.plan/local/effort-ladder.json`. The canonical no-suffix file is also emitted (with `implements:` and `levels:` stripped) so the `inherit` resolution case dispatches the session's active model. Dispatch sites resolve the role's level via `manage-config effort resolve-target --role <key>` (which returns the canonical name when level is `inherit`/empty, otherwise the per-level variant `execution-context-{level}`) and call the matching variant by name.
 
-The marketplace ships two implementors — `plan-marshall:execution-context`, the generic dispatcher that drives every plan-marshall `Task:` invocation, and `plan-marshall:execution-context-reader`, the read-only ingestion dispatcher. Each emits its own per-level variant set. Arbitrary workflow bodies are dispatched through the eight emitted variants (including canonical) via the companion workflow-doc ext-point (`ext-point-execution-context-workflow`).
+The marketplace ships two implementors — `plan-marshall:execution-context`, the generic dispatcher that drives every plan-marshall `Task:` invocation, and `plan-marshall:execution-context-reader`, the read-only ingestion dispatcher. Each emits its own per-level variant set. Arbitrary workflow bodies are dispatched through the emitted variants via the companion workflow-doc ext-point (`ext-point-execution-context-workflow`).
 
 The end-to-end trace:
 
 ```text
-.plan/marshal.json              models.roles.<role> = "level-5"
+.plan/marshal.json                  plan.<phase>.effort.<role> = "level-5"
         │
         ▼
-manage-config effort read       resolver returns "level-5"
+manage-config effort read           resolver returns "level-5"
         │
         ▼
-dispatch site                   target = {base}-level-5
+dispatch site                       target = {base}-level-5
         │
         ▼
-target/claude/{bundle}/agents/  build-emitted variant {base}-level-5.md
-                                (model/effort per effort-levels.md Level Table)
+target/{target}/agents/             build-emitted variant {base}-level-5.md
+                                    (model/effort per effort ladder and local config)
         │
         ▼
-Claude Code runtime             subagent runs on the variant's pinned model
+Target Runtime                      subagent runs on the variant's configured tier
 ```
 
 ## Implementor Requirements
@@ -73,22 +73,22 @@ Agents declare the extension point structurally; **roles** map dispatch sites to
 
 ### Input → Output Mapping
 
-Given a canonical agent at `marketplace/bundles/{bundle}/agents/{name}.md` with `implements: plan-marshall:extension-api/standards/ext-point-dynamic-level-executor`, the build target emits:
+Given a canonical agent at `marketplace/bundles/{bundle}/agents/{name}.md` with `implements: plan-marshall:extension-api/standards/ext-point-dynamic-level-executor`, each build target emits into its native agent directory (e.g. `target/claude/{bundle}/agents/`, `target/antigravity/agents/`, `target/opencode/agent/`):
 
 | Output File | Frontmatter Modification |
 |-------------|--------------------------|
-| `target/claude/{bundle}/agents/{name}.md` | Canonical: `implements:` and `levels:` **stripped**. All other fields preserved. Serves the `inherit` resolution. |
-| `target/claude/{bundle}/agents/{name}-level-1.md` | Variant: `name: {name}-level-1`, `model:` per the `effort-levels.md` Level Table (the level-1 alias omits `effort`). `implements:`/`levels:` stripped. |
-| `target/claude/{bundle}/agents/{name}-level-2.md` | Variant: `name: {name}-level-2`, `model:` + `effort:` per the `effort-levels.md` Level Table. |
-| `target/claude/{bundle}/agents/{name}-level-3.md` | Variant: `name: {name}-level-3`, `model:` + `effort:` per the `effort-levels.md` Level Table. |
-| `target/claude/{bundle}/agents/{name}-level-4.md` | Variant: `name: {name}-level-4`, `model:` + `effort:` per the `effort-levels.md` Level Table. |
-| `target/claude/{bundle}/agents/{name}-level-5.md` | Variant: `name: {name}-level-5`, `model:` + `effort:` per the `effort-levels.md` Level Table. |
-| `target/claude/{bundle}/agents/{name}-level-6.md` | Variant: `name: {name}-level-6`, `model:` + `effort:` per the `effort-levels.md` Level Table. **Refused at build time** when canonical's resolved model alias does not accept the level's effort. |
-| `target/claude/{bundle}/agents/{name}-level-7.md` | Variant: `name: {name}-level-7`, `model:` + `effort:` per the `effort-levels.md` Level Table. **Refused at build time** when canonical's resolved model alias does not accept the level's effort. |
+| `{agent-dir}/{name}.md` | Canonical: `implements:` and `levels:` **stripped**. All other fields preserved. Serves the `inherit` resolution. |
+| `{agent-dir}/{name}-level-1.md` | Variant: `name: {name}-level-1`, `model:` and `effort:` per target ladder and local `.plan/local/effort-ladder.json`. |
+| `{agent-dir}/{name}-level-2.md` | Variant: `name: {name}-level-2`, `model:` and `effort:` per target ladder and local `.plan/local/effort-ladder.json`. |
+| `{agent-dir}/{name}-level-3.md` | Variant: `name: {name}-level-3`, `model:` and `effort:` per target ladder and local `.plan/local/effort-ladder.json`. |
+| `{agent-dir}/{name}-level-4.md` | Variant: `name: {name}-level-4`, `model:` and `effort:` per target ladder and local `.plan/local/effort-ladder.json`. |
+| `{agent-dir}/{name}-level-5.md` | Variant: `name: {name}-level-5`, `model:` and `effort:` per target ladder and local `.plan/local/effort-ladder.json`. |
+| `{agent-dir}/{name}-level-6.md` | Variant: `name: {name}-level-6`, `model:` and `effort:` per target ladder and local `.plan/local/effort-ladder.json`. |
+| `{agent-dir}/{name}-level-7.md` | Variant: `name: {name}-level-7`, `model:` and `effort:` per target ladder and local `.plan/local/effort-ladder.json`. |
 
 When the canonical declares `levels: [level-3, level-5]`, only `{name}.md`, `{name}-level-3.md`, and `{name}-level-5.md` are emitted.
 
-The exact level → primitive table is the single source of truth in `effort-levels.md`; this contract pins the **shape** of variant emission, not the table values.
+The target default ladders and two-axis model are defined in `effort-levels.md`; this contract pins the **shape** of variant emission. Target-specific rules (such as Claude's alias-capability guard or OpenCode's inherit-only default) are owned by the respective target emitters.
 
 ### Session Reload Required After Variant Emission
 

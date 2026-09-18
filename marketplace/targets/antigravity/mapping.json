@@ -54,21 +54,29 @@
     }
   },
   "model_map": {
+    "flash": {
+      "id": "flash",
+      "supports_effort": ["low", "medium", "high"]
+    },
+    "pro": {
+      "id": "pro",
+      "supports_effort": ["low", "high"]
+    },
     "opus": {
       "id": "pro",
-      "supports_effort": ["medium", "high", "xhigh"]
+      "supports_effort": ["low", "high"]
     },
     "sonnet": {
-      "id": "pro",
-      "supports_effort": ["medium", "high"]
+      "id": "flash",
+      "supports_effort": ["low", "medium", "high"]
     },
     "haiku": {
       "id": "flash",
-      "supports_effort": []
+      "supports_effort": ["low"]
     },
     "fable": {
-      "id": "flash_lite",
-      "supports_effort": ["medium", "high", "xhigh", "max"]
+      "id": "pro",
+      "supports_effort": ["high"]
     }
   }
 }

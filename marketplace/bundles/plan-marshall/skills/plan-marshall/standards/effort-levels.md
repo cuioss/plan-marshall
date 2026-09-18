@@ -1,80 +1,128 @@
-# Model Levels — Level → Primitive Binding
+# Model Levels — Ordinal Scale & Two-Axis Effort Model
 
-> Single source of truth for the ordinal level → `(model, effort)` primitive binding consumed by the variant generator and by anyone reading the schema.
+> Single source of truth for the target-neutral ordinal level scale (`level-1` through `level-7`, plus `inherit`) and the Two-Axis Effort Model.
 
 ## Overview
 
-The variant emission system ([`ext-point-dynamic-level-executor`](../../extension-api/standards/ext-point-dynamic-level-executor.md)) uses a fixed seven-tier ordinal scale to select model + effort combinations per role. Authors configure roles by level keyword (e.g., `plan.phase-3-outline.effort.research = "level-7"`); the build target translates levels into concrete `(model, effort)` primitives via the table below.
+The variant emission system ([`ext-point-dynamic-level-executor`](../../extension-api/standards/ext-point-dynamic-level-executor.md)) uses a fixed seven-tier ordinal scale to express cognitive complexity and compute demand across subagent roles. Authors configure roles by target-neutral level keywords in `.plan/marshal.json` (e.g., `plan.phase-3-outline.effort.research = "level-7"`).
 
-The level palette is intentionally small and ordinal — `level-1 → level-2 → level-3 → level-4 → level-5 → level-6 → level-7` represents increasing capability and cost. The `inherit` sentinel is the only non-ordinal value; it instructs the dispatch site to use the canonical no-suffix variant (which inherits the parent session's model).
+The level scale is strictly ordinal — `level-1 → level-2 → level-3 → level-4 → level-5 → level-6 → level-7` represents increasing reasoning depth, context synthesis capability, and compute expenditure:
 
-## Level Table
+* `level-1` — Mechanical work: log scrubbing, simple file/data transforms, deterministic lookups.
+* `level-2` — Routine tasks: scoped code edits, unit test adjustments, formatting, simple documentation updates.
+* `level-3` — Analytical tasks: triage, verification feedback analysis, multi-file inspection, standard review.
+* `level-4` — Advanced reasoning: architectural outline, solution formulation, moderate refactoring across components.
+* `level-5` — Complex reasoning: deep codebase exploration, multi-module dependency analysis, comprehensive verification.
+* `level-6` — Heavy reasoning: cross-cutting architectural synthesis, subtle race condition/concurrency analysis, high-depth review.
+* `level-7` — Maximum capability ceiling: epic decomposition, high-stakes security analysis, definitive architectural decisions.
+* `inherit` — Sentinel: dispatches the canonical unadorned subagent variant, cleanly inheriting the parent session's active model.
 
-| Level | Model | Effort | Notes |
-|-------|-------|--------|-------|
-| `level-1` | `haiku` | (omitted) | Haiku does not accept the `effort` field; build target omits it on emitted variants. |
-| `level-2` | `sonnet` | `medium` | Default Sonnet effort. |
-| `level-3` | `sonnet` | `high` | High-effort Sonnet — Sonnet's top tier. |
-| `level-4` | `opus` | `medium` | Opus with medium effort — fills the Sonnet-high → Opus-high cost/quality gap for tasks that need Opus-class reasoning but not maximum thinking. |
-| `level-5` | `opus` | `high` | High-effort Opus — Opus's standard top tier. |
-| `level-6` | `opus` | `xhigh` | Extra-high-effort Opus. Alias-capability-gated: build target refuses emission when the resolved Opus alias does not accept `effort: xhigh`. |
-| `level-7` | `fable` | `max` | The absolute capability ceiling. Alias-capability-gated: build target refuses emission when the resolved alias does not accept `effort: max`. |
-| `inherit` | (unset) | (unset) | Sentinel: dispatch the canonical no-suffix variant; runtime inherits the parent session's model. |
+## The Two-Axis Model
 
-The model column lists **aliases** (`fable`, `opus`, `sonnet`, `haiku`), not version-pinned IDs. See [Aliases, not IDs](#aliases-not-ids) below for rationale.
+Model capability and reasoning intensity are orthogonal dimensions. Plan Marshall models each level as a coordinate in a two-axis space:
 
-> **Local provisioning pointer.** This table is unchanged by machine-local
-> provisioning: a target-owned effort-to-model map may satisfy a rung with a
-> local or provider-routed model post-resolve, but it never alters the rungs
-> themselves. See `doc/adr/021-machine-local-effort-to-model-map-and-resolve-chain-slot.adoc`
-> for the settled schema, slot, and never-escalate rule.
+$$\text{Level} = (\text{Model Axis}, \text{Effort Axis})$$
 
-## Aliases, not IDs
+1. **Model Axis (Capacity)**: Selects the underlying foundation model class or engine (e.g., fast/efficient lightweight models vs. massive frontier reasoning models).
+2. **Effort Axis (Reasoning Intensity)**: Controls the thinking budget, reasoning tokens, or search depth allocated to the model (e.g., `low`, `medium`, `high`, `max`).
 
-The level table maps to model **aliases** (`fable`, `opus`, `sonnet`, `haiku`) rather than version-pinned IDs (e.g., `claude-opus-4-8`). Rationale:
+Different target platforms realize this coordinate space using their own native primitives.
 
-- **Resilience to model rotation**: code.claude.com rotates the alias targets at the runtime; pinning to an ID in the schema would force a marketplace-wide edit on every model release.
-- **User override compatibility (Claude target)**: the `CLAUDE_CODE_SUBAGENT_MODEL` environment variable — a Claude Code host variable — accepts aliases and overrides the variant's pinned model at session start. Authors authoring against aliases get the same override semantics users expect.
-- **Single point of mapping**: the alias → ID resolution lives in `marketplace/targets/opencode/mapping.json` (`model_map`) and is reused by the Claude target for the alias-capability guard. Adding a new model means editing one file.
+## Target Realization & Default Ladders
 
-The only place pinned IDs are written is the build-time guard for the alias-capability-gated levels (`level-6`, `level-7`): the mapping file flags whether the resolved ID accepts the requested effort. Authors and users never see the IDs.
+Each target platform (`marketplace/targets/{target}/`) implements a default ladder translating the 7 ordinal rungs into its specific runtime capabilities. These defaults are realized and locally customizable via `.plan/local/effort-ladder.json`:
 
-> **Known coupling — recorded as a proposal.** The OpenCode target's variant emitter imports `LEVEL_TABLE` from the Claude target (`marketplace/targets/claude/variant_emitter.py`) rather than owning its own copy — a deliberate single-source reuse whose cross-target import direction a lockstep test pins (`opencode_ve.LEVEL_TABLE is claude_ve.LEVEL_TABLE`). The cleaner fix — lifting the table into a target-neutral shared module both targets import — is `marketplace/targets` work outside this plan's surface and is recorded here as the proposal rather than implemented.
+### Google Antigravity Ladder (Option 1 Default)
 
-## The Alias-Capability Guard
+Antigravity operates with **Gemini Flash 3.8** (supporting `low`, `medium`, `high` effort) and **Gemini Pro 3.1** (supporting `low`, `high` effort):
 
-The two top tiers resolve to alias-capability-gated efforts — `level-6` resolves to `(opus, xhigh)` and `level-7` resolves to `(fable, max)`. The `xhigh` and `max` effort values are accepted only by specific aliases. When a user configures a role to one of these levels AND the resolved alias does not accept the level's effort, the build target:
+| Level | Model | Effort | Cognitive Role |
+|-------|-------|--------|----------------|
+| `level-1` | `flash` | `low` | Fast mechanical transforms |
+| `level-2` | `flash` | `low` | Scoped code updates |
+| `level-3` | `flash` | `medium` | Analytical triage & validation |
+| `level-4` | `flash` | `medium` | Advanced solution planning |
+| `level-5` | `flash` | `high` | Deep investigation & test suite analysis |
+| `level-6` | `pro` | `low` | Complex cross-component reasoning |
+| `level-7` | `pro` | `high` | Maximum architectural synthesis |
+| `inherit` | (parent) | (parent) | Inherits active session model |
 
-1. **Refuses to emit** the `{name}-level-6.md` / `{name}-level-7.md` variant.
-2. **Emits a build warning** naming the canonical, the requested level, and the missing capability.
-3. **Continues building** the other variants — the missing variant is a per-agent / per-level skip, not a fatal build error.
+### Claude Code Ladder (Canonical Default)
 
-Dispatch sites that resolve to a missing variant fall back to the canonical (`inherit`) at runtime, so the user gets a degraded but functional dispatch instead of a runtime error. The decision log records the fallback for auditability.
+Claude Code maps rungs onto Anthropic model aliases and effort keywords:
+
+| Level | Model | Effort | Cognitive Role |
+|-------|-------|--------|----------------|
+| `level-1` | `haiku` | (omitted) | Fast mechanical transforms (effort unsupported on Haiku) |
+| `level-2` | `sonnet` | `medium` | Routine code edits and doc maintenance |
+| `level-3` | `sonnet` | `high` | Analytical triage and multi-file reasoning |
+| `level-4` | `opus` | `medium` | Opus reasoning with moderate thinking budget |
+| `level-5` | `opus` | `high` | Full analytical Opus reasoning |
+| `level-6` | `opus` | `xhigh` | Extra-high-effort Opus (alias-capability-gated) |
+| `level-7` | `fable` | `max` | Maximum capability ceiling (alias-capability-gated) |
+| `inherit` | (parent) | (parent) | Inherits active session model |
+
+### OpenCode Ladder (Inherit Default)
+
+In OpenCode, subagent definitions are static markdown files deployed under `~/.config/opencode/agent/`. Because OpenCode lacks a built-in in-place file re-emitter or universal model provider, all 7 level variants default to unpinned (`model: null`, `effort: null`), cleanly falling back to `inherit` (disagreeing with neither local nor remote model configurations). Users can configure custom ladders in `.plan/local/effort-ladder.json` for future rewriter integrations.
+
+## Machine-Local Customization (`.plan/local/effort-ladder.json`)
+
+Project repository configuration (`marshal.json`) expresses only the target-neutral intent (`level-1` .. `level-7`). The machine-local mapping is stored in the git-ignored file `.plan/local/effort-ladder.json`:
+
+```json
+{
+  "targets": {
+    "antigravity": {
+      "level-1": { "model": "flash", "effort": "low" },
+      "level-2": { "model": "flash", "effort": "low" },
+      "level-3": { "model": "flash", "effort": "medium" },
+      "level-4": { "model": "flash", "effort": "medium" },
+      "level-5": { "model": "flash", "effort": "high" },
+      "level-6": { "model": "pro", "effort": "low" },
+      "level-7": { "model": "pro", "effort": "high" }
+    },
+    "claude": {
+      "level-1": { "model": "haiku", "effort": null },
+      "level-2": { "model": "sonnet", "effort": "medium" },
+      "level-3": { "model": "sonnet", "effort": "high" },
+      "level-4": { "model": "opus", "effort": "medium" },
+      "level-5": { "model": "opus", "effort": "high" },
+      "level-6": { "model": "opus", "effort": "xhigh" },
+      "level-7": { "model": "fable", "effort": "max" }
+    },
+    "opencode": {
+      "level-1": { "model": null, "effort": null },
+      "level-2": { "model": null, "effort": null },
+      "level-3": { "model": null, "effort": null },
+      "level-4": { "model": null, "effort": null },
+      "level-5": { "model": null, "effort": null },
+      "level-6": { "model": null, "effort": null },
+      "level-7": { "model": null, "effort": null }
+    }
+  }
+}
+```
+
+* **Steward initialization**: Running `/marshall-steward` automatically seeds default ladders for Antigravity (Option 1), Claude (canonical), and OpenCode (inherit).
+* **Unconfigured fallback**: If the local file is absent or a target is unconfigured, all rungs fall back to `inherit` and a warning is surfaced.
 
 ## Default Resolution Order
 
 The resolver (`manage-config effort read --role <name>`) walks this order:
 
-1. `models.roles.<role>` — explicit per-role override.
-2. `effort` — plan-wide default (when set).
-3. `inherit` — implicit fallback when neither is configured.
+1. `plan.<phase>.effort.<role>` — explicit per-role override.
+2. `plan.<phase>.effort.default` — phase-level default.
+3. `plan.<phase>.effort` — string shorthand for the phase.
+4. `plan.effort` — plan-wide fallback (when set).
+5. `inherit` — implicit fallback when none is configured.
 
 The resolver returns a single level keyword. Dispatch sites compute the agent target as:
 
-- `inherit` or empty → canonical no-suffix variant: `Task: {bundle}:{base}`.
-- any other level → variant: `Task: {bundle}:{base}-{level}`.
+* `inherit` or empty → canonical no-suffix variant: `Task: {bundle}:{base}`.
+* any other level → variant: `Task: {bundle}:{base}-{level}`.
 
 Use `manage-config effort resolve-target --role <name>` for a single helper invocation that returns the variant target name directly.
-
-## Validation Rules
-
-The resolver and the wizard both enforce:
-
-| Rule | Failure Mode |
-|------|--------------|
-| Configured value is one of `level-1`, `level-2`, `level-3`, `level-4`, `level-5`, `level-6`, `level-7`, `inherit` | Hard error on read; refused at wizard save. |
-| `level-6` / `level-7` resolves but the resolved alias lacks the level's effort support (`xhigh` / `max`) | Build-time warning + per-level skip; runtime falls back to canonical. |
-| Role key is registered in [`effort-roles.md`](effort-roles.md) | Warning (not error): unknown roles resolve to `effort` / `inherit` so the registry can rename without breaking saved configs. |
 
 ## Cross-References
 
@@ -83,4 +131,5 @@ The resolver and the wizard both enforce:
 | [`ext-point-dynamic-level-executor.md`](../../extension-api/standards/ext-point-dynamic-level-executor.md) | Variant emission contract — how levels are consumed at build time. |
 | [`effort-roles.md`](effort-roles.md) | Role registry — which dispatch sites consume which roles. |
 | [`effort-variants.md`](effort-variants.md) | User-facing centralised doc — how to configure `models.roles.<name>`. |
-| `marketplace/targets/opencode/mapping.json` | `model_map` — alias → ID resolution and effort-support flags. |
+| `doc/concepts/execution-context.adoc` | Architectural concept for execution context and variant dispatch. |
+| `doc/developer/effort-ladders.adoc` | Developer guide for integrating effort ladders on new platforms. |

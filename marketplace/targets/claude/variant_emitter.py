@@ -44,6 +44,7 @@ across all four surfaces.
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -60,6 +61,32 @@ LEVEL_TABLE: dict[str, dict[str, str | None]] = {
     'level-6': {'model': 'opus', 'effort': 'xhigh'},
     'level-7': {'model': 'fable', 'effort': 'max'},
 }
+
+
+def _load_local_ladder(target: str = 'claude') -> dict[str, Any] | None:
+    """Load ladder for target from .plan/local/effort-ladder.json if present."""
+    candidates: list[Path] = []
+    if 'PLAN_BASE_DIR' in os.environ:
+        candidates.append(Path(os.environ['PLAN_BASE_DIR']) / 'effort-ladder.json')
+    try:
+        from marketplace_paths import resolve_main_anchored_path
+
+        candidates.append(resolve_main_anchored_path('effort-ladder.json'))
+    except Exception:
+        pass
+    cwd = Path.cwd().resolve()
+    for p in (cwd, *cwd.parents):
+        candidates.append(p / '.plan' / 'local' / 'effort-ladder.json')
+    for cand in candidates:
+        if cand.is_file():
+            try:
+                data = json.loads(cand.read_text(encoding='utf-8'))
+                if isinstance(data, dict) and 'targets' in data and isinstance(data['targets'], dict):
+                    if target in data['targets']:
+                        return data['targets'][target]
+            except Exception:
+                pass
+    return None
 
 # Effort values whose emission is gated by per-alias capability — a variant
 # at one of these efforts is emitted only when the resolved model alias's
@@ -257,14 +284,19 @@ def render_canonical(frontmatter: Frontmatter, body: str) -> str:
     return _assemble(new_lines, body)
 
 
-def render_variant(frontmatter: Frontmatter, body: str, level: str) -> str:
+def render_variant(
+    frontmatter: Frontmatter,
+    body: str,
+    level: str,
+    ladder: dict[str, dict[str, str | None]] | None = None,
+) -> str:
     """Render the variant file for ``level``.
 
     The variant ``name:`` is rewritten to ``{base}-{level}``; ``model:``
-    and ``effort:`` are inserted (or replaced) per ``LEVEL_TABLE``;
+    and ``effort:`` are inserted (or replaced) per ``ladder`` or ``LEVEL_TABLE``;
     ``implements:`` and ``levels:`` are stripped.
     """
-    primitive = LEVEL_TABLE[level]
+    primitive = (ladder or LEVEL_TABLE).get(level, LEVEL_TABLE.get(level, {}))
     base_name = frontmatter.name or '<unknown>'
     variant_name = f'{base_name}-{level}'
 
@@ -284,10 +316,13 @@ def render_variant(frontmatter: Frontmatter, body: str, level: str) -> str:
     if not name_replaced:
         new_lines.insert(0, f'name: {variant_name}')
 
-    # Append model and (optional) effort lines.
-    new_lines.append(f'model: {primitive["model"]}')
-    if primitive['effort'] is not None:
-        new_lines.append(f'effort: {primitive["effort"]}')
+    # Append model and (optional) effort lines if not inherit/None.
+    model = primitive.get('model')
+    effort = primitive.get('effort')
+    if model and model != 'inherit':
+        new_lines.append(f'model: {model}')
+    if effort and effort != 'inherit':
+        new_lines.append(f'effort: {effort}')
 
     return _assemble(new_lines, body)
 
@@ -369,6 +404,7 @@ def emit_variants_for_agent(
     source: Path,
     canonical_dest: Path,
     mapping_path: Path,
+    ladder: dict[str, dict[str, str | None]] | None = None,
 ) -> VariantEmissionResult | None:
     """Emit canonical + per-level variants for a single agent file.
 
@@ -389,19 +425,18 @@ def emit_variants_for_agent(
     canonical_dest.parent.mkdir(parents=True, exist_ok=True)
     canonical_dest.write_text(render_canonical(frontmatter, body), encoding='utf-8')
 
+    active_ladder = ladder or _load_local_ladder('claude') or LEVEL_TABLE
     levels = selected_levels(frontmatter)
     base_name = frontmatter.name or canonical_dest.stem
     emitted: list[str] = []
     skipped: list[tuple[str, str]] = []
 
     for level in levels:
-        primitive = LEVEL_TABLE[level]
-        effort = primitive['effort']
+        primitive = active_ladder.get(level, LEVEL_TABLE.get(level, {}))
+        effort = primitive.get('effort')
         if effort in ALIAS_GATED_EFFORTS:
-            alias = primitive['model']
-            assert alias is not None
-            assert effort is not None
-            if not supports_effort(alias, effort, mapping_path):
+            alias = primitive.get('model')
+            if alias is not None and not supports_effort(alias, effort, mapping_path):
                 skipped.append(
                     (
                         level,
@@ -411,7 +446,7 @@ def emit_variants_for_agent(
                 )
                 continue
         variant_path = canonical_dest.with_name(f'{base_name}-{level}.md')
-        variant_path.write_text(render_variant(frontmatter, body, level), encoding='utf-8')
+        variant_path.write_text(render_variant(frontmatter, body, level, ladder=active_ladder), encoding='utf-8')
         emitted.append(level)
 
     return VariantEmissionResult(

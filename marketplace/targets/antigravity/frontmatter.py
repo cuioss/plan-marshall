@@ -212,6 +212,10 @@ def transform_agent_frontmatter(
         if resolved:
             lines.append(f'model: {resolved}')
 
+    effort_value = fm.get('effort', '')
+    if effort_value:
+        lines.append(f'effort: {effort_value}')
+
     tools_raw = fm.get('tools', '')
     if tools_raw:
         tools: list[str] = []

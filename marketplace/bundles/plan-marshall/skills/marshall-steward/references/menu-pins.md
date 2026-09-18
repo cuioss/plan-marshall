@@ -24,20 +24,24 @@ Then execute the workflow described below.
 
 ## Workflow
 
-### Step 1: Validate the Map
+### Step 1: Validate or Seed the Ladder
 
-Check the machine-local map is readable and schema-valid before materializing anything:
+Check the machine-local effort ladder is readable and schema-valid before materializing anything:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:marshall-steward:effort_pins validate
 ```
 
-- **`status: success`** → the map is readable; `entries` names how many levels carry pins. Continue to Step 2.
-- **`status: error`** → stop. A missing map means this machine provisions nothing and every level dispatches on the session model (`inherit` everywhere) — report that and return to the Main Menu. A malformed map fails closed: report the `detail`, fix the map, and re-run this step. Never compensate by hand-editing levels.
+- **`status: success`** → the ladder is readable; `entries` names how many levels carry pins. Continue to Step 2.
+- **`status: error`** → missing or malformed ladder. When missing, seed the standard default ladder:
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:marshall-steward:effort_pins ensure-defaults
+  ```
+  This seeds Option 1 for Antigravity, canonical for Claude, and inherit for OpenCode into `.plan/local/effort-ladder.json`. A malformed map fails closed: report the `detail`, fix the file, and re-run this step.
 
 ### Step 2: Materialize
 
-Emit the per-level pins for the active harness class. `--harness` names a CLASS, not a `runtime.target`: pass `open` on every open-model-set harness (opencode included), `claude` on the Claude target.
+Emit the per-level pins for the active harness class or target:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:marshall-steward:effort_pins materialize --harness open

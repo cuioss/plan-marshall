@@ -1,4 +1,4 @@
 {
   "required_fields": ["description"],
-  "optional_fields": ["model", "mode", "tools", "user-invocable"]
+  "optional_fields": ["model", "effort", "mode", "tools", "user-invocable"]
 }

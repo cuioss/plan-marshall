@@ -117,6 +117,16 @@ Or if you have the local installation file:
 ~/.config/opencode/plan-marshall-install.sh --uninstall
 ----
 
+== Execution Context & Model Selection
+
+Plan Marshall uses dynamic execution context variants (`execution-context-level-1` through `level-7`) for subagent dispatches across project phases.
+
+In OpenCode:
+
+* **Session model inheritance**: All subagents run using your currently active OpenCode session model (`inherit` behavior). Level variants do not switch models automatically across tiers in this release.
+* **Architecture**: Subagents are static markdown files deployed under `~/.config/opencode/agent/`. They omit hardcoded model pins so they work reliably across whichever model provider (Anthropic, OpenAI, local Ollama, etc.) you have configured in OpenCode.
+* **Future custom ladders**: Machine-local effort ladder customization for OpenCode via `.plan/local/effort-ladder.json` will be supported in an upcoming update with a local in-place rewriter.
+
 == Next Step
 
 Run xref:getting-started.adoc[`/marshall-steward`] to wire the planning system into your project.

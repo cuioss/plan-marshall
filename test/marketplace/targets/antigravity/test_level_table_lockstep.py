@@ -24,20 +24,39 @@ def _model_map() -> dict[str, dict]:
     return model_map
 
 
-def test_antigravity_reuses_claude_level_table() -> None:
-    """Both targets share one table object — no copy, no drift possible."""
-    assert antigravity_ve.LEVEL_TABLE is claude_ve.LEVEL_TABLE, (
-        'Antigravity variant emitter must import LEVEL_TABLE from the Claude target, '
-        'not copy it — a copy would let the two palettes drift silently'
+def test_antigravity_palette_matches_claude() -> None:
+    """Both targets share the identical level palette — no drift possible."""
+    assert set(antigravity_ve.DEFAULT_LADDER.keys()) == set(claude_ve.LEVEL_TABLE.keys()), (
+        'Antigravity DEFAULT_LADDER must have the exact same level keys as Claude LEVEL_TABLE'
     )
 
 
-def test_level_table_aliases_resolve_to_antigravity_models() -> None:
-    """Every level alias resolves through model_map to a known Antigravity model."""
+def test_level_table_resolves_to_valid_antigravity_models_and_efforts() -> None:
+    """Every level in DEFAULT_LADDER resolves to a valid Antigravity model and effort."""
     model_map = _model_map()
-    valid_models = {'pro', 'flash', 'flash_lite', 'inherit'}
-    for level, binding in antigravity_ve.LEVEL_TABLE.items():
-        alias = binding['model']
-        assert alias in model_map, f'Level {level} alias {alias!r} missing from model_map'
-        target_id = model_map[alias]['id']
+    valid_models = {'pro', 'flash', 'inherit'}
+    for level, binding in antigravity_ve.DEFAULT_LADDER.items():
+        model = binding['model']
+        effort = binding['effort']
+        assert model in model_map, f'Level {level} model {model!r} missing from model_map'
+        target_id = model_map[model]['id']
         assert target_id in valid_models, f'Level {level} target id {target_id!r} not in valid Antigravity models'
+        if effort is not None and effort != 'inherit':
+            supports = model_map[model].get('supports_effort', [])
+            assert effort in supports, (
+                f'Level {level} specifies effort {effort!r} which is not supported by {model!r} (supports: {supports})'
+            )
+
+
+def test_antigravity_option_1_ladder_exact_specification() -> None:
+    """Validate the exact Option 1 ladder distribution for Antigravity."""
+    expected = {
+        'level-1': {'model': 'flash', 'effort': 'low'},
+        'level-2': {'model': 'flash', 'effort': 'low'},
+        'level-3': {'model': 'flash', 'effort': 'medium'},
+        'level-4': {'model': 'flash', 'effort': 'medium'},
+        'level-5': {'model': 'flash', 'effort': 'high'},
+        'level-6': {'model': 'pro', 'effort': 'low'},
+        'level-7': {'model': 'pro', 'effort': 'high'},
+    }
+    assert antigravity_ve.DEFAULT_LADDER == expected

@@ -75,31 +75,52 @@ Antigravity operates with a distinct set of native tools compared to Claude Code
 | `NotebookEdit` | _None (null)_ | Target-absent sentinel: Antigravity provides no native notebook editing tool; fail-closed omit.
 |===
 
-== Model Selection & ADR-021 Alignment
+== Model Selection & Two-Axis Effort Ladder
 
-Plan Marshall uses dynamic-level execution variants (`execution-context-level-1` through `level-7`). The Antigravity emitter aligns with ADR-021:
+Plan Marshall models subagent compute demand using a target-neutral seven-tier ordinal scale (`level-1` through `level-7`, plus `inherit`), realized as a **Two-Axis Effort Model**:
 
-=== Level Palette Synchronization
+$$\text{Level} = (\text{Model Axis}, \text{Effort Axis})$$
 
-The Antigravity variant emitter reuses the canonical `LEVEL_TABLE` from `marketplace/targets/claude/variant_emitter.py`. The two targets cannot drift because they share the identical table object (enforced by `test_level_table_lockstep.py`).
+=== Engine Capabilities
 
-=== Model Map
+Antigravity executes subagents via Google Gemini models. The engine capabilities are declared in `marketplace/targets/antigravity/mapping.json`:
 
-Claude Code model aliases map to Antigravity model tiers:
+* `flash` (**Gemini Flash 3.8**): Ultra-fast, cost-efficient model. Supports effort values: `low`, `medium`, `high`.
+* `pro` (**Gemini Pro 3.1**): Frontier reasoning model. Supports effort values: `low`, `high`.
 
-[cols="1,1,2", options="header"]
+=== Option 1 Default Ladder
+
+The Antigravity emitter adopts **Option 1** as its canonical default ladder, allocating Flash across levels 1–5 with graduated reasoning effort, and Pro for complex reasoning at levels 6–7:
+
+[cols="1,1,1,2", options="header"]
 |===
-| Alias | Antigravity Model | Description
-| `opus` | `pro` | High-capability reasoning model (Gemini Pro tier)
-| `sonnet` | `flash` | Fast, high-efficiency model (Gemini Flash tier)
-| `haiku` | `flash_lite` | Lightweight model for quick lookups (Gemini Flash-Lite tier)
-| `fable` | `flash` | Balanced development tier
+| Level | Model | Effort | Cognitive Role
+
+| `level-1` | `flash` | `low` | Fast mechanical transforms, log parsing, simple file lookups
+| `level-2` | `flash` | `low` | Routine scoped code edits, unit test adjustments
+| `level-3` | `flash` | `medium` | Analytical triage, verification feedback, multi-file inspection
+| `level-4` | `flash` | `medium` | Solution planning, cross-component refactoring
+| `level-5` | `flash` | `high` | Deep investigation, full test suite analysis, exploration
+| `level-6` | `pro` | `low` | Complex cross-cutting synthesis, race condition/concurrency analysis
+| `level-7` | `pro` | `high` | Maximum architectural synthesis, high-stakes security analysis
+| `inherit` | (parent) | (parent) | Inherits parent session's model (omits `model:` and `effort:`)
 |===
 
-=== Pinned vs Unpinned Variants
+=== Lockstep Palette Invariant
 
-* **Unpinned (Default)**: Emitted level variants omit the `model:` frontmatter property. The subagent inherits the calling session's active model (`inherit` behavior).
-* **Pinned (`level_pins`)**: When materialized pins are supplied via ADR-021 (`emit_bundles(..., level_pins=...)`), the configured model alias is resolved through `mapping.json::model_map` and emitted into the variant frontmatter (e.g. `model: pro`).
+Target emitters maintain independent, target-native ladder definitions rather than sharing a single vendor-bound model table. The lockstep invariant enforced by `test_level_table_lockstep.py` guarantees that:
+
+1. `DEFAULT_LADDER.keys() == set(LEVEL_PALETTE)` (exact 1:1 parity with the seven canonical rungs).
+2. Every model in `DEFAULT_LADDER` is registered in `mapping.json::model_map`.
+3. Every effort in `DEFAULT_LADDER` is declared in that model's `supports_effort` list in `mapping.json`.
+
+=== Machine-Local Customization & Steward Seeding
+
+While project configuration in `marshal.json` declares only abstract levels (`level-1` .. `level-7`), local realization can be customized machine-locally in `.plan/local/effort-ladder.json`:
+
+* `marshall-steward` automatically seeds the default Option 1 ladder for Antigravity under `targets.antigravity`.
+* The Antigravity variant emitter reads `.plan/local/effort-ladder.json` (or passed `level_pins`) during target generation.
+* If `.plan/local/effort-ladder.json` is missing or unconfigured, the generator falls back to the built-in Option 1 defaults in CI and outputs a warning.
 
 == Body Transformations
 
