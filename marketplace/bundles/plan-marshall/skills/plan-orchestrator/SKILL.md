@@ -447,7 +447,7 @@ A pointer under `.plan/local/orchestrator/{slug}/plans/` with a path-safe `{slug
 | `PLAN-{SLUG}-{DIGITS}` | `PLAN-CIS-01-content-search-seam.md` |
 | `{SLUG}-{DIGITS}` | `CIS-01-content-search-seam.md` |
 
-`{SLUG}` is a two-to-eight-character uppercase-alphanumeric token and its trailing digits are mandatory, so `01-foo.md`, a lowercase `cis-01-foo.md`, and a nine-character token are all outside the grammar.
+`{SLUG}` is a two-to-eight-character uppercase-alphanumeric token, and its trailing digits are mandatory AND terminal — an alphanumeric character immediately following the numeric segment disqualifies the id rather than being absorbed into it. So `01-foo.md`, a lowercase `cis-01-foo.md`, a nine-character token, and a letter-suffixed `PLAN-TRUTH-025B-content.md` are all outside the grammar; the last is reported `unrecognised_id` rather than matching as its unsuffixed sibling `PLAN-TRUTH-025`.
 
 `detection` names WHY the verdict came out as it did, over a closed four-token vocabulary:
 

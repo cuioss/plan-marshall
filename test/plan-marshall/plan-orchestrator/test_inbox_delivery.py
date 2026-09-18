@@ -502,9 +502,14 @@ _ROSTER_HEADING = '## Mailbox check-point roster'
 
 #: A check-point's anchor key AS AN EXECUTING SITE PUBLISHES IT. The key rides
 #: parentheses immediately after the marker phrase, which is what separates a
-#: site from prose that merely cites the roster (``§ "Mailbox check-point
-#: roster"`` carries no parenthesised key) and from a roster ROW (which opens
-#: with a list marker and names the key first).
+#: site from prose that merely CITES the roster (``§ "Mailbox check-point
+#: roster"`` carries no parenthesised key) — and from citing prose ONLY.
+#: It does NOT separate a site from a roster ROW: a live row carries the full
+#: parenthesised form too (the ``subagent-return`` row in ``phase-lifecycle.md``
+#: § "Mailbox check-point roster" spells the whole marker), so this pattern
+#: matches one. Rows are kept out by the SECTION-EXCLUSION skip instead —
+#: ``_regions_excluding_section`` under ``exclude_heading=_ROSTER_HEADING`` —
+#: pinned by the matched control in ``TestTheRosterSectionIsSkippedNotScanned``.
 _CHECK_POINT_ANCHOR = re.compile(r'Mailbox check-point \(`([^`]+)`\)')
 
 #: Any backticked token. Used to derive a row's document, never to derive its
