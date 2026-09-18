@@ -191,6 +191,34 @@ class TestDrainVerbs:
 
         assert result['status'] == 'error'
 
+    def test_drain_dedup_verb_rejects_malformed_entries(self, tmp_path):
+        candidates_file = tmp_path / 'candidates.json'
+        candidates_file.write_text(json.dumps([None, {'id': []}, {'title': 'no id'}]), encoding='utf-8')
+
+        result = _lessons.cmd_drain_dedup(SimpleNamespace(candidates_file=str(candidates_file), corpus_file=None))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'invalid_candidates_file'
+
+    def test_drain_dedup_verb_rejects_non_object_corpus_value(self, tmp_path):
+        candidates_file = tmp_path / 'candidates.json'
+        corpus_file = tmp_path / 'corpus.json'
+        candidates_file.write_text(json.dumps([]), encoding='utf-8')
+        corpus_file.write_text(json.dumps({'2026-09-01-01-001': 'not-an-object'}), encoding='utf-8')
+
+        result = _lessons.cmd_drain_dedup(
+            SimpleNamespace(candidates_file=str(candidates_file), corpus_file=str(corpus_file))
+        )
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'invalid_corpus_file'
+
+    def test_drain_dedup_verb_reports_unreadable_path(self, tmp_path):
+        result = _lessons.cmd_drain_dedup(SimpleNamespace(candidates_file=str(tmp_path), corpus_file=None))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'unreadable_candidates_file'
+
     def test_created_counts_verb_reports_filed_not_emitted(self):
         result = _lessons.cmd_created_counts(
             SimpleNamespace(

@@ -1588,6 +1588,8 @@ def _read_json_doc(path_str: str):
         return json.loads(path.read_text(encoding='utf-8'))
     except FileNotFoundError as exc:
         raise ValueError(f'JSON file not found: {path_str}') from exc
+    except OSError as exc:
+        raise ValueError(f'JSON file could not be read: {path_str}: {exc}') from exc
     except json.JSONDecodeError as exc:
         raise ValueError(f'JSON file {path_str} is not valid JSON: {exc}') from exc
 
@@ -1611,6 +1613,16 @@ def cmd_drain_dedup(args: argparse.Namespace) -> dict:
             'error': 'invalid_candidates_file',
             'message': f'Candidates file {args.candidates_file} must hold a JSON array.',
         }
+    for index, entry in enumerate(raw_candidates):
+        if not isinstance(entry, dict) or not isinstance(entry.get('id'), str) or not entry['id']:
+            return {
+                'status': 'error',
+                'error': 'invalid_candidates_file',
+                'message': (
+                    f'Candidates file {args.candidates_file} entry {index} must be an object '
+                    'with a non-empty string id.'
+                ),
+            }
     if args.corpus_file:
         try:
             raw_corpus = _read_json_doc(args.corpus_file)
@@ -1622,6 +1634,13 @@ def cmd_drain_dedup(args: argparse.Namespace) -> dict:
                 'error': 'invalid_corpus_file',
                 'message': f'Corpus file {args.corpus_file} must hold a JSON object keyed by lesson id.',
             }
+        for lesson_id, lesson in raw_corpus.items():
+            if not isinstance(lesson, dict):
+                return {
+                    'status': 'error',
+                    'error': 'invalid_corpus_file',
+                    'message': (f'Corpus file {args.corpus_file} value for {lesson_id!r} must be an object.'),
+                }
         corpus_by_id = dict(raw_corpus)
     else:
         corpus_by_id = {lesson['id']: lesson for lesson in _load_active_lessons_with_signals()}
