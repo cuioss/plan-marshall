@@ -342,6 +342,33 @@ Task: plan-marshall:{target}
 
 The agent returns confidence + track + scope_estimate + qgate_pending_count + qgate_validation_required (plus a conditional `refine_prompt` envelope) in its TOON. The 12-step confidence loop (Steps 3b/3c/8/9/10/11/12) iterates *inside* this single envelope. **Operator prompts inside an `execution-context` dispatch are unreachable at runtime** — a dispatched leaf does NOT receive `AskUserQuestion`, so the Step 11 clarification cannot prompt the operator from the subagent. Instead the leaf batches every open clarification question into a `refine_prompt` **prompt-required envelope** and this main-context orchestrator owns the prompt, per [`ref-workflow-architecture/standards/agents.md`](../../ref-workflow-architecture/standards/agents.md) § "Leaf cannot fire AskUserQuestion — return a prompt-required envelope". The **Post-return `refine_prompt` batched operator-question dispatch** block below handles the envelope.
 
+**Mailbox check-point (`subagent-return`)**: reading that return TOON is the second of the two moments a running plan changes hands, so it is where mail delivered to the plan while the sub-agent held it can first be noticed. The check-point is **additive** — it never gates the dispatch, never changes how the return is consumed, and a mailbox that cannot be read degrades what it reports rather than the phase. Its anchor key and execution site are rostered in [`ref-workflow-architecture/standards/phase-lifecycle.md`](../../ref-workflow-architecture/standards/phase-lifecycle.md) § "Mailbox check-point roster", which is the sole enumeration of the check-point set.
+
+1. Read the plan's provenance pointer (the same `request read` call § Action: init's issue-documentation hook makes):
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-documents request read \
+     --plan-id {plan_id}
+   ```
+
+2. Classify the returned `source_id`. The classifier is pure — it reads nothing from disk — so it is the cheap way to learn whether this plan has an epic at all:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator inbox detect \
+     --source-id {source_id}
+   ```
+
+   When `orchestrated` is `false`, the plan belongs to no epic and therefore has no mailbox — **skip the rest of this check-point**. That is a measured fact about the plan, not a mailbox that came back empty, so do not report it as one.
+
+3. When `orchestrated` is `true`, read the mailbox at the returned `epic`:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator inbox read \
+     --slug {epic} --plan-id {plan_id}
+   ```
+
+   The verb is fail-open: it returns `status: success` on every way it can fail to see mail. Branch on `mailbox_state` **before** the counts — only `present` means the mailbox was enumerated, and a `count: 0` beside any other value is *could not look*, never *nothing is waiting*. On `present` with `live_count > 0`, surface the waiting mail to the user alongside the phase summary and carry on. The state vocabulary is owned by [`plan-orchestrator/standards/inbox-envelope.md`](../../plan-orchestrator/standards/inbox-envelope.md); the two verbs' argument surfaces are owned by [`plan-orchestrator/SKILL.md`](../../plan-orchestrator/SKILL.md) § Canonical invocations. Neither is restated here.
+
 **Post-return `refine_prompt` batched operator-question dispatch (conditional)**: Read the `refine_prompt` envelope from the phase-2-refine return TOON captured above. When it is present with one or more questions, the leaf's confidence fell below threshold and it batched the open clarification questions it could not resolve on its own — it completed the refine pass with a best-judgment `clarified_request` but flagged these for operator confirmation. Because the dispatched leaf cannot reach the operator but this orchestrator runs in the main context and can (see [`ref-workflow-architecture/standards/agents.md` § Leaf cannot fire AskUserQuestion](../../ref-workflow-architecture/standards/agents.md#leaf-cannot-fire-askuserquestion--return-a-prompt-required-envelope)), fire ONE batched `AskUserQuestion` covering EVERY question in the envelope, presenting each with the leaf's `recommended` default. After the operator answers, re-run the resolve above (which re-emits) and re-dispatch phase-2-refine **at most once** through the resulting envelope, baking every answer into the dispatch prompt so the re-entered leaf records the clarifications (Step 12) and re-analyzes to threshold. A re-fire re-runs the resolve, which re-emits the `[DISPATCH]` record for that firing; a re-dispatch that reused a previously-resolved `{target}` without re-resolving would contribute ONE trail line for N firings. A re-dispatched run that is still below threshold returns the current confidence flagged for manual review — do NOT re-dispatch a second time. When the `refine_prompt` envelope is absent or carries no questions, skip this block.
 
 **Post-return q-gate-validation dispatch (conditional)**: Read `qgate_validation_required` from the phase return TOON captured above. When `true` (lesson-derived plan activated Step 13.5's `narrative-vs-code-validator`), dispatch q-gate-validation as a sibling top-level Task at the orchestrator layer — the phase body cannot spawn it because the `Task` tool is unavailable inside an `execution-context-{level}` subagent. When `false` or absent, skip this block and continue to the Post-dispatch contract assertion below.

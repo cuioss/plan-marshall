@@ -1,14 +1,32 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for manage-status.py transition: delete-plan claim writes and carry-back vocabulary."""
+"""Tests for manage-status.py transition: delete-plan claim writes, carry-back vocabulary,
+and the ``phase-transition`` mailbox check-point the transition payload carries."""
 
+import json
 import os
 from argparse import Namespace
 from pathlib import Path
 
-from _manage_status_transition_fixtures import SCRIPT_PATH, _lifecycle, cmd_delete_plan
+from _manage_status_transition_fixtures import (
+    SCRIPT_PATH,
+    _lifecycle,
+    cmd_create,
+    cmd_delete_plan,
+    cmd_transition,
+)
 
 from conftest import load_script_module, run_script
+
+#: The channel module, loaded under a name of this module's own — the same
+#: collision-proof spelling ``_transition_lessons_query`` below uses — so the
+#: load cannot displace a registration another test module holds. Only pure
+#: helpers are taken from it (the address composition, the envelope renderer and
+#: the state vocabulary), and nothing here monkeypatches it, so a second copy is
+#: equivalent to the one the production probe imports.
+_inbox = load_script_module(
+    'plan-marshall', 'plan-orchestrator', '_orchestrator_inbox.py', '_transition_orchestrator_inbox'
+)
 
 
 def test_delete_plan_destination_claim_does_not_rely_on_an_exists_probe(plan_context, monkeypatch):
@@ -203,6 +221,323 @@ def test_cli_transition_not_found_exits_zero(plan_context):
     assert result.success, f'Should exit 0, got: {result.stderr}'
     assert 'status: error' in result.stdout
     assert 'file_not_found' in result.stdout
+
+
+# =============================================================================
+# Tests: the ``phase-transition`` mailbox check-point on the transition payload
+# =============================================================================
+#
+# A phase transition is one of the two moments a running plan changes hands, so
+# it is where a message delivered to that plan's mailbox can first be noticed.
+# The block is ADDITIVE and FAIL-OPEN: these tests pin that it reports which
+# kind of zero it returned, and that no failure of it can reach the transition.
+
+_MAILBOX_EPIC = 'mailbox-checkpoint-epic'
+
+#: The count keys the block publishes ONLY when a read actually happened. A
+#: could-not-look branch omits them rather than zeroing them, so the set is
+#: named once here and asserted against on every non-``read`` branch.
+_MAILBOX_COUNT_KEYS = ('count', 'live_count', 'invalid_count')
+
+
+def _orchestrator_source_id(epic_slug: str) -> str:
+    """The ``request.md`` provenance pointer phase-1-init records for an orchestrated plan."""
+    return f'.plan/local/orchestrator/{epic_slug}/plans/PLAN-MBX-01-demo.md'
+
+
+def _seed_plan_with_provenance(plan_context, plan_id: str, source_id: str) -> None:
+    """Create a plan at ``1-init`` whose ``request.md`` carries ``source_id``."""
+    cmd_create(
+        Namespace(
+            plan_id=plan_id,
+            title='Mailbox Checkpoint',
+            phases='1-init,2-refine,3-outline,4-plan,5-execute,6-finalize',
+            force=False,
+        )
+    )
+    plan_dir = plan_context.plan_dir_for(plan_id)
+    (plan_dir / 'request.md').write_text(
+        f'source=orchestrator\nsource_id={source_id}\n\n# Request\n\nDemo request body.\n',
+        encoding='utf-8',
+    )
+
+
+def _mailbox_dir(plan_id: str, epic_slug: str = _MAILBOX_EPIC) -> Path:
+    """The addressee mailbox, composed by the PRODUCTION address seam.
+
+    Deliberately not hand-joined: the whole point of the check-point is that it
+    reads the directory the delivery route writes to, so the fixture resolves
+    that path through ``delivery_dir_for_write`` rather than re-deriving a
+    second layout the test could agree with while production disagreed.
+    """
+    # Re-wrapped in ``Path`` because the channel module is loaded dynamically, so
+    # its return type is opaque to the type checker — the value itself is already
+    # a ``Path`` and the wrap is idempotent.
+    return Path(_inbox.delivery_dir_for_write(_inbox.ChannelAddress(epic_slug, plan_id)))
+
+
+def _deliver(plan_id: str, sender: str = 'sender-plan', epic_slug: str = _MAILBOX_EPIC) -> Path:
+    """Write one VALID message into ``plan_id``'s mailbox and return its path."""
+    mailbox = _mailbox_dir(plan_id, epic_slug)
+    mailbox.mkdir(parents=True, exist_ok=True)
+    message = mailbox / f'{sender}-001.md'
+    message.write_text(
+        _inbox.compose_envelope('plan', sender, epic_slug, 'finding', 'A delivered advisory.'),
+        encoding='utf-8',
+    )
+    return message
+
+
+def _transition(plan_id: str, completed: str = '1-init') -> dict:
+    """Complete an UNGUARDED boundary.
+
+    ``1-init`` is used throughout rather than ``5-execute`` because the
+    ``5-execute → 6-finalize`` boundary fires the strict-verify guard and the
+    clean-tree post-condition, neither of which has anything to do with the
+    mailbox — a seed satisfying them would put handshake and worktree stubs
+    between these assertions and the behaviour under test.
+    """
+    result: dict = cmd_transition(Namespace(plan_id=plan_id, completed=completed))
+    return result
+
+
+def test_probe_vocabulary_separates_reaching_the_read_from_what_it_saw():
+    """``MAILBOX_PROBE_DID_NOT_READ`` is derived, non-empty, and excludes ``read``.
+
+    The set is computed by subtraction from ``MAILBOX_PROBES`` so a member added
+    to the vocabulary cannot silently default into the looked-and-found-nothing
+    reading. A subtraction that produced the empty set would make every
+    could-not-look assertion downstream vacuously true, so its non-emptiness is
+    pinned here rather than assumed — and the population it was derived from is
+    named, so the guard cannot pass over an empty vocabulary either.
+    """
+    assert len(_lifecycle.MAILBOX_PROBES) == 3
+    assert set(_lifecycle.MAILBOX_PROBES) == {
+        _lifecycle.MAILBOX_PROBE_READ,
+        _lifecycle.MAILBOX_PROBE_NOT_ORCHESTRATED,
+        _lifecycle.MAILBOX_PROBE_UNRESOLVED,
+    }
+    assert _lifecycle.MAILBOX_PROBE_DID_NOT_READ
+    assert _lifecycle.MAILBOX_PROBE_READ not in _lifecycle.MAILBOX_PROBE_DID_NOT_READ
+    assert _lifecycle.MAILBOX_PROBE_DID_NOT_READ == frozenset(_lifecycle.MAILBOX_PROBES) - {
+        _lifecycle.MAILBOX_PROBE_READ
+    }
+
+
+def test_transition_reports_a_message_delivered_to_the_plans_mailbox(plan_context):
+    """The positive control: a delivered message is visible at the hand-over.
+
+    Without this arm every could-not-look assertion below would be satisfied by
+    a check-point that never reports mail at all.
+    """
+    plan_id = 'mailbox-delivered'
+    _seed_plan_with_provenance(plan_context, plan_id, _orchestrator_source_id(_MAILBOX_EPIC))
+    _deliver(plan_id)
+
+    result = _transition(plan_id)
+
+    assert result['status'] == 'success'
+    assert result['next_phase'] == '2-refine'
+    mailbox = result['mailbox']
+    assert mailbox['checkpoint'] == _lifecycle.MAILBOX_CHECKPOINT_KEY
+    assert mailbox['probe'] == _lifecycle.MAILBOX_PROBE_READ
+    assert mailbox['epic'] == _MAILBOX_EPIC
+    assert mailbox['state'] == _inbox.MAILBOX_STATE_PRESENT
+    assert mailbox['count'] == 1
+    assert mailbox['live_count'] == 1
+    assert mailbox['invalid_count'] == 0
+
+
+def test_an_empty_mailbox_and_an_absent_one_are_different_zeros(plan_context):
+    """``count: 0`` alone does not discriminate — the state is what does.
+
+    Both arms report zero messages. Only one of them looked.
+    """
+    looked_id = 'mailbox-looked-empty'
+    _seed_plan_with_provenance(plan_context, looked_id, _orchestrator_source_id(_MAILBOX_EPIC))
+    _mailbox_dir(looked_id).mkdir(parents=True, exist_ok=True)
+    looked = _transition(looked_id)['mailbox']
+
+    # Same epic tree (materialized by the arm above), no mailbox for this plan.
+    absent_id = 'mailbox-never-addressed'
+    _seed_plan_with_provenance(plan_context, absent_id, _orchestrator_source_id(_MAILBOX_EPIC))
+    absent = _transition(absent_id)['mailbox']
+
+    assert looked['probe'] == absent['probe'] == _lifecycle.MAILBOX_PROBE_READ
+    assert looked['count'] == absent['count'] == 0
+    assert looked['state'] == _inbox.MAILBOX_STATE_PRESENT
+    assert absent['state'] == _inbox.MAILBOX_STATE_NO_MAILBOX
+    assert looked['state'] not in _inbox.MAILBOX_COULD_NOT_LOOK_STATES
+    assert absent['state'] in _inbox.MAILBOX_COULD_NOT_LOOK_STATES
+
+
+def test_an_unreadable_mailbox_degrades_the_block_and_never_the_transition(plan_context):
+    """A mailbox that cannot be listed still lets the phase advance.
+
+    The failure is produced the way production would meet it — the addressee
+    path is a FILE where a directory belongs — rather than by stubbing the
+    reader, so the fail-open claim is exercised through the real read path.
+    """
+    plan_id = 'mailbox-unreadable'
+    _seed_plan_with_provenance(plan_context, plan_id, _orchestrator_source_id(_MAILBOX_EPIC))
+    mailbox = _mailbox_dir(plan_id)
+    mailbox.parent.mkdir(parents=True, exist_ok=True)
+    mailbox.write_text('not a directory\n', encoding='utf-8')
+
+    result = _transition(plan_id)
+
+    assert result['status'] == 'success'
+    assert result['completed_phase'] == '1-init'
+    assert result['mailbox']['probe'] == _lifecycle.MAILBOX_PROBE_READ
+    assert result['mailbox']['state'] == _inbox.MAILBOX_STATE_UNREADABLE
+    assert result['mailbox']['count'] == 0
+
+
+def test_a_plan_with_no_epic_reports_not_orchestrated_and_publishes_no_counts(plan_context):
+    """A non-orchestrated plan has no mailbox — a measured fact, not a zero.
+
+    The omission of the count keys is the assertion that matters: a `0` here
+    would be byte-identical to a mailbox that was listed and held nothing.
+    """
+    plan_id = 'mailbox-free-form'
+    _seed_plan_with_provenance(plan_context, plan_id, 'a free-form description, not a pointer')
+
+    mailbox = _transition(plan_id)['mailbox']
+
+    assert mailbox['probe'] == _lifecycle.MAILBOX_PROBE_NOT_ORCHESTRATED
+    assert mailbox['probe'] in _lifecycle.MAILBOX_PROBE_DID_NOT_READ
+    assert 'not_orchestrator_pointer' in mailbox['reason']
+    for key in _MAILBOX_COUNT_KEYS:
+        assert key not in mailbox, f'{key} was published by a probe that never read a mailbox'
+    assert 'state' not in mailbox
+
+
+def test_an_unreadable_request_md_reports_unresolved_and_publishes_no_counts(plan_context):
+    """Provenance that cannot be read establishes nothing about the mailbox."""
+    plan_id = 'mailbox-no-request'
+    cmd_create(
+        Namespace(
+            plan_id=plan_id,
+            title='Mailbox Checkpoint',
+            phases='1-init,2-refine,3-outline,4-plan,5-execute,6-finalize',
+            force=False,
+        )
+    )
+    # No request.md is written at all — the plan carries no readable provenance.
+
+    result = _transition(plan_id)
+
+    assert result['status'] == 'success'
+    mailbox = result['mailbox']
+    assert mailbox['probe'] == _lifecycle.MAILBOX_PROBE_UNRESOLVED
+    assert 'request.md' in mailbox['reason']
+    for key in _MAILBOX_COUNT_KEYS:
+        assert key not in mailbox
+
+
+def test_a_probe_that_raises_is_contained_and_named(plan_context, monkeypatch):
+    """An unanticipated probe failure degrades the block, never the transition.
+
+    The blanket containment is what "inherits the fail-open contract in full"
+    means at this site, and it is only worth having if the contained failure is
+    still NAMED — a swallowed exception would be indistinguishable from a plan
+    that simply has no mailbox.
+    """
+    plan_id = 'mailbox-probe-explodes'
+    _seed_plan_with_provenance(plan_context, plan_id, _orchestrator_source_id(_MAILBOX_EPIC))
+
+    def _exploding(_plan_id):
+        raise RuntimeError('the reader blew up')
+
+    monkeypatch.setattr(_lifecycle, '_resolve_mailbox_checkpoint', _exploding)
+
+    result = _transition(plan_id)
+
+    assert result['status'] == 'success'
+    assert result['next_phase'] == '2-refine'
+    mailbox = result['mailbox']
+    assert mailbox['checkpoint'] == _lifecycle.MAILBOX_CHECKPOINT_KEY
+    assert mailbox['probe'] == _lifecycle.MAILBOX_PROBE_UNRESOLVED
+    assert 'RuntimeError' in mailbox['reason']
+    assert 'the reader blew up' in mailbox['reason']
+
+
+def _persisted_status(plan_context, plan_id: str) -> dict:
+    """The plan's ``status.json`` as it now stands on disk.
+
+    The returned payload says what the verb REPORTED; this says what it WROTE.
+    The "never blocks" claim is about the second, so it is asserted against the
+    persisted document rather than against the dict the call handed back.
+    """
+    data: dict = json.loads((plan_context.plan_dir_for(plan_id) / 'status.json').read_text(encoding='utf-8'))
+    return data
+
+
+def _phase_status(status: dict, name: str) -> str:
+    """The recorded status of one named phase in a persisted ``status.json``."""
+    return str(next(phase['status'] for phase in status['phases'] if phase['name'] == name))
+
+
+def test_neither_arm_of_the_matched_pair_blocks_the_phase_write(plan_context):
+    """The matched pair, anchored on PERSISTED state rather than on the return.
+
+    One arm's mailbox is readable and carries a message; the other's cannot be
+    listed at all. Both must advance the plan, and the assertion is made against
+    ``status.json`` rather than against the returned dict — a check-point that
+    returned ``status: success`` while skipping ``write_status`` would satisfy a
+    return-only assertion and still have blocked the transition.
+
+    The two arms are asserted side by side rather than in separate tests so the
+    degraded arm's success is anchored: they are shown to differ in exactly the
+    mailbox state, which is what makes this a matched pair instead of two calls
+    that happen to agree.
+    """
+    readable_id = 'mailbox-pair-readable'
+    _seed_plan_with_provenance(plan_context, readable_id, _orchestrator_source_id(_MAILBOX_EPIC))
+    _deliver(readable_id)
+
+    degraded_id = 'mailbox-pair-degraded'
+    _seed_plan_with_provenance(plan_context, degraded_id, _orchestrator_source_id(_MAILBOX_EPIC))
+    degraded_mailbox = _mailbox_dir(degraded_id)
+    degraded_mailbox.parent.mkdir(parents=True, exist_ok=True)
+    degraded_mailbox.write_text('a file where the mailbox directory belongs\n', encoding='utf-8')
+
+    readable = _transition(readable_id)
+    degraded = _transition(degraded_id)
+
+    for plan_id, result in ((readable_id, readable), (degraded_id, degraded)):
+        assert result['status'] == 'success', f'{plan_id} did not report a successful transition'
+        persisted = _persisted_status(plan_context, plan_id)
+        assert persisted['current_phase'] == '2-refine', (
+            f'{plan_id} reported success but status.json was not advanced — the '
+            'check-point blocked the phase write it is forbidden to gate.'
+        )
+        assert _phase_status(persisted, '1-init') == 'done'
+        assert _phase_status(persisted, '2-refine') == 'in_progress'
+
+    # Both arms reached the read; they differ in what the read could see.
+    assert readable['mailbox']['probe'] == degraded['mailbox']['probe'] == _lifecycle.MAILBOX_PROBE_READ
+    assert readable['mailbox']['state'] == _inbox.MAILBOX_STATE_PRESENT
+    assert degraded['mailbox']['state'] == _inbox.MAILBOX_STATE_UNREADABLE
+    assert readable['mailbox']['live_count'] == 1
+    assert degraded['mailbox']['live_count'] == 0
+
+
+def test_a_refused_transition_carries_no_mailbox_block(plan_context):
+    """The check-point rides a hand-over; a refusal is not one.
+
+    Publishing a mailbox block on a payload whose phase never advanced would
+    claim a check-point at a moment the plan did not change hands.
+    """
+    plan_id = 'mailbox-refused'
+    _seed_plan_with_provenance(plan_context, plan_id, _orchestrator_source_id(_MAILBOX_EPIC))
+    _deliver(plan_id)
+
+    result = cmd_transition(Namespace(plan_id=plan_id, completed='9-nonexistent'))
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'invalid_phase'
+    assert 'mailbox' not in result
 
 
 def test_collect_modified_files_helper_is_removed():

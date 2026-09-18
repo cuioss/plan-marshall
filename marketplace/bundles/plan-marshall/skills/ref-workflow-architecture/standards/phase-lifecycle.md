@@ -116,6 +116,14 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status transi
 
 Where `{phase_key}` is: `1-init`, `2-refine`, `3-outline`, `4-plan`, `5-execute`, or `6-finalize`.
 
+**Mailbox check-point (`phase-transition`)** — a transition is one of the two moments a running plan changes hands, so it is where a message delivered to that plan can first be noticed. The success payload of the call above carries a `mailbox` block; read it here.
+
+- Branch on `mailbox.probe` **before** any count. Only `probe: read` reached the mailbox at all; `not_orchestrated` and `unresolved` publish no count keys, so there is no number to act on and nothing to report as empty.
+- On `probe: read`, a `live_count` above zero means mail is waiting for this plan. Surface it to the user in the phase-completion summary (Step 2) and carry on — the check-point is **advisory**. It never gates the transition, and a mailbox that could not be read degrades this block rather than the phase.
+- On `probe: read` with `live_count: 0`, read `state` before calling it empty: only `state: present` means *looked, and nothing is addressed here*.
+
+The block's field contract is owned by [`manage-status/SKILL.md`](../../manage-status/SKILL.md) § `transition`; do not restate it.
+
 ### Step 2: Log Completion
 
 ```bash
@@ -142,6 +150,17 @@ python3 .plan/execute-script.py plan-marshall:plan-marshall:phase_handshake capt
 ```
 
 Returns `status: success` with the captured invariants. Re-running a phase replaces the previous row. See [`../../plan-marshall/references/phase-handshake.md`](../../plan-marshall/references/phase-handshake.md) for the full contract, storage format, and invariant registry.
+
+---
+
+## Mailbox check-point roster
+
+The **sole enumeration** of the mailbox check-point set: every moment at which a running plan consults the mailbox messages addressed to it. A check-point that is not a row here does not exist, and each row's first backticked token is that check-point's stable anchor key — the same token the executing site publishes, so the roster and the code name one check-point rather than two spellings of it.
+
+Both check-points are **additive**. Neither gates the transition or the dispatch it rides on, and both inherit the mailbox reader's fail-open contract in full: a mailbox that cannot be read degrades what the check-point reports, never what it rides on.
+
+- `phase-transition` — `ref-workflow-architecture/standards/phase-lifecycle.md` § "Phase Completion Protocol" → Step 1, where the `manage-status transition` payload's `mailbox` block is read.
+- `subagent-return` — `plan-marshall/workflow/planning.md` § "2-Refine Phase", where the orchestrator reads a dispatched sub-agent's return TOON.
 
 ---
 
