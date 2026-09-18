@@ -3922,6 +3922,15 @@ def _build_ordered_queue(status_doc: dict[str, Any], root: Path) -> str:
     ``status.json``; the surface from each row's spec. Per-row narrative (a
     sequencing caveat, a park reason) is NOT here — it lives in the annotation
     zone outside the markers, which regeneration never touches.
+
+    ⛔ The Plan cell is the ROW's own ``id``, never a re-derivation from the
+    matched spec's filename. The row carries the exact id string as data, so
+    re-deriving one from the file the row matched is both unnecessary and the
+    source of the suffixed-id collapse: a filename-derived identity is read back
+    through the plan-id grammar, where a letter-suffixed id has no legal form and
+    is absorbed onto its unsuffixed sibling. Reading the field the queue already
+    holds cannot conflate two rows whatever their ids look like. The spec is
+    still resolved, because the Surface cell genuinely IS a property of the file.
     """
     header = '| # | Plan | Workstream | Status | Surface (expected) |'
     divider = '|---|------|------------|--------|--------------------|'
@@ -3937,7 +3946,7 @@ def _build_ordered_queue(status_doc: dict[str, Any], root: Path) -> str:
     for position, row in enumerate(live, start=1):
         plan_id = str(row.get('id', ''))
         spec = next((path for path in specs if plan_id and _spec_matches_row(path, plan_id)), None)
-        plan_cell = _queue_cell(spec.stem if spec is not None else (plan_id or '?'))
+        plan_cell = _queue_cell(plan_id or '?')
         workstream = _queue_cell(str(row.get('workstream', '') or '?'))
         status_cell = _queue_cell(str(row.get('status', '') or '?'))
         surface = _row_surface(spec, repo_root)
