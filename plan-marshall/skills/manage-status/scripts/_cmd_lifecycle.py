@@ -1,0 +1,1285 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
+"""
+Lifecycle command handlers for manage-status: create, transition, archive, delete-plan.
+"""
+
+import argparse
+import os
+import shutil
+import subprocess
+from pathlib import Path
+from typing import Any, NamedTuple
+
+from _handshake_commands import cmd_capture, cmd_verify
+from _invariants import (
+    _BLOCKING_BOUNDARIES,
+    BlockingFindingsPresent,
+    assert_finalize_findings_clean,
+)
+from _lessons_query import RESTORE_ACTIONS
+from _short_description import derive_short_description
+from _status_core import (
+    _surface_drive,
+    get_archive_dir,
+    get_status_path,
+    in_progress_phases,
+    log_entry,
+    normalize_metadata,
+    now_utc_iso,
+    require_status,
+    require_valid_plan_id,
+    write_status,
+)
+from constants import (
+    PHASE_STATUS_DONE,
+    PHASE_STATUS_IN_PROGRESS,
+    PHASE_STATUS_PENDING,
+)
+from file_ops import get_plan_dir
+
+# Result-status values that indicate the strict-verify gate refuses to advance.
+# Mirrors the ``--strict`` exit-1 conditions in ``phase_handshake.py`` main()
+# so the inline guard in ``cmd_transition`` and the CLI exit-code wrapper in
+# ``manage_status.py`` main() treat the same situations as boundary refusals.
+# Single source of truth — both consumers import this name; do not duplicate
+# the literal set.
+#
+# ``worktree_dirty_at_boundary`` and ``worktree_unreadable_at_boundary`` are a PAIR:
+# one tree-state question, two structurally different answers (read-and-dirty vs
+# never-read). BOTH must be members. A new code split out of an existing one but left
+# out of this set silently degrades the boundary guard from fail-closed to fail-open —
+# ``verify_blocks_transition`` would return False for it, so the transition would
+# proceed and the CLI wrapper would exit 0 on a refusal the guard actually raised.
+VERIFY_REFUSAL_ERRORS = frozenset(
+    {
+        'worktree_unresolved',
+        'worktree_metadata_drift',
+        'main_checkout_dirtied_during_plan',
+        'worktree_dirty_at_boundary',
+        'worktree_unreadable_at_boundary',
+        'main_capture_read_the_worktree',
+    }
+)
+
+# Phases whose COMPLETION arms the finalize blocking-findings state assertion
+# (:func:`_finalize_findings_refusal`).
+#
+# Deliberately DISTINCT from ``_invariants._BLOCKING_BOUNDARIES`` even though
+# both currently hold ``{'6-finalize'}``. The two answer different questions and
+# are read against different operands:
+#
+# - ``_BLOCKING_BOUNDARIES`` names the phase being ENTERED. It is the handshake's
+#   own vocabulary — the boundary at which a pending actionable finding makes
+#   ``_capture_pending_findings_blocking_count`` raise — and here it gates the
+#   strict-verify guard on ``next_phase``.
+# - ``_COMPLETION_GUARD_PHASES`` names the phase being COMPLETED. Reaching the
+#   END of one of these phases is what arms the completion assertion, tested
+#   against ``args.completed`` (and, in ``cmd_archive``, against the plan's
+#   still-active ``current_phase``).
+#
+# Sharing one name for both let a change made for one meaning silently retarget
+# the other: adding a phase to the entry set would have armed the completion
+# assertion for it too, with nothing at either call site to reveal the coupling.
+# The equal value today is a coincidence of this project's phase list, not a
+# relationship — so the two are separate constants and neither is derived from
+# the other.
+_COMPLETION_GUARD_PHASES: frozenset[str] = frozenset({'6-finalize'})
+
+
+def _clean_tree_refusal(plan_id: str, status: dict[str, Any]) -> dict[str, Any] | None:
+    """Clean-tree post-condition for guarded boundaries (5-execute → 6-finalize).
+
+    When the plan runs in an isolated worktree (``metadata.use_worktree``
+    truthy), the working tree at ``metadata.worktree_path`` MUST be clean
+    before the transition into a blocking boundary is allowed: every
+    per-deliverable commit belongs to the phase-5-execute envelope's Step 10a
+    chain-tail, so uncommitted edits at the boundary mean a commit obligation
+    was skipped. Returns ``None`` when the transition may proceed.
+
+    Two structurally different conditions refuse here, and each reports its OWN
+    code:
+
+    - ``worktree_unreadable_at_boundary`` — ``git status`` itself failed, so the tree
+      was never read. The gate fails closed because an unreadable tree cannot be
+      PROVEN clean; that is not a claim the tree is dirty. No ``dirty_files`` key is
+      published, because nothing was enumerated.
+    - ``worktree_dirty_at_boundary`` — the tree WAS read and carries uncommitted
+      changes, enumerated in ``dirty_files``.
+
+    Both are members of :data:`VERIFY_REFUSAL_ERRORS`, so both block the transition
+    and both drive the CLI exit-1 wrapper; the split changes which condition is
+    NAMED, never whether it refuses. Reporting one code for both sent the reader to
+    the wrong remedy: a dirty tree needs the boundary settlement commit, whereas an
+    unreadable one needs the worktree itself repaired.
+    """
+    metadata = normalize_metadata(status)
+    if not metadata.get('use_worktree'):
+        return None
+    worktree_path = metadata.get('worktree_path')
+    if not worktree_path:
+        # Resolvability is asserted by the strict-verify guard that runs
+        # before this gate (``worktree_unresolved``); an empty path here
+        # means the verify guard already owns the refusal path.
+        return None
+
+    proc = subprocess.run(
+        ['git', '-C', worktree_path, 'status', '--porcelain'],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if proc.returncode != 0:
+        # Fail closed: an unreadable tree cannot be proven clean. Deliberately NOT the
+        # dirty code — nothing was read, so reporting this as "dirty" names a condition
+        # nobody observed and points the reader at the wrong remedy. ``dirty_files`` is
+        # OMITTED rather than sent as ``[]``: an empty list here would be a measured-zero
+        # claim about a tree that was never enumerated, byte-identical to what a
+        # genuinely clean read would have produced.
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'worktree_unreadable_at_boundary',
+            'message': (
+                f'git status failed in worktree {worktree_path} '
+                f'(exit {proc.returncode}): {proc.stderr.strip()} — '
+                'cannot prove the tree is clean; refusing to transition.'
+            ),
+        }
+
+    if not proc.stdout.strip():
+        return None
+
+    # Split the RAW stdout — a global .strip() would eat the leading space
+    # of the first line's "XY " porcelain status prefix (e.g. " M src.py")
+    # and shift the fixed 3-char slice into the path.
+    dirty_files = [line[3:] for line in proc.stdout.splitlines() if len(line) > 3]
+    return {
+        'status': 'error',
+        'plan_id': plan_id,
+        'error': 'worktree_dirty_at_boundary',
+        'dirty_files': dirty_files,
+        'message': (
+            f'Worktree {worktree_path} has {len(dirty_files)} uncommitted '
+            'change(s) at a guarded phase boundary. Every per-deliverable '
+            'commit is owned by phase-5-execute Step 10a — run the boundary '
+            'settlement commit, then retry the transition.'
+        ),
+    }
+
+
+def _has_refine_artifact(plan_id: str, status: dict[str, Any]) -> bool:
+    """Return True when a 2-refine completion carries its artifact.
+
+    Passes when EITHER holds (duplicated small check, no cross-skill import):
+
+    - ``request.md`` carries a non-empty ``clarified_request`` section
+      (``## Clarified Request`` heading with content), OR
+    - ``status.metadata.confidence`` is present (aggregate-confidence
+      ``--persist`` wrote the overall confidence).
+    """
+    metadata = status.get('metadata')
+    if isinstance(metadata, dict) and metadata.get('confidence') is not None:
+        return True
+    try:
+        request_path = get_plan_dir(plan_id) / 'request.md'
+    except Exception:
+        return False
+    try:
+        content = request_path.read_text(encoding='utf-8')
+    except Exception:
+        return False
+    lower = content.lower()
+    marker = '## clarified request'
+    idx = lower.find(marker)
+    if idx < 0:
+        return False
+    after = content[idx + len(marker) :]
+    # Cut at the next sibling-level heading; content before it must be non-empty.
+    next_heading = after.find('\n## ')
+    body = after[:next_heading] if next_heading >= 0 else after
+    return bool(body.strip())
+
+
+def _has_outline_artifact(plan_id: str) -> bool:
+    """Return True when a 3-outline completion carries a validating outline.
+
+    ``Validates`` means the file exists, is non-empty, and carries at least
+    one deliverable marker — the small duplicated check standing in for the
+    full ``manage-solution-outline validate`` contract (which the outline
+    phase itself still runs). A bare transition with zero artifacts fails.
+    """
+    try:
+        outline_path = get_plan_dir(plan_id) / 'solution_outline.md'
+    except Exception:
+        return False
+    try:
+        content = outline_path.read_text(encoding='utf-8')
+    except Exception:
+        return False
+    if not content.strip():
+        return False
+    return 'deliverable' in content.lower()
+
+
+def _has_plan_artifact(plan_id: str) -> bool:
+    """Return True when a 4-plan completion carries tasks or a manifest.
+
+    Passes when EITHER holds: at least one ``tasks/TASK-*.json`` file exists,
+    OR ``execution.toon`` (the composed manifest) exists. Both are checked by
+    filesystem presence only — no cross-skill import.
+    """
+    try:
+        plan_dir = get_plan_dir(plan_id)
+    except Exception:
+        return False
+    try:
+        task_files = [p for p in (plan_dir / 'tasks').glob('TASK-*.json') if p.is_file()]
+    except Exception:
+        task_files = []
+    if task_files:
+        return True
+    try:
+        return (plan_dir / 'execution.toon').is_file()
+    except Exception:
+        return False
+
+
+def _phase_artifact_refusal(args: argparse.Namespace, status: dict[str, Any]) -> dict[str, Any] | None:
+    """Phase-completion artifact gate for 2-refine / 3-outline / 4-plan.
+
+    Refuses a bare ``transition --completed {phase}`` unless the phase
+    artifact exists, with an explicit logged exemption for legitimately
+    artifact-free phases. The exemption is opt-in per call via
+    ``--allow-bare-transition`` plus a required ``--bare-reason``; it is
+    persisted to ``status.metadata.phase_exemptions[{phase}]`` and
+    decision-logged so retrospectives can see it. Returns ``None`` when the
+    transition may proceed (artifact present, exemption granted, or phase
+    not gated).
+    """
+    phase = getattr(args, 'completed', None)
+    if phase not in ('2-refine', '3-outline', '4-plan'):
+        return None
+    if status.get('kind') == 'orchestrator':
+        return None
+
+    has_artifact = False
+    if phase == '2-refine':
+        has_artifact = _has_refine_artifact(args.plan_id, status)
+    elif phase == '3-outline':
+        has_artifact = _has_outline_artifact(args.plan_id)
+    else:
+        has_artifact = _has_plan_artifact(args.plan_id)
+    if has_artifact:
+        return None
+
+    allow_bare = bool(getattr(args, 'allow_bare_transition', False))
+    reason = getattr(args, 'bare_reason', None)
+    if not allow_bare:
+        error_codes = {
+            '2-refine': 'refine_bare_transition',
+            '3-outline': 'outline_bare_transition',
+            '4-plan': 'plan_bare_transition',
+        }
+        artifact_names = {
+            '2-refine': 'a clarified/confidence record (request.md ## Clarified Request or status.metadata.confidence)',
+            '3-outline': 'a validating solution_outline.md',
+            '4-plan': 'at least one tasks/TASK-*.json file or a composed execution.toon',
+        }
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': error_codes[phase],
+            'phase': phase,
+            'message': (
+                f'Refusing bare {phase} transition: no phase artifact found '
+                f'({artifact_names[phase]}). Complete the phase artifact first, '
+                'or re-run with --allow-bare-transition --bare-reason REASON '
+                'to record an explicit exemption for a legitimately '
+                'artifact-free phase.'
+            ),
+        }
+    if not reason or not str(reason).strip():
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'missing_exempt_reason',
+            'phase': phase,
+            'message': (
+                f'--allow-bare-transition for {phase} requires '
+                '--bare-reason REASON. The exemption reason is persisted to '
+                'status.metadata.phase_exemptions and decision-logged; '
+                'an unlabeled exemption is a silent slip, so it is refused.'
+            ),
+        }
+
+    metadata = normalize_metadata(status)
+    exemptions = metadata.get('phase_exemptions')
+    if not isinstance(exemptions, dict):
+        exemptions = {}
+        metadata['phase_exemptions'] = exemptions
+    exemptions[phase] = {
+        'reason': str(reason).strip(),
+        'granted_at': now_utc_iso(),
+    }
+    log_entry(
+        'decision',
+        args.plan_id,
+        'INFO',
+        f'(plan-marshall:manage-status) Bare {phase} transition exempted: {str(reason).strip()}',
+    )
+    return None
+
+
+def _loop_back_auto_override(
+    args: argparse.Namespace,
+    status: dict[str, Any],
+    verify_result: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Auto-resolve the structurally-guaranteed loop-back handshake drift.
+
+    A sanctioned loop-back (``cmd_set_phase`` backward move) persists
+    ``metadata.loop_back_reentry``; the re-entered phases then legitimately
+    change the invariants the earlier capture recorded, so ``cmd_verify``
+    reports ``status: drift`` by construction at the next guarded boundary.
+    When BOTH hold — the blocking verify result is invariant drift AND the
+    marker is present — re-capture the handshake with ``override=True`` and a
+    recorded reason, clear the marker (persisted immediately so the override
+    fires exactly once per scheduled loop-back), emit a decision-log WARNING
+    with the drift diff summary, and let the transition proceed by returning
+    ``None``.
+
+    Every other blocking result returns the refusal unchanged: drift WITHOUT
+    the marker keeps today's blocking behavior, and the worktree-resolution /
+    dirty-boundary / unreadable-boundary / main-dirtied /
+    main-capture-misresolution refusals (``VERIFY_REFUSAL_ERRORS``) are
+    NEVER bypassed by the marker — only invariant drift is auto-resolved.
+    A failed re-capture also blocks (fail closed) by returning its error
+    payload.
+    """
+    metadata = normalize_metadata(status)
+    marker = metadata.get('loop_back_reentry')
+    if verify_result.get('status') != 'drift' or not marker:
+        return verify_result
+
+    from_phase = marker.get('from_phase', 'unknown') if isinstance(marker, dict) else 'unknown'
+    recapture = cmd_capture(
+        argparse.Namespace(
+            plan_id=args.plan_id,
+            phase=args.completed,
+            override=True,
+            reason=f'loop-back re-entry auto-override (scheduled by {from_phase} loop_back)',
+            strict=False,
+        )
+    )
+    if recapture.get('status') != 'success':
+        # Fail closed: an un-recapturable baseline cannot be auto-resolved.
+        return recapture
+
+    metadata.pop('loop_back_reentry', None)
+    write_status(args.plan_id, status)
+
+    diff_summary = '; '.join(
+        f'{d.get("invariant")}: {d.get("captured")} -> {d.get("observed")}' for d in verify_result.get('diffs', [])
+    )
+    log_entry(
+        'decision',
+        args.plan_id,
+        'WARNING',
+        f'(plan-marshall:manage-status) Loop-back re-entry auto-override at '
+        f'{args.completed}: drift ({verify_result.get("drift_count", 0)} invariant(s)) '
+        f'auto-resolved via override re-capture scheduled by {from_phase} loop_back — '
+        f'{diff_summary}',
+    )
+    return None
+
+
+def verify_blocks_transition(verify_result: dict[str, Any]) -> bool:
+    """Return True when a cmd_verify result MUST block the transition.
+
+    Consumed by both ``cmd_transition`` (refuse to mutate state) and
+    ``manage_status.py`` main() (exit 1) so the in-process refusal and the
+    CLI exit-code contract stay in lockstep.
+    """
+    if verify_result.get('status') == 'drift':
+        return True
+    return verify_result.get('error') in VERIFY_REFUSAL_ERRORS
+
+
+def _finalize_findings_refusal(plan_id: str, status: dict[str, Any]) -> dict[str, Any] | None:
+    """Finalize completion boundary: assert the blocking-findings STATE.
+
+    This is the ``call → state`` conversion for the merge boundary. The
+    blocking-findings gate used to fire only when a
+    ``phase_handshake capture --phase 6-finalize`` *call* was issued during
+    finalize; a missing call left no handshake row and raised nothing, so a
+    plan could complete with actionable findings still ``pending`` and *"the
+    gate never ran"* was indistinguishable from *"the gate passed"*. The
+    completion verbs (``cmd_transition`` completing ``6-finalize`` and
+    ``cmd_archive``) now call this assertion directly, so the gate is armed by
+    *reaching* the completion boundary rather than by an optional call.
+
+    Returns a structured refusal dict when an actionable-type finding is still
+    pending — the caller MUST return it and SKIP the completion write / archive
+    move — or ``None`` when the plan may complete:
+
+    - clean actionable-findings state (:func:`assert_finalize_findings_clean`
+      returns ``0``) → ``None`` (proceed);
+    - unevaluable query (returns ``None`` — executor unreachable / partial query
+      failure) → ``None`` (proceed, with a logged WARNING). The completion
+      boundary fails OPEN on an unevaluable query so a degenerate context with no
+      reachable findings subsystem cannot strand a legitimate completion; the
+      fail-CLOSED handling of a genuine partial query failure is owned by the
+      pre-merge ``findings-check`` gate, where the executor is guaranteed present.
+    """
+    metadata = normalize_metadata(status)
+    try:
+        blocking = assert_finalize_findings_clean(plan_id, metadata)
+    except BlockingFindingsPresent as exc:
+        log_entry(
+            'decision',
+            plan_id,
+            'ERROR',
+            f'(plan-marshall:manage-status) Finalize completion refused at 6-finalize: '
+            f'{exc.blocking_count} actionable finding(s) still pending '
+            f'(per_type={exc.per_type}) — resolve or triage before completing the plan',
+        )
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'blocking_findings_present',
+            'phase': '6-finalize',
+            'blocking_count': exc.blocking_count,
+            'blocking_types': exc.blocking_types,
+            'per_type': exc.per_type,
+            'message': str(exc),
+        }
+    if blocking is None:
+        log_entry(
+            'decision',
+            plan_id,
+            'WARNING',
+            '(plan-marshall:manage-status) Finalize completion blocking-findings check '
+            'was unevaluable (executor unreachable / partial query failure) — proceeding; '
+            'the pre-merge findings-check gate owns the fail-closed path',
+        )
+    return None
+
+
+def cmd_create(args: argparse.Namespace) -> dict[str, Any]:
+    """Create status.json for a new plan.
+
+    When the plan runs in an isolated worktree, the caller passes
+    ``--use-worktree`` so the use-worktree intent is recorded in
+    ``status.metadata`` at creation time. Only ``use_worktree`` is
+    persisted at create — the feature branch (``feature/{plan_id}``)
+    and the resolved ``worktree_path`` are derived and back-filled at
+    phase-5-execute Step 2.5, when the worktree directory is created on
+    disk via ``git worktree add``.
+
+    When ``--use-worktree`` is omitted (or set to ``false``), no
+    worktree metadata is written and the plan is treated as running
+    against the main checkout.
+    """
+    require_valid_plan_id(args)
+
+    path = get_status_path(args.plan_id)
+    if path.exists() and not args.force:
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'file_exists',
+            'message': 'status.json already exists. Use --force to overwrite.',
+        }
+
+    # Parse phases from comma-separated argument
+    phases = [p.strip() for p in args.phases.split(',') if p.strip()]
+    if not phases:
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'invalid_phases',
+            'message': 'At least one phase is required',
+        }
+
+    # Worktree intent — at create the only durable fact is whether the plan
+    # runs in an isolated worktree. The feature branch (always
+    # ``feature/{plan_id}``) and the resolved ``worktree_path`` are derived at
+    # phase-5-execute Step 2.5 and back-filled there, so nothing about the
+    # branch is read or validated here: ``feature/`` is unconditionally in the
+    # closed working-prefix set, making a create-time prefix check vacuous.
+    use_worktree = bool(getattr(args, 'use_worktree', False))
+
+    now = now_utc_iso()
+
+    status: dict[str, Any] = {
+        'title': args.title,
+        'short_description': derive_short_description(args.title),
+        'current_phase': phases[0],
+        'phases': [{'name': p, 'status': PHASE_STATUS_PENDING} for p in phases],
+        'created': now,
+        'updated': now,
+    }
+    # Mark first phase as in_progress
+    status['phases'][0]['status'] = PHASE_STATUS_IN_PROGRESS
+
+    if use_worktree:
+        # Only the use-worktree intent is durable at create. The branch and
+        # the resolved worktree_path are derived and persisted at
+        # phase-5-execute Step 2.5 when `git worktree add` runs.
+        status['metadata'] = {'use_worktree': True}
+    else:
+        # Explicit false-state seeding: even when no worktree is
+        # allocated, downstream consumers benefit from a definite
+        # ``use_worktree: false`` marker rather than having to treat
+        # absence-of-metadata as "main-checkout". Keeps the contract
+        # symmetric.
+        status['metadata'] = {'use_worktree': False}
+
+    write_status(args.plan_id, status)
+    # Persisted-title-state-write drive seam (best-effort, fire-and-forget):
+    # the first-phase seed is a current_phase write, so bind + repaint fire here
+    # too — a delegation failure never changes this command's outcome.
+    _surface_drive(args.plan_id)
+
+    result: dict[str, Any] = {
+        'status': 'success',
+        'plan_id': args.plan_id,
+        'file': 'status.json',
+        'created': True,
+        'plan': {'title': args.title, 'current_phase': phases[0]},
+        'use_worktree': use_worktree,
+    }
+    return result
+
+
+def cmd_transition(args: argparse.Namespace) -> dict[str, Any] | None:
+    """Transition to next phase."""
+    status = require_status(args)
+    if status is None:
+        return None
+
+    phases = status.get('phases', [])
+    phase_names = [p['name'] for p in phases]
+
+    if args.completed not in phase_names:
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'invalid_phase',
+            'message': f'Invalid phase: {args.completed}',
+        }
+
+    completed_idx = phase_names.index(args.completed)
+
+    # Phase-completion artifact gate (PLAN-01): refuse bare 2-refine /
+    # 3-outline / 4-plan transitions unless the phase artifact exists, with
+    # an explicit logged exemption for legitimately artifact-free phases.
+    # Runs before any state mutation; on refusal current_phase is unchanged.
+    artifact_refusal = _phase_artifact_refusal(args, status)
+    if artifact_refusal is not None:
+        return artifact_refusal
+
+    # Determine next phase early so the guard below can inspect it before any
+    # state mutation. The standalone ``cmd_transition`` later computes the same
+    # value after marking the completed phase done, but the inline guard MUST
+    # see ``next_phase`` first to decide whether the strict-verify gate fires.
+    if completed_idx + 1 < len(phase_names):
+        next_phase: str | None = phase_names[completed_idx + 1]
+    else:
+        next_phase = None
+
+    # Finalize completion boundary (D2): completing ``6-finalize`` asserts the
+    # blocking-findings STATE — the merge boundary asserts a state that must
+    # hold rather than trusting an optional ``capture --phase 6-finalize`` call.
+    # Armed by REACHING this boundary
+    # (``args.completed in _COMPLETION_GUARD_PHASES``), NOT by a call, so a plan
+    # can no longer be marked complete while an actionable finding is still
+    # pending. Distinct from the entering-finalize guard below
+    # (``next_phase in _BLOCKING_BOUNDARIES``): this fires on the phase being
+    # COMPLETED, that one on the phase being ENTERED — which is why the two read
+    # separate constants. On refusal, SKIP write_status so current_phase stays
+    # on the completed phase.
+    if args.completed in _COMPLETION_GUARD_PHASES:
+        findings_refusal = _finalize_findings_refusal(args.plan_id, status)
+        if findings_refusal is not None:
+            return findings_refusal
+
+    # Inline strict-verify guard for guarded boundaries — folds the
+    # ``phase_handshake verify --phase {completed} --strict`` step that
+    # workflow docs used to issue separately into the transition itself.
+    # When ``next_phase`` is in ``_BLOCKING_BOUNDARIES`` (currently
+    # ``{'6-finalize'}``), re-run the verify code path against the captured
+    # baseline for the completed phase. On drift (or any of the
+    # worktree-/main-checkout boundary refusals enumerated by
+    # ``VERIFY_REFUSAL_ERRORS``) return the verify result unchanged and
+    # SKIP ``write_status`` so ``current_phase`` stays on the completed
+    # phase. Non-guarded transitions are unaffected — they keep today's
+    # behaviour with no verify invoked.
+    if next_phase in _BLOCKING_BOUNDARIES:
+        verify_args = argparse.Namespace(
+            plan_id=args.plan_id,
+            phase=args.completed,
+            strict=True,
+        )
+        verify_result = cmd_verify(verify_args)
+        if verify_blocks_transition(verify_result):
+            refusal = _loop_back_auto_override(args, status, verify_result)
+            if refusal is not None:
+                return refusal
+        else:
+            # Consume-on-next-guarded-verification: the loop_back_reentry
+            # marker is consumed at the very next guarded boundary check
+            # REGARDLESS of whether that check found drift. A clean verify
+            # with the marker still present must clear it here — otherwise a
+            # later, genuinely unscheduled drift would find the stale marker
+            # and incorrectly auto-override it.
+            metadata = status.get('metadata')
+            if isinstance(metadata, dict) and metadata.get('loop_back_reentry'):
+                marker = metadata.pop('loop_back_reentry')
+                write_status(args.plan_id, status)
+                from_phase = marker.get('from_phase', 'unknown') if isinstance(marker, dict) else 'unknown'
+                log_entry(
+                    'decision',
+                    args.plan_id,
+                    'INFO',
+                    f'(plan-marshall:manage-status) Loop-back re-entry marker '
+                    f'consumed on clean guarded verification at {args.completed} '
+                    f'(scheduled by {from_phase} loop_back) — no drift to '
+                    'auto-resolve; marker cleared without recapture',
+                )
+
+        # Clean-tree post-condition: after the strict-verify guard passes,
+        # the worktree itself must be clean — uncommitted edits at the
+        # boundary mean a phase-5 Step 10a commit obligation was skipped.
+        # On refusal, skip write_status so current_phase stays on the
+        # completed phase (same contract as the verify refusal above).
+        clean_tree_refusal = _clean_tree_refusal(args.plan_id, status)
+        if clean_tree_refusal is not None:
+            return clean_tree_refusal
+
+    # Mark completed phase as done
+    phases[completed_idx]['status'] = PHASE_STATUS_DONE
+
+    # Apply the next-phase mutation. ``next_phase`` was resolved earlier so
+    # the inline strict-verify guard could decide whether to fire — here we
+    # only need to perform the state changes that follow from it.
+    if next_phase is not None:
+        phases[completed_idx + 1]['status'] = PHASE_STATUS_IN_PROGRESS
+        status['current_phase'] = next_phase
+    else:
+        # Last phase completed — set the post-finalize sentinel so dormant
+        # consumers (phase-6-finalize SKILL.md "current_phase: complete"
+        # check, planning.md cleanup --filter complete) start matching.
+        # Mirrors cmd_archive's atomic-archive behavior so the two verbs
+        # produce the same end-state.
+        status['current_phase'] = 'complete'
+
+    # No title-token sweep here: staleness is a READ-side property resolved by
+    # the aged-token predicate (_status_core.title_token_is_stale), not a
+    # transition-side one. A transition-side sweep only fires when a phase
+    # happens to change, so a stranded token could outlive it indefinitely.
+    write_status(args.plan_id, status)
+    # Persisted-title-state-write drive seam (best-effort, fire-and-forget):
+    # a phase advance is a current_phase write, so bind + repaint fire here so
+    # the title reflects the new phase immediately instead of freezing.
+    _surface_drive(args.plan_id)
+
+    result: dict[str, Any] = {'status': 'success', 'plan_id': args.plan_id, 'completed_phase': args.completed}
+    if next_phase:
+        result['next_phase'] = next_phase
+    else:
+        result['message'] = 'All phases completed'
+
+    return result
+
+
+def cmd_archive(args: argparse.Namespace) -> dict[str, Any] | None:
+    """Archive a completed plan.
+
+    Atomically closes the plan's open phases before moving the plan directory, so the
+    archived ``status.json`` — the permanent record — never says a phase is still
+    running. The post-condition has three parts:
+
+    - EVERY phase recorded as ``in_progress`` is closed to ``done``, not just the first
+      one found;
+    - every phase in :data:`_status_core.UNTOUCHED_PHASE_STATUSES` (today exactly
+      ``pending``) is left ALONE — a phase that never started must not be recorded as
+      finished, which would write a fresh false record rather than close a real one;
+    - ``current_phase`` becomes ``'complete'`` once the phase structure was read IN
+      FULL and no phase remains ``in_progress``, so a plan abandoned mid-lifecycle
+      still reaches the post-finalize sentinel its dormant consumers match on, while
+      its unstarted phases stay ``pending``.
+
+    A record whose ``phases`` could not be read in full is handled separately in both
+    directions, because an unknown open-phase set is not an empty one:
+
+    - a NO-REASON archive is REFUSED (``error: phases_unexaminable``) — the gate below
+      cannot establish that ``6-finalize`` is closed, and a guard whose job is to
+      refuse must fail closed rather than fall through;
+    - a DELIBERATE ``--reason`` archive still proceeds, but PRESERVES the existing
+      ``current_phase`` instead of writing ``complete``, and reports
+      ``phase_closure: partial`` with the reason.
+
+    This is deliberately NOT identical to ``cmd_transition``: that verb advances one
+    phase at a time through a plan that is still running, whereas archive closes out
+    whatever state the plan was abandoned in.
+
+    Archive is also the SECOND consumption point for ``metadata.loop_back_reentry``.
+    A plan archived while a re-entry is still open never reaches the guarded boundary
+    at which ``cmd_transition`` would consume that marker, so it is consumed here and
+    the archived record states that the re-entry ended without completing. Both the pop
+    and that outcome land in the same write that closes the phases — see
+    ``status-lifecycle.md`` § "Loop-back re-entry marker: two consumption points".
+    """
+    require_valid_plan_id(args)
+
+    plan_dir = get_plan_dir(args.plan_id)
+    if not plan_dir.exists():
+        return {'status': 'error', 'plan_id': args.plan_id, 'error': 'not_found', 'message': 'Plan directory not found'}
+
+    date_prefix = now_utc_iso()[:10]  # YYYY-MM-DD
+    archive_name = f'{date_prefix}-{args.plan_id}'
+    archive_dir = get_archive_dir()
+    archive_path = archive_dir / archive_name
+
+    if args.dry_run:
+        return {'status': 'success', 'plan_id': args.plan_id, 'dry_run': True, 'would_archive_to': str(archive_path)}
+
+    # Atomic phase close: load status, mark the active phase done, set the
+    # post-finalize sentinel when all phases are complete, then write back
+    # to the live plan directory BEFORE the shutil.move. This guarantees the
+    # archived status.json reflects the closed state — historically this
+    # was attempted via a follow-up `transition --completed 6-finalize`
+    # call, but that always failed because shutil.move had already
+    # invalidated the live path.
+    status = require_status(args)
+    if status is None:
+        # Plan dir exists but status.json is missing/unreadable. Fail
+        # loudly via require_status's error contract instead of moving the
+        # broken plan into the archive — silent archives mask data loss.
+        return None
+
+    # Finalize completion boundary (D2): a NORMAL-completion archive asserts the
+    # blocking-findings STATE, the same call → state conversion cmd_transition
+    # applies. ``archive-plan`` (the production terminal step) calls
+    # ``manage-status archive`` with NO --reason while the plan is still in
+    # ``6-finalize``, so that genuine-completion path is gated. Two exemptions:
+    #  - A DELIBERATE archive carrying --reason (an abandonment / low-confidence
+    #    close): the operator chose to close the plan regardless of pending
+    #    findings, and blocking that would strand it.
+    #  - An already-``complete`` plan being garbage-collected by the cleanup pass
+    #    (``planning.md`` § cleanup archives ``current_phase == 'complete'`` plans
+    #    with no --reason): the completion decision was already made and gated at
+    #    the time; re-gating a legacy plan's cleanup on a stale pending record
+    #    (exactly the pre-D3 residue this plan fixes) would wedge cleanup. The
+    #    gate therefore fires only while the plan is actively IN finalize.
+    # On refusal, return before the phase-close write and the shutil.move.
+    #
+    # The gate reads the OPEN-PHASE SET, not ``current_phase``. A backward
+    # ``cmd_set_phase`` from ``6-finalize`` to ``5-execute`` leaves BOTH phases
+    # ``in_progress`` while moving ``current_phase`` to ``5-execute`` — so a
+    # ``current_phase`` equality test does not fire in exactly the state a loop-back
+    # produces, and a no-reason archive could close both phases and archive the plan
+    # with actionable findings still pending. Finalize being OPEN is the condition the
+    # gate is about; which phase is nominally current is not.
+    open_scan = in_progress_phases(status)
+    if getattr(args, 'reason', None) is None:
+        # Fail CLOSED on an unexaminable record. This guard's job is to refuse, and a
+        # scan that could not read the phase structure cannot establish that
+        # ``6-finalize`` is closed — falling through would let the archive proceed on
+        # the strength of a question nobody answered. The remedy is in the message: a
+        # deliberate ``--reason`` archive is the sanctioned way to close a structurally
+        # broken plan, and it takes the operator's decision on the record.
+        if not open_scan.examinable:
+            return {
+                'status': 'error',
+                'plan_id': args.plan_id,
+                'error': 'phases_unexaminable',
+                'unexaminable': list(open_scan.unexaminable),
+                'message': (
+                    f'Refusing a no-reason archive of {args.plan_id!r}: its phases could not be '
+                    f'read in full ({"; ".join(open_scan.unexaminable)}), so whether 6-finalize is '
+                    'still open — and therefore whether the blocking-findings gate applies — could '
+                    'not be established. Repair the phases, or archive deliberately with --reason.'
+                ),
+            }
+        if any(phase.get('name') in _COMPLETION_GUARD_PHASES for phase in open_scan.phases):
+            findings_refusal = _finalize_findings_refusal(args.plan_id, status)
+            if findings_refusal is not None:
+                return findings_refusal
+
+    # Close EVERY open phase, not the first one found. The retired form took the first
+    # phase whose status was merely ``!= done`` and closed that one alone, which failed
+    # in both directions at once: a plan holding two ``in_progress`` phases kept the
+    # second one recorded as running forever (the permanent archived record then said a
+    # phase was still in flight), and a ``pending`` phase — one that never started —
+    # satisfied ``!= done`` and was written ``done``, fabricating a fresh false record
+    # of work that never happened. ``in_progress_phases`` reports only the closable
+    # status, so both halves are fixed by the same call.
+    for phase in open_scan.phases:
+        phase['status'] = PHASE_STATUS_DONE
+    # Re-scan AFTER the closure loop: the post-condition is a statement about the
+    # document as it now stands, not about the pre-closure snapshot.
+    closure_scan = in_progress_phases(status)
+    # The completion gate is "no phase remains ``in_progress``", NOT "every phase is
+    # ``done``". The retired ``all(done)`` predicate could never fire for a plan
+    # abandoned mid-lifecycle — its untouched ``pending`` phases are not ``done`` and
+    # must stay that way — so such a plan was archived with ``current_phase`` frozen at
+    # its last phase and never reached the post-finalize sentinel its dormant consumers
+    # match on. Stated as the explicit post-condition rather than an unconditional
+    # write: the loop above has just closed every open phase, so the predicate holds by
+    # construction today, and keeping it means a future change that narrows the closure
+    # set cannot silently start claiming completion over a phase left running.
+    #
+    # ``examinable`` is the other conjunct, and it is what stops this write from being
+    # the false claim it used to be. A record whose phases could not be read in full
+    # has an UNKNOWN open-phase set, so ``complete`` — the post-finalize sentinel
+    # dormant consumers match on — would assert a completion nothing established. Such
+    # a record keeps whatever lifecycle state it already carried; the archive still
+    # happens (a deliberate ``--reason`` close of a broken plan must not be stranded),
+    # and ``phase_closure`` on the result says which of the two paths ran.
+    if closure_scan.examinable and not closure_scan.phases:
+        status['current_phase'] = 'complete'
+    # Consume the loop-back re-entry marker when one is still open. ``cmd_transition``
+    # consumes it at the next guarded boundary, but a plan archived while a re-entry is
+    # still open never REACHES that boundary — so without this the marker rode into the
+    # permanent record still asserting that a loop-back was in flight. Archive is
+    # therefore the SECOND consumption point for the ONE marker, never a second marker:
+    # what is recorded here is that the re-entry ENDED WITHOUT COMPLETING, which is what
+    # actually happened, rather than the marker being silently dropped.
+    #
+    # The pop and the outcome write both happen BEFORE the single ``write_status`` below,
+    # so they land in the SAME write that closes the phases. A follow-up write would be a
+    # second commit of the same document, and after ``shutil.move`` the live plan path no
+    # longer resolves — exactly the failure the atomic phase-close exists to avoid.
+    metadata = normalize_metadata(status)
+    loop_back_marker = metadata.pop('loop_back_reentry', None)
+    if loop_back_marker is not None:
+        # A structurally odd marker (not a dict) is still consumed rather than left
+        # behind: the record it would otherwise leave is the thing being corrected.
+        marker_fields = loop_back_marker if isinstance(loop_back_marker, dict) else {}
+        reentry_outcome: dict[str, Any] = {
+            'outcome': 'ended_without_completing',
+            'from_phase': marker_fields.get('from_phase', 'unknown'),
+            'to_phase': marker_fields.get('to_phase', 'unknown'),
+            'consumed_at': now_utc_iso(),
+            'consumed_by': 'archive',
+        }
+        scheduled_at = marker_fields.get('at')
+        if scheduled_at is not None:
+            reentry_outcome['scheduled_at'] = scheduled_at
+        metadata['loop_back_reentry_outcome'] = reentry_outcome
+        log_entry(
+            'decision',
+            args.plan_id,
+            'INFO',
+            f'(plan-marshall:manage-status) Loop-back re-entry marker consumed at archive '
+            f'(scheduled by {reentry_outcome["from_phase"]} loop_back to '
+            f'{reentry_outcome["to_phase"]}) — the plan was archived before the re-entry '
+            'reached a guarded boundary, so the archived record states that the re-entry '
+            'ended without completing',
+        )
+    # Drop any in-flight terminal-title token (any TITLE_TOKEN_STATES value —
+    # lock-waiting/lock-owned/build-busy) before archiving. An archived plan
+    # holds no live coordination state worth arbitrating over, so this pop is
+    # owner-agnostic: a single pop covers every record regardless of its owner.
+    # ``preserve_title_token=False`` on the write below is what makes the pop
+    # stick — the default write path deliberately carries the live record over,
+    # and archive is the one writer that intends to discard it.
+    status.pop('title_token', None)
+    # Persist optional --reason into status.metadata.archived_reason before
+    # write_status so the archived status.json carries the structured reason.
+    # Absent --reason leaves the field unset (no schema migration). Mirrors the
+    # additive-metadata contract used elsewhere in this module.
+    reason = getattr(args, 'reason', None)
+    if reason is not None:
+        metadata = status.setdefault('metadata', {})
+        metadata['archived_reason'] = reason
+    write_status(args.plan_id, status, preserve_title_token=False)
+
+    # This write makes the plan terminal and drops its token, so its RENDERED
+    # projection changes — which obliges a paired delivery exactly as every other
+    # current_phase write does. Fired here, BEFORE the move, while the live plan
+    # path still resolves. The seam binds and settles the state; the repaint is
+    # deferred to the next hook event, which reads the archived status.json
+    # through this very binding.
+    _surface_drive(args.plan_id)
+
+    archive_dir.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(plan_dir), str(archive_path))
+
+    # NO binding release here, deliberately. The terminal title this archive just
+    # persisted is painted by the NEXT hook event, which can only resolve the plan
+    # while the session binding survives — releasing it here would destroy the
+    # delivery route for the state we just wrote. SessionStart:clear (the sole
+    # release point, Claude target — see
+    # platform-runtime/standards/terminal-title-architecture.md § Channel
+    # Delivery Contract ruling (b)) is where it is released, and `session doctor`
+    # exempts this slot from GC until the terminal state has actually been
+    # delivered.
+
+    # ``phase_closure`` mirrors the census cohort row's ``complete``/``partial`` pair:
+    # the verdict is published on every archive response that PERFORMS THE MOVE, and the
+    # ``reason`` naming the shortfall accompanies only the degraded one. A caller therefore
+    # never has to infer from a bare ``success`` whether the phase closure it just triggered
+    # actually covered the whole record. It is scoped to the moving payload rather than to
+    # every response because both the refusals above and the ``--dry-run`` early return —
+    # itself a ``success`` — return BEFORE the phase-close write, so neither reports a
+    # closure, none having been attempted.
+    result: dict[str, Any] = {
+        'status': 'success',
+        'plan_id': args.plan_id,
+        'archived_to': str(archive_path),
+        'phase_closure': 'complete' if closure_scan.examinable else 'partial',
+    }
+    if not closure_scan.examinable:
+        result['phase_closure_reason'] = (
+            f'the phases of {args.plan_id!r} could not be read in full, so the open-phase set is '
+            f'unknown and the existing current_phase was preserved rather than written complete: '
+            f'{"; ".join(closure_scan.unexaminable)}'
+        )
+    return result
+
+
+#: The closed vocabulary :attr:`LessonCarryBack.action` reports.
+#:
+#: - ``restored`` — the plan directory was scanned, DID carry ``lesson-*.md``
+#:   files, and EVERY one of them landed in the corpus.
+#: - ``restore_incomplete`` — the plan directory was scanned and carried lesson
+#:   files, but at least one did NOT land. ``restored_ids`` / ``skipped`` say
+#:   which; ``restored_ids`` is legitimately empty when none landed. This is
+#:   the state that fires the ``cmd_delete_plan`` veto.
+#: - ``no_lesson_file`` — the plan directory was scanned and carried none. The
+#:   benign zero.
+#: - ``plan_dir_unresolved`` — the carry-back could not look: the plan directory
+#:   is gone, or the main-anchored lessons store could not be resolved AND the
+#:   directory carried lesson files that consequently could not land. A
+#:   store-unresolved scan over a directory carrying NO lesson file is
+#:   ``no_lesson_file``, not this value: that directory WAS scanned and holds
+#:   nothing to restore, so the benign zero is the honest action and
+#:   ``store_resolution: unresolved`` is what records that the corpus was never
+#:   reached. Consumers therefore read BOTH fields — ``action`` says what the
+#:   scan found, ``store_resolution`` says whether the corpus was reachable —
+#:   and neither alone answers both questions.
+#: - ``not_attempted`` — the carry-back was opted out of via
+#:   ``--no-restore-lessons``, so nothing was scanned and no store was
+#:   resolved. Any lesson the directory carries is discarded with it.
+#:
+#: The four values this set SHARES with ``_lessons_query.RESTORE_ACTIONS``
+#: carry identical meanings there, so the two lesson-restore surfaces answer
+#: the "which kind of zero is this?" question the same way. That relationship
+#: is ENCODED as a union rather than restated as literals, so the shared four
+#: cannot drift apart silently. The sets are NOT equal, and deliberately so:
+#: ``not_attempted`` is producible only here, because only ``delete-plan`` has
+#: an opt-out flag. A superset derivation is precisely not the equality claim
+#: this docstring once made — claiming equality while the two disagreed on what
+#: ``restored`` means was itself a contract drift, and a consumer trusting the
+#: claim would carry the wrong meaning across surfaces.
+CARRY_BACK_ACTIONS = RESTORE_ACTIONS | frozenset({'not_attempted'})
+
+
+class LessonCarryBack(NamedTuple):
+    """Outcome of the ``delete-plan`` lesson carry-back.
+
+    Replaces the previous ``(bool, list[str])`` tuple outright: that shape could
+    not express EITHER of the two ways the carry-back fails silently — a plan
+    directory it never looked at, and a lesson it looked at but did not land.
+    Both mattered here more than anywhere else on the lesson path, because the
+    caller deletes the directory holding the only copy immediately afterwards.
+
+    Attributes:
+        action: One of :data:`CARRY_BACK_ACTIONS`.
+        store_resolution: How the lessons store resolved, over
+            ``_lessons_io.STORE_RESOLUTIONS``. ``unresolved`` on the
+            ``not_attempted`` path too — that path resolves no store, and
+            reporting a resolution it never performed is the same fail-open in
+            miniature.
+        lessons_dir: The corpus path lessons were moved into, or ``''`` when the
+            store did not resolve or was never consulted.
+        restored_ids: Lesson ids that successfully landed in the corpus.
+        skipped: One ``{lesson_id, reason}`` row per carried lesson that did NOT
+            land. A non-empty list means the plan directory still holds the only
+            copy of those lessons.
+        detail: Human-readable provenance naming the substrate or the failure.
+    """
+
+    action: str
+    store_resolution: str
+    lessons_dir: str
+    restored_ids: list[str]
+    skipped: list[dict[str, str]]
+    detail: str
+
+
+def _restore_lesson_from_plan_dir(plan_id: str, plan_dir: Path) -> LessonCarryBack:
+    """Scan ``plan_dir`` for lesson-{id}.md files and move each back to the corpus.
+
+    The destination resolves through the main-anchored lessons-store handle
+    (``_lessons_io.resolve_lesson_store``), NOT through the cwd-keyed
+    ``base_path()``: this helper runs from ``delete-plan``, which a
+    worktree-pinned caller invokes routinely, and a cwd-keyed resolution would
+    restore the lesson into the worktree's own empty corpus — a store that is
+    discarded when the worktree goes away.
+
+    Every carried lesson that does not land is REPORTED in
+    :attr:`LessonCarryBack.skipped` rather than silently ``continue``-skipped.
+    The silent skip was the sharpest edge on the whole lesson path: the caller
+    deletes the plan directory right after this returns, so a dropped collision
+    destroyed the only copy of a lesson with no signal anywhere.
+
+    Args:
+        plan_id: The plan being deleted (used for the work-log entry).
+        plan_dir: The plan directory to scan.
+
+    Returns:
+        A :class:`LessonCarryBack` describing what was scanned, what landed, and
+        what did not.
+    """
+    from _lessons_io import resolve_lesson_store
+
+    if not plan_dir.exists():
+        return LessonCarryBack(
+            'plan_dir_unresolved',
+            'unresolved',
+            '',
+            [],
+            [],
+            f'Plan directory {plan_dir} does not exist, so it was never scanned for lesson files.',
+        )
+
+    matches = sorted(plan_dir.glob('lesson-*.md'))
+
+    store = resolve_lesson_store()
+    if store.path is None:
+        # Could not look at the corpus. When the plan directory carries lessons,
+        # every one of them is un-landed and the caller MUST NOT delete the
+        # directory holding them.
+        return LessonCarryBack(
+            'plan_dir_unresolved' if matches else 'no_lesson_file',
+            store.resolution,
+            '',
+            [],
+            [{'lesson_id': m.stem[len('lesson-') :], 'reason': 'store_unresolved'} for m in matches],
+            store.detail,
+        )
+
+    if not matches:
+        return LessonCarryBack('no_lesson_file', store.resolution, str(store.path), [], [], store.detail)
+
+    lessons_dir = store.path.resolve()
+    lessons_dir.mkdir(parents=True, exist_ok=True)
+
+    restored_ids: list[str] = []
+    skipped: list[dict[str, str]] = []
+    for match in matches:
+        # The id comes from the MATCHED name, never from a resolved one. A
+        # symlinked ``lesson-*.md`` resolves OUT of the plan directory, so an id
+        # read off the resolved path describes the link's target rather than the
+        # file the plan actually carries — and the traversal guard below would
+        # then be inspecting the wrong name entirely.
+        lesson_id = match.stem[len('lesson-') :]
+        if any(sep in lesson_id for sep in ('/', '\\', '..')):
+            skipped.append({'lesson_id': lesson_id, 'reason': 'path_traversal'})
+            continue
+
+        # Only a regular, non-symlinked file may be carried back. For a symlink
+        # (or a directory, FIFO, device node) the move would relocate whatever
+        # the entry points AT — an arbitrary file outside the plan directory,
+        # removed from its own location — on the code path whose caller deletes
+        # that directory immediately afterwards. Reporting the rejection as a
+        # skip is what routes it into the veto instead of dropping it silently.
+        if match.is_symlink() or not match.is_file():
+            skipped.append({'lesson_id': lesson_id, 'reason': 'unsafe_source'})
+            continue
+
+        destination = (lessons_dir / f'{lesson_id}.md').resolve()
+        if destination.parent != lessons_dir:
+            skipped.append({'lesson_id': lesson_id, 'reason': 'path_traversal'})
+            continue
+
+        # Claim the destination with a no-replace create: ``O_EXCL`` makes the
+        # collision test and the claim ONE operation. A separate ``exists()``
+        # probe followed by a replacing move is a TOCTOU pair — a destination
+        # created between the two is silently overwritten and the incumbent
+        # lesson is lost, which is exactly the irrecoverable loss this
+        # carry-back exists to prevent. A lost race is the ordinary
+        # ``destination_exists`` skip, so it fires the veto like any other.
+        try:
+            claim_fd = os.open(destination, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+        except FileExistsError:
+            skipped.append({'lesson_id': lesson_id, 'reason': 'destination_exists'})
+            continue
+
+        # Write THROUGH the claim fd. Closing it and handing the PATH back to a
+        # copy helper would discard the guarantee the claim just bought: the
+        # reopen is a SECOND name lookup, and between the close and it a
+        # concurrent process can unlink the claimed entry and leave a symlink
+        # under that name — which a ``'wb'`` reopen follows, truncating whatever
+        # it points at. The claim would then protect only the collision test and
+        # never the write it exists to make safe. A descriptor names the claimed
+        # inode itself, so nothing swapped in under the name afterwards can be
+        # written to. ``os.fdopen`` takes ownership of the fd, and entering it
+        # FIRST means the ``with`` closes it exactly once even when opening the
+        # source raises.
+        #
+        # Copy-then-unlink rather than move: the source stays in place until the
+        # claim is filled, so no failure between the claim and the copy can
+        # leave the lesson existing nowhere.
+        try:
+            with os.fdopen(claim_fd, 'wb') as claimed, match.open('rb') as carried:
+                shutil.copyfileobj(carried, claimed)
+        except OSError:
+            # The empty claim must not outlive a failed copy — left behind, it
+            # turns every later carry-back of this id into a
+            # ``destination_exists`` skip against a corpus entry holding none
+            # of the lesson.
+            destination.unlink(missing_ok=True)
+            raise
+        match.unlink()
+        log_entry(
+            'work',
+            plan_id,
+            'INFO',
+            f'[RESTORE] (plan-marshall:manage-status:delete-plan) Restored lesson file '
+            f'lesson-{lesson_id}.md to {destination} before plan-dir deletion',
+        )
+        restored_ids.append(lesson_id)
+
+    # ``restored`` asserts that every carried lesson landed. When any did not,
+    # the honest value is ``restore_incomplete`` — reporting ``restored`` over a
+    # possibly-empty ``restored_ids`` claims the one thing the value promises.
+    return LessonCarryBack(
+        'restore_incomplete' if skipped else 'restored',
+        store.resolution,
+        str(lessons_dir),
+        restored_ids,
+        skipped,
+        store.detail,
+    )
+
+
+def cmd_delete_plan(args: argparse.Namespace) -> dict[str, Any]:
+    """Delete an entire plan directory.
+
+    The lesson carry-back runs FIRST and can VETO the deletion. When any lesson
+    the plan carries did not land in the main-anchored corpus — a destination
+    collision, a traversal-shaped id, or a store that would not resolve — the
+    plan directory holds the only copy, so the delete is refused with
+    ``error: lesson_carry_back_incomplete`` and the directory is left intact.
+    Deleting anyway is unrecoverable, and the refusal is what makes the
+    previously-silent per-file skip impossible to lose a lesson through.
+
+    ``--no-restore-lessons`` opts out of the carry-back entirely; the veto is
+    part of the carry-back, so opting out also opts out of the veto. That path
+    reports ``lesson_carry_back_action: not_attempted`` with
+    ``lesson_store_resolution: unresolved`` — it scanned nothing and resolved
+    nothing, so it may claim neither the benign scanned-and-empty outcome nor a
+    resolution it never performed. The distinction is the whole audit value of
+    the payload: this is the one branch that can destroy a carried lesson.
+    """
+    require_valid_plan_id(args)
+
+    plan_dir = get_plan_dir(args.plan_id)
+
+    if not plan_dir.exists():
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'plan_not_found',
+            'message': f'Plan directory does not exist: {plan_dir}',
+        }
+
+    # Auto-restore moved lesson files (default behaviour; opt-out via
+    # ``--no-restore-lessons``). Plans derived from multiple lessons can
+    # carry more than one ``lesson-*.md`` file; restore them all.
+    #
+    # The opt-out sentinel must NOT borrow the benign scanned-and-empty answer:
+    # this path scans nothing and never calls ``resolve_lesson_store``, so
+    # claiming ``no_lesson_file`` (defined as "SCANNED and carried none") and
+    # ``main_anchored`` (a resolution that never happened) reports the verified
+    # zero for the one branch that can silently discard a carried lesson. An
+    # auditor reading the payload could not tell "deleted a plan that verifiably
+    # carried no lesson" from "deleted a plan whose lessons went unexamined".
+    carry_back = LessonCarryBack(
+        'not_attempted',
+        'unresolved',
+        '',
+        [],
+        [],
+        'carry-back not attempted (--no-restore-lessons): the plan directory was '
+        'never scanned and no lessons store was resolved, so any lesson it '
+        'carries is discarded with it',
+    )
+    if not getattr(args, 'no_restore_lessons', False):
+        carry_back = _restore_lesson_from_plan_dir(args.plan_id, plan_dir)
+
+    # Carry-back veto: refuse to delete the directory holding the only copy of a
+    # lesson that did not land. Membership is tested against the skipped list's
+    # LENGTH, never its truthiness, so the guard reads the same whether the list
+    # is empty or absent.
+    if len(carry_back.skipped) > 0:
+        skipped_ids = [row['lesson_id'] for row in carry_back.skipped]
+        log_entry(
+            'work',
+            args.plan_id,
+            'ERROR',
+            f'[BLOCKED] (plan-marshall:manage-status:delete-plan) Refusing to delete '
+            f'{plan_dir}: {len(skipped_ids)} carried lesson(s) did not land in the '
+            f'corpus — {", ".join(skipped_ids)}',
+        )
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'lesson_carry_back_incomplete',
+            'action': 'refused',
+            'path': str(plan_dir),
+            'lesson_carry_back_action': carry_back.action,
+            'lesson_store_resolution': carry_back.store_resolution,
+            'lessons_dir': carry_back.lessons_dir,
+            'lesson_restored': len(carry_back.restored_ids) > 0,
+            'restored_lesson_ids': carry_back.restored_ids,
+            'skipped_lessons': carry_back.skipped,
+            'message': (
+                f'{len(skipped_ids)} carried lesson(s) could not be restored '
+                f'({", ".join(skipped_ids)}); the plan directory holds the only copy, '
+                f'so it was NOT deleted. Resolve the conflict, or pass '
+                f'--no-restore-lessons to delete anyway and discard them. '
+                f'Store: {carry_back.detail}'
+            ),
+        }
+
+    # Count files before deletion for audit trail
+    files_removed = sum(1 for _ in plan_dir.rglob('*') if _.is_file())
+
+    try:
+        shutil.rmtree(plan_dir)
+        log_entry('work', args.plan_id, 'INFO', f'[MANAGE-STATUS] Deleted plan ({files_removed} files)')
+        result: dict[str, Any] = {
+            'status': 'success',
+            'plan_id': args.plan_id,
+            'action': 'deleted',
+            'path': str(plan_dir),
+            'files_removed': files_removed,
+            'lesson_carry_back_action': carry_back.action,
+            'lesson_store_resolution': carry_back.store_resolution,
+            'lessons_dir': carry_back.lessons_dir,
+            'lesson_restored': len(carry_back.restored_ids) > 0,
+            'restored_lesson_ids': carry_back.restored_ids,
+            'skipped_lessons': carry_back.skipped,
+        }
+        return result
+    except PermissionError as e:
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'permission_denied',
+            'message': f'Permission denied: {e}',
+        }
+    except Exception as e:
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'delete_failed',
+            'message': f'Failed to delete plan directory: {e}',
+        }
