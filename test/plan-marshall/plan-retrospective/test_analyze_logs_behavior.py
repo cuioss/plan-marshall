@@ -678,15 +678,11 @@ class TestCountLogBuildCalls:
     def test_only_the_skill_segment_decides(self):
         """A `build-` prefix on the bundle or script segment must not misclassify."""
         assert (
-            _al.count_log_build_calls([_script_line('my-build-bundle:manage-tasks:manage-tasks')])[
-                'log_build_calls'
-            ]
+            _al.count_log_build_calls([_script_line('my-build-bundle:manage-tasks:manage-tasks')])['log_build_calls']
             == 0
         )
         assert (
-            _al.count_log_build_calls([_script_line('plan-marshall:manage-tasks:build-something')])[
-                'log_build_calls'
-            ]
+            _al.count_log_build_calls([_script_line('plan-marshall:manage-tasks:build-something')])['log_build_calls']
             == 0
         )
 

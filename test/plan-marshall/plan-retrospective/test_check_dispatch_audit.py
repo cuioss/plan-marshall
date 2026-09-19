@@ -1152,10 +1152,7 @@ _BOUNDARY_HEADER_10 = (
 
 def _boundary_file_content(phase: str, rows: list[str]) -> str:
     """One boundary artifact's bytes: header plus one CSV row per entry."""
-    return (
-        f'plan_id: dispatch-audit\nphase: {phase}\n{_BOUNDARY_HEADER_10}'
-        + ''.join(row + '\n' for row in rows)
-    )
+    return f'plan_id: dispatch-audit\nphase: {phase}\n{_BOUNDARY_HEADER_10}' + ''.join(row + '\n' for row in rows)
 
 
 def _brow(

@@ -661,9 +661,7 @@ class TestDeclaredAspectCountMatchesTheRoster:
 # caveat is present on post-merge resolutions while live-diff verdicts stay
 # unchanged.
 
-_cmc = load_script_module(
-    'plan-marshall', 'plan-retrospective', 'check-manifest-consistency.py', 'cmc_caveat_test_mod'
-)
+_cmc = load_script_module('plan-marshall', 'plan-retrospective', 'check-manifest-consistency.py', 'cmc_caveat_test_mod')
 
 
 def _write_references(plan_dir: Path, payload: dict) -> None:

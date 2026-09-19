@@ -483,8 +483,8 @@ class TestMixedCorpusReportsUnavailable:
         population = _analyze_logs.artifact_emission_population([], plan_dir)
 
         assert population['change_attribution'] == 'unavailable'
-        assert 'only 1 of 2 completed task records carry a changed_files list' in (
-            population['change_attribution_reason']
+        assert (
+            'only 1 of 2 completed task records carry a changed_files list' in (population['change_attribution_reason'])
         )
         assert 'eligible_tasks' not in population
         assert 'eligible_tasks_with_artifacts' not in population

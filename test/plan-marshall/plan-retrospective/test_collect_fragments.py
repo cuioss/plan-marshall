@@ -8,8 +8,8 @@ from pathlib import Path
 
 from _collect_fragments_fixtures import (
     SCRIPT_PATH,
-    _ArgsNS,
     _add_aspect,
+    _ArgsNS,
     _init_bundle,
     _load_module,
     _valid_fragment_body,
@@ -432,9 +432,7 @@ class TestRegisterBatch:
             batch_id,
             *[
                 arg
-                for frag, name in zip(
-                    frags, ('log-analysis', 'artifact-consistency', 'lessons-proposal'), strict=True
-                )
+                for frag, name in zip(frags, ('log-analysis', 'artifact-consistency', 'lessons-proposal'), strict=True)
                 for arg in ('--item', f'{name}={frag}')
             ],
         )
@@ -442,9 +440,7 @@ class TestRegisterBatch:
 
         adds_id, adds_dir = setup_live_plan(adds_base, monkeypatch, plan_id='retro-adds')
         _init_bundle(adds_id)
-        for frag, name in zip(
-            frags, ('log-analysis', 'artifact-consistency', 'lessons-proposal'), strict=True
-        ):
+        for frag, name in zip(frags, ('log-analysis', 'artifact-consistency', 'lessons-proposal'), strict=True):
             _add_aspect(adds_id, name, frag)
 
         batch_bytes = (batch_dir / 'work' / 'retro-fragments.toon').read_bytes()
@@ -495,9 +491,7 @@ class TestRegisterFaultPaths:
         good.write_text(_valid_fragment_body('log-analysis'), encoding='utf-8')
         before = self._snapshot(plan_id, plan_dir)
 
-        result = module.cmd_register(
-            _register_args(plan_id, [f'log-analysis={good}', 'not-an-aspect=whatever'])
-        )
+        result = module.cmd_register(_register_args(plan_id, [f'log-analysis={good}', 'not-an-aspect=whatever']))
 
         assert result['status'] == 'error'
         assert result['operation'] == 'register'

@@ -765,7 +765,7 @@ def evaluate_firing_comparison(
     for key in sorted(set(execution_by_step) | set(boundary_by_step)):
         exec_group = execution_by_step.get(key, [])
         bound_group = boundary_by_step.get(key, [])
-        for exec_row, bound_row in zip(exec_group, bound_group):
+        for exec_row, bound_row in zip(exec_group, bound_group, strict=False):
             token_state = (
                 exec_row['total_tokens_state']
                 if _FIRING_STATE_RANK[exec_row['total_tokens_state']]
@@ -779,15 +779,13 @@ def evaluate_firing_comparison(
                     'token_state': token_state,
                     'tool_uses': bound_row['tool_uses'],
                     'tool_uses_state': bound_row['tool_uses_state'],
-                    'population': _firing_population(
-                        token_state, bound_row['tool_uses_state'], bound_row['tool_uses']
-                    ),
+                    'population': _firing_population(token_state, bound_row['tool_uses_state'], bound_row['tool_uses']),
                 }
             )
         unpaired_execution.extend([key] * max(0, len(exec_group) - len(bound_group)))
         unpaired_boundary.extend([key] * max(0, len(bound_group) - len(exec_group)))
 
-    populations = {name: 0 for name in _FIRING_POPULATIONS}
+    populations = dict.fromkeys(_FIRING_POPULATIONS, 0)
     for firing in firings:
         populations[firing['population']] += 1
 
@@ -810,9 +808,7 @@ def evaluate_firing_comparison(
     }
 
 
-def evaluate_plan_firing_comparison(
-    plan_dir: Path, manifest: dict[str, Any] | None
-) -> dict[str, Any]:
+def evaluate_plan_firing_comparison(plan_dir: Path, manifest: dict[str, Any] | None) -> dict[str, Any]:
     """Per-phase firing comparison over boundary files × execution rows.
 
     The phase universe is every phase carrying a dispatch-boundary artifact

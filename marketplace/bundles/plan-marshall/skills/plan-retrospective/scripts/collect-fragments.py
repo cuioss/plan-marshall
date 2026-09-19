@@ -409,9 +409,7 @@ def _parse_batch_item(raw: str) -> tuple[str, str]:
     aspect = aspect.strip()
     path = path.strip()
     if not separator or not aspect or not path:
-        raise ValueError(
-            f'Malformed --item {raw!r}: expected ASPECT=PATH with a non-empty aspect and path.'
-        )
+        raise ValueError(f'Malformed --item {raw!r}: expected ASPECT=PATH with a non-empty aspect and path.')
     return aspect, path
 
 

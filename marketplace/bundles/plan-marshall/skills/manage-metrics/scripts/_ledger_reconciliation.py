@@ -515,7 +515,7 @@ def pair_rows(
         boundary_indexes = boundary_by_step.get(key)
         if not boundary_indexes:
             continue
-        for execution_index, boundary_index in zip(execution_indexes, boundary_indexes):
+        for execution_index, boundary_index in zip(execution_indexes, boundary_indexes, strict=False):
             matched_execution[execution_index] = boundary_index
             matched_boundary[boundary_index] = execution_index
 
