@@ -157,3 +157,25 @@ def test_exemption_with_reason_persists_and_logs(plan_context):
     exemptions = status.get('metadata', {}).get('phase_exemptions', {})
     assert exemptions.get('3-outline', {}).get('reason') == 'light-lane outline deferred to execute'
     assert 'granted_at' in exemptions['3-outline']
+
+
+def test_4_plan_rejects_task_directory(plan_context):
+    plan_id = 'gate-4plan-taskdir'
+    _seed_at_phase(plan_id, '4-plan')
+    plan_dir = plan_context.plan_dir_for(plan_id)
+    tasks_dir = plan_dir / 'tasks'
+    tasks_dir.mkdir(parents=True, exist_ok=True)
+    (tasks_dir / 'TASK-001.json').mkdir()
+    result = cmd_transition(Namespace(plan_id=plan_id, completed='4-plan'))
+    assert result['status'] == 'error'
+    assert result['error'] == 'plan_bare_transition'
+
+
+def test_4_plan_rejects_manifest_directory(plan_context):
+    plan_id = 'gate-4plan-manifestdir'
+    _seed_at_phase(plan_id, '4-plan')
+    plan_dir = plan_context.plan_dir_for(plan_id)
+    (plan_dir / 'execution.toon').mkdir()
+    result = cmd_transition(Namespace(plan_id=plan_id, completed='4-plan'))
+    assert result['status'] == 'error'
+    assert result['error'] == 'plan_bare_transition'

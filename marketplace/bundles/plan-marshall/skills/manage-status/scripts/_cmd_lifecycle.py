@@ -234,13 +234,13 @@ def _has_plan_artifact(plan_id: str) -> bool:
     except Exception:
         return False
     try:
-        task_files = list((plan_dir / 'tasks').glob('TASK-*.json'))
+        task_files = [p for p in (plan_dir / 'tasks').glob('TASK-*.json') if p.is_file()]
     except Exception:
         task_files = []
     if task_files:
         return True
     try:
-        return (plan_dir / 'execution.toon').exists()
+        return (plan_dir / 'execution.toon').is_file()
     except Exception:
         return False
 
