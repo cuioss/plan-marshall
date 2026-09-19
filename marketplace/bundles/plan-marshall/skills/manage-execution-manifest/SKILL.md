@@ -256,23 +256,26 @@ lanes:
     phase_6_steps[6]: [ push, create-pr, ci-verify, branch-cleanup, record-metrics, archive-plan ]
     phase_6_steps_count: 6
     cost_sum_tokens: 30000
-    dropped[1]{step,reason}:
+    dropped[8]{step,reason}:
       finalize-step-simplify,"effective tier standard exceeds the minimal posture cutoff"
+      ... (7 more rows omitted for brevity — one per remaining candidate the minimal cutoff drops)
   standard:
     phase_6_steps[12]: [ ... ]
     phase_6_steps_count: 12
     cost_sum_tokens: 700000
-    dropped[0]:
+    dropped[2]{step,reason}:
+      ... (2 rows omitted for brevity — the full-tier-only elements standard drops)
   full:
     phase_6_steps[14]: [ ... ]
     phase_6_steps_count: 14
     cost_sum_tokens: 960000
     dropped[0]:
-lane_report[3]{step,declared,effective,binds,reason}:
+lane_report[14]{step,declared,effective,binds,reason}:
   push,off,minimal,false,"override 'off' ignored for core floor element — immune, cannot be weakened"
   adr-propose,off,off,true,
   create-pr,-,minimal,false,
-lane_report_count: 3
+  ... (11 more rows omitted for brevity — one per remaining candidate)
+lane_report_count: 14
 plan_input_dependent_steps[2]: [ pre-submission-self-review, finalize-step-simplify ]
 ```
 

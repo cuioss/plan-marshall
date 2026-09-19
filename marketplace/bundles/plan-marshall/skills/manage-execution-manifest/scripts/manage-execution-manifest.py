@@ -3291,9 +3291,20 @@ def cmd_reconcile(args: argparse.Namespace) -> dict[str, Any] | None:
         params = phase_6.get('step_params')
         if isinstance(params, dict):
             marshal_map = _read_merged_phase_6_step_map(plan_id)
+            new_ids = [step for step in merged if step not in params]
+            # Resolve effective lanes for the backfilled ids exactly as cmd_compose
+            # does (see its comment above phase_6_effective_lanes) — otherwise a
+            # backfilled step whose stored lane is a weakening ``off`` on a floor
+            # element lands in phase_6.steps with that bare ``off`` copied verbatim
+            # into step_params, violating manifest-schema.md's step_params invariant.
+            new_effective_lanes = {
+                step: effective
+                for step in new_ids
+                if (effective := _resolve_effective_lane(step, marshal_map)) is not None
+            }
             phase_6['step_params'] = {
                 **{step: params.get(step) for step in merged if step in params},
-                **_snapshot_step_params([step for step in merged if step not in params], marshal_map),
+                **_snapshot_step_params(new_ids, marshal_map, new_effective_lanes),
             }
         write_manifest(plan_id, manifest)
 
