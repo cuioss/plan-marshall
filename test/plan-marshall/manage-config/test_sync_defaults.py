@@ -1125,7 +1125,7 @@ def test_sync_defaults_leaves_unresolvable_frontmatter_step_lane_less(plan_conte
 # seven seeded steps present but lane-less, only the two ask-tier steps carrying a
 # lane) and assert sync-defaults materializes every step's lane and is idempotent.
 
-_SEVEN_CORE_STEPS = (
+_SEVEN_SEEDED_STEPS = (
     'default:push',
     'default:create-pr',
     'default:ci-verify',
@@ -1160,7 +1160,7 @@ def _fresh_wizard_finalize_steps() -> dict:
     infra steps carry an explicit `lane: ask` — the state a first-run wizard's
     finalize-step seeding leaves before Step 16's sync-defaults pass runs.
     """
-    steps: dict = {step: {} for step in _SEVEN_CORE_STEPS}
+    steps: dict = {step: {} for step in _SEVEN_SEEDED_STEPS}
     for infra in _ASK_TIER_STEPS:
         steps[infra] = {'lane': 'ask'}
     return steps
@@ -1195,7 +1195,7 @@ def test_sync_defaults_fresh_wizard_materializes_every_finalize_step_lane(plan_c
     lane_less = [step_id for step_id, params in steps.items() if 'lane' not in params]
     assert lane_less == [], f'every finalize step must carry an explicit lane; lane-less: {lane_less!r}'
     # each seeded step materializes to its OWN frontmatter-class effective lane
-    for seeded in _SEVEN_CORE_STEPS:
+    for seeded in _SEVEN_SEEDED_STEPS:
         expected = _effective_lane_of(seeded)
         assert expected is not None, f'{seeded} resolves no effective lane, so this expectation is vacuous'
         assert steps[seeded]['lane'] == expected, (

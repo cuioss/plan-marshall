@@ -334,9 +334,9 @@ manage-config plan phase-6-finalize step set \
 ```text
 Cannot set lane 'off' on '<step>' — its lane.class is '<class>', a mandatory-floor
 class immune to a weakening off, so the composer would ignore the setting and keep
-running the step at its class-default tier. Set a tier ('standard' / 'full' via
-either writer, or 'minimal' via the generic `step set` writer) instead, or
-reclassify the element in its own frontmatter if it does not belong on the floor.
+running the step at its class-default tier. Set a tier ('minimal' / 'standard' /
+'full') instead, or reclassify the element in its own frontmatter if it does not
+belong on the floor.
 ```
 
 The check **fails toward permitting**: a step whose `lane.class` cannot be resolved — an external `bundle:skill` step with no project-local source, a missing source doc, or a doc declaring no `lane:` block — is **permitted, not refused**, matching the composer, which keeps an element whose class it could not read rather than pruning it. Only a class that RESOLVED and is in the immune set triggers the refusal, and only for the value `off`; every other lane value is unaffected. The same predicate backs `finalize-steps set-lane`, so the two writers refuse identically — but the remedy's `minimal` option is reachable only through the generic `step set` writer: `set-lane`'s own `--lane` enum (§ "`set-lane` — the two declaration channels" below) accepts only `off`/`standard`/`full`, so an operator on `set-lane` who tries `minimal` there hits that writer's own value-space rejection, not this one.
