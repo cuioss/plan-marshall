@@ -120,7 +120,7 @@ renamed[1]:
   - plan.phase-6-finalize.steps.default:automated-review -> plan-marshall:automatic-review
 renamed_count: 1
 migrated[1]:
-  - plan.phase-6-finalize.steps.default:branch-cleanup.run_at_all -> lane
+  - plan.phase-6-finalize.steps[default:pre-submission-self-review].self_review=never -> .lane=off
 migrated_count: 1
 materialized[2]:
   - plan.phase-6-finalize.steps.default:push -> lane=minimal
