@@ -815,6 +815,34 @@ def test_marketplace_package_route_is_blocked_under_the_same_conditions() -> Non
     assert 'blocked=yaml' in result.stdout
 
 
+def test_child_cannot_reach_the_repository_by_environment() -> None:
+    """The isolation itself is a regression-tested property.
+
+    The two tests above both hand the repository to the child board — the
+    first by loading the helper file by file location, the second by an
+    explicit ``sys.path`` insert — so neither fails if ``_run_python``
+    regresses to inheriting the caller's ``cwd`` and ``PYTHONPATH``. This
+    test pins the isolation property directly: a bare ``-c`` child given no
+    help MUST NOT import the repository's ``marketplace`` package.
+    """
+    result = _run_python(
+        textwrap.dedent(
+            """
+            try:
+                import marketplace.targets.claude.source_fingerprint  # noqa: F401
+            except ModuleNotFoundError as exc:
+                print('reachable=' + str(exc.name))
+            else:
+                print('reachable=True')
+            """
+        )
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert 'reachable=True' not in result.stdout
+    assert 'reachable=marketplace' in result.stdout
+
+
 def _guard_ready_project(cwd: Path) -> tuple[Path, Path]:
     """Build a project whose guard reaches the fingerprint-probe branch.
 

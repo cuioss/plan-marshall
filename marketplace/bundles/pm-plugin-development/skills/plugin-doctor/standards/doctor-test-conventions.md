@@ -56,10 +56,11 @@ Flag `subprocess.run([sys.executable, ...])` invocations under the test tree tha
 3. Inspect the first positional argument:
    - If it is a `List` whose first element is `sys.executable` (matched as `Attribute(Name("sys"), "executable")`), the call is in-scope.
    - Otherwise, ignore the call.
-4. For in-scope calls, check the `env` keyword:
-   - If absent → violation.
-   - If present, the value must build `PYTHONPATH` from `sys.path` (heuristic: `os.pathsep.join(sys.path)` assigned to `env["PYTHONPATH"]`, or a `dict(os.environ); d["PYTHONPATH"] = ...` shape).
-5. Calls that route through `conftest.run_script(...)` are exempt (the helper sets `PYTHONPATH` from `_MARKETPLACE_SCRIPT_DIRS` internally).
+4. For in-scope calls, exempt, in order:
+   1. Calls that route through `conftest.run_script(...)` (the helper sets `PYTHONPATH` from `_MARKETPLACE_SCRIPT_DIRS` internally).
+   2. The literal `-m py_compile` launcher — second and third list elements are the literals `-m` and `py_compile`; `py_compile` imports nothing from the tree, while any other `-m` target (e.g. `unittest repo_pkg`, which imports repo code via `loadTestsFromName`) stays in scope.
+   3. Calls whose `env=` value is built by a helper call (the detector cannot see inside a call and trusts the helper to construct the env), is a deliberate scrub comprehension over `os.environ` that excludes `PYTHONPATH` (e.g. `{k: v for k, v in os.environ.items() if k not in {'PYTHONPATH'}}` — the removal is the test's intent, not a propagation defect), carries a `PYTHONPATH` key in a dict literal or dict-merge, or is a `Name` whose binding visible at the call is any of those shapes (lexical scope, statement order, and control-flow reachability decide visibility — the latest visible binding wins).
+5. Otherwise → violation.
 
 **Violation message format**:
 

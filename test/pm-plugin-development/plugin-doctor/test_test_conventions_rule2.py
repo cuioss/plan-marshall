@@ -220,3 +220,252 @@ def test_lineno_reported_per_violation(tmp_path):
 def test_missing_test_root_returns_empty(tmp_path):
     findings = analyze_subprocess_pythonpath(tmp_path / 'does-not-exist')
     assert findings == []
+
+
+def test_m_module_invocation_passes(tmp_path):
+    """Class 3: a ``-m`` stdlib invocation (py_compile) is exempt."""
+    test_root = tmp_path / 'test'
+    _write(
+        test_root / 'foo' / 'test_thing.py',
+        """
+        import subprocess
+        import sys
+
+        def test_runs(tmp_path):
+            subprocess.run(
+                [sys.executable, '-m', 'py_compile', str(tmp_path / 'x.py')],
+                check=True,
+            )
+        """,
+    )
+
+    findings = analyze_subprocess_pythonpath(test_root)
+
+    assert findings == []
+
+
+def test_m_neighbor_bare_run_without_m_still_flagged(tmp_path):
+    """Closest genuine-violation neighbor of the ``-m`` class: a bare script
+    invocation with no ``-m`` and no ``env=`` must still fire."""
+    test_root = tmp_path / 'test'
+    target = _write(
+        test_root / 'foo' / 'test_thing.py',
+        """
+        import subprocess
+        import sys
+
+        def test_runs():
+            subprocess.run([sys.executable, 'scripts/run.py'], check=True)
+        """,
+    )
+
+    findings = analyze_subprocess_pythonpath(test_root)
+
+    assert len(findings) == 1
+    assert findings[0]['file'] == str(target)
+
+
+def test_deliberate_env_scrub_comprehension_passes(tmp_path):
+    """Class 1: PYTHONPATH deliberately removed from a copied env is exempt.
+
+    The comprehension over ``os.environ.items()`` with a ``not in`` guard on
+    ``PYTHONPATH`` is the env-scrubbing shape (the removal is the test's
+    intent, not a propagation defect).
+    """
+    test_root = tmp_path / 'test'
+    _write(
+        test_root / 'foo' / 'test_thing.py',
+        """
+        import os
+        import subprocess
+        import sys
+
+        def test_runs():
+            scrubbed_env = {k: v for k, v in os.environ.items() if k not in {'PYTHONPATH', 'PYTHONHOME'}}
+            subprocess.run(
+                [sys.executable, str(_EXECUTOR_PATH), '--help'],
+                env=scrubbed_env,
+                check=True,
+            )
+        """,
+    )
+
+    findings = analyze_subprocess_pythonpath(test_root)
+
+    assert findings == []
+
+
+def test_scrub_neighbor_env_comprehension_without_guard_still_flagged(tmp_path):
+    """Closest genuine-violation neighbor of the scrub class: the same
+    comprehension family with no ``not in`` guard, still a plain copy."""
+    test_root = tmp_path / 'test'
+    target = _write(
+        test_root / 'foo' / 'test_thing.py',
+        """
+        import os
+        import subprocess
+        import sys
+
+        def test_runs():
+            plain_env = {k: v for k, v in os.environ.items()}
+            subprocess.run([sys.executable, '-c', 'print(1)'], env=plain_env, check=True)
+        """,
+    )
+
+    findings = analyze_subprocess_pythonpath(test_root)
+
+    assert len(findings) == 1
+    assert findings[0]['file'] == str(target)
+
+
+def test_helper_built_env_passes(tmp_path):
+    """Class 2: an env built by a helper call is exempt (detector cannot see
+    inside the call and trusts the helper to construct PYTHONPATH)."""
+    test_root = tmp_path / 'test'
+    _write(
+        test_root / 'foo' / 'test_thing.py',
+        """
+        import subprocess
+        import sys
+
+        def _subprocess_env():
+            import os
+            env = os.environ.copy()
+            env['PYTHONPATH'] = os.pathsep.join(sys.path)
+            return env
+
+        def test_runs():
+            subprocess.run(
+                [sys.executable, str(_EXECUTOR_PATH), '--help'],
+                env=_subprocess_env(),
+                check=True,
+            )
+        """,
+    )
+
+    findings = analyze_subprocess_pythonpath(test_root)
+
+    assert findings == []
+
+
+def test_helper_env_neighbor_inline_dict_without_pythonpath_still_flagged(tmp_path):
+    """Closest genuine-violation neighbor of the helper class: the same intent
+    spelled as an inline dict without a PYTHONPATH key must still fire."""
+    test_root = tmp_path / 'test'
+    target = _write(
+        test_root / 'foo' / 'test_thing.py',
+        """
+        import subprocess
+        import sys
+
+        def test_runs():
+            subprocess.run(
+                [sys.executable, '-c', 'print(1)'],
+                env={'OTHER': '1'},
+                check=True,
+            )
+        """,
+    )
+
+    findings = analyze_subprocess_pythonpath(test_root)
+
+    assert len(findings) == 1
+    assert findings[0]['file'] == str(target)
+
+
+def test_m_py_compile_literal_still_passes(tmp_path):
+    """Class 3 (narrowed): the literal ``-m py_compile`` launcher stays exempt."""
+    test_root = tmp_path / 'test'
+    _write(
+        test_root / 'foo' / 'test_thing.py',
+        """
+        import subprocess
+        import sys
+
+        def test_runs(tmp_path):
+            subprocess.run(
+                [sys.executable, '-m', 'py_compile', str(tmp_path / 'x.py')],
+                check=True,
+            )
+        """,
+    )
+
+    findings = analyze_subprocess_pythonpath(test_root)
+
+    assert findings == []
+
+
+def test_m_unittest_repo_import_flagged(tmp_path):
+    """Class 3 neighbor: ``-m unittest repo_pkg`` imports repo code via
+    loadTestsFromName, so it must still fire."""
+    test_root = tmp_path / 'test'
+    target = _write(
+        test_root / 'foo' / 'test_thing.py',
+        """
+        import subprocess
+        import sys
+
+        def test_runs():
+            subprocess.run(
+                [sys.executable, '-m', 'unittest', 'repo_pkg'],
+                check=True,
+            )
+        """,
+    )
+
+    findings = analyze_subprocess_pythonpath(test_root)
+
+    assert len(findings) == 1
+    assert findings[0]['file'] == str(target)
+
+
+def test_scrub_key_guard_passes(tmp_path):
+    """Class 1 (narrowed): a ``not in`` guard on the KEY target stays exempt."""
+    test_root = tmp_path / 'test'
+    _write(
+        test_root / 'foo' / 'test_thing.py',
+        """
+        import os
+        import subprocess
+        import sys
+
+        def test_runs():
+            scrubbed_env = {k: v for k, v in os.environ.items() if k not in {'PYTHONPATH'}}
+            subprocess.run(
+                [sys.executable, str(_EXECUTOR_PATH), '--help'],
+                env=scrubbed_env,
+                check=True,
+            )
+        """,
+    )
+
+    findings = analyze_subprocess_pythonpath(test_root)
+
+    assert findings == []
+
+
+def test_scrub_value_guard_over_items_pair_flagged(tmp_path):
+    """Class 1 neighbor: ``if v not in {'PYTHONPATH'}`` over an ``items()``
+    pair tests the value, scrubs nothing, and must still fire."""
+    test_root = tmp_path / 'test'
+    target = _write(
+        test_root / 'foo' / 'test_thing.py',
+        """
+        import os
+        import subprocess
+        import sys
+
+        def test_runs():
+            scrubbed_env = {k: v for k, v in os.environ.items() if v not in {'PYTHONPATH'}}
+            subprocess.run(
+                [sys.executable, str(_EXECUTOR_PATH), '--help'],
+                env=scrubbed_env,
+                check=True,
+            )
+        """,
+    )
+
+    findings = analyze_subprocess_pythonpath(test_root)
+
+    assert len(findings) == 1
+    assert findings[0]['file'] == str(target)

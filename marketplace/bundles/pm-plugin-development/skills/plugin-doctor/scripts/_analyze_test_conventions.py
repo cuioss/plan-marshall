@@ -241,9 +241,11 @@ def analyze_subprocess_pythonpath(test_root: Path) -> list[dict]:
     AST scan of every ``*.py`` under ``test_root`` for ``subprocess.run``
     calls whose first positional argument is a list starting with
     ``sys.executable``. Such calls MUST either route through
-    ``conftest.run_script(...)`` or pass an ``env=`` keyword that propagates
-    ``PYTHONPATH`` from ``sys.path``. Calls missing both safeguards are
-    flagged.
+    ``conftest.run_script(...)``, pass an ``env=`` keyword that propagates
+    ``PYTHONPATH`` from ``sys.path``, or match one of the exempt shapes:
+    a deliberate env scrub (``PYTHONPATH`` removed from a copied env), a
+    helper-supplied env (built by a call), or the literal ``-m py_compile``
+    stdlib invocation. Calls matching none of these are flagged.
     """
     if not test_root.is_dir():
         return []
@@ -280,6 +282,7 @@ def _imports_bare_run(tree: ast.AST) -> bool:
 
 def _scan_module_for_subprocess_pythonpath(path: Path, tree: ast.AST, bare_run_imported: bool) -> list[dict]:
     results: list[dict] = []
+    parent_map = _build_parent_map(tree)
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
             continue
@@ -287,12 +290,152 @@ def _scan_module_for_subprocess_pythonpath(path: Path, tree: ast.AST, bare_run_i
             continue
         if not _first_arg_is_sys_executable_list(node):
             continue
-        if _is_run_script_call(node):
+        # NOTE: helper calls (conftest.run_script) are out of scope here.
+        # _is_subprocess_run_call already restricts func to subprocess.run (or
+        # the bare run form), so a run_script call never reaches this scanner
+        # and no additional guard is needed.
+        if _is_m_invocation_without_repo_import(node):
             continue
-        if _has_pythonpath_env_kwarg(node):
+        if _has_pythonpath_env_kwarg(node, tree, parent_map):
             continue
         results.append(_build_subprocess_pythonpath_finding(path, node))
     return results
+
+
+def _build_parent_map(tree: ast.AST) -> dict[int, ast.AST]:
+    """Return a child-id to parent mapping for every node in ``tree``."""
+    parents: dict[int, ast.AST] = {}
+    for parent in ast.walk(tree):
+        for child in ast.iter_child_nodes(parent):
+            parents[id(child)] = parent
+    return parents
+
+
+def _innermost_function(node: ast.AST, parent_map: dict[int, ast.AST]) -> ast.AST | None:
+    """Return the innermost enclosing function of ``node``, or None at module level."""
+    current = parent_map.get(id(node))
+    while current is not None:
+        if isinstance(current, ast.FunctionDef | ast.AsyncFunctionDef):
+            return current
+        current = parent_map.get(id(current))
+    return None
+
+
+def _is_constant_false(test: ast.AST) -> bool:
+    if isinstance(test, ast.Constant):
+        try:
+            return not bool(test.value)
+        except Exception:
+            return False
+    return False
+
+
+def _is_constant_true(test: ast.AST) -> bool:
+    if isinstance(test, ast.Constant):
+        try:
+            return bool(test.value)
+        except Exception:
+            return False
+    return False
+
+
+def _is_type_checking_guard(test: ast.AST) -> bool:
+    if isinstance(test, ast.Name) and test.id == 'TYPE_CHECKING':
+        return True
+    if isinstance(test, ast.Attribute) and test.attr == 'TYPE_CHECKING':
+        return True
+    return False
+
+
+def _binding_is_unreachable(binding: ast.Assign | ast.AnnAssign, parent_map: dict[int, ast.AST]) -> bool:
+    """Return True when ``binding`` sits in a statically unreachable position.
+
+    Two shapes count as unreachable: a branch the interpreter never takes
+    (``if False:`` body, ``if True:`` else-branch, ``while False:`` body, or an
+    ``if TYPE_CHECKING:`` body, which is False at runtime), and dead code after
+    a terminating statement (``return``/``raise``/``break``/``continue``) in the
+    same block or any enclosing block.
+    """
+    child: ast.AST = binding
+    current = parent_map.get(id(child))
+    while current is not None:
+        if isinstance(current, ast.If):
+            in_body = any(sibling is child for sibling in current.body)
+            in_orelse = any(sibling is child for sibling in current.orelse)
+            if in_body and (_is_constant_false(current.test) or _is_type_checking_guard(current.test)):
+                return True
+            if in_orelse and _is_constant_true(current.test):
+                return True
+        elif isinstance(current, ast.While):
+            in_body = any(sibling is child for sibling in current.body)
+            if in_body and _is_constant_false(current.test):
+                return True
+        for field in current._fields:
+            try:
+                siblings = getattr(current, field)
+            except AttributeError:
+                continue
+            if not isinstance(siblings, list) or not any(sibling is child for sibling in siblings):
+                continue
+            index = next(i for i, sibling in enumerate(siblings) if sibling is child)
+            for sibling in siblings[:index]:
+                if isinstance(sibling, ast.Return | ast.Raise | ast.Break | ast.Continue):
+                    return True
+            break
+        if isinstance(current, ast.Module | ast.FunctionDef | ast.AsyncFunctionDef):
+            return False
+        child = current
+        current = parent_map.get(id(child))
+    return False
+
+
+def _resolve_env_binding(
+    tree: ast.AST, call_node: ast.Call, name: str, parent_map: dict[int, ast.AST]
+) -> ast.AST | None:
+    """Resolve the ``env=`` Name ``name`` visible at ``call_node``.
+
+    Lexical scope (a binding from another function never leaks in; a
+    module-level binding remains visible inside functions), statement order
+    (only bindings positioned before the call), and control-flow reachability
+    (bindings under a never-taken branch or after a terminator are ignored).
+    The latest visible binding wins; None when no visible binding exists.
+    """
+    call_func = _innermost_function(call_node, parent_map)
+    call_pos = (getattr(call_node, 'lineno', 0), getattr(call_node, 'col_offset', 0))
+    best: ast.AST | None = None
+    best_pos: tuple[int, int] = (-1, -1)
+    for node in ast.walk(tree):
+        binding: ast.Assign | ast.AnnAssign | None = None
+        value: ast.AST | None = None
+        target_id: str | None = None
+        if isinstance(node, ast.Assign) and len(node.targets) == 1:
+            target = node.targets[0]
+            if isinstance(target, ast.Name):
+                target_id = target.id
+                value = node.value
+                binding = node
+        elif isinstance(node, ast.AnnAssign) and node.value is not None:
+            if isinstance(node.target, ast.Name):
+                target_id = node.target.id
+                value = node.value
+                binding = node
+        if target_id != name or value is None or binding is None:
+            continue
+        node_func = _innermost_function(node, parent_map)
+        if call_func is not None:
+            if node_func is not None and node_func is not call_func:
+                continue
+        elif node_func is not None:
+            continue
+        node_pos = (getattr(node, 'lineno', 0), getattr(node, 'col_offset', 0))
+        if node_pos >= call_pos:
+            continue
+        if _binding_is_unreachable(binding, parent_map):
+            continue
+        if node_pos > best_pos:
+            best = value
+            best_pos = node_pos
+    return best
 
 
 def _is_subprocess_run_call(node: ast.Call, bare_run_imported: bool) -> bool:
@@ -321,18 +464,103 @@ def _first_arg_is_sys_executable_list(node: ast.Call) -> bool:
     )
 
 
-def _is_run_script_call(node: ast.Call) -> bool:
-    """Return True when the call routes through conftest.run_script."""
-    func = node.func
-    if isinstance(func, ast.Attribute) and func.attr == 'run_script':
-        return True
-    if isinstance(func, ast.Name) and func.id == 'run_script':
-        return True
+def _is_m_invocation_without_repo_import(node: ast.Call) -> bool:
+    """Class 3: the literal ``-m py_compile`` stdlib invocation.
+
+    Only ``[sys.executable, '-m', 'py_compile', ...]`` is exempt: py_compile
+    imports nothing from the tree, so ``PYTHONPATH`` cannot be consumed by
+    repository code. Any other ``-m`` target stays in scope — for example
+    ``python -m unittest repo_pkg`` imports repo code via loadTestsFromName
+    and must still propagate ``PYTHONPATH``.
+    """
+    first = node.args[0]
+    if not isinstance(first, ast.List) or len(first.elts) < 3:
+        return False
+    second = first.elts[1]
+    third = first.elts[2]
+    return (
+        isinstance(second, ast.Constant)
+        and second.value == '-m'
+        and isinstance(third, ast.Constant)
+        and third.value == 'py_compile'
+    )
+
+
+def _iterates_os_environ(iter_node: ast.AST) -> bool:
+    """Return True when a comprehension iterable derives from ``os.environ``."""
+    if isinstance(iter_node, ast.Call):
+        func = iter_node.func
+        return (
+            isinstance(func, ast.Attribute)
+            and func.attr in {'items', 'keys'}
+            and isinstance(func.value, ast.Attribute)
+            and func.value.attr == 'environ'
+            and isinstance(func.value.value, ast.Name)
+            and func.value.value.id == 'os'
+        )
+    return (
+        isinstance(iter_node, ast.Attribute)
+        and iter_node.attr == 'environ'
+        and isinstance(iter_node.value, ast.Name)
+        and iter_node.value.id == 'os'
+    )
+
+
+def _contains_pythonpath(node: ast.AST) -> bool:
+    """Return True when a constant or constant container holds ``PYTHONPATH``."""
+    if isinstance(node, ast.Constant):
+        return node.value == 'PYTHONPATH'
+    if isinstance(node, (ast.Set, ast.List, ast.Tuple)):
+        return any(_contains_pythonpath(el) for el in node.elts)
     return False
 
 
-def _has_pythonpath_env_kwarg(node: ast.Call) -> bool:
-    """Heuristic: env= kwarg whose value introduces PYTHONPATH from sys.path."""
+def _is_deliberate_env_scrub(value: ast.AST) -> bool:
+    """Class 1: env is a comprehension over ``os.environ`` excluding ``PYTHONPATH``.
+
+    The shape is ``{k: v for k, v in os.environ.items() if k not in
+    {'PYTHONPATH', ...}}`` — PYTHONPATH is deliberately removed from a copied
+    environment, which is the opposite of a propagation defect. The ``not in``
+    guard must test the KEY target explicitly: over an ``items()`` pair the
+    key is ``elts[0]``, so ``if v not in {'PYTHONPATH'}`` tests the value and
+    does not scrub anything.
+    """
+    if not isinstance(value, ast.DictComp) or len(value.generators) != 1:
+        return False
+    gen = value.generators[0]
+    if not _iterates_os_environ(gen.iter):
+        return False
+    if not gen.ifs:
+        return False
+    target = gen.target
+    if isinstance(target, ast.Name):
+        key_name = target.id
+    elif isinstance(target, ast.Tuple) and target.elts and isinstance(target.elts[0], ast.Name):
+        key_name = target.elts[0].id
+    else:
+        return False
+    for guard in gen.ifs:
+        if not isinstance(guard, ast.Compare):
+            continue
+        if not isinstance(guard.left, ast.Name) or guard.left.id != key_name:
+            continue
+        if not any(isinstance(op, ast.NotIn) for op in guard.ops):
+            continue
+        for comp in guard.comparators:
+            if _contains_pythonpath(comp):
+                return True
+    return False
+
+
+def _has_pythonpath_env_kwarg(node: ast.Call, tree: ast.AST, parent_map: dict[int, ast.AST]) -> bool:
+    """Heuristic: env= kwarg that introduces, trusts, or deliberately strips PYTHONPATH.
+
+    A bare ``env=name`` resolves per call site via :func:`_resolve_env_binding`
+    (lexical scope, statement order, reachability) — the latest visible binding
+    wins. The detector is a static shape scan and cannot see through helper
+    calls, so it conservatively trusts a Name whose visible binding is itself a
+    recognized env-construction shape.
+    """
     env_value = None
     for kw in node.keywords:
         if kw.arg == 'env':
@@ -348,6 +576,16 @@ def _has_pythonpath_env_kwarg(node: ast.Call) -> bool:
     if isinstance(env_value, ast.Name) and env_value.id in {'env', 'subprocess_env', 'child_env'}:
         return True
 
+    # env=helper_call(...) — Class 2: the env is built by a call, so the
+    # detector cannot see inside it and trusts the helper to construct
+    # PYTHONPATH (or deliberately omit it, as _clean_env does).
+    if isinstance(env_value, ast.Call):
+        return True
+
+    # Class 1 (inline form): deliberate env scrub comprehension.
+    if _is_deliberate_env_scrub(env_value):
+        return True
+
     # env={"PYTHONPATH": ..., **os.environ} dict literal
     if isinstance(env_value, ast.Dict):
         for key in env_value.keys:
@@ -361,6 +599,26 @@ def _has_pythonpath_env_kwarg(node: ast.Call) -> bool:
                 for key in side.keys:
                     if isinstance(key, ast.Constant) and key.value == 'PYTHONPATH':
                         return True
+
+    # env=name whose visible binding is itself a trusted shape (latest visible
+    # binding wins via _resolve_env_binding).
+    if isinstance(env_value, ast.Name):
+        bound = _resolve_env_binding(tree, node, env_value.id, parent_map)
+        if bound is not None:
+            if isinstance(bound, ast.Call):
+                return True
+            if _is_deliberate_env_scrub(bound):
+                return True
+            if isinstance(bound, ast.Dict):
+                for key in bound.keys:
+                    if isinstance(key, ast.Constant) and key.value == 'PYTHONPATH':
+                        return True
+            if isinstance(bound, ast.BinOp) and isinstance(bound.op, ast.BitOr):
+                for side in (bound.left, bound.right):
+                    if isinstance(side, ast.Dict):
+                        for key in side.keys:
+                            if isinstance(key, ast.Constant) and key.value == 'PYTHONPATH':
+                                return True
 
     return False
 
