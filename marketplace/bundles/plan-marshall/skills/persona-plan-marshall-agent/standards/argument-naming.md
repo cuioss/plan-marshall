@@ -18,19 +18,33 @@ Without a shared convention, each script picks a flag spelling that feels locall
 
 ### Rule 1 — Typed IDs
 
-For arguments that identify a scoped entity, use the typed form:
+An argument is **entity-identifying** when its value names *which instance* of a first-class entity the command acts on. Every such argument is spelled **entity-noun-first**: the entity noun is mandatory and comes first, and any suffix names the *kind of value*, never the entity. The suffix set is closed:
+
+| Suffix | Value kind |
+|---|---|
+| _(none)_ | the entity's plain human-readable name |
+| `-id` | an assigned or opaque identifier |
+| `-number` | an ordinal within a scope |
+| `-slug` | a kebab-case human-readable key, used only where the entity ALSO carries an `-id` and the two must stay distinguishable |
+
+The entity-to-flag mapping:
 
 | Entity | Canonical flag |
 |---|---|
 | Lesson | `--lesson-id` |
 | Plan | `--plan-id` |
+| Epic | `--epic` |
 | Task | `--task-number` |
 | Module | `--module` |
 | Component | `--component` |
 
-Reserve `--id` for untyped contexts only — hash IDs of opaque records where the entity type is implicit in the subcommand and there is no risk of ambiguity at the caller surface.
+A flag that names only the value kind — `--id`, `--name`, `--slug`, `--number` standing alone — is **not** an entity-identifying flag and must not be used as one. Reserve `--id` for untyped contexts only: hash IDs of opaque records where the entity type is implicit in the subcommand, and where no second entity can appear on the same parser.
 
 **Why**: callers conceptualize values by type, not by the abstract notion of "an identifier". A script that takes `--lesson-id` matches the way every skill, agent prompt, and lesson record refers to the value; a script that takes `--id` forces every caller to remember which flavour of identifier this particular script wanted.
+
+**Why the entity noun is mandatory**: a spelling that carries no entity cannot be reused when a *second* entity appears on the same parser, so that second entity gets named around the incumbent instead of by its own name. The epic's former `--slug` spelling is the worked example — it named the value's shape rather than the entity, and the plan's slug on the same parser had to become `--slug-value` as a result. An entity-first spelling leaves the next entity a name to use.
+
+The epic entity and the `--epic` / `--slug` reconciliation, the reasons the plan does not collapse into it, and the disposition of each existing `--name` and `--target` occupant are decided in [ADR-023](../../../../../../doc/adr/023-Entity_identifying_CLI_parameters_use_one_typed_vocabulary.adoc).
 
 ### Rule 2 — Read-verb canonicalization
 
@@ -54,11 +68,20 @@ Use the verb that matches the operation's semantics:
 
 The alias is purely additive at the CLI boundary; it does not change which verb Rule 2's semantics prescribe, and it does not introduce a second handler.
 
-### Rule 3 — Module-name arguments
+### Rule 3 — `--name` is not an entity spelling
 
-When a script argument names a module, prefer `--module` over `--name`. Reserve `--name` for generic strings whose referent is unambiguous from the surrounding subcommand context (for example, naming a brand-new entity at creation time).
+`--module` over `--name` for a module argument is the general case of Rule 1, not a module-specific carve-out: `--name` names the *kind of value* and carries no entity, so it fails the entity-noun-first test exactly as `--id` and `--slug` do. The same substitution applies to every entity — an argument naming a component is `--component`, one naming an epic is `--epic`, and so on.
+
+`--name` is reserved for arguments that are **not** entity-identifying at all: a generic string the command *writes* or matches on, rather than an identity selecting which record it acts on. The discriminator is Rule 1's: does this value name which instance the command acts on?
+
+- `run_config commit-trailer set --name` supplies a co-author name the command writes into configuration. It selects no record, so `--name` is correct and stays.
+- An argument that resolves a module, a component, or any other entity is that entity's flag, whatever the referent looks like as a string.
+
+The same test governs `--target`, which is entity-identifying only where its value names a runtime target by name; where it carries a payload string or a closed selector enum (`{global,project}`, `{all,temp,logs,…}`) it is outside the partition and Rule 1 does not reach it.
 
 **Why**: the caller's mental model is about the *referent* (which module), not the *kind of value* (a string name). Using `--module` makes that referent explicit at the call site, where the cost of confusion is highest.
+
+The per-occupant dispositions this rule's reserved clause agrees with are recorded in [ADR-023](../../../../../../doc/adr/023-Entity_identifying_CLI_parameters_use_one_typed_vocabulary.adoc) § "(c) The fate of each existing `--name` occupant".
 
 ### Rule 4 — Log-level naming
 
@@ -89,6 +112,12 @@ This rule is distinct from Rule 2: Rule 2's `read` / `get` / `exists` tiers cove
 ## Canonical Forms
 
 The table below records the canonical argument form for each in-scope script after this convention lands. Future scripts in scope MUST follow these conventions; existing scripts that diverge are renamed to match.
+
+**What the rows are measured against.** A row here is not a wish: it is a claim about a script's live argparse declaration, and `ARGUMENT_NAMING_CANONICAL_FORMS_DRIFT` checks it against that declaration on every `quality-gate` run. The rule is build-failing, so a row and the script it prescribes are a coupled pair — neither may be moved to a new spelling while the other lags. Concretely, a rename lands the `add_argument` change and its row in the **same commit**; splitting them fails the gate on every commit in between. Per [ADR-017](../../../../../../doc/adr/017-A_validator_derives_its_contract_from_the_targets_own_declaration_and_fails_closed_when_it_cannot.adoc), the remedy for a row the rule flags is to fix the row or the declaration, never to suppress or annotate the rule.
+
+**The governing framework is Rules 1–5 above, and the rows are its instances.** Where a row's spelling and the rules disagree, the rules are the authority and the row is drift awaiting a rename. [ADR-023](../../../../../../doc/adr/023-Entity_identifying_CLI_parameters_use_one_typed_vocabulary.adoc) decides the entity vocabulary the rows are measured against; **the rows below are not yet brought into line with it**. Because no flag has been renamed, a row rewritten here to a decided-but-unimplemented spelling would fail the drift gate immediately. Those rewrites belong to the follow-on rename plan, where each row moves in the same commit as the argparse declaration it prescribes — not here.
+
+**Rule-1 conformance is not a substitute for reading the live surface.** The drift rule parses only rows whose third column is a lone backticked form in a three-column table; a row carrying trailing prose after the backticks, and every row of the two-column per-script tables below, is outside its reach. Those rows are governed by the same rules but are not machine-checked, so they can go stale silently — treat the script's own `## Canonical invocations` section as authoritative when the two disagree.
 
 The cross-cutting `--plan-id` and `--audit-plan-id` flags are accepted by virtually every `manage-*` script and are not enumerated row-by-row.
 
