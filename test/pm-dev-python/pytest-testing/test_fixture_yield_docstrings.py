@@ -16,9 +16,19 @@ def _is_fixture_decorator(decorator: ast.expr) -> bool:
     return isinstance(target, ast.Attribute) and target.attr == 'fixture'
 
 
+def _fixture_defs(tree: ast.AST) -> list:
+    """Return the fixture function definitions selected from a parsed tree."""
+    return [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and any(_is_fixture_decorator(decorator) for decorator in node.decorator_list)
+    ]
+
+
 def _body_yields(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
     """Decide whether the fixture body itself yields, ignoring nested scopes."""
-    stack = list(node.body)
+    stack: list[ast.AST] = list(node.body)
     while stack:
         child = stack.pop()
         if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
@@ -36,11 +46,7 @@ def _fixture_yield_mismatches(source: str) -> list:
     except SyntaxError:
         return []
     mismatches = []
-    for node in ast.walk(tree):
-        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            continue
-        if not any(_is_fixture_decorator(decorator) for decorator in node.decorator_list):
-            continue
+    for node in _fixture_defs(tree):
         docstring = ast.get_docstring(node) or ''
         if 'yield' not in docstring.lower():
             continue
@@ -96,17 +102,29 @@ def test_detector_accepts_return_wording_on_a_return_form_fixture():
 
 def test_no_fixture_docstring_says_yield_without_yielding():
     """No fixture docstring says yield unless the fixture yields."""
-    fixture_files = 0
+    fixture_count = 0
     mismatches = []
+    unreadable = []
+    unparsable = []
     for path in sorted(TEST_ROOT.rglob('*.py')):
         try:
             text = path.read_text(encoding='utf-8')
         except OSError:
+            unreadable.append(str(path.relative_to(TEST_ROOT)))
             continue
         if 'fixture' not in text:
             continue
-        fixture_files += 1
-        for name in _fixture_yield_mismatches(text):
-            mismatches.append(f'{path.relative_to(TEST_ROOT)}::{name}')
-    assert fixture_files > 0, 'expected to scan at least one fixture-bearing module'
+        try:
+            tree = ast.parse(text)
+        except SyntaxError:
+            unparsable.append(str(path.relative_to(TEST_ROOT)))
+            continue
+        for node in _fixture_defs(tree):
+            fixture_count += 1
+            docstring = ast.get_docstring(node) or ''
+            if 'yield' in docstring.lower() and not _body_yields(node):
+                mismatches.append(f'{path.relative_to(TEST_ROOT)}::{node.name}')
+    assert unreadable == [], f'fixture files that could not be read: {unreadable}'
+    assert unparsable == [], f'fixture files that could not be parsed: {unparsable}'
+    assert fixture_count > 0, 'expected the scan to select at least one fixture'
     assert mismatches == [], f'fixtures documented as yielding without yielding: {mismatches}'
