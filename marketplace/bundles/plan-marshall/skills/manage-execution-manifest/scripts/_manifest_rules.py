@@ -175,7 +175,9 @@ def _read_merged_phase_6_step_map(plan_id: str) -> dict[str, dict] | None:
 
 
 def _snapshot_step_params(
-    final_step_ids: list[str], marshal_step_map: dict[str, dict] | None
+    final_step_ids: list[str],
+    marshal_step_map: dict[str, dict] | None,
+    effective_lanes: dict[str, str] | None = None,
 ) -> dict[str, dict | None]:
     """Snapshot the resolved per-step params for the FINAL selected steps.
 
@@ -195,16 +197,47 @@ def _snapshot_step_params(
     TOON-``''`` value back to an empty dict, so ownerless steps read back as
     ``{}``. The marshal keys are matched against the bare in-manifest ids via the
     same ``default:`` prefix-strip used at the compose boundary.
+
+    ``effective_lanes`` is the optional ``{step_id: effective_lane}`` map the
+    caller resolved for these same ids. It exists because a stored ``lane``
+    value is a REQUEST, not an outcome: a weakening ``off`` on a ``core`` /
+    ``derived-state`` floor element is neutralized by
+    :func:`_manifest_lanes._effective_lane_tier`, so the step runs at its
+    class-default tier while the stored value still reads ``off``. Snapshotting
+    the request verbatim therefore produced a manifest that listed a step as
+    running while recording its lane as ``off``. When a step's stored ``lane``
+    differs from its effective lane, the snapshotted param object records
+    ``lane`` = the EFFECTIVE value and ``lane_requested`` = the originally
+    stored value; when the two agree — and whenever the caller supplies no
+    effective lane for that step, or the step stores no ``lane`` at all — only
+    ``lane`` is written and no ``lane_requested`` key is added, so an
+    unremarkable step gains no noise.
+
+    The argument is optional and defaults to ``None`` so the phase-5 call site,
+    which resolves no lanes, keeps a byte-identical snapshot.
     """
     if not marshal_step_map:
         return dict.fromkeys(final_step_ids)
     # Index the marshal map by its prefix-stripped key so a bare in-manifest id
     # matches a ``default:``-prefixed marshal key.
     bare_to_params: dict[str, dict] = {canonicalize_step_key(key): params for key, params in marshal_step_map.items()}
-    # A param-owning step snapshots its nested object; an ownerless step (no
-    # marshal entry or an empty param object) snapshots as ``None`` so the
-    # manifest carries no empty ``{}``.
-    return {step_id: (dict(params) if (params := bare_to_params.get(step_id)) else None) for step_id in final_step_ids}
+    snapshot: dict[str, dict | None] = {}
+    for step_id in final_step_ids:
+        params = bare_to_params.get(step_id)
+        # A param-owning step snapshots its nested object; an ownerless step (no
+        # marshal entry or an empty param object) snapshots as ``None`` so the
+        # manifest carries no empty ``{}``.
+        if not params:
+            snapshot[step_id] = None
+            continue
+        resolved = dict(params)
+        effective = (effective_lanes or {}).get(step_id)
+        stored = resolved.get('lane')
+        if effective is not None and isinstance(stored, str) and stored != effective:
+            resolved['lane'] = effective
+            resolved['lane_requested'] = stored
+        snapshot[step_id] = resolved
+    return snapshot
 
 
 #: The steps `commit_push_disabled` subtracts, and the single drop reason each

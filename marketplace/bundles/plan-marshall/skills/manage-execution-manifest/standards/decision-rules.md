@@ -445,9 +445,13 @@ When all four gates resolve to `auto` (the default), the transform is a no-op an
 
 **Contract ownership**: the closed `lane.class` enum (`derived-state` / `core` / `adversarial` / `prunable`), the class→default-tier table, the resolution lattice `minimal ⊏ standard ⊏ full`, the per-element override vocabulary (`off | minimal | standard | full | ask`), and the `cost_size` binding are owned by [`extension-api/standards/ext-point-lane-element.md`](../../extension-api/standards/ext-point-lane-element.md). This section documents only how the composer consumes them. Do not restate the enums here.
 
-**Per-element resolution**: for each step in `phase_6.steps` the composer resolves the element's `lane:` frontmatter block (built-in steps via the standards / workflow doc; `project:` steps via the project-local `{bare}/SKILL.md`). It then resolves the effective tier — per-element `marshal.json` `lane` override ▸ declared `lane.tier` ▸ class default — and keeps the element iff `effective_tier ⊑ posture`:
+**Declaration source — the MERGED map, and the second warning sink.** The per-element `lane` override is resolved from `_read_merged_phase_6_step_map(plan_id)` — the plan-local `status.metadata.finalize_step_overrides` map overlaid on the project-wide `marshal.json` map, plan-local winning per step key and merged per knob — never from marshal.json alone, so a plan-scoped answer reaches this pass exactly as the project-wide one does.
 
-- `minimal` keeps only the tier-`minimal` floor (`core` / `derived-state`, plus the `minimal`-deviated `lessons-capture` / `lessons-housekeeping`);
+The neutralization warning this pass produces has a SECOND consumer beside the decision log: `lanes preview` reads the same `(step, warning)` list to fill the `reason` column of its declared-vs-effective `lane_report[]`, so the text an operator reads at rest is the composer's own, not a paraphrase. Note what that implies about the `full` posture: the pass short-circuits there and resolves nothing, so **under `full` no override binds through this pass and no warning is produced**. `lanes preview` therefore resolves each element's effective lane PER STEP rather than reading it off a posture pass — a report sourced from the pass would describe every full-posture element as unexamined.
+
+**Per-element resolution**: for each step in `phase_6.steps` the composer resolves the element's `lane:` frontmatter block (built-in steps via the standards / workflow doc; `project:` steps via the project-local `{bare}/SKILL.md`). It then resolves the effective tier — per-element override ▸ declared `lane.tier` ▸ class default — and keeps the element iff `effective_tier ⊑ posture`:
+
+- `minimal` keeps only the tier-`minimal` floor (`core` / `derived-state`, plus the `minimal`-deviated `lessons-housekeeping` — `lessons-capture` is `prunable` at the class-default `standard` tier and deviates from it in neither direction, so it is not a floor member);
 - `standard` additionally keeps tier-`standard` elements and drops tier-`full` ones (`security-audit`, `plan-retrospective`);
 - `full` keeps everything.
 

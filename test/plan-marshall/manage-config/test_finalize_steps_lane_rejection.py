@@ -42,10 +42,19 @@ Covered here:
   than becoming an unbound restatement — the exact defect class the plan this test
   belongs to exists to close, and ``set-lane --lane`` was that rule's own driving
   example.
+
+A SECOND, independent rejection axis is covered in the closing section: an ``off``
+the target element's CLASS makes inert. The first axis asks "does this verb write
+that value?"; the second asks "can that value take effect on that step?". Both
+channels are asserted, plus the matched positive control (a non-immune element
+still accepts ``off``) and the fail-toward-permitting case (an unresolvable class
+is permitted, never refused).
 """
 
+import json
 import re
 from argparse import Namespace
+from pathlib import Path
 
 from _manage_config_fixtures import SCRIPT_PATH, create_marshal_json
 
@@ -59,11 +68,23 @@ _reject_lane_value = _cmd_mod._reject_lane_value
 _RESOLVED_ASK_LANE_VALUES = _cmd_mod._RESOLVED_ASK_LANE_VALUES
 _READER_LANE_VALUES = _cmd_mod._READER_LANE_VALUES
 
+_quality_mod = load_script_module(
+    'plan-marshall', 'manage-config', '_cmd_quality_phases.py', module_name='_cmd_quality_phases'
+)
+_resolve_finalize_step_lane = _quality_mod._resolve_finalize_step_lane
+
+# ``register=False``: this module needs only the returned object — it reads
+# ``LANE_OVERRIDES`` and ``_IMMUNE_TO_OFF_CLASSES``, two module-level collections,
+# and nothing here depends on ``_manifest_lanes`` being reachable through
+# ``sys.modules`` (no dataclass ``__module__`` lookup, no pickle round-trip).
+# Registering it would publish a SECOND copy under a name a sibling test module
+# (``test_lane_class_off_immunity.py``) imports plainly, which is the
+# order-dependent collision ``test_no_new_shared_registration_collision`` guards.
 _lanes_mod = load_script_module(
     'plan-marshall',
     'manage-execution-manifest',
     '_manifest_lanes.py',
-    module_name='_manifest_lanes',
+    register=False,
 )
 
 #: A finalize step every discovery run knows about, used as the set-lane target.
@@ -71,6 +92,18 @@ _LANE_STEP_ID = 'plan-marshall:automatic-review'
 
 #: The substring that IS the fix: the verb an operator should reach for instead.
 _ROUTE_MARKER = 'step set'
+
+#: A finalize step on the mandatory floor — its class is in
+#: ``_IMMUNE_TO_OFF_CLASSES``, so the composer ignores a weakening ``off``.
+_IMMUNE_STEP_ID = 'default:push'
+
+#: A finalize step OFF the floor — its class is not immune, so an ``off`` on it
+#: is a real opt-out the composer honours. The matched positive control.
+_NON_IMMUNE_STEP_ID = 'default:adr-propose'
+
+#: A finalize step whose class the resolver cannot reach (a ``bundle:skill`` id
+#: with no project-local source). The fail-toward-permitting case.
+_UNRESOLVABLE_CLASS_STEP_ID = _LANE_STEP_ID
 
 
 def test_the_reader_enum_mirror_matches_the_composer_authority():
@@ -258,3 +291,126 @@ def test_canonical_block_enum_equals_the_writer_set():
         f'SOURCE OF TRUTH by other consumers, so a divergence here sends a caller to a value '
         f'the handler refuses — or hides one it accepts.'
     )
+
+
+# ---------------------------------------------------------------------------
+# The SECOND rejection axis: an `off` the target element's class makes inert
+# ---------------------------------------------------------------------------
+#
+# The axis above is about the VALUE — which values this verb writes at all. This
+# one is about the TARGET, and the two are independent: `off` is a value this
+# verb writes, yet it is refused on a step whose class the composer shields from
+# a weakening `off`, because storing it would record a setting the composer is
+# guaranteed to ignore. The refusal is checked on BOTH channels, because a
+# refusal enforced on one destination only would leave the other able to persist
+# exactly the state the refusal exists to prevent.
+
+
+def _status_path(plan_context, plan_id: str) -> Path:
+    return Path(plan_context.plan_dir_for(plan_id)) / 'status.json'
+
+
+def _seed_status(plan_context, plan_id: str) -> Path:
+    """Write a minimal ``status.json`` for ``plan_id`` and return its path."""
+    path = _status_path(plan_context, plan_id)
+    path.write_text(json.dumps({'metadata': {}}), encoding='utf-8')
+    return path
+
+
+def _overrides(status_path: Path) -> dict:
+    status = json.loads(status_path.read_text(encoding='utf-8'))
+    overrides: dict = status.get('metadata', {}).get('finalize_step_overrides', {})
+    return overrides
+
+
+def test_the_three_fixture_steps_occupy_the_three_classes_this_axis_partitions():
+    """Anti-vacuity: the fixtures' premises are DERIVED from the live resolver.
+
+    Every assertion below turns on which side of the immune set a step's class
+    falls on. Asserting that from a remembered class would make the whole section
+    pass or fail for a reason unrelated to the refusal, so each premise is
+    re-resolved here through the same resolver the writers call.
+    """
+    immune = _resolve_finalize_step_lane(_IMMUNE_STEP_ID)
+    assert immune and immune.get('class') in _lanes_mod._IMMUNE_TO_OFF_CLASSES, (
+        f'{_IMMUNE_STEP_ID} no longer resolves to an immune class ({immune}); pick another '
+        f'floor step, or the refusal assertions below prove nothing.'
+    )
+
+    non_immune = _resolve_finalize_step_lane(_NON_IMMUNE_STEP_ID)
+    assert non_immune and non_immune.get('class') not in _lanes_mod._IMMUNE_TO_OFF_CLASSES, (
+        f'{_NON_IMMUNE_STEP_ID} no longer resolves to a NON-immune class ({non_immune}); the '
+        f'positive control below would then assert nothing about the refusal being narrow.'
+    )
+
+    assert _resolve_finalize_step_lane(_UNRESOLVABLE_CLASS_STEP_ID) is None, (
+        f'{_UNRESOLVABLE_CLASS_STEP_ID} now resolves a lane class, so the '
+        f'fail-toward-permitting case below is no longer exercised by it.'
+    )
+
+
+def test_project_channel_refuses_an_off_on_an_immune_element(plan_context):
+    """The project-wide write is refused, and the message names the class."""
+    create_marshal_json(plan_context.fixture_dir)
+    marshal_path = plan_context.fixture_dir / 'marshal.json'
+    before = marshal_path.read_bytes()
+
+    result = cmd_finalize_steps_set_lane(Namespace(step_id=_IMMUNE_STEP_ID, lane='off', plan_id=None))
+
+    assert result['status'] == 'error'
+    assert _IMMUNE_STEP_ID in result['error']
+    assert 'lane.class' in result['error']
+    # The refusal names the class it found, so the operator can see WHY.
+    assert _resolve_finalize_step_lane(_IMMUNE_STEP_ID)['class'] in result['error']
+    # Refused means not written: marshal.json is untouched.
+    assert marshal_path.read_bytes() == before
+
+
+def test_plan_local_channel_refuses_the_same_off(plan_context):
+    """The plan-scoped write is refused identically — one predicate, both channels."""
+    create_marshal_json(plan_context.fixture_dir)
+    status_path = _seed_status(plan_context, 'immune-plan-local')
+
+    result = cmd_finalize_steps_set_lane(Namespace(step_id=_IMMUNE_STEP_ID, lane='off', plan_id='immune-plan-local'))
+
+    assert result['status'] == 'error'
+    assert 'lane.class' in result['error']
+    assert _overrides(status_path) == {}
+
+
+def test_a_non_immune_element_still_accepts_off_on_both_channels(plan_context):
+    """MATCHED POSITIVE CONTROL: the refusal is narrow, not a blanket ban on ``off``.
+
+    Without this, a writer that refused EVERY ``off`` would satisfy both refusal
+    assertions above while destroying the real opt-out the lane contract grants
+    an ``adversarial`` / ``prunable`` element.
+    """
+    create_marshal_json(plan_context.fixture_dir)
+    status_path = _seed_status(plan_context, 'non-immune-plan-local')
+
+    project = cmd_finalize_steps_set_lane(Namespace(step_id=_NON_IMMUNE_STEP_ID, lane='off', plan_id=None))
+    assert project['status'] == 'success'
+    config = json.loads((plan_context.fixture_dir / 'marshal.json').read_text(encoding='utf-8'))
+    assert config['plan']['phase-6-finalize']['steps'][_NON_IMMUNE_STEP_ID]['lane'] == 'off'
+
+    plan_local = cmd_finalize_steps_set_lane(
+        Namespace(step_id=_NON_IMMUNE_STEP_ID, lane='off', plan_id='non-immune-plan-local')
+    )
+    assert plan_local['status'] == 'success'
+    assert _overrides(status_path) == {_NON_IMMUNE_STEP_ID: {'lane': 'off'}}
+
+
+def test_an_unresolvable_class_permits_the_off_rather_than_refusing_it(plan_context):
+    """Fail toward PERMITTING: an unreadable class is not evidence of immunity.
+
+    The composer keeps an element whose class it cannot read rather than pruning
+    it; the writer takes the same direction rather than refusing on a class it
+    never established.
+    """
+    create_marshal_json(plan_context.fixture_dir)
+
+    result = cmd_finalize_steps_set_lane(Namespace(step_id=_UNRESOLVABLE_CLASS_STEP_ID, lane='off', plan_id=None))
+
+    assert result['status'] == 'success'
+    config = json.loads((plan_context.fixture_dir / 'marshal.json').read_text(encoding='utf-8'))
+    assert config['plan']['phase-6-finalize']['steps'][_UNRESOLVABLE_CLASS_STEP_ID]['lane'] == 'off'

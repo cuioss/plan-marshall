@@ -37,7 +37,7 @@ never drops.
   the point: one plan's answer must not leak into every later plan.
 """
 
-from _cmd_quality_phases import _resolve_step_orders, _steps_map
+from _cmd_quality_phases import _inert_off_refusal, _resolve_step_orders, _steps_map
 from _config_core import (
     error_exit,
     is_initialized,
@@ -353,6 +353,19 @@ def cmd_finalize_steps_set_lane(args) -> dict:
     step_id = args.step_id
     if step_id not in _known_finalize_steps():
         return error_exit(f"unknown finalize step '{step_id}'")
+
+    # Class-immunity refusal, applied BEFORE either channel write so both
+    # destinations refuse identically — a setting the composer would ignore must
+    # not be storable through either one. The predicate is the SAME one the
+    # generic per-element writer calls (`_cmd_quality_phases._inert_off_refusal`),
+    # so the two verbs stay interchangeable rather than diverging on which
+    # `off` values they accept. It lives in the HANDLER, not as an argparse
+    # `choices=` on `--lane`: the refusal depends on the TARGET STEP's resolved
+    # class, which argparse cannot see, and this verb's `--lane` is a declared
+    # member of the no-choices skip class.
+    inert_error = _inert_off_refusal(step_id, lane)
+    if inert_error:
+        return error_exit(inert_error)
 
     # Channel selection. An ABSENT --plan-id is the project-wide channel; a
     # PRESENT-but-invalid value is an explicit error, never a silent fall-through

@@ -232,30 +232,54 @@ Resolve all three execution-profile postures (`minimal` / `standard` / `full`) o
 
 `full` and `minimal` are pure config projections (the lane cutoff over the configured candidates); `standard` additionally drops every `full`-tier element. Each posture's `cost_sum_tokens` is `Σ(resolved element cost_size → cost_size_token_table)` (the six-size table, default `{XS:5K, S:25K, M:60K, L:130K, XL:260K, XXL:520K}`, overridable at `plan.phase-5-execute.cost_size_token_table`).
 
+**The declared-vs-effective report.** `lane_report[]` answers, without composing a plan, the question a stored lane cannot answer by itself: *is this setting actually in force?* One row per lane-participating candidate carries the `declared` value (`-` when none is stored), the `effective` value, whether the declaration `binds`, and the verbatim neutralization `reason` when it does not — the same warning text the composer records when it ignores a weakening `off` on a floor element. The effective value is resolved PER STEP rather than read off a posture pass, because the `full` posture short-circuits that pass without resolving anything.
+
+**`--plan-id` is OPTIONAL, and it selects the channel coverage.** Supplied, the declaration source is the merged plan-local-over-marshal map, so BOTH channels are reported; omitted, only the project-wide `marshal.json` channel is read. `channels_covered` states which, so a report over one channel is never read as a report over both.
+
 ```bash
+# Both declaration channels — the plan-local map overlays marshal.json
 python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest \
   lanes preview --plan-id {plan_id}
+
+# Project-wide channel alone — no plan needed
+python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest \
+  lanes preview
 ```
 
 **Output** (TOON):
 ```toon
 status: success
 plan_id: my-feature
+channels_covered[2]: [ project, plan_local ]
 lanes:
   minimal:
     phase_6_steps[6]: [ push, create-pr, ci-verify, branch-cleanup, record-metrics, archive-plan ]
     phase_6_steps_count: 6
     cost_sum_tokens: 30000
+    dropped[8]{step,reason}:
+      finalize-step-simplify,"effective tier standard exceeds the minimal posture cutoff"
+      ... (7 more rows omitted for brevity — one per remaining candidate the minimal cutoff drops)
   standard:
     phase_6_steps[12]: [ ... ]
     phase_6_steps_count: 12
     cost_sum_tokens: 700000
+    dropped[2]{step,reason}:
+      ... (2 rows omitted for brevity — the full-tier-only elements standard drops)
   full:
     phase_6_steps[14]: [ ... ]
     phase_6_steps_count: 14
     cost_sum_tokens: 960000
+    dropped[0]:
+lane_report[14]{step,declared,effective,binds,reason}:
+  push,off,minimal,false,"override 'off' ignored for core floor element — immune, cannot be weakened"
+  adr-propose,off,off,true,
+  create-pr,-,minimal,false,
+  ... (11 more rows omitted for brevity — one per remaining candidate)
+lane_report_count: 14
 plan_input_dependent_steps[2]: [ pre-submission-self-review, finalize-step-simplify ]
 ```
+
+`plan_id` is echoed only when one was supplied. `binds` is `true` only when a declaration was made AND nothing neutralized it — so a step with no declaration at all reads `declared: -` with `binds: false`, which is the accurate statement that no stored setting is in force for it, not a claim that one was ignored. The `reason` column is what separates the two `false` cases: populated means a declaration was neutralized, empty means there was none to begin with.
 
 ### record-step
 
@@ -548,7 +572,7 @@ The bulk form requires the manifest to exist on disk; if it does not, the script
 |---------|------------|-------------|
 | `compose` | `--plan-id --plan-change-type --track --scope-estimate [--recipe-key] [--affected-files-count] [--phase-5-steps] [--phase-6-steps] [--commit-and-push] [--envelope-count]` | Compose and write execution.toon (`--phase-5-steps`/`--phase-6-steps` are fallback-only — `marshal.json` is the authoritative candidate source; `--plan-change-type` is reconciled against the settled `status.metadata.change_type`) |
 | `read` | `--plan-id` | Read manifest as TOON |
-| `lanes preview` | `--plan-id [--phase-6-steps]` | Resolve the minimal/standard/full phase-6 step sets + cost sums in one TOON (the posture-dialogue projection) |
+| `lanes preview` | `[--plan-id] [--phase-6-steps]` | Resolve the minimal/standard/full phase-6 step sets + cost sums in one TOON (the posture-dialogue projection); reports `lane_report[]`/`lane_report_count` and `channels_covered` alongside the sets |
 | `record-step` | `--plan-id --step-id --phase {5-execute\|6-finalize} --outcome [--total-tokens] [--tool-uses] [--duration-ms]` | Append a per-step execution-log row (outcome + token attribution) to execution.toon. The accepted `--outcome` set is `VALID_RECORD_OUTCOMES`, declared in `scripts/_manifest_core.py` — never restated here |
 | `refire-report` | `--plan-id [--phase {5-execute\|6-finalize}]` | Report per-step firing / re-fire counts derived from the existing `execution_log[]` rows (read-only; names its token-population floor) |
 | `step-params get` | `--plan-id --phase {5-execute\|6-finalize} --step-id` | Return a step's snapshotted param object from the manifest (plan-local read) |
@@ -617,8 +641,10 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest lanes preview \
-  --plan-id PLAN_ID [--phase-6-steps PHASE_6_STEPS]
+  [--plan-id PLAN_ID] [--phase-6-steps PHASE_6_STEPS]
 ```
+
+`--plan-id` is OPTIONAL on this verb alone: the preview reads configuration at rest and answers usefully with no plan. Supplied, the declared-vs-effective `lane_report[]` covers BOTH declaration channels (plan-local over marshal); omitted, it covers the project-wide channel only, and `channels_covered` reports which.
 
 ### record-step
 
@@ -752,7 +778,7 @@ The composer emits one `decision.log` line per forced change (canonical prefix `
 
 After the change-type / scope pre-filters and `ceremony_finalize_selection` produce the `phase_6.steps` list, and **before** the frontmatter-order sort, the composer applies the execution-profile lane cutoff. The posture is read from `status.metadata.execution_profile` (absent → `full` → no pruning, preserving the pre-lane composition path for every plan that never chose a posture). Each lane-participating element self-declares a `lane:` frontmatter block (`class` / `tier` / `prunable_when` / `cost_size`); the closed enums and the class→default-tier table are owned by [`extension-api/standards/ext-point-lane-element.md`](../extension-api/standards/ext-point-lane-element.md). Per element the composer resolves the effective tier (per-element `marshal.json` `lane` override ▸ declared `lane.tier` ▸ class default) and keeps the element iff `effective_tier ⊑ posture` on `minimal ⊏ standard ⊏ full`:
 
-- `minimal` keeps only the tier-`minimal` floor (`core` / `derived-state` plus the `minimal`-deviated lessons steps);
+- `minimal` keeps only the tier-`minimal` floor (`core` / `derived-state` plus the `minimal`-deviated `lessons-housekeeping`);
 - `standard` additionally keeps tier-`standard` elements and drops tier-`full` ones (`security-audit`, `plan-retrospective`);
 - `full` keeps everything (a no-op).
 

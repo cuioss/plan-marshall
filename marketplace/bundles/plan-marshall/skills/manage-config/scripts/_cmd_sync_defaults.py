@@ -9,6 +9,7 @@ live ``.plan/marshal.json`` so existing projects (which never re-run ``init``)
 pick up new default rows without losing user-set overrides.
 """
 
+from _cmd_quality_phases import _resolve_finalize_step_lane
 from _config_core import (
     error_exit,
     is_initialized,
@@ -17,10 +18,8 @@ from _config_core import (
     success_exit,
 )
 from _config_defaults import get_default_config, stamp_provisioning_fields
-from _manifest_lanes import LANE_TIERS, _effective_lane_tier, _read_frontmatter_lane
-from _manifest_validation import _REPO_ROOT, _is_external_step, _resolve_standards_path
+from _manifest_lanes import _IMMUNE_TO_OFF_CLASSES, LANE_TIERS, _effective_lane_tier
 from command_forms import STEWARD_COMMAND
-from marketplace_paths import resolve_project_skill_path
 
 # Retired step keys and their canonical replacements. Each entry maps a step id
 # that a prior release emitted (and which live consumer configs may still carry)
@@ -298,32 +297,6 @@ def _deep_merge_missing(live: dict, defaults: dict, prefix: str, added: list[str
     return live
 
 
-def _resolve_finalize_step_lane(step_id: str) -> dict[str, str] | None:
-    """Resolve a phase-6-finalize step's ``lane:`` frontmatter block from its source doc.
-
-    Mirrors ``manage-execution-manifest``'s composer resolver
-    (``manage-execution-manifest.py`` ``_resolve_element_lane``) verbatim so the
-    materialized effective lane is exactly the composer's own default:
-
-    - Built-in steps (bare or ``default:``-prefixed) resolve via the phase-6
-      standards / workflow doc (:func:`_resolve_standards_path`).
-    - ``project:`` steps resolve via the project-local ``{bare}/SKILL.md``.
-    - Other ``bundle:skill`` external steps have no project-local source and
-      return ``None`` (not lane-participating — left untouched by the materializer).
-
-    Returns the nested ``lane:`` sub-key dict (``class`` / ``tier`` / …), or
-    ``None`` when the source doc is missing, has no frontmatter, or declares no
-    ``lane:`` block.
-    """
-    if step_id.startswith('project:'):
-        bare = step_id[len('project:') :]
-        skill_path = resolve_project_skill_path(f'{bare}/SKILL.md', base=_REPO_ROOT)
-        return _read_frontmatter_lane(skill_path)
-    if _is_external_step(step_id):
-        return None
-    return _read_frontmatter_lane(_resolve_standards_path(step_id))
-
-
 def _materialize_finalize_lanes(live: dict, materialized: list[str], added: list[str]) -> dict:
     """Fill an explicit ``lane`` on every lane-less ``plan.phase-6-finalize.steps`` entry.
 
@@ -332,10 +305,18 @@ def _materialize_finalize_lanes(live: dict, materialized: list[str], added: list
     provisioning re-stamp. Walks the finalize keyed-map and, for each step whose
     param object carries no ``lane`` key, decides the fill value by PROVENANCE:
 
-    - **Freshly deep-merged default row** — the step's dotted path
-      ``plan.phase-6-finalize.steps.{step_id}`` is in ``added`` (a default row the
-      user's config did not previously have): filled with ``lane: off`` (opt-in,
-      per the "infra steps must be opt-in" principle).
+    - **Freshly deep-merged default row on a NON-immune class** — the step's
+      dotted path ``plan.phase-6-finalize.steps.{step_id}`` is in ``added`` (a
+      default row the user's config did not previously have) and its element
+      class is not one the composer shields from a weakening ``off``: filled with
+      ``lane: off`` (opt-in, per the "infra steps must be opt-in" principle).
+    - **Freshly deep-merged default row on an IMMUNE class** — the same freshly
+      added row, but its class is in
+      :data:`_manifest_lanes._IMMUNE_TO_OFF_CLASSES`: filled with its
+      class-effective lane instead. Writing ``off`` there would materialize a
+      setting the composer is guaranteed to ignore — the opt-in principle cannot
+      be served by a value that cannot opt anything out, and the row would read as
+      a disabled step that in fact runs on every plan.
     - **Pre-existing step** (not in ``added``): filled with its **effective lane**
       — the frontmatter-class default the composer would apply with no override,
       resolved via :func:`_resolve_finalize_step_lane` +
@@ -374,10 +355,16 @@ def _materialize_finalize_lanes(live: dict, materialized: list[str], added: list
             continue
 
         dotted = f'plan.phase-6-finalize.steps.{step_id}'
-        if dotted in added_set:
+        lane_block = _resolve_finalize_step_lane(step_id)
+        # A freshly-merged default row opts in with ``off`` — but only where an
+        # ``off`` can actually take effect. On an immune floor class the composer
+        # ignores it, so the row would advertise a disabled step that runs anyway;
+        # such a row falls through to the effective-lane fill below instead. An
+        # unresolvable class is not immune (the class is unknown, not shielded),
+        # so it keeps the ``off`` opt-in exactly as before.
+        if dotted in added_set and (lane_block or {}).get('class') not in _IMMUNE_TO_OFF_CLASSES:
             fill = 'off'
         else:
-            lane_block = _resolve_finalize_step_lane(step_id)
             if not lane_block:
                 continue  # unresolvable frontmatter — leave lane-less, do not report
             effective, _is_off = _effective_lane_tier(lane_block, None)
@@ -423,8 +410,11 @@ def cmd_sync_defaults(args) -> dict:
     on every lane-less ``plan.phase-6-finalize.steps`` entry so the finalize
     step-set is fully explicit. A **pre-existing** lane-less step is filled with
     its frontmatter-class effective lane (a semantic no-op surfacing the composer's
-    own default); only a **freshly deep-merged default** row (one in ``added``) is
-    filled with ``lane: off`` (opt-in). It is idempotent (a step already carrying
+    own default); only a **freshly deep-merged default** row (one in ``added``)
+    whose element class is NOT immune to a weakening ``off`` is filled with
+    ``lane: off`` (opt-in) — a freshly-merged row on an immune floor class takes
+    the effective-lane fill too, since an ``off`` there could never opt anything
+    out. It is idempotent (a step already carrying
     an explicit ``lane`` is untouched) and scoped to ``phase-6-finalize.steps``
     only.
 

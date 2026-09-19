@@ -21,6 +21,8 @@ from pathlib import Path
 import copy
 import json
 from argparse import Namespace
+from functools import cache
+from typing import cast
 
 import pytest
 
@@ -804,7 +806,11 @@ def test_sync_defaults_no_renames_reported_for_clean_config(plan_context):
 #     frontmatter-class effective lane (a semantic no-op: `core` /
 #     `derived-state` → `minimal`, `adversarial` / `prunable` → `standard`);
 #   - a FRESHLY deep-merged default row (in `added`) that lacks a lane is filled
-#     with `lane: off` (opt-in);
+#     with `lane: off` (opt-in) — but ONLY when its element class is not immune
+#     to a weakening `off`. A freshly-merged row on a `core` / `derived-state`
+#     floor class takes the effective-lane fill instead, because an `off` there
+#     is one the composer is guaranteed to ignore: the row would read as a
+#     disabled step that in fact runs on every plan;
 #   - a step already carrying an explicit `lane` is left untouched (idempotent);
 #   - a pre-existing step whose frontmatter lane is unresolvable is left
 #     lane-less and NOT reported.
@@ -812,11 +818,34 @@ def test_sync_defaults_no_renames_reported_for_clean_config(plan_context):
 # as an annotated dotted-path string in `materialized` / `materialized_count`.
 
 # Frontmatter-class anchors (pinned to the real phase-6-finalize step docs):
-#   default:push                        → class core       → effective minimal
-#   default:pre-submission-self-review  → class adversarial → effective standard
-#   default:archive-plan                → class core       → effective minimal
+#   default:push                        → class core       → effective minimal (IMMUNE)
+#   default:pre-submission-self-review  → class adversarial → effective standard (not immune)
+#   default:archive-plan                → class core       → effective minimal (IMMUNE)
 _CORE_STEP = 'default:push'
 _ADVERSARIAL_STEP = 'default:pre-submission-self-review'
+
+_lanes_mod = load_script_module(
+    'plan-marshall', 'manage-execution-manifest', '_manifest_lanes.py', module_name='_manifest_lanes_for_sync'
+)
+
+
+def _resolved_class(step_id: str) -> str | None:
+    """The element class the materializer itself resolves for ``step_id``."""
+    lane = _sync_mod._resolve_finalize_step_lane(step_id)
+    value = lane.get('class') if lane else None
+    return value if isinstance(value, str) else None
+
+
+def test_the_materialization_anchors_straddle_the_immune_set():
+    """Anti-vacuity: the two anchors sit on OPPOSITE sides of the immune set.
+
+    Every fresh-row expectation below turns on that split. Taking it from the
+    comment above rather than from the resolver would let the fills be asserted
+    against a classification the code no longer makes.
+    """
+    assert _resolved_class(_CORE_STEP) in _lanes_mod._IMMUNE_TO_OFF_CLASSES
+    assert _resolved_class('default:archive-plan') in _lanes_mod._IMMUNE_TO_OFF_CLASSES
+    assert _resolved_class(_ADVERSARIAL_STEP) not in _lanes_mod._IMMUNE_TO_OFF_CLASSES
 
 
 def _materialized_entry(step_id: str, lane: str) -> str:
@@ -854,13 +883,13 @@ def test_sync_defaults_materializes_preexisting_steps_to_effective_lane(plan_con
 
 
 def test_sync_defaults_materializes_freshly_merged_default_step_to_off(plan_context):
-    """A freshly deep-merged default step that lacks a lane is materialized to `off`.
+    """A freshly deep-merged NON-IMMUNE default step that lacks a lane is materialized to `off`.
 
-    `default:archive-plan` is a default_on:true step absent from the sparse input
-    config; the deep-merge back-fills it (its dotted path lands in `added`), so
-    the materializer fills it with `lane: off` (opt-in) — NOT its core effective
-    lane. This is why the D2 compose-time immunity net exists: a freshly-merged
-    core floor step can carry `off`, and the composer must ignore it.
+    `default:pre-submission-self-review` is a default_on:true step absent from the
+    sparse input config; the deep-merge back-fills it (its dotted path lands in
+    `added`), and its `adversarial` class is a real opt-out target, so the
+    materializer fills it with `lane: off` (opt-in) rather than its `standard`
+    effective lane.
     """
     # sparse input: one pre-existing step; every other default step is fresh
     _write_marshal(
@@ -873,11 +902,38 @@ def test_sync_defaults_materializes_freshly_merged_default_step_to_off(plan_cont
     assert result['status'] == 'success'
     config = _read_marshal(plan_context.fixture_dir)
     steps = config['plan']['phase-6-finalize']['steps']
-    # freshly-merged default step → off (opt-in), reported
-    assert steps['default:archive-plan']['lane'] == 'off'
-    assert _materialized_entry('default:archive-plan', 'off') in result['materialized']
+    # freshly-merged NON-immune default step → off (opt-in), reported
+    assert steps[_ADVERSARIAL_STEP]['lane'] == 'off'
+    assert _materialized_entry(_ADVERSARIAL_STEP, 'off') in result['materialized']
     # the pre-existing core step still materializes to its effective lane, not off
     assert steps[_CORE_STEP]['lane'] == 'minimal'
+
+
+def test_sync_defaults_materializes_freshly_merged_immune_step_to_its_effective_lane(plan_context):
+    """MATCHED PAIR with the test above: a freshly-merged IMMUNE row is NOT filled with `off`.
+
+    `default:archive-plan` is equally freshly-merged and equally lane-less, and
+    differs from the self-review row above in exactly one respect: its class is on
+    the mandatory floor, so an `off` there could never opt anything out. Filling it
+    with `off` would leave the config advertising a disabled step the composer runs
+    on every plan — a row whose stored value and actual behaviour disagree from the
+    moment it is written.
+    """
+    _write_marshal(
+        plan_context.fixture_dir,
+        {'plan': {'phase-6-finalize': {'steps': {_CORE_STEP: {}}}}},
+    )
+
+    result = cmd_sync_defaults(_sync_ns())
+
+    assert result['status'] == 'success'
+    config = _read_marshal(plan_context.fixture_dir)
+    steps = config['plan']['phase-6-finalize']['steps']
+    # The row IS freshly merged — the precondition the opt-in rule keys on.
+    assert 'plan.phase-6-finalize.steps.default:archive-plan' in result['added']
+    # …yet it takes the class-effective fill, not the blanket off.
+    assert steps['default:archive-plan']['lane'] == 'minimal'
+    assert _materialized_entry('default:archive-plan', 'minimal') in result['materialized']
 
 
 def test_sync_defaults_materializes_wholesale_copied_steps_subtree_to_off(plan_context):
@@ -890,11 +946,15 @@ def test_sync_defaults_materializes_wholesale_copied_steps_subtree_to_off(plan_c
     `_deep_merge_missing` recorded only the subtree ROOT
     (`plan.phase-6-finalize.steps`) in `added`, never the per-step leaf paths, so
     `_materialize_finalize_lanes` misclassified every wholesale-copied row as
-    pre-existing and filled it with its frontmatter-class effective lane
-    (`minimal` / `standard`) instead of the required `lane: off`, violating the
-    "infra steps must be opt-in" principle. With the per-descendant recording
-    fix (`_record_added_paths`), each freshly-copied config-less step is
-    recognised as newly-added and materialised to `off`.
+    pre-existing and filled it with its frontmatter-class effective lane instead
+    of the required `lane: off`, violating the "infra steps must be opt-in"
+    principle. With the per-descendant recording fix (`_record_added_paths`),
+    each freshly-copied config-less step is recognised as newly-added.
+
+    The opt-in fill then applies to the rows where an `off` can actually take
+    effect: the adversarial step is filled with `off`, while the two floor-class
+    rows take their class-effective lane, since an `off` on an immune class is
+    one the composer ignores.
     """
     # phase-6-finalize present but with NO `steps` key -> the whole default
     # `steps` map is copied wholesale (the ancestor-added-subtree case).
@@ -908,17 +968,20 @@ def test_sync_defaults_materializes_wholesale_copied_steps_subtree_to_off(plan_c
     assert result['status'] == 'success'
     config = _read_marshal(plan_context.fixture_dir)
     steps = config['plan']['phase-6-finalize']['steps']
-    # the wholesale-copied config-less core step is freshly-added, so it
-    # materialises to `off` (opt-in) — NOT its effective `minimal` lane.
-    assert steps[_CORE_STEP]['lane'] == 'off'
-    assert steps['default:archive-plan']['lane'] == 'off'
-    # the config-less adversarial step, likewise freshly-copied, is `off` too,
-    # not its effective `standard` lane.
+    # the config-less adversarial step is freshly-copied and NOT immune, so the
+    # opt-in fill applies: `off`, not its effective `standard` lane.
     assert steps[_ADVERSARIAL_STEP]['lane'] == 'off'
+    # the two floor-class rows are equally freshly-copied, and take the
+    # class-effective fill instead — an `off` there could never opt them out.
+    assert steps[_CORE_STEP]['lane'] == 'minimal'
+    assert steps['default:archive-plan']['lane'] == 'minimal'
     # the per-step leaf dotted path was recorded in `added` (the fix) — not just
-    # the subtree root — and the step is reported as materialised to off.
+    # the subtree root — for BOTH sides of that split, so the difference above is
+    # attributable to the class and not to one row having been missed.
     assert f'plan.phase-6-finalize.steps.{_CORE_STEP}' in result['added']
-    assert _materialized_entry(_CORE_STEP, 'off') in result['materialized']
+    assert f'plan.phase-6-finalize.steps.{_ADVERSARIAL_STEP}' in result['added']
+    assert _materialized_entry(_ADVERSARIAL_STEP, 'off') in result['materialized']
+    assert _materialized_entry(_CORE_STEP, 'minimal') in result['materialized']
 
 
 def test_sync_defaults_preserves_explicit_lane_untouched(plan_context):
@@ -1059,32 +1122,71 @@ def test_sync_defaults_leaves_unresolvable_frontmatter_step_lane_less(plan_conte
 #
 # The first-run wizard's Step 16 now runs `sync-defaults` BEFORE `steps-sort`, so
 # a fresh wizard leaves EVERY plan.phase-6-finalize.steps entry with an explicit
-# lane — the seven core steps included, not just the two ask-tier infra steps the
+# lane — the lane-less seeded steps included, not just the ask-tier infra steps the
 # wizard seeds with a lane. These tests simulate the fresh-wizard config (the
-# seven core steps present but lane-less, only the two ask-tier steps carrying a
-# lane) and assert sync-defaults materializes every step's lane and is idempotent.
+# lane-less seeded steps present but lane-less, the ask-tier steps carrying a lane)
+# and assert sync-defaults materializes every step's lane and is idempotent.
+#
+# Both populations are DERIVED from the production seed rather than listed. A
+# hardcoded tuple standing in for `_seed_finalize_steps()`'s output is a
+# set-guarding detector that cannot see the member it never enumerated: a new
+# lane-less production step would be omitted from BOTH the fresh-wizard fixture
+# and the per-step sweep, and the sweep would stay green while never checking it.
 
-_SEVEN_CORE_STEPS = (
-    'default:push',
-    'default:create-pr',
-    'default:ci-verify',
-    'default:lessons-capture',
-    'default:branch-cleanup',
-    'default:record-metrics',
-    'default:archive-plan',
-)
-_ASK_TIER_STEPS = ('plan-marshall:automatic-review', 'default:sonar-roundtrip')
+
+@cache
+def _seeded_finalize_steps() -> dict:
+    """The production finalize-step seed, materialized once.
+
+    `_seed_finalize_steps` runs a full extension-discovery sweep, so the result is
+    cached — every population below is a view over this one materialization.
+    """
+    return cast(dict, _config_defaults_mod._seed_finalize_steps())
+
+
+def _lane_less_seeded_steps() -> tuple[str, ...]:
+    """The seeded steps a fresh wizard leaves LANE-LESS — derived, never listed.
+
+    `_seed_finalize_steps` folds a `lane` override into exactly two kinds of row
+    (`ask` for the infra elements, `off` for `default_on: false`), so the lane-less
+    remainder IS the population sync-defaults has to fill. A step added to the
+    production seed joins this tuple with no test edit.
+    """
+    return tuple(step_id for step_id, params in _seeded_finalize_steps().items() if 'lane' not in (params or {}))
+
+
+def _ask_tier_seeded_steps() -> tuple[str, ...]:
+    """The seeded steps carrying an explicit `lane: ask` — derived the same way."""
+    return tuple(step_id for step_id, params in _seeded_finalize_steps().items() if (params or {}).get('lane') == 'ask')
+
+
+def _effective_lane_of(step_id: str) -> str | None:
+    """The class-effective lane the materializer fills a PRE-EXISTING step with.
+
+    Derived through the same two helpers the materializer itself composes
+    (`_resolve_finalize_step_lane` ▸ `_effective_lane_tier` with no override), so
+    the expectation cannot encode a class a step no longer declares. Each seeded
+    step's own frontmatter decides its fill; a step whose class changes is
+    reflected here with no test edit.
+    """
+    lane = _sync_mod._resolve_finalize_step_lane(step_id)
+    if not lane:
+        return None
+    effective, _is_off = _lanes_mod._effective_lane_tier(lane, None)
+    return effective if isinstance(effective, str) else None
 
 
 def _fresh_wizard_finalize_steps() -> dict:
     """Return a fresh-wizard-shaped phase-6 steps map.
 
-    The seven core steps are present but lane-less (`{}`); only the two ask-tier
+    The lane-less seeded steps are present but lane-less (`{}`); only the ask-tier
     infra steps carry an explicit `lane: ask` — the state a first-run wizard's
-    finalize-step seeding leaves before Step 16's sync-defaults pass runs.
+    finalize-step seeding leaves before Step 16's sync-defaults pass runs. Both
+    populations come from the production seed, so a step added there is simulated
+    here rather than silently left out of the fixture.
     """
-    steps: dict = {step: {} for step in _SEVEN_CORE_STEPS}
-    for infra in _ASK_TIER_STEPS:
+    steps: dict = {step: {} for step in _lane_less_seeded_steps()}
+    for infra in _ask_tier_seeded_steps():
         steps[infra] = {'lane': 'ask'}
     return steps
 
@@ -1092,12 +1194,21 @@ def _fresh_wizard_finalize_steps() -> dict:
 def test_sync_defaults_fresh_wizard_materializes_every_finalize_step_lane(plan_context):
     """After the wizard Step 16 sync-defaults pass, every finalize step carries an explicit lane.
 
-    Simulate the fresh-wizard config: the seven core steps present but lane-less,
-    and only the two ask-tier infra steps (automatic-review, sonar-roundtrip)
-    carrying a lane. sync-defaults materializes an explicit lane on every lane-less
-    step, so the seven core steps each gain their frontmatter-class effective lane
-    (core -> minimal) while the ask-tier steps keep `ask`. The result is a fully
-    explicit finalize step-set with no lane-less entry.
+    Simulate the fresh-wizard config: the production seed's lane-less steps present
+    but lane-less, and only its ask-tier infra steps carrying a lane. sync-defaults
+    materializes an explicit lane on every lane-less step, so each seeded step gains
+    its frontmatter-class effective lane while the ask-tier steps keep `ask`. The
+    result is a fully explicit finalize step-set with no lane-less entry. Neither
+    population is named or counted here — both are read off the seed, so this
+    description cannot go stale as the seed grows.
+
+    The per-step expectation is DERIVED from each step's own frontmatter rather
+    than pinned to one literal: the seeded set is not uniform in class (a step
+    reclassified off the floor resolves to `standard`, not `minimal`), so a single
+    hardcoded value would assert the wrong thing for whichever member moved. The
+    POPULATION each sweep runs over is derived from the production seed for the
+    same reason, and each sweep publishes its population size before running, so
+    an empty one cannot pass as a clean zero.
     """
     _write_marshal(
         plan_context.fixture_dir,
@@ -1112,13 +1223,22 @@ def test_sync_defaults_fresh_wizard_materializes_every_finalize_step_lane(plan_c
     # EVERY finalize step now carries an explicit lane — no entry is lane-less.
     lane_less = [step_id for step_id, params in steps.items() if 'lane' not in params]
     assert lane_less == [], f'every finalize step must carry an explicit lane; lane-less: {lane_less!r}'
-    # the seven core steps specifically each materialize to their effective (minimal) lane
-    for core in _SEVEN_CORE_STEPS:
-        assert steps[core]['lane'] == 'minimal', (
-            f'core step {core} must materialize to its effective lane minimal, got {steps[core]!r}'
+    # each seeded step materializes to its OWN frontmatter-class effective lane
+    lane_less_seeded = _lane_less_seeded_steps()
+    assert lane_less_seeded, (
+        'the production seed carries no lane-less step, so the per-step sweep below '
+        'would examine an empty population and pass without checking anything.'
+    )
+    for seeded in lane_less_seeded:
+        expected = _effective_lane_of(seeded)
+        assert expected is not None, f'{seeded} resolves no effective lane, so this expectation is vacuous'
+        assert steps[seeded]['lane'] == expected, (
+            f'{seeded} must materialize to its effective lane {expected}, got {steps[seeded]!r}'
         )
-    # the two ask-tier infra steps keep their explicit `ask` lane untouched
-    for infra in _ASK_TIER_STEPS:
+    # the ask-tier infra steps keep their explicit `ask` lane untouched
+    ask_tier_seeded = _ask_tier_seeded_steps()
+    assert ask_tier_seeded, 'the production seed carries no ask-tier step, so the ask-tier sweep below is vacuous.'
+    for infra in ask_tier_seeded:
         assert steps[infra]['lane'] == 'ask', f'{infra} must keep lane:ask, got {steps[infra]!r}'
 
 

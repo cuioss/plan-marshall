@@ -1,6 +1,7 @@
 ---
 lane:
-  class: core
+  class: prunable
+  prunable_when: linear_change
   cost_size: M
 name: default:lessons-capture
 description: Capture lessons from triage findings and PR-review escalations (skipped when qgate_findings=0, pr_comments_promoted=0, and script_failure_clusters=0)
@@ -20,6 +21,22 @@ implements:
 # Lessons Capture
 
 Pure executor for the `lessons-capture` finalize step. Records lessons learned from the implementation. Advisory only — does not block.
+
+## Lane classification — `prunable`, not floor
+
+This step declares `lane.class: prunable` with `prunable_when: linear_change`. It is **not** on the mandatory finalize floor, and that is deliberate: the step is advisory (it blocks nothing and ships no artifact), so an operator who turns it off is not weakening a correctness guarantee. Its former `core` classification made it a floor element, and the floor is immune to a weakening `off` — a stored `lane: off` was silently ignored, so the one control an operator had over this step did not work. `prunable` is the class whose `off` the composer honours.
+
+`linear_change` is the predicate chosen from the closed [Prune predicates](../../extension-api/standards/ext-point-lane-element.md#prune-predicates) table, because a linear change — a single deliverable with no fan-out — is the shape in which there is least to learn: no cross-deliverable interaction produced the surprise this step exists to record. The other three members were each rejected on the signal they read:
+
+- `confidence_complete` reads the POST-INIT confidence proxy. Whether the request was well specified at the start says nothing about whether the run hit anything worth recording, and this step's evidence is entirely end-of-run.
+- `no_code_delta` reads the change footprint. A docs-only or tech-debt run can still surface a triage finding or a review-bot escalation, which is precisely this step's input — pruning on an empty code delta would drop the lesson along with the code.
+- `footprint_no_lesson_component` reads the footprint against the existing lesson corpus. That is the right predicate for `lessons-housekeeping`, which RECONCILES against that corpus; this step CREATES entries, so a footprint touching no existing lesson is not evidence there is nothing new to write.
+
+Three consequences follow from the reclassification, and all three are intended:
+
+1. **An `off` override now binds.** The element is no longer on the mandatory finalize floor, so a stored `lane: off` in either declaration channel drops the step cleanly instead of being neutralized.
+2. **A `minimal`-posture plan that sets no override at all also stops running it.** A non-immune class defaults to tier `standard` rather than `core`'s `minimal`, so the step falls outside the `minimal` posture's cutoff. This is an accepted side effect of the reclassification, not an oversight: the same property that makes `off` honourable — not being on the floor — is what takes it out of the leanest posture.
+3. **The step becomes eligible for a predicate-driven skip under `standard` and `full` too**, via the `prunable_when` predicate above. This consequence is **contract-live but implementation-dormant**: no composer code evaluates `prunable_when` today. `_apply_lane_resolution` consults only `_resolve_element_lane`, `_lane_override_for`, `_lane_keep_decision`, and `_effective_lane_tier`, and none of those reads the key on the compose path — its sole reader there is `_read_frontmatter_lane`, which parses it into the block. (Outside the compose path, `plugin-doctor`'s `_analyze_lane_frontmatter.py` reads the key to validate the present-iff-class-prunable rule, and `plan-retrospective`'s `check-routing-decisions.py` maps predicate ids — neither evaluates it at compose time.) The declaration is therefore correct and binding as contract, and changes nothing at compose time until a predicate evaluator exists.
 
 **Post-run review (`post_run_review: true`, `mutates_source: false`)**: this step reads the triage findings and PR-review escalations the merge gate's re-review barrier produces, so its evidence is only complete once `default:branch-cleanup` has run — `order: 991` places it after that gate. Being post-merge-ordered, the step writes NO tracked source: every branch writes only UNTRACKED plan state under `.plan/` (lesson files, inbox payloads). The step therefore never reaches the dispatcher's commit instrumentation — item 5f reads the declared `mutates_source` fact first and skips (a)-(d) entirely. The declaration is not taken on trust, though: because this step also declares `post_run_review: true`, item 5f's sub-item (0) observes the MAIN CHECKOUT once on return (the worktree is gone by this order) and reports any dirty TRACKED path — source, or a tracked `.plan/` config/descriptor, the exemption being keyed on git trackedness rather than the path prefix — as a non-blocking WARNING plus a finding. So the claim is checked, not merely asserted. Branch B3's architecture hints are NOT written in the worktree — an `architecture enrich` write post-merge would land as an uncommitted diff on `main`, the exact defect [`../standards/source-edit-pushability.md`](../standards/source-edit-pushability.md) exists to prevent — so B3 names each owed hint in a follow-up artifact via that document's discover-after-merge route instead.
 

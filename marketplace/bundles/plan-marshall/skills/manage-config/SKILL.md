@@ -120,11 +120,11 @@ renamed[1]:
   - plan.phase-6-finalize.steps.default:automated-review -> plan-marshall:automatic-review
 renamed_count: 1
 migrated[1]:
-  - plan.phase-6-finalize.steps.default:branch-cleanup.run_at_all -> lane
+  - plan.phase-6-finalize.steps[default:pre-submission-self-review].self_review=never -> .lane=off
 migrated_count: 1
 materialized[2]:
-  - plan.phase-6-finalize.steps.default:push.lane=minimal
-  - plan.phase-6-finalize.steps.plan-marshall:automatic-review.lane=off
+  - plan.phase-6-finalize.steps.default:push -> lane=minimal
+  - plan.phase-6-finalize.steps.plan-marshall:automatic-review -> lane=off
 materialized_count: 2
 ```
 
@@ -137,16 +137,22 @@ is its length, and an empty `renamed[]` means no retired key was present.
 `migrated[]` lists each legacy `run_at_all` finalize-step key rewritten to the
 unified `lane` knob; `migrated_count` is its length. `materialized[]` lists each
 `plan.phase-6-finalize.steps` entry whose lane was made explicit by the
-materialization pass — a pre-existing lane-less step annotated with its resolved
-frontmatter-class effective lane (`...=minimal` / `...=standard`), a freshly-merged
-default step annotated with `...=off` (opt-in); `materialized_count` is its length,
-and an empty `materialized[]` means every RESOLVABLE lane-less finalize step already
-carried an explicit `lane` (idempotent re-run). A lane-less step whose frontmatter
-lane cannot be resolved to a concrete lattice tier — an external `bundle:skill` step,
-or one whose source doc is missing or declares no `lane:` block — is deliberately left
-untouched and is NOT reported in `materialized[]`. The
-config is persisted whenever `added[]`, `renamed[]`, or the provisioning stamps
-changed.
+materialization pass, annotated with the value filled — `...=off` for a row that
+took the opt-in fill, `...=minimal` / `...=standard` for one that took its
+frontmatter-class effective lane. Which of the two a given row takes is decided by
+its provenance AND its element class together; the full five-case fill matrix is
+owned by [standards/data-model.md](standards/data-model.md) § `phase-6-finalize`
+and is not restated here. `materialized_count` is its length, and an empty
+`materialized[]` means every finalize step the pass could fill already carried an
+explicit `lane` (idempotent re-run). One case fills nothing and reports nothing: a
+**pre-existing** lane-less step whose frontmatter lane cannot be resolved to a
+concrete lattice tier — an external `bundle:skill` step, or one whose source doc is
+missing or declares no `lane:` block — is deliberately left untouched and is absent
+from `materialized[]`. That exemption is scoped to pre-existing rows: a
+freshly-merged row whose class is equally unresolvable still takes the `off` opt-in
+and IS reported, because an unknown class is not a shielded one. The
+config is persisted whenever `added[]`, `renamed[]`, `migrated[]`,
+`materialized[]`, or the provisioning stamps changed.
 
 ---
 
@@ -602,7 +608,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci issue view
 | `ci` | get, get-provider, get-tools, get-command, set-provider, set-tools, persist |
 | `build-map` | `seed` (re-seed `build.map` from applicable extensions, write-once; `--force` clears + re-derives), `read` (effective map from `build.map`, fail-closed when absent), `drift` (read-only diff of persisted vs derived map: `in_sync` + per-domain added/removed globs) |
 | `build-decision` | `[--command] --plan-id` (the sole build/no-build authority's three-value verdict: `build` / `not_necessary` / `unknown`; the latter two each carry a log-friendly `reason`, and `unknown` — an unresolvable footprint — must never be collapsed into `not_necessary`. `--command` is an optional echo-only label that never enters the predicate — omit it for the command-free plan-wide verdict) |
-| `finalize-steps` | `apply-preset --preset` (write `plan.phase-6-finalize.steps` from a named preset), `list-ask-lane` (enumerate steps whose effective `lane` is still the unresolved `ask`), `set-lane --step-id --lane [--plan-id]` (persist a resolved `off`/`standard`/`full` lane override; a reader-valid value this verb does not write — `minimal`/`ask` — is rejected with a message naming the generic `step set --param lane` route; `--plan-id` is the channel selector — absent writes project-wide marshal.json, present writes only that plan's `status.metadata.finalize_step_overrides`) |
+| `finalize-steps` | `apply-preset --preset` (write `plan.phase-6-finalize.steps` from a named preset), `list-ask-lane` (enumerate steps whose effective `lane` is still the unresolved `ask`), `set-lane --step-id --lane [--plan-id]` (persist a resolved `off`/`standard`/`full` lane override; a reader-valid value this verb does not write — `minimal`/`ask` — is rejected with a message naming the generic `step set --param lane` route; an `off` on a step whose resolved `lane.class` is immune to it is rejected on BOTH channels by the same predicate the generic writer uses, while an unresolvable class is permitted; `--plan-id` is the channel selector — absent writes project-wide marshal.json, present writes only that plan's `status.metadata.finalize_step_overrides`) |
 | `init` | Initialize marshal.json (with optional `--force`) |
 | `normalize-keys` | Re-write `marshal.json` with the canonical top-level key order (reuses the `save_config` key-order writer). Idempotent and byte-stable on a canonical file; returns `unrecognized_keys` and a `warning` status naming any top-level key it could not order — a key absent from `CANONICAL_TOP_LEVEL_KEY_ORDER`, appended out of canonical position rather than dropped |
 | `steps-sort` | Re-sort `plan.phase-6-finalize.steps` into ascending frontmatter `order` (silent, idempotent, values byte-identical; reuses the manifest composer's `_sort_steps_by_frontmatter_order` choke-point; `phase-5-execute.verification_steps` is out of scope; unresolvable-order steps pinned at their original index) |
@@ -745,7 +751,9 @@ The lane mechanism's per-element vocabulary (the closed `lane.class` enum, the c
 | `lane_selection` | enum(`ask`\|`auto`) | `ask` | Whether init PROMPTS for the execution-profile posture (`ask` surfaces the minimal/standard/full dialogue) or silently takes the computed projection (`auto`). Validated by `validate_lane_selection`. Mirrors the `deep_lane` / `finalize_without_asking` ask/auto family. |
 | `lane_prune_thresholds` | dict(`confidence_complete`, `linear_change_max_deliverables`) | `{confidence_complete: 95, linear_change_max_deliverables: 1}` | Tunable numeric thresholds the `standard` posture evaluates its prunable-element predicates against at manifest-compose time. `confidence_complete` (int 0–100) is the post-init confidence floor that prunes `refine`; `linear_change_max_deliverables` (int ≥ 1) is the deliverable-count ceiling that prunes the 4-plan decomposition element. The boolean predicates (`no_code_delta`, `footprint_no_lesson_component`) carry no threshold. Validated by `validate_lane_prune_thresholds` (exact key set; ranges enforced). |
 
-**Per-element lane override** (`plan.<phase>.steps.<step>.lane`, value ∈ `off`\|`minimal`\|`standard`\|`full`\|`ask`, validated by `validate_lane_override`): pins any lane-participating element to a fixed posture cutoff via the same nested step-param channel finalize-step params use — `off` never runs it (a `derived-state`/`core` weakening additionally emits a correctness warning at compose time, but is honored), `minimal` force-keeps it in every posture, `standard`/`full` pin its tier, `ask` always surfaces it individually in the init dialogue. Absent by default — the shipped per-element default lives in each element's frontmatter `lane:` block, and `marshal.json` carries only the project / meta overrides.
+**Per-element lane override** (`plan.<phase>.steps.<step>.lane`, value ∈ `off`\|`minimal`\|`standard`\|`full`\|`ask`, validated by `validate_lane_override`): pins any lane-participating element to a fixed posture cutoff via the same nested step-param channel finalize-step params use — `off` never runs it, `minimal` force-keeps it in every posture, `standard`/`full` pin its tier, `ask` always surfaces it individually in the init dialogue. Absent by default — the shipped per-element default lives in each element's frontmatter `lane:` block, and `marshal.json` carries only the project / meta overrides.
+
+**An `off` the element's class makes inert is REFUSED at the writer, not stored.** An `off` on an element whose `lane.class` is a mandatory-floor class (`core` / `derived-state` — the closed immune set owned by [`extension-api/standards/ext-point-lane-element.md`](../extension-api/standards/ext-point-lane-element.md)) is ignored by the composer, so storing it would accept a setting that can never take effect. BOTH lane writers reject it through one shared predicate, and an unresolvable class is permitted rather than refused — see [api-reference.md § Class-immunity set-time validation](standards/api-reference.md#class-immunity-set-time-validation-lane-off) for the verbatim message and the fail-toward-permitting rule.
 
 **Flat finalize automation knobs (boolean, under `phase-6-finalize`):**
 
