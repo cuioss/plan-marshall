@@ -142,9 +142,14 @@ class TestPairingIsMaximal:
         stranding t=500 and t=0 although each has a legal partner — two findings
         where a perfect pairing exists. Both ledgers agree here, so the honest
         answer is no finding at all.
+
+        All rows are keyless, so the timestamp-window fallback applies: rows
+        carrying different non-empty keys never pair on the window.
         """
         execution_rows = [self._row(240, 'e'), self._row(500, 'e')]
         boundary_rows = [self._row(0, 'b'), self._row(250, 'b')]
+        for row in execution_rows + boundary_rows:
+            row['step_id'] = ''
 
         pairs, unpaired_execution, unpaired_boundary = _ledger.pair_rows(execution_rows, boundary_rows, 300)
 
@@ -157,9 +162,15 @@ class TestPairingIsMaximal:
 
         Without it, a `pair_rows` that paired every row unconditionally would
         satisfy the test above while destroying the verb's whole purpose.
+
+        The pairable pair shares one key; the far row carries a different key
+        and sits outside the window, so neither the key join nor the fallback
+        may claim it.
         """
         execution_rows = [self._row(0, 'e'), self._row(10000, 'e')]
         boundary_rows = [self._row(0, 'b')]
+        execution_rows[0]['step_id'] = 'shared'
+        boundary_rows[0]['step_id'] = 'shared'
 
         pairs, unpaired_execution, unpaired_boundary = _ledger.pair_rows(execution_rows, boundary_rows, 300)
 
@@ -177,11 +188,15 @@ class TestPairingIsMaximal:
         manifest's own row order decided which tied row went unpaired, and the
         same data written in a different order named a different dispatch in the
         emitted finding.
+
+        The boundary row is keyless so the timestamp fallback may claim either
+        tied row; rows carrying different non-empty keys would never pair.
         """
         tied_a = self._row(100, 'a')
         tied_b = self._row(100, 'b')
         execution_rows = [tied_a, tied_b]
         boundary_rows = [self._row(100, 'x')]
+        boundary_rows[0]['step_id'] = ''
 
         forward = _ledger.pair_rows(execution_rows, boundary_rows, 300)
         swapped = _ledger.pair_rows([tied_b, tied_a], boundary_rows, 300)
@@ -236,9 +251,14 @@ class TestMixedTimezoneAwarenessDoesNotCrash:
         assert parsed == datetime(2026, 1, 1, 10, tzinfo=UTC)
 
     def test_mixed_awareness_pairs_instead_of_raising(self):
-        """The reviewer-reported crash: naive on one side, aware on the other."""
+        """The reviewer-reported crash: naive on one side, aware on the other.
+
+        Both rows are keyless so the timestamp fallback applies — rows carrying
+        different non-empty keys never pair on the window."""
         execution_rows = [self._row('2026-01-01T10:00:00', 'e-naive')]
         boundary_rows = [self._row('2026-01-01T10:00:10Z', 'b-aware')]
+        execution_rows[0]['step_id'] = ''
+        boundary_rows[0]['step_id'] = ''
 
         pairs, unpaired_execution, unpaired_boundary = _ledger.pair_rows(execution_rows, boundary_rows, 300)
 
@@ -356,6 +376,22 @@ class TestStepIdJoinKey:
         assert len(unpaired_execution) == 1
         assert unpaired_boundary == []
 
+    def test_rows_with_different_keys_never_pair_on_the_window(self):
+        """Two rows naming different non-empty keys stay unpaired in the window.
+
+        The timestamp fallback applies only when at least one side has no key —
+        pairing across keys would manufacture agreement between two dispatches
+        that named themselves differently.
+        """
+        execution_rows = [self._keyed_row('2026-01-01T00:00:00+00:00', 'step-a')]
+        boundary_rows = [self._keyed_row('2026-01-01T00:00:10+00:00', 'step-b')]
+
+        pairs, unpaired_execution, unpaired_boundary = _ledger.pair_rows(execution_rows, boundary_rows, 300)
+
+        assert pairs == []
+        assert len(unpaired_execution) == 1
+        assert len(unpaired_boundary) == 1
+
     def test_pairing_coverage_rises_above_the_window_only_baseline(self):
         """The deliverable's coverage claim, measured on one corpus two ways.
 
@@ -420,6 +456,28 @@ class TestStepIdRecordTimeAndReconciliation:
 
         assert result['status'] == 'error', result
         assert result['error'] == 'invalid_step_id', result
+
+        path = plan_context.plan_dir_for(plan_id) / 'work' / 'metrics-dispatch-boundaries-5-execute.toon'
+        assert not path.exists()
+
+    def test_a_step_id_containing_any_line_separator_is_rejected(self, plan_context):
+        """Every line separator breaks the row, not just '\\n' — splitlines decides."""
+        plan_id = 'recon-step-id-sep'
+        cmd_start_phase(ns_start_phase(plan_id, '5-execute'))
+        for bad_key in (
+            'step\r\nid',
+            'step\rid',
+            'step\x0bid',
+            'step\x0cid',
+            'step' + chr(0x2028) + 'id',
+            'step' + chr(0x2029) + 'id',
+        ):
+            result = cmd_record_dispatch_boundary(
+                ns_record_dispatch_boundary(plan_id, '5-execute', 'step_complete', step_id=bad_key)
+            )
+
+            assert result['status'] == 'error', (bad_key, result)
+            assert result['error'] == 'invalid_step_id', (bad_key, result)
 
         path = plan_context.plan_dir_for(plan_id) / 'work' / 'metrics-dispatch-boundaries-5-execute.toon'
         assert not path.exists()

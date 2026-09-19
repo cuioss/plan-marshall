@@ -3530,11 +3530,11 @@ def cmd_record_dispatch_boundary(args: argparse.Namespace) -> dict:
     # positional CSV, so a key carrying a comma or a newline would shift every
     # column after it; reject such a key rather than writing a corrupt row.
     step_id = getattr(args, 'step_id', None) or ''
-    if ',' in step_id or '\n' in step_id:
+    if ',' in step_id or step_id.splitlines() not in ([], [step_id]):
         return {
             'status': 'error',
             'error': 'invalid_step_id',
-            'message': 'Invalid step_id: the dispatch-boundary row is positional CSV, so the key must not contain a comma or a newline.',
+            'message': 'Invalid step_id: the dispatch-boundary row is positional CSV, so the key must not contain a comma or any line separator.',
         }
     # Four per-dispatch context-load columns (the four-field message.usage view at
     # dispatch termination). An OMITTED flag stays None here and is written as the

@@ -447,7 +447,9 @@ def pair_rows(
     honestly unpaired on each side. Rows whose ``step_id`` is empty, and surplus
     rows of a key claimed on only one side, fall through to phase B. Phase B is
     the timestamp-window maximum matching over the leftovers — the fewest
-    possible unpaired rows on both sides.
+    possible unpaired rows on both sides. Phase B never pairs two rows that
+    carry different non-empty keys: the timestamp fallback applies only when
+    at least one side has no key.
 
     ⛔ Maximum matching rather than nearest-first greedy, because the unpaired
     rows are what this module REPORTS. Greedy lets a row take a closer partner
@@ -532,10 +534,14 @@ def pair_rows(
         if execution_time is None:
             candidates.append([])
             continue
+        execution_key = str(execution_rows[execution_index].get('step_id') or '')
         eligible = []
         for boundary_index in leftover_boundary:
             boundary_time = boundary_rows[boundary_index]['parsed_timestamp']
             if boundary_time is None:
+                continue
+            boundary_key = str(boundary_rows[boundary_index].get('step_id') or '')
+            if execution_key and boundary_key and execution_key != boundary_key:
                 continue
             if abs((execution_time - boundary_time).total_seconds()) <= window_seconds:
                 eligible.append(position_of_boundary[boundary_index])
