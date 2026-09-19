@@ -345,21 +345,8 @@ def resolve_merge_commit_footprint(plan_dir: Path, refs: dict[str, Any]) -> set[
     that need the gaps use :func:`resolve_merge_commit_footprint_with_gaps`;
     this wrapper returns the union alone for callers with no gaps channel.
     """
-    split_shas = read_split_shard_shas(refs)
-    if split_shas is not None:
-        union, _gaps = resolve_split_plan_footprint(plan_dir, refs)
-        if union is not None:
-            return union
-        # All shards unresolvable (or the empty-list resolved-empty case is
-        # handled by the helper): an empty list is a resolved-empty footprint,
-        # so return it rather than falling through to the single-SHA key.
-        if split_shas == []:
-            return set()
-        return None
-    sha = refs.get('merge_commit_sha')
-    if not isinstance(sha, str) or not sha.strip():
-        return None
-    return diff_landing_commit(plan_dir, sha.strip())
+    union, _gaps = resolve_merge_commit_footprint_with_gaps(plan_dir, refs)
+    return union
 
 
 def diff_landing_commit(plan_dir: Path, sha: str) -> set[str] | None:

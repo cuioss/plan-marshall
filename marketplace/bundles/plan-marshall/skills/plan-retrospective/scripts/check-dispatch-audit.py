@@ -571,7 +571,7 @@ _FIRING_STATE_RANK = {_FIRING_MEASURED: 0, _FIRING_UNMEASURED: 1, _FIRING_UNRECO
 
 def _is_int_cell(text: str) -> bool:
     """True for a plain unsigned ASCII integer cell — digits only, no sign."""
-    return bool(text) and text.isascii() and text.isdigit()
+    return text.isascii() and text.isdigit()
 
 
 def _firing_legacy_cell(cell: str | None) -> tuple[int, str]:
@@ -646,7 +646,7 @@ def parse_boundary_firings(path: Path) -> list[dict[str, Any]] | None:
                 'total_tokens_state': token_state,
                 'tool_uses': tool_uses,
                 'tool_uses_state': tool_state,
-                'step_id': step_cell.strip() if isinstance(step_cell, str) else '',
+                'step_id': step_cell if isinstance(step_cell, str) else '',
             }
         )
     return rows

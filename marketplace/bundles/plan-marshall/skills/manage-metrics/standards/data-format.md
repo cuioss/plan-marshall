@@ -909,7 +909,7 @@ rows[]{timestamp,termination_cause,total_tokens,tool_uses,duration_ms,input_toke
 2026-05-08T15:02:55Z,clean_exit_queue_empty,12903,4,61220,9100,0,0,0,5-execute:clean-exit
 ```
 
-The first three lines are the TOON-tabular header (`plan_id:`, `phase:`, `rows[]{…}:`); each subsequent line is one CSV-style data row in the declared column order. Column 10 is the `step_id` join key: row 1 carries one, row 2 was recorded with no key (empty cell — "no key recorded", never a pairing claim), row 3 carries one.
+Column 10 is the `step_id` join key: row 1 carries one, row 2 was recorded with no key (empty cell — "no key recorded", never a pairing claim), row 3 carries one.
 
 The first three lines are the TOON-tabular header (`plan_id:`, `phase:`, `rows[]{…}:`); each subsequent line is one CSV-style data row in the declared column order.
 
