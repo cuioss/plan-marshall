@@ -44,13 +44,15 @@ operation groups against the main-anchored orchestrator store
   second run finds every block ``unchanged`` and writes nothing. Refuses a
   closed epic (``refused_closed``): compaction is a live-epic operation only.
   The narrative-versus-settled RELOCATION judgement is NOT here; it stays LLM.
-- ``corpus {epics,enumerate,cross-check,surfaces,declaration-currency,verdicts,set-verdict}`` — the
+- ``corpus {epics,enumerate,read,cross-check,surfaces,declaration-currency,verdicts,set-verdict}`` — the
   epic population and the epic's staged
   spec corpus: enumerate every epic slug in the store (``epics`` — the one
   slug-free verb, partitioned into active and archived, publishing the roots it
   walked and the population size so a zero names the directory it came from),
   reconcile the ``status.json`` ``plans[]`` queue against the
-  ``plans/PLAN-*.md`` spec files in BOTH directions, cross-check those specs
+  ``plans/PLAN-*.md`` spec files in BOTH directions, return one staged spec
+  file body through the sanctioned script-mediated read path (``read`` — the
+  compliant alternative to a direct ``Read`` of the ledger tree), cross-check those specs
   against sibling epics and live plans for duplicate work (the arm a single
   ledger structurally cannot perform, scored on ``manage-status
   sibling-collision-check``'s two classes), publish every spec's DECLARED
@@ -2731,6 +2733,60 @@ def cmd_corpus_enumerate(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
+def cmd_corpus_read(args: argparse.Namespace) -> dict[str, Any]:
+    """Return one staged spec's body through the sanctioned read path.
+
+    The script-mediated alternative to a direct ``Read`` of
+    ``.plan/local/orchestrator/{slug}/plans/PLAN-NN-*.md`` — the use case the
+    ``.plan/`` scripts-only rule did not cover, forcing five independent
+    direct-read violations before this verb existed. Read-only: resolves
+    main-anchored through the same store resolver every per-epic path uses
+    (identical from a worktree and from the main checkout), reads the single
+    matching spec file, and writes nothing.
+
+    The match reuses :func:`_spec_matches_row` (exact-or-prefix on the stem
+    with the separating hyphen), so ``--plan PLAN-03`` resolves
+    ``PLAN-03-compliant-paths.md``. A plan id naming no spec returns
+    ``spec_not_found`` carrying ``available_specs``; an unreadable file returns
+    ``unreadable``; an unsafe slug returns ``invalid_slug``; a slug with no
+    store tree returns ``not_found``. An absent spec is never rendered as an
+    empty body.
+    """
+    invalid = _validate_slug(args.slug)
+    if invalid:
+        return _error(args.slug, 'invalid_slug', invalid)
+    plan = str(getattr(args, 'plan', '') or '')
+    if not plan or '/' in plan or '\\' in plan or '..' in plan:
+        return _error(args.slug, 'invalid_plan', f'invalid --plan value: {plan!r}')
+    root = _epic_root(args.slug, allow_archived=True)
+    if not root.is_dir():
+        return _error(args.slug, 'not_found', f'epic {args.slug!r} has no store tree')
+    specs = _spec_paths(root)
+    spec = next((path for path in specs if _spec_matches_row(path, plan)), None)
+    if spec is None:
+        return _error(
+            args.slug,
+            'spec_not_found',
+            f'no spec file for plan {plan!r} in {PLANS_SUBDIR}/',
+            available_specs=[path.name for path in specs],
+        )
+    text, error = _read_spec(spec)
+    if text is None:
+        return _error(args.slug, error, f'spec {spec.name!r} could not be read', spec=spec.name)
+    lines = text.splitlines()
+    return {
+        'status': 'success',
+        'operation': 'corpus-read',
+        'slug': args.slug,
+        'store': ORCHESTRATOR_STORE,
+        'plan': plan,
+        'spec': spec.name,
+        'size_bytes': len(text.encode('utf-8')),
+        'line_count': len(lines),
+        'body': text,
+    }
+
+
 def cmd_corpus_verdicts(args: argparse.Namespace) -> dict[str, Any]:
     """Parse every re-grounding verdict bullet across the corpus. Read-only.
 
@@ -4507,8 +4563,8 @@ def _build_arg_parser() -> argparse.ArgumentParser:
 def _add_corpus_group(subparsers: Any) -> None:
     """Register the ``corpus`` verb group.
 
-    Sub-verbs: ``epics``, ``enumerate``, ``cross-check``, ``surfaces``,
-    ``declaration-currency``, ``verdicts``, ``set-verdict``. The first six are
+    Sub-verbs: ``epics``, ``enumerate``, ``read``, ``cross-check``, ``surfaces``,
+    ``declaration-currency``, ``verdicts``, ``set-verdict``. The first seven are
     read-only; ``set-verdict``
     is the group's single write action, and the only surface in the tree that
     formats a ``verdict:`` line. ``epics`` is the only one that takes no
@@ -4547,6 +4603,15 @@ def _add_corpus_group(subparsers: Any) -> None:
     )
     _add_slug_arg(enumerate_specs)
     enumerate_specs.set_defaults(handler=cmd_corpus_enumerate)
+
+    read_spec = actions.add_parser(
+        'read',
+        help=('Return one staged spec file body through the sanctioned script-mediated read path (read-only).'),
+        allow_abbrev=False,
+    )
+    _add_slug_arg(read_spec)
+    read_spec.add_argument('--plan', required=True, metavar='PLAN-NN', help='Plan id whose spec body is returned.')
+    read_spec.set_defaults(handler=cmd_corpus_read)
 
     cross_check = actions.add_parser(
         'cross-check',

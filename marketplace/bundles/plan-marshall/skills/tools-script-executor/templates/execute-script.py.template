@@ -79,6 +79,13 @@ PLAN_DIR_NAME = '{{PLAN_DIR_NAME}}'
 # decide whether this executor is stale versus the installed manifest.
 MARSHALL_VERSION = '{{GENERATED_VERSION}}'
 MAPPINGS_FINGERPRINT = '{{MAPPINGS_FINGERPRINT}}'
+# SHA-256 of this template file's content at generation time. The
+# generate_executor bootstrap verb compares it against the live template to
+# detect template-content staleness (a template fix that shipped without a
+# version bump, e.g. post-merge stale-executor running pre-fix code). The
+# empty sentinel means the executor predates the stamp — staleness is then
+# unknown, never fresh.
+TEMPLATE_SHA256 = '{{TEMPLATE_SHA256}}'
 
 # Add shared module directories to sys.path so executor-level imports can find them
 # (e.g., plan_logging imports input_validation at module level).

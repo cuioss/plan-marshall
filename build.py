@@ -10,6 +10,7 @@ Usage:
     ./pw build compile pm-dev-frontend      # Single bundle
     ./pw build module-tests                 # All tests
     ./pw build module-tests plan-marshall     # Single test directory
+    ./pw build module-tests plan-marshall --filter test_foo  # Fast targeted signal (-k passthrough)
     ./pw build verify pm-dev-java           # Full verification on single bundle
 """
 
@@ -518,7 +519,7 @@ def cmd_test_compile(module: str | None, boundary: CoverageBoundary | None = Non
                      dimension='mypy(test)', boundary=boundary)
 
 
-def cmd_module_tests(module: str | None, parallel: bool = True) -> int:
+def cmd_module_tests(module: str | None, parallel: bool = True, filter_expr: str | None = None) -> int:
     """Run pytest on test sources.
 
     Parallel by default: the canonical full-suite run uses pytest-xdist with
@@ -528,10 +529,19 @@ def cmd_module_tests(module: str | None, parallel: bool = True) -> int:
     — without it, xdist scatters grouped tests across workers and the grouping
     is silently ignored. Pass ``parallel=False`` for serial single-file debug
     runs (CLI: ``--no-parallel``).
+
+    ``filter_expr`` is the sanctioned fast-signal passthrough (CLI:
+    ``--filter``): a pytest ``-k`` expression forwarded verbatim to the pytest
+    argv. It is the compliant alternative to a direct ``.venv/bin/pytest -k``
+    invocation, keeping the basetemp isolation, xdist grouping, and change-
+    ledger build attribution the direct path bypasses. An empty expression is
+    refused by the caller (never silently ignored).
     """
     path = require_test_path(module)
     basetemp = _prepare_session_basetemp()
     cmd = ['uv', 'run', 'pytest', path, f'--basetemp={basetemp}']
+    if filter_expr:
+        cmd.extend(['-k', filter_expr])
     if parallel:
         cmd.extend(['-n', 'auto', '--dist=loadgroup'])
     return run(cmd, f'module-tests: pytest {path}')
@@ -824,6 +834,7 @@ Examples:
   %(prog)s compile pm-dev-frontend    # mypy marketplace/bundles/pm-dev-frontend
   %(prog)s module-tests               # pytest test/
   %(prog)s module-tests plan-marshall   # pytest test/plan-marshall
+  %(prog)s module-tests plan-marshall --filter test_foo  # pytest -k passthrough (fast signal)
   %(prog)s verify pm-dev-java         # Full verification on single bundle
 '''
     )
@@ -848,6 +859,9 @@ Examples:
                    help='Run tests in parallel (default; -n auto --dist=loadgroup)')
     p.add_argument('--no-parallel', dest='parallel', action='store_false',
                    help='Run tests serially (single-file debug)')
+    p.add_argument('--filter', dest='filter', default=None, metavar='EXPR',
+                   help='Fast-signal passthrough: pytest -k expression forwarded verbatim '
+                        '(sanctioned alternative to direct .venv/bin/pytest -k)')
 
     # quality-gate
     p = subparsers.add_parser('quality-gate', help='mypy + ruff check on sources')
@@ -871,7 +885,11 @@ Examples:
     elif args.command == 'test-compile':
         sys.exit(cmd_test_compile(args.module))
     elif args.command == 'module-tests':
-        sys.exit(cmd_module_tests(args.module, getattr(args, 'parallel', False)))
+        filter_expr = getattr(args, 'filter', None)
+        if filter_expr is not None and not filter_expr.strip():
+            print('Error: --filter requires a non-empty pytest -k expression', file=sys.stderr)
+            sys.exit(1)
+        sys.exit(cmd_module_tests(args.module, getattr(args, 'parallel', False), filter_expr))
     elif args.command == 'quality-gate':
         sys.exit(cmd_quality_gate(args.module))
     elif args.command == 'coverage':
