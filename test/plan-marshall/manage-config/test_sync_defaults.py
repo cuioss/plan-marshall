@@ -22,6 +22,7 @@ import copy
 import json
 from argparse import Namespace
 from functools import cache
+from typing import cast
 
 import pytest
 
@@ -1140,7 +1141,7 @@ def _seeded_finalize_steps() -> dict:
     `_seed_finalize_steps` runs a full extension-discovery sweep, so the result is
     cached — every population below is a view over this one materialization.
     """
-    return _config_defaults_mod._seed_finalize_steps()
+    return cast(dict, _config_defaults_mod._seed_finalize_steps())
 
 
 def _lane_less_seeded_steps() -> tuple[str, ...]:
