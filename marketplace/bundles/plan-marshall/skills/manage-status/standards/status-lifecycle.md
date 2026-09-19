@@ -20,6 +20,11 @@ pending ──→ in_progress ──→ done
 - `set-phase` marks the target phase as `in_progress`
 - `transition --completed X` marks phase X as `done` and advances to the next phase
 - The first phase is automatically marked `in_progress` on plan creation
+- Phase-completion artifact gate: bare `2-refine` / `3-outline` / `4-plan`
+  transitions are refused unless the phase artifact exists (clarified/confidence
+  record, validating `solution_outline.md`, tasks or manifest respectively).
+  The explicit exemption form is `--allow-bare-transition --bare-reason REASON`,
+  persisted to `status.metadata.phase_exemptions` and decision-logged.
 
 ### Loop-back re-entry marker: two consumption points
 
