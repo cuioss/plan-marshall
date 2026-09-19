@@ -1,0 +1,351 @@
+= ADR-023: Entity identifying CLI parameters use one typed vocabulary
+:toc: left
+:toclevels: 2
+:sectnums:
+
+// adr-metadata
+// Progressive-disclosure metadata block (see manage-adr SKILL.md → "ADR Template
+// Structure"). Read by `manage-adr.py scan` so a caller can assess an ADR's
+// relevance without reading the full file. List fields are comma-separated.
+// summary: Every CLI parameter whose value names WHICH instance of an entity a command acts on is spelled entity-noun-first, optionally suffixed from a closed value-kind set; the epic is `--epic` and the `--slug` spelling is retired, the plan does not collapse into it because they are distinct entities at distinct tiers, and a form-noun spelling like `--slug` is rejected precisely because it names the value's shape instead of the entity and therefore forces the next entity on the same parser to be spelled around it.
+// tags: argument-naming, cli-vocabulary, typed-id, entity-identity, orchestrator, epic, plan, rename, drift-gate
+// affects: plan-marshall, persona-plan-marshall-agent, plan-orchestrator, platform-runtime, tools-epic-surface-partition, manage-architecture, plugin-doctor, script-shared
+// supersedes:
+// end-adr-metadata
+
+// Authoring discipline (see manage-adr SKILL.md → "Authoring Discipline"):
+// ADRs are durable architectural statements, not incident write-ups. No PR numbers,
+// commit SHAs, dates, or lesson IDs anywhere in the body. CLAUDE.md's "current state
+// only" rule applies — describe the architecture, not the chronology.
+
+== Status
+
+Proposed
+
+== Context
+
+`argument-naming.md` Rule 1 already prescribes typed identifier flags and carries
+a five-row entity table: `--lesson-id`, `--plan-id`, `--task-number`,
+`--module`, `--component`. The rule is stated for the `manage-*` scripts and is
+enforced, row by row, by the `ARGUMENT_NAMING_*` analyzer cluster against live
+argparse.
+
+What the rule does not carry is the rest of the tree. Deriving the population
+from the live argparse surface — running every registered notation's own
+`--help` recursively through `script-shared`'s `argparse_surface` library, rather
+than searching text — yields 503 distinct long flags across 111 derivable
+notations. Partitioning that population into *entity-identifying* (the value
+names WHICH instance of a first-class entity the command acts on) versus
+everything else shows the convention is not one convention but several, and that
+the same entity is routinely spelled more than one way:
+
+[cols="1,3", options="header"]
+|===
+| Entity | Spellings in the tree
+
+| epic
+| `--slug` (orchestrator, platform-runtime), `--epic` (epic-surface-partition)
+
+| plan
+| `--plan-id`, `--plan`, `--target-plan`, `--slug-value`, and three
+  mode-selector flags on one subparser (`--transition`, `--set-row`,
+  `--add-row`) each documented as taking a plan id
+
+| step
+| `--step-id`, `--step`, `--step-number`
+
+| deliverable
+| `--deliverable-id`, `--deliverable`, `--deliverable-number`
+
+| finding
+| `--hash-id`, `--finding-id`
+
+| lesson
+| `--lesson-id`, `--filed-id`
+
+| task
+| `--task-number`, `--task-id`
+
+| pull request
+| `--pr-number`, `--pr`
+
+| issue
+| `--issue-number`, `--issue`
+
+| module
+| `--module`, and `--name` at four sites that mean "module name"
+
+| component
+| `--component`, and `--name` at two sites that mean "component name"
+|===
+
+Two facts from that derivation shape the decision.
+
+**The epic already has two spellings, so this is a reconciliation.** `--slug`
+occupies 22 verb nodes in `plan-orchestrator:orchestrator` ("Epic slug
+(kebab-case)") plus one in `platform-runtime:platform_runtime` ("Epic slug
+(required with `--store orchestrator`)"). `--epic` occupies four nodes in
+`pm-plugin-development:tools-epic-surface-partition:epic-surface-partition`
+("Epic slug naming the orchestrator store entry"). The two mean the same thing.
+
+**A form-noun spelling propagates.** `--slug` names the *shape* of the value — a
+kebab-case string — and not the entity. The consequence is visible on a single
+parser: `orchestrator queue` spells the epic `--slug`, and because that word was
+already taken, the plan's slug on the same parser had to be spelled
+`--slug-value`. A spelling that carries no entity cannot be reused for a second
+entity, so the second entity gets named by a disambiguating suffix on the form
+noun rather than by its own name. That is the same failure Rule 1 already
+identifies for `--id` and `--name`, wearing a different word.
+
+The decision is therefore about a rule, not about a word: what makes a flag
+*entity-identifying*, and what a suffix is for.
+
+== Decision
+
+**A CLI parameter whose value names which instance of a first-class entity a
+command acts on is spelled entity-noun-first.** The entity noun is mandatory and
+comes first. A suffix is optional and, where present, is drawn from a closed set
+naming the *kind of value*, never the entity:
+
+[cols="1,3", options="header"]
+|===
+| Suffix | Value kind
+
+| _(none)_
+| the entity's plain human-readable name — `--module`, `--component`
+
+| `-id`
+| an assigned or opaque identifier — `--plan-id`, `--lesson-id`
+
+| `-number`
+| an ordinal within a scope — `--task-number`
+
+| `-slug`
+| a kebab-case human-readable key, where the entity ALSO carries an `-id` and
+  the two must stay distinguishable
+|===
+
+A flag that names only the value kind — `--id`, `--name`, `--slug`, `--number`
+standing alone — is not an entity-identifying flag and must not be used as one.
+Rule 1's existing carve-out survives unchanged: `--id` remains available for a
+genuinely untyped opaque record where the subcommand makes the entity implicit
+and no second entity can appear on the same parser.
+
+=== (a) The epic is spelled `--epic`
+
+`--slug` is retired at every site. The epic carries exactly one identifying
+value, so it takes the bare entity noun, matching `--module` and `--component`.
+
+The decision goes to `--epic` rather than `--slug` on the rule, not on volume.
+By site count `--slug` leads 23 to 4; by *script* count the tally is two to one,
+and the one script that already spells it correctly is the one with no
+orchestration history to defend. More decisively, `--slug` is the exact shape
+this ADR's rule rejects: it names the value's form, and the tree already shows
+what that costs — `--slug-value` exists solely because `--slug` could not be
+reused for the second entity on the same parser.
+
+=== (b) The plan does NOT collapse into that spelling
+
+`--plan-id` stays, at all 282 of its sites. Epic and plan are distinct entities
+at distinct tiers — an epic is an orchestration container with its own ledger,
+a plan is a lifecycle instance — and a single spelling covering both would make
+the caller surface unable to say which one a command acts on.
+
+What does collapse is the plan's *other* six spellings, into `--plan-id`:
+`--plan`, `--target-plan`, `--slug-value`, `--transition`, `--set-row`,
+`--add-row`.
+
+That collapse is not a rename of six flags to one name, and treating it as one
+is an error with a compile-time symptom. On `orchestrator queue`,
+`--transition`, `--set-row` and `--add-row` are *mutually exclusive mode
+selectors that each carry a plan id*: the flag chooses the operation and
+supplies the identity in one token. Renaming all three to `--plan-id` is a
+duplicate option string on one parser — an `argparse.ArgumentError` at parser
+construction — and even if it were legal it would erase the mode. The identity
+must be separated from the mode: the mode becomes the verb (or an explicit mode
+flag), and the identity becomes `--plan-id`.
+
+Where a plan row carries BOTH an assigned id and a kebab-case key, the two are
+`--plan-id` and `--plan-slug`. This is what the `-slug` suffix is for, and it is
+the only place in the decided vocabulary that needs it.
+
+=== (c) The fate of each existing `--name` occupant
+
+`--name` occupies nine sites across four notations, carrying four different
+meanings. Three of the four are entity identities under a form-noun spelling and
+are renamed; the fourth is a genuine generic string and is kept.
+
+[cols="2,2,1", options="header"]
+|===
+| Site | Current meaning | Decided spelling
+
+| `architecture enrich module --name`
+| "Resource name (alphanumeric + `_-`)" — the module
+| `--module`
+
+| `query-architecture commands\|module\|siblings --name`
+| "Module name (default: root module)"
+| `--module`
+
+| `doctor-marketplace analyze\|fix --name`
+| "Comma-separated component names to filter"
+| `--component`
+
+| `run_config commit-trailer set --name`
+| "Co-author name (default: plan-marshall)"
+| `--name` — **kept**
+|===
+
+The kept row is the rule working, not an exception to it. A co-author name is a
+value the command *writes*, not an identity selecting which record it acts on,
+so it is outside the entity-identifying partition entirely and Rule 3's "reserve
+`--name` for generic strings" applies to it unchanged.
+
+The same test disposes of `--target`, which the originating request also listed
+as an occupied spelling. Of its eighteen sites, seven name a runtime target
+entity (`bootstrap_plugin resolve`, `effort_pins`, `generate_executor`) and are
+entity-identifying; the remaining eleven are payload values or closed enums
+(`manage-tasks add-step --target` is a step's target string; `run_config cleanup
+--target`, `credentials ensure-denied --target` and `permission_fix --target`
+are selector enums) and are outside the partition.
+
+=== (d) Telling the two tiers apart at the caller surface
+
+The distinction is carried by the flag name itself, which is the whole point of
+requiring the entity noun. `--epic` and `--plan-id` are different tokens, so a
+caller reading an invocation can see which tier it addresses without consulting
+`--help`, and the two coexist legally on one parser.
+
+This matters because `plan-orchestrator:orchestrator` genuinely spans both
+tiers: it takes the epic identity on 22 nodes while several of those same nodes
+also take a plan identity. Under the decided vocabulary those are `--epic` and
+`--plan-id` — two distinct option strings on one parser, which argparse accepts.
+A collapsed single spelling would be rejected by argparse at that site and would
+erase the tier distinction at every other.
+
+== Consequences
+
+=== Positive
+
+* The entity-first rule is derivable rather than memorised. A script author
+  naming a new flag asks "which entity does this value identify?" and the
+  spelling follows; there is no table to consult for the common case.
+* The `--slug-value` shape cannot recur. A spelling that carries its entity is
+  reusable for a second entity on the same parser, so no future flag has to be
+  named around an incumbent.
+* `epic-surface-partition` is already compliant, so the epic reconciliation
+  converges on an existing correct spelling rather than introducing a third.
+* The four-way value-kind suffix set gives the multi-valued cases
+  (`--plan-id` / `--plan-slug`) a principled answer instead of an ad-hoc one.
+
+=== Negative
+
+* The rename surface is large and concentrated: `--slug` alone spans 23 verb
+  nodes in two scripts, and every consumer document that spells one of the
+  renamed flags moves with it.
+* `orchestrator queue` cannot be renamed mechanically. Separating identity from
+  mode on that subparser is a redesign of its argument surface, not a
+  substitution.
+* Three of the entities in the Context table (step, deliverable, finding) carry
+  three spellings each and are left unreconciled by this record. The rule
+  decides them, but the per-site mapping is not enumerated here.
+
+=== Risks
+
+* **The canonical-forms drift gate fails on any partial landing.**
+  `ARGUMENT_NAMING_CANONICAL_FORMS_DRIFT` cross-checks every canonical-forms row
+  against the live argparse declaration of the script it prescribes, and it is
+  build-failing. A row rewritten to a decided-but-unimplemented spelling fails
+  the next verify. Mitigation: the argparse declaration and its canonical-forms
+  row move in the SAME commit. Per ADR-017 the remedy is never to suppress or
+  annotate the rule.
+* **`--epic` is also a plausible spelling for an epic's *content*.** A future
+  flag meaning "the epic spec body" would collide. Mitigation: the value-kind
+  suffix set is closed and additive — such a flag takes a suffix naming what it
+  carries, and the bare noun stays reserved for identity.
+* **No rename-survivor detector exists.** ADR-007 records that cross-file stale
+  references left by a source change are a real class with no automated gate,
+  and that any future detector must derive its inputs git-natively via
+  `list_tracked_files` / `hash_objects` rather than by parsing diff text. A
+  rename of this size is exactly that class, and it must carry an explicit
+  sweep method rather than assuming a gate will catch a survivor.
+* **The population this decision rests on has a known coverage gap.**
+  `platform-runtime:platform_runtime` is a hand-rolled operation dispatcher
+  whose top level rejects `--help`, so the live derivation reports it
+  `NotDerivable`; its declarations — including one of the two `--slug` sites —
+  are recoverable only by reading the source. Per ADR-019 that cell is reported
+  as unevaluated rather than folded into a clean count. Any re-derivation of the
+  rename surface inherits the same gap and must close it the same way.
+
+== Consequence: the `push-title-token` same-parser conflict
+
+`platform_runtime.py`'s `session push-title-token` operation declares
+`--plan-id` and `--slug` on the **same** `argparse.ArgumentParser`. Both default
+to `None`; neither is argparse-`required`. Mutual exclusivity is enforced after
+parsing, by hand-rolled validation keyed on the `--store` value: `--slug` is
+required with `--store orchestrator`, `--plan-id` with the default `--store
+plans`.
+
+Two properties of that site govern the rename:
+
+* **The two flags are NOT jointly required.** The conflict's shape is mutual
+  exclusivity, not co-requirement. A rename that assumes both must be present
+  will mis-handle it.
+* **Collapsing both to a single spelling is a genuine
+  `argparse.ArgumentError`** — a duplicate option string raised when the parser
+  is constructed, not a stylistic clash. This is the concrete site that makes
+  decision (b) load-bearing: it is where a single collapsed spelling stops being
+  a naming preference and becomes a crash.
+
+Under this ADR the site resolves without a collapse: the flags become
+`--plan-id` and `--epic`, two distinct option strings, and the `--store`-keyed
+validation is unchanged.
+
+The parser is built lazily inside the dispatcher's per-operation branch, which
+is why no live-derivation instrument in the tree can see it. The rename must
+take this site from source.
+
+== Alternatives Considered
+
+**Keep `--slug` and rename `--epic` to it.** Follow the incumbent by site count:
+23 sites beat 4. Rejected because site count is a migration-cost argument, not a
+naming argument, and it optimises the wrong quantity — the cost is paid once by
+one plan, while the spelling is read on every call site forever. It also
+preserves the exact defect that produced `--slug-value`, guaranteeing the next
+entity added to `orchestrator queue` is named around an incumbent again.
+
+**Collapse epic and plan into one identifier spelling.** Treat "the thing I am
+operating on" as a single concept with a single flag, letting the subcommand
+imply which tier. Rejected on two independent grounds. Semantically it erases
+the tier distinction exactly where `orchestrator` needs it, since that script
+takes both identities on the same nodes. Mechanically it is an
+`argparse.ArgumentError` at `push-title-token`, where both are already declared
+on one parser.
+
+**Suffix every entity-identifying flag with `-id` uniformly.** Make the rule
+mechanical: entity noun plus `-id`, always. Rejected because it contradicts the
+existing Rule 1 table at two of its five rows — `--module` and `--component`
+carry human-readable names, not identifiers, and `--task-number` carries an
+ordinal — so adopting it would either falsify the rule or force three renames
+that buy nothing. The closed value-kind suffix set preserves what the table
+already encodes.
+
+**Rename the flags and sweep the documentation in the same plan.** Land the
+decision and its implementation together. Rejected because
+`ARGUMENT_NAMING_CANONICAL_FORMS_DRIFT` couples each canonical-forms row to a
+live argparse declaration: the decision layer and the implementation layer have
+different failure modes under that gate, and the ~40 per-row rewrites belong in
+the plan where the argparse side moves in the same commit.
+
+The rejected options share a shape: each trades the caller's ability to read an
+invocation for a smaller edit now, and the drift gate then charges for the
+difference on the next verify.
+
+== References
+
+* `marketplace/bundles/plan-marshall/skills/persona-plan-marshall-agent/standards/argument-naming.md` — Rule 1 (typed IDs) and Rule 3 (`--module` over `--name`), the governing framework this record decides; and the canonical-forms table whose per-row rewrites are deliberately out of this record's scope.
+* `marketplace/bundles/plan-marshall/skills/script-shared/scripts/argparse_surface.py` — the live-derivation library the population was obtained from, including the `NotDerivable` contract and the `UNIVERSAL_FLAG_ARITY` set that the derivation is structurally blind to.
+* `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/references/rule-catalog.md` — the `ARGUMENT_NAMING_*` cluster, including the build-failing canonical-forms drift rule that imposes the same-commit ordering constraint.
+* xref:007-The_survivor-sweep_invariant_covers_cross-file_stale_references_after_a_source_deletion.adoc[ADR-007: The survivor-sweep invariant covers cross-file stale references after a source deletion] — no rename-survivor detector exists, and any future one derives its inputs git-natively; this is the direct constraint on proving that no stale spelling survived the follow-on rename.
+* xref:017-A_validator_derives_its_contract_from_the_targets_own_declaration_and_fails_closed_when_it_cannot.adoc[ADR-017: A validator derives its contract from the target's own declaration, and fails closed when it cannot] — why the drift gate is narrowed around rather than suppressed.
+* xref:019-An_audit_separates_what_it_could_not_evaluate_from_what_it_evaluated_and_found_wanting.adoc[ADR-019: An audit separates what it could not evaluate from what it evaluated and found wanting] — the reporting shape for the `platform_runtime` coverage gap in the population this decision rests on.
