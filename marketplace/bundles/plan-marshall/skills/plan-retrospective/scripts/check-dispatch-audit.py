@@ -602,18 +602,20 @@ def _cell_by_name(columns: tuple[str, ...], parts: list[str], name: str) -> str 
     return parts[index]
 
 
-def parse_boundary_firings(path: Path) -> list[dict[str, Any]]:
+def parse_boundary_firings(path: Path) -> list[dict[str, Any]] | None:
     """Parse one dispatch-boundary file into firing rows.
 
     One dict per data row carrying ``timestamp``, ``termination_cause``,
     ``total_tokens`` (+ ``total_tokens_state``), ``tool_uses`` (+
     ``tool_uses_state``) and ``step_id``. Columns resolve BY NAME from the
     file's own ``rows[]`` header; a file carrying no header yields no rows.
+    Returns ``None`` when the file cannot be read — the caller marks the phase
+    `not_evaluated` rather than pairing against an empty side.
     """
     try:
         content = path.read_text(encoding='utf-8')
     except OSError:
-        return []
+        return None
     columns: tuple[str, ...] = _BOUNDARY_CANONICAL_COLUMNS
     in_rows = False
     rows: list[dict[str, Any]] = []
@@ -654,12 +656,15 @@ def _execution_token_state(value: object) -> tuple[int, str]:
     """Read one execution-log token cell into ``(value, state)``.
 
     An int (never a bool) is measured; the writer's `unmeasured` token is
-    recognised abstention; anything else — including an absent column — is
+    recognised abstention; anything else — including an absent column and a
+    negative count, which no writer can produce as a measurement — is
     unrecognised, never a measured zero.
     """
     if isinstance(value, bool):
         return 0, _FIRING_UNRECOGNISED
     if isinstance(value, int):
+        if value < 0:
+            return 0, _FIRING_UNRECOGNISED
         return value, _FIRING_MEASURED
     if isinstance(value, str):
         stripped = value.strip()
@@ -712,7 +717,7 @@ def _firing_population(token_state: str, tool_state: str, tool_uses: int) -> str
 
 def evaluate_firing_comparison(
     phase: str,
-    boundary_rows: list[dict[str, Any]],
+    boundary_rows: list[dict[str, Any]] | None,
     execution_rows: list[dict[str, Any]] | None,
 ) -> dict[str, Any]:
     """Compare one phase's dispatch-boundary rows against its execution rows, firing by firing.
@@ -729,7 +734,32 @@ def evaluate_firing_comparison(
     and absent from the other) belong to ``reconcile-ledgers``, which owns the
     timestamp-window fallback this comparison deliberately does not repeat; a
     second finding stream over the same rows would double-report every orphan.
+
+    Either side unknown marks the phase `not_evaluated`: pairing boundary
+    rows against an empty execution side — or execution rows against an
+    absent/unreadable boundary file — would report a full side as unpaired on
+    no evidence.
     """
+    if boundary_rows is None:
+        return {
+            'phase': phase,
+            'state': 'not_evaluated',
+            'reason': (
+                'no dispatch-boundary file for this phase (or it is unreadable), '
+                'so the boundary side of the comparison is unknown — pairing '
+                'execution rows against an empty side would report every one '
+                'as unpaired.'
+            ),
+            'boundary_rows': 0,
+            'execution_rows': len(execution_rows) if execution_rows is not None else 0,
+            'paired_firings': 0,
+            'populations': {},
+            'firings': [],
+            'unpaired_boundary': [],
+            'unpaired_execution': [],
+            'keyless_boundary_rows': 0,
+            'keyless_execution_rows': 0,
+        }
     if execution_rows is None:
         return {
             'phase': phase,
@@ -816,7 +846,7 @@ def evaluate_plan_firing_comparison(plan_dir: Path, manifest: dict[str, Any] | N
     not a block — there is nothing to compare — so the phase set itself states
     the comparison's coverage.
     """
-    boundary_by_phase: dict[str, list[dict[str, Any]]] = {}
+    boundary_by_phase: dict[str, list[dict[str, Any]] | None] = {}
     work_dir = plan_dir / 'work'
     if work_dir.exists():
         for artifact in sorted(work_dir.glob(f'{_BOUNDARY_FILE_PREFIX}*{_BOUNDARY_FILE_SUFFIX}')):
@@ -836,7 +866,7 @@ def evaluate_plan_firing_comparison(plan_dir: Path, manifest: dict[str, Any] | N
     blocks = {
         phase: evaluate_firing_comparison(
             phase,
-            boundary_by_phase.get(phase, []),
+            boundary_by_phase.get(phase),
             _execution_firing_rows(manifest, phase),
         )
         for phase in sorted(set(boundary_by_phase) | execution_phases)
