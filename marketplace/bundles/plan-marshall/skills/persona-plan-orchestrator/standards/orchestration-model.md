@@ -137,7 +137,7 @@ The validator was once narrower than the ledger it validates: the live queues ca
 
 **The decision is to EXTEND**, on three grounds:
 
-- **Two of the epic homes are frozen records.** Declaring a status illegal obliges a migration of the rows carrying it, and rows carrying these statuses live in `archived-orchestrators/` trees. Those are the durable audit record — `close` freezes and `archive` relocates, and neither rewrites history. A migration that edits a frozen ledger to satisfy a validator falsifies the record it exists to preserve.
+- **Rows carrying these statuses live in frozen `archived-orchestrators/` trees.** Declaring a status illegal obliges a migration of the rows carrying it. Those are the durable audit record — `close` freezes and `archive` relocates, and neither rewrites history. A migration that edits a frozen ledger to satisfy a validator falsifies the record it exists to preserve.
 - **Each status names an end state no other member can express.** The substitutes are all lies of a recognisable kind: recording a superseded row as `parked` keeps it clear of `next` while asserting that work is merely paused, and recording it as `shipped` asserts a PR that does not exist.
 - **A validator widened to accept whatever it found stops being a validator.** Extending to a *settled* set keeps the refusal meaningful: a token outside the set is still refused with `invalid_field` and nothing written.
 
