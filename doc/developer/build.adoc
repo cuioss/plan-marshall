@@ -121,6 +121,35 @@ The claim is scoped to Python on purpose: the Python build extension's only rout
 * `[tool.ruff]` — linter/formatter configuration
 * `[tool.mypy]` — type checker configuration
 
+=== Tool-Default Footprint
+
+The suite ships the following tool defaults. Each entry names the config key it
+mirrors, so documentation drift is attributable to a single source:
+
+* `[tool.pytest.ini_options].timeout = 300` — suite-wide pytest-timeout hang
+detector. A test exceeding this threshold has blown past the only declared
+budget in the suite and is reported as a failure with a stack trace.
+Per-test `@pytest.mark.timeout(N)` exemptions name why they need more rather
+than raising this default.
+* `[tool.pytest.ini_options].markers` — the custom-marker registry, the single
+source of truth for every non-built-in, non-plugin-provided
+`@pytest.mark.<name>` in the suite. The six registered names are
+`allow_pollution`, `xdist_group`, `allow_daemon_routing`,
+`allow_root_filesystem_pollution`, `slow_live`, and `touches_real_state`.
+`timeout` and `parametrize` are plugin-owned and excluded from this set.
+* `[tool.coverage.run].source = ["marketplace/bundles"]` with
+`[tool.coverage.run].branch = true` — the coverage denominator, restricted to
+the shipped product surface. `build.py:cmd_coverage` passes
+`--cov={bundle_path}` over this value, so widening the denominator requires
+editing both sites in lock-step.
+* `build.py:COVERAGE_THRESHOLD = 80` — mirrors
+`cmd_coverage --cov-fail-under=80`. Threshold enforcement happens natively
+inside the pytest-cov invocation, not in a follow-up report dispatch.
+
+The mechanism test in `test/plan-marshall/build-pyproject/test_build_cmd_coverage.py`
+reads the live config and asserts these documented defaults match, with a
+negative control asserting a deliberately wrong value fails.
+
 === Which Interpreter Runs the Build
 
 **`uv` pins the build interpreter, and `[tool.pyprojectx.env].UV_PYTHON` is the single declaration that sets it.** Local and CI resolve the same interpreter because they resolve it through the same tool from the same declaration.
