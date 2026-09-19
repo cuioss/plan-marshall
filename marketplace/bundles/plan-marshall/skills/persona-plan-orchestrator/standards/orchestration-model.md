@@ -129,7 +129,7 @@ The orchestrator MAY perform small operations inline, without spawning a plan:
 
 ## Plan-Status Vocabulary
 
-A plan row's `status` says where that plan's work stands. This section records the **decision** about which statuses are legal and what each one means; it is not the machine-locatable enumeration. The declaring source is `orchestrator.py`, where the vocabulary is derived as the union of a LIVE set and a TERMINAL set, and the mirror an operator reads is the anchored line at [`plan-orchestrator/SKILL.md` § Status Vocabulary](../../plan-orchestrator/SKILL.md#status-vocabulary), which `test_orchestrator.py` asserts equal to the constant in both directions on every run. Neither list is restated here.
+A plan row's `status` says where that plan's work stands. This section records the **decision** about which statuses are legal and what each one means; it is not the machine-locatable enumeration. The declaring source is `orchestrator.py`, where the vocabulary is derived as the union of a LIVE set and a TERMINAL set, and the mirror an operator reads is the anchored line at [`plan-orchestrator/SKILL.md` § Status Vocabulary](../../plan-orchestrator/SKILL.md#status-vocabulary), which `test_orchestrator.py` asserts equal to the constant in both directions on every run.
 
 ### The decision: extend the vocabulary, do not declare the extra statuses illegal
 
