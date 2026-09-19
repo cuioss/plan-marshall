@@ -244,8 +244,8 @@ def analyze_subprocess_pythonpath(test_root: Path) -> list[dict]:
     ``conftest.run_script(...)``, pass an ``env=`` keyword that propagates
     ``PYTHONPATH`` from ``sys.path``, or match one of the exempt shapes:
     a deliberate env scrub (``PYTHONPATH`` removed from a copied env), a
-    helper-supplied env (built by a call), or a ``-m`` stdlib invocation.
-    Calls matching none of these are flagged.
+    helper-supplied env (built by a call), or the literal ``-m py_compile``
+    stdlib invocation. Calls matching none of these are flagged.
     """
     if not test_root.is_dir():
         return []
