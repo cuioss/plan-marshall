@@ -615,11 +615,11 @@ def ensure_executor_substrate() -> int:
         BUNDLES_DIR / 'plan-marshall' / 'skills' / 'tools-script-executor'
         / 'scripts' / 'generate_executor.py'
     )
-    # Invoked by DIRECT PATH, never through .plan/execute-script.py — the file
-    # this step exists to create cannot be the thing that dispatches its own
-    # creation.
+    # Invoked by DIRECT PATH through the sanctioned bootstrap verb, never
+    # through .plan/execute-script.py — the file this step exists to create
+    # cannot be the thing that dispatches its own creation.
     exit_code = run(
-        ['python3', str(generator), 'generate', '--marketplace', '--marketplace-root', '.'],
+        ['python3', str(generator), 'bootstrap', '--marketplace', '--marketplace-root', '.'],
         'quality-gate: bootstrapping the executor substrate (absent — fresh checkout)',
     )
     if exit_code != 0:

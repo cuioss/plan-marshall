@@ -701,7 +701,7 @@ def test_verify_prints_complete_coverage_summary_on_success(monkeypatch, capsys)
 _EXPECTED_GENERATOR_ARGV = [
     'python3',
     str(build.BUNDLES_DIR / 'plan-marshall' / 'skills' / 'tools-script-executor' / 'scripts' / 'generate_executor.py'),
-    'generate',
+    'bootstrap',
     '--marketplace',
     '--marketplace-root',
     '.',
@@ -745,7 +745,8 @@ def test_executor_bootstrap_generates_by_direct_path_when_absent(monkeypatch, tm
     The argv is asserted whole rather than probed for a substring: the file this
     step creates cannot be the thing that dispatches its own creation, so routing
     the call through `.plan/execute-script.py` would be circular and is the one
-    spelling that must never appear here.
+    spelling that must never appear here. The verb is the sanctioned `bootstrap`
+    (detection-gated fresh-clone path), never bare `generate`.
     """
     monkeypatch.chdir(tmp_path)
     executor = tmp_path / '.plan' / 'execute-script.py'
