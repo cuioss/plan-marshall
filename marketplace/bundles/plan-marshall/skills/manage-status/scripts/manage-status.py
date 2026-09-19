@@ -350,10 +350,7 @@ def main() -> int:
     transition_parser.add_argument(
         '--bare-reason',
         default=None,
-        help=(
-            'Human-readable reason for a bare-transition exemption '
-            '(required with --allow-bare-transition).'
-        ),
+        help=('Human-readable reason for a bare-transition exemption (required with --allow-bare-transition).'),
     )
     transition_parser.set_defaults(func=cmd_transition)
 

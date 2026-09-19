@@ -194,7 +194,7 @@ def _has_refine_artifact(plan_id: str, status: dict[str, Any]) -> bool:
     idx = lower.find(marker)
     if idx < 0:
         return False
-    after = content[idx + len(marker):]
+    after = content[idx + len(marker) :]
     # Cut at the next sibling-level heading; content before it must be non-empty.
     next_heading = after.find('\n## ')
     body = after[:next_heading] if next_heading >= 0 else after
@@ -245,9 +245,7 @@ def _has_plan_artifact(plan_id: str) -> bool:
         return False
 
 
-def _phase_artifact_refusal(
-    args: argparse.Namespace, status: dict[str, Any]
-) -> dict[str, Any] | None:
+def _phase_artifact_refusal(args: argparse.Namespace, status: dict[str, Any]) -> dict[str, Any] | None:
     """Phase-completion artifact gate for 2-refine / 3-outline / 4-plan.
 
     Refuses a bare ``transition --completed {phase}`` unless the phase
