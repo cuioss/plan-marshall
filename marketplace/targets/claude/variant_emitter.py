@@ -48,7 +48,7 @@ import os
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 EXTENSION_POINT = 'plan-marshall:extension-api/standards/ext-point-dynamic-level-executor'
 
@@ -84,7 +84,9 @@ def _load_local_ladder(target: str = 'claude') -> dict[str, Any] | None:
                 data = json.loads(cand.read_text(encoding='utf-8'))
                 if isinstance(data, dict) and 'targets' in data and isinstance(data['targets'], dict):
                     if target in data['targets']:
-                        return data['targets'][target]
+                        target_val = data['targets'][target]
+                        if isinstance(target_val, dict):
+                            return cast(dict[str, Any], target_val)
             except Exception:
                 pass
     return None

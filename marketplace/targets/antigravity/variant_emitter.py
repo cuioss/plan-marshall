@@ -13,7 +13,7 @@ import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from marketplace.targets.antigravity.frontmatter import transform_agent_frontmatter
 from marketplace.targets.claude.variant_emitter import EXTENSION_POINT
@@ -39,7 +39,9 @@ def _load_local_ladder(target: str = 'antigravity') -> dict[str, Any] | None:
                 data = json.loads(cand.read_text(encoding='utf-8'))
                 if isinstance(data, dict) and 'targets' in data and isinstance(data['targets'], dict):
                     if target in data['targets']:
-                        return data['targets'][target]
+                        target_val = data['targets'][target]
+                        if isinstance(target_val, dict):
+                            return cast(dict[str, Any], target_val)
             except Exception:
                 pass
     return None

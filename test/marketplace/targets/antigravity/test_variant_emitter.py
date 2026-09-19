@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -150,7 +151,7 @@ def test_emit_agent_variants_end_to_end(role_bundle: Path, tmp_path: Path):
 
 def test_emit_agent_variants_with_pins(role_bundle: Path, tmp_path: Path):
     out = tmp_path / 'out'
-    pins = {
+    pins: dict[str, Any] = {
         'level-1': {'model': 'flash', 'effort': 'high'},
         'level-4': 'inherit',
     }
