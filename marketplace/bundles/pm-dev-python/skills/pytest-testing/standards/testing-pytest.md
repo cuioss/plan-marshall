@@ -79,6 +79,35 @@ def test_creates_output_file(tmp_path):
     assert output.exists()
 ```
 
+### Scoped temp-root pruning
+
+A per-test guard that walks a shared temp root to verify no stray files were left behind must walk
+only the test's own footprint, never the shared root. A recursive walk from the shared fixture base
+or the pytest basetemp tree descends into every sibling test's sandbox plus version-control object
+stores and build caches, so its cost scales with the number of retained checkouts rather than with
+the test under change.
+
+**Rule**: scope every per-test temp-root traversal to the test's own directories with an explicit
+depth limit, and prune heavy subtrees in place where the walk must touch shared ground.
+
+```python
+import os
+
+
+def owned_files(tmp_path):
+    """Files this test owns, without descending into heavy subtrees."""
+    owned = []
+    for root, dirnames, filenames in os.walk(tmp_path):
+        dirnames[:] = [d for d in dirnames if d not in {'__pycache__', '.git', 'node_modules'}]
+        owned.extend(filenames)
+    return owned
+```
+
+A recursive glob (`Path.rglob`) cannot prune as it walks, so filtering its results still pays the
+full traversal cost. Never recurse from the shared fixture base or the basetemp root. The
+language-agnostic statement is `plan-marshall:persona-module-tester` § "Bound Per-Test Guard
+Traversal by the Test's Own Footprint".
+
 ## Event-Loop and Wall-Clock CI Liabilities
 
 A test suite that passes on the developer's local Python interpreter is not proof it passes on CI's pinned interpreter — the two classes below hang the whole job for its full timeout budget rather than failing fast, and both are invisible on a newer local interpreter while reproducing reliably on an older pinned one.

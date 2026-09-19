@@ -40,6 +40,14 @@ PLAN_DIR_NAME = '.plan'  # Tracked config sub-directory inside the repo.
 # ``Edit(.plan/**)`` permission keeps covering them.
 TEST_FIXTURE_BASE = PROJECT_ROOT / PLAN_DIR_NAME / 'temp' / 'test-fixture'
 
+# Scoped temp-root pruning discipline: a per-test guard over the shared temp
+# tree walks only the test's own footprint with a depth limit and prunes heavy
+# subtrees via ``os.walk`` ``dirnames`` pruning — never a recursive walk from
+# TEST_FIXTURE_BASE or the pytest basetemp root. A recursive glob cannot prune
+# as it walks, so filtering its results still pays the full traversal cost. See
+# ``pm-dev-python:pytest-testing`` § "Scoped temp-root pruning" and the
+# ``r7_unbounded_shared_temp_walk`` guard in ``test/test_harness_shape_guards.py``.
+
 
 # =============================================================================
 # Pytest Collection Configuration

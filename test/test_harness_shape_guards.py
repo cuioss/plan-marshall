@@ -23,6 +23,11 @@ collection failure, never as the failure of the cases it was meant to produce.
 option object by hand carries only the attributes its author remembered, so a
 flag added later with a default breaks production while the suite stays green.
 
+**R7 — an unbounded walk from the shared temp root.** A per-test guard that
+recursively walks the shared fixture base or the basetemp tree pays the cost of
+every sibling sandbox on every test, so the suite's wall time scales with the
+number of retained checkouts rather than with the code under change.
+
 Why each shape is a defect in detail, and what each predicate does and
 deliberately does not report, is stated in :mod:`_test_shape_scan` beside the
 predicate itself. The general, forward-looking form of the three rules lives in
@@ -62,6 +67,7 @@ _PREDICATES = (
     ('R4', shape_scan.r4_presence_keyed_restores),
     ('R5', shape_scan.r5_unguarded_runtime_parametrize),
     ('R6', shape_scan.r6_hand_built_cli_namespace),
+    ('R7', shape_scan.r7_unbounded_shared_temp_walk),
 )
 
 # ⛔ Vacuity guard — every loop below iterates this table, so an empty one would
@@ -591,3 +597,52 @@ def test_r6_passes_a_synthetic_parse_ns_consumer(tmp_path: Path) -> None:
     result = shape_scan.r6_hand_built_cli_namespace([compliant])
 
     assert not result.hits, f'R6 flagged a parse_ns call as a hand-built namespace: {result.hits}'
+
+
+# =============================================================================
+# R7 — unbounded walk from the shared temp root
+# =============================================================================
+
+
+def test_no_per_test_guard_walks_the_shared_temp_root() -> None:
+    """The armed guard: no per-test guard recurses from the shared temp root."""
+    result = shape_scan.r7_unbounded_shared_temp_walk()
+
+    assert result.clean, _guard_report(
+        'unbounded shared-temp walk(s)', result, 'test_no_per_test_guard_walks_the_shared_temp_root'
+    )
+
+
+def test_r7_catches_a_synthetic_shared_root_rglob(tmp_path: Path) -> None:
+    """Matched negative control — a predicate that never fires cannot guard."""
+    leaking = _write(
+        tmp_path,
+        'synthetic_r7.py',
+        'from conftest import TEST_FIXTURE_BASE\n\n\ndef owned():\n'
+        '    return list(TEST_FIXTURE_BASE.rglob("*"))\n',
+    )
+    result = shape_scan.r7_unbounded_shared_temp_walk([leaking])
+
+    assert len(result.hits) == 1, f'R7 did not catch a synthetic shared-root rglob: {result}'
+
+
+def test_r7_passes_a_synthetic_scoped_walk(tmp_path: Path) -> None:
+    """Matched POSITIVE control — a scoped walk with pruning is not the defect.
+
+    Paired with the control above because the two differ by exactly the root the
+    walk starts from. A predicate keyed on any recursive walk would flag both,
+    and the rule would then be read as forbidding the traversal the guard needs.
+    """
+    scoped = _write(
+        tmp_path,
+        'synthetic_r7_scoped.py',
+        'import os\n\n\ndef owned(tmp_path):\n'
+        '    owned = []\n'
+        '    for root, dirnames, filenames in os.walk(tmp_path):\n'
+        "        dirnames[:] = [d for d in dirnames if d not in {'__pycache__'}]\n"
+        '        owned.extend(filenames)\n'
+        '    return owned\n',
+    )
+    result = shape_scan.r7_unbounded_shared_temp_walk([scoped])
+
+    assert not result.hits, f'R7 flagged a scoped walk over the test own footprint: {result.hits}'

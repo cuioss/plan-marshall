@@ -413,6 +413,13 @@ The trap: a *recursive* walk rooted at a directory that can contain full checkou
 
 **Corollary — measure on a quiescent machine before attributing a regression.** Before blaming a hypothesized cause for a performance regression, measure with no concurrent runs and no orphaned background builds: a recursive guard over a shared worktrees tree can be the real slowdown rather than the subprocess/parallelism thrash first suspected, and a conclusion built on a contended machine sends the fix in the wrong direction.
 
+**Concrete instance in this repository** (a discoverability pointer, not the rule): the shape is armed
+by the `r7_unbounded_shared_temp_walk` predicate in `test/_shared/_test_shape_scan.py` — reporting a
+recursive walk rooted at the shared temp root — and asserted whole-tree in
+`test/test_harness_shape_guards.py`, with a matched negative control (a shared-root `rglob` is caught)
+and a matched positive control (a scoped walk over the test's own directories with in-place
+`dirnames` pruning is *not* reported).
+
 ## Integration Test Separation
 
 Integration tests must be separated from unit tests:

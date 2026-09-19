@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Shared AST scan for the four mechanically-checkable test-harness shapes.
+"""Shared AST scan for the five mechanically-checkable test-harness shapes.
 
 Each shape below is a way for a test to stop testing what it names while still
 reporting green, so none of them is caught by running the suite -- that is
@@ -41,6 +41,14 @@ and names the published ``build_parser`` seam; inside such a module every
 ``Namespace``/``SimpleNamespace`` construction carrying the ``command`` routing
 key is reported, while a ``parse_ns`` call is the compliant form and is never
 reported.
+
+**R7 -- an unbounded walk from the shared temp root.** A per-test guard that
+recursively walks the shared fixture base or the pytest basetemp tree pays the
+cost of every sibling sandbox plus version-control stores and build caches on
+every test. The walk is reported however it is spelled -- ``rglob`` over the
+shared root, a recursive ``glob`` carrying a ``**`` pattern, or an ``os.walk``
+rooted there. A walk over the test's own directories (``tmp_path``, a fixture
+sandbox) is the compliant form and is never reported, however recursive it is.
 
 **Why R3 has no entry here.** R3 -- a hand-kept constant mirror, where a test
 restates a production constant as its own literal -- is not mechanically
@@ -734,4 +742,89 @@ def r6_hand_built_cli_namespace(paths: list[Path] | None = None) -> ScanResult:
         for node in ast.walk(tree):
             if isinstance(node, ast.Call) and _is_namespace_construction(node):
                 result.hits.append(f'{_rel(path)}:{node.lineno}: hand-built CLI namespace')
+    return result
+
+
+# =============================================================================
+# R7 -- unbounded walk from the shared temp root
+# =============================================================================
+
+#: Name fragments that identify the shared temp root a per-test guard must not
+#: recurse from. ``tmp_path`` and a fixture sandbox carry none of these, so a
+#: scoped walk over the test's own directories never matches.
+_SHARED_TEMP_ROOT_MARKERS = frozenset(
+    {
+        'TEST_FIXTURE_BASE',
+        'FIXTURE_BASE',
+        'PLAN_DIR_NAME',
+        'basetemp',
+        'pytest-basetemp',
+        'test-fixture',
+        'test_fixture',
+    }
+)
+
+
+def _is_shared_temp_root_text(text: str) -> bool:
+    """True when this source fragment names the shared temp root."""
+    return any(marker in text for marker in _SHARED_TEMP_ROOT_MARKERS)
+
+
+def _is_shared_temp_root_expr(node: ast.expr) -> bool:
+    """True when this root expression resolves to the shared temp tree.
+
+    The check is textual on the unparsed fragment: a ``Name`` carrying a marker
+    (``TEST_FIXTURE_BASE``), an attribute hanging off one (``PROJECT_ROOT /
+    '.plan'`` spells the same tree through a constant), or a call result derived
+    from one. Textual matching keeps the predicate independent of how the caller
+    spells the join, while ``tmp_path`` carries no marker and never matches.
+    """
+    try:
+        text = ast.unparse(node)
+    except (ValueError, SyntaxError):
+        return False
+    return _is_shared_temp_root_text(text)
+
+
+def _is_recursive_glob(node: ast.Call) -> bool:
+    """True when this ``glob`` call carries a recursive ``**`` pattern."""
+    if not isinstance(node.func, ast.Attribute) or node.func.attr != 'glob':
+        return False
+    for arg in (*node.args, *(kw.value for kw in node.keywords)):
+        if isinstance(arg, ast.Constant) and isinstance(arg.value, str) and '**' in arg.value:
+            return True
+    return False
+
+
+def r7_unbounded_shared_temp_walk(paths: list[Path] | None = None) -> ScanResult:
+    """Recursive walks rooted at the shared temp root.
+
+    A ``rglob`` over the shared root, a recursive ``glob`` carrying a ``**``
+    pattern over it, or an ``os.walk`` rooted there is a hit. A walk over the
+    test's own directories (``tmp_path``, a fixture sandbox) is the compliant
+    form and is never reported, however recursive it is, because its cost is
+    bounded by the test's own footprint.
+    """
+    result = ScanResult()
+    for path in paths if paths is not None else test_modules():
+        tree = _parse(path)
+        if tree is None:
+            result.unparseable.append(_rel(path))
+            continue
+        result.modules_examined += 1
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+                continue
+            attr = node.func.attr
+            if attr == 'rglob':
+                if _is_shared_temp_root_expr(node.func.value):
+                    result.hits.append(f'{_rel(path)}:{node.lineno}: unbounded walk from shared temp root')
+            elif attr == 'glob':
+                if _is_recursive_glob(node) and _is_shared_temp_root_expr(node.func.value):
+                    result.hits.append(f'{_rel(path)}:{node.lineno}: unbounded walk from shared temp root')
+            elif attr == 'walk':
+                receiver = node.func.value
+                is_os_walk = isinstance(receiver, ast.Name) and receiver.id == 'os'
+                if is_os_walk and node.args and _is_shared_temp_root_expr(node.args[0]):
+                    result.hits.append(f'{_rel(path)}:{node.lineno}: unbounded walk from shared temp root')
     return result
