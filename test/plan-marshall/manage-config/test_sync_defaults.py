@@ -1120,9 +1120,9 @@ def test_sync_defaults_leaves_unresolvable_frontmatter_step_lane_less(plan_conte
 #
 # The first-run wizard's Step 16 now runs `sync-defaults` BEFORE `steps-sort`, so
 # a fresh wizard leaves EVERY plan.phase-6-finalize.steps entry with an explicit
-# lane — the seven core steps included, not just the two ask-tier infra steps the
+# lane — the seven seeded steps included, not just the two ask-tier infra steps the
 # wizard seeds with a lane. These tests simulate the fresh-wizard config (the
-# seven core steps present but lane-less, only the two ask-tier steps carrying a
+# seven seeded steps present but lane-less, only the two ask-tier steps carrying a
 # lane) and assert sync-defaults materializes every step's lane and is idempotent.
 
 _SEVEN_CORE_STEPS = (
@@ -1156,7 +1156,7 @@ def _effective_lane_of(step_id: str) -> str | None:
 def _fresh_wizard_finalize_steps() -> dict:
     """Return a fresh-wizard-shaped phase-6 steps map.
 
-    The seven core steps are present but lane-less (`{}`); only the two ask-tier
+    The seven seeded steps are present but lane-less (`{}`); only the two ask-tier
     infra steps carry an explicit `lane: ask` — the state a first-run wizard's
     finalize-step seeding leaves before Step 16's sync-defaults pass runs.
     """
