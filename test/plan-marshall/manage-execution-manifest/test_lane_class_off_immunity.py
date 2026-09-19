@@ -128,7 +128,7 @@ def _write_execution_profile(plan_context, plan_id: str, posture: str) -> None:
     )
 
 
-def _stub_footprint(footprint: list[str] | None) -> None:
+def _stub_footprint(footprint: list[str]) -> None:
     """Pin BOTH footprint seams in lock-step.
 
     ``_mem._resolve_footprint`` and ``extension_base._resolve_plan_footprint`` are
@@ -139,7 +139,7 @@ def _stub_footprint(footprint: list[str] | None) -> None:
     import extension_base
 
     def _resolve(_plan_id):
-        return None if footprint is None else list(footprint)
+        return list(footprint)
 
     _mem._resolve_footprint = _resolve
     extension_base._resolve_plan_footprint = _resolve
