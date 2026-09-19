@@ -13,7 +13,7 @@ detector that emits facts; the reference doc still guides the LLM's *judgement*
 of those facts, per the SKILL's "scripts never judge, references never run code"
 split.
 
-The three deterministic facts, each computed population-derived (from the
+The deterministic facts, each computed population-derived (from the
 evidence actually present) rather than from a literal, and each publishing the
 size of the population it evaluated so a zero is legible:
 
@@ -78,6 +78,13 @@ D3 — ``channel_completeness`` (how trustworthy is the dispatch channel itself?
     input is zero the grade is ``not_evaluated`` with a reason — a fourth grade
     added because its absence let a log-less plan grade ``nominal``.
 
+D4 — ``firing_comparison`` (do the boundary rows and the execution rows agree,
+firing by firing?). Compares each phase's dispatch-boundary rows against its
+``execution_log[]`` rows on the shared ``step_id`` key where available and
+publishes the ``measured`` / ``unmeasured`` / ``no_tool_use`` populations per
+phase, with unpaired and keyless rows counted beside them rather than folded
+in. Facts only — divergence findings belong to ``reconcile-ledgers``.
+
 Inputs (all read defensively; a missing input degrades the affected block to
 ``not_evaluated`` / ``no_evidence`` with a reason, never a false clean):
 
@@ -85,6 +92,8 @@ Inputs (all read defensively; a missing input degrades the affected block to
 - ``logs/decision.log``  — Surface B ``effort resolve-target`` resolve records.
 - ``execution.toon``     — ``execution_log[]`` per-step token records (D2/D3).
 - ``status.json``        — ``metadata.phase_steps["6-finalize"]`` terminal outcomes (D2).
+- ``work/metrics-dispatch-boundaries-{phase}.toon`` — per-dispatch termination
+  rows with the ``step_id`` join key (D4, one file per dispatching phase).
 
 Usage:
     python3 check-dispatch-audit.py run --plan-id EXAMPLE-PLAN --mode live
@@ -511,6 +520,334 @@ def finalize_terminal_steps(metadata: dict[str, Any]) -> list[str]:
     return sorted({_canon_step(step) for step in finalize if isinstance(step, str)})
 
 
+#: Dispatch-boundary artifact name shape. Mirrors the producer's declared
+#: contract (`manage-metrics` data-format.md § Per-Dispatch Boundary Record)
+#: and the `analyze-logs.read_dispatch_boundaries_per_phase` glob: the phase
+#: is the stem segment after the fixed prefix.
+_BOUNDARY_FILE_PREFIX = 'metrics-dispatch-boundaries-'
+_BOUNDARY_FILE_SUFFIX = '.toon'
+
+#: Canonical boundary column order, used ONLY as the positional fallback when
+#: a boundary file's `rows[]{...}:` header declares no names. Columns resolve
+#: BY NAME from the file's own header; rows before any header are not read at
+#: all, because nothing declares what their cells mean (same contract as the
+#: `analyze-logs` boundary reader).
+_BOUNDARY_CANONICAL_COLUMNS = (
+    'timestamp',
+    'termination_cause',
+    'total_tokens',
+    'tool_uses',
+    'duration_ms',
+    'input_tokens',
+    'output_tokens',
+    'cache_read_input_tokens',
+    'cache_creation_input_tokens',
+    'step_id',
+)
+
+_BOUNDARY_HEADER_RE = re.compile(r'^rows\[\d*\]\{(?P<columns>[^}]*)\}:')
+
+#: Figure states for one firing's token/tool cells. `measured` requires a
+#: plain ASCII integer cell; the writer's `unmeasured` token is recognised
+#: abstention; anything else is unrecognised. A column the header never
+#: declares — or a row too short to carry — follows the legacy rule: the
+#: legacy five keep their `0` default (measured, because those columns predate
+#: the token and cannot abstain); `step_id` reads as '' (no key).
+_FIRING_MEASURED = 'measured'
+_FIRING_UNMEASURED = 'unmeasured'
+_FIRING_UNRECOGNISED = 'unrecognised'
+
+#: Per-firing population buckets. Every JOINED firing lands in exactly one:
+#: `unmeasured` first (a firing with a missing figure cannot substantiate
+#: either measured claim), then `no_tool_use` (fully measured, boundary
+#: `tool_uses` a measured zero), else `measured` (fully measured, nonzero
+#: tool use).
+_FIRING_POPULATIONS = ('measured', 'unmeasured', 'no_tool_use')
+
+#: Weaker-first ordering for the two sides' token states: the firing reads at
+#: its least-readable figure.
+_FIRING_STATE_RANK = {_FIRING_MEASURED: 0, _FIRING_UNMEASURED: 1, _FIRING_UNRECOGNISED: 2}
+
+
+def _is_int_cell(text: str) -> bool:
+    """True for a plain unsigned ASCII integer cell — digits only, no sign."""
+    return bool(text) and text.isascii() and text.isdigit()
+
+
+def _firing_legacy_cell(cell: str | None) -> tuple[int, str]:
+    """Read one legacy boundary cell into ``(value, state)``.
+
+    A missing cell (header never declared the column, or the row is too short)
+    reads as the writer's legacy default — a measured ``0``, because those
+    columns predate the `unmeasured` token and cannot abstain.
+    """
+    if cell is None:
+        return 0, _FIRING_MEASURED
+    stripped = cell.strip()
+    if stripped == 'unmeasured':
+        return 0, _FIRING_UNMEASURED
+    if _is_int_cell(stripped):
+        return int(stripped), _FIRING_MEASURED
+    return 0, _FIRING_UNRECOGNISED
+
+
+def _cell_by_name(columns: tuple[str, ...], parts: list[str], name: str) -> str | None:
+    """Return the cell declared under ``name``, or ``None`` when undeclared/short."""
+    try:
+        index = columns.index(name)
+    except ValueError:
+        return None
+    if index >= len(parts):
+        return None
+    return parts[index]
+
+
+def parse_boundary_firings(path: Path) -> list[dict[str, Any]]:
+    """Parse one dispatch-boundary file into firing rows.
+
+    One dict per data row carrying ``timestamp``, ``termination_cause``,
+    ``total_tokens`` (+ ``total_tokens_state``), ``tool_uses`` (+
+    ``tool_uses_state``) and ``step_id``. Columns resolve BY NAME from the
+    file's own ``rows[]`` header; a file carrying no header yields no rows.
+    """
+    try:
+        content = path.read_text(encoding='utf-8')
+    except OSError:
+        return []
+    columns: tuple[str, ...] = _BOUNDARY_CANONICAL_COLUMNS
+    in_rows = False
+    rows: list[dict[str, Any]] = []
+    for line in content.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        header = _BOUNDARY_HEADER_RE.match(stripped)
+        if header is not None:
+            declared = tuple(name.strip() for name in header.group('columns').split(',') if name.strip())
+            if declared:
+                columns = declared
+            in_rows = True
+            continue
+        if not in_rows:
+            continue
+        parts = [cell.strip() for cell in stripped.split(',')]
+        if len(parts) < 3:
+            continue
+        total_tokens, token_state = _firing_legacy_cell(_cell_by_name(columns, parts, 'total_tokens'))
+        tool_uses, tool_state = _firing_legacy_cell(_cell_by_name(columns, parts, 'tool_uses'))
+        step_cell = _cell_by_name(columns, parts, 'step_id')
+        rows.append(
+            {
+                'timestamp': _cell_by_name(columns, parts, 'timestamp') or '',
+                'termination_cause': _cell_by_name(columns, parts, 'termination_cause') or '',
+                'total_tokens': total_tokens,
+                'total_tokens_state': token_state,
+                'tool_uses': tool_uses,
+                'tool_uses_state': tool_state,
+                'step_id': step_cell.strip() if isinstance(step_cell, str) else '',
+            }
+        )
+    return rows
+
+
+def _execution_token_state(value: object) -> tuple[int, str]:
+    """Read one execution-log token cell into ``(value, state)``.
+
+    An int (never a bool) is measured; the writer's `unmeasured` token is
+    recognised abstention; anything else — including an absent column — is
+    unrecognised, never a measured zero.
+    """
+    if isinstance(value, bool):
+        return 0, _FIRING_UNRECOGNISED
+    if isinstance(value, int):
+        return value, _FIRING_MEASURED
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped == 'unmeasured':
+            return 0, _FIRING_UNMEASURED
+        if _is_int_cell(stripped):
+            return int(stripped), _FIRING_MEASURED
+    return 0, _FIRING_UNRECOGNISED
+
+
+def _execution_firing_rows(manifest: dict[str, Any] | None, phase: str) -> list[dict[str, Any]] | None:
+    """Execution-log rows for one phase as firing records.
+
+    Returns ``None`` when the manifest is unreadable (or its ``execution_log``
+    is not a row list) — the caller marks the phase `not_evaluated` rather
+    than pairing against an empty side. A readable manifest with no rows for
+    the phase yields ``[]``: a real, readable zero.
+    """
+    if not isinstance(manifest, dict):
+        return None
+    rows = manifest.get('execution_log')
+    if rows is None:
+        return []
+    if not isinstance(rows, list):
+        return None
+    firings: list[dict[str, Any]] = []
+    for row in rows:
+        if not isinstance(row, dict) or str(row.get('phase')) != phase:
+            continue
+        step_id = row.get('step_id')
+        total_tokens, token_state = _execution_token_state(row.get('total_tokens'))
+        firings.append(
+            {
+                'step_id': step_id if isinstance(step_id, str) else '',
+                'total_tokens': total_tokens,
+                'total_tokens_state': token_state,
+            }
+        )
+    return firings
+
+
+def _firing_population(token_state: str, tool_state: str, tool_uses: int) -> str:
+    """Assign one joined firing to exactly one population bucket."""
+    if token_state != _FIRING_MEASURED or tool_state != _FIRING_MEASURED:
+        return 'unmeasured'
+    if tool_uses == 0:
+        return 'no_tool_use'
+    return 'measured'
+
+
+def evaluate_firing_comparison(
+    phase: str,
+    boundary_rows: list[dict[str, Any]],
+    execution_rows: list[dict[str, Any]] | None,
+) -> dict[str, Any]:
+    """Compare one phase's dispatch-boundary rows against its execution rows, firing by firing.
+
+    The join is the shared ``step_id`` key where available: rows naming the
+    same non-empty key pair in order up to the shorter side's count; an empty
+    key is not a key, so keyless rows never pair with each other and are
+    reported as keyless rather than forced into a match. Every joined firing
+    lands in exactly one of the ``measured`` / ``unmeasured`` / ``no_tool_use``
+    populations (see :func:`_firing_population`); unpaired and keyless rows are
+    counted beside the populations, never folded into them.
+
+    Facts only — no findings. Divergence findings (a row present in one ledger
+    and absent from the other) belong to ``reconcile-ledgers``, which owns the
+    timestamp-window fallback this comparison deliberately does not repeat; a
+    second finding stream over the same rows would double-report every orphan.
+    """
+    if execution_rows is None:
+        return {
+            'phase': phase,
+            'state': 'not_evaluated',
+            'reason': (
+                'execution.toon is unreadable (or its execution_log is not a row list), '
+                'so the execution side of the comparison is unknown — pairing boundary '
+                'rows against an empty side would report every one as unpaired.'
+            ),
+            'boundary_rows': len(boundary_rows),
+            'execution_rows': 0,
+            'paired_firings': 0,
+            'populations': {},
+            'firings': [],
+            'unpaired_boundary': [],
+            'unpaired_execution': [],
+            'keyless_boundary_rows': 0,
+            'keyless_execution_rows': 0,
+        }
+
+    execution_by_step: dict[str, list[dict[str, Any]]] = {}
+    for row in execution_rows:
+        if row['step_id']:
+            execution_by_step.setdefault(row['step_id'], []).append(row)
+    boundary_by_step: dict[str, list[dict[str, Any]]] = {}
+    for row in boundary_rows:
+        if row['step_id']:
+            boundary_by_step.setdefault(row['step_id'], []).append(row)
+
+    firings: list[dict[str, Any]] = []
+    unpaired_boundary: list[str] = []
+    unpaired_execution: list[str] = []
+    for key in sorted(set(execution_by_step) | set(boundary_by_step)):
+        exec_group = execution_by_step.get(key, [])
+        bound_group = boundary_by_step.get(key, [])
+        for exec_row, bound_row in zip(exec_group, bound_group):
+            token_state = (
+                exec_row['total_tokens_state']
+                if _FIRING_STATE_RANK[exec_row['total_tokens_state']]
+                >= _FIRING_STATE_RANK[bound_row['total_tokens_state']]
+                else bound_row['total_tokens_state']
+            )
+            firings.append(
+                {
+                    'step_id': key,
+                    'termination_cause': bound_row['termination_cause'],
+                    'token_state': token_state,
+                    'tool_uses': bound_row['tool_uses'],
+                    'tool_uses_state': bound_row['tool_uses_state'],
+                    'population': _firing_population(
+                        token_state, bound_row['tool_uses_state'], bound_row['tool_uses']
+                    ),
+                }
+            )
+        unpaired_execution.extend([key] * max(0, len(exec_group) - len(bound_group)))
+        unpaired_boundary.extend([key] * max(0, len(bound_group) - len(exec_group)))
+
+    populations = {name: 0 for name in _FIRING_POPULATIONS}
+    for firing in firings:
+        populations[firing['population']] += 1
+
+    keyless_boundary = sum(1 for row in boundary_rows if not row['step_id'])
+    keyless_execution = sum(1 for row in execution_rows if not row['step_id'])
+
+    return {
+        'phase': phase,
+        'state': 'evaluated',
+        'reason': '',
+        'boundary_rows': len(boundary_rows),
+        'execution_rows': len(execution_rows),
+        'paired_firings': len(firings),
+        'populations': populations,
+        'firings': sorted(firings, key=lambda firing: (firing['step_id'], firing['termination_cause'])),
+        'unpaired_boundary': sorted(unpaired_boundary),
+        'unpaired_execution': sorted(unpaired_execution),
+        'keyless_boundary_rows': keyless_boundary,
+        'keyless_execution_rows': keyless_execution,
+    }
+
+
+def evaluate_plan_firing_comparison(
+    plan_dir: Path, manifest: dict[str, Any] | None
+) -> dict[str, Any]:
+    """Per-phase firing comparison over boundary files × execution rows.
+
+    The phase universe is every phase carrying a dispatch-boundary artifact
+    plus every phase the execution log holds rows for. A phase with neither is
+    not a block — there is nothing to compare — so the phase set itself states
+    the comparison's coverage.
+    """
+    boundary_by_phase: dict[str, list[dict[str, Any]]] = {}
+    work_dir = plan_dir / 'work'
+    if work_dir.exists():
+        for artifact in sorted(work_dir.glob(f'{_BOUNDARY_FILE_PREFIX}*{_BOUNDARY_FILE_SUFFIX}')):
+            stem = artifact.stem
+            if not stem.startswith(_BOUNDARY_FILE_PREFIX):
+                continue
+            phase = stem[len(_BOUNDARY_FILE_PREFIX) :]
+            if phase:
+                boundary_by_phase[phase] = parse_boundary_firings(artifact)
+
+    execution_phases: set[str] = set()
+    if isinstance(manifest, dict):
+        rows = manifest.get('execution_log')
+        if isinstance(rows, list):
+            execution_phases = {str(row.get('phase')) for row in rows if isinstance(row, dict)}
+
+    blocks = {
+        phase: evaluate_firing_comparison(
+            phase,
+            boundary_by_phase.get(phase, []),
+            _execution_firing_rows(manifest, phase),
+        )
+        for phase in sorted(set(boundary_by_phase) | execution_phases)
+    }
+    return {'phases': blocks, 'phase_count': len(blocks)}
+
+
 def evaluate_shape_violation(
     resolves: list[dict[str, str | None]],
     dispatches: list[dict[str, str | None]],
@@ -898,6 +1235,13 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
     envelope = evaluate_envelope_violations(dispatch_lines)
     generic = evaluate_generic_subagent(work_lines)
 
+    # Per-firing boundary × execution comparison (facts only — populations per
+    # phase with the step_id join where available). Divergence findings are NOT
+    # emitted here: `reconcile-ledgers` owns the orphan findings with its
+    # timestamp-window fallback, and a second finding stream would
+    # double-report every one of them.
+    firing_comparison = evaluate_plan_firing_comparison(plan_dir, manifest)
+
     findings = shape['findings'] + coverage['findings'] + envelope['findings'] + generic['findings']
     # ⛔ Every entry is a STRUCTURED value carrying its own population and status,
     # never a bare integer. A reader consulting `counts.by_category` alone used to
@@ -930,6 +1274,7 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
         'channel_completeness': channel,
         'envelope_violation': envelope,
         'generic_subagent_violation': generic,
+        'firing_comparison': firing_comparison,
         'findings': findings,
         'counts': counts,
     }
