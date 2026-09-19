@@ -371,7 +371,7 @@ The **execution profile** is an operator-facing, cost-visible choice — `minima
 
 The three profiles:
 
-* **`minimal`** — only the tier-`minimal` floor (push, create-pr, ci-verify, branch-cleanup, record-metrics, archive). No adversarial validators, no security audit, no retrospectives — appropriate for docs / mechanical changes.
+* **`minimal`** — only the tier-`minimal` floor (push, create-pr, ci-verify, branch-cleanup, record-metrics, archive, plus the `minimal`-deviated `lessons-housekeeping`). No adversarial validators, no security audit, no retrospectives — appropriate for docs / mechanical changes.
 * **`standard`** (the projection) — keeps the adversarial validators and prunes the structurally-empty prunable steps (e.g. sonar when there is no code delta); drops the `full`-only steps (security-audit, plan-retrospective).
 * **`full`** — every configured step.
 
