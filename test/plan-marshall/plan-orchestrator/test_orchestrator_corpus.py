@@ -3991,21 +3991,32 @@ def test_a_spec_whose_bytes_are_not_utf8_is_unreadable_in_both_verbs(tmp_path):
 
 
 # =============================================================================
-# Documentation synchronization — two hand-maintained vocabularies
+# Documentation synchronization — three hand-maintained vocabularies
 # =============================================================================
 #
-# Two prose blocks restate a set this module declares, and neither had a check
-# tying it to its declaring source — so either could drift silently while every
-# existing test stayed green:
+# Three documentation blocks restate a set this module declares, and none had a
+# check tying it to its declaring source — so any of them could drift silently
+# while every existing test stayed green:
 #
 # - ``persona-plan-orchestrator/standards/orchestration-model.md``
 #   § "What each status means" — a status -> bucket table restating
 #   ``VALID_STATUS_VOCABULARY`` and the three partitions it is built from. The
 #   existing status test reads ``plan-orchestrator/SKILL.md``, never this table.
 # - ``plan-orchestrator/workflow/orchestrate.md`` § the candidate schema — the
-#   ``candidate_kind`` x derivation-state enumeration, restating
-#   ``CANDIDATE_KINDS`` and ``CANDIDATE_DERIVATION_STATES``. The existing
-#   candidate tests assert on the verb's OUTPUT, never on this document.
+#   ``candidate_kind`` x derivation-state enumeration written as PROSE in the
+#   Step 4 disjointness bullet, restating ``CANDIDATE_KINDS`` and
+#   ``CANDIDATE_DERIVATION_STATES``. The existing candidate tests assert on the
+#   verb's OUTPUT, never on this document.
+# - ``plan-orchestrator/workflow/orchestrate.md`` § Output — the same two axes
+#   again, this time spelled out literally as the TOON ROW BLOCKS of the ``next``
+#   verb's report shape (``candidate_population[3]{...}`` and
+#   ``candidate_derivation_states[9]{...}``). This is the restatement a reader
+#   consults for the output contract, and it is a SEPARATE population from the
+#   prose sentence above: the prose anchor is the backticked token
+#   ``candidate_derivation_states[]``, which the unbackticked ``[9]``-bearing row
+#   header never matches, so pinning the sentence left these rows pinned by
+#   nothing — their stale counts and stale names would survive a change to either
+#   declaring tuple.
 #
 # Every comparison below is a set EQUALITY, so a member added to the code and a
 # member left behind in the prose each fail — a membership test could only ever
@@ -4065,6 +4076,51 @@ _SCHEMA_STATES_RE = re.compile(r'((?:`[^`]+`\s*/\s*)+`[^`]+`)\s+tally')
 _SCHEMA_KINDS_RE = re.compile(r'per `candidate_kind`\s*\(((?:`[^`]+`(?:,\s*)?)+)\)')
 _BACKTICKED_RE = re.compile(r'`([^`]+)`')
 
+#: The section the ``next`` verb's report shape is written in. The row blocks
+#: below are read from INSIDE this section rather than from the whole document,
+#: for the same reason the prose runs above are searched from their anchor: a
+#: same-shaped block added elsewhere in the file must never be read as the report
+#: shape. ``section_lines`` raises when the heading is renamed, so this anchor
+#: cannot silently stop matching the way an absent substring would.
+_REPORT_SHAPE_HEADING = '## Output'
+
+#: A TOON uniform-array header — ``name[N]{col,col,...}:`` — matched at LINE
+#: START. That is what separates a row block from the prose restatements of the
+#: same field names elsewhere in the document, which are backticked, sit
+#: mid-sentence, and write empty brackets (``candidate_derivation_states[]``).
+_REPORT_HEADER_RE = re.compile(r'^(\w+)\[(\d+)\]\{([^}]*)\}:\s*$')
+
+
+def _parse_report_block(field: str) -> tuple[int, list[str], list[list[str]]]:
+    """Return ``(declared_count, columns, rows)`` for one report-shape row block.
+
+    ``declared_count`` is the ``[N]`` the header writes; it is returned
+    SEPARATELY from the rows because it is a separate claim — a header can
+    declare nine rows and then write eight, and only comparing both to the real
+    cardinality catches that.
+
+    ``columns`` is the ``{...}`` column list, returned so a caller reading a cell
+    by position can assert the header puts that column there: a column order
+    swapped in the document would otherwise silently re-point every positional
+    read at the wrong axis.
+
+    An absent header returns an empty block, which the import-time guard below
+    turns into a loud failure rather than an equality over nothing.
+    """
+    body = section_lines(_ORCHESTRATE_DOC.read_text(encoding='utf-8'), _REPORT_SHAPE_HEADING)
+    for index, line in enumerate(body):
+        header = _REPORT_HEADER_RE.match(line)
+        if header is None or header.group(1) != field:
+            continue
+        columns = [column.strip() for column in header.group(3).split(',')]
+        rows: list[list[str]] = []
+        for row_line in body[index + 1 :]:
+            if not row_line.startswith('  ') or not row_line.strip():
+                break
+            rows.append([cell.strip() for cell in row_line.strip().split(',')])
+        return int(header.group(2)), columns, rows
+    return 0, [], []
+
 
 def _parse_status_table() -> list[tuple[str, str]]:
     """Return ``(status, bucket)`` for every DATA row of the status table."""
@@ -4098,11 +4154,13 @@ def _parse_candidate_schema() -> tuple[list[str], list[str]]:
 
 _STATUS_TABLE_ROWS: list[tuple[str, str]] = _parse_status_table()
 _SCHEMA_STATES, _SCHEMA_KINDS = _parse_candidate_schema()
+_POPULATION_DECLARED, _POPULATION_COLUMNS, _POPULATION_ROWS = _parse_report_block('candidate_population')
+_STATES_DECLARED, _STATES_COLUMNS, _STATES_ROWS = _parse_report_block('candidate_derivation_states')
 
-# Guarded at IMPORT, ahead of every comparison below, because each of the three
+# Guarded at IMPORT, ahead of every comparison below, because each of these
 # populations is the thing those comparisons range over. An empty parse is not a
 # documentation block with nothing in it — it is a parse that stopped matching
-# the prose, and it would make every equality below pass over two empty sets.
+# the document, and it would make every equality below pass over empty sets.
 assert _STATUS_TABLE_ROWS, (
     f'no data row parsed from {_ORCHESTRATION_MODEL_DOC.name} § {_STATUS_TABLE_HEADING!r} — '
     f'the status-table comparisons below would range over an empty set and pass without checking anything'
@@ -4111,6 +4169,12 @@ assert _SCHEMA_STATES and _SCHEMA_KINDS, (
     f'the candidate schema in {_ORCHESTRATE_DOC.name} yielded {len(_SCHEMA_KINDS)} kind(s) and '
     f'{len(_SCHEMA_STATES)} state(s) from the anchor {_SCHEMA_ANCHOR} — the schema comparisons '
     f'below would range over an empty set and pass without checking anything'
+)
+assert _POPULATION_ROWS and _STATES_ROWS, (
+    f'the report shape in {_ORCHESTRATE_DOC.name} § {_REPORT_SHAPE_HEADING!r} yielded '
+    f'{len(_POPULATION_ROWS)} candidate_population row(s) and {len(_STATES_ROWS)} '
+    f'candidate_derivation_states row(s) — the report-shape comparisons below would range over '
+    f'an empty set and pass without checking anything'
 )
 
 
@@ -4189,6 +4253,89 @@ class TestCandidateSchemaIsSynchronizedWithItsDeclaringTuples:
             f'the verb emits {len(emitted)} (kind, state) row(s) and the document spans '
             f'{len(documented)}: only in emitted {sorted(set(emitted) - set(documented))}, '
             f'only in the document {sorted(set(documented) - set(emitted))}'
+        )
+
+
+class TestReportShapeRowsAreSynchronizedWithItsDeclaringTuples:
+    """The ``next`` verb's report shape spells both axes out a SECOND time.
+
+    The class above pins the PROSE restatement of the same cross-product, and
+    pinning it does nothing for these rows: the prose is reached through the
+    backticked ``candidate_derivation_states[]`` anchor, which the unbackticked
+    ``candidate_derivation_states[9]{...}`` row header never matches. So a kind
+    or state added to either declaring tuple forced an update to the sentence
+    and changed the verb's output — both caught — while the output contract a
+    reader actually consults kept its stale counts and stale names.
+
+    Each block is pinned on three axes, because they fail independently: the
+    COLUMN list (a swapped column order silently re-points every positional read
+    at the wrong axis), the declared ``[N]`` (a count that outran its own rows),
+    and the row cells themselves.
+    """
+
+    def test_the_population_block_names_exactly_the_candidate_kinds_in_declared_order(self):
+        assert _POPULATION_COLUMNS == ['candidate_kind', 'population'], (
+            f'the candidate_population header declares columns {_POPULATION_COLUMNS} — the kind is '
+            'read from column 0 below, so a reordered or renamed header would compare the wrong cell'
+        )
+
+        documented = [row[0] for row in _POPULATION_ROWS]
+        assert documented == list(CANDIDATE_KINDS), (
+            f'the report shape names {documented} against the declared {list(CANDIDATE_KINDS)}'
+        )
+        assert _POPULATION_DECLARED == len(_POPULATION_ROWS) == len(CANDIDATE_KINDS), (
+            f'the header declares {_POPULATION_DECLARED} row(s), {len(_POPULATION_ROWS)} follow it, '
+            f'and {len(CANDIDATE_KINDS)} kind(s) are declared — all three must agree'
+        )
+
+    def test_the_derivation_state_block_spans_the_declared_cross_product_in_order(self):
+        assert _STATES_COLUMNS == ['candidate_kind', 'derivation_status', 'count'], (
+            f'the candidate_derivation_states header declares columns {_STATES_COLUMNS} — the pair is '
+            'read from columns 0 and 1 below, so a reordered or renamed header would compare the '
+            'wrong cells'
+        )
+
+        documented = [(row[0], row[1]) for row in _STATES_ROWS]
+        expected = [(kind, state) for kind in CANDIDATE_KINDS for state in CANDIDATE_DERIVATION_STATES]
+        assert documented == expected, (
+            f'the report shape spans {len(documented)} (kind, state) row(s) and the declaring tuples '
+            f'span {len(expected)}: only in the document {sorted(set(documented) - set(expected))}, '
+            f'only in the tuples {sorted(set(expected) - set(documented))}'
+        )
+        assert _STATES_DECLARED == len(_STATES_ROWS) == len(expected), (
+            f'the header declares {_STATES_DECLARED} row(s), {len(_STATES_ROWS)} follow it, and the '
+            f'cross-product holds {len(expected)} — all three must agree'
+        )
+
+    def test_the_documented_report_rows_equal_the_rows_the_verb_emits(self, plan_context):
+        """The loop closed to the OUTPUT, not only to the constants behind it.
+
+        The report shape is the contract a caller reads before consuming the
+        payload, so it is tied to the payload itself: the equality above proves
+        the document agrees with the declaring tuples, and this proves the
+        payload does too — a forwarding path that dropped or reordered a row
+        would satisfy the first and fail here.
+        """
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
+
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        emitted_kinds = [row['candidate_kind'] for row in result['candidate_population']]
+        assert emitted_kinds == [row[0] for row in _POPULATION_ROWS], (
+            f'the verb emits candidate_population for {emitted_kinds} and the report shape documents '
+            f'{[row[0] for row in _POPULATION_ROWS]}'
+        )
+
+        emitted_pairs = [
+            (row['candidate_kind'], row['derivation_status']) for row in result['candidate_derivation_states']
+        ]
+        documented_pairs = [(row[0], row[1]) for row in _STATES_ROWS]
+        assert emitted_pairs == documented_pairs, (
+            f'the verb emits {len(emitted_pairs)} candidate_derivation_states row(s) and the report '
+            f'shape documents {len(documented_pairs)}: only in emitted '
+            f'{sorted(set(emitted_pairs) - set(documented_pairs))}, only in the document '
+            f'{sorted(set(documented_pairs) - set(emitted_pairs))}'
         )
 
 
