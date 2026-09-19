@@ -77,31 +77,25 @@ OpenCode operates with a native set of agent tools. The mappings are declared in
 | `WebSearch` | `websearch` | Web search querying.
 |===
 
-== Model Selection & ADR-021 Alignment
+== Model Selection & Effort Rung Handling
 
-Plan Marshall uses dynamic-level execution variants (`execution-context-level-1` through `level-7`). The OpenCode emitter aligns with ADR-021:
+Plan Marshall uses a target-neutral seven-tier ordinal scale (`level-1` through `level-7`, plus `inherit`). OpenCode handles these tiers with an intentional **inherit-only policy**:
 
-=== Level Palette Synchronization
+=== Unpinned Inherit Behavior (Default & Standard)
 
-The OpenCode variant emitter reuses the canonical `LEVEL_TABLE` from `marketplace/targets/claude/variant_emitter.py`. The targets cannot drift because they share the identical table object (enforced by `test_level_table_lockstep.py`).
+Every OpenCode level variant (`execution-context-level-1.md` through `level-7.md`) is emitted **without** `model:` or `reasoningEffort:` frontmatter. Consequently, each subagent dispatches using the calling session's active model:
 
-=== Model Map
+* **Static markdown architecture**: OpenCode subagents are defined by static Markdown files deployed under `~/.config/opencode/agent/`. Unlike runtime platforms with dynamic execution engines or built-in model re-emitters, OpenCode reads markdown files directly from disk.
+* **Provider independence**: OpenCode supports a diverse matrix of LLM providers (Anthropic, OpenAI, Ollama, local models, etc.) chosen at the user's discretion. No single universal provider prefix can be hardcoded across targets without breaking user configurations.
+* **Session model inheritance**: Emitting all variants unpinned ensures that subagents execute reliably across all effort levels on whatever engine the operator currently uses, without runtime dispatch failures.
 
-Claude Code model aliases map to OpenCode model identifiers:
+=== Local Effort Ladder & Future Custom Ladders
 
-[cols="1,1,2", options="header"]
-|===
-| Alias | OpenCode Model | Description
-| `opus` | `openai/o1` | High-capability reasoning model
-| `sonnet` | `anthropic/claude-3-5-sonnet` | Fast, high-efficiency development model
-| `haiku` | `anthropic/claude-3-5-haiku` | Lightweight model for quick lookups
-| `fable` | `anthropic/claude-3-5-sonnet` | Balanced development tier
-|===
+Under the machine-local effort ladder framework:
 
-=== Pinned vs Unpinned Variants
-
-* **Unpinned (Default)**: Emitted level variants omit the `model:` frontmatter property. The subagent inherits the calling session's active model (`inherit` behavior).
-* **Pinned (`level_pins`)**: When materialized pins are supplied via ADR-021 (`emit_bundles(..., level_pins=...)`), the configured model alias is resolved through `mapping.json::model_map` and emitted into the variant frontmatter (e.g. `model: openai/o1`).
+* `.plan/local/effort-ladder.json` records OpenCode's default ladder with `model: null` and `effort: null` across all seven rungs.
+* If a user configures custom models in `.plan/local/effort-ladder.json` under `targets.opencode`, these pins can be supplied during generator builds.
+* Dynamic, in-place rewriting of deployed OpenCode agent files without full target regeneration is deferred to a future steward milestone.
 
 == Body Transformations
 

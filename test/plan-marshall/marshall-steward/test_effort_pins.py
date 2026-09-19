@@ -300,3 +300,136 @@ def test_materialize_cli_emits_toon_contract(tmp_path):
     assert 'level-2=local-model-a' in payload['pins']
     assert 'level-4=zen/route-r' in payload['pins']
     assert 'level-1=inherit' in payload['pins']
+
+
+# =============================================================================
+# Option A Multi-Target Ladder Tests
+# =============================================================================
+
+
+def test_option_a_schema_validation():
+    """Option A targets structure validates cleanly."""
+    data = {
+        'targets': {
+            'antigravity': effort_pins.ANTIGRAVITY_DEFAULT_LADDER,
+            'claude': effort_pins.CLAUDE_DEFAULT_LADDER,
+            'opencode': effort_pins.OPENCODE_DEFAULT_LADDER,
+        }
+    }
+    ok, errors = effort_pins.validate_map_data(data)
+    assert ok
+    assert errors == []
+
+
+def test_option_a_materialize_antigravity():
+    """Antigravity target materializes Option 1 models."""
+    data = {
+        'targets': {
+            'antigravity': effort_pins.ANTIGRAVITY_DEFAULT_LADDER,
+        }
+    }
+    pins, guard_hits = effort_pins.materialize_levels(data, target='antigravity')
+    assert guard_hits == 0
+    assert pins['level-1'] == 'flash'
+    assert pins['level-5'] == 'flash'
+    assert pins['level-6'] == 'pro'
+    assert pins['level-7'] == 'pro'
+
+
+def test_option_a_materialize_opencode_inherit():
+    """OpenCode target materializes all levels as inherit by default."""
+    data = {
+        'targets': {
+            'opencode': effort_pins.OPENCODE_DEFAULT_LADDER,
+        }
+    }
+    pins, guard_hits = effort_pins.materialize_levels(data, target='opencode')
+    assert guard_hits == 0
+    assert all(pins[lvl] == 'inherit' for lvl in effort_pins.LEVELS)
+
+
+def test_ensure_default_ladder_creation_and_idempotence(tmp_path):
+    """ensure_default_ladder seeds all targets and is idempotent."""
+    ladder_file = tmp_path / 'effort-ladder.json'
+
+    # Act 1: Initial creation
+    modified, detail = effort_pins.ensure_default_ladder(ladder_path=ladder_file)
+    assert modified
+    assert ladder_file.is_file()
+
+    data = json.loads(ladder_file.read_text(encoding='utf-8'))
+    assert 'targets' in data
+    assert 'antigravity' in data['targets']
+    assert 'claude' in data['targets']
+    assert 'opencode' in data['targets']
+    assert data['targets']['antigravity']['level-1']['model'] == 'flash'
+    assert data['targets']['claude']['level-7']['model'] == 'fable'
+    assert data['targets']['opencode']['level-1']['model'] is None
+
+    # Act 2: Idempotent second run
+    modified2, detail2 = effort_pins.ensure_default_ladder(ladder_path=ladder_file)
+    assert not modified2
+
+
+def test_ensure_default_ladder_preserves_custom_edits(tmp_path):
+    """Custom user entries in effort-ladder.json are never clobbered."""
+    ladder_file = tmp_path / 'effort-ladder.json'
+    custom_ladder = {
+        'targets': {'antigravity': {lvl: {'model': 'custom-flash', 'effort': 'high'} for lvl in effort_pins.LEVELS}}
+    }
+    ladder_file.write_text(json.dumps(custom_ladder), encoding='utf-8')
+
+    modified, _ = effort_pins.ensure_default_ladder(ladder_path=ladder_file)
+    assert modified  # claude and opencode were seeded
+
+    data = json.loads(ladder_file.read_text(encoding='utf-8'))
+    # Custom edit on antigravity preserved!
+    assert data['targets']['antigravity']['level-1']['model'] == 'custom-flash'
+    # Missing targets added
+    assert 'claude' in data['targets']
+    assert 'opencode' in data['targets']
+
+
+def test_load_and_save_ladder(tmp_path):
+    """save_ladder and load_ladder round-trip correctly."""
+    ladder_file = tmp_path / 'effort-ladder.json'
+    my_ladder = {
+        'level-1': {'model': 'model-x', 'effort': 'low'},
+    }
+    effort_pins.save_ladder('custom-target', my_ladder, ladder_path=ladder_file)
+
+    loaded, warnings = effort_pins.load_ladder('custom-target', ladder_path=ladder_file)
+    assert warnings == []
+    assert loaded is not None
+    assert loaded['level-1']['model'] == 'model-x'
+
+
+def test_load_ladder_missing_target_warns(tmp_path):
+    """load_ladder warns and returns None for missing target."""
+    ladder_file = tmp_path / 'effort-ladder.json'
+    ladder_file.write_text(json.dumps({'targets': {'claude': {}}}), encoding='utf-8')
+
+    loaded, warnings = effort_pins.load_ladder('non-existent', ladder_path=ladder_file)
+    assert loaded is None
+    assert len(warnings) == 1
+    assert 'non-existent' in warnings[0]
+    assert 'falling back to inherit' in warnings[0]
+
+
+def test_cli_ensure_defaults_and_validate(tmp_path):
+    """CLI subcommands ensure-defaults and validate work end-to-end."""
+    ladder_file = tmp_path / 'effort-ladder.json'
+    script = get_script_path('plan-marshall', 'marshall-steward', 'effort_pins.py')
+
+    res1 = run_script(script, 'ensure-defaults', '--ladder-path', str(ladder_file))
+    assert res1.success
+    toon1 = res1.toon()
+    assert toon1['status'] == 'success'
+    assert toon1['modified'] is True
+
+    res2 = run_script(script, 'validate', '--ladder-path', str(ladder_file))
+    assert res2.success
+    toon2 = res2.toon()
+    assert toon2['status'] == 'success'
+    assert toon2['valid'] is True
+    assert toon2['entries'] == 21  # 7 levels * 3 targets

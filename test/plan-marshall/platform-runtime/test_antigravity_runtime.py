@@ -346,7 +346,9 @@ def test_permission_ensure_wildcards(
     assert result['operation'] == 'permission ensure-wildcards'
 
 
-def test_project_install_hook_merge_existing(runtime: AntigravityRuntime, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+def test_project_install_hook_merge_existing(
+    runtime: AntigravityRuntime, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
     """project_install_hook merges plan-marshall-guard into existing hooks.json."""
     monkeypatch.chdir(tmp_path)
     hooks_dir = tmp_path / '.agents'
@@ -375,7 +377,10 @@ def test_to_antigravity_grant_structured():
 
     assert to_antigravity_grant({'tool': 'read', 'path': 'src/**'}) == 'read_file(src/**)'
     assert to_antigravity_grant({'tool': 'write', 'path': 'out.txt'}) == 'write_file(out.txt)'
-    assert to_antigravity_grant({'tool': 'webfetch', 'url': 'https://api.github.com'}) == 'read_url(https://api.github.com)'
+    assert (
+        to_antigravity_grant({'tool': 'webfetch', 'url': 'https://api.github.com'})
+        == 'read_url(https://api.github.com)'
+    )
     assert to_antigravity_grant({'tool': 'command', 'command': 'python3 -m pytest'}) == 'command(python3 -m pytest)'
     assert to_antigravity_grant({'rule': 'Bash(git status *)'}) == 'command(git status)'
 

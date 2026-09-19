@@ -165,7 +165,9 @@ def _yaml_quote(value: str) -> str:
     """Safely quote a string for inclusion as a YAML scalar value."""
     if not value:
         return '""'
-    if any(c in value for c in (':', '"', "'", '#', '\n', '@', '`', '*', '&', '{', '}', '[', ']')) or value.startswith(('-', '?', ':', ' ')):
+    if any(c in value for c in (':', '"', "'", '#', '\n', '@', '`', '*', '&', '{', '}', '[', ']')) or value.startswith(
+        ('-', '?', ':', ' ')
+    ):
         return json.dumps(value)
     return value
 
@@ -211,6 +213,10 @@ def transform_agent_frontmatter(
         resolved = _resolve_model(model_value, mapping['model_map'])
         if resolved:
             lines.append(f'model: {resolved}')
+
+    effort_value = fm.get('effort', '')
+    if effort_value:
+        lines.append(f'effort: {effort_value}')
 
     tools_raw = fm.get('tools', '')
     if tools_raw:

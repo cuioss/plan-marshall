@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -95,10 +96,11 @@ def test_render_variant_frontmatter_unpinned(tmp_path: Path):
         'tools': 'Read, Write',
         'implements': EXTENSION_POINT,
     }
-    rendered = render_variant_frontmatter(fm, 'level-1', mapping, rules, source_label='test')
+    rendered = render_variant_frontmatter(fm, 'level-1', mapping, rules, source_label='test', level_pin='inherit')
     assert 'implements' not in rendered
     assert 'mode: subagent' in rendered
     assert 'model:' not in rendered
+    assert 'effort:' not in rendered
 
 
 def test_render_variant_frontmatter_pinned(tmp_path: Path):
@@ -110,8 +112,11 @@ def test_render_variant_frontmatter_pinned(tmp_path: Path):
         'tools': 'Read, Write',
         'implements': EXTENSION_POINT,
     }
-    rendered = render_variant_frontmatter(fm, 'level-6', mapping, rules, source_label='test', level_pin='opus')
+    rendered = render_variant_frontmatter(
+        fm, 'level-7', mapping, rules, source_label='test', level_pin={'model': 'pro', 'effort': 'high'}
+    )
     assert 'model: pro' in rendered
+    assert 'effort: high' in rendered
 
 
 def test_emit_agent_variants_end_to_end(role_bundle: Path, tmp_path: Path):
@@ -126,24 +131,43 @@ def test_emit_agent_variants_end_to_end(role_bundle: Path, tmp_path: Path):
         content = variant.read_text(encoding='utf-8')
         assert 'mode: subagent' in content
 
+    # Check Option 1 ladder defaults baked into emitted files
+    l1_content = (agents_dir / 'execution-context-level-1.md').read_text(encoding='utf-8')
+    assert 'model: flash' in l1_content
+    assert 'effort: low' in l1_content
+
+    l5_content = (agents_dir / 'execution-context-level-5.md').read_text(encoding='utf-8')
+    assert 'model: flash' in l5_content
+    assert 'effort: high' in l5_content
+
+    l6_content = (agents_dir / 'execution-context-level-6.md').read_text(encoding='utf-8')
+    assert 'model: pro' in l6_content
+    assert 'effort: low' in l6_content
+
+    l7_content = (agents_dir / 'execution-context-level-7.md').read_text(encoding='utf-8')
+    assert 'model: pro' in l7_content
+    assert 'effort: high' in l7_content
+
 
 def test_emit_agent_variants_with_pins(role_bundle: Path, tmp_path: Path):
     out = tmp_path / 'out'
-    pins = {'level-1': 'haiku', 'level-7': 'opus'}
+    pins: dict[str, Any] = {
+        'level-1': {'model': 'flash', 'effort': 'high'},
+        'level-4': 'inherit',
+    }
     emit_bundles(role_bundle, out, CONFIG_DIR, level_pins=pins)
 
     agents_dir = out / 'agents'
     l1_content = (agents_dir / 'execution-context-level-1.md').read_text(encoding='utf-8')
     assert 'model: flash' in l1_content
-
-    l7_content = (agents_dir / 'execution-context-level-7.md').read_text(encoding='utf-8')
-    assert 'model: pro' in l7_content
+    assert 'effort: high' in l1_content
 
     l4_content = (agents_dir / 'execution-context-level-4.md').read_text(encoding='utf-8')
     assert 'model:' not in l4_content
+    assert 'effort:' not in l4_content
 
 
 def test_emit_agent_variants_unknown_pin_key_raises(role_bundle: Path, tmp_path: Path):
     out = tmp_path / 'out'
     with pytest.raises(ValueError, match='unknown level key'):
-        emit_bundles(role_bundle, out, CONFIG_DIR, level_pins={'level-99': 'opus'})
+        emit_bundles(role_bundle, out, CONFIG_DIR, level_pins={'level-99': 'pro'})

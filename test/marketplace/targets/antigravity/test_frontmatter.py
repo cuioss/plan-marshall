@@ -85,10 +85,19 @@ class TestTransformAgentFrontmatter:
         }
         res = transform_agent_frontmatter(fm, mapping, rules, source_label='agent/test')
         assert 'mode: subagent' in res
-        assert 'model: pro' in res
+        assert 'model: flash' in res
         assert 'run_command' in res
         assert 'view_file' in res
         assert 'write_to_file' in res
+
+        fm_opus = {
+            'name': 'test-agent-pro',
+            'description': 'An agent with opus',
+            'model': 'opus',
+            'tools': 'Read',
+        }
+        res_opus = transform_agent_frontmatter(fm_opus, mapping, rules, source_label='agent/test')
+        assert 'model: pro' in res_opus
 
     def test_unmapped_tool_raises_error(self, mapping: dict, rules: dict):
         fm = {

@@ -13,14 +13,12 @@ The steward surface owning per-level model configuration is a Main Menu option o
 
 ## Map Read and Write Contract
 
-The step reads the machine-local effort-to-model pin map at its machine-local resolved path. The map is never version-controlled and never lives in project-shared configuration.
+The step reads the machine-local effort ladder at `.plan/local/effort-ladder.json` (or legacy `effort-pins.json`). The map is never version-controlled and never lives in project-shared configuration.
 
-- **Location**: machine-local resolved path owned by the provisioning target. Project-shared configuration carries no new key for this map.
-- **Schema**: the PLAN-01 schema. Every entry declares its kind; an entry without a usable kind is unprovisioned, exactly as an absent entry is.
-- **Entry kinds**: both kinds are supported.
-  - `local` — a locally available model reference. Carries the model identifier the level provisions.
-  - `provider` — a provider-routed configuration such as Zen or Go. Carries the route the provisioning seam interprets.
-- **Writes**: the step never writes the map itself. It reads the map and delegates every effort write through the existing `manage-config effort` surface. A malformed map fails closed with an error TOON and no partial write.
+- **Location**: `.plan/local/effort-ladder.json` (resolved main-anchored via `marketplace_paths.resolve_main_anchored_path`).
+- **Schema**: Option A multi-target schema (`targets.<target_name>.<level>`), with legacy PLAN-01 (`pins.<level>`) fallback. Each level entry specifies `model` and `effort` coordinates.
+- **Entry kinds**: Both two-axis coordinates (`{"model": ..., "effort": ...}`) and legacy kinds (`local`, `provider`) are supported.
+- **Writes & Seeding**: Running `/marshall-steward` seeds built-in default ladders for Antigravity (Option 1), Claude (canonical), and OpenCode (inherit). Users can edit `.plan/local/effort-ladder.json` directly to adjust model and effort mappings without changing git-controlled files.
 
 ## Inherit Preservation and Never-Escalate Guard
 

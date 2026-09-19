@@ -19,6 +19,7 @@ import json
 import shutil
 from collections.abc import Callable, Iterable, Iterator
 from pathlib import Path
+from typing import Any
 
 from marketplace.targets.antigravity.frontmatter import (
     load_mapping,
@@ -235,7 +236,7 @@ def _emit_agent(
     rules: dict[str, list[str]],
     body_transformer: BodyTransformer,
     written: list[Path],
-    level_pins: dict[str, str] | None = None,
+    level_pins: dict[str, Any] | None = None,
 ) -> None:
     if not agent_md.exists():
         return
@@ -356,7 +357,7 @@ def emit_bundles(
     bundles: Iterable[str] | None = None,
     body_transformer: BodyTransformer | None = None,
     target_name: str = ANTIGRAVITY_TARGET_NAME,
-    level_pins: dict[str, str] | None = None,
+    level_pins: dict[str, Any] | None = None,
 ) -> list[Path]:
     """Walk source bundles and emit Antigravity output."""
     refuse_tree_overlap(output_dir, marketplace_dir)

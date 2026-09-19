@@ -540,7 +540,7 @@ class AntigravityRuntime(Runtime):
             return toon_error(
                 'permission configure',
                 'load_error',
-                f"Failed to load settings from {settings_path}: {settings['error']}",
+                f'Failed to load settings from {settings_path}: {settings["error"]}',
             )
         allow_list = get_antigravity_allow_list(settings)
 
@@ -634,7 +634,7 @@ class AntigravityRuntime(Runtime):
             return toon_error(
                 'permission fix',
                 'load_error',
-                f"Failed to load settings from {settings_path}: {settings['error']}",
+                f'Failed to load settings from {settings_path}: {settings["error"]}',
             )
         allow_list = get_antigravity_allow_list(settings)
 

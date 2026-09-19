@@ -1,0 +1,202 @@
+= Multi-Target Effort Ladders Architecture
+:nofooter:
+:toc: left
+:toclevels: 3
+:toc-title: Table of Contents
+:sectnums:
+:source-highlighter: highlight.js
+
+xref:../../README.md[Plan Marshall] » xref:README.adoc[Developer Guide]
+
+This guide explains the architectural pattern separating project-level cognitive intent from machine-local model realization, the Two-Axis Effort Model, the `.plan/local/effort-ladder.json` store contract, and step-by-step instructions for integrating new target platforms (e.g. Codex, Cursor).
+
+== Core Architectural Concept
+
+Plan Marshall coordinates complex, multi-phase software engineering workflows using subagents. Different tasks demand vastly different degrees of intelligence: log parsing or simple text transformation requires minimal compute, while architectural decomposition or security audit demands deep reasoning.
+
+Historically, assistant configurations hardcoded vendor-specific model aliases directly into workflows. This created three major problems:
+1. **Vendor lock-in**: Hardcoding Anthropic, OpenAI, or Google model names into project files breaks multi-platform distribution.
+2. **Machine supply divergence**: A project cannot dictate what models or credentials are available on a specific developer's workstation or CI runner.
+3. **Reasoning budget opacity**: Models now feature orthogonal reasoning effort controls (thinking tokens) that cannot be expressed by a model name alone.
+
+Plan Marshall resolves this through a strict separation:
+
+[cols="1,2,2", options="header"]
+|===
+| Scope | Configuration Layer | Purpose
+
+| **Project Intent** (Version-Controlled)
+| `.plan/marshal.json`
+| Declares abstract, target-neutral cognitive requirements: `level-1` through `level-7` (plus `inherit`).
+
+| **Machine Supply** (Local, Git-Ignored)
+| `.plan/local/effort-ladder.json`
+| Maps abstract levels to native models and reasoning effort settings available on this machine for each target.
+|===
+
+== The Two-Axis Effort Model
+
+Plan Marshall models each level as an orthogonal coordinate:
+
+$$\text{Level} = (\text{Model Axis}, \text{Effort Axis})$$
+
+* **Model Axis (Capacity)**: Foundation engine tier (e.g. lightweight fast engine vs. frontier deep-reasoning engine).
+* **Effort Axis (Reasoning Intensity)**: Thinking budget allocated to the engine (e.g. `low`, `medium`, `high`, `max`, or `null` if unsupported).
+
+=== The Seven Ordinal Rungs
+
+The seven rungs form an invariant ordinal scale:
+
+1. `level-1`: Fast mechanical transforms, log parsing, simple file lookups.
+2. `level-2`: Routine scoped code edits, unit test adjustments, formatting.
+3. `level-4`: Analytical triage, verification feedback, multi-file inspection.
+4. `level-4`: Solution planning, outline formulation, cross-component refactoring.
+5. `level-5`: Deep codebase exploration, comprehensive test analysis.
+6. `level-6`: Complex cross-cutting synthesis, subtle concurrency analysis.
+7. `level-7`: Maximum capability ceiling, high-stakes security analysis, definitive architecture.
+8. `inherit`: Sentinel instruct dispatch to inherit the parent session's active model without pinning.
+
+== The `.plan/local/effort-ladder.json` Store Contract
+
+The machine-local configuration is stored at `.plan/local/effort-ladder.json` (resolved main-anchored via `resolve_main_anchored_path`). It uses the multi-target **Option A** schema:
+
+[source,json]
+----
+{
+  "targets": {
+    "antigravity": {
+      "level-1": { "model": "flash", "effort": "low" },
+      "level-2": { "model": "flash", "effort": "low" },
+      "level-3": { "model": "flash", "effort": "medium" },
+      "level-4": { "model": "flash", "effort": "medium" },
+      "level-5": { "model": "flash", "effort": "high" },
+      "level-6": { "model": "pro", "effort": "low" },
+      "level-7": { "model": "pro", "effort": "high" }
+    },
+    "claude": {
+      "level-1": { "model": "haiku", "effort": null },
+      "level-2": { "model": "sonnet", "effort": "medium" },
+      "level-3": { "model": "sonnet", "effort": "high" },
+      "level-4": { "model": "opus", "effort": "medium" },
+      "level-5": { "model": "opus", "effort": "high" },
+      "level-6": { "model": "opus", "effort": "xhigh" },
+      "level-7": { "model": "fable", "effort": "max" }
+    },
+    "opencode": {
+      "level-1": { "model": null, "effort": null },
+      "level-2": { "model": null, "effort": null },
+      "level-3": { "model": null, "effort": null },
+      "level-4": { "model": null, "effort": null },
+      "level-5": { "model": null, "effort": null },
+      "level-6": { "model": null, "effort": null },
+      "level-7": { "model": null, "effort": null }
+    }
+  }
+}
+----
+
+=== Schema Validation Rules
+
+1. Root must be a JSON object with a `targets` key.
+2. Each target under `targets` maps `level-1` through `level-7` to entry objects.
+3. An entry must contain:
+   * `model`: A string model identifier/alias, or `null` (unpinned / inherit).
+   * `effort`: A string reasoning intensity, or `null` (no effort / omitted).
+4. Unpinned levels (`model: null`) or missing keys fall back to `inherit`.
+5. The never-escalate rule: An optional `capability_rank` (integer) may be included; if its rank exceeds the level index, the level falls back to `inherit` and increments guard hits.
+
+== Steward Management (`marshall-steward:effort_pins`)
+
+The deterministic script `effort_pins.py` under `marshall-steward` manages the machine-local ladder:
+
+* **`validate`**: Validates schema compliance of `.plan/local/effort-ladder.json`.
+* **`ensure-defaults`**: Seeds target defaults into `.plan/local/effort-ladder.json` without clobbering existing custom edits.
+* **`materialize`**: Emits per-level model assignments in TOON format for build and dispatch seams.
+
+[source,bash]
+----
+# Seed defaults
+python3 .plan/execute-script.py plan-marshall:marshall-steward:effort_pins ensure-defaults
+
+# Validate configuration
+python3 .plan/execute-script.py plan-marshall:marshall-steward:effort_pins validate
+
+# Materialize for a specific target
+python3 .plan/execute-script.py plan-marshall:marshall-steward:effort_pins materialize --target antigravity
+----
+
+== Guide: Adding a New Target Integration (e.g. Codex, Cursor)
+
+Follow these steps when adding a new distribution target to Plan Marshall:
+
+=== Step 1: Register Target
+
+Register the target name in `marketplace/targets/__init__.py` in `TARGET_REGISTRY`.
+
+=== Step 2: Define Target Engine Inventory (`mapping.json`)
+
+Under `marketplace/targets/{new_target}/mapping.json`, declare the native models and their supported effort levels:
+
+[source,json]
+----
+{
+  "model_map": {
+    "codex-fast": {
+      "id": "codex-fast",
+      "supports_effort": ["low", "medium"]
+    },
+    "codex-max": {
+      "id": "codex-max",
+      "supports_effort": ["low", "medium", "high"]
+    }
+  }
+}
+----
+
+=== Step 3: Define Target Default Ladder & Lockstep Tests
+
+In `marketplace/targets/{new_target}/variant_emitter.py`:
+1. Define `DEFAULT_LADDER` matching the seven ordinal rungs using the target's native models.
+2. In `test/marketplace/targets/{new_target}/test_level_table_lockstep.py`, assert that:
+   * `DEFAULT_LADDER.keys() == set(LEVEL_PALETTE)`
+   * All models are registered in `mapping.json`.
+   * All efforts are valid in `supports_effort`.
+
+=== Step 4: Implement Local Ladder Resolution in Emitter
+
+In `marketplace/targets/{new_target}/variant_emitter.py`, implement `_load_local_ladder(target='{new_target}')`. When emitting agent variants:
+1. If `level_pins` is passed explicitly, use it.
+2. Else if `.plan/local/effort-ladder.json` carries `targets.{new_target}`, overlay it.
+3. Else fall back to `DEFAULT_LADDER` (ensuring deterministic CI builds on clean checkouts).
+
+=== Step 5: Register Defaults in Steward
+
+In `marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/effort_pins.py`:
+1. Add `{NEW_TARGET}_DEFAULT_LADDER`.
+2. Register it in `DEFAULT_TARGET_LADDERS['{new_target}']`.
+3. Add `{new_target}` to the targets handled by `ensure_default_ladder`.
+
+=== Step 6: Handle Unconfigured Fallback
+
+When a target is unconfigured and no defaults exist, ensure the emitter falls back to unpinned (`inherit`) variants and logs an informative warning:
+```text
+warning: Target '{new_target}' has no local effort ladder configured in .plan/local/effort-ladder.json. Falling back to 'inherit' for all levels.
+```
+
+== Cross-References
+
+|===
+| Document | Purpose
+
+| `marketplace/bundles/plan-marshall/skills/plan-marshall/standards/effort-levels.md`
+| Ordinal scale and two-axis model definitions.
+
+| `marketplace/bundles/plan-marshall/skills/marshall-steward/standards/pin-provisioning.md`
+| Steward map reading and write delegation contract.
+
+| `doc/concepts/execution-context.adoc`
+| Conceptual overview of execution contexts and subagent dispatch.
+
+| `doc/user/efforts.adoc`
+| User-facing guide for configuring phase and role effort rungs.
+|===
