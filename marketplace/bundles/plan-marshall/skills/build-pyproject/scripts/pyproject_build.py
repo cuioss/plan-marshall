@@ -9,6 +9,21 @@ Usage:
     pyproject_build.py coverage-report [--project-path <path>] [--threshold <percent>]
     pyproject_build.py --help
 
+    Fast targeted signal (sanctioned alternative to direct ``.venv/bin/pytest``):
+    the ``run --command-args`` string is split on whitespace and forwarded
+    verbatim to the ``./pw`` wrapper, so a module-scoped and/or ``-k``-filtered
+    run stays inside the wrapper (basetemp isolation, xdist grouping, and
+    change-ledger build attribution intact)::
+
+        run --command-args "module-tests plan-marshall"
+        run --command-args "module-tests plan-marshall --no-parallel --filter test_foo"
+
+    Constraint: ``--command-args`` splits on whitespace (no shell quoting), so
+    a ``--filter`` expression containing spaces cannot travel this path — run
+    such a filter via ``./pw build module-tests <dir> --filter "<expr>"``
+    directly, or narrow to a single-token expression. An empty ``--filter``
+    is refused (exit 1), never silently ignored.
+
 Subcommands:
     run                 Execute build and auto-parse on failure (primary API)
     parse               Parse pyprojectx build output and categorize issues

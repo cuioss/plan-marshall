@@ -212,6 +212,15 @@ python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator cor
 
 Reconciles `status.json`'s `plans[]` queue against the `plans/PLAN-*.md` spec files in BOTH directions, read-only. The enumeration authority is `plans[]` — never a `plans/` directory glob, which returns a different set the moment a spec is staged without a row. The two directions stay separate fields with separate causes and are never collapsed into one symmetric-difference count: `rows_without_spec` (a queue row whose spec file is absent) and `specs_without_row` (a spec file with no queue row). Every count rides with the population it was computed over (`rows_total` / `specs_total` / `rows_scanned` / `specs_scanned`), so no figure is publishable without its denominator. A row at status `running` is enumerated carrying `excluded_reason: running` rather than omitted — an omission is indistinguishable from an empty population. An unreadable spec is reported in `unreadable[]` and does not abort the enumeration. Refuses an unsafe slug (`invalid_slug`) and an epic with no `status.json` (`file_not_found`).
 
+### corpus read
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator corpus read \
+  --slug SLUG --plan PLAN-NN
+```
+
+Returns one staged spec file's body through the sanctioned script-mediated read path — the compliant alternative to a direct `Read` of the ledger tree. The `--plan` value must match the anchored settled plan-id grammar (a bare `PLAN` without digits is refused as `invalid_plan`); resolution is exact-stem-wins, else single-prefix-match, main-anchored so the result is identical from a worktree and from the main checkout. Carries `spec`, `size_bytes`, `line_count`, and the verbatim `body`. An absent spec returns `spec_not_found` carrying `available_specs` (never an empty body); several prefix matches return `ambiguous_spec` carrying `candidates`; an unsafe slug (`invalid_slug`), an unsafe plan value (`invalid_plan`), an unreadable file (`unreadable`), and a slug with no store tree (`not_found`) are refused without writing — the verb is read-only.
+
 ### corpus cross-check
 
 ```bash
