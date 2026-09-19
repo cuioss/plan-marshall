@@ -49,7 +49,7 @@ def previous_surfaces(monkeypatch):
 
 @pytest.fixture()
 def plan_base_dir_at_tmp(tmp_path, monkeypatch):
-    """Point PLAN_BASE_DIR at an isolated tmp_path and yield that root."""
+    """Point PLAN_BASE_DIR at an isolated tmp_path and return that root."""
     monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
     return tmp_path
 

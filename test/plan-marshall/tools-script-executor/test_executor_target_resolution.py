@@ -185,7 +185,7 @@ class TestClaudeResolver:
 
     @pytest.fixture()
     def home_at_tmp(self, tmp_path, monkeypatch):
-        """Point HOME at an isolated tmp_path and yield that root."""
+        """Point HOME at an isolated tmp_path and return that root."""
         monkeypatch.setenv('HOME', str(tmp_path))
         return tmp_path
 
@@ -272,7 +272,7 @@ class TestOpenCodeResolver:
 
     @pytest.fixture()
     def home_at_tmp(self, tmp_path, monkeypatch):
-        """Point HOME at an isolated tmp_path and yield that root."""
+        """Point HOME at an isolated tmp_path and return that root."""
         monkeypatch.setenv('HOME', str(tmp_path))
         return tmp_path
 
