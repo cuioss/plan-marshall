@@ -3991,12 +3991,15 @@ def test_a_spec_whose_bytes_are_not_utf8_is_unreadable_in_both_verbs(tmp_path):
 
 
 # =============================================================================
-# Documentation synchronization — three hand-maintained vocabularies
+# Documentation synchronization — hand-maintained vocabularies restated in docs
 # =============================================================================
 #
-# Three documentation blocks restate a set this module declares, and none had a
-# check tying it to its declaring source — so any of them could drift silently
-# while every existing test stayed green:
+# Each documentation block below restates a set this module declares, without a
+# check tying the restatement to its declaring source — a member added to the
+# code and left behind in the prose (or the reverse) could drift silently while
+# every existing test stayed green. This is not asserted as an exhaustive list
+# of every such restatement in the repository; it is the set this module's
+# tests pin:
 #
 # - ``persona-plan-orchestrator/standards/orchestration-model.md``
 #   § "What each status means" — a status -> bucket table restating
