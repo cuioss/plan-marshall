@@ -15,6 +15,12 @@ point with constructed argv at the subprocess boundary (``run_script``), under
   once in ``test_inbox_envelope.py``'s in-process unit tests. This module's job
   at the CLI level is to prove the wiring (argv -> handler -> TOON ``error``)
   transports a rejection faithfully, not to re-enumerate the schema.
+- **``--target-plan`` routing**: a message aimed at a plan the epic's
+  ``status.json`` positively reads as ``running`` is DELIVERED to that plan's
+  mailbox at ``inbox/to/{plan_id}/`` rather than queued; every other target
+  queues. The sender-side ``stream_closed`` refusal is pinned to run AHEAD of
+  that routing decision by a matched pair whose two arms differ ONLY in whether
+  the sender closed its stream.
 - **``inbox validate`` resolves the archive**: a queued message reports
   ``location: queued`` with an empty ``archive_path``, a CONSUMED one reports
   ``location: archived`` with the resolved archived path, and ``file_not_found``
@@ -50,11 +56,34 @@ in the same style as the existing ``test_step_termination_contract.py`` /
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
-from conftest import MARKETPLACE_ROOT, get_script_path, run_script
+from conftest import MARKETPLACE_ROOT, get_script_path, load_script_module, run_script
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'plan-orchestrator', 'orchestrator.py')
+
+#: The channel module, addressed by module-level string constants so the loader
+#: call stays statically resolvable to ``test_conftest_loader_contract``'s
+#: walker. ``register=False`` because only the published rejection vocabulary is
+#: read here, and publishing the stem would displace the registration the
+#: sibling in-process suites hold.
+_CHANNEL_BUNDLE = 'plan-marshall'
+_CHANNEL_SKILL = 'plan-orchestrator'
+_CHANNEL_SCRIPT = '_orchestrator_inbox.py'
+
+_channel = load_script_module(_CHANNEL_BUNDLE, _CHANNEL_SKILL, _CHANNEL_SCRIPT, register=False)
+
+#: The AUTHORITATIVE rejection vocabulary of the ``inbox validate`` surface,
+#: taken from the module that raises it. Restating it here is the defect this
+#: replaces: the previous hand-maintained tuple omitted ``invalid_consume_state``
+#: and, being the population the documentation check ranged over, kept that gap
+#: invisible — a code could be undocumented and the check still pass.
+INBOX_VALIDATE_REJECTION_CODES: tuple[str, ...] = _channel.INBOX_VALIDATE_REJECTION_CODES
+
+#: A numbered row of the SKILL.md rejection table: ``| 4 | `code` | raised by |``.
+#: The header and divider rows carry no leading integer, so neither matches.
+_REJECTION_ROW_RE = re.compile(r'^\|\s*\d+\s*\|\s*`([^`]+)`\s*\|')
 
 _PLAN_MARSHALL = MARKETPLACE_ROOT / 'plan-marshall' / 'skills'
 _ORCHESTRATION_MODEL = _PLAN_MARSHALL / 'persona-plan-orchestrator' / 'standards' / 'orchestration-model.md'
@@ -86,6 +115,17 @@ def _epic_dir(plan_context, slug: str = EPIC) -> Path:
 
 def _archived_epic_dir(plan_context, slug: str) -> Path:
     return Path(plan_context.fixture_dir) / 'archived-orchestrators' / slug
+
+
+def _mailbox_dir(plan_context, plan_id: str, slug: str = EPIC) -> Path:
+    """The addressee mailbox a DELIVERED message lands in.
+
+    The CLI-level expectation of the channel's ``(epic_slug, plan_id)`` address.
+    That the write side and the read side COMPOSE the identical path from that
+    address is pinned in-process in ``test_inbox_envelope.py``; this module
+    asserts the shape the CLI contract publishes.
+    """
+    return _epic_dir(plan_context, slug) / 'inbox' / 'to' / plan_id
 
 
 def _payload(tmp_path: Path, body: str = 'the landing narrative', name: str = 'p.md') -> str:
@@ -130,10 +170,25 @@ def _write(
 def _write_status(plan_context, plans: list[dict], slug: str = EPIC) -> None:
     """Write the epic's ``status.json`` with a ``plans[]`` queue.
 
-    The machine authority the deliverability guard reads to decide whether a
-    named target plan is currently running.
+    The machine authority the routing decision reads to decide whether a named
+    target plan is currently running — and therefore whether its message is
+    delivered to that plan's mailbox or queued for the epic drain.
     """
     (_epic_dir(plan_context, slug) / 'status.json').write_text(json.dumps({'plans': plans}), encoding='utf-8')
+
+
+def _close_stream(plan_context, sender: str = SENDER, slug: str = EPIC):
+    """File the sender's terminal ``lifecycle=stream-end`` marker."""
+    return run_script(
+        SCRIPT_PATH,
+        'inbox',
+        'close-stream',
+        '--slug',
+        slug,
+        '--sender-id',
+        sender,
+        env_overrides=_env(plan_context),
+    )
 
 
 def _list(plan_context, slug: str = EPIC):
@@ -277,37 +332,93 @@ class TestWellFormedMessage:
 
 
 # =============================================================================
-# Deliverability guard: a message aimed at a RUNNING plan has no reader
+# Routing: a message aimed at a RUNNING plan is DELIVERED to its mailbox
 # =============================================================================
 
 
 class TestTargetPlanDeliverability:
-    """``--target-plan`` makes an architecturally undeliverable write visible.
+    """``--target-plan`` routes a write between the queue and a plan mailbox.
 
-    The inbox is the epic's plan->orchestrator OUTBOX, drained BETWEEN plans, so
-    a message aimed at a plan that is currently running can never be read by it —
-    the plan finishes before the next drain. The guard reports that at write time
-    instead of silently queuing a message no reader will consume; it does NOT
-    build a mid-run delivery channel.
+    The epic QUEUE is drained BETWEEN plans, so a message left in it for a plan
+    that is currently running would never be read — that plan finishes before
+    the next drain reaches it. Rather than refuse such a message, the write verb
+    DELIVERS it to the addressee mailbox composed from the channel's
+    ``(epic_slug, plan_id)`` address, ``inbox/to/{plan_id}/``. Every other
+    target — landed, parked, absent from the queue, or unreadable — queues, and
+    the write names which location it used in ``destination``.
     """
 
-    def test_naming_a_running_plan_is_refused_as_undeliverable(self, plan_context, tmp_path):
+    def test_naming_a_running_plan_delivers_instead_of_queueing(self, plan_context, tmp_path):
         _scaffold(plan_context)
         _write_status(plan_context, [{'id': 'plan-alpha', 'status': 'running'}])
 
         result = _write(plan_context, _payload(tmp_path), kind='finding', target_plan='plan-alpha')
         data = result.toon()
 
-        assert data['status'] == 'error'
-        assert data['error'] == 'undeliverable_to_running_plan'
-        # The undeliverable write is REFUSED, not silently queued — no message
-        # file is left behind for a reader that will never exist.
+        assert data['status'] == 'success'
+        assert data['destination'] == 'mailbox'
+        assert data['target_plan'] == 'plan-alpha'
+        # Delivered, not queued: the epic queue a running plan never reads is
+        # left untouched, which is what makes `destination` load-bearing rather
+        # than a label on an unchanged write.
         assert not (_epic_dir(plan_context) / 'inbox' / f'{SENDER}-001.md').exists()
 
+    def test_the_delivered_message_lands_at_the_resolved_address(self, plan_context, tmp_path):
+        # The delivery-side counterpart: not merely "not queued", but written to
+        # the (epic_slug, plan_id) address a plan-side read resolves, with the
+        # payload body intact and `path` naming that same file.
+        _scaffold(plan_context)
+        _write_status(plan_context, [{'id': 'plan-alpha', 'status': 'running'}])
+
+        result = _write(
+            plan_context,
+            _payload(tmp_path, 'delivered body'),
+            kind='finding',
+            target_plan='plan-alpha',
+        )
+
+        delivered = _mailbox_dir(plan_context, 'plan-alpha') / f'{SENDER}-001.md'
+        assert delivered.is_file()
+        assert result.toon()['path'] == str(delivered)
+        assert delivered.read_text(encoding='utf-8').endswith('delivered body\n')
+
+    def test_a_delivered_message_is_invisible_to_the_epic_drain(self, plan_context, tmp_path):
+        # Delivery moves no existing tally: the mailbox tree is disjoint from
+        # the queue, and `inbox list` is non-recursive over files matching the
+        # message-name grammar, so the drain still reports a looked-and-empty
+        # queue rather than counting a delivered message.
+        _scaffold(plan_context)
+        _write_status(plan_context, [{'id': 'plan-alpha', 'status': 'running'}])
+        _write(plan_context, _payload(tmp_path), kind='finding', target_plan='plan-alpha')
+
+        parsed = _list(plan_context).toon()
+
+        assert parsed['inbox_state'] == 'present'
+        assert parsed['count'] == 0
+
+    def test_stream_closure_refuses_ahead_of_the_routing_decision(self, plan_context, tmp_path):
+        # Matched NEGATIVE control for `test_naming_a_running_plan_delivers_...`
+        # above: identical argv and identical running-plan queue, differing ONLY
+        # in that this sender closed its stream first. Without the paired
+        # positive, a `stream_closed` here would be equally explained by delivery
+        # never being reachable at all; with it, the refusal is pinned to run
+        # AHEAD of the routing decision, unchanged in ordering and meaning.
+        _scaffold(plan_context)
+        _write_status(plan_context, [{'id': 'plan-alpha', 'status': 'running'}])
+        _close_stream(plan_context)
+
+        result = _write(plan_context, _payload(tmp_path), kind='finding', target_plan='plan-alpha')
+        data = result.toon()
+
+        assert data['status'] == 'error'
+        assert data['error'] == 'stream_closed'
+        # Refused before routing, so nothing was delivered either.
+        assert not _mailbox_dir(plan_context, 'plan-alpha').exists()
+
     def test_naming_a_non_running_plan_queues_normally(self, plan_context, tmp_path):
-        # A landed (non-running) plan is deliverable to the orchestrator at the
-        # next drain, so the guard does not block it — the running distinction is
-        # load-bearing, not a blanket refusal of every target.
+        # A landed (non-running) plan is reachable by the orchestrator at the
+        # next drain, so its message QUEUES — the running distinction is
+        # load-bearing, not a blanket delivery of every target.
         _scaffold(plan_context)
         _write_status(plan_context, [{'id': 'plan-alpha', 'status': 'landed'}])
 
@@ -317,9 +428,9 @@ class TestTargetPlanDeliverability:
         assert (_epic_dir(plan_context) / 'inbox' / f'{SENDER}-001.md').is_file()
 
     def test_untargeted_write_is_unaffected_by_a_running_plan(self, plan_context, tmp_path):
-        # The guard fires ONLY on --target-plan. An ordinary epic-addressed
-        # write (a plan's own OUTBOX message) is never blocked by another plan
-        # being in flight — that is the primary, unbroken use case.
+        # The routing decision fires ONLY on --target-plan. An ordinary
+        # epic-addressed write is never re-routed by another plan being in
+        # flight — that is the primary, unbroken use case.
         _scaffold(plan_context)
         _write_status(plan_context, [{'id': 'plan-alpha', 'status': 'running'}])
 
@@ -750,12 +861,14 @@ class TestWriteBoundary:
         result = run_script(SCRIPT_PATH, 'inbox', 'write', '--help', env_overrides={})
 
         # The write TARGET (the message file path) must stay derived from
-        # --slug + --sender-id alone, so no caller-supplied output-PATH flag may
-        # appear. The trailing spaces are the metavar boundary that lets a
-        # precise flag through: `--target ` matches a bare `--target PATH`
-        # output arg but NOT `--target-plan TARGET_PLAN` (a plan IDENTIFIER used
-        # only for the deliverability guard, never as an output path), exactly as
-        # `--file ` admits `--payload-file` while forbidding a bare `--file`.
+        # --slug, --sender-id and a validated --target-plan alone, so no
+        # caller-supplied output-PATH flag may appear. The trailing spaces are
+        # the metavar boundary that lets a precise flag through: `--target `
+        # matches a bare `--target PATH` output arg but NOT `--target-plan
+        # TARGET_PLAN` (a plan IDENTIFIER that becomes ONE validated path
+        # component of the addressee mailbox, never a caller-supplied path),
+        # exactly as `--file ` admits `--payload-file` while forbidding a bare
+        # `--file`.
         for forbidden_flag in ('--path', '--output', '--target ', '--file '):
             assert forbidden_flag not in result.stdout, forbidden_flag
 
@@ -832,37 +945,76 @@ class TestDocContract:
         assert 'file_not_found' in section
         assert 'inbox/archive/' in section
 
-    def test_inbox_validate_still_lists_every_retained_rejection_code(self):
-        # The documented surface must name every code the verb can return. The
-        # tuple is the full reachable set of `cmd_inbox_validate` — the verb's own
-        # pre-resolution and resolution codes, `validate_envelope`'s base sweep,
-        # and `_validate_state_fields`' four state checks — so a code that stops
-        # being documented fails here rather than going quietly missing.
-        section = _section(_ORCHESTRATOR_SKILL.read_text(encoding='utf-8'), '### inbox validate')
+    def test_the_published_rejection_vocabulary_is_not_empty(self):
+        """The population every check below ranges over, guarded first.
 
-        for code in (
-            'invalid_slug',
-            'invalid_message_name',
-            'file_not_found',
-            'missing_header_field',
-            'unknown_envelope_version',
-            'invalid_sender_type',
-            'invalid_kind',
-            'empty_payload',
-            'epic_mismatch',
-            'filename_sender_mismatch',
-            'invalid_lifecycle',
-            'invalid_revision',
-            'revision_not_monotonic',
-            'invalid_supersede_state',
-        ):
-            assert code in section, code
+        An empty vocabulary would make both comparisons trivially true — the
+        exact shape of the failure a derived population replaces, one level up.
+        """
+        assert INBOX_VALIDATE_REJECTION_CODES, (
+            'the channel module publishes no rejection code, so the documentation comparisons '
+            'below would range over an empty set and pass without checking anything'
+        )
+        assert len(INBOX_VALIDATE_REJECTION_CODES) == len({*INBOX_VALIDATE_REJECTION_CODES}), (
+            f'{len(INBOX_VALIDATE_REJECTION_CODES)} entries resolve to '
+            f'{len({*INBOX_VALIDATE_REJECTION_CODES})} distinct codes — a repeat makes the set '
+            'comparison weaker than the tuple length suggests'
+        )
+
+    def test_inbox_validate_documents_exactly_the_published_rejection_codes(self):
+        """Set equality against the module that RAISES them, in both directions.
+
+        The population comes from ``_orchestrator_inbox`` rather than from a
+        tuple maintained beside it, so a code added to the validator reaches the
+        documentation or fails here. The reverse direction is asserted too: a
+        row for a code the verb cannot return is a documented rejection nothing
+        produces, which misleads a caller exactly as an omission does.
+        """
+        section = _section(_ORCHESTRATOR_SKILL.read_text(encoding='utf-8'), '### inbox validate')
+        documented = [match.group(1) for line in section.split('\n') if (match := _REJECTION_ROW_RE.match(line))]
+
+        assert documented, (
+            f'no numbered rejection row parsed from § ### inbox validate — the {len(INBOX_VALIDATE_REJECTION_CODES)} '
+            'published code(s) would be compared against an empty table'
+        )
+        assert set(documented) == set(INBOX_VALIDATE_REJECTION_CODES), (
+            f'undocumented: {sorted(set(INBOX_VALIDATE_REJECTION_CODES) - set(documented))}, '
+            f'documented but unraisable: {sorted(set(documented) - set(INBOX_VALIDATE_REJECTION_CODES))}'
+        )
+
+    def test_the_documented_order_is_the_order_the_checks_run(self):
+        """The table claims an order, so the order is compared, not just the set.
+
+        ``_orchestrator_inbox`` builds the vocabulary as the verb's own codes
+        followed by the base sweep and then the state checks — the sequence the
+        rejections actually fire in — and the table says it lists them "in the
+        order the checks run". A set equality alone would let the two drift.
+        """
+        section = _section(_ORCHESTRATOR_SKILL.read_text(encoding='utf-8'), '### inbox validate')
+        documented = [match.group(1) for line in section.split('\n') if (match := _REJECTION_ROW_RE.match(line))]
+
+        assert documented == list(INBOX_VALIDATE_REJECTION_CODES), (
+            f'the table lists {documented} against the published order {list(INBOX_VALIDATE_REJECTION_CODES)}'
+        )
 
     def test_drain_semantics_records_the_read_side_of_the_consume_marker(self):
         section = _section(_INBOX_ENVELOPE.read_text(encoding='utf-8'), '## Drain semantics')
 
-        assert 'Archival is the consume marker' in section
+        assert "Archival is the QUEUE's consume marker" in section
         assert 'inbox validate` resolves the archive' in section
+
+    def test_drain_semantics_keeps_the_two_consume_markers_apart(self):
+        # Archival retires a QUEUE message by relocating it; the addressee
+        # mailbox records consumption in the ENVELOPE and leaves the message at
+        # its delivered path. The section must keep both halves of that
+        # distinction, because a doc that named archival as THE consume marker
+        # would describe a mailbox consumption as a relocation — the very move
+        # that collapses a consumed delivery into a delivery that never
+        # happened.
+        section = _section(_INBOX_ENVELOPE.read_text(encoding='utf-8'), '## Drain semantics')
+
+        assert 'The addressee mailbox records consumption differently' in section
+        assert 'Message-state vocabulary' in section
 
     def test_validator_error_code_table_is_not_read_as_exhaustive(self):
         section = _section(_INBOX_ENVELOPE.read_text(encoding='utf-8'), '## Validator error codes')

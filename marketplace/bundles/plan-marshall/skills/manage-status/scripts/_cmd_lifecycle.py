@@ -36,7 +36,7 @@ from constants import (
     PHASE_STATUS_IN_PROGRESS,
     PHASE_STATUS_PENDING,
 )
-from file_ops import get_plan_dir
+from file_ops import get_plan_dir, parse_markdown_metadata
 
 # Result-status values that indicate the strict-verify gate refuses to advance.
 # Mirrors the ``--strict`` exit-1 conditions in ``phase_handshake.py`` main()
@@ -85,6 +85,161 @@ VERIFY_REFUSAL_ERRORS = frozenset(
 # relationship — so the two are separate constants and neither is derived from
 # the other.
 _COMPLETION_GUARD_PHASES: frozenset[str] = frozenset({'6-finalize'})
+
+#: The stable anchor key this site publishes for the phase-transition mailbox
+#: check-point. It is the same token the ``## Mailbox check-point roster`` in
+#: ``ref-workflow-architecture/standards/phase-lifecycle.md`` carries as that
+#: row's first backticked value, so the roster and the executing site name ONE
+#: check-point rather than two spellings of it. The roster is the SOLE
+#: enumeration of the check-point set; this constant is one member's key and is
+#: deliberately not a second enumeration of the set.
+MAILBOX_CHECKPOINT_KEY = 'phase-transition'
+
+#: The closed vocabulary the transition payload's ``mailbox.probe`` field
+#: reports: WHETHER the mailbox read verb was reached at all.
+#:
+#: Deliberately SEPARATE from the reader's own ``mailbox_state``, which reports
+#: what the read SAW. The two answer different questions, and merging them would
+#: let *this plan belongs to no epic, so there is no mailbox* share a
+#: representation with *the mailbox was listed and held nothing*. That collapse
+#: is precisely what ``_orchestrator_inbox.MAILBOX_STATES`` exists to prevent on
+#: the reader's side, so the probe does not re-introduce it on the consumer's.
+#:
+#: - ``read`` — the read verb ran. ``state`` and the three counts ride the same
+#:   block and carry its verdict verbatim.
+#: - ``not_orchestrated`` — the plan's ``request.md`` provenance pointer names no
+#:   orchestrator plan spec, so the plan has no epic and therefore no mailbox. A
+#:   MEASURED fact about the plan, not a failure to look.
+#: - ``unresolved`` — the probe could not reach the read verb at all: the
+#:   provenance could not be read, the reader could not be imported, the read
+#:   refused the address, or the probe raised and was contained. NOTHING was
+#:   established about the mailbox.
+MAILBOX_PROBE_READ = 'read'
+MAILBOX_PROBE_NOT_ORCHESTRATED = 'not_orchestrated'
+MAILBOX_PROBE_UNRESOLVED = 'unresolved'
+
+#: The whole probe vocabulary, in reporting order. Consumers assert against this
+#: tuple rather than re-listing the literals.
+MAILBOX_PROBES: tuple[str, ...] = (
+    MAILBOX_PROBE_READ,
+    MAILBOX_PROBE_NOT_ORCHESTRATED,
+    MAILBOX_PROBE_UNRESOLVED,
+)
+
+#: The probe outcomes under which NO mailbox was enumerated — derived by
+#: subtraction from the whole vocabulary rather than re-listed, so a member added
+#: above cannot silently default into the looked-and-found-nothing reading. This
+#: mirrors the derivation ``_orchestrator_inbox.MAILBOX_COULD_NOT_LOOK_STATES``
+#: applies to the reader's own states, for the same reason.
+MAILBOX_PROBE_DID_NOT_READ: frozenset[str] = frozenset(MAILBOX_PROBES) - {MAILBOX_PROBE_READ}
+
+
+def _resolve_mailbox_checkpoint(plan_id: str) -> dict[str, Any]:
+    """Resolve the plan's epic address and read its mailbox through the read verb.
+
+    The working half of :func:`_mailbox_checkpoint`; that function is the
+    containment boundary and this one is free to let an unexpected failure
+    propagate into it.
+
+    **It resolves no address of its own.** The epic half comes from the
+    provenance pointer ``phase-1-init`` already recorded in ``request.md``,
+    classified by the channel's OWN ``classify_source_id``; the mailbox path is
+    then composed by the read verb through the channel's single
+    ``(epic_slug, plan_id)`` address. This function therefore introduces no
+    second resolver — it supplies the two identifiers and reports what came back.
+
+    The count keys are OMITTED rather than zeroed on every branch that did not
+    reach a read, so no consumer can take a measured zero off a probe that
+    measured nothing.
+    """
+    block: dict[str, Any] = {'checkpoint': MAILBOX_CHECKPOINT_KEY}
+    try:
+        # Lazy, and guarded: the reader lives in the plan-orchestrator script
+        # directory, which is on the path under the generated executor and under
+        # the test harness but need not be in every embedding context. Mirrors
+        # the deferred ``_lessons_io`` import in ``_restore_lesson_from_plan_dir``.
+        from _orchestrator_inbox import classify_source_id, cmd_inbox_read
+    except ImportError as exc:
+        block['probe'] = MAILBOX_PROBE_UNRESOLVED
+        block['reason'] = f'the mailbox reader could not be imported, so no mailbox was consulted: {exc}'
+        return block
+
+    try:
+        request_text = (get_plan_dir(plan_id) / 'request.md').read_text(encoding='utf-8')
+    except (OSError, UnicodeDecodeError) as exc:
+        block['probe'] = MAILBOX_PROBE_UNRESOLVED
+        block['reason'] = f'request.md could not be read, so the plan has no resolvable provenance: {exc}'
+        return block
+
+    classification = classify_source_id(parse_markdown_metadata(request_text).get('source_id', ''))
+    if not classification.orchestrated or not classification.epic:
+        block['probe'] = MAILBOX_PROBE_NOT_ORCHESTRATED
+        block['reason'] = (
+            f'request.md source_id is not an orchestrator plan-spec pointer '
+            f'(detection={classification.detection}), so this plan has no epic and no mailbox'
+        )
+        return block
+
+    read = cmd_inbox_read(argparse.Namespace(slug=classification.epic, plan_id=plan_id))
+    if read.get('status') != 'success':
+        # The read verb is fail-open about everything it LOOKS at and fail-closed
+        # about the address it is handed, so this branch is the refused address —
+        # a fact about the identifiers, never a verdict about the mailbox.
+        block['probe'] = MAILBOX_PROBE_UNRESOLVED
+        block['epic'] = classification.epic
+        block['reason'] = (
+            f'the mailbox read refused the address ({read.get("error", "unknown")}): {read.get("message", "")}'
+        )
+        return block
+
+    block['probe'] = MAILBOX_PROBE_READ
+    block['epic'] = classification.epic
+    block['state'] = read['mailbox_state']
+    block['count'] = read['count']
+    block['live_count'] = read['live_count']
+    block['invalid_count'] = read['invalid_count']
+    return block
+
+
+def _mailbox_checkpoint(plan_id: str) -> dict[str, Any]:
+    """Return the transition payload's ``mailbox`` block — additive, never a gate.
+
+    The phase-transition half of the mailbox check-point pair rostered in
+    ``ref-workflow-architecture/standards/phase-lifecycle.md`` § "Mailbox
+    check-point roster". A phase transition is one of the two moments a running
+    plan changes hands, so it is where a message DELIVERED to that plan while it
+    was running can first be noticed.
+
+    **This function is the containment boundary, and that is its only job.** The
+    probe inherits the mailbox reader's fail-open contract IN FULL rather than
+    restating it: the read verb never raises, and everything reached before it
+    is contained here, so there is no branch on which this function raises and
+    no branch on which it can refuse a transition. A mailbox is an advisory side
+    channel, so a plan blocked by an advisory it could not read would be
+    strictly worse off than one that never had the channel at all.
+
+    The blanket ``except`` is deliberate and is what the fail-open contract
+    means here: the probe is advisory, so ANY failure of it — including one
+    nobody anticipated — must degrade this block rather than propagate into a
+    transition that has nothing to do with the mailbox. The contained exception
+    is NAMED in ``reason`` rather than swallowed, so a failing probe stays
+    visible instead of passing as an absent mailbox.
+
+    Returns:
+        The ``mailbox`` block: ``checkpoint`` (the roster anchor key) and
+        ``probe`` (one of :data:`MAILBOX_PROBES`) on every branch, plus the
+        reader's ``state`` / ``count`` / ``live_count`` / ``invalid_count`` on
+        the ``read`` branch alone, and a ``reason`` naming the shortfall on each
+        member of :data:`MAILBOX_PROBE_DID_NOT_READ`.
+    """
+    try:
+        return _resolve_mailbox_checkpoint(plan_id)
+    except Exception as exc:
+        return {
+            'checkpoint': MAILBOX_CHECKPOINT_KEY,
+            'probe': MAILBOX_PROBE_UNRESOLVED,
+            'reason': f'the mailbox probe raised and was contained: {exc.__class__.__name__}: {exc}',
+        }
 
 
 def _clean_tree_refusal(plan_id: str, status: dict[str, Any]) -> dict[str, Any] | None:
@@ -690,6 +845,12 @@ def cmd_transition(args: argparse.Namespace) -> dict[str, Any] | None:
         result['next_phase'] = next_phase
     else:
         result['message'] = 'All phases completed'
+
+    # Mailbox check-point (roster key ``phase-transition``). Placed AFTER the
+    # phase write and on the success payload alone: a refusal above is not a
+    # transition, so there is no hand-over at which a message could be noticed.
+    # The block is additive and fail-open — it never gates what it rides on.
+    result['mailbox'] = _mailbox_checkpoint(args.plan_id)
 
     return result
 

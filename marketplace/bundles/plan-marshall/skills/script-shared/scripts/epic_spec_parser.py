@@ -79,12 +79,41 @@ KIND_FILE = 'file'
 SHAPE_CLAIM = 'claim'
 SHAPE_LEAD = 'lead'
 
+#: The explicit REJECTION of a letter-suffixed plan id, appended to both halves
+#: below so the refusal is stated once and inherited by every composer.
+#:
+#: A suffixed id such as ``PLAN-TRUTH-025B`` is not a legal id distinct from
+#: ``PLAN-TRUTH-025``: both halves terminate in mandatory digits and neither
+#: admits a trailing letter. Without a terminator that illegality is not
+#: REFUSED, it is silently absorbed — the digits stop matching one character
+#: early, the suffixed name matches as its unsuffixed SIBLING, and the ``B``
+#: rides into whatever follows the segment in the composing pattern
+#: (``[^/]*\.md`` in ``_orchestrator_inbox._SOURCE_ID_RE``, the spec slug in a
+#: filename). Two different plans then wear one id, which no consumer can
+#: detect downstream because the collapse happens inside the match.
+#:
+#: ⛔ The lookahead spans digits AS WELL AS letters, and the digit half is
+#: load-bearing rather than defensive. A letter-only lookahead is evaded by
+#: BACKTRACKING: ``\d+`` gives up its last digit, the lookahead then sees a
+#: digit rather than the offending letter, and ``PLAN-TRUTH-025B`` matches as
+#: ``PLAN-TRUTH-02`` — a second, worse collapse in place of the rejection.
+#: Bounded to alphanumerics, so every separator a real spec name continues with
+#: (``-``, ``.``) and the end of the string still terminate an id normally.
+#:
+#: A name the terminator refuses matches NOTHING, which is what makes the
+#: refusal explicit rather than silent: :func:`plan_id_of` falls through to its
+#: bare-filename return, and ``_orchestrator_inbox.classify_source_id`` reports
+#: its existing ``unrecognised_id`` detection token instead of ``orchestrated``.
+#: Neither outcome is new — the rejection routes into the states already built
+#: for an id segment matching none of the accepted forms.
+PLAN_ID_TERMINATOR = r'(?![0-9A-Za-z])'
+
 #: The ``PLAN-``-prefixed half of the plan-id grammar — ``PLAN-{DIGITS}`` and
 #: ``PLAN-{SLUG}-{DIGITS}``. Published in its own right because the prefix is the
 #: corpus's own marker for a plan: a token wearing it denotes a plan WHEREVER it
 #: appears, a spec's running prose included, which is what makes it the half a
 #: prose-reading rule can key on.
-PLAN_ID_PREFIXED_SEGMENT = r'PLAN-(?:[A-Z0-9]{2,8}-)?\d+'
+PLAN_ID_PREFIXED_SEGMENT = r'PLAN-(?:[A-Z0-9]{2,8}-)?\d+' + PLAN_ID_TERMINATOR
 
 #: The bare half — ``{SLUG}-{DIGITS}``, the form a code-slug spec name opens
 #: with. Unambiguous only in a FILENAME, where the anchored leading position is
@@ -92,7 +121,7 @@ PLAN_ID_PREFIXED_SEGMENT = r'PLAN-(?:[A-Z0-9]{2,8}-)?\d+'
 #: is worn by the external references the corpus routinely cites — ``CWE-1333``,
 #: ``CVE-2021-1234``, ``RFC-8259`` — so a prose rule keyed on this half reads a
 #: standards citation as a plan citation.
-PLAN_ID_BARE_SEGMENT = r'[A-Z0-9]{2,8}-\d+'
+PLAN_ID_BARE_SEGMENT = r'[A-Z0-9]{2,8}-\d+' + PLAN_ID_TERMINATOR
 
 #: The plan-id segment of a spec name, as an explicit alternation over the two
 #: halves above — together the settled forms ``PLAN-{DIGITS}``,
@@ -102,6 +131,12 @@ PLAN_ID_BARE_SEGMENT = r'[A-Z0-9]{2,8}-\d+'
 #: ``PLAN-``-prefixed nor slug-prefixed. ``{SLUG}`` is a bounded
 #: uppercase-alphanumeric token and its trailing digits are mandatory, so the
 #: grammar is widened without drifting toward an always-matching pattern.
+#:
+#: Each half carries :data:`PLAN_ID_TERMINATOR`, so this alternation refuses a
+#: letter-suffixed id outright rather than matching it as its unsuffixed
+#: sibling. The terminator sits on the HALVES rather than here so the prose rule
+#: keyed on :data:`PLAN_ID_PREFIXED_SEGMENT` alone inherits the same refusal —
+#: a citation re-derives an id from prose exactly as a filename scan does.
 #:
 #: Single-definition: ``_orchestrator_inbox._SOURCE_ID_RE`` composes its own
 #: pointer pattern from THIS binding rather than carrying a second copy, so the
@@ -679,6 +714,13 @@ def plan_id_of(spec_name: str) -> str:
     code-slug spec (``PLAN-TRUTH-098-….md``) keys on ``PLAN-TRUTH-098`` rather
     than on its whole filename — which is what makes cross-plan grouping work
     for the code-slug half of the corpus.
+
+    A name whose id segment is letter-suffixed (``PLAN-TRUTH-025B-….md``)
+    matches none of the three forms, because :data:`PLAN_ID_TERMINATOR` refuses
+    it, and therefore takes the bare-filename return. That is the REJECTION, not
+    a gap: the suffixed name keys on itself and can never be grouped, compared or
+    reported as its unsuffixed sibling ``PLAN-TRUTH-025``, which is precisely
+    what an unterminated grammar did silently.
     """
     match = _PLAN_ID_RE.match(spec_name)
     return match.group(1) if match else spec_name

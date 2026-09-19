@@ -939,7 +939,33 @@ status: success
 plan_id: my-feature
 completed_phase: 3-outline
 next_phase: 4-plan
+mailbox:
+  checkpoint: phase-transition
+  probe: read
+  epic: my-epic
+  state: present
+  count: 2
+  live_count: 1
+  invalid_count: 1
 ```
+
+#### The `mailbox` block — the `phase-transition` check-point
+
+A phase transition is one of the two moments a running plan changes hands, so the success payload carries what the plan's own mailbox (`inbox/to/{plan_id}/` in its epic tree) holds. The block is **additive and fail-open**: it never gates the transition, and no failure of it can refuse one. It is the executing site of the `phase-transition` check-point; the check-point SET is enumerated once, by the **Mailbox check-point roster** in [`ref-workflow-architecture/standards/phase-lifecycle.md`](../ref-workflow-architecture/standards/phase-lifecycle.md), not here.
+
+The block rides the **success payload only** — a refusal is not a hand-over, so a transition that did not advance carries no `mailbox` key at all.
+
+`probe` says whether the mailbox read was reached; `state` says what that read saw. The two are separate fields because they answer separate questions, and merging them would let *this plan belongs to no epic* share a representation with *the mailbox was listed and held nothing*.
+
+| `probe` | Meaning | Keys present |
+|---------|---------|--------------|
+| `read` | The mailbox read ran. | `epic`, `state` (one of the read verb's own `mailbox_state` values), `count`, `live_count`, `invalid_count`. |
+| `not_orchestrated` | The plan's `request.md` provenance names no orchestrator plan-spec pointer, so the plan has no epic and no mailbox. A **measured** fact about the plan, not a failure to look. | `reason`. **No `state`, and no count keys.** |
+| `unresolved` | The read was not reached at all — the provenance could not be read, the reader could not be imported, the read refused the address, or the probe raised and was contained. | `reason` (naming the contained failure), and `epic` when the address had already resolved. **No count keys.** |
+
+⛔ **The count keys are OMITTED, never zeroed, on both probes that did not read.** A `0` published by a probe that consulted no mailbox is byte-identical to a mailbox that was listed and held nothing, and no reader can recover the difference. Branch on `probe` **first**; a consumer that reads `count` on a non-`read` branch finds no key rather than a false zero.
+
+On the `read` branch the same rule applies one level down: `count: 0` discriminates only when read beside `state`. Only `state: present` means *looked, and nothing is addressed here*; every other value is one of the read verb's could-not-look states. See [`plan-orchestrator/standards/inbox-envelope.md`](../plan-orchestrator/standards/inbox-envelope.md) for that vocabulary — it is owned there and not restated here.
 
 ### archive
 

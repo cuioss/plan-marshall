@@ -71,14 +71,21 @@ operation groups against the main-anchored orchestrator store
   evidence, and the population it was derived from, plus the floor over the
   participating rows and the sample instant. An unreadable or disagreeing
   observation resolves to ``indeterminate`` and never to ``not_ready``.
-- ``inbox {write,amend,supersede,close-stream,validate,list,archive,
-  migrate-archive,detect,landing-check}`` — the epic's plan-writable OUTBOX and
-  its orchestrator-side drain: append one ``inbox/{sender_id}-{NNN}.md`` message,
+- ``inbox {write,amend,supersede,close-stream,validate,list,read,archive,
+  migrate-archive,detect,landing-check}`` — the epic's plan-writable channel and
+  its orchestrator-side drain: append one ``inbox/{sender_id}-{NNN}.md`` message
+  to the epic queue — or, when ``--target-plan`` names a plan that is currently
+  RUNNING, DELIVER it to that plan's mailbox at ``inbox/to/{plan_id}/`` instead,
   correct a filed message body in place (``amend`` — preserves ``created``,
   stamps a monotonic ``revision``), retire a message in favour of a successor
   (``supersede`` — tombstone-style), mark a sender's stream ended
   (``close-stream``), validate an existing message against the envelope schema,
   enumerate the queued messages with their validation verdicts and lifecycle,
+  read the messages DELIVERED to one plan's mailbox (``read --plan-id`` —
+  fail-open: an absent epic, an absent or unlistable mailbox, an unreadable
+  message and a malformed envelope all return ``status: success``, with
+  ``mailbox_state`` naming which kind of zero, so an advisory that could not be
+  read never blocks the reading plan and never renders as a confident empty),
   retire a consumed message to ``inbox/archive/{sender}/``, fold a flat archive
   into that per-sender layout (``migrate-archive``), classify a plan's
   ``source_id`` pointer as orchestrated, or report whether a landing message
@@ -143,6 +150,7 @@ from _orchestrator_inbox import (
     cmd_inbox_landing_check,
     cmd_inbox_list,
     cmd_inbox_migrate_archive,
+    cmd_inbox_read,
     cmd_inbox_supersede,
     cmd_inbox_validate,
     cmd_inbox_write,
@@ -182,12 +190,84 @@ FILE_STATUS = 'status.json'
 # creation — by ``decompose`` or by ``--add-row`` — and never patched.
 PLAN_ROW_FIELDS = frozenset({'plan_marshall_plan_id', 'pr', 'landing'})
 
-# The closed status vocabulary ``queue --transition --status`` may write and
-# ``queue --add-row --status`` may seed. Mirrors the ``PLAN_ROW_FIELDS`` pattern:
-# defined once here as a ``frozenset`` (membership, no order), published in
-# ``plan-orchestrator/SKILL.md`` under the machine-locatable status-vocabulary
-# anchor, and validated by :func:`cmd_queue` with the ``invalid_field`` error.
-VALID_STATUS_VOCABULARY = frozenset({'staged', 'launched', 'running', 'parked', 'shipped', 'landed'})
+# --- the plan-queue status vocabulary ---------------------------------------
+#
+# The three sets below are the DECLARING sources. Every other status set in this
+# module is derived from them by construction, so a status added to one of them
+# cannot be legal in one place and unknown in another. Which statuses are legal
+# at all is an operator-level decision settled against the live ledger and
+# recorded in ``persona-plan-orchestrator/standards/orchestration-model.md``
+# § Plan-Status Vocabulary; this module enacts that decision and does not take it.
+
+#: The statuses at which a plan row is still LIVE — its work is unfinished, so
+#: the row belongs in the Ordered Queue and may still transition. ``parked`` is
+#: live by the same reading: paused work is unfinished work, and a parked plan
+#: resumes onto the surface it declared.
+LIVE_PLAN_STATUSES = ('staged', 'launched', 'running', 'parked')
+
+#: The terminal statuses at which a row SHIPPED. These and ONLY these owe the
+#: result links :data:`SHIPPED_REQUIRED_FIELDS`, so they alone drive the
+#: completeness gap marker — a row that closed without shipping has no PR and no
+#: landing record to point at, and marking one incomplete would report a gap that
+#: cannot exist. ``analyze`` writes ``shipped``; ``landed`` is the legal
+#: alternative spelling a landing-stamped row may carry. Nothing is asserted here
+#: about which of the two the live corpus currently holds: such a claim goes stale
+#: the moment a row is written, and the tally is derivable from the ledger itself.
+SHIPPED_PLAN_STATUSES = ('shipped', 'landed')
+
+#: The terminal statuses at which a row closed WITHOUT shipping. Four distinct end
+#: states, each owing its reader a different remedy and none expressible by any
+#: other member: ``superseded`` — the work was absorbed by a named successor row;
+#: ``transferred`` — it moved to another epic's ledger; ``retired`` — it was
+#: withdrawn and no successor carries it; ``resolved`` — the defect closed with no
+#: plan work at all. Recording one of these as ``parked`` keeps the row clear of
+#: ``next`` while saying something untrue about it, and that substitution is what
+#: this set exists to remove.
+CLOSED_UNSHIPPED_PLAN_STATUSES = ('superseded', 'transferred', 'retired', 'resolved')
+
+#: Statuses at which a plan row is FINISHED, by union of the two terminal sets
+#: above so neither can be omitted from it. A terminal row never returns to the
+#: live queue; whether it additionally owes result links is
+#: :data:`SHIPPED_PLAN_STATUSES`' question, not this one.
+TERMINAL_PLAN_STATUSES = (*SHIPPED_PLAN_STATUSES, *CLOSED_UNSHIPPED_PLAN_STATUSES)
+
+#: The closed status vocabulary ``queue --transition --status`` may write and
+#: ``queue --add-row --status`` may seed. DERIVED by union from the live and
+#: terminal sets rather than re-listed, so a status added to either is legal here
+#: by construction. Declared as a ``frozenset`` (membership, no order) like
+#: :data:`PLAN_ROW_FIELDS`, published in ``plan-orchestrator/SKILL.md`` under the
+#: machine-locatable status-vocabulary anchor, and validated by :func:`cmd_queue`
+#: with the ``invalid_field`` error.
+VALID_STATUS_VOCABULARY = frozenset((*LIVE_PLAN_STATUSES, *TERMINAL_PLAN_STATUSES))
+
+#: The result links a SHIPPED row must carry, in the fixed order the gap marker
+#: names them.
+SHIPPED_REQUIRED_FIELDS = ('pr', 'landing')
+
+#: The three declaring sets, named so the construction check below can report
+#: WHICH ones it compared rather than only that they disagreed.
+_DECLARED_STATUS_SETS = {
+    'LIVE_PLAN_STATUSES': LIVE_PLAN_STATUSES,
+    'SHIPPED_PLAN_STATUSES': SHIPPED_PLAN_STATUSES,
+    'CLOSED_UNSHIPPED_PLAN_STATUSES': CLOSED_UNSHIPPED_PLAN_STATUSES,
+}
+_DECLARED_STATUS_COUNT = sum(len(members) for members in _DECLARED_STATUS_SETS.values())
+
+# The three declaring sets must be pairwise disjoint and free of repeats, and
+# NOTHING above derives that: the union that builds VALID_STATUS_VOCABULARY is a
+# frozenset, so a status listed twice — in one set or across two — is absorbed
+# silently and the vocabulary still reads correct. The damage lands downstream,
+# where one token would be simultaneously live and excluded from the live queue,
+# or simultaneously owe result links and be exempt from them. Comparing the
+# summed membership against the distinct union catches BOTH shapes in one check,
+# because either drops the union's size. Checked at construction for the same
+# reason the GENERATED_BLOCKS pair below is: neither direction can pass silently.
+assert _DECLARED_STATUS_COUNT == len(VALID_STATUS_VOCABULARY), (
+    f'the declaring status sets {_DECLARED_STATUS_SETS} carry {_DECLARED_STATUS_COUNT} '
+    f'member(s) but resolve to {len(VALID_STATUS_VOCABULARY)} distinct status(es): a status '
+    'is repeated within one set or shared between two, and the frozenset union absorbs the '
+    'difference silently'
+)
 
 #: The fields one appended ``plans[]`` row is seeded with, in the order
 #: ``--add-row`` writes them: the three identity fields the caller supplies, the
@@ -248,16 +328,6 @@ SPEC_PRESENCE_UNLISTABLE = 'unlistable'
 STATUS_DOC_ABSENT = 'absent'
 STATUS_DOC_NON_OBJECT = 'non_object'
 STATUS_DOC_OBJECT = 'object'
-
-# Statuses at which a plan row is finished, so its result links are expected to
-# be present. A terminal row missing one is the reconciliation gap the summary's
-# completeness marker surfaces. Both spellings are live in the corpus:
-# ``analyze`` writes ``shipped``, while archived ledgers carry ``landed``.
-TERMINAL_PLAN_STATUSES = ('shipped', 'landed')
-
-# The result links a terminal row must carry, in the fixed order the gap marker
-# names them.
-TERMINAL_REQUIRED_FIELDS = ('pr', 'landing')
 
 # --- corpus group ----------------------------------------------------------
 
@@ -380,6 +450,74 @@ SURFACE_GOVERNING_AUTHORITY = (
     'ADR-019 — an absent or unresolvable declaration resolves to indeterminate, never to disjoint'
 )
 
+# --- the CANDIDATE side of the cross-check comparison ------------------------
+#
+# ``SURFACE_STATES`` above measures the SPEC side of ``corpus cross-check``: every
+# own spec is tallied over the whole derivation vocabulary, so a class no spec is
+# in publishes a stated zero. The two constants below give the OTHER half of the
+# comparison the same treatment. Without them a ``file_overlap_match_count: 0``
+# cannot distinguish *every candidate was compared and none overlapped* from *no
+# candidate surface was derivable and nothing was compared* — an unchecked
+# negative wearing a clean verdict's clothes.
+
+#: The three CANDIDATE classes one spec is scored against, named once and in
+#: reporting order. ``sibling_epic_spec`` and ``corpus_spec`` are spec candidates
+#: resolved through :func:`_spec_record`; ``live_plan`` is the cross-ledger
+#: candidate whose surface is an active plan's ``references.json``
+#: ``affected_files``. The per-kind tally is derived from this tuple rather than
+#: from the kinds a given corpus happens to hold, so a kind with no candidates
+#: publishes stated zeros instead of vanishing from the breakdown.
+CANDIDATE_KIND_SIBLING_EPIC_SPEC = 'sibling_epic_spec'
+CANDIDATE_KIND_LIVE_PLAN = 'live_plan'
+CANDIDATE_KIND_CORPUS_SPEC = 'corpus_spec'
+CANDIDATE_KINDS = (
+    CANDIDATE_KIND_SIBLING_EPIC_SPEC,
+    CANDIDATE_KIND_LIVE_PLAN,
+    CANDIDATE_KIND_CORPUS_SPEC,
+)
+
+#: The CANDIDATE-side derivation vocabulary: whether one candidate contributed a
+#: comparable surface to the file-overlap matcher, and — when it did not — which
+#: of the two different zeros it is. ``indeterminate`` is a candidate that WAS
+#: read and declared nothing comparable (a spec in any
+#: :data:`SURFACE_INDETERMINATE_STATES` state, or a live plan with no captured
+#: footprint); ``unreadable`` is a candidate nothing could read at all. Collapsing
+#: them would report an unread candidate as a read-and-empty one.
+#:
+#: This vocabulary is INDEPENDENT of :data:`SURFACE_STATES` — it measures
+#: contribution to the matcher, not how a declaration was authored — so it
+#: carries its own bindings for the same reason :data:`READINESS_INDETERMINATE`
+#: does: one binding shared across two vocabularies lets a change to either
+#: silently move the other.
+CANDIDATE_COMPARABLE = 'comparable'
+CANDIDATE_INDETERMINATE = 'indeterminate'
+CANDIDATE_UNREADABLE = 'unreadable'
+
+#: The WHOLE vocabulary, ordered from most to least resolved. The per-kind tally
+#: is derived from this tuple rather than from the states actually observed,
+#: mirroring the :data:`SURFACE_STATES` / :data:`CLAIM_SECTION_STATES`
+#: construction (ADR-014: an aggregation names its producers and suppresses no
+#: element silently).
+CANDIDATE_DERIVATION_STATES = (
+    CANDIDATE_COMPARABLE,
+    CANDIDATE_INDETERMINATE,
+    CANDIDATE_UNREADABLE,
+)
+
+#: The candidate states that contributed NO row to the file-overlap matcher.
+#: Derived by subtraction so a state added to the vocabulary later is
+#: non-contributing unless it is explicitly ``comparable`` — a new class cannot
+#: default into counting as checked by being forgotten here.
+CANDIDATE_NON_CONTRIBUTING_STATES = frozenset(CANDIDATE_DERIVATION_STATES) - {CANDIDATE_COMPARABLE}
+
+#: Named once so the candidate-side payload states its governing authority rather
+#: than leaving a reader to infer the rule from the field names, exactly as the
+#: surface side already does.
+CANDIDATE_GOVERNING_AUTHORITY = (
+    'ADR-019 — a file-overlap count of 0 beside a non-zero candidate-indeterminate '
+    'count is an unchecked negative, never a clean pass'
+)
+
 # --- declaration-currency (cross-spec reconciliation) -----------------------
 #
 # The per-spec comparison states for ``corpus declaration-currency``. They mirror
@@ -440,7 +578,14 @@ NO_CLAIM_INDEX = -1
 #: The count claims a rendered START-HERE block can assert about the plan queue,
 #: each paired with the derivation it is checked against. ``row``/``plan`` are
 #: the whole population; the rest are per-status tallies read from ``plans[]``.
-COUNT_CLAIM_NOUNS = ('rows', 'plans', 'staged', 'shipped', 'running', 'parked', 'landed')
+#:
+#: The per-status members are DERIVED from :data:`VALID_STATUS_VOCABULARY` rather
+#: than re-listed, so the detector's population is exactly the set of statuses a
+#: row may legally carry. A status legal in the vocabulary but absent from this
+#: tuple would yield no divergence check for it — a claim about it would pass
+#: unexamined — and the sorted order keeps the derived alternation stable across
+#: runs rather than riding the ``frozenset`` iteration order.
+COUNT_CLAIM_NOUNS = ('rows', 'plans', *sorted(VALID_STATUS_VOCABULARY))
 
 #: The noun alternation, DERIVED from :data:`COUNT_CLAIM_NOUNS` so that tuple is the
 #: single source defining the population. A noun that is already plural (ends in
@@ -527,9 +672,13 @@ FILE_SETTLED = 'settled.md'
 #: already sealed, and compaction is a live-epic operation only.
 CLOSED_PHASE = 'closed'
 
-#: Plan statuses whose row belongs in a landing record, not the LIVE Ordered
-#: Queue. Shares :data:`TERMINAL_PLAN_STATUSES`' membership by construction so
-#: the two never drift; named apart to document the queue-exclusion intent.
+#: Plan statuses whose row no longer belongs in the LIVE Ordered Queue — a
+#: shipped row belongs in its landing record, and a row that closed without
+#: shipping is finished either way. Shares :data:`TERMINAL_PLAN_STATUSES`'
+#: membership by construction so the two never drift; named apart to document the
+#: queue-exclusion intent. The alias is deliberately over the FINISHED set rather
+#: than the shipped one: exclusion asks whether the work is done, never whether
+#: it produced a PR.
 LIVE_QUEUE_EXCLUDED_STATUSES = TERMINAL_PLAN_STATUSES
 
 #: The two GENERATED marker pairs the compact stage regenerates, each keyed by
@@ -1335,14 +1484,16 @@ def cmd_queue(args: argparse.Namespace) -> dict[str, Any]:
 def _format_plan_line(plan: dict[str, Any]) -> str:
     """Render one plan as a summary line, appending the non-empty link fields.
 
-    A row whose status is in :data:`TERMINAL_PLAN_STATUSES` and that is missing
-    any of :data:`TERMINAL_REQUIRED_FIELDS` also carries a deterministic ASCII
+    A row whose status is in :data:`SHIPPED_PLAN_STATUSES` and that is missing
+    any of :data:`SHIPPED_REQUIRED_FIELDS` also carries a deterministic ASCII
     gap marker — ``(!) missing: pr, landing`` — naming the absent fields in that
-    fixed order. The marker is a TERMINAL-status signal, not a general emptiness
-    signal: a staged or running row with empty links is mid-flight, not
-    incomplete, and renders no marker. A fully-stamped terminal row also renders
-    no marker, so correct data renders exactly as it did before the marker
-    existed.
+    fixed order. The marker is a SHIPPED-status signal, not a general emptiness
+    signal and not a terminal-status one: a staged or running row with empty
+    links is mid-flight, not incomplete, and a
+    :data:`CLOSED_UNSHIPPED_PLAN_STATUSES` row never had a PR or a landing record
+    to point at — marking either would report a gap that cannot exist. A
+    fully-stamped shipped row also renders no marker, so correct data renders
+    exactly as it did before the marker existed.
     """
     parts = [f'{plan.get("id", "?")} ({plan.get("workstream", "?")})']
     if plan.get('plan_marshall_plan_id'):
@@ -1351,8 +1502,8 @@ def _format_plan_line(plan: dict[str, Any]) -> str:
         parts.append(f'PR {plan["pr"]}')
     if plan.get('landing'):
         parts.append(f'landing={plan["landing"]}')
-    if plan.get('status') in TERMINAL_PLAN_STATUSES:
-        missing = [field for field in TERMINAL_REQUIRED_FIELDS if not plan.get(field)]
+    if plan.get('status') in SHIPPED_PLAN_STATUSES:
+        missing = [field for field in SHIPPED_REQUIRED_FIELDS if not plan.get(field)]
         if missing:
             parts.append(f'(!) missing: {", ".join(missing)}')
     return ' — '.join(parts)
@@ -3122,6 +3273,68 @@ def _collision_rows(
     return origin_row, overlap_row
 
 
+def _spec_candidate_state(record: dict[str, Any] | None) -> str:
+    """Classify one SPEC candidate into :data:`CANDIDATE_DERIVATION_STATES`.
+
+    ``None`` is :func:`_spec_record`'s unreadable return, so it maps to
+    :data:`CANDIDATE_UNREADABLE` — the state held apart from
+    :data:`CANDIDATE_INDETERMINATE` because a candidate nothing could READ and a
+    candidate that was read and declared nothing comparable are different facts.
+
+    Comparability is decided from the record's ``derivation_status`` and NOT from
+    the truthiness of its ``paths`` set, so this classification agrees with
+    ``corpus surfaces``' published ``admits_disjointness_check`` for the same
+    spec. A ``declarative`` spec that happens to resolve zero entries is
+    ``comparable`` — it was compared and matched nothing, which is a checked
+    negative rather than an unchecked one.
+    """
+    if record is None:
+        return CANDIDATE_UNREADABLE
+    if record['derivation_status'] in SURFACE_INDETERMINATE_STATES:
+        return CANDIDATE_INDETERMINATE
+    return CANDIDATE_COMPARABLE
+
+
+def _live_candidate_state(record: dict[str, Any]) -> str:
+    """Classify one LIVE-PLAN candidate into the same vocabulary.
+
+    Reads the ``comparable`` flag :func:`_live_plan_records` already derives, so
+    the live side's contribution rule lives in one place. ``unreadable`` is
+    structurally unreachable here — that walk degrades an unreadable plan
+    directory to an empty surface rather than to no record — which is exactly why
+    the tally is derived from the whole vocabulary: the live kind's ``unreadable``
+    row is a STATED zero rather than a missing row a reader must interpret.
+    """
+    return CANDIDATE_COMPARABLE if record.get('comparable', bool(record['paths'])) else CANDIDATE_INDETERMINATE
+
+
+def _candidate_indeterminate_reason(tally: dict[str, dict[str, int]]) -> str:
+    """The shortfall reason a blocked ``next`` admission names, derived from the tally.
+
+    The empty string when every candidate declared a comparable surface. A
+    non-empty reason is the enforcement point's evidence: it names which kinds
+    contributed which non-contributing state, so a refused admission says WHY
+    rather than only refusing.
+
+    Derived rather than composed by its reader — the enforcement site is a
+    workflow doc, and a reason an LLM assembles from a count is a reason that
+    can be wrong about its own payload. Both loops walk the DECLARED
+    vocabularies in declared order (the state loop filtering on
+    :data:`CANDIDATE_NON_CONTRIBUTING_STATES`, which is itself derived by
+    subtraction), so a kind or state added later is named here with no edit and
+    a zero cell contributes nothing.
+    """
+    parts = [
+        f'{kind} {state}: {tally[kind][state]}'
+        for kind in CANDIDATE_KINDS
+        for state in CANDIDATE_DERIVATION_STATES
+        if state in CANDIDATE_NON_CONTRIBUTING_STATES and tally[kind][state]
+    ]
+    if not parts:
+        return ''
+    return f'candidate comparison indeterminate — {", ".join(parts)}'
+
+
 def cmd_corpus_cross_check(args: argparse.Namespace) -> dict[str, Any]:
     """Cross-check this epic's specs against sibling epics and live plans.
 
@@ -3129,6 +3342,27 @@ def cmd_corpus_cross_check(args: argparse.Namespace) -> dict[str, Any]:
     enumerated and each is NAMED in the payload — sibling epics (active and
     archived), the live plan set, and this epic's own corpus for the
     within-corpus direction — so a ``count: 0`` states which zero it is.
+
+    BOTH sides of the comparison publish a derivation-status tally over their
+    whole state vocabulary. The spec side is ``spec_surface_states`` over
+    :data:`SURFACE_STATES`; the candidate side is ``candidate_derivation_states``
+    over the cross-product of :data:`CANDIDATE_KINDS` and
+    :data:`CANDIDATE_DERIVATION_STATES`, with ``candidate_population`` stating
+    what each kind's tally was computed over. Both are derived from the declared
+    tuples rather than from the kinds and states actually observed, so a kind
+    holding no candidate — and a state no candidate is in — publishes a stated
+    zero instead of vanishing. That is what makes ``file_overlap_match_count: 0``
+    readable: beside a non-zero ``candidates_indeterminate`` it is an UNCHECKED
+    negative, and the payload names that rule in
+    ``candidate_governing_authority``.
+
+    That reading is published as a VERDICT rather than left to its reader:
+    ``candidate_comparison_determinate`` is true only when the whole candidate
+    population was comparable, and ``candidate_indeterminate_reason`` names what
+    was not. The ``next`` admission rule consumes the verdict as a third
+    conjunct alongside the candidate's own declarative surface and the absence
+    of an overlap row, so an indeterminate comparison refuses rather than
+    admitting on an unexamined population.
 
     Reports candidates and applies nothing: superseding is the workflow doc's
     inline, ledger-writing act, and no spec file is ever deleted.
@@ -3140,11 +3374,28 @@ def cmd_corpus_cross_check(args: argparse.Namespace) -> dict[str, Any]:
     if not root.is_dir():
         return _error(args.slug, 'not_found', f'epic {args.slug!r} has no store tree')
     repo_root = Path(cwd_checkout_root())
+    # The candidate-side tally and the population each kind's tally was computed
+    # over, both keyed by the WHOLE :data:`CANDIDATE_KINDS` vocabulary and seeded
+    # with the WHOLE :data:`CANDIDATE_DERIVATION_STATES` vocabulary, so a kind
+    # this corpus holds no candidate of publishes stated zeros rather than
+    # vanishing from the breakdown.
+    candidate_tally: dict[str, dict[str, int]] = {
+        kind: dict.fromkeys(CANDIDATE_DERIVATION_STATES, 0) for kind in CANDIDATE_KINDS
+    }
+    candidate_population = dict.fromkeys(CANDIDATE_KINDS, 0)
     own_paths = _spec_paths(root)
     own: list[dict[str, Any]] = []
     unreadable: list[dict[str, str]] = []
     for path in own_paths:
         record = _spec_record(args.slug, path, repo_root)
+        # Every own spec is a corpus_spec CANDIDATE for the other own specs, so
+        # the population is counted here — over ``own_paths``, including the
+        # unreadable ones, which is the population the tally must reconcile with.
+        # The figure states how many own specs DECLARED a comparable surface, not
+        # how many pairs formed: a single-spec corpus reports population 1 while
+        # forming no pair at all, because self-comparison is excluded below.
+        candidate_population[CANDIDATE_KIND_CORPUS_SPEC] += 1
+        candidate_tally[CANDIDATE_KIND_CORPUS_SPEC][_spec_candidate_state(record)] += 1
         if record is None:
             unreadable.append({'spec': path.name, 'error': 'unreadable'})
         else:
@@ -3154,16 +3405,29 @@ def cmd_corpus_cross_check(args: argparse.Namespace) -> dict[str, Any]:
     for sibling_root in sibling_roots:
         for path in _spec_paths(sibling_root):
             record = _spec_record(sibling_root.name, path, repo_root)
+            candidate_population[CANDIDATE_KIND_SIBLING_EPIC_SPEC] += 1
+            candidate_tally[CANDIDATE_KIND_SIBLING_EPIC_SPEC][_spec_candidate_state(record)] += 1
             if record is None:
                 unreadable.append({'spec': f'{sibling_root.name}/{path.name}', 'error': 'unreadable'})
             else:
-                candidates.append(('sibling_epic_spec', {**record, 'name': f'{sibling_root.name}/{path.name}'}))
+                candidates.append(
+                    (
+                        CANDIDATE_KIND_SIBLING_EPIC_SPEC,
+                        {**record, 'name': f'{sibling_root.name}/{path.name}'},
+                    )
+                )
     live = _live_plan_records()
-    candidates.extend(('live_plan', record) for record in live)
+    for record in live:
+        candidate_population[CANDIDATE_KIND_LIVE_PLAN] += 1
+        candidate_tally[CANDIDATE_KIND_LIVE_PLAN][_live_candidate_state(record)] += 1
+    candidates.extend((CANDIDATE_KIND_LIVE_PLAN, record) for record in live)
     origin_matches: list[dict[str, Any]] = []
     overlap_matches: list[dict[str, Any]] = []
     for spec in own:
-        pairs = [*candidates, *(('corpus_spec', other) for other in own if other['name'] != spec['name'])]
+        pairs = [
+            *candidates,
+            *((CANDIDATE_KIND_CORPUS_SPEC, other) for other in own if other['name'] != spec['name']),
+        ]
         for kind, candidate in pairs:
             origin_row, overlap_row = _collision_rows(spec, candidate, kind)
             if origin_row is not None:
@@ -3203,11 +3467,19 @@ def cmd_corpus_cross_check(args: argparse.Namespace) -> dict[str, Any]:
         record['name'] for record in live if not record.get('comparable', bool(record['paths']))
     )
     live_comparable_records = [record for record in live if record.get('comparable', bool(record['paths']))]
-    live_matched_names = {row['candidate'] for row in origin_matches if row.get('candidate_kind') == 'live_plan'} | {
-        row['candidate'] for row in overlap_matches if row.get('candidate_kind') == 'live_plan'
-    }
+    live_matched_names = {
+        row['candidate'] for row in origin_matches if row.get('candidate_kind') == CANDIDATE_KIND_LIVE_PLAN
+    } | {row['candidate'] for row in overlap_matches if row.get('candidate_kind') == CANDIDATE_KIND_LIVE_PLAN}
     live_checked_and_clean = sorted(
         record['name'] for record in live_comparable_records if record['name'] not in live_matched_names
+    )
+    # Hoisted out of the payload literal because the determinacy VERDICT and the
+    # shortfall REASON are both derived from the same count, and the ``next``
+    # admission rule consults the verdict rather than re-deriving the comparison
+    # from the tally. Publishing it as a named field is what lets that rule be a
+    # field read instead of arithmetic performed at the enforcement site.
+    candidates_indeterminate = sum(
+        candidate_tally[kind][state] for kind in CANDIDATE_KINDS for state in CANDIDATE_NON_CONTRIBUTING_STATES
     )
     return {
         'status': 'success',
@@ -3237,6 +3509,45 @@ def cmd_corpus_cross_check(args: argparse.Namespace) -> dict[str, Any]:
         'live_checked_and_clean_count': len(live_checked_and_clean),
         'live_checked_and_clean': live_checked_and_clean,
         'live_could_not_check_count': len(live_indeterminate_plans),
+        # The CANDIDATE side of the same disclosure, broken down per
+        # candidate_kind and derived from the whole state vocabulary — so a kind
+        # holding no candidate, and a state no candidate is in, publish stated
+        # zeros. ``candidate_population`` states what each kind's tally was
+        # computed over, so every count is readable beside its denominator.
+        # ``candidates_indeterminate > 0`` beside ``file_overlap_match_count: 0``
+        # is an unchecked negative, never a clean pass — the rule the payload
+        # names in ``candidate_governing_authority``.
+        #
+        # ``candidates_total`` is NOT ``candidates_scanned`` under another name,
+        # and the two are deliberately both published. ``candidates_scanned``
+        # counts the sibling and live candidates that were successfully READ and
+        # entered the matcher's pair list; ``candidates_total`` is the whole
+        # candidate population the tally was computed over — all three kinds,
+        # this epic's own corpus included, and an unreadable candidate counted
+        # rather than dropped. A reader comparing them sees how much of the
+        # candidate population never reached the comparison.
+        'candidate_governing_authority': CANDIDATE_GOVERNING_AUTHORITY,
+        'candidate_kinds': list(CANDIDATE_KINDS),
+        'candidate_population': [
+            {'candidate_kind': kind, 'population': candidate_population[kind]} for kind in CANDIDATE_KINDS
+        ],
+        'candidate_derivation_states': [
+            {'candidate_kind': kind, 'derivation_status': state, 'count': candidate_tally[kind][state]}
+            for kind in CANDIDATE_KINDS
+            for state in CANDIDATE_DERIVATION_STATES
+        ],
+        'candidates_total': sum(candidate_population.values()),
+        'candidates_comparable': sum(candidate_tally[kind][CANDIDATE_COMPARABLE] for kind in CANDIDATE_KINDS),
+        'candidates_indeterminate': candidates_indeterminate,
+        # The ``next`` admission rule's third conjunct, published as a VERDICT so
+        # the enforcement site reads a field instead of re-deriving it. Without
+        # it a declarative spec with no overlap row was admitted while another
+        # candidate had never been comparable at all — admission on an
+        # unexamined population, the measured-zero-versus-unmeasured conflation
+        # the rest of this payload exists to prevent. Fails closed: the verdict
+        # is true only when the whole candidate population was comparable.
+        'candidate_comparison_determinate': candidates_indeterminate == 0,
+        'candidate_indeterminate_reason': _candidate_indeterminate_reason(candidate_tally),
         'source_origin_match_count': len(origin_matches),
         'source_origin_matches': origin_matches,
         'file_overlap_match_count': len(overlap_matches),
@@ -3730,12 +4041,22 @@ def _row_surface(spec: Path | None, repo_root: Path) -> str:
 def _build_ordered_queue(status_doc: dict[str, Any], root: Path) -> str:
     """Render the LIVE Ordered Queue table, derived from status.json + specs.
 
-    Only non-terminal rows appear: a shipped/landed row belongs in its landing
-    record, not the live queue (:data:`LIVE_QUEUE_EXCLUDED_STATUSES`). The five
+    Only non-terminal rows appear: a shipped row belongs in its landing record
+    and a row that closed without shipping is finished either way, so neither is
+    live (:data:`LIVE_QUEUE_EXCLUDED_STATUSES`). The five
     columns are all derivable — order, plan id, workstream and status from
     ``status.json``; the surface from each row's spec. Per-row narrative (a
     sequencing caveat, a park reason) is NOT here — it lives in the annotation
     zone outside the markers, which regeneration never touches.
+
+    ⛔ The Plan cell is the ROW's own ``id``, never a re-derivation from the
+    matched spec's filename. The row carries the exact id string as data, so
+    re-deriving one from the file the row matched is both unnecessary and the
+    source of the suffixed-id collapse: a filename-derived identity is read back
+    through the plan-id grammar, where a letter-suffixed id has no legal form and
+    is absorbed onto its unsuffixed sibling. Reading the field the queue already
+    holds cannot conflate two rows whatever their ids look like. The spec is
+    still resolved, because the Surface cell genuinely IS a property of the file.
     """
     header = '| # | Plan | Workstream | Status | Surface (expected) |'
     divider = '|---|------|------------|--------|--------------------|'
@@ -3751,7 +4072,7 @@ def _build_ordered_queue(status_doc: dict[str, Any], root: Path) -> str:
     for position, row in enumerate(live, start=1):
         plan_id = str(row.get('id', ''))
         spec = next((path for path in specs if plan_id and _spec_matches_row(path, plan_id)), None)
-        plan_cell = _queue_cell(spec.stem if spec is not None else (plan_id or '?'))
+        plan_cell = _queue_cell(plan_id or '?')
         workstream = _queue_cell(str(row.get('workstream', '') or '?'))
         status_cell = _queue_cell(str(row.get('status', '') or '?'))
         surface = _row_surface(spec, repo_root)
@@ -3867,7 +4188,7 @@ def _invariant_no_terminal_in_live_queue(queue_body: str) -> dict[str, Any]:
             f'terminal status leaked into the live queue: {", ".join(leaked)}',
             population,
         )
-    return _invariant('no_terminal_in_live_queue', 'ok', 'no shipped/landed row in the live queue', population)
+    return _invariant('no_terminal_in_live_queue', 'ok', 'no terminal row in the live queue', population)
 
 
 def _settled_headings(text: str) -> set[str]:
@@ -4373,8 +4694,8 @@ def _build_arg_parser() -> argparse.ArgumentParser:
             'the START-HERE resume summary, archive a closed epic, reconcile '
             'the staged spec corpus and its re-grounding verdicts, report the '
             'restart-readiness verdict, drive the plan-writable inbox '
-            'OUTBOX and its drain, and write the per-plan client.toon '
-            'pre-flight artifact.'
+            'OUTBOX, its drain and the plan-side mailbox read, and write the '
+            'per-plan client.toon pre-flight artifact.'
         ),
         allow_abbrev=False,
     )
@@ -4682,14 +5003,22 @@ def _add_inbox_group(subparsers: Any) -> None:
     """Register the ``inbox`` verb group.
 
     Sub-verbs, in registration order: ``write``, ``amend``, ``supersede``,
-    ``close-stream``, ``validate``, ``list``, ``archive``, ``migrate-archive``,
-    ``detect``, ``landing-check``. The handlers live in
+    ``close-stream``, ``validate``, ``list``, ``read``, ``archive``,
+    ``migrate-archive``, ``detect``, ``landing-check``. The handlers live in
     :mod:`_orchestrator_inbox`; this function only wires argv to them. Note what
     the surface deliberately does NOT expose: no output path, no sequence
-    number, and no inbox directory — the write and correction
-    targets are derived from ``--slug`` plus ``--sender-id`` / a bare
-    ``--message`` filename alone, which is what makes the ledger write-boundary
-    carve-out enforced by construction. ``archive --as-name`` does not widen
+    number, and no inbox directory — the write, correction and read
+    targets are derived from ``--slug`` plus ``--sender-id`` / a validated
+    ``--target-plan`` / a validated ``--plan-id`` / a bare ``--message``
+    filename alone, which is what makes
+    the ledger write-boundary carve-out enforced by construction.
+    ``--target-plan`` does not widen it either: it selects BETWEEN the epic
+    queue and the addressee mailbox ``inbox/to/{plan_id}/``, and its value is a
+    validated identifier that becomes one path component, never a path.
+    ``read --plan-id`` is the same construction on the read side — it composes
+    the one mailbox address and reaches no other path in the epic tree, so the
+    plan-side read stays a read of messages addressed to that plan rather than
+    of the epic's own state. ``archive --as-name`` does not widen
     that carve-out: it is still a bare filename joined onto
     ``inbox/archive/{sender}/``, never a caller-supplied path, and it is
     additionally sender-constrained, so the archived name's sender provenance is
@@ -4698,10 +5027,11 @@ def _add_inbox_group(subparsers: Any) -> None:
     inbox = subparsers.add_parser(
         'inbox',
         help=(
-            'Epic inbox OUTBOX and drain: append, correct (amend/supersede), '
-            'end a sender stream, validate, list, archive or fold the archive '
-            "per sender, detect a plan's orchestration context, or check a "
-            "landing's required facts."
+            'Epic inbox channel and drain: append (queued, or delivered to a '
+            'running target plan), correct (amend/supersede), end a sender '
+            "stream, validate, list, read a plan's delivered mailbox, archive "
+            "or fold the archive per sender, detect a plan's orchestration "
+            "context, or check a landing's required facts."
         ),
         allow_abbrev=False,
     )
@@ -4709,7 +5039,7 @@ def _add_inbox_group(subparsers: Any) -> None:
 
     write = actions.add_parser(
         'write',
-        help='Append one inbox/{sender_id}-{NNN}.md message to the epic.',
+        help=("Append one {sender_id}-{NNN}.md message — to the epic queue, or to a running --target-plan's mailbox."),
         allow_abbrev=False,
     )
     _add_slug_arg(write)
@@ -4735,11 +5065,11 @@ def _add_inbox_group(subparsers: Any) -> None:
         default=None,
         help=(
             'Optional plan id the message is aimed at. When it names a plan that '
-            'is currently RUNNING, the write is REFUSED as '
-            'undeliverable_to_running_plan: the inbox is drained between plans, '
-            'so a running plan never reads it. A non-running target does not '
-            'block the write. This flag makes the undeliverability visible; it '
-            'does NOT deliver a message to a plan.'
+            'is currently RUNNING, the message is DELIVERED to that plan mailbox '
+            'at inbox/to/{plan_id}/ (destination: mailbox) rather than queued, '
+            'because the epic queue is drained between plans. Any other value — '
+            'a landed, parked or unqueued plan, or the flag omitted — queues the '
+            'message for the epic drain (destination: queue).'
         ),
     )
     write.set_defaults(handler=cmd_inbox_write)
@@ -4828,6 +5158,27 @@ def _add_inbox_group(subparsers: Any) -> None:
     )
     _add_slug_arg(list_messages)
     list_messages.set_defaults(handler=cmd_inbox_list)
+
+    read = actions.add_parser(
+        'read',
+        help=(
+            "Read the messages delivered to one plan's mailbox at "
+            'inbox/to/{plan-id}/ (fail-open: never faults, and names which kind '
+            'of zero it returned).'
+        ),
+        allow_abbrev=False,
+    )
+    _add_slug_arg(read)
+    read.add_argument(
+        '--plan-id',
+        required=True,
+        help=(
+            'Plan id whose mailbox is read. Resolves the SAME (epic, plan) '
+            'address inbox write delivers to, and becomes one validated path '
+            'component — never a path.'
+        ),
+    )
+    read.set_defaults(handler=cmd_inbox_read)
 
     archive_message = actions.add_parser(
         'archive',
