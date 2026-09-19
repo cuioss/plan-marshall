@@ -734,10 +734,10 @@ class TestReconcileBuildCount:
 
 
 class TestLedgerAvailabilityProbe:
-    """Any row for the plan (any kind) means available; none means unmeasured."""
+    """Only a kind=build row means available; anything else is unmeasured."""
 
     def test_entries_for_the_plan_mean_available(self, monkeypatch):
-        monkeypatch.setattr(_al, 'read_entries', lambda: [{'plan_id': 'p', 'kind': 'change'}])
+        monkeypatch.setattr(_al, 'read_entries', lambda: [{'plan_id': 'p', 'kind': 'build'}])
 
         assert _al.ledger_has_entries_for_plan('p') is True
 
@@ -751,14 +751,20 @@ class TestLedgerAvailabilityProbe:
 
         assert _al.ledger_has_entries_for_plan('p') is False
 
-    def test_zero_build_rows_with_other_rows_is_available(self, monkeypatch):
-        """Available-and-empty: rows exist but none is kind=build — a measured zero."""
+    def test_other_kind_rows_mean_unavailable(self, monkeypatch):
+        """Non-build rows say nothing about build-oracle availability."""
+        monkeypatch.setattr(_al, 'read_entries', lambda: [{'plan_id': 'p', 'kind': 'change'}])
+
+        assert _al.ledger_has_entries_for_plan('p') is False
+
+    def test_zero_build_rows_with_other_rows_is_unavailable(self, monkeypatch):
+        """Rows exist but none is kind=build — the oracle is unmeasured, not zero."""
         monkeypatch.setattr(_al, 'read_entries', lambda: [{'plan_id': 'p', 'kind': 'change'}])
 
         result = _al.reconcile_build_count(
             0, {'build_count': 0, 'suspect_count': 0}, _al.ledger_has_entries_for_plan('p')
         )
 
-        assert result['ledger_available'] is True
-        assert result['ledger_build_count'] == 0
-        assert result['agreement'] == 'agree'
+        assert result['ledger_available'] is False
+        assert 'ledger_build_count' not in result
+        assert 'agreement' not in result

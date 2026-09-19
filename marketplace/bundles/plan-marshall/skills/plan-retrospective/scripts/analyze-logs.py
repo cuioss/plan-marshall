@@ -44,7 +44,7 @@ from _footprint_resolver import (
     FOOTPRINT_UNRESOLVED,
     read_captured_footprint,
     read_legacy_footprint,
-    resolve_merge_commit_footprint,
+    resolve_merge_commit_footprint_with_gaps,
     resolve_pr_landing_footprint,
 )
 from _ledger_core import read_entries
@@ -257,19 +257,25 @@ def count_log_build_calls(script_lines: list[str]) -> dict[str, Any]:
 
 
 def ledger_has_entries_for_plan(plan_key: str) -> bool:
-    """Whether the change-ledger holds ANY row for this plan (any kind).
+    """Whether the change-ledger holds any BUILD row for this plan.
 
     The availability probe behind the build-count reconciliation: a plan with
-    no ledger row at all — the ledger file is absent, unreadable, or simply
-    never recorded this plan — has an UNMEASURED oracle, which must read as
-    unavailable rather than as a zero-build plan. A plan WITH rows but zero
-    `kind=build` rows is available-and-empty, which is a measured zero.
+    no ``kind=build`` ledger row at all — the ledger file is absent,
+    unreadable, or simply never recorded a build for this plan — has an
+    UNMEASURED oracle, which must read as unavailable rather than as a
+    zero-build plan. Non-build rows (change records, job markers) say nothing
+    about build-oracle availability and must not satisfy the probe. A plan WITH
+    build rows but zero counted builds is available-and-empty, which is a
+    measured zero.
     """
     try:
         entries = read_entries()
     except OSError:
         return False
-    return any(isinstance(entry, dict) and entry.get('plan_id') == plan_key for entry in entries)
+    return any(
+        isinstance(entry, dict) and entry.get('plan_id') == plan_key and entry.get('kind') == 'build'
+        for entry in entries
+    )
 
 
 def reconcile_build_count(
@@ -408,8 +414,15 @@ def resolve_footprint(plan_dir: Path, plan_id: str | None = None) -> list[str] |
     if captured is not None:
         return sorted(captured)
 
-    merge_set = resolve_merge_commit_footprint(plan_dir, refs)
+    merge_set, merge_gaps = resolve_merge_commit_footprint_with_gaps(plan_dir, refs)
     if merge_set is not None:
+        if merge_gaps:
+            print(
+                f'WARNING: analyze-logs footprint tier merge-commit resolved with '
+                f'{len(merge_gaps)} unresolvable split shard(s): {", ".join(merge_gaps)} — '
+                'the returned union is partial',
+                file=sys.stderr,
+            )
         return sorted(merge_set)
 
     # Tier 4 is reached ONLY because this resolver composes the per-tier helpers itself
