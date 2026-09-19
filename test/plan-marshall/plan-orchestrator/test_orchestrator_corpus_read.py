@@ -241,6 +241,35 @@ class TestCorpusReadRefusals:
         assert 'body' not in result
         assert _tree_snapshot(root) == before
 
+    def test_escaping_symlink_refused_never_read(self, plan_context, tmp_path):
+        _write_status(plan_context, [_row('PLAN-01')])
+        secret = tmp_path / 'secret.md'
+        secret.write_text('TOP SECRET', encoding='utf-8')
+        link = _epic_dir(plan_context) / 'plans' / 'PLAN-01-escape.md'
+        link.parent.mkdir(parents=True, exist_ok=True)
+        link.symlink_to(secret)
+        root = _epic_dir(plan_context)
+        before = _tree_snapshot(root)
+        result = cmd_corpus_read(_variant(_READ_ARGS, plan='PLAN-01'))
+        assert result['status'] == 'error'
+        assert result['error'] == 'spec_escapes_corpus'
+        assert result['spec'] == 'PLAN-01-escape.md'
+        assert 'body' not in result
+        assert 'TOP SECRET' not in str(result)
+        assert _tree_snapshot(root) == before
+
+    def test_inner_symlink_still_resolves(self, plan_context):
+        _write_status(plan_context, [_row('PLAN-01')])
+        plans = _epic_dir(plan_context) / 'plans'
+        plans.mkdir(parents=True, exist_ok=True)
+        target = plans / 'target.md'
+        target.write_text(SPEC_BODY, encoding='utf-8')
+        (plans / 'PLAN-01-alias.md').symlink_to(target)
+        result = cmd_corpus_read(_variant(_READ_ARGS, plan='PLAN-01'))
+        assert result['status'] == 'success'
+        assert result['spec'] == 'PLAN-01-alias.md'
+        assert result['body'] == SPEC_BODY
+
 
 class TestCorpusReadNonVacuity:
     def test_body_hash_matches_fixture_bytes(self, plan_context):

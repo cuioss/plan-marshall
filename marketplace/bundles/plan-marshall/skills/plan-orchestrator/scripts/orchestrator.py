@@ -2733,6 +2733,26 @@ def cmd_corpus_enumerate(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
+def _spec_within_corpus(path: Path, plans_dir: Path) -> Path | None:
+    """Resolve ``path`` and verify it stays under ``plans_dir``.
+
+    ``_spec_paths`` accepts symlinks to regular files and ``_read_spec``
+    follows them, so without this check a ``plans/PLAN-01.md`` symlink could
+    win selection and return an arbitrary readable file in the read body
+    (CWE-22). Returns the resolved path when contained, ``None`` when the
+    link escapes the corpus or cannot be resolved at all.
+    """
+    try:
+        resolved = path.resolve()
+    except (OSError, RuntimeError):
+        return None
+    try:
+        resolved.relative_to(plans_dir)
+    except ValueError:
+        return None
+    return resolved
+
+
 def cmd_corpus_read(args: argparse.Namespace) -> dict[str, Any]:
     """Return one staged spec's body through the sanctioned read path.
 
@@ -2753,6 +2773,8 @@ def cmd_corpus_read(args: argparse.Namespace) -> dict[str, Any]:
     match resolves; zero matches return ``spec_not_found`` carrying
     ``available_specs``; several prefix matches return ``ambiguous_spec``
     carrying ``candidates`` rather than silently returning the first file.
+    A match resolving outside ``plans/`` (symlink escape) returns
+    ``spec_escapes_corpus`` naming the spec.
     An unreadable file returns ``unreadable``; an unsafe slug returns
     ``invalid_slug``; a slug with no store tree returns ``not_found``. An
     absent spec is never rendered as an empty body.
@@ -2762,14 +2784,32 @@ def cmd_corpus_read(args: argparse.Namespace) -> dict[str, Any]:
         return _error(args.slug, 'invalid_slug', invalid)
     plan = str(getattr(args, 'plan', '') or '')
     if not _ADD_ROW_PLAN_ID_RE.match(plan):
-        return _error(
-            args.slug, 'invalid_plan', f'--plan must be a plan id ({PLAN_ID_SEGMENT}), got: {plan!r}'
-        )
+        return _error(args.slug, 'invalid_plan', f'--plan must be a plan id ({PLAN_ID_SEGMENT}), got: {plan!r}')
     root = _epic_root(args.slug, allow_archived=True)
     if not root.is_dir():
         return _error(args.slug, 'not_found', f'epic {args.slug!r} has no store tree')
     specs = _spec_paths(root)
-    matches = sorted(path for path in specs if _spec_matches_row(path, plan))
+    try:
+        plans_dir = (root / PLANS_SUBDIR).resolve()
+    except (OSError, RuntimeError):
+        return _error(args.slug, 'not_found', f'epic {args.slug!r} has no resolvable plans tree')
+    candidates: list[Path] = []
+    for path in specs:
+        if not _spec_matches_row(path, plan):
+            continue
+        if _spec_within_corpus(path, plans_dir) is None:
+            try:
+                path.resolve()
+            except (OSError, RuntimeError):
+                return _error(args.slug, 'unreadable', f'spec {path.name!r} could not be read', spec=path.name)
+            return _error(
+                args.slug,
+                'spec_escapes_corpus',
+                f'spec {path.name!r} resolves outside {PLANS_SUBDIR}/ and is refused',
+                spec=path.name,
+            )
+        candidates.append(path)
+    matches = sorted(candidates)
     exact = next((path for path in matches if path.stem == plan), None)
     if exact is not None:
         spec = exact
