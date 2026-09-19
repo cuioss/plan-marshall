@@ -1,0 +1,17 @@
+{
+  "name": "plan-marshall",
+  "description": "Comprehensive marketplace of development standards, skills, and best practices for AI-assisted development",
+  "version": "0.1.0",
+  "bundles": [
+    "plan-marshall",
+    "pm-dev-frontend",
+    "pm-dev-frontend-cui",
+    "pm-dev-java",
+    "pm-dev-java-cui",
+    "pm-dev-oci",
+    "pm-dev-python",
+    "pm-documents",
+    "pm-plugin-development",
+    "pm-requirements"
+  ]
+}

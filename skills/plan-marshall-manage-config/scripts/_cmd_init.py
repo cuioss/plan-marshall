@@ -1,0 +1,54 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
+"""
+Init command handler for manage-config.
+
+Handles: init
+"""
+
+from _cmd_skill_domains import load_domain_config_from_bundle
+from _config_core import (
+    MARSHAL_PATH,
+    error_exit,
+    is_initialized,
+    save_config,
+    success_exit,
+)
+from _config_defaults import get_default_config, stamp_provisioning_fields
+from _config_detection import detect_domains
+
+
+def cmd_init(args) -> dict:
+    """Handle init command."""
+    if is_initialized() and not getattr(args, 'force', False):
+        return error_exit('marshal.json already exists. Use --force to overwrite.')
+
+    # init does NOT seed build.map — build_map is never populated
+    # at init time. Step 8b of the marshall-steward wizard (`build-map seed`) is
+    # the sole authoritative seed point, gated on completed architecture
+    # discovery. The write-once guard in seed_build_map_into makes the first
+    # explicit seed authoritative.
+    config = get_default_config()
+
+    # NOTE: build_systems is NOT persisted - determined at runtime via extensions
+
+    # Auto-detect technical domains (returns list of domain keys). The detected
+    # domains are added to skill_domains; the `not in skill_domains` guard
+    # protects the system domain and any other pre-seeded entries.
+    detected_keys = detect_domains()
+    if detected_keys:
+        skill_domains = config.get('skill_domains', {})
+        for domain_key in detected_keys:
+            if domain_key not in skill_domains:
+                domain_config = load_domain_config_from_bundle(domain_key)
+                if domain_config:
+                    skill_domains[domain_key] = domain_config
+        config['skill_domains'] = skill_domains
+
+    # Stamp the provisioning fields (system.provisioned_version /
+    # system.config_seed_fingerprint) so the executor/config staleness check has
+    # a baseline to compare the installed manifest against. Runtime-only stamps —
+    # not part of get_default_config(), so they never perturb the seed fingerprint.
+    stamp_provisioning_fields(config)
+
+    save_config(config)
+    return success_exit({'created': str(MARSHAL_PATH), 'domains_detected': detected_keys})
