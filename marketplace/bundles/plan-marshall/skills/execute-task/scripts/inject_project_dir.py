@@ -145,30 +145,97 @@ def inject_project_dir(command: str, plan_id: str) -> tuple[str, bool]:
     return shlex.join(rewritten_tokens), True
 
 
+#: Refusal code emitted when a Bucket-B invocation is attempted while the
+#: worktree flag is unset and ``use_worktree`` is true. The flag is persisted
+#: by ``prepare_execute``; this seam is a read-only guard. No script gate
+#: binds a free agent's Edit tool — the refusal lives here, paired with
+#: detection docs naming that residual.
+WORKTREE_NOT_MATERIALIZED = 'worktree_not_materialized'
+
+
+def is_bucket_b_notation(notation: str) -> bool:
+    """Return True when ``notation`` is a Bucket-B executor invocation."""
+    return notation in _BUCKET_B_NOTATIONS
+
+
+def refusal_needed(notation: str, *, use_worktree: bool, worktree_materialized: bool | None) -> bool:
+    """Return True when the invocation must be refused.
+
+    Refusal fires exactly when the notation is Bucket-B, the plan runs with
+    ``use_worktree`` true, and the materialized flag is explicitly False. An
+    unknown flag (``None``) never refuses — the guard is fail-open on unknown
+    so pre-flag callers keep their current behaviour; only an explicit unset
+    refuses.
+    """
+    return bool(use_worktree) and worktree_materialized is False and is_bucket_b_notation(notation)
+
+
+def guarded_inject(
+    command: str,
+    plan_id: str,
+    *,
+    use_worktree: bool = True,
+    worktree_materialized: bool | None = None,
+) -> dict[str, object]:
+    """Inject with the worktree-materialized admission check applied.
+
+    Returns a TOON-shaped payload: ``status: success`` carrying
+    ``injected``/``rewritten_command`` on the pass path, or ``status: error``
+    with ``error: worktree_not_materialized`` on the refusal path. The pure
+    :func:`inject_project_dir` above is unchanged and stays the injection
+    primitive; this wrapper is the dispatch/invocation seam phase-5 calls.
+    """
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        return {'status': 'success', 'injected': False, 'rewritten_command': command}
+    notation_index = _find_notation_index(tokens)
+    notation = tokens[notation_index] if notation_index is not None else ''
+    if refusal_needed(notation, use_worktree=use_worktree, worktree_materialized=worktree_materialized):
+        return {
+            'status': 'error',
+            'error': WORKTREE_NOT_MATERIALIZED,
+            'plan_id': plan_id,
+            'message': (
+                f'Bucket-B invocation refused for plan {plan_id}: worktree not materialized '
+                '(use_worktree=true while worktree_materialized is unset). '
+                'Materialize via prepare_execute before dispatch.'
+            ),
+        }
+    rewritten, injected = inject_project_dir(command, plan_id)
+    return {'status': 'success', 'injected': injected, 'rewritten_command': rewritten}
+
+
 def cmd_run(args: argparse.Namespace) -> int:
     """CLI wrapper: rewrite a single command and print structured TOON output.
 
     Output contract (TOON):
 
-    * ``status`` — always ``success`` on exit code 0.
+    * ``status`` — ``success`` on the pass path, ``error`` with
+      ``error: worktree_not_materialized`` on the refusal path.
     * ``injected`` — boolean; ``true`` only when the command was actually
-      rewritten.
+      rewritten (pass path only).
     * ``rewritten_command`` — the (possibly unchanged) command string the
-      caller should execute.
+      caller should execute (pass path only).
 
     Callers parse the TOON and drive conditional logging off ``injected``.
-    Exit code is ``0`` on success.
+    Exit code is ``0`` on success. The optional ``--worktree-materialized``
+    flag carries the prepare_execute-persisted state: ``true``/``false``;
+    omitted means unknown and preserves the pre-flag behaviour.
     """
-    rewritten, injected = inject_project_dir(args.command, args.plan_id)
-    print(
-        serialize_toon(
-            {
-                'status': 'success',
-                'injected': injected,
-                'rewritten_command': rewritten,
-            }
-        )
+    materialized: bool | None = None
+    raw = getattr(args, 'worktree_materialized', None)
+    if raw == 'true':
+        materialized = True
+    elif raw == 'false':
+        materialized = False
+    result = guarded_inject(
+        args.command,
+        args.plan_id,
+        use_worktree=getattr(args, 'use_worktree', True),
+        worktree_materialized=materialized,
     )
+    print(serialize_toon(result))
     return 0
 
 
@@ -198,6 +265,20 @@ def build_parser() -> argparse.ArgumentParser:
         required=True,
         dest='plan_id',
         help='Plan identifier injected as the value for --plan-id',
+    )
+    run_parser.add_argument(
+        '--use-worktree',
+        dest='use_worktree',
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help='Whether the plan runs with use_worktree=true (default: true)',
+    )
+    run_parser.add_argument(
+        '--worktree-materialized',
+        dest='worktree_materialized',
+        choices=('true', 'false'),
+        default=None,
+        help='prepare_execute-persisted materialization state; omitted means unknown (no refusal)',
     )
     run_parser.set_defaults(func=cmd_run)
 

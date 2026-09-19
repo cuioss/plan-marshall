@@ -163,6 +163,16 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 If `plan_id` is empty or an artifact is missing, emit a `[CRITICAL]` work-log entry and STOP — do not advance to phase-2-refine.
 
+**Post-dispatch contract assertion (1→2 boundary)**: phase-1-init runs inline, so there is no dispatched leaf to police — but its contract still restricts writes to `.plan/local/plans/{plan_id}/**` (see `plan-marshall:phase-1-init` § Enforcement). An init reaching for `Edit` / `Write` against the main checkout silently advances the orchestrator into phase-2-refine with main-checkout drift. Assert structurally that the main checkout is clean before advancing — this mirrors the canonical `Post-dispatch contract assertion` at § 2-Refine Phase below (phase-2-refine), which owns the full success/violation branch shape; the same `git -C . status --porcelain` check and `[CRITICAL]` refusal apply here:
+
+```bash
+git -C . status --porcelain
+```
+
+Empty output advances to phase-2-refine; non-empty output refuses with the refine-block violation shape naming each modified file. Plan-workspace writes under `.plan/local/**` are untracked, so they never appear in porcelain output — only a stray main-tree edit does.
+
+**Hand-off admission gate**: before the first phase-5 dispatch for a `use_worktree=true` plan, admit exactly when all four hold — a plan record exists (`manage-status` resolves the plan), the `feature/{plan_id}` branch exists, the worktree is materialized (`prepare_execute` persisted `worktree_materialized`, readable via its `is_worktree_materialized` helper), and the main checkout is proven clean (`git -C . status --porcelain` empty). A pre-dispatch `get-worktree-path` state of `pending` (vs materialized) fails the gate the same way — the execute dispatch is refused inside the already-declared dispatch-guard seam (`inject_project_dir.guarded_inject` returns `worktree_not_materialized`), with no new surface. Residual: no script gate binds a free agent's Edit tool — refusal lives at dispatch/invocation seams, paired with detection.
+
 The plan-existence, obsolescence, recipe-match, domain, sibling-collision, and posture dialogues all fire inline as native `AskUserQuestion` calls inside the phase-1-init steps above — there are no prompt-required return blocks for the orchestrator to consume. A dialogue whose resolution deletes the plan (obsolescence → Close, sibling-collision → Abort) STOPS the pipeline inline; the orchestrator does not advance to phase-2-refine.
 
 **Metrics**: After init completes and `plan_id` is known, record the `1-init → 2-refine` boundary in a single fused call. Because init ran **inline** (no dispatched agent, hence no `<usage>` envelope), OMIT the `<usage>`-derived flags (`--total-tokens` / `--duration-ms` / `--tool-uses`) at the boundary call — there is no inline `<usage>` total to forward here:
