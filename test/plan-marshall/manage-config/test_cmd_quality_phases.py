@@ -1753,7 +1753,7 @@ def test_step_set_refuses_an_off_on_an_immune_element(plan_context):
     assert result['status'] == 'error'
     assert _IMMUNE_LANE_STEP in result['error']
     assert _cmd_quality_phases._resolve_finalize_step_lane(_IMMUNE_LANE_STEP)['class'] in result['error']
-    assert _persisted_lane(plan_context.fixture_dir, _IMMUNE_LANE_STEP) != 'off'
+    assert _persisted_lane(plan_context.fixture_dir, _IMMUNE_LANE_STEP) is None
 
 
 def test_step_set_still_accepts_a_tier_on_the_same_immune_element(plan_context):

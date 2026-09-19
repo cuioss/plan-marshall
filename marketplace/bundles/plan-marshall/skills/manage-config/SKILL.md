@@ -137,18 +137,20 @@ is its length, and an empty `renamed[]` means no retired key was present.
 `migrated[]` lists each legacy `run_at_all` finalize-step key rewritten to the
 unified `lane` knob; `migrated_count` is its length. `materialized[]` lists each
 `plan.phase-6-finalize.steps` entry whose lane was made explicit by the
-materialization pass — a pre-existing lane-less step annotated with its resolved
-frontmatter-class effective lane (`...=minimal` / `...=standard`), a freshly-merged
-default step annotated with `...=off` (opt-in). A freshly-merged default step whose
-element class is immune to a weakening `off` takes the effective-lane annotation
-instead: materializing `off` there would write a row the composer is guaranteed to
-ignore, which reads as a disabled step that in fact runs on every plan.
-`materialized_count` is its length,
-and an empty `materialized[]` means every RESOLVABLE lane-less finalize step already
-carried an explicit `lane` (idempotent re-run). A lane-less step whose frontmatter
-lane cannot be resolved to a concrete lattice tier — an external `bundle:skill` step,
-or one whose source doc is missing or declares no `lane:` block — is deliberately left
-untouched and is NOT reported in `materialized[]`. The
+materialization pass, annotated with the value filled — `...=off` for a row that
+took the opt-in fill, `...=minimal` / `...=standard` for one that took its
+frontmatter-class effective lane. Which of the two a given row takes is decided by
+its provenance AND its element class together; the full five-case fill matrix is
+owned by [standards/data-model.md](standards/data-model.md) § `phase-6-finalize`
+and is not restated here. `materialized_count` is its length, and an empty
+`materialized[]` means every finalize step the pass could fill already carried an
+explicit `lane` (idempotent re-run). One case fills nothing and reports nothing: a
+**pre-existing** lane-less step whose frontmatter lane cannot be resolved to a
+concrete lattice tier — an external `bundle:skill` step, or one whose source doc is
+missing or declares no `lane:` block — is deliberately left untouched and is absent
+from `materialized[]`. That exemption is scoped to pre-existing rows: a
+freshly-merged row whose class is equally unresolvable still takes the `off` opt-in
+and IS reported, because an unknown class is not a shielded one. The
 config is persisted whenever `added[]`, `renamed[]`, or the provisioning stamps
 changed.
 

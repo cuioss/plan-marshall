@@ -21,6 +21,7 @@ from pathlib import Path
 import copy
 import json
 from argparse import Namespace
+from functools import cache
 
 import pytest
 
@@ -1120,21 +1121,42 @@ def test_sync_defaults_leaves_unresolvable_frontmatter_step_lane_less(plan_conte
 #
 # The first-run wizard's Step 16 now runs `sync-defaults` BEFORE `steps-sort`, so
 # a fresh wizard leaves EVERY plan.phase-6-finalize.steps entry with an explicit
-# lane — the seven seeded steps included, not just the two ask-tier infra steps the
+# lane — the lane-less seeded steps included, not just the ask-tier infra steps the
 # wizard seeds with a lane. These tests simulate the fresh-wizard config (the
-# seven seeded steps present but lane-less, only the two ask-tier steps carrying a
-# lane) and assert sync-defaults materializes every step's lane and is idempotent.
+# lane-less seeded steps present but lane-less, the ask-tier steps carrying a lane)
+# and assert sync-defaults materializes every step's lane and is idempotent.
+#
+# Both populations are DERIVED from the production seed rather than listed. A
+# hardcoded tuple standing in for `_seed_finalize_steps()`'s output is a
+# set-guarding detector that cannot see the member it never enumerated: a new
+# lane-less production step would be omitted from BOTH the fresh-wizard fixture
+# and the per-step sweep, and the sweep would stay green while never checking it.
 
-_SEVEN_SEEDED_STEPS = (
-    'default:push',
-    'default:create-pr',
-    'default:ci-verify',
-    'default:lessons-capture',
-    'default:branch-cleanup',
-    'default:record-metrics',
-    'default:archive-plan',
-)
-_ASK_TIER_STEPS = ('plan-marshall:automatic-review', 'default:sonar-roundtrip')
+
+@cache
+def _seeded_finalize_steps() -> dict:
+    """The production finalize-step seed, materialized once.
+
+    `_seed_finalize_steps` runs a full extension-discovery sweep, so the result is
+    cached — every population below is a view over this one materialization.
+    """
+    return _config_defaults_mod._seed_finalize_steps()
+
+
+def _lane_less_seeded_steps() -> tuple[str, ...]:
+    """The seeded steps a fresh wizard leaves LANE-LESS — derived, never listed.
+
+    `_seed_finalize_steps` folds a `lane` override into exactly two kinds of row
+    (`ask` for the infra elements, `off` for `default_on: false`), so the lane-less
+    remainder IS the population sync-defaults has to fill. A step added to the
+    production seed joins this tuple with no test edit.
+    """
+    return tuple(step_id for step_id, params in _seeded_finalize_steps().items() if 'lane' not in (params or {}))
+
+
+def _ask_tier_seeded_steps() -> tuple[str, ...]:
+    """The seeded steps carrying an explicit `lane: ask` — derived the same way."""
+    return tuple(step_id for step_id, params in _seeded_finalize_steps().items() if (params or {}).get('lane') == 'ask')
 
 
 def _effective_lane_of(step_id: str) -> str | None:
@@ -1156,12 +1178,14 @@ def _effective_lane_of(step_id: str) -> str | None:
 def _fresh_wizard_finalize_steps() -> dict:
     """Return a fresh-wizard-shaped phase-6 steps map.
 
-    The seven seeded steps are present but lane-less (`{}`); only the two ask-tier
+    The lane-less seeded steps are present but lane-less (`{}`); only the ask-tier
     infra steps carry an explicit `lane: ask` — the state a first-run wizard's
-    finalize-step seeding leaves before Step 16's sync-defaults pass runs.
+    finalize-step seeding leaves before Step 16's sync-defaults pass runs. Both
+    populations come from the production seed, so a step added there is simulated
+    here rather than silently left out of the fixture.
     """
-    steps: dict = {step: {} for step in _SEVEN_SEEDED_STEPS}
-    for infra in _ASK_TIER_STEPS:
+    steps: dict = {step: {} for step in _lane_less_seeded_steps()}
+    for infra in _ask_tier_seeded_steps():
         steps[infra] = {'lane': 'ask'}
     return steps
 
@@ -1169,17 +1193,21 @@ def _fresh_wizard_finalize_steps() -> dict:
 def test_sync_defaults_fresh_wizard_materializes_every_finalize_step_lane(plan_context):
     """After the wizard Step 16 sync-defaults pass, every finalize step carries an explicit lane.
 
-    Simulate the fresh-wizard config: the seven seeded steps present but lane-less,
-    and only the two ask-tier infra steps (automatic-review, sonar-roundtrip)
-    carrying a lane. sync-defaults materializes an explicit lane on every lane-less
-    step, so each seeded step gains its frontmatter-class effective lane while the
-    ask-tier steps keep `ask`. The result is a fully explicit finalize step-set
-    with no lane-less entry.
+    Simulate the fresh-wizard config: the production seed's lane-less steps present
+    but lane-less, and only its ask-tier infra steps carrying a lane. sync-defaults
+    materializes an explicit lane on every lane-less step, so each seeded step gains
+    its frontmatter-class effective lane while the ask-tier steps keep `ask`. The
+    result is a fully explicit finalize step-set with no lane-less entry. Neither
+    population is named or counted here — both are read off the seed, so this
+    description cannot go stale as the seed grows.
 
     The per-step expectation is DERIVED from each step's own frontmatter rather
     than pinned to one literal: the seeded set is not uniform in class (a step
     reclassified off the floor resolves to `standard`, not `minimal`), so a single
-    hardcoded value would assert the wrong thing for whichever member moved.
+    hardcoded value would assert the wrong thing for whichever member moved. The
+    POPULATION each sweep runs over is derived from the production seed for the
+    same reason, and each sweep publishes its population size before running, so
+    an empty one cannot pass as a clean zero.
     """
     _write_marshal(
         plan_context.fixture_dir,
@@ -1195,14 +1223,21 @@ def test_sync_defaults_fresh_wizard_materializes_every_finalize_step_lane(plan_c
     lane_less = [step_id for step_id, params in steps.items() if 'lane' not in params]
     assert lane_less == [], f'every finalize step must carry an explicit lane; lane-less: {lane_less!r}'
     # each seeded step materializes to its OWN frontmatter-class effective lane
-    for seeded in _SEVEN_SEEDED_STEPS:
+    lane_less_seeded = _lane_less_seeded_steps()
+    assert lane_less_seeded, (
+        'the production seed carries no lane-less step, so the per-step sweep below '
+        'would examine an empty population and pass without checking anything.'
+    )
+    for seeded in lane_less_seeded:
         expected = _effective_lane_of(seeded)
         assert expected is not None, f'{seeded} resolves no effective lane, so this expectation is vacuous'
         assert steps[seeded]['lane'] == expected, (
             f'{seeded} must materialize to its effective lane {expected}, got {steps[seeded]!r}'
         )
-    # the two ask-tier infra steps keep their explicit `ask` lane untouched
-    for infra in _ASK_TIER_STEPS:
+    # the ask-tier infra steps keep their explicit `ask` lane untouched
+    ask_tier_seeded = _ask_tier_seeded_steps()
+    assert ask_tier_seeded, 'the production seed carries no ask-tier step, so the ask-tier sweep below is vacuous.'
+    for infra in ask_tier_seeded:
         assert steps[infra]['lane'] == 'ask', f'{infra} must keep lane:ask, got {steps[infra]!r}'
 
 
