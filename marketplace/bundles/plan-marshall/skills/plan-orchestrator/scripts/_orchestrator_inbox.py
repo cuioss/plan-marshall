@@ -311,13 +311,6 @@ CONSUMPTION_CONSUMED = 'consumed'
 CONSUMPTION_UNCONSUMED = 'unconsumed'
 CONSUMPTION_UNKNOWN = 'unknown'
 
-#: The whole per-message consumption vocabulary, in reporting order.
-CONSUMPTION_STATES: tuple[str, ...] = (
-    CONSUMPTION_CONSUMED,
-    CONSUMPTION_UNCONSUMED,
-    CONSUMPTION_UNKNOWN,
-)
-
 #: The per-ADDRESS vocabulary :func:`derive_delivery_state` reports as
 #: ``delivery_state`` — the mailbox-level answer the per-message vocabulary
 #: above is derived into. The three substantive members are the three states the
