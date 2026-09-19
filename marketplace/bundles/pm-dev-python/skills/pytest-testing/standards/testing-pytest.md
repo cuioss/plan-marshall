@@ -340,6 +340,23 @@ def test_fallback_to_system(tmp_path):
         assert result == 'tool'
 ```
 
+### Seam-pinned mirrors
+
+Where a test owns a routing seam as its system under test, pin it with a matched mirror pair, both arms with the seam mocked and neither depending on live daemon state. The Python binding for the mock is `patch.dict` on the callee globals, so the patch cannot be detached from the callee by `sys.modules` churn (see "Patch the namespace the callee reads" above):
+
+```python
+from unittest.mock import patch
+
+
+def test_routed_path_uses_mocked_daemon():
+    with patch.dict(_route_to_daemon.__globals__, {'_load_build_server': lambda: fake_client}):
+        result, reason = _route_to_daemon(config, '/tree', 'plan-x')
+
+        assert result is not None
+```
+
+Each arm's module docstring names the other arm as its matched mirror. The two arms split the contract: one pins the routing decision and its wiring, the other pins the resolution record reaching a durable sink. The language-agnostic statement is `plan-marshall:persona-module-tester` § "Seam-pinned test mirrors".
+
 ## Assertions
 
 ### Basic Assertions

@@ -11,6 +11,12 @@ bare ``logger.info`` emit is discarded by Python's last-resort WARNING threshold
 and the diagnostic is lost. Each test therefore asserts BOTH sinks — the
 captured ``plan_logging`` work log (via the ``factory.log_entry`` seam) and the
 unconditional stderr line — so a regression back to a logger-only emit fails.
+
+This module is one arm of a matched mirror pair with
+``test_build_execute_routing.py``: this arm pins the resolution record reaching
+a durable sink with the build-server client stubbed, never live, while the
+mirror pins the routing decision and its wiring. The two are a matched pair
+and deleting or weakening either one voids the other's evidentiary value.
 """
 
 from __future__ import annotations

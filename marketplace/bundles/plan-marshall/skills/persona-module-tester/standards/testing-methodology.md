@@ -327,6 +327,20 @@ The negative arm must simulate the state, never rely on it being absent from the
 
 **Concrete instance in this repository** (a discoverability pointer, not the rule): marshalld build routing is neutralized by the default-on `_neutralize_daemon_routing` autouse fixture in `test/conftest.py`, carved out by location for `test/plan-marshall/build-server/`, with the registered `allow_daemon_routing` marker for routing-owning modules outside it, and pinned by the matched pair in `test/plan-marshall/script-shared/test_daemon_routing_neutralization.py`.
 
+### Seam-pinned test mirrors
+
+**Trigger**: production code routes through a seam — a dispatcher mapping a route to a handler, a build executor deciding routed versus in-process, a resolution recorder choosing its sink — and a test owns that routing decision as its system under test. The fast instinct is to cover the seam once, in one module, with the seam live or half-mocked, so the single test proves the decision while depending on ambient machine state.
+
+A single test over a live seam is ambiently state-dependent: it passes where the state is absent and fails where it is present, and the suite stays green only on the machines that happen to match. A single test over a half-mocked seam proves the decision on one path while leaving the sibling path unobserved, so a regression that flips the unobserved path keeps the suite green.
+
+**Durable rule**: a routing seam owned as its system under test is pinned by a **matched mirror pair** — two modules that assert the same seam from complementary angles, both with the seam mocked, never live:
+
+* Each arm drives the seam through a mocked client or stubbed handler, so neither arm depends on live daemon state, network, or ambient registration.
+* Each arm's module docstring names the other arm as its matched mirror and states that the two are a matched pair, so deleting or weakening either one voids the other's evidentiary value.
+* The two arms differ in what they pin: one pins the decision and its wiring (which route reaches which handler, routed versus fallback, no fallback slot on a routed build), the other pins the observable record of that decision (the resolution line reaching a durable sink, the audit fields carried on it).
+
+**Concrete instance in this repository** (a discoverability pointer, not the rule): the credential CLI routing table (`ROUTES` in `test/plan-marshall/manage-providers/test_credentials_cli.py`) pins each route to its own handler with every handler stubbed, so a mis-wired route cannot reach a real handler; the build-server mirror pair (`test/plan-marshall/build-server/test_build_execute_routing.py` and `test/plan-marshall/build-server/test_acceptance_resolution_log.py`) applies the same shape to the build-routing seam, with the daemon client stubbed in both arms. The Python binding is `pm-dev-python:pytest-testing` § "Seam-pinned mirrors".
+
 ### Test Isolation
 
 Each test must be independent:

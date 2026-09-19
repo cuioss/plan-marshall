@@ -17,6 +17,12 @@ The build-server CLIENT is stubbed (``_load_build_server`` returns a fake), so n
 socket, daemon, or change-ledger is touched by the routing tests. The slot tests
 drive the REAL ``build_queue`` against a ``PLAN_MARSHALL_HOME``-isolated file so
 the single-shared-file and contention behaviour is asserted on real state.
+
+This module is one arm of a matched mirror pair with
+``test_acceptance_resolution_log.py``: this arm pins the routing decision and
+its wiring with the build-server client stubbed, never live, while the mirror
+pins the resolution record reaching a durable sink. The two are a matched pair
+and deleting or weakening either one voids the other's evidentiary value.
 """
 
 from __future__ import annotations
