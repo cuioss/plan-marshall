@@ -260,9 +260,12 @@ erase the tier distinction at every other.
   row move in the SAME commit. Per ADR-017 the remedy is never to suppress or
   annotate the rule.
 * **`--epic` is also a plausible spelling for an epic's *content*.** A future
-  flag meaning "the epic spec body" would collide. Mitigation: the value-kind
-  suffix set is closed and additive — such a flag takes a suffix naming what it
-  carries, and the bare noun stays reserved for identity.
+  flag meaning "the epic spec body" would collide. Mitigation: a content-bearing
+  flag is not entity-identifying at all, so it is OUTSIDE this vocabulary
+  entirely rather than taking one of the closed suffixes — none of `-id`,
+  `-number`, or `-slug` denotes content. Such a flag is named by a separate,
+  content-describing rule (e.g. a `-body` or `-spec` suffix, decided when the
+  need arises), and the bare noun `--epic` stays reserved for identity.
 * **No rename-survivor detector exists.** ADR-007 records that cross-file stale
   references left by a source change are a real class with no automated gate,
   and that any future detector must derive its inputs git-natively via
