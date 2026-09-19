@@ -194,7 +194,7 @@ For contributors iterating on Plan Marshall bundles, the Antigravity developer w
 /sync-antigravity
 ----
 
-The project-level command (`.agents/commands/sync-antigravity.md`) invokes the unified deploy engine (`marketplace/targets/sync.py --target antigravity`). The engine:
+The project-level workspace skill (`.agents/skills/sync-antigravity/SKILL.md`) invokes the unified deploy engine (`marketplace/targets/sync.py --target antigravity`). The engine:
 * Deploys `skills/`, `agents/`, `commands/`, `plugin.json`, `install.sh`, and `README.adoc` to `~/.gemini/config/plugins/plan-marshall/` (or `--target-dir`).
 * Prunes stale managed entries in `skills/` and `commands/` belonging to the synced bundles while preserving unmanaged user files and agents.
 * Supports `--bundles <name>` for scoped deployments and `--dry-run` for non-destructive preview.

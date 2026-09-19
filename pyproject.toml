@@ -106,6 +106,8 @@ generate-antigravity = "uv run python marketplace/targets/generate.py --target a
 generate-claude = "uv run python marketplace/targets/generate.py --target claude --output target/claude"
 generate-opencode = "uv run python marketplace/targets/generate.py --target opencode --output target/opencode"
 sync = "uv run python marketplace/targets/sync.py"
+sync-antigravity = "uv run python marketplace/targets/sync.py --target antigravity"
+sync-opencode = "uv run python marketplace/targets/sync.py --target opencode"
 
 # Claude-target content-drift gate — the Stage 3 verify sub-step of the
 # marshall-steward `upgrade` verb. It is an alias for the same reason the
