@@ -25,6 +25,7 @@ from argparse import Namespace
 from pathlib import Path
 
 from _execution_manifest_fixtures import fake_lane_blocks
+from _manifest_lanes import _IMMUNE_TO_OFF_CLASSES
 
 # Tier 2 direct imports, resolved by (bundle, skill, script).
 from conftest import load_script_module
@@ -476,13 +477,23 @@ def test_compose_then_read_manifest_ownerless_steps_read_as_empty_dict(plan_cont
 
 #: Canned `lane:` frontmatter blocks for these tests. The shared fixture table
 #: supplies the four classes and both tier deviations; `lessons-capture` is added
-#: here because it is the floor element the immunity rule protects — `core` with
-#: NO declared tier, so its effective lane is the class default (`minimal`) and a
-#: neutralized `off` is visibly different from what was requested.
+#: here as the matched negative on the CLASS axis — `prunable`, carrying the
+#: `prunable_when` predicate its shipped frontmatter declares and NO declared
+#: tier, so it resolves at the class default (`standard`) and its `off` genuinely
+#: binds. Neither element's class is restated from memory:
+#: `test_the_canned_lane_blocks_agree_with_the_shipped_classification` holds both
+#: to the live resolver.
 _LANE_BLOCKS: dict[str, dict[str, str]] = {
     **fake_lane_blocks(),
-    'lessons-capture': {'class': 'core', 'cost_size': 'M'},
+    'lessons-capture': {'class': 'prunable', 'prunable_when': 'linear_change', 'cost_size': 'M'},
 }
+
+#: The neutralization case's subject — a genuine floor element, so a weakening
+#: `off` on it is ignored and the element is kept at the tier it resolves to.
+_FLOOR_LANE_STEP = 'archive-plan'
+
+#: The matched negative — off the floor, so the same `off` binds and drops it.
+_OPT_OUT_LANE_STEP = 'lessons-capture'
 
 
 def _seed_marshal_with_lane_overrides(fixture_dir: Path, lanes: dict[str, str]) -> None:
@@ -524,15 +535,40 @@ def _patch_lane_resolution(monkeypatch, posture: str) -> None:
     monkeypatch.setattr(_mem, '_read_execution_profile', lambda plan_id: posture)
 
 
-def test_neutralized_off_snapshots_the_class_default_and_records_the_request(plan_context, monkeypatch):
-    """A step kept despite a neutralized ``off`` snapshots its class-default tier.
+def test_the_canned_lane_blocks_agree_with_the_shipped_classification():
+    """Anti-vacuity: each canned class sits on the same side of the floor as production.
 
-    ``lessons-capture`` is ``core`` — a floor class immune to a weakening ``off``
-    — so the element is KEPT at the class default and the stored ``off`` never
-    bound. The snapshot must say so from both sides: ``lane`` names the tier it
-    actually runs at, ``lane_requested`` preserves what was asked for.
+    The two cases below compose against ``_LANE_BLOCKS``, not against the shipped
+    frontmatter, so a reclassification in production cannot fail them — it can
+    only leave them describing a step that no longer behaves that way. That is
+    exactly how the previous fixture went stale: it pinned ``lessons-capture`` as
+    ``core`` after this plan had moved it to ``prunable``, and the monkeypatched
+    resolver kept the arm green. This guard ties the two together on the one axis
+    the cases turn on, reading the shipped class rather than restating it.
     """
-    _seed_marshal_with_lane_overrides(plan_context.fixture_dir, {'default:lessons-capture': 'off'})
+    for step_id, expect_immune in ((_FLOOR_LANE_STEP, True), (_OPT_OUT_LANE_STEP, False)):
+        canned = _LANE_BLOCKS[step_id]
+        assert (canned['class'] in _IMMUNE_TO_OFF_CLASSES) is expect_immune, (
+            f'the canned block for {step_id} ({canned}) no longer matches the premise of these cases.'
+        )
+
+        shipped = _mem._resolve_element_lane(step_id)
+        assert shipped, f'{step_id} resolves no shipped lane block, so it is not lane-participating at all'
+        assert (shipped['class'] in _IMMUNE_TO_OFF_CLASSES) is expect_immune, (
+            f'{step_id} was reclassified in production ({shipped}), so the canned block '
+            f'{canned} now describes behaviour the shipped step no longer has.'
+        )
+
+
+def test_neutralized_off_snapshots_the_effective_tier_and_records_the_request(plan_context, monkeypatch):
+    """A step kept despite a neutralized ``off`` snapshots the tier it runs at.
+
+    ``archive-plan`` is a floor element — its class is immune to a weakening
+    ``off`` — so the element is KEPT and the stored ``off`` never bound. The
+    snapshot must say so from both sides: ``lane`` names the tier it actually
+    runs at, ``lane_requested`` preserves what was asked for.
+    """
+    _seed_marshal_with_lane_overrides(plan_context.fixture_dir, {f'default:{_FLOOR_LANE_STEP}': 'off'})
     _patch_lane_resolution(monkeypatch, 'standard')
 
     cmd_compose(_compose_ns('sp-lane-neutralized'))
@@ -540,10 +576,35 @@ def test_neutralized_off_snapshots_the_class_default_and_records_the_request(pla
     manifest = read_manifest('sp-lane-neutralized')
     assert manifest is not None
     # precondition: the off did NOT remove the floor element
-    assert 'lessons-capture' in manifest['phase_6']['steps']
-    params = manifest['phase_6']['step_params']['lessons-capture']
+    assert _FLOOR_LANE_STEP in manifest['phase_6']['steps']
+    params = manifest['phase_6']['step_params'][_FLOOR_LANE_STEP]
     assert params['lane'] == 'minimal'
     assert params['lane_requested'] == 'off'
+
+
+def test_the_same_off_on_a_non_floor_element_binds_and_is_never_snapshotted(plan_context, monkeypatch):
+    """MATCHED NEGATIVE on the CLASS axis: identical value, identical posture.
+
+    ``lessons-capture`` sits off the floor, so the very ``off`` the element above
+    neutralized is a real opt-out here — the step is dropped and never reaches the
+    snapshot at all. Without this arm the neutralization case would be equally
+    satisfied by a lane pass that had simply stopped dropping anything, and the
+    ``lane``/``lane_requested`` pair would be attributable to the value rather
+    than to the class.
+    """
+    _seed_marshal_with_lane_overrides(plan_context.fixture_dir, {f'default:{_OPT_OUT_LANE_STEP}': 'off'})
+    _patch_lane_resolution(monkeypatch, 'standard')
+
+    cmd_compose(_compose_ns('sp-lane-opt-out-binds'))
+
+    manifest = read_manifest('sp-lane-opt-out-binds')
+    assert manifest is not None
+    assert _OPT_OUT_LANE_STEP not in manifest['phase_6']['steps']
+    assert _OPT_OUT_LANE_STEP not in manifest['phase_6']['step_params']
+    # The floor element in the same compose declares no override and is untouched,
+    # so the drop is the override acting on ONE class rather than the posture
+    # emptying the list.
+    assert _FLOOR_LANE_STEP in manifest['phase_6']['steps']
 
 
 def test_binding_lane_snapshots_the_stored_value_with_no_lane_requested_key(plan_context, monkeypatch):
