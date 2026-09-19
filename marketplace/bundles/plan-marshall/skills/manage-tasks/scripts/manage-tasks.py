@@ -577,7 +577,18 @@ def cmd_finalize_step_record_changed_files(args) -> dict:
         changed = record_changed_files(task)
         if changed is None:
             return result
-        atomic_write_file(filepath, format_task_file(task))
+        # Re-read before writing: a concurrent task update between the read
+        # above and this write would otherwise be overwritten by this stale
+        # snapshot. When the fresh record already carries the field, keep the
+        # stored value; otherwise set the measured list on the FRESH record
+        # so concurrent progress survives the write.
+        fresh = parse_task_file(filepath.read_text(encoding='utf-8'))
+        if isinstance(fresh.get(CHANGED_FILES_FIELD), list):
+            result['changed_files'] = [str(path) for path in fresh[CHANGED_FILES_FIELD]]
+            result['changed_files_count'] = len(result['changed_files'])
+            return result
+        fresh[CHANGED_FILES_FIELD] = changed
+        atomic_write_file(filepath, format_task_file(fresh))
         result['changed_files'] = changed
         result['changed_files_count'] = len(changed)
     except (OSError, ValueError):

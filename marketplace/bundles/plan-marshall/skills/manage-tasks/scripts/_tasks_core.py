@@ -361,9 +361,13 @@ def calculate_progress(task: dict) -> tuple[int, int]:
 #: The task-record field holding the measured changed-file list. Written at task
 #: close by ``record_changed_files``. Present-and-empty means measured-no-change;
 #: ABSENT means never recorded (a task closed before this field existed, or one
-#: whose baseline could not be resolved). A consumer qualifying an
-#: artifact-emission population MUST read absence as "unavailable", never as a
-#: measured zero — the same absent-is-not-zero rule the token columns follow.
+#: whose baseline could not be resolved). The list is the CUMULATIVE audit
+#: footprint since the task's baseline — every uncommitted path in the worktree
+#: at close, including edits an earlier same-deliverable task left uncommitted
+#: ahead of the chain-tail commit — never a per-task attribution. A consumer
+#: qualifying an artifact-emission population MUST read absence as
+#: "unavailable", never as a measured zero — the same absent-is-not-zero rule
+#: the token columns follow.
 CHANGED_FILES_FIELD = 'changed_files'
 
 
@@ -391,7 +395,7 @@ def _changed_files_git(root: Path, *argv: str) -> str | None:
 
 
 def changed_file_paths(task: dict[str, Any], root: Path | None = None) -> list[str] | None:
-    """Derive the sorted, de-duplicated repo paths the task changed since its baseline.
+    """Derive the cumulative audit footprint since the task's baseline.
 
     The baseline is the task's ``task_start_sha`` (captured at the task's
     ``in_progress`` transition). The diff is base commit against the WORKING
@@ -400,7 +404,13 @@ def changed_file_paths(task: dict[str, Any], root: Path | None = None) -> list[s
     walk, because a newly created file appears in NEITHER diff form until it is
     staged. A rename contributes its NEW path once (never a delete plus a
     write); a copy contributes its new path; a deletion contributes the deleted
-    path — it is a path the task changed.
+    path.
+
+    The result is CUMULATIVE, not per-task attribution: sibling tasks of the
+    same deliverable leave their edits uncommitted until the shared chain-tail
+    commit, so this diff also contains paths an earlier task changed. Callers
+    must present it as the cumulative audit footprint, never as "the paths
+    this task changed".
 
     Returns ``None`` when nothing can be measured: the task carries no baseline,
     or the baseline is not a well-formed git object id (a hand-edited or
