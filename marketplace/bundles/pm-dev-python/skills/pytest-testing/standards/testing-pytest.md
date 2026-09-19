@@ -152,6 +152,15 @@ def _clear_cache():
     yield
 ```
 
+### Fixture docstrings
+
+`yield` is a term of art in pytest fixtures — it selects the setup/teardown
+form. Reserve it in a fixture docstring for a fixture that actually yields. A
+plain return-form fixture hands its value back with `return`; its docstring
+says "return" or "hand back", never "yield". The two forms coexist in one
+package, so a loose "yield" reads as deliberate: a maintainer extending the
+fixture adds teardown after a `yield` that does not exist.
+
 ### Parametrization
 
 ```python

@@ -32,7 +32,7 @@ from _ci_provider_population import CI_CATEGORY, discover_ci_provider_skills
 
 @pytest.fixture
 def declaring(monkeypatch):
-    """Return a setter that makes discovery yield the given declarations.
+    """Return a setter that makes discovery produce the given declarations.
 
     ``discover_ci_provider_skills`` resolves ``_list_providers`` by bare name from
     inside its own ``try``, so standing a stub module in ``sys.modules`` is what

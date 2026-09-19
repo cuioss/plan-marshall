@@ -122,7 +122,7 @@ def _assert_worktree_root_honours_override(base: Path) -> None:
 
 @pytest.fixture
 def main_base(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """A real repo whose ``.plan/local`` is the resolved base. Yields that base."""
+    """A real repo whose ``.plan/local`` is the resolved base. Returns that base."""
     repo = tmp_path / 'main'
     _init_repo(repo)
     base = repo / '.plan' / 'local'

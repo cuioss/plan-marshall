@@ -65,7 +65,7 @@ def executor_with_mock_log_entry():
     """
     Load the executor module and swap out ``log_entry`` for a MagicMock.
 
-    The fixture yields a tuple ``(executor, mock_log_entry)`` so each test
+    The fixture returns a tuple ``(executor, mock_log_entry)`` so each test
     can drive the boundary function via the real module API and then
     inspect the recorded calls without involving any disk I/O.
     """

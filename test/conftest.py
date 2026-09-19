@@ -2211,9 +2211,9 @@ def _root_fs_pollution_guard(request):
 
 @pytest.fixture
 def unwritable_dir() -> str:
-    """Yield a directory path whose creation FAILS for every uid, root included.
+    """Return a directory path whose creation FAILS for every uid, root included.
 
-    A test that asserts "a bad target directory yields an io_error" needs an
+    A test that asserts "a bad target directory produces an io_error" needs an
     input whose ``mkdir`` genuinely raises regardless of privilege. A path under
     the filesystem root that is merely assumed absent (``/nonexistent/...``) is
     NOT such an input: as root the OS bypasses the DAC permission check, so the
