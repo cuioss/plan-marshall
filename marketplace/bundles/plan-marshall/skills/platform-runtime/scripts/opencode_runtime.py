@@ -419,7 +419,7 @@ class OpenCodeRuntime(Runtime):
             return toon_error(
                 'permission configure',
                 'load_error',
-                f"Failed to load settings from {settings_path}: {settings['error']}",
+                f'Failed to load settings from {settings_path}: {settings["error"]}',
             )
         perm = settings.setdefault('permission', {})
         if not isinstance(perm, dict):
@@ -719,7 +719,7 @@ class OpenCodeRuntime(Runtime):
             return toon_error(
                 'permission web-apply',
                 'load_error',
-                f"Failed to load settings from {settings_path}: {settings['error']}",
+                f'Failed to load settings from {settings_path}: {settings["error"]}',
             )
         perm = settings.setdefault('permission', {})
         if not isinstance(perm, dict):

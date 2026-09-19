@@ -44,6 +44,7 @@ def _load_local_ladder(target: str = 'antigravity') -> dict[str, Any] | None:
                 pass
     return None
 
+
 #: The canonical Option 1 ladder for Antigravity (Model Axis x Effort Axis).
 DEFAULT_LADDER: dict[str, dict[str, str | None]] = {
     'level-1': {'model': 'flash', 'effort': 'low'},

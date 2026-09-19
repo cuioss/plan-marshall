@@ -312,9 +312,7 @@ def ensure_default_ladder(
         data['targets'] = {}
 
     targets_dict = data['targets']
-    targets_to_seed = (
-        [target] if target and target != 'all' else ['antigravity', 'claude', 'opencode']
-    )
+    targets_to_seed = [target] if target and target != 'all' else ['antigravity', 'claude', 'opencode']
     modified = False
     seeded: list[str] = []
 
@@ -326,7 +324,7 @@ def ensure_default_ladder(
 
     if modified:
         save_ladder_file(path, data)
-        return True, f"Seeded default ladder for {', '.join(seeded)} in {path}"
+        return True, f'Seeded default ladder for {", ".join(seeded)} in {path}'
     return False, f'Default ladder already present in {path}'
 
 
@@ -506,9 +504,7 @@ def cmd_ensure_defaults(args: argparse.Namespace) -> dict[str, Any]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog='effort_pins',
-        description=(
-            'Materialize per-level model pins from the machine-local effort-to-model map or effort ladder.'
-        ),
+        description=('Materialize per-level model pins from the machine-local effort-to-model map or effort ladder.'),
         allow_abbrev=False,
     )
     subparsers = parser.add_subparsers(dest='command', required=True)

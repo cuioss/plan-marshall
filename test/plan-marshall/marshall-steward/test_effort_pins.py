@@ -375,12 +375,7 @@ def test_ensure_default_ladder_preserves_custom_edits(tmp_path):
     """Custom user entries in effort-ladder.json are never clobbered."""
     ladder_file = tmp_path / 'effort-ladder.json'
     custom_ladder = {
-        'targets': {
-            'antigravity': {
-                lvl: {'model': 'custom-flash', 'effort': 'high'}
-                for lvl in effort_pins.LEVELS
-            }
-        }
+        'targets': {'antigravity': {lvl: {'model': 'custom-flash', 'effort': 'high'} for lvl in effort_pins.LEVELS}}
     }
     ladder_file.write_text(json.dumps(custom_ladder), encoding='utf-8')
 

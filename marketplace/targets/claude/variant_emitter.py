@@ -48,6 +48,7 @@ import os
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
+from typing import Any
 
 EXTENSION_POINT = 'plan-marshall:extension-api/standards/ext-point-dynamic-level-executor'
 
@@ -87,6 +88,7 @@ def _load_local_ladder(target: str = 'claude') -> dict[str, Any] | None:
             except Exception:
                 pass
     return None
+
 
 # Effort values whose emission is gated by per-alias capability — a variant
 # at one of these efforts is emitted only when the resolved model alias's
