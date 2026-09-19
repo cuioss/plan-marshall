@@ -125,7 +125,7 @@ or for archived mode:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:plan-retrospective:collect-plan-artifacts \
-  run --archived-plan-path {path} --mode archived
+  run --plan-id {plan_id} --archived-plan-path {path} --mode archived
 ```
 
 Capture the manifest TOON for later aspects.
