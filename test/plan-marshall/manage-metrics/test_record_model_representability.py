@@ -344,10 +344,10 @@ def test_undatable_zeros_are_not_measurements_in_either_reader():
 # file and asserted to produce the same measured set, which is the property that
 # was false before the retrospective reader adopted header-name resolution.
 
-#: The canonical nine-column header, in the order the writer emits.
+#: The canonical ten-column header, in the order the writer emits.
 _DIVERGENCE_CANONICAL_HEADER = (
     'rows[]{timestamp,termination_cause,total_tokens,tool_uses,duration_ms,'
-    'input_tokens,output_tokens,cache_read_input_tokens,cache_creation_input_tokens}:\n'
+    'input_tokens,output_tokens,cache_read_input_tokens,cache_creation_input_tokens,step_id}:\n'
 )
 
 #: (a) A header declaring only the legacy five, above a row carrying all nine.
@@ -363,7 +363,7 @@ _MALFORMED_LEGACY_BYTES = (
     'plan_id: divergence-malformed-legacy\n'
     'phase: 5-execute\n'
     + _DIVERGENCE_CANONICAL_HEADER
-    + '2026-07-01T09:00:00Z,clean_exit_queue_empty,not-an-int,7,30000,9100,0,0,0\n'
+    + '2026-07-01T09:00:00Z,clean_exit_queue_empty,not-an-int,7,30000,9100,0,0,0,\n'
 )
 
 #: (c) No `rows[]{...}:` header line at all — nothing declares what the cells mean.

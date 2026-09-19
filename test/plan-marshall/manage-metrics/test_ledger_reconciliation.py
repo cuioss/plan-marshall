@@ -257,3 +257,193 @@ class TestMixedTimezoneAwarenessDoesNotCrash:
             'naive',
             'aware',
         ]
+
+
+class TestStepIdJoinKey:
+    """The shared step_id key pairs first; the timestamp window is the fallback.
+
+    The boundary row carries the dispatch's step_id at record time, so two rows
+    naming the same non-empty key pair even when their timestamps fall outside
+    the window. Rows carrying no key — legacy boundary rows written before the
+    key existed — still pair on the window exactly as before.
+    """
+
+    @staticmethod
+    def _keyed_row(stamp: str, step_id: str, termination_cause: str = 'step_complete') -> dict:
+        return {
+            'step_id': step_id,
+            'timestamp': stamp,
+            'parsed_timestamp': _ledger._parse_iso(stamp),
+            'total_tokens': 0,
+            'outcome': 'executed',
+            'termination_cause': termination_cause,
+        }
+
+    def test_rows_sharing_a_step_id_pair_despite_a_wide_timestamp_gap(self):
+        """The key join, pinned directly: a five-hour gap exceeds any window."""
+        execution_rows = [self._keyed_row('2026-01-01T00:00:00+00:00', 'verify:quality-gate')]
+        boundary_rows = [self._keyed_row('2026-01-01T05:00:00+00:00', 'verify:quality-gate')]
+
+        pairs, unpaired_execution, unpaired_boundary = _ledger.pair_rows(execution_rows, boundary_rows, 300)
+
+        assert len(pairs) == 1
+        assert unpaired_execution == []
+        assert unpaired_boundary == []
+
+    def test_keyless_rows_still_pair_on_the_window(self):
+        """The fallback, pinned directly: no key on either side, close in time."""
+        execution_rows = [self._keyed_row('2026-01-01T00:00:00+00:00', '')]
+        boundary_rows = [self._keyed_row('2026-01-01T00:00:10+00:00', '')]
+
+        pairs, unpaired_execution, unpaired_boundary = _ledger.pair_rows(execution_rows, boundary_rows, 300)
+
+        assert len(pairs) == 1
+        assert unpaired_execution == []
+        assert unpaired_boundary == []
+
+    def test_empty_keys_never_pair_with_each_other(self):
+        """An empty key is not a key: two keyless rows far apart stay unpaired.
+
+        Without this, pairing on '' would manufacture agreement out of mutual
+        silence — every legacy row would pair with every other legacy row.
+        """
+        execution_rows = [
+            self._keyed_row('2026-01-01T00:00:00+00:00', ''),
+            self._keyed_row('2026-01-01T01:00:00+00:00', ''),
+        ]
+        boundary_rows = [
+            self._keyed_row('2026-01-01T05:00:00+00:00', ''),
+            self._keyed_row('2026-01-01T06:00:00+00:00', ''),
+        ]
+
+        pairs, unpaired_execution, unpaired_boundary = _ledger.pair_rows(execution_rows, boundary_rows, 300)
+
+        assert pairs == []
+        assert len(unpaired_execution) == 2
+        assert len(unpaired_boundary) == 2
+
+    def test_a_key_claimed_on_one_side_only_falls_back_to_the_window(self):
+        """The migration case: a keyed execution row meets a legacy keyless boundary row.
+
+        The boundary file predates the key, so no key partner exists — the row
+        must still be eligible for window pairing rather than stranded by a key
+        the other ledger never recorded.
+        """
+        execution_rows = [self._keyed_row('2026-01-01T00:00:00+00:00', 'verify:coverage')]
+        boundary_rows = [self._keyed_row('2026-01-01T00:00:10+00:00', '')]
+
+        pairs, unpaired_execution, unpaired_boundary = _ledger.pair_rows(execution_rows, boundary_rows, 300)
+
+        assert len(pairs) == 1
+        assert unpaired_execution == []
+        assert unpaired_boundary == []
+
+    def test_surplus_rows_of_one_key_stay_unpaired(self):
+        """A step recorded twice in one ledger and once in the other pairs once.
+
+        The surplus is a real divergence (one side recorded a run the other did
+        not), so it must surface as unpaired rather than pair across keys.
+        """
+        execution_rows = [
+            self._keyed_row('2026-01-01T00:00:00+00:00', 'verify:module-tests'),
+            self._keyed_row('2026-01-01T00:01:00+00:00', 'verify:module-tests'),
+        ]
+        boundary_rows = [self._keyed_row('2026-01-01T00:00:05+00:00', 'verify:module-tests')]
+
+        pairs, unpaired_execution, unpaired_boundary = _ledger.pair_rows(execution_rows, boundary_rows, 300)
+
+        assert len(pairs) == 1
+        assert len(unpaired_execution) == 1
+        assert unpaired_boundary == []
+
+    def test_pairing_coverage_rises_above_the_window_only_baseline(self):
+        """The deliverable's coverage claim, measured on one corpus two ways.
+
+        Three keyed dispatches whose timestamps drift hours apart: stripped of
+        their keys (the window-only baseline) nothing pairs; with keys every
+        dispatch pairs. Coverage rises from zero to full on the same rows.
+        """
+        keyed_execution = [
+            self._keyed_row('2026-01-01T00:00:00+00:00', 'step-a'),
+            self._keyed_row('2026-01-01T02:00:00+00:00', 'step-b'),
+            self._keyed_row('2026-01-01T04:00:00+00:00', 'step-c'),
+        ]
+        keyed_boundary = [
+            self._keyed_row('2026-01-01T05:00:00+00:00', 'step-a'),
+            self._keyed_row('2026-01-01T07:00:00+00:00', 'step-b'),
+            self._keyed_row('2026-01-01T09:00:00+00:00', 'step-c'),
+        ]
+
+        keyed_pairs, _, _ = _ledger.pair_rows(keyed_execution, keyed_boundary, 300)
+
+        stripped_execution = [dict(row, step_id='') for row in keyed_execution]
+        stripped_boundary = [dict(row, step_id='') for row in keyed_boundary]
+        baseline_pairs, _, _ = _ledger.pair_rows(stripped_execution, stripped_boundary, 300)
+
+        assert len(baseline_pairs) == 0
+        assert len(keyed_pairs) == 3
+        assert len(keyed_pairs) > len(baseline_pairs)
+
+
+class TestStepIdRecordTimeAndReconciliation:
+    """End to end: --step-id at record time flows into the reconciliation pairing."""
+
+    def test_record_dispatch_boundary_carries_the_step_id_on_the_row(self, plan_context):
+        """The writer persists the key the caller forwarded, and echoes it back."""
+        plan_id = 'recon-step-id-row'
+        cmd_start_phase(ns_start_phase(plan_id, '5-execute'))
+        result = cmd_record_dispatch_boundary(
+            ns_record_dispatch_boundary(
+                plan_id, '5-execute', 'step_complete', total_tokens=1000, step_id='verify:quality-gate'
+            )
+        )
+
+        assert result['status'] == 'success', result
+        assert result['step_id'] == 'verify:quality-gate'
+
+        path = plan_context.plan_dir_for(plan_id) / 'work' / 'metrics-dispatch-boundaries-5-execute.toon'
+        data_lines = [
+            line
+            for line in path.read_text(encoding='utf-8').splitlines()
+            if line and not line.startswith(('plan_id:', 'phase:', 'rows[]'))
+        ]
+        assert len(data_lines) == 1
+        assert data_lines[0].split(',')[-1] == 'verify:quality-gate'
+
+    def test_a_step_id_containing_a_comma_is_rejected_before_any_write(self, plan_context):
+        """The row is positional CSV: a comma in the key would shift every column after it."""
+        plan_id = 'recon-step-id-comma'
+        cmd_start_phase(ns_start_phase(plan_id, '5-execute'))
+        result = cmd_record_dispatch_boundary(
+            ns_record_dispatch_boundary(plan_id, '5-execute', 'step_complete', step_id='step,a')
+        )
+
+        assert result['status'] == 'error', result
+        assert result['error'] == 'invalid_step_id', result
+
+        path = plan_context.plan_dir_for(plan_id) / 'work' / 'metrics-dispatch-boundaries-5-execute.toon'
+        assert not path.exists()
+
+    def test_reconciliation_pairs_on_the_recorded_key(self, plan_context):
+        """One keyed boundary row plus one keyed execution row, hours apart: paired, no findings."""
+        plan_id = 'recon-step-id-e2e'
+        cmd_start_phase(ns_start_phase(plan_id, '5-execute'))
+        cmd_record_dispatch_boundary(
+            ns_record_dispatch_boundary(
+                plan_id, '5-execute', 'step_complete', total_tokens=4000, step_id='verify:quality-gate'
+            )
+        )
+        cmd_end_phase(ns_end_phase(plan_id, '5-execute', total_tokens=4000))
+        _write_execution_log(
+            plan_context,
+            plan_id,
+            [('verify:quality-gate', '5-execute', '2020-01-01T00:00:00+00:00', 4000)],
+        )
+
+        result = cmd_reconcile_ledgers(_ns_reconcile(plan_id))
+
+        block = next(b for b in result['phases'] if b['phase'] == '5-execute')
+        assert block['paired_rows'] == 1
+        assert block['union_rows'] == 1
+        assert _findings_of(result, 'row_absent_from_execution_log') == []
+        assert _findings_of(result, 'row_absent_from_boundary_ledger') == []

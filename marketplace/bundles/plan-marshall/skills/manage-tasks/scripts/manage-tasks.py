@@ -89,6 +89,14 @@ from _cmd_pre_commit_verify_freshness import cmd_pre_commit_verify_freshness
 from _cmd_qgate_mechanical import cmd_qgate_mechanical
 from _cmd_rename import cmd_rename_path
 from _cmd_step import cmd_add_step, cmd_finalize_step, cmd_remove_step, cmd_update_step
+from _tasks_core import (
+    CHANGED_FILES_FIELD,
+    find_task_file,
+    format_task_file,
+    get_tasks_dir,
+    parse_task_file,
+    record_changed_files,
+)
 from _tasks_crud import cmd_batch_add, cmd_commit_add, cmd_prepare_add, cmd_remove, cmd_update
 from _tasks_query import (
     cmd_exists,
@@ -99,7 +107,7 @@ from _tasks_query import (
     cmd_read,
 )
 from constants import VALID_STEP_INTENTS
-from file_ops import output_toon, safe_main
+from file_ops import atomic_write_file, output_toon, safe_main
 from input_validation import (
     add_domain_arg,
     add_plan_id_arg,
@@ -537,6 +545,46 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 # Command dispatch map
+def cmd_finalize_step_record_changed_files(args) -> dict:
+    """Handle 'finalize-step', persisting the task's measured ``changed_files`` at close.
+
+    Thin wrapper over :func:`_cmd_step.cmd_finalize_step`: after the close,
+    when the call completed the task terminally (``done`` or ``failed``), the
+    wrapper re-reads the task record and records the worktree paths the task
+    changed since its baseline (see :func:`_tasks_core.record_changed_files`).
+    Present-and-empty means measured-no-change; a task whose baseline cannot be
+    resolved keeps the field ABSENT rather than a fabricated empty list.
+
+    The measurement is first-close-wins (a record that already carries the
+    field keeps it), so a RETRY of the closing call cannot move the measurement
+    forward past edits a later task made. The channel is an audit measurement:
+    it must never take the task-closing call down, so every failure inside the
+    measurement is absorbed and the original result is returned untouched.
+    """
+    result = cmd_finalize_step(args)
+    if result.get('status') != 'success' or not result.get('task_complete'):
+        return result
+    try:
+        task_dir = get_tasks_dir(args.plan_id)
+        filepath = find_task_file(task_dir, args.task_number)
+        if filepath is None:
+            return result
+        task = parse_task_file(filepath.read_text(encoding='utf-8'))
+        if isinstance(task.get(CHANGED_FILES_FIELD), list):
+            result['changed_files'] = [str(path) for path in task[CHANGED_FILES_FIELD]]
+            result['changed_files_count'] = len(result['changed_files'])
+            return result
+        changed = record_changed_files(task)
+        if changed is None:
+            return result
+        atomic_write_file(filepath, format_task_file(task))
+        result['changed_files'] = changed
+        result['changed_files_count'] = len(changed)
+    except (OSError, ValueError):
+        pass
+    return result
+
+
 COMMANDS = {
     'prepare-add': cmd_prepare_add,
     'commit-add': cmd_commit_add,
@@ -549,7 +597,7 @@ COMMANDS = {
     'exists': cmd_exists,
     'next': cmd_next,
     'next-tasks': cmd_next_tasks,
-    'finalize-step': cmd_finalize_step,
+    'finalize-step': cmd_finalize_step_record_changed_files,
     'add-step': cmd_add_step,
     'update-step': cmd_update_step,
     'remove-step': cmd_remove_step,

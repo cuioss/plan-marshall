@@ -161,8 +161,8 @@ class TestRecordDispatchBoundaryContextLoadColumns:
         assert ',clean_exit_queue_empty,1000,5,2000,0,0,0,0' in content
         assert 'unmeasured' not in content
 
-    def test_header_declares_nine_column_order(self, plan_context):
-        """The artifact header lists the legacy five then the four context-load columns."""
+    def test_header_declares_ten_column_order(self, plan_context):
+        """The artifact header lists the legacy five then the four context-load columns then step_id."""
         plan_id = 'rdb-ctx-header'
         pdir = plan_context.plan_dir_for(plan_id)
         (pdir / 'status.json').write_text('{}', encoding='utf-8')
@@ -174,7 +174,7 @@ class TestRecordDispatchBoundaryContextLoadColumns:
         content = artifact.read_text(encoding='utf-8')
         assert (
             'rows[]{timestamp,termination_cause,total_tokens,tool_uses,duration_ms,'
-            'input_tokens,output_tokens,cache_read_input_tokens,cache_creation_input_tokens}:'
+            'input_tokens,output_tokens,cache_read_input_tokens,cache_creation_input_tokens,step_id}:'
         ) in content
 
     def test_legacy_five_columns_positionally_unchanged(self, plan_context):
@@ -206,16 +206,16 @@ class TestRecordDispatchBoundaryContextLoadColumns:
         ]
         assert len(data_lines) == 1
         parts = data_lines[0].split(',')
-        # Nine columns total: legacy five at positions 0-4, context-load at 5-8.
-        assert len(parts) == 9
+        # Ten columns total: legacy five at positions 0-4, context-load at 5-8, step_id at 9.
+        assert len(parts) == 10
         # parts[0] is the timestamp (non-empty); legacy positions 1-4 unchanged.
         assert parts[0]
         assert parts[1] == 'budget_yield'
         assert parts[2] == '1234'
         assert parts[3] == '5'
         assert parts[4] == '6789'
-        # The four appended context-load columns follow in canonical order.
-        assert parts[5:] == ['11', '22', '33', '44']
+        # The four appended context-load columns follow in canonical order, then the empty step_id.
+        assert parts[5:] == ['11', '22', '33', '44', '']
 
     def test_per_column_measured_and_unmeasured_mix_on_one_row(self, plan_context):
         """Supplying only input_tokens leaves the other three UNMEASURED, not 0.

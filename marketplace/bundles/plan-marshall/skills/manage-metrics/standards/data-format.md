@@ -82,9 +82,10 @@ The lattice has two directions and **both halves are first-class**. A field that
 | `output_tokens` (dispatch-boundary column 7) | `cmd_record_dispatch_boundary` | per-dispatch | `--output-tokens` at dispatch termination. An omitted flag writes the `unmeasured` token, NOT `0` | Recorded per dispatch, never aggregated and never rendered |
 | `cache_read_input_tokens` (dispatch-boundary column 8) | `cmd_record_dispatch_boundary` | per-dispatch | `--cache-read-input-tokens` at dispatch termination. An omitted flag writes the `unmeasured` token, NOT `0` | Recorded per dispatch, never aggregated and never rendered |
 | `cache_creation_input_tokens` (dispatch-boundary column 9) | `cmd_record_dispatch_boundary` | per-dispatch | `--cache-creation-input-tokens` at dispatch termination. An omitted flag writes the `unmeasured` token, NOT `0` | Recorded per dispatch, never aggregated and never rendered |
+| `step_id` (dispatch-boundary column 10) | `cmd_record_dispatch_boundary` | per-dispatch | `--step-id` at dispatch termination (the `record-step` step key). An omitted flag writes an empty key, which the reconciliation reads as "no key recorded" and routes to the timestamp-window fallback | Joined, never aggregated: the reconciliation pairs on the key first; a reader MUST NOT sum or average it |
 | `rows_recorded` | `cmd_record_dispatch_boundary` return TOON | per-dispatch | Count of data rows in the boundaries file after the append | Returned to the caller only — never persisted. `generate` does not read it: it derives its own `dispatch_boundary_rows_recorded` from the file at render time |
 
-Only column 3 of the dispatch-boundary row (`total_tokens`) escapes Direction 2: `_read_dispatch_boundary_totals` sums it into `dispatch_boundary_total`. Columns 1–2 (`timestamp`, `termination_cause`) carry no usage measurement and are outside the lattice.
+Only column 3 of the dispatch-boundary row (`total_tokens`) escapes Direction 2: `_read_dispatch_boundary_totals` sums it into `dispatch_boundary_total`. Columns 1–2 (`timestamp`, `termination_cause`) carry no usage measurement and are outside the lattice. Column 10 (`step_id`) is a join key, not a measurement: it is paired on, never aggregated.
 
 ## Intermediate Storage (metrics.toon)
 
@@ -902,11 +903,13 @@ Written by `record-dispatch-boundary`, one TOON-tabular row appended per phase T
 ```toon
 plan_id: EXAMPLE-PLAN
 phase: 5-execute
-rows[]{timestamp,termination_cause,total_tokens,tool_uses,duration_ms,input_tokens,output_tokens,cache_read_input_tokens,cache_creation_input_tokens}:
-2026-05-08T14:23:11Z,clean_exit_queue_empty,84211,38,412390,38000,4000,210000,12000
-2026-05-08T14:41:02Z,budget_yield,51044,17,238110,unmeasured,unmeasured,unmeasured,unmeasured
-2026-05-08T15:02:55Z,clean_exit_queue_empty,12903,4,61220,9100,0,0,0
+rows[]{timestamp,termination_cause,total_tokens,tool_uses,duration_ms,input_tokens,output_tokens,cache_read_input_tokens,cache_creation_input_tokens,step_id}:
+2026-05-08T14:23:11Z,clean_exit_queue_empty,84211,38,412390,38000,4000,210000,12000,5-execute:budget-yield
+2026-05-08T14:41:02Z,budget_yield,51044,17,238110,unmeasured,unmeasured,unmeasured,unmeasured,
+2026-05-08T15:02:55Z,clean_exit_queue_empty,12903,4,61220,9100,0,0,0,5-execute:clean-exit
 ```
+
+The first three lines are the TOON-tabular header (`plan_id:`, `phase:`, `rows[]{…}:`); each subsequent line is one CSV-style data row in the declared column order. Column 10 is the `step_id` join key: row 1 carries one, row 2 was recorded with no key (empty cell — "no key recorded", never a pairing claim), row 3 carries one.
 
 The first three lines are the TOON-tabular header (`plan_id:`, `phase:`, `rows[]{…}:`); each subsequent line is one CSV-style data row in the declared column order.
 
@@ -916,7 +919,7 @@ The three data rows above are the three distinguishable cases, in order: a dispa
 
 This section is the **single source of truth** for the dispatch-boundary row's column order, count, and unmeasured representation. Every consumer cites it as authority — and each one nonetheless RESTATES part of the schema in its own file, because they run in separate processes and cannot import a shared constant. Those restating surfaces are enumerated, with the obligation they carry, in **Restating surfaces (lock-step obligation)** at the end of this section; that list is the thing to keep in sync, and it is not empty.
 
-Each row carries **nine columns**: the **legacy five** followed by the **four context-load columns appended at the END** for positional backward compatibility. The four context-load columns are the per-DISPATCH counterpart to the per-PHASE context-load view that `enrich` writes (see Per-Phase Fields above); they capture the dispatched agent's context-load categories at dispatch termination so per-dispatch context cost (dispatch count, collapsed triage contexts, per-dispatch context size) becomes measurable.
+Each row carries **ten columns**: the **legacy five** followed by the **four context-load columns** followed by the **`step_id` join key appended LAST** for positional backward compatibility. The four context-load columns are the per-DISPATCH counterpart to the per-PHASE context-load view that `enrich` writes (see Per-Phase Fields above); they capture the dispatched agent's context-load categories at dispatch termination so per-dispatch context cost (dispatch count, collapsed triage contexts, per-dispatch context size) becomes measurable. The `step_id` key is the dispatch's own step key (the `record-step` `step_id` forwarded at termination); the reconciliation joins on the key first and falls back to the timestamp window for rows that carry none. An omitted `--step-id` writes an empty key — "no key recorded", never a pairing claim — and the key must not contain a comma or a newline (the row is positional CSV).
 
 | # | Column | Type | Source | Value when the flag is omitted |
 |---|--------|------|--------|--------------------------------|
@@ -929,6 +932,7 @@ Each row carries **nine columns**: the **legacy five** followed by the **four co
 | 7 | `output_tokens` | int \| `unmeasured` | `--output-tokens` (the normalized `output` category) | the literal `unmeasured` |
 | 8 | `cache_read_input_tokens` | int \| `unmeasured` | `--cache-read-input-tokens` (the normalized `cache_read` category) | the literal `unmeasured` |
 | 9 | `cache_creation_input_tokens` | int \| `unmeasured` | `--cache-creation-input-tokens` (the normalized `cache_creation` category) | the literal `unmeasured` |
+| 10 | `step_id` | string (empty when unrecorded) | `--step-id` (the dispatch's `record-step` step key) | the empty cell — "no key recorded", routed to the timestamp-window fallback |
 
 #### The unmeasured token, and the cell read
 
@@ -936,7 +940,7 @@ The four context-load columns are OPTIONAL — a caller with no context-load fig
 
 The legacy five columns keep their `0` default deliberately: no consumer distinguishes an absent from a zero on those, so introducing a second unmeasured surface there would add a distinction nothing reads.
 
-**Columns are resolved BY NAME, from the row block's own `rows[N]{…}:` header.** The nine-column order above is the order a writer emits; a reader stands it in only until a header declares names, and once one does every column — the legacy five included — is resolved by its declared name rather than by position. The header is also what gives a cell its meaning at all: a reader gates on having SEEN one, so a file carrying no header line yields NO rows rather than a positional guess. A column the header does not declare is therefore in exactly the position of one the row is too short to carry, and reads the same way — the fourth row of the table below covers both.
+**Columns are resolved BY NAME, from the row block's own `rows[N]{…}:` header.** The ten-column order above is the order a writer emits; a reader stands it in only until a header declares names, and once one does every column — the legacy five included — is resolved by its declared name rather than by position. The header is also what gives a cell its meaning at all: a reader gates on having SEEN one, so a file carrying no header line yields NO rows rather than a positional guess. A column the header does not declare is therefore in exactly the position of one the row is too short to carry, and reads the same way — the fourth row of the table below covers both.
 
 Every reader of columns 6–9 MUST implement the same cell read, and MUST NOT collapse it to two:
 

@@ -422,6 +422,7 @@ See `plan-retrospective` for the correlation logic.
 python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics record-dispatch-boundary \
   --plan-id {plan_id} --phase {phase} \
   --termination-cause {voluntary_checkpoint|task_complete_returned_verbatim|budget_yield|harness_cancellation|error|clean_exit_queue_empty|step_complete|blocked_user_review|blocked_session_restart|task_batch_complete|agent_returned|returned_with_findings|baseline_drift} \
+  [--step-id KEY] \
   [--total-tokens N] [--tool-uses N] [--duration-ms N] \
   [--input-tokens N] [--output-tokens N] [--cache-read-input-tokens N] [--cache-creation-input-tokens N]
 ```
@@ -447,6 +448,7 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics reco
 
   That test reads **this document only**, so those three sites are the whole *guarded-in-SKILL.md* population — not the whole population. Full-set enumerations living in other files are guarded by their own structural-equality tests, also in `test_manage_metrics.py`: the `termination_cause` enum line in [standards/data-format.md](standards/data-format.md) § Per-Dispatch Context-Load Attribution (`test_data_format_termination_cause_enum_matches_the_enum`) and the accepted-causes set in [plan-retrospective/references/logging-gap-analysis.md](../plan-retrospective/references/logging-gap-analysis.md) (`test_logging_gap_analysis_termination_cause_set_matches_the_enum`). The `record-dispatch-boundary` argparse `description=` and `choices=` in `scripts/manage-metrics.py` are **both derived from the tuple** and so are not mirrors — nothing to keep in sync there. When adding a new full-set enumeration, either derive it from the tuple or add a structural-equality test, and prefer deriving.
 - `--total-tokens`, `--tool-uses`, `--duration-ms` — Reported token/tool/duration figures at termination, in the runtime-normalized totals (each optional, default 0).
+- `--step-id` — The dispatch step key (the `record-step` `step_id`) carried on the boundary row so the reconciliation joins on the key first, with timestamp-window fallback for rows that carry none (optional, default empty — an omitted flag writes an empty key, never a pairing claim; the key must not contain a comma or a newline).
 - `--input-tokens`, `--output-tokens`, `--cache-read-input-tokens`, `--cache-creation-input-tokens` — Per-dispatch context-load totals in the normalized `{input, output, cache_read, cache_creation}` shape (each optional). These are the per-DISPATCH counterpart to the per-PHASE context-load view `enrich` writes; they are recorded as four columns appended at the END of each row so the legacy five columns stay positionally unchanged. **They have no numeric default**: an omitted flag writes the literal `unmeasured` into its column and omits the key from the result TOON, so "the caller passed no measurement" stays distinguishable from "the dispatch loaded zero context". A *measured* zero is still written and returned as `0`. See [data-format.md](standards/data-format.md) § Per-Dispatch Context-Load Attribution for the canonical column order, count, and the four-way (measured / unmeasured / unrecognised / indeterminate) reader contract.
 
 **Behaviour:**
@@ -608,14 +610,18 @@ and cannot say *which* dispatches it summed — only how many times the phase
 closed (`close_count`), which the reconciliation reads as the re-entry signal.
 
 The two row ledgers are written by independent call sites with no shared
-transaction and no shared key — a boundary row carries no `step_id` — so a
-dispatch can land in one and not the other **in both directions**. A step that
+transaction — but they share a key. The boundary row carries the dispatch's
+`step_id` (the same `step_id` `record-step` writes on the execution-log row),
+so the reconciliation joins on the key first and falls back to the timestamp
+window for rows that carry none. A dispatch can still land in one ledger and
+not the other **in both directions**. A step that
 ran four times can appear twice in one and three times in the other, and only
 their union shows all four. The result therefore publishes `union_rows` per phase
 and in total: that is the count a reader should take, and nothing else says so.
 
-The join is on phase plus a timestamp window (`--window-seconds`, default 300),
-because the missing `step_id` leaves no other key. Findings:
+The join is on phase plus the shared `step_id` key first (`--step-id` at
+record time), with timestamp-window fallback (`--window-seconds`, default 300)
+for rows that carry no key. Findings:
 
 | Finding | Meaning |
 |---------|---------|
@@ -776,6 +782,7 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics accu
 python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics record-dispatch-boundary \
   --plan-id PLAN_ID --phase PHASE \
   --termination-cause {voluntary_checkpoint|task_complete_returned_verbatim|budget_yield|harness_cancellation|error|clean_exit_queue_empty|step_complete|blocked_user_review|blocked_session_restart|task_batch_complete|agent_returned|returned_with_findings|baseline_drift} \
+  [--step-id KEY] \
   [--total-tokens N] [--tool-uses N] [--duration-ms N] \
   [--input-tokens N] [--output-tokens N] [--cache-read-input-tokens N] [--cache-creation-input-tokens N]
 ```

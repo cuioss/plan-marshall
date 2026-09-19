@@ -3322,8 +3322,9 @@ def cmd_reconcile_ledgers(args: argparse.Namespace) -> dict:
     """Reconcile this plan's row ledgers against each other. Mutates NOTHING.
 
     Joins ``execution.toon``'s ``execution_log[]`` against each phase's
-    ``work/metrics-dispatch-boundaries-{phase}.toon`` on phase and timestamp
-    window, and emits one finding per row present in one ledger and absent from
+    ``work/metrics-dispatch-boundaries-{phase}.toon`` on phase and the shared
+    ``step_id`` key first, with timestamp-window fallback for rows that carry
+    no key, and emits one finding per row present in one ledger and absent from
     the other. The two partiality shapes are labelled distinctly — a phase whose
     boundary never closed is not the same defect as an absent row — and a phase
     the execution log structurally cannot cover is DECLARED rather than reported
@@ -3473,7 +3474,13 @@ def cmd_record_dispatch_boundary(args: argparse.Namespace) -> dict:
     <tool_uses>,<duration_ms>``) followed by the four per-dispatch context-load
     columns appended at the END (``input_tokens``, ``output_tokens``,
     ``cache_read_input_tokens``, ``cache_creation_input_tokens``) — the
-    per-DISPATCH counterpart to the per-PHASE four-field view ``enrich`` writes.
+    per-DISPATCH counterpart to the per-PHASE four-field view ``enrich`` writes —
+    followed by the ``step_id`` join key appended LAST. ``step_id`` is the
+    dispatch's own step key (the ``record-step`` ``step_id`` the orchestrator
+    passes through at termination), so the reconciliation joins on the key first
+    and falls back to the timestamp window for rows that carry none. An omitted
+    ``--step-id`` writes an empty key, which reads as "no key recorded" rather
+    than as a pairing claim.
 
     A context-load column whose flag was OMITTED carries the literal
     ``UNMEASURED_COLUMN_TOKEN`` rather than ``0``, and the corresponding key is
@@ -3487,7 +3494,9 @@ def cmd_record_dispatch_boundary(args: argparse.Namespace) -> dict:
     downstream distinguishes an absent from a zero on those.
 
     Appending at the END keeps the legacy five columns positionally unchanged so
-    the existing plan-retrospective reader stays valid. The file's first line is
+    the existing plan-retrospective reader stays valid. The step_id key is
+    appended LAST so the four context-load columns stay positionally unchanged
+    too. The file's first line is
     a TOON-tabular header declaring the column order. The canonical column order
     / count / defaults are owned by ``standards/data-format.md`` (Per-Dispatch
     Context-Load Attribution section).
@@ -3515,6 +3524,18 @@ def cmd_record_dispatch_boundary(args: argparse.Namespace) -> dict:
     total_tokens = args.total_tokens if args.total_tokens is not None else 0
     tool_uses = args.tool_uses if args.tool_uses is not None else 0
     duration_ms = args.duration_ms if args.duration_ms is not None else 0
+    # The step_id join key. An omitted flag records no key (empty cell), which
+    # the reconciliation reads as "no key recorded" and routes to the
+    # timestamp-window fallback — never as a pairing claim. The cell is
+    # positional CSV, so a key carrying a comma or a newline would shift every
+    # column after it; reject such a key rather than writing a corrupt row.
+    step_id = getattr(args, 'step_id', None) or ''
+    if ',' in step_id or '\n' in step_id:
+        return {
+            'status': 'error',
+            'error': 'invalid_step_id',
+            'message': 'Invalid step_id: the dispatch-boundary row is positional CSV, so the key must not contain a comma or a newline.',
+        }
     # Four per-dispatch context-load columns (the four-field message.usage view at
     # dispatch termination). An OMITTED flag stays None here and is written as the
     # unmeasured token below — never coerced to 0, which would assert a
@@ -3537,14 +3558,15 @@ def cmd_record_dispatch_boundary(args: argparse.Namespace) -> dict:
     path.parent.mkdir(parents=True, exist_ok=True)
 
     timestamp = now_utc_iso()
-    # Legacy five columns first, then the four context-load columns appended at
-    # the END so legacy readers stay positionally valid. An unmeasured
-    # context-load column carries the token, not a 0.
+    # Legacy five columns first, then the four context-load columns, then the
+    # step_id join key LAST so both earlier groups stay positionally valid. An
+    # unmeasured context-load column carries the token, not a 0; an omitted
+    # step_id carries the empty cell, not a pairing claim.
     context_cells: list[str] = []
     for column in _DISPATCH_CONTEXT_LOAD_COLUMNS:
         measured = context_load[column]
         context_cells.append(UNMEASURED_COLUMN_TOKEN if measured is None else str(int(measured)))
-    row = f'{timestamp},{cause},{total_tokens},{tool_uses},{duration_ms},' + ','.join(context_cells)
+    row = f'{timestamp},{cause},{total_tokens},{tool_uses},{duration_ms},' + ','.join(context_cells) + f',{step_id}'
 
     if path.exists():
         existing = path.read_text(encoding='utf-8')
@@ -3566,7 +3588,7 @@ def cmd_record_dispatch_boundary(args: argparse.Namespace) -> dict:
             f'plan_id: {plan_id}\n'
             f'phase: {phase}\n'
             'rows[]{timestamp,termination_cause,total_tokens,tool_uses,duration_ms,'
-            'input_tokens,output_tokens,cache_read_input_tokens,cache_creation_input_tokens}:\n'
+            'input_tokens,output_tokens,cache_read_input_tokens,cache_creation_input_tokens,step_id}:\n'
         )
         new_content = header + row + '\n'
 
@@ -3582,6 +3604,7 @@ def cmd_record_dispatch_boundary(args: argparse.Namespace) -> dict:
         'plan_id': plan_id,
         'phase': phase,
         'termination_cause': cause,
+        'step_id': step_id,
         'total_tokens': total_tokens,
         'tool_uses': tool_uses,
         'duration_ms': duration_ms,
@@ -4157,8 +4180,9 @@ def main() -> int:
         description=(
             "Deterministic cross-ledger reconciliation. Joins execution.toon's "
             "execution_log[] against each phase's "
-            'work/metrics-dispatch-boundaries-{phase}.toon on phase and timestamp '
-            'window, emitting one finding per row present in one ledger and '
+            'work/metrics-dispatch-boundaries-{phase}.toon on phase and the '
+            'shared step_id key first, with timestamp-window fallback, '
+            'emitting one finding per row present in one ledger and '
             'absent from the other. The two partiality shapes are labelled '
             'distinctly: boundary_never_closed (the rows exist, the phase '
             'aggregate is missing) versus row_absent_from_* (a specific row has '
@@ -4175,9 +4199,10 @@ def main() -> int:
         type=int,
         default=DEFAULT_WINDOW_SECONDS,
         help=(
-            'Maximum timestamp gap for pairing a row across the two ledgers '
-            f'(default: {DEFAULT_WINDOW_SECONDS}). The boundary row carries no '
-            'step_id, so the window is the only join available.'
+            'Maximum timestamp gap for pairing a keyless row across the two ledgers '
+            f'(default: {DEFAULT_WINDOW_SECONDS}). Rows carrying a non-empty '
+            'step_id on both sides pair on the key first; the window is the '
+            'fallback for rows that carry none.'
         ),
     )
     rl.set_defaults(func=cmd_reconcile_ledgers)
@@ -4247,6 +4272,17 @@ def main() -> int:
         required=True,
         choices=list(DISPATCH_TERMINATION_CAUSES),
         help='Why the phase Task dispatch terminated.',
+    )
+    rdb.add_argument(
+        '--step-id',
+        type=str,
+        default=None,
+        help=(
+            'The dispatch step key (the record-step step_id) carried on the '
+            'boundary row so the reconciliation joins on the key first. Omit '
+            'when the dispatch has no step key — the cell is written empty, '
+            'never as a pairing claim. Must not contain a comma or a newline.'
+        ),
     )
     rdb.add_argument(
         '--total-tokens',

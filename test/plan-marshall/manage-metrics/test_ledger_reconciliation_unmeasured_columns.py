@@ -247,7 +247,7 @@ def _write_boundary_rows(plan_context, plan_id: str, cells: list[object]) -> Pat
         f'plan_id: {plan_id}\n'
         f'phase: {PHASE}\n'
         'rows[]{timestamp,termination_cause,total_tokens,tool_uses,duration_ms,'
-        'input_tokens,output_tokens,cache_read_input_tokens,cache_creation_input_tokens}:\n'
+        'input_tokens,output_tokens,cache_read_input_tokens,cache_creation_input_tokens,step_id}:\n'
     )
     body = ''.join(
         f'2026-01-01T10:0{index}:00+00:00,step_complete,{cell},0,0,'

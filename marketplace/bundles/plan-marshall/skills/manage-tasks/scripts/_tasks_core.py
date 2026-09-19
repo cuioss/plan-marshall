@@ -12,9 +12,11 @@ Contains:
 
 import json
 import re
+import subprocess
 from pathlib import Path
 from typing import Any, NamedTuple, NotRequired, TypedDict
 
+from _task_artifacts import is_object_id
 from constants import (
     DIR_TASKS,
     VALID_SOURCE_EXTENSIONS,
@@ -22,6 +24,7 @@ from constants import (
     VALID_TASK_ORIGINS,
 )
 from file_ops import (  # noqa: F401 - re-exported
+    cwd_checkout_root,
     get_plan_dir,
     normalize_to_repo_relative,
     now_utc_iso,
@@ -70,6 +73,8 @@ class TaskDict(TypedDict, total=False):
     skills: list[str]
     verification: VerificationDict
     current_step: int
+    task_start_sha: str
+    changed_files: list[str]
 
 
 # =============================================================================
@@ -347,6 +352,121 @@ def calculate_progress(task: dict) -> tuple[int, int]:
     steps = task.get('steps', [])
     completed = sum(1 for s in steps if s['status'] in ('done', 'skipped'))
     return completed, len(steps)
+
+
+# =============================================================================
+# Per-task changed_files persistence
+# =============================================================================
+
+#: The task-record field holding the measured changed-file list. Written at task
+#: close by ``record_changed_files``. Present-and-empty means measured-no-change;
+#: ABSENT means never recorded (a task closed before this field existed, or one
+#: whose baseline could not be resolved). A consumer qualifying an
+#: artifact-emission population MUST read absence as "unavailable", never as a
+#: measured zero — the same absent-is-not-zero rule the token columns follow.
+CHANGED_FILES_FIELD = 'changed_files'
+
+
+def _changed_files_git(root: Path, *argv: str) -> str | None:
+    """Run one git command under ``root`` and return stdout, or ``None``.
+
+    Every failure mode — git absent, not a repository, an unknown base SHA — is
+    a ``None``. The changed_files channel is an AUDIT measurement: it must never
+    take the task-closing call down, and it must never record a list it could
+    not derive.
+    """
+    try:
+        completed = subprocess.run(
+            ['git', '-C', str(root), *argv],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if completed.returncode != 0:
+        return None
+    return completed.stdout
+
+
+def changed_file_paths(task: dict[str, Any], root: Path | None = None) -> list[str] | None:
+    """Derive the sorted, de-duplicated repo paths the task changed since its baseline.
+
+    The baseline is the task's ``task_start_sha`` (captured at the task's
+    ``in_progress`` transition). The diff is base commit against the WORKING
+    TREE — a task's edits are uncommitted until the chain-tail commit, so a
+    base..HEAD comparison at task close sees nothing — plus the untracked-file
+    walk, because a newly created file appears in NEITHER diff form until it is
+    staged. A rename contributes its NEW path once (never a delete plus a
+    write); a copy contributes its new path; a deletion contributes the deleted
+    path — it is a path the task changed.
+
+    Returns ``None`` when nothing can be measured: the task carries no baseline,
+    or the baseline is not a well-formed git object id (a hand-edited or
+    predating record). Absence is the honest state there, and the caller leaves
+    the field absent rather than recording a fabricated empty list.
+    """
+    base = task.get('task_start_sha')
+    if not isinstance(base, str) or not base.strip():
+        return None
+    # The baseline allowlist is the one predicate both ends of the field are
+    # held to — imported from _task_artifacts rather than restated, so the two
+    # readers cannot drift (a hand-edited record can carry a value the capture
+    # would never write, and that value must not reach a git argument here).
+    base_sha = base.strip()
+    if not is_object_id(base_sha):
+        return None
+    root = root or Path(cwd_checkout_root())
+    paths: set[str] = set()
+
+    # `-M` makes rename detection explicit rather than dependent on the
+    # caller's git configuration, so the R-branch below is reachable
+    # deterministically.
+    name_status = _changed_files_git(root, 'diff', '--name-status', '-M', base_sha)
+    if name_status is None:
+        return None
+    for line in name_status.splitlines():
+        fields = line.split('\t')
+        if len(fields) < 2 or not fields[0]:
+            continue
+        code = fields[0]
+        if code.startswith(('R', 'C')) and len(fields) >= 3:
+            paths.add(fields[2])
+        else:
+            paths.add(fields[1])
+
+    untracked = _changed_files_git(root, 'ls-files', '--others', '--exclude-standard')
+    if untracked is None:
+        return None
+    for path in untracked.splitlines():
+        if path.strip():
+            paths.add(path.strip())
+
+    return sorted(paths)
+
+
+def record_changed_files(task: dict[str, Any]) -> list[str] | None:
+    """Measure and persist the task's ``changed_files`` list, once.
+
+    Idempotent by construction: a task that already carries the field keeps it,
+    so a RETRY of the closing call cannot move the measurement forward past the
+    edits a later task made — the same first-close-wins rule the
+    ``task_start_sha`` capture follows. An empty list IS persisted:
+    present-and-empty is the measured-no-change verdict, distinct from the
+    absent field of a task that was never measured.
+
+    Returns the list now on the task (existing or newly measured), or ``None``
+    when nothing could be measured — in which case NOTHING is written.
+    """
+    existing = task.get(CHANGED_FILES_FIELD)
+    if isinstance(existing, list):
+        return [str(path) for path in existing]
+    measured = changed_file_paths(task)
+    if measured is None:
+        return None
+    task[CHANGED_FILES_FIELD] = measured
+    return measured
 
 
 # =============================================================================

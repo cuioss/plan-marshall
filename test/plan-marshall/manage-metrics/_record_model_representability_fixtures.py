@@ -247,6 +247,9 @@ def _ns_dispatch(
     A context-load column absent from *context_load* is left at the parser's own
     default for an omitted flag, so the namespace matches what the real CLI
     produces; the writer reads the column back with `getattr(args, column, None)`.
+    The four columns are forwarded by NAME rather than splatted, so a
+    non-context keyword on the builder (such as `step_id`) can never be fed a
+    context-load int by accident.
     """
     return ns_record_dispatch_boundary(
         plan_id,
@@ -255,7 +258,10 @@ def _ns_dispatch(
         total_tokens=total_tokens,
         tool_uses=tool_uses,
         duration_ms=duration_ms,
-        **context_load,
+        input_tokens=context_load.get('input_tokens'),
+        output_tokens=context_load.get('output_tokens'),
+        cache_read_input_tokens=context_load.get('cache_read_input_tokens'),
+        cache_creation_input_tokens=context_load.get('cache_creation_input_tokens'),
     )
 
 

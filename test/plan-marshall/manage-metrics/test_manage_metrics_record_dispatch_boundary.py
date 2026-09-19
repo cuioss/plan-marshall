@@ -145,14 +145,15 @@ def test_first_invocation_creates_file_with_one_row(plan_context):
     assert path.exists()
     content = path.read_text(encoding='utf-8')
 
-    # Header lines present — the 9-column schema (legacy five columns followed
-    # by the four appended per-dispatch context-load columns).
+    # Header lines present — the 10-column schema (legacy five columns followed
+    # by the four appended per-dispatch context-load columns followed by the
+    # step_id join key).
     assert 'plan_id: disp-first' in content
     assert 'phase: 5-execute' in content
     expected_header = (
         'rows[]{timestamp,termination_cause,total_tokens,tool_uses,duration_ms,'
         'input_tokens,output_tokens,cache_read_input_tokens,'
-        'cache_creation_input_tokens}:'
+        'cache_creation_input_tokens,step_id}:'
     )
     assert expected_header in content
 

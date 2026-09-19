@@ -160,10 +160,10 @@ def _write_dispatch_boundaries(plan_context, plan_id: str, phase: str, totals: l
         f'plan_id: {plan_id}\n'
         f'phase: {phase}\n'
         'rows[]{timestamp,termination_cause,total_tokens,tool_uses,duration_ms,'
-        'input_tokens,output_tokens,cache_read_input_tokens,cache_creation_input_tokens}:\n'
+        'input_tokens,output_tokens,cache_read_input_tokens,cache_creation_input_tokens,step_id}:\n'
     )
     rows = ''.join(
-        f'2026-05-08T14:{i:02d}:11Z,budget_yield,{total},38,412390,38000,4000,210000,12000\n'
+        f'2026-05-08T14:{i:02d}:11Z,budget_yield,{total},38,412390,38000,4000,210000,12000,\n'
         for i, total in enumerate(totals)
     )
     path.write_text(header + rows, encoding='utf-8')
