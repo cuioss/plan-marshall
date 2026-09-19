@@ -542,8 +542,8 @@ def test_the_canned_lane_blocks_agree_with_the_shipped_classification():
     frontmatter, so a reclassification in production cannot fail them — it can
     only leave them describing a step that no longer behaves that way. That is
     exactly how the previous fixture went stale: it pinned ``lessons-capture`` as
-    ``core`` after this plan had moved it to ``prunable``, and the monkeypatched
-    resolver kept the arm green. This guard ties the two together on the one axis
+    ``core`` after ``lessons-capture`` was reclassified to ``prunable``, and the
+    monkeypatched resolver kept the arm green. This guard ties the two together on the one axis
     the cases turn on, reading the shipped class rather than restating it.
     """
     for step_id, expect_immune in ((_FLOOR_LANE_STEP, True), (_OPT_OUT_LANE_STEP, False)):

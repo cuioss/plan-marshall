@@ -123,8 +123,8 @@ migrated[1]:
   - plan.phase-6-finalize.steps.default:branch-cleanup.run_at_all -> lane
 migrated_count: 1
 materialized[2]:
-  - plan.phase-6-finalize.steps.default:push.lane=minimal
-  - plan.phase-6-finalize.steps.plan-marshall:automatic-review.lane=off
+  - plan.phase-6-finalize.steps.default:push -> lane=minimal
+  - plan.phase-6-finalize.steps.plan-marshall:automatic-review -> lane=off
 materialized_count: 2
 ```
 
@@ -151,8 +151,8 @@ missing or declares no `lane:` block — is deliberately left untouched and is a
 from `materialized[]`. That exemption is scoped to pre-existing rows: a
 freshly-merged row whose class is equally unresolvable still takes the `off` opt-in
 and IS reported, because an unknown class is not a shielded one. The
-config is persisted whenever `added[]`, `renamed[]`, or the provisioning stamps
-changed.
+config is persisted whenever `added[]`, `renamed[]`, `migrated[]`,
+`materialized[]`, or the provisioning stamps changed.
 
 ---
 
