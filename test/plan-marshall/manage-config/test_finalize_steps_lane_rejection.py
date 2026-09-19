@@ -49,46 +49,6 @@ that value?"; the second asks "can that value take effect on that step?". Both
 channels are asserted, plus the matched positive control (a non-immune element
 still accepts ``off``) and the fail-toward-permitting case (an unresolvable class
 is permitted, never refused).
-
-Test scope for that second axis — RE-DERIVED, with every divergence resolved
-------------------------------------------------------------------------------
-
-The scope was re-derived at execution time by sweeping the ``test`` category for
-each changed symbol, rather than carried forward from planning. The union was:
-
-- ``_materialize_finalize_lanes`` → ``test_sync_defaults.py``
-- ``cmd_finalize_steps_set_lane`` → ``test_cmd_ceremony_policy.py``,
-  ``test_cmd_finalize_steps.py``, THIS module
-- ``_reject_lane_value`` → THIS module
-- ``_resolve_finalize_step_lane`` → no test-category consumer (it was a private
-  helper of ``_cmd_sync_defaults``; this deliverable moves it to
-  ``_cmd_quality_phases`` and both writers now import it from there)
-- ``_inert_off_refusal`` (new) → no consumer yet, by construction
-
-Two divergences from the planned four-file scope, each resolved rather than
-silently absorbed:
-
-- ``test_cmd_quality_phases.py`` is IN scope but names none of those symbols. It
-  mirrors ``_cmd_quality_phases``, the module that gains both the moved resolver
-  and the new ``param == 'lane'`` branch of ``_cmd_step``'s set path, so the
-  generic writer's refusal is asserted there.
-- ``test_cmd_ceremony_policy.py`` is in the symbol union but is NOT updated. It
-  calls ``cmd_finalize_steps_set_lane`` to drive ceremony-gate policy, and every
-  target it writes is a ceremony owner (``pre-push-quality-gate`` /
-  ``pre-submission-self-review`` / ``finalize-step-simplify`` /
-  ``finalize-step-security-audit``); an ``off`` on any of them is unaffected by
-  this refusal, so the file needs no change and its green run is real coverage of
-  the positive direction rather than an omission.
-
-Two further ``lane…off``-bearing files, resolved as EXCLUDED with reason:
-
-- ``test_config_defaults.py`` — it pins the finalize-step SEED in
-  ``_config_defaults.py``, which this deliverable does not edit. The seed's
-  ``default_on:false → lane:off`` rule is a different rule from the
-  materializer's provenance fill and is unchanged.
-- ``test_manage_config_cli.py`` — it exercises the CLI plumbing of the verb
-  surfaces, not lane semantics; no assertion in it depends on which values a lane
-  writer accepts.
 """
 
 import json
