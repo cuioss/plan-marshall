@@ -230,3 +230,14 @@ def test_docs_name_boundaries_and_residual():
     assert '1→2 boundary assertion' in outline
     assert 'Session-Start Tree Check' in operations
     assert "no script gate binds a free agent's Edit tool" in operations
+
+
+def test_docs_wire_dispatch_seam_through_guarded_inject():
+    execute_task = (
+        REPO_ROOT / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'execute-task' / 'SKILL.md'
+    ).read_text(encoding='utf-8')
+
+    # Two dispatch call sites plus the canonical invocation block.
+    assert execute_task.count('--worktree-materialized {true|false}') == 3
+    assert execute_task.count('worktree_not_materialized') >= 3
+    assert 'A `pending` state is NOT a skip' in execute_task
