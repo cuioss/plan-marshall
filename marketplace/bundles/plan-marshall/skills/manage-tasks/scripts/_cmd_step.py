@@ -190,8 +190,6 @@ def cmd_finalize_step(args) -> dict:
         artifact_lines = emit_artifact_lines(args.plan_id, args.task_number, task)
 
     # Calculate progress
-
-    # Calculate progress
     completed, total = calculate_progress(task)
 
     result = {
