@@ -126,23 +126,30 @@ def resolve_diff_evidence_tier(
 ) -> tuple[str | None, str | None]:
     """Determine the evidence tier and base ref behind this run's diff.
 
-    Reads ``references.json`` for the post-merge keys the shared chain resolves
-    from (``merge_commit_sha``, then ``pr_number`` — the same precedence the
-    chain itself applies, so a recorded SHA always wins over the PR number). An
+    Reads ``references.json`` for the keys the shared chain resolves from, in
+    the chain's own precedence (capture, then ``merge_commit_sha``, then
+    ``pr_number``, then the legacy key — the same order the chain itself
+    applies, so the reported tier is the tier that supplied the diff). An
     explicit ``--diff-file`` is caller-supplied evidence and reports the
-    ``diff_file`` tier; a live ``--base-ref`` diff with no post-merge key
-    recorded reports ``live_diff``; with neither input nor post-merge key the
+    ``diff_file`` tier; a live ``--base-ref`` diff with no recorded key
+    reports ``live_diff``; with neither input nor recorded key the
     tier is unknown (``None, None``).
     """
     if diff_file is not None:
         return 'diff_file', diff_file
     refs = load_references_dict(plan_dir)
+    captured = refs.get('realized_footprint')
+    if isinstance(captured, list) and captured:
+        return 'realized_capture', 'realized_footprint'
     merge_sha = refs.get('merge_commit_sha')
     if isinstance(merge_sha, str) and merge_sha.strip():
         return 'merge_commit', merge_sha.strip()
     pr_number = refs.get('pr_number')
     if pr_number is not None and str(pr_number).strip():
         return 'pr_landing', str(pr_number).strip()
+    legacy = refs.get('modified_files')
+    if isinstance(legacy, list) and legacy:
+        return 'legacy_key', 'modified_files'
     if base_ref:
         return 'live_diff', base_ref
     return None, None
