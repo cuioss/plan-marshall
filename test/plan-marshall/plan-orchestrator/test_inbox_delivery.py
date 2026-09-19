@@ -438,10 +438,10 @@ class TestTheRoundTripWalksAllThreeDeliveryStates:
 
         consume_message(EPIC, ADDRESSEE, taken['message'])
 
-        rows = {row['name']: row for row in _read_mailbox()['messages']}
+        payload = _read_mailbox()
+        rows = {row['name']: row for row in payload['messages']}
         assert rows[taken['message']]['consumption'] == CONSUMPTION_CONSUMED
         assert rows[left['message']]['consumption'] == CONSUMPTION_UNCONSUMED
-        payload = _read_mailbox()
         assert payload['delivery_state'] == DELIVERY_STATE_DELIVERED_UNCONSUMED
         assert (payload['consumed_count'], payload['unconsumed_count']) == (1, 1)
 
@@ -552,7 +552,7 @@ def _row_document(row_line: str) -> Path | None:
     return None
 
 
-def _regions_excluding_section(text: str, heading: str, stop_prefixes: tuple[str, ...] = ('## ',)) -> list[list[str]]:
+def _regions_excluding_section(text: str, heading: str) -> list[list[str]]:
     """Return ``text``'s line regions with the named section REMOVED.
 
     Regions — a list of line lists — and deliberately never one joined string.
@@ -563,7 +563,7 @@ def _regions_excluding_section(text: str, heading: str, stop_prefixes: tuple[str
     a skip rather than a splice.
 
     The boundary rule is ``section_lines``': the heading line is located by
-    stripped equality and the section runs to the next ``stop_prefixes`` line.
+    stripped equality and the section runs to the next ``## `` heading line.
     A document that does not carry the heading yields its lines unchanged, as one
     region, so a scan over a document with no such section is unaffected.
     """
@@ -572,7 +572,7 @@ def _regions_excluding_section(text: str, heading: str, stop_prefixes: tuple[str
     if start is None:
         return [lines]
     end = start + 1
-    while end < len(lines) and not lines[end].startswith(stop_prefixes):
+    while end < len(lines) and not lines[end].startswith('## '):
         end += 1
     return [lines[:start], lines[end:]]
 
