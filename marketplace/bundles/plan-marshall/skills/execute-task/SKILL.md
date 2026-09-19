@@ -105,16 +105,23 @@ After all steps complete, run task verification using commands from `task.verifi
 
 **Sub-step: Auto-inject `--plan-id` for Bucket B commands**
 
-When the plan resolves to an active worktree, before executing any `task.verification.commands[N]`, route the command through the injection helper, passing `--plan-id {plan_id}` directly:
+When the plan resolves to an active worktree, before executing any `task.verification.commands[N]`, resolve the materialization state and route the command through the injection helper, passing `--plan-id {plan_id}` directly:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status get-worktree-path \
+  --plan-id {plan_id}
+```
+
+Read `worktree_state` (`disabled` | `pending` | `materialized`) and derive `--worktree-materialized`: `materialized` → `true`, `pending` → `false`. When `disabled`, skip the helper and execute the raw command against the main checkout. Otherwise call:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:execute-task:inject_project_dir \
-  run --command "{verification_command}" --plan-id {plan_id}
+  run --command "{verification_command}" --plan-id {plan_id} --worktree-materialized {true|false}
 ```
 
-Injecting `--plan-id` (rather than `--project-dir {worktree_path}`) lets the Bucket B script auto-resolve the worktree path itself via its `--plan-id`/`--project-dir` two-state contract. No separate `get-worktree-path` resolution is required.
+Injecting `--plan-id` (rather than `--project-dir {worktree_path}`) lets the Bucket B script auto-resolve the worktree path itself via its `--plan-id`/`--project-dir` two-state contract.
 
-Parse the TOON output from the script's stdout. Use the `rewritten_command` value as the command to execute. When `injected` is `true`, log:
+Parse the TOON output from the script's stdout. On `status: error` with `error: worktree_not_materialized`, REFUSE the dispatch: emit a `[CRITICAL]` work-log entry naming the plan and do NOT execute the command — a `pending` state while `use_worktree=true` means `prepare_execute` never materialized the worktree, and executing against the main checkout would repeat the work-on-main failure this gate exists to close. On `status: success`, use the `rewritten_command` value as the command to execute. When `injected` is `true`, log:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -388,18 +395,18 @@ Run verification commands without modifying files.
      --plan-id {plan_id}
    ```
 
-   Capture the returned `worktree_path`. When `metadata.use_worktree == false` the returned path is empty — skip the auto-injection sub-step below and execute each raw `step.target` directly against the main checkout.
+   Capture the returned `worktree_state` (`disabled` | `pending` | `materialized`) alongside `worktree_path`. When the state is `disabled` (main-checkout flow — `metadata.use_worktree == false`), skip the auto-injection sub-step below and execute each raw `step.target` directly against the main checkout. A `pending` state is NOT a skip: the plan opted into a worktree that was never materialized, so the helper must still run — it refuses.
 
 2. **Execute Verification Steps with `--plan-id` Auto-Injection**: Steps contain verification commands (not file paths). Execute sequentially. For each `step.target`:
 
-   a. Route the command through the injection helper, passing `--plan-id {plan_id}`:
+   a. Route the command through the injection helper, passing `--plan-id {plan_id}` plus the materialization flag derived in Step 1 (`materialized` → `true`, `pending` → `false`):
 
       ```bash
       python3 .plan/execute-script.py plan-marshall:execute-task:inject_project_dir \
-        run --command "{step.target}" --plan-id {plan_id}
+        run --command "{step.target}" --plan-id {plan_id} --worktree-materialized {true|false}
       ```
 
-      Parse the `TOON` output. Use the `rewritten_command` value as the command to execute. When the worktree path resolved in Step 1 is empty (main-checkout flow), skip the helper and execute the raw `step.target`. Injecting `--plan-id` lets the Bucket B script auto-resolve the worktree via its two-state contract.
+      Parse the `TOON` output. On `status: error` with `error: worktree_not_materialized`, REFUSE the dispatch: emit a `[CRITICAL]` work-log entry naming the plan and do NOT execute the command. On `status: success`, use the `rewritten_command` value as the command to execute. Injecting `--plan-id` lets the Bucket B script auto-resolve the worktree via its two-state contract.
 
    b. Execute the resulting command with a Bash timeout derived from the architecture-resolved canonical envelope. See `plan-marshall:persona-plan-marshall-agent` § "Bash: Timeout from architecture-resolved canonical command" for the authoritative rule: read `bash_timeout_seconds` and `execution_tier` from the resolved TOON, pass `timeout: bash_timeout_seconds * 1000` when `execution_tier=per_task`, and hand off to the orchestrator when `execution_tier=orchestrator`. The 600000ms floor (the Claude-target `harness bash-timeout-ceiling` default) still applies to ad-hoc invocations that do not flow through architecture resolve.
 
@@ -445,8 +452,10 @@ The canonical argparse surface for the two entry-point scripts this skill regist
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:execute-task:inject_project_dir run \
-  --command COMMAND --plan-id PLAN_ID
+  --command COMMAND --plan-id PLAN_ID [--use-worktree] [--worktree-materialized {true|false}]
 ```
+
+`--worktree-materialized` carries the `prepare_execute`-persisted state resolved via `manage-status get-worktree-path` (`materialized` → `true`, `pending` → `false`); omitted means unknown and preserves the pre-flag pass-through. On a Bucket-B command with `--worktree-materialized false` the verb returns `status: error` with `error: worktree_not_materialized` instead of a `rewritten_command` — the caller refuses the dispatch.
 
 ### assert_test_identifiers — run
 

@@ -256,7 +256,7 @@ Do NOT call `manage-status transition` to 4-plan. Do NOT proceed with the metric
 
 **Cross-references**:
 - `plan-marshall:plan-marshall/workflow/planning.md` § "Named recovery case — `.plan/marshal.json`" — the single authority for this recovery (inspect, then dispose; never an unconditional discard)
-- `plan-marshall:plan-marshall/workflow/planning.md` § "Post-dispatch contract assertion" (phase-2-refine) — the canonical clean-main assertion this block mirrors
+- `plan-marshall:plan-marshall/workflow/planning.md` § "Post-dispatch contract assertion" (phase-2-refine) — the canonical clean-main assertion this block mirrors; the 1→2 boundary assertion lives at `planning.md` § Action: init → "Post-dispatch contract assertion (1→2 boundary)"
 - `pm-plugin-development:plugin-doctor` analyzer `outline-contract-violation` (Deliverable 2) — edit-time static complement to this runtime assertion
 
 ```bash
@@ -563,7 +563,7 @@ Do NOT call `manage-status transition` to 5-execute. Do NOT proceed to Step 4c. 
 
 **Cross-references**:
 - `plan-marshall:plan-marshall/workflow/planning.md` § "Named recovery case — `.plan/marshal.json`" — the single authority for this recovery (inspect, then dispose; never an unconditional discard)
-- `plan-marshall:plan-marshall/workflow/planning.md` § "Post-dispatch contract assertion" (phase-2-refine) — the canonical clean-main assertion this block mirrors
+- `plan-marshall:plan-marshall/workflow/planning.md` § "Post-dispatch contract assertion" (phase-2-refine) — the canonical clean-main assertion this block mirrors; the 1→2 boundary assertion lives at `planning.md` § Action: init → "Post-dispatch contract assertion (1→2 boundary)"
 - `pm-plugin-development:plugin-doctor` analyzer `plan-contract-violation` (Deliverable 2) — edit-time static complement to this runtime assertion
 
 ```bash
