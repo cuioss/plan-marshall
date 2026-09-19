@@ -163,3 +163,17 @@ class TestBootstrapDecisions:
         assert result['action'] == 'not_needed'
         assert result['template_status'] == 'unknown'
         assert 'warning' in result
+
+
+class TestBootstrapNamespaceContract:
+    def test_production_bootstrap_namespace_carries_dry_run(self):
+        """The regression the decision-table tests cannot see: they
+        monkeypatch cmd_generate, so a bootstrap namespace missing
+        ``dry_run`` still passes. Parse a real ``bootstrap`` argv through
+        the module's own production parser and assert the field exists —
+        ``cmd_generate`` dereferences ``args.dry_run`` directly, and without
+        the parser default every regeneration-bound bootstrap run raised
+        ``AttributeError`` on the fresh-clone path the verb exists for."""
+        args = _gen.build_parser().parse_args(['bootstrap', '--marketplace'])
+        assert args.func is _gen.cmd_bootstrap
+        assert args.dry_run is False

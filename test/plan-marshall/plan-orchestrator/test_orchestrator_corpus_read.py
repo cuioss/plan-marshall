@@ -218,6 +218,29 @@ class TestCorpusReadRefusals:
         assert result['status'] == 'error'
         assert result.get('body', None) is None
 
+    def test_bare_plan_without_digits_refused(self, plan_context):
+        _seed(plan_context)
+        root = _epic_dir(plan_context)
+        before = _tree_snapshot(root)
+        result = cmd_corpus_read(_variant(_READ_ARGS, plan='PLAN'))
+        assert result['status'] == 'error'
+        assert result['error'] == 'invalid_plan'
+        assert 'body' not in result
+        assert _tree_snapshot(root) == before
+
+    def test_duplicate_prefix_reports_ambiguous_spec(self, plan_context):
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-a.md', SPEC_BODY)
+        _write_spec(plan_context, 'PLAN-01-b.md', _OTHER_BODY)
+        root = _epic_dir(plan_context)
+        before = _tree_snapshot(root)
+        result = cmd_corpus_read(_variant(_READ_ARGS, plan='PLAN-01'))
+        assert result['status'] == 'error'
+        assert result['error'] == 'ambiguous_spec'
+        assert result['candidates'] == ['PLAN-01-a.md', 'PLAN-01-b.md']
+        assert 'body' not in result
+        assert _tree_snapshot(root) == before
+
 
 class TestCorpusReadNonVacuity:
     def test_body_hash_matches_fixture_bytes(self, plan_context):

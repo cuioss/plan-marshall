@@ -2746,29 +2746,48 @@ def cmd_corpus_read(args: argparse.Namespace) -> dict[str, Any]:
 
     The match reuses :func:`_spec_matches_row` (exact-or-prefix on the stem
     with the separating hyphen), so ``--plan PLAN-03`` resolves
-    ``PLAN-03-compliant-paths.md``. A plan id naming no spec returns
-    ``spec_not_found`` carrying ``available_specs``; an unreadable file returns
-    ``unreadable``; an unsafe slug returns ``invalid_slug``; a slug with no
-    store tree returns ``not_found``. An absent spec is never rendered as an
-    empty body.
+    ``PLAN-03-compliant-paths.md``. The ``--plan`` value itself is validated
+    against the anchored settled plan-id grammar
+    (:data:`_ADD_ROW_PLAN_ID_RE`) — a bare ``PLAN`` without its digits never
+    reaches matching. An exact stem match wins outright; a single prefix
+    match resolves; zero matches return ``spec_not_found`` carrying
+    ``available_specs``; several prefix matches return ``ambiguous_spec``
+    carrying ``candidates`` rather than silently returning the first file.
+    An unreadable file returns ``unreadable``; an unsafe slug returns
+    ``invalid_slug``; a slug with no store tree returns ``not_found``. An
+    absent spec is never rendered as an empty body.
     """
     invalid = _validate_slug(args.slug)
     if invalid:
         return _error(args.slug, 'invalid_slug', invalid)
     plan = str(getattr(args, 'plan', '') or '')
-    if not plan or '/' in plan or '\\' in plan or '..' in plan:
-        return _error(args.slug, 'invalid_plan', f'invalid --plan value: {plan!r}')
+    if not _ADD_ROW_PLAN_ID_RE.match(plan):
+        return _error(
+            args.slug, 'invalid_plan', f'--plan must be a plan id ({PLAN_ID_SEGMENT}), got: {plan!r}'
+        )
     root = _epic_root(args.slug, allow_archived=True)
     if not root.is_dir():
         return _error(args.slug, 'not_found', f'epic {args.slug!r} has no store tree')
     specs = _spec_paths(root)
-    spec = next((path for path in specs if _spec_matches_row(path, plan)), None)
-    if spec is None:
+    matches = sorted(path for path in specs if _spec_matches_row(path, plan))
+    exact = next((path for path in matches if path.stem == plan), None)
+    if exact is not None:
+        spec = exact
+    elif len(matches) == 1:
+        spec = matches[0]
+    elif not matches:
         return _error(
             args.slug,
             'spec_not_found',
             f'no spec file for plan {plan!r} in {PLANS_SUBDIR}/',
             available_specs=[path.name for path in specs],
+        )
+    else:
+        return _error(
+            args.slug,
+            'ambiguous_spec',
+            f'plan {plan!r} matches several spec files; pass the exact spec stem',
+            candidates=[path.name for path in matches],
         )
     text, error = _read_spec(spec)
     if text is None:

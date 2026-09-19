@@ -2727,7 +2727,9 @@ def cmd_preflight(args: argparse.Namespace) -> dict:
 # ============================================================================
 
 
-def main() -> int:
+def build_parser() -> argparse.ArgumentParser:
+    """Build the module's argparse parser (extracted so tests can parse
+    production argv without dispatching a verb)."""
     parser = argparse.ArgumentParser(
         description='Generate execute-script.py with embedded script mappings',
         epilog=(
@@ -2801,7 +2803,12 @@ def main() -> int:
         metavar='TARGET',
         help=('Platform target used when bootstrap generates. Overrides the value read from .plan/marshal.json.'),
     )
-    bootstrap_parser.set_defaults(func=cmd_bootstrap)
+    # cmd_generate dereferences args.dry_run directly, so the bootstrap
+    # namespace must carry it — mirroring the preflight precedent below.
+    # Without this default every bootstrap run that reaches regeneration
+    # (absent, invalid, or template-stale executor) raises AttributeError
+    # instead of generating.
+    bootstrap_parser.set_defaults(func=cmd_bootstrap, dry_run=False)
 
     # drift subcommand
     drift_parser = subparsers.add_parser('drift', help='Compare with current bundles state', allow_abbrev=False)
@@ -2863,7 +2870,11 @@ def main() -> int:
     )
     preflight_parser.set_defaults(func=cmd_preflight, dry_run=False)
 
-    args = parser.parse_args()
+    return parser
+
+
+def main() -> int:
+    args = build_parser().parse_args()
     result = args.func(args)
 
     from toon_parser import serialize_toon
