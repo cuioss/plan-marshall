@@ -115,6 +115,14 @@ Split on what the tests *assert*, so each resulting module has a nameable subjec
 An arbitrary halving splits one subject across two files and leaves neither module describable; the
 next author then cannot tell which half a new test belongs in.
 
+### Carving PRs by behaviour cluster
+
+Carve the pull request along the same behaviour-cluster boundaries as the split above: one cluster
+per PR, named for the behaviour it carries, never arbitrary halves of a module. A PR that mixes two
+clusters forces one review to hold two subjects; a PR per cluster keeps each review to a single
+nameable subject. The 400-line module budget and the 520-line single-class exemption decide whether
+a split is owed; the cluster boundary decides where the PR is cut.
+
 ### Grouping Related Tests
 
 Use nesting constructs (JUnit `@Nested`, Jest `describe`, etc.) when **3 or more tests** belong to the same logical group. Do not nest single or two tests.

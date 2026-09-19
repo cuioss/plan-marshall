@@ -512,6 +512,13 @@ A module whose whole content is a **single class** is exempt while that class's 
 lines — the ceiling is measured on the class, not on the module. Both documents above state the
 exemption and its reasoning; it is not restated here.
 
+Carve the pull request along the same behaviour-cluster boundaries: one cluster per PR into
+`test_{unit}_{cluster}.py` names, never arbitrary halves. The 400-line module budget decides whether
+a split is owed and the 520-line single-class exemption (measured on the class, not the module)
+decides the one exempt shape; the cluster boundary decides where the PR is cut. The
+language-agnostic statement is `plan-marshall:persona-module-tester` § "Splitting by behaviour
+cluster".
+
 ### Docstring content
 
 A test docstring states the invariant in the present tense. It does not narrate the incident that
