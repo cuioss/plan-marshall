@@ -338,6 +338,23 @@ def main() -> int:
     transition_parser = subparsers.add_parser('transition', help='Transition to next phase', allow_abbrev=False)
     add_plan_id_arg(transition_parser)
     transition_parser.add_argument('--completed', required=True, help='Completed phase')
+    transition_parser.add_argument(
+        '--allow-bare-transition',
+        action='store_true',
+        help=(
+            'Record an explicit exemption for a legitimately artifact-free '
+            '2-refine / 3-outline / 4-plan transition. Requires --bare-reason. '
+            'Persisted to status.metadata.phase_exemptions and decision-logged.'
+        ),
+    )
+    transition_parser.add_argument(
+        '--bare-reason',
+        default=None,
+        help=(
+            'Human-readable reason for a bare-transition exemption '
+            '(required with --allow-bare-transition).'
+        ),
+    )
     transition_parser.set_defaults(func=cmd_transition)
 
     # archive
