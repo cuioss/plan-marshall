@@ -29,7 +29,6 @@ blocks — because the shipped classification is the subject, not a fixture.
 
 import json
 from argparse import Namespace
-from pathlib import Path
 
 import pytest
 from _manifest_lanes import _IMMUNE_TO_OFF_CLASSES
@@ -82,8 +81,8 @@ _CANDIDATES = [*_FLOOR_STEPS, _OPT_OUT_STEP, _RECLASSIFIED_STEP, 'archive-plan']
 _FOOTPRINT = ['marketplace/bundles/plan-marshall/skills/demo/scripts/demo.py']
 
 
-def _compose_ns(plan_id: str, candidates: list[str] | None = None) -> Namespace:
-    """A Row-7 default compose over ``candidates`` — no matrix narrowing, no scope gate."""
+def _compose_ns(plan_id: str) -> Namespace:
+    """A Row-7 default compose over ``_CANDIDATES`` — no matrix narrowing, no scope gate."""
     return Namespace(
         plan_id=plan_id,
         change_type='feature',
@@ -92,12 +91,12 @@ def _compose_ns(plan_id: str, candidates: list[str] | None = None) -> Namespace:
         recipe_key=None,
         affected_files_count=5,
         phase_5_steps='quality-gate,module-tests',
-        phase_6_steps=','.join(_CANDIDATES if candidates is None else candidates),
+        phase_6_steps=','.join(_CANDIDATES),
         commit_and_push=None,
     )
 
 
-def _seed_marshal(off_steps: list[str], candidates: list[str] | None = None) -> Path:
+def _seed_marshal(off_steps: list[str]) -> None:
     """Write a marshal.json whose phase-6 steps map HAND-CARRIES the ``lane`` overrides.
 
     Written directly to disk rather than through ``manage-config``'s write surface
@@ -108,7 +107,7 @@ def _seed_marshal(off_steps: list[str], candidates: list[str] | None = None) -> 
     """
     from file_ops import get_marshal_path
 
-    steps = {c: ({'lane': 'off'} if c in off_steps else None) for c in (candidates or _CANDIDATES)}
+    steps = {c: ({'lane': 'off'} if c in off_steps else None) for c in _CANDIDATES}
     marshal = {
         'plan': {'phase-6-finalize': {'steps': steps}},
         'build': {'map': {'python': [{'glob': '**/*.py', 'role': 'production', 'build_class': 'compile'}]}},
@@ -116,7 +115,6 @@ def _seed_marshal(off_steps: list[str], candidates: list[str] | None = None) -> 
     marshal_path = get_marshal_path()
     marshal_path.parent.mkdir(parents=True, exist_ok=True)
     marshal_path.write_text(json.dumps(marshal, indent=2), encoding='utf-8')
-    return marshal_path
 
 
 def _write_execution_profile(plan_context, plan_id: str, posture: str) -> None:
