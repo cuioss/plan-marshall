@@ -70,6 +70,7 @@ schema itself is documented in
 import os
 import re
 import subprocess
+import time
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, NamedTuple
@@ -673,6 +674,92 @@ def _split_message(text: str) -> tuple[dict[str, str], str]:
     return parse_markdown_metadata(text), '\n'.join(lines[body_start:]).strip()
 
 
+# --- the `inbox validate` rejection vocabulary --------------------------------
+#
+# ONE set, and it is referenced AT the return sites below rather than restated
+# beside them — so the published vocabulary and the REACHABLE one are the same
+# thing rather than two lists that agree until one is edited.
+#
+# The consumer this replaces kept its own tuple and silently omitted
+# ``invalid_consume_state``. Because that tuple was the population a
+# documentation check ranged over, the check went on passing while the code it
+# never named went undocumented: an unmeasured gap wearing a clean pass, which
+# is the set-guarding-detector failure a derived population exists to remove.
+
+#: The BASE sweep's codes, in the fixed order :func:`validate_envelope` runs its
+#: checks.
+REJECT_MISSING_HEADER_FIELD = 'missing_header_field'
+REJECT_UNKNOWN_ENVELOPE_VERSION = 'unknown_envelope_version'
+REJECT_INVALID_SENDER_TYPE = 'invalid_sender_type'
+REJECT_INVALID_KIND = 'invalid_kind'
+REJECT_EMPTY_PAYLOAD = 'empty_payload'
+REJECT_EPIC_MISMATCH = 'epic_mismatch'
+REJECT_FILENAME_SENDER_MISMATCH = 'filename_sender_mismatch'
+
+#: The MESSAGE-STATE codes :func:`_validate_state_fields` returns, in its own
+#: check order.
+REJECT_INVALID_LIFECYCLE = 'invalid_lifecycle'
+REJECT_INVALID_REVISION = 'invalid_revision'
+REJECT_REVISION_NOT_MONOTONIC = 'revision_not_monotonic'
+REJECT_INVALID_SUPERSEDE_STATE = 'invalid_supersede_state'
+REJECT_INVALID_CONSUME_STATE = 'invalid_consume_state'
+
+#: The VERB's own codes — :func:`cmd_inbox_validate` raises these while
+#: resolving the address and the message, ahead of any envelope read.
+REJECT_INVALID_SLUG = 'invalid_slug'
+REJECT_INVALID_MESSAGE_NAME = 'invalid_message_name'
+REJECT_FILE_NOT_FOUND = 'file_not_found'
+
+ENVELOPE_BASE_REJECTION_CODES: tuple[str, ...] = (
+    REJECT_MISSING_HEADER_FIELD,
+    REJECT_UNKNOWN_ENVELOPE_VERSION,
+    REJECT_INVALID_SENDER_TYPE,
+    REJECT_INVALID_KIND,
+    REJECT_EMPTY_PAYLOAD,
+    REJECT_EPIC_MISMATCH,
+    REJECT_FILENAME_SENDER_MISMATCH,
+)
+
+ENVELOPE_STATE_REJECTION_CODES: tuple[str, ...] = (
+    REJECT_INVALID_LIFECYCLE,
+    REJECT_INVALID_REVISION,
+    REJECT_REVISION_NOT_MONOTONIC,
+    REJECT_INVALID_SUPERSEDE_STATE,
+    REJECT_INVALID_CONSUME_STATE,
+)
+
+#: Everything :func:`validate_envelope` can forward, by UNION of its two halves
+#: rather than by a third list — so a code added to either half is forwarded
+#: here by construction.
+ENVELOPE_REJECTION_CODES: tuple[str, ...] = (*ENVELOPE_BASE_REJECTION_CODES, *ENVELOPE_STATE_REJECTION_CODES)
+
+#: THE set the ``inbox validate`` surface is documented and checked against: the
+#: verb's own resolution codes plus everything the validator forwards.
+#:
+#: ⛔ ``invalid_envelope`` is deliberately OUT. It is the defensive fallback in
+#: ``_error(error_code or 'invalid_envelope', …)``, reachable only from a
+#: :func:`validate_envelope` that returned ``ok=False`` with no code — which no
+#: branch does. Publishing it would oblige the documentation to name a rejection
+#: no message can produce, which is the opposite failure to the one this set
+#: closes.
+INBOX_VALIDATE_REJECTION_CODES: tuple[str, ...] = (
+    REJECT_INVALID_SLUG,
+    REJECT_INVALID_MESSAGE_NAME,
+    REJECT_FILE_NOT_FOUND,
+    *ENVELOPE_REJECTION_CODES,
+)
+
+# Distinctness at construction, for the reason the declaring status sets in
+# ``orchestrator.py`` are checked the same way: a code repeated across the three
+# contributing tuples is absorbed the moment any consumer takes a set of this,
+# and the membership check it feeds then ranges over fewer codes than the tuple
+# appears to hold.
+assert len(INBOX_VALIDATE_REJECTION_CODES) == len({*INBOX_VALIDATE_REJECTION_CODES}), (
+    f'the inbox-validate rejection vocabulary carries {len(INBOX_VALIDATE_REJECTION_CODES)} entries but '
+    f'{len({*INBOX_VALIDATE_REJECTION_CODES})} distinct codes: one is repeated across the contributing tuples'
+)
+
+
 def validate_envelope(
     text: str, expected_epic: str | None = None, filename: str | None = None
 ) -> tuple[bool, str | None, dict[str, str]]:
@@ -711,21 +798,21 @@ def validate_envelope(
     header, body = _split_message(text)
     for field in HEADER_FIELDS:
         if not header.get(field):
-            return False, 'missing_header_field', header
+            return False, REJECT_MISSING_HEADER_FIELD, header
     if header['envelope_version'] != str(ENVELOPE_VERSION):
-        return False, 'unknown_envelope_version', header
+        return False, REJECT_UNKNOWN_ENVELOPE_VERSION, header
     if header['sender_type'] not in SENDER_TYPES:
-        return False, 'invalid_sender_type', header
+        return False, REJECT_INVALID_SENDER_TYPE, header
     if header['kind'] not in KINDS:
-        return False, 'invalid_kind', header
+        return False, REJECT_INVALID_KIND, header
     if not body:
-        return False, 'empty_payload', header
+        return False, REJECT_EMPTY_PAYLOAD, header
     if expected_epic is not None and header['epic'] != expected_epic:
-        return False, 'epic_mismatch', header
+        return False, REJECT_EPIC_MISMATCH, header
     if filename is not None:
         match = _MESSAGE_NAME_RE.match(filename)
         if match is None or match.group('sender') != header['sender_id']:
-            return False, 'filename_sender_mismatch', header
+            return False, REJECT_FILENAME_SENDER_MISMATCH, header
     state_error = _validate_state_fields(header)
     if state_error is not None:
         return False, state_error, header
@@ -743,27 +830,27 @@ def _validate_state_fields(header: dict[str, str]) -> str | None:
     """
     lifecycle = header.get(_LIFECYCLE_FIELD, LIFECYCLE_LIVE)
     if lifecycle not in LIFECYCLES:
-        return 'invalid_lifecycle'
+        return REJECT_INVALID_LIFECYCLE
     revision_raw = header.get(_REVISION_FIELD, '')
     revision = 0
     if revision_raw != '':
         if not revision_raw.isdigit():
-            return 'invalid_revision'
+            return REJECT_INVALID_REVISION
         revision = int(revision_raw)
     amended = header.get(_AMENDED_FIELD, '').strip()
     # Monotonicity: a revision advance and its amendment stamp move together.
     if (revision >= 1) != bool(amended):
-        return 'revision_not_monotonic'
+        return REJECT_REVISION_NOT_MONOTONIC
     superseded_by = header.get(_SUPERSEDED_BY_FIELD, '').strip()
     if (lifecycle == LIFECYCLE_SUPERSEDED) != bool(superseded_by):
-        return 'invalid_supersede_state'
+        return REJECT_INVALID_SUPERSEDE_STATE
     # The consumption marker's two halves move together, exactly as the
     # amendment's counter and stamp do: a ``lifecycle=consumed`` message with no
     # ``consumed_at``, or a ``consumed_at`` stamp on a message that is not
     # consumed, is a half-written marker and is rejected rather than read as a
     # consumption nobody can date.
     if (lifecycle == LIFECYCLE_CONSUMED) != bool(header.get(_CONSUMED_AT_FIELD, '').strip()):
-        return 'invalid_consume_state'
+        return REJECT_INVALID_CONSUME_STATE
     return None
 
 
@@ -1753,17 +1840,17 @@ def cmd_inbox_validate(args: Any) -> dict[str, Any]:
     """
     invalid = _validate_identifier(args.slug)
     if invalid:
-        return _error('invalid_slug', invalid, slug=args.slug)
+        return _error(REJECT_INVALID_SLUG, invalid, slug=args.slug)
     name = args.message
     if not _is_bare_filename(name):
         return _error(
-            'invalid_message_name',
+            REJECT_INVALID_MESSAGE_NAME,
             f'--message must be a bare filename inside inbox/, got: {name}',
             slug=args.slug,
         )
     path, location = resolve_message_path(_inbox_dir(args.slug), name)
     if location == 'missing':
-        return _error('file_not_found', f'inbox message not found: {path}', slug=args.slug)
+        return _error(REJECT_FILE_NOT_FOUND, f'inbox message not found: {path}', slug=args.slug)
     ok, error_code, header = validate_envelope(path.read_text(encoding='utf-8'), expected_epic=args.slug, filename=name)
     if not ok:
         return _error(
@@ -2141,20 +2228,127 @@ def cmd_inbox_read(args: Any) -> dict[str, Any]:
     }
 
 
-def _marked_consumed_at(path: Path) -> str:
-    """Return the ``consumed_at`` stamp recorded at ``path``, or ``''``.
+#: The bounded wait a caller that LOST the claim gives the winner to finish
+#: stamping it. The window being covered is tiny by construction: the winner
+#: stamps with one truncating write through an inode it already holds, so what
+#: sits between its ``os.link`` and that write is a scheduler gap, never a long
+#: operation. The wait is BOUNDED because the winner may instead be about to
+#: fail and release, and an unbounded wait would hang on a consumption that is
+#: never going to happen.
+_MARKER_WAIT_ATTEMPTS = 50
+_MARKER_WAIT_INTERVAL_SECONDS = 0.02
 
-    Reads the marker off the message itself rather than re-deriving it, so the
-    idempotent consume branch reports the ORIGINAL consumption instant instead of
-    the instant the repeat call observed it. A file that cannot be read yields
-    ``''`` — the stamp was not recovered, and inventing one would date a
+#: What :func:`_await_complete_marker` established about the claim it watched.
+#: Three members, because the two non-success outcomes are DIFFERENT facts and
+#: collapsing them would re-create the defect the wait exists to close:
+#:
+#: - ``complete`` — a marker carrying BOTH halves was observed; the consumption
+#:   happened and ``consumed_at`` names when.
+#: - ``released`` — the claim was withdrawn with no complete marker ever seen.
+#:   The winner hit its own error path and unlinked, so this is POSITIVE
+#:   knowledge that no consumption happened.
+#: - ``incomplete`` — the claim is still held and no complete marker appeared
+#:   within the wait. NOTHING was established; it is not a release and it is
+#:   not a consumption.
+_MARKER_COMPLETE = 'complete'
+_MARKER_RELEASED = 'released'
+_MARKER_INCOMPLETE = 'incomplete'
+
+
+def _complete_marker_stamp(path: Path) -> str:
+    """Return the ``consumed_at`` of a COMPLETE consumption marker, or ``''``.
+
+    Complete means BOTH halves the validator already treats as inseparable —
+    ``lifecycle=consumed`` AND a non-empty ``consumed_at``, the pair
+    ``invalid_consume_state`` is raised over. Reading the stamp ALONE is what
+    let a message a winner had claimed but not yet stamped pass as a recorded
+    consumption, so the lifecycle half is checked here rather than assumed.
+
+    The value is read off the marker itself rather than re-derived, so an
+    idempotent consume reports the ORIGINAL consumption instant instead of the
+    instant the repeat call observed it. A file that cannot be read yields
+    ``''``: the marker was not recovered, and inventing a stamp would date a
     consumption from a read that failed.
     """
     try:
         header, _ = _split_message(path.read_text(encoding='utf-8'))
     except (OSError, UnicodeDecodeError):
         return ''
+    if header.get(_LIFECYCLE_FIELD) != LIFECYCLE_CONSUMED:
+        return ''
     return header.get(_CONSUMED_AT_FIELD, '')
+
+
+def _await_complete_marker(claim: Path) -> tuple[str, str]:
+    """Watch a claim this caller lost until it completes or is withdrawn.
+
+    A single unretried read of the claim cannot tell a finished consumption
+    from one still in flight, and treating the second as the first is what let a
+    loser report ``already_consumed`` for a message that was then never marked
+    at all — the winner's own error path unlinks the claim, and by then the
+    loser had already answered. This function is the retry that closes it.
+
+    Check order is load-bearing: the marker is read BEFORE the claim's presence
+    is tested, so a marker that completed is honoured whatever happened to the
+    claim afterwards, and ``released`` is reached only when no complete marker
+    was ever observed.
+
+    Returns:
+        ``(state, consumed_at)`` where ``state`` is one of
+        :data:`_MARKER_COMPLETE` / :data:`_MARKER_RELEASED` /
+        :data:`_MARKER_INCOMPLETE`, and ``consumed_at`` carries the original
+        consumption instant on the complete branch and ``''`` on both others —
+        a stamp is never invented for an outcome that observed none.
+    """
+    for remaining in range(_MARKER_WAIT_ATTEMPTS, 0, -1):
+        stamp = _complete_marker_stamp(claim)
+        if stamp:
+            return _MARKER_COMPLETE, stamp
+        if not claim.exists():
+            return _MARKER_RELEASED, ''
+        if remaining > 1:
+            time.sleep(_MARKER_WAIT_INTERVAL_SECONDS)
+    return _MARKER_INCOMPLETE, ''
+
+
+def _consume_loser_outcome(address: ChannelAddress, name: str, claim: Path) -> dict[str, Any]:
+    """The answer a caller that lost the claim returns — success only on proof.
+
+    Both loser branches of :func:`consume_message` route through this one
+    function, so neither can drift back into reading a claim's mere PRESENCE as
+    proof of a consumption. Which branch got here says how the claim was
+    refused; it says nothing about whether the winner finished, and only the
+    marker does.
+
+    This is the loser-side half of the guarantee ``inbox-envelope.md``
+    § "Consumption is a claim, not a read-then-mark" states — *a claim that is
+    won but cannot be stamped is RELEASED, so a message that was never marked
+    can never report as already consumed*. The release half lives on the
+    winner's error path; without this half the guarantee held only for callers
+    that arrived after the release.
+    """
+    state, consumed_at = _await_complete_marker(claim)
+    if state == _MARKER_COMPLETE:
+        return _consume_success(address, name, claim, already_consumed=True, consumed_at=consumed_at)
+    if state == _MARKER_RELEASED:
+        return _error(
+            'consume_claim_released',
+            f'mailbox message {name} was claimed by a concurrent reader that released the claim without '
+            'marking the message, so no consumption was recorded; the message is still unconsumed and the '
+            'consume may be retried',
+            slug=address.epic_slug,
+            message_name=name,
+            claim_path=str(claim),
+        )
+    return _error(
+        'consume_marker_incomplete',
+        f'mailbox message {name} still holds the consumption claim at {claim}, and no complete '
+        f'{_LIFECYCLE_FIELD}={LIFECYCLE_CONSUMED} + {_CONSUMED_AT_FIELD} marker appeared across '
+        f'{_MARKER_WAIT_ATTEMPTS} read(s), so whether it was consumed is undetermined',
+        slug=address.epic_slug,
+        message_name=name,
+        claim_path=str(claim),
+    )
 
 
 def _consume_success(
@@ -2205,13 +2399,13 @@ def consume_message(epic_slug: str, plan_id: str, name: str) -> dict[str, Any]:
     The branches, each derived from the claim:
 
     - claim refused because the source is gone (``FileNotFoundError``) and the
-      claim token is present → idempotent success (``already_consumed``).
+      claim token is present → the LOSER OUTCOME below.
     - claim refused because the source is gone and no token exists →
       ``error: file_not_found``.
     - claim refused because the token exists (``FileExistsError``) and it is the
-      SAME inode as the source → idempotent success: the token is this message's
-      own consumption record, whether a concurrent winner is still stamping it or
-      finished long ago.
+      SAME inode as the source → the LOSER OUTCOME below: the token is this
+      message's own consumption record, but whether that record is FINISHED is a
+      separate question the inode identity does not answer.
     - claim refused because the token exists and is a DISTINCT inode → the token
       belongs to a different file that once held this name, so
       ``error: consume_conflict`` rather than clobbering that record.
@@ -2220,6 +2414,17 @@ def consume_message(epic_slug: str, plan_id: str, name: str) -> dict[str, Any]:
     - claim won but the message could not be read or rewritten → the claim is
       RELEASED and ``error: unreadable`` returned, so a message that was never
       marked can never report as already consumed on the next call.
+
+    **The loser outcome is decided by the MARKER, never by the token's
+    presence** (:func:`_consume_loser_outcome`). A token observed before its
+    winner has stamped it is indistinguishable, by presence alone, from a
+    finished consumption — and the winner may still fail and release it. So a
+    loser waits out the stamp and answers from what it actually saw: idempotent
+    success (``already_consumed``) only once a COMPLETE marker is observed,
+    ``error: consume_claim_released`` when the claim is withdrawn with no such
+    marker (positively, no consumption happened), and
+    ``error: consume_marker_incomplete`` when the claim is still held and the
+    marker never completed (nothing was established either way).
 
     Identifier validation is fail-closed through :func:`resolve_channel_address`
     (the read verb's contract, reusing the same codes), and the epic root
@@ -2262,13 +2467,7 @@ def consume_message(epic_slug: str, plan_id: str, name: str) -> dict[str, Any]:
         os.link(source, claim)
     except FileNotFoundError:
         if claim.is_file():
-            return _consume_success(
-                address,
-                name,
-                claim,
-                already_consumed=True,
-                consumed_at=_marked_consumed_at(claim),
-            )
+            return _consume_loser_outcome(address, name, claim)
         return _error(
             'file_not_found',
             f'mailbox message not found: {source}',
@@ -2292,13 +2491,7 @@ def consume_message(epic_slug: str, plan_id: str, name: str) -> dict[str, Any]:
                 message_name=name,
                 claim_path=str(claim),
             )
-        return _consume_success(
-            address,
-            name,
-            claim,
-            already_consumed=True,
-            consumed_at=_marked_consumed_at(claim),
-        )
+        return _consume_loser_outcome(address, name, claim)
     except OSError as exc:
         # Ordering is load-bearing: both narrow clauses above are OSError
         # subclasses and MUST stay above this one. A bare name that resolves to a

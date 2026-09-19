@@ -115,6 +115,11 @@ TERMINAL_PLAN_STATUSES = _orch.TERMINAL_PLAN_STATUSES
 LIVE_QUEUE_EXCLUDED_STATUSES = _orch.LIVE_QUEUE_EXCLUDED_STATUSES
 COUNT_CLAIM_NOUNS = _orch.COUNT_CLAIM_NOUNS
 
+#: The declaring-set roster the module's own construction check reports over —
+#: taken from the source rather than re-listed here, so the controls below range
+#: over whatever set the production partition is actually built from.
+DECLARED_STATUS_SETS = _orch._DECLARED_STATUS_SETS
+
 #: The count-claim machinery is reached through its private names deliberately:
 #: the KeyError this module pins is raised INSIDE ``_count_divergences`` at
 #: ``derived[key]``, so the join it would fail on — noun to alternation to
@@ -629,6 +634,19 @@ class TestQueueSetRow:
 # =============================================================================
 
 
+def _partition_surplus(*declaring_sets: Collection[str]) -> int:
+    """How many members the declaring sets carry beyond the distinct union.
+
+    The partition rule itself, lifted out so it can be applied to SYNTHETIC
+    declaring sets. The assertion below claims the rule sees two different
+    shapes — a value repeated inside one declaring set, and a value shared
+    between two — and a claim of that kind is only worth what its controls
+    prove, so the rule is exercised against both shapes rather than described.
+    """
+    declared = [status for members in declaring_sets for status in members]
+    return len(declared) - len({*declared})
+
+
 class TestStatusVocabularyConstruction:
     """The vocabulary is DERIVED from three declaring sets, and they partition it.
 
@@ -639,6 +657,14 @@ class TestStatusVocabularyConstruction:
     distinct comparison is the only thing that sees one), and the live-queue
     exclusion must remain the SAME OBJECT as the terminal set rather than an
     equal copy that a later edit could move independently.
+
+    ⛔ **The both-shapes claim rests on the declarations being SEQUENCES**, and
+    that dependency is pinned rather than assumed. A declaring set written as a
+    ``frozenset`` would discard its own repeat before the expansion ever saw it,
+    narrowing the check to cross-set overlap alone while the message went on
+    claiming both — the overclaiming-guard shape. The type control below fails
+    the moment a declaration stops preserving a repeat, so the message cannot
+    outlive the mechanism behind it.
     """
 
     def test_the_declaring_sets_partition_the_vocabulary_exactly(self):
@@ -652,6 +678,55 @@ class TestStatusVocabularyConstruction:
             f'the declaring sets carry {len(declared)} member(s) but only '
             f'{len(VALID_STATUS_VOCABULARY)} are distinct: a status is repeated within one '
             'set or shared between two, which the frozenset union would absorb silently'
+        )
+
+    def test_every_declaring_set_preserves_a_repeat_rather_than_absorbing_it(self):
+        """The property the intra-set half of the message depends on.
+
+        The roster comes from the production constant, so a fourth declaring set
+        added later is checked here without editing this test.
+        """
+        assert DECLARED_STATUS_SETS, 'the declaring-set roster is empty — this control checks nothing'
+
+        set_like = {
+            name: type(members).__name__
+            for name, members in DECLARED_STATUS_SETS.items()
+            if not isinstance(members, (tuple, list))
+        }
+        assert not set_like, (
+            f'{set_like} do not preserve a repeated member, so the partition check above sees '
+            'cross-set overlap ONLY — its message claims a shape the mechanism no longer has'
+        )
+
+    @pytest.mark.parametrize(
+        ('declaring_sets', 'expected_surplus'),
+        (
+            ((('staged', 'running'), ('shipped',)), 0),
+            ((('staged', 'running', 'staged'), ('shipped',)), 1),
+            ((('staged', 'running'), ('running', 'shipped')), 1),
+        ),
+        ids=['a-clean-partition', 'a-repeat-within-one-set', 'a-value-shared-between-two-sets'],
+    )
+    def test_the_partition_rule_sees_both_shapes_its_message_names(self, declaring_sets, expected_surplus):
+        """Both claimed shapes, against a clean partition that must stay silent.
+
+        The clean row is the matched control: without it a rule that reported a
+        surplus for everything would satisfy both positive rows.
+        """
+        assert _partition_surplus(*declaring_sets) == expected_surplus
+
+    def test_the_rule_is_the_one_the_real_partition_check_applies(self):
+        """The controls above are only load-bearing if this IS that comparison.
+
+        Asserted as an equality between the helper and the live expression over
+        the real declaring sets, so a helper that drifted from the production
+        rule fails here rather than certifying a rule nothing uses.
+        """
+        declared = [*LIVE_PLAN_STATUSES, *SHIPPED_PLAN_STATUSES, *CLOSED_UNSHIPPED_PLAN_STATUSES]
+
+        assert _partition_surplus(*DECLARED_STATUS_SETS.values()) == len(declared) - len(VALID_STATUS_VOCABULARY)
+        assert _partition_surplus(*DECLARED_STATUS_SETS.values()) == 0, (
+            'the shipped declaring sets already carry a surplus — the partition is broken'
         )
 
     def test_terminal_is_the_two_terminal_sets_joined_in_order(self):

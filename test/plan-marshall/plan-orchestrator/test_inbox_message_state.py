@@ -38,6 +38,12 @@ stamps on a message delivered to its mailbox:
   consumption that already happened rather than re-dating it, and **inode
   identity** — not the token's presence — is what separates that idempotent
   success from a ``consume_conflict`` over a token another file holds.
+- **the loser's answer**: inode identity settles whose record a refused token
+  is, never whether that record is FINISHED, so a caller that lost the claim
+  answers from the COMPLETE marker and not from the token. The two callers are
+  interleaved deterministically to pin it: a winner that claims, is observed,
+  and then releases must leave the loser refusing rather than reporting a
+  consumption that never happened.
 - **three states**: ``delivery_state`` keeps *consumed*,
   *delivered-but-unconsumed* and *never-delivered* separately representable, with
   *unmeasured* for a read that established nothing. The pair that would otherwise
@@ -52,6 +58,7 @@ stamps on a message delivered to its mailbox:
 import argparse
 import copy
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -74,7 +81,12 @@ LIFECYCLES = _inbox.LIFECYCLES
 STREAM_END_KIND = _inbox.STREAM_END_KIND
 ENVELOPE_VERSION = _inbox.ENVELOPE_VERSION
 WRITE_DESTINATION_MAILBOX = _inbox.WRITE_DESTINATION_MAILBOX
-MAILBOX_CONSUMED_SUBDIR = _inbox.MAILBOX_CONSUMED_SUBDIR
+#: Annotated because the channel module is loaded dynamically, so its
+#: attributes are opaque to the type checker — an un-annotated binding makes
+#: every ``Path / MAILBOX_CONSUMED_SUBDIR`` join resolve to ``Any``. The sibling
+#: ``test_inbox_delivery.py`` annotates ``INBOX_DELIVERY_SUBDIR`` for the same
+#: reason.
+MAILBOX_CONSUMED_SUBDIR: str = _inbox.MAILBOX_CONSUMED_SUBDIR
 
 #: The consumption vocabularies, imported from the source of truth rather than
 #: re-listed: the per-MESSAGE states and the per-ADDRESS delivery states, the
@@ -383,6 +395,23 @@ def _deliver(
 def _read_mailbox(plan_id: str = READER, slug: str = EPIC) -> dict[str, Any]:
     payload: dict[str, Any] = cmd_inbox_read(_variant(_READ_ARGS, slug=slug, plan_id=plan_id))
     return payload
+
+
+def _unstamped_claim(plan_context, message: str, plan_id: str = READER) -> Path:
+    """Reproduce a winner that has CLAIMED a message and not yet stamped it.
+
+    The in-flight state the loser branches have to survive, staged by hand
+    because it exists only inside another caller's ``consume_message`` — between
+    its ``os.link`` and the truncating write that follows. It is built with the
+    production primitive (``os.link``, the claim itself) rather than a copied
+    file, so the token is the message's own inode exactly as a real winner's is
+    and the inode-identity discriminator sees what it would really see.
+    """
+    source = _mailbox_dir(plan_context, plan_id) / message
+    claim = _mailbox_dir(plan_context, plan_id) / MAILBOX_CONSUMED_SUBDIR / message
+    claim.parent.mkdir(parents=True, exist_ok=True)
+    os.link(source, claim)
+    return claim
 
 
 # =============================================================================
@@ -1154,6 +1183,157 @@ class TestConsumptionMarker:
         assert consume_message('../evil', READER, f'{SENDER}-001.md')['error'] == 'invalid_slug'
         assert consume_message(EPIC, '../evil', f'{SENDER}-001.md')['error'] == 'invalid_target_plan'
         assert consume_message(EPIC, READER, '../status.json')['error'] == 'invalid_message_name'
+
+
+class TestALoserAnswersFromTheMarkerNotTheToken:
+    """The two callers interleaved: only a COMPLETE marker proves a consumption.
+
+    Inode identity settles WHOSE consumption record a refused token is; it says
+    nothing about whether that record is FINISHED. A loser that reads the token
+    once, before its winner has stamped it, sees exactly what a completed
+    consumption looks like — and the winner's error path then unlinks the claim,
+    leaving the loser's ``already_consumed`` describing a consumption that never
+    happened.
+
+    Every case here is a **matched pair** against
+    ``TestConsumptionMarker.test_consume_is_idempotent_and_keeps_the_original_instant``,
+    which is the positive arm: a genuinely stamped claim must keep reporting
+    ``already_consumed`` with the original instant. Without that arm a loser that
+    simply refused everything would satisfy all three cases below.
+
+    The interleave is DETERMINISTIC rather than raced. One process, so the only
+    point at which the loser yields is its own inter-read pause, and the winner's
+    release is driven from there.
+    """
+
+    @staticmethod
+    def _release_during_the_wait(monkeypatch, claim: Path) -> dict[str, int]:
+        """Make the winner's release land INSIDE the loser's wait.
+
+        Returns the call counter, asserted non-zero by each caller: a loser that
+        answered without ever waiting would never trip this, and the case would
+        be green over an interleave it did not exercise.
+        """
+        calls = {'count': 0}
+
+        def _releasing_sleep(_seconds: float) -> None:
+            calls['count'] += 1
+            claim.unlink(missing_ok=True)
+
+        monkeypatch.setattr(_inbox.time, 'sleep', _releasing_sleep)
+        return calls
+
+    def test_a_claim_released_before_it_was_stamped_is_not_a_consumption(self, plan_context, tmp_path, monkeypatch):
+        """THE case the guarantee names: released, so never consumed.
+
+        The refusal is asserted together with the message's own unmarked
+        envelope, so the answer is checked against the disk state it describes
+        rather than against itself.
+        """
+        cmd_scaffold(_SCAFFOLD_ARGS)
+        _mark_running(plan_context, READER)
+        message = _deliver(plan_context, tmp_path)
+        claim = _unstamped_claim(plan_context, message)
+        waits = self._release_during_the_wait(monkeypatch, claim)
+
+        loser = consume_message(EPIC, READER, message)
+
+        assert waits['count'] >= 1, 'the loser answered without waiting — the interleave was never exercised'
+        assert loser['status'] == 'error'
+        assert loser['error'] == 'consume_claim_released'
+        assert 'already_consumed' not in loser
+        # The refusal states a fact about the disk: the message really is unmarked.
+        assert 'lifecycle=' not in (_mailbox_dir(plan_context) / message).read_text(encoding='utf-8')
+        assert not claim.exists()
+
+    def test_a_claim_still_held_but_never_stamped_is_undetermined(self, plan_context, tmp_path, monkeypatch):
+        """The matched partner of the release case: a DIFFERENT non-success.
+
+        Released and still-in-flight are not the same fact — the first is
+        positive knowledge that nothing was consumed, the second is the absence
+        of any verdict — so they are asserted to carry different codes rather
+        than one shared refusal.
+        """
+        monkeypatch.setattr(_inbox, '_MARKER_WAIT_INTERVAL_SECONDS', 0)
+        cmd_scaffold(_SCAFFOLD_ARGS)
+        _mark_running(plan_context, READER)
+        message = _deliver(plan_context, tmp_path)
+        claim = _unstamped_claim(plan_context, message)
+
+        loser = consume_message(EPIC, READER, message)
+
+        assert loser['status'] == 'error'
+        assert loser['error'] == 'consume_marker_incomplete'
+        assert loser['error'] != 'consume_claim_released'
+        assert 'already_consumed' not in loser
+        # The loser touched neither the message nor the winner's claim.
+        assert claim.is_file()
+        assert 'lifecycle=' not in (_mailbox_dir(plan_context) / message).read_text(encoding='utf-8')
+
+    def test_a_half_written_marker_is_not_accepted_as_a_consumption(self, plan_context, tmp_path, monkeypatch):
+        """``consumed_at`` alone is what an unretried read used to accept.
+
+        The two halves are inseparable to the validator (``invalid_consume_state``),
+        so a token carrying the stamp without ``lifecycle=consumed`` is a marker
+        caught mid-write, not a record. Planted directly because no winner ever
+        leaves that state behind for longer than one write.
+        """
+        monkeypatch.setattr(_inbox, '_MARKER_WAIT_INTERVAL_SECONDS', 0)
+        cmd_scaffold(_SCAFFOLD_ARGS)
+        _mark_running(plan_context, READER)
+        message = _deliver(plan_context, tmp_path)
+        claim = _unstamped_claim(plan_context, message)
+        header, body = claim.read_text(encoding='utf-8').split('\n\n', 1)
+        claim.write_text(f'{header}\nconsumed_at=2020-05-05T00:00:00Z\n\n{body}', encoding='utf-8')
+
+        loser = consume_message(EPIC, READER, message)
+
+        assert 'consumed_at=2020-05-05T00:00:00Z' in claim.read_text(encoding='utf-8')
+        assert loser['status'] == 'error'
+        assert loser['error'] == 'consume_marker_incomplete'
+        assert 'already_consumed' not in loser
+
+    def test_a_complete_marker_still_reports_the_consumption_when_the_source_is_gone(self, plan_context, tmp_path):
+        """The OTHER loser branch, on its positive arm.
+
+        ``FileNotFoundError`` with a token present is the resumed-reader path,
+        and the stricter completeness test must not have closed it: the token
+        here carries a real, finished marker, so the repeat is still idempotent
+        success carrying the original instant.
+        """
+        cmd_scaffold(_SCAFFOLD_ARGS)
+        _mark_running(plan_context, READER)
+        message = _deliver(plan_context, tmp_path)
+        first = consume_message(EPIC, READER, message)
+        (_mailbox_dir(plan_context) / message).unlink()
+
+        repeated = consume_message(EPIC, READER, message)
+
+        assert first['already_consumed'] is False
+        assert repeated['status'] == 'success'
+        assert repeated['already_consumed'] is True
+        assert repeated['consumed_at'] == first['consumed_at']
+
+    def test_the_same_branch_refuses_when_that_token_carries_no_marker(self, plan_context, tmp_path, monkeypatch):
+        """The matched negative for the arm above — one branch, both answers.
+
+        Same code path, same token presence, differing in exactly one variable:
+        whether the token carries a complete marker. Asserting the pair is what
+        makes the success arm a property of the MARKER rather than of the branch.
+        """
+        monkeypatch.setattr(_inbox, '_MARKER_WAIT_INTERVAL_SECONDS', 0)
+        cmd_scaffold(_SCAFFOLD_ARGS)
+        _mark_running(plan_context, READER)
+        message = _deliver(plan_context, tmp_path)
+        claim = _unstamped_claim(plan_context, message)
+        (_mailbox_dir(plan_context) / message).unlink()
+
+        loser = consume_message(EPIC, READER, message)
+
+        assert claim.is_file()  # the token IS present — presence alone proves nothing
+        assert loser['status'] == 'error'
+        assert loser['error'] == 'consume_marker_incomplete'
+        assert loser['error'] != 'file_not_found'
 
 
 class TestThreeDeliveryStates:

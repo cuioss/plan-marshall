@@ -143,7 +143,17 @@ A filed message is corrected through the sanctioned surface, never by a direct f
 
 ### Consumption is a claim, not a read-then-mark
 
-Two readers must not both record a consumption of one message. The claim is the same primitive archival uses: `os.link` creates `inbox/to/{plan_id}/consumed/{name}` and never replaces an existing file, so the create IS the claim and every answer is derived from the claim's own outcome rather than from a presence check a racing caller could also clear. The winner then stamps the marker **through the claimed inode** (a truncating write, never an atomic replace), so the message and its claim token stay ONE file and **inode identity** remains the discriminator for every later caller: a refused claim over the same inode is this message's own consumption record and reports `already_consumed`, while a refused claim over a DISTINCT inode is a different file's record and is refused with `consume_conflict` rather than clobbered. A claim that is won but cannot be stamped is RELEASED, so a message that was never marked can never report as already consumed.
+Two readers must not both record a consumption of one message. The claim is the same primitive archival uses: `os.link` creates `inbox/to/{plan_id}/consumed/{name}` and never replaces an existing file, so the create IS the claim and every answer is derived from the claim's own outcome rather than from a presence check a racing caller could also clear. The winner then stamps the marker **through the claimed inode** (a truncating write, never an atomic replace), so the message and its claim token stay ONE file and **inode identity** remains the discriminator for every later caller: a refused claim over the same inode is this message's own consumption record, while a refused claim over a DISTINCT inode is a different file's record and is refused with `consume_conflict` rather than clobbered. A claim that is won but cannot be stamped is RELEASED, so a message that was never marked can never report as already consumed.
+
+⛔ **The release half of that guarantee needs a loser half, because inode identity says WHOSE record the token is and not whether that record is FINISHED.** A loser that observes the token between the winner's `os.link` and its stamp sees exactly what a completed consumption looks like by presence alone — and if the winner then fails, it unlinks, and the loser has already reported a consumption that never happened. So a caller that loses the claim decides from the MARKER rather than from the token, waiting out the winner's stamp over a bounded number of re-reads:
+
+| What the loser observed | Outcome |
+|-------------------------|---------|
+| A COMPLETE marker — `lifecycle=consumed` **and** `consumed_at`, the pair `invalid_consume_state` treats as inseparable | `status: success` with `already_consumed: true`, carrying the ORIGINAL `consumed_at` |
+| The claim withdrawn with no complete marker ever seen | `status: error, error: consume_claim_released` — positively, no consumption happened; the message is still unconsumed and the consume may be retried |
+| The claim still held, marker still incomplete when the wait ends | `status: error, error: consume_marker_incomplete` — nothing was established, which is neither a release nor a consumption |
+
+Reading only the `consumed_at` half is what made the half-written marker indistinguishable from the finished one, which is why the completeness test is the same inseparable pair the validator already enforces.
 
 ### The three delivery states
 

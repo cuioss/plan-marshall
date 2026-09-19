@@ -344,12 +344,19 @@ The agent returns confidence + track + scope_estimate + qgate_pending_count + qg
 
 **Mailbox check-point (`subagent-return`)**: reading that return TOON is the second of the two moments a running plan changes hands, so it is where mail delivered to the plan while the sub-agent held it can first be noticed. The check-point is **additive** — it never gates the dispatch, never changes how the return is consumed, and a mailbox that cannot be read degrades what it reports rather than the phase. Its anchor key and execution site are rostered in [`ref-workflow-architecture/standards/phase-lifecycle.md`](../../ref-workflow-architecture/standards/phase-lifecycle.md) § "Mailbox check-point roster", which is the sole enumeration of the check-point set.
 
+**All three calls are fail-open, and each names WHICH kind of shortfall it hit.** The repository's default convention — report `status: error` and do not proceed — is deliberately suspended for this whole block, because a check-point that is additive and *never a gate* cannot be allowed to stop the return processing it rides on. Every branch below therefore records the check-point and **continues**. The vocabulary is the one `manage-status`'s probe already publishes (`MAILBOX_PROBES` in `manage-status/scripts/_cmd_lifecycle.py`), and its two negative members are different facts that must not be blurred:
+
+- `unresolved` — the read verb was never reached: a call failed, returned `status: error`, or yielded no usable `source_id`. **Nothing** was established about the mailbox.
+- `not_orchestrated` — the classification succeeded and says this plan has no epic, so it has no mailbox. A **measured fact about the plan**, not a failure to look.
+
 1. Read the plan's provenance pointer (the same `request read` call § Action: init's issue-documentation hook makes):
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-documents request read \
      --plan-id {plan_id}
    ```
+
+   When the call fails, returns `status: error`, or returns no `source_id`, the plan has no readable provenance and the mailbox was never reached — record the check-point as `unresolved`, name the shortfall (the returned `error`, or that `source_id` was absent), **skip the rest of this check-point, and continue**. Do not report it as a plan with no epic: which of the two it is was not established.
 
 2. Classify the returned `source_id`. The classifier is pure — it reads nothing from disk — so it is the cheap way to learn whether this plan has an epic at all:
 
@@ -358,7 +365,9 @@ The agent returns confidence + track + scope_estimate + qgate_pending_count + qg
      --source-id {source_id}
    ```
 
-   When `orchestrated` is `false`, the plan belongs to no epic and therefore has no mailbox — **skip the rest of this check-point**. That is a measured fact about the plan, not a mailbox that came back empty, so do not report it as one.
+   When the call fails or returns `status: error`, no classification was obtained — record the check-point as `unresolved`, name the shortfall, **skip the rest of this check-point, and continue**.
+
+   When the call succeeds and `orchestrated` is `false`, the plan belongs to no epic and therefore has no mailbox — record the check-point as `not_orchestrated`, carrying the returned `detection` token as the reason, and **skip the rest of this check-point**. That is a measured fact about the plan, not a mailbox that came back empty, so do not report it as one.
 
 3. When `orchestrated` is `true`, read the mailbox at the returned `epic`:
 

@@ -56,11 +56,34 @@ in the same style as the existing ``test_step_termination_contract.py`` /
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
-from conftest import MARKETPLACE_ROOT, get_script_path, run_script
+from conftest import MARKETPLACE_ROOT, get_script_path, load_script_module, run_script
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'plan-orchestrator', 'orchestrator.py')
+
+#: The channel module, addressed by module-level string constants so the loader
+#: call stays statically resolvable to ``test_conftest_loader_contract``'s
+#: walker. ``register=False`` because only the published rejection vocabulary is
+#: read here, and publishing the stem would displace the registration the
+#: sibling in-process suites hold.
+_CHANNEL_BUNDLE = 'plan-marshall'
+_CHANNEL_SKILL = 'plan-orchestrator'
+_CHANNEL_SCRIPT = '_orchestrator_inbox.py'
+
+_channel = load_script_module(_CHANNEL_BUNDLE, _CHANNEL_SKILL, _CHANNEL_SCRIPT, register=False)
+
+#: The AUTHORITATIVE rejection vocabulary of the ``inbox validate`` surface,
+#: taken from the module that raises it. Restating it here is the defect this
+#: replaces: the previous hand-maintained tuple omitted ``invalid_consume_state``
+#: and, being the population the documentation check ranged over, kept that gap
+#: invisible — a code could be undocumented and the check still pass.
+INBOX_VALIDATE_REJECTION_CODES: tuple[str, ...] = _channel.INBOX_VALIDATE_REJECTION_CODES
+
+#: A numbered row of the SKILL.md rejection table: ``| 4 | `code` | raised by |``.
+#: The header and divider rows carry no leading integer, so neither matches.
+_REJECTION_ROW_RE = re.compile(r'^\|\s*\d+\s*\|\s*`([^`]+)`\s*\|')
 
 _PLAN_MARSHALL = MARKETPLACE_ROOT / 'plan-marshall' / 'skills'
 _ORCHESTRATION_MODEL = _PLAN_MARSHALL / 'persona-plan-orchestrator' / 'standards' / 'orchestration-model.md'
@@ -922,31 +945,57 @@ class TestDocContract:
         assert 'file_not_found' in section
         assert 'inbox/archive/' in section
 
-    def test_inbox_validate_still_lists_every_retained_rejection_code(self):
-        # The documented surface must name every code the verb can return. The
-        # tuple is the full reachable set of `cmd_inbox_validate` — the verb's own
-        # pre-resolution and resolution codes, `validate_envelope`'s base sweep,
-        # and `_validate_state_fields`' four state checks — so a code that stops
-        # being documented fails here rather than going quietly missing.
-        section = _section(_ORCHESTRATOR_SKILL.read_text(encoding='utf-8'), '### inbox validate')
+    def test_the_published_rejection_vocabulary_is_not_empty(self):
+        """The population every check below ranges over, guarded first.
 
-        for code in (
-            'invalid_slug',
-            'invalid_message_name',
-            'file_not_found',
-            'missing_header_field',
-            'unknown_envelope_version',
-            'invalid_sender_type',
-            'invalid_kind',
-            'empty_payload',
-            'epic_mismatch',
-            'filename_sender_mismatch',
-            'invalid_lifecycle',
-            'invalid_revision',
-            'revision_not_monotonic',
-            'invalid_supersede_state',
-        ):
-            assert code in section, code
+        An empty vocabulary would make both comparisons trivially true — the
+        exact shape of the failure a derived population replaces, one level up.
+        """
+        assert INBOX_VALIDATE_REJECTION_CODES, (
+            'the channel module publishes no rejection code, so the documentation comparisons '
+            'below would range over an empty set and pass without checking anything'
+        )
+        assert len(INBOX_VALIDATE_REJECTION_CODES) == len({*INBOX_VALIDATE_REJECTION_CODES}), (
+            f'{len(INBOX_VALIDATE_REJECTION_CODES)} entries resolve to '
+            f'{len({*INBOX_VALIDATE_REJECTION_CODES})} distinct codes — a repeat makes the set '
+            'comparison weaker than the tuple length suggests'
+        )
+
+    def test_inbox_validate_documents_exactly_the_published_rejection_codes(self):
+        """Set equality against the module that RAISES them, in both directions.
+
+        The population comes from ``_orchestrator_inbox`` rather than from a
+        tuple maintained beside it, so a code added to the validator reaches the
+        documentation or fails here. The reverse direction is asserted too: a
+        row for a code the verb cannot return is a documented rejection nothing
+        produces, which misleads a caller exactly as an omission does.
+        """
+        section = _section(_ORCHESTRATOR_SKILL.read_text(encoding='utf-8'), '### inbox validate')
+        documented = [match.group(1) for line in section.split('\n') if (match := _REJECTION_ROW_RE.match(line))]
+
+        assert documented, (
+            f'no numbered rejection row parsed from § ### inbox validate — the {len(INBOX_VALIDATE_REJECTION_CODES)} '
+            'published code(s) would be compared against an empty table'
+        )
+        assert set(documented) == set(INBOX_VALIDATE_REJECTION_CODES), (
+            f'undocumented: {sorted(set(INBOX_VALIDATE_REJECTION_CODES) - set(documented))}, '
+            f'documented but unraisable: {sorted(set(documented) - set(INBOX_VALIDATE_REJECTION_CODES))}'
+        )
+
+    def test_the_documented_order_is_the_order_the_checks_run(self):
+        """The table claims an order, so the order is compared, not just the set.
+
+        ``_orchestrator_inbox`` builds the vocabulary as the verb's own codes
+        followed by the base sweep and then the state checks — the sequence the
+        rejections actually fire in — and the table says it lists them "in the
+        order the checks run". A set equality alone would let the two drift.
+        """
+        section = _section(_ORCHESTRATOR_SKILL.read_text(encoding='utf-8'), '### inbox validate')
+        documented = [match.group(1) for line in section.split('\n') if (match := _REJECTION_ROW_RE.match(line))]
+
+        assert documented == list(INBOX_VALIDATE_REJECTION_CODES), (
+            f'the table lists {documented} against the published order {list(INBOX_VALIDATE_REJECTION_CODES)}'
+        )
 
     def test_drain_semantics_records_the_read_side_of_the_consume_marker(self):
         section = _section(_INBOX_ENVELOPE.read_text(encoding='utf-8'), '## Drain semantics')

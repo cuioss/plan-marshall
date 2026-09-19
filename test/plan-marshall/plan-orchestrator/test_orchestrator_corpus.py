@@ -79,6 +79,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from _dispatch_roster import section_lines
 
 from conftest import (
     MARKETPLACE_ROOT,
@@ -2402,6 +2403,20 @@ class TestCrossCheckPublishesTheCandidatePopulation:
         result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
 
         assert result['candidate_kinds'] == list(CANDIDATE_KINDS)
+        # The expected row count is DERIVED from the two declaring tuples, never
+        # written as their product: a hardcoded number turns a valid vocabulary
+        # extension red while production emits exactly the right rows. Guarded
+        # non-empty, because a product with an empty factor is zero and would
+        # make the equality below range over nothing.
+        expected_rows = len(CANDIDATE_KINDS) * len(CANDIDATE_DERIVATION_STATES)
+        assert expected_rows, (
+            f'{len(CANDIDATE_KINDS)} kind(s) x {len(CANDIDATE_DERIVATION_STATES)} state(s) is an empty '
+            'cross-product — the comparison below would check nothing'
+        )
+        assert len(result['candidate_derivation_states']) == expected_rows, (
+            f'{len(result["candidate_derivation_states"])} row(s) emitted against the {expected_rows} the '
+            'declared vocabularies span'
+        )
         assert [(row['candidate_kind'], row['derivation_status']) for row in result['candidate_derivation_states']] == [
             (kind, state) for kind in CANDIDATE_KINDS for state in CANDIDATE_DERIVATION_STATES
         ], (
@@ -2433,11 +2448,20 @@ class TestCrossCheckPublishesTheCandidatePopulation:
 
         tally = _candidate_tally(result)
         population = _candidate_population(result)
-        assert population == {
+        # The KEY SET is derived from the declared vocabulary and only the
+        # fixture's own counts are overridden onto it, so a kind added to
+        # ``CANDIDATE_KINDS`` arrives here as the stated zero a kind with no
+        # candidate legitimately reports. Hand-listing the keys instead made a
+        # VALID vocabulary extension turn this red while production emitted
+        # exactly the right rows — the test pinning the vocabulary rather than
+        # the behaviour.
+        assert CANDIDATE_KINDS, 'the declared kind vocabulary is empty — the derived expectation checks nothing'
+        expected_population = dict.fromkeys(CANDIDATE_KINDS, 0) | {
             CANDIDATE_KIND_SIBLING_EPIC_SPEC: 1,
             CANDIDATE_KIND_LIVE_PLAN: 1,
             CANDIDATE_KIND_CORPUS_SPEC: 2,
-        }, 'the candidate populations did not materialize'
+        }
+        assert population == expected_population, 'the candidate populations did not materialize'
         for kind in CANDIDATE_KINDS:
             assert sum(tally[(kind, state)] for state in CANDIDATE_DERIVATION_STATES) == population[kind], (
                 f'{kind} tally does not reconcile with the population it was computed over'
@@ -2460,6 +2484,97 @@ class TestCrossCheckPublishesTheCandidatePopulation:
         assert _candidate_population(result)[CANDIDATE_KIND_CORPUS_SPEC] == result['specs_total'] == 2
         assert tally[(CANDIDATE_KIND_CORPUS_SPEC, CANDIDATE_COMPARABLE)] == 1
         assert tally[(CANDIDATE_KIND_CORPUS_SPEC, CANDIDATE_UNREADABLE)] == 1
+
+    def test_an_indeterminate_candidate_refuses_the_determinacy_verdict(self, plan_context):
+        """The ENFORCEMENT half: publishing the count never blocked anything.
+
+        The ``next`` admission rule reads this verdict as its third conjunct, so
+        an indeterminate candidate has to make it false — otherwise a
+        declarative spec with no overlap row is admitted while part of the
+        comparison never happened.
+        """
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
+        _write_live_plan(plan_context, LIVE_PLAN_ID, affected_files=[])
+
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        assert result['candidates_indeterminate'] >= 1, 'the indeterminate candidate did not materialize'
+        assert result['file_overlap_match_count'] == 0, (
+            'the arm is only load-bearing where the overlap list is empty — that is the state a '
+            'two-conjunct rule read as clean'
+        )
+        assert result['candidate_comparison_determinate'] is False
+
+    def test_the_refused_verdict_names_the_kind_and_state_behind_it(self, plan_context):
+        """A refusal that says WHY, derived from the tally rather than composed.
+
+        Asserted against the tally in the same payload, so the reason is checked
+        against the rows it claims to summarise instead of against a literal.
+        """
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
+        broken = _epic_dir(plan_context, SIBLING_SLUG) / 'plans' / 'PLAN-77-broken.md'
+        broken.parent.mkdir(parents=True, exist_ok=True)
+        broken.write_bytes(b'\xff\xfe \xff')
+        _write_live_plan(plan_context, LIVE_PLAN_ID, affected_files=[])
+
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+        reason = result['candidate_indeterminate_reason']
+
+        assert result['candidate_comparison_determinate'] is False
+        tally = _candidate_tally(result)
+        non_contributing = [
+            (kind, state)
+            for kind in CANDIDATE_KINDS
+            for state in CANDIDATE_DERIVATION_STATES
+            if state in CANDIDATE_NON_CONTRIBUTING_STATES and tally[(kind, state)]
+        ]
+        assert non_contributing, 'the fixture produced no non-contributing candidate — the reason has nothing to name'
+        for kind, state in non_contributing:
+            assert f'{kind} {state}: {tally[(kind, state)]}' in reason, (
+                f'the reason {reason!r} does not name the {kind}/{state} cell it was derived from'
+            )
+
+    def test_a_fully_comparable_corpus_admits_and_names_nothing(self, plan_context):
+        """The matched control: the verdict is a MEASUREMENT, not a constant.
+
+        Without this arm a verdict hardwired to ``False`` — and a reason that
+        always said something — would satisfy both arms above.
+        """
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
+        _write_live_plan(plan_context, LIVE_PLAN_ID, affected_files=[OTHER_PATH])
+
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        assert result['candidates_comparable'] >= 2, 'the comparable population did not materialize'
+        assert result['candidates_indeterminate'] == 0
+        assert result['candidate_comparison_determinate'] is True
+        assert result['candidate_indeterminate_reason'] == '', (
+            'a determinate comparison must name no shortfall — a non-empty reason beside a true '
+            'verdict would give the admission site two answers'
+        )
+
+    def test_the_verdict_and_the_roll_up_can_never_disagree(self, plan_context):
+        """One fact, two fields — pinned across both arms in one test.
+
+        The admission site reads the verdict while a human reads the count, so a
+        payload in which they disagree misleads exactly one of them.
+        """
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
+        _write_live_plan(plan_context, 'fixture-live-comparable', affected_files=[OTHER_PATH])
+        determinate = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        _write_live_plan(plan_context, 'fixture-live-unmeasured', affected_files=[])
+        indeterminate = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        for payload in (determinate, indeterminate):
+            assert payload['candidate_comparison_determinate'] == (payload['candidates_indeterminate'] == 0)
+            assert bool(payload['candidate_indeterminate_reason']) is not payload['candidate_comparison_determinate']
+        assert determinate['candidate_comparison_determinate'] is True
+        assert indeterminate['candidate_comparison_determinate'] is False
 
     def test_the_payload_names_its_candidate_governing_authority(self, plan_context):
         _write_status(plan_context, [_row('PLAN-01')])
@@ -3873,6 +3988,208 @@ def test_a_spec_whose_bytes_are_not_utf8_is_unreadable_in_both_verbs(tmp_path):
     assert _orch._spec_claim(spec, PROJECT_ROOT) is None
     assert _orch._spec_record(SLUG, spec, PROJECT_ROOT) is None
     assert _orch._surface_state(spec, PROJECT_ROOT) == (SURFACE_UNREADABLE, None)
+
+
+# =============================================================================
+# Documentation synchronization — two hand-maintained vocabularies
+# =============================================================================
+#
+# Two prose blocks restate a set this module declares, and neither had a check
+# tying it to its declaring source — so either could drift silently while every
+# existing test stayed green:
+#
+# - ``persona-plan-orchestrator/standards/orchestration-model.md``
+#   § "What each status means" — a status -> bucket table restating
+#   ``VALID_STATUS_VOCABULARY`` and the three partitions it is built from. The
+#   existing status test reads ``plan-orchestrator/SKILL.md``, never this table.
+# - ``plan-orchestrator/workflow/orchestrate.md`` § the candidate schema — the
+#   ``candidate_kind`` x derivation-state enumeration, restating
+#   ``CANDIDATE_KINDS`` and ``CANDIDATE_DERIVATION_STATES``. The existing
+#   candidate tests assert on the verb's OUTPUT, never on this document.
+#
+# Every comparison below is a set EQUALITY, so a member added to the code and a
+# member left behind in the prose each fail — a membership test could only ever
+# prove presence. Each parsed population is guarded non-empty at IMPORT, the way
+# ``test_inbox_delivery.py`` guards its roster rows: a parse that silently
+# yielded nothing would make every equality here trivially true, which is the
+# same vacuous-green the blocks are being tied down to prevent.
+
+LIVE_PLAN_STATUSES = _orch.LIVE_PLAN_STATUSES
+SHIPPED_PLAN_STATUSES = _orch.SHIPPED_PLAN_STATUSES
+CLOSED_UNSHIPPED_PLAN_STATUSES = _orch.CLOSED_UNSHIPPED_PLAN_STATUSES
+VALID_STATUS_VOCABULARY = _orch.VALID_STATUS_VOCABULARY
+
+_ORCHESTRATION_MODEL_DOC = (
+    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'persona-plan-orchestrator' / 'standards' / 'orchestration-model.md'
+)
+_ORCHESTRATE_DOC = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-orchestrator' / 'workflow' / 'orchestrate.md'
+
+#: The table's heading, read verbatim from the deliverable: the walk is a
+#: heading-equality match, so a heading paraphrased here finds nothing.
+_STATUS_TABLE_HEADING = '### What each status means'
+
+#: A ``###`` heading does NOT start with ``'## '`` (its third character is a
+#: hash, not a space), so the sibling-section stop prefix has to be named
+#: alongside the top-level one or the walk runs past the end of the table.
+_STATUS_TABLE_STOPS = ('## ', '### ')
+
+#: The bucket label each declaring set is written as in the table's third
+#: column. This map is the ONE hand-maintained join in the check, and it is
+#: unavoidable: a bucket label is prose and cannot be derived from a tuple name.
+#: What keeps it honest is that the parsed label set is asserted EQUAL to these
+#: keys, so a relabelled or added bucket fails here rather than quietly dropping
+#: its rows out of every comparison below.
+_BUCKET_TO_DECLARING_SET = {
+    'LIVE': LIVE_PLAN_STATUSES,
+    'TERMINAL, shipped': SHIPPED_PLAN_STATUSES,
+    'TERMINAL, closed unshipped': CLOSED_UNSHIPPED_PLAN_STATUSES,
+}
+
+#: ``| `status` | what the row's work is | Bucket |``. The first cell is
+#: backticked and the third is the bucket label; the header and divider rows
+#: carry no backticked first cell, so neither matches.
+_STATUS_ROW_RE = re.compile(r'^\|\s*`([^`]+)`\s*\|[^|]*\|\s*([^|]+?)\s*\|\s*$')
+
+#: The token the candidate-schema sentence is anchored on. Both runs below are
+#: searched FROM it rather than from the top of the document, so a same-shaped
+#: run elsewhere in the file can never be read as this schema.
+_SCHEMA_ANCHOR = '`candidate_derivation_states[]`'
+
+#: The two enumerations that sentence writes, each matched as a WHOLE RUN rather
+#: than member by member — a slash-separated run of backticked tokens
+#: immediately before the word ``tally``, and the parenthesised comma-separated
+#: run immediately after ``per `candidate_kind```. Matching the run is what makes
+#: the comparison an equality: a per-member search would prove presence and could
+#: never show that the prose names nothing extra.
+_SCHEMA_STATES_RE = re.compile(r'((?:`[^`]+`\s*/\s*)+`[^`]+`)\s+tally')
+_SCHEMA_KINDS_RE = re.compile(r'per `candidate_kind`\s*\(((?:`[^`]+`(?:,\s*)?)+)\)')
+_BACKTICKED_RE = re.compile(r'`([^`]+)`')
+
+
+def _parse_status_table() -> list[tuple[str, str]]:
+    """Return ``(status, bucket)`` for every DATA row of the status table."""
+    body = section_lines(
+        _ORCHESTRATION_MODEL_DOC.read_text(encoding='utf-8'),
+        _STATUS_TABLE_HEADING,
+        stop_prefixes=_STATUS_TABLE_STOPS,
+    )
+    matches = (_STATUS_ROW_RE.match(line) for line in body)
+    return [(match.group(1), match.group(2)) for match in matches if match]
+
+
+def _parse_candidate_schema() -> tuple[list[str], list[str]]:
+    """Return the ``(states, kinds)`` the candidate-schema sentence enumerates.
+
+    Both are empty when the anchor or either run is absent, which the
+    import-time guard below turns into a loud failure rather than an equality
+    over nothing.
+    """
+    text = _ORCHESTRATE_DOC.read_text(encoding='utf-8')
+    anchor = text.find(_SCHEMA_ANCHOR)
+    if anchor == -1:
+        return [], []
+    states = _SCHEMA_STATES_RE.search(text, anchor)
+    kinds = _SCHEMA_KINDS_RE.search(text, anchor)
+    return (
+        _BACKTICKED_RE.findall(states.group(1)) if states else [],
+        _BACKTICKED_RE.findall(kinds.group(1)) if kinds else [],
+    )
+
+
+_STATUS_TABLE_ROWS: list[tuple[str, str]] = _parse_status_table()
+_SCHEMA_STATES, _SCHEMA_KINDS = _parse_candidate_schema()
+
+# Guarded at IMPORT, ahead of every comparison below, because each of the three
+# populations is the thing those comparisons range over. An empty parse is not a
+# documentation block with nothing in it — it is a parse that stopped matching
+# the prose, and it would make every equality below pass over two empty sets.
+assert _STATUS_TABLE_ROWS, (
+    f'no data row parsed from {_ORCHESTRATION_MODEL_DOC.name} § {_STATUS_TABLE_HEADING!r} — '
+    f'the status-table comparisons below would range over an empty set and pass without checking anything'
+)
+assert _SCHEMA_STATES and _SCHEMA_KINDS, (
+    f'the candidate schema in {_ORCHESTRATE_DOC.name} yielded {len(_SCHEMA_KINDS)} kind(s) and '
+    f'{len(_SCHEMA_STATES)} state(s) from the anchor {_SCHEMA_ANCHOR} — the schema comparisons '
+    f'below would range over an empty set and pass without checking anything'
+)
+
+
+class TestStatusTableIsSynchronizedWithItsDeclaringSets:
+    """The table restates ``VALID_STATUS_VOCABULARY`` and its three partitions."""
+
+    def test_the_table_names_exactly_the_status_vocabulary(self):
+        """Both directions: a status added to the code, and one left behind here."""
+        documented = {status for status, _ in _STATUS_TABLE_ROWS}
+
+        assert documented == set(VALID_STATUS_VOCABULARY), (
+            f'the {len(_STATUS_TABLE_ROWS)}-row table and the {len(VALID_STATUS_VOCABULARY)}-member '
+            f'vocabulary disagree — undocumented: {sorted(set(VALID_STATUS_VOCABULARY) - documented)}, '
+            f'documented but not declared: {sorted(documented - set(VALID_STATUS_VOCABULARY))}'
+        )
+        assert len(_STATUS_TABLE_ROWS) == len(documented), (
+            f'{len(_STATUS_TABLE_ROWS)} row(s) name only {len(documented)} distinct status(es): '
+            'a status is listed twice, so the set equality above is weaker than the row count suggests'
+        )
+
+    def test_every_row_sits_in_the_bucket_its_declaring_set_puts_it_in(self):
+        """The partition half: naming the status is not placing it correctly.
+
+        Asserted per bucket rather than over the flattened union, because a
+        status moved from one bucket to another leaves the union untouched — and
+        the bucket is what drives Ordered-Queue membership and the completeness
+        gap marker, so a mis-bucketed row misdirects both consumers.
+        """
+        labels = {bucket for _, bucket in _STATUS_TABLE_ROWS}
+        assert labels == set(_BUCKET_TO_DECLARING_SET), (
+            f'the table uses bucket label(s) {sorted(labels)} against the {len(_BUCKET_TO_DECLARING_SET)} '
+            f'this check knows: {sorted(_BUCKET_TO_DECLARING_SET)} — an unknown label would drop its rows '
+            'out of every per-bucket comparison below'
+        )
+
+        by_bucket: dict[str, set[str]] = {}
+        for status, bucket in _STATUS_TABLE_ROWS:
+            by_bucket.setdefault(bucket, set()).add(status)
+
+        for bucket, declared in _BUCKET_TO_DECLARING_SET.items():
+            assert by_bucket[bucket] == set(declared), (
+                f'bucket {bucket!r} documents {sorted(by_bucket[bucket])} but its declaring set holds '
+                f'{sorted(declared)}'
+            )
+
+
+class TestCandidateSchemaIsSynchronizedWithItsDeclaringTuples:
+    """The schema sentence restates both axes of the candidate cross-product."""
+
+    def test_the_schema_names_exactly_the_candidate_kinds_in_declared_order(self):
+        assert _SCHEMA_KINDS == list(CANDIDATE_KINDS), (
+            f'the schema names {_SCHEMA_KINDS} against the declared {list(CANDIDATE_KINDS)}'
+        )
+
+    def test_the_schema_names_exactly_the_derivation_states_in_declared_order(self):
+        assert _SCHEMA_STATES == list(CANDIDATE_DERIVATION_STATES), (
+            f'the schema names {_SCHEMA_STATES} against the declared {list(CANDIDATE_DERIVATION_STATES)}'
+        )
+
+    def test_the_documented_axes_span_the_cross_product_the_verb_emits(self, plan_context):
+        """The two axes joined, and compared against the real payload's rows.
+
+        The axes are checked against the declaring tuples above; this closes the
+        loop to the OUTPUT, so the document is tied to what a caller actually
+        receives rather than only to the constants behind it.
+        """
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
+
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        emitted = [(row['candidate_kind'], row['derivation_status']) for row in result['candidate_derivation_states']]
+        documented = [(kind, state) for kind in _SCHEMA_KINDS for state in _SCHEMA_STATES]
+        assert documented, 'the documented cross-product is empty — the import guard should have caught this'
+        assert emitted == documented, (
+            f'the verb emits {len(emitted)} (kind, state) row(s) and the document spans '
+            f'{len(documented)}: only in emitted {sorted(set(emitted) - set(documented))}, '
+            f'only in the document {sorted(set(documented) - set(emitted))}'
+        )
 
 
 # =============================================================================

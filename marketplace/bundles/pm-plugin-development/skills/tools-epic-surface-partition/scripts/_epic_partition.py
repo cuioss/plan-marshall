@@ -75,10 +75,14 @@ one, with the terminal claims recorded beside the verdict as
 :attr:`ModuleVerdict.retired`.
 
 ⛔ The partition is taken over the ledger's OWN status vocabulary — never a
-hard-coded plan-id list, and never the presence of a landing file. A status the
-vocabulary does not cover raises :class:`UnknownPlanStatusError` rather than
-defaulting into either bucket: silently bucketing an unrecognised status is how
-this degenerates into the plan list the module forbids, one level down.
+hard-coded plan-id list, and never the presence of a landing file. That
+vocabulary is IMPORTED from the module that writes it
+(``plan-marshall:plan-orchestrator``'s ``orchestrator.py``) rather than restated
+here: a restated copy named half the legal statuses and made every real ledger
+carrying one of the others unreadable. A status the vocabulary does not cover
+raises :class:`UnknownPlanStatusError` rather than defaulting into either
+bucket: silently bucketing an unrecognised status is how this degenerates into
+the plan list the module forbids, one level down.
 
 ⛔ **Lifecycle narrows the competing set; it never picks a winner among live
 plans.** A module contested between two or more ACTIVE plans stays contested —
@@ -108,6 +112,11 @@ from epic_spec_parser import (
     KIND_RECURSIVE_GLOB,
     SHAPE_LEAD,
     SpecClaim,
+)
+from orchestrator import (
+    LIVE_PLAN_STATUSES,
+    TERMINAL_PLAN_STATUSES,
+    VALID_STATUS_VOCABULARY,
 )
 
 #: The partition verdicts.
@@ -423,12 +432,48 @@ LIFECYCLE_ACTIVE = 'active'
 #: active plan's is a live claim. ``parked`` is ACTIVE by the same reading —
 #: paused work is unfinished work, and a parked plan resumes onto the surface it
 #: declared, so retiring its claim would hand that surface away while it waits.
-TERMINAL_STATUSES = frozenset({'landed', 'shipped'})
-ACTIVE_STATUSES = frozenset({'staged', 'running', 'parked'})
+#:
+#: ⛔ **IMPORTED from the declaring source, never restated here.** The ledger's
+#: vocabulary is declared once by ``plan-marshall:plan-orchestrator``'s
+#: ``orchestrator.py`` — the module that WRITES the ``status`` values this
+#: partition reads — and the same live/terminal split it already draws for the
+#: Ordered Queue is the split this module needs, because a row excluded from the
+#: live queue is exactly a row whose claim no longer competes.
+#:
+#: A second copy here was the defect: it named five of the ten legal statuses and
+#: omitted ``launched`` on the active side and ``superseded`` / ``transferred`` /
+#: ``retired`` / ``resolved`` on the terminal side, so a real epic ledger carrying
+#: any of them raised :class:`UnknownPlanStatusError` and the derivation could not
+#: run at all. Restating a set defined elsewhere is the hard-coded list this
+#: module's own docstring forbids, one level up from the plan-id list it was
+#: written against.
+#:
+#: Re-wrapped as frozensets because the declaring source publishes ORDERED tuples
+#: — order is load-bearing there (it is the order a queue renders in) and means
+#: nothing here, where every use is a membership test.
+TERMINAL_STATUSES = frozenset(TERMINAL_PLAN_STATUSES)
+ACTIVE_STATUSES = frozenset(LIVE_PLAN_STATUSES)
 
 #: Every status the partition covers. A ledger value outside this set is not
-#: bucketed by guess — see :class:`UnknownPlanStatusError`.
-KNOWN_STATUSES = TERMINAL_STATUSES | ACTIVE_STATUSES
+#: bucketed by guess — see :class:`UnknownPlanStatusError`. Taken from the
+#: declaring source's own union rather than re-unioned here, so this module
+#: cannot come to cover a different set than the two buckets above partition.
+KNOWN_STATUSES = frozenset(VALID_STATUS_VOCABULARY)
+
+# The two buckets must partition the covered set exactly: a status in neither is
+# a value :func:`lifecycle_of` would silently bucket as ACTIVE despite
+# :func:`read_plan_lifecycle` having admitted it, and one in both is a
+# contradiction the frozenset union hides. Checked at construction because
+# nothing else derives it — the union above comes from a third constant, so the
+# three can disagree without any of them looking wrong on its own.
+assert TERMINAL_STATUSES | ACTIVE_STATUSES == KNOWN_STATUSES, (
+    f'the imported lifecycle buckets cover {sorted(TERMINAL_STATUSES | ACTIVE_STATUSES)} but the '
+    f'covered vocabulary is {sorted(KNOWN_STATUSES)}'
+)
+assert not (TERMINAL_STATUSES & ACTIVE_STATUSES), (
+    f'{sorted(TERMINAL_STATUSES & ACTIVE_STATUSES)} is both terminal and active, so lifecycle_of '
+    'would report a bucket the partition contradicts'
+)
 
 #: Why the lifecycle input could not be read. Each is STATED on the returned
 #: :class:`PlanLifecycle` so a caller reporting all-plans-active can say whether

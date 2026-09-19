@@ -227,6 +227,8 @@ The CANDIDATE side of the comparison carries its own tally, so the disclosure is
 
 ⛔ **Read `file_overlap_matches[]` together with `candidates_indeterminate`.** An empty match list beside a non-zero indeterminate count is an UNCHECKED negative, not a clean pass: part of the comparison never happened. The payload names that rule in `candidate_governing_authority` (ADR-019), the candidate-side counterpart of the `governing_authority` field the surface side already carries. The two roll-ups answer different questions and neither substitutes for the other — `specs_indeterminate` is about what this epic's own specs declared, `candidates_indeterminate` about what they were compared against.
 
+That reading is also published as a VERDICT, so the rule is enforceable and not merely legible. `candidate_comparison_determinate` is `true` only when the WHOLE candidate population was comparable, and `candidate_indeterminate_reason` is the derived shortfall string naming which kind contributed which non-contributing state (empty when the verdict is `true`). The `next` admission rule consumes the verdict as a third conjunct beside the candidate's own `admits_disjointness_check` and the absence of an overlap row — see [`workflow/orchestrate.md`](workflow/orchestrate.md) § Step 4 — and it **fails closed**: an indeterminate comparison refuses the candidate rather than admitting it on an unexamined population. A consumer transcribes the reason rather than re-composing one from the counts.
+
 ### corpus surfaces
 
 ```bash

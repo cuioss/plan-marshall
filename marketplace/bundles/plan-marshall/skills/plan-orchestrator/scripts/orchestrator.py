@@ -3308,6 +3308,33 @@ def _live_candidate_state(record: dict[str, Any]) -> str:
     return CANDIDATE_COMPARABLE if record.get('comparable', bool(record['paths'])) else CANDIDATE_INDETERMINATE
 
 
+def _candidate_indeterminate_reason(tally: dict[str, dict[str, int]]) -> str:
+    """The shortfall reason a blocked ``next`` admission names, derived from the tally.
+
+    The empty string when every candidate declared a comparable surface. A
+    non-empty reason is the enforcement point's evidence: it names which kinds
+    contributed which non-contributing state, so a refused admission says WHY
+    rather than only refusing.
+
+    Derived rather than composed by its reader — the enforcement site is a
+    workflow doc, and a reason an LLM assembles from a count is a reason that
+    can be wrong about its own payload. Both loops walk the DECLARED
+    vocabularies in declared order (the state loop filtering on
+    :data:`CANDIDATE_NON_CONTRIBUTING_STATES`, which is itself derived by
+    subtraction), so a kind or state added later is named here with no edit and
+    a zero cell contributes nothing.
+    """
+    parts = [
+        f'{kind} {state}: {tally[kind][state]}'
+        for kind in CANDIDATE_KINDS
+        for state in CANDIDATE_DERIVATION_STATES
+        if state in CANDIDATE_NON_CONTRIBUTING_STATES and tally[kind][state]
+    ]
+    if not parts:
+        return ''
+    return f'candidate comparison indeterminate — {", ".join(parts)}'
+
+
 def cmd_corpus_cross_check(args: argparse.Namespace) -> dict[str, Any]:
     """Cross-check this epic's specs against sibling epics and live plans.
 
@@ -3328,6 +3355,14 @@ def cmd_corpus_cross_check(args: argparse.Namespace) -> dict[str, Any]:
     readable: beside a non-zero ``candidates_indeterminate`` it is an UNCHECKED
     negative, and the payload names that rule in
     ``candidate_governing_authority``.
+
+    That reading is published as a VERDICT rather than left to its reader:
+    ``candidate_comparison_determinate`` is true only when the whole candidate
+    population was comparable, and ``candidate_indeterminate_reason`` names what
+    was not. The ``next`` admission rule consumes the verdict as a third
+    conjunct alongside the candidate's own declarative surface and the absence
+    of an overlap row, so an indeterminate comparison refuses rather than
+    admitting on an unexamined population.
 
     Reports candidates and applies nothing: superseding is the workflow doc's
     inline, ledger-writing act, and no spec file is ever deleted.
@@ -3438,6 +3473,14 @@ def cmd_corpus_cross_check(args: argparse.Namespace) -> dict[str, Any]:
     live_checked_and_clean = sorted(
         record['name'] for record in live_comparable_records if record['name'] not in live_matched_names
     )
+    # Hoisted out of the payload literal because the determinacy VERDICT and the
+    # shortfall REASON are both derived from the same count, and the ``next``
+    # admission rule consults the verdict rather than re-deriving the comparison
+    # from the tally. Publishing it as a named field is what lets that rule be a
+    # field read instead of arithmetic performed at the enforcement site.
+    candidates_indeterminate = sum(
+        candidate_tally[kind][state] for kind in CANDIDATE_KINDS for state in CANDIDATE_NON_CONTRIBUTING_STATES
+    )
     return {
         'status': 'success',
         'operation': 'corpus-cross-check',
@@ -3495,9 +3538,16 @@ def cmd_corpus_cross_check(args: argparse.Namespace) -> dict[str, Any]:
         ],
         'candidates_total': sum(candidate_population.values()),
         'candidates_comparable': sum(candidate_tally[kind][CANDIDATE_COMPARABLE] for kind in CANDIDATE_KINDS),
-        'candidates_indeterminate': sum(
-            candidate_tally[kind][state] for kind in CANDIDATE_KINDS for state in CANDIDATE_NON_CONTRIBUTING_STATES
-        ),
+        'candidates_indeterminate': candidates_indeterminate,
+        # The ``next`` admission rule's third conjunct, published as a VERDICT so
+        # the enforcement site reads a field instead of re-deriving it. Without
+        # it a declarative spec with no overlap row was admitted while another
+        # candidate had never been comparable at all — admission on an
+        # unexamined population, the measured-zero-versus-unmeasured conflation
+        # the rest of this payload exists to prevent. Fails closed: the verdict
+        # is true only when the whole candidate population was comparable.
+        'candidate_comparison_determinate': candidates_indeterminate == 0,
+        'candidate_indeterminate_reason': _candidate_indeterminate_reason(candidate_tally),
         'source_origin_match_count': len(origin_matches),
         'source_origin_matches': origin_matches,
         'file_overlap_match_count': len(overlap_matches),
