@@ -916,8 +916,22 @@ Mark a phase as done and advance to next phase. Validates phase ordering.
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status transition \
   --plan-id {plan_id} \
-  --completed {phase_name}
+  --completed {phase_name} \
+  [--allow-bare-transition --bare-reason REASON]
 ```
+
+**Phase-completion artifact gate.** Bare `2-refine` / `3-outline` / `4-plan`
+transitions are refused unless the phase artifact exists: `2-refine` requires
+a clarified/confidence record (`request.md` `## Clarified Request` or
+`status.metadata.confidence`); `3-outline` requires a validating
+`solution_outline.md`; `4-plan` requires at least one `tasks/TASK-*.json`
+file or a composed `execution.toon`. Refusals are fail-closed with errors
+`refine_bare_transition`, `outline_bare_transition`, `plan_bare_transition`.
+A legitimately artifact-free phase uses the explicit exemption form
+`--allow-bare-transition --bare-reason REASON`, which persists to
+`status.metadata.phase_exemptions[{phase}]` (`{reason, granted_at}`) and is
+decision-logged for retrospectives. An exemption without a reason is refused
+with `missing_exempt_reason`.
 
 **Output** (TOON):
 ```toon
@@ -1442,7 +1456,7 @@ See § [census](#census) under Operations for the cohort table, the population-m
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status transition \
-  --plan-id PLAN_ID --completed PHASE
+  --plan-id PLAN_ID --completed PHASE [--allow-bare-transition --bare-reason REASON]
 ```
 
 ### archive

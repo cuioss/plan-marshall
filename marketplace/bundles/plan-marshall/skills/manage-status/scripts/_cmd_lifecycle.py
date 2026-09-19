@@ -168,6 +168,169 @@ def _clean_tree_refusal(plan_id: str, status: dict[str, Any]) -> dict[str, Any] 
     }
 
 
+def _has_refine_artifact(plan_id: str, status: dict[str, Any]) -> bool:
+    """Return True when a 2-refine completion carries its artifact.
+
+    Passes when EITHER holds (duplicated small check, no cross-skill import):
+
+    - ``request.md`` carries a non-empty ``clarified_request`` section
+      (``## Clarified Request`` heading with content), OR
+    - ``status.metadata.confidence`` is present (aggregate-confidence
+      ``--persist`` wrote the overall confidence).
+    """
+    metadata = status.get('metadata')
+    if isinstance(metadata, dict) and metadata.get('confidence') is not None:
+        return True
+    try:
+        request_path = get_plan_dir(plan_id) / 'request.md'
+    except Exception:
+        return False
+    try:
+        content = request_path.read_text(encoding='utf-8')
+    except Exception:
+        return False
+    lower = content.lower()
+    marker = '## clarified request'
+    idx = lower.find(marker)
+    if idx < 0:
+        return False
+    after = content[idx + len(marker) :]
+    # Cut at the next sibling-level heading; content before it must be non-empty.
+    next_heading = after.find('\n## ')
+    body = after[:next_heading] if next_heading >= 0 else after
+    return bool(body.strip())
+
+
+def _has_outline_artifact(plan_id: str) -> bool:
+    """Return True when a 3-outline completion carries a validating outline.
+
+    ``Validates`` means the file exists, is non-empty, and carries at least
+    one deliverable marker — the small duplicated check standing in for the
+    full ``manage-solution-outline validate`` contract (which the outline
+    phase itself still runs). A bare transition with zero artifacts fails.
+    """
+    try:
+        outline_path = get_plan_dir(plan_id) / 'solution_outline.md'
+    except Exception:
+        return False
+    try:
+        content = outline_path.read_text(encoding='utf-8')
+    except Exception:
+        return False
+    if not content.strip():
+        return False
+    return 'deliverable' in content.lower()
+
+
+def _has_plan_artifact(plan_id: str) -> bool:
+    """Return True when a 4-plan completion carries tasks or a manifest.
+
+    Passes when EITHER holds: at least one ``tasks/TASK-*.json`` file exists,
+    OR ``execution.toon`` (the composed manifest) exists. Both are checked by
+    filesystem presence only — no cross-skill import.
+    """
+    try:
+        plan_dir = get_plan_dir(plan_id)
+    except Exception:
+        return False
+    try:
+        task_files = [p for p in (plan_dir / 'tasks').glob('TASK-*.json') if p.is_file()]
+    except Exception:
+        task_files = []
+    if task_files:
+        return True
+    try:
+        return (plan_dir / 'execution.toon').is_file()
+    except Exception:
+        return False
+
+
+def _phase_artifact_refusal(args: argparse.Namespace, status: dict[str, Any]) -> dict[str, Any] | None:
+    """Phase-completion artifact gate for 2-refine / 3-outline / 4-plan.
+
+    Refuses a bare ``transition --completed {phase}`` unless the phase
+    artifact exists, with an explicit logged exemption for legitimately
+    artifact-free phases. The exemption is opt-in per call via
+    ``--allow-bare-transition`` plus a required ``--bare-reason``; it is
+    persisted to ``status.metadata.phase_exemptions[{phase}]`` and
+    decision-logged so retrospectives can see it. Returns ``None`` when the
+    transition may proceed (artifact present, exemption granted, or phase
+    not gated).
+    """
+    phase = getattr(args, 'completed', None)
+    if phase not in ('2-refine', '3-outline', '4-plan'):
+        return None
+    if status.get('kind') == 'orchestrator':
+        return None
+
+    has_artifact = False
+    if phase == '2-refine':
+        has_artifact = _has_refine_artifact(args.plan_id, status)
+    elif phase == '3-outline':
+        has_artifact = _has_outline_artifact(args.plan_id)
+    else:
+        has_artifact = _has_plan_artifact(args.plan_id)
+    if has_artifact:
+        return None
+
+    allow_bare = bool(getattr(args, 'allow_bare_transition', False))
+    reason = getattr(args, 'bare_reason', None)
+    if not allow_bare:
+        error_codes = {
+            '2-refine': 'refine_bare_transition',
+            '3-outline': 'outline_bare_transition',
+            '4-plan': 'plan_bare_transition',
+        }
+        artifact_names = {
+            '2-refine': 'a clarified/confidence record (request.md ## Clarified Request or status.metadata.confidence)',
+            '3-outline': 'a validating solution_outline.md',
+            '4-plan': 'at least one tasks/TASK-*.json file or a composed execution.toon',
+        }
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': error_codes[phase],
+            'phase': phase,
+            'message': (
+                f'Refusing bare {phase} transition: no phase artifact found '
+                f'({artifact_names[phase]}). Complete the phase artifact first, '
+                'or re-run with --allow-bare-transition --bare-reason REASON '
+                'to record an explicit exemption for a legitimately '
+                'artifact-free phase.'
+            ),
+        }
+    if not reason or not str(reason).strip():
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'missing_exempt_reason',
+            'phase': phase,
+            'message': (
+                f'--allow-bare-transition for {phase} requires '
+                '--bare-reason REASON. The exemption reason is persisted to '
+                'status.metadata.phase_exemptions and decision-logged; '
+                'an unlabeled exemption is a silent slip, so it is refused.'
+            ),
+        }
+
+    metadata = normalize_metadata(status)
+    exemptions = metadata.get('phase_exemptions')
+    if not isinstance(exemptions, dict):
+        exemptions = {}
+        metadata['phase_exemptions'] = exemptions
+    exemptions[phase] = {
+        'reason': str(reason).strip(),
+        'granted_at': now_utc_iso(),
+    }
+    log_entry(
+        'decision',
+        args.plan_id,
+        'INFO',
+        f'(plan-marshall:manage-status) Bare {phase} transition exempted: {str(reason).strip()}',
+    )
+    return None
+
+
 def _loop_back_auto_override(
     args: argparse.Namespace,
     status: dict[str, Any],
@@ -408,6 +571,14 @@ def cmd_transition(args: argparse.Namespace) -> dict[str, Any] | None:
         }
 
     completed_idx = phase_names.index(args.completed)
+
+    # Phase-completion artifact gate (PLAN-01): refuse bare 2-refine /
+    # 3-outline / 4-plan transitions unless the phase artifact exists, with
+    # an explicit logged exemption for legitimately artifact-free phases.
+    # Runs before any state mutation; on refusal current_phase is unchanged.
+    artifact_refusal = _phase_artifact_refusal(args, status)
+    if artifact_refusal is not None:
+        return artifact_refusal
 
     # Determine next phase early so the guard below can inspect it before any
     # state mutation. The standalone ``cmd_transition`` later computes the same
