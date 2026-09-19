@@ -61,8 +61,8 @@ This workflow dispatches under `--phase phase-6-finalize --role post-run-review`
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `--plan-id` | string | Conditional | Live plan identifier. Required for finalize-step mode and user-invocable live mode. |
-| `--archived-plan-path` | string | Conditional | Absolute path to an archived plan directory (`.plan/archived-plans/{date}-{plan_id}/`). Required for archived mode. Mutually exclusive with `--plan-id`. |
+| `--plan-id` | string | Yes | Plan identifier. Required in every mode — it keys the report, the fragment bundle, and the synthetic archived fallback. |
+| `--archived-plan-path` | string | No | Absolute path to an archived plan directory (`.plan/archived-plans/{date}-{plan_id}/`). Optional override honoured in archived mode only; when omitted, archived mode falls back to the synthetic per-plan directory. Never a substitute for `--plan-id`. |
 | `--session-id` | string | No | Optional session identifier. When present, the chat-history aspect is dispatched; otherwise it is skipped. |
 | `--iteration` | integer | No | Finalize-step iteration counter. Forwarded by `phase-6-finalize`; ignored by user-invocable and archived modes. |
 | `orchestrated` | bool | No | `true` when this plan was launched from an epic's staged plan spec, so Step 5b routes every proposal to the epic inbox instead of the global lessons store. In finalize-step mode the dispatcher forwards it (resolved once per finalize run at `phase-6-finalize/SKILL.md` Step 3 item 4b.a0); this body MUST NOT recompute it. |
@@ -70,10 +70,10 @@ This workflow dispatches under `--phase phase-6-finalize --role post-run-review`
 
 **Orchestration-context resolution per mode**: in **finalize-step mode** the dispatcher supplies `orchestrated` / `epic`. In **user-invocable live mode** (a real caller with no dispatcher) this body resolves them itself through the SAME two-call seam — `manage-plan-documents request read --plan-id {plan_id} --section source_id`, then `orchestrator inbox detect --source-id "{source_id}"` — never a third detector. **Archived mode is out of scope and unchanged**: it is a read-only historic audit of an already-landed plan, not part of an orchestrated plan's finalize run, and the epic tree may itself be archived — so archived mode never resolves orchestration context and never writes an inbox message.
 
-**Mode resolution**:
+**Mode resolution** (`--plan-id` is required in every mode):
 - `--plan-id` provided, invoked by `phase-6-finalize` → **finalize-step mode** (emit `mark-step-done` tail).
-- `--plan-id` provided, invoked by user or command → **user-invocable live mode** (no `mark-step-done` tail).
-- `--archived-plan-path` provided → **archived mode** (no `mark-step-done` tail, timestamped filename).
+- `--plan-id` provided, invoked by user or command, no `--mode archived` → **user-invocable live mode** (no `mark-step-done` tail).
+- `--plan-id` provided alongside archived-mode selection → **archived mode** (no `mark-step-done` tail, timestamped filename). `--archived-plan-path` is an optional override honoured only here; when omitted the synthetic per-plan fallback applies.
 
 Mode detection heuristic: when `--iteration` is present alongside `--plan-id`, treat as finalize-step mode; otherwise user-invocable live mode.
 
@@ -81,9 +81,9 @@ Mode detection heuristic: when `--iteration` is present alongside `--plan-id`, t
 
 ### Step 1: Validate Inputs and Resolve Plan Paths
 
-Validate mutual exclusion of `--plan-id` and `--archived-plan-path`. Resolve:
+Validate inputs (`--plan-id` required in every mode; `--archived-plan-path` is an optional archived-mode override, never a substitute). Resolve:
 - Live modes: `plan_dir = .plan/local/plans/{plan-id}/`
-- Archived mode: `plan_dir = --archived-plan-path` (verify directory exists).
+- Archived mode: `plan_dir = --archived-plan-path` when the override is supplied, otherwise the synthetic per-plan fallback (verify the resolved directory exists).
 
 **Canonical plan-status read** — when this workflow needs to read plan status (current phase, metadata, worktree binding) it MUST use the `manage-status` script's `read` subcommand. The supported invocation is:
 
