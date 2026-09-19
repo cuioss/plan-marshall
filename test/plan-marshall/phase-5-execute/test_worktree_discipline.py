@@ -13,7 +13,6 @@ import json
 from pathlib import Path
 
 import pytest
-
 from inject_project_dir import (
     WORKTREE_NOT_MATERIALIZED,
     guarded_inject,
@@ -202,9 +201,29 @@ def test_prepare_execute_flag_fail_closed_on_unreadable(tmp_path: Path, monkeypa
 
 def test_docs_name_boundaries_and_residual():
     repo = REPO_ROOT
-    planning = (repo / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'plan-marshall' / 'workflow' / 'planning.md').read_text(encoding='utf-8')
-    outline = (repo / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'plan-marshall' / 'workflow' / 'planning-outline.md').read_text(encoding='utf-8')
-    operations = (repo / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'phase-5-execute' / 'standards' / 'operations.md').read_text(encoding='utf-8')
+    planning = (
+        repo / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'plan-marshall' / 'workflow' / 'planning.md'
+    ).read_text(encoding='utf-8')
+    outline = (
+        repo
+        / 'marketplace'
+        / 'bundles'
+        / 'plan-marshall'
+        / 'skills'
+        / 'plan-marshall'
+        / 'workflow'
+        / 'planning-outline.md'
+    ).read_text(encoding='utf-8')
+    operations = (
+        repo
+        / 'marketplace'
+        / 'bundles'
+        / 'plan-marshall'
+        / 'skills'
+        / 'phase-5-execute'
+        / 'standards'
+        / 'operations.md'
+    ).read_text(encoding='utf-8')
 
     assert 'Post-dispatch contract assertion (1→2 boundary)' in planning
     assert 'Hand-off admission gate' in planning
