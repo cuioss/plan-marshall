@@ -133,10 +133,13 @@ def collect_manifest(plan_dir: Path) -> dict[str, Any]:
     Each entry contains ``path`` (plan-relative), ``kind`` (classification
     label), and ``size_bytes``. Directories are not listed; only files.
     Unreadable files (stat failures, mid-walk deletions) are skipped rather
-    than aborting the walk — the manifest states what it could read.
+    than aborting the walk — and every skipped path is recorded under
+    ``skipped_paths`` so the caller can degrade its status instead of
+    reporting a partial manifest as a clean success.
     """
     entries: list[dict[str, Any]] = []
     by_kind: dict[str, int] = {}
+    skipped: list[str] = []
 
     try:
         candidates = sorted(plan_dir.rglob('*'))
@@ -147,15 +150,18 @@ def collect_manifest(plan_dir: Path) -> dict[str, Any]:
             if not path.is_file():
                 continue
         except OSError:
+            skipped.append(str(path))
             continue
         try:
             rel = path.relative_to(plan_dir)
         except ValueError:
+            skipped.append(str(path))
             continue
         kind = classify_file(rel)
         try:
             size = path.stat().st_size
         except OSError:
+            skipped.append(str(rel))
             continue
         entries.append({'path': str(rel), 'kind': kind, 'size_bytes': size})
         by_kind[kind] = by_kind.get(kind, 0) + 1
@@ -164,6 +170,7 @@ def collect_manifest(plan_dir: Path) -> dict[str, Any]:
         'entries': entries,
         'by_kind': by_kind,
         'total_files': len(entries),
+        'skipped_paths': sorted(skipped),
     }
 
 
@@ -198,6 +205,22 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
             'reason': str(exc),
         }
 
+    if manifest['skipped_paths']:
+        return {
+            'status': 'partial',
+            'mode': args.mode,
+            'plan_id': args.plan_id or plan_dir.name,
+            'plan_dir': str(plan_dir),
+            'total_files': manifest['total_files'],
+            'by_kind': manifest['by_kind'],
+            'entries': manifest['entries'],
+            'skipped_paths': manifest['skipped_paths'],
+            'reason': (
+                f'{len(manifest["skipped_paths"])} unreadable file(s) skipped during '
+                'collection — the manifest is partial, not a clean success'
+            ),
+        }
+
     return {
         'status': 'success',
         'mode': args.mode,
@@ -206,6 +229,7 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
         'total_files': manifest['total_files'],
         'by_kind': manifest['by_kind'],
         'entries': manifest['entries'],
+        'skipped_paths': [],
     }
 
 
