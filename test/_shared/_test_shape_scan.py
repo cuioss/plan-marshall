@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Shared AST scan for the three mechanically-checkable test-harness shapes.
+"""Shared AST scan for the four mechanically-checkable test-harness shapes.
 
 Each shape below is a way for a test to stop testing what it names while still
 reporting green, so none of them is caught by running the suite -- that is
@@ -31,6 +31,16 @@ collection failure). Either way the emptiness is invisible at the binding site,
 so a derivation that silently came back empty makes every case it was meant to
 produce disappear. A non-vacuity assertion beside the derivation is what turns
 that into an attributable failure naming the population.
+
+**R6 -- a hand-built CLI namespace.** A seam-pinned dispatcher test that
+constructs its option object by hand carries only the attributes its author
+remembered, not the parser's defaults -- so a flag added later with a default
+breaks production while the suite stays green. The site is a module that both
+stages an argv (directly or through the ``monkeypatch.setattr`` staging form)
+and names the published ``build_parser`` seam; inside such a module every
+``Namespace``/``SimpleNamespace`` construction carrying the ``command`` routing
+key is reported, while a ``parse_ns`` call is the compliant form and is never
+reported.
 
 **Why R3 has no entry here.** R3 -- a hand-kept constant mirror, where a test
 restates a production constant as its own literal -- is not mechanically
@@ -634,3 +644,94 @@ def _cardinality_pinned_names(tree: ast.Module) -> set[str]:
             if isinstance(sub, ast.Assert):
                 pinned |= _positive_cardinality_names(sub.test)
     return pinned
+
+
+# =============================================================================
+# R6 -- hand-built CLI namespace
+# =============================================================================
+
+
+def _is_cli_driving_module(tree: ast.Module) -> bool:
+    """True when the module drives a seam-pinned CLI dispatcher over ``sys.argv``.
+
+    Both signals must hold: the module stages an argv (a direct ``sys.argv``
+    read or the ``monkeypatch.setattr(sys, 'argv', ...)`` staging form) AND it
+    names the published ``build_parser`` seam. The conjunction is the point: a
+    module that stages an argv without a published seam exercises a router
+    whose parser is only reachable through ``main`` (a different seam with its
+    own pre-dispatch behaviour), while a module that names the seam without
+    staging an argv asserts on the parser's shape rather than standing where
+    its output would stand. Only the conjunction is the population
+    ``parse_ns`` serves directly.
+    """
+    stages_argv = False
+    names_seam = False
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Attribute) and node.attr == 'argv':
+            value = node.value
+            if isinstance(value, ast.Name) and value.id == 'sys':
+                stages_argv = True
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+            if node.func.attr != 'setattr':
+                continue
+            receiver = node.func.value
+            if not (isinstance(receiver, ast.Name) and receiver.id == 'monkeypatch'):
+                continue
+            if len(node.args) < 2:
+                continue
+            target, name = node.args[0], node.args[1]
+            if (
+                isinstance(target, ast.Name)
+                and target.id == 'sys'
+                and isinstance(name, ast.Constant)
+                and name.value == 'argv'
+            ):
+                stages_argv = True
+        if isinstance(node, ast.Name) and node.id == 'build_parser':
+            names_seam = True
+        if isinstance(node, ast.Attribute) and node.attr == 'build_parser':
+            names_seam = True
+    return stages_argv and names_seam
+
+
+def _is_namespace_construction(node: ast.Call) -> bool:
+    """True when this call hand-builds a CLI-dispatched option object.
+
+    Only a construction carrying the ``command`` routing key counts: a CLI
+    dispatcher routes on the parsed subcommand, so a hand-built namespace that
+    names a command stands where the parser's own output would stand. A
+    namespace built for an in-process command function (``root``/``glob``,
+    ``plan_id``, ``pr_number``) names no command and is outside the
+    population, however it is spelled.
+    """
+    func = node.func
+    if isinstance(func, ast.Name) and func.id in {'Namespace', 'SimpleNamespace'}:
+        pass
+    elif isinstance(func, ast.Attribute) and func.attr in {'Namespace', 'SimpleNamespace'}:
+        pass
+    else:
+        return False
+    return any(kw.arg == 'command' for kw in node.keywords)
+
+
+def r6_hand_built_cli_namespace(paths: list[Path] | None = None) -> ScanResult:
+    """Hand-built dispatcher namespaces inside CLI-driving test modules.
+
+    A ``parse_ns`` call is the compliant form and is never reported -- only a
+    ``Namespace``/``SimpleNamespace`` construction carrying the ``command``
+    routing key, inside a module that drives a dispatcher over ``sys.argv``
+    (see :func:`_is_cli_driving_module`), is a hit.
+    """
+    result = ScanResult()
+    for path in paths if paths is not None else test_modules():
+        tree = _parse(path)
+        if tree is None:
+            result.unparseable.append(_rel(path))
+            continue
+        result.modules_examined += 1
+        if not _is_cli_driving_module(tree):
+            continue
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call) and _is_namespace_construction(node):
+                result.hits.append(f'{_rel(path)}:{node.lineno}: hand-built CLI namespace')
+    return result

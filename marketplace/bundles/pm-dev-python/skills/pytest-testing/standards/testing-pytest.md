@@ -584,6 +584,23 @@ The shared helper is `parse_ns(bundle, skill, script, *argv)`, exported from `te
 resolves the script, runs that script's own parser over `argv`, and returns the resulting namespace —
 so every default the parser declares is present, including ones added after the test was written.
 
+Define the CLI-accepted base argv once at module level and derive every accepted argv from it.
+The hoisted base is the argv the real parser accepts for the route under test; each test spreads
+it into `parse_ns` with only the flags it varies. A per-test literal copy of the base drifts
+silently when the CLI gains a required flag — the hoisted definition fails once, at the base,
+instead of passing everywhere on stale copies.
+
+```python
+# Hoisted base — the one accepted argv every test in this module derives from.
+BASE_ARGV = ('check', '--skill', 'sonarqube')
+
+
+def test_check_carries_global_scope_default():
+    args = parse_ns('plan-marshall', 'manage-providers', 'credentials.py', *BASE_ARGV)
+    assert args.command == 'check'
+    assert args.scope == 'global'
+```
+
 This is `plan-marshall:persona-module-tester` § "Foundation utilities — tests against the CLI" applied
 one layer lower: that section states the principle for the CLI entry point, and this is the same
 principle at the namespace layer.

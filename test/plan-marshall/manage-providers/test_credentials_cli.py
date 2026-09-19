@@ -18,7 +18,7 @@ import sys
 
 import pytest
 
-from conftest import load_script_module
+from conftest import load_script_module, parse_ns
 
 BUNDLE = 'plan-marshall'
 SKILL = 'manage-providers'
@@ -52,6 +52,12 @@ ROUTES = [
     (('remove', '--skill', 'sonarqube'), '_cred_remove.run_remove'),
     (('ensure-denied',), '_cred_ensure_denied.run_ensure_denied'),
 ]
+
+#: Hoisted CLI-accepted base argv — the one accepted argv every ``parse_ns``
+#: consumer in this module derives from. Each test spreads it with only the
+#: flags it varies, so a required flag added to the route fails once, here,
+#: instead of passing everywhere on stale per-test copies.
+HOISTED_BASE_ARGV = ('check', '--skill', 'sonarqube')
 
 
 @pytest.fixture
@@ -173,3 +179,12 @@ def test_unrouted_command_falls_through_to_1(cli, handler_calls, monkeypatch):
 
     assert code == 1
     assert handler_calls == []
+
+
+def test_hoisted_base_argv_carries_parser_defaults(cli):
+    """The hoisted base argv parses through the real parser with its defaults."""
+    args = parse_ns(BUNDLE, SKILL, SCRIPT, *HOISTED_BASE_ARGV, register=False)
+
+    assert args.command == 'check'
+    assert args.skill == 'sonarqube'
+    assert args.scope == 'global'

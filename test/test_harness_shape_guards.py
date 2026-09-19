@@ -19,6 +19,10 @@ carries into every later test in the session.
 is computed rather than displayed reports its own emptiness as a skip or a
 collection failure, never as the failure of the cases it was meant to produce.
 
+**R6 — a hand-built CLI namespace.** A CLI-driving test that constructs its
+option object by hand carries only the attributes its author remembered, so a
+flag added later with a default breaks production while the suite stays green.
+
 Why each shape is a defect in detail, and what each predicate does and
 deliberately does not report, is stated in :mod:`_test_shape_scan` beside the
 predicate itself. The general, forward-looking form of the three rules lives in
@@ -57,6 +61,7 @@ _PREDICATES = (
     ('R1', shape_scan.r1_cross_slice_filename_pins),
     ('R4', shape_scan.r4_presence_keyed_restores),
     ('R5', shape_scan.r5_unguarded_runtime_parametrize),
+    ('R6', shape_scan.r6_hand_built_cli_namespace),
 )
 
 # ⛔ Vacuity guard — every loop below iterates this table, so an empty one would
@@ -534,3 +539,55 @@ def test_r5_credits_a_helper_guard_only_for_the_population_it_returns(tmp_path: 
 
     assert not guarded.hits, f'R5 flagged a helper asserting the very result it returns: {guarded.hits}'
     assert len(vacuous.hits) == 1, f'R5 credited an assertion about the input of a narrowing helper: {vacuous}'
+
+
+# =============================================================================
+# R6 — hand-built CLI namespace
+# =============================================================================
+
+
+def test_no_cli_driving_module_hand_builds_its_namespace() -> None:
+    """The armed guard: no CLI-driving module constructs its option object by hand."""
+    result = shape_scan.r6_hand_built_cli_namespace()
+
+    assert result.clean, _guard_report(
+        'hand-built CLI namespace(s)', result, 'test_no_cli_driving_module_hand_builds_its_namespace'
+    )
+
+
+def test_r6_catches_a_synthetic_hand_built_namespace(tmp_path: Path) -> None:
+    """Matched negative control — a predicate that never fires cannot guard."""
+    leaking = _write(
+        tmp_path,
+        'synthetic_r6.py',
+        'import argparse\nimport sys\n\n\ndef drive(monkeypatch, cli):\n'
+        '    cli.build_parser()\n'
+        "    monkeypatch.setattr(sys, 'argv', ['credentials.py', 'check'])\n"
+        "    args = argparse.Namespace(command='check')\n"
+        "    assert args.command == 'check'\n",
+    )
+    result = shape_scan.r6_hand_built_cli_namespace([leaking])
+
+    assert len(result.hits) == 1, f'R6 did not catch a synthetic hand-built namespace: {result}'
+
+
+def test_r6_passes_a_synthetic_parse_ns_consumer(tmp_path: Path) -> None:
+    """Matched POSITIVE control — the real parser is not the defect.
+
+    Paired with the control above because the two differ by exactly the call
+    that makes one compliant. A predicate keyed on any namespace-typed value
+    would flag both, and the rule would then be read as forbidding the helper
+    it exists to require.
+    """
+    compliant = _write(
+        tmp_path,
+        'synthetic_r6_compliant.py',
+        'import sys\nfrom conftest import parse_ns\n\n\ndef drive(monkeypatch, cli):\n'
+        '    cli.build_parser()\n'
+        "    monkeypatch.setattr(sys, 'argv', ['credentials.py', 'check'])\n"
+        "    args = parse_ns('plan-marshall', 'manage-providers', 'credentials.py', 'check')\n"
+        "    assert args.command == 'check'\n",
+    )
+    result = shape_scan.r6_hand_built_cli_namespace([compliant])
+
+    assert not result.hits, f'R6 flagged a parse_ns call as a hand-built namespace: {result.hits}'

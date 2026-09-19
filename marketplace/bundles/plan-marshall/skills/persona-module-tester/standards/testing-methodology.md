@@ -448,6 +448,18 @@ A collapse must name the in-process test that now carries the contract. Without 
 cannot distinguish a collapse (coverage preserved at a better layer) from a deletion (coverage gone) —
 and the two look identical in a diff that only removes lines.
 
+### Hoisted base argv — one accepted invocation, derived per test
+
+Where tests drive a command-line interface, the accepted base invocation is defined once and every
+test derives its own invocation from it. Command arguments come from the real parser, never as a
+hand-constructed option object: a hand-built options object carries only the attributes its author
+remembered, so a flag added later with a default breaks production while the suite stays green.
+The hoisted base is the one accepted argv the parser accepts for the route under test; each test
+derives from it with only the flags it varies. This is the one-layer-per-contract companion at the
+namespace layer — the in-process parsing contract is asserted once, at the base, rather than
+re-declared per test on stale copies. The Python binding is `pm-dev-python:pytest-testing`
+§ "Command arguments come from the real parser".
+
 ## Express a Guard's Population by Role, Not by Another Slice's Filename
 
 **Trigger**: A test module carries a **path literal naming a test module another slice owns** — a
