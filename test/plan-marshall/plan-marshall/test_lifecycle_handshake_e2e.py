@@ -321,6 +321,22 @@ def test_lifecycle_captures_handshakes_for_all_phases(
     plan_id = 'e2e-handshake-lifecycle'
     plan_dir = plan_context.plan_dir_for(plan_id)
     _create_plan(plan_id)
+    # Phase-gate artifacts: the 2-refine / 3-outline / 4-plan gates require
+    # phase artifacts, so seed them up front to isolate the handshake
+    # behavior under test from the bare-transition refusal.
+    (plan_dir / 'request.md').write_text(
+        '# Request\n\n## Original Input\n\norig\n\n## Clarified Request\n\nclarified body\n',
+        encoding='utf-8',
+    )
+    (plan_dir / 'solution_outline.md').write_text(
+        '# Solution\n\n## Deliverables\n\n### Deliverable 1\n\nBody\n',
+        encoding='utf-8',
+    )
+    tasks_dir = plan_dir / 'tasks'
+    tasks_dir.mkdir(parents=True, exist_ok=True)
+    (tasks_dir / 'TASK-001.json').write_text(
+        '{"number": 1, "title": "seed", "status": "pending"}', encoding='utf-8'
+    )
 
     prev_phase: str | None = None
     # Capture for the five phases that have a "next phase" (1-init through

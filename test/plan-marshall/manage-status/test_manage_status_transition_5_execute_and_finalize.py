@@ -179,6 +179,13 @@ def test_transition_4_plan_skips_handshake_verify_on_drift(plan_context, _stubbe
     """cmd_transition --completed 4-plan ignores handshake drift."""
     plan_id = 'transition-4plan-skip'
     _seed_plan_with_4_plan_capture(plan_id)
+    # Phase-gate artifact: the 4-plan gate requires tasks or a manifest, so
+    # seed one task file to isolate the drift-blindness under test from the
+    # bare-transition refusal.
+    plan_dir = plan_context.plan_dir_for(plan_id)
+    tasks_dir = plan_dir / 'tasks'
+    tasks_dir.mkdir(parents=True, exist_ok=True)
+    (tasks_dir / 'TASK-001.json').write_text('{"title": "seed"}', encoding='utf-8')
 
     _stubbed_invariants['main_sha'] = 'drifted-sha-4plan'
 
