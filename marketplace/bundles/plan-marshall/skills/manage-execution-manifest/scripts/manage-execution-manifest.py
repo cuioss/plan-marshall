@@ -159,7 +159,7 @@ from _references_core import (
     compute_plan_branch_diff,
     resolve_base_ref,
 )
-from _step_key_canonical import canonicalize_step_key
+from _step_key_canonical import canonicalize_step_key, is_valid_step_key
 from constants import FILE_REFERENCES
 from file_ops import (
     WorktreeResolutionError,
@@ -2798,6 +2798,24 @@ def cmd_record_step(args: argparse.Namespace) -> dict[str, Any] | None:
             'plan_id': plan_id,
             'error': 'invalid_outcome',
             'message': f'Invalid outcome: {args.outcome!r}. Must be one of {list(VALID_RECORD_OUTCOMES)}',
+        }
+
+    # Reject a malformed join key before anything is persisted. The execution-log
+    # key must reconcile with the positional-CSV dispatch-boundary row, which
+    # refuses commas and line separators — so this writer refuses the identical
+    # key space through the shared _step_key_canonical.is_valid_step_key
+    # predicate (canonicalization neither introduces nor removes such
+    # characters, so validating the raw id guards the stored key too).
+    if not is_valid_step_key(args.step_id):
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'invalid_step_id',
+            'message': (
+                'Invalid step_id: the execution-log join key must not contain a comma '
+                'or any line separator — it must reconcile with the positional-CSV '
+                'dispatch-boundary row, which refuses such keys.'
+            ),
         }
 
     manifest = read_manifest(plan_id)

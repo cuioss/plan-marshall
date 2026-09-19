@@ -49,6 +49,7 @@ from _ledger_reconciliation import (
     reconcile_phase,
 )
 from _plan_parsing import extract_deliverable_headings, parse_document_sections
+from _step_key_canonical import is_valid_step_key
 from constants import FILE_STATUS, FILE_WORK_METRICS, PHASES
 from file_ops import (
     PlanNotFoundError,
@@ -3529,8 +3530,11 @@ def cmd_record_dispatch_boundary(args: argparse.Namespace) -> dict:
     # timestamp-window fallback — never as a pairing claim. The cell is
     # positional CSV, so a key carrying a comma or a newline would shift every
     # column after it; reject such a key rather than writing a corrupt row.
+    # The predicate is shared with the record-step writer (manage-execution-
+    # manifest) via script-shared so both writers accept the identical key
+    # space — see _step_key_canonical.is_valid_step_key.
     step_id = getattr(args, 'step_id', None) or ''
-    if ',' in step_id or step_id.splitlines() not in ([], [step_id]):
+    if not is_valid_step_key(step_id):
         return {
             'status': 'error',
             'error': 'invalid_step_id',

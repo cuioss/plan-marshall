@@ -17,7 +17,10 @@ cover:
   row; reading back reflects the recorded sequence);
 - ``execution_log_count`` tracking the running row count;
 - the missing-manifest error path (TOON ``file_not_found``);
-- input-validation rejection of an unknown phase / outcome;
+- input-validation rejection of an unknown phase / outcome / malformed step_id
+  (a comma or any line separator in --step-id is refused, mirroring the
+  record-dispatch-boundary writer so the two writers accept the identical key
+  space);
 - a CLI subprocess roundtrip exercising the executor plumbing.
 
 Mirrors the tier-2 direct-import + CLI-subprocess split used by the sibling
@@ -504,6 +507,39 @@ def test_record_invalid_outcome_returns_error(plan_context):
     assert result['status'] == 'error'
     assert result['error'] == 'invalid_outcome'
     assert EXECUTION_LOG_KEY not in (read_manifest('rec-bad-outcome') or {})
+
+
+def test_record_step_id_containing_comma_rejected_before_any_write(plan_context):
+    """The join key must reconcile with the positional-CSV boundary row: a comma is refused."""
+    _compose('rec-step-id-comma')
+
+    result = cmd_record_step(_record_ns(plan_id='rec-step-id-comma', step_id='step,a'))
+
+    assert result is not None
+    assert result['status'] == 'error'
+    assert result['error'] == 'invalid_step_id'
+    assert EXECUTION_LOG_KEY not in (read_manifest('rec-step-id-comma') or {})
+
+
+def test_record_step_id_containing_any_line_separator_rejected(plan_context):
+    """Every line separator breaks the joined row, not just '\\n' — splitlines decides."""
+    _compose('rec-step-id-sep')
+
+    for bad_key in (
+        'step\r\nid',
+        'step\rid',
+        'step\x0bid',
+        'step\x0cid',
+        'step' + chr(0x2028) + 'id',
+        'step' + chr(0x2029) + 'id',
+    ):
+        result = cmd_record_step(_record_ns(plan_id='rec-step-id-sep', step_id=bad_key))
+
+        assert result is not None, bad_key
+        assert result['status'] == 'error', (bad_key, result)
+        assert result['error'] == 'invalid_step_id', (bad_key, result)
+
+    assert EXECUTION_LOG_KEY not in (read_manifest('rec-step-id-sep') or {})
 
 
 def test_record_phase_validated_before_manifest_read(plan_context):
