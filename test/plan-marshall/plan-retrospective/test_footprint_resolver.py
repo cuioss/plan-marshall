@@ -587,3 +587,124 @@ def test_docstring_tier_count_equals_the_tiers_resolve_footprint_consults():
     consulted = [tier for tier, marker in _TIER_CALL_MARKERS.items() if marker in source]
     assert sorted(consulted) == sorted(_fr.RESOLVING_TIERS)
     assert len(consulted) == documented_resolving
+
+
+# =============================================================================
+# Split-plan footprint union — per-shard diffs over every shipped merge commit
+# =============================================================================
+
+
+def test_split_read_missing_key_is_none():
+    assert _fr.read_split_shard_shas({}) is None
+
+
+def test_split_read_non_list_is_none():
+    assert _fr.read_split_shard_shas({'merge_commit_shas': 'deadbeef'}) is None
+
+
+def test_split_read_returns_sorted_deduped():
+    refs = {'merge_commit_shas': ['bbb', 'aaa', 'bbb', '  ', 'aaa']}
+    assert _fr.read_split_shard_shas(refs) == ['aaa', 'bbb']
+
+
+def test_split_read_empty_list_is_resolved_empty():
+    assert _fr.read_split_shard_shas({'merge_commit_shas': []}) == []
+
+
+def test_split_union_equals_sum_of_shard_diffs(tmp_path):
+    """Two shipped landings: the union equals the sum of the shard diffs."""
+    repo = tmp_path / 'repo'
+    _init_repo(repo)
+    _commit(repo, 'base', {'base.txt': 'base\n'})
+    shard_a = _commit(repo, 'shard A landing', {'feat/a.py': 'a\n'})
+    shard_b = _commit(repo, 'shard B landing', {'feat/b.py': 'b\n'})
+    refs = {'merge_commit_shas': [shard_a, shard_b]}
+
+    union, gaps = _fr.resolve_split_plan_footprint(repo, refs)
+    assert gaps == []
+    assert union == {'feat/a.py', 'feat/b.py'}
+
+
+def test_split_union_dedupes_overlapping_paths(tmp_path):
+    """Overlapping shard paths are de-duplicated, and the input order is normalized."""
+    repo = tmp_path / 'repo'
+    _init_repo(repo)
+    _commit(repo, 'base', {'base.txt': 'base\n'})
+    shard_a = _commit(repo, 'shard A landing', {'feat/shared.py': 'a\n', 'feat/only-a.py': 'a\n'})
+    shard_b = _commit(repo, 'shard B landing', {'feat/shared.py': 'b\n', 'feat/only-b.py': 'b\n'})
+    # Reversed input order plus a duplicate entry: the union is still exact.
+    refs = {'merge_commit_shas': [shard_b, shard_a, shard_a]}
+
+    union, gaps = _fr.resolve_split_plan_footprint(repo, refs)
+    assert gaps == []
+    assert union == {'feat/shared.py', 'feat/only-a.py', 'feat/only-b.py'}
+
+
+def test_split_unresolvable_shard_reported_as_gap(tmp_path):
+    """One good shard plus one bad SHA: the union holds the good set and the gap names the bad SHA."""
+    repo = tmp_path / 'repo'
+    _init_repo(repo)
+    _commit(repo, 'base', {'base.txt': 'base\n'})
+    good = _commit(repo, 'good shard landing', {'feat/good.py': 'g\n'})
+    bad = '0' * 40
+    refs = {'merge_commit_shas': [good, bad]}
+
+    union, gaps = _fr.resolve_split_plan_footprint(repo, refs)
+    assert union == {'feat/good.py'}
+    assert gaps == [bad]
+
+
+def test_split_all_unresolvable_returns_none_with_gaps(tmp_path):
+    """Every shard unresolvable: no union to report, and the gaps name every shard."""
+    repo = tmp_path / 'repo'
+    _init_repo(repo)
+    _commit(repo, 'base', {'base.txt': 'base\n'})
+    bad_a = '0' * 40
+    bad_b = '1' * 40
+    refs = {'merge_commit_shas': [bad_a, bad_b]}
+
+    union, gaps = _fr.resolve_split_plan_footprint(repo, refs)
+    assert union is None
+    assert gaps == sorted([bad_a, bad_b])
+
+
+def test_split_no_key_returns_no_union_no_gaps(tmp_path):
+    """No split-plan key: the helper answers (None, []) so the single-SHA tier applies."""
+    union, gaps = _fr.resolve_split_plan_footprint(tmp_path, {'merge_commit_sha': 'abc'})
+    assert union is None
+    assert gaps == []
+
+
+def test_split_empty_list_is_resolved_empty_union(tmp_path):
+    """A present-but-empty shard list is a resolved-empty union, never the sentinel."""
+    union, gaps = _fr.resolve_split_plan_footprint(tmp_path, {'merge_commit_shas': []})
+    assert union == set()
+    assert gaps == []
+
+
+def test_split_tier_takes_precedence_over_single_sha(tmp_path):
+    """When the split key is present the union decides, not the single SHA."""
+    repo = tmp_path / 'repo'
+    _init_repo(repo)
+    _commit(repo, 'base', {'base.txt': 'base\n'})
+    single = _commit(repo, 'single landing', {'single.py': 's\n'})
+    shard_a = _commit(repo, 'shard A landing', {'feat/a.py': 'a\n'})
+    shard_b = _commit(repo, 'shard B landing', {'feat/b.py': 'b\n'})
+    _write_refs(repo, {'merge_commit_sha': single, 'merge_commit_shas': [shard_a, shard_b]})
+
+    resolved = _fr.resolve_footprint(repo, None)
+    assert resolved == {'feat/a.py', 'feat/b.py'}
+
+
+def test_split_union_flows_through_the_whole_chain(tmp_path):
+    """The whole-chain resolver answers the split union for an archived split plan."""
+    repo = tmp_path / 'repo'
+    _init_repo(repo)
+    _commit(repo, 'base', {'base.txt': 'base\n'})
+    shard_a = _commit(repo, 'shard A landing', {'feat/a.py': 'a\n'})
+    shard_b = _commit(repo, 'shard B landing', {'feat/b.py': 'b\n'})
+    _write_refs(repo, {'merge_commit_shas': [shard_a, shard_b]})
+
+    resolved = _fr.resolve_footprint(repo, None)
+    assert _fr.footprint_resolved(resolved)
+    assert resolved == {'feat/a.py', 'feat/b.py'}
