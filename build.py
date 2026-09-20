@@ -109,7 +109,13 @@ _FRESHNESS_SUSPECT_RC = 3
 # per-session subdirectory here (see _prepare_session_basetemp) instead of the
 # shared pytest-of-{user} root, so concurrent worktrees and a killed-then-
 # restarted session never share a basetemp and never race each other's cleanup.
+# The suite owns only `.plan/temp/pytest-*`; standalone fixtures live under
+# `.plan/temp/scratch/` (see test/conftest.py TEST_FIXTURE_BASE). This module
+# prepares and prunes only the pytest-owned root, never the scratch subtree.
 PYTEST_BASETEMP_ROOT = Path('.plan/temp/pytest-basetemp')
+# Standalone fixture root. Named here so the ownership split reads in both
+# places; this module never creates, lists, or prunes it.
+SCRATCH_ROOT = Path('.plan/temp/scratch')
 # Retention is bounded on TWO dimensions, because neither implies the other and
 # only the second is the one that actually grows.
 #
@@ -247,11 +253,18 @@ def _prepare_session_basetemp() -> Path:
     per-session dirs, holding at most ``PYTEST_BASETEMP_MAX_ENTRIES`` entries
     between them. The session about to run is NOT bounded by this function — it
     is created after the prune and grows as the suite writes to it. Bringing it
-    back inside the budget is the next invocation's prune.
+    back inside the budget is the next invocation's prune. Only the pytest-owned
+    root is touched; the ``SCRATCH_ROOT`` subtree is never listed or pruned.
     """
     PYTEST_BASETEMP_ROOT.mkdir(parents=True, exist_ok=True)
     _prune_basetemp_roots()
-    return PYTEST_BASETEMP_ROOT / f'{os.getpid()}-{uuid.uuid4().hex}'
+    session = PYTEST_BASETEMP_ROOT / f'{os.getpid()}-{uuid.uuid4().hex}'
+    # Temp ownership split: the per-session dir stays inside the pytest-owned
+    # prefix and never under the scratch subtree, and the pid-uuid4 key keeps
+    # concurrent sessions from colliding.
+    assert session.parent == PYTEST_BASETEMP_ROOT
+    assert 'scratch' not in session.parts
+    return session
 
 
 # Single source of truth: delegate to collect_script_dirs so mypy_path matches runtime PYTHONPATH.

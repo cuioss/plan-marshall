@@ -79,6 +79,58 @@ def test_creates_output_file(tmp_path):
     assert output.exists()
 ```
 
+### Scoped temp-root pruning
+
+A per-test guard that walks a shared temp root to verify no stray files were left behind must walk
+only the test's own footprint, never the shared root. A recursive walk from the shared fixture base
+or the pytest basetemp tree descends into every sibling test's sandbox plus version-control object
+stores and build caches, so its cost scales with the number of retained checkouts rather than with
+the test under change.
+
+**Rule**: scope every per-test temp-root traversal to the test's own directories with an explicit
+depth limit, and prune heavy subtrees in place where the walk must touch shared ground.
+
+```python
+import os
+
+
+def owned_files(tmp_path):
+    """Files this test owns, without descending into heavy subtrees."""
+    owned = []
+    for root, dirnames, filenames in os.walk(tmp_path):
+        dirnames[:] = [d for d in dirnames if d not in {'__pycache__', '.git', 'node_modules'}]
+        owned.extend(filenames)
+    return owned
+```
+
+A recursive glob (`Path.rglob`) cannot prune as it walks, so filtering its results still pays the
+full traversal cost. Never recurse from the shared fixture base or the basetemp root. The
+language-agnostic statement is `plan-marshall:persona-module-tester` § "Bound Per-Test Guard
+Traversal by the Test's Own Footprint".
+
+### Pytest basetemp coexistence
+
+The suite owns only `.plan/temp/pytest-*`. Standalone fixtures live under `.plan/temp/scratch/`.
+The two prefixes never overlap: per-session basetemp dirs land under the pytest-owned prefix,
+standalone fixture dirs land under scratch, and nothing writes outside the owned prefix.
+
+**Rule**: keep every temp write inside its owning prefix. `test/conftest.py:TEST_FIXTURE_BASE`
+resolves to `.plan/temp/scratch/test-fixture/` and asserts at import time that no path part
+starts with `pytest-`; `build.py:PYTEST_BASETEMP_ROOT` resolves to `.plan/temp/pytest-basetemp/`
+and its prune prepares only that root, never the scratch subtree. Do not set a `basetemp` key
+in `pyproject.toml` — an ini-level basetemp fights the runner's per-session `--basetemp` and
+reintroduces the shared root the per-session dirs remove.
+
+Consumers enumerated in the same atomic change: `test/conftest.py` defines `TEST_FIXTURE_BASE`
+and `PLAN_DIR_NAME`, derives every standalone dir through `get_test_fixture_dir`, and redirects
+`PLAN_BASE_DIR` through `PlanContext`; `test/_shared/_test_shape_scan.py` names
+`TEST_FIXTURE_BASE`, `PLAN_DIR_NAME`, `basetemp`, and `test-fixture` as shared-root markers the
+`r7_unbounded_shared_temp_walk` predicate reports; `test/test_harness_shape_guards.py` carries
+the matched negative control walking `TEST_FIXTURE_BASE`; `build.py` owns the pytest prefix
+through `PYTEST_BASETEMP_ROOT`, `_prepare_session_basetemp`, and `_prune_basetemp_roots`;
+`pyproject.toml` records this split in prose with no `basetemp` key; `doc/developer/build.adoc`
+records the ownership split beside the tool-default footprint.
+
 ## Event-Loop and Wall-Clock CI Liabilities
 
 A test suite that passes on the developer's local Python interpreter is not proof it passes on CI's pinned interpreter — the two classes below hang the whole job for its full timeout budget rather than failing fast, and both are invisible on a newer local interpreter while reproducing reliably on an older pinned one.
@@ -311,6 +363,23 @@ def test_fallback_to_system(tmp_path):
         assert result == 'tool'
 ```
 
+### Seam-pinned mirrors
+
+Where a test owns a routing seam as its system under test, pin it with a matched mirror pair, both arms with the seam mocked and neither depending on live daemon state. The Python binding for the mock is `patch.dict` on the callee globals, so the patch cannot be detached from the callee by `sys.modules` churn (see "Patch the namespace the callee reads" above):
+
+```python
+from unittest.mock import patch
+
+
+def test_routed_path_uses_mocked_daemon():
+    with patch.dict(_route_to_daemon.__globals__, {'_load_build_server': lambda: fake_client}):
+        result, reason = _route_to_daemon(config, '/tree', 'plan-x')
+
+        assert result is not None
+```
+
+Each arm's module docstring names the other arm as its matched mirror. The two arms split the contract: one pins the routing decision and its wiring, the other pins the resolution record reaching a durable sink. The language-agnostic statement is `plan-marshall:persona-module-tester` § "Seam-pinned test mirrors".
+
 ## Assertions
 
 ### Basic Assertions
@@ -466,6 +535,13 @@ A module whose whole content is a **single class** is exempt while that class's 
 lines — the ceiling is measured on the class, not on the module. Both documents above state the
 exemption and its reasoning; it is not restated here.
 
+Carve the pull request along the same behaviour-cluster boundaries: one cluster per PR into
+`test_{unit}_{cluster}.py` names, never arbitrary halves. The 400-line module budget decides whether
+a split is owed and the 520-line single-class exemption (measured on the class, not the module)
+decides the one exempt shape; the cluster boundary decides where the PR is cut. The
+language-agnostic statement is `plan-marshall:persona-module-tester` § "Splitting by behaviour
+cluster".
+
 ### Docstring content
 
 A test docstring states the invariant in the present tense. It does not narrate the incident that
@@ -584,6 +660,23 @@ The shared helper is `parse_ns(bundle, skill, script, *argv)`, exported from `te
 resolves the script, runs that script's own parser over `argv`, and returns the resulting namespace —
 so every default the parser declares is present, including ones added after the test was written.
 
+Define the CLI-accepted base argv once at module level and derive every accepted argv from it.
+The hoisted base is the argv the real parser accepts for the route under test; each test spreads
+it into `parse_ns` with only the flags it varies. A per-test literal copy of the base drifts
+silently when the CLI gains a required flag — the hoisted definition fails once, at the base,
+instead of passing everywhere on stale copies.
+
+```python
+# Hoisted base — the one accepted argv every test in this module derives from.
+BASE_ARGV = ('check', '--skill', 'sonarqube')
+
+
+def test_check_carries_global_scope_default():
+    args = parse_ns('plan-marshall', 'manage-providers', 'credentials.py', *BASE_ARGV)
+    assert args.command == 'check'
+    assert args.scope == 'global'
+```
+
 This is `plan-marshall:persona-module-tester` § "Foundation utilities — tests against the CLI" applied
 one layer lower: that section states the principle for the CLI entry point, and this is the same
 principle at the namespace layer.
@@ -697,6 +790,41 @@ The invariant: no nested `conftest.py` exists, so nothing can define or re-expor
 ### Cross-Reference
 
 This is the Python/pytest-specific realization of the language-agnostic rule. See [plan-marshall:persona-module-tester — Test Helper Module Organization](../../../../plan-marshall/skills/persona-module-tester/standards/testing-methodology.md) for the general principle applied across languages.
+
+## Single Test-Module Registration
+
+Each test helper registers once under its canonical name. A module loaded by file
+is published in `sys.modules` under its stem, which replaces whatever that name
+held — so a second registration of the same name in the same module, and a
+sibling `conftest.py` that re-exports what the root already owns, both turn
+collection order into behaviour.
+
+**Rule**: load each helper once per module under the stem of the file it names,
+and keep `test/conftest.py` the single registration point. Loading the same
+`(bundle, skill, file)` triple under a second `sys.modules` name in the same
+module is a duplicate registration. A `conftest.py` anywhere under
+`test/**/` besides the root is a nested registration point. Both are defects.
+
+```python
+from conftest import load_script_module
+
+# Right — one registration under the canonical stem.
+mod = load_script_module('plan-marshall', 'manage-files', 'manage-files.py')
+
+# Right — the escape when only the returned object is needed.
+mod = load_script_module('plan-marshall', 'manage-files', 'manage-files.py', register=False)
+
+# Wrong — the same helper file registered under a second name.
+first = load_script_module('plan-marshall', 'manage-files', 'manage-files.py')
+second = load_script_module('plan-marshall', 'manage-files', 'manage-files.py', module_name='renamed')
+```
+
+The `register=False` escape (forwarded through `parse_ns`) is what a caller
+takes when only the returned module is needed. It publishes nothing, so it can
+never duplicate a registration. The allow-list in "Conftest Scoping and Module
+Shadowing" above is the same invariant at the file level: the root
+`test/conftest.py` is the one permitted registration point, and every nested
+`conftest.py` is reported alongside a duplicate.
 
 ## Running Tests
 

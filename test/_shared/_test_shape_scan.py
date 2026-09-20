@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Shared AST scan for the three mechanically-checkable test-harness shapes.
+"""Shared AST scan for the six mechanically-checkable test-harness shapes.
 
 Each shape below is a way for a test to stop testing what it names while still
 reporting green, so none of them is caught by running the suite -- that is
@@ -31,6 +31,33 @@ collection failure). Either way the emptiness is invisible at the binding site,
 so a derivation that silently came back empty makes every case it was meant to
 produce disappear. A non-vacuity assertion beside the derivation is what turns
 that into an attributable failure naming the population.
+
+**R6 -- a hand-built CLI namespace.** A seam-pinned dispatcher test that
+constructs its option object by hand carries only the attributes its author
+remembered, not the parser's defaults -- so a flag added later with a default
+breaks production while the suite stays green. The site is a module that both
+stages an argv (directly or through the ``monkeypatch.setattr`` staging form)
+and names the published ``build_parser`` seam; inside such a module every
+``Namespace``/``SimpleNamespace`` construction carrying the ``command`` routing
+key is reported, while a ``parse_ns`` call is the compliant form and is never
+reported.
+
+**R7 -- an unbounded walk from the shared temp root.** A per-test guard that
+recursively walks the shared fixture base or the pytest basetemp tree pays the
+cost of every sibling sandbox plus version-control stores and build caches on
+every test. The walk is reported however it is spelled -- ``rglob`` over the
+shared root, a recursive ``glob`` carrying a ``**`` pattern, or an ``os.walk``
+rooted there. A walk over the test's own directories (``tmp_path``, a fixture
+sandbox) is the compliant form and is never reported, however recursive it is.
+
+**R8 -- a duplicate test-module registration.** A module loaded by file is
+published in ``sys.modules`` under its stem, which replaces whatever that name
+held. Registering the same name twice in one module, and adding a sibling
+``conftest.py`` beside the single root registration point, both make the
+binding a function of collection order. The predicate reports an intra-module
+duplicate registration and any nested ``conftest.py``; a single registration
+under the canonical stem, and a ``register=False`` load that publishes nothing,
+are the compliant forms and are never reported.
 
 **Why R3 has no entry here.** R3 -- a hand-kept constant mirror, where a test
 restates a production constant as its own literal -- is not mechanically
@@ -634,3 +661,319 @@ def _cardinality_pinned_names(tree: ast.Module) -> set[str]:
             if isinstance(sub, ast.Assert):
                 pinned |= _positive_cardinality_names(sub.test)
     return pinned
+
+
+# =============================================================================
+# R6 -- hand-built CLI namespace
+# =============================================================================
+
+
+def _is_cli_driving_module(tree: ast.Module) -> bool:
+    """True when the module drives a seam-pinned CLI dispatcher over ``sys.argv``.
+
+    Both signals must hold: the module stages an argv (a direct ``sys.argv``
+    read or the ``monkeypatch.setattr(sys, 'argv', ...)`` staging form) AND it
+    names the published ``build_parser`` seam. The conjunction is the point: a
+    module that stages an argv without a published seam exercises a router
+    whose parser is only reachable through ``main`` (a different seam with its
+    own pre-dispatch behaviour), while a module that names the seam without
+    staging an argv asserts on the parser's shape rather than standing where
+    its output would stand. Only the conjunction is the population
+    ``parse_ns`` serves directly.
+    """
+    stages_argv = False
+    names_seam = False
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Attribute) and node.attr == 'argv':
+            value = node.value
+            if isinstance(value, ast.Name) and value.id == 'sys':
+                stages_argv = True
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+            if node.func.attr != 'setattr':
+                continue
+            receiver = node.func.value
+            if not (isinstance(receiver, ast.Name) and receiver.id == 'monkeypatch'):
+                continue
+            if len(node.args) < 2:
+                continue
+            target, name = node.args[0], node.args[1]
+            if (
+                isinstance(target, ast.Name)
+                and target.id == 'sys'
+                and isinstance(name, ast.Constant)
+                and name.value == 'argv'
+            ):
+                stages_argv = True
+        if isinstance(node, ast.Name) and node.id == 'build_parser':
+            names_seam = True
+        if isinstance(node, ast.Attribute) and node.attr == 'build_parser':
+            names_seam = True
+    return stages_argv and names_seam
+
+
+def _is_namespace_construction(node: ast.Call) -> bool:
+    """True when this call hand-builds a CLI-dispatched option object.
+
+    Only a construction carrying the ``command`` routing key counts: a CLI
+    dispatcher routes on the parsed subcommand, so a hand-built namespace that
+    names a command stands where the parser's own output would stand. A
+    namespace built for an in-process command function (``root``/``glob``,
+    ``plan_id``, ``pr_number``) names no command and is outside the
+    population, however it is spelled.
+    """
+    func = node.func
+    if isinstance(func, ast.Name) and func.id in {'Namespace', 'SimpleNamespace'}:
+        pass
+    elif isinstance(func, ast.Attribute) and func.attr in {'Namespace', 'SimpleNamespace'}:
+        pass
+    else:
+        return False
+    return any(kw.arg == 'command' for kw in node.keywords)
+
+
+def r6_hand_built_cli_namespace(paths: list[Path] | None = None) -> ScanResult:
+    """Hand-built dispatcher namespaces inside CLI-driving test modules.
+
+    A ``parse_ns`` call is the compliant form and is never reported -- only a
+    ``Namespace``/``SimpleNamespace`` construction carrying the ``command``
+    routing key, inside a module that drives a dispatcher over ``sys.argv``
+    (see :func:`_is_cli_driving_module`), is a hit.
+    """
+    result = ScanResult()
+    for path in paths if paths is not None else test_modules():
+        tree = _parse(path)
+        if tree is None:
+            result.unparseable.append(_rel(path))
+            continue
+        result.modules_examined += 1
+        if not _is_cli_driving_module(tree):
+            continue
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call) and _is_namespace_construction(node):
+                result.hits.append(f'{_rel(path)}:{node.lineno}: hand-built CLI namespace')
+    return result
+
+
+# =============================================================================
+# R7 -- unbounded walk from the shared temp root
+# =============================================================================
+
+#: Name fragments that identify the shared temp root a per-test guard must not
+#: recurse from. ``tmp_path`` and a fixture sandbox carry none of these, so a
+#: scoped walk over the test's own directories never matches.
+_SHARED_TEMP_ROOT_MARKERS = frozenset(
+    {
+        'TEST_FIXTURE_BASE',
+        'FIXTURE_BASE',
+        'PLAN_DIR_NAME',
+        'basetemp',
+        'pytest-basetemp',
+        'test-fixture',
+        'test_fixture',
+    }
+)
+
+
+def _is_shared_temp_root_text(text: str) -> bool:
+    """True when this source fragment names the shared temp root."""
+    return any(marker in text for marker in _SHARED_TEMP_ROOT_MARKERS)
+
+
+def _is_shared_temp_root_expr(node: ast.expr) -> bool:
+    """True when this root expression resolves to the shared temp tree.
+
+    The check is textual on the unparsed fragment: a ``Name`` carrying a marker
+    (``TEST_FIXTURE_BASE``), an attribute hanging off one (``PROJECT_ROOT /
+    '.plan'`` spells the same tree through a constant), or a call result derived
+    from one. Textual matching keeps the predicate independent of how the caller
+    spells the join, while ``tmp_path`` carries no marker and never matches.
+    """
+    try:
+        text = ast.unparse(node)
+    except (ValueError, SyntaxError):
+        return False
+    return _is_shared_temp_root_text(text)
+
+
+def _is_recursive_glob(node: ast.Call) -> bool:
+    """True when this ``glob`` call carries a recursive ``**`` pattern."""
+    if not isinstance(node.func, ast.Attribute) or node.func.attr != 'glob':
+        return False
+    for arg in (*node.args, *(kw.value for kw in node.keywords)):
+        if isinstance(arg, ast.Constant) and isinstance(arg.value, str) and '**' in arg.value:
+            return True
+    return False
+
+
+def r7_unbounded_shared_temp_walk(paths: list[Path] | None = None) -> ScanResult:
+    """Recursive walks rooted at the shared temp root.
+
+    A ``rglob`` over the shared root, a recursive ``glob`` carrying a ``**``
+    pattern over it, or an ``os.walk`` rooted there is a hit. A walk over the
+    test's own directories (``tmp_path``, a fixture sandbox) is the compliant
+    form and is never reported, however recursive it is, because its cost is
+    bounded by the test's own footprint.
+    """
+    result = ScanResult()
+    for path in paths if paths is not None else test_modules():
+        tree = _parse(path)
+        if tree is None:
+            result.unparseable.append(_rel(path))
+            continue
+        result.modules_examined += 1
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+                continue
+            attr = node.func.attr
+            if attr == 'rglob':
+                if _is_shared_temp_root_expr(node.func.value):
+                    result.hits.append(f'{_rel(path)}:{node.lineno}: unbounded walk from shared temp root')
+            elif attr == 'glob':
+                if _is_recursive_glob(node) and _is_shared_temp_root_expr(node.func.value):
+                    result.hits.append(f'{_rel(path)}:{node.lineno}: unbounded walk from shared temp root')
+            elif attr == 'walk':
+                receiver = node.func.value
+                is_os_walk = isinstance(receiver, ast.Name) and receiver.id == 'os'
+                if is_os_walk and node.args and _is_shared_temp_root_expr(node.args[0]):
+                    result.hits.append(f'{_rel(path)}:{node.lineno}: unbounded walk from shared temp root')
+    return result
+
+
+# =============================================================================
+# R8 -- duplicate test-module registration and nested conftest
+# =============================================================================
+
+#: Loader calls whose execution publishes a module in ``sys.modules`` under the
+#: resolved name. ``parse_ns`` loads to reach its parser and publishes the same
+#: way, but its fourth positional is an argv token rather than a module name, so
+#: it is excluded here: reading it would invent registrations that do not exist.
+_REGISTERING_CALLS = {'load_script_module', 'load_skill_module'}
+
+
+def _r8_registered_name(call: ast.Call) -> str | None:
+    """Return the ``sys.modules`` name ``call`` publishes, or ``None``.
+
+    A call passing a literal ``register=False`` publishes nothing and is never a
+    registration. A ``module_name`` keyword names the registration directly; a
+    third positional ending in ``.py`` names it by stem. Anything else is
+    statically unresolvable and contributes no name rather than a guessed one.
+    """
+    for keyword in call.keywords:
+        if keyword.arg == 'register' and isinstance(keyword.value, ast.Constant):
+            if keyword.value.value is False:
+                return None
+        if keyword.arg == 'module_name' and isinstance(keyword.value, ast.Constant):
+            if isinstance(keyword.value.value, str):
+                return keyword.value.value
+    if len(call.args) >= 3:
+        script = call.args[2]
+        if isinstance(script, ast.Constant) and isinstance(script.value, str):
+            if script.value.endswith('.py'):
+                return Path(script.value).stem
+    return None
+
+
+def _r8_file_key(call: ast.Call) -> str | None:
+    """Return the ``(bundle, skill, file)`` triple ``call`` loads, or ``None``.
+
+    Only literal triples resolve: a bundle, skill and file each spelled as a
+    string constant. Anything else contributes no key rather than a guessed one,
+    so a dynamically addressed load never joins — or splits — a file group.
+    """
+    if len(call.args) < 3:
+        return None
+    parts: list[str] = []
+    for arg in call.args[:3]:
+        if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+            parts.append(arg.value)
+        else:
+            return None
+    return '/'.join(parts)
+
+
+def _r8_all_test_files() -> list[Path]:
+    """Every Python module under the test tree, sorted."""
+    return sorted(TEST_ROOT.rglob('*.py'))
+
+
+def r8_duplicate_test_module_registrations(paths: list[Path] | None = None) -> ScanResult:
+    """One helper file registered under two names in the same module.
+
+    Each helper registers once under its canonical stem: loading the same
+    ``(bundle, skill, file)`` triple under a second ``sys.modules`` name
+    publishes a duplicate registration, so collection order decides which copy a
+    later importer sees. A single registration of the triple, and a
+    ``register=False`` load that publishes nothing, are the compliant forms and
+    are never reported. Triples are compared within each module, never across
+    modules: two modules loading the same helper each hold their own
+    registration, which is the expected reuse rather than a duplicate.
+    """
+    result = ScanResult()
+    for path in paths if paths is not None else _r8_all_test_files():
+        tree = _parse(path)
+        if tree is None:
+            result.unparseable.append(_rel(path))
+            continue
+        result.modules_examined += 1
+        seen: dict[str, str] = {}
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            func = node.func
+            name = func.attr if isinstance(func, ast.Attribute) else getattr(func, 'id', None)
+            if name not in _REGISTERING_CALLS:
+                continue
+            registered = _r8_registered_name(node)
+            key = _r8_file_key(node)
+            if registered is None or key is None:
+                continue
+            if key in seen and seen[key] != registered:
+                result.hits.append(
+                    f'{_rel(path)}:{node.lineno}: duplicate registration of {key!r} '
+                    f'as {registered!r} (first as {seen[key]!r})'
+                )
+            else:
+                seen.setdefault(key, registered)
+    return result
+
+
+def r8_nested_conftest_files(paths: list[Path] | None = None) -> ScanResult:
+    """Nested ``conftest.py`` files beside the single root registration point.
+
+    ``test/conftest.py`` is the one permitted registration point. Every other
+    ``conftest.py`` anywhere under ``test/**/`` shadows it by module name for
+    the sibling tests that import by bare name. The scan walks the filesystem
+    rather than the AST because the defect is the file's existence, not its
+    content; an explicit ``paths`` list is honoured so synthetic controls stay
+    falsifiable.
+    """
+    result = ScanResult()
+    if paths is not None:
+        candidates = paths
+    else:
+        candidates = sorted(TEST_ROOT.rglob('conftest.py'))
+        result.modules_examined = max(len(candidates), 1)
+        if not candidates:
+            return result
+    root = TEST_ROOT / 'conftest.py'
+    explicit = paths is not None
+    for path in candidates:
+        if explicit:
+            if _parse(Path(path)) is None:
+                result.unparseable.append(_rel(Path(path)))
+                continue
+            result.modules_examined += 1
+        if Path(path).name != 'conftest.py':
+            continue
+        try:
+            resolved = Path(path).resolve()
+        except OSError:
+            resolved = Path(path)
+        try:
+            root_resolved = root.resolve()
+        except OSError:
+            root_resolved = root
+        if resolved == root_resolved:
+            continue
+        result.hits.append(f'{_rel(Path(path))}: nested conftest.py beside the single root registration point')
+    return result

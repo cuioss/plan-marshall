@@ -115,6 +115,14 @@ Split on what the tests *assert*, so each resulting module has a nameable subjec
 An arbitrary halving splits one subject across two files and leaves neither module describable; the
 next author then cannot tell which half a new test belongs in.
 
+### Carving PRs by behaviour cluster
+
+Carve the pull request along the same behaviour-cluster boundaries as the split above: one cluster
+per PR, named for the behaviour it carries, never arbitrary halves of a module. A PR that mixes two
+clusters forces one review to hold two subjects; a PR per cluster keeps each review to a single
+nameable subject. The 400-line module budget and the 520-line single-class exemption decide whether
+a split is owed; the cluster boundary decides where the PR is cut.
+
 ### Grouping Related Tests
 
 Use nesting constructs (JUnit `@Nested`, Jest `describe`, etc.) when **3 or more tests** belong to the same logical group. Do not nest single or two tests.
@@ -327,6 +335,20 @@ The negative arm must simulate the state, never rely on it being absent from the
 
 **Concrete instance in this repository** (a discoverability pointer, not the rule): marshalld build routing is neutralized by the default-on `_neutralize_daemon_routing` autouse fixture in `test/conftest.py`, carved out by location for `test/plan-marshall/build-server/`, with the registered `allow_daemon_routing` marker for routing-owning modules outside it, and pinned by the matched pair in `test/plan-marshall/script-shared/test_daemon_routing_neutralization.py`.
 
+### Seam-pinned test mirrors
+
+**Trigger**: production code routes through a seam — a dispatcher mapping a route to a handler, a build executor deciding routed versus in-process, a resolution recorder choosing its sink — and a test owns that routing decision as its system under test. The fast instinct is to cover the seam once, in one module, with the seam live or half-mocked, so the single test proves the decision while depending on ambient machine state.
+
+A single test over a live seam is ambiently state-dependent: it passes where the state is absent and fails where it is present, and the suite stays green only on the machines that happen to match. A single test over a half-mocked seam proves the decision on one path while leaving the sibling path unobserved, so a regression that flips the unobserved path keeps the suite green.
+
+**Durable rule**: a routing seam owned as its system under test is pinned by a **matched mirror pair** — two modules that assert the same seam from complementary angles, both with the seam mocked, never live:
+
+* Each arm drives the seam through a mocked client or stubbed handler, so neither arm depends on live daemon state, network, or ambient registration.
+* Each arm's module docstring names the other arm as its matched mirror and states that the two are a matched pair, so deleting or weakening either one voids the other's evidentiary value.
+* The two arms differ in what they pin: one pins the decision and its wiring (which route reaches which handler, routed versus fallback, no fallback slot on a routed build), the other pins the observable record of that decision (the resolution line reaching a durable sink, the audit fields carried on it).
+
+**Concrete instance in this repository** (a discoverability pointer, not the rule): the credential CLI routing table (`ROUTES` in `test/plan-marshall/manage-providers/test_credentials_cli.py`) pins each route to its own handler with every handler stubbed, so a mis-wired route cannot reach a real handler; the build-server mirror pair (`test/plan-marshall/build-server/test_build_execute_routing.py` and `test/plan-marshall/build-server/test_acceptance_resolution_log.py`) applies the same shape to the build-routing seam, with the daemon client stubbed in both arms. The Python binding is `pm-dev-python:pytest-testing` § "Seam-pinned mirrors".
+
 ### Test Isolation
 
 Each test must be independent:
@@ -413,6 +435,13 @@ The trap: a *recursive* walk rooted at a directory that can contain full checkou
 
 **Corollary — measure on a quiescent machine before attributing a regression.** Before blaming a hypothesized cause for a performance regression, measure with no concurrent runs and no orphaned background builds: a recursive guard over a shared worktrees tree can be the real slowdown rather than the subprocess/parallelism thrash first suspected, and a conclusion built on a contended machine sends the fix in the wrong direction.
 
+**Concrete instance in this repository** (a discoverability pointer, not the rule): the shape is armed
+by the `r7_unbounded_shared_temp_walk` predicate in `test/_shared/_test_shape_scan.py` — reporting a
+recursive walk rooted at the shared temp root — and asserted whole-tree in
+`test/test_harness_shape_guards.py`, with a matched negative control (a shared-root `rglob` is caught)
+and a matched positive control (a scoped walk over the test's own directories with in-place
+`dirnames` pruning is *not* reported).
+
 ## Integration Test Separation
 
 Integration tests must be separated from unit tests:
@@ -447,6 +476,18 @@ to that contract, and the second assertion catches nothing the first did not.
 A collapse must name the in-process test that now carries the contract. Without that, a reviewer
 cannot distinguish a collapse (coverage preserved at a better layer) from a deletion (coverage gone) —
 and the two look identical in a diff that only removes lines.
+
+### Hoisted base argv — one accepted invocation, derived per test
+
+Where tests drive a command-line interface, the accepted base invocation is defined once and every
+test derives its own invocation from it. Command arguments come from the real parser, never as a
+hand-constructed option object: a hand-built options object carries only the attributes its author
+remembered, so a flag added later with a default breaks production while the suite stays green.
+The hoisted base is the one accepted argv the parser accepts for the route under test; each test
+derives from it with only the flags it varies. This is the one-layer-per-contract companion at the
+namespace layer — the in-process parsing contract is asserted once, at the base, rather than
+re-declared per test on stale copies. The Python binding is `pm-dev-python:pytest-testing`
+§ "Command arguments come from the real parser".
 
 ## Express a Guard's Population by Role, Not by Another Slice's Filename
 

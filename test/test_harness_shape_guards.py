@@ -19,6 +19,21 @@ carries into every later test in the session.
 is computed rather than displayed reports its own emptiness as a skip or a
 collection failure, never as the failure of the cases it was meant to produce.
 
+**R6 — a hand-built CLI namespace.** A CLI-driving test that constructs its
+option object by hand carries only the attributes its author remembered, so a
+flag added later with a default breaks production while the suite stays green.
+
+**R7 — an unbounded walk from the shared temp root.** A per-test guard that
+recursively walks the shared fixture base or the basetemp tree pays the cost of
+every sibling sandbox on every test, so the suite's wall time scales with the
+number of retained checkouts rather than with the code under change.
+
+**R8 — a duplicate test-module registration.** A helper loaded by file is
+published in ``sys.modules`` under its stem, so registering the same name twice
+in one module displaces the first and collection order decides which copy
+survives. A nested ``conftest.py`` does the same at the file level, shadowing
+the single root registration point for sibling tests.
+
 Why each shape is a defect in detail, and what each predicate does and
 deliberately does not report, is stated in :mod:`_test_shape_scan` beside the
 predicate itself. The general, forward-looking form of the three rules lives in
@@ -57,6 +72,10 @@ _PREDICATES = (
     ('R1', shape_scan.r1_cross_slice_filename_pins),
     ('R4', shape_scan.r4_presence_keyed_restores),
     ('R5', shape_scan.r5_unguarded_runtime_parametrize),
+    ('R6', shape_scan.r6_hand_built_cli_namespace),
+    ('R7', shape_scan.r7_unbounded_shared_temp_walk),
+    ('R8-duplicate', shape_scan.r8_duplicate_test_module_registrations),
+    ('R8-conftest', shape_scan.r8_nested_conftest_files),
 )
 
 # ⛔ Vacuity guard — every loop below iterates this table, so an empty one would
@@ -534,3 +553,186 @@ def test_r5_credits_a_helper_guard_only_for_the_population_it_returns(tmp_path: 
 
     assert not guarded.hits, f'R5 flagged a helper asserting the very result it returns: {guarded.hits}'
     assert len(vacuous.hits) == 1, f'R5 credited an assertion about the input of a narrowing helper: {vacuous}'
+
+
+# =============================================================================
+# R6 — hand-built CLI namespace
+# =============================================================================
+
+
+def test_no_cli_driving_module_hand_builds_its_namespace() -> None:
+    """The armed guard: no CLI-driving module constructs its option object by hand."""
+    result = shape_scan.r6_hand_built_cli_namespace()
+
+    assert result.clean, _guard_report(
+        'hand-built CLI namespace(s)', result, 'test_no_cli_driving_module_hand_builds_its_namespace'
+    )
+
+
+def test_r6_catches_a_synthetic_hand_built_namespace(tmp_path: Path) -> None:
+    """Matched negative control — a predicate that never fires cannot guard."""
+    leaking = _write(
+        tmp_path,
+        'synthetic_r6.py',
+        'import argparse\nimport sys\n\n\ndef drive(monkeypatch, cli):\n'
+        '    cli.build_parser()\n'
+        "    monkeypatch.setattr(sys, 'argv', ['credentials.py', 'check'])\n"
+        "    args = argparse.Namespace(command='check')\n"
+        "    assert args.command == 'check'\n",
+    )
+    result = shape_scan.r6_hand_built_cli_namespace([leaking])
+
+    assert len(result.hits) == 1, f'R6 did not catch a synthetic hand-built namespace: {result}'
+
+
+def test_r6_passes_a_synthetic_parse_ns_consumer(tmp_path: Path) -> None:
+    """Matched POSITIVE control — the real parser is not the defect.
+
+    Paired with the control above because the two differ by exactly the call
+    that makes one compliant. A predicate keyed on any namespace-typed value
+    would flag both, and the rule would then be read as forbidding the helper
+    it exists to require.
+    """
+    compliant = _write(
+        tmp_path,
+        'synthetic_r6_compliant.py',
+        'import sys\nfrom conftest import parse_ns\n\n\ndef drive(monkeypatch, cli):\n'
+        '    cli.build_parser()\n'
+        "    monkeypatch.setattr(sys, 'argv', ['credentials.py', 'check'])\n"
+        "    args = parse_ns('plan-marshall', 'manage-providers', 'credentials.py', 'check')\n"
+        "    assert args.command == 'check'\n",
+    )
+    result = shape_scan.r6_hand_built_cli_namespace([compliant])
+
+    assert not result.hits, f'R6 flagged a parse_ns call as a hand-built namespace: {result.hits}'
+
+
+# =============================================================================
+# R7 — unbounded walk from the shared temp root
+# =============================================================================
+
+
+def test_no_per_test_guard_walks_the_shared_temp_root() -> None:
+    """The armed guard: no per-test guard recurses from the shared temp root."""
+    result = shape_scan.r7_unbounded_shared_temp_walk()
+
+    assert result.clean, _guard_report(
+        'unbounded shared-temp walk(s)', result, 'test_no_per_test_guard_walks_the_shared_temp_root'
+    )
+
+
+def test_r7_catches_a_synthetic_shared_root_rglob(tmp_path: Path) -> None:
+    """Matched negative control — a predicate that never fires cannot guard."""
+    leaking = _write(
+        tmp_path,
+        'synthetic_r7.py',
+        'from conftest import TEST_FIXTURE_BASE\n\n\ndef owned():\n    return list(TEST_FIXTURE_BASE.rglob("*"))\n',
+    )
+    result = shape_scan.r7_unbounded_shared_temp_walk([leaking])
+
+    assert len(result.hits) == 1, f'R7 did not catch a synthetic shared-root rglob: {result}'
+
+
+def test_r7_passes_a_synthetic_scoped_walk(tmp_path: Path) -> None:
+    """Matched POSITIVE control — a scoped walk with pruning is not the defect.
+
+    Paired with the control above because the two differ by exactly the root the
+    walk starts from. A predicate keyed on any recursive walk would flag both,
+    and the rule would then be read as forbidding the traversal the guard needs.
+    """
+    scoped = _write(
+        tmp_path,
+        'synthetic_r7_scoped.py',
+        'import os\n\n\ndef owned(tmp_path):\n'
+        '    owned = []\n'
+        '    for root, dirnames, filenames in os.walk(tmp_path):\n'
+        "        dirnames[:] = [d for d in dirnames if d not in {'__pycache__'}]\n"
+        '        owned.extend(filenames)\n'
+        '    return owned\n',
+    )
+    result = shape_scan.r7_unbounded_shared_temp_walk([scoped])
+
+    assert not result.hits, f'R7 flagged a scoped walk over the test own footprint: {result.hits}'
+
+
+# =============================================================================
+# R8 — duplicate test-module registration and nested conftest
+# =============================================================================
+
+
+def test_no_test_module_registers_the_same_helper_twice() -> None:
+    """The armed guard: no module registers one helper file under two names."""
+    result = shape_scan.r8_duplicate_test_module_registrations()
+
+    assert result.clean, _guard_report(
+        'duplicate test-module registration(s)', result, 'test_no_test_module_registers_the_same_helper_twice'
+    )
+
+
+def test_no_nested_conftest_shadows_the_root_registration_point() -> None:
+    """The armed guard: the root conftest is the single registration point."""
+    result = shape_scan.r8_nested_conftest_files()
+
+    assert result.clean, _guard_report(
+        'nested conftest.py file(s)', result, 'test_no_nested_conftest_shadows_the_root_registration_point'
+    )
+
+
+def test_r8_catches_a_synthetic_duplicate_registration(tmp_path: Path) -> None:
+    """Matched negative control — a predicate that never fires cannot guard."""
+    duplicated = _write(
+        tmp_path,
+        'synthetic_r8.py',
+        'from conftest import load_script_module\n\n\n'
+        "first = load_script_module('plan-marshall', 'manage-files', 'manage-files.py')\n"
+        "second = load_script_module('plan-marshall', 'manage-files', 'manage-files.py', module_name='renamed')\n",
+    )
+    result = shape_scan.r8_duplicate_test_module_registrations([duplicated])
+
+    assert len(result.hits) == 1, f'R8 did not catch a synthetic duplicate registration: {result}'
+
+
+def test_r8_passes_a_synthetic_single_registration(tmp_path: Path) -> None:
+    """Matched POSITIVE control — a single registration is not the defect.
+
+    Paired with the control above because the two differ by exactly the second
+    load. A predicate keyed on any loader call would flag both, and the rule
+    would then be read as forbidding the helper it exists to require.
+    """
+    single = _write(
+        tmp_path,
+        'synthetic_r8_single.py',
+        'from conftest import load_script_module\n\n\n'
+        "mod = load_script_module('plan-marshall', 'manage-files', 'manage-files.py')\n",
+    )
+    result = shape_scan.r8_duplicate_test_module_registrations([single])
+
+    assert not result.hits, f'R8 flagged a single registration under its canonical name: {result.hits}'
+
+
+def test_r8_passes_a_register_false_load(tmp_path: Path) -> None:
+    """Matched POSITIVE control — a load that publishes nothing cannot duplicate.
+
+    The escape exists for callers that need only the returned module. It carries
+    the same script stem as the negative control above, so a predicate that
+    ignored the opt-out would report it.
+    """
+    escaped = _write(
+        tmp_path,
+        'synthetic_r8_escaped.py',
+        'from conftest import load_script_module\n\n\n'
+        "first = load_script_module('plan-marshall', 'manage-files', 'manage-files.py')\n"
+        "second = load_script_module('plan-marshall', 'manage-files', 'manage-files.py', register=False)\n",
+    )
+    result = shape_scan.r8_duplicate_test_module_registrations([escaped])
+
+    assert not result.hits, f'R8 flagged a register=False load as a duplicate: {result.hits}'
+
+
+def test_r8_catches_a_synthetic_nested_conftest(tmp_path: Path) -> None:
+    """Matched negative control for the file-level half of the rule."""
+    nested = tmp_path / 'conftest.py'
+    nested.write_text('VALUE = 1\n', encoding='utf-8')
+    result = shape_scan.r8_nested_conftest_files([nested])
+
+    assert len(result.hits) == 1, f'R8 did not catch a synthetic nested conftest.py: {result}'

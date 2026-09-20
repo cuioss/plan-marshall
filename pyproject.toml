@@ -295,6 +295,15 @@ markers = [
     # tests it exists for. Pure-logic tests still skip the snapshot.
     "touches_real_state: test drives real credential/plan state, so the autouse _pollution_guard runs its before/after real-path snapshot for it (derived at collection time by pytest_collection_modifyitems from the plan_context fixture request, or from the test module naming PlanContext/EmptyPlanContext/BuildContext or setting PLAN_BASE_DIR).",
 ]
+# Single test-module registration (R8) introduces no new pytest marker: the
+# duplicate-registration and nested-conftest predicates run as ordinary tests in
+# test/test_harness_shape_guards.py, so the registry above stays the complete
+# set of custom markers in use.
+# Pytest basetemp coexistence: the suite owns only `.plan/temp/pytest-*`
+# (per-session basetemp roots `build.py` creates via `--basetemp`); standalone
+# fixtures live under `.plan/temp/scratch/`. No `basetemp` key is set here on
+# purpose — an ini-level basetemp fights the runner's per-session `--basetemp`
+# and reintroduces the shared root the per-session dirs remove.
 
 [tool.coverage.run]
 # The coverage denominator is deliberately restricted to the shipped product

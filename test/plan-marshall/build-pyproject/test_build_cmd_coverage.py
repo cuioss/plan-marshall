@@ -12,6 +12,8 @@ build-pyproject:pyproject_build coverage-report dispatch.
 
 import importlib.util
 import os
+import tomllib
+from typing import Any
 from unittest.mock import patch
 
 from conftest import PROJECT_ROOT
@@ -174,4 +176,112 @@ def test_prune_basetemp_roots_bounds_retained_dir_count(tmp_path) -> None:
     remaining = sorted(p.name for p in root.iterdir() if p.is_dir())
     assert remaining == ['session-3', 'session-4', 'session-5'], (
         f'prune must retain exactly the 3 most-recent dirs; got {remaining!r}'
+    )
+
+
+DOCUMENTED_PYTEST_TIMEOUT = 300
+
+DOCUMENTED_MARKER_NAMES = sorted(
+    [
+        'allow_pollution',
+        'xdist_group',
+        'allow_daemon_routing',
+        'allow_root_filesystem_pollution',
+        'slow_live',
+        'touches_real_state',
+    ]
+)
+
+DOCUMENTED_COVERAGE_SOURCE = ['marketplace/bundles']
+
+DOCUMENTED_COVERAGE_BRANCH = True
+
+DOCUMENTED_COVERAGE_THRESHOLD = 80
+
+
+def _marker_name(entry: str) -> str:
+    """Return the registry name for one ``markers`` entry.
+
+    Entries have the ``name: description`` shape, with ``xdist_group`` carrying
+    a signature as ``xdist_group(name): description``. The name is the leading
+    identifier before any signature or description.
+    """
+    head = entry.split(':', 1)[0].strip()
+    return head.split('(', 1)[0].strip()
+
+
+def _read_live_tool_defaults() -> dict[str, Any]:
+    """Read the live tool defaults this footprint documents.
+
+    Returns a dict with ``timeout``, ``markers``, ``coverage_source``,
+    ``coverage_branch`` and ``coverage_threshold`` keys.
+    """
+    with open(PROJECT_ROOT / 'pyproject.toml', 'rb') as handle:
+        pyproject = tomllib.load(handle)
+    pytest_options = pyproject['tool']['pytest']['ini_options']
+    coverage_run = pyproject['tool']['coverage']['run']
+    build_module = _load_build_module()
+    return {
+        'timeout': pytest_options['timeout'],
+        'markers': sorted(_marker_name(entry) for entry in pytest_options['markers']),
+        'coverage_source': list(coverage_run['source']),
+        'coverage_branch': bool(coverage_run['branch']),
+        'coverage_threshold': int(build_module.COVERAGE_THRESHOLD),
+    }
+
+
+def _tool_defaults_match(live: dict[str, Any], documented: dict[str, Any]) -> bool:
+    """Return True only when every footprint field matches the documented default."""
+    return bool(
+        live['timeout'] == documented['timeout']
+        and live['markers'] == documented['markers']
+        and live['coverage_source'] == documented['coverage_source']
+        and live['coverage_branch'] == documented['coverage_branch']
+        and live['coverage_threshold'] == documented['coverage_threshold']
+    )
+
+
+def _documented_tool_defaults() -> dict[str, Any]:
+    """Return the documented footprint recorded in doc/developer/build.adoc."""
+    return {
+        'timeout': DOCUMENTED_PYTEST_TIMEOUT,
+        'markers': list(DOCUMENTED_MARKER_NAMES),
+        'coverage_source': list(DOCUMENTED_COVERAGE_SOURCE),
+        'coverage_branch': DOCUMENTED_COVERAGE_BRANCH,
+        'coverage_threshold': DOCUMENTED_COVERAGE_THRESHOLD,
+    }
+
+
+def test_tool_default_footprint_matches_live_config() -> None:
+    """Documented tool defaults match the live config keys they mirror."""
+    live = _read_live_tool_defaults()
+    documented = _documented_tool_defaults()
+    assert live['timeout'] == documented['timeout'], (
+        f'[tool.pytest.ini_options].timeout must be {documented["timeout"]!r}; got {live["timeout"]!r}'
+    )
+    assert live['markers'] == documented['markers'], (
+        f'[tool.pytest.ini_options].markers must be {documented["markers"]!r}; got {live["markers"]!r}'
+    )
+    assert live['coverage_source'] == documented['coverage_source'], (
+        f'[tool.coverage.run].source must be {documented["coverage_source"]!r}; got {live["coverage_source"]!r}'
+    )
+    assert live['coverage_branch'] == documented['coverage_branch'], (
+        f'[tool.coverage.run].branch must be {documented["coverage_branch"]!r}; got {live["coverage_branch"]!r}'
+    )
+    assert live['coverage_threshold'] == documented['coverage_threshold'], (
+        f'build.py:COVERAGE_THRESHOLD must be {documented["coverage_threshold"]!r}; got {live["coverage_threshold"]!r}'
+    )
+    assert _tool_defaults_match(live, documented)
+
+
+def test_tool_default_footprint_negative_control_rejects_wrong_default() -> None:
+    """A deliberately wrong default fails the footprint match (non-vacuous)."""
+    live = _read_live_tool_defaults()
+    documented = _documented_tool_defaults()
+    wrong = dict(live)
+    wrong['timeout'] = 999
+    wrong['coverage_threshold'] = 999
+    wrong['markers'] = sorted(live['markers'] + ['deliberately_wrong_marker'])
+    assert not _tool_defaults_match(wrong, documented), (
+        'footprint matcher must reject a deliberately wrong default; an always-True matcher would let this pass'
     )
