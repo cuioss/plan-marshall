@@ -768,6 +768,41 @@ The invariant: no nested `conftest.py` exists, so nothing can define or re-expor
 
 This is the Python/pytest-specific realization of the language-agnostic rule. See [plan-marshall:persona-module-tester — Test Helper Module Organization](../../../../plan-marshall/skills/persona-module-tester/standards/testing-methodology.md) for the general principle applied across languages.
 
+## Single Test-Module Registration
+
+Each test helper registers once under its canonical name. A module loaded by file
+is published in `sys.modules` under its stem, which replaces whatever that name
+held — so a second registration of the same name in the same module, and a
+sibling `conftest.py` that re-exports what the root already owns, both turn
+collection order into behaviour.
+
+**Rule**: load each helper once per module under the stem of the file it names,
+and keep `test/conftest.py` the single registration point. Loading the same
+`(bundle, skill, file)` triple under a second `sys.modules` name in the same
+module is a duplicate registration. A `conftest.py` anywhere under
+`test/**/` besides the root is a nested registration point. Both are defects.
+
+```python
+from conftest import load_script_module
+
+# Right — one registration under the canonical stem.
+mod = load_script_module('plan-marshall', 'manage-files', 'manage-files.py')
+
+# Right — the escape when only the returned object is needed.
+mod = load_script_module('plan-marshall', 'manage-files', 'manage-files.py', register=False)
+
+# Wrong — the same helper file registered under a second name.
+first = load_script_module('plan-marshall', 'manage-files', 'manage-files.py')
+second = load_script_module('plan-marshall', 'manage-files', 'manage-files.py', module_name='renamed')
+```
+
+The `register=False` escape (forwarded through `parse_ns`) is what a caller
+takes when only the returned module is needed. It publishes nothing, so it can
+never duplicate a registration. The allow-list in "Conftest Scoping and Module
+Shadowing" above is the same invariant at the file level: the root
+`test/conftest.py` is the one permitted registration point, and every nested
+`conftest.py` is reported alongside a duplicate.
+
 ## Running Tests
 
 ```bash

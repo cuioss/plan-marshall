@@ -28,6 +28,12 @@ recursively walks the shared fixture base or the basetemp tree pays the cost of
 every sibling sandbox on every test, so the suite's wall time scales with the
 number of retained checkouts rather than with the code under change.
 
+**R8 — a duplicate test-module registration.** A helper loaded by file is
+published in ``sys.modules`` under its stem, so registering the same name twice
+in one module displaces the first and collection order decides which copy
+survives. A nested ``conftest.py`` does the same at the file level, shadowing
+the single root registration point for sibling tests.
+
 Why each shape is a defect in detail, and what each predicate does and
 deliberately does not report, is stated in :mod:`_test_shape_scan` beside the
 predicate itself. The general, forward-looking form of the three rules lives in
@@ -68,6 +74,8 @@ _PREDICATES = (
     ('R5', shape_scan.r5_unguarded_runtime_parametrize),
     ('R6', shape_scan.r6_hand_built_cli_namespace),
     ('R7', shape_scan.r7_unbounded_shared_temp_walk),
+    ('R8-duplicate', shape_scan.r8_duplicate_test_module_registrations),
+    ('R8-conftest', shape_scan.r8_nested_conftest_files),
 )
 
 # ⛔ Vacuity guard — every loop below iterates this table, so an empty one would
@@ -618,8 +626,7 @@ def test_r7_catches_a_synthetic_shared_root_rglob(tmp_path: Path) -> None:
     leaking = _write(
         tmp_path,
         'synthetic_r7.py',
-        'from conftest import TEST_FIXTURE_BASE\n\n\ndef owned():\n'
-        '    return list(TEST_FIXTURE_BASE.rglob("*"))\n',
+        'from conftest import TEST_FIXTURE_BASE\n\n\ndef owned():\n    return list(TEST_FIXTURE_BASE.rglob("*"))\n',
     )
     result = shape_scan.r7_unbounded_shared_temp_walk([leaking])
 
@@ -646,3 +653,86 @@ def test_r7_passes_a_synthetic_scoped_walk(tmp_path: Path) -> None:
     result = shape_scan.r7_unbounded_shared_temp_walk([scoped])
 
     assert not result.hits, f'R7 flagged a scoped walk over the test own footprint: {result.hits}'
+
+
+# =============================================================================
+# R8 — duplicate test-module registration and nested conftest
+# =============================================================================
+
+
+def test_no_test_module_registers_the_same_helper_twice() -> None:
+    """The armed guard: no module registers one helper file under two names."""
+    result = shape_scan.r8_duplicate_test_module_registrations()
+
+    assert result.clean, _guard_report(
+        'duplicate test-module registration(s)', result, 'test_no_test_module_registers_the_same_helper_twice'
+    )
+
+
+def test_no_nested_conftest_shadows_the_root_registration_point() -> None:
+    """The armed guard: the root conftest is the single registration point."""
+    result = shape_scan.r8_nested_conftest_files()
+
+    assert result.clean, _guard_report(
+        'nested conftest.py file(s)', result, 'test_no_nested_conftest_shadows_the_root_registration_point'
+    )
+
+
+def test_r8_catches_a_synthetic_duplicate_registration(tmp_path: Path) -> None:
+    """Matched negative control — a predicate that never fires cannot guard."""
+    duplicated = _write(
+        tmp_path,
+        'synthetic_r8.py',
+        'from conftest import load_script_module\n\n\n'
+        "first = load_script_module('plan-marshall', 'manage-files', 'manage-files.py')\n"
+        "second = load_script_module('plan-marshall', 'manage-files', 'manage-files.py', module_name='renamed')\n",
+    )
+    result = shape_scan.r8_duplicate_test_module_registrations([duplicated])
+
+    assert len(result.hits) == 1, f'R8 did not catch a synthetic duplicate registration: {result}'
+
+
+def test_r8_passes_a_synthetic_single_registration(tmp_path: Path) -> None:
+    """Matched POSITIVE control — a single registration is not the defect.
+
+    Paired with the control above because the two differ by exactly the second
+    load. A predicate keyed on any loader call would flag both, and the rule
+    would then be read as forbidding the helper it exists to require.
+    """
+    single = _write(
+        tmp_path,
+        'synthetic_r8_single.py',
+        'from conftest import load_script_module\n\n\n'
+        "mod = load_script_module('plan-marshall', 'manage-files', 'manage-files.py')\n",
+    )
+    result = shape_scan.r8_duplicate_test_module_registrations([single])
+
+    assert not result.hits, f'R8 flagged a single registration under its canonical name: {result.hits}'
+
+
+def test_r8_passes_a_register_false_load(tmp_path: Path) -> None:
+    """Matched POSITIVE control — a load that publishes nothing cannot duplicate.
+
+    The escape exists for callers that need only the returned module. It carries
+    the same script stem as the negative control above, so a predicate that
+    ignored the opt-out would report it.
+    """
+    escaped = _write(
+        tmp_path,
+        'synthetic_r8_escaped.py',
+        'from conftest import load_script_module\n\n\n'
+        "first = load_script_module('plan-marshall', 'manage-files', 'manage-files.py')\n"
+        "second = load_script_module('plan-marshall', 'manage-files', 'manage-files.py', register=False)\n",
+    )
+    result = shape_scan.r8_duplicate_test_module_registrations([escaped])
+
+    assert not result.hits, f'R8 flagged a register=False load as a duplicate: {result.hits}'
+
+
+def test_r8_catches_a_synthetic_nested_conftest(tmp_path: Path) -> None:
+    """Matched negative control for the file-level half of the rule."""
+    nested = tmp_path / 'conftest.py'
+    nested.write_text('VALUE = 1\n', encoding='utf-8')
+    result = shape_scan.r8_nested_conftest_files([nested])
+
+    assert len(result.hits) == 1, f'R8 did not catch a synthetic nested conftest.py: {result}'

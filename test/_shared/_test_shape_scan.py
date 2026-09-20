@@ -50,6 +50,15 @@ shared root, a recursive ``glob`` carrying a ``**`` pattern, or an ``os.walk``
 rooted there. A walk over the test's own directories (``tmp_path``, a fixture
 sandbox) is the compliant form and is never reported, however recursive it is.
 
+**R8 -- a duplicate test-module registration.** A module loaded by file is
+published in ``sys.modules`` under its stem, which replaces whatever that name
+held. Registering the same name twice in one module, and adding a sibling
+``conftest.py`` beside the single root registration point, both make the
+binding a function of collection order. The predicate reports an intra-module
+duplicate registration and any nested ``conftest.py``; a single registration
+under the canonical stem, and a ``register=False`` load that publishes nothing,
+are the compliant forms and are never reported.
+
 **Why R3 has no entry here.** R3 -- a hand-kept constant mirror, where a test
 restates a production constant as its own literal -- is not mechanically
 checkable in the way the three above are. Deciding whether a literal in a test
@@ -827,4 +836,144 @@ def r7_unbounded_shared_temp_walk(paths: list[Path] | None = None) -> ScanResult
                 is_os_walk = isinstance(receiver, ast.Name) and receiver.id == 'os'
                 if is_os_walk and node.args and _is_shared_temp_root_expr(node.args[0]):
                     result.hits.append(f'{_rel(path)}:{node.lineno}: unbounded walk from shared temp root')
+    return result
+
+
+# =============================================================================
+# R8 -- duplicate test-module registration and nested conftest
+# =============================================================================
+
+#: Loader calls whose execution publishes a module in ``sys.modules`` under the
+#: resolved name. ``parse_ns`` loads to reach its parser and publishes the same
+#: way, but its fourth positional is an argv token rather than a module name, so
+#: it is excluded here: reading it would invent registrations that do not exist.
+_REGISTERING_CALLS = {'load_script_module', 'load_skill_module'}
+
+
+def _r8_registered_name(call: ast.Call) -> str | None:
+    """Return the ``sys.modules`` name ``call`` publishes, or ``None``.
+
+    A call passing a literal ``register=False`` publishes nothing and is never a
+    registration. A ``module_name`` keyword names the registration directly; a
+    third positional ending in ``.py`` names it by stem. Anything else is
+    statically unresolvable and contributes no name rather than a guessed one.
+    """
+    for keyword in call.keywords:
+        if keyword.arg == 'register' and isinstance(keyword.value, ast.Constant):
+            if keyword.value.value is False:
+                return None
+        if keyword.arg == 'module_name' and isinstance(keyword.value, ast.Constant):
+            if isinstance(keyword.value.value, str):
+                return keyword.value.value
+    if len(call.args) >= 3:
+        script = call.args[2]
+        if isinstance(script, ast.Constant) and isinstance(script.value, str):
+            if script.value.endswith('.py'):
+                return Path(script.value).stem
+    return None
+
+
+def _r8_file_key(call: ast.Call) -> str | None:
+    """Return the ``(bundle, skill, file)`` triple ``call`` loads, or ``None``.
+
+    Only literal triples resolve: a bundle, skill and file each spelled as a
+    string constant. Anything else contributes no key rather than a guessed one,
+    so a dynamically addressed load never joins — or splits — a file group.
+    """
+    if len(call.args) < 3:
+        return None
+    parts: list[str] = []
+    for arg in call.args[:3]:
+        if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+            parts.append(arg.value)
+        else:
+            return None
+    return '/'.join(parts)
+
+
+def _r8_all_test_files() -> list[Path]:
+    """Every Python module under the test tree, sorted."""
+    return sorted(TEST_ROOT.rglob('*.py'))
+
+
+def r8_duplicate_test_module_registrations(paths: list[Path] | None = None) -> ScanResult:
+    """One helper file registered under two names in the same module.
+
+    Each helper registers once under its canonical stem: loading the same
+    ``(bundle, skill, file)`` triple under a second ``sys.modules`` name
+    publishes a duplicate registration, so collection order decides which copy a
+    later importer sees. A single registration of the triple, and a
+    ``register=False`` load that publishes nothing, are the compliant forms and
+    are never reported. Triples are compared within each module, never across
+    modules: two modules loading the same helper each hold their own
+    registration, which is the expected reuse rather than a duplicate.
+    """
+    result = ScanResult()
+    for path in paths if paths is not None else _r8_all_test_files():
+        tree = _parse(path)
+        if tree is None:
+            result.unparseable.append(_rel(path))
+            continue
+        result.modules_examined += 1
+        seen: dict[str, str] = {}
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            func = node.func
+            name = func.attr if isinstance(func, ast.Attribute) else getattr(func, 'id', None)
+            if name not in _REGISTERING_CALLS:
+                continue
+            registered = _r8_registered_name(node)
+            key = _r8_file_key(node)
+            if registered is None or key is None:
+                continue
+            if key in seen and seen[key] != registered:
+                result.hits.append(
+                    f'{_rel(path)}:{node.lineno}: duplicate registration of {key!r} '
+                    f'as {registered!r} (first as {seen[key]!r})'
+                )
+            else:
+                seen.setdefault(key, registered)
+    return result
+
+
+def r8_nested_conftest_files(paths: list[Path] | None = None) -> ScanResult:
+    """Nested ``conftest.py`` files beside the single root registration point.
+
+    ``test/conftest.py`` is the one permitted registration point. Every other
+    ``conftest.py`` anywhere under ``test/**/`` shadows it by module name for
+    the sibling tests that import by bare name. The scan walks the filesystem
+    rather than the AST because the defect is the file's existence, not its
+    content; an explicit ``paths`` list is honoured so synthetic controls stay
+    falsifiable.
+    """
+    result = ScanResult()
+    if paths is not None:
+        candidates = paths
+    else:
+        candidates = sorted(TEST_ROOT.rglob('conftest.py'))
+        result.modules_examined = max(len(candidates), 1)
+        if not candidates:
+            return result
+    root = TEST_ROOT / 'conftest.py'
+    explicit = paths is not None
+    for path in candidates:
+        if explicit:
+            if _parse(Path(path)) is None:
+                result.unparseable.append(_rel(Path(path)))
+                continue
+            result.modules_examined += 1
+        if Path(path).name != 'conftest.py':
+            continue
+        try:
+            resolved = Path(path).resolve()
+        except OSError:
+            resolved = Path(path)
+        try:
+            root_resolved = root.resolve()
+        except OSError:
+            root_resolved = root
+        if resolved == root_resolved:
+            continue
+        result.hits.append(f'{_rel(Path(path))}: nested conftest.py beside the single root registration point')
     return result

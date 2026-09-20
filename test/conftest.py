@@ -496,6 +496,15 @@ def load_script_module(
 ):
     """Load a marketplace script as a module via ``spec_from_file_location``.
 
+    Single-registration invariant: each helper registers once under its canonical
+    stem. A second load of the same name in the same module displaces the first,
+    so collection order decides which copy survives. Pass ``register=False`` when
+    only the returned module is needed — it publishes nothing and can never
+    duplicate a registration. This module is the single registration point; a
+    nested ``conftest.py`` anywhere under ``test/**/`` shadows it by module name.
+    See ``pm-dev-python:pytest-testing`` § "Single Test-Module Registration" and
+    the ``r8_*`` guards in ``test/test_harness_shape_guards.py``.
+
     Replaces the per-test ``importlib.util.spec_from_file_location`` +
     ``module_from_spec`` + ``exec_module`` boilerplate. The loaded module is
     registered in :data:`sys.modules` (matching the historical per-test pattern)
