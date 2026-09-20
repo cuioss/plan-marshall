@@ -143,18 +143,16 @@ _HAPPY_REFERENCES = {
 _EVIDENCE_FREE_REFERENCES = {'domains': ['plan-marshall-plugin-dev']}
 
 
-def stage_evidence_free_references(plan_dir: Path) -> Path:
+def stage_evidence_free_references(plan_dir: Path) -> None:
     """Overwrite ``plan_dir``'s references.json so no footprint tier resolves.
 
-    Returns the written path. Callers assert the resulting run reports the
-    production ``unresolved`` base label rather than trusting this payload — a
-    tier added later that reads some other key would otherwise silently turn the
-    scenario back into a resolved one.
+    Callers assert the resulting run reports the production ``unresolved`` base
+    label rather than trusting this payload — a tier added later that reads some
+    other key would otherwise silently turn the scenario back into a resolved
+    one.
     """
     plan_dir.mkdir(parents=True, exist_ok=True)
-    path = plan_dir / 'references.json'
-    path.write_text(json.dumps(_EVIDENCE_FREE_REFERENCES), encoding='utf-8')
-    return path
+    (plan_dir / 'references.json').write_text(json.dumps(_EVIDENCE_FREE_REFERENCES), encoding='utf-8')
 
 
 _HAPPY_STATUS = {
