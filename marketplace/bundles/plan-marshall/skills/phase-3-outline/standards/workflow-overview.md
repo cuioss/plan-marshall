@@ -142,3 +142,10 @@ Both tracks converge at Step 10:
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘
 ```
+
+## Q-gate outline gaps versus refine tension
+
+Q-gate outline-gap findings pull toward fuller coverage while refine-phase
+brevity pressure pulls toward a shorter outline. For sweep plans outline
+completeness wins: record the gap, extend the declared set, and cite this note
+instead of re-litigating the trade-off on future plans.
