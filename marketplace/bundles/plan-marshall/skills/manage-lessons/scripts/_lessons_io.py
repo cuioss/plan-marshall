@@ -123,32 +123,14 @@ def resolve_lesson_store(subpath: str | Path = DIR_LESSONS) -> LessonStore:
     return LessonStore(path, resolution, f'{path} (resolved {resolution})')
 
 
-#: The closed vocabulary :func:`resolve_lesson` reports as ``state``.
-#:
-#: - ``found`` — the lesson file exists and carries a parseable ``key=value``
-#:   metadata header.
-#: - ``absent`` — no file exists at the resolved path. This is the TRUE negative
-#:   the ``not_found`` error value has always meant.
-#: - ``unreadable`` — the file EXISTS but no reader can resolve it: the read
-#:   raised, or the metadata header did not parse. This is the state that used
-#:   to be reported as ``not_found`` as well, which is what made an existing
-#:   lesson unretirable — ``remove`` refused it as missing before writing any
-#:   tombstone.
-#:
-#: The third value is the one that carries the contract, exactly as
-#: ``unresolved`` does in :data:`STORE_RESOLUTIONS`: without it a caller cannot
-#: tell "there is nothing here" from "there is something here I could not
-#: read", and the two demand opposite responses. Consumers compare ``state``
-#: against a member of this set by explicit equality — never by the truthiness
-#: of ``metadata``, which is empty in both non-``found`` states.
-LESSON_READ_STATES = frozenset({'found', 'absent', 'unreadable'})
-
-
 class LessonRead(NamedTuple):
     """A resolved lesson record together with the state that resolution reached.
 
     Attributes:
-        state: One of :data:`LESSON_READ_STATES`.
+        state: ``found`` | ``absent`` | ``unreadable`` — see
+            :func:`resolve_lesson` for what each one means. Consumers compare
+            ``state`` by explicit equality, never by the truthiness of
+            ``metadata``, which is empty in both non-``found`` states.
         metadata: The parsed ``key=value`` header; empty on every non-``found``
             state.
         title: The H1 title. Populated on ``found`` and on the ``unreadable``

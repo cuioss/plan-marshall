@@ -802,12 +802,11 @@ def _load_active_lessons_with_signals() -> ActiveCorpus:
     for path in sorted(lessons_dir.glob('*.md')):
         read = resolve_lesson(path.stem)
 
-        if read.state == 'unreadable':
-            unresolvable.append({'lesson_id': path.stem, 'path': str(read.path), 'detail': read.detail})
-            continue
-        if read.state == 'absent':
-            # The glob just listed it, so an absent verdict means the file went
-            # away between the listing and the read. Reported, not dropped.
+        if read.state != 'found':
+            # ``unreadable`` is the file that exists and will not parse;
+            # ``absent`` means the file went away between the glob listing and
+            # the read. Both are reported with the resolver's own reason rather
+            # than dropped, so the substrate every count rides on stays named.
             unresolvable.append({'lesson_id': path.stem, 'path': str(read.path), 'detail': read.detail})
             continue
 

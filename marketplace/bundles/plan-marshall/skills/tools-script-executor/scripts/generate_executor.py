@@ -2386,13 +2386,13 @@ def cmd_bootstrap(args: argparse.Namespace) -> dict:
     live_sha = current_template_sha256()
     real_executor = executor_path()
 
-    def _regenerate(reason: str, template_status: str, label: str, **extra: object) -> dict:
+    def _regenerate(reason: str, template_status: str, **extra: object) -> dict:
         """Run the single generation path every regeneration reason shares."""
         regen = cmd_generate(args)
         if regen.get('status') != 'success':
             return {
                 'status': 'error',
-                'error': f'bootstrap {label} failed: {regen.get("error", "unknown error")}',
+                'error': f'bootstrap failed: {regen.get("error", "unknown error")}',
                 'action': 'failed',
                 'reason': reason,
                 'template_status': template_status,
@@ -2409,7 +2409,6 @@ def cmd_bootstrap(args: argparse.Namespace) -> dict:
         return _regenerate(
             'executor_absent',
             'unknown' if not live_sha else 'fresh',
-            'generation',
             executor=str(real_executor),
         )
     valid, script_count = verify_executor()
@@ -2417,7 +2416,6 @@ def cmd_bootstrap(args: argparse.Namespace) -> dict:
         return _regenerate(
             'executor_invalid',
             'unknown' if not live_sha else 'uncompared',
-            'regeneration',
             script_count=script_count,
         )
     embedded_sha = read_executor_template_sha()
@@ -2434,7 +2432,7 @@ def cmd_bootstrap(args: argparse.Namespace) -> dict:
             ),
         }
     if embedded_sha != live_sha:
-        return _regenerate('template_stale', 'stale', 'regeneration')
+        return _regenerate('template_stale', 'stale')
     return {
         'status': 'success',
         'action': 'not_needed',
