@@ -2,7 +2,9 @@
 
 When a target cannot implement an operation, `platform-runtime` returns `status: no-op`.
 
-The calling skill MUST treat `no-op` as a normal continuation signal — not an error. A workflow that fails because a display hook is unsupported is a defect.
+Absent session identity is the `NO_SESSION_IDENTITY` sentinel from
+`runtime_base` (never null); the `has_session_identity` meaning guard is the
+single test for it. The calling skill MUST treat `no-op` as a normal continuation signal — not an error. A workflow that fails because a display hook is unsupported is a defect.
 
 ## TOON Shape
 
