@@ -7,7 +7,7 @@ single plan-writable channel, and it carries two locations: a sender appends
 ``inbox/{sender_id}-{NNN}.md`` messages to its governing epic's QUEUE, and a
 message aimed at a RUNNING plan is DELIVERED to that plan's MAILBOX at
 ``inbox/to/{plan_id}/`` instead. Neither location reaches any other path under
-``.plan/local/orchestrator/{slug}/``. The carve-out is enforced here **by
+``.plan/orchestrator/{slug}/``. The carve-out is enforced here **by
 construction** — :func:`cmd_inbox_write` derives the target path solely from
 the validated slug, ``--sender-id``, and (on the delivery route) the validated
 ``--target-plan``, and accepts no caller-supplied output path, so no argument

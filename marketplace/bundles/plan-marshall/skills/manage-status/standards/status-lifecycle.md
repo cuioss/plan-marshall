@@ -172,7 +172,7 @@ Metadata fields are promoted to top-level in `get-context` output for convenienc
 
 ## Orchestrator Status (`kind=orchestrator`)
 
-Orchestrator epics persist a second, deliberately lean status kind under the main-anchored orchestrator store — `.plan/local/orchestrator/{slug}/status.json`, resolved via `get_store_dir('orchestrator', slug)`. It is the machine authority for an epic's plan queue and resume state (see `persona-plan-orchestrator/standards/orchestration-model.md` for the consuming contract).
+Orchestrator epics persist a second, deliberately lean status kind under the git-tracked orchestrator store — `.plan/orchestrator/{slug}/status.json`, resolved via `get_store_dir('orchestrator', slug)`. It is the machine authority for an epic's plan queue and resume state (see `persona-plan-orchestrator/standards/orchestration-model.md` for the consuming contract).
 
 ### Schema
 

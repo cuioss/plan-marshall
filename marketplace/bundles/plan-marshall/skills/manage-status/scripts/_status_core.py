@@ -321,8 +321,9 @@ def in_progress_phases(status: dict[Any, Any]) -> OpenPhaseScan:
 # =============================================================================
 #
 # The orchestrator store holds epic-level status.json documents under
-# ``.plan/local/orchestrator/{slug}/`` (main-anchored via ``get_store_dir``,
-# deliverable D0). The ``kind=orchestrator`` schema is deliberately lean —
+# ``.plan/orchestrator/{slug}/`` — resolved via ``get_store_dir``, which
+# composes onto the git-tracked config tier, so an epic ledger is versioned
+# with the repository. The ``kind=orchestrator`` schema is deliberately lean —
 # a three-value ``phase`` field instead of the plan phase-transition
 # machinery:
 #

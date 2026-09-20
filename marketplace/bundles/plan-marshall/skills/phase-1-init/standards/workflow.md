@@ -54,7 +54,7 @@ description: "Add dark mode toggle to application settings"
 
 ### Description (file pointer)
 ```text
-description: "implement .plan/local/orchestrator/{slug}/plans/PLAN-NN-{plan_slug}.md"
+description: "implement .plan/orchestrator/{slug}/plans/PLAN-NN-{plan_slug}.md"
 ```
 
 - Detected by syntax alone: the description is a bare leading verb (`implement`) plus a single repo-relative path token — independent of filesystem existence, so a missing or mistyped spec path still classifies as a pointer and routes through `--body-file` to reach the fail-closed refusal (never the plain-text branch).

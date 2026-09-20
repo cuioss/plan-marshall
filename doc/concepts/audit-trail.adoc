@@ -70,5 +70,5 @@ The audit trail is strictly local. Storage lives under `.plan/local/{plans,archi
 * xref:security.adoc[Concepts › Security] — the script-executor proxy that makes the audit trail comprehensive.
 * xref:skill-handling.adoc[Concepts › Skill Handling] — the `[SKILL]` log tag and how loaded context is auditable.
 * xref:process-enforcement.adoc[Concepts › Process Enforcement] — the four enforcement layers the audit trail records.
-* xref:orchestration.adoc[Concepts › Orchestration] — the orchestrator store's log-everything posture: the same record-as-side-effect discipline applied to epic-level decisions and reconciliations under `.plan/local/orchestrator/{slug}/logs/`.
+* xref:orchestration.adoc[Concepts › Orchestration] — the orchestrator store's log-everything posture: the same record-as-side-effect discipline applied to epic-level decisions and reconciliations under `.plan/orchestrator/{slug}/logs/`, the one git-ignored subtree of an otherwise git-tracked epic store.
 * xref:build-server.adoc[Concepts › Build Server] — the preflight and registration decisions recorded to `decision.log` and the control skill's append-only registration audit.

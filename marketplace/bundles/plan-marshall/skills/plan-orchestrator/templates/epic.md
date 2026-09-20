@@ -2,7 +2,7 @@
 
 slug: {slug}
 
-> Ledger document for one epic under `.plan/local/orchestrator/{slug}/`. The layout and
+> Ledger document for one epic under `.plan/orchestrator/{slug}/`. The layout and
 > authority contract live in the central standard — see
 > `persona-plan-orchestrator/standards/orchestration-model.md`. `status.json` is the
 > machine authority; any statement here that conflicts with it is stale prose.

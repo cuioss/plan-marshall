@@ -10,8 +10,9 @@ Provides:
 
 Log file locations:
 - Plan-scoped (store='plans'): .plan/local/plans/{plan_id}/logs/{script-execution,work,decision}.log
-- Orchestrator-scoped (store='orchestrator'): .plan/local/orchestrator/{slug}/logs/{decision,work}.log
-  (main-anchored via get_store_dir, resolving cross-session regardless of caller cwd)
+- Orchestrator-scoped (store='orchestrator'): .plan/orchestrator/{slug}/logs/{decision,work}.log
+  (via get_store_dir, which composes onto the git-tracked config tier; the epic
+  tree is committed, while this logs/ subtree stays git-ignored)
 - Global fallback: .plan/logs/{type}-YYYY-MM-DD.log
 
 Configuration via environment variables:
@@ -49,7 +50,7 @@ LOG_ENABLED = True
 
 # Store names accepted by the store-aware logging API. 'plans' is the default
 # (existing plan-scoped behavior, byte-identical); 'orchestrator' routes to the
-# main-anchored orchestrator tree via file_ops.get_store_dir.
+# git-tracked orchestrator tree via file_ops.get_store_dir.
 VALID_STORES = ('plans', 'orchestrator')
 
 
@@ -166,8 +167,8 @@ def get_log_path(plan_id: str | None, log_type: str = 'script', store: str = 'pl
     Log-directory resolution routes through file_ops.get_store_dir — the one
     parameterized store-root mechanism. ``store='plans'`` (default) preserves
     the existing plan-scoped behavior byte-identically; ``store='orchestrator'``
-    resolves the main-anchored orchestrator tree
-    (``.plan/local/orchestrator/{entry_id}/logs/``) regardless of caller cwd,
+    resolves the git-tracked orchestrator tree
+    (``.plan/orchestrator/{entry_id}/logs/``) on the cwd-relative config tier,
     transparently falling back to the archived tree for a closed-and-relocated
     epic (see the inline rationale at the resolution call below).
 
@@ -233,8 +234,9 @@ def get_log_path(plan_id: str | None, log_type: str = 'script', store: str = 'pl
 
     if plan_id and store == 'orchestrator':
         # Orchestrator entries have no status.json sentinel contract — the
-        # slug tree is scaffolded by plan-orchestrator before logging, and
-        # the store is main-anchored, so no plans-style orphan-slot hazard.
+        # slug tree is scaffolded by plan-orchestrator before logging, and the
+        # store is the git-tracked config tier rather than a per-plan slot that
+        # moves between checkouts, so no plans-style orphan-slot hazard.
         #
         # Resolve with allow_archived=True: appending an audit-trail log entry
         # is a continuation of the record, NOT a status.json business-state
@@ -719,8 +721,8 @@ if __name__ == '__main__':
     print('  .plan/local/plans/{plan_id}/logs/work.log')
     print('  .plan/local/plans/{plan_id}/logs/decision.log')
     print('\nLog locations (orchestrator-scoped, store=orchestrator):')
-    print('  .plan/local/orchestrator/{slug}/logs/work.log')
-    print('  .plan/local/orchestrator/{slug}/logs/decision.log')
+    print('  .plan/orchestrator/{slug}/logs/work.log')
+    print('  .plan/orchestrator/{slug}/logs/decision.log')
     print('\nAvailable functions:')
     print('- format_timestamp() -> str')
     print('- format_log_entry(level, message, **fields) -> str')

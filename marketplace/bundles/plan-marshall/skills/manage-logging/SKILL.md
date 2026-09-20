@@ -1,6 +1,6 @@
 ---
 name: manage-logging
-description: Unified logging infrastructure for script execution, work progress, and decision tracking across the plan, global, and main-anchored orchestrator stores
+description: Unified logging infrastructure for script execution, work progress, and decision tracking across the plan, global, and git-tracked orchestrator stores
 user-invocable: false
 mode: script-executor
 scope: hybrid
@@ -12,7 +12,9 @@ Unified logging infrastructure providing script execution logging, semantic work
 
 **Scope: hybrid** means this skill operates at both plan-scoped and global levels. When a `plan_id` is provided and the plan directory exists, logs go to `.plan/plans/{plan-id}/logs/`. Otherwise, logs fall back to global daily files at `.plan/logs/`.
 
-A third, opt-in store exists for orchestrator epics: `--store orchestrator` on the `work` / `decision` / `read` verbs routes to the main-anchored orchestrator tree at `.plan/local/orchestrator/{slug}/logs/` (resolved via `file_ops.get_store_dir`, stable across sessions and worktree cwds). The default store is `plans` — every existing call path is unchanged.
+A third, opt-in store exists for orchestrator epics: `--store orchestrator` on the `work` / `decision` / `read` verbs routes to the git-tracked orchestrator tree at `.plan/orchestrator/{slug}/logs/` (resolved via `file_ops.get_store_dir`, cwd-relative on the tracked config tier). The default store is `plans` — every existing call path is unchanged.
+
+**The epic tree is git-tracked; its `logs/` subtree is not.** `.gitignore` un-ignores `.plan/orchestrator/` and `.plan/archived-orchestrators/` and then re-ignores `*/logs/` beneath both, because a per-verb append log is a pure audit artifact whose line-level churn would conflict on every run. So an orchestrator log entry stays machine-local even though the ledger it sits beside is versioned with the repository.
 
 ## Enforcement
 
@@ -53,7 +55,7 @@ All plan-scoped logs are stored in the `logs/` subdirectory of the plan.
 
 ### Orchestrator Store (`--store orchestrator`)
 
-**Files**: `.plan/local/orchestrator/{slug}/logs/work.log` and `.plan/local/orchestrator/{slug}/logs/decision.log` (main-anchored — no global fallback; `--plan-id` carries the epic slug). The orchestrator logged-event vocabulary (decision, interaction, plan-status-change, reconciliation) is defined in [standards/log-format.md](standards/log-format.md) § Orchestrator Logged Events.
+**Files**: `.plan/orchestrator/{slug}/logs/work.log` and `.plan/orchestrator/{slug}/logs/decision.log` (git-ignored, inside the git-tracked epic tree — no global fallback; `--plan-id` carries the epic slug). The orchestrator logged-event vocabulary (decision, interaction, plan-status-change, reconciliation) is defined in [standards/log-format.md](standards/log-format.md) § Orchestrator Logged Events.
 
 ---
 
@@ -76,7 +78,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 | `--plan-id` | No | kebab-case | Plan identifier. **Optional on write subcommands** — when omitted, the entry is written to the dated global log under `.plan/logs/` (the first-class global/no-plan path); when supplied and resolving to an initialized plan, the entry is plan-scoped. **Required with `--store orchestrator`** (the epic slug — the orchestrator store has no global fallback). |
 | `--level` | Yes | `INFO`, `WARNING`, `ERROR` | Log level |
 | `--message` | Yes | string | Log message |
-| `--store` | No | `plans` (default), `orchestrator` | Store selection — `work` and `decision` verbs only (`script` has no store flag). `orchestrator` writes main-anchored to `.plan/local/orchestrator/{slug}/logs/{work,decision}.log`. |
+| `--store` | No | `plans` (default), `orchestrator` | Store selection — `work` and `decision` verbs only (`script` has no store flag). `orchestrator` writes to `.plan/orchestrator/{slug}/logs/{work,decision}.log`. |
 
 **Output**: None (exit code only)
 
@@ -204,7 +206,7 @@ its accept-set from a live `--help` walk rather than from this section. Consumin
 name (e.g., "see `manage-logging` Canonical invocations → `work`") instead of
 restating the command inline.
 
-`--plan-id` is OPTIONAL on the three write subcommands (`work` / `decision` / `script`); omitting it writes to the dated global log under `.plan/logs/`. `--store` is available on `work`, `decision`, and `read` only (default `plans`); `--store orchestrator` requires `--plan-id` (the epic slug) and routes to `.plan/local/orchestrator/{slug}/logs/`.
+`--plan-id` is OPTIONAL on the three write subcommands (`work` / `decision` / `script`); omitting it writes to the dated global log under `.plan/logs/`. `--store` is available on `work`, `decision`, and `read` only (default `plans`); `--store orchestrator` requires `--plan-id` (the epic slug) and routes to `.plan/orchestrator/{slug}/logs/`.
 
 ### work
 
@@ -349,14 +351,14 @@ log_entry('work', 'example-plan', 'INFO', '[ARTIFACT] Created deliverable')
 ### Orchestrator Logs
 
 ```text
-.plan/local/orchestrator/{slug}/
-└── logs/
+.plan/orchestrator/{slug}/      # git-tracked
+└── logs/                       # git-ignored (re-ignored beneath the tracked tree)
     ├── work.log                # Interaction / plan-status-change / reconciliation events
     └── decision.log            # Orchestrator decision events
 ```
 
 **Scope Selection**:
-- If `--store orchestrator`: main-anchored orchestrator log (requires `plan_id` = epic slug; no fallback)
+- If `--store orchestrator`: orchestrator log on the git-tracked tier (requires `plan_id` = epic slug; no fallback)
 - If `plan_id` is provided and plan directory exists: plan-scoped log
 - Otherwise: global log (both script and work types supported)
 

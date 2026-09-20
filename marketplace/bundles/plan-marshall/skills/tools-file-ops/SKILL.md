@@ -20,7 +20,7 @@ mode: knowledge
 - Do not construct cross-domain paths manually; use ID-based access pattern
 
 **Constraints:**
-- All path construction goes through `base_path()`, `get_base_dir()`, or the sanctioned `get_store_dir(store, entry_id)` store-root resolver (`store='plans'` routes through `base_path`; `store='orchestrator'` routes main-anchored via `resolve_main_anchored_path`); plan-identifier inputs go through `resolve_plan_context(plan_id)`, which is layered on `get_store_dir`
+- All path construction goes through `base_path()`, `get_base_dir()`, or the sanctioned `get_store_dir(store, entry_id)` store-root resolver (`store='plans'` routes through `base_path`; `store='orchestrator'` composes onto the git-tracked, cwd-relative config tier via `get_tracked_config_dir`); plan-identifier inputs go through `resolve_plan_context(plan_id)`, which is layered on `get_store_dir`
 - File writes use atomic temp-file-plus-rename pattern
 - Cross-domain access uses IDs, not paths
 
@@ -71,7 +71,7 @@ Import `file_ops` module in Python scripts that write to `.plan/` directories:
 **4. get_store_dir(store, entry_id)**
 - **Purpose**: Resolve the root directory for an entry of a named runtime-state store — the ONE parameterized store-root mechanism
 - **Input**: `store` (str) - `'plans'` or `'orchestrator'`; `entry_id` (str) - plan id or epic id
-- **Output**: `Path` - store entry root. `'plans'` routes through `base_path('plans', entry_id)` (cwd-relative, ADR-002 unchanged); `'orchestrator'` routes through `resolve_main_anchored_path(f'orchestrator/{entry_id}')` (main-anchored shared state)
+- **Output**: `Path` - store entry root. `'plans'` routes through `base_path('plans', entry_id)` (cwd-relative, ADR-002 unchanged); `'orchestrator'` composes `orchestrator/{entry_id}` onto `get_tracked_config_dir()` (the git-tracked, cwd-relative config tier, so an epic ledger is versioned with the repository)
 - **Raises**: `ValueError` on unknown store values
 - **Note**: this is the underlying store-root mechanism `resolve_plan_context` builds on. Plan-id consumers do NOT call it directly — they resolve through `resolve_plan_context` (below), and `get_plan_dir(plan_id)` is itself a thin delegate to `resolve_plan_context(plan_id, ensure=False).plan_dir`
 
@@ -227,7 +227,7 @@ from constants import STATUS_SUCCESS, FILE_STATUS, PHASES, DIR_PLANS
 
 # Resolve store-entry root paths (the ONE parameterized store-root mechanism)
 plan_dir = get_store_dir('plans', plan_id)  # Returns Path to .plan/local/plans/{plan_id}
-epic_dir = get_store_dir('orchestrator', epic_id)  # Main-anchored: <main>/.plan/local/orchestrator/{epic_id}
+epic_dir = get_store_dir('orchestrator', epic_id)  # Git-tracked tier: .plan/orchestrator/{epic_id}
 artifacts = base_path('plans', plan_id, 'artifacts')
 
 # Atomic file writes (temp file + rename for crash safety)

@@ -133,7 +133,7 @@ def main() -> int:
         help=(
             'Target store. plans (default) creates the plan status.json under '
             '.plan/local/plans/{plan_id}/; orchestrator creates a kind=orchestrator '
-            'status.json under the main-anchored .plan/local/orchestrator/{plan_id}/ tree.'
+            'status.json under the git-tracked .plan/orchestrator/{plan_id}/ tree.'
         ),
     )
     create_parser.add_argument('--force', action='store_true', help='Overwrite existing status')
