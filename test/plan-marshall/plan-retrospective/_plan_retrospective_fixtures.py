@@ -138,8 +138,8 @@ _HAPPY_REFERENCES = {
 #: complement of it: the happy fixture carries a POPULATED ``modified_files`` for
 #: the artifact-consistency recall check, and that key is itself a resolving tier.
 #: A test that wants the genuinely-evidence-free scenario must therefore STAGE it
-#: rather than inherit it, and staging it from one definition keeps the two
-#: consumers from drifting into differently-shaped "no evidence".
+#: rather than inherit it, and staging it from one definition keeps its consumers
+#: from drifting into differently-shaped "no evidence".
 _EVIDENCE_FREE_REFERENCES = {'domains': ['plan-marshall-plugin-dev']}
 
 
