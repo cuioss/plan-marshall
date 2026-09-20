@@ -28,6 +28,11 @@ class ReferencesData(TypedDict, total=False):
 
     branch: str
     base_branch: str
+    # The HEAD SHA pinned at plan creation (written by ``cmd_create`` alongside
+    # ``base_branch``). ``scope_creep_check`` grades the residual drift against
+    # this pinned baseline instead of the floating base tip, so the baseline
+    # survives later base moves.
+    plan_creation_sha: str
     issue_url: str
     build_system: str
     domains: list[str]
@@ -154,12 +159,33 @@ def _parse_porcelain(stdout: str) -> list[str]:
     return paths
 
 
-def resolve_base_ref(explicit: str | None, refs: dict) -> str:
-    """Resolve the base ref, falling back to references.base_branch then 'main'.
+def _ref_resolves_in_worktree(worktree: Path, ref: str) -> bool:
+    """Return True when ``ref`` resolves inside ``worktree``.
+
+    Uses ``git rev-parse --verify`` so an unresolvable base is detected
+    before any diff runs, instead of surfacing later as an empty footprint.
+    """
+    proc = _run_git(worktree, ['rev-parse', '--verify', ref])
+    return proc.returncode == 0
+
+
+def resolve_base_ref(explicit: str | None, refs: dict, worktree: Path | None = None) -> str:
+    """Resolve the base ref, preferring the upstream base with verification.
+
+    Preference order: explicit ``--base-ref`` first, then ``origin/main`` when
+    it resolves inside ``worktree``, then ``references.base_branch``, then
+    ``'main'``. The ``origin/main`` preference keeps the realized footprint
+    diffed against the upstream base rather than a possibly stale local main;
+    when ``worktree`` is None (or ``origin/main`` does not resolve there) the
+    resolver falls back diagnosably to the recorded base branch. An explicitly
+    supplied ref always wins — its resolvability is verified downstream by the
+    caller, which fails loud on an unresolvable base instead of diffing empty.
 
     Args:
         explicit: An explicit base ref (e.g. from ``--base-ref``), or None.
         refs: The references dict (read from references.json).
+        worktree: The active git worktree used to verify ``origin/main``,
+            or None to skip upstream verification.
 
     Returns:
         The resolved base ref string.
@@ -168,6 +194,9 @@ def resolve_base_ref(explicit: str | None, refs: dict) -> str:
         val = str(explicit).strip()
         if val:
             return val
+    if worktree is not None:
+        if _ref_resolves_in_worktree(worktree, 'origin/main'):
+            return 'origin/main'
     base_branch = refs.get('base_branch')
     if base_branch is not None:
         val = str(base_branch).strip()

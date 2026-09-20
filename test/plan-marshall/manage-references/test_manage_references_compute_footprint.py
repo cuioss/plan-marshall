@@ -49,9 +49,11 @@ from _resolve_project_dir_fixtures import (
     patch_query_worktree_path,
 )
 
-from conftest import get_script_path, run_script
+from conftest import get_script_path, load_script_module, run_script
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-references', 'manage-references.py')
+
+_core = load_script_module('plan-marshall', 'manage-references', '_references_core.py', '_refs_core_footprint_upstream')
 
 FOOTPRINT_PLAN_ID = 'compute-footprint-plan'
 
@@ -493,6 +495,75 @@ def test_resolve_project_dir_rejects_caller_supplying_both_routing_sources():
 
     with pytest.raises(MutuallyExclusiveArgsError):
         resolve_project_dir(CANONICAL_PLAN_ID, '/tmp/explicit', default=None)
+
+
+def test_upstream_base_prefers_origin_main_when_resolvable(tmp_path):
+    """resolve_base_ref prefers origin/main when it resolves in the worktree."""
+    repo = tmp_path / 'worktree'
+    _init_repo(repo)
+    _commit(repo, 'base', {'base.txt': 'base\n'})
+    _git(repo, 'branch', 'origin/main')
+    resolved = _core.resolve_base_ref(None, {'base_branch': 'main'}, repo)
+    assert resolved == 'origin/main'
+
+
+def test_upstream_base_falls_back_when_origin_main_absent(tmp_path):
+    """Without origin/main the resolver falls back diagnosably to base_branch."""
+    repo = tmp_path / 'worktree'
+    _init_repo(repo)
+    _commit(repo, 'base', {'base.txt': 'base\n'})
+    resolved = _core.resolve_base_ref(None, {'base_branch': 'main'}, repo)
+    assert resolved == 'main'
+
+
+def test_compute_footprint_reports_upstream_base_ref(tmp_path):
+    """compute-footprint threads the verified upstream base and reports it."""
+    repo = tmp_path / 'worktree'
+    _build_absorb_scenario(repo)
+    _git(repo, 'branch', 'origin/main', 'main')
+    base_dir = tmp_path / 'plan-base'
+    _write_references(base_dir, FOOTPRINT_PLAN_ID, {'base_branch': 'main'})
+    result = _run_footprint(base_dir, FOOTPRINT_PLAN_ID, repo)
+    data = result.toon()
+    assert data['status'] == 'success'
+    assert data['base_ref'] == 'origin/main'
+    assert data['base_ref_source'] == 'upstream'
+    assert data['files'] == ['plan_change.py']
+
+
+def test_compute_footprint_local_main_divergence_uses_upstream(tmp_path):
+    """A file only on local main is invisible when the diff anchors at origin/main."""
+    repo = tmp_path / 'worktree'
+    _init_repo(repo)
+    base_sha = _commit(repo, 'base', {'base.txt': 'base\n'})
+    _git(repo, 'branch', 'origin/main', base_sha)
+    _git(repo, 'checkout', '-b', 'feature')
+    _commit(repo, 'plan change', {'plan_change.py': 'print("plan")\n'})
+    _git(repo, 'checkout', 'main')
+    _commit(repo, 'local only', {'local_only.py': 'print("local")\n'})
+    _git(repo, 'checkout', 'feature')
+    base_dir = tmp_path / 'plan-base'
+    _write_references(base_dir, FOOTPRINT_PLAN_ID, {'base_branch': 'main'})
+    result = _run_footprint(base_dir, FOOTPRINT_PLAN_ID, repo)
+    data = result.toon()
+    assert data['status'] == 'success'
+    assert data['base_ref'] == 'origin/main'
+    assert data['files'] == ['plan_change.py']
+    assert 'local_only.py' not in data['files']
+
+
+def test_compute_footprint_unresolvable_explicit_base_fails_loud(tmp_path):
+    """An explicit unresolvable --base-ref fails loud with a git_error."""
+    repo = tmp_path / 'worktree'
+    _build_absorb_scenario(repo)
+    base_dir = tmp_path / 'plan-base'
+    _write_references(base_dir, FOOTPRINT_PLAN_ID, {'base_branch': 'main'})
+    result = _run_footprint(base_dir, FOOTPRINT_PLAN_ID, repo, '--base-ref', 'no-such-ref-xyz')
+    assert result.returncode == 0
+    data = result.toon()
+    assert data['status'] == 'error'
+    assert data['error'] == 'git_error'
+    assert data['base_ref'] == 'no-such-ref-xyz'
 
 
 _ = patch  # Silence unused-import warning; future tests may need it.

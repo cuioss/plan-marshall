@@ -121,7 +121,7 @@ def main() -> int:
     )
     compute_footprint_parser.add_argument(
         '--base-ref',
-        help='Base ref for the diff (defaults to references.base_branch, falling back to main)',
+        help='Base ref for the diff, verified with rev-parse --verify (defaults to origin/main when it resolves, falling back to references.base_branch then main)',
     )
 
     # capture-footprint — compute the live footprint AND persist it to
@@ -139,7 +139,7 @@ def main() -> int:
     )
     capture_footprint_parser.add_argument(
         '--base-ref',
-        help='Base ref for the diff (defaults to references.base_branch, falling back to main)',
+        help='Base ref for the diff, verified with rev-parse --verify (defaults to origin/main when it resolves, falling back to references.base_branch then main)',
     )
 
     args = parse_args_with_toon_errors(parser)

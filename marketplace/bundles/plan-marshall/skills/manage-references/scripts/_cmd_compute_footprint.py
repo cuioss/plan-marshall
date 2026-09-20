@@ -23,6 +23,7 @@ import subprocess
 from pathlib import Path
 
 from _references_core import (
+    _ref_resolves_in_worktree,
     _run_git,
     compute_plan_branch_diff,
     read_references,
@@ -66,7 +67,23 @@ def cmd_compute_footprint(args: argparse.Namespace) -> dict:
             'message': f'Path is not inside a git worktree: {args.worktree_path}',
         }
 
-    base_ref = resolve_base_ref(getattr(args, 'base_ref', None), refs)
+    base_ref = resolve_base_ref(getattr(args, 'base_ref', None), refs, worktree)
+    explicit = getattr(args, 'base_ref', None)
+    if explicit is not None and str(explicit).strip():
+        base_ref_source = 'explicit'
+    elif base_ref == 'origin/main':
+        base_ref_source = 'upstream'
+    else:
+        base_ref_source = 'fallback'
+    if not _ref_resolves_in_worktree(worktree, base_ref):
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'git_error',
+            'message': f'Unresolvable base ref {base_ref!r} in worktree {worktree} (source={base_ref_source})',
+            'base_ref': base_ref,
+            'base_ref_source': base_ref_source,
+        }
     try:
         live_set = compute_plan_branch_diff(worktree, base_ref)
     except subprocess.CalledProcessError as exc:
@@ -82,6 +99,7 @@ def cmd_compute_footprint(args: argparse.Namespace) -> dict:
         'status': 'success',
         'plan_id': args.plan_id,
         'base_ref': base_ref,
+        'base_ref_source': base_ref_source,
         'files': files,
         'live_count': len(files),
     }
@@ -125,6 +143,7 @@ def cmd_capture_footprint(args: argparse.Namespace) -> dict:
         'status': 'success',
         'plan_id': args.plan_id,
         'base_ref': computed['base_ref'],
+        'base_ref_source': computed.get('base_ref_source', 'unknown'),
         'files': files,
         'realized_footprint_count': len(files),
         'persisted': True,
