@@ -185,11 +185,12 @@ def summarize_build_ledger(plan_key: str) -> dict[str, Any]:
     in every phase, the total spans EVERY build system and EVERY phase — not just
     the pyproject builds a plan happened to log.
 
-    **The total is published WITH its population, or not at all.** Four fields
-    carry it — ``population`` names the corpus, ``ledger_present`` and
-    ``ledger_readable`` say whether that corpus could be consulted,
-    ``ledger_rows_scanned`` says how much of it was read, and ``summed_rows``
-    says how many of this plan's build rows actually contributed a duration. A
+    **The total is published WITH its population, or not at all.** The fields
+    beside it say what it rests on — ``population`` names the corpus,
+    ``ledger_present`` and ``ledger_readable`` say whether that corpus could be
+    consulted, ``ledger_rows_scanned`` says how much of it was read, and
+    ``summed_rows`` says how many of this plan's build rows actually
+    contributed a duration. A
     consumer can therefore tell "looked, and this plan built for N seconds" from
     "could not look", which a bare total never permitted.
 
