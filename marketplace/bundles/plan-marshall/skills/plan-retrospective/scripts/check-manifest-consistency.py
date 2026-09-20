@@ -807,6 +807,21 @@ _DIFF_FED_RULES: dict[str, str] = {
 #: Derived, never restated — see :data:`_DIFF_FED_RULES`.
 _DIFF_FED_CHECKS = frozenset(_DIFF_FED_RULES)
 
+#: The subset of :data:`_DIFF_FED_CHECKS` whose evidence channel is THIS script's
+#: own footprint (the ``{base}...HEAD`` diff the shared resolving chain answers).
+#: ``declared_vs_realized_set`` is excluded: its evidence is the forwarded upstream
+#: ``affected_files_exact_match`` fragment (see :func:`load_forwarded_set_comparison`)
+#: and it already owns its own could-not-look path (a ``None`` comparison degrades
+#: to ``inconclusive`` on its own). Subjecting it to THIS script's footprint
+#: degradation/reduction annotation conflates two unrelated evidence channels — a
+#: received-and-agreeing verdict would read as withheld whenever this script's own
+#: footprint (not the fragment) is unresolvable, which is exactly the post-merge
+#: worktree-removed case the rule is most needed on. Used only by
+#: :func:`_withhold_on_absent_evidence` and :func:`apply_input_reduction`;
+#: :data:`_DIFF_FED_CHECKS` itself is unchanged and stays the full registry-derived
+#: membership the loop-evaluator derivation and its own tests read.
+_FOOTPRINT_FED_CHECKS: frozenset[str] = _DIFF_FED_CHECKS - {'declared_vs_realized_set'}
+
 #: The diff-fed rules dispatched OUTSIDE the shared loop, because each takes an
 #: input the shared ``(manifest, filtered_files)`` signature does not carry:
 #: ``branch_cleanup_changes`` takes the footprint-availability signal, and
@@ -874,7 +889,7 @@ def _withhold_on_absent_evidence(checks: list[dict[str, str]]) -> list[dict[str,
     """
     out: list[dict[str, str]] = []
     for check in checks:
-        if check['name'] not in _DIFF_FED_CHECKS or check['status'] != 'pass':
+        if check['name'] not in _FOOTPRINT_FED_CHECKS or check['status'] != 'pass':
             out.append(check)
             continue
         updated = dict(check)
@@ -904,7 +919,7 @@ def apply_input_reduction(checks: list[dict[str, str]], reduction: dict[str, Any
       discarded all but one path could report every rule green while none of them
       had seen the change the plan was about.
     - A check that would emit a bare clean ``pass`` while **no diff evidence
-      existed at all** takes :data:`STATUS_INCONCLUSIVE` too. This is the
+      existed at all** takes :data:`STATUS_INCONCLUSIVE`. This is the
       zero-evidence sibling of the case above and the filtering logic cannot see
       it: nothing was discarded, so the reduction is empty, yet the rule evaluated
       an empty footprint and said ``all 0 entries are docs-shaped``. A verdict over
@@ -957,7 +972,7 @@ def apply_input_reduction(checks: list[dict[str, str]], reduction: dict[str, Any
 
     annotated: list[dict[str, str]] = []
     for check in checks:
-        if check['name'] not in _DIFF_FED_CHECKS or check['status'] == 'skip':
+        if check['name'] not in _FOOTPRINT_FED_CHECKS or check['status'] == 'skip':
             annotated.append(check)
             continue
         updated = dict(check)
