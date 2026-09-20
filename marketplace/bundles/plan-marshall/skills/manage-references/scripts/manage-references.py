@@ -149,6 +149,7 @@ def main() -> int:
     from _cmd_context import cmd_get_context
     from _cmd_list import cmd_add_list, cmd_set_list
     from _cmd_reconcile_scope import cmd_reconcile_scope
+    from _references_core import is_retired_field, retired_field_error
     from _references_crud import (
         cmd_create,
         cmd_get,
@@ -156,6 +157,16 @@ def main() -> int:
         cmd_set,
         cmd_sync_affected_files,
     )
+
+    # Retired-key refusal at the CLI boundary: no field-taking verb may serve
+    # or resurrect a retired key. Step inputs (compute-footprint,
+    # capture-footprint, reconcile-scope, get-context, sync-affected-files)
+    # never name a retired field — they route through the live resolver and
+    # the captured footprint tier — so this guard only ever fires on direct
+    # access, which fails closed here instead of serving a stale value.
+    if args.command in ('get', 'set', 'add-list', 'set-list') and is_retired_field(getattr(args, 'field', None)):
+        output_toon(retired_field_error(args.plan_id, args.field, args.command))
+        return 0
 
     # Dispatch to handlers
     handlers = {

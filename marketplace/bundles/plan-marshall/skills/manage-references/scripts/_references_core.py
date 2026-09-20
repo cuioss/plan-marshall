@@ -110,6 +110,54 @@ def require_references(plan_id: str) -> dict[Any, Any]:
 
 
 # =============================================================================
+# Retired References Keys
+# =============================================================================
+#
+# Keys the change-ledger removal retired. They persist on old plan records but
+# MUST NOT feed any step input: reads route through the live resolver
+# (``compute-footprint`` over the worktree) and the captured footprint tier
+# (``references.realized_footprint``) only. Direct access fails closed with a
+# diagnosable error instead of serving a stale value.
+
+#: References keys retired by the change-ledger removal. ``modified_files`` was
+#: the ledger-derived write set; the footprint is now derived on-demand, so a
+#: recorded copy would be a stale rival to the live resolver.
+RETIRED_REFERENCE_FIELDS: frozenset[str] = frozenset({'modified_files'})
+
+
+def is_retired_field(field: str | None) -> bool:
+    """Return True when ``field`` names a retired references key."""
+    return field is not None and str(field) in RETIRED_REFERENCE_FIELDS
+
+
+def retired_field_error(plan_id: str, field: str, operation: str) -> dict:
+    """Build the fail-closed TOON payload for retired-key access.
+
+    Args:
+        plan_id: Plan identifier (echoed for the caller's audit trail).
+        field: The retired field that was requested.
+        operation: The CLI verb that requested it (``get``, ``set``, ...).
+
+    Returns:
+        A ``status: error`` dict with ``error: field_retired``. Operation
+        failures exit 0 — the script ran successfully, only the operation
+        failed; callers branch on the TOON ``status`` field, not on the
+        process exit code.
+    """
+    return {
+        'status': 'error',
+        'plan_id': plan_id,
+        'field': field,
+        'error': 'field_retired',
+        'message': (
+            f"Field '{field}' is retired and cannot be {operation}: reads route "
+            'through the live resolver (compute-footprint) and the captured '
+            'footprint tier (references.realized_footprint) only'
+        ),
+    }
+
+
+# =============================================================================
 # Shared Plan-Branch-Only Diff Primitive
 # =============================================================================
 #
