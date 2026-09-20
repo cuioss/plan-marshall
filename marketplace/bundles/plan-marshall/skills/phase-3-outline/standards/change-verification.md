@@ -101,3 +101,11 @@ Build a structured checklist:
 - Verification only — do not propose code changes
 - Create clear pass/fail criteria
 - Document verification methodology
+
+## Assessment coverage includes read-intent paths
+
+Assessment coverage counts read-intent paths, not only mutation paths.
+Verification-only reads still need assessment records: every `read`-intent
+declared path enters the coverage denominator, verification deliverables cannot
+claim exemption from the sweep, and the recall check runs against the widened
+set.
