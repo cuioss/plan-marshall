@@ -84,9 +84,7 @@ def stage_provider_subprocess_env(tmp_path: Path, monkeypatch) -> Path:
     return plan_dir
 
 
-def stage_provider_marshal_with_creds(
-    tmp_path: Path, monkeypatch, config: dict[str, Any]
-) -> tuple[Path, Path]:
+def stage_provider_marshal_with_creds(tmp_path: Path, monkeypatch, config: dict[str, Any]) -> tuple[Path, Path]:
     """Stage ``marshal.json`` via :func:`stage_marshal` plus an isolated creds dir.
 
     Composes :func:`stage_marshal` (which redirects both the ``PLAN_BASE_DIR``
