@@ -82,3 +82,19 @@ Create a deliverable that produces a findings report as a committed file:
 - Provide evidence-based findings
 - Document investigation methodology
 - If user chose "analyze and implement fixes" in phase-2-refine, that request will have been reclassified to `enhancement` or `tech_debt` — it will not reach this template
+
+## De-citing trigger for stale shielded claims
+
+When a shielded claim's cited evidence goes stale, outline review flags the
+claim for re-citation or removal. Staleness signals: the cited file no longer
+exists at the cited path, the cited section was rewritten without the claimed
+statement, or the cited mechanism was superseded by a newer design. Disposition
+is explicit: re-cite against current evidence or remove the claim. No stale
+citation survives review silently.
+
+## Decline-on-merits upper bound as explicit mutation list
+
+A decline-on-merits decision declares the explicit mutation list the declined
+sweep would have touched. The upper-bound list scopes the decline: review
+compares the decline against the concrete scope, and no open-ended decline
+without a scope is accepted.
