@@ -551,8 +551,9 @@ def evaluate_branch_cleanup(
 ) -> tuple[dict[str, str], dict[str, Any] | None]:
     """Rule M4: branch-cleanup present in phase_6 → some implementation file changed.
 
-    The rule is skipped on ``evidence_available is False`` and on nothing else.
-    That flag is the loader's own answer to "did a diff observation reach the
+    The rule reports ``inconclusive`` on ``evidence_available is False``, and
+    is skipped only when branch-cleanup is absent from ``phase_6.steps``.
+    ``evidence_available`` is the loader's own answer to "did a diff observation reach the
     rules AT ALL" (:func:`load_diff_files`), so the rule no longer re-derives an
     input condition it was handed. It must not be re-derived from
     ``raw_files_total == 0``, because an empty file list has two incompatible
