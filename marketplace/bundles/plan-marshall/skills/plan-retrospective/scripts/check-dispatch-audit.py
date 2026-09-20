@@ -1016,8 +1016,9 @@ def evaluate_dispatch_coverage(
 
     The token record is the second, independent evidence source the coverage
     check consults before ever concluding "ran inline": a non-zero
-    ``total_tokens`` proves a dispatched envelope ran, a measured ``0`` proves the
-    step ran inline, and an absent row is honest ``no_evidence``. The old
+    ``total_tokens`` proves a dispatched envelope ran, a measured ``0`` is an
+    upper bound on inline execution — never proof of it — and an absent row is
+    honest ``no_evidence``. The old
     "ran inline where dispatch was required" discipline finding — a fabricated
     violation against the step — is not emitted at all. Its replacement is
     ``missing_dispatch_emission``: when more steps are token-proven to have
