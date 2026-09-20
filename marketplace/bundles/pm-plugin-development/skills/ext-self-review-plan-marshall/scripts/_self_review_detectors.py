@@ -109,9 +109,7 @@ def _hoisted_imported_names(post_lines: list[str]) -> set[str]:
     return names
 
 
-def _detect_hoisted_binding_shadows(
-    added: list[tuple[str, int, str]], project_dir: Path
-) -> list[dict[str, Any]]:
+def _detect_hoisted_binding_shadows(added: list[tuple[str, int, str]], project_dir: Path) -> list[dict[str, Any]]:
     """Surface added bindings that shadow a hoisted (import-level) binding.
 
     Read-only surfacing for the cognitive review pass: emits one candidate
@@ -143,6 +141,8 @@ def _detect_hoisted_binding_shadows(
         seen.add(key)
         out.append({'file': path, 'line': lineno, 'shadowed': name})
     return out
+
+
 # =============================================================================
 
 
