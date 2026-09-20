@@ -219,7 +219,32 @@ class TestDeliveredTranscript:
         )
 
     def test_an_unmarked_transcript_would_corrupt_the_payload(self, monkeypatch):
-        """The matched NEGATIVE control for the two survival arms above."""
+        """The matched NEGATIVE control for the two survival arms above.
+
+        Two corruptions are asserted, and a third is deliberately NOT — the
+        envelope's own ``status`` is not forgeable at this payload's key order,
+        so asserting it would be a vacuous premise rather than a missing guard.
+
+        ``cmd_run`` builds its success return as ``{**base, **record, 'status':
+        'success', ...}``. ``reduced_transcript`` arrives through ``**record``
+        and therefore keeps *record's* position; ``status`` is in neither
+        ``base`` nor ``record``, so it is inserted after every record key. The
+        emitted document consequently carries the transcript FIRST and the
+        genuine ``status: success`` line LAST. ``parse_toon`` is last-wins on a
+        repeated top-level key, so the unmarked transcript's flush-left
+        ``status: blocked`` line does become a phantom top-level key and is then
+        overwritten by the real one emitted after it.
+
+        ⛔ Do not "restore" a ``reparsed['status'] != 'success'`` assertion here:
+        no fixture can satisfy it while ``status`` follows the transcript in key
+        order. ⛔ And do not reorder the consumer payload to make such an
+        assertion pass — re-emitting ``status`` after the transcript is exactly
+        what makes the real envelope robust against a forged status line, so
+        inverting it would trade a passing assertion for a genuine defect. The
+        corruption this control exists to prove is still fully observable in the
+        two assertions below: the transcript is truncated at its first newline,
+        and its remaining lines surface as phantom sibling keys.
+        """
         record = _runtime_record(no_signal=False, reduced_transcript=TRANSCRIPT_WITH_TOON_SHAPES)
         result = _run(monkeypatch, record, 'success')
         unmarked = dict(result)
@@ -228,7 +253,6 @@ class TestDeliveredTranscript:
         reparsed = emit_and_reparse(unmarked)
 
         assert reparsed['reduced_transcript'] != TRANSCRIPT_WITH_TOON_SHAPES, 'control did not lose the transcript'
-        assert reparsed['status'] != 'success', 'control did not forge the envelope status'
         assert set(reparsed) != set(unmarked), 'control produced no phantom key'
 
     def test_delivered_bytes_equals_the_emitted_transcript_size(self, monkeypatch):
