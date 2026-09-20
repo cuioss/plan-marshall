@@ -13,9 +13,8 @@ Attributes that scripts cannot read are dropped rather than estimated; where
 script access is hard or strange an LLM fallback may fill the gap upstream —
 this module never estimates.
 
-Scope: concrete implementations exist for ``claude`` and ``opencode`` only.
-``antigravity`` appears solely as an example harness value in documentation
-and test vectors, never as an implementation target.
+Scope: concrete implementations exist for ``claude``, ``opencode``, and
+``antigravity``.
 """
 
 from __future__ import annotations
@@ -49,10 +48,8 @@ _NON_ENTRY_KEYS = frozenset({'status', 'operation', 'schema_version', 'entries'}
 #: Operation name carried in the TOON envelope for runtime-info responses.
 RUNTIME_INFO_OPERATION = 'runtime-info'
 
-#: Harness identifiers with concrete providers. Any other harness value —
-#: ``antigravity`` included — is an example string for documentation and test
-#: vectors only, never a registered runtime target.
-SUPPORTED_HARNESSES: tuple[str, ...] = ('claude', 'opencode')
+#: Harness identifiers with concrete providers.
+SUPPORTED_HARNESSES: tuple[str, ...] = ('claude', 'opencode', 'antigravity')
 
 _MODEL_NAME_ENV: tuple[str, ...] = (
     'CLAUDE_CODE_MODEL',
@@ -209,7 +206,7 @@ def collect_runtime_info(
     rather than estimated.
 
     Args:
-        harness: Harness identifier — ``claude`` or ``opencode`` in production.
+        harness: Harness identifier — ``claude``, ``opencode``, or ``antigravity``.
         env: Explicit environment mapping for tests; defaults to ``os.environ``.
         marketplace_root: Override for build-version manifest lookup.
         model_name: Explicit model name override; auto-read when None.

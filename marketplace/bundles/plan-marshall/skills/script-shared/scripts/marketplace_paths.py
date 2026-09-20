@@ -176,13 +176,40 @@ _BUNDLE_CACHE_ROOTS_CACHE: tuple[str, ...] | None = None
 # by ``claude_runtime.py``.
 
 
-def _read_runtime_target() -> str:
-    """Read ``runtime.target`` from the nearest ``.plan/marshal.json``.
+def _detect_target_from_env() -> str | None:
+    """Detect the runtime target from platform-injected environment variables.
 
-    Walks up from the current working directory; returns
-    ``_default_runtime_target()`` when the file is absent or malformed (every
-    runtime-less environment runs the default target).
+    Antigravity injects ``ANTIGRAVITY_AGENT=1`` into every subprocess;
+    Claude Code injects ``CLAUDE_CODE_SESSION_ID``.  These ambient signals
+    resolve the target before any config or filesystem probe, eliminating
+    the chicken-and-egg problem on first run.
+
+    Returns:
+        Target string (``'antigravity'`` or ``'claude'``), or ``None``
+        when no platform env signal is present.
     """
+    if os.environ.get('ANTIGRAVITY_AGENT'):
+        return 'antigravity'
+    if os.environ.get('CLAUDE_CODE_SESSION_ID'):
+        return 'claude'
+    return None
+
+
+def _read_runtime_target() -> str:
+    """Read ``runtime.target`` from platform env vars or ``.plan/marshal.json``.
+
+    Resolution cascade:
+
+    1. **Env signal** — ``ANTIGRAVITY_AGENT`` → ``'antigravity'``,
+       ``CLAUDE_CODE_SESSION_ID`` → ``'claude'``.
+    2. **Config** — ``runtime.target`` from the nearest ``.plan/marshal.json``.
+    3. **Default** — ``_default_runtime_target()`` (``'claude'``).
+    """
+    # Tier 1: platform-injected env var (zero-cost, always present).
+    env_target = _detect_target_from_env()
+    if env_target:
+        return env_target
+    # Tier 2: marshal.json config.
     cwd = Path.cwd().resolve()
     for parent in (cwd, *cwd.parents):
         candidate = parent / PLAN_DIR_NAME / 'marshal.json'

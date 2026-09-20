@@ -21,6 +21,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, cast
 
+import runtime_info
 from runtime_base import (
     PERMISSION_FIX_OPERATIONS,
     Runtime,
@@ -125,6 +126,26 @@ def get_antigravity_allow_list(settings: dict[str, Any]) -> list[str]:
 
 class AntigravityRuntime(Runtime):
     """Google Antigravity concrete implementation of the Runtime ABC."""
+
+    #: Antigravity injects no model-name/type/effort env vars of its own
+    #: (verified live — only ``ANTIGRAVITY_AGENT``/``ANTIGRAVITY_LS_VERSION``/
+    #: ``ANTIGRAVITY_CONVERSATION_ID``/``ANTIGRAVITY_PROJECT_ID``, none of
+    #: which name a model). Only the generic vars are visible here, so a
+    #: mixed environment carrying ``CLAUDE_CODE_MODEL`` or ``OPENCODE_MODEL``
+    #: can never be attributed to an Antigravity entry — mirrors
+    #: ``ClaudeRuntime._CLAUDE_MODEL_ENV`` / ``OpenCodeRuntime._OPENCODE_MODEL_ENV``.
+    _ANTIGRAVITY_MODEL_ENV = frozenset(
+        {
+            'MODEL_NAME',
+            'MODEL_TYPE',
+            'MODEL_VERSION',
+            'PLAN_MARSHALL_EFFORT',
+            'MARSHALL_EFFORT',
+            'EFFORT_LEVEL',
+            'PLAN_MARSHALL_BUILD_VERSION',
+            'BUILD_VERSION',
+        }
+    )
 
     # ------------------------------------------------------------------
     # Project lifecycle
@@ -957,11 +978,16 @@ class AntigravityRuntime(Runtime):
         )
 
     def runtime_info(self) -> str:
-        """Report Antigravity runtime information."""
-        return toon_success(
-            'runtime-info',
-            {
-                'harness': 'antigravity',
-                'build_version': '0.1',
-            },
-        )
+        """Collect runtime information for the antigravity target.
+
+        Reads harness, model, effort, and build-version from
+        script-accessible sources via the shared collector; unreadable
+        attributes are dropped rather than estimated. Model resolution is
+        target-scoped here (never in the shared collector): only generic
+        variables are visible, so Claude or OpenCode metadata leaking into
+        a shared environment can never be attributed to an Antigravity
+        entry.
+        """
+        env = {key: value for key, value in os.environ.items() if key in self._ANTIGRAVITY_MODEL_ENV}
+        info = runtime_info.collect_runtime_info('antigravity', env=env)
+        return toon_success(runtime_info.RUNTIME_INFO_OPERATION, info)

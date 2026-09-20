@@ -70,6 +70,63 @@ def test_read_runtime_target_claude_when_unparseable(tmp_path: Path):
 
 
 # =============================================================================
+# read_runtime_target — env-var detection (tier 1)
+# =============================================================================
+
+
+def test_read_runtime_target_detects_antigravity_from_env(tmp_path: Path, monkeypatch):
+    """read_runtime_target returns 'antigravity' when ANTIGRAVITY_AGENT is set."""
+    monkeypatch.setenv('ANTIGRAVITY_AGENT', '1')
+    monkeypatch.delenv('CLAUDE_CODE_SESSION_ID', raising=False)
+    assert bp.read_runtime_target(cwd=str(tmp_path)) == 'antigravity'
+
+
+def test_read_runtime_target_detects_claude_from_env(tmp_path: Path, monkeypatch):
+    """read_runtime_target returns 'claude' when CLAUDE_CODE_SESSION_ID is set."""
+    monkeypatch.delenv('ANTIGRAVITY_AGENT', raising=False)
+    monkeypatch.setenv('CLAUDE_CODE_SESSION_ID', 'test-session-id')
+    assert bp.read_runtime_target(cwd=str(tmp_path)) == 'claude'
+
+
+def test_read_runtime_target_env_takes_precedence_over_marshal(tmp_path: Path, monkeypatch):
+    """Env var detection (tier 1) wins over marshal.json config (tier 2)."""
+    plan = tmp_path / '.plan'
+    plan.mkdir()
+    (plan / 'marshal.json').write_text('{"runtime": {"target": "claude"}}')
+
+    monkeypatch.setenv('ANTIGRAVITY_AGENT', '1')
+    monkeypatch.delenv('CLAUDE_CODE_SESSION_ID', raising=False)
+    assert bp.read_runtime_target(cwd=str(tmp_path)) == 'antigravity'
+
+
+# =============================================================================
+# detect_plugin_root — fallback probing (tier 3)
+# =============================================================================
+
+
+def test_detect_plugin_root_fallback_probes_antigravity(monkeypatch):
+    """When Claude root is None, detect_plugin_root falls back to Antigravity."""
+    monkeypatch.setattr(bp, 'read_runtime_target', lambda: 'claude')
+    monkeypatch.setattr(bp, '_detect_claude_root', lambda: None)
+    sentinel = Path('/fake/antigravity-fallback')
+    monkeypatch.setattr(bp, '_detect_antigravity_root', lambda: sentinel)
+    monkeypatch.setattr(bp, '_detect_opencode_root', lambda: None)
+
+    assert bp.detect_plugin_root() == sentinel
+
+
+def test_detect_plugin_root_fallback_probes_opencode(monkeypatch):
+    """When Claude and Antigravity roots are None, falls back to OpenCode."""
+    monkeypatch.setattr(bp, 'read_runtime_target', lambda: 'claude')
+    monkeypatch.setattr(bp, '_detect_claude_root', lambda: None)
+    monkeypatch.setattr(bp, '_detect_antigravity_root', lambda: None)
+    sentinel = Path('/fake/opencode-fallback')
+    monkeypatch.setattr(bp, '_detect_opencode_root', lambda: sentinel)
+
+    assert bp.detect_plugin_root() == sentinel
+
+
+# =============================================================================
 # _detect_claude_root
 # =============================================================================
 
