@@ -38,7 +38,7 @@ from _footprint_oracle_classification_fixtures import (
     _setup,
     _write_diff,
 )
-from _plan_retrospective_fixtures import setup_live_plan
+from _plan_retrospective_fixtures import setup_live_plan, stage_evidence_free_references
 
 from conftest import load_script_module, run_script
 
@@ -108,8 +108,10 @@ class TestBranchCleanupRuleReadsTheEvidenceFlag:
         """
         plan_id, plan_dir = _setup(tmp_path, monkeypatch, _BRANCH_CLEANUP_MANIFEST)
         # Starve every tier by name, so this exercises the unresolvable sentinel
-        # rather than merely happening to reach it.
-        (plan_dir / 'references.json').write_text(json.dumps({'base_branch': 'main'}), encoding='utf-8')
+        # rather than merely happening to reach it. Staged from the ONE shared
+        # definition, so this case and its sibling cannot drift into
+        # differently-shaped "no evidence".
+        stage_evidence_free_references(plan_dir)
 
         result = run_script(MANIFEST_SCRIPT, 'run', '--plan-id', plan_id, '--mode', 'live')
         assert result.success, result.stderr
