@@ -26,6 +26,7 @@ import json
 from pathlib import Path
 
 import pytest
+from _analyze_logs_fixtures import _build_row
 from _extract_chat_signal_fixtures import _runtime_record, transcript_of_exactly
 from _extract_chat_signal_fixtures import run_consumer as _run_chat_consumer
 
@@ -97,18 +98,7 @@ def _d3_readable_and_withheld(tmp_path: Path, monkeypatch) -> tuple[object, obje
         )
         return _analyze_logs.summarize_build_ledger('demo')
 
-    def _row(dur) -> dict:
-        return {
-            'kind': 'build',
-            'plan_id': 'demo',
-            'notation': 'plan-marshall:build-pyproject:pyproject_build',
-            'command': './pw verify',
-            'duration_seconds': dur,
-            'status': 'success',
-            'timestamp_iso': '2026-06-01T10:00:00Z',
-        }
-
-    readable = _summary([_row(9.5), _row(3.0)], name='readable')
+    readable = _summary([_build_row('demo', dur=9.5), _build_row('demo', dur=3.0)], name='readable')
     assert isinstance(readable['total_build_seconds'], float), (
         f'two rows carrying usable durations must sum to a real float total; got {readable["total_build_seconds"]!r}'
     )
@@ -117,7 +107,7 @@ def _d3_readable_and_withheld(tmp_path: Path, monkeypatch) -> tuple[object, obje
 
     # The deliverable's own negative arm, re-driven here so the pair is proven in
     # one place: every row is a suspect zero, so nothing was summed.
-    withheld = _summary([_row(0)], name='withheld')
+    withheld = _summary([_build_row('demo', dur=0)], name='withheld')
     assert withheld['total_build_seconds'] == 'unavailable'
     assert int(withheld['summed_rows']) == 0
 
