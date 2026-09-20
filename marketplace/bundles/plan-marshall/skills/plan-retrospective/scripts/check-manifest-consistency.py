@@ -776,15 +776,18 @@ FOOTPRINT_RESOLVED = 'resolved'
 
 #: The ONE dispatch registry for the diff-fed rules: check name → evaluator.
 #:
-#: ⛔ Both the evaluation loop and the reduction report read THIS map, so a rule
-#: added here is automatically evaluated AND automatically subject to the reduction
-#: report and the ``indeterminate`` downgrade. A hardcoded name set mirroring the
-#: dispatch table is the defect this whole change exists to remove — a private list
-#: restating a set defined authoritatively elsewhere — and an evaluator missing from
-#: that mirror would silently bypass D2's guarantee, emitting a bare clean pass over
-#: a majority-discarded footprint. That is precisely the failure the reduction
-#: report was written to prevent, so it must not be reachable through the report's
-#: own membership test.
+#: ⛔ The evaluation loop reads THIS map directly, so a rule added here is
+#: automatically evaluated. The reduction report and the ``indeterminate``
+#: downgrade read the derived :data:`_FOOTPRINT_FED_CHECKS` instead — the full
+#: membership here minus ``declared_vs_realized_set`` (see that data's docstring
+#: for why it is excluded) — so a rule added here is automatically subject to
+#: those two EXCEPT for that one deliberate exclusion. A hardcoded name set
+#: mirroring the dispatch table is the defect this whole change exists to remove
+#: — a private list restating a set defined authoritatively elsewhere — and an
+#: evaluator missing from that mirror would silently bypass D2's guarantee,
+#: emitting a bare clean pass over a majority-discarded footprint. That is
+#: precisely the failure the reduction report was written to prevent, so it must
+#: not be reachable through the report's own membership test.
 #:
 #: ``evaluate_branch_cleanup`` is dispatched separately (it needs the
 #: diff-availability signal the others do not take), which is why membership lives
@@ -823,9 +826,10 @@ _FOOTPRINT_FED_CHECKS: frozenset[str] = _DIFF_FED_CHECKS - {'declared_vs_realize
 #: ``declared_vs_realized_set`` takes the forwarded upstream comparison. Naming them
 #: here — and deriving the loop's evaluator tuple by SUBTRACTING this set from
 #: :data:`_DIFF_FED_RULES` — is what keeps the registry the single membership source:
-#: both rules still ride the reduction report and the downgrade machinery, because
-#: that machinery reads :data:`_DIFF_FED_CHECKS`, which is derived from the registry
-#: rather than from the loop.
+#: ``branch_cleanup_changes`` rides the reduction report and the downgrade
+#: machinery via :data:`_FOOTPRINT_FED_CHECKS`; ``declared_vs_realized_set`` is
+#: deliberately excluded from that machinery and owns its own could-not-look
+#: path instead (see :data:`_FOOTPRINT_FED_CHECKS` for why).
 _SEPARATELY_DISPATCHED_CHECKS: frozenset[str] = frozenset({'branch_cleanup_changes', 'declared_vs_realized_set'})
 
 
