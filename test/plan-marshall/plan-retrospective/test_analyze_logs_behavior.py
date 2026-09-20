@@ -17,6 +17,7 @@ import json
 from pathlib import Path
 
 import pytest
+from _analyze_logs_fixtures import _build_row
 from _plan_retrospective_fixtures import _run_args
 
 from conftest import load_script_module
@@ -694,7 +695,16 @@ class TestCountLogBuildCalls:
 
 
 class TestReconcileBuildCount:
-    """Both figures publish with the suspect floor; unavailable reads as unmeasured."""
+    """Both figures publish with the suspect floor; unavailable reads as unmeasured.
+
+    ⚠ Every ``ledger_summary`` below is a dict this module WRITES, not one the
+    producer emitted, so nothing here can notice ``summarize_build_ledger``
+    changing shape. That is deliberate — these cases isolate the reconciler's own
+    branching — but it leaves the seam unguarded on its own.
+    :class:`TestReconcileConsumesTheProducersOwnShape` is the matching
+    binding-site guard and is what keeps the two sides from drifting apart while
+    both classes stay green.
+    """
 
     def test_agreement_when_both_sides_match(self):
         result = _al.reconcile_build_count(3, {'build_count': 3, 'suspect_count': 0}, True)
@@ -731,6 +741,79 @@ class TestReconcileBuildCount:
         assert 'suspect_count' not in result
         assert 'agreement' not in result
         assert 'ledger_unavailable_reason' in result
+
+
+class TestReconcileConsumesTheProducersOwnShape:
+    """⛔ The binding-site guard: the reconciler reads what the PRODUCER emits.
+
+    :class:`TestReconcileBuildCount` above hands ``reconcile_build_count`` a
+    hand-written summary on every case. A suite built entirely from invented
+    inputs cannot fail when the producer's output shape moves, so it would keep
+    passing over a shape ``summarize_build_ledger`` no longer emits — a stale
+    oracle, which is the very archetype this plan exists to remove, committed one
+    layer down in the tests for it.
+
+    These two cases therefore DERIVE the summary from the producer, against a
+    real ledger file read by the real reader, and assert the reconciler consumes
+    it. The second case is the one that matters for D3: the producer may now
+    WITHHOLD ``total_build_seconds``, and the reconciliation — which reads only
+    the two counts — must be undisturbed by that rather than degrading into its
+    unavailable branch.
+    """
+
+    def _summary(self, tmp_path: Path, monkeypatch, rows: list[dict]) -> dict:
+        """Derive a real ``build_time`` summary from a real ledger file.
+
+        Both the path resolver and the reader are rebound, because they resolve
+        through different modules: ``summarize_build_ledger`` calls
+        ``resolve_ledger_path`` in THIS module's namespace, while a bare
+        ``read_entries()`` re-resolves through ``_ledger_core``'s own globals and
+        would otherwise read the repository's live ledger. Binding both keeps the
+        real parser in the loop while confining it to the fixture.
+        """
+        ledger = tmp_path / 'work' / 'change-ledger.jsonl'
+        ledger.parent.mkdir(parents=True, exist_ok=True)
+        ledger.write_text(''.join(json.dumps(row) + '\n' for row in rows), encoding='utf-8')
+        real_read = _al.read_entries
+        monkeypatch.setattr(_al, 'resolve_ledger_path', lambda: ledger)
+        monkeypatch.setattr(_al, 'read_entries', lambda path=None: real_read(ledger if path is None else path))
+        return _al.summarize_build_ledger('p')
+
+    def test_producer_summary_drives_the_reconciliation(self, tmp_path, monkeypatch):
+        summary = self._summary(
+            tmp_path,
+            monkeypatch,
+            [_build_row('p', dur=12.0), _build_row('p', dur=8.0)],
+        )
+
+        result = _al.reconcile_build_count(2, summary, _al.ledger_has_entries_for_plan('p'))
+
+        assert result['ledger_available'] is True
+        # Compared against the PRODUCER's own fields, never against a literal —
+        # a restated constant here would re-create the drift this guard closes.
+        assert result['ledger_build_count'] == summary['build_count'] == 2
+        assert result['suspect_count'] == summary['suspect_count'] == 0
+        assert result['agreement'] == 'agree'
+
+    def test_a_withheld_total_still_reconciles_on_the_counts(self, tmp_path, monkeypatch):
+        """A withheld total must not be read as an unavailable oracle.
+
+        The single row is suspect, so the producer publishes no number — yet both
+        counts ARE measured and the ledger IS available. Collapsing the withheld
+        total into the unavailable branch would drop a reconciliation the record
+        fully supports.
+        """
+        summary = self._summary(tmp_path, monkeypatch, [_build_row('p', dur=0.0)])
+
+        assert summary['total_build_seconds'] == 'unavailable'
+
+        result = _al.reconcile_build_count(1, summary, _al.ledger_has_entries_for_plan('p'))
+
+        assert result['ledger_available'] is True
+        assert result['ledger_build_count'] == summary['build_count'] == 1
+        assert result['suspect_count'] == summary['suspect_count'] == 1
+        assert result['agreement'] == 'agree'
+        assert 'ledger_unavailable_reason' not in result
 
 
 class TestLedgerAvailabilityProbe:

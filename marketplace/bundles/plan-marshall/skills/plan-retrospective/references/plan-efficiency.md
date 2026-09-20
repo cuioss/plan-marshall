@@ -27,22 +27,32 @@ That total spans **every build system and every phase** (the ledger records
 builds a plan happened to log. Do NOT re-derive build time from a log here — the
 same read-the-record discipline the denominators above take.
 
-Three truthfulness rules ride with it. The first two are already applied by the
-source block — surface them, do not recompute them; the third governs how this
-aspect RENDERS the total it read:
+Three truthfulness rules ride with it. All three are applied by the source block
+— surface them, do not recompute them:
 
 - **Suspect-zero.** The `build_time` block reports `suspect_count` — builds whose
   `duration_seconds` was `0` / absent (a killed run reporting 0, a cache hit, a
   no-op). Those are NOT summed into `total_build_seconds`. When `suspect_count > 0`
-  the total is a **FLOOR**; say so rather than presenting it as exact.
+  and a number was published at all, the total is a **FLOOR**; say so rather than
+  presenting it as exact.
 - **`killed` is SEPARATE from `error`.** The block's `killed` count is an
   infrastructure-event tally, never folded into `error`; a whole-tree kill is not
   a red build.
-- **Absent is not zero.** A plan with `build_count: 0` has **no ledger build
-  rows** — its build time is UNAVAILABLE, not "no builds ran". Render
-  `totals.total_build_seconds` as `unavailable` in that case, never as `0`: a `0`
-  asserts a measurement nobody made, and it averages into every cross-plan
-  roll-up as though the plan had built instantly.
+- **Absent is not zero — and the PRODUCER now says so.** `build_time` emits the
+  literal `unavailable` in place of `total_build_seconds` whenever no build row
+  contributed a duration (`summed_rows: 0`), so this aspect **surfaces that
+  sentinel verbatim** into `totals.total_build_seconds`. ⛔ Do NOT derive it here
+  from `build_count == 0`: that test was the consumer-side rule this producer
+  change replaced, and it disagrees with the producer on the suspect-only case
+  (`build_count > 0`, `summed_rows: 0`) — where the old test would print a `0`
+  the producer refused to emit. A `0` asserts a measurement nobody made and
+  averages into every cross-plan roll-up as though the plan had built instantly.
+
+  Quote the sentinel with the population that explains it. `build_time` publishes
+  `ledger_present`, `ledger_readable` and `ledger_rows_scanned` beside the total,
+  so an absent ledger, an unreadable one, and one that was read and held no build
+  row for this plan are three distinguishable facts — the sentinel itself is
+  identical in all three and names none of them.
 
 ### Denominators are READ, never re-derived
 
@@ -78,8 +88,11 @@ totals:
   duration_seconds: N   # wall clock — totals_wall_ms / 1000; reported, never a ratio numerator
   worked_seconds: N     # agent effort — totals_worked_ms / 1000; the ratio NUMERATOR below
   tokens: N
-  total_build_seconds: N   # READ from log_analysis.build_time (a FLOOR when suspect_count > 0);
-                           # `unavailable`, never 0, when log_analysis.build_time.build_count == 0
+  total_build_seconds: N|unavailable
+                           # READ VERBATIM from log_analysis.build_time (a FLOOR when
+                           # suspect_count > 0). The producer emits the literal
+                           # `unavailable` whenever summed_rows == 0; surface it, never
+                           # re-derive it and never substitute a 0.
   files_modified: N
   tasks_completed: N
   deliverable_count: N

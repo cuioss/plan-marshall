@@ -212,8 +212,21 @@ class TestBuildTimeFromLedger:
     the build-time ORACLE — into a ``build_time`` block the ``plan_efficiency``
     aspect reads into its totals.
 
-    Each test would FAIL pre-fix: pre-fix ``analyze-logs.py`` never read the ledger
-    and its output carried no ``build_time`` block at all (``KeyError``)."""
+    ⛔ **The total is published WITH its population, or not at all.** A float zero
+    is a measurement claim, and the block used to emit ``total_build_seconds: 0.0``
+    beside ``build_count: 0`` on a plan that had recorded 28 real build calls — a
+    figure every cross-plan roll-up then averaged as though the plan had built
+    instantly. The producer now emits the literal ``unavailable`` whenever no row
+    contributed, and publishes ``population`` / ``ledger_present`` /
+    ``ledger_readable`` / ``ledger_rows_scanned`` / ``summed_rows`` so a consumer
+    can see what any published number rests on.
+
+    Every test below therefore asserts the population beside the figure, and the
+    withholding cases assert WHICH state they are in — an absent ledger, an
+    unreadable one, a read-and-empty one, a read one holding no row for this plan,
+    and one holding only suspect-zero rows all reach the same sentinel, so the
+    sentinel alone tells them apart from nothing.
+    """
 
     def test_total_build_seconds_sums_valid_durations(self, tmp_path, monkeypatch):
         plan_id, _ = setup_live_plan(tmp_path, monkeypatch)
@@ -229,6 +242,13 @@ class TestBuildTimeFromLedger:
         bt = result.toon()['build_time']
         assert float(bt['total_build_seconds']) == 280.0
         assert int(bt['build_count']) == 2
+        # The POSITIVE half of the publish-or-withhold pair: a real number arrives
+        # with the population it was taken over, never bare.
+        assert bt['population'] == 'change_ledger_build_rows'
+        assert bt['ledger_present'] is True
+        assert bt['ledger_readable'] is True
+        assert int(bt['ledger_rows_scanned']) == 2
+        assert int(bt['summed_rows']) == 2
 
     def test_suspect_zero_not_summed(self, tmp_path, monkeypatch):
         plan_id, _ = setup_live_plan(tmp_path, monkeypatch)
@@ -243,6 +263,11 @@ class TestBuildTimeFromLedger:
         bt = result.toon()['build_time']
         assert float(bt['total_build_seconds']) == 300.0  # the 0 is NOT averaged in
         assert int(bt['suspect_count']) == 1
+        # A number IS published here because one row contributed — and
+        # `summed_rows` is what makes the published total legible as the FLOOR it
+        # is, rather than as a sum over both rows.
+        assert int(bt['build_count']) == 2
+        assert int(bt['summed_rows']) == 1
 
     def test_killed_separate_from_error(self, tmp_path, monkeypatch):
         plan_id, _ = setup_live_plan(tmp_path, monkeypatch)
@@ -307,16 +332,99 @@ class TestBuildTimeFromLedger:
         assert float(bt['total_build_seconds']) == 200.0
         assert int(bt['build_count']) == 1
 
-    def test_no_ledger_rows_all_zero(self, tmp_path, monkeypatch):
-        # absent is not zero: no rows => build_count 0 (unavailable), total 0.
+    def test_absent_ledger_withholds_the_total_and_says_nothing_was_scanned(self, tmp_path, monkeypatch):
+        # Absent is not zero. No ledger file exists at all, so the producer looked
+        # at nothing and says so on all three population fields rather than
+        # emitting the 0.0 that used to stand in for a measurement.
         plan_id, _ = setup_live_plan(tmp_path, monkeypatch)
         result = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
         bt = result.toon()['build_time']
+        assert bt['total_build_seconds'] == 'unavailable'
+        assert bt['ledger_present'] is False
+        assert bt['ledger_readable'] is False
+        assert int(bt['ledger_rows_scanned']) == 0
+        assert int(bt['summed_rows']) == 0
         assert int(bt['build_count']) == 0
-        assert float(bt['total_build_seconds']) == 0.0
+
+    def test_readable_empty_ledger_is_distinguishable_from_an_unreadable_one(self, tmp_path, monkeypatch):
+        """⛔ The two zeros the block used to collapse, staged side by side.
+
+        Both runs reach the SAME ``unavailable`` sentinel, which is why the
+        sentinel alone cannot be the discriminator: an empty ledger was READ and
+        found to hold nothing (a measurement), while an unreadable one was never
+        read at all (an absence of one). The matched pair asserts the payloads
+        DIFFER, so a regression that folded readability back into presence — or
+        dropped either field — fails here rather than silently reporting a
+        measured nothing over a corpus nobody opened.
+        """
+        ledger = tmp_path / 'base' / 'work' / 'change-ledger.jsonl'
+
+        plan_id, _ = setup_live_plan(tmp_path, monkeypatch, plan_id='retro-build-ledger-empty')
+        _write_ledger(tmp_path / 'base', [])  # the file exists and holds no row
+        first = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
+        assert first.success, first.stderr
+        readable = first.toon()['build_time']
+
+        ledger.chmod(0o000)
+        try:
+            second = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
+        finally:
+            ledger.chmod(0o644)
+        # An unreadable ledger degrades the block; it never fails the aspect.
+        assert second.success, second.stderr
+        unreadable = second.toon()['build_time']
+
+        # Neither publishes a number — nothing was summed in either run.
+        assert readable['total_build_seconds'] == 'unavailable'
+        assert unreadable['total_build_seconds'] == 'unavailable'
+        # …and the population fields separate them, which is the whole point.
+        assert readable['ledger_present'] is True
+        assert readable['ledger_readable'] is True
+        assert unreadable['ledger_present'] is True
+        assert unreadable['ledger_readable'] is False
+        assert readable != unreadable
+
+    def test_ledger_read_but_holding_no_build_row_for_this_plan_publishes_the_scan(self, tmp_path, monkeypatch):
+        # The third withholding route, and the one where the scan is demonstrably
+        # non-empty: rows WERE read, none of them was this plan's build row. A
+        # nonzero `ledger_rows_scanned` beside `build_count: 0` is what separates
+        # this from the absent case, where both read zero.
+        plan_id, _ = setup_live_plan(tmp_path, monkeypatch)
+        _write_ledger(tmp_path / 'base', [_build_row('some-other-plan', dur=999.0)])
+        result = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
+        bt = result.toon()['build_time']
+        assert bt['total_build_seconds'] == 'unavailable'
+        assert bt['ledger_present'] is True
+        assert bt['ledger_readable'] is True
+        assert int(bt['ledger_rows_scanned']) == 1
+        assert int(bt['build_count']) == 0
+
+    def test_all_suspect_rows_withhold_the_total_rather_than_publish_its_degenerate_zero(self, tmp_path, monkeypatch):
+        # `build_count > 0` yet NOTHING was summed: every row carried a suspect
+        # duration. The old `build_count == 0` consumer test could not see this
+        # case and would have rendered the producer's 0.0 as a measured total.
+        plan_id, _ = setup_live_plan(tmp_path, monkeypatch)
+        _write_ledger(
+            tmp_path / 'base',
+            [
+                _build_row(plan_id, dur=0.0),
+                _build_row(plan_id, dur=None),
+            ],
+        )
+        result = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
+        bt = result.toon()['build_time']
+        assert bt['total_build_seconds'] == 'unavailable'
+        assert int(bt['build_count']) == 2
+        assert int(bt['suspect_count']) == 2
+        assert int(bt['summed_rows']) == 0
+        # The ledger WAS read — this is a measured nothing, not a failure to look.
+        assert bt['ledger_readable'] is True
+        assert int(bt['ledger_rows_scanned']) == 2
 
     def test_other_plan_rows_not_attributed(self, tmp_path, monkeypatch):
-        # rows for a different plan_id are not summed into this plan.
+        # rows for a different plan_id are not summed into this plan. The matched
+        # POSITIVE control for the withholding case above: the same foreign row is
+        # present, and this plan's own row still yields a measured total.
         plan_id, _ = setup_live_plan(tmp_path, monkeypatch)
         _write_ledger(
             tmp_path / 'base',
@@ -329,6 +437,10 @@ class TestBuildTimeFromLedger:
         bt = result.toon()['build_time']
         assert float(bt['total_build_seconds']) == 100.0
         assert int(bt['build_count']) == 1
+        # Both rows were SCANNED; only one was attributed. The two counts are
+        # different populations and the block publishes both.
+        assert int(bt['ledger_rows_scanned']) == 2
+        assert int(bt['summed_rows']) == 1
 
 
 class TestScriptCostRollup:

@@ -16,9 +16,30 @@ build_time:
   # Build time from the change-ledger (the build-time ORACLE) — spans every build
   # system and every phase. total_build_seconds sums valid (> 0) durations ONLY;
   # a zero / absent duration is counted in suspect_count and NOT summed (a floor
-  # when suspect_count > 0). `killed` is SEPARATE from `error`. build_count: 0 =
-  # no ledger rows = build time UNAVAILABLE (absent is not zero). The
-  # `plan_efficiency` aspect READS total_build_seconds from here into its totals.
+  # when suspect_count > 0 and summed_rows > 0). `killed` is SEPARATE from
+  # `error`. The `plan_efficiency` aspect READS total_build_seconds from here
+  # into its totals.
+  #
+  # THE PRODUCER PUBLISHES THE POPULATION ITS TOTAL WAS TAKEN OVER, or publishes
+  # no total. `population` names the corpus; `ledger_present` / `ledger_readable`
+  # say whether that corpus could be consulted at all; `ledger_rows_scanned` says
+  # how much of it was read; `summed_rows` is the count of this plan's build rows
+  # that actually contributed a duration.
+  #
+  # ⛔ `ledger_present` and `ledger_readable` are TWO fields, not one flag, and
+  # the three states they span are distinguishable on purpose:
+  #   false / false — the ledger file is absent: nothing was scanned.
+  #   true  / false — the ledger is there and could NOT be opened.
+  #   true  / true  — the ledger was read; `ledger_rows_scanned: 0` then means it
+  #                   was genuinely empty, which is a MEASURED nothing.
+  #
+  # ⛔ `total_build_seconds` is a NUM only when `summed_rows > 0`; otherwise it is
+  # the literal `unavailable`. Absent is not zero — a `0.0` there asserts a
+  # measurement nobody made and averages into every cross-plan roll-up as though
+  # the plan had built instantly. Test the TYPE, never the value. The three ways
+  # a plan reaches the sentinel — unreadable ledger, no build row for this plan,
+  # or only suspect-zero rows — are told apart by the population fields above,
+  # not by the sentinel, which is identical in all three.
   #
   # The five status fields PARTITION the builds:
   #   pass + error + timeout + killed + status_unknown == build_count
@@ -29,7 +50,12 @@ build_time:
   # remainder unnamed, and an unnamed remainder reads as "these builds did not
   # happen". Spelled `status_unknown` to mirror the audit side's
   # `build_status_unknown` / `corpus_build_status_unknown`.
-  total_build_seconds: NUM
+  population: change_ledger_build_rows
+  ledger_present: true|false
+  ledger_readable: true|false
+  ledger_rows_scanned: N
+  summed_rows: N
+  total_build_seconds: NUM|unavailable
   build_count: N
   suspect_count: N
   pass: N
@@ -150,6 +176,7 @@ a missing key.
 - **Read the ceiling and the roll-up together — neither answers the other's question.** `slow_call_count` and the `script_duration_*` percentiles answer *"is any single call pathological?"*. They are structurally incapable of answering *"what dominates total time?"*: a call at a fraction of a percent of the 30s ceiling, repeated a hundred thousand times, is invisible to every one of them by construction, not by oversight. `script_cost_rollup` / `global_log_signals.cost_rollup` answer the second question. A script ranked first with `calls_at_or_over_ceiling: 0` is exactly that dominant-but-fast class — treat it as a finding even though no per-call signal fired.
 - ⛔ **A cumulative total is a FLOOR when `sub_precision_calls` is nonzero** — those calls ran but recorded as `0.00s` under the log's `%.2f` precision, so they contribute nothing. A script with a large `calls` count and a near-zero `cumulative_ms` is not cheap; it is unresolved. Read the two together.
 - ⛔ **The roll-up is WALL-CLOCK, not billing.** The script-execution log carries no per-call token measurement, so a `share_pct` here does **not** convert into a share of cost. A ranking from this roll-up is an operator-**latency** finding; say which currency you are quoting, and never restate a wall-clock share as a cost share.
+- ⛔ **`build_time.total_build_seconds` is either a number the producer measured or the literal `unavailable` — never a zero standing in for one.** Read `summed_rows` to know what the number rests on, and `ledger_present` / `ledger_readable` / `ledger_rows_scanned` to know why there is no number when the sentinel appears: an absent ledger and an unreadable one are different failures from a ledger that was read and held no build row for this plan, and only the population fields separate them. Do not derive `unavailable` yourself from `build_count == 0` — the producer now emits it, and deriving a second one would disagree with it on the suspect-only case (`build_count > 0`, `summed_rows == 0`).
 - `context_position_cost.position_multiple` reports how many times more **cached-read input tokens** a tool use consumes in the most expensive phase than in the cheapest — a **token** figure, and so a different currency from the wall-clock roll-up above; never add or compare the two — the same mechanical step late in a long phase re-reads a far larger accumulated context. Quote it only with `position_multiple_basis` (which two phases it compares) and `measured_rows` (how many rows it rests on). ⛔ It is also a **partition, not a whole** — cached-read is one of four context-load columns, so a 10x multiple is 10x on cached-read tokens, never 10x on billed cost. A literal `unmeasured` means the corpus could not support the figure — it is never a zero. A literal `undefined` means something different and must not be read as a recording gap: the record is COMPLETE and the ratio still cannot be formed (fewer than two rated phases is `unmeasured`; a zero denominator is `undefined`).
 
 ## Finding Shape
