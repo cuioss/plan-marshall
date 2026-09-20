@@ -50,6 +50,7 @@ from _self_review_detectors import (
     _detect_discard_without_report,
     _detect_duplicate_claimable_keys,
     _detect_flag_guard_pairs,
+    _detect_hoisted_binding_shadows,
     _detect_keep_markers,
     _detect_markdown_sections,
     _detect_ordinal_references,
@@ -77,6 +78,8 @@ from _self_review_diff import (
     _run_git,
     _truncate,  # noqa: F401 - re-exported for stable import surface
     _verify_base_branch,
+    is_behind_upstream,
+    resolve_upstream_base,
 )
 from _self_review_patterns import (
     CANDIDATE_FAMILIES,
@@ -306,7 +309,16 @@ def _cmd_surface(args: argparse.Namespace) -> int:
         )
         return 1
 
-    modified_files = _resolve_footprint(project_dir, base_branch)
+    anchor, anchor_source = resolve_upstream_base(project_dir, base_branch)
+    if is_behind_upstream(project_dir, base_branch, anchor):
+        output_toon_error(
+            'behind_upstream',
+            f'local base {base_branch!r} sits behind {anchor!r} — refusing to surface '
+            'a stale scope; advance the local base past upstream first',
+        )
+        return 1
+
+    modified_files = _resolve_footprint(project_dir, anchor)
 
     # The allow-set is tri-state on purpose. ``None`` means "do not filter" (the
     # footprint was unresolvable), while an EMPTY set means "filter to nothing" —
@@ -329,7 +341,7 @@ def _cmd_surface(args: argparse.Namespace) -> int:
         allow_set = delta if allow_set is None else (allow_set & delta)
         modified_files = sorted(allow_set)
 
-    diff_text = _diff_hunks(project_dir, base_branch)
+    diff_text = _diff_hunks(project_dir, anchor)
     added = _iter_added_lines(diff_text)
 
     if allow_set is not None:
@@ -360,6 +372,7 @@ def _cmd_surface(args: argparse.Namespace) -> int:
     worked_example_pairs = _detect_worked_example_pairs(added, project_dir)
     duplicate_claimable_keys = _detect_duplicate_claimable_keys(added, project_dir)
     discard_without_report = _detect_discard_without_report(added, project_dir)
+    hoisted_binding_shadows = _detect_hoisted_binding_shadows(added, project_dir)
 
     detected: dict[str, list] = {
         'regexes': regexes,
@@ -384,6 +397,7 @@ def _cmd_surface(args: argparse.Namespace) -> int:
         'worked_example_pairs': worked_example_pairs,
         'duplicate_claimable_keys': duplicate_claimable_keys,
         'discard_without_report': discard_without_report,
+        'hoisted_binding_shadows': hoisted_binding_shadows,
     }
 
     surface_scope = 'delta' if since_ref is not None else 'full'
@@ -392,7 +406,8 @@ def _cmd_surface(args: argparse.Namespace) -> int:
         'status': 'success',
         'plan_id': plan_id,
         'project_dir': str(project_dir),
-        'base_branch': base_branch,
+        'base_branch': anchor,
+        'base_ref_source': anchor_source,
         'since_ref': since_ref or '',
         'surface_scope': surface_scope,
         'files_in_scope': files_in_scope,

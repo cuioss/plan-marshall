@@ -538,6 +538,12 @@ CANDIDATE_LISTS: tuple[CandidateList, ...] = (
         True,
         'structural',
     ),
+    CandidateList(
+        'hoisted_binding_shadows',
+        'hoisted-binding shadows',
+        True,
+        'structural',
+    ),
 )
 
 

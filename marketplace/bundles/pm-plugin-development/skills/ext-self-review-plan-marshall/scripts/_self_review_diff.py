@@ -62,6 +62,46 @@ def _verify_base_branch(project_dir: Path, base_branch: str) -> bool:
     return rc == 0
 
 
+def resolve_upstream_base(project_dir: Path, base_branch: str) -> tuple[str, str]:
+    """Anchor the review surface at the upstream base, verifying it resolves.
+
+    Prefers ``origin/{base_branch}`` when that ref resolves inside
+    ``project_dir`` (the upstream anchor), falling back to ``base_branch``
+    otherwise. Returns ``(anchor, source)`` where ``source`` is ``upstream``
+    or ``local``. Merge-base semantics are preserved downstream: both the
+    footprint (``{anchor}...HEAD`` ∪ porcelain) and the hunks
+    (``merge-base {anchor} HEAD``) read through the returned anchor.
+    """
+    upstream = f'origin/{base_branch}' if not base_branch.startswith('origin/') else base_branch
+    if _verify_base_branch(project_dir, upstream):
+        return upstream, 'upstream'
+    return base_branch, 'local'
+
+
+def is_behind_upstream(project_dir: Path, base_branch: str, upstream: str) -> bool:
+    """Whether the local base sits behind its upstream anchor.
+
+    True when both refs resolve, they name different commits, and the local
+    base is an ancestor of the upstream (the upstream advanced past the
+    local tip). A behind local base would surface a stale scope, so callers
+    fail loud instead of reviewing against it.
+    """
+    if upstream == base_branch:
+        return False
+    rc_local, out_local, _ = _run_git(project_dir, 'rev-parse', '--verify', base_branch)
+    rc_up, out_up, _ = _run_git(project_dir, 'rev-parse', '--verify', upstream)
+    if rc_local != 0 or rc_up != 0:
+        return False
+    local_sha = out_local.strip()
+    upstream_sha = out_up.strip()
+    if not local_sha or not upstream_sha or local_sha == upstream_sha:
+        return False
+    rc_mb, out_mb, _ = _run_git(project_dir, 'merge-base', base_branch, upstream)
+    if rc_mb != 0:
+        return False
+    return out_mb.strip() == local_sha
+
+
 def _diff_hunks(project_dir: Path, base_branch: str) -> str:
     """Return the post-image diff of the working tree against the merge-base.
 
