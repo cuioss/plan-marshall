@@ -161,14 +161,19 @@ def test_cli_without_flag_preserves_legacy_behaviour(tmp_path):
 # =============================================================================
 
 
-def test_prepare_execute_flag_roundtrip(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+def _load_prepare_execute_isolated(monkeypatch: pytest.MonkeyPatch, tag: str):
     import importlib.util
 
-    spec = importlib.util.spec_from_file_location('prepare_execute_isolated', PREPARE_SCRIPT)
+    spec = importlib.util.spec_from_file_location(f'prepare_execute_{tag}', PREPARE_SCRIPT)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     monkeypatch.syspath_prepend(str(PREPARE_SCRIPT.parent))
     spec.loader.exec_module(module)
+    return module
+
+
+def test_prepare_execute_flag_roundtrip(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    module = _load_prepare_execute_isolated(monkeypatch, 'isolated')
 
     plan_id = 'flag-roundtrip-demo'
     worktree_path = tmp_path / 'wt'
@@ -183,26 +188,9 @@ def test_prepare_execute_flag_roundtrip(tmp_path: Path, monkeypatch: pytest.Monk
 
 
 def test_prepare_execute_flag_fail_closed_on_unreadable(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    import importlib.util
-
-    spec = importlib.util.spec_from_file_location('prepare_execute_closed', PREPARE_SCRIPT)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    monkeypatch.syspath_prepend(str(PREPARE_SCRIPT.parent))
-    spec.loader.exec_module(module)
+    module = _load_prepare_execute_isolated(monkeypatch, 'closed')
 
     assert module.is_worktree_materialized('no-such-plan', tmp_path / 'missing-wt') is False
-
-
-def _load_prepare_execute_isolated(monkeypatch: pytest.MonkeyPatch, tag: str):
-    import importlib.util
-
-    spec = importlib.util.spec_from_file_location(f'prepare_execute_{tag}', PREPARE_SCRIPT)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    monkeypatch.syspath_prepend(str(PREPARE_SCRIPT.parent))
-    spec.loader.exec_module(module)
-    return module
 
 
 def test_prepare_execute_first_candidate_verdict_wins(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):

@@ -298,16 +298,9 @@ def load_diff_files(
     supplied-but-unresolvable path raises rather than degrading to an empty diff.
 
     ⛔ **Without ``--diff-file`` the footprint comes from the SHARED whole-chain
-    resolver, never from a private ``git diff {base}...HEAD`` here.** That private
-    range was structurally empty on every real run: this aspect is finalize step
-    ``order: 995`` and ``default:branch-cleanup`` MERGES at an earlier order, so by
-    the time the range was taken it spanned nothing. The call succeeded and returned
-    no path, so the loader reported evidence as available over zero paths and rule M4
-    concluded that no implementation file changed — for plans that had shipped a real
-    footprint. Routing through :func:`_footprint_resolver.resolve_footprint` adopts
-    the post-merge tiers (realized capture, merge-commit, PR-landing) the sibling
-    footprint consumers already use, so this producer answers the same question they
-    answer, from the same evidence.
+    resolver (:func:`_footprint_resolver.resolve_footprint`), never from a private
+    ``git diff {base}...HEAD`` here.** The module docstring owns why that private
+    range was structurally empty on every real run.
     """
     if diff_file is not None:
         # `is not None`, never truthiness: `--diff-file ""` is SUPPLIED input and
