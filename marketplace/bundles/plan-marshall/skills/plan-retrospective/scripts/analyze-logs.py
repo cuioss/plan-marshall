@@ -204,9 +204,8 @@ def summarize_build_ledger(plan_key: str) -> dict[str, Any]:
 
     ⛔ **``total_build_seconds`` is a float ONLY when ``summed_rows > 0``**;
     otherwise it is the literal :data:`_BUILD_SECONDS_UNAVAILABLE`. Nothing was
-    measured in that case — the ledger was unreadable, held no row for this plan,
-    or held only suspect-zero rows — and a ``0.0`` there is a measurement claim
-    over an empty population. Consumers test the TYPE, never the value.
+    measured in that case, and a ``0.0`` there is a measurement claim over an
+    empty population. Consumers test the TYPE, never the value.
 
     The five status fields PARTITION the builds:
     ``pass + error + timeout + killed + status_unknown == build_count``.

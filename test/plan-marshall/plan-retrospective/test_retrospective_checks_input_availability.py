@@ -61,7 +61,7 @@ _BRANCH_CLEANUP_MANIFEST = {
 
 
 class TestBranchCleanupRuleReadsTheEvidenceFlag:
-    """A RESOLVED empty footprint is evaluated; an ABSENT observation is skipped.
+    """A RESOLVED empty footprint is evaluated; an UNRESOLVABLE one degrades to ``inconclusive``.
 
     The two produce the same ``raw_files_total == 0``, which is exactly why the
     rule must not read that proxy. Both directions are pinned, because a fix that

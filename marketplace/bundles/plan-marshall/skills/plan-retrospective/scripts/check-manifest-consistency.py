@@ -753,8 +753,13 @@ def evaluate_declared_vs_realized_set(
 #: input for its verdict to mean anything.
 STATUS_INDETERMINATE = 'indeterminate'
 
-#: The check status a diff-fed rule takes when the plan footprint could not be
-#: resolved from ANY tier of the shared chain — the footprint-DEGRADATION verdict.
+#: The check status a diff-fed rule takes when it could not obtain the evidence
+#: its verdict depends on — the footprint-DEGRADATION verdict. This has two
+#: distinct causes across the diff-fed rules: for most rules, no footprint tier
+#: resolved from the shared chain; for ``declared_vs_realized_set`` (M6), the
+#: forwarded upstream comparison was never received (see
+#: :data:`_FOOTPRINT_FED_CHECKS` and ``standards/manifest-crosscheck.md`` for the
+#: full split).
 #:
 #: ⛔ It is deliberately NOT :data:`STATUS_INDETERMINATE`, and the two must not be
 #: merged. ``inconclusive`` is this producer's honest-degradation TOKEN: it is a
@@ -764,10 +769,7 @@ STATUS_INDETERMINATE = 'indeterminate'
 #: is what lets the plan-level footprint-derivation aggregate count this aspect as
 #: degraded. ``indeterminate`` is not in that vocabulary and would read as
 #: RESOLVED, leaving the aggregate one member short of firing on exactly the run
-#: where every footprint consumer went unmeasurable together. The two statuses also
-#: mean different things: ``indeterminate`` is "the footprint resolved and the
-#: filter left too little of it", ``inconclusive`` is "no footprint resolved at
-#: all".
+#: where every footprint consumer went unmeasurable together.
 STATUS_INCONCLUSIVE = 'inconclusive'
 
 #: The aspect-level footprint-resolution states published beside the checks, so a

@@ -36,10 +36,9 @@ build_time:
   # ⛔ `total_build_seconds` is a NUM only when `summed_rows > 0`; otherwise it is
   # the literal `unavailable`. Absent is not zero — a `0.0` there asserts a
   # measurement nobody made and averages into every cross-plan roll-up as though
-  # the plan had built instantly. Test the TYPE, never the value. The three ways
-  # a plan reaches the sentinel — unreadable ledger, no build row for this plan,
-  # or only suspect-zero rows — are told apart by the population fields above,
-  # not by the sentinel, which is identical in all three.
+  # the plan had built instantly. Test the TYPE, never the value. The ways a plan
+  # reaches the sentinel are told apart by the population fields above, not by
+  # the sentinel, which is identical across all of them.
   #
   # The five status fields PARTITION the builds:
   #   pass + error + timeout + killed + status_unknown == build_count
