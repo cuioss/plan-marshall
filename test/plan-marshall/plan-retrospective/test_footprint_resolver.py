@@ -708,3 +708,59 @@ def test_split_union_flows_through_the_whole_chain(tmp_path):
     resolved = _fr.resolve_footprint(repo, None)
     assert _fr.footprint_resolved(resolved)
     assert resolved == {'feat/a.py', 'feat/b.py'}
+
+
+# =============================================================================
+# Realized single-run throughput — the mechanical-sweep sizing hook
+# (plan-07-footprint-surface deliverable 4)
+# =============================================================================
+
+
+def test_measure_realized_throughput_counts_capture_tier(tmp_path):
+    """Single-run sizing: throughput is the capture-tier footprint's file count."""
+    plan_dir = tmp_path / 'plan'
+    _write_refs(plan_dir, {'realized_footprint': ['a.py', 'b/c.py', 'd.py']})
+    assert _fr.measure_realized_throughput(plan_dir) == 3
+
+
+def test_measure_realized_throughput_empty_capture_is_zero(tmp_path):
+    """A resolved-empty capture is a measured zero, not an unmeasured None."""
+    plan_dir = tmp_path / 'plan'
+    _write_refs(plan_dir, {'realized_footprint': []})
+    assert _fr.measure_realized_throughput(plan_dir) == 0
+
+
+def test_measure_realized_throughput_absent_capture_is_none(tmp_path):
+    """No capture tier resolves: throughput is unmeasured (None), never a silent zero."""
+    plan_dir = tmp_path / 'plan'
+    _write_refs(plan_dir, {'base_branch': 'main'})
+    assert _fr.measure_realized_throughput(plan_dir) is None
+
+
+def test_derive_sweep_budget_tracks_measured_throughput():
+    """A measured throughput inside the bounds budgets itself one item per file."""
+    result = _fr.derive_sweep_budget(40)
+    assert result['budget_items'] == 40
+    assert result['basis'] == 'measured'
+    assert result['throughput_files'] == 40
+
+
+def test_derive_sweep_budget_clamps_to_bounds():
+    """Tiny plans floor to the minimum sweep unit; huge plans cap at the ceiling."""
+    small = _fr.derive_sweep_budget(0)
+    assert small['budget_items'] == _fr.SWEEP_BUDGET_MIN_ITEMS
+    assert small['basis'] == 'measured'
+    assert small['throughput_files'] == 0
+
+    huge = _fr.derive_sweep_budget(10_000)
+    assert huge['budget_items'] == _fr.SWEEP_BUDGET_MAX_ITEMS
+    assert huge['basis'] == 'measured'
+    assert huge['throughput_files'] == 10_000
+
+
+def test_derive_sweep_budget_empty_throughput_is_stated_fallback():
+    """Empty throughput degrades to the stated fallback — never a silent zero."""
+    result = _fr.derive_sweep_budget(None)
+    assert result['budget_items'] == _fr.SWEEP_BUDGET_FALLBACK_ITEMS
+    assert result['basis'] == 'fallback_empty_throughput'
+    assert result['throughput_files'] is None

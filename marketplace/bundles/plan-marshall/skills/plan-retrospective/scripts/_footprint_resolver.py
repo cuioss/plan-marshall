@@ -553,3 +553,88 @@ def resolve_footprint(plan_dir: Path, plan_id: str | None = None) -> set[str] | 
         return legacy
 
     return FOOTPRINT_UNRESOLVED
+
+
+# ---------------------------------------------------------------------------
+# Realized single-run throughput — the mechanical-sweep sizing hook
+# ---------------------------------------------------------------------------
+#
+# The mechanical sweep (the deterministic per-plan pass whose budget caps how
+# many items it processes for one plan) is sized from a REALIZED single-run
+# measurement — the realized footprint this plan's own run recorded — rather
+# than from a static estimate. This section is the hook the sweep consumes;
+# ``analyze-logs`` publishes the derived budget on its fragment so the sweep
+# reads a measured number per plan instead of assuming one.
+
+#: Minimum sweep unit: a sweep always costs at least one item to run, so a
+#: measured-empty throughput floors here rather than to a silent zero.
+SWEEP_BUDGET_MIN_ITEMS = 1
+
+#: Ceiling: a huge realized footprint must not hand the sweep an unbounded
+#: budget — the sweep stays bounded no matter how large the run was.
+SWEEP_BUDGET_MAX_ITEMS = 200
+
+#: Stated fallback when no throughput was measured at all (no capture tier
+#: resolved). Published with ``basis: fallback_empty_throughput`` so a reader
+#: can tell it apart from a measured budget — never a silent zero.
+SWEEP_BUDGET_FALLBACK_ITEMS = 25
+
+
+def measure_realized_throughput(plan_dir: Path) -> int | None:
+    """Realized single-run throughput: the capture-tier footprint's file count.
+
+    Reads ``references.realized_footprint`` — the set this plan's own realized
+    run recorded while the worktree still existed — and returns its size. This
+    is the ONE measurement the mechanical-sweep budget derives from, so the
+    budget tracks what a single realized run actually touched.
+
+    A resolved-but-empty capture returns ``0`` (measured — the run touched
+    nothing); only an unresolvable capture returns ``None`` (unmeasured).
+    Collapsing the two would let a plan with no capture at all grade the same
+    budget as a plan that genuinely touched nothing.
+
+    Args:
+        plan_dir: The plan directory holding ``references.json``.
+
+    Returns:
+        The realized file count, or ``None`` when the capture tier does not
+        resolve for this plan.
+    """
+    refs = load_references_dict(plan_dir)
+    captured = read_captured_footprint(refs)
+    if captured is None:
+        return None
+    return len(captured)
+
+
+def derive_sweep_budget(throughput: int | None) -> dict[str, Any]:
+    """Mechanical-sweep budget from realized single-run throughput.
+
+    The budget is one sweep item per realized file, clamped to
+    ``[SWEEP_BUDGET_MIN_ITEMS, SWEEP_BUDGET_MAX_ITEMS]`` so a tiny plan still
+    yields the minimum sweep unit and a huge plan stays bounded. An
+    unmeasured throughput (``None``) degrades to the stated
+    ``SWEEP_BUDGET_FALLBACK_ITEMS`` with ``basis: fallback_empty_throughput`` —
+    never a silent zero a consumer could read as "nothing to sweep".
+
+    Args:
+        throughput: The value from :func:`measure_realized_throughput`, or
+            ``None`` when nothing was measured.
+
+    Returns:
+        ``{'budget_items', 'basis', 'throughput_files'}`` where ``basis`` is
+        ``'measured'`` or ``'fallback_empty_throughput'`` and
+        ``throughput_files`` echoes the input (``None`` on the fallback path,
+        so the absence stays visible).
+    """
+    if throughput is None:
+        return {
+            'budget_items': SWEEP_BUDGET_FALLBACK_ITEMS,
+            'basis': 'fallback_empty_throughput',
+            'throughput_files': None,
+        }
+    return {
+        'budget_items': min(max(int(throughput), SWEEP_BUDGET_MIN_ITEMS), SWEEP_BUDGET_MAX_ITEMS),
+        'basis': 'measured',
+        'throughput_files': int(throughput),
+    }

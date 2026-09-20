@@ -1371,9 +1371,7 @@ def test_cli_set_retired_key_refuses_without_writing(plan_context):
     from toon_parser import parse_toon
 
     cmd_create(_create_ns())
-    result = run_script(
-        SCRIPT_PATH, 'set', '--plan-id', 'test-plan', '--field', 'modified_files', '--value', 'x.py'
-    )
+    result = run_script(SCRIPT_PATH, 'set', '--plan-id', 'test-plan', '--field', 'modified_files', '--value', 'x.py')
     assert result.returncode == 0
     data = parse_toon(result.stdout)
     assert data['status'] == 'error'
