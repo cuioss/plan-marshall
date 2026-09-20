@@ -147,14 +147,13 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
         'read_budget_bytes': read_budget,
     }
 
-    skip_transcript, skip_delivered_bytes = _delivered_transcript('')
-
     if status != 'success' or record is None:
         # The runtime declined (no-op — no transcript) or errored, or could not
         # be invoked. This is the same data-absence path Tier 2 takes: emit the
         # canonical skip token. The distinction between "no transcript" and
         # "transcript withheld" is made by the RUNTIME's status; this skill
         # surfaces the genuine-absence token for both here.
+        skip_transcript, skip_delivered_bytes = _delivered_transcript('')
         return {
             **base,
             'status': 'skipped',
