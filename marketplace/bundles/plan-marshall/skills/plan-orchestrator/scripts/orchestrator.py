@@ -1898,6 +1898,47 @@ def cmd_resume_summary(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
+#: Wall-clock bound on the ``git mv`` relocation below. A tree rename is a
+#: handful of syscalls, so this is a hang guard rather than a budget — and it is
+#: stated because an unbounded ``subprocess.run`` would let a wedged git hold the
+#: archive verb open indefinitely.
+_GIT_MV_TIMEOUT_SECONDS = 120
+
+
+def _relocate_epic_tree(source: Path, dest: Path) -> None:
+    """Move an epic tree, preferring ``git mv`` so the move lands as a rename.
+
+    The orchestrator corpus is git-tracked, so a plain filesystem move leaves
+    the index holding a whole-tree deletion beside a whole-tree addition — the
+    same bytes, with the relocation no longer readable as one. ``git mv`` stages
+    the rename instead.
+
+    The filesystem fallback is NOT optional, because three ordinary conditions
+    leave ``git mv`` unable to run at all: no git executable on PATH; a
+    ``source`` outside any repository, which is every ``PLAN_BASE_DIR`` fixture
+    since those resolve into a tmp directory; and an untracked tree, which an
+    epic created before the corpus became tracked state is. git moves nothing in
+    each of those, so the fallback carries the whole relocation rather than
+    completing a half-done one.
+    """
+    try:
+        completed = subprocess.run(  # argv list, never a shell string; 'git' resolves via PATH by design
+            ['git', '-C', str(source.parent), 'mv', str(source), str(dest)],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=_GIT_MV_TIMEOUT_SECONDS,
+        )
+    except (OSError, subprocess.SubprocessError):
+        # git could not be launched or could not finish. Either way it performed
+        # no rename, so the fallback below is the entire move.
+        pass
+    else:
+        if completed.returncode == 0:
+            return
+    shutil.move(str(source), str(dest))
+
+
 def cmd_archive(args: argparse.Namespace) -> dict[str, Any]:
     """Relocate a *closed* epic tree to ``archived-orchestrators/{slug}/``.
 
@@ -1910,8 +1951,9 @@ def cmd_archive(args: argparse.Namespace) -> dict[str, Any]:
       an actionable message; NO move is performed.
     - source present AND dest present → ``error: archive_conflict`` (never
       clobber the frozen audit record).
-    - otherwise → create the archived parent and ``shutil.move`` the tree,
-      returning ``archived_to``.
+    - otherwise → create the archived parent and relocate the tree via
+      :func:`_relocate_epic_tree` (``git mv`` where it can run, a filesystem
+      move otherwise), returning ``archived_to``.
     """
     invalid = _validate_slug(args.slug)
     if invalid:
@@ -1949,7 +1991,7 @@ def cmd_archive(args: argparse.Namespace) -> dict[str, Any]:
             archived_to=str(dest),
         )
     dest.parent.mkdir(parents=True, exist_ok=True)
-    shutil.move(str(source), str(dest))
+    _relocate_epic_tree(source, dest)
     return {
         'status': 'success',
         'operation': 'archive',
