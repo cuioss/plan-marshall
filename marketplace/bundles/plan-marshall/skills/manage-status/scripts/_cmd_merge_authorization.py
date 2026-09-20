@@ -62,6 +62,33 @@ from file_ops import now_utc_iso
 VERDICT_VALID = 'valid'
 VERDICT_LAPSED = 'lapsed'
 
+#: Distinct header marking an unattended-order consent prompt, visually
+#: separate from a blocking-question prompt.
+UNATTENDED_CONSENT_HEADER = 'Merge Authorization — Unattended Order'
+
+
+def format_unattended_consent_prompt(
+    kind: str,
+    head: str,
+    gap_class: str,
+    granted_over: str,
+) -> str:
+    """Render the unattended-order consent prompt text.
+
+    The returned text carries a distinct header and a machine prefix naming
+    the gap class and HEAD it authorizes, so it cannot be mistaken for a
+    blocking question. Pure rendering: grant/check verdicts and gap-class
+    routing are unchanged.
+    """
+    prefix = f'[UNATTENDED-CONSENT gap-class={gap_class} head={head} kind={kind}]'
+    lines = [
+        UNATTENDED_CONSENT_HEADER,
+        prefix,
+        f'Authorizing {kind} over {gap_class} at {head}.',
+        f'Granted over: {granted_over}',
+    ]
+    return '\n'.join(lines)
+
 
 def cmd_merge_authorization_grant(args: argparse.Namespace) -> dict | None:
     """Persist a HEAD-bound merge authorization into status.metadata."""
