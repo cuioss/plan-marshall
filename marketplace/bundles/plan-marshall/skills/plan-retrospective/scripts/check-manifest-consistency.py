@@ -866,7 +866,12 @@ def summarize_checks(checks: list[dict[str, str]]) -> dict[str, int]:
 
 
 def _withhold_on_absent_evidence(checks: list[dict[str, str]]) -> list[dict[str, str]]:
-    """Degrade every diff-fed clean ``pass`` when NO footprint tier resolved.
+    """Degrade every footprint-fed clean ``pass`` when NO footprint tier resolved.
+
+    "Footprint-fed" is :data:`_FOOTPRINT_FED_CHECKS`, not the full
+    :data:`_DIFF_FED_CHECKS` registry: ``declared_vs_realized_set`` (Rule M6) is
+    diff-fed for loop-derivation purposes but its evidence is the forwarded
+    upstream fragment, not this script's footprint, so it is excluded here.
 
     Reached only when :func:`load_diff_files` reported the shared chain's
     unresolvable sentinel, so the rules ran against an empty footprint for want of
@@ -898,11 +903,15 @@ def _withhold_on_absent_evidence(checks: list[dict[str, str]]) -> list[dict[str,
 
 
 def apply_input_reduction(checks: list[dict[str, str]], reduction: dict[str, Any]) -> list[dict[str, str]]:
-    """Annotate — and where required downgrade — every diff-fed check.
+    """Annotate — and where required downgrade — every footprint-fed check.
+
+    "Footprint-fed" is :data:`_FOOTPRINT_FED_CHECKS`, not the full
+    :data:`_DIFF_FED_CHECKS` registry — see :data:`_FOOTPRINT_FED_CHECKS` for why
+    ``declared_vs_realized_set`` (Rule M6) is excluded.
 
     Three obligations, all discharged here so no rule evaluator can forget one:
 
-    - **Every** diff-fed check that ran against a reduced input set has the
+    - **Every** footprint-fed check that ran against a reduced input set has the
       reduction appended to its message, so the count the rule actually saw is
       visible beside its verdict rather than buried in the ``diff`` block.
     - A check that would otherwise emit a bare clean ``pass`` while the MAJORITY of
@@ -947,7 +956,7 @@ def apply_input_reduction(checks: list[dict[str, str]], reduction: dict[str, Any
         reduction: The block :func:`filter_bookkeeping` produced.
 
     Returns:
-        The checks, with diff-fed entries annotated and possibly downgraded.
+        The checks, with footprint-fed entries annotated and possibly downgraded.
     """
     dropped = reduction['dropped']
     diff_available = reduction['diff_available']
