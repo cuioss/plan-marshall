@@ -1,12 +1,27 @@
 # Manifest Cross-Check Rules
 
-Cross-check rules that compare the per-plan execution manifest (`execution.toon` written by `plan-marshall:manage-execution-manifest`) against the actual end-of-execute git diff. Each rule maps one-to-one to a row in the seven-rule manifest decision matrix and emits one finding per violation.
+Cross-check rules that compare the per-plan execution manifest (`execution.toon` written by `plan-marshall:manage-execution-manifest`) against the plan's realized footprint. Each rule maps one-to-one to a row in the seven-rule manifest decision matrix and emits one finding per violation.
 
 ## Sources
 
 - **Manifest** (`execution.toon`): produced by `manage-execution-manifest compose` during phase-3-outline. Captures `phase_5.early_terminate`, `phase_5.verification_steps`, `phase_6.steps`, plus the `rule_fired` field that names which decision matrix row applied (logged in `decision.log` rather than the manifest body itself).
 - **Decision log** (`decision.log`): captures the rule that fired, with the `(plan-marshall:manage-execution-manifest:compose)` caller tag — load these alongside the manifest to present the WHY behind each WHAT.
-- **End-of-execute diff** (`git diff {base}...HEAD --name-only`): the authoritative list of files touched between the plan's base commit and the head of the execute branch. Used to compare against manifest assumptions.
+- **Realized footprint**: resolved through the **shared whole-chain resolver** (`scripts/_footprint_resolver.py`, `resolve_footprint`), which walks its declared `RESOLVING_TIERS` in order and then reports its unresolvable sentinel. That list is authoritative and is deliberately not enumerated here. An explicit `--diff-file` bypasses the chain and is caller-supplied evidence.
+- **Forwarded set comparison**: the `affected_files_exact_match` block of the `artifact-consistency` fragment (`work/fragment-artifact-consistency.toon`), which that aspect downgrades and marks `forwarded_to_manifest: true` whenever a manifest exists. Rule M6 is its receiver.
+
+⛔ **The footprint is NOT a private `git diff {base}...HEAD` taken by this script**, and the difference is why this aspect exists in its current form. It runs at finalize `order: 995`, after `default:branch-cleanup` has merged, so that range structurally spans nothing: the call succeeded, returned no path, and rule M4 reported "no implementation file changed" for plans that had shipped a real footprint. Routing through the shared chain is what gives this aspect the post-merge tiers (realized capture, merge-commit, PR-landing) its sibling footprint consumers already had.
+
+## Footprint degradation verdict
+
+When **no** tier of the chain resolves, the footprint is unresolvable and no rule may verdict on it. The aspect then publishes a **degradation** verdict rather than a confident empty-footprint claim:
+
+- Every affected check takes the status `inconclusive`, naming the reason and the chain it tried.
+- The aspect-level `footprint_resolution` block carries `status: inconclusive`, the reason, and `chain` (the tiers consulted).
+- Rule M4 reports `inconclusive` and **never** reaches its `raw_files_total == 0` wording, which asserts that the footprint resolved to no path — precisely what did not happen.
+
+⛔ `inconclusive` is deliberately **not** `indeterminate`, and the two must not be merged. `inconclusive` is a member of `retro_sections.FOOTPRINT_DEGRADED_TOKENS`, and `compile-report._declares_degraded` matches it by **equality against a verdict field** (`status` / `comparison`) — so emitting it is what lets the plan-level footprint-derivation aggregate count this aspect as degraded. It is also what makes `manifest-decisions` a legitimate member of `retro_sections.FOOTPRINT_CONSUMING_ASPECTS`: a producer with no degraded verdict reads as resolved on every run and would render that aggregate incapable of firing. `indeterminate` is not in that vocabulary. The two also mean different things: `indeterminate` is *the footprint resolved and the filter left too little of it*; `inconclusive` is *no footprint resolved at all*.
+
+**The resolving tier is published beside the verdict.** `footprint_resolution.tier` names which tier of the chain supplied the footprint (or `unresolved`), and `diff.evidence_tier` carries the same value; the post-merge tiers additionally attach `footprint_resolution.caveat`, so a verdict graded over landing-commit evidence states its evidence tier rather than reading as a live-worktree verdict.
 
 ## Cross-Check Matrix
 
@@ -48,9 +63,15 @@ The bare `{canonical}` form is **not impossible**, which is why this is a normal
 
 This is a soft consistency check — the script does not query git for branch state. Instead it asserts that `phase_6.steps` containing `branch-cleanup` is paired with at least one implementation-shaped diff entry (so there is something to clean up).
 
-**M4 is the only diff-fed rule that fails on the survivor set being EMPTY** rather than on a culprit present within it, which makes the filter the thing that produces its failing state. Reaching that state requires a non-empty raw diff (an empty one is already skipped as missing data) whose every entry the filter dropped — so the finding names the reduction rather than claiming the diff was empty, which the missing-data guard has already ruled out.
+**M4 is the only diff-fed rule that fails on the survivor set being EMPTY** rather than on a culprit present within it, which makes the filter the thing that can produce its failing state. Three input states reach it, and each gets its own wording because they are different facts:
 
-**Finding**: `severity=info`, `code=branch_cleanup_without_changes`, `message="phase_6.steps includes branch-cleanup but no implementation file changed — all N diff entries classified as bookkeeping (plan state, the plan report, or a build-config route)"`.
+- **No tier resolved** — the rule reports `inconclusive` with `code=branch_cleanup_footprint_unresolved` at `severity=warning`, naming the chain it tried. Whether an implementation file changed is UNMEASURABLE. ⛔ This branch must never fall through to either wording below; both assert something about a footprint that was actually observed.
+- **Footprint resolved, named no path** — a measured empty footprint. The finding says the observed footprint was empty, which it may say only here.
+- **Footprint resolved non-empty, every entry filtered** — the filter produced the emptiness, so the finding names the reduction instead. Saying "the footprint is empty" in this branch would state the opposite of what was observed.
+
+**Finding (the two resolved branches)**: `severity=info`, `code=branch_cleanup_without_changes`, `message="phase_6.steps includes branch-cleanup but no implementation file changed — all N diff entries classified as bookkeeping (plan state, the plan report, or a build-config route)"` (reduction branch), or the resolved-empty wording for the other.
+
+The verdict is substantiated in both resolved branches because every drop category is a *positive* classification: an empty survivor set means every supplied path was positively identified as non-implementation.
 
 ⛔ The finding stops at what it knows and draws no conclusion about the push. Every drop category can contain tracked files that really did change on the branch — a `report` or `config` entry plainly, and `runtime_state` too, since `.plan/` is only partly git-ignored.
 
@@ -59,6 +80,23 @@ This is a soft consistency check — the script does not query git for branch st
 **Manifest signal**: `manifest_version` field present and equals the version known to this script.
 
 **Finding (when violated)**: `severity=error`, `code=manifest_version_unknown`, `message="manifest_version={value} not recognized by check-manifest-consistency"`.
+
+### Rule M6: Declared-vs-realized set comparison is received
+
+**Source**: the `affected_files_exact_match` block of the `artifact-consistency` fragment — **not** the footprint. This is the receiving half of a forward: when an `execution.toon` exists, `check-artifact-consistency` downgrades its own `warn` to `info`, sets `forwarded_to_manifest: true`, and tells the reader the drift is handled here. Nothing read that flag, so the finding was not re-routed — it was **dropped**, on every manifest-bearing plan. A forward with no receiver loses more than the duplicate reporting the downgrade was introduced to avoid.
+
+**Two sets, two severities**, because they mean different things:
+
+| Set | Meaning | Severity |
+|-----|---------|----------|
+| `outline_only` | declared with a modification intent, absent from the realized footprint — a declaration the run did not honour | `warning` |
+| `references_only` | realized but never declared — ordinary discovery on most plans | `info` |
+
+**Finding (when either set is non-empty)**: `code=declared_vs_realized_set_mismatch`, severity per the table above (`warning` whenever `outline_only` is non-empty, else `info`), with the union of both sets under `culprits`.
+
+**Both set sizes are published beside the verdict**, and so is the population they were taken over (`declared_vs_realized.outline_only_count` / `references_only_count`, plus the upstream status and the `forwarded_to_manifest` flag the block carried). A zero from this rule is exactly the kind that needs attribution.
+
+⛔ **An unread fragment reports `inconclusive` and publishes NO counts.** When the artifact-consistency fragment is absent, unparseable, or carries no `affected_files_exact_match` block, the comparison was never received — `declared_vs_realized.received` is `false` with a reason and the count keys are **omitted**, never sent as two zeros. A zero from a comparison that ran and a zero from a comparison that never arrived are otherwise indistinguishable, which is the defect this whole aspect reports on.
 
 ## Rules That Are Intentionally NOT Checked
 
@@ -103,7 +141,7 @@ Pure-deletion diff entries (e.g., a removed file) are kept because deletion is s
 
 Filtering happens before any rule sees the diff, so a rule can be evaluated against a small fraction of the supplied footprint and still emit a clean pass. That pass reads in every downstream summary exactly like a substantiated one. Two obligations close it, both applied after every evaluator so no rule can forget one:
 
-- Every diff-fed check (`docs_only_diff`, `early_terminate_diff`, `tests_only_diff`, `branch_cleanup_changes`) that ran against a reduced input set carries the reduction in its message. `manifest_version_recognized` is exempt: it reads the manifest body alone, so no amount of filtering affects it.
+- Every diff-fed check (`docs_only_diff`, `early_terminate_diff`, `tests_only_diff`, `branch_cleanup_changes`, `declared_vs_realized_set`) that ran against a reduced input set carries the reduction in its message. The membership is the script's single `_DIFF_FED_RULES` dispatch registry, which both the evaluation loop and the reduction report read — a rule added there is automatically evaluated AND automatically subject to this report; the list above restates that registry and is not a second source for it. `manifest_version_recognized` is exempt: it reads the manifest body alone, so no amount of filtering affects it.
 - A check that would otherwise emit a bare clean `pass` while the **majority** of the supplied footprint was discarded (`files_filtered > files_kept`) takes the status `indeterminate` instead, and its message names the withheld verdict.
 
 A `fail` is never downgraded, for a reason that differs by rule shape — the blanket rationale "a reduced input can only have hidden more violations" covers only one of the two:
@@ -113,11 +151,11 @@ A `fail` is never downgraded, for a reason that differs by rule shape — the bl
 
 A `skip` is never downgraded either: the rule did not apply, which the filtering did not decide.
 
-There is a third obligation with the same purpose and a different cause. A rule that would emit a bare clean `pass` while **no diff observation reached it at all** — no `--diff-file` and no usable `--base-ref` diff — also takes `indeterminate`. The filtering logic cannot see this case: nothing was discarded, so the reduction is empty, yet the rule evaluated an empty footprint it never received.
+There is a third obligation with the same purpose and a different cause. A rule that would emit a bare clean `pass` while **no footprint reached it at all** — no `--diff-file`, and no tier of the shared chain resolved — takes `inconclusive`, the degradation token (see [Footprint degradation verdict](#footprint-degradation-verdict)), rather than `indeterminate`. The filtering logic cannot see this case: nothing was discarded, so the reduction is empty, yet the rule evaluated an empty footprint it never received.
 
-⛔ An ABSENT observation and a RESOLVED empty one are different states and must not be inferred from the same `len(files) == 0`. A supplied diff file that names nothing means the run really did change nothing — a rule may pass on it. The loader therefore reports evidence-availability directly rather than leaving it to be guessed downstream.
+⛔ An ABSENT observation and a RESOLVED empty one are different states and must not be inferred from the same `len(files) == 0`. A footprint that resolved to no path means the run really did change nothing — a rule may pass on it. The loader therefore reports evidence-availability directly, read through the resolver's own `footprint_resolved` predicate rather than by testing emptiness, so the distinction is never guessed downstream.
 
-The `diff` block publishes the evidence: `filtered_by_category` (one count per category, always present even at zero), `oracle_available` (whether the build map answered at all), `majority_discarded`, and `diff_available`.
+The `diff` block publishes the evidence: `evidence_tier` (which tier answered, or `unresolved`), `filtered_by_category` (one count per category, always present even at zero), `oracle_available` (whether the build map answered at all), `majority_discarded`, and `diff_available`.
 
 ## TOON Fragment Shape
 
@@ -136,8 +174,25 @@ manifest:
   phase_6:
     steps[*]: ['push', ...]
 decision_log_entries[*]: ['(plan-marshall:manage-execution-manifest:compose) Rule default fired — ...']
+footprint_resolution:
+  status: resolved | inconclusive     # inconclusive IS the degradation token
+  tier: {resolving tier that answered, 'diff_file', or 'unresolved'}
+  base: {label of the evidence the tier supplied}
+  chain[*]: {the RESOLVING_TIERS consulted}
+  caveat: "{post-merge evidence caveat, empty for live tiers}"
+declared_vs_realized:
+  received: true | false
+  # present ONLY when received: true — omitted, never zeroed, when it is false
+  upstream_status: {the forwarded block's own status}
+  forwarded_to_manifest: true | false
+  outline_only_count: N
+  references_only_count: N
+  # present ONLY when received: false
+  reason: "{why no set sizes were measured}"
 diff:
-  base: {base_ref or 'unknown'}
+  base: {label of the evidence supplied, or 'unresolved'}
+  evidence_tier: {same tier value as footprint_resolution.tier}
+  evidence_caveat: "{post-merge caveat, empty for live tiers}"
   files_total: N
   files_filtered: M
   files_kept: K
@@ -157,6 +212,7 @@ checks[*]{name,status,message}:
   - early_terminate_diff,skip,'rule M2 not applicable — early_terminate=false'
   - tests_only_diff,skip,'rule M3 not applicable — verification_steps does not denote module-tests only'
   - branch_cleanup_changes,indeterminate,'... — VERDICT WITHHELD: M of N supplied paths were filtered as bookkeeping before evaluation'
+  - declared_vs_realized_set,pass,'declared modification-intent set and realized footprint agree — received from check-artifact-consistency ...'
 findings[*]{severity,code,message,culprits}:
   - warning,docs_only_diff_violation,'...',['src/a.py']
 summary:
@@ -164,10 +220,13 @@ summary:
   failed: N
   skipped: N
   indeterminate: N
+  inconclusive: N
   findings: N
 ```
 
 `indeterminate` is a status distinct from both `skip` (the rule did not apply) and `pass` (the rule applied and was satisfied): it says the rule applied but saw too little of the supplied input for its verdict to mean anything. See [Reporting a Reduced Input Set](#reporting-a-reduced-input-set).
+
+`inconclusive` is distinct from all three and is the **degradation** token: the rule applied and its input could not be obtained at all — no footprint tier resolved, or (for M6) the forwarded comparison was never received. See [Footprint degradation verdict](#footprint-degradation-verdict).
 
 When `manifest_present == false`, the script emits `status: skipped` with an empty `checks` and `findings` list — the orchestrator should skip the aspect entirely in this case.
 
@@ -178,8 +237,9 @@ When `manifest_present == false`, the script emits `status: skipped` with an emp
 - `manifest_version_unknown` is a hard error — it implies the manifest schema has drifted ahead of the cross-check engine. Surface as `error` and recommend updating the script.
 - A clean run (all checks `pass` or `skip`, zero findings) is the expected outcome. The aspect's value comes from catching drift.
 - An `indeterminate` check is **not** a clean result and MUST NOT be rendered as one. It reports that the rule saw only a minority of the supplied footprint, so it is surfaced with the reduction its message names — a withheld verdict, not a satisfied one.
+- An `inconclusive` check is **not** a clean result either, and is a stronger statement than `indeterminate`: the rule's input could not be obtained at all. Surface it naming the unobtainable input — the unresolved footprint (with the chain that was tried) or the unreceived forwarded comparison — and never infer a figure for it. The usual cause of an unresolved footprint is a worktree the merge gate already deleted on a plan that recorded neither a realized-footprint capture nor a landing SHA, so the repair is to the measurement's evidence, not to the plan's declared files.
 
 ## Cross-References
 
-- `references/artifact-consistency.md` — peer aspect; `affected_files_exact_match` forwards to this matrix when a manifest exists.
+- `references/artifact-consistency.md` — peer aspect; `affected_files_exact_match` forwards to this matrix when a manifest exists, and [Rule M6](#rule-m6-declared-vs-realized-set-comparison-is-received) is the rule that receives it.
 - `plan-marshall:manage-execution-manifest` — the API that produces the manifest; see its `standards/decision-rules.md` for the authoritative rule definitions.
