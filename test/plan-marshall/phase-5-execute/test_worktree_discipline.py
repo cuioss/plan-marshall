@@ -247,6 +247,35 @@ def test_prepare_execute_malformed_first_candidate_fails_closed(tmp_path: Path, 
     assert module.is_worktree_materialized(plan_id, worktree_path) is False
 
 
+def test_prepare_execute_unreadable_first_candidate_fails_closed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    import os
+
+    module = _load_prepare_execute_isolated(monkeypatch, 'unreadable_first')
+
+    plan_id = 'unreadable-first-demo'
+    worktree_path = tmp_path / 'wt'
+    wt_status = worktree_path / '.plan' / 'local' / 'plans' / plan_id / 'status.json'
+    wt_status.parent.mkdir(parents=True)
+    wt_status.write_text(json.dumps({'plan_id': plan_id, 'metadata': {}}) + '\n', encoding='utf-8')
+    os.chmod(wt_status, 0)
+
+    main_plan_dir = tmp_path / 'main' / '.plan' / 'local' / 'plans' / plan_id
+    main_plan_dir.mkdir(parents=True)
+    (main_plan_dir / 'status.json').write_text(
+        json.dumps({'plan_id': plan_id, 'metadata': {'worktree_materialized': True}}) + '\n',
+        encoding='utf-8',
+    )
+    monkeypatch.setattr(module, 'get_plan_dir', lambda _pid: main_plan_dir)
+
+    try:
+        # Only FileNotFoundError falls through; any other I/O failure on
+        # the authoritative copy fails closed instead of consulting the
+        # stale main fallback.
+        assert module.is_worktree_materialized(plan_id, worktree_path) is False
+    finally:
+        os.chmod(wt_status, 0o644)
+
+
 def test_prepare_execute_persist_leaves_no_tmp_residue(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     module = _load_prepare_execute_isolated(monkeypatch, 'no_tmp')
 

@@ -281,8 +281,13 @@ def is_worktree_materialized(plan_id: str, worktree_path: Path | None = None) ->
     for status_path in _candidate_status_paths(plan_id, worktree_path):
         try:
             raw = status_path.read_text(encoding='utf-8')
-        except OSError:
+        except FileNotFoundError:
             continue
+        except OSError:
+            # The authoritative copy exists but cannot be read (permissions,
+            # transient I/O). Falling through to a later fallback would let
+            # a stale record reopen the gate without reading the live one.
+            return False
         try:
             payload = json.loads(raw)
         except ValueError:
