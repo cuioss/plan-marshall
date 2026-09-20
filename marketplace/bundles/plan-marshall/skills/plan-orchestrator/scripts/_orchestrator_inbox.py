@@ -354,14 +354,14 @@ _MESSAGE_NAME_RE = re.compile(r'^(?P<sender>.+?)-(?P<seq>\d{3,})\.md$')
 #: :func:`epic_spec_parser.plan_id_of` reads the same corpus through. Composing
 #: from that binding rather than carrying a second copy is what keeps this
 #: pointer grammar and the corpus parser from drifting apart.
-_SOURCE_ID_RE = re.compile(r'^\.plan/local/orchestrator/(?P<slug>[^/]+)/plans/' + PLAN_ID_SEGMENT + r'[^/]*\.md$')
+_SOURCE_ID_RE = re.compile(r'^\.plan/orchestrator/(?P<slug>[^/]+)/plans/' + PLAN_ID_SEGMENT + r'[^/]*\.md$')
 
 #: Shape-only sibling of :data:`_SOURCE_ID_RE` — any markdown file directly
 #: under an epic's ``plans/`` directory, whatever its id segment. It is the
 #: predicate that separates "not an orchestrator pointer at all" from
 #: "orchestrator pointer whose id segment matches none of the accepted forms",
 #: which is the case that previously reclassified silently.
-_ORCHESTRATOR_PLANS_RE = re.compile(r'^\.plan/local/orchestrator/(?P<slug>[^/]+)/plans/[^/]+\.md$')
+_ORCHESTRATOR_PLANS_RE = re.compile(r'^\.plan/orchestrator/(?P<slug>[^/]+)/plans/[^/]+\.md$')
 
 #: The closed vocabulary :func:`classify_source_id` reports in its ``detection``
 #: field. Consumers assert against this set rather than re-listing literals.
@@ -1147,7 +1147,7 @@ def classify_source_id(source_id: str) -> SourceIdClassification:
 
     Pure classification of the string ``phase-1-init`` already persisted — no
     filesystem access and no second detector. A pointer under
-    ``.plan/local/orchestrator/{slug}/plans/`` whose ``{slug}`` is a safe
+    ``.plan/orchestrator/{slug}/plans/`` whose ``{slug}`` is a safe
     identifier and whose id segment matches one of the three settled forms is
     orchestrated:
 

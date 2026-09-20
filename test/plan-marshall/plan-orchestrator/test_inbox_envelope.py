@@ -418,32 +418,32 @@ class TestSequenceAllocation:
 
 #: The pointer form ``test_should_tolerate_surrounding_whitespace`` wraps — named
 #: once so the padded input and the un-padded expected id cannot drift apart.
-_BARE_NUMBERED_POINTER = '.plan/local/orchestrator/my-epic/plans/PLAN-7.md'
+_BARE_NUMBERED_POINTER = '.plan/orchestrator/my-epic/plans/PLAN-7.md'
 
 #: The ACCEPTING grammar sweep, as one table: ``(source_id, expected_epic,
 #: expected_id)``. Every row is a settled pointer form the classifier must accept.
 _ACCEPTED_SOURCE_IDS = (
     (
-        '.plan/local/orchestrator/truthful-signals/plans/PLAN-55-inbox.md',
+        '.plan/orchestrator/truthful-signals/plans/PLAN-55-inbox.md',
         'truthful-signals',
-        '.plan/local/orchestrator/truthful-signals/plans/PLAN-55-inbox.md',
+        '.plan/orchestrator/truthful-signals/plans/PLAN-55-inbox.md',
     ),
     (_BARE_NUMBERED_POINTER, 'my-epic', _BARE_NUMBERED_POINTER),
     (f'  {_BARE_NUMBERED_POINTER}\n', 'my-epic', _BARE_NUMBERED_POINTER),
     (
-        '.plan/local/orchestrator/my-epic/plans/PLAN-03-content-search-seam.md',
+        '.plan/orchestrator/my-epic/plans/PLAN-03-content-search-seam.md',
         'my-epic',
-        '.plan/local/orchestrator/my-epic/plans/PLAN-03-content-search-seam.md',
+        '.plan/orchestrator/my-epic/plans/PLAN-03-content-search-seam.md',
     ),
     (
-        '.plan/local/orchestrator/my-epic/plans/PLAN-CIS-01-content-search-seam.md',
+        '.plan/orchestrator/my-epic/plans/PLAN-CIS-01-content-search-seam.md',
         'my-epic',
-        '.plan/local/orchestrator/my-epic/plans/PLAN-CIS-01-content-search-seam.md',
+        '.plan/orchestrator/my-epic/plans/PLAN-CIS-01-content-search-seam.md',
     ),
     (
-        '.plan/local/orchestrator/my-epic/plans/CIS-01-content-search-seam.md',
+        '.plan/orchestrator/my-epic/plans/CIS-01-content-search-seam.md',
         'my-epic',
-        '.plan/local/orchestrator/my-epic/plans/CIS-01-content-search-seam.md',
+        '.plan/orchestrator/my-epic/plans/CIS-01-content-search-seam.md',
     ),
 )
 
@@ -464,18 +464,18 @@ _REJECTED_SOURCE_IDS = (
     ('a request typed by the operator', 'not_orchestrator_pointer'),
     ('doc/developer/build.adoc', 'not_orchestrator_pointer'),
     ('', 'not_orchestrator_pointer'),
-    ('.plan/local/orchestrator/../../etc/plans/PLAN-1.md', 'not_orchestrator_pointer'),
-    ('.plan/local/orchestrator/..evil/plans/PLAN-1.md', 'unsafe_slug'),
+    ('.plan/orchestrator/../../etc/plans/PLAN-1.md', 'not_orchestrator_pointer'),
+    ('.plan/orchestrator/..evil/plans/PLAN-1.md', 'unsafe_slug'),
     # Orchestrator-SHAPED, id segment unrecognised — the case whose
     # reclassification was previously silent.
-    ('.plan/local/orchestrator/my-epic/plans/README.md', 'unrecognised_id'),
+    ('.plan/orchestrator/my-epic/plans/README.md', 'unrecognised_id'),
     # Over-acceptance guard: an optional-slug-group regex would accept a bare
     # ``01-foo.md`` that is neither PLAN-prefixed nor slug-prefixed.
-    ('.plan/local/orchestrator/my-epic/plans/01-foo.md', 'unrecognised_id'),
-    ('.plan/local/orchestrator/my-epic/plans/cis-01-foo.md', 'unrecognised_id'),
+    ('.plan/orchestrator/my-epic/plans/01-foo.md', 'unrecognised_id'),
+    ('.plan/orchestrator/my-epic/plans/cis-01-foo.md', 'unrecognised_id'),
     # Bound guard: the slug token caps at eight characters, so a nine-character
     # token is outside the widened grammar.
-    ('.plan/local/orchestrator/my-epic/plans/ABCDEFGHI-01-foo.md', 'unrecognised_id'),
+    ('.plan/orchestrator/my-epic/plans/ABCDEFGHI-01-foo.md', 'unrecognised_id'),
 )
 
 _REJECTED_SOURCE_ID_IDS = [
@@ -520,9 +520,9 @@ class TestClassifySourceId:
         # equality is two-sided — every declared token is reachable, and no
         # case reports a token outside the declared set.
         cases = (
-            '.plan/local/orchestrator/my-epic/plans/PLAN-7.md',
-            '.plan/local/orchestrator/..evil/plans/PLAN-1.md',
-            '.plan/local/orchestrator/my-epic/plans/README.md',
+            '.plan/orchestrator/my-epic/plans/PLAN-7.md',
+            '.plan/orchestrator/..evil/plans/PLAN-1.md',
+            '.plan/orchestrator/my-epic/plans/README.md',
             'a request typed by the operator',
         )
 
@@ -1310,7 +1310,7 @@ class TestInboxArchiveAsName:
 
 class TestInboxDetect:
     def test_should_report_the_epic_for_an_orchestrated_pointer(self):
-        pointer = '.plan/local/orchestrator/my-epic/plans/PLAN-3-thing.md'
+        pointer = '.plan/orchestrator/my-epic/plans/PLAN-3-thing.md'
 
         result = cmd_inbox_detect(_variant(_DETECT_ARGS, source_id=pointer))
 
@@ -1332,7 +1332,7 @@ class TestInboxDetect:
         # The reclassification the WARNING at the single call site reports: the
         # verdict is still orchestrated=false, but it is now distinguishable
         # from a plain non-pointer.
-        pointer = '.plan/local/orchestrator/my-epic/plans/PLAN-CIS-alpha.md'
+        pointer = '.plan/orchestrator/my-epic/plans/PLAN-CIS-alpha.md'
 
         result = cmd_inbox_detect(_variant(_DETECT_ARGS, source_id=pointer))
 

@@ -40,7 +40,7 @@ _TERMINAL_EMISSION_STEP = _mem._TERMINAL_EMISSION_STEP
 _mem._log_decision = lambda *a, **kw: None
 
 #: A settled orchestrator plan-spec pointer that classify_source_id accepts.
-_ORCHESTRATED_POINTER = '.plan/local/orchestrator/truthful-signals/plans/PLAN-55-inbox.md'
+_ORCHESTRATED_POINTER = '.plan/orchestrator/truthful-signals/plans/PLAN-55-inbox.md'
 
 
 def _write_request(plan_dir: Path, *, source: str, source_id: str) -> None:
