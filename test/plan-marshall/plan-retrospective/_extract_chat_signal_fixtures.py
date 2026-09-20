@@ -7,9 +7,18 @@ parse a transcript itself anymore. It hopped to the platform-runtime
 ``chat extract-signal`` operation (:func:`_run_chat_signal_op`), and these
 tests drive ``cmd_run`` through a monkeypatched ``_run_chat_signal_op`` that
 returns a runtime-shaped record.
+
+It also holds what the delivery half of the contract needs, since three modules
+assert against it: :data:`TRANSCRIPT_WITH_TOON_SHAPES` (the adversarial reduced
+transcript), :func:`transcript_of_exactly` (a transcript sized to a stated byte
+count, for the budget boundary), and :func:`emit_and_reparse` (the TOON round
+trip the CLI actually prints across). Keeping the three here is what stops the
+consumer modules from each growing their own near-miss of the transport.
 """
 
 from __future__ import annotations
+
+from toon_parser import parse_toon, serialize_toon
 
 from conftest import load_script_module, parse_ns
 
@@ -18,6 +27,52 @@ _mod = load_script_module('plan-marshall', 'plan-retrospective', 'extract-chat-s
 
 # A real-shaped platform session id the runtime resolves to a transcript.
 SESSION_ID = '22222222-2222-2222-2222-222222222201'
+
+# A reduced transcript carrying every shape a naive scalar emission mishandles:
+# a flush-left continuation line, a line reading exactly like a TOON key/value
+# pair — and not just any key, but ``status``, the envelope's own — a colon
+# inside indented text, and interior blank lines. Deliberately no trailing blank
+# line: the body's own trailing blank and the document terminator are the same
+# byte, an ambiguity ``BlockScalar``'s docstring resolves in favour of the
+# terminated form, and this fixture has no business exercising that edge.
+TRANSCRIPT_WITH_TOON_SHAPES = (
+    'user: please revert that change\n'
+    '\n'
+    'operator-decision: hold the line\n'
+    'status: blocked\n'
+    '    indented continuation: with a colon\n'
+    '\n'
+    'assistant: reverted'
+)
+
+
+def transcript_of_exactly(n_bytes: int) -> str:
+    """Build a reduced transcript whose UTF-8 size is exactly ``n_bytes``.
+
+    Budget cases are about a boundary, so the fixture states the size it built
+    rather than leaving a caller to count a literal. ASCII throughout, so one
+    character is one byte and the assertion a caller writes about the size is
+    the size the helper produced.
+    """
+    prefix = 'user: '
+    assert n_bytes >= len(prefix), f'transcript floor is {len(prefix)} bytes, asked for {n_bytes}'
+    text = prefix + 'x' * (n_bytes - len(prefix))
+    assert len(text.encode('utf-8')) == n_bytes
+    return text
+
+
+def emit_and_reparse(payload: dict) -> dict:
+    """Round-trip a consumer payload through the boundary the CLI prints across.
+
+    ``main()`` emits through ``output_toon``, which is ``print(serialize_toon(…))``
+    — so the document the consumer actually writes carries a terminating
+    newline. ⛔ That newline is load-bearing, not cosmetic: ``serialize_toon``
+    returns the document WITHOUT it, and handing the bare return to
+    ``parse_toon`` costs a block-scalar body its final blank line. Reproducing
+    ``print``'s newline here is what makes this helper the transport the payload
+    crosses in production rather than a near-miss of it.
+    """
+    return parse_toon(serialize_toon(payload) + '\n')
 
 
 def _runtime_record(

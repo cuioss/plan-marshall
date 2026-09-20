@@ -10,6 +10,11 @@ The two-tier degradation path keys on two tokens that are normative in
   Tier 1, and one that exceeds the read budget is refused by the orchestrator
   from ``over_budget``.
 
+⛔ Every budget case in this module sizes its own reduced transcript, because
+``over_budget`` is derived from ``reduced_transcript_delivered_bytes`` — the
+text this consumer emits — and never from the forwarded ``reduced_bytes``. A
+case that only sets ``reduced_bytes`` states nothing about the verdict.
+
 All reduction and counter semantics are runtime-owned and pinned in the
 platform-runtime tests. This module pins only what the consumer owns: the
 skip-token routing, the budget-derived verdict, and the transcript-path
@@ -18,7 +23,7 @@ passthrough.
 
 from __future__ import annotations
 
-from _extract_chat_signal_fixtures import _runtime_record
+from _extract_chat_signal_fixtures import _runtime_record, transcript_of_exactly
 from _extract_chat_signal_fixtures import run_consumer as _run
 
 
@@ -45,15 +50,19 @@ class TestSkipToken:
 
         ``over_budget`` is a routing decision for the orchestrator's Tier-2
         fallback, not a data absence — so ``status`` stays success and the
-        payload keeps the reduced content.
+        payload keeps the reduced content. The transcript is sized past the
+        budget, because the budget now reads the DELIVERED text; the forwarded
+        ``reduced_bytes`` is left deliberately larger still, so the case cannot
+        be passing on the figure it no longer consults.
         """
         record = _runtime_record(
             reduced_bytes=5000,
             no_signal=False,
-            reduced_transcript='user: ' + 'x' * 400,
+            reduced_transcript=transcript_of_exactly(1400),
         )
         result = _run(monkeypatch, record, 'success', read_budget=1000)
         assert result['status'] == 'success'
+        assert result['reduced_transcript_delivered_bytes'] == 1400
         assert result['over_budget'] is True
         assert 'reason' not in result
 
@@ -71,11 +80,35 @@ class TestVerdictPropagation:
         assert result['over_budget'] is False
 
     def test_over_budget_and_no_signal_independent(self, monkeypatch):
-        """A big reduced transcript with real signal reads healthy-but-large."""
-        record = _runtime_record(reduced_bytes=9000, no_signal=False)
+        """A big reduced transcript with real signal reads healthy-but-large.
+
+        The transcript's size is stated here rather than inherited from a
+        fixture default: the assertion is about a budget boundary, so the case
+        that decides it belongs in the case, not in a default a later edit could
+        move out from under this test without touching it.
+        """
+        record = _runtime_record(reduced_bytes=9000, no_signal=False, reduced_transcript=transcript_of_exactly(300))
         result = _run(monkeypatch, record, 'success', read_budget=100)
         assert result['over_budget'] is True
         assert result['no_signal'] is False
+
+    def test_forwarded_over_budget_with_delivered_under_is_not_over_budget(self, monkeypatch):
+        """The discriminating case: the derivation moved to the delivered figure.
+
+        The forwarded ``reduced_bytes`` is far over the budget while the text
+        this script actually emits is comfortably under it. An ``over_budget``
+        still derived from the forwarded number reads ``True`` here; derived
+        from what is delivered, it reads ``False``. Neither re-pinned case above
+        can prove that on its own — each of those would also pass under the old
+        derivation, because there both figures sit on the same side of the
+        budget.
+        """
+        record = _runtime_record(reduced_bytes=9000, no_signal=False, reduced_transcript=transcript_of_exactly(50))
+        result = _run(monkeypatch, record, 'success', read_budget=100)
+
+        assert result['reduced_bytes'] == 9000
+        assert result['reduced_transcript_delivered_bytes'] == 50
+        assert result['over_budget'] is False
 
 
 class TestTranscriptPath:

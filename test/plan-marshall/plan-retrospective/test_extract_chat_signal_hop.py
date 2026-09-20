@@ -9,6 +9,13 @@ never JSON, so the hop must parse with ``toon_parser.parse_toon`` — a
 ``json.loads`` reader would raise on every real response and the consumer would
 silently skip. Only ``subprocess.run`` is replaced here; the original
 ``_run_chat_signal_op`` parsing runs untouched.
+
+⛔ Everything this module asserts is about the RUNTIME's forwarded figures. The
+hop is upstream of every consumer-side decision: ``reduced_bytes`` is read here
+purely as a field the parse recovered, never as a budget input, and the delivered
+figure the budget does read is not the hop's to produce — it is measured where
+the payload is assembled and is pinned in ``test_extract_chat_signal.py``. The
+last case below holds that boundary in place.
 """
 
 from __future__ import annotations
@@ -61,10 +68,30 @@ class TestToonSuccessParsing:
         assert record['kept_raw_count'] == 7
         assert record['operator_turn_count'] == 3
         assert record['gate_decision_count'] == 2
+        # The runtime's own production figure, recovered by the parse. It is not
+        # a budget input: the consumer derives over_budget from the transcript it
+        # emits, and this record is what it emits FROM.
         assert record['reduced_bytes'] == 4096
         assert record['no_signal'] is False
         assert record['transcript_path'] == '/transcripts/project/session.jsonl'
         assert record['reduced_transcript'] == 'user: please revert that change'
+
+    def test_hop_publishes_no_delivered_figure(self, monkeypatch):
+        """The delivery measurement is the CONSUMER's, and the hop must not grow one.
+
+        ``reduced_transcript_delivered_bytes`` measures what
+        ``extract-chat-signal.py`` emits, which is why it can be trusted as a
+        delivery figure at all. A copy appearing on the runtime record would
+        mean the number describes the runtime's reduction again under the
+        delivered name — the exact conflation this aspect was repaired to end,
+        restored under a better label and therefore harder to see.
+        """
+        record, status = _run_hop(monkeypatch, _TOON_SUCCESS)
+
+        assert status == 'success'
+        assert 'reduced_transcript_delivered_bytes' not in record, (
+            'the runtime record grew a delivery figure it cannot measure'
+        )
 
     def test_no_op_is_not_treated_as_success(self, monkeypatch):
         record, status = _run_hop(monkeypatch, _TOON_NOOP)
