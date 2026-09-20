@@ -884,8 +884,8 @@ def _iter_string_values(value: Any):
 
 
 #: Fragment keys under which a producer publishes its own degradation VERDICT.
-#: ``status`` is the per-check verdict every ``check-*`` aspect emits;
-#: ``comparison`` is the peer field ``check-outline-vs-shipped`` publishes.
+#: ``status`` is the per-check verdict field a ``check-*`` aspect emits it under;
+#: ``comparison`` is the peer field ``check-outline-vs-shipped`` publishes instead.
 _VERDICT_FIELD_KEYS: frozenset[str] = frozenset({'status', 'comparison'})
 
 #: The degradation tokens matched by EQUALITY against a verdict field only,

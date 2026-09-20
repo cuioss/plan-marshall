@@ -72,10 +72,11 @@ FOOTPRINT_CONSUMING_ASPECTS: tuple[str, ...] = (
 
 #: Tokens by which a footprint-consuming aspect DECLARES it could not derive the
 #: footprint. Each is the producer's own existing honest-degradation token, read
-#: rather than introduced — ``inconclusive`` is the per-check status every
-#: ``check-*`` aspect in :data:`FOOTPRINT_CONSUMING_ASPECTS` emits, and
-#: ``ARTIFACT_COVERAGE_UNMEASURABLE`` is the token ``analyze-logs`` embeds in its
-#: warning finding's message.
+#: rather than introduced — ``inconclusive`` is the per-check status a
+#: ``check-*`` aspect in :data:`FOOTPRINT_CONSUMING_ASPECTS` emits it under (see
+#: :data:`compile-report._VERDICT_FIELD_KEYS` for which aspect uses which field),
+#: and ``ARTIFACT_COVERAGE_UNMEASURABLE`` is the token ``analyze-logs`` embeds in
+#: its warning finding's message.
 #:
 #: ⛔ HOW each token is matched is owned by ``compile-report._declares_degraded``
 #: and differs PER TOKEN — ``inconclusive`` by equality against a verdict field,
