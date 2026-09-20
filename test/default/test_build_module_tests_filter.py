@@ -20,10 +20,10 @@ import pytest
 REPO_ROOT = Path(build.__file__).resolve().parent
 
 
-def _run_recorder(calls: list[list[str]], rc: int = 0):
+def _run_recorder(calls: list[list[str]]):
     def _stub(cmd: list[str], description: str, env: dict[str, str] | None = None) -> int:
         calls.append(cmd)
-        return rc
+        return 0
 
     return _stub
 

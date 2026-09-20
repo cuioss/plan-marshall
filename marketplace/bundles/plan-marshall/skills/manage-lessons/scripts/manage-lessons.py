@@ -1066,29 +1066,28 @@ def cmd_remove(args: argparse.Namespace) -> dict:
             # There is no metadata to render — showing the empty fields the
             # resolver could not read would present the record as blank rather
             # than as unresolvable. Render the state and its reason instead.
-            print(
-                f'Lesson {args.lesson_id}: {title or "(no title)"}',
+            header = f'Lesson {args.lesson_id}: {title or "(no title)"}'
+            record_lines = (
                 '  state:     unreadable (retiring via --allow-unreadable)',
                 f'  path:      {read.path}',
                 f'  detail:    {read.detail}',
-                f'  body:      {len(body)} chars',
-                f'  reason:    {args.reason}',
-                f'  verdict:   {coverage_verdict}',
-                sep='\n',
-                file=sys.stderr,
             )
         else:
-            print(
-                f'Lesson {args.lesson_id}: {title}',
+            header = f'Lesson {args.lesson_id}: {title}'
+            record_lines = (
                 f'  component: {metadata.get("component", "")}',
                 f'  category:  {metadata.get("category", "")}',
                 f'  status:    {metadata.get("status", "active")}',
-                f'  body:      {len(body)} chars',
-                f'  reason:    {args.reason}',
-                f'  verdict:   {coverage_verdict}',
-                sep='\n',
-                file=sys.stderr,
             )
+        print(
+            header,
+            *record_lines,
+            f'  body:      {len(body)} chars',
+            f'  reason:    {args.reason}',
+            f'  verdict:   {coverage_verdict}',
+            sep='\n',
+            file=sys.stderr,
+        )
         # Write the prompt to stderr — input()'s prompt argument writes to
         # stdout by default, which would corrupt the script's machine-readable
         # TOON output emitted by output_toon().
