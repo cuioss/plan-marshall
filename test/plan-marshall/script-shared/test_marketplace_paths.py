@@ -922,10 +922,19 @@ class TestMainAnchoredCorpusEnumeration:
     ``marketplace_paths`` states the bounded set TWICE — once in the module
     docstring and once in ``resolve_main_anchored_path``'s. Two enumerations
     that can drift independently are the defect this class exists to catch, so
-    every assertion below is made against the set PARSED OUT of the prose
-    rather than against a literal transcribed into the assertion. Deriving the
-    set is what makes a future re-addition of ``orchestrator`` fail: a
-    hard-coded count alone would pass against any five names.
+    the set is DERIVED by parsing it out of the prose, and the two derivations
+    are compared against each other. Deriving is what makes a future
+    re-addition of ``orchestrator`` fail: a hard-coded count alone would pass
+    against any five names.
+
+    The derived set is ADDITIONALLY pinned against a transcribed expected set
+    (:data:`EXPECTED_CORPORA`, with :data:`RETIRED_CORPUS` as its named
+    exclusion). Both are carried because they catch different defects, and the
+    transcribed literal is the STRONGER of the two: derivation plus a
+    cardinality-and-no-``orchestrator`` check still passes when some OTHER name
+    is silently swapped in, and a swap is a different defect from a
+    re-addition. The transcribed set closes that hole; the derivation keeps the
+    two prose enumerations honest against each other.
     """
 
     #: The corpus the orchestrator store used to occupy. It now resolves on the

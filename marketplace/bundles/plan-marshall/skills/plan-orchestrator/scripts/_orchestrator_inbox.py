@@ -363,6 +363,18 @@ _SOURCE_ID_RE = re.compile(r'^\.plan/orchestrator/(?P<slug>[^/]+)/plans/' + PLAN
 #: which is the case that previously reclassified silently.
 _ORCHESTRATOR_PLANS_RE = re.compile(r'^\.plan/orchestrator/(?P<slug>[^/]+)/plans/[^/]+\.md$')
 
+#: The RETIRED address the orchestrator store occupied before it moved onto the
+#: git-tracked, cwd-relative config tier. It exists for ONE purpose: to make a
+#: legacy pointer's failure LOUD. Such a pointer matches neither
+#: :data:`_SOURCE_ID_RE` nor :data:`_ORCHESTRATOR_PLANS_RE`, so without this it
+#: falls through to the silent ``not_orchestrator_pointer`` verdict —
+#: indistinguishable from a prose description that never named an epic at all.
+#: It is NEVER used to RESOLVE: no slug and no spec are extracted from a match,
+#: and the verdict it produces is ``unrecognised_id``, the WARNING-emitting
+#: negative. Making an old address resolve is a MIGRATION concern and lives
+#: elsewhere.
+_RETIRED_SOURCE_ID_RE = re.compile(r'^\.plan/local/orchestrator/[^/]+/plans/[^/]+\.md$')
+
 #: The closed vocabulary :func:`classify_source_id` reports in its ``detection``
 #: field. Consumers assert against this set rather than re-listing literals.
 DETECTION_TOKENS = frozenset(
@@ -1163,8 +1175,15 @@ def classify_source_id(source_id: str) -> SourceIdClassification:
     the three forms, and ``not_orchestrator_pointer`` for everything else (a
     prose description, an unrelated path, a traversal attempt).
 
+    A pointer still carrying the RETIRED ``.plan/local/orchestrator/`` address
+    (:data:`_RETIRED_SOURCE_ID_RE`) also resolves to ``unrecognised_id``, not to
+    ``not_orchestrator_pointer``. It does NOT resolve — no slug and no spec are
+    returned — but its failure is LOUD rather than silent: a legacy pointer is a
+    stale address to be migrated, and reporting it as "not an orchestrator
+    pointer at all" would hide that behind a verdict a prose description earns.
+
     Check order is load-bearing: the slug-safety check runs on the FULL match,
-    and the shape-only check runs only after the full match has failed.
+    and the shape-only checks run only after the full match has failed.
 
     Returns:
         A :class:`SourceIdClassification` carrying ``(orchestrated, epic,
@@ -1178,7 +1197,9 @@ def classify_source_id(source_id: str) -> SourceIdClassification:
         if _validate_identifier(slug) is not None:
             return SourceIdClassification(False, None, None, 'unsafe_slug')
         return SourceIdClassification(True, slug, pointer, 'orchestrated')
-    if pointer and _ORCHESTRATOR_PLANS_RE.match(pointer) is not None:
+    if pointer and (
+        _ORCHESTRATOR_PLANS_RE.match(pointer) is not None or _RETIRED_SOURCE_ID_RE.match(pointer) is not None
+    ):
         return SourceIdClassification(False, None, None, 'unrecognised_id')
     return SourceIdClassification(False, None, None, 'not_orchestrator_pointer')
 

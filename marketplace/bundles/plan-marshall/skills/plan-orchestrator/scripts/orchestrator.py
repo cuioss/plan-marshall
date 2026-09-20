@@ -1920,6 +1920,13 @@ def _relocate_epic_tree(source: Path, dest: Path) -> None:
     epic created before the corpus became tracked state is. git moves nothing in
     each of those, so the fallback carries the whole relocation rather than
     completing a half-done one.
+
+    The TIMEOUT arm is the exception, and it is why the fallback probes instead
+    of moving unconditionally: a ``git mv`` killed at
+    :data:`_GIT_MV_TIMEOUT_SECONDS` may already have renamed the tree on disk
+    and only failed to write the index, so the source can be gone and the
+    destination already in place. Moving blindly there would raise
+    ``FileNotFoundError`` over a tree that is exactly where it belongs.
     """
     try:
         completed = subprocess.run(  # argv list, never a shell string; 'git' resolves via PATH by design
@@ -1930,12 +1937,21 @@ def _relocate_epic_tree(source: Path, dest: Path) -> None:
             timeout=_GIT_MV_TIMEOUT_SECONDS,
         )
     except (OSError, subprocess.SubprocessError):
-        # git could not be launched or could not finish. Either way it performed
-        # no rename, so the fallback below is the entire move.
+        # git could not be launched, or was killed before it finished. The
+        # launch failures performed no rename at all; a TimeoutExpired is
+        # different — the on-disk rename may already have landed — so the
+        # fallback below establishes the state rather than assuming it.
         pass
     else:
         if completed.returncode == 0:
             return
+    if dest.exists() and not source.exists():
+        # ALREADY relocated: the tree is at the destination and nothing remains
+        # at the source, which is the post-condition this function exists to
+        # reach. Returning cleanly here is the completed move, not a swallowed
+        # failure — the caller already refused a pre-existing ``dest``, so this
+        # state can only have been produced by the relocation just attempted.
+        return
     shutil.move(str(source), str(dest))
 
 
@@ -2950,7 +2966,7 @@ def cmd_corpus_read(args: argparse.Namespace) -> dict[str, Any]:
     """Return one staged spec's body through the sanctioned read path.
 
     The script-mediated alternative to a direct ``Read`` of
-    ``.plan/local/orchestrator/{slug}/plans/PLAN-NN-*.md`` — the use case the
+    ``.plan/orchestrator/{slug}/plans/PLAN-NN-*.md`` — the use case the
     ``.plan/`` scripts-only rule did not cover, forcing five independent
     direct-read violations before this verb existed. Read-only: resolves
     main-anchored through the same store resolver every per-epic path uses

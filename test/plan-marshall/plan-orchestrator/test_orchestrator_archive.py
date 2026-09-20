@@ -13,15 +13,17 @@ isolation (via ``plan_context``):
   already-archived slug (``already_archived``); refuse when no epic exists
   (``not_found``); refuse to clobber (``archive_conflict``); reject an invalid
   slug.
-- The relocation MECHANISM, as a matched pair. The corpus is git-tracked, so a
-  tracked tree must reach the index as a RENAME rather than as a whole-tree
-  deletion beside a whole-tree addition. Both arms are carried because either
-  alone passes over the other being broken: the git arm proves the rename is
-  staged, and the two fallback arms prove the move still lands where ``git mv``
-  cannot act — no executable to launch, and a source it refuses because nothing
-  tracks it. Every OTHER test in this module runs under ``PLAN_BASE_DIR``
-  isolation with no repository at the store root, so they exercise the fallback
-  incidentally; these three state the mechanism on purpose.
+- The relocation MECHANISM, as a matched pair of ARMS. The corpus is
+  git-tracked, so a tracked tree must reach the index as a RENAME rather than
+  as a whole-tree deletion beside a whole-tree addition. Both arms are carried
+  because either alone passes over the other being broken: the git arm proves
+  the rename is staged, and the filesystem-fallback arm proves the move still
+  lands where ``git mv`` cannot act — in its two cases, no executable to launch
+  and a source it refuses because nothing tracks it. Each arm carries two
+  tests, four in all. Every OTHER test in this module runs under
+  ``PLAN_BASE_DIR`` isolation with no repository at the store root, so they
+  exercise the fallback incidentally; these four state the mechanism on
+  purpose.
 - Read-fallback: after archiving, ``orchestrator.py resume-summary`` and
   ``manage-status read --store orchestrator`` still resolve the epic from
   ``archived-orchestrators/``.

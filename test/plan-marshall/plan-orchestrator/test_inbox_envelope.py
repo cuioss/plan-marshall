@@ -1341,6 +1341,22 @@ class TestInboxDetect:
         assert result['plan_spec'] == ''
         assert result['detection'] == 'unrecognised_id'
 
+    def test_should_fail_loudly_for_a_pointer_at_the_retired_address(self):
+        # A legacy pointer at the pre-move `.plan/local/orchestrator/` address
+        # still does NOT resolve — but it is a stale address to migrate, not a
+        # prose description, so it must not share the silent verdict the plain
+        # negative above earns. The id segment is deliberately a VALID one, so
+        # the only thing separating this from an orchestrated pointer is the
+        # retired prefix.
+        pointer = '.plan/local/orchestrator/my-epic/plans/PLAN-3-thing.md'
+
+        result = cmd_inbox_detect(_variant(_DETECT_ARGS, source_id=pointer))
+
+        assert result['orchestrated'] is False
+        assert result['epic'] == ''
+        assert result['plan_spec'] == ''
+        assert result['detection'] == 'unrecognised_id'
+
 
 # =============================================================================
 # The (epic_slug, plan_id) channel address — one symmetric composition rule
