@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Shared AST scan for the five mechanically-checkable test-harness shapes.
+"""Shared AST scan for the six mechanically-checkable test-harness shapes.
 
 Each shape below is a way for a test to stop testing what it names while still
 reporting green, so none of them is caught by running the suite -- that is
