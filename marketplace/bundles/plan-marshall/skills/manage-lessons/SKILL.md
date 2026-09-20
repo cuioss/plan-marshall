@@ -299,7 +299,7 @@ detail: /abs/path/... exists but carries no parseable key=value metadata header
 `canonical_not_found` for an absent canonical and `canonical_unresolvable` for
 an unresolvable one.
 
-Three more verbs reach the corpus differently, and none of them renders
+Five more verbs reach the corpus differently, and none of them renders
 `error: unresolvable`:
 
 - `set-body`, `set-title`, and `convert-to-plan` check the file's existence
@@ -810,7 +810,7 @@ The classification logic for the read-side corpus operations lives under `refere
 
 | Error Code | Cause |
 |------------|-------|
-| `not_found` | No file exists at the resolved path. See [Resolving a lesson id](#resolving-a-lesson-id-three-states-two-error-values) for exactly which verbs reach this code through the shared seam versus through a plain existence check, and which verb reports the same fact through a payload bucket instead |
+| `not_found` | No file exists at the resolved path. See [Resolving a lesson id](#resolving-a-lesson-id-three-states-two-error-values) for exactly which verbs reach this code through the shared seam versus through a plain existence check, and which verbs report the same fact through a payload bucket instead |
 | `unresolvable` | The file EXISTS and no reader can resolve it (the read raised, or the metadata header did not parse). Carries `path` and `detail` naming the substrate. See [Resolving a lesson id](#resolving-a-lesson-id-three-states-two-error-values) for exactly which verbs can reach this code |
 | `canonical_not_found` | `supersede`'s canonical-read variant of `not_found`: the canonical lesson id (`--by`) resolved `absent` |
 | `canonical_unresolvable` | `supersede`'s canonical-read variant of `unresolvable`: the canonical lesson id (`--by`) resolved `unreadable` |
