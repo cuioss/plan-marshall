@@ -11,6 +11,7 @@ manifest-bearing plan rather than re-routed.
 
 from __future__ import annotations
 
+import pytest
 from _plan_retrospective_fixtures import build_happy_plan_dir
 from _plan_retrospective_manifest_fixtures import (
     ARTIFACT_SCRIPT,
@@ -22,6 +23,14 @@ from _plan_retrospective_manifest_fixtures import (
 )
 
 from conftest import run_script
+
+#: A fragment body ``parse_toon`` genuinely REFUSES rather than merely reads oddly.
+#: The parser skips almost every shape of garbage silently, so a "looks malformed"
+#: string would exercise nothing; an integer past CPython's digit limit is one of
+#: the few inputs that actually reaches the ``ToonParseError`` wrap. The test that
+#: uses it asserts that premise before asserting anything about the aspect, so the
+#: guard cannot quietly become a test of a fragment that parsed fine after all.
+_UNPARSABLE_FRAGMENT = 'affected_files_exact_match: ' + '1' * 5000 + '\n'
 
 # =============================================================================
 # Forward in check-artifact-consistency
@@ -207,6 +216,38 @@ class TestForwardedFindingIsReceived:
         assert result.success, result.stderr
         received = result.toon()
 
+        assert received['declared_vs_realized']['received'] is False
+        check = _check_by_name(received['checks'], 'declared_vs_realized_set')
+        assert check is not None
+        assert check['status'] == 'inconclusive', check
+        assert _finding_by_code(received['findings'], 'declared_vs_realized_set_mismatch') is None
+
+    def test_an_unparsable_fragment_is_a_could_not_look_not_an_aspect_failure(self, tmp_path, monkeypatch):
+        """A fragment that is PRESENT but does not parse is the third could-not-look cause.
+
+        The receiver's own contract names three ways the block cannot be read —
+        absent, unparsable, or carrying no such block — and this is the arm for
+        the middle one. Reading it must leave the aspect reporting an unread
+        input, exactly as the absent-fragment arm above does; a parse failure
+        that escapes turns the whole aspect into ``status: error`` and takes
+        every other rule's verdict down with a finding it was supposed to
+        downgrade to ``received: false``.
+        """
+        from toon_parser import ToonParseError, parse_toon  # local import — script-test PYTHONPATH
+
+        # Premise, asserted rather than assumed: this body really is unparsable.
+        with pytest.raises(ToonParseError):
+            parse_toon(_UNPARSABLE_FRAGMENT)
+
+        plan_id, plan_dir = self._stage(tmp_path, monkeypatch, with_manifest=True)
+        work = plan_dir / 'work'
+        work.mkdir(parents=True, exist_ok=True)
+        (work / 'fragment-artifact-consistency.toon').write_text(_UNPARSABLE_FRAGMENT, encoding='utf-8')
+
+        result = run_script(MANIFEST_SCRIPT, 'run', '--plan-id', plan_id, '--mode', 'live')
+
+        assert result.success, result.stderr
+        received = result.toon()
         assert received['declared_vs_realized']['received'] is False
         check = _check_by_name(received['checks'], 'declared_vs_realized_set')
         assert check is not None
