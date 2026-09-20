@@ -154,8 +154,7 @@ class TestMachineLocalLogsStayIgnored:
         # the blanket `.plan/*` would be ignored for the pre-change reason, which
         # would mean the negation above it never took effect at all.
         assert expected_rule in completed.stdout, (
-            f'{relative_path} was decided by {completed.stdout.strip()!r}, not by the '
-            f'{expected_rule!r} re-exclusion'
+            f'{relative_path} was decided by {completed.stdout.strip()!r}, not by the {expected_rule!r} re-exclusion'
         )
 
 
