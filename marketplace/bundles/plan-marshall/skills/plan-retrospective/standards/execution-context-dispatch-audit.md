@@ -2,11 +2,12 @@
 
 This aspect is **deterministic**: the `check-dispatch-audit` script (`scripts/check-dispatch-audit.py`) reads the plan's evidence and emits fact blocks; this document is the interpretation guide the LLM applies to those facts. The script never judges; this doc never runs code.
 
-The audit consumes the standardized `[DISPATCH]` work-log lines specified in [`../../ref-workflow-architecture/standards/dispatch-logging.md`](../../ref-workflow-architecture/standards/dispatch-logging.md) as its primary evidence. It emits three fact blocks, **each publishing the size of the population it evaluated so a zero is legible** — a check that returns zero from an empty population reports `not_evaluated` with its reason, never a bare `0` a reader could mistake for evaluated-clean:
+The audit consumes the standardized `[DISPATCH]` work-log lines specified in [`../../ref-workflow-architecture/standards/dispatch-logging.md`](../../ref-workflow-architecture/standards/dispatch-logging.md) as its primary evidence. It emits four fact blocks, **each publishing the size of the population it evaluated so a zero is legible** — a check that returns zero from an empty population reports `not_evaluated` with its reason, never a bare `0` a reader could mistake for evaluated-clean:
 
 1. **`shape_violation` — did dispatch that RESOLVED get LOGGED?** Pairs the decision-log `effort resolve-target` records (Surface B — the resolve/intent side) against the `[DISPATCH]` work-log lines (Surface A — the observable side). Surface B is the left-hand side of the pairing, so when Surface B is empty the check is `not_evaluated`; a role whose resolve count exceeds its dispatch-line count is a `shape_violation`. The block also emits `corroboration` — how much its own verdict is worth, derived from the per-role `foreign_caller_lines` figures it already carries — so a clean delta that a hand-written `[DISPATCH]` line cancelled is distinguishable in the payload from a seam-corroborated one.
 2. **`dispatch_coverage` — did dispatch that SHOULD have happened, happen?** Each terminal finalize step (`status.metadata.phase_steps["6-finalize"]`) is classified by its **token record** — the second, independent evidence source — into `dispatched` (non-zero `execution_log[]` `total_tokens`), `ran_inline` (a RECORDED zero), or `no_evidence` (no token row at all, OR a row whose `total_tokens` could not be read). `ran_inline_claim_strength` rides beside the `ran_inline` count and states what it is worth, so a consumer that never loaded this document still reads the caveat. A step **token-proven to have dispatched** whose `[DISPATCH]` line is nonetheless absent is a `missing_dispatch_emission` — an instrumentation finding against the DISPATCHER, never a "ran inline where dispatch was required" discipline finding against the step. A conditionally-dispatching step that legitimately ran inline carries either a recorded zero (`ran_inline`) or the writer's `unmeasured` token (`no_evidence`, since its caller measured nothing), so the token evidence *is* the population-derived qualifier and no hand-maintained roster annotation is introduced — and in NEITHER case does it raise a discipline finding. The block carries its own `status`: when `status.json` is absent, unreadable, not valid JSON, or carries no `metadata` mapping, the population could not be read and the block reports `not_evaluated` with a reason instead of an evaluated population of zero.
 3. **`channel_completeness` — how trustworthy is the dispatch channel itself?** Publishes the **finalize-scoped** `[DISPATCH]`-line count against the `[STEP] Completed` count and the token-proven dispatched-step count — all three over the same finalize population — and downgrades the audit's own `confidence` when the channel is sparse. The all-caller line total rides alongside as `all_caller_dispatch_line_count`, each figure labelled with the population it was taken over, so whole-plan volume stays readable without becoming the comparand for a finalize verdict. A detector that consumes voluntarily-emitted evidence can only ever report a lower bound; this makes that shortfall visible rather than letting a sparse channel silently weaken every verdict. When every **finalize-scoped** input is zero the grade is `not_evaluated` with a reason — the fourth grade, added because its absence let a log-less plan grade `nominal`. ⛔ The predicate is taken over the three finalize-scoped figures ONLY; `all_caller_dispatch_line_count` is reported beside the grade and is deliberately not a term in it. It is taken over a SUPERSET population, so ANDing it on could only narrow the guard, never widen it — a plan carrying phase-5 `[DISPATCH]` lines, no `[STEP] Completed` line and no token-proven finalize dispatch has all three finalize inputs at zero and a non-zero all-caller total, and would fall past the guard (and past `none` and both `low`, which each require a completion or a proven dispatch) to `nominal` over an entirely empty finalize evaluation.
+4. **`firing_comparison` — do the boundary rows and the execution rows agree, firing by firing?** Compares each phase's dispatch-boundary rows (`work/metrics-dispatch-boundaries-{phase}.toon`) against its `execution_log[]` rows on the shared `step_id` key where available, and publishes the `measured` / `unmeasured` / `no_tool_use` populations per phase, with unpaired and keyless rows counted beside them rather than folded in. Facts only — divergence findings belong to `reconcile-ledgers`, not this check.
 
 Two further deterministic checks preserve the aspect's original surface: `envelope_violation` (a `[DISPATCH]` line whose `target=` is not an execution-context envelope) and `generic_subagent_violation` (a raw `Task: general-purpose` in the work log). Each publishes its own `{status, evaluated_population, violations, findings}` block rather than only a count, so a zero over an empty work log and a zero over a populated clean one are distinguishable in the output — they were byte-identical while the two checks returned bare lists surfaced only as lengths.
 
@@ -131,6 +132,27 @@ channel_completeness:
   ratio: N|null                  # dispatch_line_count / completion_count
   confidence: {not_evaluated|none|low|nominal}
   reason: "…"                    # present only when not_evaluated
+firing_comparison:
+  phase_count: N                 # every phase carrying a boundary artifact OR an execution_log row
+  phases:
+    {phase}:
+      phase: {phase}
+      state: {evaluated|not_evaluated}
+      reason: "…"                # present only when not_evaluated — boundary file absent/unreadable,
+                                 # or execution.toon unreadable / execution_log not a row list
+      boundary_rows: N
+      execution_rows: N
+      paired_firings: N          # == len(firings)
+      populations:
+        measured: N               # token AND tool-use state both measured, tool_uses > 0
+        unmeasured: N             # token or tool-use state not measured
+        no_tool_use: N            # both measured, tool_uses == 0
+      firings[N]{step_id,termination_cause,token_state,tool_uses,tool_uses_state,population}:
+        …                        # one row per joined (boundary, execution) pair on step_id
+      unpaired_boundary[N]: […]   # step_ids present on the boundary side with no execution counterpart
+      unpaired_execution[N]: […]  # step_ids present on the execution side with no boundary counterpart
+      keyless_boundary_rows: N    # boundary rows with an empty step_id — never paired
+      keyless_execution_rows: N   # execution rows with an empty step_id — never paired
 envelope_violation:
   status: {evaluated|not_evaluated}
   evaluated_population: N        # [DISPATCH] spawn lines walked
