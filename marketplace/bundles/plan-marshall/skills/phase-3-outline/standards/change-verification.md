@@ -106,6 +106,9 @@ Build a structured checklist:
 
 Assessment coverage counts read-intent paths, not only mutation paths.
 Verification-only reads still need assessment records: every `read`-intent
-declared path enters the coverage denominator, verification deliverables cannot
-claim exemption from the sweep, and the recall check runs against the widened
-set.
+declared path enters the coverage denominator and verification deliverables
+cannot claim exemption from the sweep. Affected-files recall compares declared
+modification-intent paths against the realized diff footprint, so read-intent
+paths are recorded in the assessment surface and reported separately rather
+than counted in the recall denominator. The recall check runs against the
+modification-intent set.
