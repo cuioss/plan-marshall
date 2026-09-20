@@ -6,7 +6,10 @@ OpenCode implementation of every platform-runtime operation.
 OpenCode-specific behaviour:
 - Operations requiring a platform session id (session capture, session
   render-title) return ``no-op`` because OpenCode does not expose a session id
-  to the shell environment (upstream issue #9292).
+  to the shell environment (upstream issue #9292). Absent identity is the
+  ``NO_SESSION_IDENTITY`` sentinel from runtime_base, never null; callers log
+  the returned reason at INFO and apply the verbatim alternative per the
+  no-op policy.
 - project initial-setup succeeds but reports ``hook_installed: false`` for the
   same reason.
 - All permission and web operations return an honest ``no-op`` with a reason
@@ -14,13 +17,19 @@ OpenCode-specific behaviour:
   permission grammar (``Skill()``/``Bash()``/``WebFetch()`` patterns) does not
   map onto OpenCode's settings format. These ops never fabricate a success that
   claims a write happened.
-- metrics capture succeeds when ``total_tokens`` is provided; returns ``no-op``
-  otherwise (no automatic transcript scan without a session id).
+- metrics capture declines on every input, manual count included, returning
+  ``no-op`` (no token-persistence boundary is reachable from this target, so a
+  success carrying the count would be a silently lost measurement).
+- metrics normalized-tokens and chat extract-signal return ``no-op`` with
+  ``transcript_not_found`` (no session transcript exists to walk or reduce).
 - subagent dispatch succeeds, mapping the ``Task`` tool to OpenCode's ``task``.
 - health-check succeeds; the ``display`` check always reports unhealthy on
   OpenCode because no hook file is present.
 - wait for returns ``no-op``: OpenCode's runtime holds no wait channel, so the
   caller runs the observable's own bounded-wait verb in-turn instead.
+- OpenCode never returns ``hook_not_configured``: that error names wiring that
+  ought to be reachable but is not, while this target exposes no session
+  identifier at all, so the honest answer is always ``no-op``.
 
 All methods return a serialized TOON string via the helpers in runtime_base.
 """

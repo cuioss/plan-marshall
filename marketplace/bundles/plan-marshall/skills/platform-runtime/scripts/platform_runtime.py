@@ -47,6 +47,11 @@ Exit codes:
     2 — runtime I/O error (printed to stderr)
 
 TOON contract: see standards/contract.md
+
+Absent session identity is the ``NO_SESSION_IDENTITY`` sentinel from
+runtime_base (never null); the router passes runtime answers through
+verbatim, so an opencode ``no-op`` stays a visible ``no-op`` and never
+becomes ``hook_not_configured``.
 """
 
 from __future__ import annotations
