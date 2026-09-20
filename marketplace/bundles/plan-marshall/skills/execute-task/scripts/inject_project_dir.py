@@ -145,8 +145,9 @@ def inject_project_dir(command: str, plan_id: str) -> tuple[str, bool]:
     return shlex.join(rewritten_tokens), True
 
 
-#: Refusal code emitted when a Bucket-B invocation is attempted while the
-#: worktree flag is unset and ``use_worktree`` is true. The flag is persisted
+#: Refusal code emitted when a Bucket-B invocation is attempted while
+#: ``worktree_materialized`` is explicitly ``False`` (``worktree_state: pending``)
+#: and ``use_worktree`` is true. The flag is persisted
 #: by ``prepare_execute``; this seam is a read-only guard. No script gate
 #: binds a free agent's Edit tool — the refusal lives here, paired with
 #: detection docs naming that residual.
