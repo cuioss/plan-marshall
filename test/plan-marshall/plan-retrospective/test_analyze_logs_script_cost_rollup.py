@@ -356,6 +356,17 @@ class TestBuildTimeFromLedger:
         DIFFER, so a regression that folded readability back into presence — or
         dropped either field — fails here rather than silently reporting a
         measured nothing over a corpus nobody opened.
+
+        ⛔ The unreadable arm is a DIRECTORY at the ledger path, never a
+        ``chmod(0o000)`` file. Permission bits do not deny a process holding
+        ``CAP_DAC_OVERRIDE``, so under root — a container, a root CI image, a dev
+        container shell — the read succeeds and the arm's premise comes from the
+        ambient user id instead of from the fixture. ``open()`` on a directory
+        raises ``IsADirectoryError`` for every user id, root included, so the state
+        this arm needs is constructed rather than borrowed from the environment.
+        Skipping under root is not the alternative: an arm that does not run
+        asserts nothing, and a matched pair whose halves run on different machines
+        is no longer matched.
         """
         ledger = tmp_path / 'base' / 'work' / 'change-ledger.jsonl'
 
@@ -365,11 +376,11 @@ class TestBuildTimeFromLedger:
         assert first.success, first.stderr
         readable = first.toon()['build_time']
 
-        ledger.chmod(0o000)
-        try:
-            second = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
-        finally:
-            ledger.chmod(0o644)
+        # Replace the file with a directory. Nothing outside ``tmp_path`` is
+        # captured or mutated, so there is no state to restore afterwards.
+        ledger.unlink()
+        ledger.mkdir()
+        second = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
         # An unreadable ledger degrades the block; it never fails the aspect.
         assert second.success, second.stderr
         unreadable = second.toon()['build_time']
