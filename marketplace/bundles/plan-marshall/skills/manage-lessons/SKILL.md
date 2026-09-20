@@ -440,6 +440,7 @@ python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons remo
 - `--covering-clause` (required when the verdict is `completely_covered`): the clause that codifies the rule the lesson taught, named precisely enough to re-read
 - `--covering-input` (required when the verdict is `completely_covered`): the concrete input on which that clause's own worked example produces the correct result
 - `--force`: Skip the interactive confirmation prompt
+- `--allow-unreadable`: Retire a lesson whose file exists but resolves `unreadable`; without it such a lesson reports `error: unresolvable` and is left in place (see *Retiring a stuck lesson* below). Relaxes no part of the evidence contract.
 
 #### Retirement evidence: the two-key remove path
 
@@ -495,6 +496,13 @@ tombstone: /abs/path/to/.plan/local/lessons-learned/.tombstones/2025-12-02-001.j
 coverage_verdict: completely_covered
 covering_clause: "manage-lessons/SKILL.md Canonical invocations -> remove"
 covering_input: "remove --coverage-verdict completely_covered with no --covering-clause"
+```
+
+A retirement taken through `--allow-unreadable` returns the same shape plus the two fields it wrote onto the tombstone, so the response states that the lesson was retired on its *state* rather than on content nobody could read:
+
+```toon
+lesson_state: unreadable
+unresolvable_detail: "/abs/path/to/2025-12-02-001.md exists but carries no parseable key=value metadata header"
 ```
 
 ### cleanup-superseded
@@ -783,7 +791,7 @@ The classification logic for the read-side corpus operations lives under `refere
 | `aggregate` | `[--top-n N]` | Read-only classifier: group active lessons that would land in one plan. Returns groups + headline commands. See [`references/aggregate-analysis.md`](references/aggregate-analysis.md). |
 | `from-error` | `--context` | Create from JSON error context (programmatic; body synthesized from context) |
 | `convert-to-plan` | `--lesson-id --plan-id` | Move lesson into a plan directory as `lesson-{id}.md`. This is the move-semantics replacement for marking a lesson "applied". |
-| `remove` | `--lesson-id --reason --coverage-verdict [--covering-clause] [--covering-input] [--force]` | Delete a lesson and write a tombstone. `--coverage-verdict` is required with no default; `completely_covered` additionally requires both evidence flags, and all supplied values are recorded on the tombstone. See [Retirement evidence](#retirement-evidence-the-two-key-remove-path). |
+| `remove` | `--lesson-id --reason --coverage-verdict [--covering-clause] [--covering-input] [--force] [--allow-unreadable]` | Delete a lesson and write a tombstone. `--coverage-verdict` is required with no default; `completely_covered` additionally requires both evidence flags, and all supplied values are recorded on the tombstone. See [Retirement evidence](#retirement-evidence-the-two-key-remove-path). |
 | `supersede` | `--lesson-id --by --reason` | Mark a lesson superseded by a canonical lesson: merge the source body into the canonical, write a tombstone carrying `superseded_by`, and replace the source body with a `[SUPERSEDED]` redirect stub. |
 | `restore-from-plan` | `--plan-id` | Inverse of `convert-to-plan`: move the relocated `lesson-*.md` back from a plan directory to the active corpus (`.plan/local/lessons-learned/`). Run on stall/abandon so a stranded lesson resurfaces. Reports a four-value `action` — enumerated in full under [restore-from-plan](#restore-from-plan), the single home for the value set — so an unreachable plan directory is never reported as a lesson-free one, and an aborted move is never reported as a completed one. |
 | `cleanup-superseded` | `[--lesson-id ID ...] \| [--retention-days N] [--dry-run]` | Prune superseded `.md` stubs while preserving tombstones. Age-filtered when `--retention-days` (falls back to `system.retention.lessons_superseded_days`, hard fallback 7); explicit when `--lesson-id` is repeated. |
@@ -930,10 +938,10 @@ python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons from
 python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons remove \
   --lesson-id LESSON_ID --reason TEXT \
   --coverage-verdict {completely_covered|redundant|superseded|obsolete} \
-  [--covering-clause TEXT] [--covering-input TEXT] [--force]
+  [--covering-clause TEXT] [--covering-input TEXT] [--force] [--allow-unreadable]
 ```
 
-`--coverage-verdict` is **required and has no default** — an unstated verdict is a rejection, never an assumption. `--covering-clause` and `--covering-input` are **required whenever the verdict is `completely_covered`**; supplying that verdict without BOTH is an argparse-level rejection (usage on stderr, exit 2) and the lesson is left in place. The three weaker verdicts (`redundant`, `superseded`, `obsolete`) need no evidence pair. See [Retirement evidence](#retirement-evidence-the-two-key-remove-path) for the contract and [Error Responses](#error-responses) → `missing_coverage_verdict` / `missing_coverage_evidence`.
+`--coverage-verdict` is **required and has no default** — an unstated verdict is a rejection, never an assumption. `--covering-clause` and `--covering-input` are **required whenever the verdict is `completely_covered`**; supplying that verdict without BOTH is an argparse-level rejection (usage on stderr, exit 2) and the lesson is left in place. The three weaker verdicts (`redundant`, `superseded`, `obsolete`) need no evidence pair. `--allow-unreadable` is the explicit exit for a lesson whose file exists but resolves `unreadable`; it relaxes WHICH states may be retired and no part of the evidence contract. See [Retirement evidence](#retirement-evidence-the-two-key-remove-path) for the contract and [Error Responses](#error-responses) → `missing_coverage_verdict` / `missing_coverage_evidence`.
 
 ### supersede
 
