@@ -20,7 +20,11 @@ which lines of a spec are surface, and which are only page furniture:
   shape.
 - **Plan-id notation** — the three settled spec-name forms
   :data:`epic_spec_parser.PLAN_ID_SEGMENT` admits, and the fallback for a name
-  matching none of them.
+  matching none of them. A letter-suffixed name is one such name, and it is
+  covered as a matched PAIR against its unsuffixed sibling: the two differ in
+  exactly one trailing letter, so a reader that resolved them to one id — the
+  collapse :data:`epic_spec_parser.PLAN_ID_TERMINATOR` refuses — is caught by the
+  pair rather than by either member alone.
 
 Entry-shape resolution and the three-class verdict are the sibling cluster, in
 ``test_epic_spec_parser.py``. Every corpus is built under ``tmp_path``, so the
@@ -346,3 +350,77 @@ def test_the_plan_id_segment_is_the_single_definition_of_the_form() -> None:
     """
     assert 'PLAN-' in spec_parser.PLAN_ID_SEGMENT
     assert spec_parser._PLAN_ID_RE.pattern == f'^({spec_parser.PLAN_ID_SEGMENT})'
+
+
+# --- the letter-suffixed id, and its unsuffixed sibling ----------------------
+#
+# The matched pair the whole cluster turns on. Each row is ONE legal spec name,
+# the id it resolves to, and the SAME name carrying one extra trailing letter —
+# so the two members of a row differ in exactly that letter and nothing else.
+# All three settled forms are represented, because the terminator sits on both
+# grammar halves and a row per form is what shows it does.
+#
+# The defect the rows pin: both halves terminate in mandatory digits, so without
+# a terminator the suffixed name matched only through its DIGITS and the letter
+# was absorbed by whatever followed the segment — the suffixed spec then wore its
+# sibling's id, and no consumer downstream could tell the two apart.
+
+_SUFFIX_PAIRS = [
+    ('PLAN-TRUTH-025-inbox.md', 'PLAN-TRUTH-025', 'PLAN-TRUTH-025B-inbox.md'),
+    ('PLAN-025-inbox.md', 'PLAN-025', 'PLAN-025B-inbox.md'),
+    ('CIS-060-verdict-field.md', 'CIS-060', 'CIS-060B-verdict-field.md'),
+]
+
+_SUFFIX_PAIR_IDS = [
+    'plan_prefixed_slug_scoped_form',
+    'plan_prefixed_numbered_form',
+    'bare_code_slug_form',
+]
+
+
+@pytest.mark.parametrize(('legal', 'legal_id', 'suffixed'), _SUFFIX_PAIRS, ids=_SUFFIX_PAIR_IDS)
+def test_a_suffixed_name_never_resolves_to_its_unsuffixed_sibling(legal: str, legal_id: str, suffixed: str) -> None:
+    """The two members of one pair resolve to different ids, and never to one.
+
+    The positive half is asserted beside the negative deliberately: without it a
+    grammar that resolved NOTHING at all would satisfy the inequality, and the
+    pair would pin the collapse's absence by pinning the reader's absence.
+    """
+    assert spec_parser.plan_id_of(legal) == legal_id
+    assert spec_parser.plan_id_of(suffixed) != legal_id
+    assert spec_parser.plan_id_of(suffixed) != spec_parser.plan_id_of(legal)
+
+
+@pytest.mark.parametrize(('legal', 'legal_id', 'suffixed'), _SUFFIX_PAIRS, ids=_SUFFIX_PAIR_IDS)
+def test_a_suffixed_name_is_refused_rather_than_truncated(legal: str, legal_id: str, suffixed: str) -> None:
+    """No id is derived from an illegal name — and none is invented either.
+
+    ``plan_id_of`` falls through to its bare-filename return, which is the
+    REJECTION: the name keys on itself and is grouped with nothing.
+
+    ⛔ The second assertion is the matched control for the DIGIT half of
+    :data:`epic_spec_parser.PLAN_ID_TERMINATOR`. A terminator written over
+    letters alone is evaded by backtracking — ``\\d+`` gives up its last digit,
+    the lookahead then sees a digit instead of the offending letter, and the name
+    resolves to a TRUNCATED id. The truncations are derived from the legal id's
+    own trailing digits rather than hand-listed, so a row whose digit count
+    changes still checks every one of them.
+    """
+    resolved = spec_parser.plan_id_of(suffixed)
+
+    assert resolved == suffixed
+    digits = len(legal_id) - len(legal_id.rstrip('0123456789'))
+    truncations = {legal_id[: len(legal_id) - dropped] for dropped in range(1, digits + 1)}
+    assert truncations, f'{legal_id!r} carries no trailing digits to truncate'
+    assert resolved not in truncations
+
+
+def test_both_grammar_halves_carry_the_one_terminator_binding() -> None:
+    """The refusal is stated once and inherited, not spelled per half.
+
+    Keyed on the published binding rather than on a literal pattern: a second
+    copy of the lookahead is exactly the drift the single definition prevents.
+    """
+    assert spec_parser.PLAN_ID_TERMINATOR
+    assert spec_parser.PLAN_ID_PREFIXED_SEGMENT.endswith(spec_parser.PLAN_ID_TERMINATOR)
+    assert spec_parser.PLAN_ID_BARE_SEGMENT.endswith(spec_parser.PLAN_ID_TERMINATOR)

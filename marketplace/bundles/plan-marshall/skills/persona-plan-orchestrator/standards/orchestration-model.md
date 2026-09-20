@@ -1,6 +1,6 @@
 # Orchestration Model
 
-The canonical standard for epic orchestration in plan-marshall. It defines the granularity model, the persisted ledger layout, the persist/stop-resume contract, the terminal-title repaint contract, the two operational carve-outs, the ledger write-boundary, the prime directive, the verify-first contract for inferred claims, the dispatch decision rule, the cleanup contract, and the lessons-handling mode contract. The `plan-orchestrator` skill's verb workflows and the `persona-plan-orchestrator` identity both bind to this document — when a workflow doc and this standard disagree, this standard wins.
+The canonical standard for epic orchestration in plan-marshall. It defines the granularity model, the persisted ledger layout, the persist/stop-resume contract, the terminal-title repaint contract, the two operational carve-outs, the plan-status vocabulary, the ledger write-boundary, the prime directive, the verify-first contract for inferred claims, the dispatch decision rule, the cleanup contract, and the lessons-handling mode contract. The `plan-orchestrator` skill's verb workflows and the `persona-plan-orchestrator` identity both bind to this document — when a workflow doc and this standard disagree, this standard wins.
 
 ## Exit-code convention for every script call
 
@@ -127,15 +127,54 @@ The orchestrator MAY perform small operations inline, without spawning a plan:
 
 **Residual risk accepted.** An unrestricted read surface lets the orchestrator pull large amounts of repository context into its own session, so the category threshold above and the prime directive are the only things preventing an orchestrator session from drifting into implementation. That is a deliberate, recorded trade in favour of making `analyze` performable: a path-bounded read rule would make the `analyze` verb's own mandatory ground-truth corroboration and its on-disk-plan-artifacts input mode unperformable, which is the strictly worse failure.
 
+## Plan-Status Vocabulary
+
+A plan row's `status` says where that plan's work stands. This section records the **decision** about which statuses are legal and what each one means; it is not the machine-locatable enumeration. The declaring source is `orchestrator.py`, where the vocabulary is derived as the union of a LIVE set and a TERMINAL set, and the mirror an operator reads is the anchored line at [`plan-orchestrator/SKILL.md` § Status Vocabulary](../../plan-orchestrator/SKILL.md#status-vocabulary), which `test_orchestrator.py` asserts equal to the constant in both directions on every run.
+
+### The decision: extend the vocabulary, do not declare the extra statuses illegal
+
+The validator was once narrower than the ledger it validates: the live queues carried terminal statuses `queue --transition --status` would have refused. That mismatch is evidence that one of the two is wrong, never that the data is right by virtue of existing — so it was settled as a decision rather than closed by widening the validator to whatever was found.
+
+**The decision is to EXTEND**, on three grounds:
+
+- **Declaring a status illegal obliges a migration of the rows carrying it.** A closed row is the durable audit record — `close` freezes it in place, and neither `close` nor `archive` rewrites history. A migration that edits a frozen ledger to satisfy a validator falsifies the record it exists to preserve.
+- **Each status names an end state no other member can express.** The substitutes are all lies of a recognisable kind: recording a superseded row as `parked` keeps it clear of `next` while asserting that work is merely paused, and recording it as `shipped` asserts a PR that does not exist.
+- **A validator widened to accept whatever it found stops being a validator.** Extending to a *settled* set keeps the refusal meaningful: a token outside the set is still refused with `invalid_field` and nothing written.
+
+The grounds are re-derivable rather than restated: `orchestrator corpus enumerate --slug S` publishes a `status_tally` per epic, and `corpus epics` enumerates the slugs to run it over across both store homes. A count written into this document would go stale on the next transition; the derivation does not.
+
+### What each status means
+
+| Status | The row's work | Bucket |
+|--------|----------------|--------|
+| `staged` | Specified, not yet launched | LIVE |
+| `launched` | Handed to the plan lifecycle, not yet observed running | LIVE |
+| `running` | Executing now | LIVE |
+| `parked` | Paused, and it resumes onto the surface it declared | LIVE |
+| `shipped` | Finished and merged — the spelling `analyze` writes | TERMINAL, shipped |
+| `landed` | Finished and merged — the alternative spelling a landing-stamped row may carry | TERMINAL, shipped |
+| `superseded` | Absorbed by a named successor row, which carries the work instead | TERMINAL, closed unshipped |
+| `transferred` | Moved to another epic's ledger, which now owns it | TERMINAL, closed unshipped |
+| `retired` | Withdrawn, with no successor carrying it | TERMINAL, closed unshipped |
+| `resolved` | The defect closed with no plan work at all — refuted premise, or fixed elsewhere | TERMINAL, closed unshipped |
+
+### The two partitions the buckets drive, and why they are not one
+
+**LIVE versus TERMINAL** decides Ordered-Queue membership: a terminal row is left out of the live queue whatever ended it, because exclusion asks whether the work is done.
+
+**Shipped versus closed-unshipped** decides the completeness gap marker: only a shipped row OWES the result links `pr` and `landing`, so only a shipped row missing one is a reconciliation gap. A row that closed without shipping never had a PR or a landing record to point at, and marking one incomplete would report a gap that cannot exist.
+
+The two questions stay two declaring sets, never one. Each derived consumer is re-derived from those sets by construction rather than maintained beside them, so a status added later reaches every consumer or none — never some.
+
 ## Ledger Write-Boundary
 
 **The executing plan MUST NOT create or edit any file under `.plan/local/orchestrator/{epic}/`** — not `status.json`, not `epic.md`, not `workstreams/`, not `plans/`, not `landings/`. The orchestrator owns every ledger write and reconciles the epic from the landed PR through the `analyze` verb. A plan has exactly two channels back to the epic: its PR, and its `inbox/` OUTBOX.
 
 **The one sanctioned exception — `inbox/`.** An executing plan MAY create `inbox/{sender}-{seq}` message files inside its epic's tree, and nothing else. The exception is bounded by three qualifiers:
 
-- **Append-only, with one sanctioned correction path** — a plan creates new message files and never deletes one. The only in-place edit it may make is correcting its OWN filed message through `inbox amend` or `inbox supersede`, each of which stamps the envelope (`amended` plus a monotonic `revision`, or `lifecycle=superseded` plus a successor pointer) so the mutation is never invisible — it never silently rewrites a message, and never edits another sender's file. The message-state vocabulary is defined in [`inbox-envelope.md` § Message-state vocabulary](../../plan-orchestrator/standards/inbox-envelope.md).
-- **Own-file-only** — a plan may write only files whose `{sender}` segment is its own plan id.
-- **One-way** — the plan writes, the orchestrator drains — the drain being the `analyze` verb's inbox-scan input mode ([`plan-orchestrator/workflow/analyze.md`](../../plan-orchestrator/workflow/analyze.md) § The four input modes), which enumerates through `inbox list` and consumes through `inbox archive` ([`plan-orchestrator/SKILL.md`](../../plan-orchestrator/SKILL.md) § Canonical invocations). The plan never reads the ledger to make a decision.
+- **Append-only, with three sanctioned in-place edits** — a plan creates new message files and never deletes one. Exactly three surfaces mutate a filed message in place: `inbox amend` and `inbox supersede`, each correcting its OWN filed message (stamping `amended` plus a monotonic `revision`, or `lifecycle=superseded` plus a successor pointer), and the consumption claim, which stamps `lifecycle=consumed` plus `consumed_at` on a message delivered TO it and is confined to the addressee mailbox `inbox/to/{plan_id}/`. Each records its mutation in the envelope, so no in-place edit is ever invisible. The message-state vocabulary is defined in [`inbox-envelope.md` § Message-state vocabulary](../../plan-orchestrator/standards/inbox-envelope.md).
+- **Own-file-only** — a plan creates a new message file only under its own `{sender}` segment.
+- **One-way per location, and the ledger is never read by a plan.** The epic QUEUE is one-way — the plan writes, the orchestrator drains — the drain being the `analyze` verb's inbox-scan input mode ([`plan-orchestrator/workflow/analyze.md`](../../plan-orchestrator/workflow/analyze.md) § The four input modes), which enumerates through `inbox list` and consumes through `inbox archive` ([`plan-orchestrator/SKILL.md`](../../plan-orchestrator/SKILL.md) § Canonical invocations). The addressee MAILBOX carries the other direction: a message aimed at a running plan is delivered into `inbox/to/{plan_id}/`, and the addressed plan takes it through `inbox read --plan-id` ([`plan-orchestrator/SKILL.md`](../../plan-orchestrator/SKILL.md) § Canonical invocations), which resolves that one mailbox address and reaches no other path in the epic tree. What stays absolute across both is the load-bearing half — **a plan never reads the ledger to make a decision**: `status.json`, `epic.md`, `workstreams/`, `plans/`, and `landings/` stay orchestrator-owned, and a mailbox read is a read of messages addressed to that plan, never of the epic's own state.
 
 The envelope schema is owned by [`plan-orchestrator/standards/inbox-envelope.md`](../../plan-orchestrator/standards/inbox-envelope.md), and the `orchestrator inbox write` canonical invocation ([`plan-orchestrator/SKILL.md`](../../plan-orchestrator/SKILL.md) § Canonical invocations) is the sole sanctioned write mechanism — it derives the target path from the epic slug and sender id alone, so the carve-out is enforced by construction rather than by this prose.
 
@@ -190,7 +229,7 @@ The orchestrator NEVER implements. It does not write production code, does not e
 
 A verify-first clause is **settled** when someone checks it against the implementing source at a known HEAD — the consuming phase, or the `cleanup` verb's re-grounding pass. That settlement is persisted as a structured field on the spec's own `## Claim Labels` section, so the claim and its settlement live in one document and a reader never has to join two artifacts to know whether a premise still holds.
 
-**This subsection is the single normative home of the field.** The grammar has exactly one emitter and one parser — `orchestrator.py`'s `corpus set-verdict` formats the line, `corpus verdicts` interprets it — so producer and consumer agreeing on one parse is a property of the code rather than of two prose documents staying in sync. `workflow/cleanup.md`, `workflow/analyze.md`, `workflow/orchestrate.md`, and `templates/plan-spec.md` carry an xref to this anchor and restate none of it. Exactly **two** marketplace files carry the five key tokens together — this document, the sanctioned prose definition, and `orchestrator.py`, the sanctioned code carrier that enacts it. Any **third** carrier is a second definition, and a defect. The code half of that rule is enforced, not merely asserted: `test_orchestrator_corpus.py::test_only_one_module_implements_the_verdict_grammar` enumerates the marketplace Python surface at test time and requires the carrier set to be exactly `orchestrator.py`. The plan-queue status vocabulary is defined once as `VALID_STATUS_VOCABULARY` in `orchestrator.py` and published under `## Status Vocabulary` in `plan-orchestrator/SKILL.md`.
+**This subsection is the single normative home of the field.** The grammar has exactly one emitter and one parser — `orchestrator.py`'s `corpus set-verdict` formats the line, `corpus verdicts` interprets it — so producer and consumer agreeing on one parse is a property of the code rather than of two prose documents staying in sync. `workflow/cleanup.md`, `workflow/analyze.md`, `workflow/orchestrate.md`, and `templates/plan-spec.md` carry an xref to this anchor and restate none of it. Exactly **two** marketplace files carry the five key tokens together — this document, the sanctioned prose definition, and `orchestrator.py`, the sanctioned code carrier that enacts it. Any **third** carrier is a second definition, and a defect. The code half of that rule is enforced, not merely asserted: `test_orchestrator_corpus.py::test_only_one_module_implements_the_verdict_grammar` enumerates the marketplace Python surface at test time and requires the carrier set to be exactly `orchestrator.py`. The plan-queue status vocabulary is defined once as `VALID_STATUS_VOCABULARY` in `orchestrator.py` and published under `## Status Vocabulary` in `plan-orchestrator/SKILL.md`; the decision behind that set, and what each member means, is [§ Plan-Status Vocabulary](#plan-status-vocabulary) above.
 
 **Placement and association.** Inside a spec's `## Claim Labels` section, a claim bullet MAY carry at most one nested child bullet whose text begins with the literal token `verdict:`. Association is by **nesting**, never by ordinal position — an ordinal join breaks the moment a claim is inserted or reordered.
 

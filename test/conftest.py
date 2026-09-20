@@ -1116,6 +1116,7 @@ _ROUTING_GUARD_MODULES: tuple[tuple[str, str], ...] = (
     ),
     ('offrouting-offrouting', 'plan-marshall/tools-integration-ci/test_merge_shaped_offrouting_refusal_offrouting.py'),
     ('api-contract-parity', 'plan-marshall/workflow-integration-github/test_pr_landing_state_states.py'),
+    ('mailbox-check-point-roster', 'plan-marshall/plan-orchestrator/test_inbox_delivery.py'),
 )
 
 
