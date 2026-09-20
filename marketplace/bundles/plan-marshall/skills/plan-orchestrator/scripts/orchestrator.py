@@ -2969,9 +2969,9 @@ def cmd_corpus_read(args: argparse.Namespace) -> dict[str, Any]:
     ``.plan/orchestrator/{slug}/plans/PLAN-NN-*.md`` — the use case the
     ``.plan/`` scripts-only rule did not cover, forcing five independent
     direct-read violations before this verb existed. Read-only: resolves
-    main-anchored through the same store resolver every per-epic path uses
-    (identical from a worktree and from the main checkout), reads the single
-    matching spec file, and writes nothing.
+    through the same tracked-config-tier store resolver every per-epic path
+    uses (cwd-relative — a worktree reads its own branch's copy, not main's),
+    reads the single matching spec file, and writes nothing.
 
     The match reuses :func:`_spec_matches_row` (exact-or-prefix on the stem
     with the separating hyphen), so ``--plan PLAN-03`` resolves
