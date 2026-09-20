@@ -871,3 +871,40 @@ class TestMainCheckoutRoot:
 
         assert main_checkout_root().resolve() == marketplace_paths._main_checkout_root().resolve()
         assert main_checkout_root().resolve() == main_repo.resolve()
+
+
+# =============================================================================
+# _detect_target_from_env / _read_runtime_target — env-var detection (tier 1)
+# =============================================================================
+
+
+class TestDetectTargetFromEnv:
+    """Tests for the env-var-based runtime-target detection tier."""
+
+    def test_antigravity_agent_env(self, monkeypatch):
+        """_detect_target_from_env returns 'antigravity' when ANTIGRAVITY_AGENT is set."""
+        monkeypatch.setenv('ANTIGRAVITY_AGENT', '1')
+        monkeypatch.delenv('CLAUDE_CODE_SESSION_ID', raising=False)
+        assert marketplace_paths._detect_target_from_env() == 'antigravity'
+
+    def test_claude_session_env(self, monkeypatch):
+        """_detect_target_from_env returns 'claude' when CLAUDE_CODE_SESSION_ID is set."""
+        monkeypatch.delenv('ANTIGRAVITY_AGENT', raising=False)
+        monkeypatch.setenv('CLAUDE_CODE_SESSION_ID', 'test-session')
+        assert marketplace_paths._detect_target_from_env() == 'claude'
+
+    def test_no_env_signal(self, monkeypatch):
+        """_detect_target_from_env returns None when no platform env var is set."""
+        monkeypatch.delenv('ANTIGRAVITY_AGENT', raising=False)
+        monkeypatch.delenv('CLAUDE_CODE_SESSION_ID', raising=False)
+        assert marketplace_paths._detect_target_from_env() is None
+
+    def test_env_takes_precedence_over_marshal_json(self, tmp_path, monkeypatch):
+        """Env-var tier (tier 1) wins over marshal.json config (tier 2)."""
+        plan_dir = tmp_path / PLAN_DIR_NAME
+        plan_dir.mkdir()
+        (plan_dir / 'marshal.json').write_text('{"runtime": {"target": "opencode"}}')
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setenv('ANTIGRAVITY_AGENT', '1')
+        monkeypatch.delenv('CLAUDE_CODE_SESSION_ID', raising=False)
+        assert marketplace_paths._read_runtime_target() == 'antigravity'

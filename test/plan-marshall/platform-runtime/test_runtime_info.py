@@ -15,6 +15,7 @@ from typing import Any
 
 import platform_runtime
 import runtime_info
+from antigravity_runtime import AntigravityRuntime
 from claude_runtime import ClaudeRuntime
 from opencode_runtime import OpenCodeRuntime
 from toon_parser import parse_toon
@@ -183,6 +184,15 @@ def test_claude_runtime_prefers_claude_env_over_opencode_env(monkeypatch: Any) -
     monkeypatch.setenv('CLAUDE_CODE_MODEL', 'claude-model')
     result = _parse(ClaudeRuntime().runtime_info())
     assert result['model_name'] == 'claude-model'
+
+
+def test_antigravity_runtime_never_carries_claude_or_opencode_env(monkeypatch: Any) -> None:
+    """An Antigravity entry never carries Claude or OpenCode model metadata."""
+    monkeypatch.delenv('MODEL_NAME', raising=False)
+    monkeypatch.setenv('CLAUDE_CODE_MODEL', 'claude-model')
+    monkeypatch.setenv('OPENCODE_MODEL', 'opencode-model')
+    result = _parse(AntigravityRuntime().runtime_info())
+    assert result.get('model_name') is None
 
 
 def test_claude_provider_reports_claude_harness() -> None:

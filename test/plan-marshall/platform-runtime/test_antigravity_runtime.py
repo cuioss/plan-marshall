@@ -43,6 +43,22 @@ def test_runtime_info(runtime: AntigravityRuntime):
     assert info['harness'] == 'antigravity'
 
 
+def test_runtime_info_picks_up_model_env(runtime: AntigravityRuntime, monkeypatch):
+    """runtime_info uses the shared collector and reads generic model env vars."""
+    monkeypatch.setenv('MODEL_NAME', 'test-model-from-env')
+    info = _parse(runtime.runtime_info())
+    assert info['status'] == 'success'
+    assert info['harness'] == 'antigravity'
+    assert info.get('model_name') == 'test-model-from-env'
+
+
+def test_antigravity_in_supported_harnesses():
+    """'antigravity' is a concrete provider in SUPPORTED_HARNESSES."""
+    import runtime_info
+
+    assert 'antigravity' in runtime_info.SUPPORTED_HARNESSES
+
+
 def test_harness_bash_timeout_ceiling(runtime: AntigravityRuntime):
     """Antigravity enforces a 600-second bash ceiling."""
     res = _parse(runtime.harness_bash_timeout_ceiling())

@@ -116,17 +116,25 @@ def write_state(state: dict[str, str]) -> None:
 
 
 def read_runtime_target(cwd: str | None = None) -> str:
-    """Read ``runtime.target`` from the nearest ``.plan/marshal.json``.
+    """Read ``runtime.target`` from platform env vars or ``.plan/marshal.json``.
 
-    Walks up from ``cwd`` (or ``Path.cwd()``) to find the nearest
-    ``.plan/marshal.json``, then extracts ``runtime.target``.
+    Resolution cascade:
 
-    Returns:
-        Target string (``"claude"`` or ``"opencode"``), or ``"claude"``
-        as fallback when the file is absent or malformed.
+    1. **Env signal** — ``ANTIGRAVITY_AGENT`` → ``'antigravity'``,
+       ``CLAUDE_CODE_SESSION_ID`` → ``'claude'``.
+    2. **Config** — ``runtime.target`` from the nearest ``.plan/marshal.json``.
+    3. **Default** — ``'claude'``.
     """
     import json as _json
+    import os as _os
 
+    # Tier 1: platform-injected env var (zero-cost, always present).
+    if _os.environ.get('ANTIGRAVITY_AGENT'):
+        return 'antigravity'
+    if _os.environ.get('CLAUDE_CODE_SESSION_ID'):
+        return 'claude'
+
+    # Tier 2: marshal.json config.
     start = Path(cwd).resolve() if cwd else Path.cwd().resolve()
     for parent in [start, *start.parents]:
         candidate = parent / '.plan' / 'marshal.json'
@@ -160,8 +168,13 @@ def detect_plugin_root(target: str | None = None) -> Path | None:
     For ``antigravity``: checks workspace-local (.agents/plugins/plan-marshall)
     and global (~/.gemini/config/plugins/plan-marshall) plugin directories.
 
-    When ``target`` is ``None``, auto-detects by reading
-    ``runtime.target`` from the nearest ``.plan/marshal.json``.
+    When ``target`` is ``None``, auto-detects via the env → config → default
+    cascade in ``read_runtime_target()``.  If that auto-detected target
+    resolves to ``claude`` and the primary Claude detector misses, a fallback
+    probe tries the remaining detectors. An explicitly passed ``target``
+    (including an explicit ``"claude"``) never falls back — the caller asked
+    for a specific runtime and a different one's root must not be returned
+    in its place.
 
     Args:
         target: Runtime target (``"claude"``, ``"opencode"``, or ``"antigravity"``).
@@ -169,6 +182,7 @@ def detect_plugin_root(target: str | None = None) -> Path | None:
     Returns:
         Path to plugin root, or ``None`` if not found.
     """
+    auto_detected = target is None
     if target is None:
         target = read_runtime_target()
 
@@ -177,7 +191,17 @@ def detect_plugin_root(target: str | None = None) -> Path | None:
     if target == 'antigravity':
         return _detect_antigravity_root()
 
-    return _detect_claude_root()
+    # Primary: Claude detection.
+    result = _detect_claude_root()
+    if result:
+        return result
+
+    if not auto_detected:
+        return None
+
+    # Tier 3 fallback (auto-detected target only): probe other targets if
+    # Claude root not found.
+    return _detect_antigravity_root() or _detect_opencode_root()
 
 
 def _detect_antigravity_root() -> Path | None:

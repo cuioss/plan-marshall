@@ -11,9 +11,7 @@ The exit-code contract for every `python3 .plan/execute-script.py` call in this 
 
 ## Scope
 
-Concrete providers exist for `claude` and `opencode` only. `antigravity` is an
-example harness value in documentation and test vectors, never a registered
-runtime target.
+Concrete providers exist for `claude`, `opencode`, and `antigravity`.
 
 ## CLI Shape
 
@@ -31,7 +29,7 @@ One required attribute (`harness`) and five optional attributes per run entry. U
 
 | Key | Meaning | Always present |
 |-----|---------|----------------|
-| `harness` | Harness identifier (`claude`, `opencode`) | Yes |
+| `harness` | Harness identifier (`claude`, `opencode`, `antigravity`) | Yes |
 | `model_name` | Model name as reported by script-accessible sources | No |
 | `model_type` | Model type as reported by script-accessible sources | No |
 | `model_version` | Model version as reported by script-accessible sources | No |
@@ -99,7 +97,7 @@ reports `marshal_not_found`:
 status: error
 operation: runtime-info
 error: unknown_target
-message: "runtime.target 'antigravity' is not in the registry; valid targets are: claude, opencode"
+message: "runtime.target 'unknown-platform' is not in the registry; valid targets are: claude, opencode, antigravity"
 ```
 
 ## No-Op
