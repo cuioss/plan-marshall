@@ -35,6 +35,7 @@ from file_ops import (
     get_executor_path,
     get_metadata_content_split,
     get_plan_dir,
+    get_store_dir,
     get_temp_dir,
     get_worktree_root,
     guard_worktree_cwd,
@@ -1373,3 +1374,49 @@ def test_get_build_results_dir_accepts_every_plan_id_the_validator_accepts(plan_
 
     assert [path.name for path in resolved] == ['build-results'] * len(accepted)
     assert [path.parent.name for path in resolved] == accepted
+
+
+# =============================================================================
+# Resolver-family membership after the orchestrator tracked-tier move
+# =============================================================================
+#
+# The orchestrator store and the NO_PLAN build-results branch used to compose
+# onto the SAME resolver (``resolve_main_anchored_path``). Only the orchestrator
+# store moved to the git-tracked, cwd-relative tier; the sentinel branch stayed
+# main-anchored, because a plan-less build is owned by no worktree. That makes
+# the two a matched pair worth asserting together.
+
+
+def test_orchestrator_store_moved_off_the_tier_the_sentinel_stayed_on(
+    real_main_checkout_and_worktree, monkeypatch, no_plan_base_dir
+):
+    """The tracked-tier move was SCOPED — it did not sweep the sentinel along.
+
+    Both halves are asserted from ONE cwd, and that is the point: either
+    assertion alone is satisfied by a change that moved both resolvers, or
+    neither. Only the pair pins the divergence, which is the actual claim — the
+    orchestrator corpus is git-tracked repo-local state that follows the
+    checkout, while the plan-less build's results must not scatter across
+    whichever worktree happened to run one.
+
+    Driven on the REAL resolver (no override) because, exactly as the sentinel
+    anchoring test above records, ``PLAN_BASE_DIR`` collapses both tiers onto
+    one directory and would make the two paths compare equal for a reason that
+    has nothing to do with the code under test.
+    """
+    main_root, worktree = real_main_checkout_and_worktree
+    monkeypatch.setattr(file_ops, '_BASE_DIR_OVERRIDE', None)
+    monkeypatch.delenv('PLAN_TRACKED_CONFIG_DIR', raising=False)
+    monkeypatch.chdir(worktree)
+
+    sentinel_dir = get_build_results_dir(NO_PLAN_SENTINEL)
+    orchestrator_dir = get_store_dir('orchestrator', 'some-epic')
+
+    # The sentinel still follows MAIN.
+    assert sentinel_dir == main_root / '.plan' / 'local' / 'plans' / NO_PLAN_SENTINEL / 'build-results'
+    # The orchestrator store now follows the CWD checkout's tracked .plan/.
+    assert orchestrator_dir == worktree / '.plan' / 'orchestrator' / 'some-epic'
+    # Stated as a containment fact too, so a future layout change that keeps the
+    # literals equal by coincidence still has to keep the anchoring right.
+    assert main_root not in orchestrator_dir.parents
+    assert worktree not in sentinel_dir.parents
