@@ -25,7 +25,7 @@ When **no** tier of the chain resolves, the footprint is unresolvable and no rul
 
 ## Cross-Check Matrix
 
-Each row is one rule. The script emits exactly one finding when the rule's expected outcome is contradicted by the actual diff.
+Each row is one rule. The script emits exactly one finding when the rule's expected outcome is contradicted by its evidence — the realized footprint for a footprint-fed rule, or the forwarded upstream comparison for Rule M6.
 
 ### Rule M1: docs-only manifest implies docs-only diff
 
