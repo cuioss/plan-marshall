@@ -108,6 +108,29 @@ full traversal cost. Never recurse from the shared fixture base or the basetemp 
 language-agnostic statement is `plan-marshall:persona-module-tester` § "Bound Per-Test Guard
 Traversal by the Test's Own Footprint".
 
+### Pytest basetemp coexistence
+
+The suite owns only `.plan/temp/pytest-*`. Standalone fixtures live under `.plan/temp/scratch/`.
+The two prefixes never overlap: per-session basetemp dirs land under the pytest-owned prefix,
+standalone fixture dirs land under scratch, and nothing writes outside the owned prefix.
+
+**Rule**: keep every temp write inside its owning prefix. `test/conftest.py:TEST_FIXTURE_BASE`
+resolves to `.plan/temp/scratch/test-fixture/` and asserts at import time that no path part
+starts with `pytest-`; `build.py:PYTEST_BASETEMP_ROOT` resolves to `.plan/temp/pytest-basetemp/`
+and its prune prepares only that root, never the scratch subtree. Do not set a `basetemp` key
+in `pyproject.toml` — an ini-level basetemp fights the runner's per-session `--basetemp` and
+reintroduces the shared root the per-session dirs remove.
+
+Consumers enumerated in the same atomic change: `test/conftest.py` defines `TEST_FIXTURE_BASE`
+and `PLAN_DIR_NAME`, derives every standalone dir through `get_test_fixture_dir`, and redirects
+`PLAN_BASE_DIR` through `PlanContext`; `test/_shared/_test_shape_scan.py` names
+`TEST_FIXTURE_BASE`, `PLAN_DIR_NAME`, `basetemp`, and `test-fixture` as shared-root markers the
+`r7_unbounded_shared_temp_walk` predicate reports; `test/test_harness_shape_guards.py` carries
+the matched negative control walking `TEST_FIXTURE_BASE`; `build.py` owns the pytest prefix
+through `PYTEST_BASETEMP_ROOT`, `_prepare_session_basetemp`, and `_prune_basetemp_roots`;
+`pyproject.toml` records this split in prose with no `basetemp` key; `doc/developer/build.adoc`
+records the ownership split beside the tool-default footprint.
+
 ## Event-Loop and Wall-Clock CI Liabilities
 
 A test suite that passes on the developer's local Python interpreter is not proof it passes on CI's pinned interpreter — the two classes below hang the whole job for its full timeout budget rather than failing fast, and both are invisible on a newer local interpreter while reproducing reliably on an older pinned one.

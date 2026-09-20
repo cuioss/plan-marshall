@@ -35,10 +35,22 @@ TEST_ROOT = Path(__file__).parent
 PROJECT_ROOT = TEST_ROOT.parent
 MARKETPLACE_ROOT = PROJECT_ROOT / 'marketplace' / 'bundles'
 PLAN_DIR_NAME = '.plan'  # Tracked config sub-directory inside the repo.
-# Standalone test fixtures live under the repo-local .plan/temp/ so each
+# Standalone test fixtures live under the repo-local .plan/temp/scratch/ so each
 # worktree keeps its own isolated fixture tree and the existing
-# ``Edit(.plan/**)`` permission keeps covering them.
-TEST_FIXTURE_BASE = PROJECT_ROOT / PLAN_DIR_NAME / 'temp' / 'test-fixture'
+# ``Edit(.plan/**)`` permission keeps covering them. The scratch subtree is
+# distinct from the pytest-owned ``.plan/temp/pytest-*`` prefix the suite owns
+# (see ``pm-dev-python:pytest-testing`` § "Pytest basetemp coexistence" and
+# ``build.py:PYTEST_BASETEMP_ROOT``): standalone fixtures never live under the
+# pytest-owned prefix, and per-session basetemp dirs never live under scratch.
+TEST_FIXTURE_BASE = PROJECT_ROOT / PLAN_DIR_NAME / 'temp' / 'scratch' / 'test-fixture'
+
+# Pytest coexistence: the suite owns only .plan/temp/pytest-* (the per-session
+# basetemp roots build.py creates); standalone fixtures live under
+# .plan/temp/scratch/ and never under the pytest-owned prefix. Pinned at import
+# time so a relocation of either prefix fails fast rather than colliding at
+# runtime.
+assert 'scratch' in TEST_FIXTURE_BASE.parts
+assert not any(part.startswith('pytest-') for part in TEST_FIXTURE_BASE.parts)
 
 # Scoped temp-root pruning discipline: a per-test guard over the shared temp
 # tree walks only the test's own footprint with a depth limit and prunes heavy
@@ -2433,7 +2445,7 @@ def get_test_fixture_dir() -> Path:
 
     Honours a TEST_FIXTURE_DIR environment variable when one is set (nothing in
     the suite sets it by default); otherwise creates a standalone directory in
-    .plan/temp/test-fixture/.
+    .plan/temp/scratch/test-fixture/.
 
     Returns:
         Path to the test fixture directory
@@ -2447,6 +2459,11 @@ def get_test_fixture_dir() -> Path:
 
     timestamp = datetime.now().strftime('%Y%m%d-%H%M%S-%f')
     fixture_dir = TEST_FIXTURE_BASE / f'standalone-{timestamp}'
+    # Temp ownership split: every standalone dir stays inside the scratch
+    # subtree and never under the pytest-owned prefix; the timestamp key keeps
+    # concurrent fixtures from colliding.
+    assert 'scratch' in fixture_dir.parts
+    assert not any(part.startswith('pytest-') for part in fixture_dir.parts)
     fixture_dir.mkdir(parents=True, exist_ok=True)
     return fixture_dir
 
@@ -2455,7 +2472,7 @@ class PlanContext:
     """
     Context manager for tests that need PLAN_BASE_DIR.
 
-    Uses a centralized test fixture directory under .plan/temp/test-fixture/
+    Uses a centralized test fixture directory under .plan/temp/scratch/test-fixture/
     instead of system temp, created and cleaned up by the context itself.
     PLAN_BASE_DIR, PLAN_DIR_NAME, and the _config_core paths are redirected via a
     MonkeyPatch instance and reverted atomically on exit — the same
