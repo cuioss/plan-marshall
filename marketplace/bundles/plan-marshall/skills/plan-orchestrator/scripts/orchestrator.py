@@ -2417,10 +2417,17 @@ def _resolve_footprint_base(base_ref: str) -> dict[str, Any]:
 def _currency_compare(footprint: frozenset[str], spec_paths: set[str]) -> dict[str, Any]:
     """Compare one spec's declared paths against the landed footprint by symmetric difference.
 
-    The ``_cmd_reconcile_scope._compare_pair`` pattern, consumed read-only:
+    Corpus twin surface: consumes the one shared containment rule hosted in
+    ``plan-retrospective/_footprint_resolver.py`` (``declaration_contains`` /
+    ``declaration_covers`` / ``symmetric_difference_with_containment``) —
+    mirrored here as :func:`_contains` because the orchestrator skill cannot
+    import across bundle boundaries, so the body below grades identically
+    rather than importing. The ``_cmd_reconcile_scope._compare_pair`` pattern,
+    consumed read-only:
     both difference directions are published as named lists with their own
     sizes alongside the pair's symmetric-difference size, and the verdict is
-    never inferred from cardinality. Directory and recursive-glob entries
+    never inferred from cardinality — an equal-sized but disjoint pair scores
+    fully disagreeing. Directory and recursive-glob entries
     resolve by containment with a ``/`` boundary via :func:`_contains` — a
     ``test/`` claim overlaps everything beneath it — so a directory-claiming
     spec is evaluated, never dropped to silence.
@@ -3367,7 +3374,11 @@ def _glob_stem(container: str) -> str:
 def _contains(container: str, contained: str) -> bool:
     """Whether ``container`` contains ``contained`` under the stated rule.
 
-    A ``recursive_glob`` entry (path ending in ``**``) contains another
+    Mirror of the shared containment rule hosted in
+    ``plan-retrospective/_footprint_resolver.py`` (``declaration_contains``):
+    kept as a local mirror because the orchestrator skill cannot import across
+    bundle boundaries. The two bodies grade identically by construction — a
+    ``recursive_glob`` entry (path ending in ``**``) contains another
     entry's normalized path when that path equals the glob stem or starts
     with ``stem + '/'``. A ``directory`` entry (path ending in ``'/'``)
     contains another entry when that entry equals the directory or starts

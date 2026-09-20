@@ -55,6 +55,8 @@ SCRIPT_PATH = get_script_path('plan-marshall', 'manage-references', 'manage-refe
 
 _core = load_script_module('plan-marshall', 'manage-references', '_references_core.py', '_refs_core_footprint_upstream')
 
+_twin = load_script_module('plan-marshall', 'plan-retrospective', '_footprint_resolver.py', '_footprint_resolver_twin')
+
 FOOTPRINT_PLAN_ID = 'compute-footprint-plan'
 
 
@@ -564,6 +566,80 @@ def test_compute_footprint_unresolvable_explicit_base_fails_loud(tmp_path):
     assert data['status'] == 'error'
     assert data['error'] == 'git_error'
     assert data['base_ref'] == 'no-such-ref-xyz'
+
+
+# =============================================================================
+# Twin-pair containment comparisons (shared rule)
+# =============================================================================
+
+
+def test_declared_vs_realized_directory_claim_covers_realized_files():
+    """A declared directory covers the realized files beneath it."""
+    # Arrange
+    declared = {'test/'}
+    realized = {'test/a.py', 'test/b.py'}
+
+    # Act
+    compared = _twin.symmetric_difference_with_containment(declared, realized)
+
+    # Assert
+    assert compared['symmetric_difference_count'] == 0
+    assert compared['declared_not_realized'] == []
+    assert compared['realized_not_declared'] == []
+
+
+def test_declared_vs_realized_disjoint_equal_sized_sets_fully_disagree():
+    """Two equal-sized but disjoint sets score fully disagreeing."""
+    # Arrange
+    declared = {'a.py', 'b.py'}
+    realized = {'c.py', 'd.py'}
+
+    # Act
+    compared = _twin.symmetric_difference_with_containment(declared, realized)
+
+    # Assert
+    assert compared['declared_not_realized_count'] == 2
+    assert compared['realized_not_declared_count'] == 2
+    assert compared['symmetric_difference_count'] == 4
+
+
+def test_declared_vs_declared_directory_claim_covers_sibling_declaration():
+    """A directory on one declared side covers a file on the other."""
+    # Arrange
+    left = {'src/'}
+    right = {'src/a.py'}
+
+    # Act
+    compared = _twin.symmetric_difference_with_containment(left, right)
+
+    # Assert
+    assert compared['symmetric_difference_count'] == 0
+
+
+def test_declared_vs_declared_disjoint_equal_sized_sets_fully_disagree():
+    """Two declared sides with no overlap score fully disagreeing."""
+    # Arrange
+    left = {'a.py', 'b.py'}
+    right = {'c.py', 'd.py'}
+
+    # Act
+    compared = _twin.symmetric_difference_with_containment(left, right)
+
+    # Assert
+    assert compared['symmetric_difference_count'] == 4
+
+
+def test_containment_requires_the_slash_boundary():
+    """A bare prefix without a slash boundary covers nothing."""
+    # Arrange
+    declared = {'test'}
+    realized = {'test-data/a.py'}
+
+    # Act
+    compared = _twin.symmetric_difference_with_containment(declared, realized)
+
+    # Assert
+    assert compared['symmetric_difference_count'] == 2
 
 
 _ = patch  # Silence unused-import warning; future tests may need it.

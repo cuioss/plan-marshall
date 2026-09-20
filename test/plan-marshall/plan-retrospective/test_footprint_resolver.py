@@ -764,3 +764,28 @@ def test_derive_sweep_budget_empty_throughput_is_stated_fallback():
     assert result['budget_items'] == _fr.SWEEP_BUDGET_FALLBACK_ITEMS
     assert result['basis'] == 'fallback_empty_throughput'
     assert result['throughput_files'] is None
+
+
+def test_unevaluated_state_reports_when_nothing_was_examined(tmp_path):
+    """No references and no live worktree classifies as unevaluated with coverage."""
+    plan_dir = tmp_path / 'plan'
+    plan_dir.mkdir()
+    classified = _fr.classify_evaluation_state(plan_dir, None, None)
+    assert classified['state'] == 'unevaluated'
+    assert classified['coverage']['has_references'] is False
+
+
+def test_resolved_empty_stays_resolved_not_unevaluated(tmp_path):
+    """A resolved-empty footprint classifies as resolved, never unevaluated."""
+    plan_dir = tmp_path / 'plan'
+    _write_refs(plan_dir, {'realized_footprint': []})
+    classified = _fr.classify_evaluation_state(plan_dir, None, set())
+    assert classified['state'] == 'resolved'
+
+
+def test_unresolvable_state_reports_when_tiers_ran_and_missed(tmp_path):
+    """References exist but no tier answers: unresolvable, not unevaluated."""
+    plan_dir = tmp_path / 'plan'
+    _write_refs(plan_dir, {'base_branch': 'main'})
+    classified = _fr.classify_evaluation_state(plan_dir, None, None)
+    assert classified['state'] == 'unresolvable'
