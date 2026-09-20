@@ -169,8 +169,12 @@ def detect_plugin_root(target: str | None = None) -> Path | None:
     and global (~/.gemini/config/plugins/plan-marshall) plugin directories.
 
     When ``target`` is ``None``, auto-detects via the env → config → default
-    cascade in ``read_runtime_target()``.  If the primary detector returns
-    ``None``, a fallback probe tries the remaining detectors.
+    cascade in ``read_runtime_target()``.  If that auto-detected target
+    resolves to ``claude`` and the primary Claude detector misses, a fallback
+    probe tries the remaining detectors. An explicitly passed ``target``
+    (including an explicit ``"claude"``) never falls back — the caller asked
+    for a specific runtime and a different one's root must not be returned
+    in its place.
 
     Args:
         target: Runtime target (``"claude"``, ``"opencode"``, or ``"antigravity"``).
@@ -178,6 +182,7 @@ def detect_plugin_root(target: str | None = None) -> Path | None:
     Returns:
         Path to plugin root, or ``None`` if not found.
     """
+    auto_detected = target is None
     if target is None:
         target = read_runtime_target()
 
@@ -191,7 +196,11 @@ def detect_plugin_root(target: str | None = None) -> Path | None:
     if result:
         return result
 
-    # Tier 3 fallback: probe other targets if Claude root not found.
+    if not auto_detected:
+        return None
+
+    # Tier 3 fallback (auto-detected target only): probe other targets if
+    # Claude root not found.
     return _detect_antigravity_root() or _detect_opencode_root()
 
 

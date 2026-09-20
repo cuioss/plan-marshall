@@ -188,6 +188,7 @@ def test_claude_runtime_prefers_claude_env_over_opencode_env(monkeypatch: Any) -
 
 def test_antigravity_runtime_never_carries_claude_or_opencode_env(monkeypatch: Any) -> None:
     """An Antigravity entry never carries Claude or OpenCode model metadata."""
+    monkeypatch.delenv('MODEL_NAME', raising=False)
     monkeypatch.setenv('CLAUDE_CODE_MODEL', 'claude-model')
     monkeypatch.setenv('OPENCODE_MODEL', 'opencode-model')
     result = _parse(AntigravityRuntime().runtime_info())

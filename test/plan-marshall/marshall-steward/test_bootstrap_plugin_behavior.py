@@ -126,6 +126,15 @@ def test_detect_plugin_root_fallback_probes_opencode(monkeypatch):
     assert bp.detect_plugin_root() == sentinel
 
 
+def test_detect_plugin_root_explicit_claude_target_never_falls_back(monkeypatch):
+    """An explicit target='claude' returns None on a miss — never another runtime's root."""
+    monkeypatch.setattr(bp, '_detect_claude_root', lambda: None)
+    monkeypatch.setattr(bp, '_detect_antigravity_root', lambda: Path('/fake/antigravity-fallback'))
+    monkeypatch.setattr(bp, '_detect_opencode_root', lambda: Path('/fake/opencode-fallback'))
+
+    assert bp.detect_plugin_root(target='claude') is None
+
+
 # =============================================================================
 # _detect_claude_root
 # =============================================================================
