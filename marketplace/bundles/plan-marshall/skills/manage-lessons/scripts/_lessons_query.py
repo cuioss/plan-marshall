@@ -26,7 +26,7 @@ from _lessons_crud import set_body
 from _lessons_io import (
     LessonStore,
     get_lessons_dir,
-    read_lesson,
+    resolve_lesson,
     resolve_lesson_store,
 )
 from _plan_parsing import deliverable_write_set, extract_deliverables, parse_document_sections
@@ -41,16 +41,35 @@ from toon_parser import serialize_toon
 
 
 def cmd_get(args: argparse.Namespace) -> dict:
-    """Get a single lesson."""
-    metadata, title, body = read_lesson(args.lesson_id)
+    """Get a single lesson.
 
-    if not metadata:
+    Renders the three-state verdict from :func:`_lessons_io.resolve_lesson`:
+    ``absent`` keeps the unchanged ``not_found`` shape, while ``unreadable``
+    reports the distinct ``unresolvable`` error carrying the resolved path and
+    the reason, so a caller can act on the file it names instead of hunting for
+    one the old message said was missing.
+    """
+    read = resolve_lesson(args.lesson_id)
+
+    if read.state == 'absent':
         return {
             'status': 'error',
             'id': args.lesson_id,
             'error': 'not_found',
             'message': f'Lesson {args.lesson_id} not found',
         }
+
+    if read.state == 'unreadable':
+        return {
+            'status': 'error',
+            'id': args.lesson_id,
+            'error': 'unresolvable',
+            'message': f'Lesson {args.lesson_id} exists but could not be resolved',
+            'path': str(read.path),
+            'detail': read.detail,
+        }
+
+    metadata, title, body = read.metadata, read.title, read.body
 
     result = {
         'status': 'success',
@@ -891,14 +910,23 @@ def cmd_set_body(args: argparse.Namespace) -> dict:
     Reads the body content from ``--file PATH`` (preferred) or ``--content
     STRING`` (secondary), preserves the ``key=value`` frontmatter and the H1
     title verbatim, and replaces everything after the H1 with the supplied
-    body. Returns TOON ``{status, id, path, body_bytes_written}``.
+    body. Returns TOON ``{status, id, path, body_bytes_written, body_state}``.
+
+    ``body_state`` is the other half of the pair ``add`` reports: ``add``
+    returns ``absent`` for the stub it allocates, and this verb reports the
+    flipped ``written`` once a body has landed, so the two verbs answer the
+    same question in the same vocabulary. It rides only on a successful write —
+    an error return says nothing about the state, because nothing was written.
     """
-    return set_body(
+    result = set_body(
         get_lessons_dir(),
         args.lesson_id,
         file_path=args.file,
         content=args.content,
     )
+    if result.get('status') == 'success':
+        result['body_state'] = 'written' if result.get('body_bytes_written') else 'absent'
+    return result
 
 
 def cmd_set_title(args: argparse.Namespace) -> dict:

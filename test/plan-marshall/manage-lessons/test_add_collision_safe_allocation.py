@@ -89,11 +89,12 @@ class TestLessonIdClockZone:
                     bundle=None,
                 )
             )
-            metadata, _title, _body = _mod.read_lesson(result['id'])
+            read = _mod.resolve_lesson(result['id'])
 
         assert result['status'] == 'success'
-        assert metadata['created'] == '2026-07-28'
-        assert result['id'][:10] == metadata['created']
+        assert read.state == 'found'
+        assert read.metadata['created'] == '2026-07-28'
+        assert result['id'][:10] == read.metadata['created']
 
 
 # =============================================================================

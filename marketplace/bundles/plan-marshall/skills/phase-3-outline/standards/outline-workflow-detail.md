@@ -1041,14 +1041,21 @@ A request's stated root cause is a **hypothesis, not a fact**. Before authoring 
    python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons get --lesson-id {id}
    ```
 
-   A registered ID returns the lesson; an unregistered ID returns the canonical error shape (`status: error` with `error: not_found`). To enumerate the full registered set in one call (e.g. when several tokens are being validated at once), use `python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons list`.
+   A registered ID returns the lesson. A failure comes back as one of **two** distinct error values, and they mean different things:
 
-2. **On a not-found result, choose one of two resolutions** (do NOT write the bare ID):
+   - `error: not_found` — no lesson file exists at that ID. The ID is genuinely **unregistered**, which is the case resolution (a) or (b) below handles.
+   - `error: unresolvable` — a lesson file for that ID **exists** and no reader can resolve it (the read raised, or its metadata header does not parse). The payload carries the resolved `path` and a `detail` naming the reason. The ID is **registered**; what failed is reading it.
+
+   Treating `unresolvable` as "unregistered" is wrong in both directions: it would reword a citation whose lesson is really there, and it would hide a corpus record that needs repairing or retiring (`remove --allow-unreadable`) rather than a citation that needs rewording. Branch on the error VALUE, never on the mere presence of an error. To enumerate the full registered set in one call (e.g. when several tokens are being validated at once), use `python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons list`.
+
+2. **On an `unresolvable` result, do not reword the citation.** The lesson is registered, so the citation itself is legitimate. Surface the unreadable record as a finding against the corpus — naming the `path` and `detail` the payload returned — and leave the cited token as it stands.
+
+3. **On a `not_found` result, choose one of two resolutions** (do NOT write the bare ID):
 
    - **(a) Drop-and-reword** — omit the bare ID from the deliverable body and reference the lesson by its logical role (what the lesson is *about*), not its identifier. This is the default for any field whose text would otherwise carry the bare token as narrative.
    - **(b) Confine to plan-internal fields** — when the ID must be retained as provenance, keep it ONLY in the deliverable's plan-internal fields (`**Change per file:**`, `**Success Criteria:**`), which live in the plan workspace and never ship in a skill body. Never write the bare ID into a field that will be lifted verbatim into shipped prose.
 
-3. **Do NOT register the plan's own plan-source lesson to make a citation resolve.** When the unregistered ID is the plan's own plan-source lesson, it lives as a plan-local copy and is intentionally absent from the inventory. Registering it first is wrong: under the three-gate lesson-creation policy, Gate 2 finds the current plan IS the covering active plan and directs a fold-into-plan, not a create. Resolve the citation via resolution (a) or (b) instead.
+4. **Do NOT register the plan's own plan-source lesson to make a citation resolve.** When the unregistered ID is the plan's own plan-source lesson, it lives as a plan-local copy and is intentionally absent from the inventory. Registering it first is wrong: under the three-gate lesson-creation policy, Gate 2 finds the current plan IS the covering active plan and directs a fold-into-plan, not a create. Resolve the citation via resolution (a) or (b) instead.
 
 **Why this is the upstream complement to the write-time safety net**: `manage-tasks batch-add` / `commit-add` already reject unregistered lesson IDs at task-write time (`lesson_id_not_found`), but that write-time validation scans `title + description` ONLY — the `steps[]` affected-path field carrying a lesson ID inside a filename is NOT scanned and is safe. The write-time net therefore catches an unregistered citation in a phase-4 task body, but only after the outline has already committed it. Running this check at outline time catches the unregistered citation where it originates — in the composed deliverable body — so the failure never surfaces downstream at `manage-tasks batch-add`.
 

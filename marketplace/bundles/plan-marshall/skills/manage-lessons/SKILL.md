@@ -1,6 +1,6 @@
 ---
 name: manage-lessons
-description: Manage lessons learned with global scope, including the main-anchored store handle and the fail-closed retirement surface — restore-from-plan's four-state outcome, list-stalled's file-presence-derived population plus its duplication direction, and the store-resolution discriminator that makes every zero state whether the store was actually resolved and scanned
+description: Manage lessons learned with global scope, including the main-anchored store handle, the shared three-state lesson-id resolution seam that reports found / absent / present-but-unreadable so not_found means absent alone, the tombstone-preserving remove --allow-unreadable retirement that gives a stuck lesson an explicit exit, add's body-state reporting that names a freshly allocated record as body-less instead of returning a bare success, and the fail-closed retirement surface — restore-from-plan's four-state outcome, list-stalled's file-presence-derived population plus its duplication direction, and the store-resolution discriminator that makes every zero state whether the store was actually resolved and scanned
 user-invocable: false
 mode: script-executor
 scope: global
@@ -114,7 +114,19 @@ id: 2025-12-02-001
 path: /abs/path/to/.plan/local/lessons-learned/2025-12-02-001.md
 component: maven-build
 category: bug
+body_state: absent
+body_bytes: 0
 ```
+
+`body_state` names what the allocation actually left on disk, so a caller never
+has to infer it from a bare `status: success`. A fresh stub is `absent` with
+`body_bytes: 0`; `set-body` reports the flipped `written` once a body lands. The
+two fields always travel together — the state is the discriminator and the byte
+count is the measurement it was derived from.
+
+On the `arch-constraint` reinforce path the fields describe the lesson that was
+REINFORCED, re-read from disk after the recurrence section was appended — never
+the body-less shape a freshly created stub would have had.
 
 ### set-body
 
@@ -139,7 +151,15 @@ status: success
 id: 2025-12-02-001
 path: /abs/path/to/.plan/local/lessons-learned/2025-12-02-001.md
 body_bytes_written: 1234
+body_state: written
 ```
+
+`body_state` is the other half of the pair `add` reports: `add` returns `absent`
+for the stub it allocates, and this verb reports `written` once a body has
+landed, so both verbs answer the same question in the same vocabulary. It is
+derived from what was actually written — writing an empty body reports `absent`,
+not `written` — and it rides only on a successful write, because an error return
+says nothing about a state nothing reached.
 
 ### set-title
 
@@ -242,6 +262,48 @@ title: Build fails with missing dependency
 content: |
   When running a Maven clean install...
 ```
+
+### Resolving a lesson id: three states, two error values
+
+Every verb that targets a single lesson by id — `get`, `update`, `remove`,
+`supersede`, and the explicit-ids mode of `cleanup-superseded` — resolves it
+through one shared seam that reports **three** states, and each verb renders
+which one it reached:
+
+| State | Meaning | Rendered as |
+|-------|---------|-------------|
+| `found` | The file exists and carries a parseable `key=value` header | the verb's normal success output |
+| `absent` | No file exists at the resolved path | `error: not_found` |
+| `unreadable` | The file EXISTS and no reader can resolve it — the read raised, or the metadata header did not parse | `error: unresolvable` |
+
+`not_found` therefore means **absent, and only absent**. The third state has its
+own value because the two demand opposite responses: an absent lesson is a typo
+or an already-retired id, while an unresolvable one is a record sitting in the
+corpus that nothing can read — and reporting it as missing is what used to leave
+it unretirable, since `remove` refused it before writing any tombstone.
+
+An `unresolvable` payload additionally carries the substrate it is talking
+about, so the caller can act on the file it names:
+
+```toon
+status: error
+id: 2025-12-02-001
+error: unresolvable
+message: Lesson 2025-12-02-001 exists but could not be resolved
+path: /abs/path/to/.plan/local/lessons-learned/2025-12-02-001.md
+detail: /abs/path/... exists but carries no parseable key=value metadata header
+```
+
+`supersede` renders the same split for its canonical read under its own names:
+`canonical_not_found` for an absent canonical and `canonical_unresolvable` for
+an unresolvable one.
+
+Two verbs render no per-verb error pair and report the state in their payload
+instead: `aggregate` lists an unresolvable lesson under `unresolvable[]`
+alongside `lessons_scanned` rather than dropping it from the corpus it counted,
+and `cleanup-superseded` reports one under `skipped_unresolvable` rather than
+`skipped_no_tombstone` — a bucket whose name would assert the absence that
+branch has already disproved.
 
 ### list
 
@@ -388,6 +450,29 @@ The evidence is not merely validated, it is **recorded**: the tombstone at `.tom
 | `coverage_verdict` | always | The `--coverage-verdict` value |
 | `covering_clause` | `completely_covered` | The clause claimed to codify the lesson's rule |
 | `covering_input` | `completely_covered` | The input the clause's worked example resolves |
+| `lesson_state` | `--allow-unreadable` retirement | `unreadable` — the state the retirement was reached through |
+| `unresolvable_detail` | `--allow-unreadable` retirement | Why no reader could resolve the lesson |
+
+**Retiring a stuck lesson — `--allow-unreadable`**
+
+A lesson whose file exists but resolves `unreadable` (see [Resolving a lesson
+id](#resolving-a-lesson-id-three-states-two-error-values)) has an exit, but only
+an explicit one:
+
+- **Without the flag** `remove` reports `error: unresolvable`, unlinks nothing
+  and writes no tombstone. This is the default because a record nobody can read
+  is not obviously safe to delete.
+- **With `--allow-unreadable`** the retirement runs the SAME path, in the same
+  order: the tombstone is written FIRST and the file is unlinked second. The
+  ordering is load-bearing — the file is the only other copy, so a failure
+  between the two steps must leave the lesson on disk rather than leave the
+  retirement unrecorded. The tombstone additionally records `lesson_state` and
+  the resolver's reason, so the audit trail states that the lesson was retired
+  on its *state* rather than on content nobody could read.
+
+The flag relaxes WHICH states may be retired. It relaxes no part of the evidence
+contract: `--coverage-verdict` is still required, and `completely_covered` still
+requires both evidence flags.
 
 **Output** (TOON):
 
@@ -426,6 +511,7 @@ Per-id outcomes:
 | `removed[]` | Lesson `.md` was unlinked (or, on `--dry-run`, would have been) |
 | `already_removed[]` | `.md` already absent and tombstone present (idempotent re-run) |
 | `skipped_no_tombstone[]` | Tombstone missing — refused to act because the audit trail would be lost |
+| `skipped_unresolvable[]` | Explicit-ids mode only: the tombstone AND the `.md` are both present, but the lesson resolves `unreadable`. Carries the resolved `path` and the reason. It gets its own bucket precisely because `skipped_no_tombstone` would assert the absence this branch has already disproved. |
 
 ```bash
 # Age-filtered (uses marshal.json retention or hard fallback 7 days)
@@ -459,6 +545,7 @@ removed[1]{lesson_id}:
   2025-12-02-001
 already_removed[0]{lesson_id}:
 skipped_no_tombstone[0]{lesson_id}:
+skipped_unresolvable[0]{lesson_id,path,detail}:
 ```
 
 Each successful unlink emits an INFO line to `script-execution.log`:
