@@ -657,7 +657,7 @@ def load_forwarded_set_comparison(plan_dir: Path) -> dict[str, Any] | None:
     """Return the upstream ``affected_files_exact_match`` block, or ``None``.
 
     ``None`` means the block could NOT be read — the fragment is absent, it did not
-    parse, or it carries no such block. That is a could-not-look, and rule M5 reports
+    parse, or it carries no such block. That is a could-not-look, and rule M6 reports
     it as one instead of grading two empty sets it never received. An empty
     ``outline_only`` / ``references_only`` inside a block that WAS read is the
     opposite answer: a measured agreement.
@@ -904,13 +904,14 @@ def apply_input_reduction(checks: list[dict[str, str]], reduction: dict[str, Any
       discarded all but one path could report every rule green while none of them
       had seen the change the plan was about.
     - A check that would emit a bare clean ``pass`` while **no diff evidence
-      existed at all** takes :data:`STATUS_INDETERMINATE` too. This is the
+      existed at all** takes :data:`STATUS_INCONCLUSIVE` too. This is the
       zero-evidence sibling of the case above and the filtering logic cannot see
       it: nothing was discarded, so the reduction is empty, yet the rule evaluated
       an empty footprint and said ``all 0 entries are docs-shaped``. A verdict over
-      no evidence is not a clean result, and ``evaluate_branch_cleanup`` already
-      refuses it for its own rule (the ``base=unknown or empty diff`` skip); this
-      extends the same refusal to the rest.
+      no evidence is not a clean result; ``_withhold_on_absent_evidence`` already
+      refuses it for ``evaluate_branch_cleanup`` (:data:`STATUS_INCONCLUSIVE`, never
+      :data:`STATUS_INDETERMINATE` — the two must not be merged); this extends the
+      same refusal to the rest.
 
     A ``fail`` is never downgraded, but the reason differs by rule shape and is
     worth stating precisely, because the obvious blanket rationale — "a reduced
@@ -1010,7 +1011,7 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
     raw_files, base_label, evidence_available = load_diff_files(
         args.diff_file, plan_dir, live_plan_id, evidence_tier, evidence_base_ref
     )
-    # The forwarded set comparison rule M5 receives. Loaded here so the payload can
+    # The forwarded set comparison rule M6 receives. Loaded here so the payload can
     # publish whether it was readable at all beside the rule's own verdict.
     forwarded_comparison = load_forwarded_set_comparison(plan_dir)
     kept_files, dropped_files, reduction = filter_bookkeeping(raw_files)
@@ -1135,7 +1136,7 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
 @safe_main
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description='Cross-check execution manifest against actual end-of-execute diff',
+        description="Cross-check execution manifest against the plan's realized footprint",
         allow_abbrev=False,
     )
     subparsers = parser.add_subparsers(dest='command', required=True)

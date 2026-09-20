@@ -206,6 +206,7 @@ diff:
     unclassified: N
   oracle_available: true | false
   majority_discarded: true | false
+  diff_available: true | false
 checks[*]{name,status,message}:
   - manifest_version_recognized,pass,'manifest_version=1 recognized'
   - docs_only_diff,skip,'rule M1 not applicable — verification_steps non-empty or early_terminate=true'
