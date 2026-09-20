@@ -168,3 +168,11 @@ With the consumer sweep applied at outline time, TASK-9 would never have hit the
 - `plan-marshall:phase-3-outline/SKILL.md` — Complex Track table row for Step 10 has a one-line callout pointing here.
 - `plan-marshall:plan-marshall/workflow/q-gate-validation.md` (dispatched under `--phase phase-3-outline` from outline or `--phase phase-4-plan` from plan) — `consumer_sweep_completeness` check enforces the trigger and output requirements at Q-Gate time.
 - Rationale: scope expansions discovered late (after deliverable finalization) silently miss consumer-site migrations in multi-module layouts. Running this sweep before deliverable finalization prevents those gaps.
+
+## Member-by-member checks for uniform-shape instructions
+
+Uniform-shape instructions (sweep, enumeration, checklist) apply per member
+with an explicit per-member verdict. A batch verdict without member evidence is
+rejected: every uniform claim names each member, records the evidence checked
+for that member, and states the per-member outcome. The consumer sweep
+procedure references this rule when enumerating consumers.
