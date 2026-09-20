@@ -2188,10 +2188,7 @@ def current_template_sha256() -> str:
     ``unknown`` sentinel :func:`read_executor_template_sha` uses, so the
     comparison degrades to ``unknown`` rather than to a false ``stale``.
     """
-    try:
-        template_file = get_templates_dir(SCRIPT_DIR) / 'execute-script.py.template'
-    except Exception:
-        return ''
+    template_file = get_templates_dir(SCRIPT_DIR) / 'execute-script.py.template'
     try:
         return hashlib.sha256(template_file.read_bytes()).hexdigest()
     except (OSError, ValueError):
