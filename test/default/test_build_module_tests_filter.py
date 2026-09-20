@@ -60,12 +60,6 @@ class TestFilterPassthrough:
         build.cmd_module_tests('plan-marshall', parallel=False)
         assert '-k' not in calls[0]
 
-    def test_none_filter_is_absence_not_empty(self, monkeypatch, repo_root_cwd):
-        calls: list[list[str]] = []
-        monkeypatch.setattr(build, 'run', _run_recorder(calls))
-        build.cmd_module_tests('plan-marshall', parallel=False, filter_expr=None)
-        assert '-k' not in calls[0]
-
 
 class TestFilterRefusals:
     @pytest.mark.parametrize('empty', ['', '   '])

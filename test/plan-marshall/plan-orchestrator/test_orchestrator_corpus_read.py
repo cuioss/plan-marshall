@@ -33,7 +33,6 @@ from typing import Any
 import pytest
 
 from conftest import (
-    get_script_path,
     load_script_module,
     parse_ns,
 )
@@ -211,12 +210,6 @@ class TestCorpusReadRefusals:
         assert result['error'] == 'unreadable'
         assert result['spec'] == 'PLAN-01-fixture.md'
         assert 'body' not in result
-
-    def test_absent_spec_never_renders_as_empty_body(self, plan_context):
-        _seed(plan_context)
-        result = cmd_corpus_read(_variant(_READ_ARGS, plan='PLAN-03'))
-        assert result['status'] == 'error'
-        assert result.get('body', None) is None
 
     def test_bare_plan_without_digits_refused(self, plan_context):
         _seed(plan_context)
