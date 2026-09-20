@@ -14,6 +14,7 @@ from pathlib import Path
 
 import marketplace_paths
 import pytest
+from _providers_fixtures import enter_bare_dir
 from marketplace_paths import CLAUDE_DIR, PLUGIN_CACHE_SUBPATH
 
 import conftest
@@ -194,10 +195,7 @@ class TestScanForProvidersCacheOnly:
         ``marketplace/bundles`` ancestor, so the no-marketplace precondition can
         only be met from a directory outside the repo.
         """
-        bare = outside_repo_dir / 'bare'
-        bare.mkdir()
-        monkeypatch.delenv('PM_MARKETPLACE_ROOT', raising=False)
-        monkeypatch.chdir(bare)
+        enter_bare_dir(outside_repo_dir, monkeypatch)
         self._write_cache_provider(
             outside_repo_dir,
             'def get_provider_declarations():\n'
@@ -223,10 +221,7 @@ class TestScanForProvidersCacheOnly:
         ``marketplace/bundles`` ancestor, so the no-marketplace precondition can
         only be met from a directory outside the repo.
         """
-        bare = outside_repo_dir / 'bare'
-        bare.mkdir()
-        monkeypatch.delenv('PM_MARKETPLACE_ROOT', raising=False)
-        monkeypatch.chdir(bare)
+        enter_bare_dir(outside_repo_dir, monkeypatch)
         cache = outside_repo_dir / CLAUDE_DIR / PLUGIN_CACHE_SUBPATH
         cache.mkdir(parents=True)
         monkeypatch.setattr(Path, 'home', lambda: outside_repo_dir)

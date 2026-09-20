@@ -8,7 +8,12 @@ and the check command for credential completeness.
 
 import pytest
 from _providers_core import SECRET_PLACEHOLDERS
-from _providers_fixtures import stage_marshal
+from _providers_fixtures import (
+    isolate_credentials_dir,
+    stage_marshal,
+    stage_provider_marshal_with_creds,
+    stage_provider_subprocess_env,
+)
 
 from conftest import get_script_path, load_script_module, run_script
 
@@ -86,16 +91,7 @@ class TestListProviders:
 
     def test_list_providers_returns_success(self, tmp_path, monkeypatch):
         """list-providers returns success with providers array."""
-        import json as _json
-
-        plan_dir = tmp_path / '.plan'
-        plan_dir.mkdir()
-        (plan_dir / 'marshal.json').write_text(_json.dumps({'skill_domains': {}}))
-        monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
-        # Redirect credential dir for the subprocess so nothing lands in
-        # the real ~/.plan-marshall-credentials/.
-        monkeypatch.setenv('HOME', str(tmp_path))
-        monkeypatch.setenv('PLAN_MARSHALL_CREDENTIALS_DIR', str(tmp_path / 'creds'))
+        stage_provider_subprocess_env(tmp_path, monkeypatch)
 
         # Activate git provider (minimum valid selection)
         persist = run_script(
@@ -109,16 +105,7 @@ class TestListProviders:
 
     def test_list_providers_discovers_sonar(self, tmp_path, monkeypatch):
         """Sonar provider is discoverable and persistable via full roundtrip."""
-        import json as _json
-
-        plan_dir = tmp_path / '.plan'
-        plan_dir.mkdir()
-        (plan_dir / 'marshal.json').write_text(_json.dumps({'skill_domains': {}}))
-        monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
-        # Redirect credential dir for the subprocess so nothing lands in
-        # the real ~/.plan-marshall-credentials/.
-        monkeypatch.setenv('HOME', str(tmp_path))
-        monkeypatch.setenv('PLAN_MARSHALL_CREDENTIALS_DIR', str(tmp_path / 'creds'))
+        stage_provider_subprocess_env(tmp_path, monkeypatch)
 
         # Discovery-only mode: scans bundle script directories for *_provider.py files
         discover = run_script(SCRIPT_PATH, 'discover-and-persist')
@@ -298,20 +285,12 @@ class TestConfigureMarshalJsonSeparation:
             read_provider_config,
         )
 
-        plan_dir = tmp_path / '.plan'
-        plan_dir.mkdir()
-        # ``stage_marshal`` redirects BOTH the PLAN_BASE_DIR env (which the
-        # subprocess writer reads) and the ``_config_core`` module attributes
-        # (which the in-process ``read_provider_config`` reads through
-        # ``load_config``). Setting only the env leaves the two bound to
-        # DIFFERENT marshal.json files — the autouse sandbox keeps
-        # ``_config_core.MARSHAL_PATH`` — so the read below would target a file
-        # the writer never wrote.
-        stage_marshal(plan_dir, monkeypatch, {'providers': [_SONAR_PROVIDER]})
-        creds_dir = tmp_path / 'creds'
-        creds_dir.mkdir()
-        monkeypatch.setenv('PLAN_MARSHALL_CREDENTIALS_DIR', str(creds_dir))
-        monkeypatch.setattr('_providers_core.CREDENTIALS_DIR', creds_dir)
+        # ``stage_provider_marshal_with_creds`` redirects BOTH the PLAN_BASE_DIR
+        # env (which the subprocess writer reads) and the ``_config_core``
+        # module attributes (which the in-process ``read_provider_config``
+        # reads) — setting only the env would leave the two bound to different
+        # marshal files.
+        plan_dir, creds_dir = stage_provider_marshal_with_creds(tmp_path, monkeypatch, {'providers': [_SONAR_PROVIDER]})
 
         skill = 'plan-marshall:workflow-integration-sonar'
         result = run_script(
@@ -343,13 +322,7 @@ class TestConfigureMarshalJsonSeparation:
             read_provider_config,
         )
 
-        plan_dir = tmp_path / '.plan'
-        plan_dir.mkdir()
-        stage_marshal(plan_dir, monkeypatch, {'providers': [_SONAR_PROVIDER]})
-        creds_dir = tmp_path / 'creds'
-        creds_dir.mkdir()
-        monkeypatch.setenv('PLAN_MARSHALL_CREDENTIALS_DIR', str(creds_dir))
-        monkeypatch.setattr('_providers_core.CREDENTIALS_DIR', creds_dir)
+        plan_dir, creds_dir = stage_provider_marshal_with_creds(tmp_path, monkeypatch, {'providers': [_SONAR_PROVIDER]})
 
         skill = 'plan-marshall:workflow-integration-sonar'
         result = run_script(
@@ -435,16 +408,10 @@ class TestConfigureSonarPomDerive:
     """
 
     def _stage(self, tmp_path, monkeypatch, pom_content: str | None):
-        plan_dir = tmp_path / '.plan'
-        plan_dir.mkdir()
-        # See the note in TestConfigureMarshalJsonSeparation: the subprocess
-        # writer binds through the env while the in-process read binds through
-        # the ``_config_core`` module attributes, so both must be redirected.
-        stage_marshal(plan_dir, monkeypatch, {'providers': [_SONAR_PROVIDER]})
-        creds_dir = tmp_path / 'creds'
-        creds_dir.mkdir()
-        monkeypatch.setenv('PLAN_MARSHALL_CREDENTIALS_DIR', str(creds_dir))
-        monkeypatch.setattr('_providers_core.CREDENTIALS_DIR', creds_dir)
+        # See ``stage_provider_marshal_with_creds``: the subprocess writer binds
+        # through the env while the in-process read binds through the
+        # ``_config_core`` module attributes, so both must be redirected.
+        plan_dir, creds_dir = stage_provider_marshal_with_creds(tmp_path, monkeypatch, {'providers': [_SONAR_PROVIDER]})
         # Project root is the parent of the tracked .plan dir.
         if pom_content is not None:
             (tmp_path / 'pom.xml').write_text(pom_content)
@@ -626,9 +593,7 @@ class TestConfigureSystemAuth:
         )
 
         tmp_path = plan_context.fixture_dir
-        creds_dir = tmp_path / 'creds'
-        creds_dir.mkdir()
-        monkeypatch.setattr('_providers_core.CREDENTIALS_DIR', creds_dir)
+        isolate_credentials_dir(tmp_path, monkeypatch)
 
         (tmp_path / '.plan').mkdir(exist_ok=True)
         (tmp_path / '.plan' / 'marshal.json').write_text('{}')
@@ -677,9 +642,7 @@ class TestConfigureSystemAuth:
         from _providers_core import read_provider_config
 
         tmp_path = plan_context.fixture_dir
-        creds_dir = tmp_path / 'creds'
-        creds_dir.mkdir()
-        monkeypatch.setattr('_providers_core.CREDENTIALS_DIR', creds_dir)
+        isolate_credentials_dir(tmp_path, monkeypatch)
 
         (tmp_path / '.plan').mkdir(exist_ok=True)
         (tmp_path / '.plan' / 'marshal.json').write_text('{}')
@@ -715,9 +678,7 @@ class TestConfigureSystemAuth:
         from _cred_configure import run_configure
 
         tmp_path = plan_context.fixture_dir
-        creds_dir = tmp_path / 'creds'
-        creds_dir.mkdir()
-        monkeypatch.setattr('_providers_core.CREDENTIALS_DIR', creds_dir)
+        isolate_credentials_dir(tmp_path, monkeypatch)
 
         (tmp_path / '.plan').mkdir(exist_ok=True)
 
