@@ -1250,7 +1250,7 @@ the missing entry with explicit change text before finalizing.
 ## Title and summary counts re-derived from the request
 
 Title and summary counts are re-derived from the request deliverable list at
-authoring time. A count copied from an earlier draft that no longer matches the
+authoring time. A count that does not match the
 composed deliverables is an outline error: recount the deliverables, update the
 title and summary to the recomputed total, and confirm this outline reports
 twelve deliverables matching the request.
