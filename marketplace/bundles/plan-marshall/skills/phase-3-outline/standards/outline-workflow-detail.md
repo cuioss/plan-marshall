@@ -1228,3 +1228,29 @@ When the query matches nothing, the author still emits the `## Lessons Consulted
 - **The consult never fired** — the artifact is absent.
 
 A silently omitted section collapses those two states into one and destroys exactly the signal a later retrospective needs. The section's structural specification (row shape, section-order position) is owned by [`manage-solution-outline` standards/solution-outline-standard.md](../../manage-solution-outline/standards/solution-outline-standard.md) § Lessons Consulted; this phase owns the obligation to write it.
+
+## Operationalizable success criteria rule
+
+Each deliverable Success Criteria must name observable files and checkable
+conditions derivable from the outline alone, with no external context required.
+Vague completion wording is rejected.
+
+- Positive example: "SKILL.md carries a Sweep declaration subsection listing
+  enumerated paths with a stated coverage rule."
+- Negative example: "Sweep handling improved." This states no observable file
+  and no checkable condition, so it fails the rule.
+
+## Affected-files sync invariant
+
+Every path in Affected files appears in Change per file and vice versa. The
+outline validator rejects drift between the two lists: a path present in one
+list but missing from the other is an outline error. Fix the drift by adding
+the missing entry with explicit change text before finalizing.
+
+## Title and summary counts re-derived from the request
+
+Title and summary counts are re-derived from the request deliverable list at
+authoring time. A count copied from an earlier draft that no longer matches the
+composed deliverables is an outline error: recount the deliverables, update the
+title and summary to the recomputed total, and confirm this outline reports
+twelve deliverables matching the request.
