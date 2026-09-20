@@ -108,3 +108,12 @@ assessments_logged: {count}
 4. **No ad-hoc discovery** — analyze only the files provided in the input list
 5. **Read tool for component files only** — use `manage-files` scripts for `.plan/` file operations
 6. **No agent spawning** — runs as a leaf-level Task (subagent constraint)
+
+## Re-assessment on scope addition
+
+When outline scope adds a path after the initial assessment pass, component
+assessment re-runs for the added scope before planning proceeds. The trigger is
+the scope addition itself: any path appended to the declared set after
+assessment requires a fresh assessment record for that path. Ordering is fixed:
+assess the added scope first, then continue to deliverable derivation. Silent
+scope growth without a matching assessment is an outline error.

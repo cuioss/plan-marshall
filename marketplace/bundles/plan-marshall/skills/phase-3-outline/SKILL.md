@@ -810,3 +810,19 @@ This skill does not invoke `manage-metrics` itself. The orchestrator
 boundary via the fused `manage-metrics phase-boundary` call — see
 `marketplace/bundles/plan-marshall/skills/manage-metrics/SKILL.md` §
 `phase-boundary` for the API.
+
+## Sweep declaration form satisfiable by execution
+
+A sweep plan declares an enumerated snapshot that execution can check from the
+outline alone. The declaration lists every declared path explicitly, states the
+coverage rule over every declared path, names the re-assessment gate that fires
+when scope grows, and carries an explicit upper-bound field for
+decline-on-merits decisions.
+
+- Declared paths are enumerated individually; glob-only scope is not checkable.
+- Coverage rule: every declared path carries one assessment record before
+  planning proceeds; a missing record is an outline error.
+- Re-assessment gate: adding a path re-runs component assessment for the added
+  scope before planning proceeds.
+- Upper-bound field: the outline states the mutation list a declined sweep
+  would have touched, so the decline is reviewable against a concrete scope.
