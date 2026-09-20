@@ -562,7 +562,7 @@ def evaluate_branch_cleanup(
     that was false about its own inputs — "no diff data available" emitted two
     lines from a ``diff_available: True`` field contradicting it.
 
-    ``base_label`` is deliberately not a parameter: ``"unknown"`` is precisely the
+    ``base_label`` is deliberately not a parameter: ``"unresolved"`` is precisely the
     label the loader pairs with ``evidence_available=False``, so testing it here
     would only restate the flag.
 
