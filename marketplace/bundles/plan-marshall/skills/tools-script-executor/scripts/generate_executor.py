@@ -6,6 +6,7 @@ Generate and manage execute-script.py with embedded script mappings.
 Usage:
     python3 generate_executor.py generate [--force] [--dry-run] [--marketplace] [--marketplace-root PATH]
     python3 generate_executor.py verify
+    python3 generate_executor.py bootstrap [--marketplace] [--marketplace-root PATH]
     python3 generate_executor.py drift [--marketplace] [--marketplace-root PATH]
     python3 generate_executor.py paths
     python3 generate_executor.py cleanup [--max-age-days N]
@@ -13,9 +14,23 @@ Usage:
 Subcommands:
     generate    Generate executor with script mappings
     verify      Verify existing executor is valid
+    bootstrap   Sanctioned direct-path bootstrap (see below)
     drift       Compare executor mappings with current marketplace state
     paths       Verify all mapped paths exist
     cleanup     Clean up old logs
+
+Direct-path bootstrap exception (narrow):
+    "Never by direct path" holds for every marketplace script EXCEPT this
+    generator's ``bootstrap`` verb. A fresh clone has no
+    ``<root>/.plan/execute-script.py`` yet, so no executor-mediated call can
+    create it — ``bootstrap`` is the sanctioned first call. It is detection-
+    gated rather than unconditional: it generates only when the executor is
+    absent (fresh clone), fails verification (corrupt/stale cache), or its
+    embedded ``TEMPLATE_SHA256`` no longer matches the live template
+    (template-content staleness — a template fix shipped without a version
+    bump). A present, valid, template-fresh executor is refused with
+    ``action: not_needed``; that refusal is the proof the exception did not
+    widen into general direct-path use.
 
 The executor is always written directly to ``<root>/.plan/execute-script.py``
 (the tracked ``.plan/`` directory inside the main git checkout). There is no
@@ -1487,6 +1502,12 @@ def generate_executor(
     generated_version = str(manifest.get('version', '') or '')
     mappings_fingerprint = str(manifest.get('executor_scripts_fingerprint', '') or '')
 
+    # Template-content stamp: SHA-256 of the template file bytes. The bootstrap
+    # verb compares it against the live template to detect template-content
+    # staleness (a template fix shipped without a version bump). Computed over
+    # the raw bytes so an encoding-only difference still counts as a change.
+    template_sha256 = hashlib.sha256(executor_template.read_bytes()).hexdigest()
+
     def _substitute(surfaces_code: str) -> str:
         content = template.replace('{{SCRIPT_MAPPINGS}}', mappings_code)
         content = content.replace('{{SCRIPT_SURFACES}}', surfaces_code)
@@ -1499,6 +1520,7 @@ def generate_executor(
         content = content.replace('{{EXECUTOR_TARGET}}', resolved_target)
         content = content.replace('{{GENERATED_VERSION}}', generated_version)
         content = content.replace('{{MAPPINGS_FINGERPRINT}}', mappings_fingerprint)
+        content = content.replace('{{TEMPLATE_SHA256}}', template_sha256)
         return content
 
     if dry_run:
@@ -2134,6 +2156,48 @@ def read_executor_version() -> str:
     return 'unknown'
 
 
+def read_executor_template_sha() -> str:
+    """Read the embedded ``TEMPLATE_SHA256`` from the generated executor.
+
+    Returns the empty string when the executor is absent, unreadable, or
+    carries an empty stamp (an executor generated before the stamp existed).
+    The empty string is the ``unknown`` sentinel for template staleness: an
+    unstampable executor can be neither fresh nor stale, so callers report
+    ``template_status: unknown`` rather than a vacuous ``fresh``.
+    """
+    real_executor = executor_path()
+    if not real_executor.is_file():
+        return ''
+    try:
+        text = real_executor.read_text(encoding='utf-8')
+    except (OSError, ValueError):
+        return ''
+    match = re.search(r"^TEMPLATE_SHA256\s*=\s*'([^']*)'", text, re.MULTILINE)
+    if match and match.group(1):
+        return match.group(1)
+    return ''
+
+
+def current_template_sha256() -> str:
+    """SHA-256 of the live executor template bytes.
+
+    Resolved script-relative to the executing generator (see
+    :func:`get_templates_dir`), so the hash always describes the template this
+    generator would substitute — never a newer cached copy. Returns the empty
+    string when the template file is absent or unreadable — the same
+    ``unknown`` sentinel :func:`read_executor_template_sha` uses, so the
+    comparison degrades to ``unknown`` rather than to a false ``stale``.
+    """
+    try:
+        template_file = get_templates_dir(SCRIPT_DIR) / 'execute-script.py.template'
+    except Exception:
+        return ''
+    try:
+        return hashlib.sha256(template_file.read_bytes()).hexdigest()
+    except (OSError, ValueError):
+        return ''
+
+
 def read_marshal_provisioned_version(cwd: Path | None = None) -> str:
     """Read ``system.provisioned_version`` from ``.plan/marshal.json``.
 
@@ -2295,6 +2359,100 @@ def cmd_verify(args: argparse.Namespace) -> dict:
         return {'status': 'success', 'script_count': count}
     else:
         return {'status': 'error', 'error': 'Verification failed'}
+
+
+def cmd_bootstrap(args: argparse.Namespace) -> dict:
+    """Sanctioned direct-path bootstrap for fresh-clone / stale-cache cases.
+
+    The NARROW exception to "never by direct path": this verb is the only
+    direct ``python3 .../generate_executor.py`` invocation a caller may use,
+    and only because no executor exists yet to mediate it (fresh clone), the
+    existing one fails verification (corrupt/stale cache), or its embedded
+    template hash no longer matches the live template (template-content
+    staleness — a template fix shipped without a version bump, e.g. the
+    post-merge stale-executor incident). Every other direct-path invocation
+    stays prohibited; an executor that is present, valid, and template-fresh
+    is refused with ``action: not_needed`` (the caller must use the
+    executor-mediated ``generate`` instead).
+
+    Template comparison is three-valued: ``fresh`` (hashes match),
+    ``stale`` (both hashes known and differ), ``unknown`` (either side
+    unstampable — a pre-stamp executor or an unreadable template). ``unknown``
+    never drives a regeneration on its own; it rides the verdict the
+    verification half already reached.
+    """
+    live_sha = current_template_sha256()
+    real_executor = executor_path()
+    if not real_executor.is_file():
+        regen = cmd_generate(args)
+        if regen.get('status') != 'success':
+            return {
+                'status': 'error',
+                'error': f'bootstrap generation failed: {regen.get("error", "unknown error")}',
+                'action': 'failed',
+                'reason': 'executor_absent',
+                'template_status': 'unknown' if not live_sha else 'fresh',
+            }
+        return {
+            'status': 'success',
+            'action': 'generated',
+            'reason': 'executor_absent',
+            'template_status': 'unknown' if not live_sha else 'fresh',
+            'executor': str(real_executor),
+        }
+    valid, script_count = verify_executor()
+    if not valid:
+        regen = cmd_generate(args)
+        if regen.get('status') != 'success':
+            return {
+                'status': 'error',
+                'error': f'bootstrap regeneration failed: {regen.get("error", "unknown error")}',
+                'action': 'failed',
+                'reason': 'executor_invalid',
+                'template_status': 'unknown' if not live_sha else 'uncompared',
+            }
+        return {
+            'status': 'success',
+            'action': 'generated',
+            'reason': 'executor_invalid',
+            'template_status': 'unknown' if not live_sha else 'uncompared',
+            'script_count': script_count,
+        }
+    embedded_sha = read_executor_template_sha()
+    if not live_sha or not embedded_sha:
+        return {
+            'status': 'success',
+            'action': 'not_needed',
+            'reason': 'executor_fresh',
+            'template_status': 'unknown',
+            'warning': (
+                'template staleness could not be determined '
+                '(executor predates the TEMPLATE_SHA256 stamp or the live '
+                'template is unreadable); verified-valid executor left untouched'
+            ),
+        }
+    if embedded_sha != live_sha:
+        regen = cmd_generate(args)
+        if regen.get('status') != 'success':
+            return {
+                'status': 'error',
+                'error': f'bootstrap regeneration failed: {regen.get("error", "unknown error")}',
+                'action': 'failed',
+                'reason': 'template_stale',
+                'template_status': 'stale',
+            }
+        return {
+            'status': 'success',
+            'action': 'generated',
+            'reason': 'template_stale',
+            'template_status': 'stale',
+        }
+    return {
+        'status': 'success',
+        'action': 'not_needed',
+        'reason': 'executor_fresh',
+        'template_status': 'fresh',
+    }
 
 
 def _flip_notation_separators(segment: str) -> str:
@@ -2569,7 +2727,9 @@ def cmd_preflight(args: argparse.Namespace) -> dict:
 # ============================================================================
 
 
-def main() -> int:
+def build_parser() -> argparse.ArgumentParser:
+    """Build the module's argparse parser (extracted so tests can parse
+    production argv without dispatching a verb)."""
     parser = argparse.ArgumentParser(
         description='Generate execute-script.py with embedded script mappings',
         epilog=(
@@ -2615,6 +2775,40 @@ def main() -> int:
     # verify subcommand
     verify_parser = subparsers.add_parser('verify', help='Verify existing executor', allow_abbrev=False)
     verify_parser.set_defaults(func=cmd_verify)
+
+    # bootstrap subcommand — the narrow direct-path exception (fresh clone /
+    # corrupt executor / stale template). Refuses a fresh executor.
+    bootstrap_parser = subparsers.add_parser(
+        'bootstrap',
+        help='Sanctioned direct-path bootstrap: generate only when the executor is absent, invalid, or template-stale',
+        allow_abbrev=False,
+    )
+    bootstrap_parser.add_argument(
+        '--marketplace', action='store_true', help='Use marketplace context (development mode) instead of plugin-cache'
+    )
+    bootstrap_parser.add_argument(
+        '--marketplace-root',
+        type=Path,
+        default=None,
+        metavar='PATH',
+        help=(
+            'Explicit marketplace anchor directory (must contain marketplace/bundles). '
+            'Overrides PM_MARKETPLACE_ROOT, the script-relative walk, and cwd-based discovery.'
+        ),
+    )
+    bootstrap_parser.add_argument(
+        '--target',
+        default=None,
+        choices=['claude', 'opencode', 'antigravity'],
+        metavar='TARGET',
+        help=('Platform target used when bootstrap generates. Overrides the value read from .plan/marshal.json.'),
+    )
+    # cmd_generate dereferences args.dry_run directly, so the bootstrap
+    # namespace must carry it — mirroring the preflight precedent below.
+    # Without this default every bootstrap run that reaches regeneration
+    # (absent, invalid, or template-stale executor) raises AttributeError
+    # instead of generating.
+    bootstrap_parser.set_defaults(func=cmd_bootstrap, dry_run=False)
 
     # drift subcommand
     drift_parser = subparsers.add_parser('drift', help='Compare with current bundles state', allow_abbrev=False)
@@ -2676,7 +2870,11 @@ def main() -> int:
     )
     preflight_parser.set_defaults(func=cmd_preflight, dry_run=False)
 
-    args = parser.parse_args()
+    return parser
+
+
+def main() -> int:
+    args = build_parser().parse_args()
     result = args.func(args)
 
     from toon_parser import serialize_toon
