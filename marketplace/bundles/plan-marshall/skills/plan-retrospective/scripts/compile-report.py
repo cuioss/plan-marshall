@@ -884,7 +884,7 @@ def _iter_string_values(value: Any):
 
 
 #: Fragment keys under which a producer publishes its own degradation VERDICT.
-#: ``status`` is the per-check verdict the three ``check-*`` aspects emit;
+#: ``status`` is the per-check verdict every ``check-*`` aspect emits;
 #: ``comparison`` is the peer field ``check-outline-vs-shipped`` publishes.
 _VERDICT_FIELD_KEYS: frozenset[str] = frozenset({'status', 'comparison'})
 
@@ -899,10 +899,10 @@ def _iter_verdict_field_values(value: Any):
 
     Narrower than :func:`_iter_string_values` on purpose: it yields a string
     only where the producer published it AS a verdict, so an incidental string
-    field carrying the same characters is never read as one. Three of the four
-    roster producers emit a ``plan_dir`` (and a ``plan_id``) in their result
-    dict, and both embed the plan id — so an all-values scan makes a plan whose
-    id contains the token match on a fully RESOLVED fragment.
+    field carrying the same characters is never read as one. Most roster
+    producers emit a ``plan_dir`` (and a ``plan_id``) in their result dict, and
+    both embed the plan id — so an all-values scan makes a plan whose id
+    contains the token match on a fully RESOLVED fragment.
     """
     if isinstance(value, dict):
         for key, item in value.items():
@@ -926,7 +926,7 @@ def _declares_degraded(fragment: Any, tokens: tuple[str, ...]) -> bool:
       ``inconclusive`` is an exact per-check ``status`` / ``comparison`` VALUE,
       so it is matched by equality and only under those keys. A substring scan
       over every string value would also match the ``plan_dir`` / ``plan_id``
-      fields three of the four roster producers publish: a plan whose id
+      fields most roster producers publish: a plan whose id
       contains the token would then read as degraded on a fully resolved
       fragment, and because the aggregate is suppressed unless EVERY member
       degraded, one such false positive across the whole roster fires
