@@ -607,7 +607,7 @@ python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons from
 status: success
 id: 2025-12-02-003
 created_from: error_context
-body_state: present
+body_state: written
 body_bytes: 42
 ```
 
