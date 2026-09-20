@@ -647,12 +647,6 @@ def evaluate_branch_cleanup(
     return _make_check('branch_cleanup_changes', 'fail', finding['message']), finding
 
 
-#: Plan-relative location of the upstream ``artifact-consistency`` fragment, whose
-#: ``affected_files_exact_match`` block carries the forwarded set comparison. The
-#: producer writes it here per that aspect's Persistence contract.
-_ARTIFACT_CONSISTENCY_FRAGMENT_RELPATH = ('work', 'fragment-artifact-consistency.toon')
-
-
 def load_forwarded_set_comparison(plan_dir: Path) -> dict[str, Any] | None:
     """Return the upstream ``affected_files_exact_match`` block, or ``None``.
 
@@ -662,9 +656,9 @@ def load_forwarded_set_comparison(plan_dir: Path) -> dict[str, Any] | None:
     ``outline_only`` / ``references_only`` inside a block that WAS read is the
     opposite answer: a measured agreement.
     """
-    path = plan_dir
-    for segment in _ARTIFACT_CONSISTENCY_FRAGMENT_RELPATH:
-        path = path / segment
+    # The upstream ``artifact-consistency`` producer writes its fragment here, per
+    # that aspect's Persistence contract.
+    path = plan_dir / 'work' / 'fragment-artifact-consistency.toon'
     if not path.is_file():
         return None
     try:

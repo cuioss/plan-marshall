@@ -310,9 +310,15 @@ def _persist_worktree_materialized(plan_id: str, worktree_path: Path) -> tuple[b
     is reported in the return value so the completed move is preserved — the
     flag can be re-persisted on the idempotent re-entry path.
     """
-    targets = _candidate_status_paths(plan_id, worktree_path)
+    wt_status = worktree_path / PLAN_DIR_NAME / 'local' / 'plans' / plan_id / 'status.json'
+    targets = [wt_status, *_candidate_status_paths(plan_id)]
+    seen: set[str] = set()
     last_detail = 'no status.json candidate found'
     for target in targets:
+        key = str(target)
+        if key in seen:
+            continue
+        seen.add(key)
         try:
             raw = target.read_text(encoding='utf-8')
         except OSError as exc:
