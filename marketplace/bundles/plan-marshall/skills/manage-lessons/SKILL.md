@@ -265,10 +265,10 @@ content: |
 
 ### Resolving a lesson id: three states, two error values
 
-Every verb that targets a single lesson by id — `get`, `update`, `remove`,
-`supersede`, and the explicit-ids mode of `cleanup-superseded` — resolves it
-through one shared seam that reports **three** states, and each verb renders
-which one it reached:
+`get`, `update`, `remove`, and `supersede` (its own target lesson, not the
+`--by` canonical) resolve a single lesson id through one shared seam that
+reports **three** states, and each of these four verbs renders which one it
+reached as an error code:
 
 | State | Meaning | Rendered as |
 |-------|---------|-------------|
@@ -276,11 +276,12 @@ which one it reached:
 | `absent` | No file exists at the resolved path | `error: not_found` |
 | `unreadable` | The file EXISTS and no reader can resolve it — the read raised, or the metadata header did not parse | `error: unresolvable` |
 
-`not_found` therefore means **absent, and only absent**. The third state has its
-own value because the two demand opposite responses: an absent lesson is a typo
-or an already-retired id, while an unresolvable one is a record sitting in the
-corpus that nothing can read — and reporting it as missing is what used to leave
-it unretirable, since `remove` refused it before writing any tombstone.
+`not_found` therefore means **absent, and only absent** — for these four verbs.
+The third state has its own value because the two demand opposite responses: an
+absent lesson is a typo or an already-retired id, while an unresolvable one is a
+record sitting in the corpus that nothing can read — and reporting it as missing
+is what used to leave it unretirable, since `remove` refused it before writing
+any tombstone.
 
 An `unresolvable` payload additionally carries the substrate it is talking
 about, so the caller can act on the file it names:
@@ -298,12 +299,22 @@ detail: /abs/path/... exists but carries no parseable key=value metadata header
 `canonical_not_found` for an absent canonical and `canonical_unresolvable` for
 an unresolvable one.
 
-Two verbs render no per-verb error pair and report the state in their payload
-instead: `aggregate` lists an unresolvable lesson under `unresolvable[]`
-alongside `lessons_scanned` rather than dropping it from the corpus it counted,
-and `cleanup-superseded` reports one under `skipped_unresolvable` rather than
-`skipped_no_tombstone` — a bucket whose name would assert the absence that
-branch has already disproved.
+Three more verbs reach the corpus differently, and none of them renders
+`error: unresolvable`:
+
+- `set-body`, `set-title`, and `convert-to-plan` check the file's existence
+  directly — they never call the shared seam — so each can render
+  `error: not_found` for an absent lesson, but none can distinguish an
+  unreadable lesson from an absent one: an unreadable lesson passed to
+  `convert-to-plan` is silently relocated rather than refused.
+- `cleanup-superseded` (explicit-ids mode) and `aggregate` resolve THROUGH the
+  seam but report the outcome in their payload instead of a per-verb error
+  code: `aggregate` lists an unresolvable lesson under `unresolvable[]`
+  alongside `lessons_scanned` rather than dropping it from the corpus it
+  counted, and `cleanup-superseded` reports one under `skipped_unresolvable`
+  rather than `skipped_no_tombstone` — a bucket whose name would assert the
+  absence that branch has already disproved. Neither verb returns
+  `error: not_found` or `error: unresolvable` at all.
 
 ### list
 
@@ -799,8 +810,8 @@ The classification logic for the read-side corpus operations lives under `refere
 
 | Error Code | Cause |
 |------------|-------|
-| `not_found` | No file exists at the resolved path. Reached two ways: via the shared id-resolution seam's `absent` state (`get`, `update`, `remove`, `supersede` — its own target lesson, not the `--by` canonical) — see [Resolving a lesson id](#resolving-a-lesson-id-three-states-two-error-values); and via a plain existence check that never calls the seam (`set-body`, `set-title`, `convert-to-plan`) — these three can never distinguish an unreadable lesson from an absent one. `cleanup-superseded` does **not** return this code — see `unresolvable` below |
-| `unresolvable` | The shared id-resolution seam resolved `unreadable` — the file EXISTS and no reader can resolve it (the read raised, or the metadata header did not parse). Reachable only from the seam-backed verbs: `get`, `update`, `remove`, `supersede` (its own target lesson). Carries `path` and `detail` naming the substrate. `set-body`, `set-title`, and `convert-to-plan` check existence only and cannot return this code — an unreadable lesson passed to `convert-to-plan` is silently relocated. `cleanup-superseded` and `aggregate` report the same fact through a payload bucket instead of this code — see [Resolving a lesson id](#resolving-a-lesson-id-three-states-two-error-values), which names both buckets |
+| `not_found` | No file exists at the resolved path. See [Resolving a lesson id](#resolving-a-lesson-id-three-states-two-error-values) for exactly which verbs reach this code through the shared seam versus through a plain existence check, and which verb reports the same fact through a payload bucket instead |
+| `unresolvable` | The file EXISTS and no reader can resolve it (the read raised, or the metadata header did not parse). Carries `path` and `detail` naming the substrate. See [Resolving a lesson id](#resolving-a-lesson-id-three-states-two-error-values) for exactly which verbs can reach this code |
 | `canonical_not_found` | `supersede`'s canonical-read variant of `not_found`: the canonical lesson id (`--by`) resolved `absent` |
 | `canonical_unresolvable` | `supersede`'s canonical-read variant of `unresolvable`: the canonical lesson id (`--by`) resolved `unreadable` |
 | `plan_dir_unresolved` | `restore-from-plan` **never scanned** for lesson files. Either the named plan directory could not be resolved under the main-anchored plans root, **or** the main-anchored lessons corpus itself did not resolve so there was nowhere to restore into. Deliberately distinct from `action: no_lesson_file`, which asserts the directory WAS scanned and held none — reporting an unreachable directory as lesson-free is the fail-open this code closes. `store_resolution` says which way it happened: `unresolved` (a required store was unreachable) versus a resolved store that does not hold that plan; on the unreachable branch it is always the resolution of the store that **failed**, and `unresolved_store` names which one (`plans` / `lessons`) |
