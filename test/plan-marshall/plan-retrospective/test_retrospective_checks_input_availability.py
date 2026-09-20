@@ -117,13 +117,25 @@ class TestBranchCleanupRuleReadsTheEvidenceFlag:
 
         assert data['diff']['diff_available'] is False
         assert data['diff']['evidence_tier'] == 'unresolved'
-        assert data['footprint_resolution']['status'] == 'inconclusive'
+        assert data['footprint_resolution']['status'] == _cmc.STATUS_INCONCLUSIVE
 
         row = _check(data['checks'], 'branch_cleanup_changes')
-        assert row['status'] == 'inconclusive', row
+        # Read from the script's own constants: the ``inconclusive`` /
+        # ``indeterminate`` pair is what the plan-level aggregate discriminates
+        # on, so a restated literal here could drift apart from the production one.
+        assert row['status'] == _cmc.STATUS_INCONCLUSIVE, row
+        assert row['status'] != _cmc.STATUS_INDETERMINATE
         assert 'could not be resolved from any tier' in row['message']
-        # ⛔ The confident claim the repair removes must be absent.
-        assert 'no implementation file changed' not in row['message']
+        # ⛔ The confident claim the repair removes must be absent — asserted
+        # against the STRUCTURED verdict, not by scraping the prose. The
+        # degradation message deliberately QUOTES "no implementation file changed"
+        # in order to deny it ("…is UNMEASURABLE, not \"…\""), so a negative
+        # substring test fires against the very message it was written to protect.
+        # The confident verdict is the ``fail`` status and the
+        # ``branch_cleanup_without_changes`` code, and both are absent here.
+        assert row['status'] != 'fail', row
+        codes = [f['code'] for f in (data.get('findings') or [])]
+        assert 'branch_cleanup_without_changes' not in codes, codes
 
     def test_a_filtered_away_diff_names_the_reduction_not_the_diff(self, tmp_path, monkeypatch):
         """The third input state, kept distinguishable from the empty-diff one.

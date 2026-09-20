@@ -128,6 +128,35 @@ _HAPPY_REFERENCES = {
     'domains': ['plan-marshall-plugin-dev'],
 }
 
+#: A references payload NO tier of the shared footprint chain can answer from:
+#: no captured ``realized_footprint``, no merge-commit or shard shas, no
+#: ``pr_number``, and no legacy ``modified_files`` key. Paired with the happy-path
+#: ``status.json`` — whose empty ``metadata`` binds no worktree — every tier
+#: declines and ``load_diff_files`` returns its ``unresolved`` sentinel.
+#:
+#: Held here, beside :data:`_HAPPY_REFERENCES`, because it is the deliberate
+#: complement of it: the happy fixture carries a POPULATED ``modified_files`` for
+#: the artifact-consistency recall check, and that key is itself a resolving tier.
+#: A test that wants the genuinely-evidence-free scenario must therefore STAGE it
+#: rather than inherit it, and staging it from one definition keeps the two
+#: consumers from drifting into differently-shaped "no evidence".
+_EVIDENCE_FREE_REFERENCES = {'domains': ['plan-marshall-plugin-dev']}
+
+
+def stage_evidence_free_references(plan_dir: Path) -> Path:
+    """Overwrite ``plan_dir``'s references.json so no footprint tier resolves.
+
+    Returns the written path. Callers assert the resulting run reports the
+    production ``unresolved`` base label rather than trusting this payload — a
+    tier added later that reads some other key would otherwise silently turn the
+    scenario back into a resolved one.
+    """
+    plan_dir.mkdir(parents=True, exist_ok=True)
+    path = plan_dir / 'references.json'
+    path.write_text(json.dumps(_EVIDENCE_FREE_REFERENCES), encoding='utf-8')
+    return path
+
+
 _HAPPY_STATUS = {
     'title': 'Demo',
     'current_phase': 'complete',

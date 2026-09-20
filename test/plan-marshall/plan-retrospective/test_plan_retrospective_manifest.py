@@ -5,6 +5,7 @@ forward in ``check-artifact-consistency.py``.
 
 from __future__ import annotations
 
+from _plan_retrospective_fixtures import stage_evidence_free_references
 from _plan_retrospective_manifest_fixtures import (
     MANIFEST_SCRIPT,
     _check_by_name,
@@ -124,17 +125,24 @@ class TestBranchCleanupRule:
         assert finding is not None
         assert finding['severity'] == 'info'
 
-    def test_skip_when_diff_base_is_unknown(self, tmp_path, monkeypatch):
+    def test_skip_when_no_footprint_tier_resolves(self, tmp_path, monkeypatch):
         # ABSENT half of the matched pair with
-        # `test_fail_when_supplied_diff_is_empty` below. No --diff-file and no
-        # --base-ref → load_diff_files returns base label "unknown" with an empty
-        # file list, so NOTHING was observed. Rule M4 must skip rather than emit a
-        # false-positive branch_cleanup_without_changes finding.
+        # `test_fail_when_supplied_diff_is_empty` below. No --diff-file, and the
+        # references payload is staged so NO tier of the shared footprint chain
+        # answers → load_diff_files returns the `unresolved` sentinel with an
+        # empty file list, so NOTHING was observed. Rule M4 must skip rather than
+        # emit a false-positive branch_cleanup_without_changes finding.
         #
         # The pair is what keeps the distinction honest: both cases reach the rule
         # with zero files, and only the diff-availability signal separates them. A
         # regression that collapsed them would have to break one of the two.
-        plan_id, _ = _setup_plan_with_manifest(tmp_path, monkeypatch, manifest_body=_manifest_default())
+        #
+        # The happy-path fixture carries a POPULATED legacy `modified_files` key,
+        # which is itself a resolving tier — inheriting it would make this the
+        # resolved-footprint case and leave the unresolved path with no test at
+        # all. The scenario is repaired; the assertion is not.
+        plan_id, plan_dir = _setup_plan_with_manifest(tmp_path, monkeypatch, manifest_body=_manifest_default())
+        stage_evidence_free_references(plan_dir)
         result = run_script(
             MANIFEST_SCRIPT,
             'run',
@@ -145,7 +153,11 @@ class TestBranchCleanupRule:
         )
         assert result.success, result.stderr
         data = result.toon()
-        assert data['diff']['base'] == 'unknown'
+        # The shipped no-evidence label is `unresolved` — read from the run, so a
+        # references payload that kept a resolving key labels the base with that
+        # key's own name here and fails instead of quietly measuring the wrong case.
+        assert data['diff']['base'] == 'unresolved', data['diff']
+        assert data['diff']['diff_available'] is False
         check = _check_by_name(data['checks'], 'branch_cleanup_changes')
         assert check is not None
         assert check['status'] == 'skip'

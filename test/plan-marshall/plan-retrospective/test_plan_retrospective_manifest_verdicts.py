@@ -29,7 +29,9 @@ from _plan_retrospective_manifest_fixtures import (
     _write_status_metadata,
 )
 
-from conftest import run_script
+from conftest import load_script_module, run_script
+
+_cmc = load_script_module('plan-marshall', 'plan-retrospective', 'check-manifest-consistency.py', 'cmc_verdicts_mod')
 
 
 def _strand_every_footprint_tier(plan_dir: Path) -> None:
@@ -353,7 +355,7 @@ class TestFootprintDegradation:
         assert result.success, result.stderr
         data = result.toon()
 
-        assert data['footprint_resolution']['status'] == 'inconclusive'
+        assert data['footprint_resolution']['status'] == _cmc.STATUS_INCONCLUSIVE
         assert data['footprint_resolution']['tier'] == 'unresolved'
 
         check = _check_by_name(data['checks'], 'branch_cleanup_changes')
@@ -361,13 +363,21 @@ class TestFootprintDegradation:
         # ``inconclusive``, NOT ``indeterminate``: only the former is a member of
         # retro_sections.FOOTPRINT_DEGRADED_TOKENS, and compile-report matches it
         # by equality against a verdict field. Emitting ``indeterminate`` here
-        # would read as RESOLVED to the plan-level footprint aggregate.
-        assert check['status'] == 'inconclusive'
-        # ⛔ The confident wording must be absent — this is the exact claim the
-        # repair removes, so it is asserted against rather than merely not
-        # asserted for.
-        assert 'no implementation file changed' not in check['message']
-        assert 'the observed diff is empty' not in check['message']
+        # would read as RESOLVED to the plan-level footprint aggregate. Read from
+        # the script's own constants so the two tokens cannot be transposed here
+        # while the production pair is renamed.
+        assert check['status'] == _cmc.STATUS_INCONCLUSIVE
+        assert check['status'] != _cmc.STATUS_INDETERMINATE
+        # ⛔ The confident claim must be absent — asserted against the STRUCTURED
+        # verdict, not by scraping the prose. The degradation message deliberately
+        # QUOTES the phrase "no implementation file changed" in order to deny it
+        # ("…is UNMEASURABLE, not \"no implementation file changed\""), and that
+        # quotation is what makes the degradation legible, so a negative substring
+        # test fires against the very message it was written to protect. The
+        # confident verdict is carried by the ``fail`` status and the
+        # ``branch_cleanup_without_changes`` code — both asserted absent, here and
+        # below, and neither can be reworded out from under the test.
+        assert check['status'] != 'fail', check
 
         finding = _finding_by_code(data['findings'], 'branch_cleanup_footprint_unresolved')
         assert finding is not None

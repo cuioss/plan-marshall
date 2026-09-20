@@ -28,7 +28,7 @@ implements:
 
 ## Enforcement
 
-**Execution mode**: Select a mode (finalize-step live, user-invocable live, archived) from the Input Contract, dispatch the 15 aspect references in the documented order, compile the report, then record proposals per Step 5b's orchestration branch — to the global lessons store when `orchestrated: false`, to the epic inbox as `kind: candidate-lesson` messages when `orchestrated: true` — and emit the mode-appropriate termination (mark-step-done tail for finalize-step mode only).
+**Execution mode**: Select a mode (finalize-step live, user-invocable live, archived) from the Input Contract, dispatch the 15 aspect references in the documented order — every Step-3 aspect-table row except the two the table itself places outside dispatch: `lessons-proposal`, whose reference is loaded in Step 5 and which this sentence's own trailing clause covers instead, and `dispatch_boundaries`, the injected row `analyze-logs` emits inside its own result and which no `collect-fragments add --aspect` command can register — compile the report, then record proposals per Step 5b's orchestration branch — to the global lessons store when `orchestrated: false`, to the epic inbox as `kind: candidate-lesson` messages when `orchestrated: true` — and emit the mode-appropriate termination (mark-step-done tail for finalize-step mode only).
 
 **Prohibited actions**:
 - Never re-run invariant capture. Read `{plan_dir}/handshakes.toon` directly — invariants are already captured by phase transitions.
