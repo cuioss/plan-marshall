@@ -1,6 +1,6 @@
 # Manifest Cross-Check Rules
 
-Cross-check rules that compare the per-plan execution manifest (`execution.toon` written by `plan-marshall:manage-execution-manifest`) against the plan's realized footprint. Each rule maps one-to-one to a row in the seven-rule manifest decision matrix and emits one finding per violation.
+Cross-check rules that compare the per-plan execution manifest (`execution.toon` written by `plan-marshall:manage-execution-manifest`) against the plan's realized footprint, or — for Rule M6 — against the forwarded upstream comparison. Each rule emits one finding per violation.
 
 ## Sources
 
