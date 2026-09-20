@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-06-03-22-001",
+  "removed_at": "2026-06-09T07:01:53.383851+00:00",
+  "reason": "Resolved: defensive orphan-reclaim in integrate_into_main neutralizes the move-back block (symptom gone); producer-side misroute hypothesis was never confirmed",
+  "status": "removed"
+}

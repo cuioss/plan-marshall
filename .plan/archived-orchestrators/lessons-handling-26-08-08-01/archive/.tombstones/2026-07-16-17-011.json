@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-07-16-17-011",
+  "removed_at": "2026-07-17T07:56:21.209429+00:00",
+  "reason": "Completely covered: D5 declared an implementation profile on the pm-documents domain so documentation modules resolve a non-empty skills_by_profile.implementation; test reproduces the lesson gap (plan architecture-resolution, PR #917)",
+  "status": "removed"
+}

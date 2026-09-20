@@ -1,0 +1,7 @@
+{
+  "lesson_id": "2026-06-01-10-002",
+  "removed_at": "2026-06-01T08:25:12.092395+00:00",
+  "reason": "Config knobs are Stream B of the single coverage-contract feature; folded into 10-001 to keep the standard+config+recipe as one lesson",
+  "status": "superseded",
+  "superseded_by": "2026-06-01-10-001"
+}

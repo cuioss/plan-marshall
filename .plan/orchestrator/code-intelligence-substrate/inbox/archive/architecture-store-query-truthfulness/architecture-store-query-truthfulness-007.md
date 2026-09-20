@@ -1,0 +1,34 @@
+envelope_version=1
+sender_type=plan
+sender_id=architecture-store-query-truthfulness
+epic=code-intelligence-substrate
+kind=candidate-lesson
+created=2026-09-15T07:44:23Z
+
+component=plan-marshall:manage-tasks
+category=bug
+created=2026-09-15
+bundle=plan-marshall
+
+# Record changed_files on completed tasks so the artifact-emission check can run
+
+## Context
+
+Not one completed task record in this plan carries a `changed_files` list. The retrospective's ARTIFACT_EMISSION detector consequently reported `change_attribution: unavailable` and emitted no finding at all — correctly, since its own contract forbids a verdict over an unmeasured population. The check did not pass; it never ran.
+
+## Root cause
+
+The per-task change set is only ever materialised as a transient SHA range inside the execute envelope's step 8, and nothing persists it onto the task record. The detector's population `M` (completed tasks whose own diff is non-empty) is therefore underivable offline on every plan, not just this one.
+
+## Solution
+
+Persist `changed_files` on the task record at completion — the list is already computed to decide whether to emit the per-task `[ARTIFACT]` line, so this is a write of a value that already exists rather than a new derivation. A present-but-empty list is a valid measurement ("this task changed nothing") and is what lets a compliant no-op task stay out of the eligible set.
+
+## Impact
+
+A whole detector class is inert. The contract in `logging-gap-analysis.md` is explicit that `measured` requires the list on every completed task, so a partially-recorded corpus is also unavailable — this cannot be fixed incrementally by recording it on some tasks.
+
+## Evidence
+
+- aspect: log_analysis — `artifact_emission.change_attribution: unavailable`, reason: "no completed task record carries a changed_files list, so no task diff could be attributed; the eligible-task population is omitted rather than reported as zero, and no emission finding is made"
+- aspect: logging_gap_analysis — `ARTIFACT_EMISSION expected_min unavailable, observed unavailable`, reported as a could-not-look rather than a clean pass

@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-07-10-23-001",
+  "removed_at": "2026-07-12T17:39:40.452854+00:00",
+  "reason": "Completely covered by plan-14 D1 (PR #877): pr merge-queue handler + ci_base argparse no longer accept/forward --delete-branch/--strategy; branch-cleanup.md + pr-operations.md + SKILL.md documented enqueue calls updated; fixture-accurate tests added. Verified live \u2014 PR #877 enqueued cleanly without the rejection (plan plan-14-ci-merge-hygiene)",
+  "status": "removed"
+}

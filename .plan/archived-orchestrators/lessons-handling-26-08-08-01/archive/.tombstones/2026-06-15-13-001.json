@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-06-15-13-001",
+  "removed_at": "2026-06-15T16:00:10.826663+00:00",
+  "reason": "Fully covered by plan harden-domain-skill-applicability (PR #695): content gap fixed in D7/D8 (cui-http http-security surface + cui-http-testing adversarial attack-database coverage), selection gap fixed in D1/D2 (description rewrites) + D11 (deterministic phase-4-plan trigger). All 4 'Fixes worth considering' implemented. Guarded failure mode can no longer occur.",
+  "status": "removed"
+}

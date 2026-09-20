@@ -1,0 +1,70 @@
+envelope_version=1
+sender_type=plan
+sender_id=apply-the-cloud-plan-lane-contract-amendments
+epic=review-apparatus
+kind=candidate-lesson
+created=2026-09-05T06:29:46Z
+
+component=plan-marshall:automatic-review
+category=bug
+created=2026-09-05
+
+# A new consumer of a shared contract's configuration inherited its keys but not its refusals
+
+## Observation
+
+PR #1416 introduced a second reader of
+`plan.phase-6-finalize.steps['plan-marshall:automatic-review'].required_bots` / `.optional_bots`
+— the cloud-plan-lane's reviewer-classification step. The new reader was written with a defined
+*happy path* and **no defined failure mode at all**. CodeRabbit caught it as Major
+(finding `e4aea1`, `.claude/skills/cloud-plan-lane/SKILL.md:1345`, remediated in-run by
+TASK-007):
+
+> Fail closed on invalid reviewer-classification configuration. … The shared contract treats an
+> unknown token as blocking `unregistered_kind`, but this lane can include it in a denominator
+> without a report row.
+
+The sharp consequence, and the reason it was Major rather than cosmetic: the lane could place an
+**unregistered bot token into the `required_bots` denominator of three named participation
+ratios with no participation row accounting for it** — silently reporting a coverage ratio over a
+reviewer that does not exist, while
+`automatic-review/standards/bot-participation-contract.md` treats that same token as a *blocking*
+`unregistered_kind`. Two readers of one config key, opposite dispositions for the same input.
+
+Four undefined inputs were identified and closed: unreadable/unparseable `.plan/marshal.json`; a
+non-string list field; duplicate and overlapping entries across the two lists; and a configured
+token that resolves to no registry doc.
+
+## Why this is live rather than hypothetical
+
+The unregistered-token case is not a theoretical input. PR #1392 renamed the `pr-agent` bot kind
+to `cuioss-review-bot`, which retired a token that consumer configurations across the fleet still
+carry, and no propagation mechanism exists to update them. Every configuration still naming the
+retired token is exactly the input this lane would have silently folded into a denominator.
+
+## The generalisable rule
+
+**Copying a configuration key from a shared contract copies its schema, not its refusals.** A new
+consumer of an existing config surface inherits the key names for free and inherits *nothing*
+about what the owning contract refuses. Where a second reader disagrees with the first about a
+malformed or unknown value, the divergence is invisible — both readers report success, and only
+one of them is right.
+
+Concretely, for this family of surfaces:
+
+1. A second reader of a shared config key must **cross-reference the owning contract's refusal
+   set**, not restate it — the remediation deliberately cross-referenced
+   `bot-participation-contract.md` rather than duplicating its rules.
+2. Any token that enters a **ratio denominator** must be reachable in the numerator's population.
+   A denominator entry with no possible corresponding row is a vacuous-coverage defect: the ratio
+   is well-formed and reports a number that means nothing.
+3. Registry reviewers appearing in *neither* configured list need a third disposition
+   (`unclassified`) — a two-way partition over a three-way population silently drops the residue.
+
+## Proposed corrective action for the epic
+
+Consider whether the reviewer-classification config read should be a **shared script surface**
+rather than a contract that each reader re-implements. The `required_bots` / `optional_bots`
+parse, the registry join, and the unregistered-token refusal are already implemented once in
+`automatic-review`; the lane needed the same three operations and got a second, divergent
+implementation because the only thing exported was the key names.

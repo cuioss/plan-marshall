@@ -1,0 +1,7 @@
+{
+  "lesson_id": "2026-06-10-21-005",
+  "removed_at": "2026-06-12T19:54:28.387070+00:00",
+  "reason": "Aggregated into voluntary_checkpoint detector false-positives on CI wait calls in work.log",
+  "status": "superseded",
+  "superseded_by": "2026-05-27-18-001"
+}

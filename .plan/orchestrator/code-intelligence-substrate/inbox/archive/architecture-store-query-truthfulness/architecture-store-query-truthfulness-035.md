@@ -1,0 +1,30 @@
+envelope_version=1
+sender_type=plan
+sender_id=architecture-store-query-truthfulness
+epic=code-intelligence-substrate
+kind=candidate-lesson
+created=2026-09-15T07:55:13Z
+
+component=plan-marshall:execute-task
+category=bug
+
+# A docstring example named a line class the function's own filter can never admit
+
+Source: Q-Gate finding 9fc689 (6-finalize; fixed in e482d93e7).
+
+count_log_nodeids' docstring at assert_test_identifiers.py:206-211 cited a
+durations-table repeat as an example of a line that inflates the nodeid count. That line
+class never satisfies is_pytest_result_line, so the example is unreachable — the
+function cannot produce the behaviour its own documentation illustrates.
+
+## Solution
+
+A false example is worse than no example: it teaches a reader a wrong model of the
+filter and invites a "fix" for a case that cannot occur. Remove it rather than weaken it.
+When documenting what a filter lets through, check the cited case against the filter
+rather than against intuition about the log format.
+
+## Impact
+
+Docstring-only, but in the one function whose whole purpose is deciding whether a
+measurement happened.

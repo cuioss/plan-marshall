@@ -1,0 +1,30 @@
+envelope_version=1
+sender_type=plan
+sender_id=architecture-store-query-truthfulness
+epic=code-intelligence-substrate
+kind=candidate-lesson
+created=2026-09-15T07:55:14Z
+
+component=plan-marshall:plan-marshall
+category=anti-pattern
+
+# A defensive test described its unreachable case as an observed defect
+
+Source: Q-Gate finding 70da8e (6-finalize; fixed in e482d93e7).
+
+test_q_gate_validation_worktree_linter.py:642's docstring claimed a REACHABLE defect that
+the current slice construction cannot produce. The test is legitimate — it pins a
+defensive invariant — but describing that invariant as an observed exposure misstates
+what the suite has evidence for.
+
+## Solution
+
+Reframed as a defensive invariant rather than deleted. The discrimination worth keeping:
+a test guarding a state the code can actually reach and a test guarding an invariant that
+holds by construction are both valuable, but only the first may be described as covering
+an observed defect. Conflating them inflates the apparent evidence behind a suite.
+
+## Impact
+
+Docstring accuracy in a suite whose subject is exactly "does this report what it
+actually observed".

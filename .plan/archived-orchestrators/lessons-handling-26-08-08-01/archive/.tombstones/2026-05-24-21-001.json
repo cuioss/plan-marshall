@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-05-24-21-001",
+  "removed_at": "2026-06-09T07:00:41.055755+00:00",
+  "reason": "Fixed: row-context-aware parse_toon TSV guard shipped in ref-toon-format/scripts/toon_parser.py:206 with capture-driven fixtures",
+  "status": "removed"
+}

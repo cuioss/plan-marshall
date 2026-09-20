@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-07-22-16-002",
+  "removed_at": "2026-07-22T17:28:21.202567+00:00",
+  "reason": "completely covered: build-decision-oracle-consolidation retired the documentation_only/lint_only shape-based exemptions and made pre-commit-verify-freshness a direct consumer of the single build-decision verdict, structurally eliminating the deadlock. Residue already promoted to ADR-004 amendment plus manage-execution-manifest/standards/decision-rules.md plus manage-tasks/SKILL.md (plan build-decision-oracle-consolidation)",
+  "status": "removed"
+}

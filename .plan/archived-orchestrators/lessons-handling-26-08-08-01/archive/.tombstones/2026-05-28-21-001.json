@@ -1,0 +1,7 @@
+{
+  "lesson_id": "2026-05-28-21-001",
+  "removed_at": "2026-05-29T15:23:23.774645+00:00",
+  "reason": "Aggregated into fnmatch trailing **/ requires at least one extra path segment",
+  "status": "superseded",
+  "superseded_by": "2026-05-28-20-002"
+}

@@ -1,0 +1,37 @@
+envelope_version=1
+sender_type=plan
+sender_id=architecture-store-query-truthfulness
+epic=code-intelligence-substrate
+kind=candidate-lesson
+created=2026-09-15T07:52:50Z
+
+component=plan-marshall:marshall-steward
+category=bug
+
+# A true statement went stale outside the declared footprint, and the plan could not stage the fix
+
+Source: Q-Gate finding be4ef7 (5-execute, resolution=fixed under TASK-028 step 7).
+
+D2 changed module_edges.status to derive from the full producer population (dispatched
+resolvers PLUS the reserved declared and sibling-cross-link producers).
+menu-derivation-resolvers.md's section "A disabled resolver is still reported" still
+asserted unconditionally that switching off every resolver makes capabilities report
+module_edges: not_derivable. With a declared internal_dependencies edge present that is
+now false — the verb reports derivable with producer_count: 0, exactly the state D2's
+own success-criterion test pins.
+
+The file was NOT in D2's declared affected_files, and the plan forbids staging a path no
+deliverable declared, so the sentence was left standing and the phase entry BLOCKED
+pending an operator scope decision.
+
+## Solution
+
+The eventual fix kept the still-true resolver_count: 0 statement and added the actual
+rule, pointing at client-api.md as authoritative rather than restating it. The
+structural lesson is upstream: a semantic change to a published status vocabulary needs
+its consumer sweep run BEFORE the footprint is declared, or the footprint is guaranteed
+too narrow and the plan stalls at a gate it cannot clear in place.
+
+## Impact
+
+Cost a phase-entry refusal and an operator decision mid-execute.

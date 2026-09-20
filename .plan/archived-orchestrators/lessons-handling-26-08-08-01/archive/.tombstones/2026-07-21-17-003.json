@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-07-21-17-003",
+  "removed_at": "2026-07-30T10:29:25.897178+00:00",
+  "reason": "Root cause fully fixed: the single_module-is-narrow carve-out was narrowed to surgical-only, and the fan-out marker (_GLOB_RE) now bands multi_module instead of being silently absorbed into single_module \u2014 glob=True and >3-path bodies both escalate correctly. (plan lane-router-scale-blind-false-negative)",
+  "status": "removed"
+}

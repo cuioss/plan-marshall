@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-06-29-01-001",
+  "removed_at": "2026-07-07T06:08:57.211630+00:00",
+  "reason": "Covered by PR #842 (roadmap plan-1): phase-5 dispatch rewired to the phase-5-execute envelope runner; confirmed by PR #845's after-measurement (0 task_complete_returned_verbatim vs 7 pre-fix). Sibling lesson 2026-06-29-17-001 was retired at the #842 landing; this earlier filing of the same defect was missed.",
+  "status": "removed"
+}

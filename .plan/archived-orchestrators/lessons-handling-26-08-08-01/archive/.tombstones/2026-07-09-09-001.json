@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-07-09-09-001",
+  "removed_at": "2026-07-17T07:57:02.590831+00:00",
+  "reason": "Completely covered: D6 retire-only decision \u2014 the shipped detect_stale_skills_by_profile guard covers the module-default stale-notation ask; refreshing the gitignored enriched.json data is a per-project maintenance op, not a marketplace change (plan architecture-resolution, PR #917)",
+  "status": "removed"
+}

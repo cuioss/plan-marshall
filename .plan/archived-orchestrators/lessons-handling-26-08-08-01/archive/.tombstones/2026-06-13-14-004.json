@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-06-13-14-004",
+  "removed_at": "2026-06-15T15:04:45.761403+00:00",
+  "reason": "All three guarded failure modes fixed: D1 orchestrator post-init assertion (planning.md), D2 transactional convert-to-plan (manage-lessons.py), D3 agent-id plan_id guard (phase-1-init/SKILL.md) \u2014 shipped in PR #694 (plan lesson-conversion-dispatch-can-silently-ignore-les)",
+  "status": "removed"
+}

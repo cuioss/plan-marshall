@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-06-25-08-001",
+  "removed_at": "2026-07-08T20:54:26.569157+00:00",
+  "reason": "Covered by D7 verify-step-canonicals-required plugin-doctor rule (plan plan-4-find-triage, PR #852)",
+  "status": "removed"
+}

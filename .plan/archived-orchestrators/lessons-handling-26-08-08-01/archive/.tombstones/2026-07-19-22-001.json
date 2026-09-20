@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-07-19-22-001",
+  "removed_at": "2026-07-21T06:57:22.584159+00:00",
+  "reason": "residue promoted to persona-module-tester testing-methodology.md Hermetic-Against-Machine-Global-Out-of-Process-Services section, guarded failure mode closed by daemon-routing test mock and explicit execution_mode=in_process API parameter, plan explicit-execution-mode",
+  "status": "removed"
+}

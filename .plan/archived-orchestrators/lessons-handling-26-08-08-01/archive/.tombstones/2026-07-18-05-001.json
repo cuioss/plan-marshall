@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-07-18-05-001",
+  "removed_at": "2026-07-21T08:05:23.635221+00:00",
+  "reason": "Triage-state-aware completeness predicate (triage_ran flag) shipped in review_completeness.py check_completeness. A pending finding no longer blocks mark-done at the FIND-only step. Corrective-action design is fully documented in automatic-review SKILL.md Step-done completeness guard section. Plan review-barrier-residuals D2/D4.",
+  "status": "removed"
+}

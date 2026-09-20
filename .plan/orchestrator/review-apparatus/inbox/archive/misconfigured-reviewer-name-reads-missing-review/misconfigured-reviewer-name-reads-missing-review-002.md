@@ -1,0 +1,109 @@
+envelope_version=1
+sender_type=plan
+sender_id=misconfigured-reviewer-name-reads-missing-review
+epic=review-apparatus
+kind=candidate-lesson
+created=2026-09-03T23:43:50Z
+
+# A once-per-run orchestration verdict held only in dispatcher context, with every consumer barred from re-deriving it, cannot be told apart from an assertion
+
+**Component**: `plan-marshall:phase-6-finalize`
+**Category**: anti-pattern
+**Source plan**: `misconfigured-reviewer-name-reads-missing-review` (PR #1392)
+
+## Context
+
+Sibling candidate 001 establishes the trigger: the composed manifest ran
+`plan-marshall:plan-retrospective` (order 995) before `lessons-capture` (order 991), so
+item 4b.a0 — the sole site that resolves `orchestrated` / `epic` — had not run when its
+first consumer was dispatched. This candidate is about why that produced **silent**
+misrouting rather than an error, and it stands even after the ordering is fixed.
+
+## The structural problem
+
+The verdict is resolved once, into **dispatcher model context**, and forwarded on prompt
+bodies. Three properties combine badly:
+
+1. **It is never persisted as a readable state field.** Item 4b.a0 writes a decision-log
+   line naming `orchestrated=` / `epic=`, but a log line is a record of what was said, not
+   a field a later consumer is told to read. No `status.metadata` key carries it. Nothing
+   downstream can look it up.
+
+2. **Every consumer is contractually forbidden from checking it.** Both consumer contracts
+   state the obligation in the same words. `plan-retrospective/SKILL.md` input table:
+   *"the dispatcher forwards it (resolved once per finalize run at
+   `phase-6-finalize/SKILL.md` Step 3 item 4b.a0); this body MUST NOT recompute it."*
+   `lessons-capture.md` § "Gate counts and orchestration context as runtime inputs" says
+   the same. The rule is a cost optimisation over two cheap deterministic script calls,
+   and it removes the only check that could have caught this.
+
+3. **A supplied-but-unresolved verdict is indistinguishable from a resolved one.**
+   `orchestrated: false` / `epic: ""` is both the legitimate value for an ordinary plan
+   and the shape an unresolved verdict takes. There is no third state meaning *"not
+   resolved"*, so the consumer cannot fail closed — it correctly executes the
+   non-orchestrated branch and reports success.
+
+The result is a confident green over an unmade reading. The detection seam itself
+(`manage-plan-documents request read --section source_id` then
+`orchestrator inbox detect --source-id`) is deterministic, cheap, and correct — it was
+simply never called before the consumer that needed it.
+
+## What this run lost to the epic
+
+Because the retrospective ran the global-store branch, the following landed in
+`.plan/local/lessons-learned/` and is **not** visible from epic `review-apparatus`.
+Recorded here so the epic can see it without re-deriving it — none of these should be
+re-filed as new candidates:
+
+Six lessons filed 2026-09-03:
+
+| id | component | category | title |
+|----|-----------|----------|-------|
+| 2026-09-03-23-001 | `plan-marshall:manage-execution-manifest` | bug | refire-report reads only execution_log, so it under-counts the steps that re-fire most |
+| 2026-09-03-23-002 | `plan-marshall:automatic-review` | bug | CodeRabbit's rate-limit ETA is unparseable and its window slides, so the claim clock is not the real window |
+| 2026-09-03-23-003 | `plan-marshall:automatic-review` | improvement | Gate participation on a bot that read the diff, not on required-bot quorum alone |
+| 2026-09-03-23-004 | `plan-marshall:plan-retrospective` | bug | affected_files_recall counts delete-intent and foreign-checkout paths into a same-repo diff denominator |
+| 2026-09-03-23-005 | `plan-marshall:tools-input-validation` | improvement | The router-flag placement hint fires only when the flag exists, staying silent on the undeclared case |
+| 2026-09-03-23-006 | `plan-marshall:manage-status` | bug | Gate 2 of lesson creation cannot read a worktree-resident plan's scope from the main checkout |
+
+Two recurrence merges into existing global lessons:
+
+| id | title |
+|----|-------|
+| 2026-08-27-16-002 | Cap or triage error-terminated finalize dispatches — 34% of finalize spend bought zero detection |
+| 2026-09-03-00-001 | `_STATE_SUMMARY_BUCKETS` is a set-guarding partition with no population-derived totality test |
+
+`2026-09-03-23-003` is the run's central finding and is squarely in this epic's charter:
+three of four `automatic-review` iterations reported `participation_complete: true` with
+`proves: participation_only` while no reviewer had read the diff. It also records
+explicitly that the `unregistered_kind` state this plan shipped does **not** close that
+hole, because `coderabbit` is a registered kind that was merely in the wrong list. Read
+that lesson before staging any follow-up work on the participation predicate.
+
+## Proposed action
+
+Three options, not mutually exclusive; the choice is the orchestrator's:
+
+1. **Persist the verdict** as a plan-state field written by 4b.a0, and let any consumer
+   read it back. Cheapest change; makes the value auditable after the fact.
+2. **Move the resolution out of the lessons-capture gate** to a phase-entry step that runs
+   unconditionally, so no consumer's access depends on another step's presence, lane, or
+   position.
+3. **Relax the must-not-recompute rule to a must-not-*disagree* rule.** The seam is two
+   deterministic script calls; a consumer permitted to re-derive and compare would have
+   caught this at zero risk. If the cost is judged worth keeping, then introduce an
+   explicit third state (`unresolved`) that a consumer fails closed on, so `false` stops
+   doing double duty.
+
+Whichever is chosen, the general shape is the reusable rule: **a value that one component
+resolves and every other component is forbidden to check must be persisted and must be
+able to say "I was never resolved."**
+
+## Evidence
+
+- source: `marketplace/bundles/plan-marshall/skills/plan-retrospective/SKILL.md` § Input Contract — the `orchestrated` / `epic` rows and the must-not-recompute wording
+- source: `marketplace/bundles/plan-marshall/skills/phase-6-finalize/workflow/lessons-capture.md` § "Gate counts and orchestration context as runtime inputs" — the same obligation
+- source: `marketplace/bundles/plan-marshall/skills/phase-6-finalize/SKILL.md` Step 3 item 4b.a0 — resolution site, decision-log line, and the four named consumers
+- corpus: `manage-lessons list` — the six 2026-09-03-23-00N entries above, all `active`
+- inbox: `orchestrator inbox list --slug review-apparatus` before this step — 18 messages, none from this sender
+- sibling candidate 001: the ordering defect that triggered it

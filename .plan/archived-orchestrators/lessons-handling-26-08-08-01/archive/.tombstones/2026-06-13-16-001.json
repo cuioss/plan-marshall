@@ -1,0 +1,7 @@
+{
+  "lesson_id": "2026-06-13-16-001",
+  "removed_at": "2026-06-13T15:28:02.350738+00:00",
+  "reason": "Aggregated into Use fnmatch.filter for batch glob matching, not per-element fnmatch.fnmatch loop",
+  "status": "superseded",
+  "superseded_by": "2026-06-13-08-001"
+}

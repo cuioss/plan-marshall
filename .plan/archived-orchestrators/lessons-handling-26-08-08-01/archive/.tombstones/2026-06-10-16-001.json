@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-06-10-16-001",
+  "removed_at": "2026-06-10T14:15:27.650034+00:00",
+  "reason": "Spurious duplicate: phase-4-plan lesson-ID-recovery re-registered this plan's own converted source lesson (lesson-2026-06-10-14-001.md, in plan dir argparse-rejection-invented-subcommand-failures-ar) as a new active lesson. Not referenced by any task. Removed to keep the active inventory clean.",
+  "status": "removed"
+}

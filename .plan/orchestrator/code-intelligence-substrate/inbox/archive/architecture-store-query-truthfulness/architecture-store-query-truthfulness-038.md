@@ -1,0 +1,34 @@
+envelope_version=1
+sender_type=plan
+sender_id=architecture-store-query-truthfulness
+epic=code-intelligence-substrate
+kind=candidate-lesson
+created=2026-09-15T07:55:17Z
+
+component=plan-marshall:manage-architecture
+category=bug
+
+# "Every writer that touches it" then listed two of three, and the document named the third itself
+
+Source: Q-Gate finding 488191 (6-finalize, self-review; fixed in-run).
+Defect class contract_drift — 3 findings in this class this round.
+
+architecture-persistence.md's "modules index - read-side pre-flight surface" section at
+line 115 said the two mirrored fields are refreshed by "every writer that touches it" and
+then enumerated only `discover` and each `enrich` verb. api_init's repair/reset branch
+also refreshes them — it calls sync_module_index directly, batched across the repaired
+modules — and this SAME document names it as a live writer seventy lines above. Line 125
+repeated the same two-writer framing.
+
+## Solution
+
+The closure phrase is what converts an incomplete list into a false one: without it the
+list reads as illustrative, with it the list reads as exhaustive. The remedy preferred
+here was NOT adding a third item — that goes stale on the next writer — but replacing the
+enumeration with a pointer to the paragraph that states the rule ("every live-path
+concept-document write also writes the module index through ...").
+
+## Impact
+
+A reader auditing writer coverage would have concluded api_init needed a fix it already
+had.

@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-07-22-00-002",
+  "removed_at": "2026-07-30T09:44:56.966060+00:00",
+  "reason": "compose-time-subtractions-drop-steps fixed the omission log-line at its source: _log_pre_push_quality_gate_omitted now fires only on the positive not_necessary verdict (never on the compose-time unknown case), so the adjacent omitted-then-added contradiction the lesson's remaining open Directive described can no longer occur (plan compose-time-subtractions-drop-steps)",
+  "status": "removed"
+}

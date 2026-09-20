@@ -1,0 +1,40 @@
+envelope_version=1
+sender_type=plan
+sender_id=architecture-store-query-truthfulness
+epic=code-intelligence-substrate
+kind=candidate-lesson
+created=2026-09-15T07:52:47Z
+
+component=plan-marshall:plan-marshall
+category=bug
+
+# A pattern linter fired on its own definition document, and the count was filed once, not nine times
+
+Source: Q-Gate finding 5a2d2e (3-outline, resolution=fixed in TASK-029 / commit 3aabe9cda).
+
+The worktree linter's WL-A (cd <worktree_path> shell compound) and WL-B
+(.claude/worktrees/) sweeps hit q-gate-validation.md over clean coverage
+(files_scanned 5440, unreadable[] empty, truncated false, elided[] empty): 2 + 7
+matches, every one the linter's OWN pattern catalogue. The suppression rule exempted
+only worktree-handling.md by name, so the second document that DEFINES these patterns
+flagged itself.
+
+## Solution
+
+Two separable rules.
+
+1. The suppression must be keyed on the (document, REGION) pair, not on a hard-coded
+   filename. worktree-handling.md keeps a whole-file region because the whole file is
+   definition; q-gate-validation.md gets Section 2.15 only, so a stale pattern in any
+   of its other validator sections is still a violation. Narrowness enforced, not
+   asserted: a whole-file guard requires every WL-A/WL-B literal outside 2.15 to stand
+   on the explicit-marker arm, with matched positive and negative controls over
+   synthetic input so the guard cannot pass vacuously.
+2. Nine matches over one self-referential cause were filed as ONE finding, not nine
+   rows. Nine rows would have been a count reported against the wrong population —
+   exactly the defect shape this plan existed to close.
+
+## Impact
+
+Any linter whose pattern catalogue lives in more than one document will flag its own
+second home the moment that document enters an in-scope set.

@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-06-04-13-001",
+  "removed_at": "2026-06-09T07:01:23.050352+00:00",
+  "reason": "Obsolete: references.modified_files ledger and diff-files/reconcile-files verbs removed by PR #580; no ledger to reconcile",
+  "status": "removed"
+}

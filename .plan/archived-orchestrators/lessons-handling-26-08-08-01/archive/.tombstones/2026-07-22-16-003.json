@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-07-22-16-003",
+  "removed_at": "2026-08-02T22:09:38.320425+00:00",
+  "reason": "Failure mode eliminated by plan fail-closed-signal-integrity (PR #1082, merged b713fe4b9). The build-class ledger stamp is now the conjunction of a notation-prefix match AND membership in a build-executing-subcommand allow-list, so a pure query verb no longer writes a status=success kind=build row. Covered by a roster-derived regression suite plus a freshness-gate regression with a matched positive control. No residue",
+  "status": "removed"
+}

@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-06-15-00-002",
+  "removed_at": "2026-06-14T23:10:31.184294+00:00",
+  "reason": "fix codified: workflow-integration-git/SKILL.md mandates worktree-absolute .plan/temp paths; plugin-doctor rule skill-relative-temp-path-git-c enforces structurally (plan harness-write-tool-resolves-relative-plan-temp-pa)",
+  "status": "removed"
+}

@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-05-27-14-002",
+  "removed_at": "2026-06-09T07:00:47.258703+00:00",
+  "reason": "Fixed: domain-prefixed fixture naming applied; unique-fixture-basenames rule gate-wired in doctor-marketplace.py:886",
+  "status": "removed"
+}

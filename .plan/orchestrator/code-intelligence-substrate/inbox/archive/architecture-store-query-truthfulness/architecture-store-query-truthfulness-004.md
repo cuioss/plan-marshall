@@ -1,0 +1,33 @@
+envelope_version=1
+sender_type=plan
+sender_id=architecture-store-query-truthfulness
+epic=code-intelligence-substrate
+kind=candidate-lesson
+created=2026-09-15T07:43:35Z
+
+component=plan-marshall:manage-findings
+category=anti-pattern
+created=2026-09-15
+bundle=plan-marshall
+
+# Make manage-findings add name the offending --type value it rejected
+
+## Context
+
+Seven `manage-findings add` calls in this plan were rejected at exit 2 on the `--type` argument. Each rejection printed the full twelve-value `choices` list back to the caller without naming which value was supplied or how close it was to a legal one.
+
+## Root cause
+
+Argparse's default `invalid choice` rendering enumerates the legal set but does not help a caller who supplied a near-miss. The rejections cluster in phase-5-execute, where findings are filed inline during task execution, so the caller pays a full retry round-trip to learn a single token.
+
+## Solution
+
+Add a `--type` validation path that echoes the supplied value and, when it is within edit distance 2 of a legal member, names the nearest match — the same shape the `ci` router already uses for its misplaced-`--plan-id` rejection, which prints the caller's own invocation with the flag moved.
+
+## Impact
+
+Seven rejected calls in one plan, all recoverable from the caller's side but only after a round-trip. The class generalises: any `manage-*` verb with a large `choices` set has the same cliff.
+
+## Evidence
+
+- aspect: script_failure_analysis — `anti-pattern, argparse_other, plan-marshall:manage-findings:manage-findings, add, exit 2, occurrence_count 7`, stderr excerpt showing the full twelve-value choices list

@@ -1,0 +1,7 @@
+{
+  "lesson_id": "2026-05-29-12-001",
+  "removed_at": "2026-05-29T20:13:54.532097+00:00",
+  "reason": "Folded consumer/detector-side script-failure-analysis fix into the producer-side manage-references structured-error-TOON plan; both halves ship in one PR per user scope decision",
+  "status": "superseded",
+  "superseded_by": "2026-05-29-19-001"
+}
