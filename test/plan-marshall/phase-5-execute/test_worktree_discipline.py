@@ -194,6 +194,90 @@ def test_prepare_execute_flag_fail_closed_on_unreadable(tmp_path: Path, monkeypa
     assert module.is_worktree_materialized('no-such-plan', tmp_path / 'missing-wt') is False
 
 
+def _load_prepare_execute_isolated(monkeypatch: pytest.MonkeyPatch, tag: str):
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(f'prepare_execute_{tag}', PREPARE_SCRIPT)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    monkeypatch.syspath_prepend(str(PREPARE_SCRIPT.parent))
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_prepare_execute_first_candidate_verdict_wins(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    module = _load_prepare_execute_isolated(monkeypatch, 'first_wins')
+
+    plan_id = 'first-wins-demo'
+    worktree_path = tmp_path / 'wt'
+    wt_status = worktree_path / '.plan' / 'local' / 'plans' / plan_id / 'status.json'
+    wt_status.parent.mkdir(parents=True)
+    wt_status.write_text('{"plan_id": "x", "metadata": {}}\n', encoding='utf-8')
+
+    main_plan_dir = tmp_path / 'main' / '.plan' / 'local' / 'plans' / plan_id
+    main_plan_dir.mkdir(parents=True)
+    (main_plan_dir / 'status.json').write_text(
+        json.dumps({'plan_id': plan_id, 'metadata': {'worktree_materialized': True}}) + '\n',
+        encoding='utf-8',
+    )
+    monkeypatch.setattr(module, 'get_plan_dir', lambda _pid: main_plan_dir)
+
+    # The live worktree copy carries no explicit true — a stale main true
+    # behind it must not reopen the gate.
+    assert module.is_worktree_materialized(plan_id, worktree_path) is False
+
+
+def test_prepare_execute_malformed_first_candidate_fails_closed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    module = _load_prepare_execute_isolated(monkeypatch, 'malformed_first')
+
+    plan_id = 'malformed-first-demo'
+    worktree_path = tmp_path / 'wt'
+    wt_status = worktree_path / '.plan' / 'local' / 'plans' / plan_id / 'status.json'
+    wt_status.parent.mkdir(parents=True)
+    wt_status.write_text('not json at all\n', encoding='utf-8')
+
+    main_plan_dir = tmp_path / 'main' / '.plan' / 'local' / 'plans' / plan_id
+    main_plan_dir.mkdir(parents=True)
+    (main_plan_dir / 'status.json').write_text(
+        json.dumps({'plan_id': plan_id, 'metadata': {'worktree_materialized': True}}) + '\n',
+        encoding='utf-8',
+    )
+    monkeypatch.setattr(module, 'get_plan_dir', lambda _pid: main_plan_dir)
+
+    assert module.is_worktree_materialized(plan_id, worktree_path) is False
+
+
+def test_prepare_execute_persist_leaves_no_tmp_residue(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    module = _load_prepare_execute_isolated(monkeypatch, 'no_tmp')
+
+    plan_id = 'no-tmp-demo'
+    worktree_path = tmp_path / 'wt'
+    wt_status = worktree_path / '.plan' / 'local' / 'plans' / plan_id / 'status.json'
+    wt_status.parent.mkdir(parents=True)
+    wt_status.write_text(json.dumps({'plan_id': plan_id, 'metadata': {}}) + '\n', encoding='utf-8')
+
+    persisted, _detail = module._persist_worktree_materialized(plan_id, worktree_path)
+    assert persisted is True
+    assert list(wt_status.parent.glob('*.tmp')) == []
+    assert module.is_worktree_materialized(plan_id, worktree_path) is True
+
+
+def test_prepare_execute_payload_claims_read_back(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    module = _load_prepare_execute_isolated(monkeypatch, 'read_back')
+
+    plan_id = 'read-back-demo'
+    worktree_path = tmp_path / 'wt'
+
+    # Persist refused: the payload must not claim materialization it did
+    # not land, even on the success path.
+    monkeypatch.setattr(module, '_persist_worktree_materialized', lambda _pid, _wt: (False, 'nope'))
+    monkeypatch.setattr(module, '_executor_landed', lambda _path: True)
+    response = module._already_moved_in_response(worktree_path, plan_id)
+    assert response['status'] == 'success'
+    assert response['worktree_materialized'] is False
+    assert response['worktree_materialized_persisted'] is False
+
+
 # =============================================================================
 # Docs: every boundary plus the residual is named in the tree
 # =============================================================================

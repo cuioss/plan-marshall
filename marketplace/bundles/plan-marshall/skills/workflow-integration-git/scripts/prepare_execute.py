@@ -269,21 +269,30 @@ def _candidate_status_paths(plan_id: str, worktree_path: Path | None = None) -> 
 def is_worktree_materialized(plan_id: str, worktree_path: Path | None = None) -> bool:
     """Return True when the persisted flag marks the worktree materialized.
 
-    Reads every candidate status.json and reports True on the first explicit
-    ``metadata.worktree_materialized == True``. Any other state — absent file,
-    unparseable document, missing metadata, or a non-true value — reports
-    False (fail-closed: an unreadable flag never reads as materialized).
+    Stops at the FIRST existing candidate status.json (most-authoritative
+    first) and reports its verdict: True only on an explicit
+    ``metadata.worktree_materialized == True``. A first candidate that is
+    malformed, shapeless, metadata-less, or non-true fails closed WITHOUT
+    consulting later fallbacks — a stale main-checkout record must never
+    reopen a gate the live worktree copy does not confirm. An absent file is
+    not a verdict and falls through to the next candidate; no existing
+    candidate at all reports False.
     """
     for status_path in _candidate_status_paths(plan_id, worktree_path):
         try:
-            payload = json.loads(status_path.read_text(encoding='utf-8'))
-        except (OSError, ValueError):
+            raw = status_path.read_text(encoding='utf-8')
+        except OSError:
             continue
+        try:
+            payload = json.loads(raw)
+        except ValueError:
+            return False
         if not isinstance(payload, dict):
-            continue
+            return False
         metadata = payload.get('metadata')
-        if isinstance(metadata, dict) and metadata.get(WORKTREE_MATERIALIZED_FIELD) is True:
-            return True
+        if not isinstance(metadata, dict):
+            return False
+        return metadata.get(WORKTREE_MATERIALIZED_FIELD) is True
     return False
 
 
@@ -327,9 +336,17 @@ def _persist_worktree_materialized(plan_id: str, worktree_path: Path) -> tuple[b
             last_detail = f'no metadata block at {target} — skipping persist'
             continue
         metadata[WORKTREE_MATERIALIZED_FIELD] = True
+        # Atomic replace: a truncated direct write would leave a partial
+        # plan record behind on I/O failure or interruption.
+        tmp_target = target.with_name(target.name + '.tmp')
         try:
-            target.write_text(json.dumps(payload, indent=2) + '\n', encoding='utf-8')
+            tmp_target.write_text(json.dumps(payload, indent=2) + '\n', encoding='utf-8')
+            os.replace(tmp_target, target)
         except OSError as exc:
+            try:
+                tmp_target.unlink(missing_ok=True)
+            except OSError:
+                pass
             last_detail = f'cannot write {target}: {exc}'
             continue
         return True, f'{WORKTREE_MATERIALIZED_FIELD}=true persisted at {target}'
@@ -351,6 +368,10 @@ def _already_moved_in_response(worktree_path: Path, plan_id: str, *, main_copy_a
     suffix = ' (main copy absent on re-entry)' if main_copy_absent else ''
     wt_executor = _worktree_executor_path(worktree_path)
     persisted, persist_detail = _persist_worktree_materialized(plan_id, worktree_path)
+    # Claim only what the read-back confirms: a failed persist must not
+    # report materialization it did not land — the admission check reads
+    # this same flag and would otherwise block dispatch on a success.
+    verified = is_worktree_materialized(plan_id, worktree_path)
     if _executor_landed(wt_executor):
         return {
             'status': 'success',
@@ -358,7 +379,7 @@ def _already_moved_in_response(worktree_path: Path, plan_id: str, *, main_copy_a
             'worktree_path': str(worktree_path),
             'action': 'noop',
             'message': f'plan state already moved into worktree{suffix}',
-            'worktree_materialized': True,
+            'worktree_materialized': verified,
             'worktree_materialized_persisted': persisted,
             'persist_detail': persist_detail,
         }
@@ -372,7 +393,7 @@ def _already_moved_in_response(worktree_path: Path, plan_id: str, *, main_copy_a
         'message': f'plan state already moved in{healed_suffix}; regenerated missing worktree executor',
         'worktree_executor_generated': generated,
         'executor_detail': executor_detail,
-        'worktree_materialized': True,
+        'worktree_materialized': verified,
         'worktree_materialized_persisted': persisted,
         'persist_detail': persist_detail,
     }
@@ -701,6 +722,9 @@ def run_prepare_execute(args: Namespace) -> dict[str, Any]:
 
     persisted, persist_detail = _persist_worktree_materialized(plan_id, worktree_path)
 
+    # Claim only what the read-back confirms (see _already_moved_in_response).
+    verified = is_worktree_materialized(plan_id, worktree_path)
+
     return _assert_cwd_unchanged(
         {
             'status': 'success',
@@ -710,7 +734,7 @@ def run_prepare_execute(args: Namespace) -> dict[str, Any]:
             'moved_in[1]': [str(wt_plan_dir)],
             'worktree_executor_generated': generated,
             'executor_detail': executor_detail,
-            'worktree_materialized': True,
+            'worktree_materialized': verified,
             'worktree_materialized_persisted': persisted,
             'persist_detail': persist_detail,
         }
