@@ -789,9 +789,11 @@ FOOTPRINT_RESOLVED = 'resolved'
 #: precisely the failure the reduction report was written to prevent, so it must
 #: not be reachable through the report's own membership test.
 #:
-#: ``evaluate_branch_cleanup`` is dispatched separately (it needs the
-#: diff-availability signal the others do not take), which is why membership lives
-#: in this map rather than being inferred from the evaluation loop alone.
+#: ``evaluate_branch_cleanup`` and ``evaluate_declared_vs_realized_set`` are both
+#: dispatched separately (see :data:`_SEPARATELY_DISPATCHED_CHECKS`) — the former
+#: needs the diff-availability signal, the latter the forwarded upstream
+#: comparison — which is why membership lives in this map rather than being
+#: inferred from the evaluation loop alone.
 #: ``manifest_version_recognized`` is deliberately absent: it reads the manifest
 #: body alone, so no amount of diff filtering affects its verdict.
 _DIFF_FED_RULES: dict[str, str] = {
@@ -817,7 +819,7 @@ _DIFF_FED_CHECKS = frozenset(_DIFF_FED_RULES)
 #: worktree-removed case the rule is most needed on. Used only by
 #: :func:`_withhold_on_absent_evidence` and :func:`apply_input_reduction`;
 #: :data:`_DIFF_FED_CHECKS` itself is unchanged and stays the full registry-derived
-#: membership the loop-evaluator derivation and its own tests read.
+#: membership its own tests read.
 _FOOTPRINT_FED_CHECKS: frozenset[str] = _DIFF_FED_CHECKS - {'declared_vs_realized_set'}
 
 #: The diff-fed rules dispatched OUTSIDE the shared loop, because each takes an
@@ -1057,7 +1059,7 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
         findings.append(version_finding)
 
     # Derived from the ONE registry rather than restated: every _DIFF_FED_RULES
-    # entry except the separately-dispatched branch-cleanup rule, in registry order.
+    # entry except the members of _SEPARATELY_DISPATCHED_CHECKS, in registry order.
     diff_evaluators: tuple[
         Callable[[dict[str, Any], list[str]], tuple[dict[str, str], dict[str, Any] | None]],
         ...,
