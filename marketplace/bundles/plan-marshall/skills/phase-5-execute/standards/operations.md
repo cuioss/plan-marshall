@@ -19,6 +19,10 @@ All Edit/Write/Read tool calls MUST target paths under this worktree. Raw tool i
 
 Omit the header only when no worktree is active (plan runs against the main checkout). The templates below show the header inline for every dispatch example.
 
+## Session-Start Tree Check (Before the First Repo Edit)
+
+Before the first repo edit in a session, verify the working tree matches the plan's admitted location: the worktree path when `use_worktree=true` and the flag is materialized, else the main checkout. Run `git -C {tree} status --porcelain` against the admitted tree and refuse to edit on any unexpected dirt — stash, re-anchor, or re-run the hand-off admission gate first (see `plan-marshall:plan-marshall/workflow/planning.md` § Action: init → "Hand-off admission gate"). The check closes the session-restart hole where a re-pinned cwd lands on main with worktree state expected. Residual: no script gate binds a free agent's Edit tool — this check is the detection half of the dispatch-refusal pair (`inject_project_dir.guarded_inject` is the refusal half).
+
 ## Build Operations
 
 ### Maven Build
