@@ -2375,11 +2375,13 @@ def cmd_bootstrap(args: argparse.Namespace) -> dict:
     is refused with ``action: not_needed`` (the caller must use the
     executor-mediated ``generate`` instead).
 
-    Template comparison is three-valued: ``fresh`` (hashes match),
+    Template comparison is four-valued: ``fresh`` (hashes match),
     ``stale`` (both hashes known and differ), ``unknown`` (either side
-    unstampable — a pre-stamp executor or an unreadable template). ``unknown``
-    never drives a regeneration on its own; it rides the verdict the
-    verification half already reached.
+    unstampable — a pre-stamp executor or an unreadable template), and
+    ``uncompared`` (the executor failed structural verification before a
+    hash comparison was even attempted, but the live template hash was
+    resolvable). None of ``unknown``/``uncompared`` drives a regeneration on
+    its own; both ride the verdict the verification half already reached.
     """
     live_sha = current_template_sha256()
     real_executor = executor_path()
