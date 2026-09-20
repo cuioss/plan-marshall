@@ -23,14 +23,10 @@ Direct-path bootstrap exception (narrow):
     "Never by direct path" holds for every marketplace script EXCEPT this
     generator's ``bootstrap`` verb. A fresh clone has no
     ``<root>/.plan/execute-script.py`` yet, so no executor-mediated call can
-    create it — ``bootstrap`` is the sanctioned first call. It is detection-
-    gated rather than unconditional: it generates only when the executor is
-    absent (fresh clone), fails verification (corrupt/stale cache), or its
-    embedded ``TEMPLATE_SHA256`` no longer matches the live template
-    (template-content staleness — a template fix shipped without a version
-    bump). A present, valid, template-fresh executor is refused with
-    ``action: not_needed``; that refusal is the proof the exception did not
-    widen into general direct-path use.
+    create it — ``bootstrap`` is the sanctioned first call, and it is
+    detection-gated rather than unconditional. :func:`cmd_bootstrap` owns that
+    gate: which states regenerate, and the ``action: not_needed`` refusal that
+    keeps the exception from widening into general direct-path use.
 
 The executor is always written directly to ``<root>/.plan/execute-script.py``
 (the tracked ``.plan/`` directory inside the main git checkout). There is no
@@ -2191,7 +2187,7 @@ def current_template_sha256() -> str:
     template_file = get_templates_dir(SCRIPT_DIR) / 'execute-script.py.template'
     try:
         return hashlib.sha256(template_file.read_bytes()).hexdigest()
-    except (OSError, ValueError):
+    except OSError:
         return ''
 
 
