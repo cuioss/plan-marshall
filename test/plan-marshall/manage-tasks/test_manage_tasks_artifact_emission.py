@@ -24,6 +24,7 @@ an absent baseline produces — are pinned in their own classes below.
 
 from __future__ import annotations
 
+import json
 import subprocess
 
 import pytest
@@ -32,6 +33,12 @@ from conftest import load_script_module
 
 _artifacts = load_script_module(
     'plan-marshall', 'manage-tasks', '_task_artifacts.py', module_name='_task_artifacts_test_mod'
+)
+
+_core = load_script_module('plan-marshall', 'manage-tasks', '_tasks_core.py', module_name='_tasks_core_test_mod')
+
+_analyze_logs = load_script_module(
+    'plan-marshall', 'plan-retrospective', 'analyze-logs.py', module_name='_analyze_logs_artifact_test_mod'
 )
 
 #: Long enough that git's similarity detection scores the rename at 100%.
@@ -361,3 +368,159 @@ class TestEmissionGate:
 
         assert _bodies(returned) == {'Wrote kept.txt'}
         assert emitted == returned
+
+
+class TestChangedFilesPersistence:
+    """``changed_files`` is measured at task close: present-and-empty is measured-no-change.
+
+    The producer half of the contract the retrospective consumer
+    (``artifact_emission_population``) reads: a task record carries the LIST of
+    worktree paths it changed since its baseline. Like the artifact channel
+    these tests run against a REAL git repository with a REAL recorded
+    baseline, not a stubbed differ.
+    """
+
+    def test_modified_new_and_deleted_paths_are_recorded_sorted(self, git_repo, monkeypatch):
+        monkeypatch.setattr(_core, 'cwd_checkout_root', lambda: str(git_repo))
+        task: dict = {'task_start_sha': _head(git_repo)}
+        (git_repo / 'kept.txt').write_text('changed\n', encoding='utf-8')
+        (git_repo / 'brand-new.txt').write_text('new\n', encoding='utf-8')
+        (git_repo / 'doomed.txt').unlink()
+
+        changed = _core.record_changed_files(task)
+
+        assert changed == ['brand-new.txt', 'doomed.txt', 'kept.txt']
+        assert task[_core.CHANGED_FILES_FIELD] == changed
+
+    def test_a_rename_contributes_its_new_path_once(self, git_repo, monkeypatch):
+        """Never a delete plus a write — the list names paths, not operations."""
+        monkeypatch.setattr(_core, 'cwd_checkout_root', lambda: str(git_repo))
+        task: dict = {'task_start_sha': _head(git_repo)}
+        _git(git_repo, 'mv', 'renamed-from.txt', 'renamed-to.txt')
+
+        assert _core.record_changed_files(task) == ['renamed-to.txt']
+
+    def test_an_unchanged_tree_records_present_and_empty(self, git_repo, monkeypatch):
+        """Present-and-empty is measured-no-change — NOT absent.
+
+        Without this, a task that changed nothing is indistinguishable from a
+        task that was never measured, and the consumer cannot tell the two
+        apart.
+        """
+        monkeypatch.setattr(_core, 'cwd_checkout_root', lambda: str(git_repo))
+        task: dict = {'task_start_sha': _head(git_repo)}
+
+        changed = _core.record_changed_files(task)
+
+        assert changed == []
+        assert _core.CHANGED_FILES_FIELD in task
+
+    def test_an_absent_baseline_leaves_the_field_absent(self, git_repo, monkeypatch):
+        """Honestly-unknown stays absent: a fabricated empty list would read as measured."""
+        monkeypatch.setattr(_core, 'cwd_checkout_root', lambda: str(git_repo))
+        (git_repo / 'kept.txt').write_text('changed\n', encoding='utf-8')
+        task: dict = {}
+
+        assert _core.record_changed_files(task) is None
+        assert _core.CHANGED_FILES_FIELD not in task
+
+    def test_a_malformed_baseline_leaves_the_field_absent(self, git_repo, monkeypatch):
+        """A corrupted record must not reach a git argument, nor read as measured."""
+        monkeypatch.setattr(_core, 'cwd_checkout_root', lambda: str(git_repo))
+        task: dict = {'task_start_sha': '--output=/tmp/whatever'}
+
+        assert _core.record_changed_files(task) is None
+        assert _core.CHANGED_FILES_FIELD not in task
+
+    def test_a_retry_does_not_move_the_measurement(self, git_repo, monkeypatch):
+        """First-close-wins: a retry after a later task's edits keeps the first list.
+
+        Re-measuring on retry would silently fold the next task's files into
+        this task's record — the same forward-creep the baseline capture refuses.
+        """
+        monkeypatch.setattr(_core, 'cwd_checkout_root', lambda: str(git_repo))
+        task: dict = {'task_start_sha': _head(git_repo)}
+        (git_repo / 'kept.txt').write_text('first\n', encoding='utf-8')
+
+        first = _core.record_changed_files(task)
+
+        (git_repo / 'later.txt').write_text('later\n', encoding='utf-8')
+
+        assert _core.record_changed_files(task) == first == ['kept.txt']
+
+
+#: Sentinel for "no changed_files key at all" — distinct from an empty list,
+#: which IS a measurement (recorded, and this task changed nothing).
+_NO_RECORD = object()
+
+
+def _write_task_record(tasks_dir, number: int, *, status: str, changed_files=_NO_RECORD) -> None:
+    """Write one TASK-NNN.json record; omit the key entirely unless given."""
+    record: dict = {'number': number, 'title': f'Task {number}', 'status': status, 'steps': []}
+    if changed_files is not _NO_RECORD:
+        record['changed_files'] = changed_files
+    (tasks_dir / f'TASK-{number:03d}.json').write_text(json.dumps(record), encoding='utf-8')
+
+
+class TestMixedCorpusReportsUnavailable:
+    """A mixed recorded/unrecorded corpus reports unavailable, never a false zero.
+
+    The consumer half, driven through the REAL ``artifact_emission_population``:
+    with one recorded task that changed files and emitted no artifact line next
+    to unrecorded completed tasks, qualifying the recorded subset alone would
+    read ``eligible_tasks: 1`` / ``eligible_tasks_with_artifacts: 0`` and fire a
+    false ABSENT. The consumer must instead report ``unavailable`` with the
+    eligible keys OMITTED — a caller gating on them finds no key, not a zero.
+    """
+
+    def test_mixed_corpus_is_unavailable_with_eligible_keys_omitted(self, tmp_path):
+        plan_dir = tmp_path / 'plan'
+        tasks_dir = plan_dir / 'tasks'
+        tasks_dir.mkdir(parents=True)
+        _write_task_record(tasks_dir, 1, status='done', changed_files=['a.py'])
+        _write_task_record(tasks_dir, 2, status='done')
+
+        population = _analyze_logs.artifact_emission_population([], plan_dir)
+
+        assert population['change_attribution'] == 'unavailable'
+        assert (
+            'only 1 of 2 completed task records carry a changed_files list' in (population['change_attribution_reason'])
+        )
+        assert 'eligible_tasks' not in population
+        assert 'eligible_tasks_with_artifacts' not in population
+
+    def test_unrecorded_corpus_is_unavailable_with_eligible_keys_omitted(self, tmp_path):
+        """The companion state: NO record carries the list — a different remedy."""
+        plan_dir = tmp_path / 'plan'
+        tasks_dir = plan_dir / 'tasks'
+        tasks_dir.mkdir(parents=True)
+        _write_task_record(tasks_dir, 1, status='done')
+        _write_task_record(tasks_dir, 2, status='done')
+
+        population = _analyze_logs.artifact_emission_population([], plan_dir)
+
+        assert population['change_attribution'] == 'unavailable'
+        assert 'no completed task record carries a changed_files list' in population['change_attribution_reason']
+        assert 'eligible_tasks' not in population
+
+    def test_fully_recorded_corpus_is_measured_with_present_and_empty_counted(self, tmp_path):
+        """The control: every record carries the list, so the population is measured.
+
+        The present-and-empty record (TASK-002 changed nothing) counts as
+        RECORDED but not as changed — it joins neither finding half, and its
+        presence is what makes the population measured rather than unavailable.
+        """
+        plan_dir = tmp_path / 'plan'
+        tasks_dir = plan_dir / 'tasks'
+        tasks_dir.mkdir(parents=True)
+        _write_task_record(tasks_dir, 1, status='done', changed_files=['a.py'])
+        _write_task_record(tasks_dir, 2, status='done', changed_files=[])
+
+        population = _analyze_logs.artifact_emission_population(
+            ['[ARTIFACT] (plan-marshall:phase-5-execute:1) Wrote a.py'], plan_dir
+        )
+
+        assert population['change_attribution'] == 'measured'
+        assert population['eligible_tasks'] == 1
+        assert population['eligible_tasks_with_artifacts'] == 1
+        assert population['eligible_tasks_without_artifacts'] == []

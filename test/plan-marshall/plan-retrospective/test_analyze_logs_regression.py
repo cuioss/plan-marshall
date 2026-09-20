@@ -254,3 +254,67 @@ class TestRegression:
         captured = capsys.readouterr()
         assert 'WARN' in captured.err, f'read_log on missing path must emit stderr WARN; got stderr: {captured.err!r}'
         assert str(missing_path) in captured.err, 'WARN line must include the missing path for operator debugging'
+
+
+class TestReEntryPreconditionDecoupling:
+    """The precondition fact varies independently of the counts and the verdict.
+
+    ``cluster_dispatches`` publishes the `RE_ENTRY_COVERAGE` precondition
+    (`re_entry_precondition_met`) as a fact alongside the marker counts and the
+    inferred dispatches; the reference rule grades them. These fixtures prove
+    the three move independently: facts publish when the precondition is unmet,
+    the precondition holds with zero inferred dispatches, and the inferred
+    count moves while the precondition stands still.
+    """
+
+    @staticmethod
+    def _marker(ts: str, kind: str = 'Starting') -> str:
+        return f'[{ts}] [INFO] [abc] [STATUS] (plan-marshall:phase-5-execute) {kind} execute phase — 3 tasks pending'
+
+    def test_facts_publish_when_the_precondition_is_unmet(self):
+        """A first-entry-only log: precondition False, but the facts still publish.
+
+        Without this, a plan that never re-entered would carry no re-entry
+        facts at all, and a consumer could not tell "never re-entered" from
+        "never measured".
+        """
+        result = _analyze_logs.cluster_dispatches([self._marker('2026-05-08T14:00:00Z')], [], gap_threshold_s=30.0)
+
+        assert result['re_entry_precondition_met'] is False
+        assert result['starting_markers'] == 1
+        assert result['re_entering_markers'] == 0
+        assert result['inferred_dispatches'] == 1
+
+    def test_precondition_met_with_zero_inferred_dispatches(self):
+        """A Re-entering line with no parseable timestamp counts as a marker
+        but contributes no timestamp: the precondition holds while nothing is
+        inferred. The two halves legitimately disagree, which is why the rule
+        must read the fact rather than re-derive the precondition from the
+        clustering it grades."""
+        lines = ['[INFO] [abc] [STATUS] (plan-marshall:phase-5-execute) Re-entering execute phase — 2 tasks pending']
+
+        result = _analyze_logs.cluster_dispatches(lines, [], gap_threshold_s=30.0)
+
+        assert result['re_entering_markers'] == 1
+        assert result['re_entry_precondition_met'] is True
+        assert result['inferred_dispatches'] == 0
+
+    def test_inferred_dispatches_vary_while_the_precondition_holds(self):
+        """Same markers, tight vs wide gaps: the inferred count moves 1 to 2
+        while the precondition stays met — the count is not the precondition."""
+        tight = [
+            self._marker('2026-05-08T14:00:00Z'),
+            self._marker('2026-05-08T14:00:10Z', 'Re-entering'),
+        ]
+        wide = [
+            self._marker('2026-05-08T14:00:00Z'),
+            self._marker('2026-05-08T14:05:00Z', 'Re-entering'),
+        ]
+
+        tight_result = _analyze_logs.cluster_dispatches(tight, [], gap_threshold_s=30.0)
+        wide_result = _analyze_logs.cluster_dispatches(wide, [], gap_threshold_s=30.0)
+
+        assert tight_result['re_entry_precondition_met'] is True
+        assert wide_result['re_entry_precondition_met'] is True
+        assert tight_result['inferred_dispatches'] == 1
+        assert wide_result['inferred_dispatches'] == 2

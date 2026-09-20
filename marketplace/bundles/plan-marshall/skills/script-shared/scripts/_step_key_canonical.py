@@ -67,3 +67,20 @@ def canonicalize_step_key(step: str) -> str:
     if step in PROMOTED_BUILTIN_STEP_IDS:
         return PROMOTED_BUILTIN_STEP_IDS[step]
     return step
+
+
+def is_valid_step_key(step: str) -> bool:
+    """Return True when ``step`` is safe to persist as a step join key.
+
+    Both writers of the step join key — ``record-step``
+    (manage-execution-manifest, ``execution_log[]`` row) and
+    ``record-dispatch-boundary`` (manage-metrics, positional-CSV boundary row)
+    — accept the identical key space through this predicate, so a key the
+    boundary writer refuses can never enter ``execution.toon``. A comma would
+    shift every column after the key in the positional-CSV row; any line
+    separator (per :meth:`str.splitlines`, not just ``\\n``) would break the
+    row outright. The empty string is valid: it records no key (the
+    reconciliation reads it as "no key recorded" and falls back to
+    timestamp-window pairing, never as a pairing claim).
+    """
+    return ',' not in step and step.splitlines() in ([], [step])

@@ -44,7 +44,7 @@ from _footprint_resolver import (
     FOOTPRINT_UNRESOLVED,
     read_captured_footprint,
     read_legacy_footprint,
-    resolve_merge_commit_footprint,
+    resolve_merge_commit_footprint_with_gaps,
     resolve_pr_landing_footprint,
 )
 from _ledger_core import read_entries
@@ -211,6 +211,108 @@ def summarize_build_ledger(plan_key: str) -> dict[str, Any]:
     }
 
 
+#: Skill-segment prefix identifying a BUILD dispatch in a script-log notation.
+#: A script-log line counts as a build call when its notation's middle segment
+#: starts with this prefix — `build-pyproject`, `build-maven`, `build-gradle`,
+#: `build-npm`. The prefix (not an enumeration) is what keeps a future build
+#: tool from silently falling out of the count: a new `build-*` skill is
+#: counted without a code change, and a non-build skill can never match it.
+_BUILD_SKILL_PREFIX = 'build-'
+
+
+def _is_build_notation(notation: str) -> bool:
+    """True when a script-log notation names a build dispatch.
+
+    The notation shape is `bundle:skill:script` (see `_NOTATION_RE`); only the
+    middle segment is tested, so a bundle or script name containing the prefix
+    cannot misclassify.
+    """
+    segments = notation.split(':')
+    return len(segments) == 3 and segments[1].startswith(_BUILD_SKILL_PREFIX)
+
+
+def count_log_build_calls(script_lines: list[str]) -> dict[str, Any]:
+    """Count build-dispatch calls in the script-execution log, by notation.
+
+    The log-derived half of the build-count reconciliation: every script-log
+    line whose notation names a build dispatch is one observed build call,
+    whether it passed or failed. The population is stated outright
+    (`plan_script_execution_log`) so this count is never added to — or read
+    as — the change-ledger oracle's own `build_count`, which spans every build
+    system and every phase including builds the plan never logged.
+    """
+    by_notation: Counter[str] = Counter()
+    for line in script_lines:
+        match = _NOTATION_RE.search(line)
+        if not match:
+            continue
+        notation = match.group(1)
+        if _is_build_notation(notation):
+            by_notation[notation] += 1
+    return {
+        'log_build_calls': sum(by_notation.values()),
+        'log_build_calls_by_notation': dict(sorted(by_notation.items())),
+        'population': 'plan_script_execution_log',
+    }
+
+
+def ledger_has_entries_for_plan(plan_key: str) -> bool:
+    """Whether the change-ledger holds any BUILD row for this plan.
+
+    The availability probe behind the build-count reconciliation: a plan with
+    no ``kind=build`` ledger row at all — the ledger file is absent,
+    unreadable, or simply never recorded a build for this plan — has an
+    UNMEASURED oracle, which must read as unavailable rather than as a
+    zero-build plan. Non-build rows (change records, job markers) say nothing
+    about build-oracle availability and must not satisfy the probe. A plan WITH
+    build rows but zero counted builds is available-and-empty, which is a
+    measured zero.
+    """
+    try:
+        entries = read_entries()
+    except OSError:
+        return False
+    return any(
+        isinstance(entry, dict) and entry.get('plan_id') == plan_key and entry.get('kind') == 'build'
+        for entry in entries
+    )
+
+
+def reconcile_build_count(
+    log_build_calls: int, ledger_summary: dict[str, Any], ledger_available: bool
+) -> dict[str, Any]:
+    """Reconcile the log-derived build-call count against the ledger oracle.
+
+    Publishes BOTH figures plus the oracle's `suspect_count` floor — when it is
+    nonzero the ledger total is a floor, and the reconciliation says so rather
+    than presenting the comparison as exact. `agreement` names the direction of
+    any divergence and is published only when the ledger is available. When the
+    ledger holds no row for the plan the oracle side is omitted rather than
+    zeroed: the eligible keys are absent so a consumer gating on them finds no
+    key instead of a false zero, and no agreement verdict is rendered.
+    """
+    result: dict[str, Any] = {
+        'log_build_calls': log_build_calls,
+        'ledger_available': ledger_available,
+    }
+    if not ledger_available:
+        result['ledger_unavailable_reason'] = (
+            'the change-ledger holds no row for this plan, so the oracle build '
+            'count is unmeasured rather than zero; no agreement verdict is rendered'
+        )
+        return result
+    ledger_count = int(ledger_summary.get('build_count', 0))
+    result['ledger_build_count'] = ledger_count
+    result['suspect_count'] = int(ledger_summary.get('suspect_count', 0))
+    if log_build_calls == ledger_count:
+        result['agreement'] = 'agree'
+    elif log_build_calls > ledger_count:
+        result['agreement'] = 'log_exceeds_ledger'
+    else:
+        result['agreement'] = 'ledger_exceeds_log'
+    return result
+
+
 def resolve_plan_dir(mode: str, plan_id: str | None, archived_plan_path: str | None) -> Path:
     """Resolve the plan directory for ``mode``."""
     if mode == 'live':
@@ -312,8 +414,15 @@ def resolve_footprint(plan_dir: Path, plan_id: str | None = None) -> list[str] |
     if captured is not None:
         return sorted(captured)
 
-    merge_set = resolve_merge_commit_footprint(plan_dir, refs)
+    merge_set, merge_gaps = resolve_merge_commit_footprint_with_gaps(plan_dir, refs)
     if merge_set is not None:
+        if merge_gaps:
+            print(
+                f'WARNING: analyze-logs footprint tier merge-commit resolved with '
+                f'{len(merge_gaps)} unresolvable split shard(s): {", ".join(merge_gaps)} — '
+                'the returned union is partial',
+                file=sys.stderr,
+            )
         return sorted(merge_set)
 
     # Tier 4 is reached ONLY because this resolver composes the per-tier helpers itself
@@ -844,6 +953,13 @@ def cluster_dispatches(
             previous marker in the run).
       - starting_markers: count of `[STATUS] ... Starting execute phase` lines.
       - re_entering_markers: count of `[STATUS] ... Re-entering execute phase` lines.
+      - re_entry_precondition_met: whether the `RE_ENTRY_COVERAGE` precondition
+            holds (at least one `Re-entering` line exists — the D2 build
+            marker). Published as a FACT alongside the counts rather than
+            derived by the grading rule, so the precondition and the counts
+            vary independently: facts appear even when the verdict is clean,
+            and no verdict is ever derived from an unmeasured precondition.
+            Mirrors `detect_voluntary_checkpoint_polling`'s `precondition_met`.
 
     The cluster count gives the LLM rule a way to flag plans where the
     orchestrator re-dispatched the per-task `phase-5-execute` envelope more times
@@ -904,6 +1020,13 @@ def cluster_dispatches(
         'inferred_dispatches': inferred,
         'starting_markers': starting,
         're_entering_markers': re_entering,
+        # The RE_ENTRY_COVERAGE precondition as a published fact. The grading
+        # rule reads this instead of re-deriving the precondition from the
+        # counts — a re-derivation that could disagree with the extractor
+        # about what "exists" means (a Re-entering line with an unparseable
+        # timestamp counts here but contributes no timestamp to the
+        # clustering, so the two halves legitimately differ).
+        're_entry_precondition_met': re_entering > 0,
     }
 
 
@@ -1939,11 +2062,24 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
     plan_ledger_key = _LEDGER_DATE_PREFIX_RE.sub('', args.plan_id or Path(args.archived_plan_path or '').name)
     build_time = summarize_build_ledger(plan_ledger_key)
 
+    # Log-derived build-call count reconciled against the change-ledger oracle.
+    # The script log observes only the builds the plan logged, while the oracle
+    # spans every build system and phase — the two routinely disagree in EITHER
+    # direction, so both figures publish with the oracle's suspect_count floor,
+    # and an unavailable ledger reads as unmeasured rather than zero.
+    log_builds = count_log_build_calls(script)
+    build_count_reconciliation = reconcile_build_count(
+        log_builds['log_build_calls'], build_time, ledger_has_entries_for_plan(plan_ledger_key)
+    )
+
     return {
         'status': 'success',
         'aspect': 'log_analysis',
         'plan_id': args.plan_id or Path(args.archived_plan_path or '').name,
         'build_time': build_time,
+        'log_build_calls': log_builds['log_build_calls'],
+        'log_build_calls_by_notation': log_builds['log_build_calls_by_notation'],
+        'build_count_reconciliation': build_count_reconciliation,
         'counts': {
             'work_entries': len(work),
             'decision_entries': len(decision),

@@ -1130,3 +1130,224 @@ def test_document_contract_detects_the_pre_fix_and_reordered_shapes():
         'was cut out of it — the terminator widened past level-3 headings into the '
         'deeper ones that belong to the step being read'
     )
+
+
+# =============================================================================
+# firing_comparison — per-firing boundary × execution comparison
+# =============================================================================
+#
+# The comparison joins dispatch-boundary rows against execution_log rows on the
+# shared step_id key where available and publishes the
+# measured / unmeasured / no_tool_use populations per phase. Every joined
+# firing lands in exactly one bucket; unpaired and keyless rows are counted
+# beside the populations, never folded into them. Facts only — no findings:
+# divergence findings belong to reconcile-ledgers.
+
+
+_BOUNDARY_HEADER_10 = (
+    'rows[]{timestamp,termination_cause,total_tokens,tool_uses,duration_ms,'
+    'input_tokens,output_tokens,cache_read_input_tokens,cache_creation_input_tokens,step_id}:\n'
+)
+
+
+def _boundary_file_content(phase: str, rows: list[str]) -> str:
+    """One boundary artifact's bytes: header plus one CSV row per entry."""
+    return f'plan_id: dispatch-audit\nphase: {phase}\n{_BOUNDARY_HEADER_10}' + ''.join(row + '\n' for row in rows)
+
+
+def _brow(
+    ts: str,
+    cause: str,
+    tokens: str,
+    tools: str,
+    step: str,
+    context: str = '11,22,33,44',
+) -> str:
+    """One ten-column boundary row carrying the given step_id key."""
+    return f'{ts},{cause},{tokens},{tools},100,{context},{step}'
+
+
+def _brow_keyless(ts: str, cause: str, tokens: str, tools: str) -> str:
+    """One legacy nine-column boundary row — no step_id cell at all."""
+    return f'{ts},{cause},{tokens},{tools},100,11,22,33,44'
+
+
+def _write_boundary(tmp_path: Path, plan_id: str, phase: str, rows: list[str]) -> None:
+    """Write one boundary artifact into the live plan's work dir."""
+    work_dir = tmp_path / 'base' / 'plans' / plan_id / 'work'
+    work_dir.mkdir(parents=True, exist_ok=True)
+    (work_dir / f'metrics-dispatch-boundaries-{phase}.toon').write_text(
+        _boundary_file_content(phase, rows), encoding='utf-8'
+    )
+
+
+def _exec_row(step_id: str, tokens) -> dict:
+    """One execution_log row for the 6-finalize phase."""
+    return {'step_id': step_id, 'phase': '6-finalize', 'outcome': 'executed', 'total_tokens': tokens}
+
+
+def _firing_block(data: dict, phase: str) -> dict:
+    """Read one phase's firing_comparison block out of a run result."""
+    block = data['firing_comparison']['phases'][phase]
+    assert isinstance(block, dict)
+    return block
+
+
+class TestFiringComparison:
+    """Per-firing findings carry population and token state."""
+
+    def test_paired_firings_carry_population_and_token_state(self, tmp_path, monkeypatch):
+        plan_id = _write_plan(
+            tmp_path,
+            monkeypatch,
+            execution_log=[
+                _exec_row('verify:quality-gate', 4000),
+                _exec_row('verify:module-tests', 0),
+            ],
+        )
+        _write_boundary(
+            tmp_path,
+            plan_id,
+            '6-finalize',
+            [
+                _brow('2026-04-17T11:00:00Z', 'step_complete', '4000', '5', 'verify:quality-gate'),
+                _brow('2026-04-17T11:01:00Z', 'step_complete', '0', '0', 'verify:module-tests'),
+            ],
+        )
+
+        block = _firing_block(_run(plan_id), '6-finalize')
+
+        assert block['state'] == 'evaluated'
+        assert block['paired_firings'] == 2
+        assert block['populations'] == {'measured': 1, 'unmeasured': 0, 'no_tool_use': 1}
+        by_step = {firing['step_id']: firing for firing in block['firings']}
+        assert by_step['verify:quality-gate']['population'] == 'measured'
+        assert by_step['verify:quality-gate']['token_state'] == 'measured'
+        assert by_step['verify:module-tests']['population'] == 'no_tool_use'
+
+    def test_unmeasured_token_routes_to_unmeasured_not_a_measured_zero(self, tmp_path, monkeypatch):
+        """A boundary `unmeasured` token must not read as a measured zero firing."""
+        plan_id = _write_plan(tmp_path, monkeypatch, execution_log=[_exec_row('verify:coverage', 3000)])
+        _write_boundary(
+            tmp_path,
+            plan_id,
+            '6-finalize',
+            [_brow('2026-04-17T11:00:00Z', 'step_complete', 'unmeasured', '3', 'verify:coverage')],
+        )
+
+        block = _firing_block(_run(plan_id), '6-finalize')
+
+        assert block['populations'] == {'measured': 0, 'unmeasured': 1, 'no_tool_use': 0}
+        assert block['firings'][0]['token_state'] == 'unmeasured'
+
+    def test_keyless_rows_reported_not_paired(self, tmp_path, monkeypatch):
+        """An empty key is not a key: two keyless rows must not pair with each other."""
+        plan_id = _write_plan(tmp_path, monkeypatch, execution_log=[{'phase': '6-finalize', 'total_tokens': 100}])
+        _write_boundary(
+            tmp_path, plan_id, '6-finalize', [_brow_keyless('2026-04-17T11:00:00Z', 'step_complete', '100', '2')]
+        )
+
+        block = _firing_block(_run(plan_id), '6-finalize')
+
+        assert block['paired_firings'] == 0
+        assert block['populations'] == {'measured': 0, 'unmeasured': 0, 'no_tool_use': 0}
+        assert block['keyless_boundary_rows'] == 1
+        assert block['keyless_execution_rows'] == 1
+
+    def test_unpaired_rows_listed_beside_populations(self, tmp_path, monkeypatch):
+        """A key claimed on one side only surfaces in that side's unpaired list."""
+        plan_id = _write_plan(tmp_path, monkeypatch, execution_log=[_exec_row('exec-only', 100)])
+        _write_boundary(
+            tmp_path,
+            plan_id,
+            '6-finalize',
+            [_brow('2026-04-17T11:00:00Z', 'step_complete', '200', '1', 'boundary-only')],
+        )
+
+        block = _firing_block(_run(plan_id), '6-finalize')
+
+        assert block['paired_firings'] == 0
+        assert block['unpaired_boundary'] == ['boundary-only']
+        assert block['unpaired_execution'] == ['exec-only']
+
+    def test_every_firing_in_exactly_one_bucket(self, tmp_path, monkeypatch):
+        """The criterion: populations partition the joined firings; the rest is counted apart."""
+        plan_id = _write_plan(
+            tmp_path,
+            monkeypatch,
+            execution_log=[
+                _exec_row('measured-step', 5000),
+                _exec_row('quiet-step', 10),
+                _exec_row('vague-step', 'unmeasured'),
+                _exec_row('lonely-step', 70),
+                {'phase': '6-finalize', 'total_tokens': 5},
+            ],
+        )
+        _write_boundary(
+            tmp_path,
+            plan_id,
+            '6-finalize',
+            [
+                _brow('2026-04-17T11:00:00Z', 'step_complete', '5000', '9', 'measured-step'),
+                _brow('2026-04-17T11:01:00Z', 'step_complete', '10', '0', 'quiet-step'),
+                _brow('2026-04-17T11:02:00Z', 'step_complete', 'unmeasured', '4', 'vague-step'),
+                _brow('2026-04-17T11:03:00Z', 'step_complete', '60', '1', 'ghost-step'),
+                _brow_keyless('2026-04-17T11:04:00Z', 'step_complete', '5', '1'),
+            ],
+        )
+
+        block = _firing_block(_run(plan_id), '6-finalize')
+
+        populations = block['populations']
+        assert populations == {'measured': 1, 'unmeasured': 1, 'no_tool_use': 1}
+        assert sum(populations.values()) == block['paired_firings'] == 3
+        assert {firing['population'] for firing in block['firings']} <= {'measured', 'unmeasured', 'no_tool_use'}
+        assert block['unpaired_boundary'] == ['ghost-step']
+        assert block['unpaired_execution'] == ['lonely-step']
+        assert block['keyless_boundary_rows'] == 1
+        assert block['keyless_execution_rows'] == 1
+
+    def test_unreadable_manifest_marks_not_evaluated(self, tmp_path, monkeypatch):
+        """No execution.toon: the comparison is unmeasured, never zero-paired."""
+        plan_id = _write_plan(tmp_path, monkeypatch, execution_log=None)
+        _write_boundary(
+            tmp_path,
+            plan_id,
+            '6-finalize',
+            [_brow('2026-04-17T11:00:00Z', 'step_complete', '200', '1', 'verify:quality-gate')],
+        )
+
+        block = _firing_block(_run(plan_id), '6-finalize')
+
+        assert block['state'] == 'not_evaluated'
+        assert 'reason' in block and block['reason']
+        assert block['boundary_rows'] == 1
+        assert block['paired_firings'] == 0
+        assert dict(block.get('populations') or {}) == {}
+
+    def test_no_boundary_no_execution_yields_no_phase_block(self, tmp_path, monkeypatch):
+        """A phase with neither artifact nor execution row is not a block."""
+        plan_id = _write_plan(tmp_path, monkeypatch, execution_log=[])
+
+        data = _run(plan_id)
+
+        assert data['firing_comparison']['phase_count'] == 0
+        assert dict(data['firing_comparison']['phases'] or {}) == {}
+
+    def test_firing_comparison_emits_no_findings(self, tmp_path, monkeypatch):
+        """Facts only: unpaired rows must not surface as audit findings here."""
+        plan_id = _write_plan(tmp_path, monkeypatch, execution_log=[_exec_row('exec-only', 100)])
+        _write_boundary(
+            tmp_path,
+            plan_id,
+            '6-finalize',
+            [_brow('2026-04-17T11:00:00Z', 'step_complete', '200', '1', 'boundary-only')],
+        )
+
+        data = _run(plan_id)
+
+        assert data['firing_comparison']['phases']['6-finalize']['paired_firings'] == 0
+        for finding in data.get('findings') or []:
+            message = finding.get('message', '') if isinstance(finding, dict) else ''
+            assert 'boundary-only' not in message
+            assert 'exec-only' not in message

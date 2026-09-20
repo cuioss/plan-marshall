@@ -9,6 +9,9 @@ that ``compile-report run --fragments-file`` can consume a single bundle.
 Subcommands:
     init      Create an empty TOON bundle at the mode-appropriate path.
     add       Merge a fragment file into the bundle under the aspect key.
+    register  Merge MANY fragment files in one batch — one aspect-key
+              registration pass, one bundle write — reporting registered
+              aspect keys with counts.
     finalize  Report the bundle path and its registered aspects.
 
 Bundle location:
@@ -395,6 +398,142 @@ def cmd_finalize(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
+def _parse_batch_item(raw: str) -> tuple[str, str]:
+    """Split one ``--item ASPECT=PATH`` value on its FIRST ``=``.
+
+    Paths routinely contain ``=`` (query strings, TOON corners); only the
+    FIRST one separates the key. A value with no ``=`` — or an empty aspect —
+    is a caller error, reported before the bundle is touched.
+    """
+    aspect, separator, path = raw.partition('=')
+    aspect = aspect.strip()
+    path = path.strip()
+    if not separator or not aspect or not path:
+        raise ValueError(f'Malformed --item {raw!r}: expected ASPECT=PATH with a non-empty aspect and path.')
+    return aspect, path
+
+
+def _fragment_entry_count(fragment: Any) -> int:
+    """Top-level entry count of a parsed fragment, for the conservation report.
+
+    A dict or list contributes its length; any other shape contributes one —
+    the fragment exists and was registered, and the count is what lets a
+    reader verify that compile-report dropped nothing silently.
+    """
+    if isinstance(fragment, (dict, list)):
+        return len(fragment)
+    return 1
+
+
+def cmd_register(args: argparse.Namespace) -> dict[str, Any]:
+    """Merge MANY fragment files in one batch — one registration pass, one write.
+
+    The batch counterpart to repeated ``add`` calls: the aspect-key registry is
+    resolved ONCE, every key is validated BEFORE the bundle is touched
+    (all-or-nothing — one bad key leaves the bundle byte-identical), every
+    fragment is read, and the bundle is written exactly once. The result
+    publishes the registered aspect keys WITH their fragment entry counts, so
+    compile-report's section loop is checkable for conservation: a registered
+    key with entries that never renders is a loud drop, not a silent one.
+    """
+    raw_items: list[str] = list(getattr(args, 'item', None) or [])
+    if not raw_items:
+        raise ValueError('register requires at least one --item ASPECT=PATH.')
+
+    # Parse every item first: a malformed item fails before anything is read.
+    parsed: list[tuple[str, str]] = [_parse_batch_item(raw) for raw in raw_items]
+
+    # In-batch duplicates are a caller error even under --overwrite (which
+    # governs bundle entries, not the batch itself): last-wins would silently
+    # discard one of the two fragment files.
+    seen: set[str] = set()
+    for aspect, _ in parsed:
+        if aspect in seen:
+            raise ValueError(f'Duplicate aspect in one register batch: {aspect!r}.')
+        seen.add(aspect)
+
+    # ONE aspect-key registration pass for the whole batch (the same closed
+    # set `cmd_add` validates against, resolved once, not once per fragment).
+    registerable = _registerable_aspect_keys()
+    unregistered = sorted({aspect for aspect, _ in parsed} - registerable)
+    if unregistered:
+        return {
+            'status': 'error',
+            'operation': 'register',
+            'plan_id': args.plan_id,
+            'aspects': [aspect for aspect, _ in parsed],
+            'error': (
+                f'Unregistered aspect key(s): {unregistered}. None are in the canonical '
+                f'section registry nor any domain-contributed aspect set, so compile-report '
+                f'would silently drop those sections. Valid aspect keys: {sorted(registerable)}'
+            ),
+            'valid_aspects': sorted(registerable),
+        }
+
+    bundle_path = _locate_bundle(args)
+    bundle = _read_bundle(bundle_path)
+    mode = _read_mode_from_bundle(bundle, bundle_path)
+
+    # Sanity guard: the path we found the bundle at must match the path the
+    # persisted mode resolves to (same contract as `cmd_add`).
+    expected_path = resolve_bundle_path(mode, args.plan_id, args.archived_plan_path)
+    if bundle_path.resolve() != expected_path.resolve():
+        raise ValueError(
+            f'Bundle path mismatch: found at {bundle_path} but _meta.mode={mode!r} resolves to {expected_path}'
+        )
+
+    # Already-present check for the WHOLE batch before any fragment is read:
+    # without --overwrite one collision aborts the batch with the bundle
+    # untouched, so a partial batch never lands.
+    already_present = {aspect for aspect, _ in parsed if aspect in bundle}
+    if already_present and not args.overwrite:
+        return {
+            'status': 'error',
+            'operation': 'register',
+            'plan_id': args.plan_id,
+            'bundle_path': str(bundle_path),
+            'error': (
+                f'Aspect(s) already registered: {sorted(already_present)}. '
+                f'Pass --overwrite to replace, or drop them from the batch.'
+            ),
+        }
+
+    # Read every fragment (fail fast — the bundle is still untouched), then
+    # merge all, update the inventory once, and write once.
+    plan_dir = _resolve_plan_dir(mode, args.plan_id, args.archived_plan_path)
+    fragments: list[tuple[str, Any]] = []
+    for aspect, raw_path in parsed:
+        candidate = Path(raw_path)
+        fragment_path = candidate if candidate.is_absolute() else plan_dir / candidate
+        fragments.append((aspect, _read_fragment(fragment_path)))
+
+    meta = bundle[_META_KEY]
+    registered_meta = meta.get('aspects', [])
+    if not isinstance(registered_meta, list):
+        raise ValueError(
+            f'Corrupt bundle {bundle_path}: {_META_KEY}.aspects must be a list, got {type(registered_meta).__name__}'
+        )
+    rows: list[dict[str, Any]] = []
+    for aspect, fragment in fragments:
+        overwrote = aspect in bundle
+        bundle[aspect] = fragment
+        if aspect not in registered_meta:
+            registered_meta.append(aspect)
+        rows.append({'aspect': aspect, 'entries': _fragment_entry_count(fragment), 'overwrote': overwrote})
+    meta['aspects'] = registered_meta
+    _write_bundle(bundle_path, bundle)
+
+    return {
+        'status': 'success',
+        'operation': 'register',
+        'plan_id': args.plan_id,
+        'bundle_path': str(bundle_path),
+        'aspects': sorted(registered_meta),
+        'aspect_count': len(registered_meta),
+        'registered': sorted(rows, key=lambda row: row['aspect']),
+    }
+
+
 def _add_init_args(parser: argparse.ArgumentParser) -> None:
     """Attach flags for ``init``: ``--plan-id``, ``--mode``, ``--archived-plan-path``.
 
@@ -469,6 +608,27 @@ def main() -> int:
         help='Replace an existing aspect entry instead of erroring',
     )
     add_parser.set_defaults(func=cmd_add)
+
+    # register
+    register_parser = subparsers.add_parser(
+        'register',
+        help='Merge many fragment files in one batch under their aspect keys',
+        allow_abbrev=False,
+    )
+    _add_add_finalize_args(register_parser)
+    register_parser.add_argument(
+        '--item',
+        dest='item',
+        action='append',
+        required=True,
+        help='One ASPECT=PATH pair per fragment (repeatable; at least one required)',
+    )
+    register_parser.add_argument(
+        '--overwrite',
+        action='store_true',
+        help='Replace already-registered aspect entries instead of erroring',
+    )
+    register_parser.set_defaults(func=cmd_register)
 
     # finalize
     finalize_parser = subparsers.add_parser(

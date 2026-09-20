@@ -14,12 +14,12 @@ validation and the diff form are pinned against a real git repository in
 END-TO-END proof that the task-closing ``finalize-step`` call actually writes
 those lines to the plan's work log.
 
-It also pins that both of this handler's gates are TRANSITIONS rather than
-states: a REPEATED closing call emits neither channel a second time, and a
-finalize on a task the record already shows as opened — ``in_progress``,
-``done`` or ``failed`` — stamps no late baseline. Both predicates were computed
-from the post-mutation record, where a transition and a repeat are
-indistinguishable.
+It also pins the two gates' shapes: the baseline-capture gate is a TRANSITION
+(a repeated opening stamps no late baseline), while the [OUTCOME] gate is the
+persisted ``outcome_emitted`` flag — it fires once per task INCLUDING a late
+close over a task that reached done without it, and a retry observes the flag
+rather than re-emitting. A transition-only outcome gate left late closes
+without their [OUTCOME] pair while still writing [MANAGE-TASKS] Completed.
 """
 
 import json
@@ -37,7 +37,7 @@ from _manage_tasks_fixtures import (
     cmd_update,
 )
 
-from conftest import add_skill_scripts_to_path
+from conftest import add_skill_scripts_to_path, load_script_module
 
 add_skill_scripts_to_path('plan-marshall', 'manage-tasks')
 
@@ -47,6 +47,10 @@ add_skill_scripts_to_path('plan-marshall', 'manage-tasks')
 # original, and the end-to-end assertions would then run against the real
 # repository instead of the fixture one.
 import _task_artifacts as _artifacts  # noqa: E402
+
+_analyze_logs = load_script_module(
+    'plan-marshall', 'plan-retrospective', 'analyze-logs.py', module_name='_analyze_logs_outcome_test_mod'
+)
 
 
 @pytest.fixture(autouse=True)
@@ -782,3 +786,126 @@ def test_a_file_created_after_the_first_finalize_is_reported_as_an_artifact(plan
 
     assert result['artifact_lines'] == 1
     assert '[ARTIFACT] (plan-marshall:phase-5-execute:1) Wrote created-by-the-task.txt' in (_read_work_log(plan_dir))
+
+
+# =============================================================================
+# Tests: every done transition leaves [OUTCOME] + [MANAGE-TASKS] Completed paired
+# =============================================================================
+#
+# A transition-only outcome gate left two closes without their [OUTCOME] pair
+# while still writing [MANAGE-TASKS] Completed: a LATE close over a task that
+# reached done WITHOUT a finalize-step call (flipped via `update --status
+# done`), and a close whose final step outcome was `skipped`. Both left an
+# unpaired Completed behind, which `pair_outcome_emissions` reports as
+# `unpaired_completed`. The gate is therefore the persisted `outcome_emitted`
+# flag: it fires once per task, including late closes, and a retry observes it.
+
+
+def test_a_late_close_over_an_update_done_task_emits_the_missing_outcome(plan_context):
+    """The late-dispatch close: done via `update`, closed via `finalize-step`.
+
+    The update path writes no log line at all, so before the flag the
+    finalizing call wrote [MANAGE-TASKS] Completed (it fires on every terminal
+    close) but no [OUTCOME] — an unpaired Completed with no retry involved.
+    """
+    add_basic_task(
+        plan_id='outcome-late',
+        title='Late Task',
+        deliverable=1,
+        steps=['src/main/java/A.java'],
+    )
+    plan_dir = plan_context.plan_dir_for('outcome-late')
+
+    cmd_update(_update_ns(plan_id='outcome-late', number=1, status='done'))
+    assert '[OUTCOME]' not in _read_work_log(plan_dir)
+
+    result = cmd_finalize_step(_finalize_step_ns(plan_id='outcome-late', task=1, step=1, outcome='done'))
+
+    assert result['task_complete'] is True
+    assert result['task_status'] == 'done'
+    log_text = _read_work_log(plan_dir)
+    assert log_text.count('[OUTCOME] (plan-marshall:phase-5-execute) Completed TASK-001') == 1
+    assert '[MANAGE-TASKS] Completed TASK-001' in log_text
+    assert _persisted_task(plan_context, 'outcome-late').get('outcome_emitted') is True
+
+
+def test_a_second_late_close_does_not_duplicate_the_outcome(plan_context):
+    """The flag survives the late close: a further retry still emits exactly one."""
+    add_basic_task(
+        plan_id='outcome-late-retry',
+        title='Late Retried Task',
+        deliverable=1,
+        steps=['src/main/java/A.java'],
+    )
+    plan_dir = plan_context.plan_dir_for('outcome-late-retry')
+
+    cmd_update(_update_ns(plan_id='outcome-late-retry', number=1, status='done'))
+    cmd_finalize_step(_finalize_step_ns(plan_id='outcome-late-retry', task=1, step=1, outcome='done'))
+    cmd_finalize_step(_finalize_step_ns(plan_id='outcome-late-retry', task=1, step=1, outcome='done'))
+
+    assert _read_work_log(plan_dir).count('[OUTCOME]') == 1
+
+
+def test_a_skipped_final_step_close_still_emits_outcome(plan_context):
+    """A done transition through a skipped final step is still a done transition.
+
+    The old gate required the closing call's own `--outcome done`, so this
+    close wrote [MANAGE-TASKS] Completed with no [OUTCOME] — unpaired from the
+    first day, with no update or retry involved.
+    """
+    add_basic_task(
+        plan_id='outcome-skip-close',
+        title='Skipped Shut Task',
+        deliverable=1,
+        steps=['src/main/java/A.java'],
+    )
+    plan_dir = plan_context.plan_dir_for('outcome-skip-close')
+
+    result = cmd_finalize_step(_finalize_step_ns(plan_id='outcome-skip-close', task=1, step=1, outcome='skipped'))
+
+    assert result['task_complete'] is True
+    assert result['task_status'] == 'done'
+    log_text = _read_work_log(plan_dir)
+    assert '[OUTCOME] (plan-marshall:phase-5-execute) Completed TASK-001' in log_text
+    assert '[MANAGE-TASKS] Completed TASK-001' in log_text
+
+
+def test_outcome_and_completed_pair_exactly_on_fixture_logs(plan_context):
+    """The deliverable's pairing claim, measured through the REAL consumer.
+
+    One normal close plus one late close: every Completed has its OUTCOME and
+    vice versa — `unpaired_completed` and `unpaired_outcome` are both empty on
+    a clean run.
+    """
+    add_basic_task(
+        plan_id='outcome-pairing',
+        title='Paired Task',
+        deliverable=1,
+        steps=['src/main/java/A.java'],
+    )
+    add_basic_task(
+        plan_id='outcome-pairing-late',
+        title='Paired Late Task',
+        deliverable=1,
+        steps=['src/main/java/A.java'],
+    )
+    # Resolve (and thereby sentinel-seed, via the autouse fixture's wrap)
+    # BEFORE the emitting calls, or the lines fall back to the global log and
+    # the plan-scoped read below sees nothing.
+    plan_context.plan_dir_for('outcome-pairing')
+    plan_context.plan_dir_for('outcome-pairing-late')
+
+    cmd_finalize_step(_finalize_step_ns(plan_id='outcome-pairing', task=1, step=1, outcome='done'))
+    cmd_update(_update_ns(plan_id='outcome-pairing-late', number=1, status='done'))
+    cmd_finalize_step(_finalize_step_ns(plan_id='outcome-pairing-late', task=1, step=1, outcome='done'))
+
+    lines: list[str] = []
+    for plan_id in ('outcome-pairing', 'outcome-pairing-late'):
+        plan_dir = plan_context.plan_dir_for(plan_id)
+        lines.extend(_read_work_log(plan_dir).splitlines())
+
+    pairing = _analyze_logs.pair_outcome_emissions(lines)
+
+    assert pairing['paired'] == 1
+    assert pairing['unpaired_completed'] == []
+    assert pairing['unpaired_outcome'] == []

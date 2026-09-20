@@ -647,3 +647,124 @@ class TestCmdRunInProcess:
         assert int(signals['fixture_leak_count']) == 1
         assert any('GLOBAL_LOG_ERRORS' in f['message'] for f in result['findings'])
         assert any('GLOBAL_LOG_FIXTURE_LEAK' in f['message'] for f in result['findings'])
+
+
+def _script_line(notation: str, duration_s: str = '1.00s') -> str:
+    """One script-execution.log line in the writer's shape for the given notation."""
+    return f'[2026-01-01T00:00:00Z] [INFO] [abc123] {notation} run ({duration_s})'
+
+
+class TestCountLogBuildCalls:
+    """The log-derived half of the build-count reconciliation counts build notations."""
+
+    def test_build_notations_count_by_notation(self):
+        lines = [
+            _script_line('plan-marshall:build-pyproject:pyproject_build', '9.50s'),
+            _script_line('plan-marshall:build-maven:maven_build', '12.00s'),
+            _script_line('plan-marshall:build-pyproject:pyproject_build', '8.00s'),
+            _script_line('plan-marshall:manage-tasks:manage-tasks', '0.10s'),
+            'prose without a notation at all',
+        ]
+
+        result = _al.count_log_build_calls(lines)
+
+        assert result['log_build_calls'] == 3
+        assert result['log_build_calls_by_notation'] == {
+            'plan-marshall:build-maven:maven_build': 1,
+            'plan-marshall:build-pyproject:pyproject_build': 2,
+        }
+        assert result['population'] == 'plan_script_execution_log'
+
+    def test_only_the_skill_segment_decides(self):
+        """A `build-` prefix on the bundle or script segment must not misclassify."""
+        assert (
+            _al.count_log_build_calls([_script_line('my-build-bundle:manage-tasks:manage-tasks')])['log_build_calls']
+            == 0
+        )
+        assert (
+            _al.count_log_build_calls([_script_line('plan-marshall:manage-tasks:build-something')])['log_build_calls']
+            == 0
+        )
+
+    def test_empty_log_counts_zero(self):
+        result = _al.count_log_build_calls([])
+
+        assert result['log_build_calls'] == 0
+        assert result['log_build_calls_by_notation'] == {}
+
+
+class TestReconcileBuildCount:
+    """Both figures publish with the suspect floor; unavailable reads as unmeasured."""
+
+    def test_agreement_when_both_sides_match(self):
+        result = _al.reconcile_build_count(3, {'build_count': 3, 'suspect_count': 0}, True)
+
+        assert result['ledger_available'] is True
+        assert result['ledger_build_count'] == 3
+        assert result['suspect_count'] == 0
+        assert result['agreement'] == 'agree'
+
+    def test_divergence_names_its_direction(self):
+        assert (
+            _al.reconcile_build_count(5, {'build_count': 3, 'suspect_count': 0}, True)['agreement']
+            == 'log_exceeds_ledger'
+        )
+        assert (
+            _al.reconcile_build_count(2, {'build_count': 3, 'suspect_count': 0}, True)['agreement']
+            == 'ledger_exceeds_log'
+        )
+
+    def test_suspect_floor_rides_along(self):
+        """A nonzero suspect_count says the ledger total is a floor, not exact."""
+        result = _al.reconcile_build_count(3, {'build_count': 3, 'suspect_count': 2}, True)
+
+        assert result['suspect_count'] == 2
+        assert result['agreement'] == 'agree'
+
+    def test_unavailable_ledger_omits_the_oracle_side(self):
+        """Missing ledger degrades to unmeasured: no zeroed count, no verdict."""
+        result = _al.reconcile_build_count(4, {'build_count': 0, 'suspect_count': 0}, False)
+
+        assert result['ledger_available'] is False
+        assert result['log_build_calls'] == 4
+        assert 'ledger_build_count' not in result
+        assert 'suspect_count' not in result
+        assert 'agreement' not in result
+        assert 'ledger_unavailable_reason' in result
+
+
+class TestLedgerAvailabilityProbe:
+    """Only a kind=build row means available; anything else is unmeasured."""
+
+    def test_entries_for_the_plan_mean_available(self, monkeypatch):
+        monkeypatch.setattr(_al, 'read_entries', lambda: [{'plan_id': 'p', 'kind': 'build'}])
+
+        assert _al.ledger_has_entries_for_plan('p') is True
+
+    def test_no_entries_for_the_plan_mean_unavailable(self, monkeypatch):
+        monkeypatch.setattr(_al, 'read_entries', lambda: [{'plan_id': 'other', 'kind': 'build'}])
+
+        assert _al.ledger_has_entries_for_plan('p') is False
+
+    def test_absent_ledger_means_unavailable(self, monkeypatch):
+        monkeypatch.setattr(_al, 'read_entries', lambda: [])
+
+        assert _al.ledger_has_entries_for_plan('p') is False
+
+    def test_other_kind_rows_mean_unavailable(self, monkeypatch):
+        """Non-build rows say nothing about build-oracle availability."""
+        monkeypatch.setattr(_al, 'read_entries', lambda: [{'plan_id': 'p', 'kind': 'change'}])
+
+        assert _al.ledger_has_entries_for_plan('p') is False
+
+    def test_zero_build_rows_with_other_rows_is_unavailable(self, monkeypatch):
+        """Rows exist but none is kind=build — the oracle is unmeasured, not zero."""
+        monkeypatch.setattr(_al, 'read_entries', lambda: [{'plan_id': 'p', 'kind': 'change'}])
+
+        result = _al.reconcile_build_count(
+            0, {'build_count': 0, 'suspect_count': 0}, _al.ledger_has_entries_for_plan('p')
+        )
+
+        assert result['ledger_available'] is False
+        assert 'ledger_build_count' not in result
+        assert 'agreement' not in result

@@ -39,7 +39,7 @@ from _footprint_classification import (
     load_oracle_routes,
     oracle_available,
 )
-from _footprint_resolver import resolve_diff_file_path
+from _footprint_resolver import load_references_dict, resolve_diff_file_path
 from _step_key_canonical import canonicalize_step_key
 from file_ops import base_path, output_toon, safe_main
 from input_validation import (
@@ -87,6 +87,72 @@ _DECISION_TAG = '(plan-marshall:manage-execution-manifest:compose)'
 
 # Maximum culprit list length included in a finding's user-visible message.
 _CULPRITS_PREVIEW = 5
+
+
+#: Evidence tiers whose footprint resolves POST-MERGE — the merge-commit and
+#: PR-landing tiers of the shared footprint chain (``_footprint_resolver`` tiers
+#: 3-4, consulted in that order). A diff taken over one of these bases names
+#: the changes a landing commit introduced, not the live worktree delta the
+#: plan's own ``base...HEAD`` range would have shown pre-merge, so verdicts
+#: graded over it carry the tier caveat below rather than reading as live-diff
+#: verdicts. The tier NAMES are the chain's own (:data:`RESOLVING_TIERS`
+#: members), restated here as the post-merge subset the caveat applies to.
+POST_MERGE_EVIDENCE_TIERS: tuple[str, ...] = ('merge_commit', 'pr_landing')
+
+
+def footprint_evidence_caveat(tier: str | None, base_ref: str | None) -> str | None:
+    """Return the evidence-tier caveat for a post-merge footprint, else ``None``.
+
+    The caveat names the resolving tier and the base ref it diffed, so a
+    verdict graded over post-merge evidence states its evidence tier instead
+    of reading as a live-diff verdict. Live tiers (``live_diff``,
+    ``realized_capture``, ``legacy_key``) and caller-supplied evidence
+    (``diff_file``) need no caveat: the former are the plan's own delta, the
+    latter's provenance the caller already states. Written for reuse by
+    ``check-outline-vs-shipped`` verdicts, which resolve through the same
+    chain and must state the same tier.
+    """
+    if tier not in POST_MERGE_EVIDENCE_TIERS:
+        return None
+    return (
+        f'evidence tier: {tier} (post-merge footprint resolved over base-ref '
+        f'{base_ref or "unknown"} — verdicts graded over landing-commit evidence, '
+        f'not the live worktree delta)'
+    )
+
+
+def resolve_diff_evidence_tier(
+    plan_dir: Path, diff_file: str | None, base_ref: str | None
+) -> tuple[str | None, str | None]:
+    """Determine the evidence tier and base ref behind this run's diff.
+
+    Reads ``references.json`` for the keys the shared chain resolves from, in
+    the chain's own precedence (capture, then ``merge_commit_sha``, then
+    ``pr_number``, then the legacy key — the same order the chain itself
+    applies, so the reported tier is the tier that supplied the diff). An
+    explicit ``--diff-file`` is caller-supplied evidence and reports the
+    ``diff_file`` tier; a live ``--base-ref`` diff with no recorded key
+    reports ``live_diff``; with neither input nor recorded key the
+    tier is unknown (``None, None``).
+    """
+    if diff_file is not None:
+        return 'diff_file', diff_file
+    refs = load_references_dict(plan_dir)
+    captured = refs.get('realized_footprint')
+    if isinstance(captured, list) and captured:
+        return 'realized_capture', 'realized_footprint'
+    merge_sha = refs.get('merge_commit_sha')
+    if isinstance(merge_sha, str) and merge_sha.strip():
+        return 'merge_commit', merge_sha.strip()
+    pr_number = refs.get('pr_number')
+    if pr_number is not None and str(pr_number).strip():
+        return 'pr_landing', str(pr_number).strip()
+    legacy = refs.get('modified_files')
+    if isinstance(legacy, list) and legacy:
+        return 'legacy_key', 'modified_files'
+    if base_ref:
+        return 'live_diff', base_ref
+    return None, None
 
 
 # =============================================================================
@@ -749,6 +815,13 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
 
     decision_entries = load_decision_log_entries(plan_dir)
     raw_files, base_label, evidence_available = load_diff_files(args.diff_file, args.base_ref, plan_dir)
+    # Evidence tier behind this run's diff: post-merge tiers attach the caveat
+    # naming the tier and base ref, so verdicts graded over landing-commit
+    # evidence state their evidence tier rather than reading as live-diff
+    # verdicts. Resolved from the same references keys (same precedence) the
+    # shared footprint chain consults.
+    evidence_tier, evidence_base_ref = resolve_diff_evidence_tier(plan_dir, args.diff_file, args.base_ref)
+    evidence_caveat = footprint_evidence_caveat(evidence_tier, evidence_base_ref)
     kept_files, dropped_files, reduction = filter_bookkeeping(raw_files)
     # Whether a diff observation reached the rules at all. Taken from the loader,
     # never inferred from an empty file list: a SUPPLIED file naming nothing is a
@@ -808,6 +881,8 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
         'decision_log_entries': decision_entries,
         'diff': {
             'base': base_label,
+            'evidence_tier': evidence_tier or 'unknown',
+            'evidence_caveat': evidence_caveat or '',
             'files_total': len(raw_files),
             'files_filtered': len(dropped_files),
             'files_kept': len(kept_files),

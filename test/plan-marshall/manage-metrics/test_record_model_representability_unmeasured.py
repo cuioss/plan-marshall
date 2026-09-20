@@ -43,7 +43,7 @@ def test_unmeasured_dispatch_columns_are_absent_rather_than_zero(plan_context):
     # And the row on disk carries the token rather than four zeros.
     rows = _data_rows(scenario['boundary_path'].read_text(encoding='utf-8'))
     assert len(rows) == 3
-    assert rows[1].endswith(',budget_yield,20000,9,90000,unmeasured,unmeasured,unmeasured,unmeasured')
+    assert rows[1].endswith(',budget_yield,20000,9,90000,unmeasured,unmeasured,unmeasured,unmeasured,')
     assert ',20000,9,90000,0,0,0,0' not in rows[1]
 
 
@@ -133,13 +133,13 @@ def test_measured_zero_dispatch_column_is_present_as_zero(plan_context):
     assert mixed_result['unmeasured_context_load_columns'] == ('output_tokens,cache_creation_input_tokens')
 
     rows = _data_rows(scenario['boundary_path'].read_text(encoding='utf-8'))
-    assert rows[2].endswith(',clean_exit_queue_empty,45000,16,150000,0,unmeasured,0,unmeasured')
+    assert rows[2].endswith(',clean_exit_queue_empty,45000,16,150000,0,unmeasured,0,unmeasured,')
     # The fully measured first dispatch keeps all four values and declares nothing
     # unmeasured. With the rows above it, this file therefore carries a measured
     # value, a measured zero and a declared abstention side by side — and the
     # invariant under test is that no two of them share a representation, so none
     # can be recovered by guessing from another's bytes.
-    assert rows[0].endswith(',budget_yield,60000,25,300000,38000,4000,210000,12000')
+    assert rows[0].endswith(',budget_yield,60000,25,300000,38000,4000,210000,12000,')
     assert scenario['dispatch_results'][0]['unmeasured_context_load_columns'] == ''
 
 

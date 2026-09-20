@@ -29,7 +29,12 @@ Resolution tiers, in order:
    base branch). It is **not** a ``base..HEAD`` range and carries no sibling
    contamination — a landing commit names its own first parent. It resolves only
    *post*-merge, so it sits BELOW the deterministic capture as a fallback: it cannot
-   serve a consumer running before the merge.
+   serve a consumer running before the merge. For SPLIT plans
+   (``references.merge_commit_shas`` — a list of per-shard landing SHAs) the tier
+   unions the per-shard path sets over EVERY shipped commit, sorted and
+   de-duplicated, instead of resolving a single SHA; shards whose diff fails are
+   reported as gaps (:func:`resolve_split_plan_footprint`) rather than shrinking
+   the union silently.
 4. **PR-landing** — ``references.pr_number`` resolved through the CI abstraction
    (``ci pr view --pr-number N``) to that PR's own ``merge_commit_sha``, then diffed
    by the SAME first-parent range tier 3 uses. It sits strictly BELOW the merge-commit
@@ -229,6 +234,89 @@ def read_legacy_footprint(refs: dict[str, Any]) -> set[str] | None:
     return _coerce_path_set(refs.get('modified_files'))
 
 
+def read_split_shard_shas(refs: dict[str, Any]) -> list[str] | None:
+    """Split-plan shard SHAs from ``references.merge_commit_shas``, or ``None``.
+
+    A missing key (or a non-list value) is ``None`` — the plan is not a split
+    plan and the single-SHA tier applies. A present list is the sorted,
+    de-duplicated set of its non-empty stringified entries (possibly empty —
+    a resolved, genuinely-empty shard set); anything else inside the list is
+    dropped rather than failing the tier, because one malformed entry must not
+    hide the remaining shards' evidence.
+    """
+    value = refs.get('merge_commit_shas')
+    if value is None:
+        return None
+    if not isinstance(value, list):
+        return None
+    cleaned = sorted({str(p).strip() for p in value if str(p).strip()})
+    return cleaned
+
+
+def resolve_split_plan_footprint(plan_dir: Path, refs: dict[str, Any]) -> tuple[set[str] | None, list[str]]:
+    """Union the per-shard footprints over every shipped merge commit.
+
+    Each shard SHA is diffed by the SAME first-parent range
+    :func:`diff_landing_commit` uses, so every shard answers the same question
+    the single-SHA tier answers — only once per shard. The union is sorted and
+    de-duplicated (a set union); shards whose diff fails (unresolvable SHA,
+    shallow clone, non-zero exit) are collected as ``gaps`` and REPORTED rather
+    than shrinking the union silently.
+
+    Returns ``(union_or_none, gaps)``: ``union_or_none`` is the union set when
+    at least one shard resolved (possibly empty only when the shard list itself
+    was empty), or ``None`` when no shard resolved (all gaps, or no key at
+    all); ``gaps`` is the sorted list of unresolvable shard SHAs (empty when
+    every shard resolved). A ``(None, [])`` return means the plan carries no
+    split-plan key — the caller falls through to the single-SHA tier.
+    """
+    shard_shas = read_split_shard_shas(refs)
+    if shard_shas is None:
+        return None, []
+    if not shard_shas:
+        return set(), []
+    union: set[str] = set()
+    gaps: list[str] = []
+    resolved_any = False
+    for sha in shard_shas:
+        shard_set = diff_landing_commit(plan_dir, sha)
+        if shard_set is None:
+            gaps.append(sha)
+            continue
+        resolved_any = True
+        union.update(shard_set)
+    if not resolved_any:
+        return None, sorted(gaps)
+    return union, sorted(gaps)
+
+
+def resolve_merge_commit_footprint_with_gaps(plan_dir: Path, refs: dict[str, Any]) -> tuple[set[str] | None, list[str]]:
+    """Tier 3 with its split-shard gaps propagated, not discarded.
+
+    Same resolution as :func:`resolve_merge_commit_footprint`, but the
+    unresolvable split-shard SHAs come back alongside the union so footprint
+    consumers can report the gap instead of presenting a partial union as the
+    whole landing. The gaps list is empty when no split-plan key is present,
+    when every shard resolved, or on the single-SHA path (which has no shards
+    to gap).
+    """
+    split_shas = read_split_shard_shas(refs)
+    if split_shas is not None:
+        union, gaps = resolve_split_plan_footprint(plan_dir, refs)
+        if union is not None:
+            return union, gaps
+        # All shards unresolvable (or the empty-list resolved-empty case is
+        # handled by the helper): an empty list is a resolved-empty footprint,
+        # so return it rather than falling through to the single-SHA key.
+        if split_shas == []:
+            return set(), []
+        return None, gaps
+    sha = refs.get('merge_commit_sha')
+    if not isinstance(sha, str) or not sha.strip():
+        return None, []
+    return diff_landing_commit(plan_dir, sha.strip()), []
+
+
 def resolve_merge_commit_footprint(plan_dir: Path, refs: dict[str, Any]) -> set[str] | None:
     """Tier 3: the realized path set of the recorded landing commit, or ``None``.
 
@@ -249,11 +337,16 @@ def resolve_merge_commit_footprint(plan_dir: Path, refs: dict[str, Any]) -> set[
     the caller falls through to the legacy tier rather than fabricating a set. The SHA
     itself is recorded by ``default:branch-cleanup`` only on the synchronous merge
     path; on the async merge-queue path it is absent and tier 2 is the resolution.
+
+    Split plans (``references.merge_commit_shas``) union over EVERY shipped commit
+    instead of resolving the single ``merge_commit_sha`` — see
+    :func:`resolve_split_plan_footprint`. The split key takes precedence when
+    present; unresolvable shards are gaps the split helper reports. Callers
+    that need the gaps use :func:`resolve_merge_commit_footprint_with_gaps`;
+    this wrapper returns the union alone for callers with no gaps channel.
     """
-    sha = refs.get('merge_commit_sha')
-    if not isinstance(sha, str) or not sha.strip():
-        return None
-    return diff_landing_commit(plan_dir, sha.strip())
+    union, _gaps = resolve_merge_commit_footprint_with_gaps(plan_dir, refs)
+    return union
 
 
 def diff_landing_commit(plan_dir: Path, sha: str) -> set[str] | None:
@@ -437,8 +530,15 @@ def resolve_footprint(plan_dir: Path, plan_id: str | None = None) -> set[str] | 
     if captured is not None:
         return captured
 
-    merge_set = resolve_merge_commit_footprint(plan_dir, refs)
+    merge_set, merge_gaps = resolve_merge_commit_footprint_with_gaps(plan_dir, refs)
     if merge_set is not None:
+        if merge_gaps:
+            print(
+                f'WARNING: footprint tier merge-commit resolved with '
+                f'{len(merge_gaps)} unresolvable split shard(s): {", ".join(merge_gaps)} — '
+                'the returned union is partial',
+                file=sys.stderr,
+            )
         return merge_set
 
     # Strictly BELOW the merge-commit tier: a recorded merge_commit_sha keeps

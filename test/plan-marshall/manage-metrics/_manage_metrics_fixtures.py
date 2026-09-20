@@ -156,13 +156,16 @@ def ns_record_dispatch_boundary(
     output_tokens: int | None = None,
     cache_read_input_tokens: int | None = None,
     cache_creation_input_tokens: int | None = None,
+    step_id: str | None = None,
 ) -> Namespace:
     """``record-dispatch-boundary`` — record one dispatch's termination and usage.
 
     The four per-dispatch context-load fields default to ``None`` so a call site
     that omits them exercises the UNMEASURED path ``cmd_record_dispatch_boundary``
     applies for a missing flag — the column carries the ``unmeasured`` literal,
-    never a ``0``.
+    never a ``0``. ``step_id`` defaults to ``None`` so a call site that omits it
+    exercises the empty-key path the reconciliation routes to the
+    timestamp-window fallback.
     """
     return ns(
         'record-dispatch-boundary',
@@ -179,6 +182,7 @@ def ns_record_dispatch_boundary(
         *_opt('--output-tokens', output_tokens),
         *_opt('--cache-read-input-tokens', cache_read_input_tokens),
         *_opt('--cache-creation-input-tokens', cache_creation_input_tokens),
+        *_opt('--step-id', step_id),
     )
 
 

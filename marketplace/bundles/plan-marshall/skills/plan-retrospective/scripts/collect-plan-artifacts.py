@@ -2,13 +2,21 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Collect and classify artifacts present in a plan directory.
 
-Supports two modes:
+Supports two modes from a SINGLE plan root keyed by ``--plan-id``:
 
 - ``live``: resolve the plan directory from ``--plan-id`` using
   ``file_ops.base_path`` (reads ``PLAN_BASE_DIR`` env var or the project-local
-  ``.plan/local`` tree).
-- ``archived``: read the plan directory directly from
-  ``--archived-plan-path``. No base-dir lookup happens.
+  ``.plan/local`` tree). A caller-supplied ``--archived-plan-path`` is ignored.
+- ``archived``: resolve the plan directory from ``--plan-id`` plus the optional
+  ``--archived-plan-path``. When the caller passes an explicit path it is used
+  verbatim; otherwise a synthetic per-plan dir under the OS tmpdir
+  (``<tmp>/plan-retrospective/plan-<plan_id>``) is used so audits without an
+  explicit archive path never mutate any real archived plan directory.
+
+Unreadable inputs (missing plan, missing directory, not-a-directory, I/O
+failure while walking) degrade the block to ``not_evaluated`` with a reason
+rather than to a clean verdict — a could-not-look must never carry the same
+token as a nothing-to-look-at.
 
 Output: TOON manifest listing every file found under the plan directory,
 grouped by kind (``status``, ``request``, ``solution_outline``,
@@ -24,6 +32,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -76,22 +85,40 @@ def classify_file(rel_path: Path) -> str:
     return 'other'
 
 
+_ARCHIVED_TMP_SUBDIR = 'plan-retrospective'
+
+
+def _resolve_plan_dir(mode: str, plan_id: str | None, archived_plan_path: str | None) -> Path:
+    """Return the canonical single plan root for the given mode.
+
+    The single source of truth for plan-root resolution: ``--plan-id`` is
+    required in BOTH modes (it keys the synthetic archived fallback), ``live``
+    mode resolves via ``base_path`` and ignores ``archived_plan_path``,
+    ``archived`` mode honours an explicit ``archived_plan_path`` and otherwise
+    falls back to a synthetic per-plan tmp directory so production audits
+    without an explicit archive path never write into a real archived plan.
+
+    Raises ``ValueError`` on unknown ``mode`` or missing ``plan_id``.
+    """
+    if not plan_id:
+        raise ValueError('--plan-id is required')
+    if mode == 'live':
+        return base_path('plans', plan_id)
+    if mode == 'archived':
+        if archived_plan_path:
+            return Path(archived_plan_path)
+        return (Path(tempfile.gettempdir()) / _ARCHIVED_TMP_SUBDIR / f'plan-{plan_id}').resolve()
+    raise ValueError(f"Unknown mode: {mode!r} — expected 'live' or 'archived'")
+
+
 def resolve_plan_dir(mode: str, plan_id: str | None, archived_plan_path: str | None) -> Path:
     """Resolve the plan directory based on mode.
 
-    Raises ``ValueError`` when the provided inputs are inconsistent or the
-    resolved directory does not exist.
+    Single-plan-root resolution via :func:`_resolve_plan_dir`, then the
+    existence / is-dir validation. Raises ``ValueError`` when the provided
+    inputs are inconsistent or the resolved directory does not exist.
     """
-    if mode == 'live':
-        if not plan_id:
-            raise ValueError('--plan-id is required for live mode')
-        plan_dir = base_path('plans', plan_id)
-    elif mode == 'archived':
-        if not archived_plan_path:
-            raise ValueError('--archived-plan-path is required for archived mode')
-        plan_dir = Path(archived_plan_path)
-    else:
-        raise ValueError(f"Unknown mode: {mode!r} — expected 'live' or 'archived'")
+    plan_dir = _resolve_plan_dir(mode, plan_id, archived_plan_path)
 
     if not plan_dir.exists():
         raise ValueError(f'Plan directory does not exist: {plan_dir}')
@@ -105,16 +132,37 @@ def collect_manifest(plan_dir: Path) -> dict[str, Any]:
 
     Each entry contains ``path`` (plan-relative), ``kind`` (classification
     label), and ``size_bytes``. Directories are not listed; only files.
+    Unreadable files (stat failures, mid-walk deletions) are skipped rather
+    than aborting the walk — and every skipped path is recorded under
+    ``skipped_paths`` so the caller can degrade its status instead of
+    reporting a partial manifest as a clean success.
     """
     entries: list[dict[str, Any]] = []
     by_kind: dict[str, int] = {}
+    skipped: list[str] = []
 
-    for path in sorted(plan_dir.rglob('*')):
-        if not path.is_file():
+    try:
+        candidates = sorted(plan_dir.rglob('*'))
+    except OSError as exc:
+        raise ValueError(f'Plan directory could not be walked: {plan_dir}: {exc}') from exc
+    for path in candidates:
+        try:
+            if not path.is_file():
+                continue
+        except OSError:
+            skipped.append(str(path))
             continue
-        rel = path.relative_to(plan_dir)
+        try:
+            rel = path.relative_to(plan_dir)
+        except ValueError:
+            skipped.append(str(path))
+            continue
         kind = classify_file(rel)
-        size = path.stat().st_size
+        try:
+            size = path.stat().st_size
+        except OSError:
+            skipped.append(str(rel))
+            continue
         entries.append({'path': str(rel), 'kind': kind, 'size_bytes': size})
         by_kind[kind] = by_kind.get(kind, 0) + 1
 
@@ -122,12 +170,56 @@ def collect_manifest(plan_dir: Path) -> dict[str, Any]:
         'entries': entries,
         'by_kind': by_kind,
         'total_files': len(entries),
+        'skipped_paths': sorted(skipped),
     }
 
 
 def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
-    plan_dir = resolve_plan_dir(args.mode, args.plan_id, args.archived_plan_path)
-    manifest = collect_manifest(plan_dir)
+    plan_id = args.plan_id
+    try:
+        plan_dir = resolve_plan_dir(args.mode, args.plan_id, args.archived_plan_path)
+    except (ValueError, OSError) as exc:
+        # Degrade unreadable inputs to not_evaluated with a reason rather than
+        # to a clean verdict: no manifest was observed, so nothing may pass.
+        return {
+            'status': 'not_evaluated',
+            'mode': args.mode,
+            'plan_id': plan_id or 'unknown',
+            'plan_dir': '',
+            'total_files': 0,
+            'by_kind': {},
+            'entries': [],
+            'reason': str(exc),
+        }
+    try:
+        manifest = collect_manifest(plan_dir)
+    except (ValueError, OSError) as exc:
+        return {
+            'status': 'not_evaluated',
+            'mode': args.mode,
+            'plan_id': plan_id or plan_dir.name,
+            'plan_dir': str(plan_dir),
+            'total_files': 0,
+            'by_kind': {},
+            'entries': [],
+            'reason': str(exc),
+        }
+
+    if manifest['skipped_paths']:
+        return {
+            'status': 'partial',
+            'mode': args.mode,
+            'plan_id': args.plan_id or plan_dir.name,
+            'plan_dir': str(plan_dir),
+            'total_files': manifest['total_files'],
+            'by_kind': manifest['by_kind'],
+            'entries': manifest['entries'],
+            'skipped_paths': manifest['skipped_paths'],
+            'reason': (
+                f'{len(manifest["skipped_paths"])} unreadable file(s) skipped during '
+                'collection — the manifest is partial, not a clean success'
+            ),
+        }
 
     return {
         'status': 'success',
@@ -137,6 +229,7 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
         'total_files': manifest['total_files'],
         'by_kind': manifest['by_kind'],
         'entries': manifest['entries'],
+        'skipped_paths': [],
     }
 
 
@@ -149,10 +242,11 @@ def main() -> int:
     subparsers = parser.add_subparsers(dest='command', required=True)
 
     run_parser = subparsers.add_parser('run', help='Collect artifacts', allow_abbrev=False)
-    add_plan_id_arg(run_parser, required=False)
+    add_plan_id_arg(run_parser, required=True)
     run_parser.add_argument(
         '--archived-plan-path',
-        help='Absolute path to archived plan directory (archived mode)',
+        default=None,
+        help='Archived plan root (archived mode only; live mode ignores it). When omitted, archived mode falls back to a synthetic per-plan tmp dir.',
     )
     run_parser.add_argument(
         '--mode',

@@ -116,6 +116,22 @@ def cmd_finalize_step(args) -> dict:
     elif next_step_info:
         task['current_step'] = next_step_info['number']
 
+    # [OUTCOME] idempotence flag, decided BEFORE the write below persists the
+    # record. The gate is "has this task's completion been recorded", not "did
+    # THIS call flip the status": a retry of the closing call on an already-done
+    # task must not re-emit, AND a late close of a task that reached done
+    # WITHOUT this call (flipped via `update --status done`, or closed before
+    # the flag existed) must still emit — otherwise the [MANAGE-TASKS]
+    # Completed line this handler writes on every terminal close stands without
+    # its [OUTCOME] pair and `pair_outcome_emissions` reports
+    # `unpaired_completed`. The flag is persisted on the record in the same
+    # write, so a retry observes it; a hand-edited or predating record carries
+    # no flag and is treated as never-emitted, which is the honest reading.
+    outcome_already_emitted = task.get('outcome_emitted') is True
+    fire_outcome = all_terminal and not has_failed and not outcome_already_emitted
+    if fire_outcome:
+        task['outcome_emitted'] = True
+
     new_content = format_task_file(task)
     atomic_write_file(filepath, new_content)
 
@@ -132,24 +148,28 @@ def cmd_finalize_step(args) -> dict:
         )
 
     # Script-level [OUTCOME] guard: emit a single canonical [OUTCOME] work-log
-    # entry whenever a finalize-step call closes a task as `done` via
-    # `--outcome done`. This guard runs unconditionally inside the script
-    # boundary so the line cannot be lost when an orchestrator skill
-    # re-dispatches a phase-5-execute agent and the original agent's working
-    # context is discarded before its own [OUTCOME] emission would fire.
+    # entry whenever a finalize-step call leaves the task done. This guard runs
+    # unconditionally inside the script boundary so the line cannot be lost when
+    # an orchestrator skill re-dispatches a phase-5-execute agent and the
+    # original agent's working context is discarded before its own [OUTCOME]
+    # emission would fire.
     #
-    # ⛔ The gate is a TRANSITION, not a state. `all_terminal and not has_failed`
-    # is computed after `step_found['status']` is assigned, so a RETRY of the
-    # closing call on an already-`done` task satisfied it just as the real
-    # closing call did, and both channels fired again — duplicate audit records
-    # inflating anything derived from them. A re-dispatch after a lost context is
-    # exactly the scenario this script-level guard exists for, so the retry path
-    # is reachable in normal operation. `prior_task_status != 'done'` is what
-    # makes the emission fire for the call that actually flips the task, which is
-    # also what `manage-tasks/SKILL.md` has said all along.
+    # ⛔ The gate is the persisted `outcome_emitted` flag, not the call's own
+    # transition. `all_terminal and not has_failed` computed after
+    # `step_found['status']` is assigned made a RETRY of the closing call on an
+    # already-`done` task satisfy the gate just as the real closing call did,
+    # and both channels fired again — duplicate audit records inflating anything
+    # derived from them. A re-dispatch after a lost context is exactly the
+    # scenario this script-level guard exists for, so the retry path is
+    # reachable in normal operation. The flag makes the emission fire for the
+    # call that actually records the completion — whether that call flips the
+    # status itself or closes late over a task that reached done without it —
+    # which is also what `manage-tasks/SKILL.md` has said all along. The
+    # [ARTIFACT] channel rides the same flag for the same reason: a late close
+    # that never emitted artifacts would leave the task change-eligible but
+    # artifact-less, the same unpaired shape one channel over.
     artifact_lines: list[str] = []
-    task_closed_by_this_call = all_terminal and not has_failed and prior_task_status != 'done'
-    if args.outcome == 'done' and task_closed_by_this_call:
+    if fire_outcome:
         caller = getattr(args, 'outcome_caller', None) or 'plan-marshall:phase-5-execute'
         title = getattr(args, 'outcome_task_title', None) or task.get('title', '')
         step_count = getattr(args, 'outcome_step_count', None)

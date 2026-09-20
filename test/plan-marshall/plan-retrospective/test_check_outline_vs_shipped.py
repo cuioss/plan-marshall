@@ -647,3 +647,129 @@ class TestDeclaredAspectCountMatchesTheRoster:
         assert _declared_aspect_count(corrupted) != len(dispatched)
         # And the uncorrupted document agrees, so the assertion discriminates.
         assert _declared_aspect_count(skill_text) == len(dispatched)
+
+
+# =============================================================================
+# Post-merge evidence-tier caveat — tier caveat on post-merge resolutions
+# =============================================================================
+#
+# When the footprint resolves via the post-merge merge-commit or PR-landing
+# tiers, verdicts graded over it must state their evidence tier instead of
+# reading as live-diff verdicts. The caveat helper lives in
+# ``check-manifest-consistency`` (written for reuse by outline-vs-shipped
+# verdicts, which resolve through the same chain); these tests prove the tier
+# caveat is present on post-merge resolutions while live-diff verdicts stay
+# unchanged.
+
+_cmc = load_script_module('plan-marshall', 'plan-retrospective', 'check-manifest-consistency.py', 'cmc_caveat_test_mod')
+
+
+def _write_references(plan_dir: Path, payload: dict) -> None:
+    """Write a references.json payload straight to the plan directory."""
+    (plan_dir / 'references.json').write_text(json.dumps(payload), encoding='utf-8')
+
+
+class TestEvidenceTierCaveat:
+    """The caveat names the tier and base ref on post-merge tiers, nothing elsewhere."""
+
+    def test_merge_commit_tier_caveat_names_tier_and_sha(self):
+        caveat = _cmc.footprint_evidence_caveat('merge_commit', 'abc1234')
+
+        assert caveat is not None
+        assert 'merge_commit' in caveat
+        assert 'abc1234' in caveat
+
+    def test_pr_landing_tier_caveat_names_tier_and_number(self):
+        caveat = _cmc.footprint_evidence_caveat('pr_landing', '42')
+
+        assert caveat is not None
+        assert 'pr_landing' in caveat
+        assert '42' in caveat
+
+    def test_live_tiers_carry_no_caveat(self):
+        """Live evidence reads as live: no caveat on any non-post-merge tier."""
+        for tier in ('live_diff', 'realized_capture', 'legacy_key', 'diff_file', None, 'unknown'):
+            assert _cmc.footprint_evidence_caveat(tier, 'whatever') is None, tier
+
+    def test_missing_base_ref_degrades_to_unknown_never_crashes(self):
+        """A post-merge tier with no recorded ref still names the tier."""
+        caveat = _cmc.footprint_evidence_caveat('merge_commit', None)
+
+        assert caveat is not None
+        assert 'merge_commit' in caveat
+        assert 'unknown' in caveat
+
+
+class TestEvidenceTierResolution:
+    """The tier is read from the same references keys (same precedence) the chain uses."""
+
+    def test_recorded_sha_wins_over_pr_number(self):
+        plan_dir = _plan_dir('caveat-precedence')
+        _write_references(plan_dir, {'merge_commit_sha': 'abc1234', 'pr_number': 42})
+
+        assert _cmc.resolve_diff_evidence_tier(plan_dir, None, 'origin/main') == ('merge_commit', 'abc1234')
+
+    def test_pr_number_resolves_pr_landing(self):
+        plan_dir = _plan_dir('caveat-pr')
+        _write_references(plan_dir, {'pr_number': 42})
+
+        assert _cmc.resolve_diff_evidence_tier(plan_dir, None, 'origin/main') == ('pr_landing', '42')
+
+    def test_diff_file_and_live_inputs(self):
+        plan_dir = _plan_dir('caveat-inputs')
+        _write_references(plan_dir, {})
+
+        assert _cmc.resolve_diff_evidence_tier(plan_dir, 'work/footprint.txt', 'origin/main') == (
+            'diff_file',
+            'work/footprint.txt',
+        )
+        assert _cmc.resolve_diff_evidence_tier(plan_dir, None, 'origin/main') == ('live_diff', 'origin/main')
+        assert _cmc.resolve_diff_evidence_tier(plan_dir, None, None) == (None, None)
+
+    def test_manifest_consistency_diff_block_carries_post_merge_caveat(self):
+        """End to end through manifest-consistency's own run: the diff block
+        states its evidence tier, and the caveat names the tier and the SHA."""
+        plan_id = 'caveat-diff-block'
+        plan_dir = _plan_dir(plan_id)
+        (plan_dir / 'execution.toon').write_text(
+            serialize_toon(
+                {
+                    'manifest_version': 1,
+                    'plan_id': plan_id,
+                    'phase_5': {'early_terminate': False, 'verification_steps': []},
+                    'phase_6': {'steps': ['push', 'create-pr']},
+                }
+            )
+            + '\n',
+            encoding='utf-8',
+        )
+        _write_references(plan_dir, {'merge_commit_sha': 'abc1234'})
+
+        args = Namespace(
+            command='run',
+            plan_id=plan_id,
+            archived_plan_path=None,
+            mode='live',
+            diff_file=None,
+            base_ref='origin/main',
+        )
+        result = _cmc.cmd_run(args)
+
+        assert result['status'] == 'success'
+        assert result['diff']['evidence_tier'] == 'merge_commit'
+        assert 'merge_commit' in result['diff']['evidence_caveat']
+        assert 'abc1234' in result['diff']['evidence_caveat']
+
+
+class TestLiveDiffVerdictsUnchanged:
+    """The caveat changes nothing about live-diff verdicts: no new keys there."""
+
+    def test_diff_file_verdicts_carry_no_evidence_keys(self):
+        plan_dir = _seed([('src/a.py', _INCLUDE)])
+
+        result = _run(plan_dir, ['src/a.py'])
+
+        assert result['comparison'] == 'measured'
+        assert result['footprint_source'] == 'diff_file'
+        assert 'evidence_tier' not in result
+        assert 'evidence_caveat' not in result

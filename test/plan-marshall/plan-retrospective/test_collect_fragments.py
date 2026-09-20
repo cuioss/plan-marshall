@@ -9,6 +9,7 @@ from pathlib import Path
 from _collect_fragments_fixtures import (
     SCRIPT_PATH,
     _add_aspect,
+    _ArgsNS,
     _init_bundle,
     _load_module,
     _valid_fragment_body,
@@ -349,6 +350,263 @@ class TestReadBundle:
             assert isinstance(result, dict)
         except ValueError:
             pass  # explicit rejection path is also covered
+
+
+# =============================================================================
+# register — batched fragment registration in a single pass
+# =============================================================================
+#
+# One `register` call replaces N `add` calls: the aspect-key registry resolves
+# once, every key validates before the bundle is touched (all-or-nothing), and
+# the bundle writes once. The result publishes the registered aspect keys WITH
+# their fragment entry counts, so compile-report's section loop is checkable
+# for conservation — a registered key with entries that never renders is a
+# loud drop, never a silent one.
+
+
+def _register_args(plan_id: str, items: list[str], overwrite: bool = False):
+    """Namespaces for direct cmd_register calls (mode comes from the bundle)."""
+    return _ArgsNS(plan_id=plan_id, archived_plan_path=None, item=items, overwrite=overwrite)
+
+
+class TestRegisterBatch:
+    """End-to-end batch registration through the CLI."""
+
+    def test_one_call_registers_many_with_counts(self, tmp_path, monkeypatch):
+        plan_id, _ = setup_live_plan(tmp_path, monkeypatch)
+        _init_bundle(plan_id)
+        frag_b = _write_fragment(tmp_path, 'b.toon', _valid_fragment_body('log-analysis'))
+        frag_a = _write_fragment(tmp_path, 'a.toon', _valid_fragment_body('artifact-consistency'))
+        frag_l = _write_fragment(tmp_path, 'l.toon', _valid_fragment_body('lessons-proposal'))
+
+        result = run_script(
+            SCRIPT_PATH,
+            'register',
+            '--plan-id',
+            plan_id,
+            '--item',
+            f'log-analysis={frag_b}',
+            '--item',
+            f'artifact-consistency={frag_a}',
+            '--item',
+            f'lessons-proposal={frag_l}',
+        )
+
+        assert result.success, result.stderr
+        data = result.toon()
+        assert data['status'] == 'success'
+        assert data['operation'] == 'register'
+        assert data['aspects'] == ['artifact-consistency', 'lessons-proposal', 'log-analysis']
+        assert int(data['aspect_count']) == 3
+        # Registered keys publish with their fragment entry counts: each
+        # two-key fragment body counts 2, so the conservation check reads 6.
+        rows = {row['aspect']: int(row['entries']) for row in data['registered']}
+        assert rows == {'artifact-consistency': 2, 'lessons-proposal': 2, 'log-analysis': 2}
+
+        # finalize agrees: the same three aspects, count 3.
+        finalize_data = run_script(SCRIPT_PATH, 'finalize', '--plan-id', plan_id).toon()
+        assert finalize_data['aspects'] == ['artifact-consistency', 'lessons-proposal', 'log-analysis']
+        assert int(finalize_data['aspect_count']) == 3
+
+    def test_batch_matches_sequential_adds_byte_for_byte(self, tmp_path, monkeypatch):
+        """Fragment count conserved end to end: one batch == N adds on disk.
+
+        The same three fragments in the same order must produce byte-identical
+        bundles whether they arrive in one `register` call or three `add`
+        calls — otherwise the batch path is a second writer with its own drift.
+        """
+        batch_base = tmp_path / 'batch'
+        batch_base.mkdir()
+        adds_base = tmp_path / 'adds'
+        adds_base.mkdir()
+        batch_id, batch_dir = setup_live_plan(batch_base, monkeypatch, plan_id='retro-batch')
+        _init_bundle(batch_id)
+        frags = [
+            _write_fragment(tmp_path, f'{name}.toon', _valid_fragment_body(name))
+            for name in ('log-analysis', 'artifact-consistency', 'lessons-proposal')
+        ]
+        result = run_script(
+            SCRIPT_PATH,
+            'register',
+            '--plan-id',
+            batch_id,
+            *[
+                arg
+                for frag, name in zip(frags, ('log-analysis', 'artifact-consistency', 'lessons-proposal'), strict=True)
+                for arg in ('--item', f'{name}={frag}')
+            ],
+        )
+        assert result.success, result.stderr
+
+        adds_id, adds_dir = setup_live_plan(adds_base, monkeypatch, plan_id='retro-adds')
+        _init_bundle(adds_id)
+        for frag, name in zip(frags, ('log-analysis', 'artifact-consistency', 'lessons-proposal'), strict=True):
+            _add_aspect(adds_id, name, frag)
+
+        batch_bytes = (batch_dir / 'work' / 'retro-fragments.toon').read_bytes()
+        adds_bytes = (adds_dir / 'work' / 'retro-fragments.toon').read_bytes()
+        # Plan ids differ, and the plan_id is not persisted in the bundle —
+        # only aspect keys and fragment bodies are — so identical inputs must
+        # yield identical bytes.
+        assert batch_bytes == adds_bytes
+
+    def test_register_overwrite_replaces_existing(self, tmp_path, monkeypatch):
+        plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
+        _init_bundle(plan_id)
+        original = _write_fragment(
+            tmp_path, 'original.toon', 'status: success\naspect: log_analysis\nmarker: original\n'
+        )
+        _add_aspect(plan_id, 'log-analysis', original)
+        replacement = _write_fragment(
+            tmp_path, 'replacement.toon', 'status: success\naspect: log_analysis\nmarker: replacement\n'
+        )
+
+        result = run_script(
+            SCRIPT_PATH,
+            'register',
+            '--plan-id',
+            plan_id,
+            '--item',
+            f'log-analysis={replacement}',
+            '--overwrite',
+        )
+
+        assert result.success, result.stderr
+        bundle_text = (plan_dir / 'work' / 'retro-fragments.toon').read_text(encoding='utf-8')
+        assert 'marker: replacement' in bundle_text
+        assert 'marker: original' not in bundle_text
+
+
+class TestRegisterFaultPaths:
+    """Direct unit tests for the batch fault paths (all-or-nothing)."""
+
+    def _snapshot(self, plan_id: str, plan_dir) -> bytes:
+        return (plan_dir / 'work' / 'retro-fragments.toon').read_bytes()
+
+    def test_unregistered_key_aborts_the_whole_batch_untouched(self, tmp_path, monkeypatch):
+        plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
+        module = _load_module()
+        module.cmd_init(_ArgsNS(plan_id=plan_id, mode='live', archived_plan_path=None))
+        good = tmp_path / 'good.toon'
+        good.write_text(_valid_fragment_body('log-analysis'), encoding='utf-8')
+        before = self._snapshot(plan_id, plan_dir)
+
+        result = module.cmd_register(_register_args(plan_id, [f'log-analysis={good}', 'not-an-aspect=whatever']))
+
+        assert result['status'] == 'error'
+        assert result['operation'] == 'register'
+        assert 'Unregistered aspect key' in result['error']
+        assert self._snapshot(plan_id, plan_dir) == before
+
+    def test_duplicate_aspect_in_one_batch_is_rejected(self, tmp_path, monkeypatch):
+        plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
+        module = _load_module()
+        module.cmd_init(_ArgsNS(plan_id=plan_id, mode='live', archived_plan_path=None))
+        frag = tmp_path / 'f.toon'
+        frag.write_text(_valid_fragment_body('log-analysis'), encoding='utf-8')
+        before = self._snapshot(plan_id, plan_dir)
+
+        try:
+            module.cmd_register(_register_args(plan_id, [f'log-analysis={frag}', f'log-analysis={frag}']))
+        except ValueError as exc:
+            assert 'Duplicate aspect' in str(exc)
+        else:
+            raise AssertionError('Expected ValueError for a duplicate aspect in one batch')
+        assert self._snapshot(plan_id, plan_dir) == before
+
+    def test_malformed_item_is_rejected_before_any_read(self, tmp_path, monkeypatch):
+        plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
+        module = _load_module()
+        module.cmd_init(_ArgsNS(plan_id=plan_id, mode='live', archived_plan_path=None))
+        before = self._snapshot(plan_id, plan_dir)
+
+        try:
+            module.cmd_register(_register_args(plan_id, ['no-equals-here']))
+        except ValueError as exc:
+            assert 'ASPECT=PATH' in str(exc)
+        else:
+            raise AssertionError('Expected ValueError for a malformed --item')
+        assert self._snapshot(plan_id, plan_dir) == before
+
+    def test_present_aspect_without_overwrite_aborts_batch_untouched(self, tmp_path, monkeypatch):
+        plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
+        module = _load_module()
+        module.cmd_init(_ArgsNS(plan_id=plan_id, mode='live', archived_plan_path=None))
+        first = tmp_path / 'first.toon'
+        first.write_text(_valid_fragment_body('log-analysis'), encoding='utf-8')
+        module.cmd_register(_register_args(plan_id, [f'log-analysis={first}']))
+        second = tmp_path / 'second.toon'
+        second.write_text(_valid_fragment_body('artifact-consistency'), encoding='utf-8')
+        before = self._snapshot(plan_id, plan_dir)
+
+        result = module.cmd_register(
+            _register_args(plan_id, [f'log-analysis={first}', f'artifact-consistency={second}'])
+        )
+
+        assert result['status'] == 'error'
+        assert 'already registered' in result['error']
+        # The batch is all-or-nothing: the NEW aspect did not land either.
+        assert self._snapshot(plan_id, plan_dir) == before
+
+    def test_overwrite_marks_replaced_rows(self, tmp_path, monkeypatch):
+        plan_id, _ = setup_live_plan(tmp_path, monkeypatch)
+        module = _load_module()
+        module.cmd_init(_ArgsNS(plan_id=plan_id, mode='live', archived_plan_path=None))
+        frag = tmp_path / 'f.toon'
+        frag.write_text(_valid_fragment_body('log-analysis'), encoding='utf-8')
+        other = tmp_path / 'o.toon'
+        other.write_text(_valid_fragment_body('artifact-consistency'), encoding='utf-8')
+        module.cmd_register(_register_args(plan_id, [f'log-analysis={frag}']))
+
+        result = module.cmd_register(
+            _register_args(plan_id, [f'log-analysis={frag}', f'artifact-consistency={other}'], overwrite=True)
+        )
+
+        assert result['status'] == 'success'
+        by_aspect = {row['aspect']: row for row in result['registered']}
+        assert by_aspect['log-analysis']['overwrote'] is True
+        assert by_aspect['artifact-consistency']['overwrote'] is False
+
+
+class TestBatchItemParsing:
+    """Direct unit tests for _parse_batch_item and _fragment_entry_count."""
+
+    def test_splits_on_the_first_equals_only(self):
+        module = _load_module()
+
+        aspect, path = module._parse_batch_item('log-analysis=/tmp/x?a=b=c')
+
+        assert aspect == 'log-analysis'
+        assert path == '/tmp/x?a=b=c'
+
+    def test_missing_equals_raises(self):
+        module = _load_module()
+
+        try:
+            module._parse_batch_item('log-analysis')
+        except ValueError as exc:
+            assert 'ASPECT=PATH' in str(exc)
+        else:
+            raise AssertionError('Expected ValueError for an item without =')
+
+    def test_empty_aspect_or_path_raises(self):
+        module = _load_module()
+
+        for raw in ('=some/path.toon', 'log-analysis=', 'log-analysis=   '):
+            try:
+                module._parse_batch_item(raw)
+            except ValueError:
+                pass
+            else:
+                raise AssertionError(f'Expected ValueError for {raw!r}')
+
+    def test_entry_count_counts_top_level_entries(self):
+        module = _load_module()
+
+        assert module._fragment_entry_count({'a': 1, 'b': 2}) == 2
+        assert module._fragment_entry_count([1, 2, 3]) == 3
+        assert module._fragment_entry_count('scalar') == 1
+        assert module._fragment_entry_count({}) == 0
 
 
 class TestReadFragment:

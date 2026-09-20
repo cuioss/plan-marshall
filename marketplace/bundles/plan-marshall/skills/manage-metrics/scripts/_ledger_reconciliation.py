@@ -25,8 +25,11 @@ boundaries-{phase}.toon``        dispatch classes that call
 ===============================  ==========================================
 
 The two ROW ledgers are written by independent call sites with no shared
-transaction and no shared key — the boundary row carries no ``step_id`` — so a
-step can land in one and not the other **in both directions**. A step that ran
+transaction — but they DO share a key. The boundary row carries the dispatch's
+``step_id`` (the same ``step_id`` ``record-step`` writes on the execution-log
+row), so :func:`pair_rows` joins on the key first and falls back to the
+timestamp window for rows that carry none. A step can still land in one ledger
+and not the other **in both directions**: a step that ran
 four times can therefore appear twice in one ledger and three times in the
 other, and only their UNION shows all four. Nothing told a reader to take the
 union; this module says so per phase.
@@ -94,11 +97,15 @@ COLUMN_MEASURED = 'measured'
 COLUMN_UNMEASURED = 'unmeasured'
 COLUMN_UNRECOGNISED = 'unrecognised'
 
-#: Default pairing window. Both writers fire around the same dispatch return —
+#: Default pairing window for the timestamp-window FALLBACK join. Both writers
+#: fire around the same dispatch return —
 #: ``record-dispatch-boundary`` at the termination, ``record-step`` once the
 #: orchestrator has recorded the outcome — with intervening script calls between
 #: them. Five minutes is wide enough to pair a genuine partner across that gap
-#: and narrow enough not to pair two different dispatches of a busy phase. It is
+#: and narrow enough not to pair two different dispatches of a busy phase. Rows
+#: that carry a non-empty ``step_id`` on both sides pair on the key first (see
+#: :func:`pair_rows`); the window covers rows that carry none — legacy boundary
+#: rows written before the key existed, and any hand-written row. It is
 #: the one tunable in this module and is exposed as ``--window-seconds``.
 DEFAULT_WINDOW_SECONDS = 300
 
@@ -374,10 +381,15 @@ def load_boundary_rows(path: Path) -> list[dict[str, Any]]:
     """Parse a phase's dispatch-boundary file into normalised rows.
 
     The row schema is positional —
-    ``timestamp,termination_cause,total_tokens,tool_uses,duration_ms,+4`` — and
-    the two header lines plus the ``rows[]`` schema line are skipped, matching
+    ``timestamp,termination_cause,total_tokens,tool_uses,duration_ms,+4[,step_id]`` —
+    and the two header lines plus the ``rows[]`` schema line are skipped, matching
     the reader ``manage-metrics`` already uses for the sum. A short or malformed
     row is skipped rather than partially parsed.
+
+    The trailing ``step_id`` column is present on rows the current writer emits
+    and absent from legacy rows written before the key existed; an absent column
+    reads as ``''`` (no key), which routes the row to the timestamp-window
+    fallback in :func:`pair_rows` rather than to a spurious empty-key pairing.
 
     Each row carries ``total_tokens_state`` from :func:`read_token_column`, the
     same three-state read :func:`execution_rows_for_phase` applies to the other
@@ -406,6 +418,7 @@ def load_boundary_rows(path: Path) -> list[dict[str, Any]]:
             continue
         timestamp = columns[0].strip()
         total_tokens, token_state = read_token_column(columns[2].strip())
+        step_id = columns[9].strip() if len(columns) > 9 else ''
         rows.append(
             {
                 'timestamp': timestamp,
@@ -413,6 +426,7 @@ def load_boundary_rows(path: Path) -> list[dict[str, Any]]:
                 'termination_cause': columns[1].strip(),
                 'total_tokens': total_tokens,
                 'total_tokens_state': token_state,
+                'step_id': step_id,
             }
         )
     return sorted(rows, key=_row_sort_key)
@@ -423,12 +437,19 @@ def pair_rows(
     boundary_rows: list[dict[str, Any]],
     window_seconds: int,
 ) -> tuple[list[tuple[dict, dict]], list[dict], list[dict]]:
-    """Pair the two ledgers' rows on timestamp proximity, MAXIMALLY.
+    """Pair the two ledgers' rows on the shared ``step_id`` FIRST, then on timestamp proximity.
 
-    The boundary row carries no ``step_id``, so the timestamp window is the only
-    join available. Every execution-log row is eligible to pair with every
-    boundary row inside the window, and this returns a pairing of **maximum
-    size** — the fewest possible unpaired rows on both sides.
+    Two-phase join. Phase A pairs rows that name the SAME non-empty ``step_id``
+    on both sides — the key ``record-dispatch-boundary`` carries at record time
+    and ``record-step`` writes on the execution-log row. Within one key the rows
+    pair in total-key order up to the shorter side's count, so a step that ran
+    four times but recorded three boundary rows pairs three and leaves one
+    honestly unpaired on each side. Rows whose ``step_id`` is empty, and surplus
+    rows of a key claimed on only one side, fall through to phase B. Phase B is
+    the timestamp-window maximum matching over the leftovers — the fewest
+    possible unpaired rows on both sides. Phase B never pairs two rows that
+    carry different non-empty keys: the timestamp fallback applies only when
+    at least one side has no key.
 
     ⛔ Maximum matching rather than nearest-first greedy, because the unpaired
     rows are what this module REPORTS. Greedy lets a row take a closer partner
@@ -473,45 +494,86 @@ def pair_rows(
     execution_rows = sorted(execution_rows, key=_row_sort_key)
     boundary_rows = sorted(boundary_rows, key=_row_sort_key)
 
+    # Phase A — exact step_id join. Group each side's non-empty keys; an empty
+    # key is not a key at all (pairing two keyless rows on '' would manufacture
+    # agreement out of mutual silence), so keyless rows skip straight to the
+    # window fallback. Within one key the pairing is order-prefix: both groups
+    # are already in total-key order, so the first min(len) rows pair and any
+    # surplus — a step recorded more times on one side than the other — falls
+    # through to the window rather than pairing across keys.
+    matched_execution: dict[int, int] = {}
+    matched_boundary: dict[int, int] = {}
+    execution_by_step: dict[str, list[int]] = {}
+    for index, row in enumerate(execution_rows):
+        key = str(row.get('step_id') or '')
+        if key:
+            execution_by_step.setdefault(key, []).append(index)
+    boundary_by_step: dict[str, list[int]] = {}
+    for index, row in enumerate(boundary_rows):
+        key = str(row.get('step_id') or '')
+        if key:
+            boundary_by_step.setdefault(key, []).append(index)
+    for key, execution_indexes in execution_by_step.items():
+        boundary_indexes = boundary_by_step.get(key)
+        if not boundary_indexes:
+            continue
+        for execution_index, boundary_index in zip(execution_indexes, boundary_indexes, strict=False):
+            matched_execution[execution_index] = boundary_index
+            matched_boundary[boundary_index] = execution_index
+
+    # Phase B — timestamp-window maximum matching over the leftovers.
     # Eligibility: a row with no parsable timestamp can never pair, and is left
     # for the caller to report — the honest outcome for a row whose position
     # nothing can establish.
+    leftover_execution = [index for index in range(len(execution_rows)) if index not in matched_execution]
+    leftover_boundary = [index for index in range(len(boundary_rows)) if index not in matched_boundary]
+    position_of_boundary = {original: position for position, original in enumerate(leftover_boundary)}
     candidates: list[list[int]] = []
-    for execution_row in execution_rows:
-        execution_time = execution_row['parsed_timestamp']
+    for execution_index in leftover_execution:
+        execution_time = execution_rows[execution_index]['parsed_timestamp']
         if execution_time is None:
             candidates.append([])
             continue
+        execution_key = str(execution_rows[execution_index].get('step_id') or '')
         eligible = []
-        for index, boundary_row in enumerate(boundary_rows):
-            boundary_time = boundary_row['parsed_timestamp']
+        for boundary_index in leftover_boundary:
+            boundary_time = boundary_rows[boundary_index]['parsed_timestamp']
             if boundary_time is None:
                 continue
+            boundary_key = str(boundary_rows[boundary_index].get('step_id') or '')
+            if execution_key and boundary_key and execution_key != boundary_key:
+                continue
             if abs((execution_time - boundary_time).total_seconds()) <= window_seconds:
-                eligible.append(index)
+                eligible.append(position_of_boundary[boundary_index])
         candidates.append(eligible)
 
-    # Kuhn's algorithm: for each execution row, try to find an augmenting path
-    # through the eligibility graph, displacing earlier matches where doing so
-    # frees a partner for them elsewhere. Row counts per phase are small, so the
-    # O(V·E) cost is irrelevant beside the correctness of the reported set.
-    matched_boundary: dict[int, int] = {}
+    # Kuhn's algorithm over the leftover positions: for each leftover execution
+    # row, try to find an augmenting path through the eligibility graph,
+    # displacing earlier matches where doing so frees a partner for them
+    # elsewhere. Row counts per phase are small, so the O(V·E) cost is
+    # irrelevant beside the correctness of the reported set.
+    window_matched_boundary: dict[int, int] = {}
 
-    def _augment(execution_index: int, visited: set[int]) -> bool:
-        for boundary_index in candidates[execution_index]:
-            if boundary_index in visited:
+    def _augment(position: int, visited: set[int]) -> bool:
+        for boundary_position in candidates[position]:
+            if boundary_position in visited:
                 continue
-            visited.add(boundary_index)
-            holder = matched_boundary.get(boundary_index)
+            visited.add(boundary_position)
+            holder = window_matched_boundary.get(boundary_position)
             if holder is None or _augment(holder, visited):
-                matched_boundary[boundary_index] = execution_index
+                window_matched_boundary[boundary_position] = position
                 return True
         return False
 
-    for execution_index in range(len(execution_rows)):
-        _augment(execution_index, set())
+    for position in range(len(leftover_execution)):
+        _augment(position, set())
 
-    matched_execution = {ex: bd for bd, ex in matched_boundary.items()}
+    for boundary_position, execution_position in window_matched_boundary.items():
+        execution_index = leftover_execution[execution_position]
+        boundary_index = leftover_boundary[boundary_position]
+        matched_execution[execution_index] = boundary_index
+        matched_boundary[boundary_index] = execution_index
+
     pairs = [(execution_rows[ex], boundary_rows[bd]) for ex, bd in sorted(matched_execution.items())]
     unpaired_execution = [row for index, row in enumerate(execution_rows) if index not in matched_execution]
     unpaired_boundary = [row for index, row in enumerate(boundary_rows) if index not in matched_boundary]
@@ -563,7 +625,10 @@ def _phase_findings(
             {
                 'finding': FINDING_ABSENT_FROM_EXECUTION_LOG,
                 'phase': phase,
-                'step_id': '',
+                # Read off the row, like the execution direction above: a
+                # keyed boundary row names the dispatch it belongs to, and a
+                # legacy keyless row carries '' — no key, not a measured one.
+                'step_id': row.get('step_id', ''),
                 'timestamp': row['timestamp'],
                 'total_tokens': row['total_tokens'],
                 'total_tokens_state': row.get('total_tokens_state', COLUMN_UNRECOGNISED),
