@@ -132,3 +132,12 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture s
 - Skills by profile are technology-specific (no mixing)
 - Build commands are strings (no nested technology selection)
 - Task verification is unambiguous
+
+## Deliverable module derived from architecture inventory
+
+Derive each deliverable module from the structured architecture inventory
+rather than guessing from paths. Lookup order: `which-module` for the primary
+path, then `files` to confirm the owning module, falling back to the
+inventory scan only when both return no module. Record the derived module on
+the deliverable; a guessed module without an inventory lookup is an outline
+error.
