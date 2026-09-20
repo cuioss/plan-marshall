@@ -1127,8 +1127,7 @@ def cmd_remove(args: argparse.Namespace) -> dict:
         'INFO',
         (
             f'(plan-marshall:manage-lessons) Removed lesson {args.lesson_id} — {args.reason} '
-            f'— verdict={coverage_verdict}'
-            + (' — state=unreadable (--allow-unreadable)' if unreadable else '')
+            f'— verdict={coverage_verdict}' + (' — state=unreadable (--allow-unreadable)' if unreadable else '')
         ),
     )
 

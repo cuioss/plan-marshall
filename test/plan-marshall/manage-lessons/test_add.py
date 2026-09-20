@@ -183,9 +183,7 @@ class TestBodyStateOnAdd:
         lessons_dir.mkdir(parents=True)
 
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
-            result = cmd_add(
-                Namespace(component='test-component', category='bug', title='Body-less Stub', bundle=None)
-            )
+            result = cmd_add(Namespace(component='test-component', category='bug', title='Body-less Stub', bundle=None))
 
         assert result['status'] == 'success'
         assert result['body_state'] == 'absent'
@@ -197,9 +195,7 @@ class TestBodyStateOnAdd:
         lessons_dir.mkdir(parents=True)
 
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
-            added = cmd_add(
-                Namespace(component='test-component', category='bug', title='Stub To Fill', bundle=None)
-            )
+            added = cmd_add(Namespace(component='test-component', category='bug', title='Stub To Fill', bundle=None))
             filled = cmd_set_body(Namespace(lesson_id=added['id'], file=None, content='Real body text.'))
 
         assert added['body_state'] == 'absent'
@@ -213,9 +209,7 @@ class TestBodyStateOnAdd:
         lessons_dir.mkdir(parents=True)
 
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
-            added = cmd_add(
-                Namespace(component='test-component', category='bug', title='Stub Left Empty', bundle=None)
-            )
+            added = cmd_add(Namespace(component='test-component', category='bug', title='Stub Left Empty', bundle=None))
             filled = cmd_set_body(Namespace(lesson_id=added['id'], file=None, content=''))
 
         assert filled['status'] == 'success'
