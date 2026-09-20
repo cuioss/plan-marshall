@@ -4,8 +4,8 @@
 
 Deliberately lean, per the orchestrator's lean posture: everything that
 requires judgement stays LLM-workflow; this script owns nine deterministic
-operation groups against the main-anchored orchestrator store
-(``.plan/local/orchestrator/{slug}/``, resolved via
+operation groups against the git-tracked orchestrator store
+(``.plan/orchestrator/{slug}/``, resolved via
 ``file_ops.get_store_dir('orchestrator', slug)``):
 
 - ``scaffold --slug S`` — create the epic directory tree (idempotent).
@@ -32,7 +32,7 @@ operation groups against the main-anchored orchestrator store
   ``epic_slug_matches[]`` (any queued row whose slug equals the epic slug).
   All four report and none rewrites.
 - ``archive --slug S`` — relocate a *closed* epic tree to
-  ``.plan/local/archived-orchestrators/{slug}/`` (a mechanical, post-close
+  ``.plan/archived-orchestrators/{slug}/`` (a mechanical, post-close
   directory move that requires no judgement; refuses a non-closed epic).
 - ``compact --slug S`` — the ledger-compaction stage ``workflow/cleanup.md``
   Phase B calls: regenerate every DERIVABLE surface of ``epic.md`` in place (the
@@ -350,7 +350,7 @@ SCOPE_ARCHIVED = 'archived'
 
 #: A syntactically valid entry id that names no real epic, used ONLY to resolve
 #: the two store ROOTS as the PARENT of a resolved entry. Taking the parent of an
-#: entry resolved through the existing main-anchored resolvers keeps the
+#: entry resolved through the existing store resolvers keeps the
 #: directory names (``orchestrator/``, ``archived-orchestrators/``) owned solely
 #: by ``file_ops``: this module holds no second copy of them, so a layout change
 #: moves this walk with it instead of leaving it pointing at a stale directory.
@@ -871,7 +871,7 @@ _BACKTICK = '`'
 # arbitrary repo file cited as background is NOT an origin pointer, which is what
 # keeps "two specs citing the same lesson" a silent near-miss rather than a match.
 SPEC_POINTER_RE = re.compile(
-    r'\.plan/local/(?:orchestrator|archived-orchestrators)/'
+    r'\.plan/(?:orchestrator|archived-orchestrators)/'
     r'(?P<slug>[A-Za-z0-9_.\-]+)/plans/(?P<spec>PLAN-[A-Za-z0-9_.\-]+\.md)'
 )
 _CHECKED_AT_RE = re.compile(r'^[0-9a-f]{7,40}$')
@@ -1212,7 +1212,7 @@ def _spec_presence(root: Path, plan_id: str) -> dict[str, Any]:
 
 
 def cmd_scaffold(args: argparse.Namespace) -> dict[str, Any]:
-    """Create the ``.plan/local/orchestrator/{slug}/`` directory tree.
+    """Create the ``.plan/orchestrator/{slug}/`` directory tree.
 
     Idempotent: existing directories are left untouched, re-running against
     an already-scaffolded epic succeeds and reports ``already_existed: true``.
@@ -3120,12 +3120,12 @@ def _epic_store_roots() -> tuple[tuple[str, Path], ...]:
     """Resolve the two epic store roots, each paired with its scope name.
 
     The single place this module derives the store ROOTS. Both are taken as the
-    PARENT of an entry resolved through the existing main-anchored resolvers
+    PARENT of an entry resolved through the existing store resolvers
     (:func:`_epic_root` and :func:`file_ops.get_archived_orchestrator_dir`), so a
-    root is main-anchored for exactly the same reason every per-epic path is —
-    the walk resolves identically from a worktree and from the main checkout —
-    and no path-resolution rule is restated here. Both consumers share it: the
-    sibling walk below and the ``corpus epics`` enumeration.
+    root resolves for exactly the same reason every per-epic path does — the walk
+    inherits whatever tier those resolvers place the store on — and no
+    path-resolution rule is restated here. Both consumers share it: the sibling
+    walk below and the ``corpus epics`` enumeration.
     """
     return (
         (SCOPE_ACTIVE, _epic_root(_ROOT_PROBE_ENTRY).parent),
@@ -3250,9 +3250,9 @@ def _sibling_epic_roots(slug: str) -> list[Path]:
     """Enumerate the OTHER epics' store roots — active and archived alike.
 
     Mirrors the on-query store scan the read verbs document: both
-    ``.plan/local/orchestrator/`` and ``.plan/local/archived-orchestrators/`` are
-    walked, so an archived sibling stays visible to the duplication check. An
-    epic present in both homes is yielded once.
+    ``.plan/orchestrator/`` and ``.plan/archived-orchestrators/`` are walked, so
+    an archived sibling stays visible to the duplication check. An epic present
+    in both homes is yielded once.
     """
     roots: dict[str, Path] = {}
     bases = [base for _, base in _epic_store_roots()]
@@ -4860,7 +4860,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
 
     scaffold = subparsers.add_parser(
         'scaffold',
-        help='Create the .plan/local/orchestrator/{slug}/ directory tree (idempotent).',
+        help='Create the .plan/orchestrator/{slug}/ directory tree (idempotent).',
         allow_abbrev=False,
     )
     _add_slug_arg(scaffold)

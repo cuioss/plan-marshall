@@ -841,9 +841,7 @@ class TestCoAuthorTrailerConvention:
 
         assert _is_dated_run_record(excluded)
         assert not _is_dated_run_record('.plan/orchestrator/truthful-signals/README.md')
-        assert not _is_dated_run_record(
-            '.plan/orchestrator/truthful-signals/cloud-runs/380-x/plan.md'
-        )
+        assert not _is_dated_run_record('.plan/orchestrator/truthful-signals/cloud-runs/380-x/plan.md')
 
     def test_no_tracked_trailer_names_an_assistant_or_vendor(self):
         """The trailer identifies the producing system, never who powered it."""
