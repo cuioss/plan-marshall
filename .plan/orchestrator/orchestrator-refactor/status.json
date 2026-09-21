@@ -29,10 +29,10 @@
       "id": "PLAN-01",
       "slug": "tracked-orchestrator-store-resolver",
       "workstream": "WS-01",
-      "status": "launched",
-      "plan_marshall_plan_id": "",
-      "pr": "",
-      "landing": ""
+      "status": "shipped",
+      "plan_marshall_plan_id": "tracked-orchestrator-store-resolver",
+      "pr": "#1557, #1558, #1561",
+      "landing": "landings/PLAN-01.md"
     },
     {
       "id": "PLAN-02",
@@ -74,7 +74,7 @@
       "id": "PLAN-06",
       "slug": "orchestrator-mechanism-intake",
       "workstream": "WS-04",
-      "status": "parked",
+      "status": "staged",
       "plan_marshall_plan_id": "",
       "pr": "",
       "landing": ""
@@ -89,10 +89,10 @@
       "landing": ""
     }
   ],
-  "resume_anchor": "PLAN-01 launched, awaiting its landing. parallelization_scope=2 has 1 slot free, but PLAN-02/03/05 all depend on PLAN-01 actually landing (not just launching), so nothing else is emittable yet.",
+  "resume_anchor": "Ledger is clean and internally consistent (corpus, compaction, dedup all pass). The ONE remaining blocker to genuine restart-readiness: 10 uncommitted paths in .plan/orchestrator/orchestrator-refactor/ (this session's tree reconciliation) are not yet committed/pushed - operator action needed, this orchestrator does not commit unprompted. Once committed: run next to emit from PLAN-02/03/06 (all staged, dependencies satisfied).",
   "metadata": {
     "parallelization_scope": "2"
   },
   "created": "2026-09-19T12:31:55Z",
-  "updated": "2026-09-20T10:23:39Z"
+  "updated": "2026-09-21T10:39:08Z"
 }

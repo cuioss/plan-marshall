@@ -225,15 +225,14 @@ touched by the `--transition` sweep.
 ## Hand-Off Command
 
 ```text
-/plan-marshall task="implement .plan/local/orchestrator/orchestrator-refactor/plans/PLAN-05-identifier-rename-execution.md"
+/plan-marshall task="implement .plan/orchestrator/orchestrator-refactor/plans/PLAN-05-identifier-rename-execution.md"
 ```
 
 ## Write-Boundary
 
 The plan implementing this spec touches only repository source, tests, standards and
 templates across three bundles (plan-marshall, pm-plugin-development). It creates and
-edits NO file under `.plan/local/orchestrator/` (or the migrated tracked address, once
-PLAN-01 lands) other than its own `inbox/{sender}-{seq}` message — the orchestrator owns
+edits NO file under `.plan/orchestrator/` other than its own `inbox/{sender}-{seq}` message — the orchestrator owns
 every other ledger write — and reports its outcome through its PR and its inbox message.
 The inbox exception's qualifiers and the sole sanctioned write mechanism are stated in
 `persona-plan-orchestrator/standards/orchestration-model.md` § Ledger Write-Boundary.

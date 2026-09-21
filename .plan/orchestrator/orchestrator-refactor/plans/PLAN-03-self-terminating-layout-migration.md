@@ -21,6 +21,14 @@ only one. The convention half of this already exists (the `SHIM(A)`/`SHIM(B)` ma
 convention, shipped) and MUST be extended rather than duplicated. What does not exist is
 anything that ever fires.
 
+> **Re-grounded 2026-09-21: PLAN-01 has LANDED (#1557/#1558/#1561) without a redirect, and
+> the gap this plan exists to fill is no longer theoretical — it is now reproduced, live,
+> breakage.** `_orchestrator_inbox.py`'s `_SOURCE_ID_RE` hardcodes the NEW
+> `.plan/orchestrator/` prefix with no acceptance of the pre-migration
+> `.plan/local/orchestrator/` form, so `inbox detect` now returns `unrecognised_id` for every
+> plan whose `source_id` was captured before PLAN-01 merged — including PLAN-01's own. See
+> Claim Labels for the reproduced evidence and the affected-population risk.
+
 ## Deliverables
 
 1. **D0 — GATE: derive the marked-shim population first-party.** Do not carry the figure 18
@@ -38,7 +46,10 @@ anything that ever fires.
 6. **D5 — an ADR**, because the tree has none governing this and the next migration will need
    the decision rather than this plan's code.
 7. **D6 — the orchestrator store migration as the first consumer**, marked with the new
-   grammar, proving the mechanism end to end.
+   grammar, proving the mechanism end to end. ⚠ PLAN-01 landed WITHOUT this shim — D6 is now
+   a RETROFIT (a redirect added after the fact) rather than a shim built alongside the move,
+   and its most urgent instance is the `_SOURCE_ID_RE` detection-seam gap in Claim Labels,
+   not only the store resolver `get_store_dir` HYPOTHESIS already covered D3's design against.
 
 ## Non-Goals
 
@@ -92,6 +103,23 @@ anything that ever fires.
   PLAN-TRUTH-003 warned against inside its own fix, and `cleanup-superseded`'s
   `skipped_no_tombstone[]` bucket is the shape that refuses it. Verify this refusal is actually
   implemented, not merely intended, before this plan is treated as done.
+- OBSERVED (added 2026-09-21, reproduced first-party by this epic's own `analyze` verb) —
+  `_orchestrator_inbox.py`'s `_SOURCE_ID_RE = re.compile(r'^\.plan/orchestrator/(?P<slug>[^/]+)/plans/' + PLAN_ID_SEGMENT + r'[^/]*\.md$')`
+  requires the literal `.plan/orchestrator/` prefix. Direct reproduction:
+  `inbox detect --source-id ".plan/local/orchestrator/orchestrator-refactor/plans/PLAN-01-tracked-orchestrator-store-resolver.md"`
+  (PLAN-01's own actual, correctly-written `source_id`) → `orchestrated: false`,
+  `detection: unrecognised_id`. The identical id with only the prefix changed to
+  `.plan/orchestrator/...` → `orchestrated: true`. Isolates the cause to the path prefix, NOT
+  to the digit-suffix grammar (`PLAN-01-tracked-orchestrator-store-resolver.md` parses fine
+  once the prefix matches — the earlier HYPOTHESIS in `PLAN-06` about a naming-grammar cause
+  was itself refuted by this test).
+- HYPOTHESIS (added 2026-09-21) — other currently-in-flight plans across other epics whose
+  `source_id` was captured before PLAN-01's merge (`8c8c7bbf`/`6728b738`) carry the same
+  old-prefix form and will hit the identical `unrecognised_id` failure at their own finalize.
+  `truthful-signals` PLAN-TRUTH-144 (confirmed `running` as of this epic's own `cleanup`
+  pass, 2026-09-21) is a plausible affected instance; confirm/refute by reading its
+  `request.md` `source_id` directly once it is reachable (verify-at-outline — it is a
+  running plan and must not be touched before then).
 
 ## Expected Surface
 
@@ -102,14 +130,19 @@ anything that ever fires.
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/manage-config/SKILL.md`
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/cache_retention.py`
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/script-shared/scripts/marketplace_paths.py`
+- OBSERVED (added by the 2026-09-21 fold): `marketplace/bundles/plan-marshall/skills/plan-orchestrator/scripts/_orchestrator_inbox.py`
 - OBSERVED: `doc/adr/`
 - OBSERVED: `test/pm-plugin-development/plugin-doctor/test_analyze_shim_marker.py`
 - OBSERVED: `test/plan-marshall/marshall-steward/test_cache_retention.py`
+- OBSERVED (added by the 2026-09-21 fold): `test/plan-marshall/plan-orchestrator/**`
 
 ## Dependencies and Sequencing
 
-- Depends on: PLAN-01 (D6 consumes PLAN-01's landed resolver tier; both touch
-  `marketplace_paths.py` — never run concurrently).
+- Depends on: PLAN-01 — **LANDED** 2026-09-21 (#1557/#1558/#1561). D6 consumes its resolver
+  tier; both touch `marketplace_paths.py`, now sequential rather than concurrent by
+  construction. ⚠ Landed WITHOUT a redirect — D6 is a retrofit, and its most urgent
+  sub-target is `_orchestrator_inbox.py`'s detection-seam prefix gap (see Claim Labels), which
+  is actively breaking orchestration routing for any plan spanning the cutover right now.
 - Overlaps with: PLAN-04 (`plugin-doctor/references/rule-catalog.md` — not caught by the
   automated disjointness matcher; sequence rather than parallelize, see WS-02's charter).
 - Adjacent to: PLAN-02 and PLAN-06 — no declared surface overlap with either; the one clean
@@ -118,14 +151,13 @@ anything that ever fires.
 ## Hand-Off Command
 
 ```text
-/plan-marshall task="implement .plan/local/orchestrator/orchestrator-refactor/plans/PLAN-03-self-terminating-layout-migration.md"
+/plan-marshall task="implement .plan/orchestrator/orchestrator-refactor/plans/PLAN-03-self-terminating-layout-migration.md"
 ```
 
 ## Write-Boundary
 
 The plan implementing this spec touches only its own repository source and tests, across two
-bundles. It creates and edits NO file under `.plan/local/orchestrator/` (or the migrated
-tracked address, once PLAN-01 lands) other than its own `inbox/{sender}-{seq}` message — the
+bundles. It creates and edits NO file under `.plan/orchestrator/` other than its own `inbox/{sender}-{seq}` message — the
 orchestrator owns every other ledger write — and reports its outcome through its PR and its
 inbox message. The inbox exception's qualifiers and the sole sanctioned write mechanism are
 stated in `persona-plan-orchestrator/standards/orchestration-model.md` § Ledger

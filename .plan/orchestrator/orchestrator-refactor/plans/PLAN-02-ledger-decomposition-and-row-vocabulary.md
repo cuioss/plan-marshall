@@ -23,6 +23,18 @@ every metadata write re-serialises, and `epic.md` is the single file `compact` a
 `status.json` holding 221 plan rows and a 1,887-character anchor string, beside a
 367,233-byte / 3,916-line `epic.md`.
 
+> **Re-grounded 2026-09-21 against HEAD `e8a716501`.** D2 is LARGELY ALREADY DELIVERED —
+> `truthful-signals` PLAN-TRUTH-143 (PR #1539, the same landing that unblocked PLAN-06)
+> shipped a `VALID_STATUS_VOCABULARY` that is now derived by union of three sets, including
+> `CLOSED_UNSHIPPED_PLAN_STATUSES = ('superseded','transferred','retired','resolved')` — the
+> exact four values this deliverable's HYPOTHESIS proposed, with the exact four meanings.
+> `cmd_queue` validates `--status` against the live set, so `--transition` already accepts
+> all four. **D2 shrinks to a documentation/reconciliation task**: `review-apparatus/epic.md`
+> (`:48`, `:2533-2542`) and other ledgers still assert the RETIRED vocabulary in narrative —
+> reconcile that stale prose, it is not this plan's schema work to redo. D0/D1/D3/D4/D5 are
+> untouched and still real; D0's own gate must re-derive the field-write-frequency population
+> at THIS plan's own HEAD regardless, since D2's premise moved under it.
+
 ## Deliverables
 
 1. **D0 — GATE: derive the collision surface before designing the split.** For each of the 9
@@ -31,8 +43,12 @@ every metadata write re-serialises, and `epic.md` is the single file `compact` a
    list.
 2. **D1 — the per-concern layout**, with the decision recorded per file: what is one file,
    what stays aggregated, and why.
-3. **D2 — the row-status vocabulary**, derived from the four observed extra values, with each
-   admitted value's meaning stated once and `--transition` accepting the settled set.
+3. **D2 — the row-status vocabulary.** ⚠ ALREADY LANDED at HEAD via PLAN-TRUTH-143 (#1539) —
+   `orchestrator.py`'s `VALID_STATUS_VOCABULARY` already admits `superseded`/`transferred`/
+   `retired`/`resolved` with the exact meanings this deliverable proposed. What remains:
+   reconcile stale ledger prose (`review-apparatus/epic.md`, others) that still asserts the
+   old six-value vocabulary, and confirm no OTHER consumer (docs, the schema doc's own
+   prose) still states the retired set.
 4. **D3 — readers and writers**, updated so no consumer re-serialises a whole document to
    change one row. The bulk `update-field --field plans` form is reduced to the seed case or
    removed.
@@ -61,12 +77,19 @@ every metadata write re-serialises, and `epic.md` is the single file `compact` a
   `rmw_json`, but still a full re-serialisation).
 - OBSERVED — the queue-write boundary reserves the bulk rewrite to the `decompose`
   seed-from-nothing case (`orchestration-model.md:102-117`).
-- OBSERVED — `orchestrator.py:190` declares
-  `VALID_STATUS_VOCABULARY = {'staged','launched','running','parked','shipped','landed'}`.
-- OBSERVED (derived, population = all 12 ledgers present on this machine, 500 plan rows): 95
-  rows (19%) carry a status the vocabulary cannot express — `superseded` 54, `retired` 31,
-  `transferred` 5, `resolved` 5 — in 6 of 12 epics. `--transition` argparse-refuses every one;
-  only the bulk rewrite can write them.
+- ⚠ SUPERSEDED AT HEAD (was OBSERVED at research time, 2026-09-19; corroborated stale
+  2026-09-21) — `orchestrator.py:190` is now a `PLAN_ROW_FIELDS` comment.
+  `VALID_STATUS_VOCABULARY` lives at `:243`, derived by union of `LIVE_PLAN_STATUSES` +
+  `SHIPPED_PLAN_STATUSES` + `CLOSED_UNSHIPPED_PLAN_STATUSES` (`:220-228`, the last being
+  exactly `('superseded','transferred','retired','resolved')`) = 10 members. Landed via
+  `1c56734ce` (PR #1539). `cmd_queue` validates `--status` against this set at `:1422` —
+  `--transition` already accepts all four.
+- OBSERVED (re-derived 2026-09-21, population = all 13 ledgers present on this machine —
+  8 active + 5 archived, corrected from the research-time 12/500 figure, 509 plan rows): 95
+  rows (19%) carried a status the OLD vocabulary could not express — `superseded` 54,
+  `retired` 31, `transferred` 5, `resolved` 5 — in 6 of 13 epics. This is now historical
+  motivation for the fix, not an open gap: the vocabulary landed (see above). D2's remaining
+  work is reconciling stale ledger PROSE that still asserts the retired six-value set.
 - OBSERVED — `review-apparatus/epic.md:2533-2542` records this independently and filed it out
   to `truthful-signals` as `review-apparatus-036.md`, explicitly as "not this epic's to fix" —
   this plan is the owner it was missing.
@@ -82,11 +105,12 @@ every metadata write re-serialises, and `epic.md` is the single file `compact` a
   (verify-at-outline).
 - HYPOTHESIS — the four unexpressible statuses are four distinct concepts and must not be
   collapsed into one (`superseded` = replaced by a successor spec; `retired` = withdrawn;
-  `transferred` = moved to another epic; `resolved` = closed without a plan). Confirm/refute by
-  reading one instance of each from its own ledger before fixing the set (verify-at-outline).
+  `transferred` = moved to another epic; `resolved` = closed without a plan).
+  - verdict: corroborated | checked_at: e8a716501d3ae21c2c64ab0c892cb1aacaa2a30e | by: orchestrator-refactor/cleanup | rescoped: n/a | evidence: orchestrator.py:220-228 declares CLOSED_UNSHIPPED_PLAN_STATUSES with exactly these four members and meanings - already implemented, nothing left to decide
 - Verify-first clause: the 500-row / 12-ledger figure is derived from the ledgers present on
-  this machine at research time. Re-derive at outline and state which population any count is
+  this machine at research time; re-derive at outline and state which population any count is
   drawn from.
+  - verdict: contradicted | checked_at: e8a716501d3ae21c2c64ab0c892cb1aacaa2a30e | by: orchestrator-refactor/cleanup | rescoped: yes | evidence: re-derived population is 509 rows / 13 ledgers (8 active + 5 archived), corrected in the claim above; the 95-row/19-percent sub-figures reproduced exactly against the new denominator
 
 ## Expected Surface
 
@@ -120,14 +144,14 @@ every metadata write re-serialises, and `epic.md` is the single file `compact` a
 ## Hand-Off Command
 
 ```text
-/plan-marshall task="implement .plan/local/orchestrator/orchestrator-refactor/plans/PLAN-02-ledger-decomposition-and-row-vocabulary.md"
+/plan-marshall task="implement .plan/orchestrator/orchestrator-refactor/plans/PLAN-02-ledger-decomposition-and-row-vocabulary.md"
 ```
 
 ## Write-Boundary
 
 The plan implementing this spec touches only its own repository source, tests, and the
 orchestrator's own templates/standards. It creates and edits NO file under
-`.plan/local/orchestrator/` (or the migrated tracked address, once PLAN-01 lands) other than
+`.plan/orchestrator/` other than
 its own `inbox/{sender}-{seq}` message — the orchestrator owns every other ledger write — and
 reports its outcome through its PR and its inbox message. The inbox exception's qualifiers and
 the sole sanctioned write mechanism are stated in
