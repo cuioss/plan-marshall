@@ -188,7 +188,7 @@ OBSERVED claims, all read first-party on 2026-09-17:
 ## Hand-Off Command
 
 ```text
-/plan-marshall task="implement .plan/local/orchestrator/post-run-quality/plans/PLAN-PRQ-06-a-lane-override-that-cannot-take-effect-is-accepted-and-reported-set.md"
+/plan-marshall task="implement .plan/orchestrator/post-run-quality/plans/PLAN-PRQ-06-a-lane-override-that-cannot-take-effect-is-accepted-and-reported-set.md"
 ```
 
 ## Write-Boundary

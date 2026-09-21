@@ -100,7 +100,7 @@ empty owed set that is distinguishable from a run that was never asked.
 ## Hand-Off Command
 
 ```text
-/plan-marshall task="implement .plan/local/orchestrator/post-run-quality/plans/PLAN-PRQ-04-an-obligation-that-outlives-its-plan-has-no-owner.md"
+/plan-marshall task="implement .plan/orchestrator/post-run-quality/plans/PLAN-PRQ-04-an-obligation-that-outlives-its-plan-has-no-owner.md"
 ```
 
 ## Write-Boundary

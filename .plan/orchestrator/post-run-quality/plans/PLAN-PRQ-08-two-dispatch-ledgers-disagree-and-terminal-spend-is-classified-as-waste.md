@@ -11,7 +11,7 @@ workstream: WS-01
 
 Staged 2026-09-17 from the same corpus classification sweep as `PLAN-PRQ-09`. Six lessons, filed by five
 different plans between 2026-08-27 and 2026-09-08, all preserved in this epic at
-`.plan/local/orchestrator/post-run-quality/lessons/{id}.md`. Three of them (`2026-08-27-16-002`,
+`.plan/orchestrator/post-run-quality/lessons/{id}.md`. Three of them (`2026-08-27-16-002`,
 `2026-09-04-08-010`, `2026-09-05-07-002`) state one defect three times — the recurrence is the evidence.
 
 ## Objective
@@ -109,6 +109,21 @@ and audit trail besides the decision log.
   `truthful-signals` PLAN-TRUTH-160, which folded that exact lesson on 2026-09-17. D0's sweep will see the
   empty columns — report them, do not fix them here.
   - verdict: corroborated | checked_at: 1605831c5 | by: post-run-quality/cleanup | rescoped: n/a | evidence: PLAN-TRUTH-160 present in truthful-signals status.json, row status:staged, not landed. Boundary holds: D0's sweep will see empty context-load-flag columns it must report, not fix. Same-shape check: manage-metrics/** also declared by -160 (staged); manage-execution-manifest/** declared by -145 and -147 (both staged).
+- ⭐ CORROBORATING EVIDENCE, folded 2026-09-21 (inbox `retrospective-aspects-publish-verdict-005.md`,
+  filed by `PLAN-PRQ-02`'s own retrospective, PR #1550): first-party post-landing confirmation of D0's
+  premise, NOT a new fix — the message explicitly defers to this D0. On that run: `ledger_present: true`,
+  `ledger_readable: true`, `ledger_rows_scanned: 796`, `summed_rows: 0`, `build_count: 0`,
+  `total_build_seconds: unavailable`, while the plan's own script log recorded 27 build calls. The
+  change-ledger build-row WRITER does not record build executions — no read-side fix can repair this.
+  D0's corpus sweep should expect this same absence on every plan; D0's acceptance test can use this run's
+  own baseline (`summed_rows == 27` after the writer is fixed).
+- ⭐ CORROBORATING EVIDENCE, folded 2026-09-21 (inbox `retrospective-aspects-publish-verdict-006.md`,
+  same source): confirms the `record-dispatch-boundary` gap cited above — on that run, `context_position_cost`
+  reported `total_rows: 103`, `measured_rows: 0`, `unmeasured_rows: 103` across every phase, and every one
+  of the 103 rows named all four missing component fields (`input_tokens`, `output_tokens`,
+  `cache_read_input_tokens`, `cache_creation_input_tokens`) in its own `unmeasured_columns`. Reinforces that
+  the gap is structural (0-of-N on every plan), not incidental to one run — still `truthful-signals`
+  PLAN-TRUTH-160's subject, not this plan's.
 
 ## Expected Surface
 
@@ -137,7 +152,7 @@ and audit trail besides the decision log.
 ## Hand-Off Command
 
 ```text
-/plan-marshall task="implement .plan/local/orchestrator/post-run-quality/plans/PLAN-PRQ-08-two-dispatch-ledgers-disagree-and-terminal-spend-is-classified-as-waste.md"
+/plan-marshall task="implement .plan/orchestrator/post-run-quality/plans/PLAN-PRQ-08-two-dispatch-ledgers-disagree-and-terminal-spend-is-classified-as-waste.md"
 ```
 
 ## Write-Boundary

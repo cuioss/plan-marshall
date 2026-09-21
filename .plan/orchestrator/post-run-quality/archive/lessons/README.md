@@ -1,6 +1,6 @@
 # ↪ Relocated — this directory is superseded by `lessons/`
 
-⛔ **Do not add files here.** The epic's lesson archive is `.plan/local/orchestrator/post-run-quality/lessons/`,
+⛔ **Do not add files here.** The epic's lesson archive is `.plan/orchestrator/post-run-quality/lessons/`,
 which carries every file that was here plus the rest of the 2026-09-17 sweep and the disposition index
 (`lessons/README.md`).
 

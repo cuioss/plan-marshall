@@ -12,7 +12,7 @@ workstream: WS-01
 Staged 2026-09-17 from a full classification sweep of the 194-lesson corpus (49 candidate files read in
 full; 23 classified as post-run-quality by subject). Every member below is a lesson filed first-party by a
 plan that hit it, and all are preserved verbatim in this epic at
-`.plan/local/orchestrator/post-run-quality/lessons/{id}.md`.
+`.plan/orchestrator/post-run-quality/lessons/{id}.md`.
 
 ⛔ These lessons were **recorded and never actioned** — the oldest is 2026-08-27, the newest 2026-09-15.
 That the corpus held six independent reports of the same instrument family for three weeks without one
@@ -53,9 +53,37 @@ D2 is therefore a pure binary now, with no honesty-of-degradation work left: giv
 `[ARTIFACT]` lines against a non-empty footprint) still fires as `error`, so the aspect is not wholly
 inert. (Lesson `2026-09-15-08-005`.)
 
-**D3 — A producerless section row escalates instead of settling itself.** A `SECTION_SPEC` row with no
-producer renders clean as `sections_omitted`, which reads as *"nothing to report"* rather than *"this
-section has no author"*. It is an operator proposal, not an in-plan decision. (Lesson `2026-08-31-09-001`.)
+**D3 — A section that HAS something to report is dropped as if it had nothing, three ways.** ⛔⛔
+**WIDENED 2026-09-21** (inbox `retrospective-aspects-publish-verdict-003.md` and `-004.md`, filed by
+`PLAN-PRQ-02`'s own retrospective — folded here rather than staged separately, per the Scope-Bloat Split
+Guard; this spec was already at 6 deliverables). The original member (a producerless `SECTION_SPEC` row
+escalating instead of settling itself, lesson `2026-08-31-09-001`) is now one of three ways a
+non-empty section fails to render:
+(a) **No producer at all** — a `SECTION_SPEC` row with no producer renders clean as `sections_omitted`,
+which reads as *"nothing to report"* rather than *"this section has no author"*. It is an operator
+proposal, not an in-plan decision. (Lesson `2026-08-31-09-001`.)
+(b) **A producer that ran and has findings, dropped for an honest non-success status.**
+`compile-report.should_emit` refuses any conditional fragment whose `status` is not `success` or absent —
+so an aspect that honestly reports `status: unmeasured` (e.g. an undeliverable population) has its findings
+silently deleted from the report, including `error`-severity ones. A bespoke carve-out already exists for
+ONE aspect (`chat-history-analysis`, placed BEFORE the status guard specifically to avoid this), which is
+evidence the gap is general, not incidental — the same problem was solved once, for one aspect, by special
+case rather than by fixing the guard. Fix the guard to render any fragment carrying a non-empty `findings`
+list regardless of status (preferred), or document the `status`-vs-degradation-field idiom explicitly and
+generalise the existing carve-out away.
+(c) **A producer that ran and has data, looked up at the wrong nesting level.** `analyze-logs` emits its
+`dispatch_boundaries` block NESTED inside its own `log-analysis` result
+(`bundle['log-analysis']['dispatch_boundaries']`), but `compile-report`'s `should_emit` looks it up as a
+TOP-LEVEL key (`fragments.get('dispatch_boundaries')`) and finds nothing — so `Phase Dispatch Boundaries`
+renders as `sections_omitted` (the benign "nothing to lose" bucket) even when the underlying data (103
+dispatch-boundary rows, every phase `present: true`) is real and lost. SKILL.md's own row for this key
+states two jointly-unsatisfiable things ("injected, never dispatched" and "rendered from the bundle under
+the same key") — pick one disposition (read the nested block explicitly, or register the key at top level)
+and make the doc and the code agree.
+All three share one root shape: the omitted/dropped classification is meant for *genuinely nothing to
+report* and is silently absorbing *something to report that the pipeline couldn't reach*. D3's control
+(added to D5's matched-controls set) must assert that a section with real underlying data renders, for
+all three failure shapes — not just the original producerless case.
 
 **D4 — The recall denominators count the population the claim is about.** Three independent errors, one
 deliverable because all three are the denominator of the same `_extract_bullet_entries` /
@@ -116,11 +144,29 @@ true retroactively, which is a reason to land them rather than a defect in them.
   - verdict: corroborated | checked_at: 1605831c5 | by: post-run-quality/cleanup | rescoped: n/a | evidence: Historical event not re-derivable (plan artifacts gone), but the governing clause D5 would add does NOT exist at HEAD: regex sweep for a handed-claim/lead-verification rule returns 0 over 2993 files scanned; no such rule in plan-retrospective/references/ (15 files) or standards/. Lesson text preserved at lessons/2026-08-27-16-003.md. D5's rule is unwritten.
 - ⚠ HYPOTHESIS: these six are the whole population. ⛔ Asserted by nobody; D0 owns the derivation.
   - verdict: unverifiable | checked_at: 1605831c5 | by: post-run-quality/cleanup | rescoped: n/a | evidence: D0's own 17-aspect classification sweep was not performed in this corroboration pass. But the COUNT in D0's own instruction is already known wrong: 17 registerable aspects exist at HEAD (retro_sections.SECTION_SPEC, valid_aspect_keys()==17), not 16 -- same finding as PLAN-PRQ-02 claim 0.
+- OBSERVED, folded 2026-09-21 (inbox `retrospective-aspects-publish-verdict-003.md`, filed first-party by
+  `PLAN-PRQ-02`'s own retrospective): `compile-report.should_emit` (lines 145-152) refuses any fragment
+  whose `status` is not `success`/absent, dropping an `unmeasured`-status fragment's `error`-severity
+  finding from the report entirely; a pre-existing bespoke carve-out for `chat-history-analysis` (placed
+  before the guard) is direct evidence the gap is general. Grounds D3(b) above.
+- OBSERVED, folded 2026-09-21 (inbox `retrospective-aspects-publish-verdict-004.md`, same source):
+  `analyze-logs` emits `dispatch_boundaries` nested under `bundle['log-analysis']['dispatch_boundaries']`;
+  `compile-report`'s `should_emit` looks it up as a top-level key and finds nothing, so `Phase Dispatch
+  Boundaries` renders `sections_omitted` despite 103 real rows across all three phases. Grounds D3(c)
+  above.
+- OBSERVED, folded 2026-09-21 (inbox `retrospective-aspects-publish-verdict-007.md`, same source, action
+  #3 of its `llm_to_script_opportunities` finding): proposes extending `check-artifact-consistency` to
+  publish PER-DELIVERABLE recall beside its existing global recall, so D4's "hides a deliverable that
+  shipped two thirds of a completeness-quantified surface" failure (lesson `2026-09-05-07-006`) is read
+  from code rather than recomputed by hand each time, and the read-intent exclusion rule applies once.
+  Confirming evidence for D4 above, not a new deliverable — D4 already stages "publish per-deliverable
+  recall alongside the plan-level figure".
 
 ## Expected Surface
 
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/` — the aspect producers (D1–D5)
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/retro_sections.py` — `SECTION_SPEC` (D3)
+- OBSERVED: `marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/compile-report.py` — `should_emit`, D3(b)/(c) fix sites
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/plan-retrospective/references/` — the logging-gap rules and the recall definitions (D1, D4)
 - HYPOTHESIS: `marketplace/bundles/plan-marshall/skills/manage-tasks/**` — the `changed_files` producer D2 needs, if D2 chooses the writer over retirement (verify-at-outline)
 - OBSERVED: `test/plan-marshall/plan-retrospective/` — the controls (D5)
@@ -142,7 +188,7 @@ true retroactively, which is a reason to land them rather than a defect in them.
 ## Hand-Off Command
 
 ```text
-/plan-marshall task="implement .plan/local/orchestrator/post-run-quality/plans/PLAN-PRQ-09-retrospective-instruments-that-cannot-fire-and-recall-denominators-that-count-the-wrong-population.md"
+/plan-marshall task="implement .plan/orchestrator/post-run-quality/plans/PLAN-PRQ-09-retrospective-instruments-that-cannot-fire-and-recall-denominators-that-count-the-wrong-population.md"
 ```
 
 ## Write-Boundary

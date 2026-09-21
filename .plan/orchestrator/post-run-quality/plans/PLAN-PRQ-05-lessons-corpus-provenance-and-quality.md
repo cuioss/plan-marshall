@@ -33,6 +33,16 @@ load-bearing. Give it a measurement and the minimum mechanism that measurement i
 measured that **1 of 5** recorded process lessons reached the governing contract. A corpus that is accurate
 but never reaches a contract is a cost with no yield, so precision alone does not close this plan.
 
+⛔⛔ **CORPUS SIZE HAS MOVED ~5× SINCE STAGING AND MUST NOT BE TRUSTED FROM THIS DOCUMENT (corrected
+2026-09-21, cleanup, `checked_at: e8a71650`).** Every population figure below (131 active files, 729
+tombstones, "6 of 194", "23 of 194") was measured at staging (2026-09-17/18) or at the first cleanup pass
+(2026-09-18). At `e8a71650` the live corpus is a different size again (observed 4-24 active files across
+several checks this session, 862 tombstones) — it has been legitimately drained multiple times since
+staging by activity outside this epic's control (see the epic's Decisions log). ⛔ **D0/D1 MUST re-derive
+the live population count as their first act, from `manage-lessons list --status all` at launch time, and
+must not carry forward any count printed in this spec.** Every figure below is a HISTORICAL reading, kept
+as evidence of the archetype (a corpus whose size nobody tracks), not as a current fact.
+
 ## Deliverables
 
 Five deliverables — the source's four, carried in substance, plus the reach measurement this epic owns.
@@ -65,6 +75,7 @@ at the path in `## Provenance`. Re-ground each at HEAD before scoping.
   - verdict: corroborated | checked_at: 1605831c5 | by: post-run-quality/cleanup | rescoped: n/a | evidence: SKILL.md sweep for confidence|freshness|decay|precision returns exactly one hit (line 690, the unrelated auto-suggest recipe matcher). Live corpus header key set is {id,component,category,status,created} across all 131 files -- no confidence/freshness/decay term anywhere.
 - OBSERVED: the store's lifecycle is binary — live or retired via tombstones — with no intermediate
   confidence position (source spec, read at `manage-lessons/SKILL.md`).
+  - verdict: corroborated | checked_at: e8a71650 | by: post-run-quality/cleanup | rescoped: n/a | evidence: manage-lessons/SKILL.md:261 status value space active|superseded|removed|all; :350 remove=delete+tombstone; :685 supersede=tombstone+superseded_by. Both non-active states are tombstoned retirements -- binary live/retired axis holds, no intermediate confidence position. Nuances: unapplied/applied axis via file location; arch-constraint-only last_seen quiet-streak is a retirement input not a scale position. D2/D3 stand.
 - ⚠ HYPOTHESIS: the corpus's dominant derivation source is run artifacts and tool returns rather than
   settled operator decisions — confirm/refute by a derived sweep of the live corpus (verify-at-outline).
   ⛔ The whole provenance argument rests on this, it is impression rather than measurement, and D2 is
@@ -81,6 +92,7 @@ at the path in `## Provenance`. Re-ground each at HEAD before scoping.
   carries tombstones whose loss is unrecoverable, and `manage-lessons remove` has a recorded failure mode
   in which it destroys a lesson while returning `not_found` — so a retry on `not_found` destroys a second
   one. Every deliverable here is read-and-measure or additive; none is a deletion pass.
+  - verdict: corroborated | checked_at: e8a71650 | by: post-run-quality/cleanup | rescoped: n/a | evidence: SKILL.md:406-407 tombstones NEVER touched; :428 skipped_no_tombstone refuses to act rather than lose the audit trail. .plan/local/lessons-learned/.tombstones/ holds 862 files at HEAD. Directive binds unchanged.
 
 ## Expected Surface
 
@@ -134,8 +146,12 @@ needs one — building the mechanism first is the same mistake as tuning a corpu
 ## Dependencies and Sequencing
 
 - Depends on: none.
-- ⛔ Declares `manage-lessons/**`, which `truthful-signals` PLAN-TRUTH-144 also declares. **Cross-epic:
-  no gate can see the collision.** Check `manage-status list` and that epic's queue before launching.
+- ⛔⛔ **`truthful-signals` PLAN-TRUTH-144 MOVED `staged → RUNNING` (confirmed 2026-09-21, cleanup,
+  `checked_at: e8a71650`)** — that epic's own anchor confirms an operator-confirmed start. PLAN-TRUTH-144
+  and this spec both declare `manage-lessons/**`; **this spec MUST NOT launch while PLAN-TRUTH-144 is
+  running.** The collision this spec originally flagged as merely "invisible to both gates" is now a LIVE
+  in-flight collision, not a theoretical one. Check `truthful-signals`' queue immediately before emitting
+  this spec, not only at staging time.
 - ⚠ Adjacent to the lessons-handling epics, which route lessons and implement nothing. This plan gives
   them an instrument and does not take their routing role; if a lessons epic is mid-flight over the same
   store, sequence behind it.
@@ -144,7 +160,7 @@ needs one — building the mechanism first is the same mistake as tuning a corpu
 ## Hand-Off Command
 
 ```text
-/plan-marshall task="implement .plan/local/orchestrator/post-run-quality/plans/PLAN-PRQ-05-lessons-corpus-provenance-and-quality.md"
+/plan-marshall task="implement .plan/orchestrator/post-run-quality/plans/PLAN-PRQ-05-lessons-corpus-provenance-and-quality.md"
 ```
 
 ## Write-Boundary

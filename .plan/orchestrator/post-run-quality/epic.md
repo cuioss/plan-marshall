@@ -2,7 +2,7 @@
 
 slug: post-run-quality
 
-> Ledger document for one epic under `.plan/local/orchestrator/post-run-quality/`. The layout and
+> Ledger document for one epic under `.plan/orchestrator/post-run-quality/`. The layout and
 > authority contract live in the central standard — see
 > `persona-plan-orchestrator/standards/orchestration-model.md`. `status.json` is the
 > machine authority; any statement here that conflicts with it is stale prose.
@@ -40,9 +40,9 @@ the machinery that grades us.
      outside the markers — never inside them. -->
 
 <!-- BEGIN GENERATED: resume-summary -->
-**Resume anchor**: === ▶ **2026-09-20 -- PLAN-PRQ-02 LAUNCHED.** Operator confirmed start ("plan got started"); transitioned staged->launched. At parallelization_scope 1 with R=1, no free slot -- next emits nothing new until PRQ-02 ships or is parked. Carried forward unchanged: inbox fully drained (24 archived, 0 queued) as of 2026-09-19; 5 folds landed on PRQ-02 itself (D1 new defect, D3 second corrupted aspect) and PRQ-09 (D4 third denominator class); PRQ-10/PRQ-11 both staged, unemitted; 4 new lessons promoted (2026-09-19-21-003..006); forwards sent to truthful-signals and code-intelligence-substrate. ⛔ PRQ-09 cites 4 already-retired lesson ids, PRQ-08 cites 6 -- never pass either specs cited ids to manage-lessons remove. ⛔ PRQ-07 unemittable until PRQ-01/PRQ-03 land. ⛔ Never pair PRQ-01 with the now-launched PRQ-02 (shared plan-retrospective/scripts/) -- moot while PRQ-02 is running, but binding again once it ships and a fresh next reaches PRQ-01. ⛔ PRQ-10 shares pre-submission-self-review.md with code-intelligence-substrate PLAN-CIS-052 -- never pair. ⛔ PRQ-11 and PRQ-09 share plan-retrospective/** -- never pair. Live lessons corpus ~4-10 entries (corrected from a stale 172 claim). QUEUE 9 staged / 1 launched (PRQ-02) / 1 shipped (PRQ-06) / 0 running. ▶ ON RESUME: (a) watch for PRQ-02s landing/inbox message and analyze it when it arrives; (b) once PRQ-02 ships (or is parked), next opens a slot -- PRQ-03 is the queue-order candidate. ===
+**Resume anchor**: === ▶ **2026-09-21 -- LEDGER RELOCATED (tracked path), PLAN-PRQ-02 SHIPPED, RECONCILED.** Store moved .plan/local/orchestrator/{slug}/ -> tracked .plan/orchestrator/{slug}/ by orchestrator-refactor PLAN-01 (#1557/#1558); this session ported all pass-2 corrections (PRQ-01/03/05/07/10/11) into the tracked tree and dropped the 'local' segment from every spec's Hand-Off Command. PLAN-PRQ-02 (PR #1550) shipped: landing written (landings/PLAN-PRQ-02.md), queue fields stamped, 9 inbox messages dispositioned and archived -- 2 folded into new spec PLAN-PRQ-12 (TOON block-scalar corruption one hop upstream of PRQ-02 D3, plus a tier-gate delivery-integrity gate), 2 folded into PRQ-09 D3 (widened to 3 render-gap shapes), 2 folded as corroborating citations into PRQ-08 D0, 1 confirming citation into PRQ-09 D4, 1 new unowned Open Defect (plan-efficiency-ratios script + scope-creep reconciliation, deliberately lower-priority per its own filing), 1 lesson promoted (2026-09-21-10-001, argparse-rejection recurrence anti-pattern). QUEUE 12 total: PRQ-02 + PRQ-06 shipped / 10 staged (PRQ-01,-03,-04,-05,-07,-08,-09,-10,-11,-12) / 0 running. Inbox empty (33 archived total, 0 queued). At parallelization_scope 1 with R=0, a slot is now OPEN -- PRQ-03 is the queue-order candidate (no blocking dependency; PRQ-01 remains hard-blocked on truthful-signals PLAN-TRUTH-146, PRQ-05 hard-blocked on truthful-signals PLAN-TRUTH-144 running). This reconciliation itself is landing via PR from worktree branch chore/post-run-quality-ledger-relocation with bot review skipped (ledger-only, not reviewable content). ⛔ The old .plan/local/orchestrator/post-run-quality/ tree is ORPHANED -- never read or write it again. ▶ ON RESUME: (a) confirm this reconciliation PR merged and main pulled; (b) run next to emit PRQ-03's hand-off command, checking truthful-signals' queue first per the two hard blocks above. ===
 **Phase**: orchestrating
-**Inbox (derived)**: 0 queued, 24 archived
+**Inbox (derived)**: 0 queued, 33 archived
 **Queue** (staged, in order):
 1. PLAN-PRQ-03 (WS-02)
 2. PLAN-PRQ-04 (WS-04)
@@ -53,7 +53,8 @@ the machinery that grades us.
 7. PLAN-PRQ-09 (WS-01)
 8. PLAN-PRQ-10 (WS-01)
 9. PLAN-PRQ-11 (WS-01)
-- PLAN-PRQ-02 (WS-01) — status: launched
+10. PLAN-PRQ-12 (WS-01)
+- PLAN-PRQ-02 (WS-01) — plan=retrospective-aspects-publish-verdict — PR 1550 — landing=landings/PLAN-PRQ-02.md — status: shipped
 - PLAN-PRQ-06 (WS-04) — plan=prq-06-a-lane-override-that-cannot-take-effect-is — PR 1541 — landing=landings/PLAN-PRQ-06.md — status: shipped
 <!-- END GENERATED: resume-summary -->
 
@@ -83,16 +84,16 @@ the machinery that grades us.
 <!-- BEGIN GENERATED: ordered-queue -->
 | # | Plan | Workstream | Status | Surface (expected) |
 |---|------|------------|--------|--------------------|
-| 1 | PLAN-PRQ-02 | WS-01 | launched | marketplace/bundles/plan-marshall/skills/plan-retrospective/SKILL.md; marketplace/bundles/plan-marshall/skills/plan-retrospective/references/; marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/; marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/_footprint_resolver.py; marketplace/bundles/plan-marshall/skills/plan-retrospective/standards/execution-context-dispatch-audit.md; test/plan-marshall/plan-retrospective/ |
-| 2 | PLAN-PRQ-03 | WS-02 | staged | .claude/skills/audit-archived-plan-retrospectives/SKILL.md; .claude/skills/audit-archived-plan-retrospectives/checks/; .claude/skills/audit-archived-plan-retrospectives/scripts/audit.py; .claude/skills/recipe-plan-review/SKILL.md; test/plan-marshall/audit-archived-plan-retrospectives/ |
-| 3 | PLAN-PRQ-04 | WS-04 | staged | marketplace/bundles/plan-marshall/skills/manage-status/**; marketplace/bundles/plan-marshall/skills/phase-6-finalize/**; marketplace/bundles/plan-marshall/skills/plan-orchestrator/standards/landing-payload-spec.md; test/plan-marshall/phase-6-finalize/** |
-| 4 | PLAN-PRQ-01 | WS-01 | staged | .claude/skills/audit-archived-plan-retrospectives/SKILL.md; .claude/skills/audit-archived-plan-retrospectives/checks/; .claude/skills/audit-archived-plan-retrospectives/scripts/audit.py; doc/analyzis-cloud-plan/; marketplace/bundles/plan-marshall/skills/manage-findings/**; marketplace/bundles/plan-marshall/skills/manage-references/**; marketplace/bundles/plan-marshall/skills/phase-3-outline/**; marketplace/bundles/plan-marshall/skills/phase-6-finalize/scripts/review_commitments.py; marketplace/bundles/plan-marshall/skills/plan-retrospective/SKILL.md; marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/; marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/compile-report.py; marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/retro_sections.py; marketplace/bundles/plan-marshall/skills/script-shared/scripts/; marketplace/bundles/plan-marshall/skills/script-shared/scripts/build/_gate_coverage.py; marketplace/bundles/plan-marshall/skills/tools-file-ops/scripts/constants.py; marketplace/bundles/plan-marshall/skills/workflow-integration-github/scripts/github_pr.py; test/plan-marshall/audit-archived-plan-retrospectives/; test/plan-marshall/manage-findings/**; test/plan-marshall/plan-retrospective/; test/plan-marshall/plan-retrospective/** |
-| 5 | PLAN-PRQ-05 | WS-03 | staged | .claude/skills/finalize-step-lessons-housekeeping/; marketplace/bundles/plan-marshall/skills/manage-lessons/; test/plan-marshall/manage-lessons/ |
-| 6 | PLAN-PRQ-07 | WS-05 | staged | .claude/skills/audit-archived-plan-retrospectives/; marketplace/bundles/plan-marshall/skills/finalize-step-analyze-marshall-quality/; marketplace/bundles/plan-marshall/skills/phase-6-finalize/; test/plan-marshall/audit-archived-plan-retrospectives/ |
-| 7 | PLAN-PRQ-08 | WS-01 | staged | marketplace/bundles/plan-marshall/skills/manage-execution-manifest/scripts/manage-execution-manifest.py; marketplace/bundles/plan-marshall/skills/manage-metrics/scripts/; marketplace/bundles/plan-marshall/skills/manage-metrics/standards/data-format.md; marketplace/bundles/plan-marshall/skills/phase-4-plan/SKILL.md; marketplace/bundles/plan-marshall/skills/plan-retrospective/references/; marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/retro_sections.py; test/plan-marshall/manage-metrics/; test/plan-marshall/plan-retrospective/ |
-| 8 | PLAN-PRQ-09 | WS-01 | staged | marketplace/bundles/plan-marshall/skills/manage-tasks/**; marketplace/bundles/plan-marshall/skills/plan-retrospective/references/; marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/; marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/retro_sections.py; test/plan-marshall/plan-retrospective/ |
-| 9 | PLAN-PRQ-10 | WS-01 | staged | doc/user/configuration.adoc; marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-finalize-step.md; marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-self-review-surfacing.md; marketplace/bundles/plan-marshall/skills/manage-execution-manifest/scripts/manage-execution-manifest.py; marketplace/bundles/plan-marshall/skills/phase-6-finalize/SKILL.md; marketplace/bundles/plan-marshall/skills/phase-6-finalize/workflow/pre-submission-self-review.md; marketplace/bundles/pm-plugin-development/skills/ext-self-review-plan-marshall/SKILL.md; marketplace/bundles/pm-plugin-development/skills/ext-self-review-plan-marshall/scripts/_self_review_detectors.py; test/plan-marshall/phase-6-finalize/; test/pm-plugin-development/ext-self-review-plan-marshall/ |
-| 10 | PLAN-PRQ-11 | WS-01 | staged | marketplace/bundles/plan-marshall/skills/plan-retrospective/references/; marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/; test/plan-marshall/plan-retrospective/ |
+| 1 | PLAN-PRQ-03 | WS-02 | staged | .claude/skills/audit-archived-plan-retrospectives/SKILL.md; .claude/skills/audit-archived-plan-retrospectives/checks/; .claude/skills/audit-archived-plan-retrospectives/scripts/audit.py; .claude/skills/recipe-plan-review/SKILL.md; test/plan-marshall/audit-archived-plan-retrospectives/ |
+| 2 | PLAN-PRQ-04 | WS-04 | staged | marketplace/bundles/plan-marshall/skills/manage-status/**; marketplace/bundles/plan-marshall/skills/phase-6-finalize/**; marketplace/bundles/plan-marshall/skills/plan-orchestrator/standards/landing-payload-spec.md; test/plan-marshall/phase-6-finalize/** |
+| 3 | PLAN-PRQ-01 | WS-01 | staged | .claude/skills/audit-archived-plan-retrospectives/SKILL.md; .claude/skills/audit-archived-plan-retrospectives/checks/; .claude/skills/audit-archived-plan-retrospectives/scripts/audit.py; doc/analyzis-cloud-plan/; marketplace/bundles/plan-marshall/skills/manage-findings/**; marketplace/bundles/plan-marshall/skills/manage-references/**; marketplace/bundles/plan-marshall/skills/phase-3-outline/**; marketplace/bundles/plan-marshall/skills/phase-6-finalize/scripts/review_commitments.py; marketplace/bundles/plan-marshall/skills/plan-retrospective/SKILL.md; marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/; marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/**; marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/compile-report.py; marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/retro_sections.py; marketplace/bundles/plan-marshall/skills/script-shared/scripts/; marketplace/bundles/plan-marshall/skills/script-shared/scripts/build/_gate_coverage.py; marketplace/bundles/plan-marshall/skills/tools-file-ops/scripts/constants.py; marketplace/bundles/plan-marshall/skills/workflow-integration-github/scripts/github_pr.py; test/plan-marshall/audit-archived-plan-retrospectives/; test/plan-marshall/manage-findings/**; test/plan-marshall/plan-retrospective/; test/plan-marshall/plan-retrospective/** |
+| 4 | PLAN-PRQ-05 | WS-03 | staged | .claude/skills/finalize-step-lessons-housekeeping/; marketplace/bundles/plan-marshall/skills/manage-lessons/; test/plan-marshall/manage-lessons/ |
+| 5 | PLAN-PRQ-07 | WS-05 | staged | .claude/skills/audit-archived-plan-retrospectives/; marketplace/bundles/plan-marshall/skills/finalize-step-analyze-marshall-quality/; marketplace/bundles/plan-marshall/skills/phase-6-finalize/; test/plan-marshall/audit-archived-plan-retrospectives/ |
+| 6 | PLAN-PRQ-08 | WS-01 | staged | marketplace/bundles/plan-marshall/skills/manage-execution-manifest/scripts/manage-execution-manifest.py; marketplace/bundles/plan-marshall/skills/manage-metrics/scripts/; marketplace/bundles/plan-marshall/skills/manage-metrics/standards/data-format.md; marketplace/bundles/plan-marshall/skills/phase-4-plan/SKILL.md; marketplace/bundles/plan-marshall/skills/plan-retrospective/references/; marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/retro_sections.py; test/plan-marshall/manage-metrics/; test/plan-marshall/plan-retrospective/ |
+| 7 | PLAN-PRQ-09 | WS-01 | staged | marketplace/bundles/plan-marshall/skills/manage-tasks/**; marketplace/bundles/plan-marshall/skills/plan-retrospective/references/; marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/; marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/compile-report.py; marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/retro_sections.py; test/plan-marshall/plan-retrospective/ |
+| 8 | PLAN-PRQ-10 | WS-01 | staged | doc/user/configuration.adoc; marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-finalize-step.md; marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-self-review-surfacing.md; marketplace/bundles/plan-marshall/skills/manage-execution-manifest/scripts/manage-execution-manifest.py; marketplace/bundles/plan-marshall/skills/phase-6-finalize/SKILL.md; marketplace/bundles/plan-marshall/skills/phase-6-finalize/workflow/pre-submission-self-review.md; marketplace/bundles/pm-plugin-development/skills/ext-self-review-plan-marshall/SKILL.md; marketplace/bundles/pm-plugin-development/skills/ext-self-review-plan-marshall/scripts/_self_review_detectors.py; marketplace/bundles/pm-plugin-development/skills/ext-self-review-plan-marshall/scripts/_self_review_patterns.py; marketplace/bundles/pm-plugin-development/skills/ext-self-review-plan-marshall/scripts/self_review.py; test/plan-marshall/phase-6-finalize/; test/pm-plugin-development/ext-self-review-plan-marshall/ |
+| 9 | PLAN-PRQ-11 | WS-01 | staged | marketplace/bundles/plan-marshall/skills/plan-retrospective/references/; marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/; test/plan-marshall/plan-retrospective/ |
+| 10 | PLAN-PRQ-12 | WS-01 | staged | marketplace/bundles/plan-marshall/skills/plan-retrospective/references/chat-history-analysis.md; marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/extract-chat-signal.py; marketplace/bundles/plan-marshall/skills/platform-runtime/scripts/_chat_signal_reducer.py; marketplace/bundles/plan-marshall/skills/platform-runtime/scripts/_claude_runtime_impl.py; marketplace/bundles/plan-marshall/skills/platform-runtime/scripts/antigravity_runtime.py; marketplace/bundles/plan-marshall/skills/platform-runtime/scripts/opencode_runtime.py; marketplace/bundles/plan-marshall/skills/ref-toon-format/scripts/toon_parser.py; test/plan-marshall/plan-retrospective/test_extract_chat_signal.py; test/plan-marshall/platform-runtime/ |
 <!-- END GENERATED: ordered-queue -->
 
 ### Queue annotations
@@ -217,12 +218,59 @@ the machinery that grades us.
   either the archive copy or the covering PRQ-02 deliverable. Two corpus entries (`2026-09-08-22-006/-007`)
   surfaced a `list`/`get` inconsistency and were deliberately left untouched — see Watches.
 
+- 2026-09-21 — **Cleanup pass 2 (restart preparation), `checked_at: e8a71650`.** Dispatched A1
+  corroboration across the 10 non-`PLAN-PRQ-02` specs (that one excluded — actively launched/running).
+  22 claims corroborated (19/3 corroborated/contradicted), 0 blocking. Five specs corrected in place:
+  `PLAN-PRQ-01` (restored the source's hard `PLAN-TRUTH-146` dependency and a dropped Expected Surface
+  glob, both softened/lost at the 2026-09-17 transfer), `PLAN-PRQ-05` (corpus size has moved ~5× since
+  staging — flagged as must-re-derive, not trust; `PLAN-TRUTH-144` moved `staged → RUNNING`, hardened
+  from a theoretical collision to a live block), `PLAN-PRQ-07` (wrong citation for the archived-plans
+  layout), `PLAN-PRQ-10` (registry population corrected from 5 to 6 content classes; D1 narrowed to two
+  of its three proposed shapes, the third refused by the finalize-step facts contract; D0(b)'s Expected
+  Surface pointed at the wrong file for `CANDIDATE_LISTS`; three more cross-epic collisions declared —
+  `truthful-signals` `PLAN-TRUTH-173`/`-167` and `review-apparatus` `PLAN-PR-074`, all staged, all
+  touching the same self-review files no single gate can see across three ledgers), `PLAN-PRQ-11` (D1's
+  premise materially refuted — the partition it proposed to add already exists in the classifier; narrowed
+  to publishing it plus one further subtype split). A4: 0 new within-epic duplicates; one missing overlap
+  note added to `PLAN-PRQ-11`. This is the SECOND time a corroboration pass has found and corrected a
+  transfer-softened dependency and a dropped Expected Surface entry (`PLAN-PRQ-01`) — worth naming as a
+  pattern: a spec TRANSFER is not merely a copy, and each one needs its own re-grounding pass rather than
+  being trusted as verbatim.
+
+- 2026-09-21 — **Ledger store relocated to a tracked address; PLAN-PRQ-02 landed and reconciled.**
+  `orchestrator-refactor` PLAN-01 (PR #1557/#1558, landed on `main` ahead of this reconciliation) moved
+  the orchestrator store from the git-ignored `.plan/local/orchestrator/{slug}/` to the git-tracked
+  `.plan/orchestrator/{slug}/` — this epic's canonical tree is now version-controlled. The migration
+  landed from a snapshot taken BEFORE cleanup pass 2 completed, so this epic's tracked copy briefly
+  diverged from the pass-2-complete content that remained only in the old, now-orphaned local path;
+  reconciled here by porting every pass-2 correction (specs `PLAN-PRQ-01/03/05/07/10/11`, this Decisions
+  entry) into the tracked tree and updating every spec's `Hand-Off Command` path to drop the `local`
+  segment. `PLAN-PRQ-02` (retrospective-aspects-publish-verdict, PR #1550) shipped in the same window;
+  its landing (`landings/PLAN-PRQ-02.md`) and inbox drain are reconciled in this same pass — see the
+  landing record for the 9-message disposition. This reconciliation itself runs inside a worktree on
+  branch `chore/post-run-quality-ledger-relocation`, landed via its own PR with bot review skipped (a
+  ledger-only relocation, not reviewable content) — the pattern PLAN-01 itself established for its own
+  landing. The old `.plan/local/orchestrator/post-run-quality/` tree is now ORPHANED — do not read or
+  write it going forward.
+
 ## Open Defects
 
 - **The census does not census itself.** `audit-archived-plan-retrospectives` SKILL.md:231-236 states it
   outright — the suspect-zero census is excluded from its own population, "the detector-inside-its-own-
   population failure mode, standing unresolved in the instrument built to surface it." — source: inventory
   sweep 2026-09-17. ⇒ Owned by PLAN-PRQ-03.
+- **Deterministic computation sited in retrospective reference prose instead of a script.** Filed 2026-09-21
+  (inbox `retrospective-aspects-publish-verdict-007.md`, actions #1/#2 — action #3 already folded into
+  `PLAN-PRQ-09` D4). Two members: (1) `references/plan-efficiency.md` Sections 1-2 compute four ratios
+  against a 35-row static anchor table entirely in prose, with three separate arithmetic-hazard warnings
+  (ms-vs-seconds, string-typed plan-level keys silently defeating `max(denominator, 1)`, numerator must be
+  worked not wall time) that exist only because the computation lives in a doc instead of code; (2)
+  `request-result-alignment`'s scope-creep set-difference re-derives by hand what `manage-references`
+  already ships as a three-way (declaration/structured-derivation/realized-footprint) reconciliation — on
+  this run the hand computation and the existing reconciliation returned different-but-both-correct figures
+  (8 vs 10 creep paths) for a legitimate reason (differing read-intent declarations), which is exactly the
+  second-producer risk `plan-efficiency.md` itself warns against for denominators. ⇒ **Unowned** — the
+  filing message itself frames this as lower priority than its action #3; no spec staged.
 - ✅ **RESOLVED-AS-REFUTED 2026-09-17, and re-staged on its true mechanism as `PLAN-PRQ-06`** (operator
   reported the same observation independently; analyzed the same day). The entry as filed read: *"either
   the lane resolution does not drop a non-ceremony step at `off`, or the landing's step list is not
