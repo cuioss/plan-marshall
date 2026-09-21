@@ -37,10 +37,6 @@ from conftest import (
     parse_ns,
 )
 
-_ORCH_BUNDLE = 'plan-marshall'
-_ORCH_SKILL = 'plan-orchestrator'
-_ORCH_SCRIPT = 'orchestrator.py'
-
 _orch = load_script_module('plan-marshall', 'plan-orchestrator', 'orchestrator.py', 'orchestrator_corpus_read')
 
 cmd_corpus_read = _orch.cmd_corpus_read
@@ -70,9 +66,9 @@ def _variant(base: argparse.Namespace, **overrides: Any) -> argparse.Namespace:
 
 
 _READ_ARGS = parse_ns(
-    _ORCH_BUNDLE,
-    _ORCH_SKILL,
-    _ORCH_SCRIPT,
+    'plan-marshall',
+    'plan-orchestrator',
+    'orchestrator.py',
     'corpus',
     'read',
     '--slug',
