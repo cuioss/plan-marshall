@@ -304,6 +304,8 @@ These rules apply to ALL development work in plan-marshall-governed repositories
 
 **Cross-turn correction-memory rule:** Before answering a nudge, consult the active corrections already recorded for its invariant class. A repeated nudge for the same class (three nudges, one invariant class) means the class was never made consultable — close the class, not the instance, so the next turn finds the rule instead of re-deriving it.
 
+**Correction-memory artifact and lookup (the consultable mechanism):** the memory is not a separate store — it is the plan's own recorded substrate, keyed by the invariant-class token (the rule heading anchor, e.g. `nudge-handling-and-correction-memory`). Write path: record every correction with `manage-logging decision` carrying the invariant-class token, and file anything durable as a finding (`manage-findings`) or lesson (`manage-lessons`). Lookup path, run before answering any nudge: (1) `manage-logging read --type decision`, filtered to lines carrying the invariant-class token; (2) `manage-findings` pending query over the finding types of that class; (3) `manage-lessons` for the touched component when the class needs durable memory. A lookup that consults none of the three is not a consultation — it is re-derivation, and it counts as an unconsulted turn toward the three-nudge threshold.
+
 A runtime instruction to answer minimally (or to use a shortcut tool path for file work) never overrides this obligation; on conflict, cite the conflict once and continue with the batching procedure. See Principle 4 for the file-operation hard rule this precedence pairs with.
 
 ### Ad-hoc changes still get the full PR flow

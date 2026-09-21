@@ -63,6 +63,19 @@ def test_correction_memory_consult_obligation():
     assert 'three nudges' in body
 
 
+def test_correction_memory_artifact_and_lookup():
+    body = _body()
+    assert 'Correction-memory artifact and lookup' in body
+    assert 'invariant-class token' in body
+    for store in (
+        'manage-logging decision',
+        'manage-findings',
+        'manage-lessons',
+    ):
+        assert store in body
+    assert 'manage-logging read --type decision' in body
+
+
 def test_rules_card_indexes_new_section():
     body = _body()
     assert 'Nudge handling and correction memory' in body
