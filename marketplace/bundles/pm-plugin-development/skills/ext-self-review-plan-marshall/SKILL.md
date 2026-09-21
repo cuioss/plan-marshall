@@ -95,7 +95,7 @@ Every entry in the `CANDIDATE_LISTS` registry carries a required `family` over a
 
 | Family | Reads | Member detection rules |
 |--------|-------|------------------------|
-| `structural` | Code SHAPE — a pattern, a pair of names, a guard, a call site, a claim into a collection | regexes, symmetric pairs, flag-guard pairs, keep markers (and the derived protected-identifiers index), producer-consumer pairs, source-of-truth duplicates, lone unguarded boundaries, scan-derived keys, duplicate-claimable keys, discard paths without a report path |
+| `structural` | Code SHAPE — a pattern, a pair of names, a guard, a call site, a claim into a collection | regexes, symmetric pairs, flag-guard pairs, keep markers (and the derived protected-identifiers index), producer-consumer pairs, source-of-truth duplicates, lone unguarded boundaries, scan-derived keys, duplicate-claimable keys, discard paths without a report path, hoisted-binding shadows |
 | `prose_contract` | PROSE or contract consistency — a heading, a description, a count claim, a documented schema | user-facing strings, markdown sections, contract sources, schema-bearing files, same-document normative directives, description-vs-body frontmatter, stale count-prose, near-identical-hunk touched claims, advertised-form help strings, same-document ordinal references, worked-example clause pairs |
 
 `counts.by_family` reports the per-round mix over the SAME `in_total` population `counts.total` sums, so the two family figures add up to `total` exactly. Both families are always reported, including a zero: a round that surfaced only prose candidates is a detector-mix signal about the change under review, and an omitted key would read as "not measured" rather than "none found".
