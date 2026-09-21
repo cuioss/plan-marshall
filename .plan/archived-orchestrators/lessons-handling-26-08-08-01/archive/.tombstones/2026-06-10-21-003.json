@@ -1,0 +1,7 @@
+{
+  "lesson_id": "2026-06-10-21-003",
+  "removed_at": "2026-06-12T19:53:48.625143+00:00",
+  "reason": "Aggregated into Recipe-discovery scanner matches the LAST backticked recipe_domain line",
+  "status": "superseded",
+  "superseded_by": "2026-06-05-10-001"
+}

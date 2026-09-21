@@ -1,0 +1,7 @@
+{
+  "lesson_id": "2026-06-20-17-004",
+  "removed_at": "2026-06-20T22:09:21.817247+00:00",
+  "reason": "Aggregated into Maven -am (--also-make) must be excluded from clean: it wipes upstream reactor target dirs",
+  "status": "superseded",
+  "superseded_by": "2026-06-15-08-001"
+}

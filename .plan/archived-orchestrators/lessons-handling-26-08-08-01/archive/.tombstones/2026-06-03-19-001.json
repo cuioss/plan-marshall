@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-06-03-19-001",
+  "removed_at": "2026-06-03T17:22:35.917304+00:00",
+  "reason": "Folded into 2026-06-03-18-004 as a sibling finalize worktree-verb resolution defect (same component, same run, same wrong-tree-resolution family) rather than fragmenting the corpus",
+  "status": "removed"
+}

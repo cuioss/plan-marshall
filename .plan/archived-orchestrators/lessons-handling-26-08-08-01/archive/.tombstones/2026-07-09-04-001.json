@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-07-09-04-001",
+  "removed_at": "2026-07-13T11:01:16.229248+00:00",
+  "reason": "which-module now unions paths.sources+paths.tests plus .claude/skills mapping, with regression tests (commit b7bf960f4), shipped by plan-7-execute-task-tests D1",
+  "status": "removed"
+}

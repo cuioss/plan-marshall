@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-06-28-20-001",
+  "removed_at": "2026-07-15T17:08:03.714619+00:00",
+  "reason": "guarded gap closed - all three LLM-reasoning consumers now wired onto ext-point-verify with quality profile and durable rule codified in ext-point-verify.md Current Implementations table (plan ext-point-verify-consumers)",
+  "status": "removed"
+}

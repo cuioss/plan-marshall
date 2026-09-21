@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-07-13-18-001",
+  "removed_at": "2026-07-17T07:23:04.270112+00:00",
+  "reason": "lessons-capture post-push tree dirtying, mutates_source gap. Remediated by mutates_source true declaration wiring item-5f instrumentation in Deliverable 4, codified in lessons-capture.md and phase-6-finalize SKILL.md (plan finalize-commit-integrity, PR 914)",
+  "status": "removed"
+}

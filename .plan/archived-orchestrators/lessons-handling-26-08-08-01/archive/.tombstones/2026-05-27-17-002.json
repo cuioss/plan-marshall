@@ -1,0 +1,7 @@
+{
+  "lesson_id": "2026-05-27-17-002",
+  "removed_at": "2026-05-28T17:40:27.680175+00:00",
+  "reason": "Aggregated into Recurring argparse-rejection cluster across phase-6-finalize workflow steps",
+  "status": "superseded",
+  "superseded_by": "2026-05-27-14-004"
+}

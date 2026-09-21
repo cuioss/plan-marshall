@@ -1,0 +1,98 @@
+{
+  "kind": "orchestrator",
+  "title": "Orchestrator Substrate Refactor",
+  "phase": "orchestrating",
+  "workstreams": [
+    {
+      "id": "WS-01",
+      "slug": "shared-store-substrate",
+      "title": "Shared Store Substrate"
+    },
+    {
+      "id": "WS-02",
+      "slug": "layout-migration-mechanism",
+      "title": "Layout Migration Mechanism"
+    },
+    {
+      "id": "WS-03",
+      "slug": "identifier-vocabulary",
+      "title": "Identifier Vocabulary"
+    },
+    {
+      "id": "WS-04",
+      "slug": "mechanism-consolidation",
+      "title": "Mechanism Consolidation"
+    }
+  ],
+  "plans": [
+    {
+      "id": "PLAN-01",
+      "slug": "tracked-orchestrator-store-resolver",
+      "workstream": "WS-01",
+      "status": "launched",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-02",
+      "slug": "ledger-decomposition-and-row-vocabulary",
+      "workstream": "WS-01",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-03",
+      "slug": "self-terminating-layout-migration",
+      "workstream": "WS-02",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-04",
+      "slug": "identifier-vocabulary-decision",
+      "workstream": "WS-03",
+      "status": "shipped",
+      "plan_marshall_plan_id": "identifier-vocabulary-decision",
+      "pr": "#1543",
+      "landing": "landings/PLAN-04.md"
+    },
+    {
+      "id": "PLAN-05",
+      "slug": "identifier-rename-execution",
+      "workstream": "WS-03",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-06",
+      "slug": "orchestrator-mechanism-intake",
+      "workstream": "WS-04",
+      "status": "parked",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-07",
+      "slug": "orchestrator-script-decomposition",
+      "workstream": "WS-04",
+      "status": "parked",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    }
+  ],
+  "resume_anchor": "PLAN-01 launched, awaiting its landing. parallelization_scope=2 has 1 slot free, but PLAN-02/03/05 all depend on PLAN-01 actually landing (not just launching), so nothing else is emittable yet.",
+  "metadata": {
+    "parallelization_scope": "2"
+  },
+  "created": "2026-09-19T12:31:55Z",
+  "updated": "2026-09-20T10:23:39Z"
+}

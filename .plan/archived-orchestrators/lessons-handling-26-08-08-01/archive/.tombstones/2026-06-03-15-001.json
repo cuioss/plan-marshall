@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-06-03-15-001",
+  "removed_at": "2026-06-09T07:00:54.086679+00:00",
+  "reason": "Obsolete: B3 surgical-fold mechanism removed; verification now flows through verification.commands + execution_tier routing",
+  "status": "removed"
+}

@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-07-06-00-001",
+  "removed_at": "2026-07-17T07:56:51.179025+00:00",
+  "reason": "Completely covered: D6 confirmed the shipped detect_stale_skills_by_profile guard (WARNING on the get_module_info read path phase-4-plan uses) satisfies the durable-guard ask; retire-only decision, no fail-loud promotion. Stale data is gitignored project-local state, not a marketplace edit (plan architecture-resolution, PR #917)",
+  "status": "removed"
+}

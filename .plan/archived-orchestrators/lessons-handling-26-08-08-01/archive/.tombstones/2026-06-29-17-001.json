@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-06-29-17-001",
+  "removed_at": "2026-07-06T16:04:58.887740+00:00",
+  "reason": "completely covered by D1 which rewired the execution.md phase-5 dispatch to the phase-5-execute envelope runner instead of the single-task execute-task workflow, residue rule already codified in ext-point-execution-context-workflow standard, plan execution-loop-reliability",
+  "status": "removed"
+}

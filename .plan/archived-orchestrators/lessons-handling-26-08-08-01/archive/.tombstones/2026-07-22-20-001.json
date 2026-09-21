@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-07-22-20-001",
+  "removed_at": "2026-07-23T07:18:08.882744+00:00",
+  "reason": "Guarded race (shared pytest-of-user rm_rf cleanup race under filterwarnings=error) eliminated at the root: build.py now allocates a per-session repo-local --basetemp (pid+uuid4 keyed) with bounded-growth pruning (keep=3) so concurrent or killed sessions never share a basetemp root, and the fix plus rationale are self-documented in build.py's own docstrings (plan test-suite-measurement-protocol)",
+  "status": "removed"
+}

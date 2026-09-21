@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-07-16-18-001",
+  "removed_at": "2026-07-22T17:28:26.156090+00:00",
+  "reason": "completely covered: build-decision-oracle-consolidation retired aspect-classify's drops_build_steps/negative-constraint-override mechanism entirely. aspect-classify no longer has any say over build necessity, which is now the sole province of the build-decision verdict over the live footprint, so a stated docs-only intent can never again be overridden by a low-confidence narrative classifier. Residue already promoted to the ADR-004 amendment (plan build-decision-oracle-consolidation)",
+  "status": "removed"
+}

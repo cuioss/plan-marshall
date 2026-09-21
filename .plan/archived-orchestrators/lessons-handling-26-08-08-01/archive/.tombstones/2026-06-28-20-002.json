@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-06-28-20-002",
+  "removed_at": "2026-06-28T19:19:43.390903+00:00",
+  "reason": "Withdrawn: marshal.json configures domains only; security is a dynamically-resolved per-domain profile (same structure as implementation/quality) \u2014 no config gap. The pm-plugin-development security profile is being added in a parallel session; the only real remaining item (audit cannot resolve per-domain security skills) is already tracked by 2026-06-25-08-002.",
+  "status": "removed"
+}

@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-06-20-18-001",
+  "removed_at": "2026-07-07T16:02:08.974120+00:00",
+  "reason": "Completely covered by plan finalize-flow-hardening D1 - manage-ci-artifacts persist moved to a validated Python call site in ci_verify.py behind _first_missing_required_field guard over all five required flags plus a _WAIT_OUTCOME_ENUM clamp, structurally eliminating the argparse-drift class. Codified in standards/ci-verify.md persist-guard section and test_ci_verify.py",
+  "status": "removed"
+}

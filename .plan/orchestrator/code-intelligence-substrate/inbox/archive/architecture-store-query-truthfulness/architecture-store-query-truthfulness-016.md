@@ -1,0 +1,34 @@
+envelope_version=1
+sender_type=plan
+sender_id=architecture-store-query-truthfulness
+epic=code-intelligence-substrate
+kind=candidate-lesson
+created=2026-09-15T07:51:39Z
+
+component=plan-marshall:plan-orchestrator
+category=bug
+
+# An outline cited `orchestrator inbox write` with 2 of its 5 required flags and no executor prefix
+
+Source: Q-Gate finding df7a0d (3-outline, resolution=fixed).
+
+D5 sub-item 14 cited "orchestrator inbox write --slug code-intelligence-substrate --kind
+finding". Probed against the live parser, the verb declares FIVE required flags: --slug,
+--sender-type, --sender-id, --kind, --payload-file. The cited shape is an argparse
+rejection (exit 2) before the script body runs, and it also omits the
+"python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator" prefix,
+so as written it is not a runnable command at all.
+
+## Solution
+
+Two compounding failures worth separating. (1) The invocation was written from the
+narrative rather than quoted from --help — the canonical recurrence signature.
+(2) D5's Success Criteria said "the epic inbox message is filed", a SIDE EFFECT that no
+task in the decomposition (TASK-009/010/011) actually performed — a coverage gap in
+phase-4-plan task derivation, since a deliverable obligation producing no source diff
+does not fit the steps[] file-list shape.
+
+## Impact
+
+The message was filed directly by the orchestrator to close the gap. The derivation gap
+recurs for any deliverable whose obligation is a side effect rather than an edit.

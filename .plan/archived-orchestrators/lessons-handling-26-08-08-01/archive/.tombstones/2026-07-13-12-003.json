@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-07-13-12-003",
+  "removed_at": "2026-07-27T09:37:48.301766+00:00",
+  "reason": "D3 closed: omitted-call half fixed structurally - agents.md binds record-before-return invariant over every dispatched leaf, dispatcher treats step_record_missing on a success return as leaf-attributable contract violation. Wrong-key half already absorbed by PROMOTED_BUILTIN_STEP_IDS plus non_canonical_step fail-loud via the shared step-key-canonical resolver (plan finalize-dispatch-audit-integrity)",
+  "status": "removed"
+}

@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-06-28-19-002",
+  "removed_at": "2026-06-28T20:03:09.539805+00:00",
+  "reason": "Completely covered: fenced-code-no-language is now a build-failing in-house gate with a deterministic auto-fixer (D1/D2); the guarded failure mode (bare fences slipping past all in-house gates, only CodeRabbit catching) can no longer occur, and the tag-your-fences rule is enforced by code + codified in rule-provenance.md/rule-catalog.md (plan activate-mirror-rules-gating)",
+  "status": "removed"
+}

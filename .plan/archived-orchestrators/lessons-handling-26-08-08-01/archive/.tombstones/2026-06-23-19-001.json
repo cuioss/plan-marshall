@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-06-23-19-001",
+  "removed_at": "2026-07-28T19:13:20.327605+00:00",
+  "reason": "required_bots/optional_bots plus the ask posture means a silently-absent required bot (including a large-PR file-count auto-skip, which resolves to the absent taxonomy member with no check-run) now forces an explicit operator escalation instead of a silent green pass - the guarded failure mode (absence read as clean review) can no longer occur (plan one-coherent-automated-review-contract, D3/D6)",
+  "status": "removed"
+}

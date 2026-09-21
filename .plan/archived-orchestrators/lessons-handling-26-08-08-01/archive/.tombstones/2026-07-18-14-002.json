@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-07-18-14-002",
+  "removed_at": "2026-07-18T22:06:54.950552+00:00",
+  "reason": "trigger-comment barrier churn eliminated by is_registered_trigger_comment noise filter + CodeRabbit rate-limit filter (verified this finalize: trigger-A re-review filtered, zero loopback); Sourcery rate-limit residue tracked by open 2026-07-13-21-001 (plan review-barrier-noise-filter)",
+  "status": "removed"
+}

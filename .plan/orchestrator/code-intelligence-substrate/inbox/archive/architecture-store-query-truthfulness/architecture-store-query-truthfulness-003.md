@@ -1,0 +1,34 @@
+envelope_version=1
+sender_type=plan
+sender_id=architecture-store-query-truthfulness
+epic=code-intelligence-substrate
+kind=candidate-lesson
+created=2026-09-15T07:43:21Z
+
+component=plan-marshall:manage-solution-outline
+category=anti-pattern
+created=2026-09-15
+bundle=plan-marshall
+
+# Retire the extract-deliverables verb name — 14 rejections in one plan
+
+## Context
+
+Callers invoked `manage-solution-outline extract-deliverables` 14 times during this plan. The declared verb is `list-deliverables`; every one of the 14 calls was rejected by argparse at exit 2 without entering the script body. That single verb name accounts for 14 of the plan's 33 script failures — the largest failure signature in the run by a wide margin.
+
+## Root cause
+
+The skill's own prose describes the operation as "extract deliverables" (the SKILL.md aspect table and the deliverable-extraction description both use that wording), while argparse declares `list-deliverables`. A caller quoting the prose rather than the argparse surface produces a plausible-but-wrong verb, which is recurrence signature 1 (verb-paraphrase) in `persona-plan-marshall-agent/standards/agent-behavior-rules.md`.
+
+## Solution
+
+Pick one: either add `extract-deliverables` as a declared argparse alias of `list-deliverables` (the same accepted-secondary-spelling carve-out `manage-lessons read` / `manage-tasks get` / `manage-status get` already use), or sweep the prose so no document describes the operation with a word that is not the verb. Do not leave the two spellings live in different places.
+
+## Impact
+
+Fourteen wasted round-trips in one plan, each costing a tool call and a retry, and each polluting the plan's script-execution log with a failure that carries no diagnostic value.
+
+## Evidence
+
+- aspect: script_failure_analysis — `anti-pattern, argparse_other, plan-marshall:manage-solution-outline:manage-solution-outline, extract-deliverables, exit 2, occurrence_count 14`
+- The verb surface confirmed live: `manage-solution-outline --help` declares `{validate,list-deliverables,read,get-deliverable,exists,get-field,resolve-path,write,update,get-module-context}`

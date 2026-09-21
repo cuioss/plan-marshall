@@ -1,0 +1,43 @@
+envelope_version=1
+sender_type=plan
+sender_id=architecture-store-query-truthfulness
+epic=code-intelligence-substrate
+kind=candidate-lesson
+created=2026-09-15T07:57:43Z
+
+component=plan-marshall:manage-tasks
+category=bug
+
+# "Four call sites" was not merely unenforced — it was already wrong when written
+
+Source: PR #1489 CodeRabbit inline finding 47e436 (resolution=fixed, TASK-044).
+
+The reviewer flagged a docstring claim of "Four call sites" for index_unique_by_number as
+an unenforced exhaustive count. Checking it made the finding STRONGER than reported.
+Derived over the script inventory (architecture search --content, files_scanned 441,
+unreadable[] empty, truncated false, elided[] empty), there are FIVE assignment-shaped
+call sites: _cmd_qgate_mechanical.py at 192 (prose map), 195 (deliverable records), 381
+(acyclic in_degree), 611 (keyword-drift index), plus the closure index in
+_qgate_closure.py.
+
+The omitted one — line 195's indexing of deliverable records in _load_deliverables — is
+precisely a caller-supplied deliverable number indexed into a keyed collection whose
+duplicate report is consumed two lines later.
+
+## Solution
+
+Two things worth carrying.
+
+1. When a reviewer says a count is UNENFORCED, derive it before agreeing. It may already
+   be false, and the count being wrong on arrival is a different and larger defect than
+   the count being able to go stale.
+2. The remedy chosen was the NON-EXHAUSTIVE WORDING one, not the derived-check one.
+   Deriving a call-site population means parsing source, which is the
+   machine-readable-registry class this plan had already declined once as scope expansion
+   (finding 0efb44, carried to a lesson). Rewording needs no registry and removes the
+   false claim outright.
+
+## Impact
+
+Establishes that "remove the false closure claim" is a complete fix when "derive the
+set" would require infrastructure that does not exist.

@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-07-16-17-013",
+  "removed_at": "2026-07-17T07:56:39.564336+00:00",
+  "reason": "ARCH half covered: D4 added the authored build.maven.profiles.mutating signal + resolve-command mutating field + gate-context contract; test reproduces recommendation 3. The consumer non-mutating-profile authoring is handed off to P5/build-maven, not this lesson (plan architecture-resolution, PR #917)",
+  "status": "removed"
+}

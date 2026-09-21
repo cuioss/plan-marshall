@@ -1,0 +1,36 @@
+envelope_version=1
+sender_type=plan
+sender_id=architecture-store-query-truthfulness
+epic=code-intelligence-substrate
+kind=candidate-lesson
+created=2026-09-15T07:55:21Z
+
+component=plan-marshall:manage-architecture
+category=bug
+
+# The published consumer contract described the freshness source the change had just replaced
+
+Source: Q-Gate finding 90f228 (6-finalize, self-review; fixed in-run).
+Defect class contract_drift — 3 findings in this class this round.
+
+client-api.md's `info` section at line 74 still said description AND freshness are read
+from the _project.json modules-index header (the module's description and its
+generation.tree_sha compared to the current working tree). get_project_info now derives
+freshness from the concept DOCUMENT's own generation header, and forces description to
+blank plus freshness `unknown` when no document is on disk. architecture-persistence.md's
+"Client API Mapping" already recorded the new behaviour, so the two surfaced contract
+sources contradicted each other and client-api.md was the drifted one. The same section
+also omitted the presence-gated `warnings` key get_module_info now puts on the module
+payload.
+
+## Solution
+
+This is the PUBLISHED consumer contract for the exact behaviour the plan changed, so the
+stale sentence is the one a consumer reads — the highest-cost drift site of the three.
+When a change moves where a field is derived from, the consumer-facing document is the
+first to update, not the last.
+
+## Impact
+
+A consumer would have read freshness from a mirror that no longer decides it, and would
+not have known the warnings key exists.

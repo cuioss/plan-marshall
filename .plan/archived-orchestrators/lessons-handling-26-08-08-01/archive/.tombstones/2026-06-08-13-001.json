@@ -1,0 +1,7 @@
+{
+  "lesson_id": "2026-06-08-13-001",
+  "removed_at": "2026-06-08T18:48:38.278461+00:00",
+  "reason": "Consolidated into the single config-discipline lesson 2026-06-08-20-001 (Rule 2: field migration preserves read-path + values)",
+  "status": "superseded",
+  "superseded_by": "2026-06-08-20-001"
+}

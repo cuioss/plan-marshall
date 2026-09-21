@@ -1,0 +1,7 @@
+{
+  "lesson_id": "2026-06-21-12-003",
+  "removed_at": "2026-06-24T12:36:40.723044+00:00",
+  "reason": "Aggregated into the static-mirror-drift fix lesson 2026-06-24-14-004 (provides_*-to-SKILL-table + prose/comment counts + relative-link/MD040 guards); its durable-fix discipline (canonical source + full-set coverage) carried forward. Finalize-step registry face excluded (owned by active plan dynamic-finalize-step-discovery).",
+  "status": "superseded",
+  "superseded_by": "2026-06-24-14-004"
+}

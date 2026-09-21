@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-07-21-16-001",
+  "removed_at": "2026-07-26T19:11:35.796306+00:00",
+  "reason": "Both findings verified landed by plan test-suite-quality-unit-testing-residue: dead test/plan-marshall/integration/discover_modules/ tier deleted outright (D2), and the four weak assertions (test_gradle_stats_file_counts, test_gradle_stats_readme_in_paths, test_gradle_module_has_commands, test_gradle_discover_sources) strengthened to concrete-value checks (D3). No residual reusable rule to promote (plan test-suite-quality-unit-testing-residue)",
+  "status": "removed"
+}

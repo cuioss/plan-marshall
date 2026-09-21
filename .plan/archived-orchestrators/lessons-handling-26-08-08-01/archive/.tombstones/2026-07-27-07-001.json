@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-07-27-07-001",
+  "removed_at": "2026-07-28T19:13:08.382261+00:00",
+  "reason": "Evidence-typed participation (participation_evidence closed to publish shapes, check-run-is-not-evidence, refusals excluded from participated_bots) now codified in automatic-review/standards/bot-participation-contract.md - the exact false-signal failure mode (green check or stored refusal-as-finding read as participation) can no longer occur (plan one-coherent-automated-review-contract, D6)",
+  "status": "removed"
+}

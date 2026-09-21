@@ -1,0 +1,7 @@
+{
+  "lesson_id": "2026-05-27-20-005",
+  "removed_at": "2026-05-28T17:41:39.073672+00:00",
+  "reason": "Aggregated into Holistic verification task exceeds agent dispatch lifetime; orchestrator must run build directly",
+  "status": "superseded",
+  "superseded_by": "2026-05-27-20-004"
+}

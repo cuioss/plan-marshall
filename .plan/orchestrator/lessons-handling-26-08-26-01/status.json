@@ -1,0 +1,183 @@
+{
+  "kind": "orchestrator",
+  "title": "Lessons handling 26-08-26",
+  "phase": "orchestrating",
+  "workstreams": [],
+  "plans": [
+    {
+      "id": "PLAN-LH2-01",
+      "slug": "guard-verdicts-over-empty-populations",
+      "workstream": "WS-01",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-LH2-02",
+      "slug": "tests-that-cannot-fail",
+      "workstream": "WS-01",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-LH2-03",
+      "slug": "routed-build-loses-tests-run",
+      "workstream": "WS-01",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-LH2-04",
+      "slug": "verdict-refuted-by-data-at-the-same-site",
+      "workstream": "WS-01",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-LH2-05",
+      "slug": "affected-files-is-not-a-footprint",
+      "workstream": "WS-01",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-LH2-06",
+      "slug": "doc-contract-divergence",
+      "workstream": "WS-01",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-LH2-07",
+      "slug": "restated-counts-and-underived-completeness",
+      "workstream": "WS-01",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-LH2-08",
+      "slug": "run-measurement-is-unrecoverable",
+      "workstream": "WS-03",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-LH2-09",
+      "slug": "self-review-loop-mechanics",
+      "workstream": "WS-02",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-LH2-10",
+      "slug": "review-bot-participation-and-reliability",
+      "workstream": "WS-02",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-LH2-11",
+      "slug": "review-triage-discipline",
+      "workstream": "WS-02",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-LH2-12",
+      "slug": "plugin-cache-and-registry-pin-staleness",
+      "workstream": "WS-01",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-LH2-13",
+      "slug": "build-and-test-infrastructure",
+      "workstream": "WS-01",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-LH2-14",
+      "slug": "orchestrator-stops-short",
+      "workstream": "WS-01",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-LH2-15",
+      "slug": "early-phase-gate-quality",
+      "workstream": "WS-01",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-LH2-16",
+      "slug": "git-worktree-integrity",
+      "workstream": "WS-01",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-LH2-17",
+      "slug": "lane-levers-unadopted",
+      "workstream": "WS-03",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-LH2-18",
+      "slug": "manage-lessons-corpus-integrity",
+      "workstream": "WS-04",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-LH2-19",
+      "slug": "manage-tasks-surface-gap",
+      "workstream": "WS-01",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    }
+  ],
+  "resume_anchor": "CORPUS SCANNED, ROUTED AND RETIRED. Scan 2026-08-26, retirement 2026-08-27 (operator-directed). 87 active lessons -> 19 clusters -> 18 inbox messages: truthful-signals 13 (msgs -001..-013), review-apparatus 3 (-001..-003), code-intelligence-substrate 2 (-001..-002). Stream CLOSED at all three siblings, so each drain reads FINISHED not EMPTY. PLAN-LH2-18 (corpus integrity) kept here, not routed. DISPOSITIONS: 84 clustered-into, 3 standalone, 0 already-covered, 0 stale - both zeros DELIBERATE (neither verification was performed; claiming either is the fail-open PLAN-TRUTH-044 repairs). RETIREMENT: 87 remove calls, 81 success with tombstone, 6 not_found; corpus 87 active -> 5 active, so 82 files gone against 81 tombstones. DERIVED: 81+6=87 calls, 87-5=82 removed. \u26d4\u26d4 NEW OBSERVED DEFECT, the worst finding here: manage-lessons remove DESTROYED 2026-08-25-05-001 while returning not_found. Before: list active AND get success. One remove call, returned error not_found. After: gone from both. No tombstone, so that retirement has NO audit record. Strictly worse than the known remove defect, which merely REFUSES - this one refuses AFTER destroying, so a caller retrying on not_found or reading it as nothing-happened is wrong unrecoverably. Unestablished: whether the unlink precedes the metadata read, or the tombstone write failed after a successful unlink. \u26d4 5 lessons SURVIVE and cannot be removed by any sanctioned verb (19-001, 19-003, 23-13-001, 23-13-002, 24-14-001) - all five refused with not_found; each subject is already carried in a routed inbox message. Also still present: 5 pre-existing superseded stubs, prunable via cleanup-superseded (dry-run confirms all 5 have tombstones); NOT pruned, they were never in this drain's scope. \u26d4 DO NOT wipe .plan/local/lessons-learned wholesale - that destroys .tombstones/, the audit trail for all 81 recorded retirements. NEXT ACTION: siblings drain their inboxes and return fold-or-decline verdicts; then stamp each PLAN-LH2-NN row with the accepting plan id.",
+  "metadata": {},
+  "created": "2026-08-26T20:37:28Z",
+  "updated": "2026-08-27T05:51:14Z"
+}

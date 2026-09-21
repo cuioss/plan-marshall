@@ -1,0 +1,33 @@
+envelope_version=1
+sender_type=plan
+sender_id=architecture-store-query-truthfulness
+epic=code-intelligence-substrate
+kind=candidate-lesson
+created=2026-09-15T07:55:19Z
+
+component=plan-marshall:manage-architecture
+category=bug
+
+# Two contract sources disagreed and the Data Sources table was the drifted half
+
+Source: Q-Gate finding 9f7836 (6-finalize, self-review; fixed in-run).
+Defect class contract_drift — 3 findings in this class this round.
+
+manage-api.md's "Data Sources" Writes column at line 417 still said `init` writes only
+per-module enriched.json (one per module), and each enrich verb writes only
+{module}/enriched.json. Both now ALSO write _project.json through sync_module_index —
+api_init in _cmd_manage.py, and _save_module_document / _batched_index_sync in
+_cmd_enrich.py — which is exactly the contract architecture-persistence.md states after
+the change.
+
+## Solution
+
+When two documents both claim to be the contract source for one behaviour, a change must
+name WHICH is authoritative and update the other in the same move. Here the disagreement
+was detectable only by reading both; nothing links them, so neither reader sees the
+conflict.
+
+## Impact
+
+Three contract_drift findings in one self-review round, all in this skill's document set,
+all from the same change to the persistence path.

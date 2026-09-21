@@ -1,0 +1,144 @@
+{
+  "kind": "orchestrator",
+  "title": "Post-Run Quality Analysis",
+  "phase": "orchestrating",
+  "workstreams": [
+    {
+      "id": "WS-01",
+      "slug": "retrospective-producer-integrity",
+      "title": "Retrospective producer integrity",
+      "status": "active"
+    },
+    {
+      "id": "WS-02",
+      "slug": "corpus-level-auditing",
+      "title": "Corpus-level auditing",
+      "status": "active"
+    },
+    {
+      "id": "WS-03",
+      "slug": "the-learning-loop",
+      "title": "The learning loop",
+      "status": "active"
+    },
+    {
+      "id": "WS-04",
+      "slug": "obligations-that-outlive-the-run",
+      "title": "Obligations that outlive the run",
+      "status": "active"
+    },
+    {
+      "id": "WS-05",
+      "slug": "cross-repo-post-run-telemetry",
+      "title": "Cross-repo post-run telemetry",
+      "status": "active"
+    }
+  ],
+  "plans": [
+    {
+      "id": "PLAN-PRQ-02",
+      "slug": "retrospective-aspects-publish-a-verdict-over-a-population-they-never-read",
+      "workstream": "WS-01",
+      "status": "launched",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-PRQ-03",
+      "slug": "the-census-does-not-census-itself-and-a-re-check-persists-nothing",
+      "workstream": "WS-02",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-PRQ-04",
+      "slug": "an-obligation-that-outlives-its-plan-has-no-owner",
+      "workstream": "WS-04",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-PRQ-01",
+      "slug": "retrospective-quality-chain-and-assessments-graded-at-report-time",
+      "workstream": "WS-01",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-PRQ-05",
+      "slug": "lessons-corpus-provenance-and-quality",
+      "workstream": "WS-03",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-PRQ-06",
+      "slug": "a-lane-override-that-cannot-take-effect-is-accepted-and-reported-set",
+      "workstream": "WS-04",
+      "status": "shipped",
+      "plan_marshall_plan_id": "prq-06-a-lane-override-that-cannot-take-effect-is",
+      "pr": "1541",
+      "landing": "landings/PLAN-PRQ-06.md"
+    },
+    {
+      "id": "PLAN-PRQ-07",
+      "slug": "cross-repo-telemetry-archive-and-analyze",
+      "workstream": "WS-05",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-PRQ-08",
+      "slug": "two-dispatch-ledgers-disagree-and-terminal-spend-is-classified-as-waste",
+      "workstream": "WS-01",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-PRQ-09",
+      "slug": "retrospective-instruments-that-cannot-fire-and-recall-denominators-that-count-the-wrong-population",
+      "workstream": "WS-01",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-PRQ-10",
+      "slug": "finalize-refire-convergence-and-self-review-coverage-honesty",
+      "workstream": "WS-01",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-PRQ-11",
+      "slug": "spend-and-diagnostic-aspects-count-the-wrong-population-too",
+      "workstream": "WS-01",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    }
+  ],
+  "resume_anchor": "=== \u25b6 **2026-09-20 -- PLAN-PRQ-02 LAUNCHED.** Operator confirmed start (\"plan got started\"); transitioned staged->launched. At parallelization_scope 1 with R=1, no free slot -- next emits nothing new until PRQ-02 ships or is parked. Carried forward unchanged: inbox fully drained (24 archived, 0 queued) as of 2026-09-19; 5 folds landed on PRQ-02 itself (D1 new defect, D3 second corrupted aspect) and PRQ-09 (D4 third denominator class); PRQ-10/PRQ-11 both staged, unemitted; 4 new lessons promoted (2026-09-19-21-003..006); forwards sent to truthful-signals and code-intelligence-substrate. \u26d4 PRQ-09 cites 4 already-retired lesson ids, PRQ-08 cites 6 -- never pass either specs cited ids to manage-lessons remove. \u26d4 PRQ-07 unemittable until PRQ-01/PRQ-03 land. \u26d4 Never pair PRQ-01 with the now-launched PRQ-02 (shared plan-retrospective/scripts/) -- moot while PRQ-02 is running, but binding again once it ships and a fresh next reaches PRQ-01. \u26d4 PRQ-10 shares pre-submission-self-review.md with code-intelligence-substrate PLAN-CIS-052 -- never pair. \u26d4 PRQ-11 and PRQ-09 share plan-retrospective/** -- never pair. Live lessons corpus ~4-10 entries (corrected from a stale 172 claim). QUEUE 9 staged / 1 launched (PRQ-02) / 1 shipped (PRQ-06) / 0 running. \u25b6 ON RESUME: (a) watch for PRQ-02s landing/inbox message and analyze it when it arrives; (b) once PRQ-02 ships (or is parked), next opens a slot -- PRQ-03 is the queue-order candidate. ===",
+  "metadata": {
+    "parallelization_scope": "1"
+  },
+  "created": "2026-09-17T19:34:05Z",
+  "updated": "2026-09-20T10:26:34Z"
+}
