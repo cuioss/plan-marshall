@@ -30,8 +30,11 @@ population-derived, and must publish the population size — and one matched-con
 ⛔ Every claim below is a POINTER at the superseded source spec that authored it. The sources are on disk and are the audit record; re-derive each claim **from the source spec's own section at HEAD**, never from this restatement. D0 owns that re-grounding.
 
 - HYPOTHESIS: every scoping premise carried from PLAN-TRUTH-116 still holds at HEAD — confirm/refute at `.plan/local/orchestrator/truthful-signals/plans/PLAN-TRUTH-116-a-test-or-fixture-that-cannot-fail.md` § `## Claim Labels` (verify-at-outline)
+  - verdict: unverifiable | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: Pointer at PLAN-TRUTH-116 Claim Labels: 7 verdicts, 3 corroborated + 4 unverifiable.
 - HYPOTHESIS: every scoping premise carried from PLAN-TRUTH-112 still holds at HEAD — confirm/refute at `.plan/local/orchestrator/truthful-signals/plans/PLAN-TRUTH-112-plugin-doctors-llm-phase-documents-rules-that-emit-nothing.md` § `## Claim Labels` (verify-at-outline)
+  - verdict: contradicted | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: no | evidence: Pointer at PLAN-TRUTH-112 Claim Labels: 7 verdicts including one contradicted (index 3) - a premise the source records as refuted. Not yet re-scoped.
 - HYPOTHESIS: every scoping premise carried from PLAN-TRUTH-117 still holds at HEAD — confirm/refute at `.plan/local/orchestrator/truthful-signals/plans/PLAN-TRUTH-117-restated-counts-and-underived-completeness-claims.md` § `## Claim Labels` (verify-at-outline)
+  - verdict: unverifiable | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: Pointer at PLAN-TRUTH-117 Claim Labels: 6 verdicts, ALL SIX unverifiable - nothing about that source is settled either way.
 
 ## Expected Surface
 

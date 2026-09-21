@@ -1839,7 +1839,7 @@
       "id": "PLAN-TRUTH-152",
       "slug": "the-retrospective-quality-chain-and-assessments-graded-at-report-time",
       "workstream": "WS-01",
-      "status": "parked",
+      "status": "transferred",
       "plan_marshall_plan_id": "",
       "pr": "",
       "landing": ""
@@ -2070,12 +2070,12 @@
       "landing": ""
     }
   ],
-  "resume_anchor": "=== \u25b6 **2026-09-21 -- PLAN-TRUTH-144 SHIPPED (PR #1560), landing reconciled.** merge_state=merged, cleanup_owed=false confirmed; commit 05b5d1ac4 verified on main. Two Watches added (W-1560-a: a ci pr merge-queue wait-loop hung once, recovered by manual re-enqueue; W-1560-b: 4 unreadable lessons + an allowed-tools:Grep denied-at-runtime gap, both flagged by the plan itself as needing operator judgment, not staged). This run hit two independent 14-round loop-back ceilings (pre-submission-self-review, post-merge unified triage) -- the plan's own retrospective already filed 4 new lessons + recurrence appends about it, no further epic action taken. \u25b6 QUEUE: R now 0 at N=1 (operator's standing instruction: stay sequential, 161 then 165). Emitting PLAN-TRUTH-161 next (confirmed disjoint + prep-ready); do NOT emit 165 until 161 ships or is parked, and do not raise parallelization_scope without an explicit operator decision to do so. \u26d4\u26d4 PLUGIN PIN GAP STILL OPEN, OPERATOR-ONLY: verify current executor version vs installed_plugins.json before treating any restart as clean. Old .plan/local/orchestrator/truthful-signals/ was already relocated+deleted (logs merged) earlier this session; unrelated to this landing. ===",
+  "resume_anchor": "=== \u25b6 **2026-09-21 -- CLEANUP RAN PROPERLY (Steps 1-3/A1 substantially complete; A2-A5 lighter-touch).** HEAD 74153664d. A1: dispatched corroboration re-grounded 78 claims across 22 live specs (8 of 30 had none unsettled) -- 27 corroborated, 45 unverifiable (never blocks), 6 contradicted. 5 specs now correctly BLOCKED pending re-scope (PLAN-TRUTH-145 x2, -146, -150, -153 -- see Open Defects for the pointed-to contradictions each must absorb). PLAN-TRUTH-174 D1 was found ALREADY SHIPPED and re-scoped in place (now targets the untouched parse_toon ingestion call only). Surface half of A1: all 30 live specs already declarative, no corrections needed. A4: no true duplicates among the 30 EXCEPT PLAN-TRUTH-152, a verbatim duplicate of post-run-quality PLAN-PRQ-01 -- transitioned to transferred. High file-overlap network (mostly PLAN-TRUTH-155's broad doc-sweep nature) reviewed, no new NEVER-PAIR entries added this pass beyond what was already known. A2/A3/A5: not separately run this pass -- no live spec is missing Objective/Expected Surface/Claim Labels, and no redistribution was attempted (time-bounded pass). Phase B (compact) and Phase D (restart-check) still to run this session. PLAN-TRUTH-144's own landing (PR #1560, merged 05b5d1ac4) was independently reconciled and already landed on main as PR #1571 (two Watches recorded: W-1560-a merge-queue wait-loop hang, W-1560-b unreadable-lessons+allowed-tools gap) -- this branch's identical landing record merged cleanly against it. \u25b6 QUEUE: 224 live rows (152 now transferred, not counted staged). PLAN-TRUTH-161 remains the next emit target (not among the blocked 5), confirmed disjoint+prep-ready, N=1 R=0; do not raise parallelization_scope without an explicit operator decision. \u26d4\u26d4 PLUGIN PIN GAP STILL OPEN, OPERATOR-ONLY -- verify current executor version vs installed_plugins.json before any restart. ===",
   "metadata": {
     "successor_of": "plan-optimization",
     "origin_note": "Spawned 2026-07-22 from plan-optimization staged residue + watches; running PLAN-23/35 remain in plan-optimization until landed, then that epic self-archives.",
     "parallelization_scope": "1"
   },
   "created": "2026-07-22T18:17:00Z",
-  "updated": "2026-09-21T14:10:09Z"
+  "updated": "2026-09-21T14:34:45Z"
 }

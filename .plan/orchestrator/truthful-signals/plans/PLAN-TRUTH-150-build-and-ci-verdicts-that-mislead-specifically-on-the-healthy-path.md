@@ -29,8 +29,11 @@ on the path that lies, with a matched control on the path that does not.
 ⛔ Every claim below is a POINTER at the superseded source spec that authored it. The sources are on disk and are the audit record; re-derive each claim **from the source spec's own section at HEAD**, never from this restatement. D0 owns that re-grounding.
 
 - HYPOTHESIS: every scoping premise carried from PLAN-TRUTH-105 still holds at HEAD — confirm/refute at `.plan/local/orchestrator/truthful-signals/plans/PLAN-TRUTH-105-build-execution-verdicts-that-mislead-specifically-on-the-healthy-path.md` § `## Claim Labels` (verify-at-outline)
+  - verdict: contradicted | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: no | evidence: Pointer at PLAN-TRUTH-105 Claim Labels: 13 verdicts including two contradicted (indices 1,3). Not yet re-scoped.
 - HYPOTHESIS: every scoping premise carried from PLAN-TRUTH-122 still holds at HEAD — confirm/refute at `.plan/local/orchestrator/truthful-signals/plans/PLAN-TRUTH-122-the-maven-signal-lies-in-both-directions-a-canonical-that-cannot-pass-and-a-count-that-cannot-add-up.md` § `## Claim Labels` (verify-at-outline)
+  - verdict: unverifiable | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: Pointer at PLAN-TRUTH-122 Claim Labels: 8 verdicts, 4 corroborated + 4 unverifiable.
 - HYPOTHESIS: every scoping premise carried from PLAN-TRUTH-118 still holds at HEAD — confirm/refute at `.plan/local/orchestrator/truthful-signals/plans/PLAN-TRUTH-118-a-confident-verdict-refuted-by-data-already-at-the-same-site.md` § `## Claim Labels` (verify-at-outline)
+  - verdict: unverifiable | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: Pointer at PLAN-TRUTH-118 Claim Labels: 5 verdicts, 3 corroborated + 2 unverifiable.
 
 ## Expected Surface
 

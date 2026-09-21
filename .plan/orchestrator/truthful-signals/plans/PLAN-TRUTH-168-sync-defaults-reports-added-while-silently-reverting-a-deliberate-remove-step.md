@@ -52,18 +52,23 @@ control (a genuinely new default step IS back-filled), for both `verification_st
   docstring states an absent `steps` / `verification_steps` step id is back-filled —
   `marketplace/bundles/plan-marshall/skills/manage-config/scripts/_cmd_sync_defaults.py` lines 255–294, read
   at `7a028157e`.
+  - verdict: corroborated | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: _cmd_sync_defaults.py:254-297 _deep_merge_missing recurses into dicts and back-fills every key absent from live; its docstring states verbatim that an absent steps/verification_steps step id is back-filled (line range moved from 255-294).
 - OBSERVED: `_seed_verify_steps()` exists as the verify-step seed —
   `marketplace/bundles/plan-marshall/skills/manage-config/scripts/_config_defaults.py` line 747, read at
   `7a028157e`.
+  - verdict: corroborated | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: _seed_verify_steps exists in _config_defaults.py (3 references; line number has moved off 747, which now holds the BUILD_VERIFY_STEP_EXT_POINT comment block).
 - OBSERVED: `remove-step` is a registered verb on keyed step phases —
   `marketplace/bundles/plan-marshall/skills/manage-config/scripts/_cmd_quality_phases.py` line 492, read at
   `7a028157e`.
+  - verdict: corroborated | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: _cmd_quality_phases.py:577 dispatches elif args.verb == remove-step and phase_section in STEP_PHASES - a registered verb on keyed step phases (line moved from 492).
 - HYPOTHESIS: `/marshall-steward upgrade` Stage 2 runs `sync-defaults` before any operator-intent
   preservation — confirm/refute at `marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/upgrade.py`
   § the Stage-2 `sub_steps` and `marshall-steward/standards/upgrade-flow.md` (verify-at-outline).
+  - verdict: unverifiable | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: The claim's own confirm-at target is GONE: marshall-steward/standards/upgrade-flow.md does not exist (that standards dir holds only effort-menu.md and pin-provisioning.md), and upgrade.py carries no sync-defaults token at all. Not settled.
 - HYPOTHESIS: the observed byte-for-byte revert (sender-observed on Token-Sheriff) reproduces at HEAD —
   confirm/refute with a D3 fixture against `_cmd_sync_defaults.py` § `_deep_merge_missing`
   (verify-at-outline).
+  - verdict: unverifiable | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: Reproducing the byte-for-byte revert requires running the D3 fixture; not executed in a read-only pass.
 
 ## Expected Surface
 

@@ -28,7 +28,9 @@ that same payload is the transport the findings ledger needs.
 ⛔ Every claim below is a POINTER at the superseded source spec that authored it. The sources are on disk and are the audit record; re-derive each claim **from the source spec's own section at HEAD**, never from this restatement. D0 owns that re-grounding.
 
 - HYPOTHESIS: every scoping premise carried from PLAN-TRUTH-106 still holds at HEAD — confirm/refute at `.plan/local/orchestrator/truthful-signals/plans/PLAN-TRUTH-106-the-terminal-emission-and-the-operator-report-do-not-check-themselves.md` § `## Claim Labels` (verify-at-outline)
+  - verdict: unverifiable | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: Pointer at PLAN-TRUTH-106 Claim Labels: 9 verdicts, 4 corroborated + 5 unverifiable.
 - HYPOTHESIS: every scoping premise carried from PLAN-TRUTH-110 still holds at HEAD — confirm/refute at `.plan/local/orchestrator/truthful-signals/plans/PLAN-TRUTH-110-a-plan-decides-what-the-epic-learns-and-nothing-audits-that-decision.md` § `## Claim Labels` (verify-at-outline)
+  - verdict: unverifiable | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: Pointer at PLAN-TRUTH-110 Claim Labels: 8 verdicts, 3 corroborated + 5 unverifiable.
 
 ## Expected Surface
 

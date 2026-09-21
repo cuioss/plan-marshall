@@ -1,4 +1,4 @@
-# PLAN-TRUTH-174: plan-retrospective measurement integrity — a lossy TOON hop and an ungated comparison state
+# PLAN-TRUTH-174: plan-retrospective measurement integrity — an ungated comparison state
 
 epic: truthful-signals
 workstream: WS-01
@@ -7,22 +7,33 @@ workstream: WS-01
 
 ## Objective
 
-Fix two independent measurement-integrity defects in `plan-marshall:plan-retrospective`
-surfaced by PLAN-TRUTH-143's own retrospective run: `extract-chat-signal` silently
-truncates the transcript it forwards while reporting the runtime's full size as if it
-were what was delivered, and the `outline-vs-shipped` aspect reports `comparison:
-measured` when the assessment corpus (not the footprint) is entirely absent, so two
-of its three outcome classes report a confident zero over nothing.
+⛔ **Re-scoped 2026-09-21 at cleanup A1 re-grounding.** The original D1 (a lossy
+`parse_toon` re-parse of `reduced_transcript` in `extract-chat-signal.py`) is
+ALREADY FIXED at HEAD `74153664d`: line 186 now routes the value through
+`_delivered_transcript()` (line 66), which returns a `BlockScalar` and publishes a
+conservation measurement (`reduced_transcript_delivered_bytes`, line 175) beside the
+forwarded `reduced_bytes` — the cited source lines 92/145/162/165 no longer
+correspond to anything. One narrower residual survives and is now the plan's sole
+deliverable: `parse_toon(result.stdout)` (still at line 128) is the INGESTION hop
+from the runtime, a separate, unverified step the emission-side fix did not touch.
+
+Fix the one remaining measurement-integrity defect in
+`plan-marshall:plan-retrospective` surfaced by PLAN-TRUTH-143's own retrospective
+run: the `outline-vs-shipped` aspect reports `comparison: measured` when the
+assessment corpus (not the footprint) is entirely absent, so two of its three
+outcome classes report a confident zero over nothing.
 
 ## Deliverables
 
-1. Stop routing `reduced_transcript` through a `parse_toon` re-parse in
-   `extract-chat-signal.py` (a multi-line value does not round-trip): either have the
-   runtime operation write the reduction to a file and return its path, or give
-   `parse_toon`/`serialize_toon` a tested multi-line round-trip with a fixture
-   containing embedded newlines. Add a conservation assertion
-   (`len(reduced_transcript.encode()) == reduced_bytes`) or publish
-   `reduced_bytes_reported` / `reduced_bytes_delivered` side by side.
+1. Confirm whether `parse_toon(result.stdout)` at `extract-chat-signal.py:128` (the
+   runtime-to-consumer ingestion hop, upstream of the already-fixed emission path)
+   still loses a multi-line value — `parse_toon` not round-tripping embedded
+   newlines was the ORIGINAL root cause, and only the emission side has a confirmed
+   fix. If it still round-trips lossily, apply the same remedy the emission side
+   already uses (route through a `BlockScalar` or an out-of-band file handoff) with
+   a conservation assertion at the ingestion boundary; if it turns out already fixed
+   too, close this deliverable with a positive account (commit/symbol) rather than
+   re-deriving the original finding.
 2. Make the `outline-vs-shipped` aspect's `comparison` field three-state over BOTH
    inputs: `measured` requires a resolved footprint AND `assessments_store_present:
    true` with `assessments_read > 0`; an absent/empty assessment store yields a new
@@ -34,17 +45,19 @@ of its three outcome classes report a confident zero over nothing.
 
 ## Claim Labels
 
-- OBSERVED: `extract-chat-signal.py` re-parses the runtime's TOON output with
-  `parse_toon(result.stdout)` and forwards `record.get('reduced_transcript', '')`
-  verbatim, losing everything past the first line of a multi-line value — read from
-  PLAN-TRUTH-143's retrospective finding (source lines 92, 145, 162, 165 named in the
-  finding) at `marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/extract-chat-signal.py`
+- OBSERVED: `extract-chat-signal.py:128` still calls `parse_toon(result.stdout)` at
+  HEAD `74153664d` (the emission-side fix at line 186 did not touch this ingestion
+  call) — read at outline whether this specific call still loses a multi-line value,
+  since `parse_toon`'s general round-trip behaviour is what the now-fixed emission
+  side worked around rather than repaired at the source.
+  - verdict: contradicted | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: yes | evidence: FIXED AT HEAD. extract-chat-signal.py no longer forwards reduced_transcript verbatim - line 186 routes it through _delivered_transcript() (line 66), returning a BlockScalar with a conservation measurement published beside reduced_bytes. Spec re-scoped in place: D1 now targets the untouched parse_toon ingestion call at line 128.
 - OBSERVED: the `outline-vs-shipped` aspect's existing footprint guard yields
   `comparison: inconclusive` with counts withheld on an unresolvable footprint, but no
   equivalent guard exists on the assessment-store side, so `assessments_store_present:
   false` / `assessments_read: 0` still takes the `measured` branch — read from
   PLAN-TRUTH-143's retrospective finding against `plan-retrospective`'s
   outline-vs-shipped aspect implementation
+  - verdict: corroborated | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: check-outline-vs-shipped.py declares only TWO comparison states (constants at lines 90-94); inconclusive is set on ONE condition - an unresolvable footprint - and the else-branch sets measured with assessments_store_present/assessments_read merely REPORTED, gating nothing. Exactly as claimed.
 - Verify-first clause: confirm the exact line numbers and current behaviour of both
   sites against HEAD at outline before scoping the fix — the retrospective finding is
   first-party but was not independently re-read by the orchestrator before staging.

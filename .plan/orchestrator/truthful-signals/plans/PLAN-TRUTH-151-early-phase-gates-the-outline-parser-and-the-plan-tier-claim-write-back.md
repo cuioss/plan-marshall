@@ -28,8 +28,11 @@ applied one tier below the orchestrator, on the same outline and status surfaces
 ⛔ Every claim below is a POINTER at the superseded source spec that authored it. The sources are on disk and are the audit record; re-derive each claim **from the source spec's own section at HEAD**, never from this restatement. D0 owns that re-grounding.
 
 - HYPOTHESIS: every scoping premise carried from PLAN-TRUTH-119 still holds at HEAD — confirm/refute at `.plan/local/orchestrator/truthful-signals/plans/PLAN-TRUTH-119-early-phase-gates-cannot-be-told-apart-from-confident-answers.md` § `## Claim Labels` (verify-at-outline)
+  - verdict: unverifiable | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: Pointer at PLAN-TRUTH-119 Claim Labels: 5 verdicts, 3 corroborated + 2 unverifiable.
 - HYPOTHESIS: every scoping premise carried from PLAN-TRUTH-134 still holds at HEAD — confirm/refute at `.plan/local/orchestrator/truthful-signals/plans/PLAN-TRUTH-134-the-scope-extractor-invents-paths-and-drops-bullets-and-reports-success.md` § `## Claim Labels` (verify-at-outline)
+  - verdict: unverifiable | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: Pointer at PLAN-TRUTH-134 Claim Labels: 6 verdicts, 3 corroborated + 3 unverifiable.
 - HYPOTHESIS: every scoping premise carried from PLAN-TRUTH-137 still holds at HEAD — confirm/refute at `.plan/local/orchestrator/truthful-signals/plans/PLAN-TRUTH-137-a-refuted-spec-claim-has-no-write-back-channel-at-the-plan-tier.md` § `## Claim Labels` (verify-at-outline)
+  - verdict: unverifiable | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: Pointer at PLAN-TRUTH-137 Claim Labels: 6 verdicts, 4 corroborated + 2 unverifiable.
 
 ## Expected Surface
 
