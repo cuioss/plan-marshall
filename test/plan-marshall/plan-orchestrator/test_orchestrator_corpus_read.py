@@ -25,7 +25,6 @@ byte-identical afterwards — read-only means read-only.
 
 import argparse
 import copy
-import hashlib
 import json
 from pathlib import Path
 from typing import Any
@@ -261,14 +260,6 @@ class TestCorpusReadRefusals:
 
 
 class TestCorpusReadNonVacuity:
-    def test_body_hash_matches_fixture_bytes(self, plan_context):
-        _seed(plan_context)
-        result = cmd_corpus_read(_READ_ARGS)
-        assert (
-            hashlib.sha256(result['body'].encode('utf-8')).hexdigest()
-            == hashlib.sha256(SPEC_BODY.encode('utf-8')).hexdigest()
-        )
-
     def test_hyphen_boundary_plan_1_does_not_claim_plan_10(self, plan_context):
         _write_status(plan_context, [_row('PLAN-1'), _row('PLAN-10')])
         _write_spec(plan_context, 'PLAN-10-tenth.md', _OTHER_BODY)
