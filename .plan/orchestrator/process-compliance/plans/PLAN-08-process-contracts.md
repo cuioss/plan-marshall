@@ -32,15 +32,22 @@ pruned when non-empty.
 7. Outline counts re-derived, include_unrealised fixed (lesson 2026-09-03-02-008).
 8. Footprint prune gated on non-empty footprint (lesson 2026-09-03-02-009).
 
+(Folded drain 2026-09-21, `phase-gates-009.md`: barrier-ask-override precedent for a
+spend-capped stale review bot — incapacitated required reviewer + all other signals
+green → escalate to operator, persist the override as a HEAD-bound gap-class
+merge-authorization record, never an undocumented skip. Precedent note for the
+merge-authorization flows this spec already covers; expected surface unchanged by this
+fold — adds no file surface, recorded explicitly.)
+
 (8 deliverables. The pytest-basetemp lesson is single-owned by test-quality
 PLAN-180 — no duplication; see quality-aspect lessons-disposition.md § Transfers out.)
 
 ## Claim Labels
 
 - OBSERVED: nine process lessons listable but unaddressable (YAML headers), each naming a doc-vs-behavior gap — read at `.plan/local/orchestrator/quality-aspect/lessons-archive/2026-09-03-02-001.md` et seq. (title triage; bodies verified at outline).
-  - verdict: corroborated | checked_at: 86789820f | by: process-compliance/cleanup | rescoped: n/a | evidence: all nine 2026-09-03-02-00x lesson files present in quality-aspect lessons-archive
+  - verdict: unverifiable | checked_at: 93bda90 | by: process-compliance/cleanup | rescoped: n/a | evidence: quality-aspect lessons-archive titles cited; bodies not opened this pass
 - HYPOTHESIS: one contract pass over the plan lane closes all nine without cross-plan refactors — confirm/refute at `marketplace/bundles/plan-marshall/skills/tools-integration-ci/` § CI abstraction read surface (verify-at-outline).
-  - verdict: corroborated | checked_at: 86789820f | by: process-compliance/cleanup | rescoped: n/a | evidence: tools-integration-ci/ read surface present (scripts/ci.py); seam holds for the contract pass
+  - verdict: corroborated | checked_at: 93bda90 | by: process-compliance/cleanup | rescoped: n/a | evidence: tools-integration-ci ci.py and ci_base.py present
 
 ## Expected Surface
 

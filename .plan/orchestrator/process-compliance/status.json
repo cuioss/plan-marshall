@@ -82,12 +82,48 @@
       "plan_marshall_plan_id": "",
       "pr": "",
       "landing": ""
+    },
+    {
+      "id": "PLAN-09",
+      "slug": "store-access",
+      "workstream": "WS-03",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-10",
+      "slug": "entry-capture",
+      "workstream": "WS-01",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-11",
+      "slug": "landing-facts",
+      "workstream": "WS-06",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-12",
+      "slug": "tool-triage",
+      "workstream": "WS-05",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
     }
   ],
-  "resume_anchor": "Cleanup done 2026-09-21 (corpus re-grounded, compact idempotent, drain done); uncommitted specs ride the cleanup branch PR; emitted PLAN-08 awaits launch; restart once tree clean.",
+  "resume_anchor": "Cleanup done 2026-09-21 (restart not_ready: 109 uncommitted paths); next: land tracked .plan changes via branch/PR/merge, then re-check restart.",
   "metadata": {
     "parallelization_scope": "2"
   },
   "created": "2026-09-17T19:36:11Z",
-  "updated": "2026-09-21T12:07:56Z"
+  "updated": "2026-09-21T16:09:05Z"
 }
