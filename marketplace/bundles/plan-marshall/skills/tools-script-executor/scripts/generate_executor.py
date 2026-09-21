@@ -2751,7 +2751,7 @@ def build_parser() -> argparse.ArgumentParser:
     verify_parser = subparsers.add_parser('verify', help='Verify existing executor', allow_abbrev=False)
     verify_parser.set_defaults(func=cmd_verify)
 
-    # bootstrap subcommand — the narrow direct-path exception (fresh clone /
+    # bootstrap subcommand — a sanctioned direct-path entry point (fresh clone /
     # corrupt executor / stale template). Refuses a fresh executor.
     bootstrap_parser = subparsers.add_parser(
         'bootstrap',
