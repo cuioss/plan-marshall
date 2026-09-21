@@ -45,7 +45,7 @@ orchestrator-substrate deliverable this epic did not absorb or explicitly declin
      outside the markers — never inside them. -->
 
 <!-- BEGIN GENERATED: resume-summary -->
-**Resume anchor**: Ledger is clean and internally consistent (corpus, compaction, dedup all pass). The ONE remaining blocker to genuine restart-readiness: 10 uncommitted paths in .plan/orchestrator/orchestrator-refactor/ (this session's tree reconciliation) are not yet committed/pushed - operator action needed, this orchestrator does not commit unprompted. Once committed: run next to emit from PLAN-02/03/06 (all staged, dependencies satisfied).
+**Resume anchor**: Epic fully restart-ready: PLAN-01/PLAN-04 shipped and merged (main at 6b26e246d), ledger reconciled and clean (corpus/compaction/dedup all pass, worktree clean, no open blockers). Old .plan/local/ tree removed. Next: run next to emit from PLAN-02/03/06 (all staged, dependencies satisfied).
 **Phase**: orchestrating
 **Inbox (derived)**: 0 queued, 13 archived
 **Parked**:
@@ -254,13 +254,13 @@ orchestrator-substrate deliverable this epic did not absorb or explicitly declin
   UNCOMMITTED change in the actual git working tree** — this orchestrator does not commit or
   push without being asked; flagging for the operator. Going forward, this orchestrator
   writes directly to `.plan/orchestrator/orchestrator-refactor/` only.
-- **STILL OPEN as of the 2026-09-21 `cleanup` re-run — `restart-check`'s own `worktree`
-  signal reports `not_ready`**: 10 paths in this epic's tracked tree remain uncommitted
-  (`epic.md`, all 7 `plans/*.md`, `status.json`, `landings/PLAN-01.md`). This is the
-  reconciliation above, not yet turned into a commit. This is the ONE thing standing
-  between this epic and genuine restart-readiness — every other signal (`phase`,
-  `running_plans`, `corpus_reconciliation`, `inbox`) reports `ready`. Committing and
-  pushing is an operator decision this orchestrator does not make unprompted.
+- ~~STILL OPEN — restart-check's worktree signal reports not_ready~~ **RESOLVED
+  2026-09-21**: operator approved the commit/push/PR/merge sequence. Landed as PR #1566
+  (`3d88b24cf`, `skip-bot-review`, merge queue) — see `landings/PLAN-01.md`. `main`
+  pulled locally; `restart-check` now reports `ready` on all 5 scored signals. The old
+  `.plan/local/orchestrator/orchestrator-refactor/` tree (21 decision-log entries it
+  alone held, since `logs/` is git-ignored) was merged into this tree's log before the
+  operator deleted it.
 - **Operator-reported, not yet independently investigated**: `finalize-step-deploy-target` /
   `finalize-step-sync-plugin-cache` were skipped for PLAN-01's own branch, so the local
   `~/.claude/plugins/cache/plan-marshall/` may be stale relative to what just landed
