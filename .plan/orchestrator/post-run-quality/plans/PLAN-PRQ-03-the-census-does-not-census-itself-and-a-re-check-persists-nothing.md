@@ -62,13 +62,17 @@ when its own checks fired.
 - OBSERVED: `.claude/skills/audit-archived-plan-retrospectives/SKILL.md:231-236` states the census's
   self-exclusion verbatim, including the phrase "standing unresolved in the instrument built to surface
   it" (inventory sweep, 2026-09-17).
+  - verdict: corroborated | checked_at: e8a71650 | by: post-run-quality/cleanup | rescoped: n/a | evidence: SKILL.md:231-236 line-exact: 'The census does not census itself'; suspect-zero-census and retire-on-quiet are meta blocks not in CHECK_NAMES; 'standing unresolved in the instrument built to surface it'. Verbatim.
 - OBSERVED: the auditor registers **24 checks**, each with a `checks/{name}.md` sub-doc, with a
   deterministic core in `scripts/audit.py` and LLM orchestration in SKILL.md (inventory sweep).
+  - verdict: corroborated | checked_at: e8a71650 | by: post-run-quality/cleanup | rescoped: n/a | evidence: audit.py:237-266 CHECK_NAMES has exactly 24 entries; checks/ dir has exactly 24 .md files, 1:1 by name with CHECK_NAMES; scripts/ contains only audit.py (9583 lines) plus __pycache__; SKILL.md is 662 lines of LLM orchestration.
 - OBSERVED: `.claude/skills/recipe-plan-review/SKILL.md` declares itself LLM-only with no backing script
   and no persisted artifact — by design, per its own line 30 (inventory sweep).
+  - verdict: corroborated | checked_at: e8a71650 | by: post-run-quality/cleanup | rescoped: n/a | evidence: recipe-plan-review/ contains only SKILL.md, no scripts/. Line 30 verbatim: LLM-driven by design. Nuance: :41 persists a pinned coverage cell identifier to status.json metadata -- coverage-contract bookkeeping, not the review verdict. The verdict itself is persisted nowhere; D3's premise holds unchanged.
 - OBSERVED: `input-integrity` is the auditor's declared "no-false-healthy foundation", and blind plans'
   rows must be annotated "floor, not truth" — so the auditor already HAS the vocabulary D1 needs
   (inventory sweep).
+  - verdict: corroborated | checked_at: e8a71650 | by: post-run-quality/cleanup | rescoped: n/a | evidence: checks/input-integrity.md:3 'the no-false-healthy FOUNDATION'; :187 'deterministic foundation for no-false-healthy'; :190-192 'Annotate floored rows... floor, not truth'; :196-198 worked wording for blind plans; :67 defines the blind flag. Vocabulary present and usable.
 - ⚠ HYPOTHESIS: the census is the only self-exclusion, and the other 23 checks participate in their own
   populations. ⛔ Asserted by nobody — D0 owns the derivation, and an asserted absence is the higher-risk
   half (verify-at-outline).
@@ -96,7 +100,7 @@ when its own checks fired.
 ## Hand-Off Command
 
 ```text
-/plan-marshall task="implement .plan/local/orchestrator/post-run-quality/plans/PLAN-PRQ-03-the-census-does-not-census-itself-and-a-re-check-persists-nothing.md"
+/plan-marshall task="implement .plan/orchestrator/post-run-quality/plans/PLAN-PRQ-03-the-census-does-not-census-itself-and-a-re-check-persists-nothing.md"
 ```
 
 ## Write-Boundary

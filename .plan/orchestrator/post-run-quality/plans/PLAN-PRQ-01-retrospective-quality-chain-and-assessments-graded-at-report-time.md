@@ -36,8 +36,15 @@ gate: nothing downstream starts until every carried claim is re-grounded at HEAD
 authored before PR #1488, #1494 and #1501 landed in this area.
 
 1. **D0 — GATE: re-ground at HEAD; derive the mechanism population, settle the disposition→point mapping
-   against the real corpus, and enumerate every surface that grades an assessment.** Publish each
-   population and its size.
+   against the real corpus, and enumerate every surface that grades a recorded action against a mutable
+   stored judgement.** Publish each population and its size. ⛔ **CORRECTED 2026-09-21 (cleanup,
+   `checked_at: e8a71650`)**: this D0 diverged from the source (`PLAN-TRUTH-152`) at transfer — the
+   source's exact wording for the enumeration target ("enumerate every surface that grades a recorded
+   action against a mutable stored judgement") is restored above, replacing the transfer's shortened
+   "grades an assessment". The "publish each population and its size" sentence was NOT in the source; it
+   is KEPT here as a deliberate epic-level addition (matching this epic's own standing population-derived
+   discipline), not silently dropped — but it is now labelled as an addition rather than inherited
+   silently from the transfer.
 2. **D1 — The coordinator: ONE script, one entry point, two consumers.**
 3. **D2 — The scoring core: signal presence first, yield second, and the two are NEVER folded into one
    number.** Folding them is what makes a disabled gate read like a clean one.
@@ -51,8 +58,13 @@ authored before PR #1488, #1494 and #1501 landed in this area.
     every assessment-grading member.
 11. **D10 — CONSUME the unified ledger vocabulary — do not build it.** The source recorded that its
     D8-class vocabulary work MOVED to `truthful-signals` PLAN-TRUTH-146. ⛔ That plan stays in that epic;
-    this one consumes its output and must not re-implement it. If PRQ-01 launches first, D10 states the
-    dependency rather than filling it.
+    this one consumes its output and must not re-implement it. ⛔⛔ **CORRECTED 2026-09-21 (cleanup,
+    `checked_at: e8a71650`): the source states a HARD ordering, not a soft one.** `PLAN-TRUTH-152:35`
+    ("this plan CONSUMES the vocabulary and must land after it") and `:72` ("⛔ Sequenced AFTER
+    PLAN-TRUTH-146") both state PRQ-01 must land after PLAN-TRUTH-146 — the transfer softened this into
+    "Depends on: none" plus "if PRQ-01 launches first, D10 states the dependency rather than filling it",
+    which concealed a real ordering constraint from the emit-time check. `PLAN-TRUTH-146` is still
+    `staged` as of `e8a71650`. See the restored dependency in `## Dependencies and Sequencing`.
 
 ## Claim Labels
 
@@ -69,6 +81,7 @@ restatement — D0 owns that re-grounding.
 - OBSERVED: the transfer changed no deliverable's content. The 11 above are the source's D0–D10 verbatim
   in substance; only the epic, the workstream and this provenance framing differ. Re-read the source to
   confirm before scoping.
+  - verdict: contradicted | checked_at: e8a71650 | by: post-run-quality/cleanup | rescoped: yes | evidence: Compared against truthful-signals PLAN-TRUTH-152 source. D1-D9 verbatim in substance. Three divergences: (a) D0 wording shortened and adds an unsourced 'publish population and size' obligation; (b) D10 sequencing softened -- source :35/:72 states a HARD 'must land after PLAN-TRUTH-146', PRQ-01 recorded 'Depends on: none'; (c) Expected Surface dropped the recursive glob plan-retrospective/scripts/** (source had 21 entries, PRQ-01 has 20) -- read by the disjointness gate, not cosmetic.
 
 ## Expected Surface
 
@@ -76,6 +89,9 @@ Carried from the source spec, which derived it through `epic_spec_parser` as the
 superseded sources — not retyped from memory.
 
 - `marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/`
+- `marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/**` (restored 2026-09-21 — the
+  transfer dropped this recursive glob; source had 21 Expected Surface entries, this spec had 20. Read by
+  the disjointness gate, not cosmetic.)
 - `marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/retro_sections.py`
 - `marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/compile-report.py`
 - `marketplace/bundles/plan-marshall/skills/plan-retrospective/SKILL.md`
@@ -98,8 +114,11 @@ superseded sources — not retyped from memory.
 
 ## Dependencies and Sequencing
 
-- Depends on: none. D10 CONSUMES `truthful-signals` PLAN-TRUTH-146's vocabulary work — a cross-epic
-  dependency **no disjointness gate can see**, since the two live in different ledgers.
+- ⛔⛔ **Depends on: `truthful-signals` PLAN-TRUTH-146 (HARD — corrected 2026-09-21, restoring the
+  source's stated ordering).** D10 CONSUMES `PLAN-TRUTH-146`'s unified ledger vocabulary and MUST land
+  after it, per the source spec (`PLAN-TRUTH-152:35,:72`) — this plan must NOT be emitted while
+  `PLAN-TRUTH-146` is still unlanded. A cross-epic dependency **no disjointness gate can see**, since the
+  two live in different ledgers; check `truthful-signals`' queue before emitting this spec.
 - ⛔ Never pair with PLAN-PRQ-02 (shared `plan-retrospective/scripts/`). At `parallelization_scope: 1`
   that is automatic.
 - ⚠ Shares `.claude/skills/audit-archived-plan-retrospectives/**` with PLAN-PRQ-03 — sequence.
@@ -107,7 +126,7 @@ superseded sources — not retyped from memory.
 ## Hand-Off Command
 
 ```text
-/plan-marshall task="implement .plan/local/orchestrator/post-run-quality/plans/PLAN-PRQ-01-retrospective-quality-chain-and-assessments-graded-at-report-time.md"
+/plan-marshall task="implement .plan/orchestrator/post-run-quality/plans/PLAN-PRQ-01-retrospective-quality-chain-and-assessments-graded-at-report-time.md"
 ```
 
 ## Write-Boundary

@@ -141,13 +141,13 @@ still report a real figure when the population IS readable.
 ## Hand-Off Command
 
 ```text
-/plan-marshall task="implement .plan/local/orchestrator/post-run-quality/plans/PLAN-PRQ-02-retrospective-aspects-publish-a-verdict-over-a-population-they-never-read.md"
+/plan-marshall task="implement .plan/orchestrator/post-run-quality/plans/PLAN-PRQ-02-retrospective-aspects-publish-a-verdict-over-a-population-they-never-read.md"
 ```
 
 ## ⭐ FOLDED 2026-09-17 — FOUR CORPUS LESSONS THAT ALREADY REPORTED THREE OF THESE, AND ONE THAT GENERALISES THEM
 
 From the 2026-09-17 lessons sweep; all four preserved at
-`.plan/local/orchestrator/post-run-quality/lessons/{id}.md`. Expected Surface unchanged — each names a
+`.plan/orchestrator/post-run-quality/lessons/{id}.md`. Expected Surface unchanged — each names a
 producer already declared above. ⛔ **Each predates this spec**, so D0's population derivation must treat
 them as prior art rather than as new members: three of this spec's four known defects were filed as
 lessons and never actioned.

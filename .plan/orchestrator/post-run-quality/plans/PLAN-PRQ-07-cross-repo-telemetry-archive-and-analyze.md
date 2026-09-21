@@ -67,11 +67,17 @@ operator before creating it — this is not a decision the plan makes unilateral
 - OBSERVED: `.claude/skills/audit-archived-plan-retrospectives/` exists at this path with
   `SKILL.md`, a `checks/` directory of 24 per-aspect markdown check docs, and
   `scripts/audit.py` — read directly via `find` over the skill directory.
+  - verdict: corroborated | checked_at: e8a71650 | by: post-run-quality/cleanup | rescoped: n/a | evidence: Directory listing returns exactly [SKILL.md, checks, scripts]; checks/ = 24 .md files; scripts/audit.py = 9583 lines. Unchanged at HEAD; D5's relocation target intact.
 - OBSERVED: archived plan and orchestrator ledgers are main-anchored at
-  `.plan/local/archived-plans/{dated-slug}/` and
-  `.plan/local/archived-orchestrators/{slug}/` respectively, per
-  `persona-plan-orchestrator/standards/orchestration-model.md` § Directory Layout — read
-  directly.
+  `.plan/local/archived-plans/{dated-slug}/` (per
+  `phase-6-finalize/standards/archive-plan.md` — corrected 2026-09-21; the original citation,
+  `orchestration-model.md` § Directory Layout, documents only the orchestrator-tree half and does not
+  cover `archived-plans/` at all) and `.plan/local/archived-orchestrators/{slug}/` (per
+  `persona-plan-orchestrator/standards/orchestration-model.md` § Directory Layout) respectively — read
+  directly. ⚠ Incidental, not this epic's to fix: `archive-plan.md:21` itself writes the path as
+  `.plan/archived-plans/`, missing the `local/` segment — a live doc defect on this spec's own declared
+  surface.
+  - verdict: corroborated | checked_at: e8a71650 | by: post-run-quality/cleanup | rescoped: n/a | evidence: Fact holds but the citation is wrong for the archived-plans half: orchestration-model.md documents only the orchestrator half (:49,:52); the string archived-plans occurs once at :66 as a GC aside only. Canonical doc is phase-6-finalize/standards/archive-plan.md (which itself writes .plan/archived-plans/ without local/ -- a separate, unrelated doc defect). Cite archive-plan.md, not orchestration-model.md, for the plan half.
 - OBSERVED: this repo's project-local finalize-step skills follow the
   `.claude/skills/finalize-step-{name}/SKILL.md` pattern with frontmatter
   `implements: plan-marshall:extension-api/standards/ext-point-finalize-step` (read verbatim
@@ -80,6 +86,7 @@ operator before creating it — this is not a decision the plan makes unilateral
   `finalize-step-review-retrospective`, `finalize-step-era-stamp-fill`,
   `finalize-step-deploy-target`, `finalize-step-sync-plugin-cache`) is meta-project-only —
   it applies to plan-marshall's own repo, never exported to consumer projects.
+  - verdict: corroborated | checked_at: e8a71650 | by: post-run-quality/cleanup | rescoped: n/a | evidence: .claude/skills/ contains exactly the six named finalize-step-* dirs, no others. finalize-step-review-retrospective/SKILL.md:17 verbatim implements: plan-marshall:extension-api/standards/ext-point-finalize-step. Meta-project-only is derived: marketplace/bundles/plan-marshall/skills/ has zero *finalize-step* directories -- none exported today.
 - HYPOTHESIS: `analyze-marshall-quality` (deliverable 3) should ship as a
   MARKETPLACE-bundled finalize step
   (`marketplace/bundles/plan-marshall/skills/finalize-step-analyze-marshall-quality/`),
@@ -151,7 +158,7 @@ operator before creating it — this is not a decision the plan makes unilateral
 ## Hand-Off Command
 
 ```text
-/plan-marshall task="implement .plan/local/orchestrator/post-run-quality/plans/PLAN-PRQ-07-cross-repo-telemetry-archive-and-analyze.md"
+/plan-marshall task="implement .plan/orchestrator/post-run-quality/plans/PLAN-PRQ-07-cross-repo-telemetry-archive-and-analyze.md"
 ```
 
 ## Write-Boundary
