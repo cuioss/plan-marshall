@@ -714,6 +714,16 @@ Per record the HEAD verdict is `valid` when `record.head` equals `--head`, and `
 
 **Admissibility narrows the ROUTING, never the REPORT.** A `valid` record granted over a different gap stays in `authorized_kinds` (it really is bound to this tree) and is additionally listed in `inadmissible_kinds`, and a lapsed sibling still appears in `lapsed_kinds`. Nothing is filtered out, so a caller can always name exactly which ruling expired and which one is live but covers a different gap.
 
+#### Unattended consent prompt distinction
+
+An unattended-order consent prompt renders with the distinct header
+`Merge Authorization — Unattended Order` and the machine prefix
+`[UNATTENDED-CONSENT gap-class={gap_class} head={head} kind={kind}]` naming
+the gap class and HEAD it authorizes (see
+`format_unattended_consent_prompt` in `_cmd_merge_authorization.py`). The
+wording is visually distinct from a blocking-question prompt; grant/check
+verdicts and gap-class routing are unchanged.
+
 **Output** (TOON):
 ```toon
 status: success

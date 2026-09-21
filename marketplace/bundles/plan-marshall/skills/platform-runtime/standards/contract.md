@@ -345,6 +345,10 @@ reason: OpenCode does not expose a platform-provided session id to the shell; tr
 alternative: pass --total-tokens manually to metrics capture
 ```
 
+Absent identity is the `NO_SESSION_IDENTITY` sentinel from `runtime_base`
+(never null); callers test it with the `has_session_identity` meaning guard
+instead of inline truthiness checks.
+
 ---
 
 ### `permission configure`

@@ -18,6 +18,31 @@ from typing import Any
 
 from toon_parser import serialize_toon
 
+#: The absent-session-identity sentinel, published once so no site restates it.
+#:
+#: Absent platform session identity is the stated sentinel rather than null:
+#: callers compare against this constant instead of inline truthiness checks
+#: per ADR-015. Re-grounded at PLAN-07 execution time against the
+#: finalize-machinery PLAN-07 landed sentinel; no prior sentinel was found
+#: in-tree, so this value stands.
+NO_SESSION_IDENTITY: str = 'NO_SESSION_IDENTITY'
+
+
+def has_session_identity(session_id: str | None) -> bool:
+    """Return True when *session_id* carries a usable platform session identity.
+
+    The named meaning guard replacing inline truthiness checks per ADR-015:
+    empty, whitespace-only, and sentinel values read as absent.
+    """
+    if session_id is None:
+        return False
+    if not isinstance(session_id, str):
+        return False
+    if not session_id.strip():
+        return False
+    return session_id != NO_SESSION_IDENTITY
+
+
 #: The `permission fix` operation set, published once so no site restates it.
 #:
 #: The names were maintained by hand in five places — the argparse ``choices``,
