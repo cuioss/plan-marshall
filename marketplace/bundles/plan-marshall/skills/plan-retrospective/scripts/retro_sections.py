@@ -47,16 +47,10 @@ FOOTPRINT_AGGREGATE_KEY = '_footprint-derivation'
 #: ``outline-vs-shipped`` (``check-outline-vs-shipped``) passes on exactly that test:
 #: it resolves through the shared chain and publishes ``comparison: inconclusive`` —
 #: the first token below, as a VALUE — whenever no tier answers.
-#: ``manifest-decisions`` (``check-manifest-consistency``) now passes it too, and is
-#: a member for that reason rather than by description. It previously failed the
-#: test on both halves — it took a PRIVATE ``git diff {base}...HEAD`` instead of the
-#: shared chain, and published no degradation verdict at all — which is why this
-#: comment used to explain its ABSENCE. Both halves were repaired together: the
-#: script now calls ``resolve_footprint`` and emits ``inconclusive`` (under a check
-#: ``status``, and under ``footprint_resolution.status``) when the chain reports its
-#: unresolvable sentinel. Rostering it without that repair would have been the
-#: aggregate-can-never-fire mistake described above; rostering it after the repair is
-#: what the membership test asks for.
+#: ``manifest-decisions`` (``check-manifest-consistency``) passes it on both halves
+#: too: it resolves through the shared chain and emits ``inconclusive`` — under a
+#: check ``status``, and under ``footprint_resolution.status`` — when the chain
+#: reports its unresolvable sentinel.
 #: ⛔ Do NOT reintroduce a per-script ``resolve_footprint`` mention count here as
 #: corroboration. An earlier revision carried one, it drifted from the tree, and a
 #: count is the wrong instrument regardless: mention frequency is not the membership
