@@ -89,10 +89,10 @@
       "landing": ""
     }
   ],
-  "resume_anchor": "Ledger is clean and internally consistent (corpus, compaction, dedup all pass). The ONE remaining blocker to genuine restart-readiness: 10 uncommitted paths in .plan/orchestrator/orchestrator-refactor/ (this session's tree reconciliation) are not yet committed/pushed - operator action needed, this orchestrator does not commit unprompted. Once committed: run next to emit from PLAN-02/03/06 (all staged, dependencies satisfied).",
+  "resume_anchor": "Epic fully restart-ready: PLAN-01/PLAN-04 shipped and merged (main at 6b26e246d), ledger reconciled and clean (corpus/compaction/dedup all pass, worktree clean, no open blockers). Old .plan/local/ tree removed. Next: run next to emit from PLAN-02/03/06 (all staged, dependencies satisfied).",
   "metadata": {
     "parallelization_scope": "2"
   },
   "created": "2026-09-19T12:31:55Z",
-  "updated": "2026-09-21T10:39:08Z"
+  "updated": "2026-09-21T12:02:24Z"
 }
