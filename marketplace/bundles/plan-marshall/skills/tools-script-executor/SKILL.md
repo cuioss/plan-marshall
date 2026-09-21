@@ -14,7 +14,7 @@ mode: knowledge
 **Executor is cwd-pass-through. All cwd control is explicit at the call site.** See [standards/cwd-policy.md](standards/cwd-policy.md) for the single uniform cwd-relative resolution rule (ADR-002) and the cwd-unchanged invariant every script obeys.
 
 **Prohibited actions:**
-- Do not execute marketplace scripts directly by path; always use the executor notation
+- Do not execute marketplace scripts directly by path; always use the executor notation — for the sanctioned exception and the bound on it, see the `generate_executor — bootstrap` verb under [Canonical invocations](#canonical-invocations)
 - Do not modify `.plan/execute-script.py` manually; regenerate via `/marshall-steward`
 - Do not hard-code PYTHONPATH; the executor manages it automatically
 - Do not rely on ambient cwd for path resolution inside scripts; follow [standards/cwd-policy.md](standards/cwd-policy.md)
@@ -718,7 +718,7 @@ The verification skill recognizes this execution pattern:
 - `python3 .plan/execute-script.py {notation} ...`
 
 **Violation**:
-- `python3 {direct_script_path} ...`
+- `python3 {direct_script_path} ...` — for the sanctioned exception and the bound on it, see the `generate_executor — bootstrap` verb under [Canonical invocations](#canonical-invocations)
 
 ## Canonical invocations
 
