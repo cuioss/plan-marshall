@@ -83,11 +83,11 @@ _READ_ARGS = parse_ns(
 )
 
 
-def _epic_dir(plan_context, slug: str = SLUG) -> Path:
-    return Path(plan_context.fixture_dir) / 'orchestrator' / slug
+def _epic_dir(plan_context) -> Path:
+    return Path(plan_context.fixture_dir) / 'orchestrator' / SLUG
 
 
-def _write_status(plan_context, rows: list, slug: str = SLUG) -> Path:
+def _write_status(plan_context, rows: list) -> Path:
     doc = {
         'kind': 'orchestrator',
         'title': 'Fixture Corpus Read Epic',
@@ -99,26 +99,26 @@ def _write_status(plan_context, rows: list, slug: str = SLUG) -> Path:
         'created': FIXED_TIMESTAMP,
         'updated': FIXED_TIMESTAMP,
     }
-    path = _epic_dir(plan_context, slug) / 'status.json'
+    path = _epic_dir(plan_context) / 'status.json'
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(doc, indent=2), encoding='utf-8')
     return path
 
 
-def _row(plan_id: str, status: str = 'staged') -> dict:
+def _row(plan_id: str) -> dict:
     return {
         'id': plan_id,
         'slug': plan_id.lower(),
         'workstream': 'WS-01',
-        'status': status,
+        'status': 'staged',
         'plan_marshall_plan_id': '',
         'pr': '',
         'landing': '',
     }
 
 
-def _write_spec(plan_context, filename: str, body: str, slug: str = SLUG) -> Path:
-    path = _epic_dir(plan_context, slug) / 'plans' / filename
+def _write_spec(plan_context, filename: str, body: str) -> Path:
+    path = _epic_dir(plan_context) / 'plans' / filename
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(body, encoding='utf-8')
     return path
