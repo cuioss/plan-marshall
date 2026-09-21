@@ -16,6 +16,7 @@ unit tests in ``test_lesson_id_resolution.py``, ``test_remove.py`` and
 """
 
 import json
+import sys
 from pathlib import Path
 from unittest.mock import patch
 import pytest
@@ -37,20 +38,9 @@ CONTROLLED_MEMBERS = (
     'body_less_add',
 )
 
-#: The gate's published count of open members whose remedy this plan ships.
-#: The suite asserts its own table against this number so a member that loses
-#: its control pair is a red test rather than a silently smaller suite.
-GATE_OPEN_MEMBER_COUNT = 4
-
 # ⛔ Vacuity guard — an emptied member table would collect zero cases below and
 # still report green.
 assert CONTROLLED_MEMBERS, 'CONTROLLED_MEMBERS is empty'
-
-
-def test_every_published_open_member_carries_a_control_pair():
-    """The suite's member table matches the gate's published open-member count."""
-    assert len(CONTROLLED_MEMBERS) == GATE_OPEN_MEMBER_COUNT
-    assert len(set(CONTROLLED_MEMBERS)) == len(CONTROLLED_MEMBERS)
 
 
 @pytest.fixture
@@ -212,3 +202,51 @@ class TestBodyLessAdd:
         assert filled.success, f'Script failed: {filled.stderr}'
         assert 'status: success' in filled.stdout
         assert 'body_state: written' in filled.stdout
+
+
+#: Binds each controlled member to the ``Test*`` class that carries its control
+#: pair. This is what the guard below is DERIVED from — the population is the
+#: module's own collected classes, not a restated count beside them.
+MEMBER_TO_CLASS = {
+    'collapsed_resolver_read': TestCollapsedResolverRead,
+    'two_meaning_not_found': TestTwoMeaningNotFound,
+    'stuck_lesson_retirement': TestStuckLessonRetirement,
+    'body_less_add': TestBodyLessAdd,
+}
+
+
+def _module_test_classes() -> set:
+    """Every ``Test*`` class this module actually collects at import time."""
+    module = sys.modules[__name__]
+    return {obj for name, obj in vars(module).items() if name.startswith('Test') and isinstance(obj, type)}
+
+
+def test_every_published_open_member_carries_a_control_pair():
+    """The member table is derived from, and checked against, the collected classes.
+
+    Both directions matter: every member must map to a class (an orphan member
+    with no class would otherwise be silently unenforced — the archetype this
+    member table exists to close), and every collected control class must be
+    named by a member (an orphan class would otherwise never be required by
+    anything, so deleting it would pass unnoticed).
+    """
+    assert set(MEMBER_TO_CLASS) == set(CONTROLLED_MEMBERS)
+    assert set(MEMBER_TO_CLASS.values()) == _module_test_classes()
+
+
+@pytest.mark.parametrize(
+    'member_id, cls', list(MEMBER_TO_CLASS.items()), ids=lambda v: v if isinstance(v, str) else v.__name__
+)
+def test_each_bound_class_carries_both_control_halves(member_id, cls):
+    """Every bound class defines both a negative and a matched positive control.
+
+    A class that dropped its positive control would still fail on the negative
+    half's own defect and read as covered; asserting both, not just the
+    class's presence, is what keeps a half-dropped pair red.
+    """
+    method_names = [name for name in vars(cls) if name.startswith('test_')]
+    negatives = [name for name in method_names if 'negative_control' in name]
+    positives = [name for name in method_names if 'positive_control' in name]
+
+    assert negatives, f'{cls.__name__} ({member_id}) carries no negative control'
+    assert positives, f'{cls.__name__} ({member_id}) carries no positive control'

@@ -29,6 +29,7 @@ from _lessons_helpers import (
 READABLE_ID = '2026-01-01-02-001'
 UNREADABLE_ID = '2026-01-01-02-002'
 ABSENT_ID = '2026-01-01-02-099'
+INVALID_UTF8_ID = '2026-01-01-02-003'
 
 
 @pytest.fixture
@@ -67,6 +68,19 @@ def _write_unreadable(lessons_dir, lesson_id=UNREADABLE_ID, title='Unreadable Le
     """
     path = lessons_dir / f'{lesson_id}.md'
     path.write_text(f'# {title}\n\nBody with no metadata header.\n', encoding='utf-8')
+    return path
+
+
+def _write_invalid_utf8(lessons_dir, lesson_id=INVALID_UTF8_ID):
+    """Write a lesson file whose bytes are NOT valid UTF-8.
+
+    ``path.read_text(encoding='utf-8')`` raises ``UnicodeDecodeError`` on this
+    content — the negative control for the decode-failure branch of
+    ``resolve_lesson``, distinct from the no-metadata-header ``_write_unreadable``
+    case above (that one reads fine; this one does not decode at all).
+    """
+    path = lessons_dir / f'{lesson_id}.md'
+    path.write_bytes(b'\xff\xfe invalid utf-8 bytes\n')
     return path
 
 
@@ -112,6 +126,34 @@ class TestResolveLessonStates:
         assert read.body == 'Body with no metadata header.'
         assert read.path == path
         assert 'no parseable key=value metadata header' in read.detail
+
+    def test_invalid_utf8_resolves_unreadable_instead_of_raising(self, lessons_store):
+        """A lesson file holding invalid UTF-8 bytes resolves ``unreadable``.
+
+        Negative control: ``UnicodeDecodeError`` derives from ``ValueError``
+        (via ``UnicodeError``), not ``OSError``, so a guard that only catches
+        ``OSError`` lets this raise straight out of ``resolve_lesson`` instead
+        of returning the ``unreadable`` state its own docstring promises.
+        """
+        path = _write_invalid_utf8(lessons_store)
+
+        read = _mod.resolve_lesson(INVALID_UTF8_ID)
+
+        assert read.state == 'unreadable'
+        assert read.metadata == {}
+        assert read.path == path
+
+    def test_valid_utf8_still_resolves_found(self, lessons_store):
+        """The matched positive control: a valid UTF-8 lesson still resolves.
+
+        Without this control, a guard that reported every lesson as
+        ``unreadable`` would pass the negative test above just as well.
+        """
+        _write_readable(lessons_store)
+
+        read = _mod.resolve_lesson(READABLE_ID)
+
+        assert read.state == 'found'
 
 
 def _invoke_get(lesson_id):

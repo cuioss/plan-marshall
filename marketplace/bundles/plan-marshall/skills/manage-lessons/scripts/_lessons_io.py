@@ -280,10 +280,11 @@ def resolve_lesson(lesson_id: str) -> LessonRead:
     - ``absent`` — the path does not exist. ``metadata`` / ``title`` / ``body``
       are empty and ``path`` names the file that is missing.
     - ``unreadable`` — the path EXISTS but no reader can resolve it: the read
-      raised :class:`OSError`, or :func:`file_ops.parse_markdown_metadata`
-      yielded no ``key=value`` header. ``title`` and ``body`` are populated
-      whenever the bytes were readable, because the record is right there and a
-      caller reporting the failure can name what it holds.
+      raised :class:`OSError` or :class:`UnicodeError` (invalid UTF-8), or
+      :func:`file_ops.parse_markdown_metadata` yielded no ``key=value`` header.
+      ``title`` and ``body`` are populated whenever the bytes were readable,
+      because the record is right there and a caller reporting the failure can
+      name what it holds.
     - ``found`` — the path exists and carries parseable metadata.
 
     Args:
@@ -302,7 +303,7 @@ def resolve_lesson(lesson_id: str) -> LessonRead:
 
     try:
         content = path.read_text(encoding='utf-8')
-    except OSError as exc:
+    except (OSError, UnicodeError) as exc:
         return LessonRead('unreadable', {}, '', '', path, f'{path} exists but could not be read: {exc}')
 
     metadata = parse_markdown_metadata(content)
