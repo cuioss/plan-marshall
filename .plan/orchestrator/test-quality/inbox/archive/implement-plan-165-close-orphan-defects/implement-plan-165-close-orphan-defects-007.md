@@ -1,0 +1,29 @@
+envelope_version=1
+sender_type=plan
+sender_id=implement-plan-165-close-orphan-defects
+epic=test-quality
+kind=candidate-lesson
+created=2026-09-13T11:18:54Z
+
+component=plan-marshall:build-pyproject
+category=bug
+
+# pyproject_build coverage-report exits 1 with empty stderr on three occasions
+
+## Context
+
+`script-failure-analysis` recorded six non-zero script exits across this plan, deduplicating to four unique failures. The most frequent — three of the six — is `plan-marshall:build-pyproject:pyproject_build coverage-report` exiting with code 1 and an EMPTY stderr excerpt, classified `script_internal_error`. The first occurrence was at 2026-09-12T20:44:56Z. Because the stderr excerpt is empty, the failure gives the caller nothing to act on: there is no message, no traceback fragment, and no argparse diagnostic to distinguish a genuine coverage regression from a tooling fault.
+
+## Root cause
+
+Not established from the retrospective inputs — which is itself the finding. An exit-1 with no stderr is indistinguishable between a legitimate threshold failure that failed to report its reason, a crash whose output went to stdout, and a wrapper that swallowed the child's diagnostics. The plan proceeded to a green verify and a clean landing, so the failures were evidently non-fatal in context, but nothing in the record says why they occurred or why they stopped mattering.
+
+## Proposed action
+
+Ensure `coverage-report` surfaces a diagnostic on its failure path — at minimum the underlying tool's stderr, or an explicit message naming the threshold that was not met. A build wrapper whose failure mode is a bare exit code defeats the retrospective's script-failure classification, which keys on stderr signature: with no signature it can only bucket the failure as `script_internal_error`, the residual category.
+
+## Evidence
+
+- aspect: script_failure_analysis — `bug,script_internal_error,"plan-marshall:build-pyproject:pyproject_build",coverage-report,1,"2026-09-12T20:44:56Z","",3` (note the empty stderr_excerpt field and `occurrence_count: 3`)
+- aspect: script_failure_analysis — `total_failures: 6`, `unique_failures: 4`; this signature is the only one recurring more than once
+- The plan's manifest declares `verify:coverage` with `execution_tier: orchestrator`, so these calls are on the orchestrator-owned verification path

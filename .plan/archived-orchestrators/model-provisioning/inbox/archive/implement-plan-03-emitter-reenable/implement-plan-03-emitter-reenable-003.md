@@ -1,0 +1,31 @@
+envelope_version=1
+sender_type=plan
+sender_id=implement-plan-03-emitter-reenable
+epic=model-provisioning
+kind=candidate-lesson
+created=2026-09-16T11:13:28Z
+
+component=plan-marshall:platform-runtime
+category=improvement
+title=Capture subagent token usage on the OpenCode platform target
+created=2026-09-16
+
+# Capture subagent token usage on the OpenCode platform target
+
+## Context
+
+During plan implement-plan-03-emitter-reenable, every token figure was unmeasured: totals_tokens 0 over 0 of 6 measured phases, all dispatch-boundary rows zero-token with unmeasured columns, and all 31 execution-log rows at 0 (26 unmeasured, 5 measured-zero re-entry skips). Session capture reported hook_not_configured and metrics capture is a no-op, so efficiency ratios, cost-preview comparison and termination-cause spend are all floors without a figure — and the chat-history and permission-prompt aspects were permanently skipped for lack of a session token.
+
+## Root cause
+
+The platform-runtime session/usage capture path has no working implementation on the OpenCode target, so dispatched spend leaves no measurement anywhere downstream.
+
+## Proposed action
+
+Implement usage capture for the OpenCode target (or document the gap as a known limitation with the unmeasured labelling kept fail-closed), so retrospectives measure spend instead of reporting unanchored zeros.
+
+## Evidence
+
+- aspect: plan-efficiency — totals_tokens_population_count 0, totals_worked_ms 0, all ratios unanchored
+- aspect: logging-gap-analysis — DISPATCH_TERMINATION_CAUSE error_total_tokens 0 and retryable_total_tokens 0 over unmeasured rows
+- session capture error hook_not_configured at both 1-init (logged warning) and retrospective time

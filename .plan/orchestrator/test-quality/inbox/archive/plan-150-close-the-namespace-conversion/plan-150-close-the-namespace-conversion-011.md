@@ -1,0 +1,93 @@
+envelope_version=1
+sender_type=plan
+sender_id=plan-150-close-the-namespace-conversion
+epic=test-quality
+kind=candidate-lesson
+created=2026-09-02T22:00:19Z
+
+component=plan-marshall:persona-module-tester
+category=anti-pattern
+title=A hoisted base argv must be an argv the CLI actually accepts, or the fidelity claim is false
+source_plan=plan-150-close-the-namespace-conversion
+source_signal=qgate_findings
+source_findings=3ffc17,05efef
+confidence=high
+
+# A hoisted base argv must be an argv the CLI actually accepts
+
+The other two of this plan's four 6-finalize Q-Gate findings are one class. The
+conversion hoisted a shared base argv into a module constant so tests could derive
+variants from it:
+
+```python
+_RUN_ARGS = run --command-args 'verify core' --project-dir /tree --plan-id plan-x
+```
+
+`--project-dir` and `--plan-id` are declared **mutually exclusive** in
+`_build_cli.py:50-51`, and `build_main` enforces that at 676-681 *before any
+handler runs*. Production can therefore never deliver this argv to `cmd_run`.
+The parser will happily produce the namespace; the CLI refuses the invocation.
+
+Instances: `test_acceptance_resolution_log.py:57` (`3ffc17`) and
+`test_build_execute_routing.py:443` (`05efef`).
+
+## Why this is worse than an ordinary inaccurate fixture
+
+The handler state under test **is** reachable in production — just by a different
+route: `--plan-id` alone, with `build_main` deriving `project_dir`. So the tests
+exercised a real state via an argv that reaches it only in the test.
+
+What makes it a defect rather than a shortcut is that both modules made an
+explicit **production-fidelity claim** over that argv. The docstrings called the
+base "a plan-bound auto-mode build" and "the hoisted parser-derived run namespace",
+and `test_build_execute_routing.py:71-75` stated the conversion closes "exactly
+the gap that lets a newly-added build flag break production while the tests stay
+green."
+
+That claim is false as written, and "parser-derived" is doing the equivocating:
+it admits two readings — a namespace the CLI *produces and can deliver*, versus
+one the parser yields but `build_main` refuses first. The conversion's entire
+value proposition is the first reading. The fixture only satisfied the second.
+
+## The rule
+
+When hoisting an argv into a shared base for a parametrized or derived-variant
+test suite, the base must be an argv the CLI **accepts end to end**, not merely
+one the parser can tokenize. Where the state under test is reached through
+post-parse derivation, model the derivation explicitly rather than smuggling it
+in as a flag combination the CLI rejects:
+
+```python
+# argv build_main accepts
+_RUN_ARGS = run --command-args 'verify core' --plan-id plan-x
+# model build_main's derivation; --project-dir is mutually exclusive with --plan-id
+ns = _variant(_RUN_ARGS, project_dir='/tree')
+```
+
+That is the fix both findings took, and it keeps the fidelity claim true instead
+of asserted.
+
+## The generalizable failure mode
+
+Argument-parser tests routinely construct a namespace directly, which bypasses
+every constraint the CLI enforces *outside* the parser — mutual exclusion,
+conditional requirements, post-parse derivation, cross-flag validation. Hoisting
+that namespace into a shared base **multiplies the infidelity across every test
+that derives from it**, and simultaneously makes it harder to see, because the
+argv now lives far from its assertions.
+
+The corrective discipline is a specialization of the existing
+"constructed-argv assertion at the lowest subprocess primitive" standard:
+a constructed argv must survive the *real* admission path, not just the
+tokenizer. A base argv is a shared premise, so an unsound one is a shared
+unsound premise.
+
+## Detection note
+
+Both instances were caught by `ext-self-review-plan-marshall`'s
+`ambiguous_wording` detector, grouped as one class, and fixed in-run
+(`module-tests plan-marshall/build-server` green, 342 tests). Worth noting that
+the detector found them via the *wording* of the fidelity claim rather than by
+checking the argv against the parser's constraints — a semantic check
+("does this argv pass the CLI's own mutual-exclusion rules?") would catch the
+class directly and would not depend on the fixture having documented itself.

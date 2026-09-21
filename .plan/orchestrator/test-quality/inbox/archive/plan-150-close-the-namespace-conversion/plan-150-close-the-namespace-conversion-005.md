@@ -1,0 +1,50 @@
+envelope_version=1
+sender_type=plan
+sender_id=plan-150-close-the-namespace-conversion
+epic=test-quality
+kind=candidate-lesson
+created=2026-09-02T21:54:02Z
+
+component=plan-marshall:phase-3-outline
+category=improvement
+confidence=high
+source_plan=plan-150-close-the-namespace-conversion
+
+# Record per-file assessments so the two downstream consumers can evaluate
+
+## Context
+
+The assessment store was empty for this plan: `assessments_store_present: false`,
+`assessments_read: 0`, `assessed_path_count: 0`. Two independent consumers of that store
+reported the consequence in the same run, at opposite ends of the lifecycle:
+
+1. At `3-outline`, Q-Gate section 2.2 could not be evaluated at all. The operator was asked
+   to dispose of the resulting informational finding `1d627e` and answered
+   `taken_into_account` — the recommended option.
+2. At retrospective time, the `outline-vs-shipped` aspect reported `comparison: measured`
+   with 48 of 48 realized footprint paths as `touched_but_unassessed`, and both other
+   outcome classes (`include_unrealised`, `exclude_violated`) over a denominator of zero.
+
+Both consumers behaved correctly. Neither had anything to consume.
+
+## Root cause
+
+`phase-3-outline` did not record per-file certainty/confidence assessments for this plan's
+lane. The two downstream checks are then structurally unable to fire, and each reports its
+own inability in a form that is easy to disposition away: an informational Q-Gate finding,
+and an `info`-severity report-only aspect. A gap that reports itself twice per plan and is
+dispositioned away each time never closes.
+
+## Proposed action
+
+Record per-file assessments at outline time on every lane that produces a declared file
+surface — this plan declared 48 files across 8 deliverables and assessed none of them. If
+some lane legitimately produces no assessments, make that an explicitly recorded state so
+the two consumers can report "not applicable on this lane" instead of an empty population
+that reads the same as a missed step.
+
+## Evidence
+
+- aspect: outline_vs_shipped — `assessments_store_present: false`, `assessments_read: 0`, `touched_but_unassessed: 48 of 48 realized_footprint_paths`
+- aspect: chat_history_analysis — gated decision on finding `1d627e`: "Q-Gate section 2.2 could not be evaluated - the assessment store is empty, so there was no assessed population to reconcile against"; answered `taken_into_account (Recommended)`
+- aspect: artifact_consistency — the outline itself is otherwise complete: `affected_files_exact_match: pass`, `outline_only: 0`, `references_only: 0`

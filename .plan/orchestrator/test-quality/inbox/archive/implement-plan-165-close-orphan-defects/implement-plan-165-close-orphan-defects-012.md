@@ -1,0 +1,46 @@
+envelope_version=1
+sender_type=plan
+sender_id=implement-plan-165-close-orphan-defects
+epic=test-quality
+kind=candidate-lesson
+created=2026-09-13T11:24:26Z
+
+component=plan-marshall:phase-3-outline
+category=bug
+
+# A count in a title or summary is re-derived from the request, not inherited from the deliverable count
+
+The solution outline's header read "Close the four orphaned defects PLAN-090
+routed onward", and the Summary repeated "Close the four defects PLAN-090 left
+undone". The request described **two** orphaned defects (the `github_ops` import
+arrangement and `credentials.py` coverage), plus a third item folded in from
+PLAN-155's landing (the `test_configure.py` auth-type literal), plus a fourth
+deliverable that closes no defect at all and only reports the deltas.
+
+Four deliverables was correct. Four orphaned defects was not, and the provenance
+was wrong too — one of the items came from a different plan's landing entirely.
+
+## The failure shape
+
+The deliverable count is the number sitting in front of the author while the
+header is written, so it gets reused as the count of *whatever the header happens
+to be about*. The two numbers coincide often enough that the substitution usually
+goes unnoticed — and when they diverge, the header still reads fluently, because
+nothing inside the sentence is self-contradictory. Here it also erased the fact
+that the work spanned two upstream plans rather than one.
+
+## Solution
+
+Treat any count in a title, header, or summary opening as a claim about the
+**request**, and re-derive it from the request's own provenance before writing it:
+how many items of *that kind* does the request actually name, and where did each
+come from? Where deliverables and items do not correspond one-to-one, say what the
+number counts ("four deliverables", not "four defects") rather than letting the
+noun drift. A deliverable that closes no defect — a reporting or verification
+deliverable — is the usual reason the two counts separate.
+
+## Impact
+
+Miscounted provenance in a header propagates: it is the line the landing report,
+the PR title, and the epic ledger all pick up, so one unchecked number becomes the
+epic's record of what the plan was for.

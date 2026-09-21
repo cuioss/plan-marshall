@@ -1,0 +1,96 @@
+envelope_version=1
+sender_type=plan
+sender_id=plan-150-close-the-namespace-conversion
+epic=test-quality
+kind=candidate-lesson
+created=2026-09-02T21:59:29Z
+
+component=plan-marshall:phase-3-outline
+category=improvement
+title=A success criterion must be operationalizable from the outline alone
+source_plan=plan-150-close-the-namespace-conversion
+source_signal=qgate_findings
+source_findings=2d4541,2689a0,bdf5d9,615895
+confidence=high
+
+# A success criterion must be operationalizable from the outline alone
+
+Four of the five Q-Gate findings this plan's 3-outline gate raised are one class,
+not four incidents. Every one of them is a success criterion that reads as
+checkable but cannot actually be executed from the outline as written. The plan
+scored a perfect outline-fidelity result downstream (8/8 deliverables done, 48/48
+realized paths declared, zero scope creep), so this class is not a symptom of a
+sloppy outline — it is what a *good* outline still gets wrong, which is why it is
+worth a standing rule rather than a one-off correction.
+
+## The four instances and the missing precondition each one exposes
+
+| Finding | Criterion as written | Missing precondition |
+|---------|----------------------|----------------------|
+| `2d4541` | "record the per-directory distribution across the 29 enumerated slice entries" | The 29 entries were never enumerated. Only the 2 top-level files were named; the 27 directories were not. The criterion referenced a population the outline did not contain. |
+| `2689a0` | D8: "collected test-item count unchanged or higher than the before figure recorded by deliverable 1" | D1 was instructed to record four figures, none of them the item count. No deliverable recorded the baseline the criterion compares against. |
+| `bdf5d9` | Risks section: "the conversion deliverables state that assertions stay untouched" | Only D2 carried the criterion. D3-D7 were covered by a mitigation their own text did not implement. |
+| `615895` | "the suite passes in default order and in reverse order" | No reverse-order command was declared anywhere, and the project has no reverse-order plugin, so no command *could* exist. The criterion additionally cited `-p no:randomly` for a plugin (`pytest-randomly`) the project does not depend on. |
+
+## The rule
+
+Before an outline is submitted, every success criterion must satisfy four
+preconditions. Each maps to one instance above:
+
+1. **Enumerated population.** A criterion quantifying over a set ("across the 29
+   entries", "every conversion deliverable") requires that set to be written down
+   in the outline. A count in prose is not an enumeration.
+2. **Named producing command.** A criterion asserting an observation requires the
+   concrete command that produces it, verified to exist. `615895` is the sharp
+   case: the command was absent because the capability was absent, and the
+   criterion's own qualifier cited tooling the project does not use. An executor
+   running the one declared command and seeing green would have ticked a criterion
+   it never observed.
+3. **Recorded baseline for every comparison.** A criterion of the form "unchanged
+   or higher than the before figure" requires some earlier deliverable to record
+   that figure explicitly.
+4. **Present on every deliverable it is claimed for.** A mitigation written in the
+   plural must be implemented on each deliverable it names, or narrowed to name
+   only the ones that carry it.
+
+## The temporally-unrecoverable baseline is the sharpest sub-case
+
+`2689a0` deserves separate emphasis because it is not merely an incomplete
+criterion — it is an **irreversibly** incomplete one. D1 was the gate deliverable
+running before any conversion, so it was the only point in the plan's life at
+which the pre-conversion item count existed. Once D2-D7 landed, the figure was
+unrecoverable and D8's criterion would have been permanently unsatisfiable. The
+same gap reached D2-D7, each of which compared its own directory's count against
+a baseline nobody recorded.
+
+This suggests a structural check an outline validator could run mechanically,
+without judgement: **does any deliverable's criterion compare against a figure
+that no earlier deliverable's success criteria record?** That is a pure
+data-dependency question over the outline's own text. It does not require
+understanding what the plan does.
+
+## The class-level fix this plan actually adopted
+
+`bdf5d9`'s resolution is the reusable artifact: a **cross-deliverable criterion
+table** listing every success criterion any deliverable carries, checked across
+all of them, with blank cells annotated as deliberate non-applicability plus the
+rationale. That converts criterion drift from something a reviewer must notice
+into something visible in one place, and it makes a blank read as a decision
+rather than an omission. Consider making the table a standard section of any
+outline with three or more structurally similar deliverables.
+
+## Why this is worth recording despite being fixed in-run
+
+All four were caught by the outline Q-Gate and dispositioned before execution, so
+the plan shipped clean. But the gate catches these one plan at a time, and all
+four dispositions were hand-authored corrections. Encoding the four preconditions
+as an authoring checklist (or as validator checks, at least for preconditions 1
+and 3, which are mechanically decidable) moves the work from per-plan remediation
+to per-plan prevention.
+
+## Routing note
+
+Filed against `plan-marshall:phase-3-outline` as the owner of outline authoring.
+The mechanically-decidable half (preconditions 1 and 3) may belong instead with
+the `scope_criterion_validator` that raised three of the four findings — the
+orchestrator holds the cross-plan context to make that call.

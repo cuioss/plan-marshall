@@ -1,0 +1,52 @@
+envelope_version=1
+sender_type=plan
+sender_id=plan-150-close-the-namespace-conversion
+epic=test-quality
+kind=candidate-lesson
+created=2026-09-02T21:54:55Z
+
+component=plan-marshall:plan-orchestrator
+category=improvement
+confidence=medium
+source_plan=plan-150-close-the-namespace-conversion
+
+# Recalibrate staged-spec sizing for mechanical conversion sweeps
+
+## Context
+
+The staged spec `PLAN-150-close-the-architecture-slice-namespace-conversion.md` carried a
+Scope Note that expected the work to need a second run and explicitly treated partial
+completion as an acceptable outcome.
+
+All 8 deliverables landed in one run, with:
+
+- 100 percent modification-intent coverage on every deliverable that declared a modification
+  surface (48 of 48 declared files realized);
+- zero scope creep — every one of the 48 realized paths was declared by some deliverable;
+- exact outline/references agreement (`outline_only: 0`, `references_only: 0`);
+- hand-built `argparse.Namespace` sites reduced 547 to 1 (the survivor a named,
+  explicitly-reported seam-blocked site), `parse_ns` sites 1 to 78 with all 78 at module or
+  fixture scope, collected items 3905 to 3909 with the +4 fully accounted for, an empty
+  blocked-site set recorded as an explicit result, and whole-tree verify green at 23,739
+  tests.
+
+## Root cause
+
+The sizing heuristic for the mechanical-conversion-sweep spec class appears calibrated on
+plans whose per-item work carries judgement. This class does not: once the seam and the
+placement rule are established in the first deliverable, the remaining deliverables are
+throughput. The result was a spec that over-provisioned by a full run.
+
+## Proposed action
+
+Distinguish mechanical-sweep specs from judgement-bearing specs when sizing, and calibrate
+the sweep class on realized single-run throughput rather than on the general case. Note the
+cost is real in both directions: the plan did cross its `broad + tech_debt` token error
+anchor (3.95M against a 3.5M ceiling), so "one run" here means one large run, not a cheap
+one — the sizing error is in the run COUNT, not in the budget.
+
+## Evidence
+
+- aspect: request_result_alignment — all 8 goals `fulfilled`; `gaps: []`, `scope_creep: []`; `declared_files_total: 48` equal to `realized_footprint_paths: 48`
+- aspect: plan_efficiency — `total_tokens_per_deliverable: 494037.13` against a 500K fallback ceiling; `max_phase_token_share: 0.45` under the 0.50 ceiling, so cost was breadth-driven rather than a runaway phase
+- aspect: artifact_consistency — `task_deliverable_match: pass` (all 8 deliverables covered by tasks), `affected_files_exact_match: pass`

@@ -1,0 +1,31 @@
+envelope_version=1
+sender_type=plan
+sender_id=output-volume-standard
+epic=operator-ux
+kind=candidate-lesson
+created=2026-09-03T16:08:32Z
+
+component=plan-marshall:manage-status
+category=improvement
+
+# scope_estimate derivation counts read-only paths named in a request as edit targets
+
+## Observation
+
+The refine Q-Gate raised a classification mismatch on plan `output-volume-standard`: `references.scope_estimate` was persisted as `surgical`, while the request body named 9 distinct file paths — at or above the `multi_module` floor of 8. The gate read the raw count of paths appearing in the request narrative.
+
+Of those 9 paths, only 2 were edit targets (`standards/user-communication.md`, `citations-only-return.md`). The remaining 7 were read-only: source-premise verification targets and cross-reference targets the request named so the refine step could check them. The surgical derivation was correct and the finding was resolved `taken_into_account`.
+
+## Recommended rule
+
+Derive `scope_estimate` from the paths the plan declares as EXPECTED MODIFICATIONS, not from every path the request narrative mentions. The declared-footprint surface already partitions declared intent into expected-modification and read-only-reference keys (`manage-references`), so the discriminator exists and is not being consulted here. Where the raw-count heuristic must stay, state in the finding that the count is over narrative mentions rather than edit targets, so the reader is not told a surgical plan looks multi-module.
+
+## Why it matters
+
+A narrow band is claimed to suppress S3/S4 escalation signals, so the gate exists to catch an under-claim. Counting read-only mentions makes it fire on exactly the plans that did the verification work properly — a documentation plan that names its premise sources is penalised for naming them.
+
+## Evidence
+
+- Plan: `output-volume-standard` (epic `operator-ux`)
+- Q-Gate finding `d517fa`, phase `2-refine`, type `anti-pattern`, severity `warning`
+- Resolution: `taken_into_account` — module mapping confirmed both edit targets in one module, 3 files or fewer, no public API surface

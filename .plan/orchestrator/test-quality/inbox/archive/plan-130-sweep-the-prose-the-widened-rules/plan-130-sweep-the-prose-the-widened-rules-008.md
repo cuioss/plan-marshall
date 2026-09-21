@@ -1,0 +1,29 @@
+envelope_version=1
+sender_type=plan
+sender_id=plan-130-sweep-the-prose-the-widened-rules
+epic=test-quality
+kind=candidate-lesson
+created=2026-09-07T15:22:23Z
+
+# De-citing prose is a review trigger: it exposes the stale factual claims the citation was shielding
+
+**Signal**: `pr-comment` finding `e7b364` (CodeRabbit, PR #1436, `test/plan-marshall/manage-execution-manifest/test_manage_execution_manifest_compose.py:672`), resolution `fixed` in `be27eb720`.
+
+## Observation
+
+The sweep's declared job was to remove historical citations from prose. At one site the comment said the composer retires `bundle_self_modification` and emits `default:sync-plugin-cache` (order 14) and `default:deploy-target` (order 12). Both halves were wrong: those are **project-local** steps at orders **85** and **81**, and the composer contains no retire-and-replace mechanism at all — it loads Phase 6 candidates from `marshal.json` or `DEFAULT_PHASE_6_STEPS`.
+
+The error **predated this sweep**. The sweep had only de-cited the surrounding prose; it did not introduce the wrong orders or the invented mechanism.
+
+## The transferable rule
+
+A citation acts as a shield. While a claim reads as "per commit X, ..." a reviewer treats it as a historical report and checks provenance, not current truth. Restate the same sentence as a standing present-tense claim and it becomes a **verifiable assertion about HEAD** — which is exactly what a review bot then verifies, and what it found false.
+
+So a prose-only sweep has a second, unbudgeted yield: it converts dormant stale claims into review findings. Two consequences for planning a sweep of this class:
+
+1. **Budget for factual repair, not only for rewriting.** Some fraction of de-cited sites will turn out to be wrong on the merits. That repair is in scope (the sweep is what made the claim assertable) even though it is not prose work.
+2. **Do not treat a finding on a de-cited line as sweep-introduced by default.** The correct disposition depends on which it is. Here the fix was to correct the facts and record that the sweep did not cause them; misattributing it to the sweep would have implied a regression that never happened.
+
+## Contrast with the sibling candidate
+
+The mirror-image case (a de-citation that *strengthened* a claim beyond what the test verifies) is already routed as separate material. The two are opposite directions of the same non-neutrality: de-citing can make a claim **stronger than the code supports** or make an **already-false claim newly checkable**. Both are consequences of the same edit, and neither is a wording change.

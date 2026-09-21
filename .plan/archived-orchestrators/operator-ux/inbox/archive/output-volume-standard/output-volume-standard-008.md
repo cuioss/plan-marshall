@@ -1,0 +1,30 @@
+envelope_version=1
+sender_type=plan
+sender_id=output-volume-standard
+epic=operator-ux
+kind=candidate-lesson
+created=2026-09-03T16:08:39Z
+
+component=plan-marshall:phase-3-outline
+category=improvement
+
+# A request Exclusion stated on the basis of one site silently excludes sibling sites in the same file
+
+## Observation
+
+The outline Q-Gate blocked on plan `output-volume-standard` for a `request_alignment` conflict. Deliverable 3 modified `persona-plan-marshall-agent/SKILL.md`, and the clarified request's Exclusions list named "agent-behavior-rules.md and the persona SKILL.md load step" as out of scope — so no request requirement mapped to the deliverable, and an operator decision was required to proceed.
+
+The exclusion's own stated basis was the Step 1 LOAD INSTRUCTION, which deliverable 3 left byte-identical. The sites it actually touched were different: a closure claim at line 31 ("the two binding rules") that deliverable 1 made false, and a Standards Reference index row at line 142 that summarised only two of three rules. Two standing project rules — the closure-claim rule and the index-completeness rule — mandate correcting both in the same change. The operator included the deliverable.
+
+## Recommended rule
+
+An Exclusion is a claim about a SITE, not about a file. When refine records an exclusion whose stated basis is a specific construct ("the load step", "the frontmatter", "the examples"), record the site, not the enclosing path, so the outline gate compares like with like. Where the exclusion is genuinely file-wide, say so explicitly.
+
+Secondarily: when a plan's own change falsifies a closure claim or an index row elsewhere in an excluded file, that correction is mandated by standing rules and should be surfaced by refine as a KNOWN consequence rather than discovered as an alignment conflict at the outline gate, where it costs an operator escalation.
+
+## Evidence
+
+- Plan: `output-volume-standard` (epic `operator-ux`)
+- Q-Gate finding `1e3eeb`, phase `3-outline`, type `triage`, `file_path` `marketplace/bundles/plan-marshall/skills/persona-plan-marshall-agent/SKILL.md`
+- Resolution: `accepted` — operator scope decision at the `outline_prompt` `d3_scope` gate, include D3 with `depends:1` so it stays droppable
+- A content sweep over 5324 inventoried files confirmed the "two binding rules" closure claim existed in exactly two files, both covered by the plan
