@@ -312,9 +312,8 @@ regardless of the suite's colour.
 The smoke, run against **merged source** (so the executor carries the change and
 the full live notation set):
 
-1. **Regenerate the executor directly** — the same command the
-   [broken-executor recovery](#recovery) uses, so it bypasses any executor the
-   change may have broken:
+1. **Regenerate the executor directly** — a direct-path `generate` call, which
+   bypasses any executor the change may have broken:
 
    ```bash
    python3 marketplace/bundles/plan-marshall/skills/tools-script-executor/scripts/generate_executor.py generate --marketplace --marketplace-root .
@@ -648,7 +647,7 @@ Regenerate the executor by invoking `generate_executor.py` **directly**, bypassi
 python3 marketplace/bundles/plan-marshall/skills/tools-script-executor/scripts/generate_executor.py bootstrap --marketplace --marketplace-root .
 ```
 
-This is the same `generate_executor — bootstrap` surface documented under [Canonical invocations](#canonical-invocations), run against the script file by its repository path rather than through the executor notation. The `--marketplace` flag selects the marketplace-source generation mode and `--marketplace-root .` pins discovery to the current checkout root (the directory that contains `marketplace/bundles`). After the direct call succeeds, the rewritten `.plan/execute-script.py` carries the corrected preamble and the normal executor-routed commands work again. A bare `generate` direct call remains prohibited outside this verb — `bootstrap` refuses a fresh executor, which is what keeps the exception narrow.
+This is the same `generate_executor — bootstrap` surface documented under [Canonical invocations](#canonical-invocations), run against the script file by its repository path rather than through the executor notation. The `--marketplace` flag selects the marketplace-source generation mode and `--marketplace-root .` pins discovery to the current checkout root (the directory that contains `marketplace/bundles`). After the direct call succeeds, the rewritten `.plan/execute-script.py` carries the corrected preamble and the normal executor-routed commands work again.
 
 ### Distinguishing the executor-unavailable cases
 
@@ -752,7 +751,7 @@ python3 .plan/execute-script.py plan-marshall:tools-script-executor:generate_exe
   [--marketplace] [--marketplace-root PATH] [--target TARGET]
 ```
 
-Sanctioned direct-path bootstrap for fresh-clone / stale-cache cases — the narrow exception to "never by direct path". Generates only when the executor is absent (fresh clone), fails verification (corrupt/stale cache), or its embedded `TEMPLATE_SHA256` no longer matches the live template (template-content staleness). A present, valid, template-fresh executor is refused with `action: not_needed`; an unstampable side reports `template_status: unknown` (never a vacuous `fresh`) and still refuses. `template_status` is four-valued: `fresh` (hashes match), `stale` (both hashes known and differ), `unknown` (either side unstampable), and `uncompared` (no hash comparison was attempted — the executor was absent, or it failed structural verification — while the live template hash was resolvable) — `unknown`/`uncompared` never drive a regeneration on their own; both ride the verdict the presence check or the verification half already reached. Direct invocation is sanctioned ONLY through this verb; every other direct-path call stays prohibited.
+Sanctioned direct-path bootstrap for fresh-clone / stale-cache cases — the narrow exception to "never by direct path". Generates only when the executor is absent (fresh clone), fails verification (corrupt/stale cache), or its embedded `TEMPLATE_SHA256` no longer matches the live template (template-content staleness). A present, valid, template-fresh executor is refused with `action: not_needed`; an unstampable side reports `template_status: unknown` (never a vacuous `fresh`) and still refuses. `template_status` is four-valued: `fresh` (hashes match), `stale` (both hashes known and differ), `unknown` (either side unstampable), and `uncompared` (no hash comparison was attempted — the executor was absent, or it failed structural verification — while the live template hash was resolvable) — `unknown`/`uncompared` never drive a regeneration on their own; both ride the verdict the presence check or the verification half already reached.
 
 ### generate_executor — drift
 
