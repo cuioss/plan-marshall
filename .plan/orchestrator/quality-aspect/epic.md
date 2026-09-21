@@ -33,11 +33,9 @@ not see, and ledgers that pair by construction rather than by audit.
      outside the markers — never inside them. -->
 
 <!-- BEGIN GENERATED: resume-summary -->
-**Resume anchor**: PLAN-19 STAGED prio 1 (executor-target-fidelity, WS-02): emit at next free slot. PLAN-07 running; next action: await landings or mid-flight observations.
+**Resume anchor**: PLAN-07 SHIPPED 2026-09-21 (#1559, 8/8); store migrated to tracked tree, state verified. Next action: emit prio-1 PLAN-19 + disjoint PLAN-02 (R=0, scope 2).
 **Phase**: orchestrating
-**Inbox (derived)**: 0 queued, 8 archived
-**Running**:
-- PLAN-07 (WS-04)
+**Inbox (derived)**: 0 queued, 9 archived
 **Queue** (staged, in order):
 1. PLAN-02 (WS-01)
 2. PLAN-03 (WS-02)
@@ -55,6 +53,7 @@ not see, and ledgers that pair by construction rather than by audit.
 14. PLAN-18 (WS-08)
 15. PLAN-19 (WS-02)
 - PLAN-01 (WS-01) — plan=ledger-joins — PR #1545 — landing=landings/PLAN-01.md — status: shipped
+- PLAN-07 (WS-04) — plan=plan-07-footprint-surface — PR #1559 — landing=landings/PLAN-07.md — status: shipped
 - PLAN-09 (WS-05) — plan=plan-09-outline-sweep — PR #1551 — landing=landings/PLAN-09.md — status: shipped
 <!-- END GENERATED: resume-summary -->
 
@@ -91,17 +90,16 @@ not see, and ledgers that pair by construction rather than by audit.
 | 3 | PLAN-04 | WS-02 | staged | marketplace/bundles/plan-marshall/skills/phase-5-execute/; marketplace/bundles/plan-marshall/skills/phase-6-finalize/ |
 | 4 | PLAN-05 | WS-03 | staged | marketplace/bundles/plan-marshall/skills/automatic-review/ |
 | 5 | PLAN-06 | WS-03 | staged | marketplace/bundles/plan-marshall/skills/automatic-review/; marketplace/bundles/plan-marshall/skills/manage-providers/ |
-| 6 | PLAN-07 | WS-04 | running | marketplace/bundles/plan-marshall/skills/manage-references/; marketplace/bundles/plan-marshall/skills/plan-orchestrator/; marketplace/bundles/pm-plugin-development/skills/ext-self-review-plan-marshall/ |
-| 7 | PLAN-08 | WS-04 | staged | marketplace/bundles/plan-marshall/skills/manage-lessons/; marketplace/bundles/plan-marshall/skills/workflow-integration-git/ |
-| 8 | PLAN-10 | WS-06 | staged | marketplace/bundles/plan-marshall/skills/manage-tasks/; marketplace/bundles/plan-marshall/skills/phase-4-plan/; marketplace/bundles/plan-marshall/skills/phase-5-execute/ |
-| 9 | PLAN-11 | WS-06 | staged | marketplace/bundles/plan-marshall/skills/phase-2-refine/; marketplace/bundles/plan-marshall/skills/plan-marshall/; marketplace/bundles/plan-marshall/skills/workflow-integration-github/ |
-| 10 | PLAN-12 | WS-06 | staged | marketplace/bundles/plan-marshall/skills/manage-architecture/; marketplace/bundles/plan-marshall/skills/manage-lessons/; marketplace/bundles/plan-marshall/skills/tools-script-executor/ |
-| 11 | PLAN-13 | WS-07 | staged | marketplace/bundles/plan-marshall/skills/manage-findings/; marketplace/bundles/pm-plugin-development/skills/ext-self-review-plan-marshall/; marketplace/bundles/pm-plugin-development/skills/plugin-doctor/ |
-| 12 | PLAN-14 | WS-07 | staged | marketplace/bundles/plan-marshall/skills/manage-logging/; marketplace/bundles/plan-marshall/skills/plan-retrospective/ |
-| 13 | PLAN-15 | WS-09 | staged | marketplace/bundles/plan-marshall/skills/manage-config/ |
-| 14 | PLAN-17 | WS-08 | staged | marketplace/bundles/plan-marshall/skills/phase-6-finalize/ |
-| 15 | PLAN-18 | WS-08 | staged | marketplace/bundles/plan-marshall/skills/phase-6-finalize/; marketplace/bundles/plan-marshall/skills/tools-integration-ci/ |
-| 16 | PLAN-19 | WS-02 | staged | marketplace/bundles/plan-marshall/skills/marshall-steward/; marketplace/bundles/plan-marshall/skills/platform-runtime/; marketplace/bundles/plan-marshall/skills/tools-script-executor/; marketplace/bundles/pm-plugin-development/skills/finalize-step-deploy-target/ |
+| 6 | PLAN-08 | WS-04 | staged | marketplace/bundles/plan-marshall/skills/manage-lessons/; marketplace/bundles/plan-marshall/skills/workflow-integration-git/ |
+| 7 | PLAN-10 | WS-06 | staged | marketplace/bundles/plan-marshall/skills/manage-tasks/; marketplace/bundles/plan-marshall/skills/phase-4-plan/; marketplace/bundles/plan-marshall/skills/phase-5-execute/ |
+| 8 | PLAN-11 | WS-06 | staged | marketplace/bundles/plan-marshall/skills/phase-2-refine/; marketplace/bundles/plan-marshall/skills/plan-marshall/; marketplace/bundles/plan-marshall/skills/workflow-integration-github/ |
+| 9 | PLAN-12 | WS-06 | staged | marketplace/bundles/plan-marshall/skills/manage-architecture/; marketplace/bundles/plan-marshall/skills/manage-lessons/; marketplace/bundles/plan-marshall/skills/tools-script-executor/ |
+| 10 | PLAN-13 | WS-07 | staged | marketplace/bundles/plan-marshall/skills/manage-findings/; marketplace/bundles/pm-plugin-development/skills/ext-self-review-plan-marshall/; marketplace/bundles/pm-plugin-development/skills/plugin-doctor/ |
+| 11 | PLAN-14 | WS-07 | staged | marketplace/bundles/plan-marshall/skills/manage-logging/; marketplace/bundles/plan-marshall/skills/plan-retrospective/ |
+| 12 | PLAN-15 | WS-09 | staged | marketplace/bundles/plan-marshall/skills/manage-config/ |
+| 13 | PLAN-17 | WS-08 | staged | marketplace/bundles/plan-marshall/skills/phase-6-finalize/ |
+| 14 | PLAN-18 | WS-08 | staged | marketplace/bundles/plan-marshall/skills/phase-6-finalize/; marketplace/bundles/plan-marshall/skills/tools-integration-ci/ |
+| 15 | PLAN-19 | WS-02 | staged | marketplace/bundles/plan-marshall/skills/marshall-steward/; marketplace/bundles/plan-marshall/skills/platform-runtime/; marketplace/bundles/plan-marshall/skills/tools-script-executor/; marketplace/bundles/pm-plugin-development/skills/finalize-step-deploy-target/ |
 <!-- END GENERATED: ordered-queue -->
 
 ### Queue annotations
@@ -172,6 +170,13 @@ not see, and ledgers that pair by construction rather than by audit.
   Justification: single operator session, fresh pre/post reads (18→17 verified),
   no concurrent writer on this epic.   Pre/post row sets verified identical minus
   PLAN-16.
+- **Store migration mid-session (#1575, 2026-09-21):** epic trees moved
+  `.plan/local/orchestrator/` → tracked `.plan/orchestrator/` (this epic +
+  test-quality; archived epics → `.plan/archived-orchestrators/`). All session
+  state verified carried over intact (18 queue rows, 173 lessons-archive files,
+  2 landings, inbox archives, logs). Scripts resolve the tracked store; all
+  subsequent ledger paths use it. The plan-07 inbox message arriving at the new
+  path is the migration working, not a write-boundary breach.
 - **Cross-machine reconciliation 2026-09-19 (response.09-19.md, truthful-signals
   checkout):** treated as leads, verified against this tree, 9 shipped-in-tree
   deliverables retired (specs + summary.md updated, surfaces re-derived 17/17
@@ -257,6 +262,11 @@ input, not this epic's observations.}
   (12 deliverables, 9 files). Discrepancy noted: message lists 4
   process-compliance findings, the paste 5 — the 5th (post-archive artifact)
   postdates the message. A manual paste from this plan could still surface a
+  required fact the inbox did not.
+- **Incomplete inbox landing (plan-07-footprint-surface-001.md, recorded not
+  reconciled-as-if-complete):** narrative only, missing all 9 facts-block keys;
+  reconciled via landings/PLAN-07.md instead. Corroborates (8 deliverables, 9
+  files, verify green). A manual paste from this plan could still surface a
   required fact the inbox did not.
 
 ## Watches

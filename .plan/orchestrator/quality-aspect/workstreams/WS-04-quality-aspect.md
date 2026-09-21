@@ -23,7 +23,7 @@ plan reports is the footprint it realized, on a base it names.
 
 | Plan | Status | Notes |
 |------|--------|-------|
-| PLAN-07-footprint-surface | running | Upstream-base diffs, creation SHA, containment rule, origin/main surfacing |
+| PLAN-07-footprint-surface | shipped | Upstream-base diffs, creation SHA, containment rule, origin/main surfacing (#1559) |
 | PLAN-08-baseline-reconcile | staged | Localized-git parsing, drift recovery routing, lesson dedup keys |
 
 ## Sequencing and Surface Notes

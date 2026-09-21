@@ -72,10 +72,10 @@
       "id": "PLAN-07",
       "slug": "footprint-surface",
       "workstream": "WS-04",
-      "status": "running",
-      "plan_marshall_plan_id": "",
-      "pr": "",
-      "landing": ""
+      "status": "shipped",
+      "plan_marshall_plan_id": "plan-07-footprint-surface",
+      "pr": "#1559",
+      "landing": "landings/PLAN-07.md"
     },
     {
       "id": "PLAN-08",
@@ -177,10 +177,10 @@
       "landing": ""
     }
   ],
-  "resume_anchor": "PLAN-19 STAGED prio 1 (executor-target-fidelity, WS-02): emit at next free slot. PLAN-07 running; next action: await landings or mid-flight observations.",
+  "resume_anchor": "PLAN-07 SHIPPED 2026-09-21 (#1559, 8/8); store migrated to tracked tree, state verified. Next action: emit prio-1 PLAN-19 + disjoint PLAN-02 (R=0, scope 2).",
   "metadata": {
     "parallelization_scope": "2"
   },
   "created": "2026-09-18T21:04:01Z",
-  "updated": "2026-09-21T06:22:42Z"
+  "updated": "2026-09-21T20:24:16Z"
 }
