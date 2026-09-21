@@ -898,7 +898,7 @@ Examples:
     elif args.command == 'test-compile':
         sys.exit(cmd_test_compile(args.module))
     elif args.command == 'module-tests':
-        filter_expr = getattr(args, 'filter', None)
+        filter_expr = args.filter
         if filter_expr is not None and not filter_expr.strip():
             print('Error: --filter requires a non-empty pytest -k expression', file=sys.stderr)
             sys.exit(1)
