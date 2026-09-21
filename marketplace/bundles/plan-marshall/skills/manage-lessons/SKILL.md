@@ -302,7 +302,7 @@ and no `hint`.
 `canonical_not_found` for an absent canonical and `canonical_unresolvable` for
 an unresolvable one.
 
-Five more verbs reach the corpus differently, and none of them renders
+The verbs below reach the corpus differently, and none of them renders
 `error: unresolvable`:
 
 - `set-body`, `set-title`, and `convert-to-plan` check the file's existence
@@ -312,13 +312,17 @@ Five more verbs reach the corpus differently, and none of them renders
   both pass the same bare existence check, and what follows turns on the verb's
   own parsing rather than on the resolver's `unreadable` verdict. An unreadable
   lesson passed to `convert-to-plan` is silently relocated rather than refused.
-- `cleanup-superseded` (explicit-ids mode) and `aggregate` resolve THROUGH the
-  seam but report the outcome in their payload instead of a per-verb error
-  code: `aggregate` lists an unresolvable lesson under `unresolvable[]`
-  alongside `lessons_scanned` rather than dropping it from the corpus it
-  counted, and `cleanup-superseded` reports one under `skipped_unresolvable`
-  rather than `skipped_no_tombstone` — a bucket whose name would assert the
-  absence that branch has already disproved. Neither verb returns
+- `cleanup-superseded` (explicit-ids mode), `aggregate`, and `drain-dedup`
+  (default live-corpus path) resolve THROUGH the seam but report the outcome
+  in their payload instead of a per-verb error code: `aggregate` lists an
+  unresolvable lesson under `unresolvable[]` alongside `lessons_scanned`
+  rather than dropping it from the corpus it counted, `cleanup-superseded`
+  reports one under `skipped_unresolvable` rather than `skipped_no_tombstone`
+  — a bucket whose name would assert the absence that branch has already
+  disproved — and `drain-dedup` lists one under `corpus_unresolvable[]`, so a
+  dedup plan is never read as one computed against the whole corpus. That list
+  is empty by construction on the `--corpus-file` path, where the caller
+  supplied the corpus and no scan was performed. None of the three returns
   `error: not_found` or `error: unresolvable` at all.
 
 ### list
