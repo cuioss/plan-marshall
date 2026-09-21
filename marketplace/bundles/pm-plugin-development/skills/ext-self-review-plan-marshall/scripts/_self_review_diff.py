@@ -65,15 +65,26 @@ def _verify_base_branch(project_dir: Path, base_branch: str) -> bool:
 def resolve_upstream_base(project_dir: Path, base_branch: str) -> tuple[str, str]:
     """Anchor the review surface at the upstream base, verifying it resolves.
 
-    Prefers ``origin/{base_branch}`` when that ref resolves inside
+    Prefers ``origin/{base_branch}`` when its fully-qualified remote-tracking
+    ref (``refs/remotes/origin/{base_branch}``) resolves inside
     ``project_dir`` (the upstream anchor), falling back to ``base_branch``
-    otherwise. Returns ``(anchor, source)`` where ``source`` is ``upstream``
-    or ``local``. Merge-base semantics are preserved downstream: both the
-    footprint (``{anchor}...HEAD`` ∪ porcelain) and the hunks
+    otherwise. An optional ``origin/`` prefix (or a fully-qualified
+    ``refs/remotes/origin/`` prefix) on the input is normalized so the
+    upstream is never doubled to ``origin/origin/...``. Returns
+    ``(anchor, source)`` where ``source`` is ``upstream`` or ``local``.
+    Merge-base semantics are preserved downstream: both the footprint
+    (``{anchor}...HEAD`` ∪ porcelain) and the hunks
     (``merge-base {anchor} HEAD``) read through the returned anchor.
     """
-    upstream = f'origin/{base_branch}' if not base_branch.startswith('origin/') else base_branch
-    if _verify_base_branch(project_dir, upstream):
+    if base_branch.startswith('refs/remotes/origin/'):
+        short_branch = base_branch[len('refs/remotes/origin/') :]
+    elif base_branch.startswith('origin/'):
+        short_branch = base_branch[len('origin/') :]
+    else:
+        short_branch = base_branch
+    upstream = f'origin/{short_branch}'
+    fully_qualified = f'refs/remotes/{upstream}'
+    if _verify_base_branch(project_dir, fully_qualified):
         return upstream, 'upstream'
     return base_branch, 'local'
 
@@ -89,7 +100,13 @@ def is_behind_upstream(project_dir: Path, base_branch: str, upstream: str) -> bo
     if upstream == base_branch:
         return False
     rc_local, out_local, _ = _run_git(project_dir, 'rev-parse', '--verify', base_branch)
-    rc_up, out_up, _ = _run_git(project_dir, 'rev-parse', '--verify', upstream)
+    if upstream.startswith('refs/remotes/'):
+        upstream_verify_ref = upstream
+    elif upstream.startswith('origin/'):
+        upstream_verify_ref = f'refs/remotes/{upstream}'
+    else:
+        upstream_verify_ref = upstream
+    rc_up, out_up, _ = _run_git(project_dir, 'rev-parse', '--verify', upstream_verify_ref)
     if rc_local != 0 or rc_up != 0:
         return False
     local_sha = out_local.strip()

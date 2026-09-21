@@ -71,7 +71,7 @@ def cmd_compute_footprint(args: argparse.Namespace) -> dict:
     explicit = getattr(args, 'base_ref', None)
     if explicit is not None and str(explicit).strip():
         base_ref_source = 'explicit'
-    elif base_ref == 'origin/main':
+    elif base_ref.startswith('origin/') or base_ref.startswith('refs/remotes/origin/'):
         base_ref_source = 'upstream'
     else:
         base_ref_source = 'fallback'

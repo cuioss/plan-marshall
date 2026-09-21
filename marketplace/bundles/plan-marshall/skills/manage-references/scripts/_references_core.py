@@ -220,19 +220,22 @@ def _ref_resolves_in_worktree(worktree: Path, ref: str) -> bool:
 def resolve_base_ref(explicit: str | None, refs: dict, worktree: Path | None = None) -> str:
     """Resolve the base ref, preferring the upstream base with verification.
 
-    Preference order: explicit ``--base-ref`` first, then ``origin/main`` when
-    it resolves inside ``worktree``, then ``references.base_branch``, then
-    ``'main'``. The ``origin/main`` preference keeps the realized footprint
-    diffed against the upstream base rather than a possibly stale local main;
-    when ``worktree`` is None (or ``origin/main`` does not resolve there) the
-    resolver falls back diagnosably to the recorded base branch. An explicitly
-    supplied ref always wins — its resolvability is verified downstream by the
-    caller, which fails loud on an unresolvable base instead of diffing empty.
+    Preference order: explicit ``--base-ref`` first, then
+    ``origin/{base_branch}`` when its fully-qualified remote-tracking ref
+    (``refs/remotes/origin/{base_branch}``) resolves inside ``worktree``,
+    then ``references.base_branch``, then ``'main'``. The base branch is
+    determined from ``refs`` first (defaulting to ``'main'``) so a plan
+    targeting a non-main base (e.g. ``develop``) verifies
+    ``origin/{base_branch}`` instead of a hardcoded ``origin/main``. The
+    fully-qualified verification avoids a local ``refs/heads/origin/...``
+    branch shadowing the remote-tracking ref. An explicitly supplied ref
+    always wins — its resolvability is verified downstream by the caller,
+    which fails loud on an unresolvable base instead of diffing empty.
 
     Args:
         explicit: An explicit base ref (e.g. from ``--base-ref``), or None.
         refs: The references dict (read from references.json).
-        worktree: The active git worktree used to verify ``origin/main``,
+        worktree: The active git worktree used to verify the upstream ref,
             or None to skip upstream verification.
 
     Returns:
@@ -242,14 +245,24 @@ def resolve_base_ref(explicit: str | None, refs: dict, worktree: Path | None = N
         val = str(explicit).strip()
         if val:
             return val
+    raw_base = refs.get('base_branch')
+    if raw_base is not None:
+        base_branch = str(raw_base).strip() or 'main'
+    else:
+        base_branch = 'main'
+    if base_branch.startswith('refs/remotes/origin/'):
+        short_branch = base_branch[len('refs/remotes/origin/') :]
+    elif base_branch.startswith('origin/'):
+        short_branch = base_branch[len('origin/') :]
+    else:
+        short_branch = base_branch
+    upstream = f'origin/{short_branch}'
+    fully_qualified = f'refs/remotes/{upstream}'
     if worktree is not None:
-        if _ref_resolves_in_worktree(worktree, 'origin/main'):
-            return 'origin/main'
-    base_branch = refs.get('base_branch')
-    if base_branch is not None:
-        val = str(base_branch).strip()
-        if val:
-            return val
+        if _ref_resolves_in_worktree(worktree, fully_qualified):
+            return upstream
+    if base_branch:
+        return base_branch
     return 'main'
 
 

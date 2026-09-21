@@ -3921,8 +3921,14 @@ class TestUpstreamAnchoring:
 
         repo = self._init_repo(tmp_path)
         self._commit(repo, 'base', {'base.txt': 'base\n'})
+        head = subprocess.run(
+            ['git', '-C', str(repo), 'rev-parse', 'HEAD'],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
         subprocess.run(
-            ['git', '-C', str(repo), 'branch', 'origin/main'],
+            ['git', '-C', str(repo), 'update-ref', 'refs/remotes/origin/main', head],
             capture_output=True,
             text=True,
             check=True,
@@ -3930,6 +3936,51 @@ class TestUpstreamAnchoring:
         anchor, source = resolve_upstream_base(repo, 'main')
         assert anchor == 'origin/main'
         assert source == 'upstream'
+
+    def test_upstream_anchor_prefers_origin_develop_for_non_main_branch(self, tmp_path):
+        """A non-main base anchors at origin/{base_branch} via its remote-tracking ref."""
+        from _self_review_diff import resolve_upstream_base
+
+        repo = self._init_repo(tmp_path)
+        self._commit(repo, 'base', {'base.txt': 'base\n'})
+        subprocess.run(
+            ['git', '-C', str(repo), 'checkout', '-b', 'develop'],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        self._commit(repo, 'develop base', {'dev.txt': 'dev\n'})
+        head = subprocess.run(
+            ['git', '-C', str(repo), 'rev-parse', 'HEAD'],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        subprocess.run(
+            ['git', '-C', str(repo), 'update-ref', 'refs/remotes/origin/develop', head],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        anchor, source = resolve_upstream_base(repo, 'develop')
+        assert anchor == 'origin/develop'
+        assert source == 'upstream'
+
+    def test_upstream_anchor_ignores_local_origin_branch_shadow(self, tmp_path):
+        """A local refs/heads/origin/main must not satisfy the upstream verification."""
+        from _self_review_diff import resolve_upstream_base
+
+        repo = self._init_repo(tmp_path)
+        self._commit(repo, 'base', {'base.txt': 'base\n'})
+        subprocess.run(
+            ['git', '-C', str(repo), 'branch', 'origin/main'],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        anchor, source = resolve_upstream_base(repo, 'main')
+        assert anchor == 'main'
+        assert source == 'local'
 
     def test_local_fallback_when_no_upstream(self, tmp_path):
         """Without origin/main the surface falls back to the local base."""
@@ -3947,15 +3998,31 @@ class TestUpstreamAnchoring:
 
         repo = self._init_repo(tmp_path)
         self._commit(repo, 'base', {'base.txt': 'base\n'})
+        base_sha = subprocess.run(
+            ['git', '-C', str(repo), 'rev-parse', 'HEAD'],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        self._commit(repo, 'upstream ahead', {'ahead.txt': 'ahead\n'})
+        upstream_sha = subprocess.run(
+            ['git', '-C', str(repo), 'rev-parse', 'HEAD'],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
         subprocess.run(
-            ['git', '-C', str(repo), 'branch', 'origin/main'],
+            ['git', '-C', str(repo), 'update-ref', 'refs/remotes/origin/main', upstream_sha],
             capture_output=True,
             text=True,
             check=True,
         )
-        subprocess.run(['git', '-C', str(repo), 'checkout', 'origin/main'], capture_output=True, text=True, check=True)
-        self._commit(repo, 'upstream ahead', {'ahead.txt': 'ahead\n'})
-        subprocess.run(['git', '-C', str(repo), 'checkout', 'main'], capture_output=True, text=True, check=True)
+        subprocess.run(
+            ['git', '-C', str(repo), 'reset', '--hard', base_sha],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
         assert is_behind_upstream(repo, 'main', 'origin/main') is True
 
 
