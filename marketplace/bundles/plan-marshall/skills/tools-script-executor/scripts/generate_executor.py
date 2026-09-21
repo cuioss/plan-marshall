@@ -19,14 +19,12 @@ Subcommands:
     paths       Verify all mapped paths exist
     cleanup     Clean up old logs
 
-Direct-path bootstrap exception (narrow):
-    "Never by direct path" holds for every marketplace script EXCEPT this
-    generator's ``bootstrap`` verb. A fresh clone has no
-    ``<root>/.plan/execute-script.py`` yet, so no executor-mediated call can
-    create it — ``bootstrap`` is the sanctioned first call, and it is
-    detection-gated rather than unconditional. :func:`cmd_bootstrap` owns that
-    gate: which states regenerate, and the ``action: not_needed`` refusal that
-    keeps the exception from widening into general direct-path use.
+Direct-path bootstrap:
+    A fresh clone has no ``<root>/.plan/execute-script.py`` yet, so no
+    executor-mediated call can create it — ``bootstrap`` is the sanctioned
+    first call, and it is detection-gated rather than unconditional.
+    :func:`cmd_bootstrap` owns that gate: which states regenerate, and the
+    ``action: not_needed`` refusal.
 
 The executor is always written directly to ``<root>/.plan/execute-script.py``
 (the tracked ``.plan/`` directory inside the main git checkout). There is no
@@ -2357,16 +2355,13 @@ def cmd_verify(args: argparse.Namespace) -> dict:
 def cmd_bootstrap(args: argparse.Namespace) -> dict:
     """Sanctioned direct-path bootstrap for fresh-clone / stale-cache cases.
 
-    The NARROW exception to "never by direct path": this verb is the only
-    direct ``python3 .../generate_executor.py`` invocation a caller may use,
-    and only because no executor exists yet to mediate it (fresh clone), the
-    existing one fails verification (corrupt/stale cache), or its embedded
-    template hash no longer matches the live template (template-content
-    staleness — a template fix shipped without a version bump, e.g. the
-    post-merge stale-executor incident). Every other direct-path invocation
-    stays prohibited; an executor that is present, valid, and template-fresh
-    is refused with ``action: not_needed`` (the caller must use the
-    executor-mediated ``generate`` instead).
+    This verb regenerates only when no executor exists yet to mediate it
+    (fresh clone), the existing one fails verification (corrupt/stale cache),
+    or its embedded template hash no longer matches the live template
+    (template-content staleness — a template fix shipped without a version
+    bump, e.g. the post-merge stale-executor incident). An executor that is
+    present, valid, and template-fresh is refused with ``action: not_needed``
+    (the caller must use the executor-mediated ``generate`` instead).
 
     Template comparison is four-valued: ``fresh`` (hashes match),
     ``stale`` (both hashes known and differ), ``unknown`` (either side
