@@ -190,6 +190,9 @@ def _compose_candidate_output(detected: dict[str, list]) -> dict[str, Any]:
     would emit a key with no payload; a detector result with no registry entry
     would be silently dropped from BOTH the payload and the count — the same
     mirror-drift this registry exists to remove. Either direction raises.
+    The emitted vocabulary is therefore closed: unregistered sub-lists are
+    refused here, never carried through — see
+    ext-point-self-review-surfacing.md § Required Candidate Sub-Lists.
 
     Which lists feed ``total`` is the registry's ``in_total`` field; the rationale
     is owned by
