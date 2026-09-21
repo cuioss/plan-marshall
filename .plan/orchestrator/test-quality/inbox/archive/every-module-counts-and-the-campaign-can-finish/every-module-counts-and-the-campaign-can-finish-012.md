@@ -1,0 +1,46 @@
+envelope_version=1
+sender_type=plan
+sender_id=every-module-counts-and-the-campaign-can-finish
+epic=test-quality
+kind=candidate-lesson
+created=2026-09-04T16:33:25Z
+
+component=plan-marshall:manage-architecture
+category=improvement
+confidence=high
+source_plan=every-module-counts-and-the-campaign-can-finish
+
+# A lint root the gate polices was unsweepable, and the envelope had no fallback tool either
+
+## Context
+
+Deliverable 8 had to retire non-enabled-rule suppressions across every root ruff lints. `pyproject.toml` names four: `marketplace/bundles/`, `marketplace/targets/`, `test/`, `.claude/`. `extend-exclude` carries only `.claude/worktrees/`, so none of the four is exempt.
+
+`architecture search --content` swept three of them cleanly (files_scanned 5324, unreadable 0, truncated false, elided []). It could not sweep `.claude/` at all: a dotfile tree outside the crawled inventory. `architecture find` over `.claude/` returned `count: 0` — a coverage gap, not a clean negative.
+
+The documented fallback is Glob/Grep. Neither was available in the authoring envelope.
+
+To its credit the outline reported this as an unknown rather than a zero, and the operator refused to accept it (`user_review` finding 75c38e: "An unknown residue in a root the gate polices is not acceptable as-is"). It was then resolved by enumerating with `git -C . ls-files .claude` — correct as a lint proxy, since ruff honours `.gitignore` — which returned exactly 7 tracked Python files, all read in full. Result: 8 non-enabled directives across 3 files (`audit.py` 4, `reconcile_daemon.py` 3, `sync.py` 1), plus one deliberately retained in-use `# noqa: E402`.
+
+## Root cause
+
+Two gaps compose into one blind spot:
+
+1. `search --content` is inventory-scoped, and `.claude/**` and `.github/**` are outside the crawl. This is documented, and the zero correctly rides with its coverage fields — the contract behaved as specified.
+2. The documented fallback (Glob/Grep) is not guaranteed in a dispatched envelope. It was absent here, and it was absent again in the lessons-capture envelope filing this candidate.
+
+When both hold, an agent that follows the documented path has no way to answer a content question about a real, gated tree — and the only remaining honest output is "unknown", which is exactly what a gate cannot act on.
+
+## Proposed action
+
+Give the inventory a sanctioned answer for gitignore-respecting trees outside the crawl. `git ls-files {path}` is already the right proxy and was the actual resolution here; making it a verb (or extending `search --content` to accept an explicit out-of-inventory root backed by `ls-files`) turns a coverage gap into a bounded, reportable sweep.
+
+Second, smaller: the "trees the inventory does not walk" guidance names `.claude/**` and `.github/**` and points at Glob/Grep. That pointer should acknowledge Glob/Grep may be denied, and name the fallback that survives.
+
+## Evidence
+
+- qgate finding 4c7f43 (3-outline) — under_coverage for deliverable 8; explicit COVERAGE GAP paragraph rather than a clean pass
+- qgate finding 75c38e (3-outline, `user_review`) — operator ruling that unknown residue in a policed root is not acceptable
+- Resolution method recorded in the outline because the inventory cannot cover it: `git -C . ls-files .claude`, 7 tracked Python files, all read
+- Also established during resolution: `build.py cmd_quality_gate` lints all four roots only when module is None, so a module-scoped gate skips `marketplace/targets/` and `.claude/` entirely — D8's verification had to be pinned to the whole-tree verify
+- Recurrence in this envelope: the lessons-capture leaf was likewise denied Grep/Glob

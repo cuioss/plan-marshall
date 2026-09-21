@@ -1,0 +1,39 @@
+envelope_version=1
+sender_type=plan
+sender_id=derive-the-partition-and-the-budget-attribution
+epic=test-quality
+kind=candidate-lesson
+created=2026-08-25T08:57:52Z
+
+component=plan-marshall:plan-retrospective
+category=bug
+confidence=medium
+source_plan=derive-the-partition-and-the-budget-attribution
+
+# Fall back to status.metadata.session_ids when the forwarded id has no transcript
+
+## Context
+
+This retrospective was dispatched with `session_id: 9d9c3700-8571-4264-8291-300e3dfa09f3`. Resolving it through the canonical Claude Code path pattern gives `~/.claude/projects/-home-oliver-git-plan-marshall/9d9c3700-....jsonl`, which does not exist. `extract-chat-signal` correctly returned `status: skipped, reason: transcript_unavailable, raw_turn_count: 0`.
+
+`status.metadata.session_ids` carries a different id — `38a64dc7-1dc4-4027-9810-6a4c9b4f82e1` — whose transcript does exist and holds the run: 1249 raw turns, 5 operator turns, 3 gate decisions.
+
+A retrospective that followed the forwarded id alone would have emitted a `status: skipped` chat-history fragment and reported no chat signal for a plan with 1249 turns of it. The skip is well-formed and honest about its own reason, which is why the loss is silent rather than wrong — but the coverage is lost all the same.
+
+A second facet: `platform_runtime session capture --plan-id P` returned the already-stored `38a64dc7` and did not register the current session, so `session_ids` stays single-valued on a plan that provably spans two sessions. The second session's token window has no session to attribute through.
+
+## Root cause
+
+The transcript resolution is a single-candidate lookup against the forwarded `--session-id`. `status.metadata.session_ids` is the plan's own persisted record of which sessions it ran in and is not consulted, so a forwarded id that is newer than, or otherwise divergent from, the persisted list resolves to nothing with no second attempt.
+
+## Proposed action
+
+On `transcript_unavailable` for the forwarded id, retry the canonical resolution against each entry in `status.metadata.session_ids` before emitting the skip. Report which id resolved, so the fragment states its own provenance rather than implying the forwarded one was used.
+
+Separately, have `session capture` append the current session to `session_ids` when it differs from the stored value, so a multi-session plan records all of its windows.
+
+## Evidence
+
+- aspect: chat_history_analysis — forwarded id `transcript_unavailable` / `raw_turn_count: 0`; persisted id `status: success` / `raw_turn_count: 1249`
+- `platform_runtime session capture` returned `session_id: 38a64dc7-...`, `stored: true` while the dispatch carried `9d9c3700-...`
+- `status.metadata.session_ids` holds exactly one entry for a two-session run

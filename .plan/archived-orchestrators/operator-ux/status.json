@@ -1,0 +1,112 @@
+{
+  "kind": "orchestrator",
+  "title": "Operator UX: reduce interaction friction across the plan-marshall lifecycle",
+  "phase": "closed",
+  "workstreams": [
+    "WS-01-domain-resolution",
+    "WS-02-autonomy-defaults",
+    "WS-03-prompt-quality",
+    "WS-04-how-plan-marshall-talks",
+    "WS-05-surface-remediation",
+    "WS-06-interaction-mode",
+    "WS-07-persona-loading-structure"
+  ],
+  "plans": [
+    {
+      "id": "PLAN-02",
+      "slug": "domain-glob-seeding",
+      "workstream": "WS-01-domain-resolution",
+      "status": "shipped",
+      "plan_marshall_plan_id": "domain-glob-seeding",
+      "pr": "#1406",
+      "landing": "landings/PLAN-02.md"
+    },
+    {
+      "id": "PLAN-03",
+      "slug": "domain-post-plan-narrow",
+      "workstream": "WS-01-domain-resolution",
+      "status": "shipped",
+      "plan_marshall_plan_id": "domain-post-plan-narrow",
+      "pr": "#1422",
+      "landing": "landings/PLAN-03.md"
+    },
+    {
+      "id": "PLAN-04",
+      "slug": "autonomy-gate-defaults",
+      "workstream": "WS-02-autonomy-defaults",
+      "status": "shipped",
+      "plan_marshall_plan_id": "plan-04-autonomy-gate-defaults",
+      "pr": "#1437",
+      "landing": "landings/PLAN-04.md"
+    },
+    {
+      "id": "PLAN-06",
+      "slug": "user-language-and-vocabulary",
+      "workstream": "WS-04-how-plan-marshall-talks",
+      "status": "shipped",
+      "plan_marshall_plan_id": "user-language-and-vocabulary",
+      "pr": "#1382",
+      "landing": "landings/PLAN-06.md"
+    },
+    {
+      "id": "PLAN-07",
+      "slug": "output-volume-standard",
+      "workstream": "WS-04-how-plan-marshall-talks",
+      "status": "shipped",
+      "plan_marshall_plan_id": "output-volume-standard",
+      "pr": "#1387",
+      "landing": "landings/PLAN-07.md"
+    },
+    {
+      "id": "PLAN-08",
+      "slug": "remediate-user-facing-sites",
+      "workstream": "WS-05-surface-remediation",
+      "status": "shipped",
+      "plan_marshall_plan_id": "remediate-user-facing-sites",
+      "pr": "#1447",
+      "landing": "landings/PLAN-08.md"
+    },
+    {
+      "id": "PLAN-09",
+      "slug": "interaction-mode",
+      "workstream": "WS-06-interaction-mode",
+      "status": "shipped",
+      "plan_marshall_plan_id": "implement-plan-09-interaction-mode",
+      "pr": "#1502",
+      "landing": "landings/PLAN-09.md"
+    },
+    {
+      "id": "PLAN-10",
+      "slug": "always-on-is-not-a-resolve",
+      "workstream": "WS-01-domain-resolution",
+      "status": "shipped",
+      "plan_marshall_plan_id": "always-on-is-not-a-resolve",
+      "pr": "#1391",
+      "landing": "landings/PLAN-10.md"
+    },
+    {
+      "id": "PLAN-01",
+      "slug": "domain-over-provision",
+      "workstream": "WS-01-domain-resolution",
+      "status": "shipped",
+      "plan_marshall_plan_id": "domain-over-provision",
+      "pr": "#1380",
+      "landing": "landings/PLAN-01.md"
+    },
+    {
+      "id": "PLAN-05",
+      "slug": "prompt-standard-and-doctor-rule",
+      "workstream": "WS-03-prompt-quality",
+      "status": "shipped",
+      "plan_marshall_plan_id": "prompt-standard-and-doctor-rule",
+      "pr": "#1378",
+      "landing": "landings/PLAN-05.md"
+    }
+  ],
+  "resume_anchor": "epic closed \u2014 see history.md",
+  "metadata": {
+    "parallelization_scope": "2"
+  },
+  "created": "2026-09-01T14:36:44Z",
+  "updated": "2026-09-16T17:58:51Z"
+}

@@ -1,0 +1,218 @@
+{
+  "kind": "orchestrator",
+  "title": "Multi-target architecture completion",
+  "phase": "closed",
+  "workstreams": [
+    "WS-01-runtime-seam",
+    "WS-02-target-machinery",
+    "WS-03-bundle-residuals",
+    "WS-04-developer-loop",
+    "WS-05-live-validation"
+  ],
+  "plans": [
+    {
+      "id": "PLAN-01",
+      "slug": "runtime-seam-neutrality",
+      "workstream": "WS-01",
+      "status": "landed",
+      "plan_marshall_plan_id": "n/a",
+      "pr": "#1291",
+      "landing": "landings/PLAN-01.md"
+    },
+    {
+      "id": "PLAN-02",
+      "slug": "target-scoped-components",
+      "workstream": "WS-02",
+      "status": "landed",
+      "plan_marshall_plan_id": "n/a",
+      "pr": "#1313",
+      "landing": "landings/PLAN-02.md"
+    },
+    {
+      "id": "PLAN-03",
+      "slug": "claude-literal-residuals",
+      "workstream": "WS-03",
+      "status": "landed",
+      "plan_marshall_plan_id": "n/a",
+      "pr": "#1319",
+      "landing": "landings/PLAN-03.md"
+    },
+    {
+      "id": "PLAN-04",
+      "slug": "sync-opencode-inner-loop",
+      "workstream": "WS-04",
+      "status": "landed",
+      "plan_marshall_plan_id": "n/a",
+      "pr": "#1372",
+      "landing": "landings/PLAN-04.md"
+    },
+    {
+      "id": "PLAN-19",
+      "slug": "repoint-ingested-epic-citations",
+      "workstream": "WS-02",
+      "status": "landed",
+      "plan_marshall_plan_id": "n/a",
+      "pr": "#1374",
+      "landing": "landings/PLAN-19.md"
+    },
+    {
+      "id": "PLAN-16",
+      "slug": "lint-scope-marketplace-targets",
+      "workstream": "WS-02",
+      "status": "landed",
+      "plan_marshall_plan_id": "n/a",
+      "pr": "#1375",
+      "landing": "landings/PLAN-16.md"
+    },
+    {
+      "id": "PLAN-13",
+      "slug": "chat-signal-transcript-boundary",
+      "workstream": "WS-03",
+      "status": "landed",
+      "plan_marshall_plan_id": "n/a",
+      "pr": "#1376",
+      "landing": "landings/PLAN-13.md"
+    },
+    {
+      "id": "PLAN-15",
+      "slug": "repo-scoping-design",
+      "workstream": "WS-02",
+      "status": "landed",
+      "plan_marshall_plan_id": "n/a",
+      "pr": "#1420",
+      "landing": "landings/PLAN-15.md"
+    },
+    {
+      "id": "PLAN-05",
+      "slug": "structural-directive-coverage",
+      "workstream": "WS-02",
+      "status": "landed",
+      "plan_marshall_plan_id": "n/a",
+      "pr": "#1379",
+      "landing": "landings/PLAN-05.md"
+    },
+    {
+      "id": "PLAN-08",
+      "slug": "permission-skills-through-the-registry",
+      "workstream": "WS-01",
+      "status": "landed",
+      "plan_marshall_plan_id": "n/a",
+      "pr": "#1393",
+      "landing": "landings/PLAN-08.md"
+    },
+    {
+      "id": "PLAN-06",
+      "slug": "authoring-surface-target-awareness",
+      "workstream": "WS-03",
+      "status": "landed",
+      "plan_marshall_plan_id": "n/a",
+      "pr": "#1456",
+      "landing": "landings/PLAN-06.md"
+    },
+    {
+      "id": "PLAN-07",
+      "slug": "runtime-fact-prose-and-single-sources",
+      "workstream": "WS-03",
+      "status": "landed",
+      "plan_marshall_plan_id": "n/a",
+      "pr": "#1458",
+      "landing": "landings/PLAN-07.md"
+    },
+    {
+      "id": "PLAN-09",
+      "slug": "runtime-seam-completeness",
+      "workstream": "WS-01",
+      "status": "landed",
+      "plan_marshall_plan_id": "n/a",
+      "pr": "#1405",
+      "landing": "landings/PLAN-09.md"
+    },
+    {
+      "id": "PLAN-10",
+      "slug": "layout-and-executor-residuals",
+      "workstream": "WS-03",
+      "status": "landed",
+      "plan_marshall_plan_id": "n/a",
+      "pr": "#1449",
+      "landing": "landings/PLAN-10.md"
+    },
+    {
+      "id": "PLAN-12",
+      "slug": "cross-bundle-assistant-prose",
+      "workstream": "WS-03",
+      "status": "landed",
+      "plan_marshall_plan_id": "n/a",
+      "pr": "#1460",
+      "landing": "landings/PLAN-12.md"
+    },
+    {
+      "id": "PLAN-11",
+      "slug": "target-scoping-adoption",
+      "workstream": "WS-02",
+      "status": "landed",
+      "plan_marshall_plan_id": "n/a",
+      "pr": "#1438",
+      "landing": "landings/PLAN-11.md"
+    },
+    {
+      "id": "PLAN-14",
+      "slug": "permission-web-and-rule-pack-class",
+      "workstream": "WS-01",
+      "status": "landed",
+      "plan_marshall_plan_id": "n/a",
+      "pr": "#1408",
+      "landing": "landings/PLAN-14.md"
+    },
+    {
+      "id": "PLAN-20",
+      "slug": "sync-opencode-prune-boundary",
+      "workstream": "WS-04",
+      "status": "landed",
+      "plan_marshall_plan_id": "n/a",
+      "pr": "#1418",
+      "landing": "landings/PLAN-20.md"
+    },
+    {
+      "id": "PLAN-17",
+      "slug": "pin-opencode-install-path",
+      "workstream": "WS-05",
+      "status": "parked",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-18",
+      "slug": "opencode-user-documentation",
+      "workstream": "WS-05",
+      "status": "parked",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-21",
+      "slug": "worktree-executor-root-resolution",
+      "workstream": "WS-03",
+      "status": "landed",
+      "plan_marshall_plan_id": "n/a",
+      "pr": "#1444",
+      "landing": "landings/PLAN-21.md"
+    },
+    {
+      "id": "PLAN-22",
+      "slug": "permission-grammar-residue",
+      "workstream": "WS-03",
+      "status": "landed",
+      "plan_marshall_plan_id": "n/a",
+      "pr": "#1452",
+      "landing": "landings/PLAN-22.md"
+    }
+  ],
+  "resume_anchor": "epic closed \u2014 see history.md",
+  "metadata": {
+    "parallelization_scope": "1"
+  },
+  "created": "2026-08-23T21:31:49Z",
+  "updated": "2026-09-15T07:47:10Z"
+}

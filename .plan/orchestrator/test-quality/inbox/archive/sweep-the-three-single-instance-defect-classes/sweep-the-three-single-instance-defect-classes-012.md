@@ -1,0 +1,64 @@
+envelope_version=1
+sender_type=plan
+sender_id=sweep-the-three-single-instance-defect-classes
+epic=test-quality
+kind=candidate-lesson
+created=2026-09-14T03:27:55Z
+
+component=plan-marshall:persona-module-tester
+category=anti-pattern
+
+# Changing a project-wide tool default invalidates every document that states the old behaviour, and the plan's footprint did not include them
+
+This plan's deliverable 5 adopted `empty_parameter_set_mark = "fail_at_collect"`
+project-wide. Under that setting an empty parameter set **fails collection** — the run
+goes red. `persona-module-tester/standards/testing-methodology.md:581` still stated that
+the affected cases simply disappear and the run stays green, which is true only of
+pytest's default skip mode.
+
+The plan changed the behaviour and left the sentence describing the old behaviour in
+place. A review bot, not the plan, found it.
+
+## Why this is the interesting one
+
+The other findings on this PR are defects in code the plan was writing. This one is
+different in kind: **the plan's own change made a statement elsewhere in the repository
+false.** The doc was correct before the commit that invalidated it, so no review of the
+diff in isolation could have caught it — the diff and the now-wrong sentence are in
+different files, and the sentence did not change.
+
+That is the signature of a footprint gap: the declared set of files the plan expected to
+modify did not include the documents whose claims depend on the setting being changed.
+
+## Impact
+
+A standards document that states the opposite of the configured behaviour is worse than
+silence, because standards docs are precisely what an agent loads as ground truth before
+writing tests. An author reading line 581 would conclude an empty parameter set is a
+soft, green outcome and would not add the non-vacuity assertion — while CI reds on it.
+
+## Solution
+
+1. **When a change alters a project-wide default, treat the change as having a
+   documentation footprint and derive it.** Before the change lands, search the
+   repository for prose stating the behaviour being altered (here: the tool-option name
+   `empty_parameter_set_mark`, and the behavioural phrases "stays green", "silently
+   skipped", "disappear"). `architecture search --content` is the derivation surface;
+   an unsearched doc set is an undeclared footprint, not an empty one.
+2. **State the two outcomes apart rather than replacing one with the other.** The
+   corrected text says the cases disappear under *both* settings, and that only the
+   default skip mode stays green — so it stays true if the project ever reverts.
+3. **Keep the reason independent of the run colour.** The non-vacuity assertion is
+   required because the cases *disappear*, not because the run reds; tying the rule to
+   the exit status makes the rule evaporate the moment the setting changes again. The
+   remediation deliberately re-anchored it on the disappearing cases.
+4. Consider a mechanism rather than a habit: a test asserting that documented
+   tool-option behaviour matches the configured value would make this class unable to
+   recur silently.
+
+## Provenance
+
+Plan `sweep-the-three-single-instance-defect-classes`, PR #1486 (merged). Finding
+`9b642b` (`pr-comment`, `resolution=fixed`),
+`marketplace/bundles/plan-marshall/skills/persona-module-tester/standards/testing-methodology.md:581`.
+Reviewer: coderabbitai. Remediated by TASK-012.

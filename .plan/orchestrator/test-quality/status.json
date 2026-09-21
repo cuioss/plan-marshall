@@ -1,0 +1,264 @@
+{
+  "kind": "orchestrator",
+  "title": "test-quality: house style and reduction of the Python test corpus",
+  "phase": "orchestrating",
+  "workstreams": [
+    "WS-01-standards-and-harness-foundation",
+    "WS-02-slice-reduction",
+    "WS-03-production-and-harness-gaps",
+    "WS-04-module-budget-campaign",
+    "WS-05-suite-integrity",
+    "WS-06-derived-epic-sets"
+  ],
+  "plans": [
+    {
+      "id": "PLAN-010",
+      "slug": "test-authoring-standards-and-enforcement",
+      "workstream": "WS-01",
+      "status": "landed",
+      "plan_marshall_plan_id": "",
+      "pr": "#1248, #1250",
+      "landing": "landings/PLAN-010.md"
+    },
+    {
+      "id": "PLAN-020",
+      "slug": "shared-test-harness",
+      "workstream": "WS-01",
+      "status": "landed",
+      "plan_marshall_plan_id": "",
+      "pr": "#1247",
+      "landing": "landings/PLAN-020.md"
+    },
+    {
+      "id": "PLAN-030",
+      "slug": "config-and-manifest-test-reduction",
+      "workstream": "WS-02",
+      "status": "landed",
+      "plan_marshall_plan_id": "",
+      "pr": "#1261, #1270",
+      "landing": "landings/PLAN-030.md"
+    },
+    {
+      "id": "PLAN-040",
+      "slug": "delivery-pipeline-test-reduction",
+      "workstream": "WS-02",
+      "status": "landed",
+      "plan_marshall_plan_id": "",
+      "pr": "#1259",
+      "landing": "landings/PLAN-040.md"
+    },
+    {
+      "id": "PLAN-050",
+      "slug": "plan-state-and-records-test-reduction",
+      "workstream": "WS-02",
+      "status": "landed",
+      "plan_marshall_plan_id": "",
+      "pr": "#1258, #1266",
+      "landing": "landings/PLAN-050.md"
+    },
+    {
+      "id": "PLAN-060",
+      "slug": "runtime-and-script-substrate-test-reduction",
+      "workstream": "WS-02",
+      "status": "landed",
+      "plan_marshall_plan_id": "",
+      "pr": "#1263, #1265, #1272",
+      "landing": "landings/PLAN-060.md"
+    },
+    {
+      "id": "PLAN-070",
+      "slug": "architecture-and-orchestration-test-reduction",
+      "workstream": "WS-02",
+      "status": "landed",
+      "plan_marshall_plan_id": "",
+      "pr": "#1290",
+      "landing": "landings/PLAN-070.md"
+    },
+    {
+      "id": "PLAN-080",
+      "slug": "plugin-development-and-generator-test-reduction",
+      "workstream": "WS-02",
+      "status": "landed",
+      "plan_marshall_plan_id": "",
+      "pr": "#1302, #1306",
+      "landing": "landings/PLAN-080.md"
+    },
+    {
+      "id": "PLAN-090",
+      "slug": "harness-and-rule-gaps",
+      "workstream": "WS-03",
+      "status": "landed",
+      "plan_marshall_plan_id": "",
+      "pr": "#1294",
+      "landing": "landings/PLAN-090.md"
+    },
+    {
+      "id": "PLAN-100",
+      "slug": "module-budget-campaign",
+      "workstream": "WS-04",
+      "status": "landed",
+      "plan_marshall_plan_id": "",
+      "pr": "#1314",
+      "landing": "landings/PLAN-100.md"
+    },
+    {
+      "id": "PLAN-105",
+      "slug": "every-module-counts-and-the-campaign-can-finish",
+      "workstream": "WS-04",
+      "status": "shipped",
+      "plan_marshall_plan_id": "every-module-counts-and-the-campaign-can-finish",
+      "pr": "#1407",
+      "landing": "landings/PLAN-105.md"
+    },
+    {
+      "id": "PLAN-110",
+      "slug": "every-test-runs-and-the-suite-does-not-slow-down",
+      "workstream": "WS-05",
+      "status": "shipped",
+      "plan_marshall_plan_id": "every-test-runs-and-the-suite-does-not-slow-down",
+      "pr": "#1426",
+      "landing": "landings/PLAN-110.md"
+    },
+    {
+      "id": "PLAN-120",
+      "slug": "derive-the-partition-and-the-budget-attribution",
+      "workstream": "WS-06",
+      "status": "shipped",
+      "plan_marshall_plan_id": "derive-the-partition-and-the-budget-attribution",
+      "pr": "#1345",
+      "landing": "landings/PLAN-120.md"
+    },
+    {
+      "id": "PLAN-130",
+      "slug": "sweep-the-prose-the-widened-rules-can-now-see",
+      "workstream": "WS-02",
+      "status": "shipped",
+      "plan_marshall_plan_id": "plan-130-sweep-the-prose-the-widened-rules",
+      "pr": "#1436, #1435",
+      "landing": "landings/PLAN-130.md"
+    },
+    {
+      "id": "PLAN-135",
+      "slug": "sweep-the-preambles-the-shipped-accessors-can-now-reach",
+      "workstream": "WS-02",
+      "status": "shipped",
+      "plan_marshall_plan_id": "sweep-preambles-shipped-accessors",
+      "pr": "#1446",
+      "landing": "landings/PLAN-135.md"
+    },
+    {
+      "id": "PLAN-140",
+      "slug": "module-budget-campaign-runs-2-7",
+      "workstream": "WS-04",
+      "status": "parked",
+      "plan_marshall_plan_id": "",
+      "pr": "#1552",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-145",
+      "slug": "publish-the-missing-parser-seams",
+      "workstream": "WS-03",
+      "status": "shipped",
+      "plan_marshall_plan_id": "plan-145-publish-the-missing-parser-seams",
+      "pr": "#1395",
+      "landing": "landings/PLAN-145.md"
+    },
+    {
+      "id": "PLAN-150",
+      "slug": "close-the-architecture-slice-namespace-conversion",
+      "workstream": "WS-02",
+      "status": "shipped",
+      "plan_marshall_plan_id": "plan-150-close-the-namespace-conversion",
+      "pr": "#1383",
+      "landing": "landings/PLAN-150.md"
+    },
+    {
+      "id": "PLAN-155",
+      "slug": "close-the-runtime-slice-parametrization",
+      "workstream": "WS-02",
+      "status": "shipped",
+      "plan_marshall_plan_id": "close-the-runtime-slice-parametrization",
+      "pr": "#1455",
+      "landing": "landings/PLAN-155.md"
+    },
+    {
+      "id": "PLAN-160",
+      "slug": "sweep-the-three-single-instance-defect-classes",
+      "workstream": "WS-03",
+      "status": "shipped",
+      "plan_marshall_plan_id": "sweep-the-three-single-instance-defect-classes",
+      "pr": "#1486",
+      "landing": "landings/PLAN-160.md"
+    },
+    {
+      "id": "PLAN-165",
+      "slug": "close-the-two-orphan-production-defects",
+      "workstream": "WS-03",
+      "status": "shipped",
+      "plan_marshall_plan_id": "implement-plan-165-close-orphan-defects",
+      "pr": "#1480",
+      "landing": "landings/PLAN-165.md"
+    },
+    {
+      "id": "PLAN-170",
+      "slug": "make-the-attribution-usable",
+      "workstream": "WS-06",
+      "status": "shipped",
+      "plan_marshall_plan_id": "plan-170-make-the-attribution-usable",
+      "pr": "#1385",
+      "landing": "landings/PLAN-170.md"
+    },
+    {
+      "id": "PLAN-175",
+      "slug": "harden-the-shipped-shape-scanners",
+      "workstream": "WS-03",
+      "status": "shipped",
+      "plan_marshall_plan_id": "harden-the-shipped-shape-scanners",
+      "pr": "#1506",
+      "landing": "landings/PLAN-175.md"
+    },
+    {
+      "id": "PLAN-176",
+      "slug": "module-budget-campaign-run-2-slice-040",
+      "workstream": "WS-04",
+      "status": "shipped",
+      "plan_marshall_plan_id": "module-budget-campaign-run-2-slice-040",
+      "pr": "#1514,#1515,#1526,#1517,#1518,#1519,#1520,#1521,#1522",
+      "landing": "landings/PLAN-176.md"
+    },
+    {
+      "id": "PLAN-177",
+      "slug": "close-the-leftover-gate-gaps",
+      "workstream": "WS-03",
+      "status": "shipped",
+      "plan_marshall_plan_id": "close-the-leftover-gate-gaps",
+      "pr": "#1534",
+      "landing": "landings/PLAN-177.md"
+    },
+    {
+      "id": "PLAN-180",
+      "slug": "test-fidelity-rules",
+      "workstream": "WS-01",
+      "status": "shipped",
+      "plan_marshall_plan_id": "test-fidelity-rules",
+      "pr": "#1538, #1549",
+      "landing": "landings/PLAN-180.md"
+    },
+    {
+      "id": "PLAN-181",
+      "slug": "run-3-carve-2-tools-permission-fix",
+      "workstream": "WS-04",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    }
+  ],
+  "resume_anchor": "Cleanup done, restart READY (5/6 signals, inbox empty, tree clean at e8a716501). PLAN-181 STAGED awaiting launch; PLAN-140 parked. NEXT: operator launches PLAN-181 or reports.",
+  "metadata": {
+    "parallelization_scope": "1"
+  },
+  "created": "2026-08-23T21:32:44Z",
+  "updated": "2026-09-21T08:45:15Z"
+}

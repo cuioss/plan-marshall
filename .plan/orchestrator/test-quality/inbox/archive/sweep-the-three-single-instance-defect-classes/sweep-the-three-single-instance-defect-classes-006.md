@@ -1,0 +1,36 @@
+envelope_version=1
+sender_type=plan
+sender_id=sweep-the-three-single-instance-defect-classes
+epic=test-quality
+kind=candidate-lesson
+created=2026-09-14T03:21:54Z
+
+component=plan-marshall:manage-references
+category=anti-pattern
+confidence=medium
+source_plan=sweep-the-three-single-instance-defect-classes
+source_aspects=script_failure_analysis
+
+# Name the rejected flag in capture-footprint argparse failures
+
+## Context
+
+`manage-references capture-footprint` was rejected with `exit_code: 2` three times in this plan — the most-repeated argparse rejection of the run, first seen at `2026-09-13T17:39:11Z`. The recorded `stderr_excerpt` for all three is empty, so neither the caller at the time nor this retrospective can say which flag was wrong.
+
+Two other rejections in the same plan share the shape: `manage-files list` (2 occurrences, empty excerpt) and `manage-logging read` (1 occurrence, empty excerpt). Only `manage-findings qgate` (2 occurrences) captured a usable excerpt, and that one names the parser and its required flags outright.
+
+Total for the plan: 9 failures, 5 unique signatures. Four of the five are diagnosable only by re-running the call.
+
+## Root cause
+
+`script-failure-analysis` classifies by stderr signature and falls back to `argparse_other` when no known marker (`invalid choice:`, `the following arguments are required:`, `unrecognized arguments:`) is present. An empty excerpt yields `argparse_other` with nothing actionable attached. Whether the excerpt is empty because argparse wrote nothing, because the executor did not capture it, or because a truncation window dropped it is itself unknown from the record — which is the deeper problem: the failure record cannot say why it is uninformative.
+
+## Proposed action
+
+Ensure the script-execution log captures argparse's usage output on `exit_code: 2` — argparse writes usage to stderr before exiting, so an empty excerpt points at the capture path rather than at argparse. Where the excerpt is genuinely empty, `script-failure-analysis` should record that as a distinct subtype (an uncapturable rejection) rather than folding it into `argparse_other` beside rejections that did carry a message, so the two are separable in a cross-plan sweep.
+
+## Evidence
+
+- aspect: script_failure_analysis — `plan-marshall:manage-references:manage-references capture-footprint`, exit 2, `occurrence_count: 3`, `stderr_excerpt: ""`
+- aspect: script_failure_analysis — same empty-excerpt shape on `manage-files list` (2) and `manage-logging read` (1); `manage-findings qgate` (2) is the one that captured usable usage text
+- aspect: log_analysis — `errors_script: 9` across 2316 script log entries

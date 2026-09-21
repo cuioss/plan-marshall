@@ -1,0 +1,42 @@
+envelope_version=1
+sender_type=plan
+sender_id=sweep-the-three-single-instance-defect-classes
+epic=test-quality
+kind=candidate-lesson
+created=2026-09-14T03:21:57Z
+
+component=plan-marshall:phase-5-execute
+category=improvement
+confidence=medium
+source_plan=sweep-the-three-single-instance-defect-classes
+source_aspects=request_result_alignment,artifact_consistency
+
+# Record a deliverable-less production edit as a declared scope change
+
+## Context
+
+The plan's declared write surface is exactly three things: `test/`, `pyproject.toml`, and two files under `marketplace/bundles/plan-marshall/skills/persona-module-tester/` (deliverable 7). The outline says so explicitly — "Every other mutated path is under `test/` or is `pyproject.toml` ... **One deliverable touches an existing skill — D7**".
+
+The merged commit additionally carries three production files under `plan-marshall:manage-status`:
+
+- `marketplace/bundles/plan-marshall/skills/manage-status/SKILL.md` (+4/-)
+- `marketplace/bundles/plan-marshall/skills/manage-status/scripts/_cmd_lifecycle.py` (+13/-)
+- `marketplace/bundles/plan-marshall/skills/manage-status/scripts/_status_query.py` (+6/-)
+
+No deliverable declares them, no success criterion covers them, and the outline's own coordination note — which extends the disjointness check to D7's path specifically — does not extend to these.
+
+The distinction that matters: the same commit carries roughly 45 further undeclared test-file edits, and those are *not* this finding. D4's `Change per file` mandates an AST-re-derived population over all of `test/`, so breadth beyond the outline's named survey pool is the designed behaviour. Production code outside `test/` is a different category.
+
+## Root cause
+
+A sweep legitimately discovers instances beyond its declared list, and phase-5-execute has no point at which an edit outside the declared surface has to be justified against a stated intent. The realized-footprint capture records *that* the file changed; nothing records *why* it was in scope. The gap only surfaces at retrospective time, after the change has merged.
+
+## Proposed action
+
+When a task's edit lands outside every deliverable's declared file surface **and** outside the sweep's own scoped tree, require it to be recorded as a declared scope change — a finding, a task note, or an outline amendment — at the point it is made. The mechanism need not gate; recording is enough to make the edit reviewable against an intent instead of discoverable only afterwards. The `touched_but_unassessed` class that `outline-vs-shipped` already computes is the natural place to distinguish "inside the sweep's tree" from "outside every declared surface", rather than reporting all 130 paths as one undifferentiated class.
+
+## Evidence
+
+- ground truth: `git show --stat f21a0dc66` — three `manage-status` production files in a plan whose declared write surface is test-only
+- aspect: request_result_alignment — scope_creep entry 1 of 3; the other two are sweep-mandated breadth and are explicitly not this finding
+- aspect: outline_vs_shipped — `touched_but_unassessed: 130 of 130 realized_footprint_paths`, reported as one undifferentiated `info` class

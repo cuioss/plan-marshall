@@ -1,0 +1,36 @@
+envelope_version=1
+sender_type=plan
+sender_id=sweep-the-three-single-instance-defect-classes
+epic=test-quality
+kind=candidate-lesson
+created=2026-09-14T03:21:41Z
+
+component=plan-marshall:phase-3-outline
+category=improvement
+confidence=high
+source_plan=sweep-the-three-single-instance-defect-classes
+source_aspects=artifact_consistency,request_result_alignment
+
+# Declare a decline-on-merits sweep's mutation list as an explicit upper bound
+
+## Context
+
+Deliverable 4 declared seven files under `**Files expected to mutate:**`. Two of them landed in the merged commit; five did not. That produced a 69% declared-vs-realized recall and a `fail` on the artifact-consistency 70% threshold — the plan's only failing consistency check.
+
+The five absences are almost certainly correct execution. D4's own `Change per file` text instructs the executor to "decline sites whose argvalues derive from a literal via a pure transform (`sorted()` over a literal dict cannot be empty) with that reason recorded". A sweep that classifies before converting will, by design, leave some declared candidates untouched.
+
+Deliverable 2 in the same outline handled this correctly and did not trip the check: it wrote "the mutation entry here is the upper bound in case the sweep finds otherwise" directly into its `Change per file`, and both its declared files happened to land. D4 used the same semantics without the same declaration.
+
+## Root cause
+
+`**Files expected to mutate:**` carries one meaning to the recall check — every path here is an expected modification — while a decline-on-merits sweep uses it with a different meaning: every path here is a *candidate* whose conversion is decided at execution time. Nothing in the outline grammar distinguishes the two, so the check grades the declaration style instead of the execution.
+
+## Proposed action
+
+Give the outline a way to state the distinction, and have the recall check read it. Either a dedicated heading for a candidate set whose conversion is decided per site, or a per-bullet annotation in the same family as the existing `(read)` marker — a candidate bullet would then sit outside the recall denominator the way a read-intent bullet already does. Until such a marker exists, phase-3-outline should require a sweep deliverable whose Change-per-file sanctions declining to say so in the mutation list itself, as D2 did.
+
+## Evidence
+
+- aspect: artifact_consistency — `affected_files_recall: fail, Recall 69% below 70% threshold`; declared 16, found 11, `missing[5]` is exactly D4's five unconverted candidates
+- aspect: request_result_alignment — D4 graded `partial` at 2/7 coverage while the other seven deliverables graded `fulfilled`
+- Deliverable 2's `Change per file` already carries the upper-bound wording and did not trip the check
