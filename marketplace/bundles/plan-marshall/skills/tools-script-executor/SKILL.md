@@ -14,7 +14,7 @@ mode: knowledge
 **Executor is cwd-pass-through. All cwd control is explicit at the call site.** See [standards/cwd-policy.md](standards/cwd-policy.md) for the single uniform cwd-relative resolution rule (ADR-002) and the cwd-unchanged invariant every script obeys.
 
 **Prohibited actions:**
-- Do not execute marketplace scripts directly by path; always use the executor notation
+- Do not execute marketplace scripts directly by path; always use the executor notation — for the sanctioned exceptions and the bounds on them, see the `generate_executor — bootstrap` verb under [Canonical invocations](#canonical-invocations) and the direct-path `generate` call in the [required regenerate-and-dispatch smoke](#required-regenerate-and-dispatch-smoke-shipping-a-validator-or-derivation-change)
 - Do not modify `.plan/execute-script.py` manually; regenerate via `/marshall-steward`
 - Do not hard-code PYTHONPATH; the executor manages it automatically
 - Do not rely on ambient cwd for path resolution inside scripts; follow [standards/cwd-policy.md](standards/cwd-policy.md)
@@ -312,9 +312,8 @@ regardless of the suite's colour.
 The smoke, run against **merged source** (so the executor carries the change and
 the full live notation set):
 
-1. **Regenerate the executor directly** — the same command the
-   [broken-executor recovery](#recovery) uses, so it bypasses any executor the
-   change may have broken:
+1. **Regenerate the executor directly** — a direct-path `generate` call, which
+   bypasses any executor the change may have broken:
 
    ```bash
    python3 marketplace/bundles/plan-marshall/skills/tools-script-executor/scripts/generate_executor.py generate --marketplace --marketplace-root .
@@ -436,7 +435,7 @@ The executor exports environment variables to child scripts:
 | Variable | Purpose | Default |
 |----------|---------|---------|
 | `PLAN_DIR_NAME` | Directory name for plan storage (e.g., `.plan`) | `.plan` |
-| `PM_MARKETPLACE_ROOT` | Optional explicit marketplace anchor directory (must contain `marketplace/bundles`). NOT required for stale/relocated embedded paths — the executor self-heals those (see [Self-healing path resolution](#self-healing-path-resolution)). Honored by `generate_executor.py` and `script_shared.marketplace_paths.find_marketplace_path()` when resolving the marketplace tree. Overrides the script-relative walk and cwd-based fallback. The CLI flag `--marketplace-root` (on `generate` and `drift`) takes precedence when both are set. | _(unset)_ |
+| `PM_MARKETPLACE_ROOT` | Optional explicit marketplace anchor directory (must contain `marketplace/bundles`). NOT required for stale/relocated embedded paths — the executor self-heals those (see [Self-healing path resolution](#self-healing-path-resolution)). Honored by `generate_executor.py` and `script_shared.marketplace_paths.find_marketplace_path()` when resolving the marketplace tree. Overrides the script-relative walk and cwd-based fallback. The CLI flag `--marketplace-root` takes precedence when both are set (see each subcommand's `--help` for which verbs accept it, rather than reading a verb list from here). | _(unset)_ |
 | `PYTHONPATH` | Cross-skill import paths | Auto-built from all script directories |
 
 ### PLAN_DIR_NAME Usage
@@ -648,7 +647,7 @@ Regenerate the executor by invoking `generate_executor.py` **directly**, bypassi
 python3 marketplace/bundles/plan-marshall/skills/tools-script-executor/scripts/generate_executor.py bootstrap --marketplace --marketplace-root .
 ```
 
-This is the same `generate_executor — bootstrap` surface documented under [Canonical invocations](#canonical-invocations), run against the script file by its repository path rather than through the executor notation. The `--marketplace` flag selects the marketplace-source generation mode and `--marketplace-root .` pins discovery to the current checkout root (the directory that contains `marketplace/bundles`). After the direct call succeeds, the rewritten `.plan/execute-script.py` carries the corrected preamble and the normal executor-routed commands work again. A bare `generate` direct call remains prohibited outside this verb — `bootstrap` refuses a fresh executor, which is what keeps the exception narrow.
+This is the same `generate_executor — bootstrap` surface documented under [Canonical invocations](#canonical-invocations), run against the script file by its repository path rather than through the executor notation. The `--marketplace` flag selects the marketplace-source generation mode and `--marketplace-root .` pins discovery to the current checkout root (the directory that contains `marketplace/bundles`). After the direct call succeeds, the rewritten `.plan/execute-script.py` carries the corrected preamble and the normal executor-routed commands work again.
 
 ### Distinguishing the executor-unavailable cases
 
@@ -718,7 +717,7 @@ The verification skill recognizes this execution pattern:
 - `python3 .plan/execute-script.py {notation} ...`
 
 **Violation**:
-- `python3 {direct_script_path} ...`
+- `python3 {direct_script_path} ...` — for the sanctioned exceptions and the bounds on them, see the `generate_executor — bootstrap` verb under [Canonical invocations](#canonical-invocations) and the direct-path `generate` call in the [required regenerate-and-dispatch smoke](#required-regenerate-and-dispatch-smoke-shipping-a-validator-or-derivation-change)
 
 ## Canonical invocations
 
@@ -752,7 +751,7 @@ python3 .plan/execute-script.py plan-marshall:tools-script-executor:generate_exe
   [--marketplace] [--marketplace-root PATH] [--target TARGET]
 ```
 
-Sanctioned direct-path bootstrap for fresh-clone / stale-cache cases — the narrow exception to "never by direct path". Generates only when the executor is absent (fresh clone), fails verification (corrupt/stale cache), or its embedded `TEMPLATE_SHA256` no longer matches the live template (template-content staleness). A present, valid, template-fresh executor is refused with `action: not_needed`; an unstampable side reports `template_status: unknown` (never a vacuous `fresh`) and still refuses. Direct invocation is sanctioned ONLY through this verb; every other direct-path call stays prohibited.
+A sanctioned direct-path entry point for fresh-clone / stale-cache cases. Generates only when the executor is absent (fresh clone), fails verification (corrupt/stale cache), or its embedded `TEMPLATE_SHA256` no longer matches the live template (template-content staleness). A present, valid, template-fresh executor is refused with `action: not_needed`; an unstampable side reports `template_status: unknown` (never a vacuous `fresh`) and still refuses. `template_status` is four-valued: `fresh` (hashes match), `stale` (both hashes known and differ), `unknown` (either side unstampable), and `uncompared` (no hash comparison was attempted — the executor was absent, or it failed structural verification — while the live template hash was resolvable) — `unknown`/`uncompared` never drive a regeneration on their own; both ride the verdict the presence check or the verification half already reached.
 
 ### generate_executor — drift
 

@@ -20,6 +20,7 @@ from _lessons_helpers import (
     _mod,
     cmd_add,
     cmd_from_error,
+    cmd_set_body,
     get_next_id,
 )
 from conftest import run_script
@@ -160,6 +161,93 @@ class TestStatusFrontmatterOnAdd:
         # Locate the file by id in the lessons dir.
         lesson_path = next(lessons_dir.glob(f'{result["id"]}.md'))
         assert 'status=active' in lesson_path.read_text(encoding='utf-8')
+
+
+# =============================================================================
+# Tier 2: body state reported on allocation
+# =============================================================================
+
+
+class TestBodyStateOnAdd:
+    """``add`` names the body state of the record it allocated.
+
+    A freshly allocated lesson carries no body, and a bare ``status: success``
+    cannot be told apart from a record a reader can resolve. Each assertion
+    rides with the matched control that the state FLIPS — otherwise a field
+    hardcoded to either value would satisfy half the suite on its own.
+    """
+
+    def test_fresh_allocation_reports_an_absent_body(self, tmp_path):
+        """``add`` returns ``body_state: absent`` with a zero byte count."""
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            result = cmd_add(Namespace(component='test-component', category='bug', title='Body-less Stub', bundle=None))
+
+        assert result['status'] == 'success'
+        assert result['body_state'] == 'absent'
+        assert result['body_bytes'] == 0
+
+    def test_set_body_reports_the_flipped_state(self, tmp_path):
+        """MATCHED CONTROL: once a body lands, ``set-body`` reports ``written``."""
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            added = cmd_add(Namespace(component='test-component', category='bug', title='Stub To Fill', bundle=None))
+            filled = cmd_set_body(Namespace(lesson_id=added['id'], file=None, content='Real body text.'))
+
+        assert added['body_state'] == 'absent'
+        assert filled['status'] == 'success'
+        assert filled['body_state'] == 'written'
+        assert filled['body_bytes_written'] == len('Real body text.')
+
+    def test_set_body_with_an_empty_body_still_reports_absent(self, tmp_path):
+        """The state is derived from what was written, never assumed by the verb."""
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            added = cmd_add(Namespace(component='test-component', category='bug', title='Stub Left Empty', bundle=None))
+            filled = cmd_set_body(Namespace(lesson_id=added['id'], file=None, content=''))
+
+        assert filled['status'] == 'success'
+        assert filled['body_state'] == 'absent'
+        assert filled['body_bytes_written'] == 0
+
+    def test_reinforced_arch_constraint_reports_the_lesson_it_reinforced(self, tmp_path):
+        """A reinforced lesson reports ITS body, not the created stub's.
+
+        The second ``add`` for the same rule reinforces the existing lesson
+        instead of allocating one, appending a recurrence section to its body.
+        Reporting ``absent`` there would describe a stub that was never created.
+        """
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+
+        def _add():
+            return cmd_add(
+                Namespace(
+                    component='test-component',
+                    category='arch-constraint',
+                    title='Rule Guard',
+                    bundle=None,
+                    rule='no-bare-success',
+                )
+            )
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            created = _add()
+            reinforced = _add()
+
+        assert created['action'] == 'created'
+        assert created['body_state'] == 'absent'
+
+        assert reinforced['action'] == 'reinforced'
+        assert reinforced['id'] == created['id']
+        assert reinforced['body_state'] == 'written'
+        assert reinforced['body_bytes'] > 0
 
 
 # =============================================================================

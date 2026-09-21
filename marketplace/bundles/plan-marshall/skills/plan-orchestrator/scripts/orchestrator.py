@@ -2942,24 +2942,24 @@ def cmd_corpus_enumerate(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
-def _spec_within_corpus(path: Path, plans_dir: Path) -> Path | None:
-    """Resolve ``path`` and verify it stays under ``plans_dir``.
+def _spec_within_corpus(path: Path, plans_dir: Path) -> bool:
+    """Report whether ``path`` resolves to a location under ``plans_dir``.
 
     ``_spec_paths`` accepts symlinks to regular files and ``_read_spec``
     follows them, so without this check a ``plans/PLAN-01.md`` symlink could
     win selection and return an arbitrary readable file in the read body
-    (CWE-22). Returns the resolved path when contained, ``None`` when the
-    link escapes the corpus or cannot be resolved at all.
+    (CWE-22). ``False`` when the link escapes the corpus or cannot be resolved
+    at all.
     """
     try:
         resolved = path.resolve()
     except (OSError, RuntimeError):
-        return None
+        return False
     try:
         resolved.relative_to(plans_dir)
     except ValueError:
-        return None
-    return resolved
+        return False
+    return True
 
 
 def cmd_corpus_read(args: argparse.Namespace) -> dict[str, Any]:
@@ -2991,7 +2991,7 @@ def cmd_corpus_read(args: argparse.Namespace) -> dict[str, Any]:
     invalid = _validate_slug(args.slug)
     if invalid:
         return _error(args.slug, 'invalid_slug', invalid)
-    plan = str(getattr(args, 'plan', '') or '')
+    plan = args.plan
     if not _ADD_ROW_PLAN_ID_RE.match(plan):
         return _error(args.slug, 'invalid_plan', f'--plan must be a plan id ({PLAN_ID_SEGMENT}), got: {plan!r}')
     root = _epic_root(args.slug, allow_archived=True)
@@ -3006,7 +3006,7 @@ def cmd_corpus_read(args: argparse.Namespace) -> dict[str, Any]:
     for path in specs:
         if not _spec_matches_row(path, plan):
             continue
-        if _spec_within_corpus(path, plans_dir) is None:
+        if not _spec_within_corpus(path, plans_dir):
             try:
                 path.resolve()
             except (OSError, RuntimeError):

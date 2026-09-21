@@ -31,9 +31,6 @@ subprocess spawns; the decision table is what is pinned here.
 
 import argparse
 import hashlib
-from pathlib import Path
-
-import pytest
 
 from conftest import PROJECT_ROOT, load_script_module
 
@@ -46,11 +43,8 @@ _TEMPLATE_PATH = (
 )
 
 
-def _ns(**overrides) -> argparse.Namespace:
-    base = argparse.Namespace(marketplace=False, marketplace_root=None, target=None)
-    for field, value in overrides.items():
-        setattr(base, field, value)
-    return base
+def _ns() -> argparse.Namespace:
+    return argparse.Namespace(marketplace=False, marketplace_root=None, target=None)
 
 
 class TestTemplateStamp:

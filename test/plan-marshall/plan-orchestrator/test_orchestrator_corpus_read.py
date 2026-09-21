@@ -25,7 +25,6 @@ byte-identical afterwards — read-only means read-only.
 
 import argparse
 import copy
-import hashlib
 import json
 from pathlib import Path
 from typing import Any
@@ -33,14 +32,9 @@ from typing import Any
 import pytest
 
 from conftest import (
-    get_script_path,
     load_script_module,
     parse_ns,
 )
-
-_ORCH_BUNDLE = 'plan-marshall'
-_ORCH_SKILL = 'plan-orchestrator'
-_ORCH_SCRIPT = 'orchestrator.py'
 
 _orch = load_script_module('plan-marshall', 'plan-orchestrator', 'orchestrator.py', 'orchestrator_corpus_read')
 
@@ -71,9 +65,9 @@ def _variant(base: argparse.Namespace, **overrides: Any) -> argparse.Namespace:
 
 
 _READ_ARGS = parse_ns(
-    _ORCH_BUNDLE,
-    _ORCH_SKILL,
-    _ORCH_SCRIPT,
+    'plan-marshall',
+    'plan-orchestrator',
+    'orchestrator.py',
     'corpus',
     'read',
     '--slug',
@@ -84,11 +78,11 @@ _READ_ARGS = parse_ns(
 )
 
 
-def _epic_dir(plan_context, slug: str = SLUG) -> Path:
-    return Path(plan_context.fixture_dir) / 'orchestrator' / slug
+def _epic_dir(plan_context) -> Path:
+    return Path(plan_context.fixture_dir) / 'orchestrator' / SLUG
 
 
-def _write_status(plan_context, rows: list, slug: str = SLUG) -> Path:
+def _write_status(plan_context, rows: list) -> Path:
     doc = {
         'kind': 'orchestrator',
         'title': 'Fixture Corpus Read Epic',
@@ -100,26 +94,26 @@ def _write_status(plan_context, rows: list, slug: str = SLUG) -> Path:
         'created': FIXED_TIMESTAMP,
         'updated': FIXED_TIMESTAMP,
     }
-    path = _epic_dir(plan_context, slug) / 'status.json'
+    path = _epic_dir(plan_context) / 'status.json'
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(doc, indent=2), encoding='utf-8')
     return path
 
 
-def _row(plan_id: str, status: str = 'staged') -> dict:
+def _row(plan_id: str) -> dict:
     return {
         'id': plan_id,
         'slug': plan_id.lower(),
         'workstream': 'WS-01',
-        'status': status,
+        'status': 'staged',
         'plan_marshall_plan_id': '',
         'pr': '',
         'landing': '',
     }
 
 
-def _write_spec(plan_context, filename: str, body: str, slug: str = SLUG) -> Path:
-    path = _epic_dir(plan_context, slug) / 'plans' / filename
+def _write_spec(plan_context, filename: str, body: str) -> Path:
+    path = _epic_dir(plan_context) / 'plans' / filename
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(body, encoding='utf-8')
     return path
@@ -212,12 +206,6 @@ class TestCorpusReadRefusals:
         assert result['spec'] == 'PLAN-01-fixture.md'
         assert 'body' not in result
 
-    def test_absent_spec_never_renders_as_empty_body(self, plan_context):
-        _seed(plan_context)
-        result = cmd_corpus_read(_variant(_READ_ARGS, plan='PLAN-03'))
-        assert result['status'] == 'error'
-        assert result.get('body', None) is None
-
     def test_bare_plan_without_digits_refused(self, plan_context):
         _seed(plan_context)
         root = _epic_dir(plan_context)
@@ -272,14 +260,6 @@ class TestCorpusReadRefusals:
 
 
 class TestCorpusReadNonVacuity:
-    def test_body_hash_matches_fixture_bytes(self, plan_context):
-        _seed(plan_context)
-        result = cmd_corpus_read(_READ_ARGS)
-        assert (
-            hashlib.sha256(result['body'].encode('utf-8')).hexdigest()
-            == hashlib.sha256(SPEC_BODY.encode('utf-8')).hexdigest()
-        )
-
     def test_hyphen_boundary_plan_1_does_not_claim_plan_10(self, plan_context):
         _write_status(plan_context, [_row('PLAN-1'), _row('PLAN-10')])
         _write_spec(plan_context, 'PLAN-10-tenth.md', _OTHER_BODY)

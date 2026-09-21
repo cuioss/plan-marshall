@@ -39,6 +39,7 @@ import sys
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import NamedTuple
 
 # Direct imports - PYTHONPATH set by executor
 from _cmd_auto_suggest import cmd_auto_suggest
@@ -73,7 +74,7 @@ from _lessons_io import (
     get_lessons_dir,
     get_tombstones_dir,
     guard_component_store_match,
-    read_lesson,
+    resolve_lesson,
 )
 from _lessons_query import (
     DEFAULT_CONSULT_MAX_PER_COMPONENT,
@@ -337,11 +338,28 @@ def _append_consolidated_from(canonical_id: str, source_id: str) -> None:
 
     Creates the section at the end of the body when absent. Idempotent: if
     ``source_id`` is already listed, the canonical is left untouched.
+
+    Returns without effect on either non-``found`` state, but the two are NOT
+    the same fact and are logged apart: ``absent`` is the caller's documented
+    precondition (it verifies canonical existence before calling), while
+    ``unreadable`` means the canonical is on disk and could not be parsed — a
+    state that would otherwise be swallowed into the same silent return.
     """
-    metadata, title, body = read_lesson(canonical_id)
-    if not metadata:
+    read = resolve_lesson(canonical_id)
+    if read.state == 'unreadable':
+        log_entry(
+            'script',
+            'global',
+            'WARNING',
+            f'(plan-marshall:manage-lessons) Canonical {canonical_id} is unresolvable, '
+            f'so no consolidated-from bullet was appended — {read.detail}',
+        )
+        return
+    if read.state == 'absent':
         # Caller is responsible for verifying canonical existence before calling.
         return
+
+    metadata, title, body = read.metadata, read.title, read.body
 
     bullet = f'- {source_id}'
     section_marker = '## Consolidated from'
@@ -384,11 +402,28 @@ def _merge_consolidated_lesson_body(
     The canonical is written via :func:`write_lesson`, which goes through
     :func:`atomic_write_file` — a partial failure during the write leaves the
     canonical's previous body intact on disk.
+
+    Returns ``0`` on either non-``found`` state, but the two are NOT the same
+    fact and are logged apart, exactly as in
+    :func:`_append_consolidated_from`: ``absent`` is the caller's documented
+    precondition, while ``unreadable`` means the merge target is on disk and
+    could not be parsed.
     """
-    metadata, title, body = read_lesson(canonical_id)
-    if not metadata:
+    read = resolve_lesson(canonical_id)
+    if read.state == 'unreadable':
+        log_entry(
+            'script',
+            'global',
+            'WARNING',
+            f'(plan-marshall:manage-lessons) Canonical {canonical_id} is unresolvable, '
+            f'so no body was merged into it — {read.detail}',
+        )
+        return 0
+    if read.state == 'absent':
         # Caller is responsible for verifying canonical existence before calling.
         return 0
+
+    metadata, title, body = read.metadata, read.title, read.body
 
     if re.search(rf'(?m)^### {re.escape(source_id)}(?:\s|$)', body):
         return 0
@@ -420,11 +455,33 @@ def _merge_consolidated_lesson_body(
     return appended_bytes
 
 
+def _body_state_fields(body: str) -> dict:
+    """Report whether a lesson record carries a body, and the bytes it measured.
+
+    A freshly allocated stub has no body, and a bare ``status: success`` cannot
+    be told apart from a record a reader can actually resolve. The two fields
+    always travel together: ``body_state`` is the discriminator and
+    ``body_bytes`` is the measurement it was derived from, so a consumer can
+    see what the state was computed over rather than taking it on trust.
+    """
+    return {
+        'body_state': 'written' if body.strip() else 'absent',
+        'body_bytes': len(body.encode('utf-8')),
+    }
+
+
 def cmd_add(args: argparse.Namespace) -> dict:
     """Allocate a new lesson file with metadata header and title (empty body).
 
-    Returns the absolute path of the created file. The caller writes the body
-    directly to that path via the Write tool — there is no inline body API.
+    Returns the absolute path of the created file together with the body state
+    that path is in — ``absent`` with ``body_bytes: 0`` for a fresh stub, since
+    the caller has not written the body yet. The caller writes the body
+    directly to that path via the Write tool — there is no inline body API —
+    and ``set-body`` reports the flipped state once it has.
+
+    On the arch-constraint reinforce path the fields describe the lesson that
+    was actually REINFORCED, re-read from disk, never the body-less shape a
+    freshly created stub would have had.
     """
     try:
         guard_component_store_match(args.component, getattr(args, 'allow_foreign_store', False))
@@ -464,6 +521,10 @@ def cmd_add(args: argparse.Namespace) -> dict:
                 reinforced['component'] = args.component
                 reinforced['category'] = args.category
                 reinforced['rule'] = rule
+                # Re-read the lesson that was reinforced: its body is whatever
+                # the corpus already held plus the appended recurrence section,
+                # never the empty body a freshly created stub would report.
+                reinforced.update(_body_state_fields(resolve_lesson(existing_id).body))
             return reinforced
 
     def _metadata(lesson_id: str) -> dict:
@@ -482,7 +543,8 @@ def cmd_add(args: argparse.Namespace) -> dict:
             metadata['bundle'] = args.bundle
         return metadata
 
-    allocation = _allocate_and_write_scaffold(_metadata, args.title, '')
+    scaffold_body = ''
+    allocation = _allocate_and_write_scaffold(_metadata, args.title, scaffold_body)
     if allocation['status'] != 'success':
         return allocation
 
@@ -492,6 +554,9 @@ def cmd_add(args: argparse.Namespace) -> dict:
         'path': str(allocation['path'].resolve()),
         'component': args.component,
         'category': args.category,
+        # Derived from the body actually written, not asserted: if the scaffold
+        # ever stops being empty, the reported state follows it.
+        **_body_state_fields(scaffold_body),
     }
     if args.category == 'arch-constraint':
         result['action'] = 'created'
@@ -500,16 +565,33 @@ def cmd_add(args: argparse.Namespace) -> dict:
 
 
 def cmd_update(args: argparse.Namespace) -> dict:
-    """Update lesson metadata (component, category). For body updates, use ``set-body``."""
-    metadata, title, body = read_lesson(args.lesson_id)
+    """Update lesson metadata (component, category). For body updates, use ``set-body``.
 
-    if not metadata:
+    Renders the three-state verdict: ``absent`` keeps the unchanged
+    ``not_found`` shape, ``unreadable`` reports ``unresolvable`` instead, so an
+    update is never refused as missing against a file that is on disk.
+    """
+    read = resolve_lesson(args.lesson_id)
+
+    if read.state == 'absent':
         return {
             'status': 'error',
             'id': args.lesson_id,
             'error': 'not_found',
             'message': f'Lesson {args.lesson_id} not found',
         }
+
+    if read.state == 'unreadable':
+        return {
+            'status': 'error',
+            'id': args.lesson_id,
+            'error': 'unresolvable',
+            'message': f'Lesson {args.lesson_id} exists but could not be resolved',
+            'path': str(read.path),
+            'detail': read.detail,
+        }
+
+    metadata, title, body = read.metadata, read.title, read.body
 
     field = None
     value = None
@@ -680,32 +762,59 @@ def _derive_standards_dir(component: str) -> str:
     return f'{base}/{bundle}/skills/{skill}/standards/'
 
 
-def _load_active_lessons_with_signals() -> list[dict]:
+class ActiveCorpus(NamedTuple):
+    """The active lesson corpus together with the lessons it could not resolve.
+
+    ``lessons`` carries the signal-bearing dicts the classifier groups.
+    ``unresolvable`` carries one row per lesson file that EXISTS in the corpus
+    and could not be resolved — the population every count over ``lessons`` was
+    computed against. The two travel together because a count over a corpus
+    that silently dropped its unreadable members states a completeness it never
+    established.
+    """
+
+    lessons: list[dict]
+    unresolvable: list[dict]
+
+
+def _load_active_lessons_with_signals() -> ActiveCorpus:
     """Load every active lesson with body and per-lesson signals.
 
-    Returns a list of dicts with keys ``id``, ``title``, ``component``,
+    ``lessons`` holds dicts with keys ``id``, ``title``, ``component``,
     ``body``, ``cross_refs``, ``standards_dir``, ``workflow_boundary``,
-    ``recurrence_count``. Lessons without ``status: active`` (or those with
-    no metadata) are skipped — the aggregate verb only operates on the
-    active corpus.
+    ``recurrence_count``. A lesson without ``status: active`` is skipped — the
+    aggregate verb only operates on the active corpus — and that skip is a
+    genuine selection, not a failure to look.
+
+    A lesson file that exists and cannot be resolved is a different fact and is
+    REPORTED in ``unresolvable`` rather than dropped: it carries no status to
+    filter on, so dropping it silently would shrink the substrate every count
+    is computed over without saying so. An all-readable corpus yields an empty
+    ``unresolvable`` and a ``lessons`` list identical to the one this loader
+    produced before the three-state seam.
     """
     lessons_dir = get_lessons_dir()
     if not lessons_dir.exists():
-        return []
+        return ActiveCorpus([], [])
 
     lessons: list[dict] = []
+    unresolvable: list[dict] = []
     for path in sorted(lessons_dir.glob('*.md')):
-        content = path.read_text(encoding='utf-8')
-        metadata = parse_markdown_metadata(content)
-        if not metadata:
+        read = resolve_lesson(path.stem)
+
+        if read.state != 'found':
+            # ``unreadable`` is the file that exists and will not parse;
+            # ``absent`` means the file went away between the glob listing and
+            # the read. Both are reported with the resolver's own reason rather
+            # than dropped, so the substrate every count rides on stays named.
+            unresolvable.append({'lesson_id': path.stem, 'path': str(read.path), 'detail': read.detail})
             continue
+
+        metadata, title, body = read.metadata, read.title, read.body
         if metadata.get('status', 'active') != 'active':
             continue
 
         lesson_id = metadata.get('id', path.stem)
-        # Reuse read_lesson semantics for title/body extraction so the
-        # frontmatter/title/body split matches the rest of the script.
-        _, title, body = read_lesson(lesson_id)
         component = metadata.get('component', '')
 
         lessons.append(
@@ -720,7 +829,7 @@ def _load_active_lessons_with_signals() -> list[dict]:
                 'recurrence_count': len(RECURRENCE_H2_REGEX.findall(body)),
             }
         )
-    return lessons
+    return ActiveCorpus(lessons, unresolvable)
 
 
 def cmd_aggregate(args: argparse.Namespace) -> dict:
@@ -730,17 +839,24 @@ def cmd_aggregate(args: argparse.Namespace) -> dict:
     ``cleanup-superseded``. Emits TOON
     ``{status, top_n, groups[]{primary_id, primary_title, absorb_count, tier,
     enacted, absorbed[{lesson_id, title, reason}], merged_body_preview},
-    top_n_commands[]}``. ``tier`` is the group's strongest signal
-    (cross-ref | shared-component | shared-standards-dir |
-    shared-workflow-boundary); ``enacted`` is ``True`` only for the cross-ref
-    tier.
+    top_n_commands[], lessons_scanned, unresolvable[]}``. ``tier`` is the
+    group's strongest signal (cross-ref | shared-component |
+    shared-standards-dir | shared-workflow-boundary); ``enacted`` is ``True``
+    only for the cross-ref tier.
+
+    ``lessons_scanned`` and ``unresolvable[]`` name the substrate the grouping
+    was computed over: a lesson file that exists and could not be resolved is
+    listed with its path and reason rather than dropped, so an empty
+    ``groups[]`` is never mistaken for a corpus that was fully read and found
+    to have no groups.
 
     The classifier rules and primary-pick ordering are specified in
     ``references/aggregate-analysis.md``.
     """
     top_n = args.top_n if args.top_n is not None else 5
 
-    lessons = _load_active_lessons_with_signals()
+    corpus = _load_active_lessons_with_signals()
+    lessons = corpus.lessons
     by_id = {lesson['id']: lesson for lesson in lessons}
     raw_groups = _group_by_signals(lessons)
 
@@ -803,6 +919,8 @@ def cmd_aggregate(args: argparse.Namespace) -> dict:
         'top_n': top_n,
         'groups': out_groups,
         'top_n_commands': top_n_commands,
+        'lessons_scanned': len(lessons),
+        'unresolvable': corpus.unresolvable,
     }
 
 
@@ -855,7 +973,14 @@ def cmd_from_error(args: argparse.Namespace) -> dict:
     if allocation['status'] != 'success':
         return allocation
 
-    return {'status': 'success', 'id': allocation['id'], 'created_from': 'error_context'}
+    return {
+        'status': 'success',
+        'id': allocation['id'],
+        'created_from': 'error_context',
+        # This path allocates WITH a body, so it reports the state it wrote —
+        # the same two fields ``add`` reports, derived the same way.
+        **_body_state_fields(body),
+    }
 
 
 def cmd_remove(args: argparse.Namespace) -> dict:
@@ -875,6 +1000,13 @@ def cmd_remove(args: argparse.Namespace) -> dict:
     reads a yes/no confirmation from stdin. On confirm, writes the tombstone
     JSON (carrying the verdict and its evidence), deletes the lesson file, and
     emits an INFO line to script-execution.log.
+
+    A lesson that resolves ``unreadable`` has an exit, but only an explicit
+    one: without ``--allow-unreadable`` the verb reports ``unresolvable`` and
+    removes nothing, and with it the retirement runs the SAME two-key path —
+    tombstone first, unlink second — with the tombstone additionally recording
+    ``lesson_state`` and the resolver's reason. The flag relaxes WHICH states
+    may be retired; it relaxes no part of the evidence contract.
     """
     coverage_verdict = getattr(args, 'coverage_verdict', None)
     covering_clause = getattr(args, 'covering_clause', None)
@@ -904,8 +1036,8 @@ def cmd_remove(args: argparse.Namespace) -> dict:
             'missing_flags': missing_flags,
         }
 
-    metadata, title, body = read_lesson(args.lesson_id)
-    if not metadata:
+    read = resolve_lesson(args.lesson_id)
+    if read.state == 'absent':
         return {
             'status': 'error',
             'id': args.lesson_id,
@@ -913,12 +1045,43 @@ def cmd_remove(args: argparse.Namespace) -> dict:
             'message': f'Lesson {args.lesson_id} not found',
         }
 
+    allow_unreadable = bool(getattr(args, 'allow_unreadable', False))
+    unreadable = read.state == 'unreadable'
+
+    if unreadable and not allow_unreadable:
+        return {
+            'status': 'error',
+            'id': args.lesson_id,
+            'error': 'unresolvable',
+            'message': f'Lesson {args.lesson_id} exists but could not be resolved',
+            'path': str(read.path),
+            'detail': read.detail,
+            'hint': 'Pass --allow-unreadable to retire it; the tombstone is still written.',
+        }
+
+    metadata, title, body = read.metadata, read.title, read.body
+
     if not args.force:
+        if unreadable:
+            # There is no metadata to render — showing the empty fields the
+            # resolver could not read would present the record as blank rather
+            # than as unresolvable. Render the state and its reason instead.
+            header = f'Lesson {args.lesson_id}: {title or "(no title)"}'
+            record_lines = (
+                '  state:     unreadable (retiring via --allow-unreadable)',
+                f'  path:      {read.path}',
+                f'  detail:    {read.detail}',
+            )
+        else:
+            header = f'Lesson {args.lesson_id}: {title}'
+            record_lines = (
+                f'  component: {metadata.get("component", "")}',
+                f'  category:  {metadata.get("category", "")}',
+                f'  status:    {metadata.get("status", "active")}',
+            )
         print(
-            f'Lesson {args.lesson_id}: {title}',
-            f'  component: {metadata.get("component", "")}',
-            f'  category:  {metadata.get("category", "")}',
-            f'  status:    {metadata.get("status", "active")}',
+            header,
+            *record_lines,
             f'  body:      {len(body)} chars',
             f'  reason:    {args.reason}',
             f'  verdict:   {coverage_verdict}',
@@ -941,6 +1104,16 @@ def cmd_remove(args: argparse.Namespace) -> dict:
             }
 
     evidence = coverage_evidence_fields(coverage_verdict, covering_clause, covering_input)
+    if unreadable:
+        # The tombstone is the only record that survives the unlink, so a
+        # retirement reached through the unreadable path names that state and
+        # its reason ON the tombstone. Without it the audit trail would claim a
+        # lesson whose content nobody could read was retired on its content.
+        evidence = {**evidence, 'lesson_state': 'unreadable', 'unresolvable_detail': read.detail}
+
+    # Tombstone FIRST, unlink second: the file is the only other copy, so a
+    # failure between the two must leave the lesson on disk rather than leave
+    # the retirement unrecorded.
     tombstone_path = _write_tombstone(args.lesson_id, args.reason, status='removed', evidence=evidence)
 
     lesson_path = get_lessons_dir() / f'{args.lesson_id}.md'
@@ -952,7 +1125,7 @@ def cmd_remove(args: argparse.Namespace) -> dict:
         'INFO',
         (
             f'(plan-marshall:manage-lessons) Removed lesson {args.lesson_id} — {args.reason} '
-            f'— verdict={coverage_verdict}'
+            f'— verdict={coverage_verdict}' + (' — state=unreadable (--allow-unreadable)' if unreadable else '')
         ),
     )
 
@@ -988,8 +1161,8 @@ def cmd_supersede(args: argparse.Namespace) -> dict:
             'message': 'A lesson cannot supersede itself',
         }
 
-    metadata, title, body = read_lesson(args.lesson_id)
-    if not metadata:
+    read = resolve_lesson(args.lesson_id)
+    if read.state == 'absent':
         return {
             'status': 'error',
             'id': args.lesson_id,
@@ -997,13 +1170,35 @@ def cmd_supersede(args: argparse.Namespace) -> dict:
             'message': f'Lesson {args.lesson_id} not found',
         }
 
-    canonical_metadata, _canonical_title, _canonical_body = read_lesson(args.by)
-    if not canonical_metadata:
+    if read.state == 'unreadable':
+        return {
+            'status': 'error',
+            'id': args.lesson_id,
+            'error': 'unresolvable',
+            'message': f'Lesson {args.lesson_id} exists but could not be resolved',
+            'path': str(read.path),
+            'detail': read.detail,
+        }
+
+    metadata, title, body = read.metadata, read.title, read.body
+
+    canonical = resolve_lesson(args.by)
+    if canonical.state == 'absent':
         return {
             'status': 'error',
             'id': args.by,
             'error': 'canonical_not_found',
             'message': f'Canonical lesson {args.by} not found',
+        }
+
+    if canonical.state == 'unreadable':
+        return {
+            'status': 'error',
+            'id': args.by,
+            'error': 'canonical_unresolvable',
+            'message': f'Canonical lesson {args.by} exists but could not be resolved',
+            'path': str(canonical.path),
+            'detail': canonical.detail,
         }
 
     tombstone_path = _write_tombstone(args.lesson_id, args.reason, status='superseded', superseded_by=args.by)
@@ -1064,6 +1259,10 @@ def cmd_cleanup_superseded(args: argparse.Namespace) -> dict:
       otherwise the id is reported under ``skipped_no_tombstone`` and left
       untouched. This guarantees we never destroy the only remaining record
       of a removal.
+    * An explicit id whose ``.md`` is present but unresolvable is reported
+      under ``skipped_unresolvable`` with the resolved path and the reason —
+      never under ``skipped_no_tombstone``, whose name would assert the
+      absence this branch has already disproved.
     * If the ``.md`` is already gone but the tombstone is present, the id
       is reported under ``already_removed`` (idempotent re-runs are a no-op).
     * Tombstone files are NEVER deleted by this command.
@@ -1081,6 +1280,7 @@ def cmd_cleanup_superseded(args: argparse.Namespace) -> dict:
     removed: list[dict] = []
     already_removed: list[dict] = []
     skipped_no_tombstone: list[dict] = []
+    skipped_unresolvable: list[dict] = []
 
     if use_age_filter:
         if not lessons_dir.exists():
@@ -1118,8 +1318,15 @@ def cmd_cleanup_superseded(args: argparse.Namespace) -> dict:
         # Verify status (only enforced for explicit ids; age-filter walk has
         # already filtered on metadata.status == 'superseded').
         if not use_age_filter:
-            metadata, _title, _body = read_lesson(lesson_id)
-            if metadata.get('status') != 'superseded':
+            read = resolve_lesson(lesson_id)
+            if read.state == 'unreadable':
+                # This branch has already established that the tombstone exists
+                # and that the .md exists, so routing an unresolvable lesson
+                # into skipped_no_tombstone would assert the exact fact those
+                # two checks just disproved. It gets its own named outcome.
+                skipped_unresolvable.append({'lesson_id': lesson_id, 'path': str(read.path), 'detail': read.detail})
+                continue
+            if read.metadata.get('status') != 'superseded':
                 skipped_no_tombstone.append({'lesson_id': lesson_id})
                 continue
 
@@ -1143,6 +1350,7 @@ def cmd_cleanup_superseded(args: argparse.Namespace) -> dict:
         'removed': removed,
         'already_removed': already_removed,
         'skipped_no_tombstone': skipped_no_tombstone,
+        'skipped_unresolvable': skipped_unresolvable,
     }
 
 
@@ -1434,6 +1642,17 @@ def main() -> int:
         ),
     )
     remove_parser.add_argument('--force', action='store_true', help='Skip the interactive confirmation prompt')
+    remove_parser.add_argument(
+        '--allow-unreadable',
+        action='store_true',
+        help=(
+            'Retire a lesson whose file exists but carries no parseable metadata. '
+            'Without this flag such a lesson reports error: unresolvable and is left '
+            'in place; with it the tombstone is written first (recording lesson_state '
+            'and the resolver reason) and only then is the file unlinked. The '
+            '--coverage-verdict requirement and its evidence pair are unchanged.'
+        ),
+    )
     remove_parser.set_defaults(func=cmd_remove)
 
     # supersede
@@ -1601,7 +1820,13 @@ def cmd_drain_dedup(args: argparse.Namespace) -> dict:
     allocating any lesson: candidates are grouped with the corpus via
     :func:`drain_dedup_gate`, strongest-wins, and only ``to_file`` ids are
     subsequently allocated. Recurrences ride counts, never duplicated
-    bodies. Returns ``{status, to_file[], recurrences{}, groups_evaluated}``.
+    bodies. Returns ``{status, to_file[], recurrences{}, groups_evaluated,
+    corpus_unresolvable[]}``.
+
+    ``corpus_unresolvable`` names the lessons the live-corpus read could not
+    resolve, so a dedup plan is never mistaken for one computed against the
+    whole corpus. It is empty by construction on the ``--corpus-file`` path,
+    where the caller supplied the corpus and no scan was performed.
     """
     try:
         raw_candidates = _read_json_doc(args.candidates_file)
@@ -1642,10 +1867,18 @@ def cmd_drain_dedup(args: argparse.Namespace) -> dict:
                     'message': (f'Corpus file {args.corpus_file} value for {lesson_id!r} must be an object.'),
                 }
         corpus_by_id = dict(raw_corpus)
+        corpus_unresolvable: list[dict] = []
     else:
-        corpus_by_id = {lesson['id']: lesson for lesson in _load_active_lessons_with_signals()}
+        corpus = _load_active_lessons_with_signals()
+        corpus_by_id = {lesson['id']: lesson for lesson in corpus.lessons}
+        corpus_unresolvable = corpus.unresolvable
     plan = drain_dedup_gate(list(raw_candidates), corpus_by_id)
-    return {'status': 'success', 'operation': 'drain-dedup', **plan}
+    return {
+        'status': 'success',
+        'operation': 'drain-dedup',
+        **plan,
+        'corpus_unresolvable': corpus_unresolvable,
+    }
 
 
 def post_housekeeping_created_counts(

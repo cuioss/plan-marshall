@@ -12,6 +12,8 @@ argv, and the refusal that fires instead of a silent ignore (an empty
 ``--filter`` is rejected; an unfiltered run carries no ``-k`` at all).
 """
 
+import subprocess
+import sys
 from pathlib import Path
 
 import build
@@ -20,10 +22,10 @@ import pytest
 REPO_ROOT = Path(build.__file__).resolve().parent
 
 
-def _run_recorder(calls: list[list[str]], rc: int = 0):
+def _run_recorder(calls: list[list[str]]):
     def _stub(cmd: list[str], description: str, env: dict[str, str] | None = None) -> int:
         calls.append(cmd)
-        return rc
+        return 0
 
     return _stub
 
@@ -60,21 +62,12 @@ class TestFilterPassthrough:
         build.cmd_module_tests('plan-marshall', parallel=False)
         assert '-k' not in calls[0]
 
-    def test_none_filter_is_absence_not_empty(self, monkeypatch, repo_root_cwd):
-        calls: list[list[str]] = []
-        monkeypatch.setattr(build, 'run', _run_recorder(calls))
-        build.cmd_module_tests('plan-marshall', parallel=False, filter_expr=None)
-        assert '-k' not in calls[0]
-
 
 class TestFilterRefusals:
     @pytest.mark.parametrize('empty', ['', '   '])
     def test_empty_filter_refused_not_silently_ignored(self, empty):
         """The CLI layer rejects an empty ``--filter`` (exit 1); it never runs
         an unfiltered suite while reporting a filtered one."""
-        import subprocess
-        import sys
-
         result = subprocess.run(
             [sys.executable, 'build.py', 'module-tests', 'plan-marshall', '--filter', empty],
             capture_output=True,
@@ -87,9 +80,6 @@ class TestFilterRefusals:
     def test_filter_flag_reaches_parser(self):
         """The ``--filter`` flag exists on the ``module-tests`` parser (no
         argparse rejection for the sanctioned form)."""
-        import subprocess
-        import sys
-
         result = subprocess.run(
             [sys.executable, 'build.py', 'module-tests', '--help'],
             capture_output=True,

@@ -28,6 +28,10 @@ re-implemented validator; the handler-side backstop (``cmd_remove`` invoked
 directly, as a programmatic caller would) is covered separately so BOTH keys of
 the two-key path are pinned.
 
+The unreadable-retirement path (``--allow-unreadable``) is covered by its own
+three-arm class: refused without the flag, retired with it, and the matched
+control that a readable lesson is unaffected by the flag's absence.
+
 CLI plumbing (subprocess) tests for the ``remove`` subcommand live in
 ``test_remove_supersede_cli.py``.
 """
@@ -342,6 +346,100 @@ class TestRemoveEvidenceControlsViaRealArgparse:
 
         assert not result.success
         assert seeded.exists()
+
+
+class TestRemoveUnreadableLesson:
+    """A lesson that exists and cannot be resolved has an exit, but an explicit one.
+
+    Three arms: refused without the flag, retired with it, and the matched
+    control that a readable lesson is unaffected by the flag's absence. The
+    control is what keeps the first two honest — a build that retired
+    everything, or nothing, would satisfy one arm each on its own.
+    """
+
+    UNREADABLE_ID = '2025-01-01-01-006'
+    READABLE_ID = '2025-01-01-01-007'
+
+    def _seed_unreadable(self, lessons_dir: Path) -> Path:
+        """Seed a lesson file whose first line is the H1, so no header parses."""
+        path = lessons_dir / f'{self.UNREADABLE_ID}.md'
+        path.write_text('# Stuck Lesson\n\nBody with no metadata header.\n', encoding='utf-8')
+        return path
+
+    def _remove(self, lesson_id: str, allow_unreadable: bool):
+        """Invoke ``cmd_remove`` with the two arms' only differing argument."""
+        return cmd_remove(
+            Namespace(
+                lesson_id=lesson_id,
+                reason='stuck record',
+                force=True,
+                coverage_verdict='obsolete',
+                covering_clause=None,
+                covering_input=None,
+                allow_unreadable=allow_unreadable,
+            )
+        )
+
+    def test_unreadable_without_the_flag_is_refused_and_nothing_is_unlinked(self, tmp_path):
+        """The refusal removes nothing and writes no tombstone."""
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+        seeded = self._seed_unreadable(lessons_dir)
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            result = self._remove(self.UNREADABLE_ID, allow_unreadable=False)
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'unresolvable'
+        assert '--allow-unreadable' in result['hint']
+        assert seeded.exists()
+        assert not (lessons_dir / '.tombstones' / f'{self.UNREADABLE_ID}.json').exists()
+
+    def test_unreadable_with_the_flag_is_retired_and_the_tombstone_names_the_state(self, tmp_path):
+        """The tombstone records the unreadable state before the file is unlinked.
+
+        The tombstone is the only record that survives the unlink, so it must
+        name the state the retirement was reached through — otherwise the audit
+        trail claims a lesson nobody could read was retired on its content.
+        """
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+        seeded = self._seed_unreadable(lessons_dir)
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            result = self._remove(self.UNREADABLE_ID, allow_unreadable=True)
+
+        assert result['status'] == 'success'
+        assert result['lesson_state'] == 'unreadable'
+        assert not seeded.exists()
+
+        tombstone_path = lessons_dir / '.tombstones' / f'{self.UNREADABLE_ID}.json'
+        assert tombstone_path.exists()
+        payload = json.loads(tombstone_path.read_text(encoding='utf-8'))
+        assert payload['coverage_verdict'] == 'obsolete'
+        assert payload['lesson_state'] == 'unreadable'
+        assert payload['unresolvable_detail']
+
+    def test_readable_lesson_still_removes_with_the_flag_absent(self, tmp_path):
+        """MATCHED CONTROL: the ordinary retirement path is unchanged.
+
+        The tombstone carries no ``lesson_state`` key, so the marker names the
+        unreadable path specifically rather than every retirement.
+        """
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+        seeded = _seed_lesson_file(lessons_dir, self.READABLE_ID)
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            result = self._remove(self.READABLE_ID, allow_unreadable=False)
+
+        assert result['status'] == 'success'
+        assert 'lesson_state' not in result
+        assert not seeded.exists()
+
+        payload = json.loads((lessons_dir / '.tombstones' / f'{self.READABLE_ID}.json').read_text(encoding='utf-8'))
+        assert payload['coverage_verdict'] == 'obsolete'
+        assert 'lesson_state' not in payload
 
 
 class TestRemoveEvidenceHandlerBackstop:

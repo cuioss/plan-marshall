@@ -1,6 +1,6 @@
 ---
 name: manage-lessons
-description: Manage lessons learned with global scope, including the main-anchored store handle and the fail-closed retirement surface — restore-from-plan's four-state outcome, list-stalled's file-presence-derived population plus its duplication direction, and the store-resolution discriminator that makes every zero state whether the store was actually resolved and scanned
+description: Manage lessons learned with global scope, including the main-anchored store handle, the shared three-state lesson-id resolution seam that reports found / absent / present-but-unreadable so not_found means absent alone, the tombstone-preserving remove --allow-unreadable retirement that gives a stuck lesson an explicit exit, add's body-state reporting that names a freshly allocated record as body-less instead of returning a bare success, and the fail-closed retirement surface — restore-from-plan's four-state outcome, list-stalled's file-presence-derived population plus its duplication direction, and the store-resolution discriminator that makes every zero state whether the store was actually resolved and scanned
 user-invocable: false
 mode: script-executor
 scope: global
@@ -114,7 +114,19 @@ id: 2025-12-02-001
 path: /abs/path/to/.plan/local/lessons-learned/2025-12-02-001.md
 component: maven-build
 category: bug
+body_state: absent
+body_bytes: 0
 ```
+
+`body_state` names what the allocation actually left on disk, so a caller never
+has to infer it from a bare `status: success`. A fresh stub is `absent` with
+`body_bytes: 0`; `set-body` reports the flipped `written` once a body lands. The
+two fields always travel together — the state is the discriminator and the byte
+count is the measurement it was derived from.
+
+On the `arch-constraint` reinforce path the fields describe the lesson that was
+REINFORCED, re-read from disk after the recurrence section was appended — never
+the body-less shape a freshly created stub would have had.
 
 ### set-body
 
@@ -139,7 +151,13 @@ status: success
 id: 2025-12-02-001
 path: /abs/path/to/.plan/local/lessons-learned/2025-12-02-001.md
 body_bytes_written: 1234
+body_state: written
 ```
+
+`body_state` is the other half of the pair `add` reports (see [add](#add)). It is
+derived from what was actually written — writing an empty body reports `absent`,
+not `written` — and it rides only on a successful write, because an error return
+says nothing about a state nothing reached.
 
 ### set-title
 
@@ -242,6 +260,70 @@ title: Build fails with missing dependency
 content: |
   When running a Maven clean install...
 ```
+
+### Resolving a lesson id: three states, two error values
+
+`get`, `update`, `remove`, and `supersede` (its own target lesson, not the
+`--by` canonical) resolve a single lesson id through one shared seam that
+reports **three** states, and each of these four verbs renders which one it
+reached as an error code:
+
+| State | Meaning | Rendered as |
+|-------|---------|-------------|
+| `found` | The file exists and carries a parseable `key=value` header | the verb's normal success output |
+| `absent` | No file exists at the resolved path | `error: not_found` |
+| `unreadable` | The file EXISTS and no reader can resolve it — the read raised, or the metadata header did not parse | `error: unresolvable` |
+
+`not_found` therefore means **absent, and only absent** — for these four verbs.
+The third state has its own value because the two demand opposite responses: an
+absent lesson is a typo or an already-retired id, while an unresolvable one is a
+record sitting in the corpus that nothing can read — and reporting it as missing
+is what used to leave it unretirable, since `remove` refused it before writing
+any tombstone.
+
+An `unresolvable` payload additionally carries the substrate it is talking
+about, so the caller can act on the file it names:
+
+```toon
+status: error
+id: 2025-12-02-001
+error: unresolvable
+message: Lesson 2025-12-02-001 exists but could not be resolved
+path: /abs/path/to/.plan/local/lessons-learned/2025-12-02-001.md
+detail: /abs/path/... exists but carries no parseable key=value metadata header
+```
+
+`remove` alone adds a seventh field to that payload — `hint`, naming the
+`--allow-unreadable` exit it has and the other verbs do not (see
+[remove](#remove)). `get`, `update` and `supersede` emit the six fields above
+and no `hint`.
+
+`supersede` renders the same split for its canonical read under its own names:
+`canonical_not_found` for an absent canonical and `canonical_unresolvable` for
+an unresolvable one.
+
+The verbs below reach the corpus differently, and none of them renders
+`error: unresolvable`:
+
+- `set-body`, `set-title`, and `convert-to-plan` check the file's existence
+  directly — they never call the shared seam — so each renders
+  `error: not_found` for an absent lesson: genuine absence IS distinguished.
+  What none of them distinguishes is an unreadable lesson from a READABLE one —
+  both pass the same bare existence check, and what follows turns on the verb's
+  own parsing rather than on the resolver's `unreadable` verdict. An unreadable
+  lesson passed to `convert-to-plan` is silently relocated rather than refused.
+- `cleanup-superseded` (explicit-ids mode), `aggregate`, and `drain-dedup`
+  (default live-corpus path) resolve THROUGH the seam but report the outcome
+  in their payload instead of a per-verb error code: `aggregate` lists an
+  unresolvable lesson under `unresolvable[]` alongside `lessons_scanned`
+  rather than dropping it from the corpus it counted, `cleanup-superseded`
+  reports one under `skipped_unresolvable` rather than `skipped_no_tombstone`
+  — a bucket whose name would assert the absence that branch has already
+  disproved — and `drain-dedup` lists one under `corpus_unresolvable[]`, so a
+  dedup plan is never read as one computed against the whole corpus. That list
+  is empty by construction on the `--corpus-file` path, where the caller
+  supplied the corpus and no scan was performed. None of the three returns
+  `error: not_found` or `error: unresolvable` at all.
 
 ### list
 
@@ -367,6 +449,7 @@ python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons remo
 - `--covering-clause` (required when the verdict is `completely_covered`): the clause that codifies the rule the lesson taught, named precisely enough to re-read
 - `--covering-input` (required when the verdict is `completely_covered`): the concrete input on which that clause's own worked example produces the correct result
 - `--force`: Skip the interactive confirmation prompt
+- `--allow-unreadable`: Retire a lesson whose file exists but resolves `unreadable`; without it such a lesson reports `error: unresolvable` and is left in place (see *Retiring a stuck lesson* below). Relaxes no part of the evidence contract.
 
 #### Retirement evidence: the two-key remove path
 
@@ -388,6 +471,32 @@ The evidence is not merely validated, it is **recorded**: the tombstone at `.tom
 | `coverage_verdict` | always | The `--coverage-verdict` value |
 | `covering_clause` | `completely_covered` | The clause claimed to codify the lesson's rule |
 | `covering_input` | `completely_covered` | The input the clause's worked example resolves |
+| `lesson_state` | `--allow-unreadable` retirement | `unreadable` — the state the retirement was reached through |
+| `unresolvable_detail` | `--allow-unreadable` retirement | Why no reader could resolve the lesson |
+
+**Retiring a stuck lesson — `--allow-unreadable`**
+
+A lesson whose file exists but resolves `unreadable` (see [Resolving a lesson
+id](#resolving-a-lesson-id-three-states-two-error-values)) has an exit, but only
+an explicit one:
+
+- **Without the flag** `remove` reports `error: unresolvable`, unlinks nothing
+  and writes no tombstone. This is the default because a record nobody can read
+  is not obviously safe to delete. That payload carries the shared
+  `path`/`detail` pair plus a `hint` field this verb alone emits —
+  `"Pass --allow-unreadable to retire it; the tombstone is still written."` —
+  so the exit is named at the point of refusal rather than only here.
+- **With `--allow-unreadable`** the retirement runs the SAME path, in the same
+  order: the tombstone is written FIRST and the file is unlinked second. The
+  ordering is load-bearing — the file is the only other copy, so a failure
+  between the two steps must leave the lesson on disk rather than leave the
+  retirement unrecorded. The tombstone additionally records `lesson_state` and
+  the resolver's reason, so the audit trail states that the lesson was retired
+  on its *state* rather than on content nobody could read.
+
+The flag relaxes WHICH states may be retired. It relaxes no part of the evidence
+contract: `--coverage-verdict` is still required, and `completely_covered` still
+requires both evidence flags.
 
 **Output** (TOON):
 
@@ -399,6 +508,13 @@ tombstone: /abs/path/to/.plan/local/lessons-learned/.tombstones/2025-12-02-001.j
 coverage_verdict: completely_covered
 covering_clause: "manage-lessons/SKILL.md Canonical invocations -> remove"
 covering_input: "remove --coverage-verdict completely_covered with no --covering-clause"
+```
+
+A retirement taken through `--allow-unreadable` returns the same shape plus the two fields it wrote onto the tombstone:
+
+```toon
+lesson_state: unreadable
+unresolvable_detail: "/abs/path/to/2025-12-02-001.md exists but carries no parseable key=value metadata header"
 ```
 
 ### cleanup-superseded
@@ -426,6 +542,7 @@ Per-id outcomes:
 | `removed[]` | Lesson `.md` was unlinked (or, on `--dry-run`, would have been) |
 | `already_removed[]` | `.md` already absent and tombstone present (idempotent re-run) |
 | `skipped_no_tombstone[]` | Tombstone missing — refused to act because the audit trail would be lost |
+| `skipped_unresolvable[]` | Explicit-ids mode only: the tombstone AND the `.md` are both present, but the lesson resolves `unreadable`. Carries the resolved `path` and the reason. It gets its own bucket precisely because `skipped_no_tombstone` would assert the absence this branch has already disproved. |
 
 ```bash
 # Age-filtered (uses marshal.json retention or hard fallback 7 days)
@@ -459,6 +576,7 @@ removed[1]{lesson_id}:
   2025-12-02-001
 already_removed[0]{lesson_id}:
 skipped_no_tombstone[0]{lesson_id}:
+skipped_unresolvable[0]{lesson_id,path,detail}:
 ```
 
 Each successful unlink emits an INFO line to `script-execution.log`:
@@ -520,6 +638,8 @@ python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons from
 status: success
 id: 2025-12-02-003
 created_from: error_context
+body_state: written
+body_bytes: 42
 ```
 
 ### aggregate
@@ -545,6 +665,8 @@ groups[N]{primary_id,primary_title,absorb_count,tier,enacted,absorbed,merged_bod
 top_n_commands[N]:
   - "/plan-marshall:plan-marshall lesson=2025-12-02-001"
   - "/plan-marshall:plan-marshall lesson=2025-12-04-002"
+lessons_scanned: 23
+unresolvable[0]:
 ```
 
 Each group carries `tier` (the producing signal: `cross-ref` | `shared-component` | `shared-standards-dir` | `shared-workflow-boundary`) and `enacted` (`true` only for the `cross-ref` tier — weaker tiers are opt-in co-location suggestions, not auto-applied merges). Each `absorbed[]` row carries `{lesson_id, title, reason}` where `reason` names the strongest signal that placed the lesson in the group (e.g., `cross-ref to 2025-12-02-001`, `shared component plan-marshall:phase-5-execute`, `shared standards-dir marketplace/bundles/.../standards/`, `shared workflow-boundary plan-marshall:phase-5-execute`). `merged_body_preview` is the first ~400 characters of the would-be merged body so callers can sanity-check the grouping before invoking the orchestrator action.
@@ -681,7 +803,7 @@ The classification logic for the read-side corpus operations lives under `refere
 | `aggregate` | `[--top-n N]` | Read-only classifier: group active lessons that would land in one plan. Returns groups + headline commands. See [`references/aggregate-analysis.md`](references/aggregate-analysis.md). |
 | `from-error` | `--context` | Create from JSON error context (programmatic; body synthesized from context) |
 | `convert-to-plan` | `--lesson-id --plan-id` | Move lesson into a plan directory as `lesson-{id}.md`. This is the move-semantics replacement for marking a lesson "applied". |
-| `remove` | `--lesson-id --reason --coverage-verdict [--covering-clause] [--covering-input] [--force]` | Delete a lesson and write a tombstone. `--coverage-verdict` is required with no default; `completely_covered` additionally requires both evidence flags, and all supplied values are recorded on the tombstone. See [Retirement evidence](#retirement-evidence-the-two-key-remove-path). |
+| `remove` | `--lesson-id --reason --coverage-verdict [--covering-clause] [--covering-input] [--force] [--allow-unreadable]` | Delete a lesson and write a tombstone. `--coverage-verdict` is required with no default; `completely_covered` additionally requires both evidence flags, and all supplied values are recorded on the tombstone. See [Retirement evidence](#retirement-evidence-the-two-key-remove-path). |
 | `supersede` | `--lesson-id --by --reason` | Mark a lesson superseded by a canonical lesson: merge the source body into the canonical, write a tombstone carrying `superseded_by`, and replace the source body with a `[SUPERSEDED]` redirect stub. |
 | `restore-from-plan` | `--plan-id` | Inverse of `convert-to-plan`: move the relocated `lesson-*.md` back from a plan directory to the active corpus (`.plan/local/lessons-learned/`). Run on stall/abandon so a stranded lesson resurfaces. Reports a four-value `action` — enumerated in full under [restore-from-plan](#restore-from-plan), the single home for the value set — so an unreachable plan directory is never reported as a lesson-free one, and an aborted move is never reported as a completed one. |
 | `cleanup-superseded` | `[--lesson-id ID ...] \| [--retention-days N] [--dry-run]` | Prune superseded `.md` stubs while preserving tombstones. Age-filtered when `--retention-days` (falls back to `system.retention.lessons_superseded_days`, hard fallback 7); explicit when `--lesson-id` is repeated. |
@@ -708,7 +830,10 @@ The classification logic for the read-side corpus operations lives under `refere
 
 | Error Code | Cause |
 |------------|-------|
-| `not_found` | Lesson ID doesn't exist (get, update, set-body, convert-to-plan) |
+| `not_found` | No file exists at the resolved path. See [Resolving a lesson id](#resolving-a-lesson-id-three-states-two-error-values) for exactly which verbs reach this code through the shared seam versus through a plain existence check, and which verbs report the same fact through a payload bucket instead |
+| `unresolvable` | The file EXISTS and no reader can resolve it (the read raised, or the metadata header did not parse). Carries `path` and `detail` naming the substrate. See [Resolving a lesson id](#resolving-a-lesson-id-three-states-two-error-values) for exactly which verbs can reach this code |
+| `canonical_not_found` | `supersede`'s canonical-read variant of `not_found`: the canonical lesson id (`--by`) resolved `absent` |
+| `canonical_unresolvable` | `supersede`'s canonical-read variant of `unresolvable`: the canonical lesson id (`--by`) resolved `unreadable` |
 | `plan_dir_unresolved` | `restore-from-plan` **never scanned** for lesson files. Either the named plan directory could not be resolved under the main-anchored plans root, **or** the main-anchored lessons corpus itself did not resolve so there was nowhere to restore into. Deliberately distinct from `action: no_lesson_file`, which asserts the directory WAS scanned and held none — reporting an unreachable directory as lesson-free is the fail-open this code closes. `store_resolution` says which way it happened: `unresolved` (a required store was unreachable) versus a resolved store that does not hold that plan; on the unreachable branch it is always the resolution of the store that **failed**, and `unresolved_store` names which one (`plans` / `lessons`) |
 | `store_unresolved` | `list-stalled` could not resolve the main-anchored plans root **or** lessons corpus, so no plan directory was ever scanned. `unresolved_store` names which of the two failed, `store_resolution` is that store's `unresolved` — never a sibling's resolved value — and `plans_root_state` is `unknown`. Distinct from the non-faulting `plans_root_state: missing` (the store resolved, but the plans root does not exist) and from `plans_root_state: present` with `stalled_count: 0` (the scan looked and found nothing) |
 | `destination_exists` | `restore-from-plan` refused to clobber an existing corpus file for a restored lesson id; reported under `action: restore_incomplete`, never `restored`. Any lessons moved before the collision remain restored and are reported in `restored_lessons`, so `restored_count` may be `0` (first-file collision) or non-zero. `list-stalled` surfaces the same condition ahead of time as a `duplicate_lessons[]` row |
@@ -825,10 +950,10 @@ python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons from
 python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons remove \
   --lesson-id LESSON_ID --reason TEXT \
   --coverage-verdict {completely_covered|redundant|superseded|obsolete} \
-  [--covering-clause TEXT] [--covering-input TEXT] [--force]
+  [--covering-clause TEXT] [--covering-input TEXT] [--force] [--allow-unreadable]
 ```
 
-`--coverage-verdict` is **required and has no default** — an unstated verdict is a rejection, never an assumption. `--covering-clause` and `--covering-input` are **required whenever the verdict is `completely_covered`**; supplying that verdict without BOTH is an argparse-level rejection (usage on stderr, exit 2) and the lesson is left in place. The three weaker verdicts (`redundant`, `superseded`, `obsolete`) need no evidence pair. See [Retirement evidence](#retirement-evidence-the-two-key-remove-path) for the contract and [Error Responses](#error-responses) → `missing_coverage_verdict` / `missing_coverage_evidence`.
+`--coverage-verdict` is **required and has no default** — an unstated verdict is a rejection, never an assumption. `--covering-clause` and `--covering-input` are **required whenever the verdict is `completely_covered`**; supplying that verdict without BOTH is an argparse-level rejection (usage on stderr, exit 2) and the lesson is left in place. The three weaker verdicts (`redundant`, `superseded`, `obsolete`) need no evidence pair. `--allow-unreadable` is the explicit exit for a lesson whose file exists but resolves `unreadable`; it relaxes WHICH states may be retired and no part of the evidence contract. See [Retirement evidence](#retirement-evidence-the-two-key-remove-path) for the contract and [Error Responses](#error-responses) → `missing_coverage_verdict` / `missing_coverage_evidence`.
 
 ### supersede
 

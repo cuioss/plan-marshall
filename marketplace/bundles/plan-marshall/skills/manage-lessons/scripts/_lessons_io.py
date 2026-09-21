@@ -123,6 +123,35 @@ def resolve_lesson_store(subpath: str | Path = DIR_LESSONS) -> LessonStore:
     return LessonStore(path, resolution, f'{path} (resolved {resolution})')
 
 
+class LessonRead(NamedTuple):
+    """A resolved lesson record together with the state that resolution reached.
+
+    Attributes:
+        state: ``found`` | ``absent`` | ``unreadable`` — see
+            :func:`resolve_lesson` for what each one means. Consumers compare
+            ``state`` by explicit equality, never by the truthiness of
+            ``metadata``, which is empty in both non-``found`` states.
+        metadata: The parsed ``key=value`` header; empty on every non-``found``
+            state.
+        title: The H1 title. Populated on ``found`` and on the ``unreadable``
+            branch whose bytes were readable, empty otherwise.
+        body: The body below the H1, under the same rule as ``title``.
+        path: The resolved lesson path. Always populated — on ``absent`` it
+            names the file that is missing, so a caller can report WHICH file it
+            did not find.
+        detail: Human-readable provenance naming the substrate and, on
+            ``unreadable``, the reason no reader could resolve it, for direct
+            inclusion in a report line.
+    """
+
+    state: str
+    metadata: dict
+    title: str
+    body: str
+    path: Path
+    detail: str
+
+
 class WrongStoreError(Exception):
     """Raised when a lesson's component bundle is not owned by the resolved store repo.
 
@@ -239,15 +268,44 @@ def get_tombstones_dir() -> Path:
     return get_lessons_dir() / '.tombstones'
 
 
-def read_lesson(lesson_id: str) -> tuple[dict, str, str]:
-    """Read a lesson file and return (metadata, title, body)."""
+def resolve_lesson(lesson_id: str) -> LessonRead:
+    """Resolve a lesson id to a record and report WHICH of three facts it found.
+
+    The single seam behind every verb that reads a lesson by id. It answers two
+    questions at once — what does the record contain, and did I actually resolve
+    it — so no caller has to infer the second from the emptiness of the first.
+
+    The three states are disjoint and exhaustive:
+
+    - ``absent`` — the path does not exist. ``metadata`` / ``title`` / ``body``
+      are empty and ``path`` names the file that is missing.
+    - ``unreadable`` — the path EXISTS but no reader can resolve it: the read
+      raised :class:`OSError` or :class:`UnicodeError` (invalid UTF-8), or
+      :func:`file_ops.parse_markdown_metadata` yielded no ``key=value`` header.
+      ``title`` and ``body`` are populated whenever the bytes were readable,
+      because the record is right there and a caller reporting the failure can
+      name what it holds.
+    - ``found`` — the path exists and carries parseable metadata.
+
+    Args:
+        lesson_id: Identifier of the lesson to resolve (no ``.md`` suffix).
+
+    Returns:
+        A :class:`LessonRead` record. Never raises on an unreadable lesson — the
+        unreadable state IS the report, so a caller cannot swallow the failure
+        into the same answer an absent lesson produces.
+    """
     lessons_dir = get_lessons_dir()
     path = lessons_dir / f'{lesson_id}.md'
 
     if not path.exists():
-        return {}, '', ''
+        return LessonRead('absent', {}, '', '', path, f'no lesson file at {path}')
 
-    content = path.read_text(encoding='utf-8')
+    try:
+        content = path.read_text(encoding='utf-8')
+    except (OSError, UnicodeError) as exc:
+        return LessonRead('unreadable', {}, '', '', path, f'{path} exists but could not be read: {exc}')
+
     metadata = parse_markdown_metadata(content)
 
     # Extract title and body
@@ -263,7 +321,21 @@ def read_lesson(lesson_id: str) -> tuple[dict, str, str]:
 
     body = '\n'.join(lines[body_start:]).strip()
 
-    return metadata, title, body
+    if metadata:
+        return LessonRead('found', metadata, title, body, path, str(path))
+
+    # The parse yielded no key=value header. This is the one place the emptiness
+    # of ``metadata`` is READ, and it is read here to PRODUCE the state — not as
+    # a caller's presence guard standing in for a meaning guard. Every verb
+    # downstream compares ``state`` instead.
+    return LessonRead(
+        'unreadable',
+        {},
+        title,
+        body,
+        path,
+        f'{path} exists but carries no parseable key=value metadata header',
+    )
 
 
 def _build_lesson_content(metadata: dict, title: str, body: str) -> str:
