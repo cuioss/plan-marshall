@@ -278,6 +278,46 @@ path this run took is the workaround, and it costs an operator prompt every time
 retry input cannot change; limb C cannot converge because the retry was **never armed for the bot in
 question at all**. A run reading only `review_rate_window_await: true` would conclude the wait was armed.
 
+**Limb D — a SECOND, independently-scoped timeout knob is the same defect as Limb A, and the corroboration
+now names it. Folded 2026-09-18 from `truthful-signals-060.md`** (forwarded from `truthful-signals`,
+relayed to it 2026-09-17 by the API-Sheriff `deployment-configurability` orchestrator from its PLAN-26
+drain, PR `cuioss/API-Sheriff#314`, squash `a475cff`). ⚠ **Not re-verified against plan-marshall source by
+either forwarding orchestrator — a lead from one consuming-repo run, with first-party timings**, recorded
+here as corroboration rather than as a settled claim.
+
+PR #314 took six finalize loop-backs, five CodeRabbit-driven, with reviewed rounds landing at roughly
+17:15, 19:19, 23:57, 01:08 and 02:37 UTC — an interval consistent with Limb A's own reading of CodeRabbit's
+budget ("one review per hour on this plan; 0 remain after this review"), not shorter. The run also exceeded
+`max_iterations=5`. ⭐ **The cadence is the hourly budget, not the bot's latency** — a fix pushed inside the
+hour waits for the budget regardless of how fast the bot itself would otherwise answer.
+
+⛔ **The sender names a SECOND, already-shipped instance of Limb A's exact defect class**:
+`re_review_await_timeout_seconds` (`phase-6-finalize/standards/branch-cleanup-rereview.md`'s trigger-A
+await budget, default 600s) is a flat per-call timeout scoped independently of Limb A's
+`review_rate_window_timeout_seconds` — and a 600s budget inside an hourly window can only time out, for
+the same reason a 3600s one affords at most one attempt at the boundary. This is not a new mechanism; it
+is Limb A's own "Done when" (an interval **defaulted from the bot registry's known rate limit**, not a
+flat operator-set timeout) reaching a knob Limb A did not itself enumerate. ⛔ **Adds no file surface to
+this deliverable**: `branch-cleanup-rereview.md` and `github_re_review.py` are declared by `PLAN-PR-070`,
+not here — this limb records the corroborating population fact and the second knob name; the fix, once
+Limb A's per-bot-registry-interval model lands, is inherited by every consumer of it rather than
+re-implemented per knob.
+
+⭐ **The sender's other two named mechanics are corroboration of rules this deliverable and D7 already
+state, not new ones**: "auto-review pauses after the budget is spent, and the explicit `@coderabbitai
+review` trigger is what resumes it" restates D7's already-recorded rule ("never trigger inside a closed
+window … the recovery succeeded only on the sequence: wait for FULL expiry → then trigger"); "incremental-
+only re-review — a *Review finished* comment is not a verdict" restates the `matched` vs
+`head_sha_verified` discrimination `branch-cleanup-rereview.md` already ships (an answering comment that
+does not reference the reviewed HEAD is recorded as a **decline**, never as a completed review) and the
+currency-blind disposition `PLAN-PR-070` D5/D6 owns. Neither is a gap this corpus has not already named;
+both are recorded here as second-repo corroboration that the shipped/staged mechanism is the right one to
+finish, not as grounds for a new deliverable.
+
+*Done when (unchanged from Limb A):* once the per-attempt interval is defaulted from the bot registry's
+known rate limit rather than a flat operator-set timeout, `re_review_await_timeout_seconds` is one of the
+callers that migrates onto it — recorded here so the migration's population is not rediscovered later.
+
 ### D7 — The rate window's own instruments are deaf, and one of them reads a foreign PR's counter
 
 ⭐ **Folded 2026-09-05 from three independent sources**: `truthful-signals-049.md` (relayed from
