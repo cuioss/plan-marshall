@@ -84,10 +84,10 @@
       "landing": ""
     }
   ],
-  "resume_anchor": "Drain complete 2026-09-21 (76/76, queue EMPTY); 11 lessons promoted, 8 Open Defects added; slots open (N=2, R=0); emitted PLAN-08 awaits operator-confirmed launch; PLAN-05/06 sequenced behind live plan-07-footprint-surface.",
+  "resume_anchor": "Cleanup done 2026-09-21 (corpus re-grounded, compact idempotent, drain done); uncommitted specs ride the cleanup branch PR; emitted PLAN-08 awaits launch; restart once tree clean.",
   "metadata": {
     "parallelization_scope": "2"
   },
   "created": "2026-09-17T19:36:11Z",
-  "updated": "2026-09-21T11:52:43Z"
+  "updated": "2026-09-21T12:07:56Z"
 }

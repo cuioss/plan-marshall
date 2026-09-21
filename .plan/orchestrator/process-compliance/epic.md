@@ -35,7 +35,7 @@ with every remaining gap a logged, visible exemption rather than a silent slip.
      outside the markers — never inside them. -->
 
 <!-- BEGIN GENERATED: resume-summary -->
-**Resume anchor**: Drain complete 2026-09-21 (76/76, queue EMPTY); 11 lessons promoted, 8 Open Defects added; slots open (N=2, R=0); emitted PLAN-08 awaits operator-confirmed launch; PLAN-05/06 sequenced behind live plan-07-footprint-surface.
+**Resume anchor**: Cleanup done 2026-09-21 (corpus re-grounded, compact idempotent, drain done); uncommitted specs ride the cleanup branch PR; emitted PLAN-08 awaits launch; restart once tree clean.
 **Phase**: orchestrating
 **Inbox (derived)**: 0 queued, 86 archived
 **Queue** (staged, in order):

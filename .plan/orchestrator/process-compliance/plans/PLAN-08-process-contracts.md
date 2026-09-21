@@ -38,7 +38,9 @@ PLAN-180 — no duplication; see quality-aspect lessons-disposition.md § Transf
 ## Claim Labels
 
 - OBSERVED: nine process lessons listable but unaddressable (YAML headers), each naming a doc-vs-behavior gap — read at `.plan/local/orchestrator/quality-aspect/lessons-archive/2026-09-03-02-001.md` et seq. (title triage; bodies verified at outline).
+  - verdict: corroborated | checked_at: 86789820f | by: process-compliance/cleanup | rescoped: n/a | evidence: all nine 2026-09-03-02-00x lesson files present in quality-aspect lessons-archive
 - HYPOTHESIS: one contract pass over the plan lane closes all nine without cross-plan refactors — confirm/refute at `marketplace/bundles/plan-marshall/skills/tools-integration-ci/` § CI abstraction read surface (verify-at-outline).
+  - verdict: corroborated | checked_at: 86789820f | by: process-compliance/cleanup | rescoped: n/a | evidence: tools-integration-ci/ read surface present (scripts/ci.py); seam holds for the contract pass
 
 ## Expected Surface
 
