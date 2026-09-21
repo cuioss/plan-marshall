@@ -121,7 +121,7 @@ def main() -> int:
     )
     compute_footprint_parser.add_argument(
         '--base-ref',
-        help='Base ref for the diff, verified with rev-parse --verify (defaults to origin/main when it resolves, falling back to references.base_branch then main)',
+        help='Base ref for the diff, verified with rev-parse --verify (defaults to origin/{base_branch} when its remote-tracking ref resolves, falling back to references.base_branch then main)',
     )
 
     # capture-footprint — compute the live footprint AND persist it to
@@ -139,7 +139,7 @@ def main() -> int:
     )
     capture_footprint_parser.add_argument(
         '--base-ref',
-        help='Base ref for the diff, verified with rev-parse --verify (defaults to origin/main when it resolves, falling back to references.base_branch then main)',
+        help='Base ref for the diff, verified with rev-parse --verify (defaults to origin/{base_branch} when its remote-tracking ref resolves, falling back to references.base_branch then main)',
     )
 
     args = parse_args_with_toon_errors(parser)
@@ -164,8 +164,9 @@ def main() -> int:
     # never name a retired field — they route through the live resolver and
     # the captured footprint tier — so this guard only ever fires on direct
     # access, which fails closed here instead of serving a stale value.
-    if args.command in ('get', 'set', 'add-list', 'set-list') and is_retired_field(getattr(args, 'field', None)):
-        output_toon(retired_field_error(args.plan_id, args.field, args.command))
+    field = getattr(args, 'field', None)
+    if is_retired_field(field):
+        output_toon(retired_field_error(args.plan_id, str(field), args.command))
         return 0
 
     # Dispatch to handlers

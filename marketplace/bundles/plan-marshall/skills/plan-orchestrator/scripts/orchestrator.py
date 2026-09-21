@@ -2439,15 +2439,22 @@ def _currency_compare(footprint: frozenset[str], spec_paths: set[str]) -> dict[s
     directory claim), and an untouched spec reports no overlap (clean) even
     though its sets differ.
     """
-    overlapping = sorted(
-        path for path in footprint if any(entry == path or _contains(entry, path) for entry in spec_paths)
-    )
-    footprint_not_spec = sorted(
-        path for path in footprint if not any(entry == path or _contains(entry, path) for entry in spec_paths)
-    )
-    spec_not_footprint = sorted(
-        entry for entry in spec_paths if not any(entry == path or _contains(entry, path) for path in footprint)
-    )
+
+    def _covers(left: str, right: str) -> bool:
+        """Whether two entries cover each other by exact match or containment.
+
+        Containment runs in BOTH directions: a directory claim covers the
+        files beneath it (``_contains(entry, path)``) AND a file beneath a
+        directory covers that directory claim (``_contains(path, entry)``) —
+        so ``footprint={'src/'}`` against ``spec_paths={'src/a.py'}`` scores
+        covered rather than leaving ``src/`` in ``footprint_not_spec`` while
+        the shared resolver treats both as covered.
+        """
+        return left == right or _contains(left, right) or _contains(right, left)
+
+    overlapping = sorted(path for path in footprint if any(_covers(entry, path) for entry in spec_paths))
+    footprint_not_spec = sorted(path for path in footprint if not any(_covers(entry, path) for entry in spec_paths))
+    spec_not_footprint = sorted(entry for entry in spec_paths if not any(_covers(entry, path) for path in footprint))
     symmetric_difference_count = len(footprint_not_spec) + len(spec_not_footprint)
     if not footprint and not spec_paths:
         state = CURRENCY_VACUOUS
