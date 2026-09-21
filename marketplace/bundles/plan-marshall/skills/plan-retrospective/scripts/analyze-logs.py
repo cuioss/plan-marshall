@@ -198,10 +198,11 @@ def summarize_build_ledger(plan_key: str) -> dict[str, Any]:
     flag.** :func:`_ledger_core.read_entries` returns the same empty list for an
     ABSENT ledger, an UNREADABLE one and a genuinely EMPTY one — three states one
     figure cannot carry — so presence is probed from the path and readability by
-    opening it. A readable-but-empty ledger and an unreadable ledger are thereby
-    distinguishable in the emitted payload rather than collapsing into the same
-    zero. Presence means the path EXISTS, whatever kind of node sits there: a
-    directory or other non-regular node is present-and-unreadable, not absent.
+    opening it when it is a regular file. A readable-but-empty ledger and an
+    unreadable ledger are thereby distinguishable in the emitted payload rather
+    than collapsing into the same zero. Presence means the path EXISTS, whatever
+    kind of node sits there: a directory or other non-regular node is
+    present-and-unreadable, not absent.
 
     ⛔ **``total_build_seconds`` is a float ONLY when ``summed_rows > 0``**;
     otherwise it is the literal :data:`_BUILD_SECONDS_UNAVAILABLE`. Nothing was
@@ -239,16 +240,21 @@ def summarize_build_ledger(plan_key: str) -> dict[str, Any]:
     # Presence is EXISTENCE, not file-ness. A directory, a fifo, or any other
     # non-regular node at the ledger path is something that IS there and cannot be
     # read — which is the present-but-unreadable state, not the absent one. Probing
-    # with `is_file()` reported every such path as `ledger_present: False`, i.e. "no
-    # ledger at all", re-collapsing the very distinction the two fields exist to
-    # keep apart. The open-probe below then classifies it correctly, because
-    # `IsADirectoryError` is an `OSError`.
+    # PRESENCE with `is_file()` reported every such path as `ledger_present: False`,
+    # i.e. "no ledger at all", re-collapsing the very distinction the two fields
+    # exist to keep apart. READABILITY is the separate question, and its open-probe
+    # below is gated on `is_file()` so that `open()` is never reached for a
+    # non-regular node: opening a FIFO BLOCKS until a writer connects — no timeout,
+    # no `O_NONBLOCK` — so classifying one by the `OSError` it never raises would
+    # hang the run instead of reporting it. Every non-regular node (directory,
+    # FIFO, socket, device node) therefore lands on present-and-unreadable without
+    # an `open()` that could block.
     ledger_present = ledger_path.exists()
-    # Probed by OPENING, not inferred from the row count: `read_entries` swallows
-    # its own OSError and returns `[]`, so an unreadable ledger is byte-identical
-    # to an empty one at the call site below.
+    # Probed by OPENING the regular file, not inferred from the row count:
+    # `read_entries` swallows its own OSError and returns `[]`, so an unreadable
+    # ledger is byte-identical to an empty one at the call site below.
     ledger_readable = False
-    if ledger_present:
+    if ledger_present and ledger_path.is_file():
         try:
             with ledger_path.open(encoding='utf-8'):
                 ledger_readable = True

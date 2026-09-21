@@ -9,6 +9,7 @@ emission, and the ranking that results.
 from __future__ import annotations
 
 import json
+import os
 
 import pytest
 from _analyze_logs_fixtures import (
@@ -361,12 +362,13 @@ class TestBuildTimeFromLedger:
         ``chmod(0o000)`` file. Permission bits do not deny a process holding
         ``CAP_DAC_OVERRIDE``, so under root — a container, a root CI image, a dev
         container shell — the read succeeds and the arm's premise comes from the
-        ambient user id instead of from the fixture. ``open()`` on a directory
-        raises ``IsADirectoryError`` for every user id, root included, so the state
-        this arm needs is constructed rather than borrowed from the environment.
-        Skipping under root is not the alternative: an arm that does not run
-        asserts nothing, and a matched pair whose halves run on different machines
-        is no longer matched.
+        ambient user id instead of from the fixture. A directory is not a regular
+        file for ANY user id, so the producer's ``is_file()``-gated readability
+        probe classifies it unreadable regardless of ``CAP_DAC_OVERRIDE`` — the
+        state this arm needs is constructed rather than borrowed from the
+        environment. Skipping under root is not the alternative: an arm that does
+        not run asserts nothing, and a matched pair whose halves run on different
+        machines is no longer matched.
         """
         ledger = tmp_path / 'base' / 'work' / 'change-ledger.jsonl'
 
@@ -394,6 +396,39 @@ class TestBuildTimeFromLedger:
         assert unreadable['ledger_present'] is True
         assert unreadable['ledger_readable'] is False
         assert readable != unreadable
+
+    def test_a_fifo_at_the_ledger_path_is_classified_without_being_opened(self, tmp_path, monkeypatch):
+        """⛔ The arm the directory arm cannot cover: the node that HANGS.
+
+        The directory arm above passes whether or not the readability probe is
+        gated on ``is_file()``, so it pins the CONTRACT and not the hazard. A FIFO
+        pins the hazard. ``open()`` on one BLOCKS until a writer connects — no
+        timeout, no ``O_NONBLOCK`` — so an ungated probe does not reach a
+        present-and-unreadable verdict at all: it hangs report generation
+        indefinitely, with no diagnostic and nothing for a caller to catch. The
+        assertions below are only reachable if the producer classified the node
+        WITHOUT opening it.
+
+        A regression fails this test rather than wedging the suite, because
+        ``run_script`` runs the producer under a subprocess timeout and a killed
+        child raises.
+        """
+        ledger = tmp_path / 'base' / 'work' / 'change-ledger.jsonl'
+
+        plan_id, _ = setup_live_plan(tmp_path, monkeypatch, plan_id='retro-build-ledger-fifo')
+        _write_ledger(tmp_path / 'base', [])  # creates the tree, then becomes a fifo
+        ledger.unlink()
+        os.mkfifo(ledger)
+
+        result = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
+        assert result.success, result.stderr
+        bt = result.toon()['build_time']
+        # Present-and-unreadable, the same verdict the directory reaches — this
+        # time arrived at with no open() on the node.
+        assert bt['ledger_present'] is True
+        assert bt['ledger_readable'] is False
+        assert bt['total_build_seconds'] == 'unavailable'
+        assert int(bt['ledger_rows_scanned']) == 0
 
     def test_ledger_read_but_holding_no_build_row_for_this_plan_publishes_the_scan(self, tmp_path, monkeypatch):
         # The third withholding route, and the one where the scan is demonstrably
