@@ -14,7 +14,7 @@ mode: knowledge
 **Executor is cwd-pass-through. All cwd control is explicit at the call site.** See [standards/cwd-policy.md](standards/cwd-policy.md) for the single uniform cwd-relative resolution rule (ADR-002) and the cwd-unchanged invariant every script obeys.
 
 **Prohibited actions:**
-- Do not execute marketplace scripts directly by path; always use the executor notation — for the sanctioned exception and the bound on it, see the `generate_executor — bootstrap` verb under [Canonical invocations](#canonical-invocations)
+- Do not execute marketplace scripts directly by path; always use the executor notation — for the sanctioned exceptions and the bounds on them, see the `generate_executor — bootstrap` verb under [Canonical invocations](#canonical-invocations) and the direct-path `generate` call in the [required regenerate-and-dispatch smoke](#required-regenerate-and-dispatch-smoke-shipping-a-validator-or-derivation-change)
 - Do not modify `.plan/execute-script.py` manually; regenerate via `/marshall-steward`
 - Do not hard-code PYTHONPATH; the executor manages it automatically
 - Do not rely on ambient cwd for path resolution inside scripts; follow [standards/cwd-policy.md](standards/cwd-policy.md)
@@ -717,7 +717,7 @@ The verification skill recognizes this execution pattern:
 - `python3 .plan/execute-script.py {notation} ...`
 
 **Violation**:
-- `python3 {direct_script_path} ...` — for the sanctioned exception and the bound on it, see the `generate_executor — bootstrap` verb under [Canonical invocations](#canonical-invocations)
+- `python3 {direct_script_path} ...` — for the sanctioned exceptions and the bounds on them, see the `generate_executor — bootstrap` verb under [Canonical invocations](#canonical-invocations) and the direct-path `generate` call in the [required regenerate-and-dispatch smoke](#required-regenerate-and-dispatch-smoke-shipping-a-validator-or-derivation-change)
 
 ## Canonical invocations
 
@@ -751,7 +751,7 @@ python3 .plan/execute-script.py plan-marshall:tools-script-executor:generate_exe
   [--marketplace] [--marketplace-root PATH] [--target TARGET]
 ```
 
-Sanctioned direct-path bootstrap for fresh-clone / stale-cache cases — the narrow exception to "never by direct path". Generates only when the executor is absent (fresh clone), fails verification (corrupt/stale cache), or its embedded `TEMPLATE_SHA256` no longer matches the live template (template-content staleness). A present, valid, template-fresh executor is refused with `action: not_needed`; an unstampable side reports `template_status: unknown` (never a vacuous `fresh`) and still refuses. `template_status` is four-valued: `fresh` (hashes match), `stale` (both hashes known and differ), `unknown` (either side unstampable), and `uncompared` (no hash comparison was attempted — the executor was absent, or it failed structural verification — while the live template hash was resolvable) — `unknown`/`uncompared` never drive a regeneration on their own; both ride the verdict the presence check or the verification half already reached.
+A sanctioned direct-path entry point for fresh-clone / stale-cache cases. Generates only when the executor is absent (fresh clone), fails verification (corrupt/stale cache), or its embedded `TEMPLATE_SHA256` no longer matches the live template (template-content staleness). A present, valid, template-fresh executor is refused with `action: not_needed`; an unstampable side reports `template_status: unknown` (never a vacuous `fresh`) and still refuses. `template_status` is four-valued: `fresh` (hashes match), `stale` (both hashes known and differ), `unknown` (either side unstampable), and `uncompared` (no hash comparison was attempted — the executor was absent, or it failed structural verification — while the live template hash was resolvable) — `unknown`/`uncompared` never drive a regeneration on their own; both ride the verdict the presence check or the verification half already reached.
 
 ### generate_executor — drift
 
