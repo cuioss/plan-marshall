@@ -154,9 +154,7 @@ body_bytes_written: 1234
 body_state: written
 ```
 
-`body_state` is the other half of the pair `add` reports: `add` returns `absent`
-for the stub it allocates, and this verb reports `written` once a body has
-landed, so both verbs answer the same question in the same vocabulary. It is
+`body_state` is the other half of the pair `add` reports (see [add](#add)). It is
 derived from what was actually written — writing an empty body reports `absent`,
 not `written` — and it rides only on a successful write, because an error return
 says nothing about a state nothing reached.
@@ -508,7 +506,7 @@ covering_clause: "manage-lessons/SKILL.md Canonical invocations -> remove"
 covering_input: "remove --coverage-verdict completely_covered with no --covering-clause"
 ```
 
-A retirement taken through `--allow-unreadable` returns the same shape plus the two fields it wrote onto the tombstone, so the response states that the lesson was retired on its *state* rather than on content nobody could read:
+A retirement taken through `--allow-unreadable` returns the same shape plus the two fields it wrote onto the tombstone:
 
 ```toon
 lesson_state: unreadable

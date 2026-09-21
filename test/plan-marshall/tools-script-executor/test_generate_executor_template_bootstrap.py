@@ -31,9 +31,6 @@ subprocess spawns; the decision table is what is pinned here.
 
 import argparse
 import hashlib
-from pathlib import Path
-
-import pytest
 
 from conftest import PROJECT_ROOT, load_script_module
 
