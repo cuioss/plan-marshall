@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-07-21-11-004",
+  "removed_at": "2026-07-25T13:28:25.208621+00:00",
+  "reason": "Fixed - lessons-housekeeping forbids lesson-id citation, routes provenance to tombstone reason. Lessons-triage 2026-07-25",
+  "status": "removed"
+}

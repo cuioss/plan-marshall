@@ -1,0 +1,228 @@
+{
+  "kind": "orchestrator",
+  "title": "Lessons handling 26-08-08",
+  "phase": "closed",
+  "workstreams": [],
+  "plans": [
+    {
+      "id": "PLAN-LH-01",
+      "slug": "derive-verification-emits-an-unroutable-build-class",
+      "workstream": "WS-01",
+      "status": "retired",
+      "plan_marshall_plan_id": "truthful-signals/PLAN-TRUTH-067",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-LH-02",
+      "slug": "a-build-reports-its-own-outcome-falsely",
+      "workstream": "WS-01",
+      "status": "retired",
+      "plan_marshall_plan_id": "truthful-signals/PLAN-TRUTH-027 (lead; spec edit NOT made)",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-LH-03",
+      "slug": "freshness-gate-admits-a-tree-whose-tests-never-ran",
+      "workstream": "WS-02",
+      "status": "retired",
+      "plan_marshall_plan_id": "code-intelligence-substrate/PLAN-CIS-017 (shipped #1279)",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-LH-04",
+      "slug": "vacuous-guards-and-degenerate-zeros",
+      "workstream": "WS-01",
+      "status": "retired",
+      "plan_marshall_plan_id": "truthful-signals/PLAN-TRUTH-045+065 (re-routed; suggested TRUTH-042 had shipped)",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-LH-05",
+      "slug": "review-bot-participation-and-reliability",
+      "workstream": "WS-03",
+      "status": "retired",
+      "plan_marshall_plan_id": "review-apparatus/PLAN-PR-005+013 (distributed across members)",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-LH-06",
+      "slug": "in-house-gates-silent-where-they-claim-coverage",
+      "workstream": "WS-03",
+      "status": "retired",
+      "plan_marshall_plan_id": "review-apparatus/PLAN-PR-011 (became D4 empirical population)",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-LH-07",
+      "slug": "dispatched-leaf-has-no-search-primitive",
+      "workstream": "WS-02",
+      "status": "retired",
+      "plan_marshall_plan_id": "code-intelligence-substrate/PLAN-CIS-002 (merged with review-apparatus-005 as one surface)",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-LH-08",
+      "slug": "cost-and-token-measurement-instruments",
+      "workstream": "WS-02",
+      "status": "retired",
+      "plan_marshall_plan_id": "code-intelligence-substrate/PLAN-CIS-022 +3 specs (2 re-routed against suggestion)",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-LH-09",
+      "slug": "retrospective-instrument-has-dead-sections",
+      "workstream": "WS-02",
+      "status": "retired",
+      "plan_marshall_plan_id": "code-intelligence-substrate/PLAN-CIS-020 (2 of 3 members already there; corroboration only)",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-LH-10",
+      "slug": "finalize-step-ordering-and-instrumentation",
+      "workstream": "WS-01",
+      "status": "retired",
+      "plan_marshall_plan_id": "truthful-signals/PLAN-TRUTH-050 (lead; spec edit NOT made)",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-LH-11",
+      "slug": "plugin-cache-and-executor-regeneration-staleness",
+      "workstream": "WS-01",
+      "status": "retired",
+      "plan_marshall_plan_id": "truthful-signals/PLAN-TRUTH-059 (spec edit MADE)",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-LH-12",
+      "slug": "outline-scope-derivation-is-incomplete",
+      "workstream": "WS-02",
+      "status": "retired",
+      "plan_marshall_plan_id": "code-intelligence-substrate/PLAN-CIS-015 (split made mandatory at orchestrator tier)",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-LH-13",
+      "slug": "a-premise-verified-against-the-wrong-artifact",
+      "workstream": "WS-01",
+      "status": "retired",
+      "plan_marshall_plan_id": "truthful-signals: UNOWNED, new spec wanted (no spec staged)",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-LH-14",
+      "slug": "change-type-and-plan-scoping-under-report-risk",
+      "workstream": "WS-01",
+      "status": "retired",
+      "plan_marshall_plan_id": "truthful-signals: UNOWNED, new spec wanted (no spec staged)",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-LH-15",
+      "slug": "agent-working-discipline-residue",
+      "workstream": "WS-01",
+      "status": "retired",
+      "plan_marshall_plan_id": "truthful-signals/PLAN-TRUTH-016 (lead; spec edit NOT made)",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-LH-16",
+      "slug": "test-authoring-discipline",
+      "workstream": "WS-01",
+      "status": "retired",
+      "plan_marshall_plan_id": "truthful-signals: UNOWNED, new spec wanted (no spec staged)",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-LH-17",
+      "slug": "security-hardening-at-logging-and-provider-boundaries",
+      "workstream": "WS-01",
+      "status": "retired",
+      "plan_marshall_plan_id": "truthful-signals/PLAN-TRUTH-011 (arrived POST-LAUNCH; could not be scoped in)",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-LH-18",
+      "slug": "self-review-completeness",
+      "workstream": "WS-03",
+      "status": "retired",
+      "plan_marshall_plan_id": "review-apparatus/PLAN-PR-018 (turned one incident into a population)",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-LH-19",
+      "slug": "doc-contract-divergence",
+      "workstream": "WS-01",
+      "status": "retired",
+      "plan_marshall_plan_id": "truthful-signals/PLAN-TRUTH-012 (spec edit MADE)",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-LH-20",
+      "slug": "git-worktree-and-footprint-integrity",
+      "workstream": "WS-01",
+      "status": "retired",
+      "plan_marshall_plan_id": "truthful-signals/PLAN-TRUTH-006 (lead; spec edit NOT made)",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-LH-21",
+      "slug": "execute-phase-yield-and-artifact-loss",
+      "workstream": "WS-01",
+      "status": "retired",
+      "plan_marshall_plan_id": "truthful-signals: UNOWNED, new spec wanted (no spec staged)",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-LH-22",
+      "slug": "manage-script-surface-gaps",
+      "workstream": "WS-01",
+      "status": "retired",
+      "plan_marshall_plan_id": "truthful-signals/PLAN-TRUTH-009 (lead; partly SUPERSEDED by msg -016)",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-LH-23",
+      "slug": "consumer-repo-java-cui-domain-lessons",
+      "workstream": "WS-04",
+      "status": "retired",
+      "plan_marshall_plan_id": "DISCARDED by truthful-signals: out of epic scope, belongs in the consumer repos",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-LH-24",
+      "slug": "corpus-retirement-gated-behind-truth-044",
+      "workstream": "WS-04",
+      "status": "retired",
+      "plan_marshall_plan_id": "truthful-signals msg -016: UNOWNED lead (header-less lesson defect; still unfixed)",
+      "pr": "",
+      "landing": ""
+    }
+  ],
+  "resume_anchor": "epic closed - see history.md",
+  "metadata": {},
+  "created": "2026-08-08T15:13:26Z",
+  "updated": "2026-08-27T06:02:46Z"
+}

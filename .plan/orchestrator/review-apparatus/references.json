@@ -1,0 +1,58 @@
+{
+  "repos": [
+    {
+      "name": "plan-marshall",
+      "role": "consumer — triggers reviews, awaits them, classifies participation, gates the merge",
+      "local_checkout": "/Users/oliver/git/plan-marshall",
+      "remote": "cuioss/plan-marshall",
+      "access": "plan-marshall tooling (execute-script.py, ci abstraction)",
+      "key_paths": [
+        "marketplace/bundles/plan-marshall/skills/automatic-review/scripts/review_completeness.py",
+        "marketplace/bundles/plan-marshall/skills/automatic-review/scripts/bot_registry.py",
+        "marketplace/bundles/plan-marshall/skills/automatic-review/scripts/github_re_review.py",
+        "marketplace/bundles/plan-marshall/skills/automatic-review/standards/bot-participation-contract.md",
+        "marketplace/bundles/plan-marshall/skills/automatic-review/standards/pr-agent.md",
+        "marketplace/bundles/plan-marshall/skills/workflow-integration-github/scripts/_github_pr.py"
+      ]
+    },
+    {
+      "name": "pr-agent-settings",
+      "role": "central PR-Agent config — org-level global settings, merged BENEATH any repo-local .pr_agent.toml",
+      "local_checkout": "/Users/oliver/git/pr-agent-settings",
+      "remote": "cuioss/pr-agent-settings",
+      "checkout_state_at_init": "on main, clean, at 765e23f (#13)",
+      "access": "plain git -C + ci abstraction --project-dir",
+      "key_paths": [".pr_agent.toml", "README.adoc"],
+      "discovery_constraint": "repo name is FIXED by PR-Agent's discovery; file must sit at the root of the DEFAULT BRANCH"
+    },
+    {
+      "name": "coderabbit",
+      "role": "central CodeRabbit config — applies to every cuioss repo without its own .coderabbit.yaml",
+      "local_checkout": "/Users/oliver/git/coderabbit",
+      "remote": "cuioss/coderabbit",
+      "checkout_state_at_init": "on branch chore/stop-incremental-review-quota-burn (PR #4, OPEN, FALSIFIED) — NOT main",
+      "access": "plain git -C + ci abstraction --project-dir",
+      "key_paths": [".coderabbit.yaml", "README.md"],
+      "live_ref": "origin/main at 46cd5f7",
+      "warning": "the working tree is 4 commits ahead on an unmerged, falsified branch — read config from origin/main, never from the working tree"
+    },
+    {
+      "name": "cuioss-organization",
+      "role": "reusable workflows — the reviewer caller, the skip guards, the fail-closed empty-review gate",
+      "local_checkout": null,
+      "remote": "cuioss/cuioss-organization",
+      "key_paths": [
+        ".github/workflows/reusable-pr-agent-review.yml",
+        "docs/automatic-review/README.md",
+        "docs/automatic-review/pr-agent.md",
+        "docs/automatic-review/coderabbit.md",
+        "docs/automatic-review/sourcery.md"
+      ],
+      "warning": "changes here fan out to ~21 consumer repos via an org release tag"
+    }
+  ],
+  "open_prs_at_init": [
+    {"repo": "cuioss/coderabbit", "number": 4, "state": "open", "note": "FALSIFIED by plan-marshall#1043; kept for measurement notes only — do not merge as a fix"},
+    {"repo": "cuioss/coderabbit", "number": 3, "state": "open", "note": "drop the AI-agent prompt block and autofix — undecided"}
+  ]
+}

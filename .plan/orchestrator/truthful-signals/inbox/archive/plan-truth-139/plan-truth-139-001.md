@@ -1,0 +1,75 @@
+envelope_version=1
+sender_type=plan
+sender_id=plan-truth-139
+epic=truthful-signals
+kind=candidate-lesson
+created=2026-09-13T14:20:09Z
+
+# Derive the boundary population in a security sweep instead of enumerating it
+
+component: plan-marshall:recipe-security-audit
+category: improvement
+confidence: high
+suggested_epic: truthful-signals
+source_plan: plan-truth-139
+source_pr: 1479
+
+## Context
+
+The `finalize-step-security-audit` step on PR #1479 hardened 4 files and filed 5
+findings, one at error severity. Its substantive work was closing unsanitised TOON
+report boundaries: `read_per_repo_max_slots` returns a raw repository JSON value by
+contract, and three emission sites placed it directly into a reported field, where
+`serialize_toon` quotes a newline-bearing string but escapes nothing inside the
+quotes — so the second and later lines land at column zero and `parse_toon` reads
+them as sibling envelope keys. A verified round-trip probe turned a `config migrate`
+refusal (`machine_config_modified: false`) into a reported `status: success /
+outcome: migrated`, and a `build_queue` `admission: blocked` into `admitted`.
+
+The audit introduced `_machine_config.report_safe` for exactly this purpose and
+applied it at the boundaries it had found. Then it reported clean.
+
+CodeRabbit found the fifth boundary: finding `266f33`, `build_queue.py:1229`,
+CWE-116 — a Major. It sat in a function whose declared mirror already routed
+through `report_safe`, so the helper the audit had just written was one line away
+from the site it missed.
+
+## Root cause
+
+The sweep's population was enumerated, not derived. Nothing in the audit computed
+the set of emission boundaries that reach a reported field from a foreign-origin
+read; the boundaries were found by inspection, and inspection found four of five.
+A clean verdict was then published over a population the sweep never bounded — the
+`derive completeness, never assert it` archetype, committed inside a sweep whose
+entire value is completeness.
+
+The review retrospective labels 10 of this PR's 15 counted escapes
+`gate_addressable` for this reason: an existing gate class could reach them. The
+remaining 5 are exception-path and lock-ordering arguments no gate class reaches,
+which is a genuine structural limit and a different problem.
+
+## Proposed action
+
+Give the audit's report-boundary check a derived population rather than an
+enumerated one: identify the emission sinks structurally (fields placed into a TOON
+envelope, a uniform-array cell, `sys.stderr`, or a log record) whose value
+originates from a read declared as returning raw foreign content, and require each
+member to route through the sanitiser. Publish the population size beside the
+verdict, so `0 unconverted of N` is legible and a shrinking `N` is visible.
+
+The same discipline is already stated for set-guarding detectors elsewhere in this
+corpus: a check that can return 0 from an empty population must publish the
+population size. This audit is an instance of that rule that does not yet obey it.
+
+## Evidence
+
+- aspect: request_result_alignment — findings `a97285` (error severity, three
+  emission sites fixed) and `d6f3ca` (the cross-repository leg: a foreign
+  checkout's queue entry reaching another repository's envelope and stderr)
+- aspect: log_analysis — the audit's own step record: `4 files hardened, 5 findings
+  (1 error: TOON field injection)` at `head_at_completion 7e895b76`
+- review-retrospective.md § "The gate-versus-review contrast that IS substantiated"
+  — `266f33` is "the lone unconverted member of a set the audit had otherwise
+  closed, in a function whose declared mirror already routed through report_safe"
+- review-retrospective.md § Recommendations item 5 — "It closed 4 of 5 members of a
+  set and reported clean"

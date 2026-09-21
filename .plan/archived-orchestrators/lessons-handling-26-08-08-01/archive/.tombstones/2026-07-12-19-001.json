@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-07-12-19-001",
+  "removed_at": "2026-07-12T22:35:37.080972+00:00",
+  "reason": "holder_is_dead sibling sink now hardened with is_valid_plan_id() before path construction (plan harden-holder-is-dead-path-sink, PR #883); concrete guarded failure mode can no longer occur. General sweep-the-sink-class residue tracked via deferred _scope_fn path-traversal topic; source-doc promotion blocked on protected main.",
+  "status": "removed"
+}

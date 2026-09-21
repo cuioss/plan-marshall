@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-07-21-08-001",
+  "removed_at": "2026-07-21T06:57:51.043894+00:00",
+  "reason": "residue promoted to ref-code-quality error-handling.md Symmetric-Diagnostic-Fields-Across-Sibling-Branches section, defect fixed in-scope during this plan's TASK-004 PR review fix, plan explicit-execution-mode",
+  "status": "removed"
+}

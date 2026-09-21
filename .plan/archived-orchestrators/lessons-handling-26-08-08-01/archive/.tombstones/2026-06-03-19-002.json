@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-06-03-19-002",
+  "removed_at": "2026-06-09T07:00:59.954627+00:00",
+  "reason": "Fixed: clock pinned via _pin_start_time_to_past; deterministic span assertions in test_manage_metrics.py",
+  "status": "removed"
+}

@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-05-30-22-001",
+  "removed_at": "2026-05-30T20:52:19.234096+00:00",
+  "reason": "Self-reclassified as caller error (omitted --archived-plan-path), not a collect-fragments defect; no code change warranted. Removed per retrospective sub-agent recommendation.",
+  "status": "removed"
+}

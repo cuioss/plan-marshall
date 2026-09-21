@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-07-21-14-001",
+  "removed_at": "2026-07-22T10:04:42.785152+00:00",
+  "reason": "pyproject now routes through the shared factory cmd_run (create_execute_handlers with wrap_execute_fn) - routing half confirmed via 4 new regression tests (a-d), residue (single shared cmd_run + in-process-executor seam) already promoted into doc/developer/build-architecture.adoc by this plan (plan pyproject-routing-integration)",
+  "status": "removed"
+}

@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-07-13-12-002",
+  "removed_at": "2026-07-13T19:51:03.853909+00:00",
+  "reason": "structural compose-time execution_tier guard shipped and verified live, superseding the doc-only leaf-no-background invariant (D6, plan-6-prompt-reachability #893)",
+  "status": "removed"
+}

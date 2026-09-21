@@ -1,0 +1,721 @@
+{
+  "kind": "orchestrator",
+  "title": "Automated PR review apparatus reliability",
+  "phase": "orchestrating",
+  "workstreams": [
+    "WS-01-await-and-participation-detection",
+    "WS-02-org-workflow-gates",
+    "WS-03-review-signal-efficacy",
+    "WS-04-merge-barrier-and-landing-channel"
+  ],
+  "plans": [
+    {
+      "id": "PLAN-PR-014",
+      "slug": "a-crashed-participation-gate-records-a-pass",
+      "workstream": "WS-04",
+      "status": "shipped",
+      "plan_marshall_plan_id": "crashed-participation-gate-records-a-pass",
+      "pr": "1070",
+      "landing": "landings/PLAN-PR-014.md"
+    },
+    {
+      "id": "PLAN-PR-015",
+      "slug": "a-barrier-override-is-not-bound-to-the-head-it-was-granted-against",
+      "workstream": "WS-04",
+      "status": "shipped",
+      "plan_marshall_plan_id": "barrier-override-not-head-bound",
+      "pr": "1077",
+      "landing": "landings/PLAN-PR-015.md"
+    },
+    {
+      "id": "PLAN-PR-016",
+      "slug": "a-correct-review-scores-as-maximally-wrong",
+      "workstream": "WS-03",
+      "status": "shipped",
+      "plan_marshall_plan_id": "correct-review-scores-as-maximally-wrong",
+      "pr": "1078",
+      "landing": "landings/PLAN-PR-016.md"
+    },
+    {
+      "id": "PLAN-PR-001",
+      "slug": "wait-for-comments-counts-rows",
+      "workstream": "WS-01",
+      "status": "shipped",
+      "plan_marshall_plan_id": "wait-for-comments-counts-rows",
+      "pr": "1071",
+      "landing": "landings/PLAN-PR-001.md"
+    },
+    {
+      "id": "PLAN-PR-009",
+      "slug": "merge-queue-enqueue-does-not-take",
+      "workstream": "WS-04",
+      "status": "shipped",
+      "plan_marshall_plan_id": "merge-queue-enqueue-does-not-take",
+      "pr": "1087",
+      "landing": "landings/PLAN-PR-009.md"
+    },
+    {
+      "id": "PLAN-PR-022",
+      "slug": "a-generic-charter-cannot-see-a-language-specific-defect",
+      "workstream": "WS-03",
+      "status": "shipped",
+      "plan_marshall_plan_id": "generic-charter-language-specific-defect",
+      "pr": "1130",
+      "landing": "landings/PLAN-PR-022.md"
+    },
+    {
+      "id": "PLAN-PR-013",
+      "slug": "participation-credited-from-a-superseded-commit",
+      "workstream": "WS-01",
+      "status": "shipped",
+      "plan_marshall_plan_id": "cloud/010-participation-credited-from-a-superseded-commit",
+      "pr": "1141",
+      "landing": "landings/PLAN-PR-013.md"
+    },
+    {
+      "id": "PLAN-PR-023",
+      "slug": "a-foreign-task-reports-done-with-no-pr-anywhere",
+      "workstream": "WS-02",
+      "status": "shipped",
+      "plan_marshall_plan_id": "cloud/020-a-foreign-task-reports-done-with-no-pr-anywhere",
+      "pr": "1151",
+      "landing": "landings/PLAN-PR-023.md"
+    },
+    {
+      "id": "PLAN-PR-017",
+      "slug": "a-workflow-doc-prescribes-a-flag-no-script-declares",
+      "workstream": "WS-03",
+      "status": "shipped",
+      "plan_marshall_plan_id": "cloud/030-a-workflow-doc-prescribes-a-flag-no-script-declares",
+      "pr": "1157",
+      "landing": "landings/PLAN-PR-017.md"
+    },
+    {
+      "id": "PLAN-PR-006",
+      "slug": "canned-no-op-indistinguishable-from-a-review",
+      "workstream": "WS-01",
+      "status": "shipped",
+      "plan_marshall_plan_id": "cloud/040-canned-no-op-indistinguishable-from-a-review",
+      "pr": "1165",
+      "landing": "landings/PLAN-PR-006.md"
+    },
+    {
+      "id": "PLAN-PR-021",
+      "slug": "coverage-shortfall-disclosed-against-the-roster-not-the-required-set",
+      "workstream": "WS-03",
+      "status": "shipped",
+      "plan_marshall_plan_id": "cloud/050-coverage-shortfall-disclosed-against-the-roster-not-the-required-set",
+      "pr": "1170",
+      "landing": "landings/PLAN-PR-021.md"
+    },
+    {
+      "id": "PLAN-PR-018",
+      "slug": "self-review-rescans-the-whole-surface-every-round",
+      "workstream": "WS-03",
+      "status": "retired",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-PR-020",
+      "slug": "a-prose-routing-table-is-not-an-enforcement-boundary",
+      "workstream": "WS-04",
+      "status": "shipped",
+      "plan_marshall_plan_id": "cloud/060-a-prose-routing-table-is-not-an-enforcement-boundary",
+      "pr": "1182",
+      "landing": "landings/PLAN-PR-020.md"
+    },
+    {
+      "id": "PLAN-PR-019",
+      "slug": "post-responses-retransmits-already-sent-replies",
+      "workstream": "WS-03",
+      "status": "shipped",
+      "plan_marshall_plan_id": "cloud/070-post-responses-retransmits-already-sent-replies",
+      "pr": "1187",
+      "landing": "landings/PLAN-PR-019.md"
+    },
+    {
+      "id": "PLAN-PR-007",
+      "slug": "absent-names-two-states-with-opposite-remedies",
+      "workstream": "WS-01",
+      "status": "shipped",
+      "plan_marshall_plan_id": "absent-names-two-states-with-opposite-remedies",
+      "pr": "1118",
+      "landing": "landings/PLAN-PR-007.md"
+    },
+    {
+      "id": "PLAN-PR-010",
+      "slug": "landing-message-carries-the-outcome-post-merge",
+      "workstream": "WS-04",
+      "status": "shipped",
+      "plan_marshall_plan_id": "cloud/080-landing-message-carries-the-outcome-post-merge",
+      "pr": "1196",
+      "landing": "landings/PLAN-PR-010.md"
+    },
+    {
+      "id": "PLAN-PR-012",
+      "slug": "feed-pr-findings-back-into-local-review",
+      "workstream": "WS-03",
+      "status": "shipped",
+      "plan_marshall_plan_id": "cloud/090-feed-pr-findings-back-into-local-review",
+      "pr": "1204",
+      "landing": "landings/PLAN-PR-012.md"
+    },
+    {
+      "id": "PLAN-PR-003",
+      "slug": "coderabbit-ai-agent-block-strip-vs-extract",
+      "workstream": "WS-03",
+      "status": "shipped",
+      "plan_marshall_plan_id": "cloud/100-coderabbit-ai-agent-block-strip-vs-extract",
+      "pr": "1212",
+      "landing": "landings/PLAN-PR-003.md"
+    },
+    {
+      "id": "PLAN-PR-005",
+      "slug": "participation-derived-from-a-lossy-view",
+      "workstream": "WS-01",
+      "status": "shipped",
+      "plan_marshall_plan_id": "cloud/110-participation-derived-from-a-lossy-view",
+      "pr": "1219",
+      "landing": "landings/PLAN-PR-005.md"
+    },
+    {
+      "id": "PLAN-PR-008",
+      "slug": "review-barrier-deadlocks-on-a-refusing-bot",
+      "workstream": "WS-04",
+      "status": "shipped",
+      "plan_marshall_plan_id": "cloud/120-review-barrier-deadlocks-on-a-refusing-bot",
+      "pr": "1241",
+      "landing": "landings/PLAN-PR-008.md"
+    },
+    {
+      "id": "PLAN-PR-002",
+      "slug": "org-empty-review-guard-too-broad",
+      "workstream": "WS-02",
+      "status": "parked",
+      "plan_marshall_plan_id": "org-empty-review-guard-too-broad",
+      "pr": "cuioss-organization#235",
+      "landing": "landings/PLAN-PR-002.md"
+    },
+    {
+      "id": "PLAN-PR-011",
+      "slug": "review-bots-catch-what-in-house-gates-cannot",
+      "workstream": "WS-03",
+      "status": "shipped",
+      "plan_marshall_plan_id": "cloud/130-review-bots-catch-what-in-house-gates-cannot",
+      "pr": "1239",
+      "landing": "landings/PLAN-PR-011.md"
+    },
+    {
+      "id": "PLAN-PR-004",
+      "slug": "pr-agent-charter-unverified-in-effect",
+      "workstream": "WS-03",
+      "status": "retired",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-PR-027",
+      "slug": "a-failing-ci-call-reports-success-and-a-doc-prescribes-the-rejection",
+      "workstream": "WS-04",
+      "status": "shipped",
+      "plan_marshall_plan_id": "a-failing-ci-call-reports-success",
+      "pr": "1356",
+      "landing": "landings/PLAN-PR-027.md"
+    },
+    {
+      "id": "PLAN-PR-024",
+      "slug": "participation-credit-anchored-to-the-merge-candidate",
+      "workstream": "WS-01",
+      "status": "shipped",
+      "plan_marshall_plan_id": "participation-credit-anchored-to-merge-candidate",
+      "pr": "1349",
+      "landing": "landings/PLAN-PR-024.md"
+    },
+    {
+      "id": "PLAN-PR-025",
+      "slug": "a-refusal-is-recorded-as-a-refusal-and-the-contract-says-so",
+      "workstream": "WS-01",
+      "status": "retired",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-PR-025A",
+      "slug": "a-refusal-is-recorded-as-a-refusal-the-record",
+      "workstream": "WS-01",
+      "status": "shipped",
+      "plan_marshall_plan_id": "a-refusal-is-recorded-as-a-refusal-the-record",
+      "pr": "1368",
+      "landing": "landings/PLAN-PR-025A.md"
+    },
+    {
+      "id": "PLAN-PR-044",
+      "slug": "a-misconfigured-reviewer-name-reads-as-a-missing-review",
+      "workstream": "WS-01",
+      "status": "shipped",
+      "plan_marshall_plan_id": "misconfigured-reviewer-name-reads-missing-review",
+      "pr": "1392",
+      "landing": "landings/PLAN-PR-044.md"
+    },
+    {
+      "id": "PLAN-PR-042",
+      "slug": "the-required-reviewer-returns-an-empty-list-on-a-correct-full-review",
+      "workstream": "WS-03",
+      "status": "shipped",
+      "plan_marshall_plan_id": "required-reviewer-returns-empty-list",
+      "pr": "1410",
+      "landing": "landings/PLAN-PR-042.md"
+    },
+    {
+      "id": "PLAN-PR-046",
+      "slug": "a-clean-review-arrives-in-a-shape-the-registry-does-not-credit",
+      "workstream": "WS-01",
+      "status": "shipped",
+      "plan_marshall_plan_id": "plan-pr-046",
+      "pr": "1477",
+      "landing": "landings/PLAN-PR-046.md"
+    },
+    {
+      "id": "PLAN-PR-043",
+      "slug": "the-re-trigger-selector-cannot-reach-the-bot-that-gates",
+      "workstream": "WS-01",
+      "status": "parked",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-PR-045",
+      "slug": "a-bot-that-never-gets-currency-tested-is-credited-on-a-superseded-review",
+      "workstream": "WS-01",
+      "status": "parked",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-PR-025B",
+      "slug": "arm-the-refusal-recovery-that-has-never-run",
+      "workstream": "WS-01",
+      "status": "shipped",
+      "plan_marshall_plan_id": "arm-the-refusal-recovery-that-has-never-run",
+      "pr": "1433",
+      "landing": "landings/PLAN-PR-025B.md"
+    },
+    {
+      "id": "PLAN-PR-032",
+      "slug": "apply-the-cloud-plan-lane-contract-amendments",
+      "workstream": "WS-02",
+      "status": "shipped",
+      "plan_marshall_plan_id": "apply-the-cloud-plan-lane-contract-amendments",
+      "pr": "1416",
+      "landing": "landings/PLAN-PR-032.md"
+    },
+    {
+      "id": "PLAN-PR-029",
+      "slug": "the-comment-pipeline-loses-findings-and-repeats-replies",
+      "workstream": "WS-03",
+      "status": "parked",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-PR-030",
+      "slug": "the-instrument-that-measures-our-gates-can-report-them-perfect",
+      "workstream": "WS-03",
+      "status": "parked",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-PR-026",
+      "slug": "nobody-reviewed-and-reviewed-clean-are-still-one-signal",
+      "workstream": "WS-03",
+      "status": "parked",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-PR-034",
+      "slug": "a-refusal-nobody-recognises-is-filed-as-a-finding",
+      "workstream": "WS-01",
+      "status": "shipped",
+      "plan_marshall_plan_id": "a-refusal-nobody-recognises-is-filed-as-a-finding",
+      "pr": "1344",
+      "landing": "landings/PLAN-PR-034.md"
+    },
+    {
+      "id": "PLAN-PR-035",
+      "slug": "the-response-path-drops-answers-and-nothing-measures-it",
+      "workstream": "WS-03",
+      "status": "parked",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-PR-036",
+      "slug": "the-exit-code-convention-stops-at-the-skill-boundary",
+      "workstream": "WS-03",
+      "status": "shipped",
+      "plan_marshall_plan_id": "exit-code-convention-stops-at-the-skill-boundary",
+      "pr": "1423,1429",
+      "landing": "landings/PLAN-PR-036.md"
+    },
+    {
+      "id": "PLAN-PR-031",
+      "slug": "the-record-of-what-we-did-is-itself-unverified",
+      "workstream": "WS-03",
+      "status": "parked",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-PR-028",
+      "slug": "a-landing-message-that-cannot-outrun-its-merge",
+      "workstream": "WS-04",
+      "status": "retired",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-PR-033",
+      "slug": "the-foreign-gate-population-and-branch-f-recovery",
+      "workstream": "WS-04",
+      "status": "shipped",
+      "plan_marshall_plan_id": "the-foreign-gate-population-and-branch-f-recovery",
+      "pr": "1473",
+      "landing": "landings/PLAN-PR-033.md"
+    },
+    {
+      "id": "PLAN-PR-037",
+      "slug": "a-disposition-bucket-that-contradicts-its-own-text",
+      "workstream": "WS-03",
+      "status": "parked",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-PR-038",
+      "slug": "review-packs-become-published-artifacts",
+      "workstream": "WS-03",
+      "status": "shipped",
+      "plan_marshall_plan_id": "review-packs-become-published-artifacts",
+      "pr": "1388",
+      "landing": "landings/PLAN-PR-038.md"
+    },
+    {
+      "id": "PLAN-PR-039",
+      "slug": "the-workflow-assembles-the-charter",
+      "workstream": "WS-02",
+      "status": "parked",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-PR-040",
+      "slug": "our-own-comment-is-ingested-as-a-review-finding",
+      "workstream": "WS-03",
+      "status": "parked",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-PR-041",
+      "slug": "the-model-ladder-leads-with-a-superseded-flash",
+      "workstream": "WS-03",
+      "status": "shipped",
+      "plan_marshall_plan_id": "NO_PLAN",
+      "pr": "cuioss/pr-agent-settings#15",
+      "landing": "landings/PLAN-PR-041.md"
+    },
+    {
+      "id": "PLAN-PR-047",
+      "slug": "the-counting-stage-reasons-from-inputs-that-were-never-persisted",
+      "workstream": "WS-03",
+      "status": "parked",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-PR-048",
+      "slug": "a-bot-that-could-not-review-is-scored-as-one-that-reviewed",
+      "workstream": "WS-01",
+      "status": "parked",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-PR-049",
+      "slug": "the-self-review-loop-cannot-account-for-its-own-findings",
+      "workstream": "WS-03",
+      "status": "parked",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-PR-050",
+      "slug": "the-finalize-record-of-a-review-cannot-be-read-back",
+      "workstream": "WS-03",
+      "status": "parked",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-PR-051",
+      "slug": "the-participation-gate-rejects-its-own-callers",
+      "workstream": "WS-03",
+      "status": "parked",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-PR-052",
+      "slug": "the-refusal-surface-lies-in-four-ways",
+      "workstream": "WS-01",
+      "status": "parked",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-PR-053",
+      "slug": "the-ledger-records-when-we-looked-not-what-was-reviewed",
+      "workstream": "WS-01",
+      "status": "parked",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-PR-054",
+      "slug": "the-foreign-pr-gate-half",
+      "workstream": "WS-04",
+      "status": "parked",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-PR-055",
+      "slug": "the-landing-and-pr-body-half",
+      "workstream": "WS-04",
+      "status": "parked",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-PR-056",
+      "slug": "the-refusal-recognition-and-re-trigger-stack",
+      "workstream": "WS-01",
+      "status": "parked",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-PR-057",
+      "slug": "a-bot-that-could-not-review-and-the-refusal-that-says-so",
+      "workstream": "WS-01",
+      "status": "parked",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-PR-058",
+      "slug": "the-coverage-ledger-and-the-gate-its-callers-cannot-invoke",
+      "workstream": "WS-01",
+      "status": "parked",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-PR-059",
+      "slug": "what-the-pipeline-loses-on-the-way-in",
+      "workstream": "WS-03",
+      "status": "parked",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-PR-060",
+      "slug": "what-the-pipeline-drops-on-the-way-out",
+      "workstream": "WS-03",
+      "status": "parked",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-PR-061",
+      "slug": "reviewed-at-all-and-the-numbers-computed-from-it",
+      "workstream": "WS-03",
+      "status": "parked",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-PR-062",
+      "slug": "the-instruments-that-measure-our-own-gates",
+      "workstream": "WS-03",
+      "status": "parked",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-PR-063",
+      "slug": "the-finalize-record-and-the-disposition-it-carries",
+      "workstream": "WS-03",
+      "status": "parked",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-PR-064",
+      "slug": "a-landing-that-cannot-outrun-its-merge-restored",
+      "workstream": "WS-04",
+      "status": "parked",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-PR-065",
+      "slug": "the-settings-repo-accumulates-and-never-lands",
+      "workstream": "WS-02",
+      "status": "shipped",
+      "plan_marshall_plan_id": "pr-065-settings-repo-accumulates-never-lands",
+      "pr": "1491",
+      "landing": "landings/PLAN-PR-065.md"
+    },
+    {
+      "id": "PLAN-PR-066",
+      "slug": "the-charter-is-assembled-at-run-time-and-enabled-per-repo",
+      "workstream": "WS-02",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-PR-067",
+      "slug": "the-comment-pipeline-on-the-way-in",
+      "workstream": "WS-03",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-PR-068",
+      "slug": "the-response-path-and-what-it-drops",
+      "workstream": "WS-03",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-PR-069",
+      "slug": "refusal-recognition-and-the-rate-window",
+      "workstream": "WS-01",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-PR-070",
+      "slug": "participation-and-what-the-gate-may-credit",
+      "workstream": "WS-01",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-PR-071",
+      "slug": "reviewed-at-all-and-the-numbers",
+      "workstream": "WS-03",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-PR-072",
+      "slug": "the-findings-store-and-its-dispositions",
+      "workstream": "WS-03",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-PR-073",
+      "slug": "the-landing-record-and-the-pr-body",
+      "workstream": "WS-04",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-PR-074",
+      "slug": "the-merge-gate-and-the-finalize-dispatcher",
+      "workstream": "WS-04",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-PR-075",
+      "slug": "the-telemetry-channels-of-finalize",
+      "workstream": "WS-04",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-PR-076",
+      "slug": "the-retrospective-and-what-it-can-establish",
+      "workstream": "WS-03",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    }
+  ],
+  "resume_anchor": "=== 2026-09-18 CLEANUP + RESTART PREP DONE. HEAD has MOVED to 7242b33ef (was 7a028157e) \u2014 every stamped verdict is checked_at 7a028157e and is now STALE: reported, never promoted. restart_verdict READY (5/5 scored, sampled 2026-09-18T08:51:08Z, inbox 0 queued / 341 archived). R = 0 of N = 2. ===\nNEXT ACTION ON RESTART: (a) PLAN-PR-066 remains the ONE emitted plan awaiting operator-confirmed launch (13 deliverables incl. D11 rename + D12 settings-repo docs rewrite); (b) run `next` for the SECOND slot \u2014 it is usable for the first time: overlap rows fell 5545 -> 2 and only 066/069 (cuioss-review-bot.md) and 067/068 (github_pr read vs write) collide; PLAN-PR-075 is disjoint from everything; (c) \u26d4 do NOT emit a parked PLAN-PR-056..064 \u2014 they are pointer chains now, not work.\n\u2b50 THE SLOT MATH (re-derived 2026-09-18 after the component re-cut): N = 2, R = 0. 10 staged component plans + PLAN-PR-066. Every deliverable body still lives in a RETIRED source spec \u2014 a successor points at the parked theme spec, which points at the original. \u26d4 Never retype a body; follow the chain. ORCHESTRATOR HOUSEKEEPING now owns 7 ex-deliverables that reach no repository diff (epic.md Open Defects) \u2014 do them in a cleanup pass, not a plan.\n\u26d4\u26d4 THE PLUGIN PIN IS SPLIT AGAIN (2026-09-18, double-sampled): executor MARSHALL_VERSION 0.1.1677 vs registry installPath 0.1.1670 on 18/18 entries; sole unmarked dir is 0.1.1670 on 10/10 bundles. GATE executor == installPath FAILS. \u26d4 REPAIR IS OPERATOR-ONLY \u2014 the classifier refused even a dry run (Self-Modification). Scripts are staged OUTSIDE the session scratchpad at ~/.claude/plugin-pin-repair/: run `! python3 ~/.claude/plugin-pin-repair/repair_1_markers.py --apply` (markers FIRST), then `! python3 ~/.claude/plugin-pin-repair/repair_2_registry.py --apply`, then a FULL RESTART \u2014 /reload-plugins does NOT re-seat skill bodies. \u26a0 Re-read both versions before running: the executor regenerates on any /plan-marshall preflight, so TARGET in both scripts may need updating.\n\u26d4\u26d4 HIGHEST-RISK OPEN ITEM, unchanged: THE SHIPPED MARKER GATE IS UNEXERCISED AND FAILS CLOSED. `recent_review_start` is ABSENT from CodeRabbit live summary comments, and `_is_participation_evidence` gates content with a BARE substring test over the whole body (any occurrence anywhere satisfies it \u2014 quoted PR text included). A verdict comment that does not match resolves a clean review `absent`, which BLOCKS A MERGE. CodeRabbit raised it twice (b131a3, c847ec), both taken_into_account, never disputed. \u26d4 The decline was CORRECT \u2014 do not anchor against an unsampled layout. SAMPLE FIRST: PLAN-PR-058 D0 owns it and must publish the sampled population with its size.\n\u2b50\u2b50 THE PACK SYSTEM, VERIFIED FIRST-PARTY 2026-09-14 \u2014 do not re-derive: generation is DETERMINISTIC AND NEEDS NO LLM (harvests `## Enforcement` bullets per domain, MAX_DOMAIN_RULES=12, MAX_CATEGORY_BULLETS=10), fires automatically on every push to main touching marketplace/bundles/** or marketplace/targets/**, and REPLACES packs/ wholesale. 8 artifacts, 12534 bytes total on pr-agent-settings main. \u26d4 SMALL PACKS ARE A MEASUREMENT OF THE SOURCE SKILLS, NOT A GENERATOR DEFECT \u2014 operator confirmed correct and OUT OF SCOPE. \u26d4\u26d4 THE CONSUMER SIDE DOES NOT EXIST: cuioss-organization reusable-pr-agent-review.yml v0.27.0 references NEITHER project.yml NOR packs/ (grep count 0), so this repo pr-agent block is INERT CONFIGURATION. That is exactly what PLAN-PR-066 builds.\n\u2b50 PLAN-PR-066 OPERATOR RULINGS, settled at staging 2026-09-14 \u2014 do not re-litigate: an `enabled` flag in .github/project.yml with ABSENT = DISABLED (shaped like the existing sonar.enabled key); \u26d4 disabled means THE CHARTER IT HAS TODAY, never NO CHARTER \u2014 the flag governs pack ASSEMBLY only; the spine stays unselectable. Rollout is opt-in per repo over a DERIVED population, never a sweep.\n\u26d4 THE QUEUE CANNOT EXPRESS `retired` \u2014 VALID_STATUS_VOCABULARY is {staged, launched, running, parked, shipped, landed}; 20 superseded specs are recorded `parked`, which is SAFE (next walks staged only) but NOT TRUE. Real status lives in each spec header, the epic.md redistribution table, and decision.log. Filed to truthful-signals as review-apparatus-036.md.\n\u26d4 FOUR CONSECUTIVE LANDINGS DIVERGED DECLARED-vs-REALIZED, and #1491 diverged in BOTH directions (19 declared / 13 realized, not nested; 4 declared-but-never-touched). \u2b50 Over-declaration is the worse half for the gate: it sequences siblings behind files nothing ever claims. `reconcile-scope` detects the drift and NOTHING IN FINALIZE CALLS IT \u2014 unowned.\n\u26d4 #1491 MERGED ON A RECORDED REVIEW BYPASS (operator decision, empty rosters + skip-bot-review). `0 comments found` means NOBODY LOOKED \u2014 never read it as evidence of quality. That conflation is what PLAN-PR-061 exists to end.\nPHASE A 2026-09-15: `corpus enumerate` 68/68 BOTH directions, 0 rows_without_spec, 0 specs_without_row, 0 unreadable. Tally 34 shipped / 20 parked / 10 staged / 4 retired = 68. A1 BY DERIVATION: 218 paths moved since 77cb2e251 and ZERO were deleted or renamed, so no staged spec can have been invalidated by a retired path \u2014 the discriminator is the RETIRED-path set, not the moved count. A2 nothing retired (no positive account). A3 nothing to apply: blocking_count 0 over 389 claims, 68/68 claim sections parsed, 0 unreadable; the 3 prose specs are named and deliberate. A4 no duplication action. A5 redistribution DECLINED \u2014 applied in full 2026-09-12, and PLAN-PR-066 absorbed PLAN-PR-039 on 2026-09-14.\nPHASE B: the 2026-09-13 dated block was relocated VERBATIM to settled.md; nothing dropped, still-live items carried forward here. compact regenerated the derivable blocks; invariants re-checked after a pointer correction (see below); unreachable_count 0.\n\u26d4 A POINTER DEFECT I INTRODUCED AND THE INVARIANT CAUGHT: the first version of this anchor named the relocation heading in an ABBREVIATED form with an ellipsis, which matches no heading in settled.md, and `relocated_pointer_reachable` came back VIOLATED over 10 pointers. \u2b50 Cite a relocation heading EXACTLY and in full \u2014 an abbreviated pointer is an unreachable one.\nPHASE C `archive_drain: refused` \u2014 the PERMANENT documented default. No EPIC-WIDE quiescence signal exists; closed_senders is per-sender only and the sender population is open. \u26d4 Never derive quiescence from a timer or a merge landing.\n\u26a0 INBOX IS AN ACTIVE CHANNEL: 26 messages drained across the last three sessions from five distinct senders (plan-pr-046, pr-065, truthful-signals, plan-truth-139, next-level). An empty queue is the EMPTY zero, never `finished` \u2014 no sender has filed a stream-end.\n\u2705 TIER WATCH CLOSED 2026-09-15 (operator): premise refuted \u2014 already hybrid (CodeRabbit + Sourcery Tier 1, pr-agent Tier 2, finalize self-review). CodeRabbit stays REQUIRED until pr-agent reaches similar quality, measured by review-practice.md \u00a7 1; corpus pass findings/2026-09-15-pr-agent-vs-coderabbit-vs-sourcery.md says NOT met (152/156 guides canned, paired recall 4/123). Next corpus pass lower bound: 2026-09-15T09:50:16Z.\n\u26d4 NEW 2026-09-18 (drain): inbox emptied \u2014 post-run-quality-001 forwarded four reviewer-quality lessons, ALL FOUR already absorbed in the same-day lessons pass (drain record on PLAN-PR-072, no new deliverable; the bot_states persisted-carrier seam it names IS 072 D2 consumed by 071 D1); truthful-signals-059 staged as PLAN-PR-076 D4 (the EXTERNAL loop re-found its own remediation residue in 2 of 3 rounds on #1501) with its two cheap rules written into review-practice.md \u00a7 10. Still open from 2026-09-15: review-practice.md \u00a7 1 gating table is STALE (says CodeRabbit optional); the architecture search --content .github blind spot is unfiled; PLAN-PR-066 D12 carries the settings-repo docs REWRITE that PLAN-PR-065 falsely recorded as done.\n\u26d4 STILL OWED: TokenSheriff permanently merge-blocked (required_bots names the retired pr-agent kind); two ADR proposals await confirmation (79a483); the deploy-target/R4 divergence is DECIDED (skill adopts the executor invocation, filed as review-apparatus-039.md) and needs the ./pw population DERIVED rather than the single site fixed.\n\n> \u21aa This pass relocated one anchor block to `settled.md` \u00a7 \"Relocated resume-anchor blocks (2026-09-15 cleanup, operator-confirmed)\"\n>   \u2014 35 blocks are now relocated in total; the 2026-09-13 and 2026-09-04 passes each have their own section in that file, listed in its header.\n>   \u26d4 Read them before re-deriving anything about 2026-09-04/08/13 \u2014 they carry the refutations.\n\n\u26d4 STANDING RULES AND DO-NOT-RE-DERIVE NOTES \u2014 kept INLINE verbatim below, deliberately NOT relocated:\n=== \u26d4\u26d4 OPERATOR-CONFIRMED 2026-08-25: N = 1 STANDS. DO NOT DO PAIRING ANALYSIS. ===\nIntra-epic parallel-run review is RETIRED. No overlap matrices, no disjointness comparisons between two staged specs of this epic, do NOT re-derive the must-not-run-concurrently bullets. At N = 1 the disjointness test is satisfied BY CONSTRUCTION whenever R = 0. A FULL SLOT IS STEADY STATE, NEVER A SHORTFALL TO FIX.\n\u26a0 SUPERSEDED IN PART 2026-09-08: the knob is now N = 2 (metadata parallelization_scope), so pairing IS derived again \u2014 but only from the parser (corpus surfaces + corpus cross-check), never by hand-built overlap matrices. The three classes below still bind.\n\u2b50 THREE CLASSES SURVIVE - full reading key in epic.md section Sequencing constraints:\n  A. ORDERING BINDS: PR-024 before PR-025 - PR-024 before PR-031 - PR-030 before PR-031 - PR-038 before PR-039/066 - PR-064 (ex-028) after PR-033 (landed).\n  B. OWNERSHIP BINDS: 030 G7 claimed by BOTH PR-025 D3 and PR-027 D5. A spec-correctness defect. SETTLE IT before either is emitted.\n  C. CROSS-EPIC IS THE ONLY LIVE COLLISION QUESTION: N = 2 is EPIC-LOCAL. Three orchestrators still put concurrent plans in the repo. manage-status list + source_id before every emit REMAINS MANDATORY.\n\u26d4 THE TRAP: C is easy to lose while retiring D, because both are worded as collisions. Discriminator = WHOSE LEDGER the other plan lives in.\n\u2705 ADJACENCY WATCH RETIRED as UNRESOLVABLE under this configuration, not answered (n=2, no negative control). Reopen before the first pairing if the knob is ever raised.\n\n=== \u2b50\u2b50 PLAN-PR-038 + PLAN-PR-039 ARCHITECTURE - SETTLED WITH THE OPERATOR, do NOT re-litigate ===\n- Packs are GENERATED, never hand-written, derived from the skill tree (discover_domains keys on *-security / arch-gate-* / ext-triage-*). Seven derive today plus the spine; all eight land in pr-agent-settings packs/.\n- They become PUBLISHED ARTIFACTS in cuioss/pr-agent-settings - NOT fetched from plan-marshall at review time, which would make 21 repos depend on a product repo and invert the dependency direction.\n- Selection + per-project additions declared in .github/project.yml: packs: plus additional_rules:, which is APPEND-ONLY. \u26d4 security is NOT a selectable pack - it is a 10-topic spine folded into every pack and a project must never deselect it. That is WHY additional_rules cannot replace.\n- Read from the DEFAULT BRANCH ONLY - reading the PR head would let an author change the rules reviewing their own PR. Precedent: repo_context_from_default_branch = true.\n- Any read/fetch/compose failure FAILS THE REVIEW LOUDLY. No silent fallback to a bare charter.\n- The composed charter is ECHOED INTO THE RUN LOG - the audit surface for the free-text channel.\n- \u26d4 maven is DEFERRED as a RECORDED PRECONDITION by explicit operator decision (maven is to be modularized anyway). Ship the seven derivable domains, add NO authored-pack mechanism.\n\u26d4 SEQUENCING: PLAN-PR-038 \u2192 consumer fan-out \u2192 PLAN-PR-066 (ex-039). 066 landing first fails every review in 21 repos. \u2b50 ITS PRECONDITION IS NOW DISCHARGED: packs/ exists on pr-agent-settings main since #64 / PLAN-PR-065.\n\u26a0 TWO LOAD-BEARING HYPOTHESES marked verify-at-outline, still UNEXECUTED: that the dotted-env form generalises from VERTEXAI.* / github_action_config.* to PR_REVIEWER.EXTRA_INSTRUCTIONS (if refuted, PLAN-PR-066 D3 re-scopes and D1/D2 are worthless without it - SETTLE IT EARLY), and that an injected env value OUTRANKS a repo-local .pr_agent.toml.\n\n=== STANDING (carried) ===\nREAD cloud-wave-audit.md BEFORE TOUCHING ANY STAGED PLAN - coverage matrix, overlap map, the now-TEN pre-emit amendments (6 applied at this emit, so NINE remain), the 14 standing rules.\n\u26d4 PLAN-PR-029 D2 must absorb 070 G1 third requirement - as written its Done-when CERTIFIES a permanently-unresolved thread. Carried by PLAN-PR-059.\n\u26d4 Once PR-032 lands (it HAS, #1416), DROP PLAN-PR-031 D5 items 1-3 and PLAN-PR-026 D6 lane item \u2014 now carried by PLAN-PR-060 D9 and PLAN-PR-061 respectively. CHECK THEM OFF AT EMIT, not at outline.\nEVERY PRE-041 VERDICT IS STALE (f6d058b4b/77c9dc70a). Reported, never promoted - not a refutation.\nPOST-MERGE REVISITS OWED: 1077, 1078, 1080, 1087, 1118, 1130 plus foreign 14, 237, 202, 643. 1334 and 1344 done. \u26a0 1338 has 7 unresolved threads on the merged PR. The 13 wave PRs got post-run verifications - do NOT re-queue.\nPLAN-PR-002 PARKED: cuioss-organization#235 OPEN - corroborate against the FOREIGN PR.\n\u26d4 wrong_case tautology still live in main: marshall-steward/scripts/determine_mode.py:580-582.\n\u26d4 A pre-existing macOS test defect is OPERATOR-ASSIGNED to a separate plan: test_qgate_closure.py::test_a_declared_glob_escaping_the_repo_is_unmeasured_not_empty asserts == Path(/etc) against a path resolving to /private/etc. Also a pollution-guard teardown flake in test_comments_stage.py under xdist.\n\u26a0 The build wrapper reported status: timeout on a run that COMPLETED (17877 passed in 467s). Read the LOG layer, never the outer status.\nENVIRONMENT: epic tree GITIGNORED, LOCAL-ONLY - restart safe, machine loss is not. Nothing unpushed.",
+  "metadata": {
+    "parallelization_scope": "2"
+  },
+  "created": "2026-07-29T19:15:44Z",
+  "updated": "2026-09-18T08:53:20Z"
+}

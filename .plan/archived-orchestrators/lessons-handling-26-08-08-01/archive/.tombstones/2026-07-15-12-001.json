@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-07-15-12-001",
+  "removed_at": "2026-07-17T19:15:02.171225+00:00",
+  "reason": "residue promoted to build-pyproject standards pyproject-impl.md new Verification-Target Trust section, test-compile wired into build.py cmd_verify and pyproject.toml exclude list extended, plan small-tooling-batch",
+  "status": "removed"
+}

@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-06-10-21-006",
+  "removed_at": "2026-06-11T09:26:06.248222+00:00",
+  "reason": "Fixed: phase-6-finalize Step 3 now calls accumulate-agent-usage --phase 6-finalize per dispatch (SKILL.md:826-842), closing the blank finalize metrics row",
+  "status": "removed"
+}

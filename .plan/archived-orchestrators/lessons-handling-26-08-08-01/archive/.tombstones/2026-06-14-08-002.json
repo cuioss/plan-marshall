@@ -1,0 +1,7 @@
+{
+  "lesson_id": "2026-06-14-08-002",
+  "removed_at": "2026-06-20T14:04:14.419822+00:00",
+  "reason": "Patch-oriented guidance (anchor diff-text regex to declared symbols) superseded by git-native rebuild (git plumbing file detection + parsed symbol-set diff); the diff-text-parser abstraction produced four successive edge-case defects",
+  "status": "superseded",
+  "superseded_by": "2026-06-20-16-001"
+}

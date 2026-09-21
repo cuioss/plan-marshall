@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-06-08-12-001",
+  "removed_at": "2026-06-08T17:24:03.590067+00:00",
+  "reason": "All five false-negative modes addressed by merged plan centralized-cleanup-scope (PR #600): P1 whole-tree-gate, P2 ceremony_policy.simplify, P3 phase-3 classifier cleanup, P3b profiles regex, P4 four self-review surfacer classes. Durable knowledge promoted into finalize-step-whole-tree-gate.md, ceremony_policy.finalize.simplify, and self_review.py + ext-point-self-review-surfacing.md. Dogfood-validated in-run.",
+  "status": "removed"
+}

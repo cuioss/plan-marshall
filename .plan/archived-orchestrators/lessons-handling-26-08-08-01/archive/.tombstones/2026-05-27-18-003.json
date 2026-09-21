@@ -1,0 +1,7 @@
+{
+  "lesson_id": "2026-05-27-18-003",
+  "removed_at": "2026-05-28T17:40:57.126768+00:00",
+  "reason": "Aggregated into Execute agent missed boy-scout batching opportunity; only surfaced via PR review",
+  "status": "superseded",
+  "superseded_by": "2026-05-27-18-002"
+}

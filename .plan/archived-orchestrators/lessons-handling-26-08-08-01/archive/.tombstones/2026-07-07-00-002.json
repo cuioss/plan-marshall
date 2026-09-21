@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-07-07-00-002",
+  "removed_at": "2026-07-07T16:01:59.927606+00:00",
+  "reason": "Completely covered by plan finalize-flow-hardening D3 - adaptive ci-wait ratchet in ci_complete_precondition.py unstarves the timeout ceiling by recording elapsed-at-deadline upward and preferring provider duration_sec so a healthy long CI no longer false-timeouts each finalize. Practice codified in code plus module docstring plus test_ci_complete_precondition.py",
+  "status": "removed"
+}

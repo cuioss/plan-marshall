@@ -1,0 +1,7 @@
+{
+  "lesson_id": "2026-06-03-18-001",
+  "removed_at": "2026-06-09T07:19:16.416419+00:00",
+  "reason": "Aggregated into 2026-06-03-17-001 (plugin-doctor lint-gap cluster)",
+  "status": "superseded",
+  "superseded_by": "2026-06-03-17-001"
+}

@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-07-21-10-002",
+  "removed_at": "2026-07-28T19:13:14.212560+00:00",
+  "reason": "review_completeness.py now distinguishes absent (no comment, no check-run) from in_progress (check-run non-terminal) as separate taxonomy members, sourced from the completion-aware poll's per-bot check-run query before any loop decision - the futile loop-on-structurally-absent-bot failure mode is eliminated (plan one-coherent-automated-review-contract, D3)",
+  "status": "removed"
+}

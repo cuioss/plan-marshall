@@ -1,0 +1,72 @@
+{
+  "kind": "orchestrator",
+  "title": "Plan-Server (marshalld) build-server epic",
+  "phase": "closed",
+  "workstreams": [
+    {
+      "id": "WS-01",
+      "slug": "build-server",
+      "status": "active"
+    }
+  ],
+  "plans": [
+    {
+      "id": "PLAN-01",
+      "slug": "plan-server-core",
+      "workstream": "WS-01",
+      "status": "shipped",
+      "plan_marshall_plan_id": "",
+      "pr": "#933",
+      "landing": "landings/PLAN-01.md"
+    },
+    {
+      "id": "PLAN-02",
+      "slug": "registration-scope-population",
+      "workstream": "WS-01",
+      "status": "shipped",
+      "plan_marshall_plan_id": "",
+      "pr": "#941",
+      "landing": "landings/PLAN-02.md"
+    },
+    {
+      "id": "PLAN-03",
+      "slug": "interaction-audit-logging",
+      "workstream": "WS-01",
+      "status": "shipped",
+      "plan_marshall_plan_id": "",
+      "pr": "#949",
+      "landing": "landings/PLAN-03.md"
+    },
+    {
+      "id": "PLAN-04",
+      "slug": "explicit-execution-mode",
+      "workstream": "WS-01",
+      "status": "shipped",
+      "plan_marshall_plan_id": "",
+      "pr": "#956",
+      "landing": "landings/PLAN-04.md"
+    },
+    {
+      "id": "PLAN-05",
+      "slug": "client-resolution-log-capture",
+      "workstream": "WS-01",
+      "status": "shipped",
+      "plan_marshall_plan_id": "",
+      "pr": "#971",
+      "landing": "landings/PLAN-05.md"
+    },
+    {
+      "id": "PLAN-06",
+      "slug": "pyproject-routing-integration",
+      "workstream": "WS-01",
+      "status": "shipped",
+      "plan_marshall_plan_id": "",
+      "pr": "#979",
+      "landing": "landings/PLAN-06.md"
+    }
+  ],
+  "resume_anchor": "epic closed \u2014 see history.md",
+  "metadata": {},
+  "created": "2026-07-17T21:41:30Z",
+  "updated": "2026-07-22T16:59:43Z"
+}

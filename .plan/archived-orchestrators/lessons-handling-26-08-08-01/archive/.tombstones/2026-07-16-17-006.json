@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-07-16-17-006",
+  "removed_at": "2026-07-16T19:06:20.767625+00:00",
+  "reason": "Verified closed against current source: _manifest_validation.py anchors project: step resolution on _find_plan_root_from_cwd (ADR-002) with _REPO_ROOT display-only (execution-manifest-gaps TASK-1)",
+  "status": "removed"
+}

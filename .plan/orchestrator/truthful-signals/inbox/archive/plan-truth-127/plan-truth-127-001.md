@@ -1,0 +1,71 @@
+envelope_version=1
+sender_type=plan
+sender_id=plan-truth-127
+epic=truthful-signals
+kind=candidate-lesson
+created=2026-09-13T19:49:05Z
+
+# Name the population beside every count a drift verb publishes
+
+component=plan-marshall:marshall-steward
+category=improvement
+confidence=high
+source_plan=plan-truth-127
+theme=confident-signal-hides-a-caveat
+
+## Context
+
+Mid-execute I ran `marshall-steward drift --marketplace` and read `removed=6` alongside
+"the executor maps 162 scripts while only 156 exist under marketplace/bundles". I concluded
+the executor held six live mappings whose sources had left the tree, that regenerating would
+drop them, and that two other plans mid-finalize against the same checkout gave that a
+cross-plan blast radius. On that basis I refused to regenerate the executor, and the operator
+deferred TASK-012 (the deliverable-1 census survey) as a direct consequence. I filed the
+diagnosis as bug finding `4adc50`.
+
+At finalize the on-main executor regeneration printed its own decomposition:
+`Found 156 marketplace scripts / Found 6 local scripts / Total: 162 scripts`. There were no
+orphans. The 162 counts marketplace **plus** the six project-local scripts under
+`.claude/skills/`; `drift --marketplace` counts marketplace only, because that is what its
+name says. I had differenced two figures that never enumerated the same set. Finding `4adc50`
+is now `rejected` — not fixed, because nothing was broken.
+
+## Root cause
+
+A count published without its population invites subtraction against any other count of a
+similar-sounding thing. The scope qualifier lived in the verb's *name* (`--marketplace`) and
+in nothing the output said, so the output read as a whole-executor figure. The failure is not
+that I misread a flag; it is that the payload gave me nothing to misread *against*.
+
+This is the same shape the audited plan exists to remove, taken from the other end: there, a
+count was published over a population the code had failed to fully enumerate; here, a count
+was published without naming the population it *had* enumerated. Both let a reader form a
+confident belief the number does not support.
+
+## Proposed action
+
+1. Tool layer, and this is where the fix belongs: have `marshall-steward drift --marketplace`
+   publish the population it compared — `marketplace_scripts_counted: 156` beside
+   `removed: 6` — so a reader who then quotes an executor total sees two differently-labelled
+   populations instead of one apparent contradiction. Do the same for any sibling verb that
+   emits a scoped count.
+2. Discipline half, stated so it is checkable rather than as "be careful": before
+   differencing two counts, write down the population each one enumerates. If the two
+   descriptions are not the same sentence, the difference is not a defect signal. When one
+   figure comes from a verb carrying a scope qualifier, that qualifier **is** the population,
+   and the other side must be restricted to it before any comparison is made.
+3. The one durable observation from the original finding that survives its withdrawal, and it
+   is unrelated to counting: adding a **verb** to an existing script still requires an executor
+   regeneration, because the per-script verb allowlist is embedded at generation time. That is
+   real, and it is what actually blocked TASK-012.
+
+## Evidence
+
+- finding `4adc50` (bug, resolution `rejected`) — the diagnosis, and its withdrawal with the
+  correcting output quoted verbatim.
+- The plan paid for it: TASK-012 deferred, TASK-001 left `infeasible`, deliverable 1 grading
+  `missed` on task status even though its artefact (finding `9b6297`) exists.
+- Two further count-drift instances in the same run, both handled correctly and both showing
+  why the discipline matters: the archived open-phase population measured 30/4, then 39/6,
+  then 46/7 at three different HEADs (finding `9b6297`), which is why deliverable 1's success
+  criterion was re-scoped to name a **derivation** rather than a number.

@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-07-07-21-002",
+  "removed_at": "2026-07-09T12:53:33.432519+00:00",
+  "reason": "Completely covered by plan-10 D1 plus D2 - triage.md FIX action body now carries the structural not-done/loop_back/STOP directive and the build-failing plugin-doctor analyzer analyze_triage_fix_not_done_surface enforces it. Guarded failure mode can no longer occur, residue codified into governing skill. Plan plan-10-finalize-contracts",
+  "status": "removed"
+}

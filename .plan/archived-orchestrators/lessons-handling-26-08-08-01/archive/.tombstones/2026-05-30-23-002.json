@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-05-30-23-002",
+  "removed_at": "2026-05-30T21:02:50.988070+00:00",
+  "reason": "Duplicate allocation of 2026-05-30-23-001 (retry double-created the same refine-bypass lesson)",
+  "status": "removed"
+}

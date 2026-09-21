@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-06-14-15-002",
+  "removed_at": "2026-06-15T13:24:38.298299+00:00",
+  "reason": "Obsolete/over-engineered: plan-retrospective is not a framework default (opt-in only via OPTIONAL_BUNDLE_FINALIZE_STEPS), is already scope-gated to drop on surgical/single_module (_apply_scope_gated_finalize), and only runs in this repo via the .plan/marshal.json:77 opt-in we own \u2014 which fires it on multi_module+ plans, exactly where the lesson concedes it is valuable. The proposed default/gating machinery duplicates the existing scope gate; the only remaining lever is a config line. No structural change warranted.",
+  "status": "removed"
+}

@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-06-21-14-001",
+  "removed_at": "2026-06-21T16:58:40.932790+00:00",
+  "reason": "wrong-scope duplicate (LIST-only direction, pre-revert); corrected and superseded by lesson 2026-06-21-17-001 (revert-to-keyed-map) now carried by plan pre-1-0-no-legacy-rule-a-format-contract-migration-2; stalled duplicate init-plan cleaned up",
+  "status": "removed"
+}

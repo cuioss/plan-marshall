@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-06-16-18-001",
+  "removed_at": "2026-06-16T17:08:49.233183+00:00",
+  "reason": "Retracted: its distinctive claim (token cost is cache_read-dominated such that builds are effectively expensive) was an over-generalization from a bloated audit session. The build-management.adoc design establishes builds cost ~100 tokens (LLM suspended on the synchronous call); the real cost driver is execution-context fragmentation (lesson 2026-06-16-18-003) and the metric's cache_read exclusion (lesson 2026-06-16-18-002). No unique correct content lost.",
+  "status": "removed"
+}

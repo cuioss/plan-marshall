@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-07-16-17-018",
+  "removed_at": "2026-07-17T14:02:22.462268+00:00",
+  "reason": "Completely codified into cui-logging/standards/logging-standards.md section 4 (CWE-117 throwable + cause-chain MUST NOT + sanitized-carrier pattern) via deliverable 3 (plan consumer-domain-standards)",
+  "status": "removed"
+}

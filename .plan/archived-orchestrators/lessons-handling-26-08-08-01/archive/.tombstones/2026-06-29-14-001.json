@@ -1,0 +1,7 @@
+{
+  "lesson_id": "2026-06-29-14-001",
+  "removed_at": "2026-06-30T06:30:59.927161+00:00",
+  "reason": "Folded as Facet 4 (textual-vs-semantic gate-trust; sibling-redundant work) into the consolidated regression-guard/trust-boundary lesson 2026-06-29-23-002 per user-directed consolidation",
+  "status": "superseded",
+  "superseded_by": "2026-06-29-23-002"
+}

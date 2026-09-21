@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-06-03-18-003",
+  "removed_at": "2026-06-03T17:19:24.765807+00:00",
+  "reason": "False positive. Verified against the live system: the normal dispatched finalize flow runs integrate_into_main from main cwd and the move-back works correctly (dozens of worktree-backed plans are successfully archived, which is impossible without a correct move-back). The wrong-noop was an artifact of a one-off inline-execution deviation in the marshal-json-config-audit run, where the orchestrator had cd'd into the worktree; the normal flow operates from main cwd using git -C and --plan-id and never hits it. Not a system defect.",
+  "status": "removed"
+}

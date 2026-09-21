@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-06-13-22-001",
+  "removed_at": "2026-06-15T13:09:24.557599+00:00",
+  "reason": "Already closed: fixed by #671 (replace invalid qgate-add finding types with valid FINDING_TYPES enum values); verification-failure/quality-gate-failure strings no longer present in phase-5-execute",
+  "status": "removed"
+}
