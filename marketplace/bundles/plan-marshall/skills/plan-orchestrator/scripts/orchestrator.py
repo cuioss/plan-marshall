@@ -2933,7 +2933,7 @@ def cmd_corpus_read(args: argparse.Namespace) -> dict[str, Any]:
     invalid = _validate_slug(args.slug)
     if invalid:
         return _error(args.slug, 'invalid_slug', invalid)
-    plan = str(getattr(args, 'plan', '') or '')
+    plan = args.plan
     if not _ADD_ROW_PLAN_ID_RE.match(plan):
         return _error(args.slug, 'invalid_plan', f'--plan must be a plan id ({PLAN_ID_SEGMENT}), got: {plan!r}')
     root = _epic_root(args.slug, allow_archived=True)
