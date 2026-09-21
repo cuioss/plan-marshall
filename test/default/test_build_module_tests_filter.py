@@ -12,6 +12,8 @@ argv, and the refusal that fires instead of a silent ignore (an empty
 ``--filter`` is rejected; an unfiltered run carries no ``-k`` at all).
 """
 
+import subprocess
+import sys
 from pathlib import Path
 
 import build
@@ -66,9 +68,6 @@ class TestFilterRefusals:
     def test_empty_filter_refused_not_silently_ignored(self, empty):
         """The CLI layer rejects an empty ``--filter`` (exit 1); it never runs
         an unfiltered suite while reporting a filtered one."""
-        import subprocess
-        import sys
-
         result = subprocess.run(
             [sys.executable, 'build.py', 'module-tests', 'plan-marshall', '--filter', empty],
             capture_output=True,
@@ -81,9 +80,6 @@ class TestFilterRefusals:
     def test_filter_flag_reaches_parser(self):
         """The ``--filter`` flag exists on the ``module-tests`` parser (no
         argparse rejection for the sanctioned form)."""
-        import subprocess
-        import sys
-
         result = subprocess.run(
             [sys.executable, 'build.py', 'module-tests', '--help'],
             capture_output=True,
