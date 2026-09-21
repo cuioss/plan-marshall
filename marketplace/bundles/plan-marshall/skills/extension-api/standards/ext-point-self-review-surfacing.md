@@ -78,6 +78,7 @@ status: success
 plan_id: {plan_id}
 project_dir: {project_dir}
 base_branch: {base_branch}
+base_ref_source: upstream | local
 since_ref: {sha or empty when the round was not delta-scoped}
 surface_scope: delta | full
 files_in_scope: N
