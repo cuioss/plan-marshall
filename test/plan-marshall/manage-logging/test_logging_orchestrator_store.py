@@ -4,7 +4,7 @@
 
 Covers:
 - get_log_path resolution under the orchestrator store
-  (``.plan/local/orchestrator/{slug}/logs/{work,decision}.log``).
+  (``.plan/orchestrator/{slug}/logs/{work,decision}.log``).
 - decision/work log round-trip under the orchestrator store, both in-process
   (plan_logging library) and through the manage-logging.py CLI entry point.
 - CLI boundary: ``--store orchestrator`` requires ``--plan-id`` (the epic

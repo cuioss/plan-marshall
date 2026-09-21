@@ -80,7 +80,7 @@ status: success | error
 display_detail: "epic {slug} archived to archived-orchestrators/"
 slug: {slug}
 already_archived: true | false
-archived_to: /abs/path/.plan/local/archived-orchestrators/{slug}
+archived_to: /abs/path/.plan/archived-orchestrators/{slug}
 ```
 
-`archived_to` is the absolute, main-anchored filesystem path `cmd_archive` returns via `str(dest)` (not the relative `archived-orchestrators/{slug}` form). `display_detail` is composed by the calling workflow — `cmd_archive` does not emit it — and is ≤80 chars, ASCII, no trailing period.
+`archived_to` is the absolute, git-tracked-tier filesystem path `cmd_archive` returns via `str(dest)` (not the relative `archived-orchestrators/{slug}` form). `display_detail` is composed by the calling workflow — `cmd_archive` does not emit it — and is ≤80 chars, ASCII, no trailing period.

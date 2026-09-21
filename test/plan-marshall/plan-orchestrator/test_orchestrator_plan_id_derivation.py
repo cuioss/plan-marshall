@@ -250,8 +250,8 @@ class TestPointerGrammarComposition:
         matching no accepted form — instead of being silently classified as its
         unsuffixed sibling's pointer.
         """
-        accepted = _inbox.classify_source_id(f'.plan/local/orchestrator/{_POINTER_EPIC}/plans/{UNSUFFIXED_SPEC}')
-        refused = _inbox.classify_source_id(f'.plan/local/orchestrator/{_POINTER_EPIC}/plans/{SUFFIXED_SPEC}')
+        accepted = _inbox.classify_source_id(f'.plan/orchestrator/{_POINTER_EPIC}/plans/{UNSUFFIXED_SPEC}')
+        refused = _inbox.classify_source_id(f'.plan/orchestrator/{_POINTER_EPIC}/plans/{SUFFIXED_SPEC}')
 
         assert (accepted.orchestrated, accepted.detection) == (True, 'orchestrated')
         assert accepted.epic == _POINTER_EPIC

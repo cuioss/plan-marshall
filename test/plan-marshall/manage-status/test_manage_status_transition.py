@@ -242,7 +242,7 @@ _MAILBOX_COUNT_KEYS = ('count', 'live_count', 'invalid_count')
 
 def _orchestrator_source_id(epic_slug: str) -> str:
     """The ``request.md`` provenance pointer phase-1-init records for an orchestrated plan."""
-    return f'.plan/local/orchestrator/{epic_slug}/plans/PLAN-MBX-01-demo.md'
+    return f'.plan/orchestrator/{epic_slug}/plans/PLAN-MBX-01-demo.md'
 
 
 def _seed_plan_with_provenance(plan_context, plan_id: str, source_id: str) -> None:

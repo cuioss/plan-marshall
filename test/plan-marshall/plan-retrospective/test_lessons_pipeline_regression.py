@@ -48,7 +48,7 @@ class TestDispatcherOrchestrationContext:
         assert verdict.detection == 'not_orchestrator_pointer'
 
     def test_working_path_with_forwarding_resolves_once(self):
-        pointer = '.plan/local/orchestrator/demo-epic/plans/PLAN-05-lessons-pipeline.md'
+        pointer = '.plan/orchestrator/demo-epic/plans/PLAN-05-lessons-pipeline.md'
         verdict = _inbox.classify_source_id(pointer)
 
         assert verdict.orchestrated is True

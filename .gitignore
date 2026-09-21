@@ -46,6 +46,17 @@ target/
 !.plan/marshal.json
 !.plan/project-architecture/
 
+# The orchestrator corpus is git-tracked, repo-local state: an epic ledger is
+# shared history, not machine-local runtime. Both homes are un-ignored, because
+# an epic's active and archived trees sit on the same storage tier.
+!.plan/orchestrator/
+!.plan/archived-orchestrators/
+
+# Re-ignore the one genuinely machine-local sub-path of those trees. Placed
+# AFTER the negations above because a later rule wins: the per-verb append log
+# is a pure audit artifact whose line-level churn conflicts on every run.
+.plan/orchestrator/*/logs/
+.plan/archived-orchestrators/*/logs/
 
 
 # Pyprojectx (tool installations, downloaded on demand)

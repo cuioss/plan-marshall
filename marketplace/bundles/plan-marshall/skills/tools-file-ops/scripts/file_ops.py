@@ -594,11 +594,12 @@ def get_store_dir(store: str, entry_id: str, allow_archived: bool = False) -> Pa
       :func:`base_path` (``{base_dir}/plans/{entry_id}``, ADR-002 unchanged):
       plan state moves into the pinned worktree during phase-5+ and resolves
       wherever the working directory is.
-    - ``store='orchestrator'`` — routes through
-      :func:`marketplace_paths.resolve_main_anchored_path`
-      (``<main-root>/.plan/local/orchestrator/{entry_id}``): orchestrator
-      state is cross-session shared state that stays main-anchored regardless
-      of caller cwd, joining the bounded main-anchored exception set.
+    - ``store='orchestrator'`` — composes a subpath onto the git-tracked,
+      cwd-relative config tier, :func:`get_tracked_config_dir`
+      (``<checkout-root>/.plan/orchestrator/{entry_id}``): the orchestrator
+      corpus is git-tracked, repo-local state, so it resolves in whichever
+      checkout the working directory is in and is NOT a member of the bounded
+      main-anchored exception set.
 
     Args:
         store: Store name — ``'plans'`` or ``'orchestrator'``.
@@ -626,14 +627,14 @@ def get_store_dir(store: str, entry_id: str, allow_archived: bool = False) -> Pa
         return base_path('plans', entry_id)
     if store == 'orchestrator':
         # entry_id (an epic slug) flows unvalidated from CLI callers straight
-        # into the main-anchored join below, and this is the single choke point
+        # into the tracked-tier join below, and this is the single choke point
         # for every orchestrator-store consumer — including
         # claude_runtime.py's _read_orchestrator_title_state(slug), which reads
         # this function directly without going through orchestrator.py's
         # _validate_slug. Reject traversal and separator components here so no
         # caller can escape the orchestrator/ subtree.
         _reject_unsafe_entry_id(entry_id)
-        active = resolve_main_anchored_path(f'orchestrator/{entry_id}')
+        active = get_tracked_config_dir() / 'orchestrator' / entry_id
         if allow_archived and not active.exists():
             archived = get_archived_orchestrator_dir(entry_id)
             if archived.exists():
@@ -645,31 +646,32 @@ def get_store_dir(store: str, entry_id: str, allow_archived: bool = False) -> Pa
 def get_archived_orchestrator_dir(slug: str) -> Path:
     """Resolve the unconditional archived-home directory for an epic ``slug``.
 
-    Returns ``<main-root>/.plan/local/archived-orchestrators/{slug}`` — the
+    Returns ``<checkout-root>/.plan/archived-orchestrators/{slug}`` — the
     relocated home of a *closed* epic tree, mirroring the plan-lifecycle
     ``archived-plans/`` convention. This is the unconditional destination
     resolver (it never checks existence): the ``archive`` subcommand moves a
     closed epic here, and the :func:`get_store_dir` read-fallback resolves it
     when the active ``orchestrator/{slug}`` path is absent.
 
-    Reuses the same resolver family as the active store root
-    (:func:`marketplace_paths.resolve_main_anchored_path`) so the archived tree
-    stays main-anchored regardless of caller cwd, and reuses
-    :func:`_reject_unsafe_entry_id` so a traversal/separator slug cannot escape
-    the ``archived-orchestrators/`` subtree.
+    Composes onto the SAME tier as the active store root
+    (:func:`get_tracked_config_dir`), so one epic's active and archived homes
+    stay in one storage tier and ``allow_archived`` keeps resolving a single
+    slug across both. Reuses :func:`_reject_unsafe_entry_id` so a
+    traversal/separator slug cannot escape the ``archived-orchestrators/``
+    subtree.
 
     Args:
         slug: Epic slug identifying the archived epic entry.
 
     Returns:
-        Path to ``archived-orchestrators/{slug}`` under the main-anchored store.
+        Path to ``archived-orchestrators/{slug}`` under the tracked config dir.
 
     Raises:
         ValueError: when ``slug`` is empty/whitespace-only or contains ``..``,
             ``/``, ``\\``, or a null byte.
     """
     _reject_unsafe_entry_id(slug)
-    return resolve_main_anchored_path(f'archived-orchestrators/{slug}')
+    return get_tracked_config_dir() / 'archived-orchestrators' / slug
 
 
 def _reject_unsafe_entry_id(entry_id: str) -> None:

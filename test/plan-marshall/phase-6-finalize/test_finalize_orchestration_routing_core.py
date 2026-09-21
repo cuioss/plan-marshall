@@ -158,7 +158,7 @@ def _missing_from_table(row_names: set[str]) -> list[str]:
 
 class TestDetectionSeam:
     def test_should_classify_the_pointer_shape_phase_1_init_emits(self):
-        pointer = '.plan/local/orchestrator/truthful-signals/plans/PLAN-55-inbox.md'
+        pointer = '.plan/orchestrator/truthful-signals/plans/PLAN-55-inbox.md'
 
         verdict = classify_source_id(pointer)
 
@@ -182,7 +182,7 @@ class TestDetectionSeam:
         )
 
     def test_should_reject_a_traversal_attempt(self):
-        pointer = '.plan/local/orchestrator/../../etc/plans/PLAN-1.md'
+        pointer = '.plan/orchestrator/../../etc/plans/PLAN-1.md'
 
         assert classify_source_id(pointer) == (
             False,

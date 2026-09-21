@@ -324,7 +324,10 @@
       "bundle": "pm-documents",
       "workflow_skill_extensions": {
         "triage": "pm-documents:ext-triage-docs"
-      }
+      },
+      "file_globs": [
+        "**/*.adoc"
+      ]
     },
     "plan-marshall-plugin-dev": {
       "bundle": "pm-plugin-development",

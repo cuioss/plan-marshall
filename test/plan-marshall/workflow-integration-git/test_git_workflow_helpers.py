@@ -156,6 +156,17 @@ FORBIDDEN_COAUTHOR_TOKENS = (
 # concatenated pieces so this pattern does not itself match the sweep.
 _TRAILER_PATTERN = re.compile('Co-Authored' + r'-By:\s*[^<>\n]*<[^<>\n]*>')
 
+# The path shape of a dated run record: a numbered report filed under a
+# ``cloud-runs/`` directory. Derived from the shape rather than from a list of
+# the reports that exist today, so a run filed later is exempt without editing
+# this test — the same population-derived contract the two sweeps below keep.
+_RUN_RECORD_PATH = re.compile(r'(^|/)cloud-runs/[^/]+/report-\d+\.md$')
+
+
+def _is_dated_run_record(rel: str) -> bool:
+    """Whether a repo-relative path is a dated record of one past execution."""
+    return bool(_RUN_RECORD_PATH.search(rel))
+
 
 def _repo_root() -> Path:
     """Repository root, resolved from git rather than from __file__ depth."""
@@ -182,6 +193,15 @@ def _tracked_trailer_lines() -> tuple[list[tuple[str, str]], int]:
     a stated identity, and is excluded: the value it renders is decided at
     runtime, so judging the template against a literal identity would be a
     category error.
+
+    A dated run record — a ``cloud-runs/**/report-NN.md`` — is excluded for the
+    same reason in the other direction: it states the identity a past execution
+    committed under, not the identity the convention prescribes now, so judging
+    it against the current default is the same category error. The exclusion is
+    a path-shape predicate (``_is_dated_run_record``), never a list of the
+    reports that happen to exist, and it removes those paths from the swept
+    population rather than from its reported size, so ``files_scanned`` stays
+    the count of files this sweep actually judged.
     """
     root = _repo_root()
     listing = subprocess.run(
@@ -195,6 +215,8 @@ def _tracked_trailer_lines() -> tuple[list[tuple[str, str]], int]:
     scanned = 0
     for rel in listing.stdout.split('\0'):
         if not rel:
+            continue
+        if _is_dated_run_record(rel):
             continue
         path = root / rel
         try:
@@ -807,6 +829,19 @@ class TestCoAuthorTrailerConvention:
             f'no trailer line found in {scanned} tracked files — the probe no '
             'longer matches anything, so a passing sweep proves nothing'
         )
+
+    def test_run_record_exclusion_covers_a_report_and_nothing_wider(self):
+        """The exemption is the ``cloud-runs/**/report-NN.md`` shape exactly.
+
+        Both arms matter: an exclusion that stopped matching would red the
+        sweep on historical records it must not judge, and one that matched
+        wider would silently shrink the population the other two tests sweep.
+        """
+        excluded = '.plan/orchestrator/truthful-signals/cloud-runs/380-x/report-01.md'
+
+        assert _is_dated_run_record(excluded)
+        assert not _is_dated_run_record('.plan/orchestrator/truthful-signals/README.md')
+        assert not _is_dated_run_record('.plan/orchestrator/truthful-signals/cloud-runs/380-x/plan.md')
 
     def test_no_tracked_trailer_names_an_assistant_or_vendor(self):
         """The trailer identifies the producing system, never who powered it."""

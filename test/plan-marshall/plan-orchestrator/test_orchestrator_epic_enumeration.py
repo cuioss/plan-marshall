@@ -4,8 +4,8 @@
 
 The one slug-free sub-verb of the ``corpus`` group, and the only one that walks
 both store homes rather than a single named epic's tree. It lives apart from
-``test_orchestrator_corpus.py`` because its subject is a directory WALK over a
-main-anchored store, so its fixtures build store roots rather than the
+``test_orchestrator_corpus.py`` because its subject is a directory WALK over the
+git-tracked, repo-local store, so its fixtures build store roots rather than the
 scaffolded fixture epic the rest of the group shares.
 
 Its controls are fixture-driven for the same reason as the rest of the group:
@@ -26,9 +26,10 @@ Three properties carry matched controls rather than a single happy path:
   be read are each proven to be REPORTED, with the row's own scanned count
   checked against the total partition rather than taken on trust.
 
-The main-anchoring pair closes with a discriminator: redirecting only
-``resolve_main_anchored_path`` moves both roots, so a root built from the
-cwd-relative base path instead would stay put and fail the assertion.
+The tracked-tier pair closes with a discriminator in both directions:
+redirecting only ``get_tracked_config_dir`` moves both roots, while redirecting
+only ``resolve_main_anchored_path`` moves neither. A root left on the
+main-anchored tier would satisfy exactly one of those and fail the other.
 """
 
 from pathlib import Path
@@ -234,16 +235,47 @@ class TestCorpusEpicsDropsNothing:
         assert result['active_count'] == len(_ACTIVE_EPICS) - 1
 
 
-class TestCorpusEpicsResolvesMainAnchored:
-    """The store is main-anchored, so the walk must not move with the cwd."""
+class TestCorpusEpicsResolvesOnTheTrackedTier:
+    """The store is git-tracked and repo-local, so BOTH homes sit on that tier.
 
-    def test_both_roots_resolve_through_the_main_anchored_resolver(self, plan_context, monkeypatch, tmp_path):
-        """Discriminator: a cwd-relative root would not follow this stub.
+    One epic's active and archived homes share a single storage tier — the
+    git-tracked, cwd-relative config directory — so ``allow_archived`` keeps
+    resolving one slug across both. The pair below pins that in the two
+    directions a single assertion cannot: the tracked resolver moves both roots,
+    and the main-anchored resolver moves neither.
+    """
 
-        Redirecting ONLY ``resolve_main_anchored_path`` moves both roots. A root
-        built from the cwd-relative ``base_path`` instead would stay put, so this
-        fails if the enumeration ever stops routing through the anchored resolver.
+    def test_both_roots_resolve_through_the_tracked_config_tier(self, plan_context, monkeypatch, tmp_path):
+        """Discriminator: a main-anchored root would not follow this stub.
+
+        Redirecting ONLY ``get_tracked_config_dir`` moves both roots. A root
+        built from ``resolve_main_anchored_path`` — or from the plan-state
+        ``base_path`` — instead would stay put, so this fails if the enumeration
+        ever stops routing through the tracked-tier resolver.
         """
+        tracked = tmp_path / 'tracked-config'
+        monkeypatch.setattr(file_ops, 'get_tracked_config_dir', lambda: tracked)
+
+        result = cmd_corpus_epics(_EPICS_ARGS)
+
+        rows = _roots_by_scope(result)
+        assert len(rows) == 2, f'{len(rows)} root row(s) published, expected both homes'
+        assert rows[SCOPE_ACTIVE]['path'] == str(tracked / 'orchestrator')
+        assert rows[SCOPE_ARCHIVED]['path'] == str(tracked / 'archived-orchestrators')
+
+    def test_neither_root_follows_the_main_anchored_resolver(self, plan_context, monkeypatch, tmp_path):
+        """The matched negative: the store has LEFT the main-anchored tier.
+
+        Its sibling above would still pass if the enumeration routed through
+        BOTH tiers, so the move is only pinned once this direction is checked
+        too: redirecting only ``resolve_main_anchored_path`` must move nothing.
+        """
+        # PLAN_TRACKED_CONFIG_DIR outranks the fixture's base-directory override
+        # inside ``get_tracked_config_dir``, so an ambient value would pin the
+        # tracked tier somewhere else and the equalities below would describe
+        # that pin rather than the fixture's own store roots.
+        monkeypatch.delenv('PLAN_TRACKED_CONFIG_DIR', raising=False)
+        tracked_active, tracked_archived = _store_roots(plan_context)
         anchored = tmp_path / 'main-anchor'
         monkeypatch.setattr(file_ops, 'resolve_main_anchored_path', lambda subpath: anchored / str(subpath))
 
@@ -251,26 +283,12 @@ class TestCorpusEpicsResolvesMainAnchored:
 
         rows = _roots_by_scope(result)
         assert len(rows) == 2, f'{len(rows)} root row(s) published, expected both homes'
-        assert rows[SCOPE_ACTIVE]['path'] == str(anchored / 'orchestrator')
-        assert rows[SCOPE_ARCHIVED]['path'] == str(anchored / 'archived-orchestrators')
-
-    def test_the_roots_do_not_move_with_the_working_directory(self, plan_context, monkeypatch, tmp_path):
-        """A worktree and the main checkout must resolve the SAME store root."""
-        _seed_epic_population(plan_context)
-        before = cmd_corpus_epics(_EPICS_ARGS)
-        worktree = tmp_path / 'checkout' / '.plan' / 'local' / 'worktrees' / 'fixture-worktree'
-        worktree.mkdir(parents=True)
-        monkeypatch.chdir(worktree)
-
-        after = cmd_corpus_epics(_EPICS_ARGS)
-
-        assert len(after['roots']) == 2
-        assert [row['path'] for row in after['roots']] == [row['path'] for row in before['roots']], (
-            'the store root moved with the cwd — the enumeration is not main-anchored'
-        )
-        # The population is non-empty on both sides, so this is two agreeing
-        # readings of a real store rather than two agreeing empties.
-        assert after['total_count'] == before['total_count'] == len(_ACTIVE_EPICS) + len(_ARCHIVED_EPICS)
+        assert rows[SCOPE_ACTIVE]['path'] != str(anchored / 'orchestrator')
+        assert rows[SCOPE_ARCHIVED]['path'] != str(anchored / 'archived-orchestrators')
+        # Both roots are pinned to the tracked tier as well, so the inequalities
+        # above cannot be satisfied by a root that moved somewhere else again.
+        assert rows[SCOPE_ACTIVE]['path'] == str(tracked_active)
+        assert rows[SCOPE_ARCHIVED]['path'] == str(tracked_archived)
 
 
 class TestCorpusEpicsCli:

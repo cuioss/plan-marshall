@@ -4,8 +4,8 @@
 
 Deliberately lean, per the orchestrator's lean posture: everything that
 requires judgement stays LLM-workflow; this script owns nine deterministic
-operation groups against the main-anchored orchestrator store
-(``.plan/local/orchestrator/{slug}/``, resolved via
+operation groups against the git-tracked orchestrator store
+(``.plan/orchestrator/{slug}/``, resolved via
 ``file_ops.get_store_dir('orchestrator', slug)``):
 
 - ``scaffold --slug S`` — create the epic directory tree (idempotent).
@@ -32,7 +32,7 @@ operation groups against the main-anchored orchestrator store
   ``epic_slug_matches[]`` (any queued row whose slug equals the epic slug).
   All four report and none rewrites.
 - ``archive --slug S`` — relocate a *closed* epic tree to
-  ``.plan/local/archived-orchestrators/{slug}/`` (a mechanical, post-close
+  ``.plan/archived-orchestrators/{slug}/`` (a mechanical, post-close
   directory move that requires no judgement; refuses a non-closed epic).
 - ``compact --slug S`` — the ledger-compaction stage ``workflow/cleanup.md``
   Phase B calls: regenerate every DERIVABLE surface of ``epic.md`` in place (the
@@ -350,7 +350,7 @@ SCOPE_ARCHIVED = 'archived'
 
 #: A syntactically valid entry id that names no real epic, used ONLY to resolve
 #: the two store ROOTS as the PARENT of a resolved entry. Taking the parent of an
-#: entry resolved through the existing main-anchored resolvers keeps the
+#: entry resolved through the existing store resolvers keeps the
 #: directory names (``orchestrator/``, ``archived-orchestrators/``) owned solely
 #: by ``file_ops``: this module holds no second copy of them, so a layout change
 #: moves this walk with it instead of leaving it pointing at a stale directory.
@@ -871,7 +871,7 @@ _BACKTICK = '`'
 # arbitrary repo file cited as background is NOT an origin pointer, which is what
 # keeps "two specs citing the same lesson" a silent near-miss rather than a match.
 SPEC_POINTER_RE = re.compile(
-    r'\.plan/local/(?:orchestrator|archived-orchestrators)/'
+    r'\.plan/(?:orchestrator|archived-orchestrators)/'
     r'(?P<slug>[A-Za-z0-9_.\-]+)/plans/(?P<spec>PLAN-[A-Za-z0-9_.\-]+\.md)'
 )
 _CHECKED_AT_RE = re.compile(r'^[0-9a-f]{7,40}$')
@@ -1212,7 +1212,7 @@ def _spec_presence(root: Path, plan_id: str) -> dict[str, Any]:
 
 
 def cmd_scaffold(args: argparse.Namespace) -> dict[str, Any]:
-    """Create the ``.plan/local/orchestrator/{slug}/`` directory tree.
+    """Create the ``.plan/orchestrator/{slug}/`` directory tree.
 
     Idempotent: existing directories are left untouched, re-running against
     an already-scaffolded epic succeeds and reports ``already_existed: true``.
@@ -1898,6 +1898,63 @@ def cmd_resume_summary(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
+#: Wall-clock bound on the ``git mv`` relocation below. A tree rename is a
+#: handful of syscalls, so this is a hang guard rather than a budget — and it is
+#: stated because an unbounded ``subprocess.run`` would let a wedged git hold the
+#: archive verb open indefinitely.
+_GIT_MV_TIMEOUT_SECONDS = 120
+
+
+def _relocate_epic_tree(source: Path, dest: Path) -> None:
+    """Move an epic tree, preferring ``git mv`` so the move lands as a rename.
+
+    The orchestrator corpus is git-tracked, so a plain filesystem move leaves
+    the index holding a whole-tree deletion beside a whole-tree addition — the
+    same bytes, with the relocation no longer readable as one. ``git mv`` stages
+    the rename instead.
+
+    The filesystem fallback is NOT optional, because three ordinary conditions
+    leave ``git mv`` unable to run at all: no git executable on PATH; a
+    ``source`` outside any repository, which is every ``PLAN_BASE_DIR`` fixture
+    since those resolve into a tmp directory; and an untracked tree, which an
+    epic created before the corpus became tracked state is. git moves nothing in
+    each of those, so the fallback carries the whole relocation rather than
+    completing a half-done one.
+
+    The TIMEOUT arm is the exception, and it is why the fallback probes instead
+    of moving unconditionally: a ``git mv`` killed at
+    :data:`_GIT_MV_TIMEOUT_SECONDS` may already have renamed the tree on disk
+    and only failed to write the index, so the source can be gone and the
+    destination already in place. Moving blindly there would raise
+    ``FileNotFoundError`` over a tree that is exactly where it belongs.
+    """
+    try:
+        completed = subprocess.run(  # argv list, never a shell string; 'git' resolves via PATH by design
+            ['git', '-C', str(source.parent), 'mv', str(source), str(dest)],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=_GIT_MV_TIMEOUT_SECONDS,
+        )
+    except (OSError, subprocess.SubprocessError):
+        # git could not be launched, or was killed before it finished. The
+        # launch failures performed no rename at all; a TimeoutExpired is
+        # different — the on-disk rename may already have landed — so the
+        # fallback below establishes the state rather than assuming it.
+        pass
+    else:
+        if completed.returncode == 0:
+            return
+    if dest.exists() and not source.exists():
+        # ALREADY relocated: the tree is at the destination and nothing remains
+        # at the source, which is the post-condition this function exists to
+        # reach. Returning cleanly here is the completed move, not a swallowed
+        # failure — the caller already refused a pre-existing ``dest``, so this
+        # state can only have been produced by the relocation just attempted.
+        return
+    shutil.move(str(source), str(dest))
+
+
 def cmd_archive(args: argparse.Namespace) -> dict[str, Any]:
     """Relocate a *closed* epic tree to ``archived-orchestrators/{slug}/``.
 
@@ -1910,8 +1967,9 @@ def cmd_archive(args: argparse.Namespace) -> dict[str, Any]:
       an actionable message; NO move is performed.
     - source present AND dest present → ``error: archive_conflict`` (never
       clobber the frozen audit record).
-    - otherwise → create the archived parent and ``shutil.move`` the tree,
-      returning ``archived_to``.
+    - otherwise → create the archived parent and relocate the tree via
+      :func:`_relocate_epic_tree` (``git mv`` where it can run, a filesystem
+      move otherwise), returning ``archived_to``.
     """
     invalid = _validate_slug(args.slug)
     if invalid:
@@ -1949,7 +2007,7 @@ def cmd_archive(args: argparse.Namespace) -> dict[str, Any]:
             archived_to=str(dest),
         )
     dest.parent.mkdir(parents=True, exist_ok=True)
-    shutil.move(str(source), str(dest))
+    _relocate_epic_tree(source, dest)
     return {
         'status': 'success',
         'operation': 'archive',
@@ -2908,12 +2966,12 @@ def cmd_corpus_read(args: argparse.Namespace) -> dict[str, Any]:
     """Return one staged spec's body through the sanctioned read path.
 
     The script-mediated alternative to a direct ``Read`` of
-    ``.plan/local/orchestrator/{slug}/plans/PLAN-NN-*.md`` — the use case the
+    ``.plan/orchestrator/{slug}/plans/PLAN-NN-*.md`` — the use case the
     ``.plan/`` scripts-only rule did not cover, forcing five independent
     direct-read violations before this verb existed. Read-only: resolves
-    main-anchored through the same store resolver every per-epic path uses
-    (identical from a worktree and from the main checkout), reads the single
-    matching spec file, and writes nothing.
+    through the same tracked-config-tier store resolver every per-epic path
+    uses (cwd-relative — a worktree reads its own branch's copy, not main's),
+    reads the single matching spec file, and writes nothing.
 
     The match reuses :func:`_spec_matches_row` (exact-or-prefix on the stem
     with the separating hyphen), so ``--plan PLAN-03`` resolves
@@ -3078,12 +3136,12 @@ def _epic_store_roots() -> tuple[tuple[str, Path], ...]:
     """Resolve the two epic store roots, each paired with its scope name.
 
     The single place this module derives the store ROOTS. Both are taken as the
-    PARENT of an entry resolved through the existing main-anchored resolvers
+    PARENT of an entry resolved through the existing store resolvers
     (:func:`_epic_root` and :func:`file_ops.get_archived_orchestrator_dir`), so a
-    root is main-anchored for exactly the same reason every per-epic path is —
-    the walk resolves identically from a worktree and from the main checkout —
-    and no path-resolution rule is restated here. Both consumers share it: the
-    sibling walk below and the ``corpus epics`` enumeration.
+    root resolves for exactly the same reason every per-epic path does — the walk
+    inherits whatever tier those resolvers place the store on — and no
+    path-resolution rule is restated here. Both consumers share it: the sibling
+    walk below and the ``corpus epics`` enumeration.
     """
     return (
         (SCOPE_ACTIVE, _epic_root(_ROOT_PROBE_ENTRY).parent),
@@ -3208,9 +3266,9 @@ def _sibling_epic_roots(slug: str) -> list[Path]:
     """Enumerate the OTHER epics' store roots — active and archived alike.
 
     Mirrors the on-query store scan the read verbs document: both
-    ``.plan/local/orchestrator/`` and ``.plan/local/archived-orchestrators/`` are
-    walked, so an archived sibling stays visible to the duplication check. An
-    epic present in both homes is yielded once.
+    ``.plan/orchestrator/`` and ``.plan/archived-orchestrators/`` are walked, so
+    an archived sibling stays visible to the duplication check. An epic present
+    in both homes is yielded once.
     """
     roots: dict[str, Path] = {}
     bases = [base for _, base in _epic_store_roots()]
@@ -4818,7 +4876,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
 
     scaffold = subparsers.add_parser(
         'scaffold',
-        help='Create the .plan/local/orchestrator/{slug}/ directory tree (idempotent).',
+        help='Create the .plan/orchestrator/{slug}/ directory tree (idempotent).',
         allow_abbrev=False,
     )
     _add_slug_arg(scaffold)

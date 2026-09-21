@@ -12,14 +12,17 @@ other's — see [The plan-lifecycle input](#the-plan-lifecycle-input).
 
 ## Never a gate
 
-⛔ This tool is a **derivation and report tool, never a CI gate**. The epic specs
-and the epic ledger both live under `.plan/local/orchestrator/`, which is
-git-ignored and therefore absent from a fresh clone — no CI check can read them,
-so no CI check can depend on them. `report` exits 0 even when it renders
-disagreements: a rendered disagreement is the product, not a failure.
+⛔ This tool is a **derivation and report tool, never a CI gate**. `report` exits
+0 even when it renders disagreements: a rendered disagreement is the product, not
+a failure. That ruling is about what the output MEANS, and it does not rest on
+reachability — the epic specs and the epic ledger live under
+`.plan/orchestrator/`, which is git-tracked and therefore present in a fresh
+clone. Whether any CI check should consume the derivation is a separate decision
+this document does not take.
 
-The ledger's absence from a fresh clone is also why the degraded lifecycle read
-is a first-class, reported state rather than an error — see
+The degraded lifecycle read is a first-class, reported state rather than an
+error for its own reasons, which reachability never supplied: a ledger can be
+absent, unreadable, or malformed in any checkout — see
 [The degradation path](#the-degradation-path).
 
 The tool's only sanctioned write is the escalation path in
