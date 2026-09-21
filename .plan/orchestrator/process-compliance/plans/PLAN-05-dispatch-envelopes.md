@@ -29,13 +29,13 @@ Each gap gets a contract plus a closure test.
 ## Claim Labels
 
 - OBSERVED: Generic dispatch must defer to step-owned dispatch bodies — read at `.plan/local/orchestrator/process-compliance/epic.md` § `Inherited Material F`
-  - verdict: corroborated | checked_at: 86789820f | by: process-compliance/cleanup | rescoped: n/a | evidence: epic Inherited Material F intact; requires_prompt_fields still absent from phase-5-execute at HEAD
+  - verdict: unverifiable | checked_at: 93bda90 | by: process-compliance/cleanup | rescoped: n/a | evidence: ledger cite (epic Inherited Material F) not re-opened this pass; run-behavior premise needs outline evidence
 - OBSERVED: Fix-task loop-back dispatch shape states no envelope fields — read at `.plan/local/orchestrator/process-compliance/epic.md` § `Inherited Material F`
-  - verdict: corroborated | checked_at: 86789820f | by: process-compliance/cleanup | rescoped: n/a | evidence: epic Inherited Material F intact; no fix-task envelope-shape contract landed since
+  - verdict: unverifiable | checked_at: 93bda90 | by: process-compliance/cleanup | rescoped: n/a | evidence: ledger cite (epic Inherited Material F) not re-opened this pass; run-behavior premise needs outline evidence
 - OBSERVED: `loop_back_target` is missing on verification-feedback loop_back returns — read at `.plan/local/orchestrator/process-compliance/epic.md` § `Inherited Material F`
-  - verdict: corroborated | checked_at: 86789820f | by: process-compliance/cleanup | rescoped: n/a | evidence: epic Inherited Material F intact; loop_back_target still absent from phase-5-execute at HEAD
+  - verdict: unverifiable | checked_at: 93bda90 | by: process-compliance/cleanup | rescoped: n/a | evidence: ledger cite (epic Inherited Material F) not re-opened this pass; run-behavior premise needs outline evidence
 - HYPOTHESIS: The dispatch registry seam lives under the execute-task / phase-5 dispatch paths — confirm/refute at `marketplace/bundles/plan-marshall/skills/execute-task/scripts/inject_project_dir.py` § `inject_project_dir` (verify-at-outline; corrected 2026-09-18: full symbol, subcommand dispatch at :208)
-  - verdict: corroborated | checked_at: 86789820f | by: process-compliance/cleanup | rescoped: n/a | evidence: inject_project_dir at :82, subcommand dispatch at :61 (line drift from PLAN-02 additions); seam holds
+  - verdict: corroborated | checked_at: 93bda90 | by: process-compliance/cleanup | rescoped: n/a | evidence: inject_project_dir defined at inject_project_dir.py:82 with subcommand dispatch at :208
 - Verify-first clause: The consuming phase must settle the HYPOTHESIS against the implementing source before scoping — refutation loops back to re-scope.
   - verdict: unverifiable | checked_at: 6e239a13762514dc8e1f3fbceeb70b3d21ebac06 | by: process-compliance/cleanup | rescoped: n/a | evidence: procedural instruction to the consuming phase, not a checkable world premise; no implementing-source check applies
 

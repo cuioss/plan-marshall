@@ -28,11 +28,11 @@ family. Lands on top of PLAN-05's settled envelope shapes.
 ## Claim Labels
 
 - OBSERVED: Producer vocabulary inconsistently enforced across two observations — read at `.plan/local/orchestrator/process-compliance/epic.md` § `Inherited Material F`
-  - verdict: corroborated | checked_at: 86789820f | by: process-compliance/cleanup | rescoped: n/a | evidence: epic Inherited Material F intact; producer vocabulary still without single accept-set at HEAD
+  - verdict: unverifiable | checked_at: 93bda90 | by: process-compliance/cleanup | rescoped: n/a | evidence: ledger cite (epic Inherited Material F) not re-opened this pass; enforcement behavior not checkable by file read
 - OBSERVED: Dispatch roster should carry each step's prompt skills — read at `.plan/local/orchestrator/process-compliance/epic.md` § `Inherited Material F`
-  - verdict: corroborated | checked_at: 86789820f | by: process-compliance/cleanup | rescoped: n/a | evidence: epic Inherited Material F intact; roster prompt-skills gap still open at HEAD
+  - verdict: unverifiable | checked_at: 93bda90 | by: process-compliance/cleanup | rescoped: n/a | evidence: ledger cite (epic Inherited Material F) not re-opened this pass; gap premise names no implementing symbol
 - HYPOTHESIS: The roster and vocabulary seams live beside the PLAN-05 dispatch paths — confirm/refute at `marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/dispatch-inline-split.md` § `Dispatched steps` (verify-at-outline; re-scoped 2026-09-18: not operations.md)
-  - verdict: corroborated | checked_at: 86789820f | by: process-compliance/cleanup | rescoped: n/a | evidence: dispatch-inline-split.md Dispatched steps at :13 holds; re-pointed anchor confirmed (PR #1556-era state preserved)
+  - verdict: corroborated | checked_at: 93bda90 | by: process-compliance/cleanup | rescoped: n/a | evidence: dispatch-inline-split.md Dispatched steps section present at :13
 - Verify-first clause: The consuming phase must settle the HYPOTHESIS against the implementing source before scoping — refutation loops back to re-scope.
   - verdict: unverifiable | checked_at: ba0317c47edacc196d383dc0110d06cdb13dcc32 | by: process-compliance/cleanup | rescoped: n/a | evidence: procedural instruction to the consuming phase, not a checkable world premise; no implementing-source check applies
 
