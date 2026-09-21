@@ -97,7 +97,7 @@ observed in the wild match registry patterns.
 - CodeRabbit reset-notice phrasing without trailing phrase
 - provider nitpicks routed when test-only scope excludes them
 
-### PLAN-07 footprint-surface
+### PLAN-07 footprint-surface — shipped (#1559)
 The realized footprint is diffed against the upstream base with a recorded
 creation SHA. Twin
 declaration comparisons share one containment rule and report the classified
