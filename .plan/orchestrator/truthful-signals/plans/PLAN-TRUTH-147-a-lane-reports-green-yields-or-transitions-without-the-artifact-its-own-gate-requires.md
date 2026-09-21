@@ -37,9 +37,13 @@ concurrency. Deliverable count re-derived after the split: **9**.
 ⛔ Every claim below is a POINTER at the superseded source spec that authored it. The sources are on disk and are the audit record; re-derive each claim **from the source spec's own section at HEAD**, never from this restatement. D0 owns that re-grounding.
 
 - HYPOTHESIS: every scoping premise carried from PLAN-TRUTH-142 still holds at HEAD — confirm/refute at `.plan/local/orchestrator/truthful-signals/plans/PLAN-TRUTH-142-phase-5-reports-green-over-work-it-did-not-verify-or-commit.md` § `## Claim Labels` (verify-at-outline)
+  - verdict: unverifiable | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: Pointer at PLAN-TRUTH-142 Claim Labels: 6 top-level bullets, ZERO persisted verdicts - that source has never been re-grounded, so no aggregate can be derived.
 - HYPOTHESIS: every scoping premise carried from PLAN-TRUTH-107 still holds at HEAD — confirm/refute at `.plan/local/orchestrator/truthful-signals/plans/PLAN-TRUTH-107-the-phase-runner-yields-control-without-naming-a-reason.md` § `## Claim Labels` (verify-at-outline)
+  - verdict: unverifiable | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: Pointer at PLAN-TRUTH-107 Claim Labels: 13 verdicts, 5 corroborated + 8 unverifiable, none contradicted.
 - HYPOTHESIS: every scoping premise carried from PLAN-TRUTH-104 still holds at HEAD — confirm/refute at `.plan/local/orchestrator/truthful-signals/plans/PLAN-TRUTH-104-a-clear-verdict-over-an-empty-population-is-reported-as-a-checked-negative.md` § `## Claim Labels` (verify-at-outline)
+  - verdict: unverifiable | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: Pointer at PLAN-TRUTH-104 Claim Labels: 11 verdicts, 3 corroborated + 8 unverifiable.
 - HYPOTHESIS: every scoping premise carried from PLAN-TRUTH-141 still holds at HEAD — confirm/refute at `.plan/local/orchestrator/truthful-signals/plans/PLAN-TRUTH-141-the-light-lane-cannot-author-the-pr-title-its-own-entry-gate-requires.md` § `## Claim Labels` (verify-at-outline)
+  - verdict: unverifiable | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: Pointer at PLAN-TRUTH-141 Claim Labels: 7 top-level bullets, ZERO persisted verdicts - never re-grounded.
 
 ## Expected Surface
 

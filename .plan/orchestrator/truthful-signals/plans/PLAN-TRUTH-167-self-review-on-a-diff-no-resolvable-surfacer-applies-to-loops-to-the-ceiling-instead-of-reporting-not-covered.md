@@ -72,22 +72,29 @@ surfacer applied" from "reviewed clean" without reading `may_close=no` from a st
 - OBSERVED: Step 1 selects "the first implementor whose notation **resolves in the current executor**" —
   `marketplace/bundles/plan-marshall/skills/phase-6-finalize/workflow/pre-submission-self-review.md` line 115,
   read at `7a028157e`.
+  - verdict: corroborated | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: pre-submission-self-review.md:119 still reads Select the first implementor whose notation resolves in the current executor (line moved from 115).
 - OBSERVED: the zero-generator fallback and its not-run verdict exist but are reached only when NO
   implementor resolves — `pre-submission-self-review.md` lines 177–179 and 395, read at `7a028157e`.
+  - verdict: corroborated | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: pre-submission-self-review.md:181-183 carries the zero-generator fallback and the not-run verdict string, gated on when NO discovered implementor resolves (lines moved from 177-179).
 - OBSERVED: `verdict_refused`, `further_round_owed`, and `verifier_unavailable` all map to `loop_back` —
   `pre-submission-self-review.md` lines 503–505, read at `7a028157e`.
+  - verdict: corroborated | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: pre-submission-self-review.md:505-509 is a three-row table mapping verdict_refused, further_round_owed and verifier_unavailable all to recorded outcome loop_back, restated as absolute at line 518.
 - OBSERVED: the plan-marshall surfacer defaults its base to local `main` —
   `marketplace/bundles/pm-plugin-development/skills/ext-self-review-plan-marshall/scripts/self_review.py`
   line 285 (`base_branch = args.base_branch or 'main'`), read at `7a028157e`.
+  - verdict: corroborated | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: self_review.py:285 is exactly base_branch = args.base_branch or main - unchanged, same line number.
 - OBSERVED: `ext-self-review-plan-marshall` is the only surfacer implementor; no detector reads Java (per the
   sender's `git ls-tree` sweep at `7a028157e`, corroborated by directory listing at staging).
+  - verdict: corroborated | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: architecture search --content over 3097 files (clean coverage) shows exactly one implementor bundle, pm-plugin-development:ext-self-review-plan-marshall; no Java/other-domain surfacer exists.
 - HYPOTHESIS: `manage-references compute-footprint` resolves `--base-ref` to local `{base}` after a rebase
   onto `origin/{base}` — confirm/refute at
   `marketplace/bundles/plan-marshall/skills/manage-references/scripts/_cmd_compute_footprint.py` § the base-ref
   default (verify-at-outline).
+  - verdict: corroborated | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: _cmd_compute_footprint.py:69 calls resolve_base_ref, which (_references_core.py:167-176) falls back to the bare LOCAL branch name and finally the literal main. Never origin/{base}. HYPOTHESIS confirmed.
 - HYPOTHESIS: the extension point declares no content-class domain an implementor could be matched on —
   confirm/refute at `marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-self-review-surfacing.md`
   § the implementor contract (verify-at-outline).
+  - verdict: corroborated | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: ext-point-self-review-surfacing.md declares an implementor via implements: frontmatter plus a CLI contract only; no content-class/domain declaration exists for selection to match on. delta_coverage per-content-class counts are an OUTPUT field, not an applicability declaration.
 
 ## Expected Surface
 

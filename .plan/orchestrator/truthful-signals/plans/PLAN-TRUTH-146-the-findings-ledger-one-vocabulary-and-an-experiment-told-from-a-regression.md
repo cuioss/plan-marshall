@@ -29,7 +29,9 @@ because the second is unfixable without the first: an expected-red intent needs 
 ⛔ Every claim below is a POINTER at the superseded source spec that authored it. The sources are on disk and are the audit record; re-derive each claim **from the source spec's own section at HEAD**, never from this restatement. D0 owns that re-grounding.
 
 - HYPOTHESIS: every scoping premise carried from PLAN-TRUTH-124 still holds at HEAD — confirm/refute at `.plan/local/orchestrator/truthful-signals/plans/PLAN-TRUTH-124-one-ledger-vocabulary-clean-slate-so-the-same-word-means-the-same-thing-everywhere.md` § `## Claim Labels` (verify-at-outline)
+  - verdict: contradicted | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: no | evidence: Pointer at PLAN-TRUTH-124 Claim Labels: 11 verdicts including FOUR contradicted (indices 0,1,3,6) plus 3 unverifiable. Not yet re-scoped.
 - HYPOTHESIS: every scoping premise carried from PLAN-TRUTH-133 still holds at HEAD — confirm/refute at `.plan/local/orchestrator/truthful-signals/plans/PLAN-TRUTH-133-the-findings-pipeline-cannot-tell-an-experiment-from-a-regression.md` § `## Claim Labels` (verify-at-outline)
+  - verdict: unverifiable | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: Pointer at PLAN-TRUTH-133 Claim Labels: 8 top-level bullets but only 7 verdicts (one bullet never settled) and 3 unverifiable.
 
 ## Expected Surface
 

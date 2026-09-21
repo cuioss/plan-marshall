@@ -30,8 +30,11 @@ make the machine assert what the prose currently only states.
 ⛔ Every claim below is a POINTER at the superseded source spec that authored it. The sources are on disk and are the audit record; re-derive each claim **from the source spec's own section at HEAD**, never from this restatement. D0 owns that re-grounding.
 
 - HYPOTHESIS: every scoping premise carried from PLAN-TRUTH-129 still holds at HEAD — confirm/refute at `.plan/local/orchestrator/truthful-signals/plans/PLAN-TRUTH-129-an-invocation-rejection-answers-confidently-and-wrongly.md` § `## Claim Labels` (verify-at-outline)
+  - verdict: unverifiable | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: Pointer at PLAN-TRUTH-129 Claim Labels: 8 verdicts, 6 corroborated + 2 unverifiable.
 - HYPOTHESIS: every scoping premise carried from PLAN-TRUTH-140 still holds at HEAD — confirm/refute at `.plan/local/orchestrator/truthful-signals/plans/PLAN-TRUTH-140-the-trailer-authority-is-open-in-three-carriers-and-checked-in-none.md` § `## Claim Labels` (verify-at-outline)
+  - verdict: unverifiable | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: Pointer at PLAN-TRUTH-140 Claim Labels: 9 top-level bullets, ZERO persisted verdicts - never re-grounded.
 - HYPOTHESIS: every scoping premise carried from PLAN-TRUTH-115 still holds at HEAD — confirm/refute at `.plan/local/orchestrator/truthful-signals/plans/PLAN-TRUTH-115-the-repin-is-excluded-by-a-principle-we-already-violate-by-hand.md` § `## Claim Labels` (verify-at-outline)
+  - verdict: unverifiable | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: Pointer at PLAN-TRUTH-115 Claim Labels: 16 verdicts, 6 corroborated + 9 unverifiable + 1 non-standard token (ready).
 
 ## Expected Surface
 

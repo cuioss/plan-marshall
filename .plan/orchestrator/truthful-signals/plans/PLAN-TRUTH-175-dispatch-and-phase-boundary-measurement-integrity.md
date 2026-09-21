@@ -57,19 +57,24 @@ be captured.
 - OBSERVED: `boundary_monotonicity` returned an empty violation list over
   `work/metrics.toon` recording `6-finalize` `end_time` (12:24:27Z) before
   `start_time` (14:00:01Z) — read from PLAN-TRUTH-143's retrospective finding
+  - verdict: unverifiable | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: Cites PLAN-TRUTH-143's work/metrics.toon. That plan's directory no longer exists (no match under .plan/local/plans/, no .plan/local/archive/ at all) - only the landing record survives, and trusting its restated figures is the very thing this epic forbids.
 - OBSERVED: 41 of 77 `work/metrics-dispatch-boundaries-6-finalize.toon` rows record
   `total_tokens: 0` / `tool_uses: 0` / `duration_ms: 0` contiguous from a timestamp
   12 seconds after three logged `accumulate-agent-usage` argparse rejections — read
   from PLAN-TRUTH-143's retrospective finding
+  - verdict: unverifiable | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: Cites work/metrics-dispatch-boundaries-6-finalize.toon (41 of 77 rows) from the same unreachable PLAN-TRUTH-143 plan directory.
 - OBSERVED: `context_position_cost` reported `measured_rows: 0` of `total_rows: 98`
   across all three dispatching phases on PLAN-TRUTH-143 — read from its retrospective
   finding
+  - verdict: unverifiable | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: context_position_cost measured_rows: 0 of 98 is a PLAN-TRUTH-143 retrospective figure; the artifact is gone.
 - OBSERVED: `check-dispatch-audit` found only 7 of 15 token-proven dispatched
   finalize steps carrying a `[DISPATCH]` line, `channel_completeness` ratio 0.104 —
   read from PLAN-TRUTH-143's retrospective finding
+  - verdict: unverifiable | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: check-dispatch-audit 7-of-15 / channel_completeness 0.104 is a PLAN-TRUTH-143 retrospective figure; the artifact is gone.
 - OBSERVED: `analyze-logs` reported `build_count: 0` / `ledger_available: false`
   beside `log_build_calls: 139` for PLAN-TRUTH-143 — read from its retrospective
   finding
+  - verdict: unverifiable | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: build_count: 0 / ledger_available: false beside log_build_calls: 139 is a PLAN-TRUTH-143 retrospective figure; the artifact is gone.
 - Verify-first clause: confirm current line numbers and exact field names at outline
   before scoping each of the five deliverables against HEAD — all five are first-party
   retrospective findings, none independently re-read by the orchestrator before

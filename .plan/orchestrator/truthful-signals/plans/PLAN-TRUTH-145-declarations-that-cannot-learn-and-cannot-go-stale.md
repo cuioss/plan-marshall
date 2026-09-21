@@ -28,8 +28,11 @@ honest INDETERMINATE where a clean zero is currently published.
 ⛔ Every claim below is a POINTER at the superseded source spec that authored it. The sources are on disk and are the audit record; re-derive each claim **from the source spec's own section at HEAD**, never from this restatement. D0 owns that re-grounding.
 
 - HYPOTHESIS: every scoping premise carried from PLAN-TRUTH-136 still holds at HEAD — confirm/refute at `.plan/local/orchestrator/truthful-signals/plans/PLAN-TRUTH-136-the-declared-footprint-cannot-learn-a-path-the-outline-did-not-predict.md` § `## Claim Labels` (verify-at-outline)
+  - verdict: contradicted | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: no | evidence: Pointer at PLAN-TRUTH-136 Claim Labels: that spec's 6 persisted verdicts include one contradicted (claim 2 - plugin-doctor performs no git cross-check; plugin-doctor/SKILL.md unchanged since 7566efd95). A premise the source itself records as REFUTED cannot still all hold. Not yet re-scoped.
 - HYPOTHESIS: every scoping premise carried from PLAN-TRUTH-138 still holds at HEAD — confirm/refute at `.plan/local/orchestrator/truthful-signals/plans/PLAN-TRUTH-138-the-scope-creep-guard-has-no-producer-and-has-never-measured-anything.md` § `## Claim Labels` (verify-at-outline)
+  - verdict: contradicted | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: no | evidence: Pointer at PLAN-TRUTH-138 Claim Labels: 7 persisted verdicts, one contradicted (index 5), two unverifiable. Not yet re-scoped.
 - HYPOTHESIS: every scoping premise carried from PLAN-TRUTH-132 still holds at HEAD — confirm/refute at `.plan/local/orchestrator/truthful-signals/plans/PLAN-TRUTH-132-a-frozen-manifest-param-has-no-staleness-detector.md` § `## Claim Labels` (verify-at-outline)
+  - verdict: unverifiable | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: Pointer at PLAN-TRUTH-132 Claim Labels: 5 persisted verdicts, 4 corroborated + 1 unverifiable (index 0). No contradiction, but not every premise is settled.
 
 ## Expected Surface
 

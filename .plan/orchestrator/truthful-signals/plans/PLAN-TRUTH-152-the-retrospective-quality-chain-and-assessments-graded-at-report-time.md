@@ -39,7 +39,9 @@ archived-retrospective auditor, and because a score computed over mis-graded ass
 ⛔ Every claim below is a POINTER at the superseded source spec that authored it. The sources are on disk and are the audit record; re-derive each claim **from the source spec's own section at HEAD**, never from this restatement. D0 owns that re-grounding.
 
 - HYPOTHESIS: every scoping premise carried from PLAN-TRUTH-123 still holds at HEAD — confirm/refute at `.plan/local/orchestrator/truthful-signals/plans/PLAN-TRUTH-123-the-quality-chain-has-no-score-and-a-disabled-gate-is-indistinguishable-from-a-clean-one.md` § `## Claim Labels` (verify-at-outline)
+  - verdict: contradicted | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: no | evidence: Pointer at PLAN-TRUTH-123 Claim Labels: 23 verdicts including THREE contradicted (indices 9,12,14). Not yet re-scoped. Note: PLAN-TRUTH-152 is itself transferred out to post-run-quality PLAN-PRQ-01, so this spec's own scope is already moving.
 - HYPOTHESIS: every scoping premise carried from PLAN-TRUTH-130 still holds at HEAD — confirm/refute at `.plan/local/orchestrator/truthful-signals/plans/PLAN-TRUTH-130-an-assessment-is-read-at-report-time-and-grades-a-correct-action-as-a-violation.md` § `## Claim Labels` (verify-at-outline)
+  - verdict: unverifiable | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: Pointer at PLAN-TRUTH-130 Claim Labels: 8 top-level bullets, only 7 verdicts (one unsettled), 5 unverifiable.
 
 ## Expected Surface
 

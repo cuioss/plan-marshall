@@ -31,9 +31,11 @@ on a single PLAN-TRUTH-143 run.
   `invented_flag`, spread across 14 distinct scripts; `manage-findings qgate` and
   `manage-solution-outline get-deliverable` each occurred 8 times — read from
   PLAN-TRUTH-143's own retrospective finding
+  - verdict: unverifiable | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: The 41-failures / 18-signatures / 14-scripts figures come from PLAN-TRUTH-143's script-failure-analysis aspect, whose plan directory no longer exists in this checkout.
 - OBSERVED: `manage-invocation-invalid` already derives its accept-set from a live
   `--help` walk — read from prior corpus usage (e.g. `plan-orchestrator/SKILL.md`'s
   own canonical-block enforcement note)
+  - verdict: corroborated | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: _analyze_manage_invocation.py's module docstring (lines 27-43) states the recursive --help walk, the four parse anchors, the in-process memo and the content-hash-keyed on-disk cache were lifted into script-shared's argparse_surface - one shared live-help derivation, also consumed by the executor generator.
 - Verify-first clause: confirm the exact `tools-script-executor` verb surface and the
   `manage-invocation-invalid` implementation location against HEAD at outline before
   scoping the new verb's integration point.

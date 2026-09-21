@@ -74,15 +74,20 @@ each at HEAD before scoping (verify-at-outline for all).
 
 - OBSERVED (lesson `2026-09-03-05-001`): re-fireable finalize steps carry a terminal `--outcome done`
   branch with no `--force`.
+  - verdict: unverifiable | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: Lesson 2026-09-03-05-001 present; settling re-fireable finalize steps carry a terminal --outcome done with no --force requires the population sweep D0 owns, not run here.
 - OBSERVED (lesson `2026-09-04-08-007`, KEEP of its cluster): `[OUTCOME]` is lost on self-re-dispatch;
   member `2026-09-05-07-004` (a re-fire emitting no `[DISPATCH]`, leaving the audit blind) retired as
   redundant of it. ⚠ Three recurrences across three plans.
+  - verdict: unverifiable | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: Lesson 2026-09-04-08-007 present; [OUTCOME]/[DISPATCH] loss on re-dispatch is a runtime-emission property, not observable from source read-only.
 - OBSERVED (lesson `2026-09-05-06-001`): `mark-step-done` does not enforce the `display_detail` ceiling it
   documents.
+  - verdict: corroborated | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: _cmd_mark_step.py handles display_detail at 18 sites (307, 452-511) with NO length, ASCII, single-line or trailing-period check - a pattern probe returns ZERO hits. The documented ceiling is unenforced.
 - OBSERVED (lesson `2026-09-08-22-001`): the finalize commit seam's stage-specific-files rule is prose, not
   a mechanical allowlist; the porcelain read is whole-tree.
+  - verdict: corroborated | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: git-workflow.py:2295 runs git status --porcelain with no pathspec (whole-tree) and the file carries no staging allowlist derived from a footprint. CAVEAT: established by absence of an allowlist at the commit seam, not by sweeping every commit-seam doc.
 - ⚠ HYPOTHESIS: the four are independent rather than one under-recording cause — ⛔ D0 decides; if they
   share a cause, D1–D4 collapse and the plan shrinks (verify-at-outline).
+  - verdict: unverifiable | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: Independence-vs-common-cause question the spec itself hands to D0.
 
 ## Expected Surface
 

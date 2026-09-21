@@ -62,14 +62,18 @@ distinct outcomes with a matched negative control; a light-lane plan reaches cap
 
 - HYPOTHESIS: every scoping premise carried from `PLAN-TRUTH-104` still holds at HEAD — confirm/refute at
   that spec's `## Claim Labels` (verify-at-outline)
+  - verdict: unverifiable | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: Pointer at PLAN-TRUTH-104 Claim Labels: 11 verdicts, 8 unverifiable, none contradicted.
 - HYPOTHESIS: every scoping premise carried from `PLAN-TRUTH-141` still holds at HEAD — confirm/refute at
   that spec's `## Claim Labels` (verify-at-outline)
+  - verdict: unverifiable | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: Pointer at PLAN-TRUTH-141 Claim Labels: 7 top-level bullets, ZERO persisted verdicts - never re-grounded (same gap PLAN-TRUTH-147 c3 has).
 - OBSERVED: the light-lane `pr_title` defect was re-confirmed first-party on 2026-09-17 —
   `pr_title_missing` is raised by `plan-marshall/scripts/_handshake_commands.py` line 470 (invariant
   documented at `_invariants.py` line 321), and neither `planning.md` nor `light-lane.md` mentions
   `pr_title`.
+  - verdict: corroborated | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: All three limbs confirmed at HEAD: pr_title_missing raised at _handshake_commands.py:470 (and again 610); the invariant documented at _invariants.py:314-332; and a whole-file probe for pr_title returns ZERO hits in both planning.md and light-lane.md.
 - OBSERVED: this spec carries no deliverable of its own invention — all four are `PLAN-TRUTH-147`'s D8–D11
   and their gate, moved without rewording. The split changed the owner, not the work.
+  - verdict: corroborated | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: PLAN-TRUTH-147's deliverable list marks D8, D9 and D10 MOVED OUT 2026-09-18 to PLAN-TRUTH-172 and reassigns the -104/-141 control sets to -172 D3; -172's D0-D3 map onto exactly those members plus their gate.
 
 ## Expected Surface
 

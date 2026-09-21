@@ -39,7 +39,9 @@ after the move: **10**.
 ⛔ Every claim below is a POINTER at the superseded source spec that authored it. The sources are on disk and are the audit record; re-derive each claim **from the source spec's own section at HEAD**, never from this restatement. D0 owns that re-grounding.
 
 - HYPOTHESIS: every scoping premise carried from PLAN-TRUTH-091 still holds at HEAD — confirm/refute at `.plan/local/orchestrator/truthful-signals/plans/PLAN-TRUTH-091-agent-facing-documentation-surfaces.md` § `## Claim Labels` (verify-at-outline)
+  - verdict: unverifiable | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: Pointer at PLAN-TRUTH-091 Claim Labels: resolves to a single top-level bullet carrying one section-scoped unverifiable verdict (27 asserted gaps never enumerated).
 - HYPOTHESIS: every scoping premise carried from PLAN-TRUTH-111 still holds at HEAD — confirm/refute at `.plan/local/orchestrator/truthful-signals/plans/PLAN-TRUTH-111-observed-defects-from-the-live-plan-sweep.md` § `## Claim Labels` (verify-at-outline)
+  - verdict: unverifiable | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: Pointer at PLAN-TRUTH-111 Claim Labels: 6 verdicts, 1 corroborated + 5 unverifiable.
 
 ## Expected Surface
 

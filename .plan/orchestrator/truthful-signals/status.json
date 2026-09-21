@@ -1767,10 +1767,10 @@
       "id": "PLAN-TRUTH-144",
       "slug": "the-lessons-corpus-and-producers-that-report-success-over-a-write-nothing-can-read",
       "workstream": "WS-01",
-      "status": "running",
-      "plan_marshall_plan_id": "",
-      "pr": "",
-      "landing": ""
+      "status": "shipped",
+      "plan_marshall_plan_id": "lessons-corpus-producers-report-success",
+      "pr": "1560",
+      "landing": "landings/PLAN-TRUTH-144.md"
     },
     {
       "id": "PLAN-TRUTH-145",
@@ -1839,7 +1839,7 @@
       "id": "PLAN-TRUTH-152",
       "slug": "the-retrospective-quality-chain-and-assessments-graded-at-report-time",
       "workstream": "WS-01",
-      "status": "parked",
+      "status": "transferred",
       "plan_marshall_plan_id": "",
       "pr": "",
       "landing": ""
@@ -2070,12 +2070,12 @@
       "landing": ""
     }
   ],
-  "resume_anchor": "=== \u25b6 **2026-09-21 -- LEDGER RELOCATED to .plan/orchestrator/ (tracked), inbox DRAINED (20/20 dispositioned), 4 new specs staged.** Relocated epic.md+status.json drift (only these 2 files had drifted from the day-old tracked snapshot at #1558 -- everything else already matched). Inbox drain: 9 messages staged into 4 new plan specs (PLAN-TRUTH-174 plan-retrospective measurement integrity; PLAN-TRUTH-175 dispatch/phase-boundary measurement integrity, 5 deliverables; PLAN-TRUTH-176 pre-flight invocation validator; PLAN-TRUTH-177 orchestration detection fails open without source_id, forwarded from post-run-quality), 11 messages promoted to the global lessons corpus (2026-09-21-10-002 through -012, process/methodology corrective rules from PLAN-TRUTH-143's own self-review and CodeRabbit findings -- 3 of the 11 describe bugs already fixed within PR #1539 itself, promoted for the corrective rule only). Queue now 225 rows (221 + 4 new), all staged. PLATFORM GOTCHA DISCOVERED THIS PASS, ITSELF AN INSTANCE OF THE EPICS OWN THEME: orchestrator queue --add-row / inbox archive / manage-logging decision resolve their WRITE target to the MAIN checkout regardless of actual cwd, even when invoked from a worktree with an explicit copied executor -- only git itself (add/commit) and the Write tool correctly targeted the worktree. Worked around by mirroring mains post-write state into the worktree and reverting main to clean; not yet reported as a finding of its own (candidate for a future inbox message). REPAIR THE PLUGIN PIN BEFORE RESTARTING -- still open: executor MARSHALL_VERSION=0.1.1723 (rebuilt this session) vs installed_plugins.json still at 0.1.1670. THIS WORK IS UNCOMMITTED ON BRANCH chore/relocate-truthful-signals-ledger IN A WORKTREE, NOT YET LANDED. NEXT ACTION: commit, push, open PR (skip-bot-review label), switch main back, monitor merge, pull -- then re-run corpus enumerate against the tracked location and continue the deferred cleanup verb (Steps 3-11, A1 re-grounding onward) as a SEPARATE pass. PLAN-TRUTH-144 still running (worktree lessons-corpus-producers-report-success), parallelization_scope=1, 161 then 165 queued after it per operator order. ===",
+  "resume_anchor": "=== \u25b6 **2026-09-21 -- CLEANUP RAN PROPERLY (Steps 1-3/A1 substantially complete; A2-A5 lighter-touch).** HEAD 74153664d. A1: dispatched corroboration re-grounded 78 claims across 22 live specs (8 of 30 had none unsettled) -- 27 corroborated, 45 unverifiable (never blocks), 6 contradicted. 5 specs now correctly BLOCKED pending re-scope (PLAN-TRUTH-145 x2, -146, -150, -153 -- see Open Defects for the pointed-to contradictions each must absorb). PLAN-TRUTH-174 D1 was found ALREADY SHIPPED and re-scoped in place (now targets the untouched parse_toon ingestion call only). Surface half of A1: all 30 live specs already declarative, no corrections needed. A4: no true duplicates among the 30 EXCEPT PLAN-TRUTH-152, a verbatim duplicate of post-run-quality PLAN-PRQ-01 -- transitioned to transferred. High file-overlap network (mostly PLAN-TRUTH-155's broad doc-sweep nature) reviewed, no new NEVER-PAIR entries added this pass beyond what was already known. A2/A3/A5: not separately run this pass -- no live spec is missing Objective/Expected Surface/Claim Labels, and no redistribution was attempted (time-bounded pass). Phase B (compact) and Phase D (restart-check) still to run this session. \u25b6 QUEUE: 224 live rows (152 now transferred, not counted staged). PLAN-TRUTH-161 remains the next emit target (not among the blocked 5), confirmed disjoint+prep-ready, N=1 R=0. \u26d4\u26d4 PLUGIN PIN GAP STILL OPEN, OPERATOR-ONLY -- verify current executor version vs installed_plugins.json before any restart. ===",
   "metadata": {
     "successor_of": "plan-optimization",
     "origin_note": "Spawned 2026-07-22 from plan-optimization staged residue + watches; running PLAN-23/35 remain in plan-optimization until landed, then that epic self-archives.",
     "parallelization_scope": "1"
   },
   "created": "2026-07-22T18:17:00Z",
-  "updated": "2026-09-21T11:22:44Z"
+  "updated": "2026-09-21T14:34:45Z"
 }

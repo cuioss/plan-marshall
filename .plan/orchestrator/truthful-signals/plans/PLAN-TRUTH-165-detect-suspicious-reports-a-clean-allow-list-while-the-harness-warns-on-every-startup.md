@@ -77,12 +77,15 @@ middle.
 - OBSERVED: `claude_runtime.py`'s `_reject_unprotectable_path` refuses to render a deny rule for any path
   containing whitespace, with the argument-boundary reasoning stated in its own code comment — per the
   source finding, not independently re-read line-for-line at staging (verify-at-outline).
+  - verdict: corroborated | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: claude_runtime.py:2715 _reject_unprotectable_path refuses a whitespace-bearing path at lines 2748-2753, with the argument-boundary reasoning in its own inline comment verbatim.
 - ⚠ HYPOTHESIS: a full sweep of all three live allow lists (46 + 7 + 184 rules) finds no OTHER
   mid-command-wildcard rule beyond the one already fixed. ⛔ Reported by the source finding as already
   swept, but not independently re-run at staging. D0 re-confirms (verify-at-outline).
+  - verdict: corroborated | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: Full re-sweep of all three live allow lists found NO mid-command-wildcard rule: .claude/settings.local.json (46 rules), .claude/settings.json (7), ~/.claude/settings.json (185). Every * is trailing, :*, or a trailing ** path glob.
 - ⚠ HYPOTHESIS: none of plan-marshall's own rule generators emit a mid-command wildcard. ⛔ Reported by
   the source finding as verified by reading each renderer; not independently re-read at staging
   (verify-at-outline).
+  - verdict: corroborated | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: _default_permission_rules() (claude_runtime.py:2615) emits only trailing globs. CAVEAT for D0: permission_fix.generate_wildcard() emits a filename glob inside a path rule, not a Bash argument-boundary span - the mid-COMMAND claim holds while the literal tail-or-colon-star wording does not.
 
 ## Expected Surface
 

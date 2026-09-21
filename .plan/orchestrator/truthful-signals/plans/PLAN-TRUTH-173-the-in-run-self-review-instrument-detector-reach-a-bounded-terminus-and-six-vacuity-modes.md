@@ -80,14 +80,19 @@ matched` self-review. *(Lesson `2026-09-13-20-003`; its action 3 is already ship
 - OBSERVED (`review-apparatus-043`): 4 of 5 observed escapes are a closed-set literal beside its defining
   symbol (`a1ebb0`, `986369`, `bc1344`, `df7702`), and none of the 20 `_detect_*` functions covers it.
   ⚠ Measured by the sending epic, not here — D0 re-derives.
+  - verdict: corroborated | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: _self_review_detectors.py carries exactly 20 module-level _detect_* functions, and none is a closed-set-literal-beside-its-defining-symbol detector. The 4-of-5-escapes measurement itself was NOT re-derived - D0 still owes that half.
 - OBSERVED (`review-apparatus-043`): 14 of 51 findings (27%) across 19 firings were self-seeded, five
   chains, one four rounds long, one oscillating. ⚠ Same caveat: re-derive at D0.
+  - verdict: unverifiable | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: The 14-of-51 / 27% self-seeded share over 19 firings is a measurement taken in another epic's run; the source firings are not on disk in this checkout. The spec's own caveat (re-derive at D0) stands.
 - OBSERVED (lesson `2026-09-15-06-002`): six separately-diagnosed vacuity modes, each caught by CodeRabbit
   or Q-Gate during `plan-truth-157`'s own review rounds; instances closed in #1494.
+  - verdict: unverifiable | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: Lesson 2026-09-15-06-002 present in the epic's lessons store; the six vacuity modes were not individually re-read against _self_review_patterns.py / the #1494 fixes.
 - OBSERVED (lesson `2026-09-13-20-003`): `plan-truth-127` shipped its own thesis inverted twice, and its
   action 3 is already shipped in `pre-submission-self-review.md`.
+  - verdict: unverifiable | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: Lesson 2026-09-13-20-003 present; neither the plan-truth-127 double-inversion nor the action-3-already-shipped half was re-read at HEAD.
 - ⚠ HYPOTHESIS: the closed-set-literal class and the six vacuity modes are one detector family rather than
   two — ⛔ unsettled; D0 decides, and if they are one, D1 and D4 collapse (verify-at-outline).
+  - verdict: unverifiable | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: One-detector-family-or-two question the claim assigns to D0.
 
 ## Expected Surface
 

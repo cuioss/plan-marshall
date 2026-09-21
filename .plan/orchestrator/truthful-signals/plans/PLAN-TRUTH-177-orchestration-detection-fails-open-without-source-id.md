@@ -39,10 +39,12 @@ mechanics on precedent.
   `recipe` sources and explicitly omits it for `description` — read from the
   forwarding message's first-party confirmation on PLAN-PRQ-06 (PR #1541,
   `a1dd4901f`, `'source_id' in status.json.metadata` is `False`)
+  - verdict: corroborated | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: phase-1-init/SKILL.md:429 shows --source-id as OPTIONAL with placeholder set {lesson_id|issue_url|recipe_key}, and line 449 states it is only for traceable sources - description, the default, is omitted. NUANCE for D0: line 303 adds a FOURTH source that DOES pass one on the file-pointer branch, so the claim's three-member enumeration is incomplete even though its conclusion about description holds.
 - OBSERVED: PLAN-PRQ-06's `emit-landing` never fired and `post-run-quality` never
   received its landing notification — 23 `candidate-lesson` messages had to be filed
   manually as a workaround — read from the forwarding message
   (`post-run-quality-001.md`)
+  - verdict: unverifiable | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: PLAN-PRQ-06's emit-landing non-firing and the 23 manually-filed candidate-lesson messages are reported by the forwarding message post-run-quality-001.md in a sibling epic's inbox; not cross-read here.
 - Verify-first clause: confirm `phase-1-init` Step 5.1's current source-handling
   branch and the orchestration-verdict detector's exact decision point against HEAD
   at outline before scoping.

@@ -82,18 +82,24 @@ each at HEAD before scoping (verify-at-outline for all).
 
 - OBSERVED (lesson `2026-08-27-12-001`): a full commit SHA was reconstructed from an abbreviated one and
   accepted into the append-only change ledger; prefix matching hid it.
+  - verdict: corroborated | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: manage-change-ledger.py accepts --commit-sha as a caller-supplied value with a PRESENCE check only (lines 161-163, passed through at 169); no format check, no resolvability check, no git rev-parse corroboration. The mechanism is live.
 - OBSERVED (lesson `2026-09-02-15-001`): `phase-2-refine` stages `module_mapping.toon` to a fixed,
   non-plan-namespaced `.plan/temp` path — concurrent refine dispatches race.
+  - verdict: corroborated | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: phase-2-refine/standards/refine-workflow-detail.md:750 instructs staging the rendered TOON payload to the FIXED, non-plan-namespaced path .plan/temp/module_mapping.toon, consumed at line 764. Concurrent refine dispatches collide.
 - OBSERVED (lesson `2026-09-15-08-010`, KEEP of its cluster): `baseline-reconcile` parses merge-tree prose
   into synthetic `file_path` entries. Members `2026-09-15-08-009` (proximity vs semantic), `-011` (a second
   synthetic path per conflict) and `-012` (name the symbols to prove disjointness) retired as redundant —
   ⚠ `-009`'s classification gap is carried into D3 and is NOT covered by the count fix alone.
+  - verdict: corroborated | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: _cmd_baseline_reconcile.py:411-414 takes stdout.splitlines()[1:] on rc==1 and returns EVERY non-blank line as a conflicted path, with no filter separating git's conflicted-name block from its trailing informational-message block.
 - OBSERVED (lesson `2026-09-15-08-044`): `.get('metadata', {})` does not defend against an explicit
   `metadata: null`.
+  - verdict: unverifiable | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: Lesson 2026-09-15-08-044 present; the reachable-explicit-metadata:null call sites were not enumerated (that is D0's .get(k,{}) population sweep).
 - OBSERVED (lesson `2026-09-15-08-006`): `phase_handshake verify` exits 1 twice with no stderr captured.
+  - verdict: unverifiable | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: Partly overtaken: _handshake_commands.py cmd_verify (line 547) now has named handlers returning structured TOON for each refusal class incl. pr_title_missing at 608-614. Which code path produced the observed silent exit 1 is not identified.
 - ⚠ HYPOTHESIS: `2026-09-15-08-017` (the module-mapping validator has no shape for a cross-bundle
   drift-rule test) belongs with D0's population rather than as its own deliverable — ⛔ unsettled; D0
   decides whether it is a sixth member or a separate spec (verify-at-outline).
+  - verdict: unverifiable | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: Lesson 2026-09-15-08-017 present; whether it is a sixth member or its own spec is a decision the claim assigns to D0.
 
 ## Expected Surface
 

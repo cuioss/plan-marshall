@@ -104,16 +104,21 @@ each against the named surface at HEAD before scoping (verify-at-outline for all
   but never reaps the build, so every documented re-run compounds the load that caused it; the verdict
   described the wait while the build had passed. Members `2026-09-02-21-001` and `2026-09-03-09-001` were
   retired as redundant of it.
+  - verdict: unverifiable | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: Lesson 2026-09-02-21-002 preserved at lessons/; the marshalld timeout technical assertion was not re-grounded against build-server-client / manage-build-server at this HEAD, as the spec's own verify-at-outline-for-all instruction requires.
 - OBSERVED (lesson `2026-09-05-21-001`, KEEP): the plugin-doctor real-tree test exceeds a 300 s
   pytest-timeout under a bare `module-tests` while passing under `verify` — the budget, not the code,
   decides the colour. Member `2026-09-02-20-001` (a 30 s budget against a 24–57 s verb) retired as redundant.
+  - verdict: unverifiable | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: Lesson 2026-09-05-21-001 present in the epic's lessons store; the 300s pytest-timeout-vs-verify divergence was not re-measured against test/conftest.py or the pytest config at this HEAD.
 - OBSERVED (lesson `2026-09-04-08-016`): before treating a build timeout as budget-vs-code, check whether
   the preceding sync absorbed a dependency-graph change — a cold rebuild is not a regression.
+  - verdict: unverifiable | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: Lesson 2026-09-04-08-016 present; the dependency-sync/cold-rebuild premise was not re-grounded against the adaptive budget inputs.
 - OBSERVED (inbox `api-sheriff-deployment-configurability-020`, first-party in a consuming repo): job
   `dbbc60f9` timed out at 300 s against a native IT whose p50 is 1250–1800 s, and a killed waiter for job
   `2ead9378…` was recovered by re-attaching to the same job id — the build had succeeded in 1255 s.
+  - verdict: unverifiable | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: Cites first-party observations inside inbox message api-sheriff-deployment-configurability-020 (job ids dbbc60f9 / 2ead9378); that message is consumed/archived and the daemon state is not re-observable read-only.
 - ⚠ HYPOTHESIS: these four sites are the whole population — ⛔ asserted by nobody; D0 owns the derivation
   (verify-at-outline).
+  - verdict: unverifiable | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: Self-declared population claim (these four sites are the whole population), explicitly assigned to D0 by the spec itself.
 
 ## Expected Surface
 
