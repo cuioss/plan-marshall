@@ -435,7 +435,7 @@ The executor exports environment variables to child scripts:
 | Variable | Purpose | Default |
 |----------|---------|---------|
 | `PLAN_DIR_NAME` | Directory name for plan storage (e.g., `.plan`) | `.plan` |
-| `PM_MARKETPLACE_ROOT` | Optional explicit marketplace anchor directory (must contain `marketplace/bundles`). NOT required for stale/relocated embedded paths — the executor self-heals those (see [Self-healing path resolution](#self-healing-path-resolution)). Honored by `generate_executor.py` and `script_shared.marketplace_paths.find_marketplace_path()` when resolving the marketplace tree. Overrides the script-relative walk and cwd-based fallback. The CLI flag `--marketplace-root` (on `generate` and `drift`) takes precedence when both are set. | _(unset)_ |
+| `PM_MARKETPLACE_ROOT` | Optional explicit marketplace anchor directory (must contain `marketplace/bundles`). NOT required for stale/relocated embedded paths — the executor self-heals those (see [Self-healing path resolution](#self-healing-path-resolution)). Honored by `generate_executor.py` and `script_shared.marketplace_paths.find_marketplace_path()` when resolving the marketplace tree. Overrides the script-relative walk and cwd-based fallback. The CLI flag `--marketplace-root` takes precedence when both are set (see each subcommand's `--help` for which verbs accept it, rather than reading a verb list from here). | _(unset)_ |
 | `PYTHONPATH` | Cross-skill import paths | Auto-built from all script directories |
 
 ### PLAN_DIR_NAME Usage
