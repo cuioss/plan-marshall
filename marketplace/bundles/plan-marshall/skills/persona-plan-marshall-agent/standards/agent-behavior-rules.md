@@ -34,6 +34,7 @@ A plain-English index of the rules below. Each line is a memory hook that links 
 | Obey each skill's declared `mode`. | [Skill mode: comply with the declared archetype](#skill-mode-comply-with-the-declared-archetype) |
 | Ask the architecture inventory before reaching for Glob/Grep. | [Structured queries first](#structured-queries-first) |
 | Quote script subcommands/flags verbatim; never paraphrase a verb. | [Never invent script subcommands — recurrence signatures](#never-invent-script-subcommands--recurrence-signatures) |
+| A nudge names the family — enumerate it, close every sibling, report the set. | [Nudge handling and correction memory](#nudge-handling-and-correction-memory) |
 
 **Talking to the user** is governed by [`user-communication.md`](user-communication.md), the sibling standard that loads unconditionally alongside this one. Its rules are not restated or summarised here — read it there.
 
@@ -280,6 +281,32 @@ These rules apply to ALL development work in plan-marshall-governed repositories
 - **A newly-authored index/summary table must enumerate every member of the set it indexes** — When you author or extend a table, card, or list whose purpose is to *index* a set — a rules card over the document's rules, a command table over a script's subcommands, a candidate-list summary over a detector's outputs, a step-dispatch table over a workflow's steps — it MUST carry one row per member of the indexed set, with no omissions. An index that lists only a subset silently misrepresents the set as smaller than it is, and the omission is invisible at the index site (the table reads as complete). When you add a member to the indexed set, add its index row in the SAME change; when you author the index, cross-check it against the authoritative set and confirm the cardinality matches before considering it done. This is the index-completeness counterpart to the count-prose-staleness discipline: a count claim and an index table are two faces of the same "describe the set accurately" obligation.
 
 - **Never assert closure over an enumeration without re-checking it against its declaring source** — Prose of the shape *"Required — unrecognised values are rejected; one of: {list}"* does two things at once: it enumerates, and it tells the reader the enumeration is the complete legal set. When that list has drifted from the authoritative declaration (an argparse `choices=` tuple, an enum, a registry), the closure claim upgrades an ordinary staleness gap into an actively misleading contract: a reader obeying the project's "quote subcommands and flag values verbatim from the docs" rule is led to a *wrong* value rather than merely an incomplete one, reaches for the nearest documented substitute, and writes a plausible-but-wrong entry that downstream analysis consumes as well-formed. Closure language therefore raises the bar on the enumeration beneath it — before writing or preserving it, re-read the declaring source and confirm the list matches member-for-member. Where the set can grow, point the prose at the source of truth ("the accepted set is exactly the `X` tuple in `path`") instead of silently restating it, and prefer a test asserting documented-set equals declared-set over a hand-maintained copy. When the same enumeration is mirrored at several sites in one document, every site is part of the same change.
+
+### Nudge handling and correction memory
+
+**Rule:** A nudge names an invariant family, not a single instance. On any operator nudge that names an invariant, enumerate the invariant family, close every sibling, and report the closed set. Answering only the nudged instance while leaving known siblings open is minimal-literal compliance, and minimal-literal compliance is itself a recorded finding.
+
+**Nudge-batching obligation (procedural, not advisory):**
+
+1. Name the invariant family the nudge belongs to.
+2. Enumerate every sibling the family covers in the current scope.
+3. Close each sibling (fix, or record an explicit exemption with a reason).
+4. Report the closed set: family, siblings checked, per-sibling outcome.
+
+**Structured deviation-audit form:** Replace prose "revisit the workflow" with this fixed checklist artifact, recorded wherever the correction is logged:
+
+- Nudge received (verbatim or pointer).
+- Invariant family named.
+- Siblings enumerated (list, or state the population when empty).
+- Correction memory consulted (yes/no with the consulted record).
+- Per-sibling closure outcome (closed / exempted with reason).
+- Closed set reported back to the operator.
+
+**Cross-turn correction-memory rule:** Before answering a nudge, consult the active corrections already recorded for its invariant class. A repeated nudge for the same class (three nudges, one invariant class) means the class was never made consultable — close the class, not the instance, so the next turn finds the rule instead of re-deriving it.
+
+**Correction-memory artifact and lookup (the consultable mechanism):** the memory is not a separate store — it is the plan's own recorded substrate, keyed by the invariant-class token (the rule heading anchor, e.g. `nudge-handling-and-correction-memory`). Write path: record every correction with `manage-logging decision` carrying the invariant-class token, and file anything durable as a finding (`manage-findings`) or lesson (`manage-lessons`). Lookup path, run before answering any nudge: (1) `manage-logging read --type decision`, filtered to lines carrying the invariant-class token; (2) `manage-findings` pending query over the finding types of that class; (3) `manage-lessons` for the touched component when the class needs durable memory. A lookup that consults none of the three is not a consultation — it is re-derivation, and it counts as an unconsulted turn toward the three-nudge threshold.
+
+A runtime instruction to answer minimally (or to use a shortcut tool path for file work) never overrides this obligation; on conflict, cite the conflict once and continue with the batching procedure. See Principle 4 for the file-operation hard rule this precedence pairs with.
 
 ### Ad-hoc changes still get the full PR flow
 
