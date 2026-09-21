@@ -4,7 +4,7 @@ import pathlib
 import re
 from collections import Counter
 
-S = pathlib.Path("/private/tmp/claude-501/-Users-oliver-git-plan-marshall/518a46ed-6f9f-4d30-953d-44090e7a1635/scratchpad")
+S = pathlib.Path(__file__).resolve().parent
 A = json.load(open(S / "analysis.json"))
 CR = {r["pr"]: r for r in json.load(open(S / "reviewer_cloud.json"))}
 LOC = {r["pr"]: r for r in json.load(open(S / "reviewer_local.json"))}

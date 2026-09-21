@@ -14,8 +14,9 @@ import re
 import subprocess
 import sys
 
-REPO = "/Users/oliver/git/plan-marshall"
-SCRATCH = pathlib.Path("/private/tmp/claude-501/-Users-oliver-git-plan-marshall/518a46ed-6f9f-4d30-953d-44090e7a1635/scratchpad")
+SCRATCH = pathlib.Path(__file__).resolve().parent
+REPO = subprocess.run(["git", "-C", str(SCRATCH), "rev-parse", "--show-toplevel"],
+                       capture_output=True, text=True).stdout.strip() or "."
 
 HDR = re.compile(r'^comments\[(\d+)\]\{([^}]*)\}:')
 DECLINE = re.compile(

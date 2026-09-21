@@ -10,9 +10,12 @@ import subprocess
 import sys
 from collections import Counter, defaultdict
 
-REPO = pathlib.Path("/Users/oliver/git/plan-marshall")
-EPIC = REPO / ".plan/local/orchestrator/code-intelligence-substrate"
-RUNS = EPIC / "cloud-runs"
+RUNS = pathlib.Path(__file__).resolve().parent.parent
+EPIC = RUNS.parent
+REPO = pathlib.Path(
+    subprocess.run(["git", "-C", str(EPIC), "rev-parse", "--show-toplevel"],
+                    capture_output=True, text=True).stdout.strip() or "."
+)
 LANE_SKILL = ".claude/skills/cloud-plan-lane/SKILL.md"
 
 PR_RE = re.compile(r'\*\*PR:\*\*\s*\[#(\d+)\]')
@@ -206,9 +209,10 @@ def main():
         print(f"{d['plan'][:62]:<62} {r['pr'] or '-':>5} {d['overall'][:22]:<22} "
               f"{d['n_del']:>3} {d['d_fail']:>3} {len(d['gap_ids']):>4} {hi:>3}")
 
+    out_path = pathlib.Path(__file__).resolve().parent / "analysis.json"
     json.dump({"rows": rows, "data": [{k: v for k, v in d.items()} for d in data]},
-              open("/private/tmp/claude-501/-Users-oliver-git-plan-marshall/518a46ed-6f9f-4d30-953d-44090e7a1635/scratchpad/analysis.json", "w"))
-    print("\n[state written to analysis.json]")
+              open(out_path, "w"))
+    print(f"\n[state written to {out_path}]")
 
 
 main()
