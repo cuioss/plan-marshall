@@ -9,6 +9,7 @@ detectors live alongside them. Importers pull these by flat name (e.g.
 ``from _self_review_detectors import _detect_regexes``).
 """
 
+import ast
 import os
 import re
 from pathlib import Path, PurePosixPath
@@ -88,24 +89,37 @@ from _self_review_patterns import (
 # =============================================================================
 # Detectors
 
-_HOISTED_IMPORT_RE = re.compile(r'^\s*(?:import\s+([A-Za-z_][A-Za-z0-9_\.]*)|from\s+\S+\s+import\s+(.+))')
 _HOISTED_BINDING_RE = re.compile(r'^\s*(?:for\s+([A-Za-z_][A-Za-z0-9_]*)\s+in|([A-Za-z_][A-Za-z0-9_]*)\s*=(?!=))')
 
 
 def _hoisted_imported_names(post_lines: list[str]) -> set[str]:
-    """Top-level imported names in a file's post-image (the hoisted bindings)."""
+    """Module-scope imported names in a file's post-image (the hoisted bindings).
+
+    Parses the post-image AST and inspects only the ``Module`` body
+    ``Import`` and ``ImportFrom`` nodes, so imports nested inside functions
+    or classes never count as hoisted. Aliases resolve to the bound name
+    (``import package as name`` binds ``name``; ``from x import y as z``
+    binds ``z``; a bare ``import package.sub`` binds the top-level
+    ``package``).
+    """
+    try:
+        tree = ast.parse('\n'.join(post_lines))
+    except (SyntaxError, ValueError):
+        return set()
     names: set[str] = set()
-    for line in post_lines:
-        m = _HOISTED_IMPORT_RE.match(line)
-        if m is None:
-            continue
-        if m.group(1) is not None:
-            names.add(m.group(1).split('.')[0])
-        elif m.group(2) is not None:
-            for part in m.group(2).split(','):
-                token = part.strip().split(' as ')[-1].strip().split('.')[0]
-                if re.match(r'^[A-Za-z_][A-Za-z0-9_]*$', token):
-                    names.add(token)
+    for node in tree.body:
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                bound = alias.asname or alias.name.split('.')[0]
+                if re.match(r'^[A-Za-z_][A-Za-z0-9_]*$', bound):
+                    names.add(bound)
+        elif isinstance(node, ast.ImportFrom):
+            for alias in node.names:
+                if alias.name == '*':
+                    continue
+                bound = alias.asname or alias.name.split('.')[0]
+                if re.match(r'^[A-Za-z_][A-Za-z0-9_]*$', bound):
+                    names.add(bound)
     return names
 
 

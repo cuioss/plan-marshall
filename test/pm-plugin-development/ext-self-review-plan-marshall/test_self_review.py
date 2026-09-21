@@ -4053,6 +4053,36 @@ class TestHoistedBindingShadows:
         added = [('mod.py', 5, 'result = compute()')]
         assert _detect_hoisted_binding_shadows(added, project_dir) == []
 
+    def test_nested_function_import_does_not_shadow(self, tmp_path):
+        """An import nested inside a function is not a module-scope hoisted binding."""
+        from _self_review_detectors import _detect_hoisted_binding_shadows
+
+        project_dir = tmp_path / 'proj'
+        project_dir.mkdir()
+        (project_dir / 'mod.py').write_text('def f():\n    import os\n')
+        added = [('mod.py', 5, 'for os in items:')]
+        assert _detect_hoisted_binding_shadows(added, project_dir) == []
+
+    def test_import_alias_binds_alias_name(self, tmp_path):
+        """import package as name hoists the alias, not the package stem."""
+        from _self_review_detectors import _detect_hoisted_binding_shadows
+
+        project_dir = tmp_path / 'proj'
+        project_dir.mkdir()
+        (project_dir / 'mod.py').write_text('import package as name\n')
+        assert _detect_hoisted_binding_shadows([('mod.py', 5, 'name = compute()')], project_dir) != []
+        assert _detect_hoisted_binding_shadows([('mod.py', 5, 'for package in items:')], project_dir) == []
+
+    def test_from_import_alias_binds_alias_name(self, tmp_path):
+        """from x import y as z hoists the alias, not the original name."""
+        from _self_review_detectors import _detect_hoisted_binding_shadows
+
+        project_dir = tmp_path / 'proj'
+        project_dir.mkdir()
+        (project_dir / 'mod.py').write_text('from pkg import thing as alias\n')
+        assert _detect_hoisted_binding_shadows([('mod.py', 5, 'alias = compute()')], project_dir) != []
+        assert _detect_hoisted_binding_shadows([('mod.py', 5, 'thing = compute()')], project_dir) == []
+
     def test_candidate_line_matches_post_image(self, tmp_path):
         """Each candidate carries the added line's own post-image number."""
         from _self_review_detectors import _detect_hoisted_binding_shadows

@@ -35,6 +35,7 @@ Usage:
 import argparse
 import subprocess
 import textwrap
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -374,31 +375,37 @@ def _cmd_surface(args: argparse.Namespace) -> int:
     discard_without_report = _detect_discard_without_report(added, project_dir)
     hoisted_binding_shadows = _detect_hoisted_binding_shadows(added, project_dir)
 
-    detected: dict[str, list] = {
-        'regexes': regexes,
-        'user_facing_strings': user_facing,
-        'markdown_sections': md_sections,
-        'symmetric_pairs': sym_pairs,
-        'flag_guard_pairs': flag_guard_pairs,
-        'contract_sources': contract_sources,
-        'schema_bearing_files': schema_bearing,
-        'keep_markers': keep_markers,
-        'protected_identifiers': protected_identifiers,
-        'producer_consumer': producer_consumer,
-        'source_of_truth': source_of_truth,
-        'same_document_consistency': same_document,
-        'description_vs_body': description_vs_body,
-        'unguarded_boundaries': unguarded_boundaries,
-        'count_prose': count_prose,
-        'touched_claims': touched_claims,
-        'advertised_form_help_strings': advertised_form_help_strings,
-        'ordinal_references': ordinal_references,
-        'scan_derived_keys': scan_derived_keys,
-        'worked_example_pairs': worked_example_pairs,
-        'duplicate_claimable_keys': duplicate_claimable_keys,
-        'discard_without_report': discard_without_report,
-        'hoisted_binding_shadows': hoisted_binding_shadows,
+    # Detector bindings keyed by registry key. ``detected`` below is built by
+    # iterating ``CANDIDATE_LISTS``, so a registry entry without a binding
+    # raises ``KeyError`` here instead of drifting silently into the
+    # ``_compose_candidate_output`` registry-drift error.
+    bindings: dict[str, Callable[[], list]] = {
+        'regexes': lambda: regexes,
+        'user_facing_strings': lambda: user_facing,
+        'markdown_sections': lambda: md_sections,
+        'symmetric_pairs': lambda: sym_pairs,
+        'flag_guard_pairs': lambda: flag_guard_pairs,
+        'contract_sources': lambda: contract_sources,
+        'schema_bearing_files': lambda: schema_bearing,
+        'keep_markers': lambda: keep_markers,
+        'protected_identifiers': lambda: protected_identifiers,
+        'producer_consumer': lambda: producer_consumer,
+        'source_of_truth': lambda: source_of_truth,
+        'same_document_consistency': lambda: same_document,
+        'description_vs_body': lambda: description_vs_body,
+        'unguarded_boundaries': lambda: unguarded_boundaries,
+        'count_prose': lambda: count_prose,
+        'touched_claims': lambda: touched_claims,
+        'advertised_form_help_strings': lambda: advertised_form_help_strings,
+        'ordinal_references': lambda: ordinal_references,
+        'scan_derived_keys': lambda: scan_derived_keys,
+        'worked_example_pairs': lambda: worked_example_pairs,
+        'duplicate_claimable_keys': lambda: duplicate_claimable_keys,
+        'discard_without_report': lambda: discard_without_report,
+        'hoisted_binding_shadows': lambda: hoisted_binding_shadows,
     }
+
+    detected: dict[str, list] = {spec.key: bindings[spec.key]() for spec in CANDIDATE_LISTS}
 
     surface_scope = 'delta' if since_ref is not None else 'full'
     files_in_scope = len(modified_files)

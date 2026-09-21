@@ -550,3 +550,23 @@ CANDIDATE_LISTS: tuple[CandidateList, ...] = (
 def candidate_list_prose() -> str:
     """Return the registry's labels as a comma-separated enumeration for help prose."""
     return ', '.join(spec.label for spec in CANDIDATE_LISTS)
+
+
+def sibling_keys(exclude: str) -> tuple[str, ...]:
+    """Return every registry key except ``exclude`` as the sibling sweep population.
+
+    The single registry-derived helper for complementary-negative sweeps: a
+    reachability check over one candidate list sweeps ALL of its siblings so a
+    sibling detector incidentally flagging the same hunk cannot be mistaken
+    for the check doing its job. Deriving the population from the registry
+    keeps the sweep in agreement with the emitter by construction; the
+    three-way emitted-vs-swept-vs-registered assertion in the reachability
+    regression still pins the emitter against the registry, so a list added
+    to one side but not the other fails loudly instead of slipping past.
+    """
+    swept = tuple(spec.key for spec in CANDIDATE_LISTS if spec.key != exclude)
+    if not swept:
+        raise ValueError(f'sibling_keys({exclude!r}) swept an empty population')
+    if exclude not in {spec.key for spec in CANDIDATE_LISTS}:
+        raise ValueError(f'sibling_keys({exclude!r}) names no registered candidate list')
+    return swept
