@@ -140,9 +140,70 @@ def _outline_vs_shipped(*, degraded: bool) -> dict:
     }
 
 
+def _manifest_decisions(*, degraded: bool) -> dict:
+    """``check-manifest-consistency``. Its token rides a nested verdict field.
+
+    The aspect joined the roster when it stopped taking a private
+    ``{base}...HEAD`` diff — structurally empty at finalize ``order: 995`` — and
+    started resolving through the shared chain. The degradation verdict is what
+    made it a legitimate member: a producer with no degraded verdict reads as
+    RESOLVED on every run, and one resolved member suppresses the aggregate, so
+    rostering it before the repair would have made the record incapable of firing.
+
+    Both the aspect-level ``footprint_resolution.status`` and the affected check's
+    own ``status`` carry the token, mirroring the real payload — the probe reads
+    ``status`` at any nesting depth, so either alone would suffice and the shape
+    deliberately does not rely on which one it finds.
+    """
+    if degraded:
+        return {
+            'status': 'success',
+            'aspect': 'manifest-decisions',
+            'manifest_present': True,
+            'footprint_resolution': {
+                'status': 'inconclusive',
+                'tier': 'unresolved',
+                'chain': ['live_diff', 'realized_capture'],
+            },
+            'checks': [
+                {
+                    'name': 'branch_cleanup_changes',
+                    'status': 'inconclusive',
+                    'message': 'the plan footprint could not be resolved from any tier',
+                }
+            ],
+            'findings': [
+                {
+                    'severity': 'warning',
+                    'code': 'branch_cleanup_footprint_unresolved',
+                    'message': 'footprint unresolved — whether an implementation file changed is UNMEASURABLE',
+                }
+            ],
+        }
+    return {
+        'status': 'success',
+        'aspect': 'manifest-decisions',
+        'manifest_present': True,
+        'footprint_resolution': {
+            'status': 'resolved',
+            'tier': 'realized_capture',
+            'chain': ['live_diff', 'realized_capture'],
+        },
+        'checks': [
+            {
+                'name': 'branch_cleanup_changes',
+                'status': 'pass',
+                'message': 'branch-cleanup paired with 2 changed file(s)',
+            }
+        ],
+        'findings': [],
+    }
+
+
 _BUILDERS = {
     'artifact-consistency': _artifact_consistency,
     'log-analysis': _log_analysis,
+    'manifest-decisions': _manifest_decisions,
     'outline-vs-shipped': _outline_vs_shipped,
     'routing-decisions': _routing_decisions,
 }
@@ -251,12 +312,14 @@ class TestDegradationProbeKeyValueSplit:
 # The degradation probe reads `inconclusive` from VERDICT FIELDS, not any string
 # =============================================================================
 # The key/value split above protects the ``summary.inconclusive`` COUNTER KEY.
-# It does not protect the VALUES: three of the four roster producers publish a
-# ``plan_id`` / ``plan_dir`` pair in their result dict, and both embed the plan
-# id. A plan whose id contains the token therefore makes a fully RESOLVED
-# fragment match — and because the aggregate is suppressed unless EVERY member
-# degraded, one such false positive across the whole roster fires
-# AGGREGATE_UNMEASURABLE on a run where every producer resolved.
+# It does not protect the VALUES: the roster producers publish a ``plan_id`` /
+# ``plan_dir`` pair in their result dict, and both embed the plan id. (How MANY
+# of them do is deliberately not restated — that count drifted once already, and
+# the property being guarded holds for any member that carries the pair.) A plan
+# whose id contains the token therefore makes a fully RESOLVED fragment match —
+# and because the aggregate is suppressed unless EVERY member degraded, one such
+# false positive across the whole roster fires AGGREGATE_UNMEASURABLE on a run
+# where every producer resolved.
 
 #: A plan id that CONTAINS the token. Not contrived: ``inconclusive`` is an
 #: ordinary English word, and a plan about unmeasurable footprints is precisely

@@ -2,6 +2,11 @@ status: success
 aspect: log_analysis
 plan_id: lesson-2026-04-18-13-001
 build_time:
+  population: change_ledger_build_rows
+  ledger_present: true
+  ledger_readable: true
+  ledger_rows_scanned: 3
+  summed_rows: 3
   total_build_seconds: 42.5
   build_count: 3
   suspect_count: 0

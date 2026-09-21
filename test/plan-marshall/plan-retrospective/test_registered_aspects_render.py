@@ -28,31 +28,33 @@ class TestAspectTableKeysMatchTheRegistry:
     Key column, and these assertions are what make that column *derived* rather
     than *transcribed*: a key that drifts from ``SECTION_SPEC`` fails here.
 
-    ⚠ The correspondence is checked in ONE direction only — ``table → registry``.
-    A ``SECTION_SPEC`` row shipped with no table row is caught by nothing here, so
-    a registry row whose section can never be filled passes this class unnoticed.
-    Do not read a green result as "registry and table agree"; it is "no table row
-    names a key the registry does not have", which is the weaker half.
+    The correspondence is checked in BOTH directions, by two separate assertions
+    that read two different populations:
 
-    ⛔ What blocks the reverse direction, re-derived against HEAD rather than
-    recalled. THREE ``SECTION_SPEC`` rows have no producer, and they do not all
-    block it:
+    * ``table → registry`` — no table row names a key the registry does not have
+      (:meth:`test_every_table_key_is_a_real_registry_key`).
+    * ``registry → table`` — every registerable key has a table row
+      (:meth:`test_every_registerable_key_has_a_table_row`). A ``SECTION_SPEC``
+      row shipped with no table row now fails here instead of passing unnoticed.
 
-    * ``_executive-summary`` and ``_footprint-derivation`` — injected by
-      ``compile-report`` itself and refused by ``collect-fragments add``. A reverse
-      assertion scoped to :func:`retro_sections.valid_aspect_keys` excludes both by
-      that function's own leading-underscore rule, which is a STRUCTURAL exclusion,
-      not an exemption list. Neither blocks anything.
-    * ``dispatch_boundaries`` — registerable (no underscore), and the token appears
-      nowhere in the Step-3 aspect table. This is the one genuine blocker: the
-      reverse assertion fails on it today, and the only way to land it green would
-      be to write it into an exemption list, which pins the dead row in place
-      instead of surfacing it.
+    A green result therefore does mean "registry and table agree". Neither half
+    may be read as the whole: they compare different sets, so each publishes the
+    size of the population it compared and fails on an empty one.
 
-    The reverse assertion is therefore written and HELD rather than shipped — its
-    body is carried in the plan's verification record, to be added verbatim once
-    ``dispatch_boundaries`` is resolved (given a producer and a table row, or
-    deleted). It is deliberately NOT landed with an exemption.
+    ⛔ The reverse assertion carries NO exemption list, and that is the point. Two
+    ``SECTION_SPEC`` rows have no producer and are excluded STRUCTURALLY rather
+    than by exemption — ``_executive-summary`` and ``_footprint-derivation`` are
+    injected by ``compile-report`` itself and refused by ``collect-fragments add``,
+    and :func:`retro_sections.valid_aspect_keys` drops them by its own
+    leading-underscore rule, so scoping the assertion to that function excludes
+    them without naming them.
+
+    ``dispatch_boundaries`` was the one genuine blocker: registerable (no
+    underscore) and absent from the Step-3 table, so the assertion could only have
+    been landed green by exempting it — which would have pinned the dead row in
+    place instead of surfacing it. It was resolved the other way, by giving it an
+    explicit table row stating its injected disposition, which is what makes this
+    assertion landable with no exemption at all.
     """
 
     def test_scan_finds_a_key_for_every_numbered_row(self):
@@ -80,6 +82,60 @@ class TestAspectTableKeysMatchTheRegistry:
             f'would be rejected by `collect-fragments add` — the exact defect the '
             f'Key column exists to prevent.'
         )
+
+    def test_reverse_assertion_populations_are_non_empty(self):
+        """Anchor for the reverse direction — it reads a population the forward one does not.
+
+        ``test_scan_finds_a_key_for_every_numbered_row`` anchors the table scan
+        alone. The reverse assertion compares the scan against
+        ``valid_aspect_keys()``, so an empty REGISTRY would make it pass
+        vacuously while that anchor stayed green. Both sizes are published here,
+        which is what makes the emptiness a reported fact rather than an
+        assumption.
+        """
+        registerable = _rs.valid_aspect_keys()
+        table_keys = set(_scan_aspect_table_keys())
+        assert registerable, 'retro_sections.valid_aspect_keys() is empty — the reverse assertion would be vacuous'
+        assert table_keys, 'the Step-3 aspect-table scan is empty — the reverse assertion would be vacuous'
+        # Published populations, so a shrinking set is visible in the failure text
+        # rather than silently weakening the comparison below.
+        assert len(registerable) >= 15, f'registry population {len(registerable)}: {sorted(registerable)}'
+        assert len(table_keys) >= 15, f'table population {len(table_keys)}: {sorted(table_keys)}'
+
+    def test_every_registerable_key_has_a_table_row(self):
+        """``registry → table``: the half that was written and HELD until now.
+
+        Landed with no exemption list. The two underscore-prefixed
+        ``SECTION_SPEC`` rows are excluded by ``valid_aspect_keys()``'s own
+        structural prefix rule, not by being named here.
+        """
+        registerable = _rs.valid_aspect_keys()
+        table_keys = set(_scan_aspect_table_keys())
+        missing = sorted(registerable - table_keys)
+        assert not missing, (
+            f'retro_sections.valid_aspect_keys() carries {len(registerable)} registerable '
+            f'key(s) and the Step-3 aspect table carries {len(table_keys)}; key(s) {missing} '
+            f'have a registry row but no table row. A registry row whose section the table '
+            f'never names is an aspect a reader cannot register from the documentation — add '
+            f'its row (stating its disposition when it has no producer), never an exemption here.'
+        )
+
+    def test_reverse_guard_bites_on_a_registry_key_missing_from_the_table(self):
+        """The bite test: run the REAL parser over a table with a row removed.
+
+        Set arithmetic on a literal would prove nothing about the parse, so the
+        live table is corrupted by deleting one row and the same comparison is
+        applied to the result.
+        """
+        live = _SKILL_MD_PATH.read_text(encoding='utf-8')
+        victim = next(line for line in live.splitlines() if '| `routing-decisions` |' in line)
+        corrupted = live.replace(victim + '\n', '', 1)
+        assert corrupted != live, 'the corruption did not apply — this test would pass vacuously'
+
+        missing = sorted(_rs.valid_aspect_keys() - set(_scan_aspect_table_keys(corrupted)))
+        assert missing == ['routing-decisions'], f'the reverse check must flag the removed row; got {missing}'
+        # And the uncorrupted table must be clean, so the assertion is discriminating.
+        assert not sorted(_rs.valid_aspect_keys() - set(_scan_aspect_table_keys()))
 
     def test_every_table_key_is_registerable(self):
         keys = _scan_aspect_table_keys()

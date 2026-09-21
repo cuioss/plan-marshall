@@ -8,9 +8,14 @@ Its sections, in order:
 * Rule M5: manifest version recognition
 * Rule M1: docs-only manifest
 * Rule M2: early_terminate
+* Rule M4 + footprint degradation: no tier resolved
+* Rule M6: the forwarded declared-vs-realized set comparison is RECEIVED
 """
 
 from __future__ import annotations
+
+import json
+from pathlib import Path
 
 from _plan_retrospective_manifest_fixtures import (
     MANIFEST_SCRIPT,
@@ -21,9 +26,42 @@ from _plan_retrospective_manifest_fixtures import (
     _manifest_early_terminate,
     _setup_plan_with_manifest,
     _write_diff,
+    _write_status_metadata,
 )
 
-from conftest import run_script
+from conftest import load_script_module, run_script
+
+_cmc = load_script_module('plan-marshall', 'plan-retrospective', 'check-manifest-consistency.py', 'cmc_verdicts_mod')
+
+
+def _strand_every_footprint_tier(plan_dir: Path) -> None:
+    """Leave the plan with NO resolvable footprint tier.
+
+    Every tier of the shared chain is starved deliberately and by NAME, so the
+    degradation cases below exercise the unresolvable sentinel rather than
+    happening to reach it: no worktree is recorded (tier 1), and
+    ``references.json`` carries none of ``realized_footprint`` (tier 2),
+    ``merge_commit_sha`` / ``merge_commit_shas`` (tier 3), ``pr_number``
+    (tier 4) or ``modified_files`` (tier 5).
+    """
+    _write_status_metadata(plan_dir, {})
+    (plan_dir / 'references.json').write_text(json.dumps({'base_branch': 'main'}), encoding='utf-8')
+
+
+def _write_artifact_consistency_fragment(plan_dir: Path, exact_match: dict) -> None:
+    """Write the upstream fragment rule M6 receives its comparison from."""
+    from toon_parser import serialize_toon  # local import — script-test PYTHONPATH
+
+    work = plan_dir / 'work'
+    work.mkdir(parents=True, exist_ok=True)
+    body = {
+        'aspect': 'artifact_consistency',
+        'status': 'success',
+        'plan_id': plan_dir.name,
+        'affected_files_exact_match': exact_match,
+    }
+    (work / 'fragment-artifact-consistency.toon').write_text(serialize_toon(body) + '\n', encoding='utf-8')
+
 
 # =============================================================================
 # Skipped path: no manifest present
@@ -285,3 +323,205 @@ class TestEarlyTerminateRule:
         assert check['status'] == 'fail'
         finding = _finding_by_code(data['findings'], 'early_terminate_diff_nonempty')
         assert finding is not None
+
+
+# =============================================================================
+# Rule M4 + footprint degradation: no tier resolved
+# =============================================================================
+
+
+class TestFootprintDegradation:
+    """An unresolvable footprint degrades; it never reads as an empty one.
+
+    This is the defect the aspect was repaired for. The script used to take its
+    own ``git diff {base}...HEAD``, which is structurally empty at finalize
+    ``order: 995`` (``branch-cleanup`` has already merged): the call succeeded,
+    named no path, and rule M4 concluded "no implementation file changed" for
+    plans that had shipped a real footprint.
+
+    The pair below is MATCHED, and both halves are needed. The negative half
+    alone would pass against a script that degraded unconditionally — including
+    one that had simply stopped working — so the positive half pins that a
+    RESOLVED footprint still produces a measured verdict.
+    """
+
+    def test_unresolved_footprint_yields_the_degradation_verdict(self, tmp_path, monkeypatch):
+        plan_id, plan_dir = _setup_plan_with_manifest(tmp_path, monkeypatch, manifest_body=_manifest_default())
+        _strand_every_footprint_tier(plan_dir)
+
+        # No --diff-file: the footprint must come from the shared chain, which
+        # has nothing to resolve from.
+        result = run_script(MANIFEST_SCRIPT, 'run', '--plan-id', plan_id, '--mode', 'live')
+        assert result.success, result.stderr
+        data = result.toon()
+
+        assert data['footprint_resolution']['status'] == _cmc.STATUS_INCONCLUSIVE
+        assert data['footprint_resolution']['tier'] == 'unresolved'
+
+        check = _check_by_name(data['checks'], 'branch_cleanup_changes')
+        assert check is not None
+        # ``inconclusive``, NOT ``indeterminate``: only the former is a member of
+        # retro_sections.FOOTPRINT_DEGRADED_TOKENS, and compile-report matches it
+        # by equality against a verdict field. Emitting ``indeterminate`` here
+        # would read as RESOLVED to the plan-level footprint aggregate. Read from
+        # the script's own constants so the two tokens cannot be transposed here
+        # while the production pair is renamed.
+        assert check['status'] == _cmc.STATUS_INCONCLUSIVE
+        assert check['status'] != _cmc.STATUS_INDETERMINATE
+        # ⛔ The confident claim must be absent — asserted against the STRUCTURED
+        # verdict, not by scraping the prose. The degradation message deliberately
+        # QUOTES the phrase "no implementation file changed" in order to deny it
+        # ("…is UNMEASURABLE, not \"no implementation file changed\""), and that
+        # quotation is what makes the degradation legible, so a negative substring
+        # test fires against the very message it was written to protect. The
+        # confident verdict is carried by the ``fail`` status and the
+        # ``branch_cleanup_without_changes`` code — both asserted absent, here and
+        # below, and neither can be reworded out from under the test.
+        assert check['status'] != 'fail', check
+
+        finding = _finding_by_code(data['findings'], 'branch_cleanup_footprint_unresolved')
+        assert finding is not None
+        assert finding['severity'] == 'warning'
+        # The inverse finding must NOT have been raised.
+        assert _finding_by_code(data['findings'], 'branch_cleanup_without_changes') is None
+
+    def test_resolved_footprint_still_yields_a_measured_verdict(self, tmp_path, monkeypatch):
+        """The matched POSITIVE control: a readable footprint still reports.
+
+        Without this, a script that degraded on every run — or one whose
+        resolver had broken outright — would satisfy the negative case above.
+        """
+        plan_id, plan_dir = _setup_plan_with_manifest(tmp_path, monkeypatch, manifest_body=_manifest_default())
+        _strand_every_footprint_tier(plan_dir)
+        diff = _write_diff(tmp_path, ['src/foo/bar.py'])
+
+        result = run_script(
+            MANIFEST_SCRIPT,
+            'run',
+            '--plan-id',
+            plan_id,
+            '--mode',
+            'live',
+            '--diff-file',
+            str(diff),
+        )
+        assert result.success, result.stderr
+        data = result.toon()
+
+        assert data['footprint_resolution']['status'] == 'resolved'
+        assert data['footprint_resolution']['tier'] == 'diff_file'
+
+        check = _check_by_name(data['checks'], 'branch_cleanup_changes')
+        assert check is not None
+        assert check['status'] == 'pass'
+        assert _finding_by_code(data['findings'], 'branch_cleanup_footprint_unresolved') is None
+
+
+# =============================================================================
+# Rule M6: the forwarded declared-vs-realized set comparison is RECEIVED
+# =============================================================================
+
+
+class TestDeclaredVsRealizedSetRule:
+    """``check-artifact-consistency`` forwards; this rule is the receiver.
+
+    The flag previously had no reader at all, so the downgraded upstream finding
+    was DROPPED on every manifest-bearing plan rather than re-routed.
+    """
+
+    def _run(self, tmp_path, monkeypatch, exact_match: dict | None):
+        plan_id, plan_dir = _setup_plan_with_manifest(tmp_path, monkeypatch, manifest_body=_manifest_default())
+        if exact_match is not None:
+            _write_artifact_consistency_fragment(plan_dir, exact_match)
+        diff = _write_diff(tmp_path, ['src/foo/bar.py'])
+        result = run_script(
+            MANIFEST_SCRIPT,
+            'run',
+            '--plan-id',
+            plan_id,
+            '--mode',
+            'live',
+            '--diff-file',
+            str(diff),
+        )
+        assert result.success, result.stderr
+        return result.toon()
+
+    def test_agreeing_sets_pass_and_publish_both_sizes(self, tmp_path, monkeypatch):
+        data = self._run(
+            tmp_path,
+            monkeypatch,
+            {
+                'status': 'pass',
+                'outline_only': [],
+                'references_only': [],
+                'manifest_present': True,
+                'forwarded_to_manifest': False,
+            },
+        )
+        check = _check_by_name(data['checks'], 'declared_vs_realized_set')
+        assert check is not None
+        assert check['status'] == 'pass'
+
+        received = data['declared_vs_realized']
+        assert received['received'] is True
+        assert int(received['outline_only_count']) == 0
+        assert int(received['references_only_count']) == 0
+
+    def test_outline_only_drift_is_graded_warning(self, tmp_path, monkeypatch):
+        data = self._run(
+            tmp_path,
+            monkeypatch,
+            {
+                'status': 'warn',
+                'outline_only': ['src/declared_but_unbuilt.py'],
+                'references_only': [],
+                'manifest_present': True,
+                'forwarded_to_manifest': True,
+            },
+        )
+        check = _check_by_name(data['checks'], 'declared_vs_realized_set')
+        assert check is not None
+        assert check['status'] == 'fail'
+
+        finding = _finding_by_code(data['findings'], 'declared_vs_realized_set_mismatch')
+        assert finding is not None
+        # A declaration the run did not honour is the stronger signal.
+        assert finding['severity'] == 'warning'
+        assert 'src/declared_but_unbuilt.py' in finding['culprits']
+        assert int(data['declared_vs_realized']['outline_only_count']) == 1
+        assert data['declared_vs_realized']['forwarded_to_manifest'] is True
+
+    def test_references_only_drift_alone_is_graded_info(self, tmp_path, monkeypatch):
+        """The severity DISCRIMINATOR: realized-but-undeclared is ordinary discovery."""
+        data = self._run(
+            tmp_path,
+            monkeypatch,
+            {
+                'status': 'warn',
+                'outline_only': [],
+                'references_only': ['src/discovered.py'],
+                'manifest_present': True,
+                'forwarded_to_manifest': True,
+            },
+        )
+        finding = _finding_by_code(data['findings'], 'declared_vs_realized_set_mismatch')
+        assert finding is not None
+        assert finding['severity'] == 'info'
+        assert int(data['declared_vs_realized']['references_only_count']) == 1
+
+    def test_unread_fragment_is_inconclusive_and_publishes_no_counts(self, tmp_path, monkeypatch):
+        """⛔ An unreceived comparison must not read as two agreeing empty sets."""
+        data = self._run(tmp_path, monkeypatch, None)
+
+        check = _check_by_name(data['checks'], 'declared_vs_realized_set')
+        assert check is not None
+        assert check['status'] == 'inconclusive'
+
+        received = data['declared_vs_realized']
+        assert received['received'] is False
+        # The count keys are OMITTED, never zeroed — a caller gating on them
+        # finds no key instead of a measured-looking zero.
+        assert 'outline_only_count' not in received
+        assert 'references_only_count' not in received
+        assert received['reason']

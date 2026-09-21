@@ -26,6 +26,16 @@ D1 — ``shape_violation`` (does dispatch that RESOLVED get LOGGED?).
     reader could mistake for "evaluated clean". Every count is published beside
     its ``evaluated_population``.
 
+    The block also publishes how much its own verdict is worth: ``corroboration``
+    is ``seam_corroborated`` when no role's ``[DISPATCH]`` lines came from a
+    caller that resolved nothing for it, and ``uncorroborated`` when some did —
+    because such a line CANCELS a missing seam emission and the delta then reads
+    ``0``. It is derived from the ``foreign_caller_lines`` figures the per-role
+    breakdown already carries (their sum rides along as
+    ``foreign_caller_line_total``), so no new evidence is read and no judgement is
+    added; the qualifier simply stops being reachable only through this aspect's
+    standard.
+
 D2 — ``dispatch_coverage`` (did dispatch that SHOULD have happened, happen — and
     is a missing line an instrumentation gap or a discipline violation?).
     The discriminator is the **token record**, not the completion line: the
@@ -52,7 +62,11 @@ D2 — ``dispatch_coverage`` (did dispatch that SHOULD have happened, happen —
     captured. Reading the bucket as "these steps ran inline" over-claims by
     exactly the size of the uncaptured-usage population. What the bucket rules out
     is the third state: an absent or unreadable record, which now lands in
-    ``no_evidence`` rather than being coerced to a measured zero.
+    ``no_evidence`` rather than being coerced to a measured zero. That strength is
+    EMITTED as ``ran_inline_claim_strength`` — ``ceiling`` over a non-empty bucket,
+    ``no_claim`` over an empty one — derived from the bucket's own size so the
+    caveat travels with the count instead of living only in this aspect's
+    standard, where it bound an LLM that had loaded the standard and nobody else.
 
     A step proven to have dispatched (non-zero tokens) whose dispatch line is
     nonetheless absent is a ``missing_dispatch_emission`` — an instrumentation
@@ -894,6 +908,12 @@ def evaluate_shape_violation(
             'status': 'not_evaluated',
             'evaluated_population': 0,
             'violations': 0,
+            # No role was walked, so no dispatch line was attributed to a caller.
+            # `corroboration` says so; `foreign_caller_line_total` is OMITTED rather
+            # than sent as 0, for the same reason `violations: 0` needs `status`
+            # beside it — a zero taken over nothing reads identically to a zero
+            # taken over a clean population.
+            'corroboration': 'not_evaluated',
             'reason': (
                 'no `effort resolve-target` records in decision.log — Surface B (the '
                 'resolve/intent side of the pairing) is empty, so the shape-violation '
@@ -966,10 +986,20 @@ def evaluate_shape_violation(
                     ),
                 }
             )
+    # Derived from the per-role figures this block already computed — no new
+    # evidence source, no judgement. A `[DISPATCH]` line whose caller resolved
+    # nothing for that role CANCELS a missing seam emission, so the role's delta
+    # reads 0 while the emission it stands in for never happened. That caveat used
+    # to live only in this aspect's standard, which means it reached a consumer
+    # that had loaded the standard and nobody else. Emitting it puts the strength
+    # of the verdict beside the verdict, where every consumer reads it.
+    foreign_caller_line_total = sum(entry['foreign_caller_lines'] for entry in by_role)
     return {
         'status': 'evaluated',
         'evaluated_population': population,
         'violations': len(findings),
+        'foreign_caller_line_total': foreign_caller_line_total,
+        'corroboration': 'uncorroborated' if foreign_caller_line_total else 'seam_corroborated',
         'findings': findings,
         'by_role': by_role,
     }
@@ -986,8 +1016,9 @@ def evaluate_dispatch_coverage(
 
     The token record is the second, independent evidence source the coverage
     check consults before ever concluding "ran inline": a non-zero
-    ``total_tokens`` proves a dispatched envelope ran, a measured ``0`` proves the
-    step ran inline, and an absent row is honest ``no_evidence``. The old
+    ``total_tokens`` proves a dispatched envelope ran, a measured ``0`` is an
+    upper bound on inline execution — never proof of it — and an absent row is
+    honest ``no_evidence``. The old
     "ran inline where dispatch was required" discipline finding — a fabricated
     violation against the step — is not emitted at all. Its replacement is
     ``missing_dispatch_emission``: when more steps are token-proven to have
@@ -1042,6 +1073,16 @@ def evaluate_dispatch_coverage(
         # back to the manifest to re-derive it.
         'dispatched_steps': dispatched,
         'ran_inline': len(ran_inline),
+        # Derived from the bucket's own size. `ran_inline` counts steps with a
+        # RECORDED-zero token attribution, which a dispatched step whose `<usage>`
+        # tag was captured as zero also produces — so a non-empty bucket is a
+        # CEILING on inline execution, never a measurement of it. An empty bucket
+        # claims nothing at all, and the two states are worth telling apart: a
+        # consumer quoting `ran_inline: 0` as "nothing ran inline" is making a
+        # claim the bucket cannot support either. The caveat used to live only in
+        # this aspect's standard, so it bound an LLM that had loaded the standard
+        # and no other consumer.
+        'ran_inline_claim_strength': 'ceiling' if ran_inline else 'no_claim',
         'no_evidence': len(no_evidence),
         'no_evidence_steps': no_evidence,
         'missing_dispatch_emission': missing,

@@ -41,6 +41,7 @@ import re
 from argparse import Namespace
 from pathlib import Path
 
+import pytest
 import retro_sections as _rs
 from _registered_aspects_render_fixtures import _SKILL_MD_PATH, _scan_aspect_table_keys
 from file_ops import base_path
@@ -62,11 +63,21 @@ _INCLUDE = 'CERTAIN_INCLUDE'
 _EXCLUDE = 'CERTAIN_EXCLUDE'
 _UNCERTAIN = 'UNCERTAIN'
 
-#: The aspect-table row the Enforcement sentence's trailing "then record
-#: proposals per Step 5b" clause covers, rather than its "dispatch the N aspect
-#: references" clause. It is the one aspect whose reference is loaded in Step 5
-#: (after the report is compiled in Step 4), so it is not one of the dispatched N.
-_RECORDED_NOT_DISPATCHED = 'lessons-proposal'
+#: The aspect-table rows the Enforcement sentence's "dispatch the N aspect
+#: references" clause does NOT cover. A SET rather than a single key, because the
+#: table carries more than one kind of non-dispatched row and each is outside the
+#: clause for its own reason — subtracting only one of them would leave the
+#: equality below off by exactly the rows the set does not name:
+#:
+#: * ``lessons-proposal`` — covered by the sentence's own trailing "then record
+#:   proposals per Step 5b" clause instead. Its reference is loaded in Step 5,
+#:   after the report is compiled in Step 4, so it is not one of the dispatched N.
+#: * ``dispatch_boundaries`` — an INJECTED row, per its own disposition cell in
+#:   the Step-3 table: ``analyze-logs`` emits the block inside its own result and
+#:   ``compile-report`` renders it from the bundle, so no
+#:   ``collect-fragments add --aspect`` command dispatches it and none can — the
+#:   underscored spelling is unreachable through the ``--aspect`` pattern.
+_NOT_DISPATCHED = frozenset({'lessons-proposal', 'dispatch_boundaries'})
 
 
 # =============================================================================
@@ -599,24 +610,27 @@ class TestDeclaredAspectCountMatchesTheRoster:
     """A stated count is a claim about a population, so it is derived from one.
 
     The population is the Step-3 aspect table, read by the SAME parser the
-    registry-correspondence guard uses, minus the single row the Enforcement
-    sentence's own trailing clause covers: it reads *"dispatch the N aspect
-    references …, compile the report, then record proposals per Step 5b"*, and
-    ``lessons-proposal`` is the aspect whose reference is loaded in Step 5 —
-    after the Step 4 compile — so it is not one of the dispatched N.
+    registry-correspondence guard uses, minus the rows the Enforcement sentence
+    places outside its own "dispatch the N aspect references" clause — the
+    :data:`_NOT_DISPATCHED` set, whose docstring gives each row's reason.
     """
 
-    def test_the_excluded_row_really_is_in_the_table(self):
-        # Anchor: if the exclusion named a key the table does not carry, the
-        # subtraction below would be a no-op and the equality would be luck.
-        assert _RECORDED_NOT_DISPATCHED in _scan_aspect_table_keys()
+    def test_every_excluded_row_really_is_in_the_table(self):
+        # Anchor: an exclusion naming a key the table does not carry would make
+        # the subtraction below a partial no-op and the equality luck. Quantified
+        # over the whole set — a per-member check on one key cannot see a second
+        # member drift — and guarded against an empty set, which would make the
+        # subset assertion pass while excluding nothing.
+        keys = set(_scan_aspect_table_keys())
+        assert _NOT_DISPATCHED, 'the exclusion set is empty, so it excludes nothing'
+        assert _NOT_DISPATCHED <= keys, sorted(_NOT_DISPATCHED - keys)
 
     def test_the_declared_count_equals_the_dispatched_rows(self):
         skill_text = _SKILL_MD_PATH.read_text(encoding='utf-8')
         keys = _scan_aspect_table_keys(skill_text)
         assert len(keys) >= 16, f'aspect-table scan returned {len(keys)} rows: {keys}'
 
-        dispatched = [key for key in keys if key != _RECORDED_NOT_DISPATCHED]
+        dispatched = [key for key in keys if key not in _NOT_DISPATCHED]
 
         assert _declared_aspect_count(skill_text) == len(dispatched), (
             f'the Enforcement block declares {_declared_aspect_count(skill_text)} '
@@ -642,7 +656,7 @@ class TestDeclaredAspectCountMatchesTheRoster:
         assert corrupted != skill_text, 'the corruption did not apply'
 
         keys = _scan_aspect_table_keys(corrupted)
-        dispatched = [key for key in keys if key != _RECORDED_NOT_DISPATCHED]
+        dispatched = [key for key in keys if key not in _NOT_DISPATCHED]
 
         assert _declared_aspect_count(corrupted) != len(dispatched)
         # And the uncorrupted document agrees, so the assertion discriminates.
@@ -667,6 +681,33 @@ _cmc = load_script_module('plan-marshall', 'plan-retrospective', 'check-manifest
 def _write_references(plan_dir: Path, payload: dict) -> None:
     """Write a references.json payload straight to the plan directory."""
     (plan_dir / 'references.json').write_text(json.dumps(payload), encoding='utf-8')
+
+
+#: The plan id whose live worktree the gate below resolves, and the one it
+#: declines. Two ids rather than one flag, so a tier assertion names the side of
+#: the tier-1 gate it stands on in its own arguments.
+_LIVE_WORKTREE_PLAN_ID = 'caveat-live-worktree'
+_NO_LIVE_WORKTREE_PLAN_ID = 'caveat-no-live-worktree'
+
+
+@pytest.fixture
+def live_worktree_gate(monkeypatch, tmp_path):
+    """Make tier ``live_diff`` answer for exactly one plan id and decline for the other.
+
+    ``resolve_diff_evidence_tier`` probes ``live_diff`` first through
+    ``resolve_live_worktree``, so without a gate under test control the tier a
+    call reports depends on whatever the ambient sandbox happens to resolve.
+    Returns the directory the resolving id maps to, so the anchor test can assert
+    the stub answers both ways rather than inferring it from a tier verdict.
+    """
+    worktree = tmp_path / 'live-worktree'
+    worktree.mkdir()
+
+    def _resolve(plan_id):
+        return worktree if plan_id == _LIVE_WORKTREE_PLAN_ID else None
+
+    monkeypatch.setattr(_cmc, 'resolve_live_worktree', _resolve)
+    return worktree
 
 
 class TestEvidenceTierCaveat:
@@ -701,30 +742,86 @@ class TestEvidenceTierCaveat:
 
 
 class TestEvidenceTierResolution:
-    """The tier is read from the same references keys (same precedence) the chain uses."""
+    """The tier is read from the same keys, in the chain's own precedence order.
 
-    def test_recorded_sha_wins_over_pr_number(self):
-        plan_dir = _plan_dir('caveat-precedence')
+    ``live_diff`` is probed FIRST and is decided by ``resolve_live_worktree(plan_id)``
+    — not by a non-``None`` ``base_ref`` — so every test here states which side of
+    that gate it stands on. The recorded-key tiers are reachable only once tier 1
+    declines, and the ``live_diff`` expectation holds only for a plan id whose
+    worktree actually resolves. Both sides are bound to one stub so the positive
+    and its matched negative share a code path: a stub that stopped answering
+    sends the positive red rather than letting the negatives pass for the wrong
+    reason.
+    """
+
+    def test_the_gate_discriminates_between_the_two_plan_ids(self, live_worktree_gate):
+        """Anchor for every test below: the stub really does answer both ways."""
+        assert _cmc.resolve_live_worktree(_LIVE_WORKTREE_PLAN_ID) == live_worktree_gate
+        assert _cmc.resolve_live_worktree(_NO_LIVE_WORKTREE_PLAN_ID) is None
+
+    def test_recorded_sha_wins_over_pr_number(self, live_worktree_gate):
+        plan_dir = _plan_dir(_NO_LIVE_WORKTREE_PLAN_ID)
         _write_references(plan_dir, {'merge_commit_sha': 'abc1234', 'pr_number': 42})
 
-        assert _cmc.resolve_diff_evidence_tier(plan_dir, None, 'origin/main') == ('merge_commit', 'abc1234')
+        tier = _cmc.resolve_diff_evidence_tier(plan_dir, None, 'origin/main', _NO_LIVE_WORKTREE_PLAN_ID)
 
-    def test_pr_number_resolves_pr_landing(self):
-        plan_dir = _plan_dir('caveat-pr')
+        assert tier == ('merge_commit', 'abc1234')
+
+    def test_pr_number_resolves_pr_landing(self, live_worktree_gate):
+        plan_dir = _plan_dir(_NO_LIVE_WORKTREE_PLAN_ID)
         _write_references(plan_dir, {'pr_number': 42})
 
-        assert _cmc.resolve_diff_evidence_tier(plan_dir, None, 'origin/main') == ('pr_landing', '42')
+        tier = _cmc.resolve_diff_evidence_tier(plan_dir, None, 'origin/main', _NO_LIVE_WORKTREE_PLAN_ID)
 
-    def test_diff_file_and_live_inputs(self):
-        plan_dir = _plan_dir('caveat-inputs')
+        assert tier == ('pr_landing', '42')
+
+    def test_an_explicit_diff_file_outranks_the_gate_on_both_sides(self, live_worktree_gate):
+        """Caller-supplied evidence sits outside the chain, so tier 1 never decides it.
+
+        Swept over both plan ids rather than one: asserted against the declining
+        id alone, this would pass equally if ``diff_file`` were merely ranked
+        above the recorded keys instead of above tier 1.
+        """
+        plan_dir = _plan_dir(_NO_LIVE_WORKTREE_PLAN_ID)
         _write_references(plan_dir, {})
 
-        assert _cmc.resolve_diff_evidence_tier(plan_dir, 'work/footprint.txt', 'origin/main') == (
-            'diff_file',
-            'work/footprint.txt',
+        for plan_id in (_LIVE_WORKTREE_PLAN_ID, _NO_LIVE_WORKTREE_PLAN_ID):
+            tier = _cmc.resolve_diff_evidence_tier(plan_dir, 'work/footprint.txt', 'origin/main', plan_id)
+
+            assert tier == ('diff_file', 'work/footprint.txt'), plan_id
+
+    def test_a_resolving_live_worktree_reports_live_diff(self, live_worktree_gate):
+        plan_dir = _plan_dir(_LIVE_WORKTREE_PLAN_ID)
+        _write_references(plan_dir, {})
+
+        tier = _cmc.resolve_diff_evidence_tier(plan_dir, None, 'origin/main', _LIVE_WORKTREE_PLAN_ID)
+
+        assert tier == ('live_diff', 'origin/main')
+
+    def test_a_resolving_live_worktree_falls_back_to_the_worktree_label(self, live_worktree_gate):
+        """Tier 1 answers without a base ref — the gate is the worktree, not the ref."""
+        plan_dir = _plan_dir(_LIVE_WORKTREE_PLAN_ID)
+        _write_references(plan_dir, {})
+
+        tier = _cmc.resolve_diff_evidence_tier(plan_dir, None, None, _LIVE_WORKTREE_PLAN_ID)
+
+        assert tier == ('live_diff', 'worktree')
+
+    def test_no_live_worktree_and_no_recorded_key_is_the_unknown_tier(self, live_worktree_gate):
+        """The matched negative of the two tests above: same inputs, gate declines.
+
+        A base ref is supplied here, so a regression that re-decided tier 1 on a
+        non-``None`` ``base_ref`` would report ``live_diff`` and fail this test
+        rather than passing it by agreeing with the gate.
+        """
+        plan_dir = _plan_dir(_NO_LIVE_WORKTREE_PLAN_ID)
+        _write_references(plan_dir, {})
+
+        assert _cmc.resolve_diff_evidence_tier(plan_dir, None, 'origin/main', _NO_LIVE_WORKTREE_PLAN_ID) == (
+            None,
+            None,
         )
-        assert _cmc.resolve_diff_evidence_tier(plan_dir, None, 'origin/main') == ('live_diff', 'origin/main')
-        assert _cmc.resolve_diff_evidence_tier(plan_dir, None, None) == (None, None)
+        assert _cmc.resolve_diff_evidence_tier(plan_dir, None, None, _NO_LIVE_WORKTREE_PLAN_ID) == (None, None)
 
     def test_manifest_consistency_diff_block_carries_post_merge_caveat(self):
         """End to end through manifest-consistency's own run: the diff block

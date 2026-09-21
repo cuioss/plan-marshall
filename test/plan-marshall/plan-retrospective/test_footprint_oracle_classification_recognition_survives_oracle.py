@@ -294,17 +294,23 @@ class TestSummarizeChecksIsTotal:
         assert summary['a_status_added_later'] == 1, summary
 
     def test_known_statuses_report_an_explicit_zero(self):
+        """Every bucket the script declares reports 0, none is absent.
+
+        The expected keys are derived from the script's own ``_STATUS_BUCKETS``
+        rather than restated as a literal dict: the claim is that the summary is
+        TOTAL over the declared status set, and a hand-listed dict stops being
+        total the moment a status is added — reporting the new bucket as an
+        unexpected key rather than as the coverage it is.
+        """
         from conftest import load_script_module
 
         mod = load_script_module(
             'plan-marshall', 'plan-retrospective', 'check-manifest-consistency.py', 'cmc_summary_mod2'
         )
-        assert mod.summarize_checks([]) == {
-            'passed': 0,
-            'failed': 0,
-            'skipped': 0,
-            'indeterminate': 0,
-        }
+        expected_buckets = set(mod._STATUS_BUCKETS.values())
+        assert expected_buckets, 'the bucket map is empty — the comparison below would be vacuous'
+
+        assert mod.summarize_checks([]) == dict.fromkeys(expected_buckets, 0)
 
     def test_every_status_the_script_emits_has_a_named_bucket(self):
         """Derived from the emitted set, not from the bucket map it is checking."""

@@ -235,7 +235,20 @@ class TestDiffFedRuleRegistryIsTheSingleSource:
         mod = self._mod()
         assert set(mod._DIFF_FED_RULES) <= emitted, set(mod._DIFF_FED_RULES) - emitted
 
-    def test_the_branch_cleanup_exclusion_names_a_registered_rule(self):
-        """The separately-dispatched rule must be IN the registry, not beside it."""
+    def test_every_separately_dispatched_rule_is_in_the_registry(self):
+        """Separately-dispatched rules must be IN the registry, not beside it.
+
+        Quantified over the whole set rather than pinned to one member: the set
+        is what the loop's evaluator tuple is derived by subtracting, so a member
+        that drifts out of the registry silently shrinks the loop's population
+        while a single-member assertion keeps passing on the other one. The
+        non-emptiness anchor stops the subset check from passing over an empty
+        set, which would assert nothing at all.
+        """
         mod = self._mod()
-        assert mod._BRANCH_CLEANUP_CHECK in mod._DIFF_FED_RULES
+        assert mod._SEPARATELY_DISPATCHED_CHECKS, (
+            'the separately-dispatched set is empty — the subset check below would be vacuous'
+        )
+        assert set(mod._SEPARATELY_DISPATCHED_CHECKS) <= set(mod._DIFF_FED_RULES), set(
+            mod._SEPARATELY_DISPATCHED_CHECKS
+        ) - set(mod._DIFF_FED_RULES)

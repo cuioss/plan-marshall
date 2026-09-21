@@ -1,17 +1,36 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for the manifest-aware forward in ``check-artifact-consistency.py``."""
+"""Tests for the manifest-aware forward in ``check-artifact-consistency.py``.
+
+Two halves, and the second is the one that matters. The producer's half proves the
+flag is SET; the receiver's half proves the forwarded finding is RECEIVED. A forward
+asserted only at its sending end is exactly how this contract broke: the downgrade
+traded a real ``warn`` for a promise that another aspect would report the drift, and
+for as long as no rule read the flag the finding was DROPPED on every
+manifest-bearing plan rather than re-routed.
+"""
 
 from __future__ import annotations
 
+import pytest
 from _plan_retrospective_fixtures import build_happy_plan_dir
 from _plan_retrospective_manifest_fixtures import (
     ARTIFACT_SCRIPT,
+    MANIFEST_SCRIPT,
     _check_by_name,
+    _finding_by_code,
     _manifest_default,
     _write_manifest,
 )
 
 from conftest import run_script
+
+#: A fragment body ``parse_toon`` genuinely REFUSES rather than merely reads oddly.
+#: The parser skips almost every shape of garbage silently, so a "looks malformed"
+#: string would exercise nothing; an integer past CPython's digit limit is one of
+#: the few inputs that actually reaches the ``ToonParseError`` wrap. The test that
+#: uses it asserts that premise before asserting anything about the aspect, so the
+#: guard cannot quietly become a test of a fragment that parsed fine after all.
+_UNPARSABLE_FRAGMENT = 'affected_files_exact_match: ' + '1' * 5000 + '\n'
 
 # =============================================================================
 # Forward in check-artifact-consistency
@@ -106,3 +125,131 @@ class TestArtifactConsistencyManifestForward:
         warning_findings = [f for f in data['findings'] if f.get('severity') == 'warning']
         # At least the exact_match warning is present.
         assert any('mismatch' in f['message'].lower() for f in warning_findings)
+
+
+# =============================================================================
+# The RECEIVING half — the forward actually arrives
+# =============================================================================
+
+
+class TestForwardedFindingIsReceived:
+    """End-to-end: producer downgrades, receiver picks the drift up.
+
+    ⛔ Asserting the producer's ``forwarded_to_manifest`` flag proves only that a
+    handoff was ATTEMPTED. These tests run BOTH aspects in sequence — the real
+    producer's emitted fragment is what the real receiver reads — so they fail if
+    the receiving rule is removed, renamed, or stops reading the fragment, which
+    the producer-side assertions above cannot detect.
+    """
+
+    def _stage(self, tmp_path, monkeypatch, *, with_manifest: bool):
+        import json as _json
+
+        base = tmp_path / 'base'
+        base.mkdir()
+        plan_dir = base / 'plans' / 'forward-e2e'
+        build_happy_plan_dir(plan_dir)
+        # outline declares more than references carries → exact_match drift.
+        (plan_dir / 'references.json').write_text(
+            _json.dumps({'modified_files': ['src/foo.py'], 'domains': []}),
+            encoding='utf-8',
+        )
+        if with_manifest:
+            _write_manifest(plan_dir, _manifest_default())
+        monkeypatch.setenv('PLAN_BASE_DIR', str(base))
+        return 'forward-e2e', plan_dir
+
+    def _run_producer_and_persist(self, plan_id: str, plan_dir):
+        """Run the producer and persist its fragment where the receiver reads it."""
+        from toon_parser import serialize_toon  # local import — script-test PYTHONPATH
+
+        result = run_script(ARTIFACT_SCRIPT, 'run', '--plan-id', plan_id, '--mode', 'live')
+        assert result.success, result.stderr
+        payload = result.toon()
+
+        work = plan_dir / 'work'
+        work.mkdir(parents=True, exist_ok=True)
+        (work / 'fragment-artifact-consistency.toon').write_text(serialize_toon(payload) + '\n', encoding='utf-8')
+        return payload
+
+    def test_the_downgraded_drift_reaches_the_manifest_aspect(self, tmp_path, monkeypatch):
+        plan_id, plan_dir = self._stage(tmp_path, monkeypatch, with_manifest=True)
+        produced = self._run_producer_and_persist(plan_id, plan_dir)
+
+        # Precondition: the producer really did downgrade and forward, and the
+        # drift it forwarded is non-empty — otherwise the receiver assertion
+        # below would pass over an empty comparison and prove nothing.
+        assert produced['affected_files_exact_match']['forwarded_to_manifest'] is True
+        assert produced['affected_files_exact_match']['outline_only']
+
+        result = run_script(MANIFEST_SCRIPT, 'run', '--plan-id', plan_id, '--mode', 'live')
+        assert result.success, result.stderr
+        received = result.toon()
+
+        block = received['declared_vs_realized']
+        assert block['received'] is True
+        assert block['forwarded_to_manifest'] is True
+        assert int(block['outline_only_count']) == len(produced['affected_files_exact_match']['outline_only'])
+
+        check = _check_by_name(received['checks'], 'declared_vs_realized_set')
+        assert check is not None
+        assert check['status'] == 'fail', check
+
+        finding = _finding_by_code(received['findings'], 'declared_vs_realized_set_mismatch')
+        assert finding is not None, (
+            'the producer downgraded its own warn on the promise that this aspect '
+            'would report the drift — a receiver that raises nothing turns the '
+            'downgrade into a silent drop'
+        )
+        assert finding['severity'] == 'warning'
+
+    def test_no_fragment_means_the_receiver_reports_an_unread_input(self, tmp_path, monkeypatch):
+        """The matched control: a receiver that always failed would pass the test above.
+
+        Same plan, same manifest, but the producer's fragment is never persisted.
+        The receiver must then report an UNREAD input rather than a mismatch it
+        never received — and must publish no counts.
+        """
+        plan_id, _plan_dir = self._stage(tmp_path, monkeypatch, with_manifest=True)
+
+        result = run_script(MANIFEST_SCRIPT, 'run', '--plan-id', plan_id, '--mode', 'live')
+        assert result.success, result.stderr
+        received = result.toon()
+
+        assert received['declared_vs_realized']['received'] is False
+        check = _check_by_name(received['checks'], 'declared_vs_realized_set')
+        assert check is not None
+        assert check['status'] == 'inconclusive', check
+        assert _finding_by_code(received['findings'], 'declared_vs_realized_set_mismatch') is None
+
+    def test_an_unparsable_fragment_is_a_could_not_look_not_an_aspect_failure(self, tmp_path, monkeypatch):
+        """A fragment that is PRESENT but does not parse is the third could-not-look cause.
+
+        The receiver's own contract names three ways the block cannot be read —
+        absent, unparsable, or carrying no such block — and this is the arm for
+        the middle one. Reading it must leave the aspect reporting an unread
+        input, exactly as the absent-fragment arm above does; a parse failure
+        that escapes turns the whole aspect into ``status: error`` and takes
+        every other rule's verdict down with a finding it was supposed to
+        downgrade to ``received: false``.
+        """
+        from toon_parser import ToonParseError, parse_toon  # local import — script-test PYTHONPATH
+
+        # Premise, asserted rather than assumed: this body really is unparsable.
+        with pytest.raises(ToonParseError):
+            parse_toon(_UNPARSABLE_FRAGMENT)
+
+        plan_id, plan_dir = self._stage(tmp_path, monkeypatch, with_manifest=True)
+        work = plan_dir / 'work'
+        work.mkdir(parents=True, exist_ok=True)
+        (work / 'fragment-artifact-consistency.toon').write_text(_UNPARSABLE_FRAGMENT, encoding='utf-8')
+
+        result = run_script(MANIFEST_SCRIPT, 'run', '--plan-id', plan_id, '--mode', 'live')
+
+        assert result.success, result.stderr
+        received = result.toon()
+        assert received['declared_vs_realized']['received'] is False
+        check = _check_by_name(received['checks'], 'declared_vs_realized_set')
+        assert check is not None
+        assert check['status'] == 'inconclusive', check
+        assert _finding_by_code(received['findings'], 'declared_vs_realized_set_mismatch') is None

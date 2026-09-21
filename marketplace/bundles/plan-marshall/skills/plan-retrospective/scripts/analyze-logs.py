@@ -47,7 +47,7 @@ from _footprint_resolver import (
     resolve_merge_commit_footprint_with_gaps,
     resolve_pr_landing_footprint,
 )
-from _ledger_core import read_entries
+from _ledger_core import read_entries, resolve_ledger_path
 from _references_core import (
     compute_plan_branch_diff,
     resolve_base_ref,
@@ -151,6 +151,28 @@ _GLOBAL_LOG_FIXTURE_LEAK_RE = re.compile(
 # plan key is derived from an archived path. A live plan_id has no prefix.
 _LEDGER_DATE_PREFIX_RE = re.compile(r'^\d{4}-\d{2}-\d{2}-')
 
+#: The corpus ``build_time``'s figures are counted over, published beside them.
+#: Named for the same reason :func:`summarize_script_cost` requires its own
+#: ``population``: a cumulative total is meaningless without the corpus it was
+#: taken over, and two totals from different corpora must never be added.
+_BUILD_LEDGER_POPULATION = 'change_ledger_build_rows'
+
+#: The literal ``total_build_seconds`` carries when NO build row contributed a
+#: usable duration.
+#:
+#: Deliberately a STRING, on the same discipline
+#: :func:`summarize_context_position_cost` already applies to its rates: a
+#: consumer tests the TYPE, so an unmeasured total cannot be read as a measured
+#: ``0.0``. A float zero is a measurement claim, and the plan whose retrospective
+#: exposed this had 28 recorded build calls — the zero was averaged into
+#: cross-plan roll-ups as though the plan had built instantly.
+#:
+#: The token is the one ``references/plan-efficiency.md`` already renders, so the
+#: rule moves from the CONSUMER (which used to derive ``unavailable`` from
+#: ``build_count == 0``, leaving every other consumer to average the producer's
+#: zero) onto the producer that owns the figure.
+_BUILD_SECONDS_UNAVAILABLE = 'unavailable'
+
 
 def summarize_build_ledger(plan_key: str) -> dict[str, Any]:
     """Sum this plan's build time from the change-ledger — the build-time ORACLE.
@@ -162,6 +184,30 @@ def summarize_build_ledger(plan_key: str) -> dict[str, Any]:
     ratio. Because the ledger records ``command`` per build system and is written
     in every phase, the total spans EVERY build system and EVERY phase — not just
     the pyproject builds a plan happened to log.
+
+    **The total is published WITH its population, or not at all.** The fields
+    beside it say what it rests on — ``population`` names the corpus,
+    ``ledger_present`` and ``ledger_readable`` say whether that corpus could be
+    consulted, ``ledger_rows_scanned`` says how much of it was read, and
+    ``summed_rows`` says how many of this plan's build rows actually
+    contributed a duration. A
+    consumer can therefore tell "looked, and this plan built for N seconds" from
+    "could not look", which a bare total never permitted.
+
+    ⛔ **``ledger_present`` and ``ledger_readable`` are separate fields, not one
+    flag.** :func:`_ledger_core.read_entries` returns the same empty list for an
+    ABSENT ledger, an UNREADABLE one and a genuinely EMPTY one — three states one
+    figure cannot carry — so presence is probed from the path and readability by
+    opening it when it is a regular file. A readable-but-empty ledger and an
+    unreadable ledger are thereby distinguishable in the emitted payload rather
+    than collapsing into the same zero. Presence means the path EXISTS, whatever
+    kind of node sits there: a directory or other non-regular node is
+    present-and-unreadable, not absent.
+
+    ⛔ **``total_build_seconds`` is a float ONLY when ``summed_rows > 0``**;
+    otherwise it is the literal :data:`_BUILD_SECONDS_UNAVAILABLE`. Nothing was
+    measured in that case, and a ``0.0`` there is a measurement claim over an
+    empty population. Consumers test the TYPE, never the value.
 
     The five status fields PARTITION the builds:
     ``pass + error + timeout + killed + status_unknown == build_count``.
@@ -178,17 +224,45 @@ def summarize_build_ledger(plan_key: str) -> dict[str, Any]:
     SUSPECT-ZERO rule: a row whose ``duration_seconds`` is ``0`` / absent /
     non-numeric is counted in ``suspect_count`` and is NOT summed into
     ``total_build_seconds`` — never averaged in as a fabricated zero. When
-    ``suspect_count > 0`` the total is a FLOOR. ``killed`` is counted SEPARATELY
-    from ``error`` (an infrastructure kill is not a red build). Best-effort: a
-    plan with no ledger rows returns an all-zero block (``build_count: 0``), which
-    the reader treats as "unavailable", never as "no builds ran".
+    ``suspect_count > 0`` AND ``summed_rows > 0`` the published total is a FLOOR;
+    when ``suspect_count == build_count`` nothing was summed at all and the
+    unavailable sentinel is emitted instead of that floor's degenerate zero.
+    ``killed`` is counted SEPARATELY from ``error`` (an infrastructure kill is not
+    a red build).
     """
     status_keys = ('success', 'error', 'timeout', 'killed', 'unknown')
     status_counts = dict.fromkeys(status_keys, 0)
     total = 0.0
     build_count = 0
     suspect_count = 0
-    for entry in read_entries():
+
+    ledger_path = resolve_ledger_path()
+    # Presence is EXISTENCE, not file-ness. A directory, a fifo, or any other
+    # non-regular node at the ledger path is something that IS there and cannot be
+    # read — which is the present-but-unreadable state, not the absent one. Probing
+    # PRESENCE with `is_file()` reported every such path as `ledger_present: False`,
+    # i.e. "no ledger at all", re-collapsing the very distinction the two fields
+    # exist to keep apart. READABILITY is the separate question, and its open-probe
+    # below is gated on `is_file()` so that `open()` is never reached for a
+    # non-regular node: opening a FIFO BLOCKS until a writer connects — no timeout,
+    # no `O_NONBLOCK` — so classifying one by the `OSError` it never raises would
+    # hang the run instead of reporting it. Every non-regular node (directory,
+    # FIFO, socket, device node) therefore lands on present-and-unreadable without
+    # an `open()` that could block.
+    ledger_present = ledger_path.exists()
+    # Probed by OPENING the regular file, not inferred from the row count:
+    # `read_entries` swallows its own OSError and returns `[]`, so an unreadable
+    # ledger is byte-identical to an empty one at the call site below.
+    ledger_readable = False
+    if ledger_present and ledger_path.is_file():
+        try:
+            with ledger_path.open(encoding='utf-8'):
+                ledger_readable = True
+        except OSError:
+            ledger_readable = False
+
+    entries = read_entries(ledger_path) if ledger_readable else []
+    for entry in entries:
         if entry.get('kind') != 'build' or entry.get('plan_id') != plan_key:
             continue
         build_count += 1
@@ -199,8 +273,18 @@ def summarize_build_ledger(plan_key: str) -> dict[str, Any]:
             suspect_count += 1
         else:
             total += float(dur)
+
+    # The population BEHIND the total: the build rows that actually contributed a
+    # usable duration. It is what decides whether a number may be published at
+    # all, so it is emitted rather than left for a consumer to subtract.
+    summed_rows = build_count - suspect_count
     return {
-        'total_build_seconds': round(total, 3),
+        'population': _BUILD_LEDGER_POPULATION,
+        'ledger_present': ledger_present,
+        'ledger_readable': ledger_readable,
+        'ledger_rows_scanned': len(entries),
+        'summed_rows': summed_rows,
+        'total_build_seconds': round(total, 3) if summed_rows > 0 else _BUILD_SECONDS_UNAVAILABLE,
         'build_count': build_count,
         'suspect_count': suspect_count,
         'pass': status_counts['success'],
@@ -2057,8 +2141,12 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
     # every build system and every phase, with the
     # pass/error/timeout/killed/status_unknown ratio (killed SEPARATE, and
     # status_unknown published so the five terms sum to build_count) and the
-    # suspect-zero rule applied. The plan_efficiency aspect READS
-    # `total_build_seconds` from this block into its `totals`.
+    # suspect-zero rule applied. The block publishes the POPULATION behind its
+    # total (`population`, `ledger_present`, `ledger_readable`,
+    # `ledger_rows_scanned`, `summed_rows`) and emits the `unavailable` sentinel
+    # in place of `total_build_seconds` whenever no row contributed. The
+    # plan_efficiency aspect READS `total_build_seconds` from this block into its
+    # `totals` and surfaces that sentinel rather than deriving one of its own.
     plan_ledger_key = _LEDGER_DATE_PREFIX_RE.sub('', args.plan_id or Path(args.archived_plan_path or '').name)
     build_time = summarize_build_ledger(plan_ledger_key)
 

@@ -39,33 +39,38 @@ FOOTPRINT_AGGREGATE_KEY = '_footprint-derivation'
 #: always the registry's own. Adding a footprint-consuming aspect means adding its
 #: registry row (which any new aspect needs regardless) and naming it here — the
 #: aggregate's ``producer_count`` then grows with no consumer edit.
-#: ⛔ ``manifest-decisions`` (``check-manifest-consistency``) is deliberately NOT a
-#: member, though it is often described as one. Measured against HEAD it publishes
-#: no footprint-degradation verdict at all: a content sweep for the degradation
-#: tokens below returns no match in that script, a sweep for
-#: ``footprint_resolved`` / ``FOOTPRINT_UNRESOLVED`` returns none either, and it
-#: carries a single ``resolve_footprint`` mention against the 9, 8 and 3 carried by
-#: ``artifact-consistency``, ``log-analysis`` and ``routing-decisions``. A producer
-#: with no degraded verdict reads as ``resolved`` on EVERY run, and one resolved
-#: member suppresses the record — so rostering it would not make the aggregate
-#: broader, it would make it incapable of ever firing. Add it here the moment it
-#: grows a degradation verdict, not before.
-#: ``outline-vs-shipped`` (``check-outline-vs-shipped``) IS a member on exactly that
-#: test: it resolves the footprint through the shared chain and publishes
-#: ``comparison: inconclusive`` — the first token below, as a VALUE — whenever no
-#: tier answers, so it goes unmeasurable on the same missing derivation as the rest.
+#: The membership test is a single question: does the aspect resolve the footprint
+#: through the shared chain AND publish a degradation verdict when no tier answers?
+#: A producer with no degraded verdict reads as ``resolved`` on EVERY run, and one
+#: resolved member suppresses the record — so rostering such a producer would not
+#: make the aggregate broader, it would make it incapable of ever firing.
+#: ``outline-vs-shipped`` (``check-outline-vs-shipped``) passes on exactly that test:
+#: it resolves through the shared chain and publishes ``comparison: inconclusive`` —
+#: the first token below, as a VALUE — whenever no tier answers.
+#: ``manifest-decisions`` (``check-manifest-consistency``) passes it on both halves
+#: too: it resolves through the shared chain and emits ``inconclusive`` — under a
+#: check ``status``, and under ``footprint_resolution.status`` — when the chain
+#: reports its unresolvable sentinel.
+#: ⛔ Do NOT reintroduce a per-script ``resolve_footprint`` mention count here as
+#: corroboration. An earlier revision carried one, it drifted from the tree, and a
+#: count is the wrong instrument regardless: mention frequency is not the membership
+#: test, and the test above is decidable by reading whether the producer emits a
+#: degradation token. Derive it from the scripts when it needs re-checking.
 FOOTPRINT_CONSUMING_ASPECTS: tuple[str, ...] = (
     'artifact-consistency',
     'log-analysis',
+    'manifest-decisions',
     'outline-vs-shipped',
     'routing-decisions',
 )
 
 #: Tokens by which a footprint-consuming aspect DECLARES it could not derive the
 #: footprint. Each is the producer's own existing honest-degradation token, read
-#: rather than introduced — ``inconclusive`` is the per-check status the three
-#: ``check-*`` aspects emit, and ``ARTIFACT_COVERAGE_UNMEASURABLE`` is the token
-#: ``analyze-logs`` embeds in its warning finding's message.
+#: rather than introduced — ``inconclusive`` is the per-check status a
+#: ``check-*`` aspect in :data:`FOOTPRINT_CONSUMING_ASPECTS` emits it under (see
+#: :data:`compile-report._VERDICT_FIELD_KEYS` for which aspect uses which field),
+#: and ``ARTIFACT_COVERAGE_UNMEASURABLE`` is the token ``analyze-logs`` embeds in
+#: its warning finding's message.
 #:
 #: ⛔ HOW each token is matched is owned by ``compile-report._declares_degraded``
 #: and differs PER TOKEN — ``inconclusive`` by equality against a verdict field,

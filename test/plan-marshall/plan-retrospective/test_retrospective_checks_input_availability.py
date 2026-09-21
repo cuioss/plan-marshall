@@ -11,7 +11,10 @@ The three surfaces:
 
 * ``check-manifest-consistency`` rule M4 — skipped on ``raw_files_total == 0``
   while the loader's ``evidence_available`` sat unused, emitting *"no diff data
-  available"* for a diff that had been supplied and read.
+  available"* for a diff that had been supplied and read. The loader now resolves
+  the footprint through the SHARED chain rather than taking a private
+  ``{base}...HEAD`` diff, so the no-evidence state is an unresolvable footprint
+  and carries the ``inconclusive`` degradation token rather than a skip.
 * ``check-manifest-consistency.filter_bookkeeping`` — seeded ``diff_available``
   ``True`` (fail-OPEN) and relied on one caller to correct it, so a caller that
   forgot would grant every clean verdict on no evidence.
@@ -35,7 +38,7 @@ from _footprint_oracle_classification_fixtures import (
     _setup,
     _write_diff,
 )
-from _plan_retrospective_fixtures import setup_live_plan
+from _plan_retrospective_fixtures import setup_live_plan, stage_evidence_free_references
 
 from conftest import load_script_module, run_script
 
@@ -58,7 +61,7 @@ _BRANCH_CLEANUP_MANIFEST = {
 
 
 class TestBranchCleanupRuleReadsTheEvidenceFlag:
-    """A RESOLVED empty footprint is evaluated; an ABSENT observation is skipped.
+    """A RESOLVED empty footprint is evaluated; an UNRESOLVABLE one degrades to ``inconclusive``.
 
     The two produce the same ``raw_files_total == 0``, which is exactly why the
     rule must not read that proxy. Both directions are pinned, because a fix that
@@ -90,23 +93,51 @@ class TestBranchCleanupRuleReadsTheEvidenceFlag:
         codes = [f['code'] for f in (data.get('findings') or [])]
         assert 'branch_cleanup_without_changes' in codes
 
-    def test_no_diff_input_at_all_still_skips(self, tmp_path, monkeypatch):
+    def test_no_resolvable_footprint_degrades_rather_than_verdicting(self, tmp_path, monkeypatch):
         """The negative control, and the distinction the whole change turns on.
 
-        With neither ``--diff-file`` nor ``--base-ref`` the loader observed
-        nothing, so the rule has no evidence to verdict on and must still skip.
-        A fix that evaluated here would fabricate a finding out of an absence.
+        With no ``--diff-file`` and no tier of the shared chain able to answer,
+        the rule has no evidence to verdict on. A fix that evaluated here would
+        fabricate a finding out of an absence.
+
+        The verdict is ``inconclusive``, not ``skip``: a skip says the rule did
+        not apply, while this rule DID apply and could not be evaluated. The
+        token also matters beyond wording — only ``inconclusive`` is a member of
+        ``retro_sections.FOOTPRINT_DEGRADED_TOKENS``, so it is what lets the
+        plan-level footprint aggregate see this aspect as degraded.
         """
-        plan_id, _ = _setup(tmp_path, monkeypatch, _BRANCH_CLEANUP_MANIFEST)
+        plan_id, plan_dir = _setup(tmp_path, monkeypatch, _BRANCH_CLEANUP_MANIFEST)
+        # Starve every tier by name, so this exercises the unresolvable sentinel
+        # rather than merely happening to reach it. Staged from the ONE shared
+        # definition, so this case and its sibling cannot drift into
+        # differently-shaped "no evidence".
+        stage_evidence_free_references(plan_dir)
 
         result = run_script(MANIFEST_SCRIPT, 'run', '--plan-id', plan_id, '--mode', 'live')
         assert result.success, result.stderr
         data = result.toon()
 
         assert data['diff']['diff_available'] is False
+        assert data['diff']['evidence_tier'] == 'unresolved'
+        assert data['footprint_resolution']['status'] == _cmc.STATUS_INCONCLUSIVE
+
         row = _check(data['checks'], 'branch_cleanup_changes')
-        assert row['status'] == 'skip', row
-        assert 'no diff evidence was available' in row['message']
+        # Read from the script's own constants: the ``inconclusive`` /
+        # ``indeterminate`` pair is what the plan-level aggregate discriminates
+        # on, so a restated literal here could drift apart from the production one.
+        assert row['status'] == _cmc.STATUS_INCONCLUSIVE, row
+        assert row['status'] != _cmc.STATUS_INDETERMINATE
+        assert 'could not be resolved from any tier' in row['message']
+        # ⛔ The confident claim the repair removes must be absent — asserted
+        # against the STRUCTURED verdict, not by scraping the prose. The
+        # degradation message deliberately QUOTES "no implementation file changed"
+        # in order to deny it ("…is UNMEASURABLE, not \"…\""), so a negative
+        # substring test fires against the very message it was written to protect.
+        # The confident verdict is the ``fail`` status and the
+        # ``branch_cleanup_without_changes`` code, and both are absent here.
+        assert row['status'] != 'fail', row
+        codes = [f['code'] for f in (data.get('findings') or [])]
+        assert 'branch_cleanup_without_changes' not in codes, codes
 
     def test_a_filtered_away_diff_names_the_reduction_not_the_diff(self, tmp_path, monkeypatch):
         """The third input state, kept distinguishable from the empty-diff one.
@@ -165,8 +196,10 @@ class TestReductionSeedIsFailClosed:
 
         annotated = _cmc.apply_input_reduction(clean_pass, reduction)
 
-        assert annotated[0]['status'] == _cmc.STATUS_INDETERMINATE
-        assert 'no diff evidence was available' in annotated[0]['message']
+        # The no-evidence path degrades with the footprint token, distinct from
+        # the majority-discarded path's STATUS_INDETERMINATE.
+        assert annotated[0]['status'] == _cmc.STATUS_INCONCLUSIVE
+        assert 'could not be resolved from any tier' in annotated[0]['message']
 
     def test_the_caller_assignment_restores_the_measured_verdict(self):
         """The matched control: with evidence recorded, the pass stands.

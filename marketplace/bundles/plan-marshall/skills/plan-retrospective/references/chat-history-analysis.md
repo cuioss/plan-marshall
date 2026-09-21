@@ -37,8 +37,9 @@ The aspect resolves to exactly one of two tiers, gated by the `extract-chat-sign
 The pre-pass is the single decision source — the orchestrator never inspects a raw file size directly. The `extract-chat-signal.py run --session-id {id} [--read-budget-bytes N]` invocation returns:
 
 - `no_signal` — `true` when the transcript carried **no operator-authored signal of either kind**: `operator_turn_count == 0` AND `gate_decision_count == 0`. It is deliberately **not** a count of survivors (the runtime derives it from operator-authored counts; see the contract's § "The operator-provenance predicate").
-- `over_budget` — `true` when the reduced text still exceeds `--read-budget-bytes` (default 2 MiB). This is derived by the **consumer**: the runtime reports `reduced_bytes`, and this skill compares it against its own budget.
-- `reduced_transcript` — the Tier-1 input. It is fed to the LLM only when both flags are `false`; it is **not** empty whenever they are not. A transcript with no operator signal can still retain marker-bearing `assistant` turns, so a Tier-2 skip may carry a non-empty reduction. The flags decide the tier — never the emptiness of this field.
+- `over_budget` — `true` when the **delivered** text exceeds `--read-budget-bytes` (default 2 MiB). This is derived by the **consumer**, and ⛔ it is derived from `reduced_transcript_delivered_bytes`, **never** from the forwarded `reduced_bytes`. The budget governs what will actually be read, and only the delivered figure measures that.
+- `reduced_bytes` / `reduced_transcript_delivered_bytes` — two figures describing **different things**, published side by side so neither can stand in for the other. `reduced_bytes` is forwarded verbatim from the runtime and describes the bytes its reduction PRODUCED; `reduced_transcript_delivered_bytes` is the UTF-8 size of the `reduced_transcript` the pre-pass actually EMITS. They agree in the ordinary case — a block scalar round-trips verbatim — and the gap between them is itself the signal when they do not. A budget decision taken on the forwarded figure is a verdict about a payload the consumer never received, which is exactly what it used to be.
+- `reduced_transcript` — the Tier-1 input, emitted as a `key: |` block scalar (see [Multi-line serialization](#multi-line-serialization-binds-producers-and-fragment-authors-alike)). It is fed to the LLM only when both flags are `false`; it is **not** empty whenever they are not. A transcript with no operator signal can still retain marker-bearing `assistant` turns, so a Tier-2 skip may carry a non-empty reduction. The flags decide the tier — never the emptiness of this field.
 - `raw_turn_count` / `reduced_turn_count` / `dropped_turn_count` — the parseable-turn count before reduction, the raw turns kept, and how many the reduction removed, so the caller can see how much was boilerplate. `reduced_turn_count + dropped_turn_count == raw_turn_count` holds; recovered gate decisions were never raw turns, so they appear as extra entries in `reduced_transcript` and are counted by `gate_decision_count` alone.
 - `operator_turn_count` / `gate_decision_count` — the two operator-signal counters, reported separately from the survivor count so a caller can tell *"kept 200 turns, 3 operator-authored"* from *"kept 200 operator turns"*. `operator_turn_count` counts free-form operator corrections; `gate_decision_count` counts operator decisions recovered from the tool-result channel.
 
@@ -89,12 +90,25 @@ findings[*]{severity,message}:
 
 (`reason: transcript_unavailable` when the transcript was absent rather than too large.)
 
+## Multi-line serialization (binds PRODUCERS and fragment authors alike)
+
+⛔ **No line of a multi-line value may reach column 0 of the emitted document.** `parse_toon` reads a flush-left line containing a colon as a *sibling top-level key*, so a transcript line reading `status: blocked` does not merely get lost — it OVERWRITES the envelope's own `status` and truncates everything after it. This rule is stated here, outside [LLM Interpretation Rules](#llm-interpretation-rules), because it binds **both** parties to a fragment and the interpretation rules bind only one: the script that PRODUCES a payload is subject to it exactly as the LLM that AUTHORS a fragment is. Siting it under the interpretation rules is what let `extract-chat-signal.py` emit a raw multi-line `reduced_transcript` for as long as it did.
+
+Which form satisfies the rule depends on who is writing:
+
+| Writer | Form | Why |
+|--------|------|-----|
+| A **script** emitting opaque foreign text (a transcript, a captured log, a PR body) | Mark the value `BlockScalar` before handing it to `serialize_toon`; it is then emitted as `key: \|` with the body indented two spaces past the header. | The indent is exactly what `parse_toon` strips back off, so the body round-trips verbatim and is inert — no payload line can reach column 0. A plain multi-line `str` is quoted but **not** escaped, which is the corruption above. |
+| An **LLM** hand-authoring a fragment body (e.g. `summary`) | A quoted scalar with escaped newlines (`"line1\nline2"`). | A hand-authored body is short and under the author's control; the escaped form keeps it on one physical line, so the question of a flush-left continuation never arises. |
+
+`serialize_toon` emits a block scalar **only** for a value the producer explicitly marked `BlockScalar` — the marking is deliberate and is not inferred from the presence of a newline, because `value_needs_quoting` is the published predicate for what the serializer quotes and changing it would be wrong for every existing caller. The boundary contract, including which edges round-trip and which do not, is owned by the `BlockScalar` docstring in `ref-toon-format/scripts/toon_parser.py` and is not restated here.
+
 ## LLM Interpretation Rules
 
 - Pivots AFTER `3-outline` completion indicate a missed clarification in refine — surface as `warning`.
 - Any permission prompt within the plan SHOULD have a corresponding entry in the permission-prompt-analysis aspect.
 - Loop-backs from `6-finalize` to `5-execute` are normal; loop-backs from later phases to `2-refine` are strong signals of an under-refined request.
-- Fragment bodies MUST NOT use `|` block scalars. Multi-line narrative content (e.g. `summary`) MUST be a quoted scalar (`"line1\nline2"`) so the fragment round-trips deterministically through `serialize_toon`/`parse_toon`. Rationale: `serialize_toon` never emits block scalars, so a `|` block scalar is a parse-only, hand-authored construct; any continuation line that sits flush at column 0 and contains a colon is re-parsed by `parse_toon` as a phantom sibling top-level key, leaking a spurious aspect into the bundle.
+- Multi-line narrative content you author by hand (e.g. `summary`) MUST be a quoted scalar (`"line1\nline2"`). See [Multi-line serialization](#multi-line-serialization-binds-producers-and-fragment-authors-alike) for the rule this follows from and for the different form a producing SCRIPT must use.
 
 ## Finding Shape
 

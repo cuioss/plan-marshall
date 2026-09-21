@@ -7,8 +7,13 @@ Its one section: A verdict over no evidence is not a clean result.
 from __future__ import annotations
 
 from _footprint_oracle_classification_fixtures import MANIFEST_SCRIPT, _check, _setup, _write_diff
+from _plan_retrospective_fixtures import stage_evidence_free_references
 
-from conftest import run_script
+from conftest import load_script_module, run_script
+
+_cmc = load_script_module(
+    'plan-marshall', 'plan-retrospective', 'check-manifest-consistency.py', 'cmc_withheld_no_diff_mod'
+)
 
 # =============================================================================
 # A verdict over no evidence is not a clean result
@@ -31,17 +36,27 @@ class TestVerdictWithheldWhenNoDiffEvidenceExists:
         'phase_6': {'steps': ['push']},
     }
 
-    def test_no_diff_file_and_no_base_ref_withholds_the_verdict(self, tmp_path, monkeypatch):
-        plan_id, _ = _setup(tmp_path, monkeypatch, self._MANIFEST)
+    def test_no_diff_file_and_no_resolvable_tier_withholds_the_verdict(self, tmp_path, monkeypatch):
+        plan_id, plan_dir = _setup(tmp_path, monkeypatch, self._MANIFEST)
+        # The happy-path fixture carries a POPULATED legacy ``modified_files``
+        # key for the artifact-consistency recall check, and that key is itself a
+        # resolving tier — inheriting it would make this the RESOLVED-footprint
+        # case and leave the evidence-free path untested. The scenario is
+        # repaired; the assertions below are not.
+        stage_evidence_free_references(plan_dir)
 
         result = run_script(MANIFEST_SCRIPT, 'run', '--plan-id', plan_id, '--mode', 'live')
         assert result.success, result.stderr
         data = result.toon()
 
+        # That no tier answered is read from the production sentinel, not assumed
+        # from the fixture: a references payload that accidentally kept a
+        # resolving key would label the base with that key's name instead.
+        assert data['diff']['base'] == 'unresolved', data['diff']
         assert data['diff']['diff_available'] is False
         docs_only = _check(data['checks'], 'docs_only_diff')
-        assert docs_only['status'] == 'indeterminate', docs_only
-        assert 'no diff evidence was available' in docs_only['message']
+        assert docs_only['status'] == _cmc.STATUS_INCONCLUSIVE, docs_only
+        assert 'could not be resolved from any tier' in docs_only['message']
 
     def test_a_supplied_empty_diff_file_is_evidence_and_still_passes(self, tmp_path, monkeypatch):
         """The negative control, and the distinction that matters.

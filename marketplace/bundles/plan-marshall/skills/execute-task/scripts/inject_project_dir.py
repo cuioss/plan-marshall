@@ -145,8 +145,9 @@ def inject_project_dir(command: str, plan_id: str) -> tuple[str, bool]:
     return shlex.join(rewritten_tokens), True
 
 
-#: Refusal code emitted when a Bucket-B invocation is attempted while the
-#: worktree flag is unset and ``use_worktree`` is true. The flag is persisted
+#: Refusal code emitted when a Bucket-B invocation is attempted while
+#: ``worktree_materialized`` is explicitly ``False`` (``worktree_state: pending``)
+#: and ``use_worktree`` is true. The flag is persisted
 #: by ``prepare_execute``; this seam is a read-only guard. No script gate
 #: binds a free agent's Edit tool — the refusal lives here, paired with
 #: detection docs naming that residual.
@@ -163,9 +164,9 @@ def refusal_needed(notation: str, *, use_worktree: bool, worktree_materialized: 
 
     Refusal fires exactly when the notation is Bucket-B, the plan runs with
     ``use_worktree`` true, and the materialized flag is explicitly False. An
-    unknown flag (``None``) never refuses — the guard is fail-open on unknown
-    so pre-flag callers keep their current behaviour; only an explicit unset
-    refuses.
+    omitted flag (``None``) never refuses — the guard is fail-open on the
+    unknown/omitted case so pre-flag callers keep their current behaviour;
+    only an explicit ``False`` (``worktree_state: pending``) refuses.
     """
     return bool(use_worktree) and worktree_materialized is False and is_bucket_b_notation(notation)
 
@@ -198,7 +199,7 @@ def guarded_inject(
             'plan_id': plan_id,
             'message': (
                 f'Bucket-B invocation refused for plan {plan_id}: worktree not materialized '
-                '(use_worktree=true while worktree_materialized is unset). '
+                '(use_worktree=true while worktree_materialized is false, worktree_state: pending). '
                 'Materialize via prepare_execute before dispatch.'
             ),
         }

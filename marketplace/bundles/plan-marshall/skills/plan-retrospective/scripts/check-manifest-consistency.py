@@ -1,12 +1,28 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Cross-check the per-plan execution manifest against the actual end-of-execute diff.
+"""Cross-check the per-plan execution manifest against the plan's realized footprint.
 
 Reads ``execution.toon`` (produced by ``plan-marshall:manage-execution-manifest``)
 plus the matching ``decision.log`` entries, then evaluates each manifest
-assumption against ``git diff {base}...HEAD --name-only``. Emits one finding
-per violated assumption in the same fragment shape as
-``check-artifact-consistency.py``.
+assumption against the footprint resolved through the SHARED whole-chain resolver
+(``_footprint_resolver.resolve_footprint``). Emits one finding per violated
+assumption in the same fragment shape as ``check-artifact-consistency.py``.
+
+⛔ **The footprint is NOT a private ``git diff {base}...HEAD`` taken here.** This
+aspect runs at finalize ``order: 995``, after ``default:branch-cleanup`` has merged,
+so that range spanned nothing on every real run: it succeeded, returned no path, and
+rule M4 concluded "no implementation file changed" for plans that had shipped a real
+footprint. Routing through the shared chain adopts the post-merge tiers the sibling
+footprint consumers already use, which is also what makes this aspect a legitimate
+member of ``retro_sections.FOOTPRINT_CONSUMING_ASPECTS``: when no tier resolves it
+now publishes the ``inconclusive`` degradation verdict rather than a confident zero.
+
+Two evidence sources feed the rules, and they are distinct: the footprint above, and
+the ``affected_files_exact_match`` comparison ``check-artifact-consistency`` FORWARDS
+to this aspect (``forwarded_to_manifest``). Rule M6 is that forward's receiver — the
+flag previously had none, so the downgraded upstream finding was dropped rather than
+re-routed. (M5 is the manifest-version rule; see ``standards/manifest-crosscheck.md``
+for the numbering, which this script does not renumber.)
 
 Sibling to ``check-artifact-consistency.py`` — both scripts produce
 deterministic TOON fragments that the retrospective orchestrator pipes into
@@ -24,7 +40,6 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import subprocess
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -39,14 +54,25 @@ from _footprint_classification import (
     load_oracle_routes,
     oracle_available,
 )
-from _footprint_resolver import load_references_dict, resolve_diff_file_path
+from _footprint_resolver import (
+    RESOLVING_TIERS,
+    coerce_pr_number,
+    footprint_resolved,
+    load_references_dict,
+    read_captured_footprint,
+    read_legacy_footprint,
+    read_split_shard_shas,
+    resolve_diff_file_path,
+    resolve_footprint,
+)
+from _references_core import resolve_live_worktree
 from _step_key_canonical import canonicalize_step_key
 from file_ops import base_path, output_toon, safe_main
 from input_validation import (
     add_plan_id_arg,
     parse_args_with_toon_errors,
 )
-from toon_parser import parse_toon
+from toon_parser import ToonParseError, parse_toon
 
 # Manifest schema version known to this script. Bump in lock-step with
 # ``manage-execution-manifest`` whenever the manifest body changes shape.
@@ -122,36 +148,53 @@ def footprint_evidence_caveat(tier: str | None, base_ref: str | None) -> str | N
 
 
 def resolve_diff_evidence_tier(
-    plan_dir: Path, diff_file: str | None, base_ref: str | None
+    plan_dir: Path, diff_file: str | None, base_ref: str | None, plan_id: str | None
 ) -> tuple[str | None, str | None]:
-    """Determine the evidence tier and base ref behind this run's diff.
+    """Determine which tier of the shared chain supplied this run's footprint.
 
-    Reads ``references.json`` for the keys the shared chain resolves from, in
-    the chain's own precedence (capture, then ``merge_commit_sha``, then
-    ``pr_number``, then the legacy key — the same order the chain itself
-    applies, so the reported tier is the tier that supplied the diff). An
-    explicit ``--diff-file`` is caller-supplied evidence and reports the
-    ``diff_file`` tier; a live ``--base-ref`` diff with no recorded key
-    reports ``live_diff``; with neither input nor recorded key the
-    tier is unknown (``None, None``).
+    The order below is :data:`_footprint_resolver.RESOLVING_TIERS` verbatim —
+    ``live_diff`` FIRST, then capture, merge-commit, PR-landing, legacy key —
+    because :func:`_footprint_resolver.resolve_footprint` is now what answers,
+    and a tier label taken in a different order names a tier that did not
+    supply the diff. The previous order put ``live_diff`` LAST, which was
+    correct while this script ran its own ``git diff`` and consulted the
+    recorded keys only as a fallback; under the shared chain it would report
+    ``realized_capture`` for a footprint the live worktree actually produced.
+
+    Each tier is probed through the RESOLVER'S OWN reader rather than a local
+    re-read of the same key, so "did this tier answer?" is decided by the same
+    predicate the chain applies. That distinction is load-bearing for a
+    present-but-EMPTY key: ``realized_footprint: []`` is a resolved,
+    genuinely-empty footprint that the chain accepts and stops at, while the
+    previous truthiness test (``isinstance(v, list) and v``) skipped past it and
+    attributed the answer to a lower tier.
+
+    An explicit ``--diff-file`` is caller-supplied evidence outside the chain
+    entirely and reports the ``diff_file`` tier. When no tier answers the tier
+    is unknown (``None, None``) — the footprint-degradation state, never a
+    guessed label.
     """
     if diff_file is not None:
         return 'diff_file', diff_file
+    if resolve_live_worktree(plan_id) is not None:
+        # Tier 1 answered — and it answers whether the diff succeeded or the
+        # chain reported the sentinel, because a tier-1 failure does NOT fall
+        # through to a lower tier (see _footprint_resolver's module docstring).
+        return 'live_diff', base_ref or 'worktree'
     refs = load_references_dict(plan_dir)
-    captured = refs.get('realized_footprint')
-    if isinstance(captured, list) and captured:
+    if read_captured_footprint(refs) is not None:
         return 'realized_capture', 'realized_footprint'
+    shard_shas = read_split_shard_shas(refs)
+    if shard_shas is not None:
+        return 'merge_commit', f'merge_commit_shas[{len(shard_shas)}]'
     merge_sha = refs.get('merge_commit_sha')
     if isinstance(merge_sha, str) and merge_sha.strip():
         return 'merge_commit', merge_sha.strip()
-    pr_number = refs.get('pr_number')
-    if pr_number is not None and str(pr_number).strip():
-        return 'pr_landing', str(pr_number).strip()
-    legacy = refs.get('modified_files')
-    if isinstance(legacy, list) and legacy:
+    pr_number = coerce_pr_number(refs.get('pr_number'))
+    if pr_number is not None:
+        return 'pr_landing', str(pr_number)
+    if read_legacy_footprint(refs) is not None:
         return 'legacy_key', 'modified_files'
-    if base_ref:
-        return 'live_diff', base_ref
     return None, None
 
 
@@ -229,18 +272,24 @@ def load_decision_log_entries(plan_dir: Path) -> list[str]:
     return matches
 
 
-def load_diff_files(diff_file: str | None, base_ref: str | None, plan_dir: Path) -> tuple[list[str], str, bool]:
+def load_diff_files(
+    diff_file: str | None,
+    plan_dir: Path,
+    plan_id: str | None,
+    evidence_tier: str | None,
+    evidence_base_ref: str | None,
+) -> tuple[list[str], str, bool]:
     """Return ``(file_paths, base_label, evidence_available)``.
 
-    ``evidence_available`` says whether the rules received a diff observation AT
-    ALL, and it is threaded out of here rather than inferred downstream from an
-    empty file list — because an empty list has two incompatible causes. A supplied
-    diff file naming nothing is a RESOLVED empty footprint (the run really did
-    change nothing, and a rule may pass on it); no diff input, or a git invocation
-    that failed, is an ABSENCE OF EVIDENCE (no rule may pass on it). Inferring from
-    `len(files) == 0` collapses the two, which is the same
-    could-not-look-versus-nothing-to-look-at conflation this script is being fixed
-    for.
+    ``evidence_available`` says whether the rules received a footprint
+    observation AT ALL, and it is threaded out of here rather than inferred
+    downstream from an empty file list — because an empty list has two
+    incompatible causes. A footprint that RESOLVED to no path is a measured
+    result (the run really did change nothing, and a rule may pass on it); a
+    footprint no tier could resolve is an ABSENCE OF EVIDENCE (no rule may pass
+    on it). Inferring from ``len(files) == 0`` collapses the two, which is the
+    could-not-look-versus-nothing-to-look-at conflation this script exists to
+    report on and must not commit itself.
 
     When ``--diff-file`` is provided, read it directly. A RELATIVE argument is
     resolved against the plan directory first and the cwd second
@@ -248,13 +297,14 @@ def load_diff_files(diff_file: str | None, base_ref: str | None, plan_dir: Path)
     documents resolves to the same file an absolute path names — and a
     supplied-but-unresolvable path raises rather than degrading to an empty diff.
 
-    Without ``--diff-file``, invoke ``git diff {base}...HEAD --name-only`` and treat
-    any failure as "no diff available" rather than aborting — the manifest
-    cross-check is a best-effort retrospective signal, not a build-blocking gate.
+    ⛔ **Without ``--diff-file`` the footprint comes from the SHARED whole-chain
+    resolver (:func:`_footprint_resolver.resolve_footprint`), never from a private
+    ``git diff {base}...HEAD`` here.** The module docstring owns why that private
+    range was structurally empty on every real run.
     """
     if diff_file is not None:
         # `is not None`, never truthiness: `--diff-file ""` is SUPPLIED input and
-        # must take the supplied path (where it raises) rather than the git path.
+        # must take the supplied path (where it raises) rather than the resolver path.
         path = resolve_diff_file_path(diff_file, plan_dir)
         try:
             raw = path.read_text(encoding='utf-8')
@@ -268,22 +318,13 @@ def load_diff_files(diff_file: str | None, base_ref: str | None, plan_dir: Path)
             raise ValueError(f'Diff file could not be read: {diff_file}: {e}') from e
         return _split_diff_lines(raw), f'file:{path.name}', True
 
-    if not base_ref:
-        return [], 'unknown', False
-
-    try:
-        result = subprocess.run(
-            ['git', 'diff', f'{base_ref}...HEAD', '--name-only'],
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=10,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return [], base_ref, False
-    if result.returncode != 0:
-        return [], base_ref, False
-    return _split_diff_lines(result.stdout), base_ref, True
+    footprint = resolve_footprint(plan_dir, plan_id)
+    if not footprint_resolved(footprint):
+        # Read through the named predicate, never by testing emptiness: the
+        # sentinel and a resolved-empty set are different answers.
+        return [], 'unresolved', False
+    label = evidence_base_ref or evidence_tier or 'resolver'
+    return sorted(footprint), label, True
 
 
 def _split_diff_lines(raw: str) -> list[str]:
@@ -510,8 +551,9 @@ def evaluate_branch_cleanup(
 ) -> tuple[dict[str, str], dict[str, Any] | None]:
     """Rule M4: branch-cleanup present in phase_6 → some implementation file changed.
 
-    The rule is skipped on ``evidence_available is False`` and on nothing else.
-    That flag is the loader's own answer to "did a diff observation reach the
+    The rule reports ``inconclusive`` on ``evidence_available is False``, and
+    is skipped only when branch-cleanup is absent from ``phase_6.steps``.
+    ``evidence_available`` is the loader's own answer to "did a diff observation reach the
     rules AT ALL" (:func:`load_diff_files`), so the rule no longer re-derives an
     input condition it was handed. It must not be re-derived from
     ``raw_files_total == 0``, because an empty file list has two incompatible
@@ -521,7 +563,7 @@ def evaluate_branch_cleanup(
     that was false about its own inputs — "no diff data available" emitted two
     lines from a ``diff_available: True`` field contradicting it.
 
-    ``base_label`` is deliberately not a parameter: ``"unknown"`` is precisely the
+    ``base_label`` is deliberately not a parameter: ``"unresolved"`` is precisely the
     label the loader pairs with ``evidence_available=False``, so testing it here
     would only restate the flag.
 
@@ -562,12 +604,22 @@ def evaluate_branch_cleanup(
         ), None
 
     if not evidence_available:
-        return _make_check(
-            'branch_cleanup_changes',
-            'skip',
-            'rule M4 skipped — no diff evidence was available (no --diff-file supplied '
-            'and no usable --base-ref diff), so nothing was observed to evaluate',
-        ), None
+        # The footprint-DEGRADATION branch. It is reported as
+        # ``inconclusive`` rather than ``skip`` because the two say different
+        # things: a skip means the rule did not apply, while this rule DID apply
+        # and could not be evaluated for want of a resolvable footprint. It is
+        # also the branch that must never fall through to the
+        # ``raw_files_total == 0`` wording below — that wording asserts the
+        # footprint resolved to no path, which is precisely what did not happen
+        # here.
+        message = (
+            'rule M4 inconclusive — the plan footprint could not be resolved from any '
+            f'tier of the shared chain ({", ".join(RESOLVING_TIERS)}), so whether an '
+            'implementation file changed is UNMEASURABLE, not "no implementation file changed"'
+        )
+        return _make_check('branch_cleanup_changes', STATUS_INCONCLUSIVE, message), _make_finding(
+            'warning', 'branch_cleanup_footprint_unresolved', message
+        )
 
     if filtered_files:
         return _make_check(
@@ -596,6 +648,100 @@ def evaluate_branch_cleanup(
     return _make_check('branch_cleanup_changes', 'fail', finding['message']), finding
 
 
+def load_forwarded_set_comparison(plan_dir: Path) -> dict[str, Any] | None:
+    """Return the upstream ``affected_files_exact_match`` block, or ``None``.
+
+    ``None`` means the block could NOT be read — the fragment is absent, it did not
+    parse, or it carries no such block. That is a could-not-look, and rule M6 reports
+    it as one instead of grading two empty sets it never received. An empty
+    ``outline_only`` / ``references_only`` inside a block that WAS read is the
+    opposite answer: a measured agreement.
+    """
+    # The upstream ``artifact-consistency`` producer writes its fragment here, per
+    # that aspect's Persistence contract.
+    path = plan_dir / 'work' / 'fragment-artifact-consistency.toon'
+    if not path.is_file():
+        return None
+    try:
+        parsed = parse_toon(path.read_text(encoding='utf-8'))
+    except (OSError, ValueError, ToonParseError):
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    block = parsed.get('affected_files_exact_match')
+    return block if isinstance(block, dict) else None
+
+
+def _as_path_list(value: Any) -> list[str]:
+    """Coerce a fragment set field to a list of non-empty path strings."""
+    if isinstance(value, str):
+        value = [value]
+    if not isinstance(value, list):
+        return []
+    return [str(entry).strip() for entry in value if str(entry).strip()]
+
+
+def evaluate_declared_vs_realized_set(
+    comparison: dict[str, Any] | None,
+) -> tuple[dict[str, str], dict[str, Any] | None]:
+    """Rule M6: RECEIVE the set comparison ``check-artifact-consistency`` forwards.
+
+    That producer downgrades its ``affected_files_exact_match`` ``warn`` to ``info``
+    whenever an ``execution.toon`` is present, sets ``forwarded_to_manifest: true``,
+    and tells the reader the drift is handled by this aspect. Nothing here read that
+    flag, so the finding was not re-routed — it was DROPPED. A forward with no
+    receiver is a finding lost on every manifest-bearing plan, which is worse than
+    the duplicate reporting the downgrade was introduced to avoid.
+
+    The two sets are graded at DIFFERENT severities because they mean different
+    things. ``outline_only`` — declared with a modification intent, absent from the
+    realized footprint — is a declaration the run did not honour, graded ``warning``.
+    ``references_only`` — realized but never declared — is ordinary discovery on most
+    plans, graded ``info``.
+
+    ⛔ Both counts are published beside the verdict, and so is the size of the
+    population they were taken over, because a zero from this rule is exactly the
+    kind that needs attribution: ``0 outline_only`` from a comparison that ran and
+    ``0 outline_only`` from a fragment that was never read are indistinguishable
+    otherwise. An unread fragment therefore reports :data:`STATUS_INCONCLUSIVE` and
+    no counts at all, rather than two zeros.
+    """
+    if comparison is None:
+        return _make_check(
+            'declared_vs_realized_set',
+            STATUS_INCONCLUSIVE,
+            'rule M6 inconclusive — the artifact-consistency fragment carrying '
+            'affected_files_exact_match could not be read, so the declared-vs-realized '
+            'comparison was never received; this is an unread input, not an agreeing pair of sets',
+        ), None
+
+    outline_only = _as_path_list(comparison.get('outline_only'))
+    references_only = _as_path_list(comparison.get('references_only'))
+    forwarded = comparison.get('forwarded_to_manifest') is True
+    upstream_status = str(comparison.get('status') or 'unknown')
+    population = (
+        f'received from check-artifact-consistency (upstream status {upstream_status}, '
+        f'forwarded_to_manifest={str(forwarded).lower()}); compared '
+        f'{len(outline_only)} outline_only and {len(references_only)} references_only path(s)'
+    )
+
+    if not outline_only and not references_only:
+        return _make_check(
+            'declared_vs_realized_set',
+            'pass',
+            f'declared modification-intent set and realized footprint agree — {population}',
+        ), None
+
+    severity = 'warning' if outline_only else 'info'
+    culprits = sorted(set(outline_only) | set(references_only))
+    message = (
+        f'declared-vs-realized set mismatch — {len(outline_only)} declared-but-unrealized '
+        f'and {len(references_only)} realized-but-undeclared path(s); {population}'
+    )
+    finding = _make_finding(severity, 'declared_vs_realized_set_mismatch', message, culprits)
+    return _make_check('declared_vs_realized_set', 'fail', message), finding
+
+
 # =============================================================================
 # Input-reduction reporting (D2)
 # =============================================================================
@@ -607,21 +753,49 @@ def evaluate_branch_cleanup(
 #: input for its verdict to mean anything.
 STATUS_INDETERMINATE = 'indeterminate'
 
+#: The check status a diff-fed rule takes when it could not obtain the evidence
+#: its verdict depends on — the footprint-DEGRADATION verdict. This has two
+#: distinct causes across the diff-fed rules: for most rules, no footprint tier
+#: resolved from the shared chain; for ``declared_vs_realized_set`` (M6), the
+#: forwarded upstream comparison was never received (see
+#: :data:`_FOOTPRINT_FED_CHECKS` and ``standards/manifest-crosscheck.md`` for the
+#: full split).
+#:
+#: ⛔ It is deliberately NOT :data:`STATUS_INDETERMINATE`, and the two must not be
+#: merged. ``inconclusive`` is this producer's honest-degradation TOKEN: it is a
+#: member of :data:`retro_sections.FOOTPRINT_DEGRADED_TOKENS`, and
+#: ``compile-report._declares_degraded`` matches it by EQUALITY against a verdict
+#: field (``status`` / ``comparison``) — so emitting it under a check's ``status``
+#: is what lets the plan-level footprint-derivation aggregate count this aspect as
+#: degraded. ``indeterminate`` is not in that vocabulary and would read as
+#: RESOLVED, leaving the aggregate one member short of firing on exactly the run
+#: where every footprint consumer went unmeasurable together.
+STATUS_INCONCLUSIVE = 'inconclusive'
+
+#: The aspect-level footprint-resolution states published beside the checks, so a
+#: reader gets the degradation verdict without reassembling it from check rows.
+FOOTPRINT_RESOLVED = 'resolved'
+
 #: The ONE dispatch registry for the diff-fed rules: check name → evaluator.
 #:
-#: ⛔ Both the evaluation loop and the reduction report read THIS map, so a rule
-#: added here is automatically evaluated AND automatically subject to the reduction
-#: report and the ``indeterminate`` downgrade. A hardcoded name set mirroring the
-#: dispatch table is the defect this whole change exists to remove — a private list
-#: restating a set defined authoritatively elsewhere — and an evaluator missing from
-#: that mirror would silently bypass D2's guarantee, emitting a bare clean pass over
-#: a majority-discarded footprint. That is precisely the failure the reduction
-#: report was written to prevent, so it must not be reachable through the report's
-#: own membership test.
+#: ⛔ The evaluation loop reads THIS map directly, so a rule added here is
+#: automatically evaluated. The reduction report and the ``indeterminate``
+#: downgrade read the derived :data:`_FOOTPRINT_FED_CHECKS` instead — the full
+#: membership here minus ``declared_vs_realized_set`` (see that data's docstring
+#: for why it is excluded) — so a rule added here is automatically subject to
+#: those two EXCEPT for that one deliberate exclusion. A hardcoded name set
+#: mirroring the dispatch table is the defect this whole change exists to remove
+#: — a private list restating a set defined authoritatively elsewhere — and an
+#: evaluator missing from that mirror would silently bypass D2's guarantee,
+#: emitting a bare clean pass over a majority-discarded footprint. That is
+#: precisely the failure the reduction report was written to prevent, so it must
+#: not be reachable through the report's own membership test.
 #:
-#: ``evaluate_branch_cleanup`` is dispatched separately (it needs the
-#: diff-availability signal the others do not take), which is why membership lives
-#: in this map rather than being inferred from the evaluation loop alone.
+#: ``evaluate_branch_cleanup`` and ``evaluate_declared_vs_realized_set`` are both
+#: dispatched separately (see :data:`_SEPARATELY_DISPATCHED_CHECKS`) — the former
+#: needs the diff-availability signal, the latter the forwarded upstream
+#: comparison — which is why membership lives in this map rather than being
+#: inferred from the evaluation loop alone.
 #: ``manifest_version_recognized`` is deliberately absent: it reads the manifest
 #: body alone, so no amount of diff filtering affects its verdict.
 _DIFF_FED_RULES: dict[str, str] = {
@@ -629,15 +803,38 @@ _DIFF_FED_RULES: dict[str, str] = {
     'early_terminate_diff': 'evaluate_early_terminate',
     'tests_only_diff': 'evaluate_tests_only',
     'branch_cleanup_changes': 'evaluate_branch_cleanup',
+    'declared_vs_realized_set': 'evaluate_declared_vs_realized_set',
 }
 
 #: Derived, never restated — see :data:`_DIFF_FED_RULES`.
 _DIFF_FED_CHECKS = frozenset(_DIFF_FED_RULES)
 
-#: The one diff-fed rule dispatched outside the shared loop, because it takes the
-#: diff-availability signal the others do not. Named once so both the loop's
-#: exclusion and any reader can refer to the same string.
-_BRANCH_CLEANUP_CHECK = 'branch_cleanup_changes'
+#: The subset of :data:`_DIFF_FED_CHECKS` whose evidence channel is THIS script's
+#: own footprint (the ``{base}...HEAD`` diff the shared resolving chain answers).
+#: ``declared_vs_realized_set`` is excluded: its evidence is the forwarded upstream
+#: ``affected_files_exact_match`` fragment (see :func:`load_forwarded_set_comparison`)
+#: and it already owns its own could-not-look path (a ``None`` comparison degrades
+#: to ``inconclusive`` on its own). Subjecting it to THIS script's footprint
+#: degradation/reduction annotation conflates two unrelated evidence channels — a
+#: received-and-agreeing verdict would read as withheld whenever this script's own
+#: footprint (not the fragment) is unresolvable, which is exactly the post-merge
+#: worktree-removed case the rule is most needed on. Used only by
+#: :func:`_withhold_on_absent_evidence` and :func:`apply_input_reduction`;
+#: :data:`_DIFF_FED_CHECKS` itself is unchanged and stays the full registry-derived
+#: membership its own tests read.
+_FOOTPRINT_FED_CHECKS: frozenset[str] = _DIFF_FED_CHECKS - {'declared_vs_realized_set'}
+
+#: The diff-fed rules dispatched OUTSIDE the shared loop, because each takes an
+#: input the shared ``(manifest, filtered_files)`` signature does not carry:
+#: ``branch_cleanup_changes`` takes the footprint-availability signal, and
+#: ``declared_vs_realized_set`` takes the forwarded upstream comparison. Naming them
+#: here — and deriving the loop's evaluator tuple by SUBTRACTING this set from
+#: :data:`_DIFF_FED_RULES` — is what keeps the registry the single membership source:
+#: ``branch_cleanup_changes`` rides the reduction report and the downgrade
+#: machinery via :data:`_FOOTPRINT_FED_CHECKS`; ``declared_vs_realized_set`` is
+#: deliberately excluded from that machinery and owns its own could-not-look
+#: path instead (see :data:`_FOOTPRINT_FED_CHECKS` for why).
+_SEPARATELY_DISPATCHED_CHECKS: frozenset[str] = frozenset({'branch_cleanup_changes', 'declared_vs_realized_set'})
 
 
 #: Emitted check status → its ``summary`` bucket name. EVERY status this script
@@ -651,6 +848,7 @@ _STATUS_BUCKETS: dict[str, str] = {
     'fail': 'failed',
     'skip': 'skipped',
     STATUS_INDETERMINATE: 'indeterminate',
+    STATUS_INCONCLUSIVE: 'inconclusive',
 }
 
 
@@ -677,38 +875,52 @@ def summarize_checks(checks: list[dict[str, str]]) -> dict[str, int]:
 
 
 def _withhold_on_absent_evidence(checks: list[dict[str, str]]) -> list[dict[str, str]]:
-    """Downgrade every diff-fed clean ``pass`` when no diff evidence existed at all.
+    """Degrade every footprint-fed clean ``pass`` when NO footprint tier resolved.
 
-    ``base_label == 'unknown'`` (no ``--diff-file`` and no ``--base-ref``) or a git
-    diff that returned nothing means the rules ran against an empty footprint for
-    want of input rather than because the run changed nothing. A ``pass`` there
-    reads identically to a substantiated one downstream.
+    "Footprint-fed" is :data:`_FOOTPRINT_FED_CHECKS`, not the full
+    :data:`_DIFF_FED_CHECKS` registry: ``declared_vs_realized_set`` (Rule M6) is
+    diff-fed for loop-derivation purposes but its evidence is the forwarded
+    upstream fragment, not this script's footprint, so it is excluded here.
 
-    A ``fail`` is untouched — a rule that found a violation without diff evidence
-    found it in the manifest body. A ``skip`` is untouched for the usual reason.
+    Reached only when :func:`load_diff_files` reported the shared chain's
+    unresolvable sentinel, so the rules ran against an empty footprint for want of
+    any resolvable evidence rather than because the run changed nothing. A ``pass``
+    there reads identically to a substantiated one downstream.
+
+    The status is :data:`STATUS_INCONCLUSIVE`, this producer's footprint-DEGRADATION
+    token, not :data:`STATUS_INDETERMINATE` — see that constant for why the
+    distinction is load-bearing for the plan-level aggregate.
+
+    A ``fail`` is untouched — a rule that found a violation without footprint
+    evidence found it in the manifest body. A ``skip`` is untouched for the usual
+    reason.
     """
     out: list[dict[str, str]] = []
     for check in checks:
-        if check['name'] not in _DIFF_FED_CHECKS or check['status'] != 'pass':
+        if check['name'] not in _FOOTPRINT_FED_CHECKS or check['status'] != 'pass':
             out.append(check)
             continue
         updated = dict(check)
-        updated['status'] = STATUS_INDETERMINATE
+        updated['status'] = STATUS_INCONCLUSIVE
         updated['message'] = (
-            f'{check["message"]} — VERDICT WITHHELD: no diff evidence was available '
-            '(no --diff-file supplied and no usable --base-ref diff), so the rule '
-            'evaluated an empty footprint rather than an empty change'
+            f'{check["message"]} — VERDICT WITHHELD: the plan footprint could not be '
+            f'resolved from any tier of the shared chain ({", ".join(RESOLVING_TIERS)}), '
+            'so the rule evaluated an empty footprint rather than an empty change'
         )
         out.append(updated)
     return out
 
 
 def apply_input_reduction(checks: list[dict[str, str]], reduction: dict[str, Any]) -> list[dict[str, str]]:
-    """Annotate — and where required downgrade — every diff-fed check.
+    """Annotate — and where required downgrade — every footprint-fed check.
+
+    "Footprint-fed" is :data:`_FOOTPRINT_FED_CHECKS`, not the full
+    :data:`_DIFF_FED_CHECKS` registry — see :data:`_FOOTPRINT_FED_CHECKS` for why
+    ``declared_vs_realized_set`` (Rule M6) is excluded.
 
     Three obligations, all discharged here so no rule evaluator can forget one:
 
-    - **Every** diff-fed check that ran against a reduced input set has the
+    - **Every** footprint-fed check that ran against a reduced input set has the
       reduction appended to its message, so the count the rule actually saw is
       visible beside its verdict rather than buried in the ``diff`` block.
     - A check that would otherwise emit a bare clean ``pass`` while the MAJORITY of
@@ -719,13 +931,14 @@ def apply_input_reduction(checks: list[dict[str, str]], reduction: dict[str, Any
       discarded all but one path could report every rule green while none of them
       had seen the change the plan was about.
     - A check that would emit a bare clean ``pass`` while **no diff evidence
-      existed at all** takes :data:`STATUS_INDETERMINATE` too. This is the
+      existed at all** takes :data:`STATUS_INCONCLUSIVE`. This is the
       zero-evidence sibling of the case above and the filtering logic cannot see
       it: nothing was discarded, so the reduction is empty, yet the rule evaluated
       an empty footprint and said ``all 0 entries are docs-shaped``. A verdict over
-      no evidence is not a clean result, and ``evaluate_branch_cleanup`` already
-      refuses it for its own rule (the ``base=unknown or empty diff`` skip); this
-      extends the same refusal to the rest.
+      no evidence is not a clean result; ``_withhold_on_absent_evidence`` already
+      refuses it for ``evaluate_branch_cleanup`` (:data:`STATUS_INCONCLUSIVE`, never
+      :data:`STATUS_INDETERMINATE` — the two must not be merged); this extends the
+      same refusal to the rest.
 
     A ``fail`` is never downgraded, but the reason differs by rule shape and is
     worth stating precisely, because the obvious blanket rationale — "a reduced
@@ -752,7 +965,7 @@ def apply_input_reduction(checks: list[dict[str, str]], reduction: dict[str, Any
         reduction: The block :func:`filter_bookkeeping` produced.
 
     Returns:
-        The checks, with diff-fed entries annotated and possibly downgraded.
+        The checks, with footprint-fed entries annotated and possibly downgraded.
     """
     dropped = reduction['dropped']
     diff_available = reduction['diff_available']
@@ -771,7 +984,7 @@ def apply_input_reduction(checks: list[dict[str, str]], reduction: dict[str, Any
 
     annotated: list[dict[str, str]] = []
     for check in checks:
-        if check['name'] not in _DIFF_FED_CHECKS or check['status'] == 'skip':
+        if check['name'] not in _FOOTPRINT_FED_CHECKS or check['status'] == 'skip':
             annotated.append(check)
             continue
         updated = dict(check)
@@ -814,14 +1027,20 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
         }
 
     decision_entries = load_decision_log_entries(plan_dir)
-    raw_files, base_label, evidence_available = load_diff_files(args.diff_file, args.base_ref, plan_dir)
-    # Evidence tier behind this run's diff: post-merge tiers attach the caveat
+    # Evidence tier behind this run's footprint: post-merge tiers attach the caveat
     # naming the tier and base ref, so verdicts graded over landing-commit
     # evidence state their evidence tier rather than reading as live-diff
-    # verdicts. Resolved from the same references keys (same precedence) the
-    # shared footprint chain consults.
-    evidence_tier, evidence_base_ref = resolve_diff_evidence_tier(plan_dir, args.diff_file, args.base_ref)
+    # verdicts. Resolved in the shared chain's OWN tier order, so the label names
+    # the tier that actually supplied the footprint.
+    live_plan_id = args.plan_id if args.mode == 'live' else None
+    evidence_tier, evidence_base_ref = resolve_diff_evidence_tier(plan_dir, args.diff_file, args.base_ref, live_plan_id)
     evidence_caveat = footprint_evidence_caveat(evidence_tier, evidence_base_ref)
+    raw_files, base_label, evidence_available = load_diff_files(
+        args.diff_file, plan_dir, live_plan_id, evidence_tier, evidence_base_ref
+    )
+    # The forwarded set comparison rule M6 receives. Loaded here so the payload can
+    # publish whether it was readable at all beside the rule's own verdict.
+    forwarded_comparison = load_forwarded_set_comparison(plan_dir)
     kept_files, dropped_files, reduction = filter_bookkeeping(raw_files)
     # Whether a diff observation reached the rules at all. Taken from the loader,
     # never inferred from an empty file list: a SUPPLIED file naming nothing is a
@@ -842,11 +1061,13 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
         findings.append(version_finding)
 
     # Derived from the ONE registry rather than restated: every _DIFF_FED_RULES
-    # entry except the separately-dispatched branch-cleanup rule, in registry order.
+    # entry except the members of _SEPARATELY_DISPATCHED_CHECKS, in registry order.
     diff_evaluators: tuple[
         Callable[[dict[str, Any], list[str]], tuple[dict[str, str], dict[str, Any] | None]],
         ...,
-    ] = tuple(globals()[symbol] for name, symbol in _DIFF_FED_RULES.items() if name != _BRANCH_CLEANUP_CHECK)
+    ] = tuple(
+        globals()[symbol] for name, symbol in _DIFF_FED_RULES.items() if name not in _SEPARATELY_DISPATCHED_CHECKS
+    )
     for evaluator in diff_evaluators:
         check, finding = evaluator(manifest, kept_files)
         checks.append(check)
@@ -854,12 +1075,18 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
             findings.append(finding)
 
     # evaluate_branch_cleanup takes the loader's evidence signal itself, so it can
-    # skip (instead of false-positive failing) when no diff was observed, and can
-    # still EVALUATE a resolved-empty footprint that was.
+    # report the footprint-degradation verdict (instead of false-positive failing)
+    # when no tier resolved, and can still EVALUATE a resolved-empty footprint.
     cleanup_check, cleanup_finding = evaluate_branch_cleanup(manifest, kept_files, len(raw_files), evidence_available)
     checks.append(cleanup_check)
     if cleanup_finding is not None:
         findings.append(cleanup_finding)
+
+    # Rule M6 takes the forwarded upstream comparison, which no other rule reads.
+    set_check, set_finding = evaluate_declared_vs_realized_set(forwarded_comparison)
+    checks.append(set_check)
+    if set_finding is not None:
+        findings.append(set_finding)
 
     # Applied AFTER every evaluator so no rule can emit a bare clean pass over a
     # majority-discarded footprint, and so the reduction is reported exactly once.
@@ -879,9 +1106,42 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
             'phase_6': manifest.get('phase_6', {}),
         },
         'decision_log_entries': decision_entries,
+        # The aspect-level footprint verdict, published so a reader gets the
+        # degradation state without reassembling it from check rows. ``status`` is
+        # the DEGRADATION token on the unresolved path (see STATUS_INCONCLUSIVE) —
+        # which is also what makes this aspect legible to the plan-level
+        # footprint-derivation aggregate as a FOOTPRINT_CONSUMING_ASPECTS member.
+        'footprint_resolution': {
+            'status': FOOTPRINT_RESOLVED if evidence_available else STATUS_INCONCLUSIVE,
+            'tier': evidence_tier or 'unresolved',
+            'base': base_label,
+            'chain': list(RESOLVING_TIERS),
+            'caveat': evidence_caveat or '',
+        },
+        # The received half of the forward contract: whether the upstream comparison
+        # was readable at all, and the sizes of the two sets it carried. Published
+        # even on the unread path — as an explicit ``received: false`` with no
+        # counts — so a zero here is never mistaken for a measured agreement.
+        'declared_vs_realized': (
+            {
+                'received': True,
+                'upstream_status': str(forwarded_comparison.get('status') or 'unknown'),
+                'forwarded_to_manifest': forwarded_comparison.get('forwarded_to_manifest') is True,
+                'outline_only_count': len(_as_path_list(forwarded_comparison.get('outline_only'))),
+                'references_only_count': len(_as_path_list(forwarded_comparison.get('references_only'))),
+            }
+            if forwarded_comparison is not None
+            else {
+                'received': False,
+                'reason': (
+                    'the artifact-consistency fragment carrying affected_files_exact_match '
+                    'could not be read, so no set sizes were measured'
+                ),
+            }
+        ),
         'diff': {
             'base': base_label,
-            'evidence_tier': evidence_tier or 'unknown',
+            'evidence_tier': evidence_tier or 'unresolved',
             'evidence_caveat': evidence_caveat or '',
             'files_total': len(raw_files),
             'files_filtered': len(dropped_files),
@@ -903,7 +1163,7 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
 @safe_main
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description='Cross-check execution manifest against actual end-of-execute diff',
+        description="Cross-check execution manifest against the plan's realized footprint",
         allow_abbrev=False,
     )
     subparsers = parser.add_subparsers(dest='command', required=True)
@@ -932,7 +1192,11 @@ def main() -> int:
     run_parser.add_argument(
         '--base-ref',
         default=None,
-        help='Git base ref for the diff (e.g. origin/main). Required when --diff-file is absent.',
+        help=(
+            'Base ref LABEL reported beside a live-diff footprint (e.g. origin/main). It no '
+            'longer selects the diff: without --diff-file the footprint comes from the shared '
+            'whole-chain resolver, which derives its own base ref for the live-diff tier.'
+        ),
     )
     run_parser.set_defaults(func=cmd_run)
 
