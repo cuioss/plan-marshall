@@ -35,9 +35,9 @@ landed.
      Paste the returned block verbatim between the markers. -->
 
 <!-- BEGIN GENERATED: resume-summary -->
-**Resume anchor**: === ▶ **2026-09-20 -- PLAN-TRUTH-144 RUNNING (operator-confirmed start).** Operator set parallelization_scope back to N=1 (was 3) and directed sequential order: 161 then 165 run AFTER 144, not concurrently -- do not emit either until 144 ships or is parked, even though a 3-slot corpus check already confirmed all three pairwise disjoint and prep-ready. ⛔⛔ REPAIR THE PLUGIN PIN BEFORE RESTARTING -- still open, still widening: executor MARSHALL_VERSION=0.1.1712 (checked 09-20) while every installed_plugins.json entry still reads 0.1.1670. Repair via .plan/temp/repair-plugin-pin.py --target {VERSION} (⛔ target is a VERSION, never a bundle name), verify by TWO methods, then FULL restart. ▶ RESTART-CHECK (as of 09-20 10:04Z, now stale on running_plans): inbox not_ready (20 queued: 19 candidate-lesson from PLAN-TRUTH-143's own retrospective + 1 finding from post-run-quality, none drained), running_plans now NOT ready again (144 running). registry_parity not_available (owned by PLAN-TRUTH-059, excluded from the floor -- pin gap above is real regardless). ▶ NEXT ACTION: await PLAN-TRUTH-144's landing, then analyze it; only after 144 ships/parks does next re-open a slot -- at N=1 that slot goes to PLAN-TRUTH-161 by operator's stated order, PLAN-TRUTH-165 after that. Drain the 20-message inbox (analyze with no paste) at a convenient point before the next restart. ⛔ NEVER PAIR: 147+172, 169+150, 170+171, 153+155, 173+167, 173+147 (moot while N=1, relevant again if scope is raised). ===
+**Resume anchor**: === ▶ **2026-09-21 -- LEDGER RELOCATED to .plan/orchestrator/ (tracked), inbox DRAINED (20/20 dispositioned), 4 new specs staged.** Relocated epic.md+status.json drift (only these 2 files had drifted from the day-old tracked snapshot at #1558 -- everything else already matched). Inbox drain: 9 messages staged into 4 new plan specs (PLAN-TRUTH-174 plan-retrospective measurement integrity; PLAN-TRUTH-175 dispatch/phase-boundary measurement integrity, 5 deliverables; PLAN-TRUTH-176 pre-flight invocation validator; PLAN-TRUTH-177 orchestration detection fails open without source_id, forwarded from post-run-quality), 11 messages promoted to the global lessons corpus (2026-09-21-10-002 through -012 -- 3 of the 11 describe bugs already fixed within PR #1539 itself, promoted for the corrective rule only). Queue now 225 rows (221 + 4 new), all 4 new ones staged. ⛔⛔ **PLATFORM GOTCHA DISCOVERED THIS PASS, ITSELF AN INSTANCE OF THE EPIC'S OWN THEME**: `orchestrator queue --add-row` / `inbox archive` / `manage-logging decision` / `resume-summary` resolve their READ AND WRITE target to the MAIN checkout regardless of actual cwd, even when invoked from a worktree with an explicit copied executor -- only git itself (add/commit) and the Write tool correctly targeted the worktree. Worked around by mirroring main's post-write state into the worktree and reverting main to clean each time; this block was therefore hand-edited rather than pasted from `resume-summary`'s output, which kept resolving against main's un-landed HEAD. Not yet reported as a finding of its own -- candidate for a future inbox message once this PR lands. ⛔⛔ REPAIR THE PLUGIN PIN BEFORE RESTARTING -- still open: executor MARSHALL_VERSION=0.1.1723 (rebuilt this session) vs installed_plugins.json still at 0.1.1670. ▶ THIS WORK LANDED ON BRANCH chore/relocate-truthful-signals-ledger, PR pending at emit time. ▶ NEXT ACTION: once merged, pull main, re-run corpus enumerate against the tracked location, and continue the deferred cleanup verb (Steps 3-11, A1 re-grounding onward) as a SEPARATE pass -- this pass did NOT run A1-A5. PLAN-TRUTH-144 still running (worktree lessons-corpus-producers-report-success @ 8e389206c), parallelization_scope=1, PLAN-TRUTH-161 then PLAN-TRUTH-165 queued after it per operator's stated order -- do not emit either yet. ===
 **Phase**: orchestrating
-**Inbox (derived)**: 20 queued, 1122 archived
+**Inbox (derived)**: 0 queued, 1142 archived
 **Running**:
 - PLAN-TRUTH-144 (WS-01)
 **Parked**:
@@ -68,6 +68,10 @@ landed.
 18. PLAN-TRUTH-171 (WS-01)
 19. PLAN-TRUTH-172 (WS-01)
 20. PLAN-TRUTH-173 (WS-01)
+21. PLAN-TRUTH-174 (WS-01)
+22. PLAN-TRUTH-175 (WS-01)
+23. PLAN-TRUTH-176 (WS-01)
+24. PLAN-TRUTH-177 (WS-01)
 - PLAN-41 (WS-01) — PR 991 — landing=landings/PLAN-41.md — status: shipped
 - PLAN-43 (WS-01) — PR 989 — landing=landings/PLAN-43.md — status: shipped
 - PLAN-69 (WS-01) — PR 1013 — landing=landings/PLAN-69.md — status: shipped
@@ -422,6 +426,10 @@ not carried; `landings/` is their record.
 | 25 | PLAN-TRUTH-171 | WS-01 | staged | marketplace/bundles/plan-marshall/skills/manage-change-ledger/; marketplace/bundles/plan-marshall/skills/manage-status/**; marketplace/bundles/plan-marshall/skills/manage-status/scripts/; marketplace/bundles/plan-marshall/skills/phase-2-refine/; marketplace/bundles/plan-marshall/skills/phase-4-plan/; marketplace/bundles/plan-marshall/skills/plan-marshall/scripts/; marketplace/bundles/plan-marshall/skills/workflow-integration-git/scripts/; marketplace/bundles/plan-marshall/skills/workflow-integration-git/scripts/_cmd_prune_ref.py; marketplace/bundles/plan-marshall/skills/workflow-integration-git/scripts/git-workflow.py; test/plan-marshall/manage-change-ledger/; test/plan-marshall/manage-status/; test/plan-marshall/workflow-integration-git/ |
 | 26 | PLAN-TRUTH-172 | WS-01 | staged | marketplace/bundles/plan-marshall/skills/manage-status/scripts/_cmd_lifecycle.py; marketplace/bundles/plan-marshall/skills/phase-3-outline/workflow/light-lane.md; marketplace/bundles/plan-marshall/skills/phase-6-finalize/scripts/review_commitments.py; marketplace/bundles/plan-marshall/skills/phase-6-finalize/scripts/verdict_currency.py; marketplace/bundles/plan-marshall/skills/plan-marshall/scripts/_invariants.py; marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/planning.md; test/plan-marshall/manage-tasks/scripts/; test/plan-marshall/plan-marshall/ |
 | 27 | PLAN-TRUTH-173 | WS-01 | staged | marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-self-review-surfacing.md; marketplace/bundles/plan-marshall/skills/phase-6-finalize/workflow/pre-submission-self-review.md; marketplace/bundles/pm-plugin-development/skills/ext-self-review-plan-marshall/scripts/_self_review_detectors.py; marketplace/bundles/pm-plugin-development/skills/ext-self-review-plan-marshall/scripts/_self_review_patterns.py; test/pm-plugin-development/ext-self-review-plan-marshall/ |
+| 28 | PLAN-TRUTH-174 | WS-01 | staged | marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/extract-chat-signal.py; marketplace/bundles/plan-marshall/skills/ref-toon-format/scripts/toon_parser.py; marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/; test/plan-marshall/plan-retrospective/** |
+| 29 | PLAN-TRUTH-175 | WS-01 | staged | marketplace/bundles/plan-marshall/skills/manage-metrics/**; marketplace/bundles/plan-marshall/skills/phase-6-finalize/**; marketplace/bundles/plan-marshall/skills/manage-change-ledger/**; marketplace/bundles/plan-marshall/skills/ref-workflow-architecture/standards/dispatch-logging.md; test/plan-marshall/manage-metrics/**; test/plan-marshall/phase-6-finalize/**; test/plan-marshall/manage-change-ledger/** |
+| 30 | PLAN-TRUTH-176 | WS-01 | staged | marketplace/bundles/plan-marshall/skills/tools-script-executor/**; marketplace/bundles/plan-marshall/skills/manage-findings/SKILL.md; marketplace/bundles/plan-marshall/skills/manage-solution-outline/SKILL.md; marketplace/bundles/pm-plugin-development/skills/recipe-fix-argparse-rejection/**; test/plan-marshall/tools-script-executor/** |
+| 31 | PLAN-TRUTH-177 | WS-01 | staged | marketplace/bundles/plan-marshall/skills/phase-1-init/**; marketplace/bundles/plan-marshall/skills/plan-orchestrator/scripts/_orchestrator_inbox.py; marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/emit-landing.md; test/plan-marshall/phase-1-init/** |
 <!-- END GENERATED: ordered-queue -->
 
 ### Queue annotations
@@ -1197,6 +1205,41 @@ structurally indistinguishable from a clean scan; recorded as a Watch below, rec
 Sonar is wired into PR CI); `409263` (`triage.md` prescribes `deliverable: 0` for a FIX task, which the
 validator rejects — a RECURRENCE of already-filed lesson `2026-09-06-09-002`, not a new item); `805bc7`
 (in-process build env inheritance, declined by the plan itself as out-of-footprint — no action).
+
+## Inbox drain — 2026-09-21, 20 messages, every one dispositioned (ledger relocation to `.plan/orchestrator/`)
+
+**9 staged (4 new specs) · 11 promoted (global lessons corpus).**
+
+| Message | Disposition | Destination / reason |
+|---|---|---|
+| `truth-143-...-001` | staged | **`PLAN-TRUTH-174`** D1 — `extract-chat-signal` truncates `reduced_transcript` in a lossy TOON re-parse |
+| `truth-143-...-004` | staged | **`PLAN-TRUTH-174`** D2 — `outline-vs-shipped` reports `comparison: measured` over an absent assessment store |
+| `truth-143-...-002` | staged | **`PLAN-TRUTH-175`** D1 — `boundary_monotonicity` reports zero violations over a crossed 1h36m phase boundary |
+| `truth-143-...-003` | staged | **`PLAN-TRUTH-175`** D2 — 41 of 77 finalize dispatch-boundary rows record structural zero tokens, not unmeasured |
+| `truth-143-...-007` | staged | **`PLAN-TRUTH-175`** D3 — `context_position_cost` measured 0 of 98 dispatch rows on a 14.4M-token plan |
+| `truth-143-...-005` | staged | **`PLAN-TRUTH-175`** D4 — 8 of 15 token-proven dispatched finalize steps emit no `[DISPATCH]` line |
+| `truth-143-...-006` | staged | **`PLAN-TRUTH-175`** D5 — build-time oracle holds no row for a plan with 139 logged build calls |
+| `truth-143-...-008` | staged | **`PLAN-TRUTH-176`** (new) — pre-flight invocation validator; 41 script-call failures, 16 argparse rejections on one plan |
+| `post-run-quality-001` | staged | **`PLAN-TRUTH-177`** (new) — forwarded from `post-run-quality`: `phase-1-init` writes no `source_id` for description-sourced plans, orchestration detection fails open |
+| `truth-143-...-009` | promoted | lesson **`2026-09-21-10-002`** — hand-maintained doc enumeration of a code-declared set |
+| `truth-143-...-010` | promoted | lesson **`2026-09-21-10-003`** — a round-loop fix can self-seed the next instance of its own defect class |
+| `truth-143-...-011` | promoted | lesson **`2026-09-21-10-004`** — coverage figures re-derived in transit produce structurally impossible zeros |
+| `truth-143-...-012` | promoted | lesson **`2026-09-21-10-005`** — self-review findings go stale against a moving HEAD |
+| `truth-143-...-013` | promoted | lesson **`2026-09-21-10-006`** — a population-derived guard walking one document under-covers a roster split across two |
+| `truth-143-...-014` | promoted | lesson **`2026-09-21-10-007`** — a deliverable named the dispatch wrapper, not the defining module |
+| `truth-143-...-015` | promoted | lesson **`2026-09-21-10-008`** — positive pattern: do not back-fill an empty assessment population to make a validator pass |
+| `truth-143-...-016` | promoted | lesson **`2026-09-21-10-009`** — a publisher and its registration row are one edit |
+| `truth-143-...-017` | promoted | lesson **`2026-09-21-10-010`** — an idempotent-success path must observe a complete marker (bug already fixed in PR #1539 TASK-020, lesson records the rule) |
+| `truth-143-...-018` | promoted | lesson **`2026-09-21-10-011`** — a guard's stated scope must be derivable from its mechanism (frozenset within-set vacuity, already fixed in same PR) |
+| `truth-143-...-019` | promoted | lesson **`2026-09-21-10-012`** — publishing an indeterminacy count is not enforcing it (`candidates_indeterminate`, already fixed in same PR, TASK-025) |
+
+Also this pass: relocated `epic.md`/`status.json` drift from the day-old tracked snapshot at #1558 into
+the tracked `.plan/orchestrator/` location (the only two files that had drifted). Discovered a platform
+gotcha worth its own future finding: `orchestrator queue --add-row` / `inbox archive` / `manage-logging
+decision` / `resume-summary` resolve their read AND write target to the MAIN checkout regardless of actual
+cwd, even when invoked from a worktree with its own copied executor — only `git` itself and the `Write`
+tool correctly targeted this worktree. Worked around by mirroring main's post-write state into the
+worktree and reverting main to clean after each affected call.
 
 ## Open Defects
 
