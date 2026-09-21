@@ -2371,10 +2371,11 @@ def cmd_bootstrap(args: argparse.Namespace) -> dict:
     Template comparison is four-valued: ``fresh`` (hashes match),
     ``stale`` (both hashes known and differ), ``unknown`` (either side
     unstampable — a pre-stamp executor or an unreadable template), and
-    ``uncompared`` (the executor failed structural verification before a
-    hash comparison was even attempted, but the live template hash was
-    resolvable). None of ``unknown``/``uncompared`` drives a regeneration on
-    its own; both ride the verdict the verification half already reached.
+    ``uncompared`` (no hash comparison was attempted — the executor was
+    absent, or it failed structural verification — while the live template
+    hash was resolvable). None of ``unknown``/``uncompared`` drives a
+    regeneration on its own; both ride the verdict the presence check or
+    the verification half already reached.
     """
     live_sha = current_template_sha256()
     real_executor = executor_path()
@@ -2401,7 +2402,7 @@ def cmd_bootstrap(args: argparse.Namespace) -> dict:
     if not real_executor.is_file():
         return _regenerate(
             'executor_absent',
-            'unknown' if not live_sha else 'fresh',
+            'unknown' if not live_sha else 'uncompared',
             executor=str(real_executor),
         )
     valid, script_count = verify_executor()
