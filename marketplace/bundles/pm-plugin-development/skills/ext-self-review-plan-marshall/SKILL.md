@@ -69,7 +69,7 @@ The marker is a pure structural signal — no LLM call is added to the surface s
 
 ## Subcommand: `surface`
 
-Surfaces twenty-two candidate lists from the worktree's staged diff against the base branch.
+Surfaces twenty-three candidate lists from the worktree's staged diff against the base branch.
 
 ### Inputs
 

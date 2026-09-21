@@ -119,6 +119,7 @@ counts:
   worked_example_pairs: N20
   duplicate_claimable_keys: N21
   discard_without_report: N22
+  hoisted_binding_shadows: N23
   total: the sum of every registry entry whose in_total flag is set
 
 regexes[N1]{file,line,pattern}:
@@ -187,6 +188,9 @@ duplicate_claimable_keys[N21]{file,line,collection,key,form}:
 
 discard_without_report[N22]{file,line,channel,discard}:
   ...
+
+hoisted_binding_shadows[N23]{file,line,shadowed}:
+  ...
 ```
 
 The `total` count covers the line-level heuristic lists only. `contract_sources`, `schema_bearing_files`, `count_prose`, and `advertised_form_help_strings` are review-anchor categories not summed into `total`; `protected_identifiers` is a derived index over `keep_markers` entries with `kind: keep_protected` and likewise does not contribute. The authoritative membership is the implementor's `CANDIDATE_LISTS` registry `in_total` field, from which both the emitted key set and the `total` formula are derived — a consumer reads the emitted `counts` block rather than re-deriving the sum from a hand-maintained name list.
@@ -251,10 +255,11 @@ Every registry key MUST appear in the output (possibly with empty payloads) — 
 | `protected_identifiers` | Derived index over `keep_markers` entries with `kind: keep_protected` — the flat identifier set the duplication check refuses to drop | Check 4 (duplication), as the refusal set |
 | `duplicate_claimable_keys` | An insertion site that claims a caller-supplied identity into a new keyed collection while validating it but omitting any duplicate-key disposition | Check 16 (duplicate-claimable key) |
 | `discard_without_report` | A bare guarded `continue`/`break` that drops an item inside a function owning a suppression report channel without recording the drop | Check 17 (discard without report) |
+| `hoisted_binding_shadows` | An added line rebinding a name the file imports at top level, surfacing the shadowed import for review | Check 18 (hoisted-binding shadow) |
 
 **Closed coverage gap — every summed key is now examined.** `duplicate_claimable_keys` and `discard_without_report` both carry `in_total: true`, so they raise `counts.total`, the Step 1b dispatch gate, and the `"{N} candidates examined"` verdict. They previously had no consuming check while the check list stopped at check 15 — a candidate inflating the examined-count without being examined, the volume-read-as-coverage shape this ext-point exists to detect, reproduced inside its own contract. That gap is now closed by ADDING the two consuming checks (16 and 17), not by clearing the `in_total` flags: dropping the entries from the total would shrink the published count without examining anything more (the improve-the-metric-by-examining-less shape this project rejects), whereas adding the checks keeps the total, the dispatch gate, and the verdict at their current magnitude and makes them honest. The tie between a counted registry entry and a consuming check is now enforced by a population-derived contract test over the registry (see the Detection Rules reference below), so a future `in_total` entry added without a check fails that test rather than silently re-opening this gap.
 
-A line-level entry carries `file` (repo-relative path) AND `line` (1-based line number in the post-diff file content) — the primary navigation fields the LLM cognitive review consumes. Not every key uses that pair: a payload that is a file-level reference, a derived index, or a different coordinate tuple deviates from it. **The per-key field tuples in the Output Schema above are the authoritative statement of which keys deviate and how — read them there.** This paragraph names no key and counts no deviation. Additional per-domain sub-lists beyond the canonical registry keys are allowed and ignored by the seventeen canonical checks.
+A line-level entry carries `file` (repo-relative path) AND `line` (1-based line number in the post-diff file content) — the primary navigation fields the LLM cognitive review consumes. Not every key uses that pair: a payload that is a file-level reference, a derived index, or a different coordinate tuple deviates from it. **The per-key field tuples in the Output Schema above are the authoritative statement of which keys deviate and how — read them there.** This paragraph names no key and counts no deviation. Additional per-domain sub-lists beyond the canonical registry keys are allowed and ignored by the eighteen canonical checks.
 
 ### Detection Rules (Plan-Marshall Domain Reference)
 
