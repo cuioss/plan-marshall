@@ -192,6 +192,46 @@ def footprint_resolved(footprint: set[str] | None) -> TypeGuard[set[str]]:
     return footprint is not FOOTPRINT_UNRESOLVED
 
 
+#: Classified unevaluated state: evaluation was not attempted (no plan
+#: directory, no references, no live worktree), so no tier ran. Distinct from
+#: :data:`FOOTPRINT_UNRESOLVED` (every tier ran and none answered) and from a
+#: resolved-but-empty set (a measured empty footprint). A could-not-evaluate
+#: reports this state with the coverage it walked, never a row-builder
+#: default or a vacuously clean verdict.
+FOOTPRINT_UNEVALUATED = 'unevaluated'
+
+#: The classified evaluation states :func:`classify_evaluation_state` reports,
+#: in the order it tries to establish them.
+EVALUATION_STATES: tuple[str, ...] = ('resolved', 'unresolvable', 'unevaluated')
+
+
+def classify_evaluation_state(plan_dir: Path, plan_id: str | None, footprint: set[str] | None) -> dict[str, Any]:
+    """Classify one footprint evaluation into resolved / unresolvable / unevaluated.
+
+    ``resolved`` means :func:`footprint_resolved` holds (possibly empty — a
+    measured empty footprint is still resolved). ``unresolvable`` means every
+    tier ran and none answered. ``unevaluated`` means evaluation was never
+    attempted: the plan directory holds no ``references.json`` AND no live
+    worktree resolves for ``plan_id``, so no tier had an input to read. The
+    payload always carries the coverage it was computed over (whether the
+    plan directory and references existed), so an unevaluated verdict never
+    renders as a clean bill — it names what went unexamined.
+    """
+    refs_path = plan_dir / 'references.json'
+    has_refs = refs_path.exists()
+    has_worktree = resolve_live_worktree(plan_id) is not None if plan_id is not None else False
+    coverage = {
+        'plan_dir_exists': plan_dir.exists(),
+        'has_references': has_refs,
+        'has_live_worktree': has_worktree,
+    }
+    if footprint_resolved(footprint):
+        return {'state': 'resolved', 'coverage': coverage}
+    if not has_refs and not has_worktree:
+        return {'state': 'unevaluated', 'coverage': coverage}
+    return {'state': 'unresolvable', 'coverage': coverage}
+
+
 def load_references_dict(plan_dir: Path) -> dict[str, Any]:
     """Read ``references.json`` from ``plan_dir``; return ``{}`` on any error."""
     refs_path = plan_dir / 'references.json'
@@ -553,3 +593,175 @@ def resolve_footprint(plan_dir: Path, plan_id: str | None = None) -> set[str] | 
         return legacy
 
     return FOOTPRINT_UNRESOLVED
+
+
+# ---------------------------------------------------------------------------
+# Realized single-run throughput — the mechanical-sweep sizing hook
+# ---------------------------------------------------------------------------
+#
+# The mechanical sweep (the deterministic per-plan pass whose budget caps how
+# many items it processes for one plan) is sized from a REALIZED single-run
+# measurement — the realized footprint this plan's own run recorded — rather
+# than from a static estimate. This section is the hook the sweep consumes;
+# ``analyze-logs`` publishes the derived budget on its fragment so the sweep
+# reads a measured number per plan instead of assuming one.
+
+#: Minimum sweep unit: a sweep always costs at least one item to run, so a
+#: measured-empty throughput floors here rather than to a silent zero.
+SWEEP_BUDGET_MIN_ITEMS = 1
+
+#: Ceiling: a huge realized footprint must not hand the sweep an unbounded
+#: budget — the sweep stays bounded no matter how large the run was.
+SWEEP_BUDGET_MAX_ITEMS = 200
+
+#: Stated fallback when no throughput was measured at all (no capture tier
+#: resolved). Published with ``basis: fallback_empty_throughput`` so a reader
+#: can tell it apart from a measured budget — never a silent zero.
+SWEEP_BUDGET_FALLBACK_ITEMS = 25
+
+
+def measure_realized_throughput(plan_dir: Path) -> int | None:
+    """Realized single-run throughput: the capture-tier footprint's file count.
+
+    Reads ``references.realized_footprint`` — the set this plan's own realized
+    run recorded while the worktree still existed — and returns its size. This
+    is the ONE measurement the mechanical-sweep budget derives from, so the
+    budget tracks what a single realized run actually touched.
+
+    A resolved-but-empty capture returns ``0`` (measured — the run touched
+    nothing); only an unresolvable capture returns ``None`` (unmeasured).
+    Collapsing the two would let a plan with no capture at all grade the same
+    budget as a plan that genuinely touched nothing.
+
+    Args:
+        plan_dir: The plan directory holding ``references.json``.
+
+    Returns:
+        The realized file count, or ``None`` when the capture tier does not
+        resolve for this plan.
+    """
+    refs = load_references_dict(plan_dir)
+    captured = read_captured_footprint(refs)
+    if captured is None:
+        return None
+    return len(captured)
+
+
+def derive_sweep_budget(throughput: int | None) -> dict[str, Any]:
+    """Mechanical-sweep budget from realized single-run throughput.
+
+    The budget is one sweep item per realized file, clamped to
+    ``[SWEEP_BUDGET_MIN_ITEMS, SWEEP_BUDGET_MAX_ITEMS]`` so a tiny plan still
+    yields the minimum sweep unit and a huge plan stays bounded. An
+    unmeasured throughput (``None``) degrades to the stated
+    ``SWEEP_BUDGET_FALLBACK_ITEMS`` with ``basis: fallback_empty_throughput`` —
+    never a silent zero a consumer could read as "nothing to sweep".
+
+    Args:
+        throughput: The value from :func:`measure_realized_throughput`, or
+            ``None`` when nothing was measured.
+
+    Returns:
+        ``{'budget_items', 'basis', 'throughput_files'}`` where ``basis`` is
+        ``'measured'`` or ``'fallback_empty_throughput'`` and
+        ``throughput_files`` echoes the input (``None`` on the fallback path,
+        so the absence stays visible).
+    """
+    if throughput is None:
+        return {
+            'budget_items': SWEEP_BUDGET_FALLBACK_ITEMS,
+            'basis': 'fallback_empty_throughput',
+            'throughput_files': None,
+        }
+    return {
+        'budget_items': min(max(int(throughput), SWEEP_BUDGET_MIN_ITEMS), SWEEP_BUDGET_MAX_ITEMS),
+        'basis': 'measured',
+        'throughput_files': int(throughput),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Shared containment rule — twin declaration comparisons
+# ---------------------------------------------------------------------------
+#
+# One containment rule serves both twin declaration comparisons
+# (declared-vs-realized and declared-vs-declared). Both twin call sites —
+# ``check-artifact-consistency`` (recall + exact-match) and the orchestrator
+# corpus twin surface (``_currency_compare`` / collision rows) — grade through
+# this section, so a directory or recursive-glob claim resolves identically in
+# every consumer. The comparison is symmetric difference in both directions,
+# never cardinality: two equal-sized but disjoint sets score fully
+# disagreeing, because no element on either side is covered by the other.
+
+
+def declaration_contains(container: str, contained: str) -> bool:
+    """Whether a declared ``container`` covers ``contained`` by containment.
+
+    A ``recursive_glob`` entry (path ending in ``**``) contains another path
+    when that path equals the glob stem or starts with ``stem + '/'``. A
+    ``directory`` entry (path ending in ``'/'``) contains another path when
+    that path equals the directory or starts with it. Every other kind never
+    contains, and matching without a ``'/'`` boundary (bare substring/prefix)
+    never counts.
+
+    Exact equality is NOT containment here — callers OR it in via
+    :func:`declaration_covers` — so this predicate stays a pure
+    container-contains-contained test its consumers can reason about.
+    """
+    if not container or not contained:
+        return False
+    if container == contained:
+        return False
+    if container.endswith('**'):
+        stem = container[:-2].rstrip('/')
+        if not stem:
+            return True
+        if contained.endswith('**'):
+            other = contained[:-2].rstrip('/')
+        elif contained.endswith('/'):
+            other = contained.rstrip('/')
+        else:
+            other = contained
+        return other == stem or other.startswith(stem + '/')
+    if container.endswith('/'):
+        if contained.rstrip('/') == container.rstrip('/'):
+            return True
+        return contained.startswith(container)
+    return False
+
+
+def declaration_covers(entry: str, path: str) -> bool:
+    """Whether declared ``entry`` covers realized ``path``.
+
+    Exact match or containment in either direction, so a directory claim and
+    a file beneath it overlap regardless of which side declared the
+    directory. Bare prefix overlap without a ``'/'`` boundary never covers.
+    """
+    if entry == path:
+        return True
+    return declaration_contains(entry, path) or declaration_contains(path, entry)
+
+
+def symmetric_difference_with_containment(declared: set[str], realized: set[str]) -> dict[str, Any]:
+    """Compare two path sets by symmetric difference with containment.
+
+    Both difference directions are published as named lists with their own
+    sizes alongside the pair's symmetric-difference size, which is the sum of
+    the two direction sizes (the differences are disjoint by construction).
+    The verdict is never inferred from cardinality: two equal-sized but
+    disjoint sets report ``symmetric_difference_count == len(declared) +
+    len(realized)`` — fully disagreeing — rather than agreeing on size.
+    """
+    declared_not_realized = sorted(
+        entry for entry in declared if not any(declaration_covers(entry, path) for path in realized)
+    )
+    realized_not_declared = sorted(
+        path for path in realized if not any(declaration_covers(entry, path) for entry in declared)
+    )
+    return {
+        'declared_not_realized': declared_not_realized,
+        'realized_not_declared': realized_not_declared,
+        'declared_not_realized_count': len(declared_not_realized),
+        'realized_not_declared_count': len(realized_not_declared),
+        'symmetric_difference_count': len(declared_not_realized) + len(realized_not_declared),
+    }

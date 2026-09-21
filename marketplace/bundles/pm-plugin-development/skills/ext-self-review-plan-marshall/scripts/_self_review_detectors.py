@@ -9,6 +9,7 @@ detectors live alongside them. Importers pull these by flat name (e.g.
 ``from _self_review_detectors import _detect_regexes``).
 """
 
+import ast
 import os
 import re
 from pathlib import Path, PurePosixPath
@@ -87,6 +88,75 @@ from _self_review_patterns import (
 
 # =============================================================================
 # Detectors
+
+_HOISTED_BINDING_RE = re.compile(r'^\s*(?:for\s+([A-Za-z_][A-Za-z0-9_]*)\s+in|([A-Za-z_][A-Za-z0-9_]*)\s*=(?!=))')
+
+
+def _hoisted_imported_names(post_lines: list[str]) -> set[str]:
+    """Module-scope imported names in a file's post-image (the hoisted bindings).
+
+    Parses the post-image AST and inspects only the ``Module`` body
+    ``Import`` and ``ImportFrom`` nodes, so imports nested inside functions
+    or classes never count as hoisted. Aliases resolve to the bound name
+    (``import package as name`` binds ``name``; ``from x import y as z``
+    binds ``z``; a bare ``import package.sub`` binds the top-level
+    ``package``).
+    """
+    try:
+        tree = ast.parse('\n'.join(post_lines))
+    except (SyntaxError, ValueError):
+        return set()
+    names: set[str] = set()
+    for node in tree.body:
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                bound = alias.asname or alias.name.split('.')[0]
+                if re.match(r'^[A-Za-z_][A-Za-z0-9_]*$', bound):
+                    names.add(bound)
+        elif isinstance(node, ast.ImportFrom):
+            for alias in node.names:
+                if alias.name == '*':
+                    continue
+                bound = alias.asname or alias.name.split('.')[0]
+                if re.match(r'^[A-Za-z_][A-Za-z0-9_]*$', bound):
+                    names.add(bound)
+    return names
+
+
+def _detect_hoisted_binding_shadows(added: list[tuple[str, int, str]], project_dir: Path) -> list[dict[str, Any]]:
+    """Surface added bindings that shadow a hoisted (import-level) binding.
+
+    Read-only surfacing for the cognitive review pass: emits one candidate
+    per added line that rebinds a name the file's post-image imports at top
+    level, carrying the file and the post-image line. Adjudicates nothing —
+    whether the shadow is intentional is the reviewer's judgement, never this
+    detector's verdict.
+    """
+    out: list[dict[str, Any]] = []
+    seen: set[tuple[str, int, str]] = set()
+    imports_by_file: dict[str, set[str]] = {}
+    for path, lineno, content in added:
+        if not path.endswith('.py'):
+            continue
+        if path not in imports_by_file:
+            imports_by_file[path] = _hoisted_imported_names(_read_post_image(project_dir, path))
+        hoisted = imports_by_file[path]
+        if not hoisted:
+            continue
+        m = _HOISTED_BINDING_RE.match(content)
+        if m is None:
+            continue
+        name = m.group(1) or m.group(2)
+        if name not in hoisted:
+            continue
+        key = (path, lineno, name)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append({'file': path, 'line': lineno, 'shadowed': name})
+    return out
+
+
 # =============================================================================
 
 

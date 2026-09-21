@@ -258,7 +258,7 @@ build_system: maven
 
 ### compute-footprint
 
-Derive the plan's actual footprint live from the worktree git state — the single source of truth — without consulting any persisted ledger. **Read-only — never mutates `references.json`.** It reads `references.json` only to resolve `base_branch` for the diff range.
+Derive the plan's actual footprint live from the worktree git state — the single source of truth — without consulting any persisted ledger. **Read-only — never mutates `references.json`.** It reads `references.json` only to resolve `base_branch` for the diff range, then prefers the `origin/{base_branch}` remote-tracking ref when it resolves (verified upstream base), falling back diagnosably to the local `base_branch`.
 
 The footprint is the union of the three-dot `{base_ref}...HEAD` diff name set and the porcelain working-tree state (`git status --porcelain`). The derivation primitive is `compute_plan_branch_diff` in `_references_core`. Consumers that need to know which files the plan touched (self-review surfacing, pre-commit freshness, the finalize-step scope cap, retrospective consistency checks) call this verb on demand rather than reading a stored array.
 
@@ -271,7 +271,7 @@ python3 .plan/execute-script.py plan-marshall:manage-references:manage-reference
 **Parameters**:
 - `--plan-id` (required): Plan identifier
 - `--worktree-path` (required): Absolute path to the active git worktree
-- `--base-ref`: Base ref for the diff (defaults to `references.base_branch`, falling back to `main`)
+- `--base-ref`: Base ref for the diff (defaults to the verified upstream base `origin/{base_branch}` when it resolves, else `references.base_branch`, falling back to `main`)
 
 **Output** (TOON):
 ```toon

@@ -121,7 +121,7 @@ def main() -> int:
     )
     compute_footprint_parser.add_argument(
         '--base-ref',
-        help='Base ref for the diff (defaults to references.base_branch, falling back to main)',
+        help='Base ref for the diff, verified with rev-parse --verify (defaults to origin/{base_branch} when its remote-tracking ref resolves, falling back to references.base_branch then main)',
     )
 
     # capture-footprint — compute the live footprint AND persist it to
@@ -139,7 +139,7 @@ def main() -> int:
     )
     capture_footprint_parser.add_argument(
         '--base-ref',
-        help='Base ref for the diff (defaults to references.base_branch, falling back to main)',
+        help='Base ref for the diff, verified with rev-parse --verify (defaults to origin/{base_branch} when its remote-tracking ref resolves, falling back to references.base_branch then main)',
     )
 
     args = parse_args_with_toon_errors(parser)
@@ -149,6 +149,7 @@ def main() -> int:
     from _cmd_context import cmd_get_context
     from _cmd_list import cmd_add_list, cmd_set_list
     from _cmd_reconcile_scope import cmd_reconcile_scope
+    from _references_core import is_retired_field, retired_field_error
     from _references_crud import (
         cmd_create,
         cmd_get,
@@ -156,6 +157,17 @@ def main() -> int:
         cmd_set,
         cmd_sync_affected_files,
     )
+
+    # Retired-key refusal at the CLI boundary: no field-taking verb may serve
+    # or resurrect a retired key. Step inputs (compute-footprint,
+    # capture-footprint, reconcile-scope, get-context, sync-affected-files)
+    # never name a retired field — they route through the live resolver and
+    # the captured footprint tier — so this guard only ever fires on direct
+    # access, which fails closed here instead of serving a stale value.
+    field = getattr(args, 'field', None)
+    if is_retired_field(field):
+        output_toon(retired_field_error(args.plan_id, str(field), args.command))
+        return 0
 
     # Dispatch to handlers
     handlers = {

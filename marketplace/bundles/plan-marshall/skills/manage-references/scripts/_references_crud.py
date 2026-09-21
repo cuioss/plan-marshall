@@ -6,6 +6,7 @@ Handles: create, read, get, set, sync-affected-files
 """
 
 import argparse
+import subprocess
 
 from _plan_parsing import INTENT_UNANNOTATED, declared_paths_by_intent, declared_paths_population
 from _references_core import (
@@ -65,6 +66,30 @@ _READ_INTENT_FILES_FIELD = 'read_intent_files'
 _MUTATION_INTENTS = frozenset(set(VALID_STEP_INTENTS) - {STEP_INTENT_READ} | {INTENT_UNANNOTATED})
 
 
+def _capture_creation_sha() -> str | None:
+    """Capture the current HEAD SHA as the plan-creation baseline.
+
+    Runs ``git rev-parse HEAD`` in the caller's checkout (plan creation runs
+    on the main checkout, before any worktree exists). Returns None when the
+    SHA cannot be resolved — the ``scope_creep_check`` missing-key fallback
+    degrades diagnosably (``could_not_look/no_baseline_sha``) instead of
+    grading against a fabricated baseline.
+    """
+    try:
+        proc = subprocess.run(
+            ['git', 'rev-parse', 'HEAD'],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return None
+    if proc.returncode != 0:
+        return None
+    sha = proc.stdout.strip()
+    return sha or None
+
+
 def cmd_create(args: argparse.Namespace) -> dict:
     """Create references.json with basic fields."""
     require_valid_plan_id(args)
@@ -80,6 +105,12 @@ def cmd_create(args: argparse.Namespace) -> dict:
 
     # Build base references
     refs = {'branch': args.branch, 'base_branch': 'main'}
+
+    # Pin the creation baseline alongside the base branch so the scope-creep
+    # guard survives later base moves instead of grading a floating tip.
+    creation_sha = _capture_creation_sha()
+    if creation_sha is not None:
+        refs['plan_creation_sha'] = creation_sha
 
     # Add optional fields
     if args.issue_url:

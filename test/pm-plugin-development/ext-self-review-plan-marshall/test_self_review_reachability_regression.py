@@ -36,7 +36,7 @@ import re  # noqa: I001
 import subprocess
 from pathlib import Path
 
-from _self_review_patterns import CANDIDATE_LISTS
+from _self_review_patterns import CANDIDATE_LISTS, sibling_keys
 from conftest import get_script_path, run_script
 
 # =============================================================================
@@ -105,35 +105,15 @@ _ANCESTOR_PATHS = (
 #: The candidate list this check contributes; every other list is independent of it.
 _NEW_LIST = 'scan_derived_keys'
 
-#: The twenty-one candidate lists OTHER than the one under test. The complementary
+#: The twenty-two candidate lists OTHER than the one under test. The complementary
 #: negative in case (a) sweeps ALL of them, so a sibling detector incidentally
 #: flagging the same hunk cannot be mistaken for the reachability check doing its
-#: job. The tuple is hand-written on purpose: deriving it from the registry would
-#: make the three-way assertion below vacuous, since the swept set would then
-#: agree with the registry by construction rather than by maintenance.
-_SIBLING_LISTS = (
-    'regexes',
-    'user_facing_strings',
-    'markdown_sections',
-    'symmetric_pairs',
-    'flag_guard_pairs',
-    'contract_sources',
-    'schema_bearing_files',
-    'keep_markers',
-    'protected_identifiers',
-    'producer_consumer',
-    'source_of_truth',
-    'same_document_consistency',
-    'description_vs_body',
-    'unguarded_boundaries',
-    'count_prose',
-    'touched_claims',
-    'advertised_form_help_strings',
-    'ordinal_references',
-    'worked_example_pairs',
-    'duplicate_claimable_keys',
-    'discard_without_report',
-)
+#: job. The population derives from the registry via the shared ``sibling_keys``
+#: helper so the sweep stays in agreement with the emitter by construction; the
+#: three-way emitted-vs-swept-vs-registered assertion below still pins the
+#: emitter against the registry, and the sibling-sweep-coverage test guards the
+#: helper against an empty or mis-excluded population.
+_SIBLING_LISTS = sibling_keys(_NEW_LIST)
 
 # =============================================================================
 # Fixture sources — the diff the surfacer reads
@@ -357,6 +337,15 @@ class TestPreFixScanningFormIsSurfaced:
             f'Registered but not swept: {sorted(registered - swept)}. '
             f'Swept but not registered: {sorted(swept - registered)}.'
         )
+
+    def test_sibling_sweep_is_not_vacuous(self):
+        """The registry-derived sibling sweep names every other list, exactly once."""
+        registered = {spec.key for spec in CANDIDATE_LISTS}
+
+        assert len(_SIBLING_LISTS) >= 1
+        assert _NEW_LIST not in _SIBLING_LISTS
+        assert set(_SIBLING_LISTS) | {_NEW_LIST} == registered
+        assert len(set(_SIBLING_LISTS)) == len(_SIBLING_LISTS)
 
 
 # =============================================================================

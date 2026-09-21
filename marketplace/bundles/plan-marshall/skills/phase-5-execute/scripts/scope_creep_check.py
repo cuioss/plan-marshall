@@ -209,7 +209,7 @@ def cmd_check(args: argparse.Namespace) -> int:
     plan_dir = get_plan_dir(plan_id)
     worktree = _resolve_worktree(plan_id)
     refs = _read_references(plan_dir)
-    base_sha = refs.get('plan_creation_sha')
+    base_sha = (refs.get('plan_creation_sha') or '').strip()
     if not base_sha:
         # No baseline sha means there was nothing to diff against — the guard
         # could not look. Reporting a zero here is the defect this branch fixes.

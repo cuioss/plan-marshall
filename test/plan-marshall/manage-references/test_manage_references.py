@@ -1332,3 +1332,88 @@ def test_sync_keeps_the_stored_halves_disjoint_when_mutation_becomes_read(plan_c
     assert second['read_intent_added_count'] == 0
     assert second['mutation_count'] + second['read_intent_count'] == second['declared_count']
     assert len(set(_affected()) | set(_read_intent())) == second['declared_count']
+
+
+# =============================================================================
+# Retired keys are unlinked from step inputs (plan-07-footprint-surface D3)
+# =============================================================================
+#
+# ``modified_files`` was retired by the change-ledger removal. Step inputs
+# (compute-footprint, get-context, reconcile-scope, sync-affected-files) route
+# through the live resolver and the captured footprint tier only; direct CLI
+# access to a retired key fails closed with ``error: field_retired`` instead
+# of serving (or resurrecting) a stale value.
+
+
+def _write_refs_with_stale_retired_key(plan_id='test-plan'):
+    """Simulate a pre-removal plan record carrying a stale retired key."""
+    refs = require_references(plan_id)
+    refs['modified_files'] = ['stale.py']
+    path = get_references_path(plan_id)
+    path.write_text(json.dumps(refs))
+
+
+def test_cli_get_retired_key_fails_closed(plan_context):
+    """CLI get on a retired key exits 0 with a field_retired TOON error."""
+    from toon_parser import parse_toon
+
+    cmd_create(_create_ns())
+    result = run_script(SCRIPT_PATH, 'get', '--plan-id', 'test-plan', '--field', 'modified_files')
+    assert result.returncode == 0
+    data = parse_toon(result.stdout)
+    assert data['status'] == 'error'
+    assert data['error'] == 'field_retired'
+    assert data['field'] == 'modified_files'
+
+
+def test_cli_set_retired_key_refuses_without_writing(plan_context):
+    """CLI set on a retired key refuses and does not resurrect the key."""
+    from toon_parser import parse_toon
+
+    cmd_create(_create_ns())
+    result = run_script(SCRIPT_PATH, 'set', '--plan-id', 'test-plan', '--field', 'modified_files', '--value', 'x.py')
+    assert result.returncode == 0
+    data = parse_toon(result.stdout)
+    assert data['status'] == 'error'
+    assert data['error'] == 'field_retired'
+    assert 'modified_files' not in require_references('test-plan')
+
+
+def test_cli_add_list_retired_key_fails_closed(plan_context):
+    """CLI add-list on a retired key fails closed like get/set."""
+    from toon_parser import parse_toon
+
+    cmd_create(_create_ns())
+    result = run_script(
+        SCRIPT_PATH,
+        'add-list',
+        '--plan-id',
+        'test-plan',
+        '--field',
+        'modified_files',
+        '--values',
+        'x.py',
+    )
+    assert result.returncode == 0
+    data = parse_toon(result.stdout)
+    assert data['status'] == 'error'
+    assert data['error'] == 'field_retired'
+
+
+def test_get_context_ignores_stale_retired_key(plan_context):
+    """A stale retired key on disk never surfaces through get-context."""
+    cmd_create(_create_ns())
+    _write_refs_with_stale_retired_key()
+    result = cmd_get_context(_get_context_ns())
+    assert result['status'] == 'success'
+    assert 'modified_files' not in result
+    assert 'modified_files_count' not in result
+
+
+def test_live_branch_read_unaffected_by_stale_retired_key(plan_context):
+    """Live paths still resolve when a stale retired key sits beside them."""
+    cmd_create(_create_ns())
+    _write_refs_with_stale_retired_key()
+    result = cmd_get(_get_ns(field='branch'))
+    assert result['status'] == 'success'
+    assert result['value'] == 'feature/test'

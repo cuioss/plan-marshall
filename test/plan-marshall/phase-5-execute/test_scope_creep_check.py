@@ -377,3 +377,97 @@ def test_resolve_worktree_falls_back_to_cwd_when_resolution_fails(monkeypatch):
     monkeypatch.setattr(file_ops, '_query_worktree_path', _raise)
 
     assert scc._resolve_worktree('never-resolves') == Path.cwd()
+
+
+# ---------------------------------------------------------------------------
+# Creation-SHA pinning contract (plan-07-footprint-surface deliverable 2)
+# ---------------------------------------------------------------------------
+#
+# The guard grades the residual drift against the pinned ``plan_creation_sha``
+# instead of the floating base tip, so the baseline survives later base moves.
+# A missing (or whitespace-only) key degrades diagnosably to ``could_not_look``
+# instead of grading a fabricated baseline.
+
+
+@pytest.fixture
+def plan_with_moved_base(plan_context):
+    """Refs whose base_branch moved on from the pinned creation SHA."""
+    plan_dir = plan_context.plan_dir_for('scope-creep-pinned')
+    refs = {
+        'base_branch': 'main',
+        'plan_creation_sha': 'pinnedsha123',
+        'affected_files': ['src/a.py'],
+    }
+    (plan_dir / 'references.json').write_text(json.dumps(refs))
+    plan_context.plan_dir = plan_dir
+    yield plan_context
+
+
+def test_diff_grades_pinned_sha_despite_moved_base(plan_with_moved_base, monkeypatch, capsys):
+    """The pinned SHA reaches the diff even though the base tip moved on."""
+    seen: dict = {}
+
+    def _record(worktree, sha):
+        seen['sha'] = sha
+        return ['src/a.py']
+
+    monkeypatch.setattr(scc, '_git_diff_files', _record)
+    _patch_resolve(monkeypatch, plan_with_moved_base.plan_dir)
+    stub = _PersistStub()
+    _patch_persist(monkeypatch, stub)
+
+    rc = scc.cmd_check(Namespace(plan_id='scope-creep-pinned', threshold=None))
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert seen['sha'] == 'pinnedsha123'
+    assert 'residual_count: 0' in out
+    assert stub.calls == []
+
+
+def test_missing_creation_sha_is_could_not_look(plan_context, monkeypatch, capsys):
+    """No plan_creation_sha means nothing to diff against — could_not_look."""
+    plan_dir = plan_context.plan_dir_for('scope-creep-nosha')
+    (plan_dir / 'references.json').write_text(json.dumps({'affected_files': []}))
+    plan_context.plan_dir = plan_dir
+
+    def _raise(*_a, **_k):
+        raise AssertionError('diff should not be invoked without a baseline sha')
+
+    monkeypatch.setattr(scc, '_git_diff_files', _raise)
+    _patch_resolve(monkeypatch, plan_dir)
+    stub = _PersistStub()
+    _patch_persist(monkeypatch, stub)
+
+    rc = scc.cmd_check(Namespace(plan_id='scope-creep-nosha', threshold=None))
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert 'status: could_not_look' in out
+    assert 'reason: no_baseline_sha' in out
+    assert 'residual_count:' not in out
+    assert stub.calls == []
+
+
+def test_whitespace_creation_sha_is_could_not_look(plan_context, monkeypatch, capsys):
+    """A whitespace-only SHA is no baseline — it degrades like a missing one."""
+    plan_dir = plan_context.plan_dir_for('scope-creep-blanksha')
+    (plan_dir / 'references.json').write_text(json.dumps({'plan_creation_sha': '   '}))
+    plan_context.plan_dir = plan_dir
+
+    def _raise(*_a, **_k):
+        raise AssertionError('diff should not be invoked with a blank baseline sha')
+
+    monkeypatch.setattr(scc, '_git_diff_files', _raise)
+    _patch_resolve(monkeypatch, plan_dir)
+    stub = _PersistStub()
+    _patch_persist(monkeypatch, stub)
+
+    rc = scc.cmd_check(Namespace(plan_id='scope-creep-blanksha', threshold=None))
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert 'status: could_not_look' in out
+    assert 'reason: no_baseline_sha' in out
+    assert 'residual_count:' not in out
+    assert stub.calls == []

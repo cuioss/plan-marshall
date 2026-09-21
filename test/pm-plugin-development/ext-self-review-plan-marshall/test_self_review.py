@@ -3879,3 +3879,217 @@ class TestSkillDocDeltaCoverageSchemaMatchesTheRegistry:
         a zero over an unread population rather than a measured agreement.
         """
         assert len(CONTENT_CLASSES) >= 1
+
+
+class TestUpstreamAnchoring:
+    """The surfacing anchor prefers origin/main and refuses a behind base."""
+
+    def _init_repo(self, tmp_path):
+        repo = tmp_path / 'worktree'
+        repo.mkdir(parents=True, exist_ok=True)
+        subprocess.run(
+            ['git', '-C', str(repo), 'init', '--initial-branch=main'],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        subprocess.run(
+            ['git', '-C', str(repo), 'config', 'user.email', 'test@example.com'],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        subprocess.run(
+            ['git', '-C', str(repo), 'config', 'user.name', 'Test User'],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return repo
+
+    def _commit(self, repo, message, files):
+        for rel, content in files.items():
+            target = repo / rel
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content)
+        subprocess.run(['git', '-C', str(repo), 'add', '-A'], capture_output=True, text=True, check=True)
+        subprocess.run(['git', '-C', str(repo), 'commit', '-m', message], capture_output=True, text=True, check=True)
+
+    def test_upstream_anchor_prefers_origin_main(self, tmp_path):
+        """An available origin/main anchors the surface as upstream."""
+        from _self_review_diff import resolve_upstream_base
+
+        repo = self._init_repo(tmp_path)
+        self._commit(repo, 'base', {'base.txt': 'base\n'})
+        head = subprocess.run(
+            ['git', '-C', str(repo), 'rev-parse', 'HEAD'],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        subprocess.run(
+            ['git', '-C', str(repo), 'update-ref', 'refs/remotes/origin/main', head],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        anchor, source = resolve_upstream_base(repo, 'main')
+        assert anchor == 'origin/main'
+        assert source == 'upstream'
+
+    def test_upstream_anchor_prefers_origin_develop_for_non_main_branch(self, tmp_path):
+        """A non-main base anchors at origin/{base_branch} via its remote-tracking ref."""
+        from _self_review_diff import resolve_upstream_base
+
+        repo = self._init_repo(tmp_path)
+        self._commit(repo, 'base', {'base.txt': 'base\n'})
+        subprocess.run(
+            ['git', '-C', str(repo), 'checkout', '-b', 'develop'],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        self._commit(repo, 'develop base', {'dev.txt': 'dev\n'})
+        head = subprocess.run(
+            ['git', '-C', str(repo), 'rev-parse', 'HEAD'],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        subprocess.run(
+            ['git', '-C', str(repo), 'update-ref', 'refs/remotes/origin/develop', head],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        anchor, source = resolve_upstream_base(repo, 'develop')
+        assert anchor == 'origin/develop'
+        assert source == 'upstream'
+
+    def test_upstream_anchor_ignores_local_origin_branch_shadow(self, tmp_path):
+        """A local refs/heads/origin/main must not satisfy the upstream verification."""
+        from _self_review_diff import resolve_upstream_base
+
+        repo = self._init_repo(tmp_path)
+        self._commit(repo, 'base', {'base.txt': 'base\n'})
+        subprocess.run(
+            ['git', '-C', str(repo), 'branch', 'origin/main'],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        anchor, source = resolve_upstream_base(repo, 'main')
+        assert anchor == 'main'
+        assert source == 'local'
+
+    def test_local_fallback_when_no_upstream(self, tmp_path):
+        """Without origin/main the surface falls back to the local base."""
+        from _self_review_diff import resolve_upstream_base
+
+        repo = self._init_repo(tmp_path)
+        self._commit(repo, 'base', {'base.txt': 'base\n'})
+        anchor, source = resolve_upstream_base(repo, 'main')
+        assert anchor == 'main'
+        assert source == 'local'
+
+    def test_behind_upstream_refuses(self, tmp_path):
+        """A local base behind origin/main reports behind instead of a stale scope."""
+        from _self_review_diff import is_behind_upstream
+
+        repo = self._init_repo(tmp_path)
+        self._commit(repo, 'base', {'base.txt': 'base\n'})
+        base_sha = subprocess.run(
+            ['git', '-C', str(repo), 'rev-parse', 'HEAD'],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        self._commit(repo, 'upstream ahead', {'ahead.txt': 'ahead\n'})
+        upstream_sha = subprocess.run(
+            ['git', '-C', str(repo), 'rev-parse', 'HEAD'],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        subprocess.run(
+            ['git', '-C', str(repo), 'update-ref', 'refs/remotes/origin/main', upstream_sha],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        subprocess.run(
+            ['git', '-C', str(repo), 'reset', '--hard', base_sha],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        assert is_behind_upstream(repo, 'main', 'origin/main') is True
+
+
+class TestHoistedBindingShadows:
+    """The shadow detector surfaces import-level shadowing without adjudicating."""
+
+    def test_loop_variable_shadowing_import_surfaces(self, tmp_path):
+        """A loop variable rebinding an imported name surfaces a candidate."""
+        from _self_review_detectors import _detect_hoisted_binding_shadows
+
+        project_dir = tmp_path / 'proj'
+        project_dir.mkdir()
+        (project_dir / 'mod.py').write_text('import os\n\n\ndef f():\n    pass\n')
+        added = [('mod.py', 10, 'for os in items:')]
+        candidates = _detect_hoisted_binding_shadows(added, project_dir)
+        assert len(candidates) == 1
+        assert candidates[0]['file'] == 'mod.py'
+        assert candidates[0]['line'] == 10
+        assert candidates[0]['shadowed'] == 'os'
+
+    def test_unrelated_assignment_surfaces_nothing(self, tmp_path):
+        """An assignment to a name nothing imports is not a shadow."""
+        from _self_review_detectors import _detect_hoisted_binding_shadows
+
+        project_dir = tmp_path / 'proj'
+        project_dir.mkdir()
+        (project_dir / 'mod.py').write_text('import os\n')
+        added = [('mod.py', 5, 'result = compute()')]
+        assert _detect_hoisted_binding_shadows(added, project_dir) == []
+
+    def test_nested_function_import_does_not_shadow(self, tmp_path):
+        """An import nested inside a function is not a module-scope hoisted binding."""
+        from _self_review_detectors import _detect_hoisted_binding_shadows
+
+        project_dir = tmp_path / 'proj'
+        project_dir.mkdir()
+        (project_dir / 'mod.py').write_text('def f():\n    import os\n')
+        added = [('mod.py', 5, 'for os in items:')]
+        assert _detect_hoisted_binding_shadows(added, project_dir) == []
+
+    def test_import_alias_binds_alias_name(self, tmp_path):
+        """import package as name hoists the alias, not the package stem."""
+        from _self_review_detectors import _detect_hoisted_binding_shadows
+
+        project_dir = tmp_path / 'proj'
+        project_dir.mkdir()
+        (project_dir / 'mod.py').write_text('import package as name\n')
+        assert _detect_hoisted_binding_shadows([('mod.py', 5, 'name = compute()')], project_dir) != []
+        assert _detect_hoisted_binding_shadows([('mod.py', 5, 'for package in items:')], project_dir) == []
+
+    def test_from_import_alias_binds_alias_name(self, tmp_path):
+        """from x import y as z hoists the alias, not the original name."""
+        from _self_review_detectors import _detect_hoisted_binding_shadows
+
+        project_dir = tmp_path / 'proj'
+        project_dir.mkdir()
+        (project_dir / 'mod.py').write_text('from pkg import thing as alias\n')
+        assert _detect_hoisted_binding_shadows([('mod.py', 5, 'alias = compute()')], project_dir) != []
+        assert _detect_hoisted_binding_shadows([('mod.py', 5, 'thing = compute()')], project_dir) == []
+
+    def test_candidate_line_matches_post_image(self, tmp_path):
+        """Each candidate carries the added line's own post-image number."""
+        from _self_review_detectors import _detect_hoisted_binding_shadows
+
+        project_dir = tmp_path / 'proj'
+        project_dir.mkdir()
+        (project_dir / 'mod.py').write_text('import json\n')
+        added = [('mod.py', 7, 'json = load()'), ('mod.py', 9, 'for json in rows:')]
+        candidates = _detect_hoisted_binding_shadows(added, project_dir)
+        assert [c['line'] for c in candidates] == [7, 9]

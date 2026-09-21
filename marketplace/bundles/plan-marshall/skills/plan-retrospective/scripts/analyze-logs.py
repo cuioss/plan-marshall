@@ -42,6 +42,8 @@ from typing import Any
 
 from _footprint_resolver import (
     FOOTPRINT_UNRESOLVED,
+    derive_sweep_budget,
+    measure_realized_throughput,
     read_captured_footprint,
     read_legacy_footprint,
     resolve_merge_commit_footprint_with_gaps,
@@ -2160,6 +2162,12 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
         log_builds['log_build_calls'], build_time, ledger_has_entries_for_plan(plan_ledger_key)
     )
 
+    # Mechanical-sweep budget from the realized single-run measurement: the
+    # sweep sizes itself from this plan's own realized throughput (published
+    # here per plan) rather than from a static estimate. An unmeasured plan
+    # carries the stated fallback, never a silent zero.
+    mechanical_sweep_budget = derive_sweep_budget(measure_realized_throughput(plan_dir))
+
     return {
         'status': 'success',
         'aspect': 'log_analysis',
@@ -2198,6 +2206,7 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
         # asserts no figure.
         'context_position_cost': summarize_context_position_cost(dispatch_boundaries),
         'global_log_signals': global_log_signals,
+        'mechanical_sweep_budget': mechanical_sweep_budget,
         'findings': findings,
     }
 

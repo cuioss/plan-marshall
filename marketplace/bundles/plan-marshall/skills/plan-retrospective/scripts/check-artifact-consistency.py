@@ -55,8 +55,10 @@ from pathlib import Path
 from typing import Any
 
 from _footprint_resolver import (
+    classify_evaluation_state,
     footprint_resolved,
     resolve_footprint,
+    symmetric_difference_with_containment,
 )
 from _plan_parsing import (
     extract_deliverable_headings,
@@ -507,15 +509,19 @@ def check_affected_files_recall(
 
     actual = _resolve_footprint(plan_dir, plan_id)
     if footprint_resolved(actual):
-        found = declared & actual
-        missing = declared - actual
+        # Twin comparison one (declared-vs-realized): both twin pairs grade
+        # through the one shared containment rule, so a directory or
+        # recursive-glob declaration covers the realized files beneath it.
+        compared = symmetric_difference_with_containment(declared, actual)
+        missing = set(compared['declared_not_realized'])
+        found_count = len(declared) - len(missing)
         # ``declared`` is guaranteed non-empty here — the empty case returned
         # ``skip`` above — so the division needs no zero guard.
-        recall = len(found) / len(declared)
+        recall = found_count / len(declared)
 
         details = {
             'declared': len(declared),
-            'found': len(found),
+            'found': found_count,
             'missing': sorted(missing)[:10],
             'recall_pct': round(recall * 100.0, 1),
             'footprint_resolved': True,
@@ -529,6 +535,7 @@ def check_affected_files_recall(
             details,
         )
 
+    evaluation = classify_evaluation_state(plan_dir, plan_id, None)
     return (
         'inconclusive',
         'Plan footprint could not be resolved from any tier (no live worktree diff, '
@@ -539,6 +546,8 @@ def check_affected_files_recall(
             'deliverables': len(deliverables),
             'footprint_resolved': False,
             'read_intent_excluded': read_intent_excluded,
+            'evaluation_state': evaluation['state'],
+            'evaluation_coverage': evaluation['coverage'],
         },
     )
 
@@ -565,7 +574,11 @@ def check_affected_files_exact_match(
 
     Any drift — files declared in the outline but missing from references, or
     listed in references but not declared in the outline — produces a ``warn``
-    with both sides surfaced for the retrospective synthesizer.
+    with both sides surfaced for the retrospective synthesizer. Twin
+    comparison two (declared-vs-realized strict): grades through the one
+    shared containment rule with symmetric difference in both directions, so
+    an equal-sized but disjoint pair scores fully disagreeing rather than
+    agreeing on size.
     """
     if footprint_resolved(references_files):
         if not outline_files and not references_files:
@@ -575,10 +588,11 @@ def check_affected_files_exact_match(
                 [],
                 [],
             )
-        if outline_files == references_files:
+        compared = symmetric_difference_with_containment(outline_files, references_files)
+        if compared['symmetric_difference_count'] == 0:
             return 'pass', 'Outline and references agree exactly', [], []
-        outline_only = sorted(outline_files - references_files)
-        references_only = sorted(references_files - outline_files)
+        outline_only = list(compared['declared_not_realized'])
+        references_only = list(compared['realized_not_declared'])
         return 'warn', 'Set mismatch', outline_only, references_only
 
     return (

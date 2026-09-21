@@ -472,3 +472,108 @@ class TestCountedListCheckCoverage:
         # targeted entries were already counted and stay counted.
         assert next(s for s in CANDIDATE_LISTS if s.key == 'duplicate_claimable_keys').in_total
         assert next(s for s in CANDIDATE_LISTS if s.key == 'discard_without_report').in_total
+
+
+_SURFACING_DOC = (
+    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'extension-api' / 'standards' / 'ext-point-self-review-surfacing.md'
+)
+
+_SURFACING_COUNTS_START = 'counts:'
+_SURFACING_COUNTS_END = 'total: the sum'
+_SURFACING_SCHEMA_START = 'regexes[N1]'
+_SURFACING_SCHEMA_END = 'hoisted_binding_shadows[N23]'
+_SURFACING_TABLE_START = '### Required Candidate Sub-Lists'
+_SURFACING_TABLE_END = '**Closed coverage gap'
+
+
+def _surfacing_registry_keys() -> list[str]:
+    """Every registry key the surfacing standard must document."""
+    return [spec.key for spec in CANDIDATE_LISTS]
+
+
+assert _surfacing_registry_keys(), (
+    'no CANDIDATE_LISTS entry registered, so the surfacing parity sweep below would pass having examined nothing'
+)
+
+
+def _surfacing_block(text: str, start: str, end: str) -> str:
+    """Return the surfacing document span between two markers."""
+    begin = text.index(start)
+    finish = text.index(end) + len(end)
+    return text[begin:finish]
+
+
+def _surfacing_counts_block(text: str) -> str:
+    """Return the surfacing document counts enumeration."""
+    return _surfacing_block(text, _SURFACING_COUNTS_START, _SURFACING_COUNTS_END)
+
+
+def _surfacing_schema_block(text: str) -> str:
+    """Return the surfacing document output-schema enumeration."""
+    return _surfacing_block(text, _SURFACING_SCHEMA_START, _SURFACING_SCHEMA_END)
+
+
+def _surfacing_table_block(text: str) -> str:
+    """Return the surfacing document required-list table."""
+    return _surfacing_block(text, _SURFACING_TABLE_START, _SURFACING_TABLE_END)
+
+
+def _missing_from_counts(keys: tuple[str, ...], block: str) -> list[str]:
+    """Return registry keys with no counts entry in the block."""
+    return [key for key in keys if f'{key}:' not in block]
+
+
+def _missing_from_schema(keys: tuple[str, ...], block: str) -> list[str]:
+    """Return registry keys with no schema entry in the block."""
+    return [key for key in keys if f'{key}[N' not in block]
+
+
+def _missing_from_table(keys: tuple[str, ...], block: str) -> list[str]:
+    """Return registry keys with no backtick-quoted table row in the block."""
+    return [key for key in keys if f'`{key}`' not in block]
+
+
+class TestSurfacingParity:
+    def test_every_registry_key_has_a_counts_row(self):
+        """Every registry key is enumerated in the surfacing counts block."""
+        population = _surfacing_registry_keys()
+        assert len(population) > 0
+        block = _surfacing_counts_block(_SURFACING_DOC.read_text(encoding='utf-8'))
+        assert block, 'surfacing document carries no counts block'
+        missing = _missing_from_counts(tuple(population), block)
+        assert missing == [], (
+            f'registry key(s) with no counts row in the surfacing standard: {missing} (population={len(population)})'
+        )
+
+    def test_every_registry_key_has_a_schema_entry(self):
+        """Every registry key is enumerated in the surfacing output schema."""
+        population = _surfacing_registry_keys()
+        assert len(population) > 0
+        block = _surfacing_schema_block(_SURFACING_DOC.read_text(encoding='utf-8'))
+        assert block, 'surfacing document carries no schema block'
+        missing = _missing_from_schema(tuple(population), block)
+        assert missing == [], (
+            f'registry key(s) with no schema entry in the surfacing standard: {missing} (population={len(population)})'
+        )
+
+    def test_every_registry_key_has_a_required_table_row(self):
+        """Every registry key is enumerated in the surfacing required table."""
+        population = _surfacing_registry_keys()
+        assert len(population) > 0
+        block = _surfacing_table_block(_SURFACING_DOC.read_text(encoding='utf-8'))
+        assert block, 'surfacing document carries no required table'
+        missing = _missing_from_table(tuple(population), block)
+        assert missing == [], (
+            f'registry key(s) with no required-table row in the surfacing standard: {missing} '
+            f'(population={len(population)})'
+        )
+
+    def test_parity_predicate_detects_an_absent_key(self):
+        """The parity predicate reports a registry key missing from each block."""
+        synthetic = ('covered_key', 'orphan_key')
+        counts = 'counts:\n  covered_key: N1\n  total: the sum\n'
+        assert _missing_from_counts(synthetic, counts) == ['orphan_key']
+        schema = 'covered_key[N1]{file,line}:\n'
+        assert _missing_from_schema(synthetic, schema) == ['orphan_key']
+        table = '| `covered_key` | purpose | check |\n'
+        assert _missing_from_table(synthetic, table) == ['orphan_key']

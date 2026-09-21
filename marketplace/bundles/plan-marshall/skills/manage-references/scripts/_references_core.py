@@ -28,6 +28,11 @@ class ReferencesData(TypedDict, total=False):
 
     branch: str
     base_branch: str
+    # The HEAD SHA pinned at plan creation (written by ``cmd_create`` alongside
+    # ``base_branch``). ``scope_creep_check`` grades the residual drift against
+    # this pinned baseline instead of the floating base tip, so the baseline
+    # survives later base moves.
+    plan_creation_sha: str
     issue_url: str
     build_system: str
     domains: list[str]
@@ -105,6 +110,54 @@ def require_references(plan_id: str) -> dict[Any, Any]:
 
 
 # =============================================================================
+# Retired References Keys
+# =============================================================================
+#
+# Keys the change-ledger removal retired. They persist on old plan records but
+# MUST NOT feed any step input: reads route through the live resolver
+# (``compute-footprint`` over the worktree) and the captured footprint tier
+# (``references.realized_footprint``) only. Direct access fails closed with a
+# diagnosable error instead of serving a stale value.
+
+#: References keys retired by the change-ledger removal. ``modified_files`` was
+#: the ledger-derived write set; the footprint is now derived on-demand, so a
+#: recorded copy would be a stale rival to the live resolver.
+RETIRED_REFERENCE_FIELDS: frozenset[str] = frozenset({'modified_files'})
+
+
+def is_retired_field(field: str | None) -> bool:
+    """Return True when ``field`` names a retired references key."""
+    return field is not None and str(field) in RETIRED_REFERENCE_FIELDS
+
+
+def retired_field_error(plan_id: str, field: str, operation: str) -> dict:
+    """Build the fail-closed TOON payload for retired-key access.
+
+    Args:
+        plan_id: Plan identifier (echoed for the caller's audit trail).
+        field: The retired field that was requested.
+        operation: The CLI verb that requested it (``get``, ``set``, ...).
+
+    Returns:
+        A ``status: error`` dict with ``error: field_retired``. Operation
+        failures exit 0 — the script ran successfully, only the operation
+        failed; callers branch on the TOON ``status`` field, not on the
+        process exit code.
+    """
+    return {
+        'status': 'error',
+        'plan_id': plan_id,
+        'field': field,
+        'error': 'field_retired',
+        'message': (
+            f"Field '{field}' is retired and cannot be {operation}: reads route "
+            'through the live resolver (compute-footprint) and the captured '
+            'footprint tier (references.realized_footprint) only'
+        ),
+    }
+
+
+# =============================================================================
 # Shared Plan-Branch-Only Diff Primitive
 # =============================================================================
 #
@@ -154,12 +207,36 @@ def _parse_porcelain(stdout: str) -> list[str]:
     return paths
 
 
-def resolve_base_ref(explicit: str | None, refs: dict) -> str:
-    """Resolve the base ref, falling back to references.base_branch then 'main'.
+def _ref_resolves_in_worktree(worktree: Path, ref: str) -> bool:
+    """Return True when ``ref`` resolves inside ``worktree``.
+
+    Uses ``git rev-parse --verify`` so an unresolvable base is detected
+    before any diff runs, instead of surfacing later as an empty footprint.
+    """
+    proc = _run_git(worktree, ['rev-parse', '--verify', ref])
+    return proc.returncode == 0
+
+
+def resolve_base_ref(explicit: str | None, refs: dict, worktree: Path | None = None) -> str:
+    """Resolve the base ref, preferring the upstream base with verification.
+
+    Preference order: explicit ``--base-ref`` first, then
+    ``origin/{base_branch}`` when its fully-qualified remote-tracking ref
+    (``refs/remotes/origin/{base_branch}``) resolves inside ``worktree``,
+    then ``references.base_branch``, then ``'main'``. The base branch is
+    determined from ``refs`` first (defaulting to ``'main'``) so a plan
+    targeting a non-main base (e.g. ``develop``) verifies
+    ``origin/{base_branch}`` instead of a hardcoded ``origin/main``. The
+    fully-qualified verification avoids a local ``refs/heads/origin/...``
+    branch shadowing the remote-tracking ref. An explicitly supplied ref
+    always wins — its resolvability is verified downstream by the caller,
+    which fails loud on an unresolvable base instead of diffing empty.
 
     Args:
         explicit: An explicit base ref (e.g. from ``--base-ref``), or None.
         refs: The references dict (read from references.json).
+        worktree: The active git worktree used to verify the upstream ref,
+            or None to skip upstream verification.
 
     Returns:
         The resolved base ref string.
@@ -168,11 +245,24 @@ def resolve_base_ref(explicit: str | None, refs: dict) -> str:
         val = str(explicit).strip()
         if val:
             return val
-    base_branch = refs.get('base_branch')
-    if base_branch is not None:
-        val = str(base_branch).strip()
-        if val:
-            return val
+    raw_base = refs.get('base_branch')
+    if raw_base is not None:
+        base_branch = str(raw_base).strip() or 'main'
+    else:
+        base_branch = 'main'
+    if base_branch.startswith('refs/remotes/origin/'):
+        short_branch = base_branch[len('refs/remotes/origin/') :]
+    elif base_branch.startswith('origin/'):
+        short_branch = base_branch[len('origin/') :]
+    else:
+        short_branch = base_branch
+    upstream = f'origin/{short_branch}'
+    fully_qualified = f'refs/remotes/{upstream}'
+    if worktree is not None:
+        if _ref_resolves_in_worktree(worktree, fully_qualified):
+            return upstream
+    if base_branch:
+        return base_branch
     return 'main'
 
 

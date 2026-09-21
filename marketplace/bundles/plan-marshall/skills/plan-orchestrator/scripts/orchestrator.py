@@ -2417,10 +2417,17 @@ def _resolve_footprint_base(base_ref: str) -> dict[str, Any]:
 def _currency_compare(footprint: frozenset[str], spec_paths: set[str]) -> dict[str, Any]:
     """Compare one spec's declared paths against the landed footprint by symmetric difference.
 
-    The ``_cmd_reconcile_scope._compare_pair`` pattern, consumed read-only:
+    Corpus twin surface: consumes the one shared containment rule hosted in
+    ``plan-retrospective/_footprint_resolver.py`` (``declaration_contains`` /
+    ``declaration_covers`` / ``symmetric_difference_with_containment``) —
+    mirrored here as :func:`_contains` because the orchestrator skill cannot
+    import across bundle boundaries, so the body below grades identically
+    rather than importing. The ``_cmd_reconcile_scope._compare_pair`` pattern,
+    consumed read-only:
     both difference directions are published as named lists with their own
     sizes alongside the pair's symmetric-difference size, and the verdict is
-    never inferred from cardinality. Directory and recursive-glob entries
+    never inferred from cardinality — an equal-sized but disjoint pair scores
+    fully disagreeing. Directory and recursive-glob entries
     resolve by containment with a ``/`` boundary via :func:`_contains` — a
     ``test/`` claim overlaps everything beneath it — so a directory-claiming
     spec is evaluated, never dropped to silence.
@@ -2432,15 +2439,22 @@ def _currency_compare(footprint: frozenset[str], spec_paths: set[str]) -> dict[s
     directory claim), and an untouched spec reports no overlap (clean) even
     though its sets differ.
     """
-    overlapping = sorted(
-        path for path in footprint if any(entry == path or _contains(entry, path) for entry in spec_paths)
-    )
-    footprint_not_spec = sorted(
-        path for path in footprint if not any(entry == path or _contains(entry, path) for entry in spec_paths)
-    )
-    spec_not_footprint = sorted(
-        entry for entry in spec_paths if not any(entry == path or _contains(entry, path) for path in footprint)
-    )
+
+    def _covers(left: str, right: str) -> bool:
+        """Whether two entries cover each other by exact match or containment.
+
+        Containment runs in BOTH directions: a directory claim covers the
+        files beneath it (``_contains(entry, path)``) AND a file beneath a
+        directory covers that directory claim (``_contains(path, entry)``) —
+        so ``footprint={'src/'}`` against ``spec_paths={'src/a.py'}`` scores
+        covered rather than leaving ``src/`` in ``footprint_not_spec`` while
+        the shared resolver treats both as covered.
+        """
+        return left == right or _contains(left, right) or _contains(right, left)
+
+    overlapping = sorted(path for path in footprint if any(_covers(entry, path) for entry in spec_paths))
+    footprint_not_spec = sorted(path for path in footprint if not any(_covers(entry, path) for entry in spec_paths))
+    spec_not_footprint = sorted(entry for entry in spec_paths if not any(_covers(entry, path) for path in footprint))
     symmetric_difference_count = len(footprint_not_spec) + len(spec_not_footprint)
     if not footprint and not spec_paths:
         state = CURRENCY_VACUOUS
@@ -3367,7 +3381,11 @@ def _glob_stem(container: str) -> str:
 def _contains(container: str, contained: str) -> bool:
     """Whether ``container`` contains ``contained`` under the stated rule.
 
-    A ``recursive_glob`` entry (path ending in ``**``) contains another
+    Mirror of the shared containment rule hosted in
+    ``plan-retrospective/_footprint_resolver.py`` (``declaration_contains``):
+    kept as a local mirror because the orchestrator skill cannot import across
+    bundle boundaries. The two bodies grade identically by construction — a
+    ``recursive_glob`` entry (path ending in ``**``) contains another
     entry's normalized path when that path equals the glob stem or starts
     with ``stem + '/'``. A ``directory`` entry (path ending in ``'/'``)
     contains another entry when that entry equals the directory or starts

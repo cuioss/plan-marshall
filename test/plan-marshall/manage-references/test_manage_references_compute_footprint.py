@@ -49,9 +49,13 @@ from _resolve_project_dir_fixtures import (
     patch_query_worktree_path,
 )
 
-from conftest import get_script_path, run_script
+from conftest import get_script_path, load_script_module, run_script
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-references', 'manage-references.py')
+
+_core = load_script_module('plan-marshall', 'manage-references', '_references_core.py', '_refs_core_footprint_upstream')
+
+_twin = load_script_module('plan-marshall', 'plan-retrospective', '_footprint_resolver.py', '_footprint_resolver_twin')
 
 FOOTPRINT_PLAN_ID = 'compute-footprint-plan'
 
@@ -493,6 +497,194 @@ def test_resolve_project_dir_rejects_caller_supplying_both_routing_sources():
 
     with pytest.raises(MutuallyExclusiveArgsError):
         resolve_project_dir(CANONICAL_PLAN_ID, '/tmp/explicit', default=None)
+
+
+def test_upstream_base_prefers_origin_main_when_resolvable(tmp_path):
+    """resolve_base_ref prefers origin/main when it resolves in the worktree."""
+    repo = tmp_path / 'worktree'
+    _init_repo(repo)
+    sha = _commit(repo, 'base', {'base.txt': 'base\n'})
+    _git(repo, 'update-ref', 'refs/remotes/origin/main', sha)
+    resolved = _core.resolve_base_ref(None, {'base_branch': 'main'}, repo)
+    assert resolved == 'origin/main'
+
+
+def test_upstream_base_prefers_origin_develop_for_non_main_branch(tmp_path):
+    """A non-main base_branch verifies origin/{base_branch}, not hardcoded origin/main."""
+    repo = tmp_path / 'worktree'
+    _init_repo(repo)
+    _commit(repo, 'base', {'base.txt': 'base\n'})
+    _git(repo, 'checkout', '-b', 'develop')
+    sha = _commit(repo, 'develop base', {'dev.txt': 'dev\n'})
+    _git(repo, 'update-ref', 'refs/remotes/origin/develop', sha)
+    # An unrelated origin/main must not shadow the configured base branch.
+    _git(repo, 'update-ref', 'refs/remotes/origin/main', sha)
+    resolved = _core.resolve_base_ref(None, {'base_branch': 'develop'}, repo)
+    assert resolved == 'origin/develop'
+
+
+def test_upstream_base_ignores_local_origin_branch_shadow(tmp_path):
+    """A local refs/heads/origin/main must not satisfy the upstream verification."""
+    repo = tmp_path / 'worktree'
+    _init_repo(repo)
+    _commit(repo, 'base', {'base.txt': 'base\n'})
+    _git(repo, 'branch', 'origin/main')
+    resolved = _core.resolve_base_ref(None, {'base_branch': 'main'}, repo)
+    assert resolved == 'main'
+
+
+def test_upstream_base_falls_back_when_origin_main_absent(tmp_path):
+    """Without origin/main the resolver falls back diagnosably to base_branch."""
+    repo = tmp_path / 'worktree'
+    _init_repo(repo)
+    _commit(repo, 'base', {'base.txt': 'base\n'})
+    resolved = _core.resolve_base_ref(None, {'base_branch': 'main'}, repo)
+    assert resolved == 'main'
+
+
+def test_compute_footprint_reports_upstream_base_ref(tmp_path):
+    """compute-footprint threads the verified upstream base and reports it."""
+    repo = tmp_path / 'worktree'
+    _build_absorb_scenario(repo)
+    main_sha = _git(repo, 'rev-parse', 'main').strip()
+    _git(repo, 'update-ref', 'refs/remotes/origin/main', main_sha)
+    base_dir = tmp_path / 'plan-base'
+    _write_references(base_dir, FOOTPRINT_PLAN_ID, {'base_branch': 'main'})
+    result = _run_footprint(base_dir, FOOTPRINT_PLAN_ID, repo)
+    data = result.toon()
+    assert data['status'] == 'success'
+    assert data['base_ref'] == 'origin/main'
+    assert data['base_ref_source'] == 'upstream'
+    assert data['files'] == ['plan_change.py']
+
+
+def test_compute_footprint_reports_upstream_for_non_main_branch(tmp_path):
+    """A non-main base_branch anchors at origin/{base_branch} with upstream source."""
+    repo = tmp_path / 'worktree'
+    _init_repo(repo)
+    _commit(repo, 'base', {'base.txt': 'base\n'})
+    _git(repo, 'checkout', '-b', 'develop')
+    dev_sha = _commit(repo, 'develop base', {'dev.txt': 'dev\n'})
+    _git(repo, 'update-ref', 'refs/remotes/origin/develop', dev_sha)
+    _git(repo, 'checkout', '-b', 'feature')
+    _commit(repo, 'plan change', {'plan_change.py': 'print("plan")\n'})
+    base_dir = tmp_path / 'plan-base'
+    _write_references(base_dir, FOOTPRINT_PLAN_ID, {'base_branch': 'develop'})
+    result = _run_footprint(base_dir, FOOTPRINT_PLAN_ID, repo)
+    data = result.toon()
+    assert data['status'] == 'success'
+    assert data['base_ref'] == 'origin/develop'
+    assert data['base_ref_source'] == 'upstream'
+    assert data['files'] == ['plan_change.py']
+
+
+def test_compute_footprint_local_main_divergence_uses_upstream(tmp_path):
+    """A file only on local main is invisible when the diff anchors at origin/main."""
+    repo = tmp_path / 'worktree'
+    _init_repo(repo)
+    base_sha = _commit(repo, 'base', {'base.txt': 'base\n'})
+    _git(repo, 'update-ref', 'refs/remotes/origin/main', base_sha)
+    _git(repo, 'checkout', '-b', 'feature')
+    _commit(repo, 'plan change', {'plan_change.py': 'print("plan")\n'})
+    _git(repo, 'checkout', 'main')
+    _commit(repo, 'local only', {'local_only.py': 'print("local")\n'})
+    _git(repo, 'checkout', 'feature')
+    base_dir = tmp_path / 'plan-base'
+    _write_references(base_dir, FOOTPRINT_PLAN_ID, {'base_branch': 'main'})
+    result = _run_footprint(base_dir, FOOTPRINT_PLAN_ID, repo)
+    data = result.toon()
+    assert data['status'] == 'success'
+    assert data['base_ref'] == 'origin/main'
+    assert data['files'] == ['plan_change.py']
+    assert 'local_only.py' not in data['files']
+
+
+def test_compute_footprint_unresolvable_explicit_base_fails_loud(tmp_path):
+    """An explicit unresolvable --base-ref fails loud with a git_error."""
+    repo = tmp_path / 'worktree'
+    _build_absorb_scenario(repo)
+    base_dir = tmp_path / 'plan-base'
+    _write_references(base_dir, FOOTPRINT_PLAN_ID, {'base_branch': 'main'})
+    result = _run_footprint(base_dir, FOOTPRINT_PLAN_ID, repo, '--base-ref', 'no-such-ref-xyz')
+    assert result.returncode == 0
+    data = result.toon()
+    assert data['status'] == 'error'
+    assert data['error'] == 'git_error'
+    assert data['base_ref'] == 'no-such-ref-xyz'
+
+
+# =============================================================================
+# Twin-pair containment comparisons (shared rule)
+# =============================================================================
+
+
+def test_declared_vs_realized_directory_claim_covers_realized_files():
+    """A declared directory covers the realized files beneath it."""
+    # Arrange
+    declared = {'test/'}
+    realized = {'test/a.py', 'test/b.py'}
+
+    # Act
+    compared = _twin.symmetric_difference_with_containment(declared, realized)
+
+    # Assert
+    assert compared['symmetric_difference_count'] == 0
+    assert compared['declared_not_realized'] == []
+    assert compared['realized_not_declared'] == []
+
+
+def test_declared_vs_realized_disjoint_equal_sized_sets_fully_disagree():
+    """Two equal-sized but disjoint sets score fully disagreeing."""
+    # Arrange
+    declared = {'a.py', 'b.py'}
+    realized = {'c.py', 'd.py'}
+
+    # Act
+    compared = _twin.symmetric_difference_with_containment(declared, realized)
+
+    # Assert
+    assert compared['declared_not_realized_count'] == 2
+    assert compared['realized_not_declared_count'] == 2
+    assert compared['symmetric_difference_count'] == 4
+
+
+def test_declared_vs_declared_directory_claim_covers_sibling_declaration():
+    """A directory on one declared side covers a file on the other."""
+    # Arrange
+    left = {'src/'}
+    right = {'src/a.py'}
+
+    # Act
+    compared = _twin.symmetric_difference_with_containment(left, right)
+
+    # Assert
+    assert compared['symmetric_difference_count'] == 0
+
+
+def test_declared_vs_declared_disjoint_equal_sized_sets_fully_disagree():
+    """Two declared sides with no overlap score fully disagreeing."""
+    # Arrange
+    left = {'a.py', 'b.py'}
+    right = {'c.py', 'd.py'}
+
+    # Act
+    compared = _twin.symmetric_difference_with_containment(left, right)
+
+    # Assert
+    assert compared['symmetric_difference_count'] == 4
+
+
+def test_containment_requires_the_slash_boundary():
+    """A bare prefix without a slash boundary covers nothing."""
+    # Arrange
+    declared = {'test'}
+    realized = {'test-data/a.py'}
+
+    # Act
+    compared = _twin.symmetric_difference_with_containment(declared, realized)
+
+    # Assert
+    assert compared['symmetric_difference_count'] == 2
 
 
 _ = patch  # Silence unused-import warning; future tests may need it.

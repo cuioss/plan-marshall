@@ -35,6 +35,7 @@ Usage:
 import argparse
 import subprocess
 import textwrap
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -50,6 +51,7 @@ from _self_review_detectors import (
     _detect_discard_without_report,
     _detect_duplicate_claimable_keys,
     _detect_flag_guard_pairs,
+    _detect_hoisted_binding_shadows,
     _detect_keep_markers,
     _detect_markdown_sections,
     _detect_ordinal_references,
@@ -77,6 +79,8 @@ from _self_review_diff import (
     _run_git,
     _truncate,  # noqa: F401 - re-exported for stable import surface
     _verify_base_branch,
+    is_behind_upstream,
+    resolve_upstream_base,
 )
 from _self_review_patterns import (
     CANDIDATE_FAMILIES,
@@ -186,6 +190,9 @@ def _compose_candidate_output(detected: dict[str, list]) -> dict[str, Any]:
     would emit a key with no payload; a detector result with no registry entry
     would be silently dropped from BOTH the payload and the count — the same
     mirror-drift this registry exists to remove. Either direction raises.
+    The emitted vocabulary is therefore closed: unregistered sub-lists are
+    refused here, never carried through — see
+    ext-point-self-review-surfacing.md § Required Candidate Sub-Lists.
 
     Which lists feed ``total`` is the registry's ``in_total`` field; the rationale
     is owned by
@@ -306,7 +313,16 @@ def _cmd_surface(args: argparse.Namespace) -> int:
         )
         return 1
 
-    modified_files = _resolve_footprint(project_dir, base_branch)
+    anchor, anchor_source = resolve_upstream_base(project_dir, base_branch)
+    if is_behind_upstream(project_dir, base_branch, anchor):
+        output_toon_error(
+            'behind_upstream',
+            f'local base {base_branch!r} sits behind {anchor!r} — refusing to surface '
+            'a stale scope; advance the local base past upstream first',
+        )
+        return 1
+
+    modified_files = _resolve_footprint(project_dir, anchor)
 
     # The allow-set is tri-state on purpose. ``None`` means "do not filter" (the
     # footprint was unresolvable), while an EMPTY set means "filter to nothing" —
@@ -329,7 +345,7 @@ def _cmd_surface(args: argparse.Namespace) -> int:
         allow_set = delta if allow_set is None else (allow_set & delta)
         modified_files = sorted(allow_set)
 
-    diff_text = _diff_hunks(project_dir, base_branch)
+    diff_text = _diff_hunks(project_dir, anchor)
     added = _iter_added_lines(diff_text)
 
     if allow_set is not None:
@@ -360,31 +376,39 @@ def _cmd_surface(args: argparse.Namespace) -> int:
     worked_example_pairs = _detect_worked_example_pairs(added, project_dir)
     duplicate_claimable_keys = _detect_duplicate_claimable_keys(added, project_dir)
     discard_without_report = _detect_discard_without_report(added, project_dir)
+    hoisted_binding_shadows = _detect_hoisted_binding_shadows(added, project_dir)
 
-    detected: dict[str, list] = {
-        'regexes': regexes,
-        'user_facing_strings': user_facing,
-        'markdown_sections': md_sections,
-        'symmetric_pairs': sym_pairs,
-        'flag_guard_pairs': flag_guard_pairs,
-        'contract_sources': contract_sources,
-        'schema_bearing_files': schema_bearing,
-        'keep_markers': keep_markers,
-        'protected_identifiers': protected_identifiers,
-        'producer_consumer': producer_consumer,
-        'source_of_truth': source_of_truth,
-        'same_document_consistency': same_document,
-        'description_vs_body': description_vs_body,
-        'unguarded_boundaries': unguarded_boundaries,
-        'count_prose': count_prose,
-        'touched_claims': touched_claims,
-        'advertised_form_help_strings': advertised_form_help_strings,
-        'ordinal_references': ordinal_references,
-        'scan_derived_keys': scan_derived_keys,
-        'worked_example_pairs': worked_example_pairs,
-        'duplicate_claimable_keys': duplicate_claimable_keys,
-        'discard_without_report': discard_without_report,
+    # Detector bindings keyed by registry key. ``detected`` below is built by
+    # iterating ``CANDIDATE_LISTS``, so a registry entry without a binding
+    # raises ``KeyError`` here instead of drifting silently into the
+    # ``_compose_candidate_output`` registry-drift error.
+    bindings: dict[str, Callable[[], list]] = {
+        'regexes': lambda: regexes,
+        'user_facing_strings': lambda: user_facing,
+        'markdown_sections': lambda: md_sections,
+        'symmetric_pairs': lambda: sym_pairs,
+        'flag_guard_pairs': lambda: flag_guard_pairs,
+        'contract_sources': lambda: contract_sources,
+        'schema_bearing_files': lambda: schema_bearing,
+        'keep_markers': lambda: keep_markers,
+        'protected_identifiers': lambda: protected_identifiers,
+        'producer_consumer': lambda: producer_consumer,
+        'source_of_truth': lambda: source_of_truth,
+        'same_document_consistency': lambda: same_document,
+        'description_vs_body': lambda: description_vs_body,
+        'unguarded_boundaries': lambda: unguarded_boundaries,
+        'count_prose': lambda: count_prose,
+        'touched_claims': lambda: touched_claims,
+        'advertised_form_help_strings': lambda: advertised_form_help_strings,
+        'ordinal_references': lambda: ordinal_references,
+        'scan_derived_keys': lambda: scan_derived_keys,
+        'worked_example_pairs': lambda: worked_example_pairs,
+        'duplicate_claimable_keys': lambda: duplicate_claimable_keys,
+        'discard_without_report': lambda: discard_without_report,
+        'hoisted_binding_shadows': lambda: hoisted_binding_shadows,
     }
+
+    detected: dict[str, list] = {spec.key: bindings[spec.key]() for spec in CANDIDATE_LISTS}
 
     surface_scope = 'delta' if since_ref is not None else 'full'
     files_in_scope = len(modified_files)
@@ -392,7 +416,8 @@ def _cmd_surface(args: argparse.Namespace) -> int:
         'status': 'success',
         'plan_id': plan_id,
         'project_dir': str(project_dir),
-        'base_branch': base_branch,
+        'base_branch': anchor,
+        'base_ref_source': anchor_source,
         'since_ref': since_ref or '',
         'surface_scope': surface_scope,
         'files_in_scope': files_in_scope,
