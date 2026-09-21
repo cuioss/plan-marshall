@@ -84,10 +84,10 @@
       "landing": ""
     }
   ],
-  "resume_anchor": "PLAN-04 shipped as PR #1556 (ed90328), reconciled post-migration 2026-09-21; slots open (N=2, R=0); emitted PLAN-08 awaits operator-confirmed launch; PLAN-05/06 sequenced behind live plan-07-footprint-surface; inbox drain still owed.",
+  "resume_anchor": "Drain complete 2026-09-21 (76/76, queue EMPTY); 11 lessons promoted, 8 Open Defects added; slots open (N=2, R=0); emitted PLAN-08 awaits operator-confirmed launch; PLAN-05/06 sequenced behind live plan-07-footprint-surface.",
   "metadata": {
     "parallelization_scope": "2"
   },
   "created": "2026-09-17T19:36:11Z",
-  "updated": "2026-09-21T10:20:54Z"
+  "updated": "2026-09-21T11:52:43Z"
 }

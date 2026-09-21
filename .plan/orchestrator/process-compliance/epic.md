@@ -35,9 +35,9 @@ with every remaining gap a logged, visible exemption rather than a silent slip.
      outside the markers — never inside them. -->
 
 <!-- BEGIN GENERATED: resume-summary -->
-**Resume anchor**: PLAN-04 shipped as PR #1556 (ed90328), reconciled post-migration 2026-09-21; slots open (N=2, R=0); emitted PLAN-08 awaits operator-confirmed launch; PLAN-05/06 sequenced behind live plan-07-footprint-surface; inbox drain still owed.
+**Resume anchor**: Drain complete 2026-09-21 (76/76, queue EMPTY); 11 lessons promoted, 8 Open Defects added; slots open (N=2, R=0); emitted PLAN-08 awaits operator-confirmed launch; PLAN-05/06 sequenced behind live plan-07-footprint-surface.
 **Phase**: orchestrating
-**Inbox (derived)**: 76 queued, 10 archived
+**Inbox (derived)**: 0 queued, 86 archived
 **Queue** (staged, in order):
 1. PLAN-05 (WS-05)
 2. PLAN-06 (WS-05)
@@ -277,14 +277,41 @@ recipe-fix-argparse-rejection remediation carrier.
   argparse subcommand of every executor-mapped script resolves through the
   generated executor, or document regeneration as a required verb-adding step. No
   owning spec; candidate future staging.
+- **Mailbox probe vs detect divergence (drain 2026-09-21, two instances,
+  unowned).** `plan-07-opencode-repairs-001` item 4 and
+  `plan-09-outline-sweep-002` independently report the transition mailbox
+  checkpoint answering `not_orchestrated` for a valid orchestrator spec
+  pointer while `inbox detect --source-id` on the same value returns
+  `orchestrated: true`. Mailbox linkage for affected plans stays unresolved.
+  Candidate future staging.
+- **Inbox has no queued-body read verb (drain 2026-09-21,
+  `plan-140-slice-060-b0-001`/`-002`, unowned).** `inbox list`/`validate`
+  return headers only, `inbox read` serves only the delivered mailbox, and
+  `manage-files` cannot reach the outbox store — so a plan that must ground
+  work in a queued sibling message has no compliant read path (resolved once
+  by one-time operator override). Request: `inbox show --slug S --message M`
+  or a documented alternative. Candidate future staging; load-bearing for
+  any outbox-reader workflow.
 - **Light-lane 2-refine adoption follow-up (paste 2026-09-18,
   `phase-gates-001` item 2, unowned while PLAN-01 flies).** Light-lane
   `planning.md` closes 2-refine via transition with no refine artifact, which the
   new gate refuses as `refine_bare_transition` — the caller must adopt
   `--allow-bare-transition --bare-reason` or produce a clarified record, and no
   change was made (outside PLAN-01's surface). Blocked on PLAN-01 landing; then
-  either a docs-adoption pass or a staged follow-up. PLAN-01's spec is not
-  re-scoped mid-flight.
+   either a docs-adoption pass or a staged follow-up. PLAN-01's spec is not
+   re-scoped mid-flight. Recurrence (drain 2026-09-21,
+   `ledger-joins-001`/`ledger-joins-002`): the first foreign plan to meet the
+   shipped gate hit exactly this — bare-transition refusal on an artifact-free
+   light-lane close, then `pr_title_missing` on the paired capture — and
+   continued under explicit exemption + script-contracted override. PLAN-01
+   landed, so this defect is now unblocked; still no owning spec. Recurrence
+   (drain 2026-09-21, `plan-09-outline-sweep-004`): third independent
+   instance — provisional pr_title + bare-transition exemption performed
+   manually; request is to document the light-lane closure as a sanctioned
+   path. Recurrence (same drain, `test-fidelity-rules-follow-up-004`):
+   fourth instance — light-lane entry with missing outline on an
+   8-deliverable scope; operator chose deep lane. Scope-guard signal
+   requested.
 
 ## Watches
 
@@ -334,10 +361,139 @@ recipe-fix-argparse-rejection remediation carrier.
   work). Remaining work (caller wiring, audit, finalize PR) belongs to the
   running plan — tracked here, staged nowhere; PR opens on operator word.
   (Retired 2026-09-19 by PLAN-02 landing PR #1547 — gaps closed in-run.)
+- **Drain 2026-09-21, ledger-joins + phase-gates groups.** ledger-joins-001/002:
+  folded as recurrence evidence into the light-lane Open Defect above (plus
+  marshal-stale advisory and pre-existing uv.lock dirt, no action).
+  phase-gates-002 (PLAN-01 authored on main mid-refine, 3rd §C instance):
+  observed — remediated in-run (reverted, re-applied in worktree), shipped.
+  phase-gates-003 (contradictory .plan access rules): observed — orchestrator-spec
+  half resolved by shipped `corpus read` (PR #1542); plan-scoped refine/outline
+  direct-Edit mandate vs scripts-only letter remains a documented tension.
+  phase-gates-004: observed — queue back-pointer + anchor staleness fixed
+  in-session; open recommendations: stamp `plan_marshall_plan_id` at `next`
+  emit time, re-derive anchor on unplanned-main-mutation detection, and make
+  re-issued hand-offs resume on `source_id` match (all unowned, candidate
+  future staging).
+- **Drain 2026-09-21, compliant-paths group (PLAN-03 shipped).** 001
+  precedence-gap 6th instance: observed — gap since closed by PR #1542, counted
+  as recurrence evidence. 002 domain-detect `--request-text` drift: discarded —
+  refuted at HEAD (phase-1-init SKILL.md:307/:764 now routes domain-detect via
+  `--plan-id`). 003 implementation outcome: reconciled — superseded by the
+  2026-09-20 paste landing (settlements applied via set-verdict). 004
+  main-checkout violation + 005 recovery: observed — self-reported, recovered
+  in-run (late Step 2.5), shipped. 006 CI-timeout accept pattern: promoted to
+  corpus `2026-09-21-11-001`. 007 landing (complete): reconciled — facts
+  already reconciled via paste, `cleanup_owed=false`, no new surface.
 - **PLAN-02 self-reported process deviations (paste 2026-09-19, absorbed).**
   Direct `.plan/` Read at opening, fast-tracked refine/outline/plan (hand-set
   confidence/scope/skills, skipped loops and Q-gates), focused pytest outside
   the resolved envelope. Pattern recurrence of epic §C–E material, now with a
   first-party admission attached. Formal record lives in inbox
   `plan-02-worktree-discipline-001.md` (live/queued, kind: landing) for the
-  owed drain; no duplicate defect opened.
+   owed drain; no duplicate defect opened.
+- **Drain 2026-09-21, phase-gates lessons + landing (PLAN-01 shipped).** 005
+  is_file masquerade: promoted to corpus `2026-09-21-11-002`. 006 argparse
+  cluster: discarded — class shipped via PR #1507 + recipe carrier. 007 bare
+  bot names: promoted to corpus `2026-09-21-11-003`. 008 preserve-then-move:
+  promoted to corpus `2026-09-21-11-004`. 009 barrier-ask-override precedent:
+  promoted to corpus `2026-09-21-11-005`. 010 CI-timeout suppression: folded
+  as recurrence into `2026-09-21-11-001`. 011 spend-cap suppression: promoted
+  to corpus `2026-09-21-11-006`. 012 landing (complete): reconciled — facts
+  already reconciled via paste, no new surface.
+- **Drain 2026-09-21, plan-02 group (PLAN-02 shipped as #1547).** 001–005
+  progress landings + 014 (complete) + 015 (narrative-only: all 9 fact keys
+  missing, facts covered by 014 + paste): reconciled — sequential run history
+  superseded by the paste landing, no new facts. 006 + 009 (same ci --plan-id
+  rejection): 009 promoted to corpus `2026-09-21-11-007`, 006 folded into it.
+  008 authoritative-read/atomic-persist: promoted to corpus
+  `2026-09-21-11-008`. 010 transition exit-1: promoted to corpus
+  `2026-09-21-11-009` (thin evidence noted). 007/011/012/013 (verbatim/--help
+  paraphrase class): discarded — covered by `2026-09-19-09-003` retry rule +
+  shipped recipe carrier.
+- **phase_steps_complete parser scope + post-archive read (drain 2026-09-21,
+  `plan-09-outline-sweep-005`, unowned Open Defect).** The required-steps
+  parser keys on `- ` lines outside the `## Steps` section (contract prose
+  leaks into the required set) and a post-archive capture resolves a status
+  copy without step records, reporting a misleading incomplete verdict after
+  `archive` already certified `phase_closure: complete`. Request: confine the
+  parser to `## Steps`; resolve post-archive reads against the archived
+  record or refuse with a distinct `plan_archived` code. Candidate future
+  staging.
+- **Drain 2026-09-21, plan-09 + plan-140 groups (foreign senders).**
+  plan-09-outline-sweep-001 (no `--content-file` on recipe-match/
+  aspect-classify): observed — new forced-violation instance, candidate
+  follow-up (a PLAN-03-class sequel spec). -002 mailbox probe: folded into
+  the probe-divergence defect above. -003 pre-existing-dirt assertion: folded
+  with plan-07 item 3 as sibling-attribution evidence (assertion cannot
+  attribute under concurrent plans). -004 light-lane closure: folded into the
+  light-lane defect (third instance). plan-140-slice-060-b0-001/002 (no
+  queued-body read verb): 001 opened the defect above, 002 recorded as the
+  one-time-override resolution evidence.
+- **Drain 2026-09-21, plan-07 groups (PLAN-07 shipped as #1554).** 001 (7
+  sub-issues): observed — advisory/friction items no-action; sibling-drift
+  attribution gap, mailbox probe divergence, and Expected-Surface
+  under-declaration (merge-auth files) recorded as watch-level instances.
+  002 session-identity block: reconciled — superseded (finalize ran under
+  operator override, plan shipped). 003/004/005 Q-gate assessments: 003
+  promoted to corpus `2026-09-21-11-010`, 004+005 folded as recurrences. 006
+  decline-off-intent triage: promoted to corpus `2026-09-21-11-011`. 007
+  retrospective fragments: promoted to corpus `2026-09-21-11-012`. 008
+  landing (complete): reconciled — pr=#1553 vs stamped #1554 discrepancy
+  already handled in paste; no new facts.
+- **Drain 2026-09-21, plan-07-footprint-surface-001 (foreign sender).**
+  Observed — quality-aspect plan's direct-read-at-init, remediated in-run, no
+  spec change requested. Noted: this sender is the live plan overlapping
+  PLAN-05/06 surfaces.
+- **Drain 2026-09-21, plan-04 group (PLAN-04 shipped as #1556).** 001
+  implementation report + 002 gap-closure + 003 landing (all narrative, no
+  fact blocks): reconciled — sequential run history superseded by the paste
+   landing; settlements already applied via set-verdict; process issues already
+   absorbed in the mid-flight watch. No new facts.
+- **Move-to-worktree gap: sanctioned move-in cannot take a pre-existing
+  branch (drain 2026-09-21, `test-fidelity-rules-004`/`-005`, unowned).**
+  `prepare_execute prepare` delegates to `worktree-create` (`git worktree add
+  -b`), which fails when the branch already exists; recovery was a manual
+  move (checkout, worktree add existing branch, plan-dir mv, executor regen)
+  plus manual move-back. Request: teach the verbs the existing-branch case or
+  document the manual move as sanctioned recovery. Candidate future staging.
+- **Installed skill copy lacks workflow docs (drain 2026-09-21,
+  `test-fidelity-rules-follow-up-002`, unowned).** The action router points at
+  `workflow/` documents absent from the installed copy, forcing a
+  marketplace-tree fallback read. Request: ship `workflow/` with the installed
+  copy or document the fallback as sanctioned. Candidate future staging.
+- **Empty handshake store fails silently (drain 2026-09-21,
+  `test-fidelity-rules-follow-up-003`, unowned).** Metrics stamp while the
+  handshake store is empty and `verify --strict` skips — independent ops, one
+  passing does not cover the other. Request: backfill-or-refuse rule plus a
+  loud failure at the stamping transition. Candidate future staging.
+- **Footprint base goes stale silently (drain 2026-09-21,
+  `test-fidelity-rules-follow-up-009`, unowned).** Footprint/surfacer resolve
+  local `main`, widening review scope with already-merged upstream files when
+  the local ref trails. Request: pin to merge-base or fail loudly; refresh the
+  base in `sync-baseline`. Candidate future staging.
+- **emit-landing writes narrative without facts block (drain 2026-09-21,
+  `test-quality-001`, unowned).** Two carve landings carried no
+  `landing-facts` block; the drain hand-recovered via `ci pr view` (third
+  occurrence class with PLAN-135/176). Request: require the block in the step
+  contract or gate on `landing-check` at file time. Candidate future staging.
+- **Drain 2026-09-21, test-fidelity + test-quality groups (foreign senders).**
+  test-fidelity-rules-001 (spec-read gap): reconciled — closed by shipped
+  `corpus read` (PR #1542), Nth instance counted. -002 (carve-1 note +
+  split-guard + shortcut): observed — test-quality business, no action here.
+  -003 (D9 basetemp staging): observed — routed info for test-quality. -004/005
+  (move-to-worktree): opened the defect above. -006 (uv.lock restore
+  letter-vs-spirit): observed — recurring-theme evidence for a future rule
+  refinement. follow-up-001 (invented --lines): discarded — paraphrase class
+  covered by `2026-09-19-09-003` + recipe carrier. -002/-003/-009: opened the
+  three defects above. -004 (light-lane missing outline): folded into the
+  light-lane defect (fourth instance). -005 (no inbox write verb): discarded —
+  refuted by later facts (`inbox write` is the sanctioned verb; this drain
+  used it 76 times). -006 (clean-tree override): observed — deviation
+  recorded, override-shape request noted. -007 (identity abort, correct
+  branch): observed — correct-behavior evidence for finalize-machinery. -008
+  (override dispatch): observed — one-plan override recorded. -010 (verbatim
+  forwarding): observed — forwarding-profile request noted. test-quality-001:
+  opened the emit-landing defect above. -002/-003 (PLAN-140 emission/spec):
+  observed — test-quality business. -004/-005/-006 (review-light +
+  skip-bot-review convention): observed — convention since adopted
+  (this epic's own #1562 used it).
