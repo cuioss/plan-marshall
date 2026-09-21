@@ -28,7 +28,8 @@ Arguments (write):
     --store    - Store name: 'plans' (default) or 'orchestrator'. Available on
                  the work and decision verbs only. With --store orchestrator,
                  --plan-id is REQUIRED (the epic slug) and the entry is written
-                 main-anchored under .plan/local/orchestrator/{slug}/logs/.
+                 under .plan/orchestrator/{slug}/logs/ — the git-ignored logs/
+                 subtree of the git-tracked epic store.
 
 Global / no-plan logging:
     Omitting --plan-id writes to .plan/logs/{work,decision,script-execution}-{date}.log.

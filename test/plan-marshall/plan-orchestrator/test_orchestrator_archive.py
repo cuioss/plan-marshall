@@ -13,6 +13,17 @@ isolation (via ``plan_context``):
   already-archived slug (``already_archived``); refuse when no epic exists
   (``not_found``); refuse to clobber (``archive_conflict``); reject an invalid
   slug.
+- The relocation MECHANISM, as a matched pair of ARMS. The corpus is
+  git-tracked, so a tracked tree must reach the index as a RENAME rather than
+  as a whole-tree deletion beside a whole-tree addition. Both arms are carried
+  because either alone passes over the other being broken: the git arm proves
+  the rename is staged, and the filesystem-fallback arm proves the move still
+  lands where ``git mv`` cannot act — in its two cases, no executable to launch
+  and a source it refuses because nothing tracks it. Each arm carries two
+  tests, four in all. Every OTHER test in this module runs under
+  ``PLAN_BASE_DIR`` isolation with no repository at the store root, so they
+  exercise the fallback incidentally; these four state the mechanism on
+  purpose.
 - Read-fallback: after archiving, ``orchestrator.py resume-summary`` and
   ``manage-status read --store orchestrator`` still resolve the epic from
   ``archived-orchestrators/``.
@@ -26,9 +37,11 @@ isolation (via ``plan_context``):
 import argparse
 import copy
 import json
+import subprocess
 from pathlib import Path
 from typing import Any
 
+import pytest
 from plan_logging import log_entry
 
 from conftest import get_script_path, load_script_module, parse_ns, run_script
@@ -144,6 +157,29 @@ def _seed_active_epic(plan_context, slug: str, phase: str = 'closed') -> Path:
     """Scaffold the active epic tree and write its status.json at ``phase``."""
     cmd_scaffold(_variant(_SCAFFOLD_ARGS, slug=slug))
     return _write_epic_status(_active_epic_dir(plan_context, slug), phase=phase)
+
+
+def _git(*args: str, cwd: Path) -> subprocess.CompletedProcess:
+    # Test-controlled fixture helper: every argument is a test literal, never
+    # externally-sourced input. 'git' is resolved via PATH on purpose so the
+    # fixture works on any CI runner without an absolute path pinned here. The
+    # identity flags keep the commit below independent of the runner's git
+    # configuration.
+    return subprocess.run(  # argv list, never a shell string; see the note above for the PATH decision
+        [
+            'git',
+            '-c',
+            'user.name=archive-test',
+            '-c',
+            'user.email=test@example.com',
+            *args,
+        ],
+        cwd=cwd,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
 
 
 # =============================================================================
@@ -374,3 +410,118 @@ class TestCli:
         assert result.returncode == 0
         assert 'error: not_closed' in result.stdout
         assert (_active_epic_dir(plan_context, 'cli-busy-epic') / 'status.json').is_file()
+
+
+# =============================================================================
+# Relocation mechanism — the git arm and its matched filesystem fallback
+# =============================================================================
+
+#: The slug the git arm commits. Named once so the fixture that tracks it and
+#: the assertions that read the index cannot drift onto different epics.
+_TRACKED_SLUG = 'tracked-epic'
+
+
+@pytest.fixture()
+def tracked_store(plan_context) -> Path:
+    """A real repository AT the fixture store root, with one epic committed.
+
+    The store root itself is initialised rather than some ancestor, because git
+    discovery finds the NEAREST repository: an epic under ``tmp_path`` would
+    otherwise resolve against whatever checkout pytest's basetemp happens to sit
+    in, and the assertions would read that index instead of the fixture's.
+    """
+    root = Path(plan_context.fixture_dir)
+    _git('init', '--initial-branch=main', cwd=root)
+    _seed_active_epic(plan_context, _TRACKED_SLUG, phase='closed')
+    _git('add', 'orchestrator', cwd=root)
+    _git('commit', '-m', 'seed the epic under version control', cwd=root)
+    return root
+
+
+class TestTrackedRelocationLandsAsARename:
+    """A tracked tree reaches the index as the relocation it actually is."""
+
+    def test_a_tracked_epic_tree_is_staged_as_a_rename(self, plan_context, tracked_store):
+        active = _active_epic_dir(plan_context, _TRACKED_SLUG)
+        archived = _archived_epic_dir(plan_context, _TRACKED_SLUG)
+
+        result = cmd_archive(_variant(_ARCHIVE_ARGS, slug=_TRACKED_SLUG))
+
+        # The observable contract is unchanged by the mechanism.
+        assert result['status'] == 'success'
+        assert result['already_archived'] is False
+        assert result['archived_to'] == str(archived)
+        assert not active.exists()
+        assert (archived / 'status.json').is_file()
+        # And the index carries the move as ONE rename, not as a deletion beside
+        # an addition of the same bytes.
+        staged = _git('diff', '--cached', '--name-status', '-M', cwd=tracked_store).stdout
+        renames = [row for row in staged.splitlines() if row.startswith('R')]
+        assert renames, f'nothing was staged as a rename; git recorded:\n{staged}'
+        assert any(
+            f'orchestrator/{_TRACKED_SLUG}/status.json' in row
+            and f'archived-orchestrators/{_TRACKED_SLUG}/status.json' in row
+            for row in renames
+        ), f'no rename maps the epic to its archived address; git recorded:\n{staged}'
+
+    def test_the_relocated_tree_is_not_left_untracked(self, plan_context, tracked_store):
+        # The discriminator against a filesystem move: that one leaves the new
+        # address untracked while the old paths read as deletions, so the rename
+        # assertion above is not the only thing a bypass would break.
+        cmd_archive(_variant(_ARCHIVE_ARGS, slug=_TRACKED_SLUG))
+
+        status = _git('status', '--porcelain', '--untracked-files=all', cwd=tracked_store).stdout
+
+        stray = [row for row in status.splitlines() if row.startswith('??') and _TRACKED_SLUG in row]
+        assert not stray, f'the relocated tree is untracked at its new address — git never saw the move: {stray}'
+
+
+class TestFilesystemFallbackStillRelocates:
+    """The matched negative: the move lands where ``git mv`` cannot act.
+
+    Two arms, because they reach different branches — an invocation that cannot
+    START (no executable to launch) and one that starts and REFUSES (a source
+    nothing tracks). Neither is a degraded outcome: git moved nothing in both,
+    so the fallback carries the whole relocation.
+    """
+
+    def test_the_move_lands_when_no_git_executable_is_available(self, plan_context, monkeypatch):
+        slug = 'no-git-epic'
+        _seed_active_epic(plan_context, slug, phase='closed')
+        real_run = subprocess.run
+
+        def _git_mv_unavailable(command, *args, **kwargs):
+            # Scoped to the relocation's OWN invocation so every other
+            # subprocess in the process still runs normally — a blanket raise
+            # would prove nothing about this branch.
+            if isinstance(command, list) and command[:1] == ['git'] and 'mv' in command:
+                raise FileNotFoundError(2, 'No such file or directory', 'git')
+            return real_run(command, *args, **kwargs)
+
+        monkeypatch.setattr(subprocess, 'run', _git_mv_unavailable)
+
+        result = cmd_archive(_variant(_ARCHIVE_ARGS, slug=slug))
+
+        assert result['status'] == 'success'
+        assert result['already_archived'] is False
+        assert not _active_epic_dir(plan_context, slug).exists()
+        assert (_archived_epic_dir(plan_context, slug) / 'status.json').is_file()
+
+    def test_the_move_lands_when_the_source_is_untracked(self, plan_context):
+        slug = 'untracked-epic'
+        root = Path(plan_context.fixture_dir)
+        _git('init', '--initial-branch=main', cwd=root)
+        # Deliberately NEVER committed: ``git mv`` refuses a source that is not
+        # under version control, which is exactly the shape of an epic tree
+        # created before the corpus became tracked state.
+        _seed_active_epic(plan_context, slug, phase='closed')
+
+        result = cmd_archive(_variant(_ARCHIVE_ARGS, slug=slug))
+
+        assert result['status'] == 'success'
+        assert not _active_epic_dir(plan_context, slug).exists()
+        assert (_archived_epic_dir(plan_context, slug) / 'status.json').is_file()
+        # Nothing reached the index, so this arm really did take the fallback
+        # rather than quietly succeeding through git.
+        staged = _git('diff', '--cached', '--name-status', cwd=root).stdout
+        assert staged.strip() == '', f'git staged {staged!r} for a tree it never tracked'

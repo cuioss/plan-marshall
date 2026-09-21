@@ -356,6 +356,13 @@ _PRE_FIX_MARKDOWN = (
 )
 
 #: The pre-fix ``doc/concepts/orchestration.adoc:31`` bullet, verbatim.
+#:
+#: The store address inside it is the RETIRED ``.plan/local/orchestrator/`` one on
+#: purpose: this string is a historical snapshot of a superseded document line, not
+#: a current-state statement about where the store lives, and re-anchoring it on the
+#: tracked address would make the "verbatim" claim above false. Nothing in the
+#: detector reads the path either — the bullet is flagged by its exclusive "only
+#: within" construction, so the address is inert to every assertion over it.
 _PRE_FIX_ASCIIDOC = (
     '* **Direct file access** — Read/Write/Edit only within its own '
     '`.plan/local/orchestrator/{slug}/` tree (the ledger documents are free-form authored '

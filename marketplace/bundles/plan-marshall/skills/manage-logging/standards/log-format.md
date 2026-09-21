@@ -208,7 +208,9 @@ Decision entries are written to a dedicated log file. They do NOT include a `[DE
 
 ## Orchestrator Logged Events
 
-**Files**: `.plan/local/orchestrator/{slug}/logs/work.log` and `.plan/local/orchestrator/{slug}/logs/decision.log` (written via `--store orchestrator` on the `work` / `decision` verbs; main-anchored, no global fallback).
+**Files**: `.plan/orchestrator/{slug}/logs/work.log` and `.plan/orchestrator/{slug}/logs/decision.log` (written via `--store orchestrator` on the `work` / `decision` verbs; no global fallback).
+
+**The epic tree is git-tracked; this `logs/` subtree is not.** `.gitignore` un-ignores `.plan/orchestrator/` and `.plan/archived-orchestrators/` and then re-ignores `*/logs/` beneath both, so an orchestrator log line stays machine-local while the ledger beside it is versioned with the repository. A consumer that reconciles across checkouts therefore reads the ledger, never these logs.
 
 Entries use the standard entry format and the standard two-segment `(bundle:skill)` caller shape. Exactly four event types are defined for the orchestrator store:
 
@@ -308,8 +310,8 @@ All plan-scoped logs are stored in the `logs/` subdirectory of the plan.
 | Log Type | Plan-Scoped | Global | Orchestrator (`--store orchestrator`) |
 |----------|-------------|--------|----------------------------------------|
 | Script Execution | `logs/script-execution.log` | `script-execution-YYYY-MM-DD.log` | — (not store-aware) |
-| Work | `logs/work.log` | `work-YYYY-MM-DD.log` | `.plan/local/orchestrator/{slug}/logs/work.log` |
-| Decision | `logs/decision.log` | `decision-YYYY-MM-DD.log` | `.plan/local/orchestrator/{slug}/logs/decision.log` |
+| Work | `logs/work.log` | `work-YYYY-MM-DD.log` | `.plan/orchestrator/{slug}/logs/work.log` |
+| Decision | `logs/decision.log` | `decision-YYYY-MM-DD.log` | `.plan/orchestrator/{slug}/logs/decision.log` |
 
 ---
 

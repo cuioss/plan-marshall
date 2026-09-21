@@ -151,7 +151,7 @@ def test_recorded_case_end_to_end_routes_light(plan_context):
     plan_dir = plan_context.plan_dir_for('pl-recorded-e2e')
     _write_orchestrator_request(
         plan_dir,
-        '.plan/local/orchestrator/y/plans/PLAN-03-y.md',
+        '.plan/orchestrator/y/plans/PLAN-03-y.md',
         'Update pkg/one.py, pkg/two.py, pkg/three.py and pkg/four.py. This is foundation work the rest builds on.',
     )
     _write_status(plan_dir, metadata={})
@@ -364,7 +364,7 @@ def test_post_bridge_motivating_vector_is_low_confidence():
     resolved side. Keying on the discriminators alone is what makes the flag fire.
     """
     result = evaluate_signals_pure(
-        plan_source='.plan/local/orchestrator/x/plans/PLAN-01-x.md',
+        plan_source='.plan/orchestrator/x/plans/PLAN-01-x.md',
         scope_estimate='single_module',
         change_type=None,
         compatibility=None,
@@ -501,7 +501,7 @@ def test_d3b_orchestrator_spec_resolves_plan_source_nonnull(plan_context):
     counts as resolved in the confidence split.
     """
     plan_dir = plan_context.plan_dir_for('pl-d3b')
-    spec_id = '.plan/local/orchestrator/some-slug/plans/PLAN-07-do-a-thing.md'
+    spec_id = '.plan/orchestrator/some-slug/plans/PLAN-07-do-a-thing.md'
     _write_orchestrator_request(plan_dir, spec_id, 'Implement the four targets in pkg/a.py.')
     _write_status(plan_dir, metadata={})
     _write_references(plan_dir, scope_estimate='single_module')
@@ -520,7 +520,7 @@ def test_metadata_plan_source_wins_over_the_bridge(plan_context):
     wins, even if ``request.md`` also carries a ``source_id``.
     """
     plan_dir = plan_context.plan_dir_for('pl-d3b-meta')
-    _write_orchestrator_request(plan_dir, '.plan/local/orchestrator/x/plans/PLAN-01-x.md', 'Implement pkg/a.py.')
+    _write_orchestrator_request(plan_dir, '.plan/orchestrator/x/plans/PLAN-01-x.md', 'Implement pkg/a.py.')
     _write_status(plan_dir, metadata={'plan_source': '2026-05-11-08-004'})
     _write_references(plan_dir, scope_estimate='single_module')
     _write_marshal(plan_context.fixture_dir)

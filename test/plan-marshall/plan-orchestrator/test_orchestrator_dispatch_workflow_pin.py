@@ -318,7 +318,7 @@ _FORBIDDEN_WRITE_TARGETS: tuple[str, ...] = (
     'manage-logging --store orchestrator',
     'orchestrator queue',
     'corpus set-verdict',
-    '.plan/local/orchestrator',
+    '.plan/orchestrator',
 )
 
 #: The affirmative half of a grant: a permission or an assertion that the leaf DOES
@@ -714,7 +714,7 @@ class TestDraftingDispatchWritePathContainment:
         # an omnibus doc is matched by whichever target the scan happens to
         # support.
         grants = {
-            'write-in-epic-tree': 'The leaf may call `Write` inside `.plan/local/orchestrator/{slug}/plans/`.',
+            'write-in-epic-tree': 'The leaf may call `Write` inside `.plan/orchestrator/{slug}/plans/`.',
             'status-store': 'The leaf writes the queue row itself via `manage-status` with the orchestrator store.',
             'queue': 'The leaf calls `orchestrator queue` to append the row once it has drafted the spec.',
             'verdict': 'The leaf invokes `corpus set-verdict` for each claim it settled.',
@@ -742,7 +742,7 @@ class TestDraftingDispatchWritePathContainment:
         grants = {
             'records': 'The leaf records each disposition through `manage-status` in the orchestrator store.',
             'appends': 'The leaf appends the drafted row via `orchestrator queue` once the mapping is settled.',
-            'authors': 'The leaf authors the landing record inside `.plan/local/orchestrator/{slug}/landings/`.',
+            'authors': 'The leaf authors the landing record inside `.plan/orchestrator/{slug}/landings/`.',
             'is-responsible-for-writing': (
                 'The leaf is responsible for writing each settled verdict with `corpus set-verdict`.'
             ),
@@ -767,10 +767,10 @@ class TestDraftingDispatchWritePathContainment:
         rule = tmp_path / 'prohibition.md'
         rule.write_text(
             'A drafting leaf MAY compose a spec draft; it MAY NOT call `Write`/`Edit` inside '
-            '`.plan/local/orchestrator/{slug}/**`, `manage-status` or `manage-logging --store '
+            '`.plan/orchestrator/{slug}/**`, `manage-status` or `manage-logging --store '
             'orchestrator`, `orchestrator queue`, or `corpus set-verdict`.\n\n'
             'No leaf dispatched by an orchestrator verb writes inside '
-            '`.plan/local/orchestrator/{slug}/**`.\n',
+            '`.plan/orchestrator/{slug}/**`.\n',
             encoding='utf-8',
         )
 

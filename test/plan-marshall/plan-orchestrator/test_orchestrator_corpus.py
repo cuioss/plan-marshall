@@ -499,7 +499,7 @@ def _archived_epic_dir(plan_context, slug: str) -> Path:
 
 def _pointer(spec_name: str, slug: str = SLUG, store: str = 'orchestrator') -> str:
     """Render the on-disk spec-pointer text a ``source_id`` or a spec carries."""
-    return f'.plan/local/{store}/{slug}/plans/{spec_name}'
+    return f'.plan/{store}/{slug}/plans/{spec_name}'
 
 
 def _surface(*paths: str) -> list:

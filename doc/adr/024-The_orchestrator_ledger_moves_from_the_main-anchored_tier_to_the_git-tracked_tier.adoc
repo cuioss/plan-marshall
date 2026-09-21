@@ -1,0 +1,250 @@
+= ADR-024: The orchestrator ledger moves from the main-anchored tier to the git-tracked tier
+:toc: left
+:toclevels: 2
+:sectnums:
+
+// adr-metadata
+// Progressive-disclosure metadata block (see manage-adr SKILL.md → "ADR Template
+// Structure"). Read by `manage-adr.py scan` so a caller can assess an ADR's
+// relevance without reading the full file. List fields are comma-separated.
+// summary: The orchestrator store leaves ADR-002's enumerated main-anchored set for the git-tracked, repo-local tier `marshal.json` already occupies, shrinking that enumeration from six corpora to five rather than adding a fourth anchoring tier; containment stays at the shared resolver per ADR-016, the epic tree becomes versioned content with only its `logs/` subtree still git-ignored, cross-session visibility becomes merge-time rather than immediate, and no compatibility shim or read-fallback to the retired address is provided because every existing tree is relocated in the same change.
+// tags: path-resolution, anchoring, main-anchored, git-tracked, orchestrator, ledger, durability, tier-removal, no-shim
+// affects: plan-marshall, script-shared, tools-file-ops, plan-orchestrator, manage-logging, manage-status
+// supersedes:
+// end-adr-metadata
+
+// Authoring discipline (see manage-adr SKILL.md → "Authoring Discipline"):
+// ADRs are durable architectural statements, not incident write-ups. No PR numbers,
+// commit SHAs, dates, or lesson IDs anywhere in the body. CLAUDE.md's "current state
+// only" rule applies — describe the architecture, not the chronology.
+
+== Status
+
+Proposed
+
+== Context
+
+Path anchoring in this codebase is settled by two records. ADR-002 makes resolution
+uniformly cwd-relative and carves out ONE per-repo exception: an explicitly
+enumerated set of shared corpora that resolve to the main checkout through
+`resolve_main_anchored_path`, whatever worktree the caller's cwd is pinned to.
+ADR-008 adds a third tier above both — the machine-global home root — for state
+that spans every checkout on the host rather than one repository.
+
+Every movement in that tier map so far has been an ADDITION. ADR-008 introduced a
+tier; the build-slot queue moved onto it. Nothing has ever left the enumerated
+main-anchored set, so the question this record settles has not been asked before:
+whether a corpus can be wrong for that tier on grounds other than being
+machine-wide.
+
+The orchestrator store is that corpus. It holds an epic's ledger — the machine
+`status.json`, the hand-authored `epic.md`, the staged plan specs under `plans/`,
+the landing records, and the plan-writable `inbox/` channel. Three properties of
+that content are in tension with where it currently resides:
+
+* **It is authored, not derived.** An operator reads and edits `epic.md`; a plan
+  is launched from a spec file another human wrote. Nothing regenerates it.
+* **It is durable and repo-scoped.** An epic outlives every plan it decomposes
+  into, and it describes work in exactly one repository.
+* **Main-anchoring makes it invisible to the repository.** `.plan/local/` is
+  git-ignored in full, so a main-anchored corpus exists only on the machine that
+  created it. A fresh clone has no epics. A session running against a fresh clone
+  has no epics. Losing the checkout loses the corpus, and nothing about that loss
+  is detectable from the repository.
+
+What main-anchoring actually buys the store is two properties: cross-session
+visibility, and a single authoritative copy. It buys them structurally, by there
+being exactly one tree that every worktree reaches sideways through the shared
+resolver.
+
+The choice point is therefore not "is this state shared?" — it plainly is — but
+which mechanism should supply the sharing. A git-tracked, repo-local address
+supplies both properties by a different mechanism: the repository versions the
+content, and reconciliation between checkouts is a merge rather than a shared
+inode. That tier is not hypothetical here. `marshal.json` already occupies it:
+project configuration lives at `.plan/marshal.json`, resolves cwd-relative like
+everything outside the carve-out, and is versioned by the repository.
+
+Containment is orthogonal to all of this. The epic slug is a caller-supplied
+identifier that a shared resolver turns into a filesystem path, and ADR-016
+already settles where that grammar check belongs. Moving the store changes which
+root the resolver joins onto; it does not change which component validates the
+join.
+
+== Decision
+
+**The orchestrator store resolves to a git-tracked, repo-local address.** An
+epic's active tree is `.plan/orchestrator/{slug}/` and its archived tree is
+`.plan/archived-orchestrators/{slug}/`, both resolved cwd-relative by the uniform
+rule ADR-002 states for everything outside its carve-out.
+
+=== (a) The enumeration shrinks; no tier is added
+
+This is the first REMOVAL from ADR-002's enumerated main-anchored set, and it is
+deliberately nothing more than that. The set goes from six corpora to five:
+`merge.lock`, `run-configuration.json`, `lessons-learned/`, `merge-queue.json`,
+and `plans/NO_PLAN/build-results/` remain, each still reached through
+`resolve_main_anchored_path`. The orchestrator store simply stops being a member
+and joins the tier `marshal.json` already uses.
+
+No fourth anchoring tier is introduced, no new resolver utility is written, and
+the shared main-anchored utility is untouched for its five surviving callers. The
+asymmetry with ADR-008 is the point: that record added a tier because
+build-session coordination spans hosts and no existing tier expressed that; this
+record adds nothing, because the tier the store belongs on is the default one it
+should never have been excepted from.
+
+Any per-repo cross-session state added in future still faces the same question,
+and ADR-002's rule stands unchanged: it routes through the shared utility, or it
+justifies why the tracked tier serves it better. What this record establishes is
+that the second answer exists.
+
+=== (b) Containment stays at the shared resolver
+
+`get_store_dir` remains the single place the slug becomes a path component, and
+the grammar check stays there, exactly as ADR-016 prescribes. Every caller is
+contained by construction because there is one join, not because each entry point
+re-checks. The per-entry-point validations that return a structured error envelope
+are retained above it for diagnosability, never as the containment mechanism.
+
+The root the resolver joins onto changes. Nothing about the checking does.
+
+=== (c) The tree is versioned; its logs are not
+
+The epic tree is content the repository carries: `status.json`, `epic.md`, the
+staged specs, the landing records, and the inbox messages are all reviewable in a
+diff and recoverable from any clone. The tree's `logs/` subtree is the exception
+and stays git-ignored — it is per-run machine output, high-volume and of no value
+to another checkout, so versioning it would impose merge cost on content nobody
+reads across checkouts.
+
+=== (d) No compatibility shim and no read-fallback
+
+The store is NOT given a read-fallback to the retired address, and no shim
+accommodates a tree left behind at it. The relocation of every existing epic tree
+is part of the same change that moves the address, so there is no window in which
+both addresses hold live trees and therefore no state for a fallback to read.
+
+This is the condition under which a fallback is genuinely unnecessary rather than
+merely unwritten. A fallback deferred to a follow-up change would have to exist,
+because the old address would hold real trees until that change landed; a
+fallback added anyway, against an address nothing writes and nothing holds, would
+be an unreachable read path — the speculative defensive branch the minimum-viable
+rule rejects, and a permanent claim in the code that the old address might still
+be live.
+
+== Consequences
+
+=== Positive
+
+* The epic corpus becomes durable. It clones, it survives the loss of any single
+  checkout, and a session working from a fresh clone sees the same ledger every
+  other session sees.
+* Ledger changes become reviewable. A staged spec, a queue transition and a
+  landing record arrive in a diff, so a corpus edit is inspectable by the same
+  mechanism every other repository change is.
+* ADR-002's carve-out gets smaller. The enumerated exception is the thing that
+  keeps a pervasive main-anchored resolution layer from re-forming, and every
+  member removed from it narrows the exception rather than widening it.
+* The store stops needing the cwd-independence machinery at all. Resolution is
+  the uniform rule, so the orchestrator surface has one fewer resolution mode to
+  reason about.
+
+=== Negative
+
+* **Cross-session visibility becomes merge-time rather than immediate.** This
+  amends the consequence ADR-002 records under _Concurrent-session visibility_.
+  Under the main-anchored tier every worktree reached ONE tree sideways, so a
+  write landed in the shared copy the instant it was made. Under the tracked tier
+  each checkout holds its OWN checked-out copy and reconciliation is a merge. A
+  message written into an epic's `inbox/` from a plan's worktree is therefore
+  visible to other checkouts when that branch merges, not when the message is
+  written.
+* The ledger participates in merge conflicts. Two checkouts that edit the same
+  epic document — `status.json`'s queue most plausibly — produce a conflict that
+  a human or a tool has to resolve, where the shared tree previously produced a
+  last-writer-wins sequence with no conflict and no record of one.
+* The epic tree enters every footprint derived from the worktree's diff. A plan
+  that writes a landing record or files an inbox message now shows those paths in
+  its own change surface, and any consumer of that footprint sees them.
+
+=== Risks
+
+* **A message filed late in a plan's life is delivered late.** The epic queue is
+  drained BETWEEN plans, so merge-time visibility is ordinarily early enough. What
+  it no longer supports is a same-instant cross-checkout handoff: a message a
+  running plan files for another running plan is not visible to that plan's
+  checkout until a merge carries it. Mitigation is structural rather than
+  additive — the channel already routes a message aimed at a RUNNING plan to that
+  plan's mailbox rather than the epic queue, and that mailbox is read at the
+  reader's own phase boundaries; what changes is the moment the mailbox write
+  becomes visible, which is the merge.
+* **Concurrent staging can conflict on one document.** Two sessions appending a
+  plan row to the same epic's `status.json` on different branches produce a
+  genuine content conflict. The existing in-lock append already keeps the two
+  from clobbering each other WITHIN one checkout; across checkouts the merge is
+  the reconciliation point, and a conflict there is a visible one rather than a
+  silent loss.
+* **The ledger is pushed to the remote.** Epic prose, plan specs and inbox
+  messages leave the machine. That is the whole point of the change, but it makes
+  the corpus subject to whatever disclosure rules the repository is under, where
+  a git-ignored tree was subject to none. An epic that must not be published has
+  no home in this tier, and needs its own answer rather than a carve-out here.
+* **A stale reference to the retired address is not caught by any gate.** ADR-007
+  records that cross-file stale references left by a source change are a real
+  class with no automated detector, and that any future detector derives its
+  inputs git-natively. The address appears in prose, in docstrings and in at least
+  two executing literals, so the sweep that retires it must be
+  population-derived — an enumeration over the inventory reporting its own
+  coverage per ADR-019 — rather than a spot check.
+
+== Alternatives Considered
+
+**Keep the store main-anchored and add an export/import path.** Leave the tier
+alone and give the orchestrator a verb that writes the ledger into the repository
+on demand and reads it back. Rejected because it produces two copies of authored
+content with no rule about which is authoritative, which is precisely the
+reconcile-or-merge problem ADR-002's move-based model exists to avoid. It also
+makes durability an action someone must remember to take, so the corpus is
+durable only as often as the export is run.
+
+**Move the store to the machine-global home-root tier.** Follow ADR-008 and put
+the ledger at `~/.plan-marshall/orchestrator/`. Rejected on the tier's own
+admission test: that tier is for state that spans every checkout ON THE HOST, and
+an epic describes work in exactly one repository. It would also make the
+durability problem worse rather than better — the corpus would still be invisible
+to the repository, and would additionally be shared across unrelated clones of
+different projects.
+
+**Ship a read-fallback to the old address anyway.** Resolve the tracked address
+first and fall back to the main-anchored one when no tree is found there, as
+cheap insurance. Rejected because the relocation is part of this same change, so
+the fallback reads an address nothing writes and nothing holds. An unreachable
+branch is not insurance: it is a permanent statement in the code that the old
+address may still be live, and every later reader has to re-establish that it is
+not.
+
+**Track only part of the epic tree.** Version the specs and the ledger documents
+but leave `status.json` — the most conflict-prone file — on the main-anchored
+tier. Rejected because it splits one epic across two tiers with two different
+visibility rules, so a queue transition and the spec it refers to become visible
+to another checkout at different moments. The conflict it avoids is also the one
+worth having: a contested queue edit is exactly the case where a silent
+last-writer-wins is worse than a conflict.
+
+The rejected options share a shape: each keeps the authored corpus outside the
+repository's own versioning and then reintroduces, by hand, one property the
+repository would have supplied — durability, a single authority, or a
+reconciliation point — while leaving the others unsupplied.
+
+== References
+
+* xref:002-Plan-scoped_operations_move_into_a_cwd-pinned_hermetic_worktree.adoc[ADR-002: Plan-scoped operations move into a cwd-pinned hermetic worktree] — the enumerated main-anchored set this record removes one member from, the uniform cwd-relative rule the store now follows, and the _Concurrent-session visibility_ consequence this record amends.
+* xref:008-Machine-global_home-root_anchor_tier.adoc[ADR-008: Machine-global home-root anchor tier] — the tier addition this record is deliberately not a repeat of, and the admission test that rules the home root out for a repo-scoped corpus.
+* xref:016-Containment_of_a_caller-supplied_identifier_belongs_at_the_shared_resolver_not_at_each_entry_point.adoc[ADR-016: Containment of a caller-supplied identifier belongs at the shared resolver, not at each entry point] — why moving the store's root changes nothing about where the slug is grammar-checked.
+* xref:019-An_audit_separates_what_it_could_not_evaluate_from_what_it_evaluated_and_found_wanting.adoc[ADR-019: An audit separates what it could not evaluate from what it evaluated and found wanting] — the reporting shape the old-address sweep owes, so a zero-occurrence result carries the coverage it was computed over.
+* xref:007-The_survivor-sweep_invariant_covers_cross-file_stale_references_after_a_source_deletion.adoc[ADR-007: The survivor-sweep invariant covers cross-file stale references after a source deletion] — the absent-detector constraint that makes the address sweep an explicit method rather than something a gate catches.
+* `marketplace/bundles/plan-marshall/skills/script-shared/scripts/marketplace_paths.py` — `resolve_main_anchored_path`, the shared utility whose caller set shrinks by one.
+* `marketplace/bundles/plan-marshall/skills/tools-file-ops/scripts/file_ops.py` — `get_store_dir`, the single join the store root is resolved through and the point ADR-016's containment sits at.
+* `marketplace/bundles/plan-marshall/skills/tools-script-executor/standards/cwd-policy.md` — the resident-set statement the enumeration shrink is reflected in.
+* `marketplace/bundles/plan-marshall/skills/plan-orchestrator/standards/inbox-envelope.md` — the channel whose delivery timing becomes merge-bound under the tracked tier.

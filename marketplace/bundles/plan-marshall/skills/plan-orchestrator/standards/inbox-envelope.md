@@ -5,11 +5,13 @@ The message format of the epic's inbox channel. An executing plan appends struct
 ## Storage location
 
 ```text
-.plan/local/orchestrator/{epic}/inbox/{sender_id}-{NNN}.md                          # queued
-.plan/local/orchestrator/{epic}/inbox/to/{plan_id}/{sender_id}-{NNN}.md             # delivered (per addressee)
-.plan/local/orchestrator/{epic}/inbox/to/{plan_id}/consumed/{sender_id}-{NNN}.md    # consumption claim token
-.plan/local/orchestrator/{epic}/inbox/archive/{sender_id}/{sender_id}-{NNN}.md      # retired (per-sender)
+.plan/orchestrator/{epic}/inbox/{sender_id}-{NNN}.md                          # queued
+.plan/orchestrator/{epic}/inbox/to/{plan_id}/{sender_id}-{NNN}.md             # delivered (per addressee)
+.plan/orchestrator/{epic}/inbox/to/{plan_id}/consumed/{sender_id}-{NNN}.md    # consumption claim token
+.plan/orchestrator/{epic}/inbox/archive/{sender_id}/{sender_id}-{NNN}.md      # retired (per-sender)
 ```
+
+**Timing is merge-bound, because the address sits on the git-tracked tier.** The epic tree is versioned with the repository, so a message filed from one checkout becomes readable at the same address in another only once the branch carrying it merges. A read therefore sees the messages merged into the checkout it runs in, and a message that has not merged yet is not missing from the address — it has not arrived at it. Nothing about the envelope, the validator, or the sequence allocator changes: the tier decides when a written message becomes visible elsewhere, never what is written.
 
 `inbox/` is created by `orchestrator scaffold` alongside `workstreams/`, `plans/`, `landings/`, and `logs/`. Messages are written ONLY by the `orchestrator inbox write` verb (see [`../SKILL.md`](../SKILL.md) § Canonical invocations), which derives the path from the validated epic slug, `--sender-id`, and — on the delivery route — the validated `--target-plan`, and accepts no caller-supplied output path. There is no argument value that reaches any other path in the epic tree.
 

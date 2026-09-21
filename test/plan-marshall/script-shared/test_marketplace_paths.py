@@ -10,6 +10,7 @@ cwd. These tests pin both PLAN_BASE_DIR and cwd and never contend for the real
 """
 
 import os
+import re
 import subprocess
 from pathlib import Path
 
@@ -908,3 +909,113 @@ class TestDetectTargetFromEnv:
         monkeypatch.setenv('ANTIGRAVITY_AGENT', '1')
         monkeypatch.delenv('CLAUDE_CODE_SESSION_ID', raising=False)
         assert marketplace_paths._read_runtime_target() == 'antigravity'
+
+
+# =============================================================================
+# The bounded main-anchored corpus set — stated in TWO docstrings
+# =============================================================================
+
+
+class TestMainAnchoredCorpusEnumeration:
+    """The bounded main-RESIDENT corpus set, derived from the docstrings themselves.
+
+    ``marketplace_paths`` states the bounded set TWICE — once in the module
+    docstring and once in ``resolve_main_anchored_path``'s. Two enumerations
+    that can drift independently are the defect this class exists to catch, so
+    the set is DERIVED by parsing it out of the prose, and the two derivations
+    are compared against each other. Deriving is what makes a future
+    re-addition of ``orchestrator`` fail: a hard-coded count alone would pass
+    against any five names.
+
+    The derived set is ADDITIONALLY pinned against a transcribed expected set
+    (:data:`EXPECTED_CORPORA`, with :data:`RETIRED_CORPUS` as its named
+    exclusion). Both are carried because they catch different defects, and the
+    transcribed literal is the STRONGER of the two: derivation plus a
+    cardinality-and-no-``orchestrator`` check still passes when some OTHER name
+    is silently swapped in, and a swap is a different defect from a
+    re-addition. The transcribed set closes that hole; the derivation keeps the
+    two prose enumerations honest against each other.
+    """
+
+    #: The corpus the orchestrator store used to occupy. It now resolves on the
+    #: git-tracked, cwd-relative config tier
+    #: (``file_ops.get_tracked_config_dir``), so it must never reappear in
+    #: either enumeration.
+    RETIRED_CORPUS = 'orchestrator'
+
+    #: The bounded set as it stands, pinned as a SET rather than as a count.
+    #: Cardinality plus a no-orchestrator check still passes when some OTHER
+    #: name is silently swapped in, and a swap is a different defect from a
+    #: re-addition — this closes that hole.
+    EXPECTED_CORPORA = frozenset(
+        {
+            'merge.lock',
+            'run-configuration.json',
+            'lessons-learned',
+            'merge-queue.json',
+            'plans/NO_PLAN/build-results',
+        }
+    )
+
+    #: An RST double-backtick literal.
+    _LITERAL_RE = re.compile(r'``([^`]+)``')
+
+    @staticmethod
+    def _slice_between(text: str, start_marker: str, end_marker: str, where: str) -> str:
+        """Return the text between two prose anchors, failing loudly if either moved.
+
+        An anchor that no longer matches means the enumeration was reworded, not
+        that it is empty — so this asserts rather than returning ``''``, which
+        would reach the caller as a silently-empty corpus list.
+        """
+        start = text.find(start_marker)
+        assert start != -1, f'{where}: start anchor {start_marker!r} not found — the enumeration prose moved'
+        start += len(start_marker)
+        end = text.find(end_marker, start)
+        assert end != -1, f'{where}: end anchor {end_marker!r} not found — the enumeration prose moved'
+        return text[start:end]
+
+    @classmethod
+    def _module_corpora(cls) -> list[str]:
+        """The corpora enumerated in the module docstring, in source order."""
+        segment = cls._slice_between(
+            marketplace_paths.__doc__ or '',
+            'bounded exception set — ',
+            ' — every other resolution',
+            'module docstring',
+        )
+        return [m.group(1) for m in cls._LITERAL_RE.finditer(segment)]
+
+    @classmethod
+    def _function_corpora(cls) -> list[str]:
+        """The corpora enumerated in ``resolve_main_anchored_path``'s docstring."""
+        segment = cls._slice_between(
+            resolve_main_anchored_path.__doc__ or '',
+            'corpora is exactly: ',
+            '(the plan-less build',
+            'resolve_main_anchored_path docstring',
+        )
+        return [m.group(1) for m in cls._LITERAL_RE.finditer(segment)]
+
+    def test_function_docstring_enumerates_exactly_five_corpora(self):
+        corpora = self._function_corpora()
+        # Non-vacuity guard: a parse that matched nothing must not arrive at the
+        # count assertion as a confusing ``0 != 5``.
+        assert corpora, 'no corpora parsed from resolve_main_anchored_path.__doc__'
+        assert len(corpora) == 5, f'expected five main-resident corpora, got {len(corpora)}: {corpora}'
+
+    def test_module_docstring_enumerates_exactly_five_corpora(self):
+        corpora = self._module_corpora()
+        assert corpora, 'no corpora parsed from the module docstring'
+        assert len(corpora) == 5, f'expected five main-resident corpora, got {len(corpora)}: {corpora}'
+
+    def test_orchestrator_is_not_a_main_anchored_corpus(self):
+        assert self.RETIRED_CORPUS not in self._function_corpora()
+        assert self.RETIRED_CORPUS not in self._module_corpora()
+
+    def test_both_enumerations_agree(self):
+        # The two lists can drift independently; that drift IS the defect.
+        assert set(self._module_corpora()) == set(self._function_corpora())
+
+    def test_enumerated_set_is_the_expected_bounded_set(self):
+        assert set(self._function_corpora()) == self.EXPECTED_CORPORA

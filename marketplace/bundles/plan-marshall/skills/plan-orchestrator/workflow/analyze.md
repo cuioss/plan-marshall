@@ -285,7 +285,7 @@ queue_items_retired: {N}
 defects_added: {N}
 watches_added: {N}
 emitted[E]{plan,command}:
-  PLAN-NN,/plan-marshall task="implement .plan/local/orchestrator/{slug}/plans/PLAN-NN-{plan_slug}.md"
+  PLAN-NN,/plan-marshall task="implement .plan/orchestrator/{slug}/plans/PLAN-NN-{plan_slug}.md"
 shortfall[S]{plan,reason}:
   PLAN-MM,"overlaps {surface} with PLAN-KK"
 resume_anchor: "{next action}"

@@ -1,6 +1,6 @@
 # Init Verb Workflow
 
-Workflow doc for the `init` verb: scaffold a new epic tree under `.plan/local/orchestrator/{slug}/` and write the epic skeleton. The layout, authority, and carve-out contracts are owned by [`persona-plan-orchestrator/standards/orchestration-model.md`](../../persona-plan-orchestrator/standards/orchestration-model.md); when this doc and the standard disagree, the standard wins.
+Workflow doc for the `init` verb: scaffold a new epic tree under `.plan/orchestrator/{slug}/` and write the epic skeleton. The layout, authority, and carve-out contracts are owned by [`persona-plan-orchestrator/standards/orchestration-model.md`](../../persona-plan-orchestrator/standards/orchestration-model.md); when this doc and the standard disagree, the standard wins.
 
 ## Exit-code convention for every script call
 
@@ -10,7 +10,7 @@ The exit-code contract for every `python3 .plan/execute-script.py` call in this 
 
 | Parameter | Required | Description |
 |-----------|:--------:|-------------|
-| `slug` | Yes | Epic slug (kebab-case). Names the `.plan/local/orchestrator/{slug}/` tree. |
+| `slug` | Yes | Epic slug (kebab-case). Names the `.plan/orchestrator/{slug}/` tree. |
 | `title` | No | Human-facing epic title. Defaults to the slug when omitted. |
 
 ## Workflow
