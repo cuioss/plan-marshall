@@ -295,6 +295,11 @@ path: /abs/path/to/.plan/local/lessons-learned/2025-12-02-001.md
 detail: /abs/path/... exists but carries no parseable key=value metadata header
 ```
 
+`remove` alone adds a seventh field to that payload — `hint`, naming the
+`--allow-unreadable` exit it has and the other verbs do not (see
+[remove](#remove)). `get`, `update` and `supersede` emit the six fields above
+and no `hint`.
+
 `supersede` renders the same split for its canonical read under its own names:
 `canonical_not_found` for an absent canonical and `canonical_unresolvable` for
 an unresolvable one.
@@ -303,10 +308,12 @@ Five more verbs reach the corpus differently, and none of them renders
 `error: unresolvable`:
 
 - `set-body`, `set-title`, and `convert-to-plan` check the file's existence
-  directly — they never call the shared seam — so each can render
-  `error: not_found` for an absent lesson, but none can distinguish an
-  unreadable lesson from an absent one: an unreadable lesson passed to
-  `convert-to-plan` is silently relocated rather than refused.
+  directly — they never call the shared seam — so each renders
+  `error: not_found` for an absent lesson: genuine absence IS distinguished.
+  What none of them distinguishes is an unreadable lesson from a READABLE one —
+  both pass the same bare existence check, and what follows turns on the verb's
+  own parsing rather than on the resolver's `unreadable` verdict. An unreadable
+  lesson passed to `convert-to-plan` is silently relocated rather than refused.
 - `cleanup-superseded` (explicit-ids mode) and `aggregate` resolve THROUGH the
   seam but report the outcome in their payload instead of a per-verb error
   code: `aggregate` lists an unresolvable lesson under `unresolvable[]`
@@ -473,7 +480,10 @@ an explicit one:
 
 - **Without the flag** `remove` reports `error: unresolvable`, unlinks nothing
   and writes no tombstone. This is the default because a record nobody can read
-  is not obviously safe to delete.
+  is not obviously safe to delete. That payload carries the shared
+  `path`/`detail` pair plus a `hint` field this verb alone emits —
+  `"Pass --allow-unreadable to retire it; the tombstone is still written."` —
+  so the exit is named at the point of refusal rather than only here.
 - **With `--allow-unreadable`** the retirement runs the SAME path, in the same
   order: the tombstone is written FIRST and the file is unlinked second. The
   ordering is load-bearing — the file is the only other copy, so a failure
