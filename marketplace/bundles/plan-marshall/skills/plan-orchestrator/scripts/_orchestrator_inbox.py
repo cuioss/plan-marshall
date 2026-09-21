@@ -1172,8 +1172,10 @@ def classify_source_id(source_id: str) -> SourceIdClassification:
     pointer with a safe slug, ``unsafe_slug`` for a recognised pointer whose
     ``{slug}`` fails the path-safety validator, ``unrecognised_id`` for a path
     that IS an orchestrator plan-spec path but whose id segment matches none of
-    the three forms, and ``not_orchestrator_pointer`` for everything else (a
-    prose description, an unrelated path, a traversal attempt).
+    the three forms (see also the retired-address case below, a second
+    ``unrecognised_id`` producer), and ``not_orchestrator_pointer`` for
+    everything remaining (a prose description, an unrelated path, a traversal
+    attempt).
 
     A pointer still carrying the RETIRED ``.plan/local/orchestrator/`` address
     (:data:`_RETIRED_SOURCE_ID_RE`) also resolves to ``unrecognised_id``, not to

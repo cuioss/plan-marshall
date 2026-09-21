@@ -219,7 +219,7 @@ python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator cor
   --slug SLUG --plan PLAN-NN
 ```
 
-Returns one staged spec file's body through the sanctioned script-mediated read path — the compliant alternative to a direct `Read` of the ledger tree. The `--plan` value must match the anchored settled plan-id grammar (a bare `PLAN` without digits is refused as `invalid_plan`); resolution is exact-stem-wins, else single-prefix-match, main-anchored so the result is identical from a worktree and from the main checkout. Carries `spec`, `size_bytes`, `line_count`, and the verbatim `body`. An absent spec returns `spec_not_found` carrying `available_specs` (never an empty body); several prefix matches return `ambiguous_spec` carrying `candidates`; a match resolving outside `plans/` (symlink escape) returns `spec_escapes_corpus` naming the spec; an unsafe slug (`invalid_slug`), an unsafe plan value (`invalid_plan`), an unreadable file (`unreadable`), and a slug with no store tree (`not_found`) are refused without writing — the verb is read-only.
+Returns one staged spec file's body through the sanctioned script-mediated read path — the compliant alternative to a direct `Read` of the ledger tree. The `--plan` value must match the anchored settled plan-id grammar (a bare `PLAN` without digits is refused as `invalid_plan`); resolution is exact-stem-wins, else single-prefix-match, on the git-tracked, cwd-relative config tier — the current checkout's own branch, not main's. Carries `spec`, `size_bytes`, `line_count`, and the verbatim `body`. An absent spec returns `spec_not_found` carrying `available_specs` (never an empty body); several prefix matches return `ambiguous_spec` carrying `candidates`; a match resolving outside `plans/` (symlink escape) returns `spec_escapes_corpus` naming the spec; an unsafe slug (`invalid_slug`), an unsafe plan value (`invalid_plan`), an unreadable file (`unreadable`), and a slug with no store tree (`not_found`) are refused without writing — the verb is read-only.
 
 ### corpus cross-check
 
@@ -465,8 +465,8 @@ A pointer under `.plan/orchestrator/{slug}/plans/` with a path-safe `{slug}` is 
 | `detection` | Meaning |
 |-------------|---------|
 | `orchestrated` | Recognised pointer with a path-safe slug — `orchestrated: true`. |
-| `not_orchestrator_pointer` | Not an orchestrator plan-spec path at all (prose, an unrelated path, a traversal attempt). |
-| `unrecognised_id` | The path IS under `.plan/orchestrator/{slug}/plans/*.md` but its id segment matches none of the three forms — distinguishable from a plain non-pointer, so the reclassification is reportable rather than silent. |
+| `not_orchestrator_pointer` | Not an orchestrator plan-spec path at all (prose, an unrelated path, a traversal attempt) — and NOT a pointer at the retired `.plan/local/orchestrator/{slug}/plans/*.md` address either; see `unrecognised_id` below. |
+| `unrecognised_id` | Either the path IS under `.plan/orchestrator/{slug}/plans/*.md` but its id segment matches none of the three forms, OR the path is under the RETIRED `.plan/local/orchestrator/{slug}/plans/*.md` address — recognition-only, no resolution (migration to the tracked address is out of scope). Both producers are distinguishable from a plain non-pointer, so the reclassification is reportable rather than silent. |
 | `unsafe_slug` | Orchestrator-shaped path whose `{slug}` fails the path-safety validator. |
 
 Every negative verdict returns `orchestrated: false` with empty `epic` / `plan_spec`. This is the single detection seam — consumers never add a second detector or a new persisted metadata field.
