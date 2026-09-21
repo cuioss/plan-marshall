@@ -63,13 +63,16 @@ Context Detection:
     By default, operates in plugin-cache context (~/.claude/plugins/cache/plan-marshall/).
     Use --marketplace flag for marketplace development context (marketplace/bundles/).
 
-    The ``--marketplace-root PATH`` flag (honored by ``generate`` and ``drift``)
-    pins marketplace discovery to an explicit anchor directory, overriding the
-    script-relative walk and cwd-based fallback. Equivalent to setting the
-    ``PM_MARKETPLACE_ROOT`` environment variable; the flag takes precedence
-    when both are supplied. Use this when invoking the script from a worktree
-    or alternate checkout where Path.cwd() would otherwise resolve to the
-    wrong marketplace tree.
+    The ``--marketplace-root PATH`` flag pins marketplace discovery to an
+    explicit anchor directory, overriding the script-relative walk and
+    cwd-based fallback. Every subcommand that performs marketplace discovery
+    — each verb that regenerates the executor or re-scans the bundle tree —
+    declares it; run a subcommand's ``--help`` for the flag set that verb
+    actually accepts, rather than reading a verb list from here. Equivalent
+    to setting the ``PM_MARKETPLACE_ROOT`` environment variable; the flag takes
+    precedence when both are supplied. Use this when invoking the script from
+    a worktree or alternate checkout where Path.cwd() would otherwise resolve
+    to the wrong marketplace tree.
 
 Runtime Side-effects:
     The generated executor performs NO session-to-plan binding write. The
