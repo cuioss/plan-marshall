@@ -33,23 +33,45 @@ for a restatement is to replace it with a pointer at its source.
 ## Claim Labels
 
 - OBSERVED: A `SessionStart` seam already exists and is wired — `architecture search --content
-  --pattern "SessionStart"` returned `count: 42` over `file_count: 21` with clean coverage
-  (`files_scanned: 5462`, `unreadable: 0`), locating it at
+  --pattern "SessionStart"` returned `count: 46` over `file_count: 23` with clean coverage
+  (re-measured at cleanup 2026-09-22, `files_scanned: 3097`; was `count: 42` / `file_count: 21` /
+  `files_scanned: 5462` at staging), locating it at
   `marketplace/bundles/plan-marshall/skills/platform-runtime/scripts/claude_hook.py` and
-  `claude_runtime.py`, with the contract at `platform-runtime/standards/contract.md` (15 matches) and
-  the architecture at `standards/terminal-title-architecture.md` (12 matches). Measured in this session
-  at `main` `77cb2e251`.
-- OBSERVED: The seam's present consumer is the terminal title — the bulk of the matches sit in
-  `terminal-title-architecture.md` and the title-token surface. ⭐ So this plan **extends an existing,
-  tested seam** rather than introducing a hook, which is what keeps its cost low.
+  `claude_runtime.py`, with the contract at `platform-runtime/standards/contract.md` (15 matches,
+  exact) and the architecture at `standards/terminal-title-architecture.md` (12 matches, exact). The
+  seam is heavily tested: `test_claude_runtime.py` (49 matches), `test__claude_runtime_impl.py` (22).
+  - verdict: corroborated | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: instrumentation-substrate/cleanup | rescoped: n/a | evidence: SessionStart search re-run: count 46/file_count 23 (was 42/21), all named locations hold with exact match counts
+- ⛔ **REFUTED at cleanup 2026-09-22 (was OBSERVED).** The seam's present consumer is NOT only the
+  terminal title. A second, independent consumer already exists: **session-id capture** —
+  `platform-runtime/standards/contract.md` § `session capture` ("Persist the current platform session
+  identifier via `manage-status`") and `persona-plan-marshall-agent/standards/tool-usage-patterns.md`
+  § "Reading environment variables" ("captured at plan-init time by the platform-runtime `SessionStart`
+  hook and APPENDED to `status.json` field `metadata.session_ids`"). Confirmed live:
+  `.claude/settings.local.json` carries TWO matcher-less `SessionStart` entries — `claude_hook` (render)
+  and `platform_runtime session capture`. On distribution the largest match counts also sit in the
+  runtime/test files (49/23/22), above `terminal-title-architecture.md`'s 12. **Consequence, absorbed
+  into this spec's scope**: the ⭐ conclusion — "this plan extends an existing, tested seam" — survives
+  and is the load-bearing part; deliverable 1 must account for BOTH existing consumers when extending
+  the event handling, not assume terminal-title is the only one sharing the hook.
+  - verdict: contradicted | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: instrumentation-substrate/cleanup | rescoped: yes | evidence: session-id capture is a second independent consumer (contract.md + tool-usage-patterns.md + two matcher-less SessionStart entries); ⭐ conclusion survives, deliverable 1 must account for both consumers
 - HYPOTHESIS: The seam already fires on `compact` and only its payload needs extending, rather than the
   event set — confirm/refute at
   `marketplace/bundles/plan-marshall/skills/platform-runtime/standards/contract.md` (verify-at-outline).
-  ⛔ This materially changes the plan's size: a payload change is small, an event-set change touches the
-  runtime contract and every target that implements it.
+  ⚠ **Unverifiable at cleanup 2026-09-22 — a strong lead, not a confirmation.** `contract.md` (1431
+  lines, read in full) contains ZERO occurrences of `compact`; it documents a closed 9-entry render-event
+  set naming `SessionStart:matcher-less` and `SessionStart:clear` — no `compact` entry. But
+  `.claude/settings.local.json` carries two MATCHER-LESS `SessionStart` groups, and a matcher-less entry
+  structurally fires on every `SessionStart` source including `compact`, so the hook process very likely
+  already runs with no branch on source. Residue to settle at outline: the single `compact` occurrence
+  each in `platform-runtime/scripts/_claude_runtime_impl.py` and
+  `standards/terminal-title-architecture.md`. ⛔ This materially changes the plan's size: a payload
+  change is small, an event-set change touches the runtime contract and every target that implements
+  it — and that sizing question remains open pending the outline residue above.
+  - verdict: unverifiable | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: instrumentation-substrate/cleanup | rescoped: n/a | evidence: contract.md read in full, zero compact occurrences, closed 9-entry event set with no compact entry; matcher-less SessionStart groups are a strong lead not a confirmation; outline residue named in spec text
 - HYPOTHESIS: A live plan's id and phase are resolvable at hook time without loading a skill — confirm/
   refute at `marketplace/bundles/plan-marshall/skills/manage-status/SKILL.md` (verify-at-outline). A
   hook that must load a skill to decide what to emit is too expensive to run on every session start.
+  - verdict: corroborated | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: instrumentation-substrate/cleanup | rescoped: n/a | evidence: contract.md session resolve-plan + session render-title: deterministic runtime verbs, no skill load needed, phase-aware already at the hook path
 - Verify-first clause: ⚠ **This plan's saving has never been independently sized, and PLAN-05 may
   refute its premise.** If PLAN-05 closes unfixed — concluding that always-resident bytes are not worth
   chasing — re-read this objective before scoping. The rediscovery cost avoided here is a different

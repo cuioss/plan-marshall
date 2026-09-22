@@ -67,7 +67,7 @@ operator before creating it — this is not a decision the plan makes unilateral
 - OBSERVED: `.claude/skills/audit-archived-plan-retrospectives/` exists at this path with
   `SKILL.md`, a `checks/` directory of 24 per-aspect markdown check docs, and
   `scripts/audit.py` — read directly via `find` over the skill directory.
-  - verdict: corroborated | checked_at: e8a71650 | by: post-run-quality/cleanup | rescoped: n/a | evidence: Directory listing returns exactly [SKILL.md, checks, scripts]; checks/ = 24 .md files; scripts/audit.py = 9583 lines. Unchanged at HEAD; D5's relocation target intact.
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: post-run-quality/cleanup | rescoped: n/a | evidence: audit-archived-plan-retrospectives/SKILL.md + audit.py --check enumerates exactly 24 names 1:1 with checks/; D5's relocation target intact and unchanged
 - OBSERVED: archived plan and orchestrator ledgers are main-anchored at
   `.plan/local/archived-plans/{dated-slug}/` (per
   `phase-6-finalize/standards/archive-plan.md` — corrected 2026-09-21; the original citation,
@@ -77,7 +77,7 @@ operator before creating it — this is not a decision the plan makes unilateral
   directly. ⚠ Incidental, not this epic's to fix: `archive-plan.md:21` itself writes the path as
   `.plan/archived-plans/`, missing the `local/` segment — a live doc defect on this spec's own declared
   surface.
-  - verdict: corroborated | checked_at: e8a71650 | by: post-run-quality/cleanup | rescoped: n/a | evidence: Fact holds but the citation is wrong for the archived-plans half: orchestration-model.md documents only the orchestrator half (:49,:52); the string archived-plans occurs once at :66 as a GC aside only. Canonical doc is phase-6-finalize/standards/archive-plan.md (which itself writes .plan/archived-plans/ without local/ -- a separate, unrelated doc defect). Cite archive-plan.md, not orchestration-model.md, for the plan half.
+  - verdict: contradicted | checked_at: 7d82d5d90 | by: post-run-quality/cleanup | rescoped: yes | evidence: archived-plans half holds (.plan/archived-plans/{date}-{plan_id}); archived-orchestrators half is now WRONG at HEAD -- orchestration-model.md:45/50/53 + ADR-024 place it at the git-tracked .plan/archived-orchestrators/{slug}/, not main-anchored, and 'NO retention/cleanup policy applies'. Cross-repo defect survives; premise needs a path/tier correction and D2 needs re-derivation over two different storage tiers
 - OBSERVED: this repo's project-local finalize-step skills follow the
   `.claude/skills/finalize-step-{name}/SKILL.md` pattern with frontmatter
   `implements: plan-marshall:extension-api/standards/ext-point-finalize-step` (read verbatim
@@ -86,7 +86,7 @@ operator before creating it — this is not a decision the plan makes unilateral
   `finalize-step-review-retrospective`, `finalize-step-era-stamp-fill`,
   `finalize-step-deploy-target`, `finalize-step-sync-plugin-cache`) is meta-project-only —
   it applies to plan-marshall's own repo, never exported to consumer projects.
-  - verdict: corroborated | checked_at: e8a71650 | by: post-run-quality/cleanup | rescoped: n/a | evidence: .claude/skills/ contains exactly the six named finalize-step-* dirs, no others. finalize-step-review-retrospective/SKILL.md:17 verbatim implements: plan-marshall:extension-api/standards/ext-point-finalize-step. Meta-project-only is derived: marketplace/bundles/plan-marshall/skills/ has zero *finalize-step* directories -- none exported today.
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: post-run-quality/cleanup | rescoped: n/a | evidence: manage-config list-finalize-steps returns exactly 6 project: rows matching spec's enumeration 1:1; architecture find for finalize-step* under marketplace/bundles returns 0 -- meta-project-only confirmed, derived not asserted
 - HYPOTHESIS: `analyze-marshall-quality` (deliverable 3) should ship as a
   MARKETPLACE-bundled finalize step
   (`marketplace/bundles/plan-marshall/skills/finalize-step-analyze-marshall-quality/`),
@@ -97,13 +97,13 @@ operator before creating it — this is not a decision the plan makes unilateral
   `marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-finalize-step.md`
   § registration and at `marketplace/bundles/plan-marshall/skills/phase-6-finalize/`'s
   step-selection logic (verify-at-outline).
-  - verdict: corroborated | checked_at: 1605831c5 | by: post-run-quality/cleanup | rescoped: n/a | evidence: Question is UNSETTLED, mechanism the hypothesis wants IS supported. Nothing settles it: content sweep for 'analyze-marshall-quality' returns 0 over 2993 files scanned; no marketplace dir yet. Registration contract supports marketplace form: ext-point-finalize-step.md:47 documents {bundle}:{skill} opt-in form; :202 tabulates project-local as a separate namespace; :286,:317 confirm project steps are meta-project-only. Live design choice, correctly deferred to outline.
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: post-run-quality/cleanup | rescoped: n/a | evidence: no analyze-marshall-quality/plan-marshall-telemetry surface exists at HEAD (0 hits/3097 files); ext-point-finalize-step.md:47 supports the bundled {bundle}:{skill} registration form the hypothesis needs -- live design choice, correctly deferred to outline
 - HYPOTHESIS: the relocated `audit-archived-plan-retrospectives` (deliverable 5) becomes the
   implementation backbone the shared analysis engine (deliverables 3/4) calls into, rather
   than a second, parallel auditor living alongside it — confirm/refute by comparing its
   `checks/` coverage against what deliverables 3/4 must report, once PLAN-PRQ-01 and
   PLAN-PRQ-03's fixes have landed on it (verify-at-outline).
-  - verdict: unverifiable | checked_at: 1605831c5 | by: post-run-quality/cleanup | rescoped: n/a | evidence: Structurally undecidable now. Auditor intact and relocatable (SKILL.md 662 lines, audit.py 9583 lines, checks/ 24 docs 1:1 with CHECK_NAMES, test mirror 77 entries). But the comparison is against post-PRQ-01/PRQ-03 checks/ coverage, and neither has launched (both staged). No engine exists to compare against either.
+  - verdict: unverifiable | checked_at: 7d82d5d90 | by: post-run-quality/cleanup | rescoped: n/a | evidence: structurally undecidable: comparison target is post-PRQ-01/PRQ-03 checks/ coverage and both are still staged (corpus enumerate confirms), no shared analysis engine exists to compare against either yet
 - HYPOTHESIS: the telemetry repo's `analyze` skill (deliverable 4) reuses the shared
   analysis engine by installing plan-marshall as a Claude Code plugin in the telemetry repo
   (so it can call the same `python3 .plan/execute-script.py plan-marshall:...` scripted
@@ -112,20 +112,20 @@ operator before creating it — this is not a decision the plan makes unilateral
   per `doc/developer/marketplace-build.adoc` (verify-at-outline). This decides the whole
   Expected Surface shape of deliverables 2-4 and MUST settle before Deliverables 3/4 are
   built, not after.
-  - verdict: unverifiable | checked_at: 1605831c5 | by: post-run-quality/cleanup | rescoped: n/a | evidence: Deciding facts are outside this repo's tree: plan-marshall-telemetry does not exist, so whether it can install the marketplace is not observable here. marketplace-build.adoc exists and documents the generator/adapter system, but installing into a NEW repo is a per-repo action, not a codebase property. The spec's own Verify-first clause is correctly placed.
+  - verdict: unverifiable | checked_at: 7d82d5d90 | by: post-run-quality/cleanup | rescoped: n/a | evidence: deciding facts are outside this repo -- plan-marshall-telemetry appears nowhere in the inventory (0/3097 files); this envelope cannot reach a remote repository. Verify-first clause is correctly placed
 - HYPOTHESIS: "excluded from review agents" (deliverable 1) is achieved operationally —
   never installing the CodeRabbit/Sourcery/pr-agent GitHub Apps on the new repo, and never
   configuring `required_bots`/`optional_bots` for it — rather than by any code change in
   this codebase, since bot onboarding is a per-repo GitHub App installation outside this
   repository's control — confirm/refute against `.plan/marshal.json`'s `automatic-review`
   schema (verify-at-outline).
-  - verdict: corroborated | checked_at: 1605831c5 | by: post-run-quality/cleanup | rescoped: n/a | evidence: .plan/marshal.json plan.phase-6-finalize.steps['plan-marshall:automatic-review'] carries required_bots:'cuioss-review-bot,coderabbit', optional_bots:'sourcery', bot_lists_provenance:'answered' -- bot coverage is a per-repo config string in that repo's own marshal.json, no cross-repo registry, no code path here that could enrol another repo. Omitting the keys + not installing the GitHub Apps is the whole mechanism.
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: post-run-quality/cleanup | rescoped: n/a | evidence: manage-config plan phase-6-finalize step get --step-id automatic-review returns required_bots/optional_bots as a per-repo config string; no cross-repo bot registry or code path exists -- omission-plus-never-installing IS the whole mechanism, as the hypothesis states
 - Verify-first clause: at outline, settle the plan-marshall-plugin-installation question
   above before scoping deliverables 3/4's implementation — a refutation (the telemetry repo
   cannot or should not install plan-marshall as a plugin) changes the shared-engine
   mechanism from "one scripted surface, two callers" to "one engine, vendored into two
   repos," which changes both deliverables' file lists.
-  - verdict: unverifiable | checked_at: 1605831c5 | by: post-run-quality/cleanup | rescoped: n/a | evidence: Same blocker as claim 5 -- the decision needs the telemetry repo to exist. Sequencing constraint confirmed still binding: PRQ-01 and PRQ-03 both staged, both declare .claude/skills/audit-archived-plan-retrospectives/** (PRQ-01 lines 88-90; PRQ-03 lines 74-76), skill still present at this repo -- PRQ-07 D5's relocation correctly gated behind both.
+  - verdict: unverifiable | checked_at: 7d82d5d90 | by: post-run-quality/cleanup | rescoped: n/a | evidence: same blocker as claim 5 -- needs the telemetry repo to exist. Sequencing constraint confirmed still binding from the parser: corpus surfaces shows PRQ-01/PRQ-03/PRQ-07 all declarative with PRQ-01 and PRQ-03 both still staged; D5's relocation correctly gated behind both
 
 ## Expected Surface
 

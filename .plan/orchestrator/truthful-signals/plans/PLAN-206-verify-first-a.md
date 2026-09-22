@@ -1,6 +1,6 @@
 # PLAN-03: Verify-first rules and convergent fixes
 
-epic: quality-aspect
+epic: truthful-signals
 workstream: WS-02
 
 > Staged plan spec — one shippable unit of work, ready for `/plan-marshall` hand-off.
@@ -48,7 +48,7 @@ propositions, unmeasured channels rendered as unmeasured. G02 first half (11 les
 ## Hand-Off Command
 
 ```text
-/plan-marshall task="implement .plan/orchestrator/quality-aspect/plans/PLAN-03-verify-first-a.md"
+/plan-marshall task="implement .plan/orchestrator/truthful-signals/plans/PLAN-206-verify-first-a.md"
 ```
 
 ## Write-Boundary

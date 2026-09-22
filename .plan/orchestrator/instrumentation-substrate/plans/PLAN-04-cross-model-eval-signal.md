@@ -42,20 +42,33 @@ taken.
 - OBSERVED: `CLAUDE.md` § "Multi-Assistant Support" states "**only Claude Code is tested as a
   runtime**" — read at `CLAUDE.md`. This is the gap this plan closes and the repository states it
   itself.
+  - verdict: corroborated | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: instrumentation-substrate/cleanup | rescoped: n/a | evidence: CLAUDE.md Multi-Assistant Support: only Claude Code is tested as a runtime, verbatim at HEAD
 - OBSERVED: The existing non-Claude target tests are structural rather than behavioural — the test
   tree carries `test/marketplace/targets` and
   `test/plan-marshall/platform-runtime/test_opencode_runtime.py`, both asserting emission and
   resolution. Corroborated in this session by `architecture search --content --pattern "SessionStart"`,
   which located `test_opencode_runtime.py` among the platform-runtime tests.
+  - verdict: corroborated | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: instrumentation-substrate/cleanup | rescoped: n/a | evidence: test/marketplace/targets + test_opencode_runtime.py both present, structural only; antigravity structural tests also added since staging, gap wider not narrower
 - HYPOTHESIS: A three-role separation — the model executing the workflow, a second model standing in
   for the operator so a question-driven workflow can be batch-run at all, and a third scoring the
   result — is necessary here, because plan-marshall's workflow is question-driven and cannot be
   batch-run without something to answer its questions. Confirm/refute against the actual interaction
   surface at `marketplace/bundles/plan-marshall/skills/phase-2-refine/SKILL.md` (verify-at-outline).
+  ⭐ **Corroborated with a material sizing correction at cleanup 2026-09-22**: the blocking point is
+  real, but `phase-2-refine/SKILL.md` Step 11 shows the leaf batches every open clarification into ONE
+  `refine_prompt` envelope and the orchestrator re-dispatches **at most once** — so an operator-stand-in
+  role is needed for at most one batched round per plan, not per turn. Step 3's "Recipe Shortcut" also
+  forces `confidence=100` and skips analysis for recipe-sourced plans — a batch-runnable fixture path
+  needing NO operator-stand-in role at all. **Consequence, absorbed into this spec's scope**:
+  deliverable 1's harness can be sized smaller than a per-turn interactive stand-in; deliverable 2's
+  fixture task selection should prefer (or include) a recipe-sourced path to exercise the zero-role
+  case cheaply.
+  - verdict: corroborated | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: instrumentation-substrate/cleanup | rescoped: n/a | evidence: phase-2-refine/SKILL.md Step 11: batched refine_prompt, at-most-one re-dispatch; Step 3 recipe shortcut skips analysis entirely; sizing correction applied to deliverables 1-2
 - HYPOTHESIS: `marshalld`'s existing build-server machinery is **not** the right vehicle for this and a
   separate surface is warranted — confirm/refute at
   `marketplace/bundles/plan-marshall/skills/manage-build-server/SKILL.md` (verify-at-outline). ⛔ If
   refuted, reuse rather than build; a second job runner would be duplication.
+  - verdict: corroborated | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: instrumentation-substrate/cleanup | rescoped: n/a | evidence: manage-build-server/SKILL.md anti-laundering wall + notation_allowlist refuse an off-template eval submit; reuse structurally closed, separate surface confirmed warranted
 - Verify-first clause: ⛔ **No result from any external evaluation harness is carried into this plan
   as evidence.** The prior art that informed this spec was inspected for *design*, and not one of its
   results was read. It establishes that such a mechanism is buildable and what shape it takes; it

@@ -36,27 +36,53 @@ ceiling after the work.
 
 ## Claim Labels
 
-- OBSERVED: The always-resident description surface totals **26,694 bytes across 157 components**,
-  mean 170 bytes and median 119, with the top 20 components carrying a disproportionate share
-  (`manage-references` 713 bytes, `ext-self-review-plan-marshall` 689, `plugin-security` 587,
-  `plan-orchestrator` 579). Measured in this session at `main` `77cb2e251` over
-  `marketplace/bundles/*/skills/*/SKILL.md`; `components_without_description: 0`, `unreadable: 0`, so
-  the population is complete. ⚠ The measuring script is at `.plan/temp/size-description-surface.py`
-  and is **temporary** — re-derive rather than trusting these numbers if they have aged.
+- ⛔ **CONTRADICTED on the figures at cleanup 2026-09-22 (population and shape hold).** The original
+  measuring script (`.plan/temp/size-description-surface.py`, gitignored) is gone at HEAD; re-derived
+  from scratch over the SAME population (`marketplace/bundles/*/skills/*/SKILL.md`, UTF-8 byte length of
+  `description:`). **Corrected figures**: **157 components ✓** (unchanged), total **27,354 bytes** (was
+  26,694, drifted +660), mean **174** (was 170), median **119 ✓** (exact), `components_without_description:
+  0 ✓`, `unreadable: 0 ✓`. Per-component: `manage-references` **713 ✓**, `plugin-security` **587 ✓**,
+  `ext-self-review-plan-marshall` **714** (was 689), `plan-orchestrator` **621** (was 579). **The
+  ranking itself is also wrong**: the current top component is `plan-marshall:manage-lessons` at **721
+  bytes**, unnamed in the original measurement, with `persona-module-tester` at **651** also unnamed.
+  Corrected top-8 by byte count: `manage-lessons` 721, `ext-self-review-plan-marshall` 714,
+  `manage-references` 713, `persona-module-tester` 651, `plan-orchestrator` 621, `plugin-security` 587,
+  `arch-gate-java` 519, `oci-standards` 501. **Consequence, absorbed into this spec's scope**:
+  deliverable 4's "top decile by byte count" must be re-run against this corrected ranking, not the
+  original one — the original top-4 list would have missed the actual #1 and #4 components entirely.
+  - verdict: contradicted | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: instrumentation-substrate/cleanup | rescoped: yes | evidence: measuring script gone at HEAD; re-derived over same population, 157 components + median 119 hold, 4 of 6 stated figures drifted; corrected top-8 ranking in spec text
 - OBSERVED: The median is 119 bytes, which means most descriptions are already short and the
   addressable cost is concentrated in a small tail. ⭐ This is the fact that makes deliverable 2's
   "close it unfixed" branch a live possibility rather than a formality.
+  - verdict: corroborated | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: instrumentation-substrate/cleanup | rescoped: n/a | evidence: median re-derived at exactly 119; mean/median ratio 1.46 confirms right skew; top-8=18.4% of total from 5.1% of components
 - HYPOTHESIS: Registration status determines whether a component's description is resident — a
   script-only three-part component does not register and therefore costs nothing per turn — confirm/
   refute at `CLAUDE.md` § "Tool Usage" and the bundle `plugin.json` registration contract
-  (verify-at-outline). ⛔ If refuted, deliverable 1's population is wrong and the measurement above
-  overstates or understates the real resident cost.
-- HYPOTHESIS: A description phrased as a *trigger* ("Use when …") rather than as a *summary* both
-  shortens the text and improves retrieval — confirm/refute against
-  `marketplace/bundles/pm-plugin-development/skills/plugin-architecture/references/frontmatter-standards.md`,
-  which may already state a shape rule (verify-at-outline). ⛔ The retrieval half of this hypothesis is
-  a behavioural claim about a model, and this plan has no instrument for it. State it as unverified or
-  drop it — do not assert it.
+  (verify-at-outline). ⭐ **Corroborated at cleanup 2026-09-22, via the SECOND target only — the first
+  is mis-cited.** `CLAUDE.md` § "Tool Usage" says nothing about registration (it is four lines on
+  Read/Edit/Write over shell commands). The `plugin.json` half settles it: summing each bundle's
+  `.claude-plugin/plugin.json` `skills` array gives **154 registered skills** against **157 SKILL.md
+  files on disk** — registration is an explicit per-component opt-in and **3 on-disk skills sit outside
+  it**, matching `CLAUDE.md` § "Repository Overview" ("158 registered components (154 skills, 2
+  agents, 2 commands)"). **Consequence, absorbed into this spec's scope**: deliverable 1's population
+  concern is real and quantified — the corrected measurement above, taken over all 157 on-disk SKILL.md
+  files, overstates the resident surface by the 3 unregistered components; a resident-only re-cut is
+  owed before deliverable 2's decision.
+  - verdict: corroborated | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: instrumentation-substrate/cleanup | rescoped: n/a | evidence: CLAUDE.md Tool Usage is mis-cited (unrelated); plugin.json sums confirm 154/157 registered, 3 unregistered; deliverable 1 population concern quantified
+- ⛔ **REFUTED at cleanup 2026-09-22 (was HYPOTHESIS).** A description phrased as a *trigger* ("Use
+  when …") rather than as a *summary* is NOT the shape this corpus's own standard prescribes.
+  `plugin-architecture/references/frontmatter-standards.md` § Skill Frontmatter → description DOES
+  state a shape rule, and it is the OPPOSITE shape: "Min length: 30 characters / Max length: 500
+  characters / Should describe the standards domain covered / Single-line preferred." **Consequence,
+  absorbed into this spec's scope**: deliverable 2's decision is now between (a) enforcing the EXISTING
+  summary-shaped rule — already unenforced, since 8 of 157 descriptions exceed its own 500-char max
+  (`manage-lessons` 721, `ext-self-review-plan-marshall` 714, `manage-references` 713,
+  `persona-module-tester` 651, `plan-orchestrator` 621, `plugin-security` 587, `arch-gate-java` 519,
+  `oci-standards` 501) — or (b) proposing a CHANGE to the standard toward a trigger shape, which is a
+  larger, separately-justified move than "adopt what's already written". The retrieval half remains
+  unverifiable — no instrument exists for it, exactly as this spec's own ⛔ already states — and is not
+  grounds for choosing (b) over (a).
+  - verdict: contradicted | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: instrumentation-substrate/cleanup | rescoped: yes | evidence: frontmatter-standards.md prescribes the opposite (summary, max 500 chars, single-line); 8/157 already exceed it; deliverable 2 reframed as enforce-existing vs change-standard
 - Verify-first clause: ⚠ Descriptions are how **every** runtime in the fleet locates a skill, and the
   generator emits them byte-identical to all of them. A shape rule reasoned about one model's retrieval
   behaviour is the same defect WS-02 exists to prevent, at a smaller scale. This plan must state which

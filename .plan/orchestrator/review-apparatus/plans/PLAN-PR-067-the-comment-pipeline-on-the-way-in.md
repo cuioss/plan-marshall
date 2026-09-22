@@ -28,6 +28,10 @@ Stop the ingestion end of the PR-comment pipeline destroying real findings, and 
 | D7 | Exclude a RECOGNISED refusal from `actionable_count` | `PLAN-PR-047` § D3 | `PLAN-PR-061` D10 |
 | D8 | A zero fetch reports WHICH zero it is | `PLAN-PR-053` § D1 | `PLAN-PR-058` D1 |
 
+⭐ **Recurrence (lesson `2026-09-20-00-001`, drained 2026-09-22 via `lessons-handling-26-09-22-01`):**
+`github_pr fetch_findings` still stores a CodeRabbit control-flow acknowledgement ("Already reviewed
+the last commit...") as a first-class pending pr-comment finding — the same AI-agent-block-as-ack
+defect D1 already owns. No new deliverable; folds as a second occurrence on D1.
 
 **D0 — GATE, mutates nothing.** The merged derivation gate. From `PLAN-PR-029` D0: derive the RESPOND
 consumer surface, or HALT. From `PLAN-PR-040`: re-derive the count of already-mis-ingested comments in
@@ -102,17 +106,25 @@ Nine deliverables, under the ceiling.
 - OBSERVED (2026-09-18): every deliverable in this plan was carried verbatim from the theme spec named
   in its `Carried from` column, which carries the claim labels for its own deliverables. Confirm/refute
   by reading that spec's `## Claim Labels` section — this plan re-states none of them.
-- OBSERVED (2026-09-18, orchestrator `corpus surfaces` + per-deliverable mapping): this plan's declared
-  surface is disjoint from every other live plan's in this epic. Confirm/refute with
-  `orchestrator corpus cross-check --slug review-apparatus`.
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: review-apparatus/cleanup | rescoped: n/a | evidence: Structural claim (every deliverable body lives in its Carried-from theme spec, none restated here). Verified by reading this spec at HEAD: the Deliverables table carries only pointers, and the bodies added inline (D6, D9, D3-amendment) are explicitly marked as folds with their provenance. No git diff bears on it.
+- OBSERVED (2026-09-18, orchestrator `corpus surfaces` + per-deliverable mapping; RE-SCOPED 2026-09-22):
+  this plan's declared surface is disjoint from every other live plan's in this epic **except
+  `PLAN-PR-068`, which shares three declared files** (`github_pr.py`, `workflow-integration-github/SKILL.md`,
+  `test_github_pr.py`) — sequenced, never paired, per the "Runs BEFORE `PLAN-PR-068`" entry below.
+  Confirm/refute with `orchestrator corpus cross-check --slug review-apparatus` — non-determinate at
+  HEAD (see the claim's verdict).
+  - verdict: contradicted | checked_at: 7d82d5d90 | by: review-apparatus/cleanup | rescoped: yes | evidence: DISJOINTNESS IS FALSE, derived by membership over corpus surfaces declared paths. PLAN-PR-067 and PLAN-PR-068 both declare THREE files: workflow-integration-github/scripts/github_pr.py, workflow-integration-github/SKILL.md, and test/plan-marshall/workflow-integration-github/test_github_pr.py. The spec header claim that the cut is by component so no file is declared by two live plans does not hold for this pair. RE-SCOPE: the claim should read that 067 and 068 share three declared files and must be SEQUENCED, never paired - which both specs own Dependencies sections already say (Runs BEFORE PLAN-PR-068). corpus cross-check cannot be used to confirm this at HEAD: it reports 5628 file-overlap matches and candidate_comparison_determinate false, because the live/archived epic split made review-apparatus-26-09-21 its own sibling-epic candidate.
 - OBSERVED (first-party, 2026-09-15, `github_ops.py:405-448`): `REVIEW_THREADS_QUERY` carries four
   fixed `first:` caps and no `pageInfo`, and `fetch_pr_comments_data` issues it once, returning
   `status: success` over the clipped set. Confirm/refute at that query and its `run_graphql` call site.
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: review-apparatus/cleanup | rescoped: n/a | evidence: Re-grounded FIRST-PARTY at HEAD. github_ops.py is UNMOVED in 7a028157e..HEAD (the workflow-integration-github diff lists only _github_checks.py, _github_ci.py, _github_pr.py, github_pr.py), so REVIEW_THREADS_QUERY four fixed first caps, the absent pageInfo and fetch_pr_comments_data single issuance are unchanged. The cited 405-448 coordinates are undisturbed because the file did not move. This is the same premise as PLAN-PR-059 claim 3 and both now agree.
 - OBSERVED (corpus pass 2026-09-15): `ci pr comments` returned 236 records against `gh api`'s 237 on
   `cuioss/API-Sheriff#255` (review `5123206655`, the 101st of 109). 1 of 351 PRs exceeded a cap, so
   the loss is latent, not absent.
+  - verdict: unverifiable | checked_at: 7d82d5d90 | by: review-apparatus/cleanup | rescoped: n/a | evidence: FOREIGN observation (cuioss/API-Sheriff#255: ci pr comments 236 vs gh api 237, review 5123206655 the 101st of 109; 1 of 351 dumped PRs over a cap). A foreign-repo measurement over an external population; no plan-marshall git diff reaches it, and it was not re-sampled this pass. Latent, not absent - unchanged.
 - OBSERVED (corpus pass 2026-09-15): `cuioss-review-bot[bot]` posts inline `/improve` suggestions (10
   in the window). D0 confirms the pipeline ingests them as findings attributed to that bot.
+  - verdict: unverifiable | checked_at: 7d82d5d90 | by: review-apparatus/cleanup | rescoped: n/a | evidence: FOREIGN observation (cuioss-review-bot[bot] posting 10 inline improve suggestions in the corpus window). An external behavioural sample, not a property of this tree; not re-sampled this pass. D0 must re-derive it rather than inherit it.
 
 ## Dependencies and Sequencing
 
@@ -129,10 +141,10 @@ Nine deliverables, under the ceiling.
 ## Hand-Off Command
 
 ```text
-/plan-marshall task="implement .plan/local/orchestrator/review-apparatus/plans/PLAN-PR-067-the-comment-pipeline-on-the-way-in.md"
+/plan-marshall task="implement .plan/orchestrator/review-apparatus/plans/PLAN-PR-067-the-comment-pipeline-on-the-way-in.md"
 ```
 
 ## Write-Boundary
 
 The plan implementing this spec writes to its own repository source only. It creates and edits NO file
-under `.plan/local/orchestrator/` other than its own `inbox/{sender}-{seq}` message.
+under `.plan/orchestrator/` other than its own `inbox/{sender}-{seq}` message.

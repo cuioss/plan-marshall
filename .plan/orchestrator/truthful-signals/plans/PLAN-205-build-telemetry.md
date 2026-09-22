@@ -1,6 +1,6 @@
 # PLAN-02: Build telemetry and lock accounting
 
-epic: quality-aspect
+epic: truthful-signals
 workstream: WS-01
 
 > Staged plan spec — one shippable unit of work, ready for `/plan-marshall` hand-off.
@@ -61,7 +61,7 @@ manage-locks/scripts/merge_lock.py; verified in-tree before retiring.)
 ## Hand-Off Command
 
 ```text
-/plan-marshall task="implement .plan/orchestrator/quality-aspect/plans/PLAN-02-build-telemetry.md"
+/plan-marshall task="implement .plan/orchestrator/truthful-signals/plans/PLAN-205-build-telemetry.md"
 ```
 
 ## Write-Boundary

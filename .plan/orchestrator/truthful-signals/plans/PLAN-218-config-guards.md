@@ -1,6 +1,6 @@
 # PLAN-15: Config root guards and mode lists
 
-epic: quality-aspect
+epic: truthful-signals
 workstream: WS-09
 
 > Staged plan spec — one shippable unit of work, ready for `/plan-marshall` hand-off.
@@ -40,7 +40,7 @@ and displayed/tested mode lists derived from the authoritative tuple.
 ## Hand-Off Command
 
 ```text
-/plan-marshall task="implement .plan/orchestrator/quality-aspect/plans/PLAN-15-config-guards.md"
+/plan-marshall task="implement .plan/orchestrator/truthful-signals/plans/PLAN-218-config-guards.md"
 ```
 
 ## Write-Boundary

@@ -699,7 +699,7 @@ stops mid-run drift.
   `test/plan-marshall/build-pyproject/test_gate_coverage.py`,
   `test/pm-plugin-development/ext-self-review-plan-marshall/test_self_review.py` — the tests every
   *Done when* names, plus D5's committed derivation artifact.
-- ⛔ **Epic-tree record, NOT repository source — read input only.** `../cloud-runs/` resolves under `.plan/local/orchestrator/review-apparatus/`, which is **git-ignored**; the records were moved out of `doc/plans/` at the cloud-wave ingest (`26f2f417b`, #1333). An edit here reaches **no PR diff** and is machine-local. Read it; do not count it as delivered surface.
+- ⛔ **Epic-tree record, NOT repository source — read input only.** `../cloud-runs/` resolves under `.plan/orchestrator/review-apparatus/`, which is **git-ignored**; the records were moved out of `doc/plans/` at the cloud-wave ingest (`26f2f417b`, #1333). An edit here reaches **no PR diff** and is machine-local. Read it; do not count it as delivered surface.
 - `../cloud-runs/090-feed-pr-findings-back-into-local-review/report-01.md` — D6's two
   record corrections only.
 
@@ -755,7 +755,7 @@ just added. **Two independent measurements, same direction.**
 - OBSERVED (added 2026-08-31, the run's own report — NOT re-derived here): the drift guard emitted
   a false positive in its introducing run's logs, ten self-review rounds passed it, and an external
   reviewer caught it. Confirm/refute at PR #1368 comment `86d508` and that run's logs.
-  - verdict: corroborated | checked_at: 7845a4b9a383a4d58c9314bfce89970ced67c4f7 | by: review-apparatus/cleanup | rescoped: n/a | evidence: Re-grounded at HEAD 7845a4b9a, method: whole-spec-file intersection against git diff --name-only 26645688b..HEAD (197 paths). Fail-closed by design - the scan is over the WHOLE spec file, not a parsed Expected Surface section, because two section parsers disagreed on this corpus. Basename matching stays DISCARDED as non-discriminating. NO running-row exclusion applied this pass: the queue has no running plan. Intersection: 12 hit(s), including SKILL.md; bot-participation-contract.md; build.py; ext-point-self-review-surfacing.md; gitlab_pr.py; marshal.json. Surface MOVED in this window - NOT re-audited line by line this pass; line references will have drifted, re-derive at outline. No finding in this window contradicts the premise.
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: review-apparatus/cleanup | rescoped: n/a | evidence: Re-grounded at HEAD (was 7845a4b9a). Intersection over the 22 declared paths: 12 hits incl. review_gate_delta.py (+50), build.py, pre-push-quality-gate.md, pre-submission-self-review.md, ext-self-review SKILL.md, _self_review_detectors.py (+70), _self_review_patterns.py (+26), finalize-step-plugin-doctor SKILL.md. Diff magnitude read (1597 insertions, 212 deletions across the core): additive throughout. review_gate_delta.py addition is should_await_refusal (the #1510 await policy), not a change to the gate-delta counting the claim is about. Premise intact; not a line-by-line re-audit.
 - OBSERVED: this spec was RE-GROUNDED against HEAD `e8324d241` on 2026-08-23 during the cloud-wave ingestion; the outcome, and every spec defect that must be corrected before a run, are in § "Re-Grounding" above and in `../cloud-wave-audit.md` § 6.
 Every scoping premise is labelled. Each confirm/refute artifact is **git-reachable from this clone**,
 and none is a `.plan/` path. That is a scoping choice, not a reachability fact: `.plan/` carries two
@@ -785,7 +785,7 @@ and this plan simply settles no premise from either.
 An asserted **absence** is verified exactly as an asserted presence, and is the higher-risk half here:
 four of the claims above are absences, and each sends the run to build something if it holds. Verify
 each before building against it.
-  - verdict: corroborated | checked_at: 26645688b | by: review-apparatus/cleanup | rescoped: n/a | evidence: Re-grounded at HEAD 26645688b, method: whole-spec-file intersection against git diff --name-only f6d058b4b..HEAD (486 paths). Fail-closed by design - the scan is over the WHOLE spec file, not a parsed Expected Surface section, because two section parsers disagreed on this corpus. Basename matching was measured last pass and DISCARDED as non-discriminating. NO running-row exclusion applied this pass: the queue has no running plan. Intersection: 13 hit(s). FIRST-PARTY: #1356's directed class sweep FIXED verification-feedback.md's pr-state producer - line 108 now carries the error_cause: no_pr_found discriminator and states that a status: error is NOT a no-PR signal. That was one of the four the sweep found, so this spec's own subject is one instance lighter. The cohort_size defect folded here 2026-08-27 is NEW scope and unverified by any run. 13 hits including automatic-review/SKILL.md, bot-participation-contract.md, ci-verify.md and marshal.json - re-derive every line reference at outline.
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: review-apparatus/cleanup | rescoped: n/a | evidence: Same window as claim 1, baseline 26645688b..HEAD (strictly wider, same hit set plus the pre-7a028157e tail). Surface MOVED; read at the diff, the movement is additive instrumentation, not a change to the measure-our-own-gates premise.
 
 ## Verification
 
@@ -870,12 +870,12 @@ Beyond every per-deliverable *Done when*:
 ## Hand-Off Command
 
 ```text
-/plan-marshall task="implement .plan/local/orchestrator/review-apparatus/plans/PLAN-PR-030-the-instrument-that-measures-our-gates-can-report-them-perfect.md"
+/plan-marshall task="implement .plan/orchestrator/review-apparatus/plans/PLAN-PR-030-the-instrument-that-measures-our-gates-can-report-them-perfect.md"
 ```
 
 ## Write-Boundary
 
 The plan implementing this spec touches only its own repository source and tests. It creates and edits
-NO file under `.plan/local/orchestrator/` other than its own `inbox/{sender}-{seq}` message — the
+NO file under `.plan/orchestrator/` other than its own `inbox/{sender}-{seq}` message — the
 orchestrator owns every other ledger write — and reports its outcome through its PR and its inbox
 message.

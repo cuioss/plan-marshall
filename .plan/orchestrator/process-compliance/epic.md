@@ -35,9 +35,9 @@ with every remaining gap a logged, visible exemption rather than a silent slip.
      outside the markers — never inside them. -->
 
 <!-- BEGIN GENERATED: resume-summary -->
-**Resume anchor**: Full drain complete 2026-09-21 (76/76 consumed: 13 landings + 63 findings/lessons; 6 lessons promoted, 4 specs staged as PLAN-09..12, queue 12 rows); next: emit PLAN-08 launch per gate (slots N=2 R=0).
+**Resume anchor**: Drain+cleanup complete (2026-09-22): 1 candidate-lesson dispositioned (folded 2 argparse lessons into PLAN-12, staged PLAN-13/PLAN-14 under new WS-07); re-grounded 22 claims across PLAN-05..12 at HEAD 7d82d5d90 (1 contradicted+rescoped, 1 surface correction); ledger compacted, invariants ok. Restart NOT_READY: 106 uncommitted worktree paths (multi-epic dirty state) block a fresh-session restart until committed. Next: operator reviews/commits the working tree, then run 'next' to emit PLAN-08 (or another disjoint candidate) per the parallelization gate.
 **Phase**: orchestrating
-**Inbox (derived)**: 0 queued, 86 archived
+**Inbox (derived)**: 0 queued, 87 archived
 **Queue** (staged, in order):
 1. PLAN-05 (WS-05)
 2. PLAN-06 (WS-05)
@@ -46,6 +46,8 @@ with every remaining gap a logged, visible exemption rather than a silent slip.
 5. PLAN-10 (WS-01)
 6. PLAN-11 (WS-06)
 7. PLAN-12 (WS-05)
+8. PLAN-13 (WS-07)
+9. PLAN-14 (WS-04)
 - PLAN-01 (WS-01) — plan=phase-gates — PR 1540 — landing=landings/PLAN-01.md — status: shipped
 - PLAN-02 (WS-02) — plan=plan-02-worktree-discipline — PR 1547 — landing=landings/PLAN-02.md — status: shipped
 - PLAN-03 (WS-03) — plan=compliant-paths — PR 1542 — landing=landings/PLAN-03.md — status: shipped
@@ -86,9 +88,11 @@ with every remaining gap a logged, visible exemption rather than a silent slip.
 | 2 | PLAN-06 | WS-05 | staged | marketplace/bundles/plan-marshall/skills/execute-task/scripts/inject_project_dir.py; marketplace/bundles/plan-marshall/skills/phase-5-execute/standards/operations.md; marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/dispatch-inline-split.md; test/plan-marshall/phase-5-execute/ |
 | 3 | PLAN-08 | WS-03 | staged | marketplace/bundles/plan-marshall/skills/tools-integration-ci/; marketplace/bundles/plan-marshall/skills/workflow-integration-github/ |
 | 4 | PLAN-09 | WS-03 | staged | AGENTS.md; marketplace/bundles/plan-marshall/skills/plan-orchestrator/SKILL.md; marketplace/bundles/plan-marshall/skills/plan-orchestrator/scripts/orchestrator.py; test/plan-marshall/plan-orchestrator/ |
-| 5 | PLAN-10 | WS-01 | staged | marketplace/bundles/plan-marshall/skills/plan-marshall/; marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/planning.md; marketplace/bundles/plan-marshall/skills/plan-orchestrator/scripts/orchestrator.py; test/plan-marshall/plan-marshall/; test/plan-marshall/plan-orchestrator/ |
+| 5 | PLAN-10 | WS-01 | staged | marketplace/bundles/plan-marshall/skills/phase-1-init/; marketplace/bundles/plan-marshall/skills/plan-marshall/; marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/planning.md; marketplace/bundles/plan-marshall/skills/plan-orchestrator/scripts/_orchestrator_inbox.py; test/plan-marshall/plan-marshall/; test/plan-marshall/plan-orchestrator/ |
 | 6 | PLAN-11 | WS-06 | staged | marketplace/bundles/plan-marshall/skills/phase-6-finalize/; marketplace/bundles/plan-marshall/skills/plan-orchestrator/scripts/orchestrator.py; test/plan-marshall/phase-5-execute/; test/plan-marshall/plan-orchestrator/ |
-| 7 | PLAN-12 | WS-05 | staged | marketplace/bundles/plan-marshall/skills/manage-status/scripts/manage-status.py; marketplace/bundles/plan-marshall/skills/plan-retrospective/; test/plan-marshall/manage-status/ |
+| 7 | PLAN-12 | WS-05 | staged | marketplace/bundles/plan-marshall/skills/manage-locks/scripts/merge_lock.py; marketplace/bundles/plan-marshall/skills/manage-status/scripts/manage-status.py; marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/branch-cleanup.md; marketplace/bundles/plan-marshall/skills/plan-retrospective/; marketplace/bundles/plan-marshall/skills/tools-integration-ci/scripts/ci.py; marketplace/bundles/plan-marshall/skills/tools-integration-ci/standards/pr-review-operations.md; test/plan-marshall/manage-status/ |
+| 8 | PLAN-13 | WS-07 | staged | marketplace/bundles/plan-marshall/skills/phase-6-finalize/SKILL.md; marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/archive-plan.md; marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/dispatch-inline-split.md; marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/emit-landing.md; marketplace/bundles/plan-marshall/skills/phase-6-finalize/workflow/create-pr.md; marketplace/bundles/plan-marshall/skills/platform-runtime/scripts/session_binding.py; test/plan-marshall/phase-6-finalize/ |
+| 9 | PLAN-14 | WS-04 | staged | marketplace/bundles/plan-marshall/skills/persona-plan-marshall-agent/; test/plan-marshall/persona-plan-marshall-agent/ |
 <!-- END GENERATED: ordered-queue -->
 
 ### Queue annotations

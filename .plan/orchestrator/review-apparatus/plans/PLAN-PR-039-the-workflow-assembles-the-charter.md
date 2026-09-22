@@ -59,7 +59,7 @@ that same path.
   Generate Review Token, Authenticate to Google Cloud, Resolve credentials path, Record run start,
   Review pull request, Verify the reviewer actually produced a review. Read at
   `cuioss/cuioss-organization/.github/workflows/reusable-pr-agent-review.yml`.
-  - verdict: unverifiable | checked_at: 19453cb | by: review-apparatus/cleanup | rescoped: n/a | evidence: Re-grounded at HEAD 19453cb. UNVERIFIABLE BY CONSTRUCTION, not by omission: this spec's Expected Surface is FOREIGN-REPO-ONLY (cuioss/cuioss-organization) - corpus surfaces reports derivation_status prose, claimed_count 0, admits_disjointness_check false, which is the NAMED EXEMPTION recorded on the spec. A git diff over plan-marshall can never reach that population, so the intersection method used for the rest of this corpus is inapplicable here. This is an unreachable population, NOT a refutation and NOT a checked negative.
+  - verdict: unverifiable | checked_at: 7d82d5d90 | by: review-apparatus/cleanup | rescoped: n/a | evidence: UNVERIFIABLE BY CONSTRUCTION, unchanged from the prior stamp and re-confirmed at HEAD: corpus surfaces still reports derivation_status prose, claimed_count 0, admits_disjointness_check false - the named exemption on this spec. Its surface is FOREIGN-REPO-ONLY (cuioss/cuioss-organization). A plan-marshall git diff cannot reach that population. An unreachable population, not a refutation and not a checked negative. Note: superseded by PLAN-PR-066, which absorbed it 2026-09-14.
 - OBSERVED: dotted-key environment variables are PR-Agent's documented configuration form, already
   used by this workflow for `VERTEXAI.VERTEX_PROJECT`, `VERTEXAI.VERTEX_LOCATION` and the three
   `github_action_config.*` toggles — read in the `Review pull request` step's `env:` block.
@@ -134,12 +134,12 @@ this plan with anything.
 ## Hand-Off Command
 
 ```text
-/plan-marshall task="implement .plan/local/orchestrator/review-apparatus/plans/PLAN-PR-039-the-workflow-assembles-the-charter.md"
+/plan-marshall task="implement .plan/orchestrator/review-apparatus/plans/PLAN-PR-039-the-workflow-assembles-the-charter.md"
 ```
 
 ## Write-Boundary
 
 The plan implementing this spec touches only the foreign `cuioss/cuioss-organization` repository
-and its tests. It creates and edits NO file under `.plan/local/orchestrator/` other than its own
+and its tests. It creates and edits NO file under `.plan/orchestrator/` other than its own
 `inbox/{sender}-{seq}` message. Because the real diff is foreign, finalize will offer to manufacture
 an empty host PR scoped to bookkeeping.

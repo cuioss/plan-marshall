@@ -47,9 +47,11 @@ and report** if either no longer reproduces.
 - OBSERVED (2026-09-18): every deliverable in this plan was carried verbatim from the theme spec named
   in its `Carried from` column, which carries the claim labels for its own deliverables. Confirm/refute
   by reading that spec's `## Claim Labels` section — this plan re-states none of them.
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: review-apparatus/cleanup | rescoped: n/a | evidence: Structural carried-verbatim claim, verified by reading this spec at HEAD: four pointer deliverables plus a merged D0, and the post-run-quality-001 drain table records carriers rather than new bodies.
 - OBSERVED (2026-09-18, orchestrator `corpus surfaces` + per-deliverable mapping): this plan's declared
   surface is disjoint from every other live plan's in this epic. Confirm/refute with
   `orchestrator corpus cross-check --slug review-apparatus`.
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: review-apparatus/cleanup | rescoped: n/a | evidence: DISJOINTNESS HOLDS, derived by membership: _findings_core.py, jsonl-format.md, manage-findings/SKILL.md and test/plan-marshall/manage-findings are declared by no other STAGED spec - a real change from the theme-spec era this file own header records. AND its whole declared surface is UNDISTURBED: zero of the four declared paths appear in git diff --name-only 7a028157e..HEAD. This plan is the cleanest re-grounding in the corpus.
 
 
 ## Inbox drain 2026-09-18 — `post-run-quality-001.md`
@@ -82,10 +84,10 @@ closed to `indeterminate`. That producer-side fix is **D2** of this plan, consum
 ## Hand-Off Command
 
 ```text
-/plan-marshall task="implement .plan/local/orchestrator/review-apparatus/plans/PLAN-PR-072-the-findings-store-and-its-dispositions.md"
+/plan-marshall task="implement .plan/orchestrator/review-apparatus/plans/PLAN-PR-072-the-findings-store-and-its-dispositions.md"
 ```
 
 ## Write-Boundary
 
 The plan implementing this spec writes to its own repository source only. It creates and edits NO file
-under `.plan/local/orchestrator/` other than its own `inbox/{sender}-{seq}` message.
+under `.plan/orchestrator/` other than its own `inbox/{sender}-{seq}` message.

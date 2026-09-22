@@ -34,18 +34,19 @@ completeness, and records the CI-wait suppression hints that landed alongside th
 ## Claim Labels
 
 - OBSERVED: both PLAN-180 carve-1 landings carried narrative only; `landing-check` returned complete:false with 9-of-9 missing keys on each — read at `.plan/orchestrator/process-compliance/inbox/test-quality-001.md` § What was observed
-  - verdict: unverifiable | checked_at: 93bda90 | by: process-compliance/cleanup | rescoped: n/a | evidence: ledger cite (test-quality-001 What was observed); landing bodies not opened this pass
+  - verdict: unverifiable | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: process-compliance/cleanup | rescoped: n/a | evidence: ledger cite (test-quality-001 What was observed) unchanged; landing bodies still not opened this pass
 - OBSERVED: the drain corroborated merge facts independently (the hand-recovery the block exists to remove); same pre-fix class as two earlier landings — read at `.plan/orchestrator/process-compliance/inbox/test-quality-001.md` § Cost paid
-  - verdict: unverifiable | checked_at: 93bda90 | by: process-compliance/cleanup | rescoped: n/a | evidence: ledger cite (test-quality-001 Cost paid); history premise needs plan-store read
+  - verdict: unverifiable | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: process-compliance/cleanup | rescoped: n/a | evidence: ledger cite (test-quality-001 Cost paid) unchanged; history premise still needs plan-store read
 - OBSERVED: the emit-landing step writes narrative but not facts on this path; a file-time complete:false is currently silent — read at `.plan/orchestrator/process-compliance/inbox/test-quality-001.md` § Suggested direction
-  - verdict: unverifiable | checked_at: 93bda90 | by: process-compliance/cleanup | rescoped: n/a | evidence: ledger cite (test-quality-001 Suggested direction); path behavior needs outline
+  - verdict: unverifiable | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: process-compliance/cleanup | rescoped: n/a | evidence: ledger cite (test-quality-001 Suggested direction) unchanged; path behavior still needs outline
 - OBSERVED: 9 of this epic's 13 drained landings were narrative-only (4 complete) — drain-proposal tally, corroborated by two inline `landing-check complete: true` spot checks
-  - verdict: unverifiable | checked_at: 93bda90 | by: process-compliance/cleanup | rescoped: n/a | evidence: drain-proposal tally plus spot checks; drain population not re-opened this pass
+  - verdict: unverifiable | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: process-compliance/cleanup | rescoped: n/a | evidence: drain-proposal tally plus spot checks unchanged; drain population still not re-opened this pass
 - OBSERVED: 2 identical `[ci_timeout]` findings suppressed after the terminal precondition showed green (recurrence 2/2) — read at `.plan/orchestrator/process-compliance/inbox/phase-gates-010.md` § body
-  - verdict: unverifiable | checked_at: 93bda90 | by: process-compliance/cleanup | rescoped: n/a | evidence: ledger cite (phase-gates-010 inbox); suppression history not re-opened
+  - verdict: unverifiable | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: process-compliance/cleanup | rescoped: n/a | evidence: ledger cite (phase-gates-010 inbox, archived) unchanged; suppression history still not re-opened
 - HYPOTHESIS: the wait-budget lapse on a live-pending finalize is the same wait-artifact class — confirm/refute at `marketplace/bundles/plan-marshall/skills/phase-6-finalize/` § wait-budget seam (verify-at-outline; folded lead from `compliant-paths-006.md`)
-  - verdict: corroborated | checked_at: 93bda90 | by: process-compliance/cleanup | rescoped: n/a | evidence: branch-cleanup.md merge_queue_wait_budget_seconds at :581-606
+  - verdict: corroborated | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: process-compliance/cleanup | rescoped: n/a | evidence: branch-cleanup.md unchanged since 93bda90; merge_queue_wait_budget_seconds still present at :581-606; re-confirmed
 - Verify-first clause: the consuming phase settles the HYPOTHESIS clause against the implementing source before scoping — refutation loops back to re-scope
+  - verdict: unverifiable | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: process-compliance/cleanup | rescoped: n/a | evidence: procedural instruction to the consuming phase, not a checkable world premise; no implementing-source check applies
 
 ## Expected Surface
 
@@ -58,7 +59,7 @@ completeness, and records the CI-wait suppression hints that landed alongside th
 ## Dependencies and Sequencing
 
 - Depends on: none
-- Overlaps with: PLAN-07 surfaces (shipped, no live collision); PLAN-08 (shared orchestator surface area — sequence, do not parallelize)
+- Overlaps with: PLAN-07 surfaces (shipped, no live collision); PLAN-08 (shared orchestator surface area — sequence, do not parallelize); PLAN-12 (`branch-cleanup.md`, discovered when PLAN-12 folded new material — confirmed via `corpus cross-check` — sequence, do not parallelize); PLAN-13 (this spec's bare-directory `phase-6-finalize/` declaration covers every file PLAN-13 names — `SKILL.md`, `archive-plan.md`, `dispatch-inline-split.md`, `emit-landing.md`, `create-pr.md` — discovered when PLAN-13 was staged; sequence, do not parallelize)
 - Adjacent to: test-quality epic (foreign landings stay owned there — this plan fixes the producer contract, not their ledger)
 
 ## Folded inbox material (same act)

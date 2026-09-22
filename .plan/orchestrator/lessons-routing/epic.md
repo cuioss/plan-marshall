@@ -131,17 +131,105 @@ rather than re-deriving it:
 owns only the routing/versioning **mechanism itself** — PLAN-LR-01..06 and any future infra plan about
 *how* a finding gets classified, transported, or stamped. It never accumulates content-derived plans.
 
-A future pass over the lesson corpus is a **separate, dated epic** — `lessons-handling-YY-MM-DD-NN`,
-one per pass, mirroring the two already run and closed (`lessons-handling-26-08-08-01`,
-`lessons-handling-26-08-26-01`). That dated epic does the actual work: read each lesson, check it
-against ground truth (still valid vs stale), deduplicate/consolidate, cluster into ≤12-deliverable
-groups per plan, and route each group via `orchestrator inbox write` to whichever sibling epic
-actually owns the subject (or, when a cluster is a tooling defect in the routing/versioning mechanism
-itself rather than lesson content, port it directly into `lessons-routing` as a new plan — the
-precedent is `PLAN-LH2-18` → `PLAN-LR-06`, WS-05, done at this epic's 2026-09-21 consolidation). Each
-handled lesson is removed from `.plan/local/lessons-learned/` via a sanctioned `manage-lessons remove`
-call (never a raw `rm`) after it is ingested, and the dated epic closes and archives under its own
-name once every lesson it touched has a disposition — it does not stay open as a permanent home.
+⛔⛔ **RULING 2026-09-22 (operator) — SUPERSEDES the "separate dated epic" model below. `lessons-routing`
+is ALWAYS the orchestrator used for a lessons-corpus sweep, going forward. No new
+`lessons-handling-YY-MM-DD-NN` epic is created.** A sweep runs AS this epic, not as a child of it: read
+each lesson, check it against ground truth (still valid vs stale), deduplicate/consolidate, cluster,
+and route each cluster via `orchestrator inbox write` to whichever sibling epic actually owns the
+subject (or, when a cluster is a tooling defect in the routing/versioning mechanism itself rather than
+lesson content, port it directly into `lessons-routing` as a new plan — see the `PLAN-LH2-18`/`PLAN-LR-06`
+caution two paragraphs up: check both re-grounding AND the Inbound Routing rule before doing that,
+never on the strength of "the sweep found it while reading lesson content" alone). Each handled lesson
+is removed from `.plan/local/lessons-learned/` via a sanctioned `manage-lessons remove` call (never a
+raw `rm`) once its routing message is queued. **The distribution discipline is unchanged — only the
+epic wrapper is retired**: this epic still never accumulates content-derived plans from a sweep: every
+cluster's disposition is a routing decision (`## Lesson Sweeps` below) or, rarely, a genuinely new
+routing-mechanism infra plan, never a staged plan spec that just restates swept content.
+
+Three epics ran the now-retired separate-epic pattern before this ruling and remain as closed history,
+never reopened or reused as a template: `lessons-handling-26-08-08-01`, `lessons-handling-26-08-26-01`,
+and the short-lived `lessons-handling-26-09-22-01` (opened and closed the same day this ruling landed —
+its full record is inlined at `## Lesson Sweeps § 2026-09-22` below and its tree was removed, per the
+operator, once inlined).
+
+## Lesson Sweeps
+
+One dated subsection per sweep, append-only, newest last. This is where a sweep's disposition record
+lives now that a sweep runs AS this epic rather than as a separate dated epic (see the Standing Rule
+above) — never in the generated START-HERE/Ordered-Queue blocks, which stay reserved for this epic's
+own PLAN-LR-NN queue.
+
+### 2026-09-22 — full corpus sweep (inlined from the retired `lessons-handling-26-09-22-01`)
+
+Opened as a separate dated epic under the then-current model, closed the same day once the operator
+ruled `lessons-routing` is always the orchestrator used; its record is inlined here verbatim and its
+tree removed.
+
+**Scan.** `manage-lessons list` → 45 total (44 active + 1 pre-existing `superseded` stub, unrelated).
+`manage-lessons aggregate` clustered the 44 active into 10 shared-component/cross-ref groups (31
+lessons) + 9 standalones (40 parseable) + 4 unresolvable (unparseable metadata header, all from plan
+`tracked-orchestrator-store-resolver`, hand-authored directly into files rather than filed via
+`manage-lessons add`).
+
+**Ground-truth check.** Spot-checked the one claim closest to a known precedent: `2026-09-21-13-003`
+(manage-lessons `set-body` destroys the metadata header `add` wrote) against the just-shipped
+`PLAN-TRUTH-144`/PR#1560 (`05b5d1ac4`) — that fix touched `manage-lessons.py`, `_lessons_io.py`,
+`_lessons_query.py` for `add`/`remove`/resolution only; `cmd_set_body` was untouched. Still live,
+routed as-is. All 44 were 2026-08-24 through 2026-09-21 vintage, most from one recent retrospective
+sweep.
+
+⛔⛔ **CORRECTION (2026-09-22, via `truthful-signals`' own inbox forward, drained below): "no lesson found
+already-covered" was FALSE for at least 7 of the 44, and possibly 11.** `truthful-signals` had itself
+promoted 11 lessons into the corpus the day before (`2026-09-21-10-002`..`-012`, from its own 2026-09-21
+inbox drain). This sweep never checked a lesson's provenance against its routing destination: 7 of those
+11 (`10-002,003,005,006,007,009,011`) matched `truthful-signals`' own theme and were routed BACK to it as
+if new, then deleted from the corpus once queued. `truthful-signals` caught the round-trip (dates one day
+apart, thematically obvious) and restored all 7 from its own archived pre-promotion messages — no
+permanent loss. The other 4 in that same promoted range (`10-004`→`process-compliance`, `10-008`→
+`post-run-quality`, `10-010`/`10-012`→`orchestrator-refactor`) went to DIFFERENT epics and could not
+self-detect the duplication; correction notices were filed to all three. See `## Open Defects` below.
+
+**Routing** (5 destinations, one bundled `inbox write --kind candidate-lesson` message per epic,
+matched against each epic's own stated ownership scope):
+
+| Destination | Count | Subject |
+|---|--:|---|
+| `truthful-signals` | 18 | confident-signal-hides-a-caveat / prose-vs-structured-fact / doc-drift patterns, incl. the 4 unresolvable-header lessons forwarded verbatim |
+| `process-compliance` | 12 | finalize/worktree mechanism defects + `persona-plan-marshall-agent` foundational-conduct corrections |
+| `post-run-quality` | 6 | `plan-retrospective`/metrics/findings/archived-obligation-ownership |
+| `review-apparatus` | 5 | `automatic-review`/review-retrospective |
+| `orchestrator-refactor` | 3 | `plan-orchestrator`'s own mechanism, per that epic's own aspect 4 |
+
+Plus a sixth, direct `--kind finding` message to `code-intelligence-substrate`: two of the routed
+lessons (`2026-09-21-08-002`, `2026-09-21-08-003`) independently surfaced the same live,
+already-diagnosed bug in that epic's own `cloud-runs/_audit/analyze.py` (hardcoded developer-machine
+paths, confirmed present on `origin/main`) — sent directly rather than left to surface only inside the
+process-angle lessons filed to `truthful-signals`.
+
+One candidate was rerouted mid-analysis: `2026-09-20-08-011` (orchestrator-authored specs tripping
+`phase-2-refine`'s suspicious-perfect-confidence heuristic) was initially considered for
+`orchestrator-refactor` (its provenance names that epic's PLAN-04) but routed to `truthful-signals`
+instead — its remedy is a `phase-2-refine` heuristic-tuning question, not an orchestrator-mechanism
+one; `orchestrator-refactor` independently tracks the supporting staged-spec population as its own
+Watch.
+
+**Retirement.** All 44 routed lessons removed via `manage-lessons remove --coverage-verdict superseded`
+(the convention the prior `lessons-handling-26-08-26-01` epic established — `completely_covered`/
+`redundant`/`obsolete` don't fit a routed-not-yet-acted-on finding), each tombstone naming its
+destination epic and inbox message; the 4 unresolvable ones used `--allow-unreadable`. All 44 calls
+returned success with a tombstone written — **zero destroy-without-tombstone incidents**, confirming
+`PLAN-TRUTH-144`'s fix holds under load, the exact failure mode that produced this epic's own retired
+`PLAN-LR-06` the same day. Also pruned the one pre-existing `superseded` stub via `cleanup-superseded`.
+`.plan/local/lessons-learned/` is now empty.
+
+⚠ **Watch carried forward**: four lessons were hand-authored directly into the corpus without a
+metadata header, bypassing `manage-lessons add`. Not treated as a script defect (no evidence `add`/
+`set-body` themselves are broken for this case), but if it recurs across future sweeps it may be worth
+a `manage-lessons` guard against a headerless file entering the corpus at all. *(re-check: next sweep.)*
+
+⚠ **Watch carried forward**: none of the 6 destination messages was confirmed drained by its receiving
+epic in this session. *(re-check: next `status`/`cleanup` pass on any of the 5 sibling epics, or
+`code-intelligence-substrate`.)*
 
 ## START HERE
 
@@ -154,29 +242,34 @@ name once every lesson it touched has a disposition — it does not stay open as
      outside the markers — never inside them. -->
 
 <!-- BEGIN GENERATED: resume-summary -->
-**Resume anchor**: === ▶ EPIC CREATED 2026-08-24 (operator). 5 plans staged, N=1, R=0. NOTHING RUNNING. Next action: emit PLAN-LR-01, the gate. READ R1-R13. ===
+**Resume anchor**: === R16 (2026-09-22). Inbox drained: 2 messages absorbed. truthful-signals-002 CORRECTED this epic's own sweep record (its 'none already-covered' claim was false for 7-11 items - see R-below and Open Defects). PLAN-LR-07 now RUNNING (operator started it in parallel) - do not edit its spec while running. Queue: LR-01/02/03/04/05 staged, LR-06 retired, LR-07 running. N=1, R=1. Next action: await PLAN-LR-07's landing, then analyze it; do not emit anything else while R=1. READ R1-R16. ===
 R1. ⭐⭐ **THE PROBLEM IS NOT THAT FINDINGS ARE MIXED — IT IS THAT THE UPSTREAM CLASS HAS NO DESTINATION.** `manage-lessons add` already carries a cross-repo guard (`error: wrong_store`) that notices a `plan-marshall:*` component does not belong in a client store. It then offers exactly TWO outcomes: **refuse** (the finding is LOST) or **`--allow-foreign-store`** (the finding is STRANDED where nobody can act on it). **Both are failures.** ⇒ A guard that refuses without routing converts a finding into a dead end.
 R2. ⛔⛔ **THE DISCRIMINATOR EXISTS AND DISCRIMINATES THE WRONG AXIS — verified first-party.** The `wrong_store` ownership predicate asks *"does `marketplace/bundles/{prefix}` exist in this repo?"* — a question only a marketplace repo can answer yes to. **`API-Sheriff` has NO `marketplace/bundles/` directory at all**, so `api-sheriff:maven-build` — *the client's own build, entirely theirs to fix* — fails the test **exactly as** `plan-marshall:build-maven` does. ⇒ **In a consumer repo EVERY prefixed component is "foreign", including the client's own.** ⚠ The predicate is not wrong in THIS repo, where bundle ownership and actionability coincide — **that coincidence is the trap**, and it is why the defect stayed invisible until a consumer checkout was sampled.
 R3. ⛔⛔ **THREE STRANDED UPSTREAM FINDINGS EXIST RIGHT NOW AND NOBODY HERE HAS READ THEM.** `cui-jsf-test-basic/.plan/local/lessons-learned/` holds 4 lessons: 1 local (`cui-jsf-test-basic`) and **3 about plan-marshall** — `recipe-refactor-to-profile-standards`, `build-maven`, `workflow-integration-sonar`. They are real findings about THIS project, in a git-ignored directory, on one developer's machine. ⭐ **PLAN-LR-01 D3 reads them, and that deliverable is the cheapest possible proof the loss matters.** ⚠ Only **2 of 4** known consumer repos were sampled — the population is **at least** five findings over an **unenumerated denominator**.
 R4. ⛔ **MULTI-DEVELOPER SHARING IS BLOCKED BY CONSTRUCTION, NOT BY POLICY.** `.gitignore:45` is `.plan/*` with exceptions only for `marshal.json` and `project-architecture/`; `git ls-files .plan` returns **15 tracked files, none under `local/`**. ⇒ `.plan/local/lessons-learned/` is untracked by design, so a lesson is visible to exactly one developer on exactly one checkout, forever. **This is the operator's aspect 4 and it is structural.**
-R5. ✅ **THE TRANSPORT ALREADY EXISTS — build a ROUTE, not an integration.** `ci.py` exposes an `issue` subcommand alongside `pr`/`checks`/`branch`/`repo`. ⛔ The hard rule that all CI/Git provider operations go through the abstraction binds here exactly as elsewhere; **no second CI path.** ⚠ **UNVERIFIED and gated at PLAN-LR-03 D0: whether a consumer repo's credentials can open an issue on `cuioss/plan-marshall` ACROSS ORGS.** The surface existing does not answer that. A negative answer re-shapes LR-03 rather than killing it — its D0 prices the alternatives (queued outbox / generated body to paste / operator-provisioned token) so the run does not stall on an undecided fork.
-R6. ⭐ **SCOPE DECISIONS TAKEN AT DECOMPOSITION — do not re-derive.** (a) **Issues are DECIDED** as the upstream transport (operator). (b) **Client-local sharing moves to issues LATER** — the operator's *"eventually we should streamline here to issues anyway"* read as sequencing; WS-02 routes upstream now, WS-03 owns client-local durability with the file store as interim. ⚠ **WS-03 has NO plan staged yet, deliberately** — its gate question (issues vs a committable file store) is a function of LR-01's findings, and staging it now would presuppose the answer. (c) **Per-component filing is a MEANS, not the goal** — component is already recorded and already backs the failing guard; what is missing is an **audience**, which component only proxies for.
-R7. ⛔ **THE EPIC IS A HARD SERIAL CHAIN: LR-01 → LR-02 → LR-03 → LR-04.** N=1 is set, but **the dependency chain, not the knob, is the binding constraint** — raising N admits nothing. **LR-01 blocks everything** (it derives both populations and settles derived-vs-declared). **LR-04 is deliberately LAST** — migrating a stranded finding before a destination exists moves it from one dead end to another. ⚠ **LR-04 D2 WRITES into consumer repositories**, which every other plan here is forbidden to do; its spec requires operator confirmation of that write scope before execution. ⚠ This epic's corpus has **never** been `corpus cross-check`ed against its four siblings — do that before emitting anything.
-R8. ⭐⭐ **`PLAN-LR-05` STAGED 2026-08-24 (operator): the version is MANDATORY on every lesson and SCRIPT-DETERMINED, never caller-supplied.** Verified first-party that a lesson header carries `id`, `component`, `category`, `status`, `created` and **nothing about what was running** — `manage-lessons/SKILL.md` mentions no version field anywhere. ⛔⛔ **THE HARD PART: "the version" IS NOT ONE NUMBER, and this session proved it.** Double-sampled on this machine 2026-08-24: executor `MARSHALL_VERSION` = **0.1.1538**, registry `installPath`/`version` = **0.1.1526**, and the cache dir the SKILL BODIES were seated from = **0.1.1526**. ⇒ **The script that files the lesson and the skill body whose behaviour it describes came from DIFFERENT versions** — twelve releases apart today. A naive `version = MARSHALL_VERSION` stamp attributes a finding about a 1526 body to 1538. **D0 settles which source answers *what was running when this was observed*, and may record more than one value; a field whose single value is under-determined is the token-total-is-a-partition archetype.** ⚠ A consumer checkout has **no `marketplace/bundles/**`**, so any answer that reads the source tree fails there — test the design in the consumer shape.
-R9. ⛔⛔ **`LR-03` D1 WAS WRONG WITHOUT `LR-05`, AND IS NOW RE-SEQUENCED.** LR-03 D1 requires the issue body to carry the version the client was running. Without filing-time stamping it could only sample a **live** version at ROUTING time — the version at the moment of routing, not of observation. ⇒ Wrong for **every** finding filed before an upgrade, and the stranded corpus is **two months old** (dated 2026-06-15/16). **LR-05 now lands before LR-03, and LR-03 D1 READS a recorded field rather than sampling one.** ⚠ LR-05 D3: **do NOT backfill a guessed version** onto the pre-existing corpus — a June lesson stamped with today's version is actively false and worse than an absent field. **`absent`, `undetermined` and a real version are THREE states.**
-R10. ⛔⛔ **`LR-02` IS THE RESIDUE OF A SHIPPED FIX — READ `truthful-signals/PLAN-103` (#1050, `a7a657b00`) BEFORE TOUCHING THE GUARD.** It merged as *"fix(manage-lessons): **scope the store-ownership guard to prefixed components**"* — i.e. it fixed the **prefix-LESS** case, which is now correct and documented at `SKILL.md:108` and **must be preserved**. ⇒ This epic owns the half it did not reach: for a **PREFIXED** component the ownership test is still *"does `marketplace/bundles/{prefix}` exist here?"*, which in a consumer repo is `no` for the client's own component too. ⛔ **Two live risks: concluding the subject is closed from PLAN-103's TITLE** (read its landing and merge subject instead), and **re-deriving its narrowing as new**. ⚠ PLAN-103 carries recorded **verification debt** and a live watch that a post-merge CodeRabbit re-review of its `from-error` contract change may have left findings **untriaged in `main`** — check #1050's comments before extending that code path. ✅ **SIBLING REGISTRATION DONE**: this epic is the FOURTH owner; `lessons` was removed from `truthful-signals`' column and the discriminator gained a fourth. **The test is DESTINATION, not subject** — a defect *in* `manage-lessons` behaviour stays theirs. ⚠ **Nothing was transferred**: 17 staged rows there, none with a lessons subject; the five historical ones are all shipped.
-R11. ⛔⛔ **OPERATOR RULING 2026-08-24 — THE VERSION SOURCE IS SETTLED: `MARSHALL_VERSION`, ALWAYS. DO NOT RE-OPEN.** *"Always use MARSHALL_VERSION. Reasoning: for typical clients, installed locally, this is usually correct."* ⇒ **`LR-05`'s D0 gate is RETIRED and the plan is now 4 deliverables with no gate.** ⭐ **MY OBJECTION IS WITHDRAWN AND THE REASON MATTERS:** I evidenced ambiguity with the live 1538-vs-1526 split on THIS machine — **but that split is the plugin-registry pin / orphan-GC inversion, a pathology of this DEVELOPMENT checkout with a long incident history. A typical client installs the plugin, has one cache version, and never sees it.** I generalized a meta-repo defect to clients who do not have it. ⚠ The residual risk is real but **CONFINED to this machine** — where plan-marshall's own lessons are filed, `MARSHALL_VERSION` can name a version other than the one whose skill bodies ran. **Record it as a known limitation in the shipped docs; do NOT build a second source to chase it.** A field right for every client and occasionally imprecise for one developer is the correct trade.
-R12. ⛔ **OPERATOR RULING 2026-08-24 (second): THE PRE-VERSIONING EXECUTOR CASE IS OUT OF SCOPE.** *"That is ok. this is the very old stuff, can be ignored."* ⇒ **`LR-05` D2 is DEMOTED from a designed failure branch to ONE defensive line** — record a sanctioned `undetermined` rather than crash or fabricate, and nothing more. **No signal semantics, no field-population claim, no dedicated fixture.** Any client filing a lesson today has a current executor, because the executor is regenerated by steward / cache-sync. ⭐⭐ **RECORDED BECAUSE I GOT IT WRONG AND THE ERROR IS THE PROJECT'S OWN ARCHETYPE:** I called that branch *"reachable in the field today"* on the evidence of a **SINGLE** stale checkout (`cui-jsf-test-basic`, Jun 15) — **one sample presented as a population**, and a sample of an ABANDONED checkout rather than a live client. The observation was true; the inference was not. ⇒ **`LR-05` is now 3 substantive deliverables + 1 defensive line, no gate.** ⭐ **D4's load-bearing assertion moved**: it is the **no-backfill** case, not the absent-constant one — silently stamping a June lesson with today's version is the failure that is invisible afterwards. ⛔ **D3 unchanged: `absent` / `undetermined` / a real version remain THREE distinct states.** ⚠ **Twice in two turns an over-engineered premise was corrected by the operator** (the version-source gate, then this) — both times I generalized from this development machine to clients who do not share its condition. **Check whether an observation is of a LIVE client before letting it shape a deliverable.**
-R13. ✅ **CLEANUP 2026-08-24 — THIS EPIC IS `restart-check` READY** (`verdict: ready`, 5 of 6 signals scored; `registry_parity` excluded as unowned). Corpus 5/5 both directions, 0 unreadable; `compact` idempotent, 3/3 invariants; inbox at the **EMPTY** zero. ⛔⛔ **BUT ALL FIVE SPECS WERE BORN BLIND TO THE ADMISSION GATE AND ARE NOW FIXED — do not assume a freshly-authored spec is conformant.** They carried a self-invented `## Re-grounding` heading with unlabelled `- Claim:` bullets; `_parse_claims` requires `## Claim Labels` **case-sensitively** and returns `[]` silently otherwise, so `corpus verdicts` saw **0 claims across the whole epic** and every spec would have passed the prep-ready gate **vacuously**. ✅ Rewritten as canonical Claim Labels with OBSERVED/HYPOTHESIS labels, file§symbol anchors, verify-at-outline markers and a verify-first clause each: **`claims_scanned` 0 → 30.** ⚠ **`PLAN-LR-02` lost its machine-derived collision map to my own conversion script and was restored** — re-read it if anything downstream depends on that map.
+R5. ✅ **THE TRANSPORT ALREADY EXISTS — build a ROUTE, not an integration.** `ci.py` exposes an `issue` subcommand alongside `pr`/`checks`/`branch`/`repo`. ⛔ The hard rule that all CI/Git provider operations go through the abstraction binds here exactly as elsewhere; **no second CI path.** ⚠ **UNVERIFIED and gated at PLAN-LR-03 D0: whether a consumer repo's credentials can open an issue on `cuioss/plan-marshall` ACROSS ORGS.** The surface existing does not answer that.
+R6. ⭐ **SCOPE DECISIONS TAKEN AT DECOMPOSITION — do not re-derive.** (a) **Issues are DECIDED** as the upstream transport (operator). (b) **Client-local sharing moves to issues LATER**. (c) **Per-component filing is a MEANS, not the goal.**
+R7. ⛔ **THE EPIC IS A HARD SERIAL CHAIN: LR-01 → LR-02 → LR-03 → LR-04.** LR-01 blocks everything; LR-04 is deliberately last. ⚠ LR-04 D2 WRITES into consumer repositories, forbidden elsewhere; requires operator confirmation. ✅ Cross-checked 2026-09-22 against 24 sibling epics — see R14.
+R8. ⭐⭐ **`PLAN-LR-05`: the version is MANDATORY on every lesson and SCRIPT-DETERMINED, never caller-supplied.**
+R9. ⛔⛔ **`LR-03` D1 WAS WRONG WITHOUT `LR-05`.** LR-05 now lands before LR-03.
+R10. ⛔⛔ **`LR-02` IS THE RESIDUE OF A SHIPPED FIX — READ `truthful-signals/PLAN-103` BEFORE TOUCHING THE GUARD.** ✅ SIBLING REGISTRATION DONE: this epic is the FOURTH owner.
+R11. ⛔⛔ **OPERATOR RULING — THE VERSION SOURCE IS SETTLED: `MARSHALL_VERSION`, ALWAYS. DO NOT RE-OPEN.**
+R12. ⛔ **OPERATOR RULING (second): THE PRE-VERSIONING EXECUTOR CASE IS OUT OF SCOPE.**
+R13. ✅ **CLEANUP — restart-check READY.** ALL FIVE SPECS WERE BORN BLIND TO THE ADMISSION GATE AND ARE NOW FIXED — claims_scanned 0 → 30.
+R14. ⛔⛔ **Audit of whether LR-01..06 are real plans.** PLAN-LR-06 RETIRED, not transferred: its defect already shipped as PLAN-TRUTH-144/PR#1560. LR-01/02/03/04/05 confirmed correctly homed.
+R15. ⛔⛔ **OPERATOR RULING — lessons-routing is ALWAYS the orchestrator used for a lessons-corpus sweep. NO new lessons-handling-{date} epic.** The 2026-09-22 sweep is inlined at '## Lesson Sweeps'. PLAN-LR-07 staged to make this structural in the skill itself.
+R16. ⛔⛔ **2026-09-22, inbox drain corrected this epic's own sweep record.** truthful-signals-002 reported the sweep's 'none already-covered' claim was FALSE for 7 of 11 items in truthful-signals' own 2026-09-21 promotion range (10-002..012) — they boomeranged back to truthful-signals, were deleted from the corpus, and truthful-signals self-healed by restoring them from its own archive. 4 more from the same range went to 3 OTHER epics (process-compliance, post-run-quality, orchestrator-refactor) undetected — correction notices filed to all three. Root cause recorded as an Open Defect: no field records which epic already promoted a lesson. truthful-signals-001 (2026-09-11 forward: Token-Sheriff/API-Sheriff guard-override tension, opposite conclusions) also absorbed as Open Defects feeding PLAN-LR-01/02/04. Both messages archived. New boomerang-detection defect deliberately NOT folded into the currently-running PLAN-LR-07 — candidate for a later PLAN-LR-08.
 **Phase**: orchestrating
-**Inbox (derived)**: 1 queued, 0 archived
+**Inbox (derived)**: 0 queued, 2 archived
+**Running**:
+- PLAN-LR-07 (WS-01)
 **Queue** (staged, in order):
 1. PLAN-LR-01 (WS-01)
 2. PLAN-LR-02 (WS-01)
 3. PLAN-LR-03 (WS-02)
 4. PLAN-LR-04 (WS-04)
 5. PLAN-LR-05 (WS-01)
-6. PLAN-LR-06 (WS-05)
+- PLAN-LR-06 (WS-05) — status: retired
 <!-- END GENERATED: resume-summary -->
 
 ### Annotations
@@ -204,7 +297,7 @@ R13. ✅ **CLEANUP 2026-08-24 — THIS EPIC IS `restart-check` READY** (`verdict
 | 3 | PLAN-LR-03 | WS-02 | staged | marketplace/bundles/plan-marshall/skills/manage-lessons/scripts/**; marketplace/bundles/plan-marshall/skills/tools-integration-ci/**; test/plan-marshall/manage-lessons/** |
 | 4 | PLAN-LR-04 | WS-04 | staged | (prose) |
 | 5 | PLAN-LR-05 | WS-01 | staged | marketplace/bundles/plan-marshall/skills/manage-lessons/SKILL.md; marketplace/bundles/plan-marshall/skills/manage-lessons/scripts/**; test/plan-marshall/manage-lessons/** |
-| 6 | PLAN-LR-06 | WS-05 | staged | marketplace/bundles/plan-marshall/skills/manage-lessons/scripts/**; test/plan-marshall/manage-lessons/** |
+| 6 | PLAN-LR-07 | WS-01 | running | marketplace/bundles/plan-marshall/skills/persona-plan-orchestrator/standards/orchestration-model.md; marketplace/bundles/plan-marshall/skills/plan-orchestrator/SKILL.md; marketplace/bundles/plan-marshall/skills/plan-orchestrator/workflow/lessons-handling.md |
 <!-- END GENERATED: ordered-queue -->
 
 ### Queue annotations
@@ -215,6 +308,9 @@ R13. ✅ **CLEANUP 2026-08-24 — THIS EPIC IS `restart-check` READY** (`verdict
   checkouts, which no other plan in this epic performs.
 - PLAN-LR-04 — deliberately last. Migrating the stranded corpus before the route exists would move
   findings from one dead end to another.
+- PLAN-LR-07 — disjoint from LR-01..05's surface, may run in any order relative to them. ⚠ Overlaps
+  live `orchestrator-refactor` and `truthful-signals` plans on the same shared skill files
+  (`SKILL.md`/`orchestration-model.md`) — serialize with whichever lands first, do not merge edits.
 
 ## Decisions
 
@@ -230,12 +326,52 @@ R13. ✅ **CLEANUP 2026-08-24 — THIS EPIC IS `restart-check` READY** (`verdict
 - 2026-08-24 — **`lessons-handling-26-08-08-01` is NOT the home.** That epic holds 24 staged plans
   drained *from* the lessons corpus — it consumes lessons as input. This epic owns the corpus's routing
   machinery. Different subjects; no merge.
+- 2026-09-22 — **Operator-directed audit: are PLAN-LR-01..06 real work or an accident of
+  over-decomposition?** Answer, verified against ground truth (all six spec bodies read, `corpus
+  cross-check` run for the first time, and the two named plans' fate checked against `git log`): five
+  of six are correctly homed here per this epic's own Inbound Routing rule above (no sibling owns
+  audience/ownership classification, the upstream route, provenance, or corpus migration — that is
+  *why* this epic exists) and were kept staged, untouched. **PLAN-LR-06 (`manage-lessons-corpus-integrity`,
+  WS-05) was RETIRED**, not transferred: its subject (a `remove` call that destroys a lesson while
+  reporting `not_found`, with no tombstone) is not a destination question at all — it is exactly the
+  "confident signal hides a caveat" pattern this epic's own routing rule assigns to `truthful-signals` —
+  and, independently, the fix had *already shipped* the same day the finding was ported in here
+  (`truthful-signals-26-09-21/PLAN-TRUTH-144`, PR #1560, `05b5d1ac4`). Filing it as a new finding would
+  have duplicated shipped work rather than routed a live one. WS-05 now has zero live plans.
+- 2026-09-22 — **OPERATOR RULING: `lessons-routing` is ALWAYS the orchestrator used for a
+  lessons-corpus sweep; the separate-dated-epic model is retired.** A sweep just ran as a fresh dated
+  epic (`lessons-handling-26-09-22-01`, per the then-current Standing Rule) and completed — 44 lessons
+  routed to 5 sibling epics, corpus emptied (full record: `## Lesson Sweeps § 2026-09-22` above). The
+  operator then directed: inline that epic's full record into this one and remove its tree, and
+  document that this epic is always used going forward. Alternative considered and rejected: keep
+  opening a fresh dated epic per sweep — **rejected** by direct operator instruction, not by this
+  epic's own reasoning; the Standing Rule section above is amended accordingly. The two PRIOR dated
+  epics (`lessons-handling-26-08-08-01`, `26-08-26-01`) are NOT retroactively inlined — this ruling is
+  prospective, and reopening closed history to backfill it would be pure churn with no reader benefit.
 
 ## Open Defects
 
 - ⛔⛔ **Three stranded upstream lessons exist RIGHT NOW** in `cui-jsf-test-basic` — `plan-marshall:recipe-refactor-to-profile-standards`, `plan-marshall:build-maven`, `plan-marshall:workflow-integration-sonar` — in a git-ignored directory, unread by this project. *(source: first-party sample, 2026-08-24. Owned by PLAN-LR-01 (b), routed by PLAN-LR-04.)*
 - ⛔ **The `wrong_store` ownership predicate mis-classifies a client's OWN prefixed component as foreign**, because it tests for `marketplace/bundles/{prefix}` which no consumer repo has. Verified against `API-Sheriff` (`api-sheriff:maven-build`, no `marketplace/` directory). *(source: first-party, 2026-08-24. Owned by PLAN-LR-02.)*
 - ⚠ **`--allow-foreign-store` is the only escape and it launders the distinction it bypasses** — a lesson filed with it is indistinguishable afterwards from a genuinely local one. *(source: first-party read of `manage-lessons/SKILL.md:108`. Owned by PLAN-LR-02.)*
+- ⛔⛔ **A lesson sweep has no way to detect it is re-routing content a destination epic already owns —
+  confirmed, not hypothetical.** The 2026-09-22 sweep routed 7 of `truthful-signals`' own 2026-09-21
+  promotions (`2026-09-21-10-002,003,005,006,007,009,011`) back to `truthful-signals` as new candidates,
+  then deleted the corpus copies once queued; 4 more from the same promoted range went to 3 OTHER epics
+  undetected. Root cause: no field on a lesson records which epic (if any) already promoted/dispositioned
+  it, so even a same-sender "is this a boomerang" check has no field to read. *(source: `truthful-signals`
+  inbox forward, drained 2026-09-22, archived at `inbox/archive/truthful-signals/truthful-signals-002.md`.
+  Not yet owned by a staged plan — candidate for a PLAN-LR-07 D6 or a new PLAN-LR-08; do not fold into
+  PLAN-LR-07 while it is running, per the operator's parallel launch.)*
+- ⚠ **Two consumer repos independently reached OPPOSITE conclusions about the `wrong_store` guard's
+  right axis** (Token-Sheriff: refuse harder, treat the override as operator-only; API-Sheriff: file
+  locally whenever THIS repo pays the recurring cost, regardless of bundle ownership) — both coherent,
+  because "who can fix it" and "who keeps paying for it" are different populations a single store can
+  serve only one of. Token-Sheriff's override also RECURRED after a first relocation (PLAN-08 routed
+  correctly, PLAN-09 filed two more locally). *(source: `truthful-signals` inbox forward dated
+  2026-09-11, drained 2026-09-22 — leads, not independently corroborated from this checkout. Owned by
+  PLAN-LR-01 D1/D4 and PLAN-LR-02 D0/D1; PLAN-LR-04 should not assume one-time migration is sufficient
+  given the recurrence.)*
 
 ## Watches
 

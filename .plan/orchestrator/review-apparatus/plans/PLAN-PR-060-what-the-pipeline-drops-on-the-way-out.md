@@ -140,10 +140,10 @@ widens D0's population, adds no deliverable):
 ## Hand-Off Command
 
 ```text
-/plan-marshall task="implement .plan/local/orchestrator/review-apparatus/plans/PLAN-PR-060-what-the-pipeline-drops-on-the-way-out.md"
+/plan-marshall task="implement .plan/orchestrator/review-apparatus/plans/PLAN-PR-060-what-the-pipeline-drops-on-the-way-out.md"
 ```
 
 ## Write-Boundary
 
 The plan implementing this spec touches only its own repository source and tests. It creates and edits
-NO file under `.plan/local/orchestrator/` other than its own `inbox/{sender}-{seq}` message.
+NO file under `.plan/orchestrator/` other than its own `inbox/{sender}-{seq}` message.

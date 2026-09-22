@@ -521,7 +521,7 @@ theme, and limb C is D6 limb B's rule stated in its general form.
   `participated_stale` required bot whose peer comments more recently can never be selected.
   Confirm/refute at the trigger-B selection site in `automatic-review` (verify-at-outline —
   ⛔ **re-read it; PLAN-PR-025A moved this surface**).
-  - verdict: corroborated | checked_at: 19453cb | by: review-apparatus/cleanup | rescoped: n/a | evidence: Re-grounded at HEAD 19453cb (was 7845a4b9a). METHOD CHANGED THIS PASS: intersection of the spec's DECLARED Expected Surface (via corpus surfaces, the single shared reader) against git diff --name-only 7845a4b9a..HEAD (204 paths). The former whole-spec-file method is RETIRED as non-discriminating - it scored hits on prose mentions of CLAUDE.md and .plan/marshal.json. ZERO declared paths moved in this window, so no premise of this spec was disturbed. NOT a line-by-line re-audit: this establishes the surface is UNDISTURBED, not that the premise was re-read.
+  - verdict: contradicted | checked_at: 7d82d5d90 | by: review-apparatus/cleanup | rescoped: yes | evidence: DEAD AT HEAD, first-party. Claim: trigger B selects one bot from the newest bot-authored finding, so a participated_stale required bot whose peer comments more recently can never be selected. review_completeness.py now carries select_stale_bot_for_trigger(stale_bots, newest_finding_kind_bot): selects from the STALE SET, newest-kind only as tie-breaker, exposed as CLI verb trigger-bot --plan-id --stale-bots --newest-kind. Shipped UNDECLARED by dd16f521e (#1510), authored by sibling epic instrumentation-substrate PLAN-03. RE-SCOPE: residue is narrower - a required bot that never published any finding is not in stale_bots and falls through to newest_finding_kind_bot or empty; whether automatic-review workflow actually invokes the new verb is unestablished.
 - OBSERVED: on PR #1368 the CodeRabbit notice `Review rate limited` was filed as actionable
   finding `12ce1a` and remediated in-run by TASK-016. Confirm/refute at PR #1368's comment
   history and the plan's findings store.
@@ -537,7 +537,7 @@ theme, and limb C is D6 limb B's rule stated in its general form.
   `issue_comment` path therefore cannot produce `head_sha_verified: true` for any bot. ⛔ **Cite the
   SYMBOL, not the line** — the relayed report and this ledger's own prior note both carried line
   numbers (`571`, `394`) that no longer resolve; the mechanism held, the coordinates did not.
-  - verdict: corroborated | checked_at: b64db66713d037b456d3c0c0956c68839208b173 | by: review-apparatus/cleanup | rescoped: n/a | evidence: Re-grounded FIRST-PARTY at HEAD b64db6671, not relayed: github_re_review.py sets head_sha_verified from matched_signal == 'review' in ONE hard-coded assignment, and _references_head_sha has exactly ONE call site, inside the review branch against review['commit_sha']. The issue_comment discriminator returns 'issue_comment', so head_sha_verified: true is UNREACHABLE on that path for any bot; the module's own docstring records the symptom verbatim. The relayed line number (571) and this ledger's prior note (394) BOTH failed to resolve at HEAD - the mechanism held, the coordinates did not.
+  - verdict: contradicted | checked_at: 7d82d5d90 | by: review-apparatus/cleanup | rescoped: no | evidence: DEAD AT HEAD and stale since five days after it was stamped. Claim asserts one hard-coded head_sha_verified assignment from matched_signal == review and one _references_head_sha call site. At HEAD github_re_review.py holds 17 head_sha_verified occurrences and _verifies_head_sha resolves (3 occurrences). PLAN-PR-056 claim 3 already recorded this refutation at 38af136e (2026-09-13) while this claim stayed corroborated at b64db6671 (2026-09-08). The corpus carried two opposite verdicts on one symbol; 056 is right, this one is superseded by it.
 
 ## Expected Surface
 
@@ -570,10 +570,10 @@ theme, and limb C is D6 limb B's rule stated in its general form.
 ## Hand-Off Command
 
 ```text
-/plan-marshall task="implement .plan/local/orchestrator/review-apparatus/plans/PLAN-PR-043-the-re-trigger-selector-cannot-reach-the-bot-that-gates.md"
+/plan-marshall task="implement .plan/orchestrator/review-apparatus/plans/PLAN-PR-043-the-re-trigger-selector-cannot-reach-the-bot-that-gates.md"
 ```
 
 ## Write-Boundary
 
 The plan implementing this spec touches only its own repository source and tests. It creates and
-edits NO file under `.plan/local/orchestrator/` other than its own `inbox/{sender}-{seq}` message.
+edits NO file under `.plan/orchestrator/` other than its own `inbox/{sender}-{seq}` message.

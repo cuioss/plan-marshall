@@ -30,10 +30,10 @@
       "landing": ""
     }
   ],
-  "resume_anchor": "Cleanup done, restart READY (5/6 signals, inbox empty, tree clean at e8a716501). PLAN-181 STAGED awaiting launch; PLAN-140 parked. NEXT: operator launches PLAN-181 or reports.",
+  "resume_anchor": "Cleanup 2026-09-22 done (drain 1 promoted, A1 11/11 re-grounded at 7d82d5d90 \u2014 6 contradicted incl. 2 gone-vacuous from the epic restructure deleting landings/, A2-A5 no findings/declined, Phase B compacted). PLAN-181 STAGED awaiting launch; PLAN-140 parked. RESTART NOT_READY: 103 uncommitted paths repo-wide (only 5 this epic's own), operator must decide commit scope \u2014 see truthful-signals' matching finding. Open: PLAN-140 claims 1/2 need re-scope (attribution vs archived sibling specs is structurally vacuous); settled.md carries 7 dangling landings/PLAN-NNN.md refs (105/110/135/145/150/155/170), unowned.",
   "metadata": {
     "parallelization_scope": "1"
   },
   "created": "2026-08-23T21:32:44Z",
-  "updated": "2026-09-21T21:31:02Z"
+  "updated": "2026-09-22T09:01:10Z"
 }

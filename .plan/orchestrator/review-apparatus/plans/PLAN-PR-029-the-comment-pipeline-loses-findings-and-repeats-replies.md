@@ -571,7 +571,7 @@ claims the bound backs the thread-reply case.
   exist at HEAD — the suite was split, and D3's clear-on-change tests belong in the `_resolve` file.
   This applies the correction the spec's own § "Correct before handing this spec to a run" item 1
   already identified.
-- ⛔ **Epic-tree record, NOT repository source — read input only.** `../cloud-runs/` resolves under `.plan/local/orchestrator/review-apparatus/`, which is **git-ignored**; the records were moved out of `doc/plans/` at the cloud-wave ingest (`26f2f417b`, #1333). An edit here reaches **no PR diff** and is machine-local. Read it; do not count it as delivered surface.
+- ⛔ **Epic-tree record, NOT repository source — read input only.** `../cloud-runs/` resolves under `.plan/orchestrator/review-apparatus/`, which is **git-ignored**; the records were moved out of `doc/plans/` at the cloud-wave ingest (`26f2f417b`, #1333). An edit here reaches **no PR diff** and is machine-local. Read it; do not count it as delivered surface.
 - `../cloud-runs/100-coderabbit-ai-agent-block-strip-vs-extract/report-01.md` — D4 item 7
   only.
 
@@ -594,7 +594,7 @@ claims the bound backs the thread-reply case.
 | Seven sites across four bundles place a finding's full body in `detail` | OBSERVED, count is a lead | the enumerating sweep in D4 item 3; **re-derive — a site added or fixed since authoring changes the number** |
 | No production code reads `count_responded`, so the skip-reason rename is safe | HYPOTHESIS | D0's derivation (a); the rename proceeds only on what that sweep returns, and any reader it finds is updated in the same commit |
 | Scoping the shared layer by body length keeps every pre-existing noise-filter test green | HYPOTHESIS | `test/plan-marshall/workflow-integration-github/test_github_pr.py` — the existing noise-filter tests are the artifact; if one goes red, the threshold derivation is wrong and the run reports the conflicting fixture rather than deleting the test |
-  - verdict: corroborated | checked_at: cc5ea40a1 | by: review-apparatus/cleanup | rescoped: n/a | evidence: Re-grounded at HEAD cc5ea40a1 (was 19453cb1b). Method: intersect the spec's DECLARED Expected Surface (via corpus surfaces, the single shared reader) against git diff --name-only 19453cb1b..cc5ea40a1 (111 paths). CORPUS-WIDE CHECK THIS PASS: PR #1392 RETIRED standards/pr-agent.md (renamed to cuioss-review-bot.md) and retired bot_kind pr-agent; all 49 specs were swept for the retired path and 11 cite it, of which 3 are staged (PR-029, PR-031, PR-042) and were CORRECTED in place. Membership-verified from corpus surfaces, not by cardinality. NOT a line-by-line re-audit of every claim: this settles the SURFACE citation only.
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: review-apparatus/cleanup | rescoped: n/a | evidence: Re-grounded at HEAD (was cc5ea40a1). Intersection of the 22 declared paths against cc5ea40a1..HEAD: 4 hits - github_pr.py, automatic-review SKILL.md, test_github_pr.py, test_fetch_findings.py. github_pr.py diff READ: the only change is router plan-id re-injection and three routing-uniformity flags. comment-patterns.json, _findings_core.py, the ingestion pre-filter and the gitlab/sonar arms are all UNMOVED. Premise intact.
 
 ## Verification
 
@@ -680,12 +680,12 @@ was wrong, it **records that as a proposal in the report** and implements the ch
 ## Hand-Off Command
 
 ```text
-/plan-marshall task="implement .plan/local/orchestrator/review-apparatus/plans/PLAN-PR-029-the-comment-pipeline-loses-findings-and-repeats-replies.md"
+/plan-marshall task="implement .plan/orchestrator/review-apparatus/plans/PLAN-PR-029-the-comment-pipeline-loses-findings-and-repeats-replies.md"
 ```
 
 ## Write-Boundary
 
 The plan implementing this spec touches only its own repository source and tests. It creates and edits
-NO file under `.plan/local/orchestrator/` other than its own `inbox/{sender}-{seq}` message — the
+NO file under `.plan/orchestrator/` other than its own `inbox/{sender}-{seq}` message — the
 orchestrator owns every other ledger write — and reports its outcome through its PR and its inbox
 message.

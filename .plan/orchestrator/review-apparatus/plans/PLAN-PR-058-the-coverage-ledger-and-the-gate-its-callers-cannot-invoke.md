@@ -155,7 +155,7 @@ it.
 - OBSERVED (first-party, 2026-09-15, orchestrator `gh api` read): `plan-marshall#1438` merged
   `2026-09-07T07:58:16Z`, carries no labels, and has zero reviews authored by `coderabbitai[bot]`.
   Confirm/refute at `repos/cuioss/plan-marshall/pulls/1438` and its `/reviews`.
-  - verdict: corroborated | checked_at: 7a028157e | by: review-apparatus/cleanup | rescoped: n/a | evidence: gh api pulls/1438: merged_at 2026-09-07T07:58:16Z, labels []; pulls/1438/reviews filtered to coderabbitai[bot] -> 0
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: review-apparatus/cleanup | rescoped: n/a | evidence: Re-grounded at HEAD (was 7a028157e). The claim is a merged-PR historical record (plan-marshall#1438 merged 2026-09-07T07:58:16Z, no labels, zero coderabbitai[bot] reviews). An immutable GitHub fact: no commit in 7a028157e..HEAD can disturb it, and the gh api read that established it is not re-run this pass. Corroborated as a historical record, not as a fresh API read.
 - OBSERVED (corpus pass 2026-09-15, not re-read first-party): 74 of 181 PRs carry a CodeRabbit refusal
   inside the summary comment, 71 as in-place edits, 54 alongside real reviews. Confirm/refute by
   re-sampling at D0 — this figure is the starting population, not the sample D0 publishes.
@@ -173,10 +173,10 @@ it.
 ## Hand-Off Command
 
 ```text
-/plan-marshall task="implement .plan/local/orchestrator/review-apparatus/plans/PLAN-PR-058-the-coverage-ledger-and-the-gate-its-callers-cannot-invoke.md"
+/plan-marshall task="implement .plan/orchestrator/review-apparatus/plans/PLAN-PR-058-the-coverage-ledger-and-the-gate-its-callers-cannot-invoke.md"
 ```
 
 ## Write-Boundary
 
 The plan implementing this spec touches only its own repository source and tests. It creates and edits
-NO file under `.plan/local/orchestrator/` other than its own `inbox/{sender}-{seq}` message.
+NO file under `.plan/orchestrator/` other than its own `inbox/{sender}-{seq}` message.

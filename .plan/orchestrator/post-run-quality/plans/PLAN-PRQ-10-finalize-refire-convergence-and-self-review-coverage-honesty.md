@@ -58,6 +58,23 @@ corpus figure decides whether D1 is a convergence probe or a threshold tweak. `m
 note `refire-report` reads ONLY `execution_log` (`manage-execution-manifest.py:2918`, helper
 `:2801-2849`), which `PLAN-PRQ-08` D2 records as under-counting exactly the steps that re-fire most. Read
 both ledgers and publish the disagreement rather than picking one.
+
+⛔⛔ **BLOCKER, found 2026-09-22 (cleanup, `checked_at: 7d82d5d90`), by attempting exactly what this
+sub-deliverable instructs: D0(a) is UNEXECUTABLE AS WRITTEN against the archived corpus.** Both named
+readers are `--plan-id`-keyed and the shared `validate_plan_id` rejects a dated archived-directory id (the
+archive lives at `.plan/local/archived-plans/{date}-{plan_id}`, not `plans/archived`); neither declares an
+`--archived-plan-path` flag. Only the `plan-retrospective` scripts accept a path, and none of them
+publishes `phase_steps` or the token rollup. This must be resolved — either add archived-path support to
+one of the two named readers, or add a third deliverable/reader before this plan is emitted — or D0(a)
+cannot run. Partial corpus re-derivation IS possible today through `check-dispatch-audit run --mode
+archived --archived-plan-path {path}`: on one archived plan it read `evaluated_population: 22`,
+`execution_rows: 30` (reproducing `PLAN-PRQ-08` D2's under-count to the row), and exactly **4** re-firing
+steps via `firing_comparison` — disagreeing with this spec's own carried figure of 9 re-firing
+steps/47 firings, which is exactly the disagreement D0(a) exists to publish rather than resolve by
+picking a reader. ⚠ Also found while calibrating, a candidate fold for `PLAN-PRQ-09` or `PLAN-PRQ-11` D0:
+`check-dispatch-audit run --mode archived --archived-plan-path {a nonexistent path}` returns
+`status: success` with output byte-identical to a real-but-empty plan directory — no path-existence check,
+so "does not exist" and "exists and is empty" are indistinguishable.
 (b) For every entry in the `ext-self-review-plan-marshall` `CANDIDATE_LISTS` registry, state which
 `CONTENT_CLASSES` members it can produce a candidate for. Publish the matrix and the count of (class,
 detector) pairs, and the classes with zero covering detectors. ⛔⛔ **CORRECTED 2026-09-21 (cleanup,
@@ -145,32 +162,32 @@ from an empty firing set is the vacuous-guard archetype this epic has recorded a
   8 / "0 rm, 0 promo, 0 adapt", `plugin-doctor` 7 / "clean". First-party from that plan's
   `status.metadata.phase_steps` and its `plan_efficiency` aspect. ⛔ The plan directory is archived —
   re-derive from the archived corpus at outline, do not re-read this restatement (verify-at-outline).
-  - verdict: corroborated | checked_at: e8a71650 | by: post-run-quality/cleanup | rescoped: n/a | evidence: All figures exact, re-derived from archived status.json + fragment-plan-efficiency.toon. One nuance: the 47-firing total sums only the 9 steps with firing_count>1, excluding 13 single-firing steps out of 22 total steps / 60 total firings -- D0(a) must state which denominator it publishes. Also confirms execution.toon's execution_log carries only 30 of 6-finalize's rows -- live first-party evidence of PRQ-08 D2's under-count, measurable before D0 runs.
+  - verdict: unverifiable | checked_at: 7d82d5d90 | by: post-run-quality/cleanup | rescoped: n/a | evidence: archive located and read via check-dispatch-audit --mode archived, but the two D0(a) readers (manage-status, manage-execution-manifest refire-report) both reject the archived plan id via validate_plan_id and neither declares --archived-plan-path -- D0(a) as written is unexecutable, needs resolving before emission. Partial re-derivation: evaluated_population 22, execution_rows 30 (reproduces PRQ-08 D2 under-count), 7 dispatched/0 inline/15 no-evidence; token totals and phase_steps not re-derivable through any path-accepting reader
 - OBSERVED: `may_close` and `further_round_owed` are defined and consumed in
   `marketplace/bundles/plan-marshall/skills/phase-6-finalize/workflow/pre-submission-self-review.md` and
   nowhere else outside tests — content sweep, 37 hits in that file, 6 across 5 test files, 0 elsewhere;
   3080 files scanned, 0 unreadable, no truncation, no elision (2026-09-19).
-  - verdict: corroborated | checked_at: e8a71650 | by: post-run-quality/cleanup | rescoped: n/a | evidence: may_close: 34 hits in pre-submission-self-review.md + 4 across 3 test files. further_round_owed: 3 hits same file + 2 across 2 test files. Totals 37/6/0 reproduce exactly. files_scanned 3089 (grew from 3080, not drift), 0 unreadable.
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: post-run-quality/cleanup | rescoped: n/a | evidence: reproduces exactly: may_close 34 hits in pre-submission-self-review.md + 4 across 3 test files; further_round_owed 3 hits + 2 across 2 test files. Totals match the claim's figures to the hit
 - OBSERVED: `ext-point-self-review-surfacing.md:222` declines the per-detector reach map on the stated
   ground that "no implementor can derive" it, while `:219` states the class vocabulary is declared in the
   implementor's own `CONTENT_CLASSES` registry, and that registry exists at
   `pm-plugin-development/skills/ext-self-review-plan-marshall/scripts/_self_review_detectors.py`. The two
   sentences sit in one document. Read directly, 2026-09-19.
-  - verdict: corroborated | checked_at: e8a71650 | by: post-run-quality/cleanup | rescoped: n/a | evidence: :222 and :219 verbatim as claimed; registry confirmed at _self_review_detectors.py:2331. FLAG for D3: a SECOND site makes the same underivability assertion -- _self_review_detectors.py:2327-2330's comment directly above the registry. D3's amendment must discharge BOTH sites or it ships the same contradiction it forbids.
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: post-run-quality/cleanup | rescoped: n/a | evidence: both sentences present verbatim but LINE NUMBERS DRIFTED: underivability sentence now ext-point-self-review-surfacing.md:227 (was :222), class-vocabulary sentence now :224 (was :219). Second site also moved to _self_review_detectors.py:2393-2400 (was :2327-2330). D3 must discharge the re-pinned lines
 - OBSERVED: `5e9ee0` is the load-bearing `may_close=no` case (delta round clean, full-surface confirmation
   owed) and is contractual at `ext-point-self-review-surfacing.md:56`. D2 must not retire it.
-  - verdict: corroborated | checked_at: e8a71650 | by: post-run-quality/cleanup | rescoped: n/a | evidence: :56 verbatim: 'A delta-scoped round cannot close the step...' The contract D2 must preserve is live and unambiguous. Finding id 5e9ee0 lives in the archived findings store, not re-opened this pass; the contractual claim does not depend on it.
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: post-run-quality/cleanup | rescoped: n/a | evidence: ext-point-self-review-surfacing.md:56 verbatim at the unchanged line: a delta-scoped round cannot close the step, consumer re-runs without --since-ref before recording terminal done. Contract D2 must preserve is live and unambiguous
 - ⚠ HYPOTHESIS: the four steps named above are not the whole re-firing population — D0(a) owns the
   derivation and may return a larger or smaller set (verify-at-outline).
-  - verdict: corroborated | checked_at: e8a71650 | by: post-run-quality/cleanup | rescoped: n/a | evidence: Derived from archived status.json phase_steps: nine steps re-fired (simplify 12, self-review 9, lessons-housekeeping 8, plugin-doctor 7, pre-push-quality-gate 3, push 2, ci-verify 2, automatic-review 2, branch-cleanup 2), 13 of 22 fired once. Hypothesis confirmed on one plan before D0 starts; D0(a) inherits a floor of 9, not 4.
+  - verdict: unverifiable | checked_at: 7d82d5d90 | by: post-run-quality/cleanup | rescoped: n/a | evidence: phase_steps unreadable (same validate_plan_id blocker as claim 0). Reachable ledger DISAGREES with prior verdict: execution.toon via firing_comparison shows exactly 4 re-firing steps not 9, 30 firings not 47 -- D0(a) should publish the disagreement rather than pick one reader; hypothesis not supported by the reachable ledger, which names precisely those four
 - ⚠ HYPOTHESIS: AsciiDoc bullet-list prose is the only content class with zero covering detectors. ⛔
   Asserted by nobody; it was found by an operator opening one file. D0(b) owns it (verify-at-outline).
-  - verdict: contradicted | checked_at: e8a71650 | by: post-run-quality/cleanup | rescoped: yes | evidence: CONTENT_CLASSES (_self_review_detectors.py:2331-2338) has SIX members: python, skill_doc, standards_doc, markdown_other, structured_config, other. 'AsciiDoc bullet-list prose' is not a declared class -- .adoc lands in the unnamed catch-all 'other' per _classify_content (:2344-2368). Objective's 'one of five classes' is a count error, same archetype as PRQ-02/09's 16-vs-17. Substance survives: 0 hits for adoc across all three implementor modules -- no detector reaches AsciiDoc at all. D4 must name 'other' explicitly or scope an AsciiDoc class -- neither is currently stated.
+  - verdict: contradicted | checked_at: 7d82d5d90 | by: post-run-quality/cleanup | rescoped: yes | evidence: CONTENT_CLASSES now at _self_review_detectors.py:2401-2408 (moved from :2331-2338), six members, no AsciiDoc class -- _classify_content falls through to other for .adoc. Substance survives, sharper: zero AsciiDoc-related hits in any of the three implementor modules. D4 must name other explicitly or scope a distinct class
 - ⚠ HYPOTHESIS: a `work_performed`-style convergence flag is derivable for every finalize step without a
   per-step change — confirm/refute at `finalize-step-sync-baseline` and `branch-cleanup`, which already
   publish it, and at the `ext-point-finalize-step` facts contract (verify-at-outline). If refuted, D1
   narrows to shape (i) or (iii).
-  - verdict: contradicted | checked_at: e8a71650 | by: post-run-quality/cleanup | rescoped: yes | evidence: ext-point-finalize-step.md:120-124: work_performed is exactly one fact with a fixed key, deliberately NOT a per-step template; declaring it is CONDITIONAL (only when a done branch is reachable without characteristic work), binding every declaring step at every terminal call site. Generalising to all steps is a per-step change, not a free derivation -- the contract refuses the template the hypothesis assumes. D1 narrows to shape (i) or (iii) per the spec's own fallback. Also: declarer population is FOUR not two -- :144 sync-baseline, :145 branch-cleanup, :146 sonar-roundtrip, :149 emit-landing; archived PRQ-06 status.json also shows pre-submission-self-review recording facts.work_performed.
+  - verdict: contradicted | checked_at: 7d82d5d90 | by: post-run-quality/cleanup | rescoped: yes | evidence: ext-point-finalize-step.md:120-125: work_performed is one fixed-key fact, deliberately not a per-step template, declaration is conditional -- generalising to all steps is a per-step contract change, standard refuses the template the hypothesis assumes. Declarer population re-derived: obligations table now 6 rows, 4 declare work_performed (was 2), matching the prior correction. D1 narrows to shapes (i) and (iii)
 
 ## Expected Surface
 

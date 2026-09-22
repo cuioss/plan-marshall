@@ -99,6 +99,7 @@ each at HEAD before scoping (verify-at-outline for all).
 - OBSERVED: `test/plan-marshall/manage-status/` and `test/plan-marshall/workflow-integration-git/` — D5's controls
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/manage-status/scripts/_cmd_lifecycle.py` — `mark-step-done`'s parameter surface (D4a; absorbed from PLAN-TRUTH-156)
 - HYPOTHESIS: `marketplace/bundles/plan-marshall/skills/phase-6-finalize/scripts/` — `assert-step-recorded` (D4b; absorbed from PLAN-TRUTH-155 D10) (verify-at-outline)
+- OBSERVED: `marketplace/bundles/plan-marshall/skills/phase-6-finalize/workflow/create-pr.md` — `pr_number` stamped at create-pr and never reconciled against the PR that actually merged (D0, D1; folded 2026-09-22)
 
 ## Dependencies and Sequencing
 
@@ -114,6 +115,19 @@ each at HEAD before scoping (verify-at-outline for all).
 ```text
 /plan-marshall task="implement .plan/local/orchestrator/truthful-signals/plans/PLAN-TRUTH-170-the-finalize-seam-records-less-than-it-does-and-enforces-less-than-it-documents.md"
 ```
+
+## ⭐ FOLDED 2026-09-22 — a stamped `pr_number` surviving only in a `display_detail` prose sentence, D0/D1's exact shape
+
+Inbox lesson `2026-09-21-08-004` (relayed via `lessons-handling-26-09-22-01`): `create-pr` stamped
+`pr_number: "1555"`; the operator closed it unmerged and landed as `#1557`+`#1558` instead, recorded only
+in a `display_detail` prose sentence. This spec's own Objective states the shape verbatim: "None of these
+is a wrong number. Each is a record that is quietly incomplete." Surface added above (`create-pr.md`).
+
+⚠ **Split, do not let one fold swallow both halves.** The RECORDING half (above) is D0/D1's. The
+CONSUMING half — *"four of sixteen retrospective aspects could not grade the plan because every footprint
+tier resolved against the dead PR"* — is **PLAN-TRUTH-174** D2's exact shape (a three-state `comparison`
+that reports its unresolvable state instead of silently not grading). Sequence 170 → 174, or split the
+lesson's two halves explicitly if both launch independently.
 
 ## Write-Boundary
 

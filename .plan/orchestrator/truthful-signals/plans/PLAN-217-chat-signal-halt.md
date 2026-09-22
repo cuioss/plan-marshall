@@ -1,6 +1,6 @@
 # PLAN-14: Chat-signal fidelity and halt reporting
 
-epic: quality-aspect
+epic: truthful-signals
 workstream: WS-07
 
 > Staged plan spec — one shippable unit of work, ready for `/plan-marshall` hand-off.
@@ -48,7 +48,7 @@ not no-op, version stamps. G06 + 2 singletons (6 lessons).
 ## Hand-Off Command
 
 ```text
-/plan-marshall task="implement .plan/orchestrator/quality-aspect/plans/PLAN-14-chat-signal-halt.md"
+/plan-marshall task="implement .plan/orchestrator/truthful-signals/plans/PLAN-217-chat-signal-halt.md"
 ```
 
 ## Write-Boundary

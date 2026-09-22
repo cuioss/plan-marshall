@@ -55,23 +55,44 @@ this repository's own cost record warns against.
 - OBSERVED: `CLAUDE.md` § "Workflow Discipline (Hard Rules)" states the rules exist "because Claude
   regularly violates them despite softer guidance" — read at `CLAUDE.md`. This is the admission the
   survey acts on, and it is also an undederived empirical claim, which is why PLAN-02 baselines it.
+  - verdict: corroborated | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: instrumentation-substrate/cleanup | rescoped: n/a | evidence: CLAUDE.md hard-rule opening sentence unmodified at HEAD, same verbatim quote as PLAN-01 idx1
 - ⛔ OBSERVED — **a correction to `next-level-002`, made at drain time.** The message claimed
   plan-marshall "runs **one** hook family — the PreToolUse R1 group" and that "every other hard rule is
   exhortation". The machine-local `.claude/settings.local.json` in this checkout declares **six** hook
   events — `SessionStart`, `UserPromptSubmit`, `Notification`, `Stop`, `PostToolUse` (2 matcher groups)
-  and `PreToolUse` (3 matcher groups). Measured in this checkout on 2026-09-14. ⚠ The message's
-  **substance** survives — most hard rules have no mechanical enforcer, and the R1 family is
-  context-gated to plan contexts so a fresh clone and every cloud session carry none of it — but its
+  and `PreToolUse` (3 matcher groups). Measured in this checkout on 2026-09-14; re-confirmed at cleanup
+  2026-09-22 — PostToolUse 2 ✓, PreToolUse 3 ✓, UserPromptSubmit 1, Notification 1, Stop 1, still six
+  events total. ⚠ One addition the spec does not state: `SessionStart` itself now carries **3** matcher
+  groups (two matcher-less + one `clear`) — a sub-count within the six events, not a seventh event. ⚠
+  The message's **substance** survives — most hard rules have no mechanical enforcer, and the R1 family
+  is context-gated to plan contexts so a fresh clone and every cloud session carry none of it — but its
   **count** is wrong, and deliverable 1 must derive the existing-enforcer population rather than
   inheriting the claim.
+  - verdict: corroborated | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: instrumentation-substrate/cleanup | rescoped: n/a | evidence: six hook events re-confirmed at HEAD, exact matcher-group counts hold; SessionStart sub-count noted (3 groups, not a 7th event)
 - HYPOTHESIS: The hook surface is machine-local only, so no enforcement travels with a clone — confirm/
   refute at `.claude/settings.local.json` versus the checked-in `.claude/` tree (verify-at-outline).
   ⛔ This decides whether a "deterministic check" verdict means anything portable, or whether it means
   "enforced on one developer's machine" — which would make the whole partition's value conditional.
-- HYPOTHESIS: The rule population is bounded by `CLAUDE.md` and does not extend into
-  `persona-plan-marshall-agent` — confirm/refute at
-  `marketplace/bundles/plan-marshall/skills/persona-plan-marshall-agent/standards/tool-usage-patterns.md`
-  (verify-at-outline). Shared with PLAN-02, which carries the same hypothesis over the same population.
+  ⭐ **Corroborated at cleanup 2026-09-22.** The checked-in `.claude/settings.json` (read in full, 30
+  lines) declares `extraKnownMarketplaces`, `enabledPlugins`, `permissions` — and NO `hooks` key at all.
+  All six hook events live solely in the gitignored `.claude/settings.local.json`. Corroborated at
+  `platform-runtime/standards/contract.md` § `project install-hook`: "`claude` resolves to
+  `.claude/settings.local.json` in both install modes … because both payloads are machine-local operator
+  wiring". **Consequence, absorbed into this spec's scope**: a "deterministic check" verdict for the
+  structural+chronically-violated cell means "enforced on one developer's machine" UNLESS the routing
+  verdict (deliverable 4) also addresses where enforcement is installed — the partition's value IS
+  conditional, exactly as this claim feared. Deliverable 4 must state this explicitly per rule rather
+  than leaving it implicit.
+  - verdict: corroborated | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: instrumentation-substrate/cleanup | rescoped: n/a | evidence: checked-in .claude/settings.json carries no hooks key; all 6 events live only in gitignored settings.local.json; deliverable 4 must state the portability caveat per rule
+- ⛔ **REFUTED at cleanup 2026-09-22 (was HYPOTHESIS).** The rule population is NOT bounded by
+  `CLAUDE.md` — it extends into `persona-plan-marshall-agent`. Identical refutation to PLAN-02 idx 2, at
+  the same named artifact: `persona-plan-marshall-agent/SKILL.md` § "Hard Rules (never override)" carries
+  5 always-binding rules absent from `CLAUDE.md`, and `standards/tool-usage-patterns.md` carries 5 more.
+  **Consequence, absorbed into this spec's scope**: deliverable 1's "derived enumeration of the hard-rule
+  population" must span `CLAUDE.md` + the persona `SKILL.md` + `tool-usage-patterns.md`, and PLAN-02's
+  enumeration must be reconciled against the same widened population rather than each plan deriving it
+  twice and getting two answers.
+  - verdict: contradicted | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: instrumentation-substrate/cleanup | rescoped: yes | evidence: persona-plan-marshall-agent/SKILL.md Hard Rules (5 extra) + tool-usage-patterns.md (5 extra) absent from CLAUDE.md; deliverable 1 widened; identical refutation to PLAN-02 idx2, reconcile enumerations
 - Verify-first clause: ⛔ **This is not a de-escalation sweep and may not grow into one.** Demotion moves
   a rule from prose to code. It does not soften the rule, and it does not touch the wording of any rule
   that stays. A plan that finds itself editing rule prose for emphasis has left its scope.

@@ -62,24 +62,24 @@ when its own checks fired.
 - OBSERVED: `.claude/skills/audit-archived-plan-retrospectives/SKILL.md:231-236` states the census's
   self-exclusion verbatim, including the phrase "standing unresolved in the instrument built to surface
   it" (inventory sweep, 2026-09-17).
-  - verdict: corroborated | checked_at: e8a71650 | by: post-run-quality/cleanup | rescoped: n/a | evidence: SKILL.md:231-236 line-exact: 'The census does not census itself'; suspect-zero-census and retire-on-quiet are meta blocks not in CHECK_NAMES; 'standing unresolved in the instrument built to surface it'. Verbatim.
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: post-run-quality/cleanup | rescoped: n/a | evidence: audit-archived-plan-retrospectives/SKILL.md:231-236 line-exact and verbatim; census-does-not-census-itself claim still stands unresolved as filed
 - OBSERVED: the auditor registers **24 checks**, each with a `checks/{name}.md` sub-doc, with a
   deterministic core in `scripts/audit.py` and LLM orchestration in SKILL.md (inventory sweep).
-  - verdict: corroborated | checked_at: e8a71650 | by: post-run-quality/cleanup | rescoped: n/a | evidence: audit.py:237-266 CHECK_NAMES has exactly 24 entries; checks/ dir has exactly 24 .md files, 1:1 by name with CHECK_NAMES; scripts/ contains only audit.py (9583 lines) plus __pycache__; SKILL.md is 662 lines of LLM orchestration.
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: post-run-quality/cleanup | rescoped: n/a | evidence: audit.py:237-267 CHECK_NAMES has exactly 24 entries, checks/ holds 24 .md files 1:1; deterministic-core/LLM-orchestration split holds
 - OBSERVED: `.claude/skills/recipe-plan-review/SKILL.md` declares itself LLM-only with no backing script
   and no persisted artifact — by design, per its own line 30 (inventory sweep).
-  - verdict: corroborated | checked_at: e8a71650 | by: post-run-quality/cleanup | rescoped: n/a | evidence: recipe-plan-review/ contains only SKILL.md, no scripts/. Line 30 verbatim: LLM-driven by design. Nuance: :41 persists a pinned coverage cell identifier to status.json metadata -- coverage-contract bookkeeping, not the review verdict. The verdict itself is persisted nowhere; D3's premise holds unchanged.
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: post-run-quality/cleanup | rescoped: n/a | evidence: recipe-plan-review/SKILL.md:30 confirms LLM-driven-by-design, no persisted verdict; D3 premise stands
 - OBSERVED: `input-integrity` is the auditor's declared "no-false-healthy foundation", and blind plans'
   rows must be annotated "floor, not truth" — so the auditor already HAS the vocabulary D1 needs
   (inventory sweep).
-  - verdict: corroborated | checked_at: e8a71650 | by: post-run-quality/cleanup | rescoped: n/a | evidence: checks/input-integrity.md:3 'the no-false-healthy FOUNDATION'; :187 'deterministic foundation for no-false-healthy'; :190-192 'Annotate floored rows... floor, not truth'; :196-198 worked wording for blind plans; :67 defines the blind flag. Vocabulary present and usable.
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: post-run-quality/cleanup | rescoped: n/a | evidence: checks/input-integrity.md:3,187,190-193 no-false-healthy foundation and floor/blind vocabulary exist and are usable; D1 premise holds
 - ⚠ HYPOTHESIS: the census is the only self-exclusion, and the other 23 checks participate in their own
   populations. ⛔ Asserted by nobody — D0 owns the derivation, and an asserted absence is the higher-risk
   half (verify-at-outline).
-  - verdict: contradicted | checked_at: 1605831c5 | by: post-run-quality/cleanup | rescoped: yes | evidence: Two self-excluded meta blocks, not one -- SKILL.md:231-232 itself says so: suspect-zero-census AND retire-on-quiet are meta blocks, not in CHECK_NAMES. audit.py:237 CHECK_NAMES has 24 entries 1:1 with checks/*.md; suspect_zero_census iterates CHECK_NAMES (:5860); emit_suspect_zero_census_block (:5909) and emit_retire_on_quiet_block (:5956) both append outside the loop (:9452-9462). D1 as written closes only half the population.
+  - verdict: contradicted | checked_at: 7d82d5d90 | by: post-run-quality/cleanup | rescoped: yes | evidence: audit.py:5860/5909/5956/9452-9462 confirms TWO meta blocks (suspect-zero-census + retire-on-quiet), not one; D1 already re-grounded 2026-09-18 to close both, stale hypothesis text is the only residue
 - ⚠ HYPOTHESIS: `.plan/local/audit-reports/` is a suitable home for D3's persisted verdict — confirm at
   the auditor's own persistence step before adding a second layout (verify-at-outline).
-  - verdict: corroborated | checked_at: 1605831c5 | by: post-run-quality/cleanup | rescoped: n/a | evidence: audit.py:5333 AUDIT_REPORTS_REL='.plan/local/audit-reports'; :5345-5348 persistence fn writes {run-timestamp}.toon with a path-traversal guard; :839 retire-on-quiet already reads back from the same dir -- a two-way store, not write-only. 31 entries on disk. No second layout needed.
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: post-run-quality/cleanup | rescoped: n/a | evidence: audit.py:5333,5344-5362,5402,5578 persisted-report store is two-way with path-traversal guard; 31 .toon entries on disk; no second layout needed for D3
 
 ## Expected Surface
 

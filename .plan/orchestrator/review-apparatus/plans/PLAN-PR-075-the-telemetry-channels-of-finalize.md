@@ -41,9 +41,11 @@ Make a step record self-validating about the head it describes, and make a chann
 - OBSERVED (2026-09-18): every deliverable in this plan was carried verbatim from the theme spec named
   in its `Carried from` column, which carries the claim labels for its own deliverables. Confirm/refute
   by reading that spec's `## Claim Labels` section — this plan re-states none of them.
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: review-apparatus/cleanup | rescoped: n/a | evidence: Structural carried-verbatim claim, verified by reading this spec at HEAD: four pointer deliverables, no restated body.
 - OBSERVED (2026-09-18, orchestrator `corpus surfaces` + per-deliverable mapping): this plan's declared
   surface is disjoint from every other live plan's in this epic. Confirm/refute with
   `orchestrator corpus cross-check --slug review-apparatus`.
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: review-apparatus/cleanup | rescoped: n/a | evidence: DISJOINTNESS HOLDS and is the strongest in the corpus, derived by membership: manage-status, manage-metrics and manage-logging are declared by no other staged spec, exactly as this spec own Dependencies claims. But the surface MOVED heavily - _cmd_lifecycle.py (+334), _cmd_mark_step.py (+70), manage-status.py (+16), SKILL.md (+63), status-lifecycle.md (+7), manage-metrics and log-format.md all changed. Light method on the bodies: the surface is DISTURBED and every D0 coordinate must be re-derived at outline.
 
 
 ## Dependencies and Sequencing
@@ -59,10 +61,10 @@ Make a step record self-validating about the head it describes, and make a chann
 ## Hand-Off Command
 
 ```text
-/plan-marshall task="implement .plan/local/orchestrator/review-apparatus/plans/PLAN-PR-075-the-telemetry-channels-of-finalize.md"
+/plan-marshall task="implement .plan/orchestrator/review-apparatus/plans/PLAN-PR-075-the-telemetry-channels-of-finalize.md"
 ```
 
 ## Write-Boundary
 
 The plan implementing this spec writes to its own repository source only. It creates and edits NO file
-under `.plan/local/orchestrator/` other than its own `inbox/{sender}-{seq}` message.
+under `.plan/orchestrator/` other than its own `inbox/{sender}-{seq}` message.

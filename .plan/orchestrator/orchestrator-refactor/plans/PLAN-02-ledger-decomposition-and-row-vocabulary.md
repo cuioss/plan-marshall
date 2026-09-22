@@ -84,12 +84,15 @@ every metadata write re-serialises, and `epic.md` is the single file `compact` a
   exactly `('superseded','transferred','retired','resolved')`) = 10 members. Landed via
   `1c56734ce` (PR #1539). `cmd_queue` validates `--status` against this set at `:1422` —
   `--transition` already accepts all four.
-- OBSERVED (re-derived 2026-09-21, population = all 13 ledgers present on this machine —
-  8 active + 5 archived, corrected from the research-time 12/500 figure, 509 plan rows): 95
-  rows (19%) carried a status the OLD vocabulary could not express — `superseded` 54,
-  `retired` 31, `transferred` 5, `resolved` 5 — in 6 of 13 epics. This is now historical
-  motivation for the fix, not an open gap: the vocabulary landed (see above). D2's remaining
-  work is reconciling stale ledger PROSE that still asserts the retired six-value set.
+- ⚠ SUPERSEDED AT HEAD (was OBSERVED, re-derived 2026-09-21 against 13 ledgers — 8 active +
+  5 archived, 509 plan rows, 95 rows/19% pre-vocabulary) — `7d82d5d90` (#1578, "restructure
+  epics into a fresh live/archived split") moved the population again: `orchestrator corpus
+  epics` now reports **25 distinct ledgers (9 active + 16 archived)**, not 13. The 509-row/
+  95-row/19% figures are therefore STALE denominators, not a current fact — re-derive
+  against 25 rather than trusting either cached figure. This is now historical motivation
+  for the fix, not an open gap: the vocabulary itself already landed (see above). D2's
+  remaining work is reconciling stale ledger PROSE that still asserts the retired six-value
+  set — that work is unaffected by which denominator the historical row-count used.
 - OBSERVED — `review-apparatus/epic.md:2533-2542` records this independently and filed it out
   to `truthful-signals` as `review-apparatus-036.md`, explicitly as "not this epic's to fix" —
   this plan is the owner it was missing.
@@ -99,18 +102,20 @@ every metadata write re-serialises, and `epic.md` is the single file `compact` a
   files only narrow it; confirm/refute by constructing the two concurrent-staging scenarios
   against `orchestrator.py` § `_append_plan_row` and the shared `rmw_json` critical section
   (verify-at-outline).
+  - verdict: unverifiable | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: orchestrator-refactor/cleanup | rescoped: n/a | evidence: neither per-plan-row nor per-workstream file layout exists at HEAD - the claim compares two unbuilt designs, no ground truth to check. def _append_plan_row declared exactly once in orchestrator.py; rmw_json critical section is the write path (_status_core.py:507).
 - HYPOTHESIS — `resume_anchor` belongs in its own file: it is written on almost every verb and
   is the field a fresh session reads first; confirm/refute at `orchestrator.py` §
   `cmd_resume_summary` and `_status_core.py` § `cmd_orchestrator_update_field`
   (verify-at-outline).
+  - verdict: corroborated | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: orchestrator-refactor/cleanup | rescoped: n/a | evidence: resume_anchor is an ORCHESTRATOR_UPDATABLE_FIELDS member (_status_core.py:458-517), every write is a whole-document rmw_json re-serialisation at :507. Named in 8 of 9 plan-orchestrator/workflow/*.md verbs (resume.md alone: 11 mentions) plus templates/landing-analysis.md. The own-file conclusion remains an unimplemented design proposal.
 - HYPOTHESIS — the four unexpressible statuses are four distinct concepts and must not be
   collapsed into one (`superseded` = replaced by a successor spec; `retired` = withdrawn;
   `transferred` = moved to another epic; `resolved` = closed without a plan).
-  - verdict: corroborated | checked_at: e8a716501d3ae21c2c64ab0c892cb1aacaa2a30e | by: orchestrator-refactor/cleanup | rescoped: n/a | evidence: orchestrator.py:220-228 declares CLOSED_UNSHIPPED_PLAN_STATUSES with exactly these four members and meanings - already implemented, nothing left to decide
+  - verdict: corroborated | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: orchestrator-refactor/cleanup | rescoped: n/a | evidence: re-confirmed at current HEAD: orchestrator.py:228 CLOSED_UNSHIPPED_PLAN_STATUSES = (superseded, transferred, retired, resolved), four meanings spelled out at :220-227. VALID_STATUS_VOCABULARY derived by union at :243; disjointness enforced by a construction-time assert at :267-272.
 - Verify-first clause: the 500-row / 12-ledger figure is derived from the ledgers present on
   this machine at research time; re-derive at outline and state which population any count is
   drawn from.
-  - verdict: contradicted | checked_at: e8a716501d3ae21c2c64ab0c892cb1aacaa2a30e | by: orchestrator-refactor/cleanup | rescoped: yes | evidence: re-derived population is 509 rows / 13 ledgers (8 active + 5 archived), corrected in the claim above; the 95-row/19-percent sub-figures reproduced exactly against the new denominator
+  - verdict: contradicted | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: orchestrator-refactor/cleanup | rescoped: yes | evidence: the prior 509-row/13-ledger correction is ITSELF stale: 7d82d5d90 (#1578) restructured epic trees, orchestrator corpus epics now reports 25 distinct ledgers (9 active + 16 archived). Re-scoped in place: the OBSERVED bullet above now states the population is unstable and must be re-derived against 25 at D0 time, not trusted from any cached figure.
 
 ## Expected Surface
 

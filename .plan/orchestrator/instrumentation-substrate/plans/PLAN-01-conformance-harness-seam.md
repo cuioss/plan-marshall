@@ -74,26 +74,49 @@ built, re-scoped, or re-ordered.
 
 - OBSERVED: No adversarial or pressure-scenario testing of instruction prose exists anywhere in the
   inventoried tree — `architecture search --content --pattern "pressure.test|adversarial.scenario|sunk.cost" --ignore-case`
-  returned `count: 0` over `files_scanned: 5462` with `unreadable: 0`, `truncated: false`,
-  `elided: 0`, so the coverage is clean and the zero is a derived negative rather than an absence of
-  looking. Measured in this session at `main` `77cb2e251`.
+  returned `count: 0` with `unreadable: 0`, `truncated: false`, `elided: 0`, so the coverage is clean
+  and the zero is a derived negative rather than an absence of looking. Re-measured at `main`
+  `7d82d5d90` (cleanup 2026-09-22): `files_scanned: 3097` (was `5462` at original staging — the
+  inventory shrank; the zero holds over the current population, re-derive rather than citing either
+  count as current).
+  - verdict: corroborated | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: instrumentation-substrate/cleanup | rescoped: n/a | evidence: architecture search re-run: count 0, files_scanned 3097 (was 5462), coverage clean, zero holds
 - OBSERVED: The repository asserts, without deriving it, that its hard rules "exist because Claude
   regularly violates them despite softer guidance" — read at `CLAUDE.md` § "Workflow Discipline (Hard
   Rules)". This sentence is the proposition this plan makes testable.
+  - verdict: corroborated | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: instrumentation-substrate/cleanup | rescoped: n/a | evidence: CLAUDE.md hard-rule opening sentence unmodified at HEAD, quoted verbatim
 - OBSERVED: A dispatch vehicle with a pinned model and effort already exists and does not need
-  inventing — the `execution-context-{level}` agent family, read at
-  `marketplace/bundles/plan-marshall/skills/persona-plan-marshall-agent/SKILL.md` and the agent
-  definitions it fronts.
-- HYPOTHESIS: A dispatched `execution-context-{level}` leaf can be given a scenario prompt that does
-  **not** load the rule's own skill, so the leaf's compliance is attributable to the instruction under
-  test rather than to a second copy of it arriving through the persona chain — confirm/refute at
-  `marketplace/bundles/plan-marshall/skills/persona-plan-marshall-agent/SKILL.md` § the unconditional
-  base-persona load (verify-at-outline). ⛔ If refuted, the whole measurement is confounded and the
-  plan must re-scope around a different isolation mechanism before implementing anything.
-- HYPOTHESIS: `manage-findings` can store a conformance verdict without a schema change — confirm/
-  refute at `marketplace/bundles/plan-marshall/skills/manage-findings/SKILL.md` (verify-at-outline).
-  If refuted, report verdicts from the runner's TOON only and do not grow the findings schema in this
-  plan.
+  inventing — the `execution-context-{level}` agent family. ⛔ **Citation corrected at cleanup
+  2026-09-22**: the level-variant contract lives at `marketplace/bundles/plan-marshall/agents/
+  execution-context.md` (frontmatter `implements: …/ext-point-dynamic-level-executor`) and
+  `platform-runtime/standards/contract.md` § subagent dispatch, not at
+  `persona-plan-marshall-agent/SKILL.md`, which mentions the envelope only in passing and documents no
+  level variants.
+  - verdict: corroborated | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: instrumentation-substrate/cleanup | rescoped: n/a | evidence: execution-context.md + platform-runtime/standards/contract.md confirm the vehicle; citation corrected in spec text
+- ⛔ **REFUTED at cleanup 2026-09-22 (was HYPOTHESIS).** A dispatched `execution-context-{level}` leaf
+  can be given a scenario prompt that does NOT load the rule's own skill, so compliance is attributable
+  to the instruction under test rather than to a second copy of it arriving through the persona chain.
+  Contradicted at `marketplace/bundles/plan-marshall/agents/execution-context.md` § "Step 2: Load
+  Foundational Practices (IMPLICIT)" (`persona-plan-marshall-agent` loads unconditionally, and its own
+  `## Hard Rules (never override)` section restates several always-binding rules by name) AND
+  independently by first-hand observation: the harness re-supplies the whole of `CLAUDE.md` as system
+  context inside a dispatched leaf. **Consequence, absorbed into this spec's scope**: true
+  attribution-isolated compliance is achievable only for a rule that is NOT already duplicated in the
+  always-loaded base context (`CLAUDE.md` hard rules, `persona-plan-marshall-agent/SKILL.md` § Hard
+  Rules, `standards/tool-usage-patterns.md`). Deliverable 4's rule-selection criterion (Objective) is
+  narrowed accordingly: for a rule that IS already duplicated there, the harness scores
+  **compliance-under-realistic-context** — a still-useful but different signal — and the verdict must
+  say which of the two it measured. Outline picks the first scenario's rule and states which case
+  applies; the isolation confound is a known, absorbed constraint rather than an open question.
+  - verdict: contradicted | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: instrumentation-substrate/cleanup | rescoped: yes | evidence: execution-context.md unconditional persona load + first-hand observation of CLAUDE.md re-supplied in a dispatched leaf; spec re-scoped to attribution-isolated vs realistic-context compliance
+- ⛔ **REFUTED at cleanup 2026-09-22 (was HYPOTHESIS).** `manage-findings` can store a conformance
+  verdict WITHOUT a schema change. Contradicted at `manage-findings/SKILL.md` § "Finding Types": the
+  type vocabulary is a closed 12-value enum and the resolution vocabulary a closed 6-value enum, neither
+  carrying `held`/`violated`/`indeterminate` or a population field; the store is also plan-scoped
+  (`--plan-id` required, `add` refuses an absent plan directory), so a free-standing conformance run has
+  no store to write to. **Consequence, absorbed into this spec's scope**: deliverable 3's verdict is
+  reported from the runner's own TOON output only — this spec's stated fallback branch is now the ONLY
+  branch, and the findings schema is not touched by this plan under any outcome.
+  - verdict: contradicted | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: instrumentation-substrate/cleanup | rescoped: yes | evidence: manage-findings/SKILL.md closed type/resolution enums, no verdict/population field, plan-scoped store; spec's fallback (TOON-only) is now the sole branch, Expected Surface entry removed
 - Verify-first clause: the chosen rule must be re-read at HEAD before a scenario is authored against
   it. A scenario written against a rule whose wording has since changed tests nothing, and this is the
   stale-cache-as-evidence archetype in a new place.
@@ -105,8 +128,11 @@ built, re-scoped, or re-ordered.
   bundle-wide claim contains every sibling plan's component by containment and would serialize the
   queue behind a plan that adds one directory.
 - OBSERVED: `test/pm-plugin-development/instruction-conformance/` — the mirror test directory
-- HYPOTHESIS: `marketplace/bundles/plan-marshall/skills/manage-findings/` — touched only if the
-  verdict-storage hypothesis above confirms (verify-at-outline)
+
+⛔ **Removed at cleanup 2026-09-22**: `marketplace/bundles/plan-marshall/skills/manage-findings/` was
+declared HYPOTHESIS, contingent on a verdict-storage hypothesis now REFUTED (see Claim Labels) — the
+fallback branch (report from the runner's own TOON) is the only branch, so `manage-findings/` is never
+touched by this plan.
 
 ⚠ **Read-only, deliberately NOT declared above**: `CLAUDE.md` is the source of the rule under test and
 is **read, never modified**. Declaring a read-only reference here would serialize every sibling plan

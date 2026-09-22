@@ -168,10 +168,10 @@ review does not cover HEAD cannot pass it without an explicit, recorded override
 ## Hand-Off Command
 
 ```text
-/plan-marshall task="implement .plan/local/orchestrator/review-apparatus/plans/PLAN-PR-053-the-ledger-records-when-we-looked-not-what-was-reviewed.md"
+/plan-marshall task="implement .plan/orchestrator/review-apparatus/plans/PLAN-PR-053-the-ledger-records-when-we-looked-not-what-was-reviewed.md"
 ```
 
 ## Write-Boundary
 
 The plan implementing this spec touches only its own repository source and tests. It creates and edits
-NO file under `.plan/local/orchestrator/` other than its own `inbox/{sender}-{seq}` message.
+NO file under `.plan/orchestrator/` other than its own `inbox/{sender}-{seq}` message.

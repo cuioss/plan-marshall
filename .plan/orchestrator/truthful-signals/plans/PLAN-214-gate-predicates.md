@@ -1,6 +1,6 @@
 # PLAN-11: Gate predicates and refine honesty
 
-epic: quality-aspect
+epic: truthful-signals
 workstream: WS-06
 
 > Staged plan spec — one shippable unit of work, ready for `/plan-marshall` hand-off.
@@ -53,8 +53,27 @@ unknown_head_at_completion, writing nothing.)
 ## Hand-Off Command
 
 ```text
-/plan-marshall task="implement .plan/orchestrator/quality-aspect/plans/PLAN-11-gate-predicates.md"
+/plan-marshall task="implement .plan/orchestrator/truthful-signals/plans/PLAN-214-gate-predicates.md"
 ```
+
+## ⭐ FOLDED 2026-09-22 — D1 needs an orchestrated-spec-aware arm, with a cross-epic-owned derived population
+
+Inbox lesson `2026-09-20-08-011` (relayed via `lessons-handling-26-09-22-01`, surfaced during
+`orchestrator-refactor` PLAN-04 / PR #1543): orchestrator-authored staged specs systematically trip
+phase-2-refine's suspicion heuristic. Six dimensions scoring 100 is EXPECTED for a spec an orchestrator
+already pre-verified with OBSERVED/HYPOTHESIS claim labeling, not suspicious — the check needs an
+orchestrated-spec-aware arm, the opposite prescription from D1's `2026-09-03-16-002` corpus lesson (which
+that spec's own § FOLDED 2026-09-15 already records as accepted corpus learning, not open work). D1's
+Expected Surface (`phase-2-refine/` — suspicion heuristics, exclusions) already covers the file; surface
+unchanged. **Cross-reference, do not re-derive**: `orchestrator-refactor` independently tracks the derived
+staged-spec 2-refine score population as its own Watch — read it before scoping the arm's threshold.
+
+⚠ Header drift found and FIXED at the following `cleanup` pass (2026-09-22, A4 duplication cross-check):
+this spec's front-matter read `epic: quality-aspect` and its Hand-Off Command pointed at
+`.plan/orchestrator/quality-aspect/plans/PLAN-11-gate-predicates.md` — a path that no longer resolves at
+all, since `quality-aspect` is archived (`archived-orchestrators/quality-aspect/`). The same drift was
+found on all 15 migrated `PLAN-2xx` (ex `quality-aspect`) specs and corrected on all of them in the same
+pass.
 
 ## Write-Boundary
 

@@ -14,6 +14,14 @@ full; 23 classified as post-run-quality by subject). Every member below is a les
 plan that hit it, and all are preserved verbatim in this epic at
 `.plan/orchestrator/post-run-quality/lessons/{id}.md`.
 
+⛔ **Folded 2026-09-22 from inbox `lessons-handling-26-09-22-01-001.md`, shared-component pair
+`2026-09-20-08-009` (primary) / `2026-09-21-13-002`.** The seventh and eighth members of the family the
+Objective already predicted ("a seventh is likelier than not"): Step 2.5's metrics reconcile is inert when
+no phase accumulator file exists — the exact case it exists to catch (a D1-shape precondition-keyed-on-its-
+own-defect instance); and the chat-signal pre-pass reports Tier 1 over a transcript truncated to its first
+line (a wrong-population-denominator instance, D3's shape). Adds no new file/module surface — both sites
+fall inside the already-declared `plan-retrospective/scripts/` directory entry.
+
 ⛔ These lessons were **recorded and never actioned** — the oldest is 2026-08-27, the newest 2026-09-15.
 That the corpus held six independent reports of the same instrument family for three weeks without one
 reaching a plan is itself the `PLAN-PRQ-05` contract-reach metric, measured on this epic's own subject.
@@ -52,6 +60,15 @@ D2 is therefore a pure binary now, with no honesty-of-degradation work left: giv
 `changed_files` producer, or retire the detector. Note the older non-`changed_files` branch (zero
 `[ARTIFACT]` lines against a non-empty footprint) still fires as `error`, so the aspect is not wholly
 inert. (Lesson `2026-09-15-08-005`.)
+
+⛔⛔ **D2 IS NOW FULLY DISCHARGED (cleanup, `checked_at: 7d82d5d90`) — RETIRE OUTRIGHT, do not re-narrow.**
+The `changed_files` producer now exists and is wired: `manage-tasks.py:548-596`
+`cmd_finalize_step_record_changed_files` re-reads the task record after a terminal close and calls
+`_tasks_core.record_changed_files`, registered as the `finalize-step` handler at `manage-tasks.py:611`,
+first-close-wins with absent-baseline/present-empty handled correctly, pinned by
+`test_manage_tasks_artifact_emission.py`. Landed in `#1545` (`afce081b1`), which post-dates this spec's
+`1605831c5` narrowing check. The only remaining ask ("give it the producer, or retire it") is done —
+nothing is left to build for D2. At outline, drop D2 from the deliverable count.
 
 **D3 — A section that HAS something to report is dropped as if it had nothing, three ways.** ⛔⛔
 **WIDENED 2026-09-21** (inbox `retrospective-aspects-publish-verdict-003.md` and `-004.md`, filed by
@@ -127,33 +144,35 @@ true retroactively, which is a reason to land them rather than a defect in them.
 
 - OBSERVED (lesson `2026-09-08-22-007`): `RE_ENTRY_COVERAGE`'s precondition is the re-entry marker whose
   absence is the defect, so a run with no markers at all skips the rule silently.
-  - verdict: corroborated | checked_at: 1605831c5 | by: post-run-quality/cleanup | rescoped: n/a | evidence: logging-gap-analysis.md:81-92 verbatim: precondition is at least one Re-entering-execute-phase work.log line, closing 'Plans without any Re-entering line skip this rule entirely.' Still keyed on the artifact whose absence is the defect. Impl site analyze-logs.py:866. D1's inversion is unmade.
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: post-run-quality/cleanup | rescoped: n/a | evidence: logging-gap-analysis.md:81-92 precondition still keyed on the artifact whose absence is the defect; cluster_dispatches at analyze-logs.py:1102-1115 (prior citation :866 now stale, cache-read-ratio code). D1's inversion unmade
 - OBSERVED (lesson `2026-09-15-08-005`): tasks never persist `changed_files`, so `ARTIFACT_EMISSION` has
   been inert on every plan.
-  - verdict: contradicted | checked_at: 1605831c5 | by: post-run-quality/cleanup | rescoped: yes | evidence: Producer half holds (zero hits for changed_files in manage-tasks/**), but the 'renders as a pass' half is ALREADY FIXED: logging-gap-analysis.md:127-152 now requires change_attribution:measured|unavailable be read FIRST, with the three keys ABSENT (not zero) on unavailable -- implemented at analyze-logs.py:1034-1076,:1824, mixed-corpus case handled at :133-142. D2 is narrowed to only 'give it the producer or retire it'.
+  - verdict: contradicted | checked_at: 7d82d5d90 | by: post-run-quality/cleanup | rescoped: yes | evidence: NEW SINCE PRIOR CHECK: producer now exists and is wired. manage-tasks.py:548-596 cmd_finalize_step_record_changed_files, registered handler at :611, pinned by test_manage_tasks_artifact_emission.py, landed #1545 (afce081b1, post-dates prior check sha). D2 fully discharged, not merely narrowed -- recommend retiring D2 outright
 - OBSERVED (lesson `2026-08-31-09-001`): a producerless `SECTION_SPEC` row renders as `sections_omitted`.
-  - verdict: corroborated | checked_at: 1605831c5 | by: post-run-quality/cleanup | rescoped: n/a | evidence: compile-report.py still terminates in a two-bucket classification (:744 returns content/sections_written/sections_omitted/sections_dropped, emitted :1115). Recent hardening (:640-687) separates lost payload from omitted but does NOT distinguish no-payload from no-author. A producerless row still lands in sections_omitted. D3's escalation is unbuilt. Note: this lesson's own tombstone (completely_covered) is not yet accurate, per its own recorded caveat.
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: post-run-quality/cleanup | rescoped: n/a | evidence: compile-report.build_document (:735-858) still three-bucket; producerless row -> should_emit False -> omitted; no no-author escalation anywhere; test_compile_report_partition_producer_differential.py pins absent->omitted. D3(a) unbuilt
 - OBSERVED (lesson `2026-09-03-23-004`): delete-intent and foreign-checkout paths enter a same-repo diff
   denominator.
-  - verdict: corroborated | checked_at: 1605831c5 | by: post-run-quality/cleanup | rescoped: n/a | evidence: Denominator filter excludes read intent only: check-artifact-consistency.py:345 filters entry['intent'] != _READ_INTENT. Four-valued vocabulary at constants.py:301-310 includes STEP_INTENT_DELETE='delete' -- a delete-intent path IS counted. Foreign-checkout handling absent entirely (0 matches for 'foreign' in the 937-line file). details publishes read_intent_excluded but no delete/foreign counters.
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: post-run-quality/cleanup | rescoped: n/a | evidence: extract_modification_intent_files (:347) excludes READ only; 4-valued intent vocabulary confirmed, DELETE counted; foreign-checkout handling absent from check-artifact-consistency.py (0 hits). NEW: manage-solution-outline now carries foreign-deliverable handling upstream -- D4's fix has a real declared signal to read
 - OBSERVED (lesson `2026-09-05-07-006`): a deliverable shipping 67% of a completeness-quantified surface
   is averaged away at plan level.
-  - verdict: corroborated | checked_at: 1605831c5 | by: post-run-quality/cleanup | rescoped: n/a | evidence: Per-deliverable machinery exists but publishes declaration state only, never recall: extract_affected_files_per_deliverable (:308) and _declaration_state_per_deliverable (:348) feed check_affected_files_recall (:382), which consumes them solely to detect unparseable deliverables (:437-465). No per-deliverable recall ratio on any branch. D4's ask is unbuilt.
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: post-run-quality/cleanup | rescoped: n/a | evidence: extract_affected_files_per_deliverable (:310-319) returns a flat list despite its name; recall computed (:510-536) at PLAN level only, no per-deliverable ratio on any branch. _extract_bullet_entries admits on bare truthiness -- placeholder inflation confirmed unmade
 - OBSERVED (lesson `2026-08-27-16-003`): a handed defect claim was restated as a finding without
   verification.
-  - verdict: corroborated | checked_at: 1605831c5 | by: post-run-quality/cleanup | rescoped: n/a | evidence: Historical event not re-derivable (plan artifacts gone), but the governing clause D5 would add does NOT exist at HEAD: regex sweep for a handed-claim/lead-verification rule returns 0 over 2993 files scanned; no such rule in plan-retrospective/references/ (15 files) or standards/. Lesson text preserved at lessons/2026-08-27-16-003.md. D5's rule is unwritten.
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: post-run-quality/cleanup | rescoped: n/a | evidence: governing lead-verification clause D5 would add does not exist at HEAD: content sweep for handed-claim/LEAD vocabulary returns 0/3097 files. Rule's absence, which D5 addresses, cleanly derived
 - ⚠ HYPOTHESIS: these six are the whole population. ⛔ Asserted by nobody; D0 owns the derivation.
-  - verdict: unverifiable | checked_at: 1605831c5 | by: post-run-quality/cleanup | rescoped: n/a | evidence: D0's own 17-aspect classification sweep was not performed in this corroboration pass. But the COUNT in D0's own instruction is already known wrong: 17 registerable aspects exist at HEAD (retro_sections.SECTION_SPEC, valid_aspect_keys()==17), not 16 -- same finding as PLAN-PRQ-02 claim 0.
+  - verdict: unverifiable | checked_at: 7d82d5d90 | by: post-run-quality/cleanup | rescoped: n/a | evidence: D0's own 17-aspect classification sweep not performed in this read-only pass, whole-population hypothesis stays open by construction. Correction: D0's text already reads 17 and 17 IS correct at HEAD (SECTION_SPEC 19 rows, 2 underscore-prefixed, valid_aspect_keys returns 17) -- no further count correction needed
 - OBSERVED, folded 2026-09-21 (inbox `retrospective-aspects-publish-verdict-003.md`, filed first-party by
   `PLAN-PRQ-02`'s own retrospective): `compile-report.should_emit` (lines 145-152) refuses any fragment
   whose `status` is not `success`/absent, dropping an `unmeasured`-status fragment's `error`-severity
   finding from the report entirely; a pre-existing bespoke carve-out for `chat-history-analysis` (placed
   before the guard) is direct evidence the gap is general. Grounds D3(b) above.
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: post-run-quality/cleanup | rescoped: n/a | evidence: chat-history-analysis carve-out at compile-report.py:145-148, status guard :149-152, exact at HEAD; test-pinned via test_compile_report_partition_producer_differential.py. Narrowing: loss now reported loudly under sections_dropped with warning status -- only the 'silent' half is superseded, findings still never reach the report body
 - OBSERVED, folded 2026-09-21 (inbox `retrospective-aspects-publish-verdict-004.md`, same source):
   `analyze-logs` emits `dispatch_boundaries` nested under `bundle['log-analysis']['dispatch_boundaries']`;
   `compile-report`'s `should_emit` looks it up as a top-level key and finds nothing, so `Phase Dispatch
   Boundaries` renders `sections_omitted` despite 103 real rows across all three phases. Grounds D3(c)
   above.
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: post-run-quality/cleanup | rescoped: n/a | evidence: dispatch_boundaries present in analyze-logs bundle (:2203/:2110) but nothing registers the trigger key top-level (0 hits for --aspect dispatch registration). SKILL.md:202/:204 confirms this was a DELIBERATE disposition over a structural rename -- D3(c) must discharge a chosen position, not a slip
 - OBSERVED, folded 2026-09-21 (inbox `retrospective-aspects-publish-verdict-007.md`, same source, action
   #3 of its `llm_to_script_opportunities` finding): proposes extending `check-artifact-consistency` to
   publish PER-DELIVERABLE recall beside its existing global recall, so D4's "hides a deliverable that
@@ -161,6 +180,7 @@ true retroactively, which is a reason to land them rather than a defect in them.
   from code rather than recomputed by hand each time, and the read-intent exclusion rule applies once.
   Confirming evidence for D4 above, not a new deliverable — D4 already stages "publish per-deliverable
   recall alongside the plan-level figure".
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: post-run-quality/cleanup | rescoped: n/a | evidence: source inbox message consumed/archived at the 2026-09-21 fold; substance independently re-derived from code (global recall exists, no per-deliverable recall on any branch, single read-intent exclusion rule). Confirming evidence for D4, not a new deliverable
 
 ## Expected Surface
 

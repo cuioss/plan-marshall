@@ -145,7 +145,7 @@ the claim named no longer exists at HEAD, and this block is the re-scope.
   path. The premise that a re-review by that bot can never verify is DEAD at HEAD. Confirm/refute at
   `marketplace/bundles/plan-marshall/skills/workflow-integration-github/scripts/github_re_review.py`
   § `_verifies_head_sha`.
-  - verdict: contradicted | checked_at: 38af136ede5c7d6ea531a38d59a67ece1bf3ade2 | by: review-apparatus/analyze | rescoped: yes | evidence: D6's premise is DEAD at HEAD: github_re_review.py no longer hard-codes head_sha_verified to matched_signal == 'review' - it calls _verifies_head_sha, which runs _references_head_sha over the comment BODY on the issue_comment path, recognising the .../commit/{sha} permalink cuioss-review-bot publishes. Shipped UNDECLARED by PLAN-PR-033 (#1473) under an operator-directed in-PR scope expansion; git show --stat lists 28 files against references.affected_files' 14. RE-SCOPED in place: D6 is now the audit half - re-derive the declined classification end to end at HEAD across producer, both consumers and the barrier, since a described fix reads as a complete one.
+  - verdict: contradicted | checked_at: 7d82d5d90 | by: review-apparatus/cleanup | rescoped: yes | evidence: HOLDS CONTRADICTED at HEAD, and now doubly. _verifies_head_sha resolves in github_re_review.py (3 occurrences; 17 head_sha_verified occurrences); github_re_review.py did not move in 7a028157e..HEAD, so #1473 landing is unchanged. SECOND, INDEPENDENT landing since the prior stamp: #1510 added _github_ci.issue_comment_verifies_head() - the same issue_comment HEAD-verification, implemented a second time and UNWIRED (1 occurrence = its own definition, plus 14 in test_review_currency_holes_regression.py). The D6 audit arm this claim was re-scoped to must now cover two implementations of one repair, one live and one orphaned.
 - OBSERVED: `PLAN-PR-033` (#1473) landed 28 files while its `references.affected_files` recorded 14,
   and the undeclared half carried this plan's D6. Confirm/refute at `git show --stat 38af136ed`
   against that plan's landing message `-008` § Residue.
@@ -162,10 +162,10 @@ the claim named no longer exists at HEAD, and this block is the re-scope.
 ## Hand-Off Command
 
 ```text
-/plan-marshall task="implement .plan/local/orchestrator/review-apparatus/plans/PLAN-PR-056-the-refusal-recognition-and-re-trigger-stack.md"
+/plan-marshall task="implement .plan/orchestrator/review-apparatus/plans/PLAN-PR-056-the-refusal-recognition-and-re-trigger-stack.md"
 ```
 
 ## Write-Boundary
 
 The plan implementing this spec touches only its own repository source and tests. It creates and edits
-NO file under `.plan/local/orchestrator/` other than its own `inbox/{sender}-{seq}` message.
+NO file under `.plan/orchestrator/` other than its own `inbox/{sender}-{seq}` message.

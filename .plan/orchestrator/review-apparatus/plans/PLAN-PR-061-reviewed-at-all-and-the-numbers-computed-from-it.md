@@ -149,10 +149,10 @@ feeds an existing one):
 ## Hand-Off Command
 
 ```text
-/plan-marshall task="implement .plan/local/orchestrator/review-apparatus/plans/PLAN-PR-061-reviewed-at-all-and-the-numbers-computed-from-it.md"
+/plan-marshall task="implement .plan/orchestrator/review-apparatus/plans/PLAN-PR-061-reviewed-at-all-and-the-numbers-computed-from-it.md"
 ```
 
 ## Write-Boundary
 
 The plan implementing this spec touches only its own repository source and tests. It creates and edits
-NO file under `.plan/local/orchestrator/` other than its own `inbox/{sender}-{seq}` message.
+NO file under `.plan/orchestrator/` other than its own `inbox/{sender}-{seq}` message.

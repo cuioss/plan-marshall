@@ -72,25 +72,46 @@ model those specific numbers describe.
   truth for registered targets — read in this session via `architecture search --content`; corroborated
   by `CLAUDE.md` § "Multi-Assistant Support", which names it as the registry and states that
   "only Claude Code is tested as a runtime".
+  - verdict: corroborated | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: instrumentation-substrate/cleanup | rescoped: n/a | evidence: marketplace/targets/__init__.py TARGET_REGISTRY confirmed; CLAUDE.md only-Claude-tested sentence corroborated
 - HYPOTHESIS: The shared body-transform engine applies exactly three line-level transforms — structural
   load directives, the slash-command rewrite, and registered tool-idiom rewrites — all data-driven from
   each target's `mapping.json`, and none of them can vary emphasis or verification scaffolding —
   confirm/refute at `marketplace/targets/body_transform_engine.py` (verify-at-outline). Carried from
   absorbed inbox message `truthful-signals-009`, which measured it at `77cb2e251`; **not** re-measured
   in this session, so it is a lead and not a fact.
-- HYPOTHESIS: Component-level `targets:` scoping is all-or-nothing and is used by 6 components, every
-  one of them `targets: [claude]` — confirm/refute at
-  `marketplace/bundles/pm-plugin-development/skills/plugin-architecture/references/frontmatter-standards.md`
-  and by a derived sweep of the bundle tree (verify-at-outline). Same provenance and same caveat as
-  above. ⛔ The count must be **re-derived**, not quoted from this spec.
-- HYPOTHESIS: A third runtime target for the Gemini models is in development, present but untracked,
-  and imports the same vocabulary-only transform engine — confirm/refute at `marketplace/targets/`
-  (verify-at-outline). ⚠ Uncommitted in-flight work: treat every detail as a snapshot, never as
-  contract, and re-check its state at outline rather than scoping on this sentence.
+  - verdict: corroborated | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: instrumentation-substrate/cleanup | rescoped: n/a | evidence: body_transform_engine.py docstring: exactly 3 mapping.json-driven transforms, none touching emphasis/scaffolding; Transform 1 now covers 2 directives (widened, count unchanged)
+- ⛔ **REFUTED at cleanup 2026-09-22 (was HYPOTHESIS).** Component-level `targets:` scoping is NOT
+  all-or-nothing, and the count is NOT 6. `marketplace/targets/component_targets.py` module docstring:
+  "A single `*.md` file *inside* a skill MAY also declare a `targets:` field that governs only itself …
+  A file's declaration may only NARROW its parent skill's scope" — a file-level narrowing tier exists
+  beneath the component-level switch. A re-derived sweep for `^targets:` finds 6 file hits, but one —
+  `plugin-architecture/references/frontmatter-standards.md` — carries NO frontmatter at all (the hit is
+  prose, not a declaration); the 5 real declarations are 1 command, 1 skill manifest, and 3 skill-
+  internal reference files, all `[claude]`. **Consequence, absorbed into this spec's scope**:
+  deliverable 2's "count and listing" must report the two-tier mechanism (component-level switch +
+  file-level narrowing) and the corrected 5-declaration count, not the flat 6-component reading.
+  - verdict: contradicted | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: instrumentation-substrate/cleanup | rescoped: yes | evidence: component_targets.py: file-level narrowing tier exists (not all-or-nothing); re-derived sweep finds 5 real declarations not 6 (one hit is prose, no frontmatter); deliverable 2 corrected
+- ⛔ **REFUTED at cleanup 2026-09-22 (was HYPOTHESIS), on "untracked" only.** A third runtime target for
+  the Gemini models is in development and imports the same vocabulary-only transform engine — that half
+  holds. But it is NOT "present but untracked": `git ls-files marketplace/targets/antigravity` returns 9
+  tracked files (emitter, frontmatter, mapping, target, variant_emitter, templates), it is registered in
+  `TARGET_REGISTRY` (`marketplace/targets/__init__.py`), tested
+  (`test/marketplace/targets/antigravity/test_body_transforms.py`), and documented
+  (`doc/developer/antigravity.adoc`). **Consequence, absorbed into this spec's scope**: this is now
+  shipped contract, not uncommitted snapshot — the cost-of-retrofitting argument in the Objective has
+  already advanced one notch since this spec was staged, which makes deliverable 5's SkCC read and the
+  decision itself MORE time-sensitive, not less.
+  - verdict: contradicted | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: instrumentation-substrate/cleanup | rescoped: yes | evidence: antigravity target is tracked (9 files), registered in TARGET_REGISTRY, tested, and documented — not uncommitted; Objective's time-sensitivity argument strengthened accordingly
 - OBSERVED: The variance axis is **model**, not target, because one target hosts several models —
   recorded in absorbed inbox message `truthful-signals-009`, whose reasoning is reproduced here: a
   per-target mechanism cannot distinguish two models behind the same target, so any design keying on
-  target is insufficient by construction.
+  target is insufficient by construction. ⚠ **Downgraded at cleanup 2026-09-22**: the cited
+  `truthful-signals-009` is no longer reachable in this epic's tracked inbox at HEAD (only
+  `inbox/archive/next-level/next-level-001..010.md` and `inbox/truthful-signals-001.md` remain; a
+  same-named file elsewhere in the repo belongs to `code-intelligence-substrate` and is unrelated). The
+  reasoning stands as **spec-internal reasoning**, not an externally-corroborated finding, until a
+  reachable source is re-attached.
+  - verdict: unverifiable | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: instrumentation-substrate/cleanup | rescoped: n/a | evidence: cited truthful-signals-009 not reachable in this epic's tracked inbox at HEAD; same-named file belongs to code-intelligence-substrate; downgraded to spec-internal reasoning in spec text
 - Verify-first clause: ⛔ Do **not** assert that smaller or flash-tier models need scaffolding that
   stronger models do not. It is the intuitive hypothesis, no evidence for it was gathered about any
   model in the fleet, and asserting it would be exactly the confident-signal-without-provenance defect
