@@ -18,7 +18,7 @@ The epic slug is neither an input nor derived — it is the fixed constant `less
 
 ### Step 1: Resolve the fixed epic and scaffold only when absent
 
-The slug is the constant `lessons-routing` — there is nothing to derive. Determine whether that epic already exists, which decides the whole step:
+Determine whether the `lessons-routing` epic already exists, which decides the whole step:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator corpus epics
