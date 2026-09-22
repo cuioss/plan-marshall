@@ -112,7 +112,14 @@ Per cluster produced by Step 3, in order:
 
    `--slug` names the DESTINATION epic, not the sender — the sender is carried by `--sender-type` / `--sender-id`. `--target-plan` is deliberately omitted so the message queues for the destination epic's drain rather than being delivered to one running plan's mailbox.
 
-**The single narrow exception.** A cluster that is a tooling defect in the routing/versioning MECHANISM itself — not lesson content — MAY be staged as a `PLAN-LR-NN` spec in `lessons-routing`. Take it only after confirming the defect is not already shipped and is not in fact `truthful-signals`' subject; failing either check, route the cluster outward like any other. The worked counter-example is `PLAN-LH2-18` → `PLAN-LR-06`: it was staged under this exception and then RETIRED the following day, which is what makes it a cautionary precedent rather than a template to copy.
+**The single narrow exception.** A cluster that is a tooling defect in the routing/versioning MECHANISM itself — not lesson content — MAY be staged as a `PLAN-LR-NN` spec in `lessons-routing`. Take it only after confirming the defect is not already shipped and is not in fact `truthful-signals`' subject; failing either check, route the cluster outward like any other. When the exception fires, append the plan row via the sanctioned single-append form:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator queue \
+  --slug lessons-routing --add-row {PLAN-LR-NN} --slug-value {plan_slug} --workstream {WS-NN}
+```
+
+The worked counter-example is `PLAN-LH2-18` → `PLAN-LR-06`: it was staged under this exception and then RETIRED the following day, which is what makes it a cautionary precedent rather than a template to copy.
 
 **Regenerate only when the exception actually fired.** A sweep that only routed outward changed no derivable block — no plan row was appended — so it regenerates nothing. When the exception path DID append a plan row, regenerate the START-HERE block and the Ordered Queue table and paste each verbatim between its own markers (`resume-summary` and `ordered-queue`); ⛔ **do not hand-write the Ordered Queue table** (reconciliation direction is always status.json → epic.md):
 
