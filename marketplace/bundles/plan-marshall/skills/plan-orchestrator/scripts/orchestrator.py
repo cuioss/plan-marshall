@@ -2217,10 +2217,16 @@ def _current_head_sha() -> str:
     The tip half of the staleness comparison, and the value echoed in the
     ``head_sha`` payload field. An unresolvable HEAD is NOT read as "nothing
     moved": the empty string matches no ``checked_at`` prefix and resolves no tree
-    diff, so every row falls through to :data:`STALENESS_DIFF_UNAVAILABLE` and
-    reports ``stale: true`` with that basis named. The "not stale" versus
-    "staleness was not computable" distinction a caller needs is therefore carried
-    explicitly by ``staleness_basis`` rather than inferred from an empty echo.
+    diff, so any row that reaches the diff branch — a parsed verdict on a
+    ``declarative`` surface whose comparison ``head_unchanged`` did not already
+    settle — falls through to :data:`STALENESS_DIFF_UNAVAILABLE` and reports
+    ``stale: true`` with that basis named. A row that never reaches the diff
+    branch is unaffected: an unparsed verdict keeps
+    :data:`STALENESS_VERDICT_UNPARSED` with ``stale: false``, and a
+    non-``declarative`` surface resolves :data:`STALENESS_SURFACE_NOT_DECLARATIVE`
+    first. The "not stale" versus "staleness was not computable" distinction a
+    caller needs is therefore carried explicitly by ``staleness_basis`` rather
+    than inferred from an empty echo.
     """
     output, _ = _git_read('head-sha')
     return output or ''
