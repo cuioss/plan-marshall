@@ -56,6 +56,8 @@ Before landing, the finalize body runs `manage-adr scan` and refuses the tree wh
 - Fail closed: a `duplicate_numbers` verdict blocks landing. It is distinct from `unresolvable` (the corpus could not be read) and `unknown` (no verdict was rendered) — both of those also block, but only `duplicate_numbers` names a concrete collision to resolve by hand.
 - No auto-renumber: the gate never rewrites filenames or reassigns numbers. Resolve the collision manually (renumber one side, consolidate, or drop) and re-run `scan` until it reports `duplicate_count: 0`.
 - No remote allocation: `create`/`next-number` still derive numbers from the local checkout only and never consult `origin/main`. The gate at landing is what makes that local-only allocation safe.
+- Enforcement site: the Pre-Merge ADR Duplicate-Number Gate in [`branch-cleanup.md`](branch-cleanup.md) runs the scan immediately before either merge dispatch (`pr safe-merge` or the `pr merge-queue` enqueue) and stops before the post-merge tail on a duplicate, unresolvable, or unknown verdict.
+- Malformed filenames: files with no numeric prefix are excluded from duplicate grouping and reported separately as `malformed_count` / `malformed_paths` — advisory-only at landing, never a block.
 
 ## Authoring the proposed ADR
 
