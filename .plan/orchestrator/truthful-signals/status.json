@@ -12,1774 +12,14 @@
   ],
   "plans": [
     {
-      "id": "PLAN-41",
-      "slug": "phase-1-init-single-source-ingestion",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "",
-      "pr": "991",
-      "landing": "landings/PLAN-41.md"
-    },
-    {
-      "id": "PLAN-43",
-      "slug": "architecture-find-confident-false-negative",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "",
-      "pr": "989",
-      "landing": "landings/PLAN-43.md"
-    },
-    {
-      "id": "PLAN-69",
-      "slug": "executor-version-split-marker-aware-vs-marker-blind-resolvers",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "",
-      "pr": "1013",
-      "landing": "landings/PLAN-69.md"
-    },
-    {
-      "id": "PLAN-66",
-      "slug": "build-queue-fifo-ordering-nondeterminism",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "",
-      "pr": "1008",
-      "landing": "landings/PLAN-66.md"
-    },
-    {
-      "id": "PLAN-53",
-      "slug": "orchestrator-queue-row-field-setter",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "",
-      "pr": "1010",
-      "landing": "landings/PLAN-53.md"
-    },
-    {
-      "id": "PLAN-44",
-      "slug": "finalize-preference-emitter-order-violation",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "",
-      "pr": "990",
-      "landing": "landings/PLAN-44.md"
-    },
-    {
-      "id": "PLAN-42",
-      "slug": "waiting-standard-usage-observability",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "",
-      "pr": "988",
-      "landing": "landings/PLAN-42.md"
-    },
-    {
-      "id": "PLAN-27",
-      "slug": "openrewrite-log-finding-retrieval",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "",
-      "pr": "995",
-      "landing": "landings/PLAN-27.md"
-    },
-    {
-      "id": "PLAN-45",
-      "slug": "routed-verdict-client-crosscheck",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "",
-      "pr": "993",
-      "landing": "landings/PLAN-45.md"
-    },
-    {
-      "id": "PLAN-46",
-      "slug": "title-repaint-lost-from-dispatch-and-unlogged",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "",
-      "pr": "994",
-      "landing": "landings/PLAN-46.md"
-    },
-    {
-      "id": "PLAN-47",
-      "slug": "orchestrator-effort-config-block",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "",
-      "pr": "997",
-      "landing": "landings/PLAN-47.md"
-    },
-    {
-      "id": "PLAN-48",
-      "slug": "orchestrator-emit-autonomy",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "",
-      "pr": "996",
-      "landing": "landings/PLAN-48.md"
-    },
-    {
-      "id": "PLAN-51",
-      "slug": "retrospective-compile-report-silent-omit",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "",
-      "pr": "1009",
-      "landing": "landings/PLAN-51.md"
-    },
-    {
-      "id": "PLAN-70",
-      "slug": "retire-gemini-registry-and-ground-pr-agent-standard",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "",
-      "pr": "1014",
-      "landing": "landings/PLAN-70.md"
-    },
-    {
-      "id": "PLAN-54",
-      "slug": "retrospective-checker-assertion-integrity",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "",
-      "pr": "1015",
-      "landing": "landings/PLAN-54.md"
-    },
-    {
-      "id": "PLAN-55",
-      "slug": "orchestration-inbox-channel",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "",
-      "pr": "1016",
-      "landing": "landings/PLAN-55.md"
-    },
-    {
-      "id": "PLAN-80",
-      "slug": "refusal-recognizer-generalizes-phrasing-not-failure-mode",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "",
-      "pr": "1021",
-      "landing": "landings/PLAN-80.md"
-    },
-    {
-      "id": "PLAN-62",
-      "slug": "build-timeout-learned-value-truthfulness",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "",
-      "pr": "1022",
-      "landing": "landings/PLAN-62.md"
-    },
-    {
-      "id": "PLAN-79",
-      "slug": "terminal-title-channel-reconciliation",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "",
-      "pr": "1023",
-      "landing": "landings/PLAN-79.md"
-    },
-    {
-      "id": "PLAN-56",
-      "slug": "orchestrator-inbox-pickup",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "",
-      "pr": "1027",
-      "landing": "landings/PLAN-56.md"
-    },
-    {
-      "id": "PLAN-75",
-      "slug": "manifest-composer-honours-declared-contract",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "",
-      "pr": "1032",
-      "landing": "landings/PLAN-75.md"
-    },
-    {
-      "id": "PLAN-87",
-      "slug": "no-extension-claims-yaml-infrastructure-paths",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "",
-      "pr": "1024",
-      "landing": "landings/PLAN-87.md"
-    },
-    {
-      "id": "PLAN-93",
-      "slug": "inbox-sequence-reuse-collides-with-the-archive",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "inbox-sequence-reuse-collides-with-the-archive",
-      "pr": "1034",
-      "landing": "landings/PLAN-93.md"
-    },
-    {
-      "id": "PLAN-92",
-      "slug": "one-coherent-automated-review-contract",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "one-coherent-automated-review-contract",
-      "pr": "1041",
-      "landing": "landings/PLAN-92.md"
-    },
-    {
-      "id": "PLAN-86",
-      "slug": "unchecked-finding-persist-loses-the-finding",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "unchecked-finding-persist-loses-the-finding",
-      "pr": "1038",
-      "landing": "landings/PLAN-86.md"
-    },
-    {
-      "id": "PLAN-88",
-      "slug": "daemon-audit-logs-interactions-not-job-lifecycles",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "daemon-audit-logs-interactions-not-job-lifecycles",
-      "pr": "1037",
-      "landing": "landings/PLAN-88.md"
-    },
-    {
-      "id": "PLAN-90",
-      "slug": "lessons-corpus-is-written-and-never-read",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "lessons-corpus-is-written-and-never-read",
-      "pr": "1039",
-      "landing": "landings/PLAN-90.md"
-    },
-    {
-      "id": "PLAN-94",
-      "slug": "orchestrator-read-boundary-self-contradiction",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "orchestrator-read-boundary-self-contradiction",
-      "pr": "1040",
-      "landing": "landings/PLAN-94.md"
-    },
-    {
-      "id": "PLAN-89",
-      "slug": "runnable-slice-keys-on-the-floor-not-the-measurement",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "runnable-slice-keys-on-the-floor-not-the-measurement",
-      "pr": "1044",
-      "landing": "landings/PLAN-89.md"
-    },
-    {
-      "id": "PLAN-102",
-      "slug": "post-merge-review-findings-are-untriaged-in-main",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "post-merge-review-findings-untriaged-in-main",
-      "pr": "1045",
-      "landing": "landings/PLAN-102.md"
-    },
-    {
-      "id": "PLAN-111",
-      "slug": "self-ingested-reply-is-a-non-terminating-barrier-loop",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "self-ingested-reply-is-a-non-terminating-barrier-loop",
-      "pr": "1047",
-      "landing": "landings/PLAN-111.md"
-    },
-    {
-      "id": "PLAN-101",
-      "slug": "lane-router-reads-the-wrong-body",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "lane-router-reads-the-wrong-body",
-      "pr": "1049",
-      "landing": "landings/PLAN-101.md"
-    },
-    {
-      "id": "PLAN-105",
-      "slug": "dispatched-leaf-has-no-search-primitive",
-      "workstream": "WS-01",
-      "status": "superseded",
-      "plan_marshall_plan_id": "",
-      "pr": "1046",
-      "landing": "landings/PLAN-105.md"
-    },
-    {
-      "id": "PLAN-110",
-      "slug": "build-tests-do-not-neutralize-daemon-routing",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "build-tests-do-not-neutralize-daemon-routing",
-      "pr": "1061",
-      "landing": "landings/PLAN-110.md"
-    },
-    {
-      "id": "PLAN-112",
-      "slug": "ceremony-prefilter-dropped-the-security-audit",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "ceremony-prefilter-dropped-the-security-audit",
-      "pr": "1055",
-      "landing": "landings/PLAN-112.md"
-    },
-    {
-      "id": "PLAN-116",
-      "slug": "review-detectors-check-the-wrong-observable",
-      "workstream": "WS-01",
-      "status": "transferred",
-      "plan_marshall_plan_id": "",
-      "pr": "",
-      "landing": ""
-    },
-    {
-      "id": "PLAN-TRUTH-001",
-      "slug": "gates-do-not-refire-over-the-loop-back-diff",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "gates-do-not-refire-over-the-loop-back-diff",
-      "pr": "1073",
-      "landing": "landings/PLAN-TRUTH-001.md"
-    },
-    {
-      "id": "PLAN-114",
-      "slug": "orchestrated-plan-detection-fails-silently",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "orchestrated-plan-detection-fails-silently",
-      "pr": "1057",
-      "landing": "landings/PLAN-114.md"
-    },
-    {
-      "id": "PLAN-115",
-      "slug": "plan-less-pr-can-be-opened-but-never-corrected",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "plan-less-pr-can-be-opened-but-never-corrected",
-      "pr": "1065",
-      "landing": "landings/PLAN-115.md"
-    },
-    {
-      "id": "PLAN-103",
-      "slug": "wrong-store-guard-refuses-project-local-lessons",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "wrong-store-guard-refuses-project-local-lessons",
-      "pr": "1050",
-      "landing": "landings/PLAN-103.md"
-    },
-    {
-      "id": "PLAN-109",
-      "slug": "manage-lessons-mixes-local-time-and-utc",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "manage-lessons-mixes-local-time-and-utc",
-      "pr": "1058",
-      "landing": "landings/PLAN-109.md"
-    },
-    {
-      "id": "PLAN-TRUTH-002",
-      "slug": "inert-thinking-directives-in-dispatched-docs",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "",
-      "pr": "1138",
-      "landing": "landings/PLAN-TRUTH-002.md"
-    },
-    {
-      "id": "PLAN-99",
-      "slug": "exploration-share-is-unmeasured",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "exploration-share-is-unmeasured",
-      "pr": "1043",
-      "landing": "landings/PLAN-99.md"
-    },
-    {
-      "id": "PLAN-57",
-      "slug": "lane-router-scale-blind-false-negative",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "lane-router-scale-blind-false-negative",
-      "pr": "1068",
-      "landing": "landings/PLAN-57.md"
-    },
-    {
-      "id": "PLAN-TRUTH-003",
-      "slug": "migration-shims-have-no-expiry",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "",
-      "pr": "1153",
-      "landing": "landings/PLAN-TRUTH-003.md"
-    },
-    {
-      "id": "PLAN-81",
-      "slug": "self-review-cannot-see-an-unreachable-guard",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "self-review-cannot-see-an-unreachable-guard",
-      "pr": "1042",
-      "landing": "landings/PLAN-81.md"
-    },
-    {
-      "id": "PLAN-TRUTH-004",
-      "slug": "invented-plan-scoping-flags-are-an-overgeneralized-convention",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "",
-      "pr": "1150",
-      "landing": "landings/PLAN-TRUTH-004.md"
-    },
-    {
-      "id": "PLAN-TRUTH-005",
-      "slug": "marshalld-self-reload-on-version-signal",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "",
-      "pr": "1152",
-      "landing": "landings/PLAN-TRUTH-005.md"
-    },
-    {
-      "id": "PLAN-TRUTH-006",
-      "slug": "baseline-reconcile-persists-merge-commit",
-      "workstream": "WS-01",
-      "status": "superseded",
-      "plan_marshall_plan_id": "",
-      "pr": "",
-      "landing": ""
-    },
-    {
-      "id": "PLAN-TRUTH-007",
-      "slug": "key-order-canonicalization-unreachable-and-false-green",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "",
-      "pr": "1156",
-      "landing": "landings/PLAN-TRUTH-007.md"
-    },
-    {
-      "id": "PLAN-TRUTH-008",
-      "slug": "executor-preflight-stamp-not-resolution",
-      "workstream": "WS-01",
-      "status": "superseded",
-      "plan_marshall_plan_id": "",
-      "pr": "",
-      "landing": ""
-    },
-    {
-      "id": "PLAN-TRUTH-009",
-      "slug": "surface-every-knob-in-marshal-json",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "",
-      "pr": "1155",
-      "landing": "landings/PLAN-TRUTH-009.md"
-    },
-    {
-      "id": "PLAN-TRUTH-010",
-      "slug": "fail-closed-signal-integrity",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "",
-      "pr": "1082",
-      "landing": "landings/PLAN-TRUTH-010.md"
-    },
-    {
-      "id": "PLAN-60",
-      "slug": "in-house-gate-ci-parity",
-      "workstream": "WS-01",
-      "status": "transferred",
-      "plan_marshall_plan_id": "",
-      "pr": "",
-      "landing": ""
-    },
-    {
-      "id": "PLAN-TRUTH-011",
-      "slug": "provider-logging-path-containment",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "provider-logging-path-containment",
-      "pr": "1123",
-      "landing": "landings/PLAN-TRUTH-011.md"
-    },
-    {
-      "id": "PLAN-TRUTH-012",
-      "slug": "canonical-block-diverges-from-argparse-choices",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "",
-      "pr": "1158",
-      "landing": "landings/PLAN-TRUTH-012.md"
-    },
-    {
-      "id": "PLAN-TRUTH-013",
-      "slug": "hook-timeout-unit-confusion",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "hook-timeout-unit-confusion",
-      "pr": "1131",
-      "landing": "landings/PLAN-TRUTH-013.md"
-    },
-    {
-      "id": "PLAN-100",
-      "slug": "landing-message-carries-the-outcome-post-merge",
-      "workstream": "WS-01",
-      "status": "transferred",
-      "plan_marshall_plan_id": "",
-      "pr": "",
-      "landing": ""
-    },
-    {
-      "id": "PLAN-TRUTH-014",
-      "slug": "landed-residue-promotion-sweep",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "",
-      "pr": "1169",
-      "landing": "landings/PLAN-TRUTH-014.md"
-    },
-    {
-      "id": "PLAN-TRUTH-015",
-      "slug": "rename-marshall-orchestrator-to-plan-orchestrator",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "",
-      "pr": "1162",
-      "landing": "landings/PLAN-TRUTH-015.md"
-    },
-    {
-      "id": "PLAN-117",
-      "slug": "merge-queue-enqueue-does-not-take",
-      "workstream": "WS-01",
-      "status": "transferred",
-      "plan_marshall_plan_id": "",
-      "pr": "",
-      "landing": ""
-    },
-    {
-      "id": "PLAN-TRUTH-016",
-      "slug": "skills-carry-incident-history-as-normative-prose",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "",
-      "pr": "1163",
-      "landing": "landings/PLAN-TRUTH-016.md"
-    },
-    {
-      "id": "PLAN-119",
-      "slug": "review-barrier-deadlocks-on-a-refusing-bot",
-      "workstream": "WS-01",
-      "status": "transferred",
-      "plan_marshall_plan_id": "",
-      "pr": "",
-      "landing": ""
-    },
-    {
-      "id": "PLAN-TRUTH-017",
-      "slug": "detect-artifacts-offers-a-live-audit-trail-as-safe-to-delete",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "",
-      "pr": "1171",
-      "landing": "landings/PLAN-TRUTH-017.md"
-    },
-    {
-      "id": "PLAN-202",
-      "slug": "compose-time-subtractions-drop-steps-nobody-authorised",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "compose-time-subtractions-drop-steps",
-      "pr": "1066",
-      "landing": "landings/PLAN-202.md"
-    },
-    {
-      "id": "PLAN-203",
-      "slug": "inbox-and-anchor-cannot-distinguish-consumed-from-missing",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "plan-203-inbox-consumed-vs-missing",
-      "pr": "1064",
-      "landing": "landings/PLAN-203.md"
-    },
-    {
-      "id": "PLAN-TRUTH-018",
-      "slug": "configurable-display-timezone-for-rendered-timestamps",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "",
-      "pr": "1172",
-      "landing": "landings/PLAN-TRUTH-018.md"
-    },
-    {
-      "id": "PLAN-TRUTH-019",
-      "slug": "build-gate-coverage-parity",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "",
-      "pr": "1174",
-      "landing": "landings/PLAN-TRUTH-019.md"
-    },
-    {
-      "id": "PLAN-TRUTH-020",
-      "slug": "graduate-deployment-diagram-type-from-api-sheriff",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "",
-      "pr": "1296",
-      "landing": "landings/PLAN-TRUTH-020.md"
-    },
-    {
-      "id": "PLAN-TRUTH-021",
-      "slug": "operator-posture-answer-never-reaches-the-immunity-channel",
-      "workstream": "WS-01",
-      "status": "superseded",
-      "plan_marshall_plan_id": "",
-      "pr": "",
-      "landing": ""
-    },
-    {
-      "id": "PLAN-TRUTH-022",
-      "slug": "orchestrator-cleanup-verb",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "",
-      "pr": "1183",
-      "landing": "landings/PLAN-TRUTH-022.md"
-    },
-    {
-      "id": "PLAN-TRUTH-023",
-      "slug": "split-and-complete-the-user-configuration-doc",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "",
-      "pr": "1179",
-      "landing": "landings/PLAN-TRUTH-023.md"
-    },
-    {
-      "id": "PLAN-TRUTH-024",
-      "slug": "respread-the-effort-preset-ladder",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "",
-      "pr": "1181",
-      "landing": "landings/PLAN-TRUTH-024.md"
-    },
-    {
-      "id": "PLAN-TRUTH-025",
-      "slug": "named-recovery-discards-operator-config",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "",
-      "pr": "1186",
-      "landing": "landings/PLAN-TRUTH-025.md"
-    },
-    {
-      "id": "PLAN-TRUTH-026",
-      "slug": "mandatory-plan-id-plan-scoped-build-results-and-build-ledger",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "mandatory-plan-id-build-results-ledger",
-      "pr": "1075",
-      "landing": "landings/PLAN-TRUTH-026.md"
-    },
-    {
-      "id": "PLAN-TRUTH-027",
-      "slug": "build-ledger-is-the-build-time-oracle",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "",
-      "pr": "1224",
-      "landing": "landings/PLAN-TRUTH-027.md"
-    },
-    {
-      "id": "PLAN-TRUTH-028",
-      "slug": "domain-invariant-chain-hardcodes-the-python-toolchain",
-      "workstream": "WS-01",
-      "status": "superseded",
-      "plan_marshall_plan_id": "",
-      "pr": "",
-      "landing": ""
-    },
-    {
-      "id": "PLAN-TRUTH-030",
-      "slug": "finalize-retriggers-ci-after-it-has-already-gone-green",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "",
-      "pr": "1194",
-      "landing": "landings/PLAN-TRUTH-030.md"
-    },
-    {
-      "id": "PLAN-TRUTH-031",
-      "slug": "finalize-step-records-are-prose-not-facts",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "finalize-step-records-are-prose-not-facts",
-      "pr": "1076",
-      "landing": "landings/PLAN-TRUTH-031.md"
-    },
-    {
-      "id": "PLAN-TRUTH-032",
-      "slug": "inbox-has-no-emission-quiescence-signal",
-      "workstream": "WS-01",
-      "status": "superseded",
-      "plan_marshall_plan_id": "",
-      "pr": "",
-      "landing": ""
-    },
-    {
-      "id": "PLAN-TRUTH-033",
-      "slug": "a-plan-has-two-identities-and-the-terminal-shows-only-one",
-      "workstream": "WS-01",
-      "status": "superseded",
-      "plan_marshall_plan_id": "",
-      "pr": "",
-      "landing": ""
-    },
-    {
-      "id": "PLAN-TRUTH-034",
-      "slug": "orchestrator-state-is-narrated-where-it-should-be-typed",
-      "workstream": "WS-01",
-      "status": "superseded",
-      "plan_marshall_plan_id": "",
-      "pr": "",
-      "landing": ""
-    },
-    {
-      "id": "PLAN-TRUTH-035",
-      "slug": "the-token-total-is-a-partition-labelled-a-whole",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "",
-      "pr": "1083",
-      "landing": "landings/PLAN-TRUTH-035.md"
-    },
-    {
-      "id": "PLAN-TRUTH-036",
-      "slug": "deep-lane-bought-by-one-signal-while-the-discriminating-field-is-null",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "",
-      "pr": "1188",
-      "landing": "landings/PLAN-TRUTH-036.md"
-    },
-    {
-      "id": "PLAN-TRUTH-037",
-      "slug": "a-terminal-report-is-emitted-before-most-of-what-it-reports",
-      "workstream": "WS-01",
-      "status": "superseded",
-      "plan_marshall_plan_id": "",
-      "pr": "",
-      "landing": ""
-    },
-    {
-      "id": "PLAN-TRUTH-038",
-      "slug": "inbox-has-no-amend-or-supersede-verb",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "",
-      "pr": "1198",
-      "landing": "landings/PLAN-TRUTH-038.md"
-    },
-    {
-      "id": "PLAN-TRUTH-039",
-      "slug": "argparse-rejection-log-discards-the-only-recoverable-part",
-      "workstream": "WS-01",
-      "status": "superseded",
-      "plan_marshall_plan_id": "",
-      "pr": "",
-      "landing": ""
-    },
-    {
-      "id": "PLAN-TRUTH-040",
-      "slug": "the-generic-dispatch-template-cannot-carry-a-step-specific-mandatory-field",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "",
-      "pr": "1197",
-      "landing": "landings/PLAN-TRUTH-040.md"
-    },
-    {
-      "id": "PLAN-TRUTH-041",
-      "slug": "java-skills-route-authors-to-an-anti-pattern-they-never-warn-about",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "",
-      "pr": "1195",
-      "landing": "landings/PLAN-TRUTH-041.md"
-    },
-    {
-      "id": "PLAN-TRUTH-042",
-      "slug": "a-rule-that-is-green-because-it-examined-nothing",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "a-rule-that-is-green-because-it-examined-nothing",
-      "pr": "1115",
-      "landing": "landings/PLAN-TRUTH-042.md"
-    },
-    {
-      "id": "PLAN-TRUTH-043",
-      "slug": "every-config-write-is-a-lost-update-waiting-and-added-count-reports-intent",
-      "workstream": "WS-01",
-      "status": "superseded",
-      "plan_marshall_plan_id": "",
-      "pr": "",
-      "landing": ""
-    },
-    {
-      "id": "PLAN-TRUTH-044",
-      "slug": "the-lesson-retirement-path-fails-open-in-three-independent-places",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "",
-      "pr": "1113",
-      "landing": "landings/PLAN-TRUTH-044.md"
-    },
-    {
-      "id": "PLAN-TRUTH-045",
-      "slug": "the-dispatch-audit-has-an-empty-primary-surface-and-a-retry-blind-secondary-one",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "",
-      "pr": "1200",
-      "landing": "landings/PLAN-TRUTH-045.md"
-    },
-    {
-      "id": "PLAN-TRUTH-046",
-      "slug": "main-sha-records-the-worktree-head-and-config-hash-cannot-fail-usefully",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "",
-      "pr": "1205",
-      "landing": "landings/PLAN-TRUTH-046.md"
-    },
-    {
-      "id": "PLAN-TRUTH-047",
-      "slug": "a-retirement-verdict-cited-a-worked-example-that-contradicts-its-own-clause",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "",
-      "pr": "1085",
-      "landing": "landings/PLAN-TRUTH-047.md"
-    },
-    {
-      "id": "PLAN-TRUTH-048",
-      "slug": "self-review-is-priced-but-not-scoped-and-a-refuted-arm-reads-as-a-gap",
-      "workstream": "WS-01",
-      "status": "superseded",
-      "plan_marshall_plan_id": "",
-      "pr": "",
-      "landing": ""
-    },
-    {
-      "id": "PLAN-TRUTH-049",
-      "slug": "two-producers-write-one-marker-field-in-two-encodings-and-one-is-not-ours",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "two-producers-one-marker-field-two-encodings",
-      "pr": "1125",
-      "landing": "landings/PLAN-TRUTH-049.md"
-    },
-    {
-      "id": "PLAN-TRUTH-050",
-      "slug": "the-operator-report-is-an-evidence-surface-the-inbox-cannot-see",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "",
-      "pr": "1211",
-      "landing": "landings/PLAN-TRUTH-050.md"
-    },
-    {
-      "id": "PLAN-TRUTH-051",
-      "slug": "the-inbox-emission-must-be-the-plans-terminal-action",
-      "workstream": "WS-01",
-      "status": "superseded",
-      "plan_marshall_plan_id": "",
-      "pr": "",
-      "landing": ""
-    },
-    {
-      "id": "PLAN-TRUTH-052",
-      "slug": "the-finalize-step-order-space-is-saturated-collides-and-has-no-allocation-contract",
-      "workstream": "WS-01",
-      "status": "superseded",
-      "plan_marshall_plan_id": "",
-      "pr": "",
-      "landing": ""
-    },
-    {
-      "id": "PLAN-TRUTH-053",
-      "slug": "cost-has-no-yield-denominator-in-the-metrics",
-      "workstream": "WS-01",
-      "status": "superseded",
-      "plan_marshall_plan_id": "",
-      "pr": "",
-      "landing": ""
-    },
-    {
-      "id": "PLAN-TRUTH-054",
-      "slug": "baseline-reconcile-anchors-on-a-stale-phase-1-sha-and-one-verdict-auto-merges",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "",
-      "pr": "1206",
-      "landing": "landings/PLAN-TRUTH-054.md"
-    },
-    {
-      "id": "PLAN-TRUTH-055",
-      "slug": "the-metrics-record-cannot-represent-a-re-entered-phase",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "metrics-record-cannot-represent-re-entered-phase",
-      "pr": "1129",
-      "landing": "landings/PLAN-TRUTH-055.md"
-    },
-    {
-      "id": "PLAN-TRUTH-056",
-      "slug": "the-enforcement-hook-scans-for-shell-metacharacters-without-respecting-quoting",
-      "workstream": "WS-01",
-      "status": "superseded",
-      "plan_marshall_plan_id": "",
-      "pr": "",
-      "landing": ""
-    },
-    {
-      "id": "PLAN-TRUTH-057",
-      "slug": "references-affected-files-is-absent-and-three-consumers-silently-under-scope",
-      "workstream": "WS-01",
-      "status": "superseded",
-      "plan_marshall_plan_id": "",
-      "pr": "",
-      "landing": ""
-    },
-    {
-      "id": "PLAN-TRUTH-058",
-      "slug": "no-remote-conflates-never-pushed-with-merged-and-deleted",
-      "workstream": "WS-01",
-      "status": "superseded",
-      "plan_marshall_plan_id": "",
-      "pr": "",
-      "landing": ""
-    },
-    {
-      "id": "PLAN-TRUTH-059",
-      "slug": "sync-plugin-cache-updates-the-cache-and-executor-and-never-the-registry",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "",
-      "pr": "1213",
-      "landing": "landings/PLAN-TRUTH-059.md"
-    },
-    {
-      "id": "PLAN-TRUTH-060",
-      "slug": "the-daemon-baseline-interpreter-is-unregistrable-and-its-safe-default-unreachable",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "daemon-baseline-interpreter-is-unregistrable",
-      "pr": "1122",
-      "landing": "landings/PLAN-TRUTH-060.md"
-    },
-    {
-      "id": "PLAN-TRUTH-061",
-      "slug": "cloud-lane-merges-on-unverified-review-coverage",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "",
-      "pr": "1112",
-      "landing": "landings/PLAN-TRUTH-061.md"
-    },
-    {
-      "id": "PLAN-TRUTH-062",
-      "slug": "cloud-plan-authoring-knowledge-has-no-home",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "",
-      "pr": "1117",
-      "landing": "landings/PLAN-TRUTH-062.md"
-    },
-    {
-      "id": "PLAN-TRUTH-063",
-      "slug": "merge-gate-cannot-tell-a-required-check-from-a-decorative-one",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "",
-      "pr": "1137",
-      "landing": "landings/PLAN-TRUTH-063.md"
-    },
-    {
-      "id": "PLAN-TRUTH-064",
-      "slug": "post-run-guard-exempts-every-tracked-plan-file",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "",
-      "pr": "1217",
-      "landing": "landings/PLAN-TRUTH-064.md"
-    },
-    {
-      "id": "PLAN-TRUTH-065",
-      "slug": "help-surface-cache-is-keyed-on-one-file-of-many",
-      "workstream": "WS-01",
-      "status": "superseded",
-      "plan_marshall_plan_id": "",
-      "pr": "",
-      "landing": ""
-    },
-    {
-      "id": "PLAN-TRUTH-066",
-      "slug": "the-retrospective-reads-a-record-that-is-not-yet-written",
-      "workstream": "WS-01",
-      "status": "superseded",
-      "plan_marshall_plan_id": "",
-      "pr": "",
-      "landing": ""
-    },
-    {
-      "id": "PLAN-TRUTH-067",
-      "slug": "derive-verification-emits-a-build-class-phase-5-cannot-route",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "",
-      "pr": "1222",
-      "landing": "landings/PLAN-TRUTH-067.md"
-    },
-    {
-      "id": "PLAN-TRUTH-068",
-      "slug": "change-type-is-one-word-for-two-different-scopes",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "",
-      "pr": "1221",
-      "landing": "landings/PLAN-TRUTH-068.md"
-    },
-    {
-      "id": "PLAN-TRUTH-069",
-      "slug": "collapse-the-version-selection-machinery",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "",
-      "pr": "1223",
-      "landing": "landings/PLAN-TRUTH-069.md"
-    },
-    {
-      "id": "PLAN-TRUTH-070",
-      "slug": "runtime-edge-paths-crash-or-silently-lose-data",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "runtime-edge-paths-crash-or-silently-lose-data",
-      "pr": "1132",
-      "landing": "landings/PLAN-TRUTH-070.md"
-    },
-    {
-      "id": "PLAN-TRUTH-071",
-      "slug": "multi-target-generator-edge-paths",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "",
-      "pr": "1228",
-      "landing": "landings/PLAN-TRUTH-071.md"
-    },
-    {
-      "id": "PLAN-TRUTH-072",
-      "slug": "test-suite-false-confidence",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "",
-      "pr": "1229",
-      "landing": "landings/PLAN-TRUTH-072.md"
-    },
-    {
-      "id": "PLAN-TRUTH-073",
-      "slug": "ci-and-supply-chain-hardening",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "",
-      "pr": "1230",
-      "landing": "landings/PLAN-TRUTH-073.md"
-    },
-    {
-      "id": "PLAN-TRUTH-074",
-      "slug": "spec-corpus-review-and-cleanup-entry-point",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "spec-corpus-review-and-cleanup-entry-point",
-      "pr": "1134",
-      "landing": "landings/PLAN-TRUTH-074.md"
-    },
-    {
-      "id": "PLAN-TRUTH-075",
-      "slug": "cloud-lane-build-gate-reads-one-field-short",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "cloud-lane-build-gate-reads-one-field-short",
-      "pr": "1336",
-      "landing": "landings/PLAN-TRUTH-075.md"
-    },
-    {
-      "id": "PLAN-TRUTH-076",
-      "slug": "the-pipeline-talks-to-itself-and-learns-from-the-echo",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "",
-      "pr": "1231",
-      "landing": "landings/PLAN-TRUTH-076.md"
-    },
-    {
-      "id": "PLAN-TRUTH-077",
-      "slug": "the-writer-already-destroyed-the-distinction-the-reader-learned-to-make",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "",
-      "pr": "1255",
-      "landing": "landings/PLAN-TRUTH-077.md"
-    },
-    {
-      "id": "PLAN-TRUTH-078",
-      "slug": "a-timeout-is-not-a-red-test-and-a-kill-is-not-a-timeout",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "",
-      "pr": "1193",
-      "landing": "landings/PLAN-TRUTH-078.md"
-    },
-    {
-      "id": "PLAN-TRUTH-079",
-      "slug": "the-merge-currency-treadmill",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "",
-      "pr": "1235",
-      "landing": "landings/PLAN-TRUTH-079.md"
-    },
-    {
-      "id": "PLAN-TRUTH-080",
-      "slug": "the-terminal-report-is-a-machine-readable-emission-the-inbox-drains",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "",
-      "pr": "1215",
-      "landing": "landings/PLAN-TRUTH-080.md"
-    },
-    {
-      "id": "PLAN-TRUTH-081",
-      "slug": "cloud-lane-assumes-local-runtime-affordances",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "",
-      "pr": "1147",
-      "landing": "landings/PLAN-TRUTH-081.md"
-    },
-    {
-      "id": "PLAN-TRUTH-082",
-      "slug": "audit-ledger-reader-reads-undatable-zero-as-measured",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "",
-      "pr": "1278",
-      "landing": "landings/PLAN-TRUTH-082.md"
-    },
-    {
-      "id": "PLAN-TRUTH-083",
-      "slug": "plugin-doctor-detectors-report-clean-over-unexamined-populations",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "",
-      "pr": "1320",
-      "landing": "landings/PLAN-TRUTH-083.md"
-    },
-    {
-      "id": "PLAN-TRUTH-084",
-      "slug": "finalize-step-contract-ordering-and-refire-currency",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "",
-      "pr": "1309",
-      "landing": "landings/PLAN-TRUTH-084.md"
-    },
-    {
-      "id": "PLAN-TRUTH-085",
-      "slug": "orchestrator-inbox-lifecycle-cleanup-and-landing-payload",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "",
-      "pr": "1317",
-      "landing": "landings/PLAN-TRUTH-085.md"
-    },
-    {
-      "id": "PLAN-TRUTH-086",
-      "slug": "manage-config-seeding-effort-presets-and-steward-upgrade-flow",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "config-seeding-effort-presets-steward-upgrade",
-      "pr": "#1351",
-      "landing": "landings/PLAN-TRUTH-086.md"
-    },
-    {
-      "id": "PLAN-TRUTH-087",
-      "slug": "build-gates-test-suite-confidence-and-ci-workflow-lint",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "build-gates-test-suite-confidence-ci-workflow-lint",
-      "pr": "#1340",
-      "landing": "landings/PLAN-TRUTH-087.md"
-    },
-    {
-      "id": "PLAN-TRUTH-088",
-      "slug": "metrics-ledger-readers-and-timestamp-provenance",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "metrics-ledger-readers-and-timestamp-provenance",
-      "pr": "1342",
-      "landing": "landings/PLAN-TRUTH-088.md"
-    },
-    {
-      "id": "PLAN-TRUTH-089",
-      "slug": "planning-lane-change-type-scope-and-execution-manifest",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "planning-lane-change-type-scope-execution-manifest",
-      "pr": "1399",
-      "landing": "landings/PLAN-TRUTH-089.md"
-    },
-    {
-      "id": "PLAN-TRUTH-090",
-      "slug": "git-artifact-scanning-and-destructive-recovery-prose",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "git-artifact-scanning-and-destructive-recovery",
-      "pr": "1371",
-      "landing": "landings/PLAN-TRUTH-090.md"
-    },
-    {
-      "id": "PLAN-TRUTH-128",
-      "slug": "the-freshness-gate-says-fresh-for-a-tree-it-never-examined",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "freshness-gate-says-fresh-unexamined-tree",
-      "pr": "1425",
-      "landing": "landings/PLAN-TRUTH-128.md"
-    },
-    {
-      "id": "PLAN-TRUTH-127",
-      "slug": "the-archived-record-says-a-phase-is-still-running-and-the-closer-can-only-close-one",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "plan-truth-127",
-      "pr": "1483",
-      "landing": "landings/PLAN-TRUTH-127.md"
-    },
-    {
-      "id": "PLAN-TRUTH-126",
-      "slug": "shipped-guards-assume-the-meta-projects-own-layout-and-go-vacuously-green-elsewhere",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "shipped-guards-assume-the-meta-projects-own-layout",
-      "pr": "1397",
-      "landing": "landings/PLAN-TRUTH-126.md"
-    },
-    {
-      "id": "PLAN-TRUTH-125",
-      "slug": "one-format-several-implementations-that-disagree-and-no-test-compares-them",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "one-format-several-implementations-that-disagree",
-      "pr": "1427",
-      "landing": "landings/PLAN-TRUTH-125.md"
-    },
-    {
-      "id": "PLAN-TRUTH-124",
-      "slug": "one-ledger-vocabulary-clean-slate-so-the-same-word-means-the-same-thing-everywhere",
-      "workstream": "WS-01",
-      "status": "superseded",
-      "plan_marshall_plan_id": "",
-      "pr": "",
-      "landing": "",
-      "superseded_by": "PLAN-TRUTH-146"
-    },
-    {
-      "id": "PLAN-TRUTH-123",
-      "slug": "the-quality-chain-has-no-score-and-a-disabled-gate-is-indistinguishable-from-a-clean-one",
-      "workstream": "WS-01",
-      "status": "superseded",
-      "plan_marshall_plan_id": "",
-      "pr": "",
-      "landing": "",
-      "superseded_by": "PLAN-TRUTH-152"
-    },
-    {
-      "id": "PLAN-TRUTH-091",
-      "slug": "agent-facing-documentation-surfaces",
-      "workstream": "WS-01",
-      "status": "superseded",
-      "plan_marshall_plan_id": "",
-      "pr": "",
-      "landing": "",
-      "superseded_by": "PLAN-TRUTH-155"
-    },
-    {
-      "id": "PLAN-TRUTH-092",
-      "slug": "cloud-plan-lane-contract-and-run-report-accuracy",
-      "workstream": "WS-01",
-      "status": "retired",
-      "plan_marshall_plan_id": "",
-      "pr": "",
-      "landing": ""
-    },
-    {
-      "id": "PLAN-TRUTH-093",
-      "slug": "preference-admissibility-is-prose-where-the-auditor-has-code",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "preference-admissibility-prose-vs-auditor-code",
-      "pr": "1398",
-      "landing": "landings/PLAN-TRUTH-093.md"
-    },
-    {
-      "id": "PLAN-TRUTH-094",
-      "slug": "plugin-doctor-detector-coverage-residue",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "plugin-doctor-detector-coverage-residue",
-      "pr": "#1343",
-      "landing": "landings/PLAN-TRUTH-094.md"
-    },
-    {
-      "id": "PLAN-TRUTH-095",
-      "slug": "finalize-step-contract-guard-residue",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "finalize-step-contract-guard-residue",
-      "pr": "1339",
-      "landing": "landings/PLAN-TRUTH-095.md"
-    },
-    {
-      "id": "PLAN-TRUTH-096",
-      "slug": "orchestrator-inbox-and-landing-residue",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "orchestrator-inbox-and-landing-residue",
-      "pr": "1338",
-      "landing": "landings/PLAN-TRUTH-096.md"
-    },
-    {
-      "id": "PLAN-TRUTH-097",
-      "slug": "dispatch-contract-and-measurement-residue",
-      "workstream": "WS-01",
-      "status": "superseded",
-      "plan_marshall_plan_id": "",
-      "pr": "",
-      "landing": "",
-      "superseded_by": "PLAN-TRUTH-148"
-    },
-    {
-      "id": "PLAN-TRUTH-100",
-      "slug": "the-inbox-has-no-delivery-path-to-a-running-plan",
-      "workstream": "WS-01",
-      "status": "superseded",
-      "plan_marshall_plan_id": "",
-      "pr": "",
-      "landing": "",
-      "superseded_by": "PLAN-TRUTH-143"
-    },
-    {
-      "id": "PLAN-TRUTH-098",
-      "slug": "plan-footprint-is-unknowable-to-its-own-graders",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "plan-footprint-is-unknowable-to-its-own-graders",
-      "pr": "1359",
-      "landing": "landings/PLAN-TRUTH-098.md"
-    },
-    {
-      "id": "PLAN-TRUTH-099",
-      "slug": "the-ledger-has-no-safe-single-row-append",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "the-ledger-has-no-safe-single-row-append",
-      "pr": "1434",
-      "landing": "landings/PLAN-TRUTH-099.md"
-    },
-    {
-      "id": "PLAN-TRUTH-101",
-      "slug": "documented-invocations-that-cannot-succeed-as-written",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "documented-invocations-cannot-succeed-as-written",
-      "pr": "1386",
-      "landing": "landings/PLAN-TRUTH-101.md"
-    },
-    {
-      "id": "PLAN-TRUTH-102",
-      "slug": "a-dual-homed-hook-install-renders-identically-to-a-healthy-one",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "dual-homed-hook-install-renders-identically",
-      "pr": "1384",
-      "landing": "landings/PLAN-TRUTH-102.md"
-    },
-    {
-      "id": "PLAN-TRUTH-103",
-      "slug": "the-permission-machinery-models-write-as-live-and-settings-json-as-authoritative",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "plan-truth-103",
-      "pr": "1475",
-      "landing": "landings/PLAN-TRUTH-103.md"
-    },
-    {
-      "id": "PLAN-TRUTH-104",
-      "slug": "a-clear-verdict-over-an-empty-population-is-reported-as-a-checked-negative",
-      "workstream": "WS-01",
-      "status": "superseded",
-      "plan_marshall_plan_id": "",
-      "pr": "",
-      "landing": "",
-      "superseded_by": "PLAN-TRUTH-147"
-    },
-    {
-      "id": "PLAN-TRUTH-105",
-      "slug": "build-execution-verdicts-that-mislead-specifically-on-the-healthy-path",
-      "workstream": "WS-01",
-      "status": "superseded",
-      "plan_marshall_plan_id": "",
-      "pr": "",
-      "landing": "",
-      "superseded_by": "PLAN-TRUTH-150"
-    },
-    {
-      "id": "PLAN-TRUTH-106",
-      "slug": "the-terminal-emission-and-the-operator-report-do-not-check-themselves",
-      "workstream": "WS-01",
-      "status": "superseded",
-      "plan_marshall_plan_id": "",
-      "pr": "",
-      "landing": "",
-      "superseded_by": "PLAN-TRUTH-149"
-    },
-    {
-      "id": "PLAN-TRUTH-107",
-      "slug": "the-phase-runner-yields-control-without-naming-a-reason",
-      "workstream": "WS-01",
-      "status": "superseded",
-      "plan_marshall_plan_id": "",
-      "pr": "",
-      "landing": "",
-      "superseded_by": "PLAN-TRUTH-147"
-    },
-    {
-      "id": "PLAN-TRUTH-108",
-      "slug": "the-self-review-decides-its-own-close-and-its-distinguishing-property-is-invisible",
-      "workstream": "WS-01",
-      "status": "superseded",
-      "plan_marshall_plan_id": "",
-      "pr": "",
-      "landing": "",
-      "superseded_by": "PLAN-TRUTH-148"
-    },
-    {
-      "id": "PLAN-TRUTH-109",
-      "slug": "a-findings-read-against-an-absent-plan-directory-returns-a-clean-zero",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "findings-read-absent-plan-dir-returns-clean-zero",
-      "pr": "1369",
-      "landing": "landings/PLAN-TRUTH-109.md"
-    },
-    {
-      "id": "PLAN-TRUTH-110",
-      "slug": "a-plan-decides-what-the-epic-learns-and-nothing-audits-that-decision",
-      "workstream": "WS-01",
-      "status": "superseded",
-      "plan_marshall_plan_id": "",
-      "pr": "",
-      "landing": "",
-      "superseded_by": "PLAN-TRUTH-149"
-    },
-    {
-      "id": "PLAN-TRUTH-111",
-      "slug": "observed-defects-from-the-live-plan-sweep",
-      "workstream": "WS-01",
-      "status": "superseded",
-      "plan_marshall_plan_id": "",
-      "pr": "",
-      "landing": "",
-      "superseded_by": "PLAN-TRUTH-155"
-    },
-    {
-      "id": "PLAN-TRUTH-112",
-      "slug": "plugin-doctors-llm-phase-documents-rules-that-emit-nothing",
-      "workstream": "WS-01",
-      "status": "superseded",
-      "plan_marshall_plan_id": "",
-      "pr": "",
-      "landing": "",
-      "superseded_by": "PLAN-TRUTH-153"
-    },
-    {
-      "id": "PLAN-TRUTH-113",
-      "slug": "the-disjointness-gate-reads-a-declared-surface-wrong-in-both-directions",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "disjointness-gate-reads-declared-surface-wrong",
-      "pr": "1366",
-      "landing": "landings/PLAN-TRUTH-113.md"
-    },
-    {
-      "id": "PLAN-TRUTH-114",
-      "slug": "the-move-back-guard-resolves-through-the-tree-it-protects",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "move-back-guard-resolves-through-its-own-tree",
-      "pr": "1361",
-      "landing": "landings/PLAN-TRUTH-114.md"
-    },
-    {
-      "id": "PLAN-TRUTH-115",
-      "slug": "the-repin-is-excluded-by-a-principle-we-already-violate-by-hand",
-      "workstream": "WS-01",
-      "status": "superseded",
-      "plan_marshall_plan_id": "",
-      "pr": "",
-      "landing": "",
-      "superseded_by": "PLAN-TRUTH-154"
-    },
-    {
-      "id": "PLAN-TRUTH-116",
-      "slug": "a-test-or-fixture-that-cannot-fail",
-      "workstream": "WS-01",
-      "status": "superseded",
-      "plan_marshall_plan_id": "",
-      "pr": "",
-      "landing": "",
-      "superseded_by": "PLAN-TRUTH-153"
-    },
-    {
-      "id": "PLAN-TRUTH-117",
-      "slug": "restated-counts-and-underived-completeness-claims",
-      "workstream": "WS-01",
-      "status": "superseded",
-      "plan_marshall_plan_id": "",
-      "pr": "",
-      "landing": "",
-      "superseded_by": "PLAN-TRUTH-153"
-    },
-    {
-      "id": "PLAN-TRUTH-118",
-      "slug": "a-confident-verdict-refuted-by-data-already-at-the-same-site",
-      "workstream": "WS-01",
-      "status": "superseded",
-      "plan_marshall_plan_id": "",
-      "pr": "",
-      "landing": "",
-      "superseded_by": "PLAN-TRUTH-150"
-    },
-    {
-      "id": "PLAN-TRUTH-119",
-      "slug": "early-phase-gates-cannot-be-told-apart-from-confident-answers",
-      "workstream": "WS-01",
-      "status": "superseded",
-      "plan_marshall_plan_id": "",
-      "pr": "",
-      "landing": "",
-      "superseded_by": "PLAN-TRUTH-151"
-    },
-    {
-      "id": "PLAN-TRUTH-120",
-      "slug": "container-files-have-no-derivable-build-route-in-any-project",
-      "workstream": "WS-01",
-      "status": "superseded",
-      "plan_marshall_plan_id": "",
-      "pr": "",
-      "landing": ""
-    },
-    {
-      "id": "PLAN-TRUTH-121",
-      "slug": "producers-report-success-over-a-write-nothing-can-read",
-      "workstream": "WS-01",
-      "status": "superseded",
-      "plan_marshall_plan_id": "",
-      "pr": "",
-      "landing": "",
-      "superseded_by": "PLAN-TRUTH-144"
-    },
-    {
-      "id": "PLAN-TRUTH-122",
-      "slug": "the-maven-signal-lies-in-both-directions-a-canonical-that-cannot-pass-and-a-count-that-cannot-add-up",
-      "workstream": "WS-01",
-      "status": "superseded",
-      "plan_marshall_plan_id": "",
-      "pr": "",
-      "landing": "",
-      "superseded_by": "PLAN-TRUTH-150"
-    },
-    {
-      "id": "PLAN-TRUTH-129",
-      "slug": "an-invocation-rejection-answers-confidently-and-wrongly",
-      "workstream": "WS-01",
-      "status": "superseded",
-      "plan_marshall_plan_id": "",
-      "pr": "",
-      "landing": "",
-      "superseded_by": "PLAN-TRUTH-154"
-    },
-    {
-      "id": "PLAN-TRUTH-130",
-      "slug": "an-assessment-is-read-at-report-time-and-grades-a-correct-action-as-a-violation",
-      "workstream": "WS-01",
-      "status": "superseded",
-      "plan_marshall_plan_id": "",
-      "pr": "",
-      "landing": "",
-      "superseded_by": "PLAN-TRUTH-152"
-    },
-    {
-      "id": "PLAN-TRUTH-131",
-      "slug": "the-corpus-instruments-publish-an-unmeasured-zero-and-collapse-a-suffixed-id",
-      "workstream": "WS-01",
-      "status": "superseded",
-      "plan_marshall_plan_id": "",
-      "pr": "",
-      "landing": "",
-      "superseded_by": "PLAN-TRUTH-143"
-    },
-    {
-      "id": "PLAN-TRUTH-132",
-      "slug": "a-frozen-manifest-param-has-no-staleness-detector",
-      "workstream": "WS-01",
-      "status": "superseded",
-      "plan_marshall_plan_id": "",
-      "pr": "",
-      "landing": "",
-      "superseded_by": "PLAN-TRUTH-145"
-    },
-    {
-      "id": "PLAN-TRUTH-133",
-      "slug": "the-findings-pipeline-cannot-tell-an-experiment-from-a-regression",
-      "workstream": "WS-01",
-      "status": "superseded",
-      "plan_marshall_plan_id": "",
-      "pr": "",
-      "landing": "",
-      "superseded_by": "PLAN-TRUTH-146"
-    },
-    {
-      "id": "PLAN-TRUTH-134",
-      "slug": "the-scope-extractor-invents-paths-and-drops-bullets-and-reports-success",
-      "workstream": "WS-01",
-      "status": "superseded",
-      "plan_marshall_plan_id": "",
-      "pr": "",
-      "landing": "",
-      "superseded_by": "PLAN-TRUTH-151"
-    },
-    {
-      "id": "PLAN-TRUTH-135",
-      "slug": "a-lesson-can-be-listed-and-neither-read-nor-retired",
-      "workstream": "WS-01",
-      "status": "superseded",
-      "plan_marshall_plan_id": "",
-      "pr": "",
-      "landing": "",
-      "superseded_by": "PLAN-TRUTH-144"
-    },
-    {
-      "id": "PLAN-TRUTH-136",
-      "slug": "the-declared-footprint-cannot-learn-a-path-the-outline-did-not-predict",
-      "workstream": "WS-01",
-      "status": "superseded",
-      "plan_marshall_plan_id": "",
-      "pr": "",
-      "landing": "",
-      "superseded_by": "PLAN-TRUTH-145"
-    },
-    {
-      "id": "PLAN-TRUTH-137",
-      "slug": "a-refuted-spec-claim-has-no-write-back-channel-at-the-plan-tier",
-      "workstream": "WS-01",
-      "status": "superseded",
-      "plan_marshall_plan_id": "",
-      "pr": "",
-      "landing": "",
-      "superseded_by": "PLAN-TRUTH-151"
-    },
-    {
-      "id": "PLAN-TRUTH-138",
-      "slug": "the-scope-creep-guard-has-no-producer-and-has-never-measured-anything",
-      "workstream": "WS-01",
-      "status": "superseded",
-      "plan_marshall_plan_id": "",
-      "pr": "",
-      "landing": "",
-      "superseded_by": "PLAN-TRUTH-145"
-    },
-    {
-      "id": "PLAN-TRUTH-139",
-      "slug": "a-config-knob-is-dead-on-one-path-and-unreconciled-on-the-other",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "plan-truth-139",
-      "pr": "1479",
-      "landing": "landings/PLAN-TRUTH-139.md"
-    },
-    {
-      "id": "PLAN-TRUTH-140",
-      "slug": "the-trailer-authority-is-open-in-three-carriers-and-checked-in-none",
-      "workstream": "WS-01",
-      "status": "superseded",
-      "plan_marshall_plan_id": "",
-      "pr": "",
-      "landing": "",
-      "superseded_by": "PLAN-TRUTH-154"
-    },
-    {
-      "id": "PLAN-TRUTH-141",
-      "slug": "the-light-lane-cannot-author-the-pr-title-its-own-entry-gate-requires",
-      "workstream": "WS-01",
-      "status": "superseded",
-      "plan_marshall_plan_id": "",
-      "pr": "",
-      "landing": "",
-      "superseded_by": "PLAN-TRUTH-147"
-    },
-    {
-      "id": "PLAN-TRUTH-142",
-      "slug": "phase-5-reports-green-over-work-it-did-not-verify-or-commit",
-      "workstream": "WS-01",
-      "status": "superseded",
-      "plan_marshall_plan_id": "",
-      "pr": "",
-      "landing": "",
-      "superseded_by": "PLAN-TRUTH-147"
-    },
-    {
-      "id": "PLAN-TRUTH-143",
-      "slug": "the-orchestrator-inbox-has-no-delivery-path-and-its-corpus-instruments-publish-an-unmeasured-zero",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "truth-143-orchestrator-inbox-delivery-path",
-      "pr": "1539",
-      "landing": "landings/PLAN-TRUTH-143.md"
-    },
-    {
-      "id": "PLAN-TRUTH-144",
-      "slug": "the-lessons-corpus-and-producers-that-report-success-over-a-write-nothing-can-read",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "lessons-corpus-producers-report-success",
-      "pr": "1560",
-      "landing": "landings/PLAN-TRUTH-144.md"
-    },
-    {
       "id": "PLAN-TRUTH-145",
       "slug": "declarations-that-cannot-learn-and-cannot-go-stale",
       "workstream": "WS-01",
       "status": "staged",
       "plan_marshall_plan_id": "",
       "pr": "",
-      "landing": ""
+      "landing": "",
+      "superseded_by": ""
     },
     {
       "id": "PLAN-TRUTH-146",
@@ -1788,7 +28,8 @@
       "status": "staged",
       "plan_marshall_plan_id": "",
       "pr": "",
-      "landing": ""
+      "landing": "",
+      "superseded_by": ""
     },
     {
       "id": "PLAN-TRUTH-147",
@@ -1797,16 +38,8 @@
       "status": "staged",
       "plan_marshall_plan_id": "",
       "pr": "",
-      "landing": ""
-    },
-    {
-      "id": "PLAN-TRUTH-148",
-      "slug": "the-finalize-step-contract-declared-surfaces-the-dispatch-seam-and-a-self-review-that-decides-its-own-close",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "plan-truth-148",
-      "pr": "1488",
-      "landing": "landings/PLAN-TRUTH-148.md"
+      "landing": "",
+      "superseded_by": ""
     },
     {
       "id": "PLAN-TRUTH-149",
@@ -1815,7 +48,8 @@
       "status": "staged",
       "plan_marshall_plan_id": "",
       "pr": "",
-      "landing": ""
+      "landing": "",
+      "superseded_by": ""
     },
     {
       "id": "PLAN-TRUTH-150",
@@ -1824,7 +58,8 @@
       "status": "staged",
       "plan_marshall_plan_id": "",
       "pr": "",
-      "landing": ""
+      "landing": "",
+      "superseded_by": ""
     },
     {
       "id": "PLAN-TRUTH-151",
@@ -1833,16 +68,8 @@
       "status": "staged",
       "plan_marshall_plan_id": "",
       "pr": "",
-      "landing": ""
-    },
-    {
-      "id": "PLAN-TRUTH-152",
-      "slug": "the-retrospective-quality-chain-and-assessments-graded-at-report-time",
-      "workstream": "WS-01",
-      "status": "transferred",
-      "plan_marshall_plan_id": "",
-      "pr": "",
-      "landing": ""
+      "landing": "",
+      "superseded_by": ""
     },
     {
       "id": "PLAN-TRUTH-153",
@@ -1851,7 +78,8 @@
       "status": "staged",
       "plan_marshall_plan_id": "",
       "pr": "",
-      "landing": ""
+      "landing": "",
+      "superseded_by": ""
     },
     {
       "id": "PLAN-TRUTH-154",
@@ -1860,7 +88,8 @@
       "status": "staged",
       "plan_marshall_plan_id": "",
       "pr": "",
-      "landing": ""
+      "landing": "",
+      "superseded_by": ""
     },
     {
       "id": "PLAN-TRUTH-155",
@@ -1869,7 +98,8 @@
       "status": "staged",
       "plan_marshall_plan_id": "",
       "pr": "",
-      "landing": ""
+      "landing": "",
+      "superseded_by": ""
     },
     {
       "id": "PLAN-TRUTH-156",
@@ -1878,16 +108,8 @@
       "status": "parked",
       "plan_marshall_plan_id": "",
       "pr": "",
-      "landing": ""
-    },
-    {
-      "id": "PLAN-TRUTH-157",
-      "slug": "dispatch-is-assumed-to-protect-judgement-quality-but-the-write-bound-half-never-leaves-the-caller",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "plan-truth-157",
-      "pr": "1494",
-      "landing": "landings/PLAN-TRUTH-157.md"
+      "landing": "",
+      "superseded_by": ""
     },
     {
       "id": "PLAN-TRUTH-158",
@@ -1896,7 +118,8 @@
       "status": "parked",
       "plan_marshall_plan_id": "",
       "pr": "",
-      "landing": ""
+      "landing": "",
+      "superseded_by": ""
     },
     {
       "id": "PLAN-TRUTH-159",
@@ -1905,7 +128,8 @@
       "status": "parked",
       "plan_marshall_plan_id": "",
       "pr": "",
-      "landing": ""
+      "landing": "",
+      "superseded_by": ""
     },
     {
       "id": "PLAN-TRUTH-160",
@@ -1914,7 +138,8 @@
       "status": "staged",
       "plan_marshall_plan_id": "",
       "pr": "",
-      "landing": ""
+      "landing": "",
+      "superseded_by": ""
     },
     {
       "id": "PLAN-TRUTH-161",
@@ -1923,7 +148,8 @@
       "status": "staged",
       "plan_marshall_plan_id": "",
       "pr": "",
-      "landing": ""
+      "landing": "",
+      "superseded_by": ""
     },
     {
       "id": "PLAN-TRUTH-162",
@@ -1932,7 +158,8 @@
       "status": "staged",
       "plan_marshall_plan_id": "",
       "pr": "",
-      "landing": ""
+      "landing": "",
+      "superseded_by": ""
     },
     {
       "id": "PLAN-TRUTH-163",
@@ -1941,7 +168,8 @@
       "status": "parked",
       "plan_marshall_plan_id": "",
       "pr": "",
-      "landing": ""
+      "landing": "",
+      "superseded_by": ""
     },
     {
       "id": "PLAN-TRUTH-164",
@@ -1950,7 +178,8 @@
       "status": "parked",
       "plan_marshall_plan_id": "",
       "pr": "",
-      "landing": ""
+      "landing": "",
+      "superseded_by": ""
     },
     {
       "id": "PLAN-TRUTH-165",
@@ -1959,16 +188,8 @@
       "status": "staged",
       "plan_marshall_plan_id": "",
       "pr": "",
-      "landing": ""
-    },
-    {
-      "id": "PLAN-TRUTH-166",
-      "slug": "architecture-refresh-ships-tool-migration-churn-as-plan-work-past-an-identity-only-regression-gate",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "truth-166-architecture-refresh-migration-churn",
-      "pr": "1501",
-      "landing": "landings/PLAN-TRUTH-166.md"
+      "landing": "",
+      "superseded_by": ""
     },
     {
       "id": "PLAN-TRUTH-167",
@@ -1977,7 +198,8 @@
       "status": "staged",
       "plan_marshall_plan_id": "",
       "pr": "",
-      "landing": ""
+      "landing": "",
+      "superseded_by": ""
     },
     {
       "id": "PLAN-TRUTH-168",
@@ -1986,7 +208,8 @@
       "status": "staged",
       "plan_marshall_plan_id": "",
       "pr": "",
-      "landing": ""
+      "landing": "",
+      "superseded_by": ""
     },
     {
       "id": "PLAN-TRUTH-169",
@@ -1995,7 +218,8 @@
       "status": "staged",
       "plan_marshall_plan_id": "",
       "pr": "",
-      "landing": ""
+      "landing": "",
+      "superseded_by": ""
     },
     {
       "id": "PLAN-TRUTH-170",
@@ -2004,7 +228,8 @@
       "status": "staged",
       "plan_marshall_plan_id": "",
       "pr": "",
-      "landing": ""
+      "landing": "",
+      "superseded_by": ""
     },
     {
       "id": "PLAN-TRUTH-171",
@@ -2013,7 +238,8 @@
       "status": "staged",
       "plan_marshall_plan_id": "",
       "pr": "",
-      "landing": ""
+      "landing": "",
+      "superseded_by": ""
     },
     {
       "id": "PLAN-TRUTH-172",
@@ -2022,7 +248,8 @@
       "status": "staged",
       "plan_marshall_plan_id": "",
       "pr": "",
-      "landing": ""
+      "landing": "",
+      "superseded_by": ""
     },
     {
       "id": "PLAN-TRUTH-173",
@@ -2031,7 +258,8 @@
       "status": "staged",
       "plan_marshall_plan_id": "",
       "pr": "",
-      "landing": ""
+      "landing": "",
+      "superseded_by": ""
     },
     {
       "id": "PLAN-TRUTH-174",
@@ -2040,7 +268,8 @@
       "status": "staged",
       "plan_marshall_plan_id": "",
       "pr": "",
-      "landing": ""
+      "landing": "",
+      "superseded_by": ""
     },
     {
       "id": "PLAN-TRUTH-175",
@@ -2049,7 +278,8 @@
       "status": "staged",
       "plan_marshall_plan_id": "",
       "pr": "",
-      "landing": ""
+      "landing": "",
+      "superseded_by": ""
     },
     {
       "id": "PLAN-TRUTH-176",
@@ -2058,7 +288,8 @@
       "status": "staged",
       "plan_marshall_plan_id": "",
       "pr": "",
-      "landing": ""
+      "landing": "",
+      "superseded_by": ""
     },
     {
       "id": "PLAN-TRUTH-177",
@@ -2067,7 +298,158 @@
       "status": "staged",
       "plan_marshall_plan_id": "",
       "pr": "",
-      "landing": ""
+      "landing": "",
+      "superseded_by": ""
+    },
+    {
+      "id": "PLAN-205",
+      "slug": "build-telemetry",
+      "workstream": "WS-QA-01",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": "",
+      "superseded_by": ""
+    },
+    {
+      "id": "PLAN-206",
+      "slug": "verify-first-a",
+      "workstream": "WS-QA-02",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": "",
+      "superseded_by": ""
+    },
+    {
+      "id": "PLAN-207",
+      "slug": "verify-first-b",
+      "workstream": "WS-QA-02",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": "",
+      "superseded_by": ""
+    },
+    {
+      "id": "PLAN-208",
+      "slug": "review-yield-a",
+      "workstream": "WS-QA-03",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": "",
+      "superseded_by": ""
+    },
+    {
+      "id": "PLAN-209",
+      "slug": "review-yield-b",
+      "workstream": "WS-QA-03",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": "",
+      "superseded_by": ""
+    },
+    {
+      "id": "PLAN-211",
+      "slug": "baseline-reconcile",
+      "workstream": "WS-QA-04",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": "",
+      "superseded_by": ""
+    },
+    {
+      "id": "PLAN-213",
+      "slug": "plan-execute-mechanics",
+      "workstream": "WS-QA-06",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": "",
+      "superseded_by": ""
+    },
+    {
+      "id": "PLAN-214",
+      "slug": "gates-anchors",
+      "workstream": "WS-QA-06",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": "",
+      "superseded_by": ""
+    },
+    {
+      "id": "PLAN-215",
+      "slug": "worktree-paths",
+      "workstream": "WS-QA-06",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": "",
+      "superseded_by": ""
+    },
+    {
+      "id": "PLAN-216",
+      "slug": "self-review-detectors",
+      "workstream": "WS-QA-07",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": "",
+      "superseded_by": ""
+    },
+    {
+      "id": "PLAN-217",
+      "slug": "chat-signal-halt",
+      "workstream": "WS-QA-07",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": "",
+      "superseded_by": ""
+    },
+    {
+      "id": "PLAN-218",
+      "slug": "testing-fidelity",
+      "workstream": "WS-QA-09",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": "",
+      "superseded_by": ""
+    },
+    {
+      "id": "PLAN-219",
+      "slug": "finalize-self-review",
+      "workstream": "WS-QA-08",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": "",
+      "superseded_by": ""
+    },
+    {
+      "id": "PLAN-220",
+      "slug": "cost-mergequeue",
+      "workstream": "WS-QA-08",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": "",
+      "superseded_by": ""
+    },
+    {
+      "id": "PLAN-221",
+      "slug": "executor-target-fidelity",
+      "workstream": "WS-QA-02",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": "",
+      "superseded_by": ""
     }
   ],
   "resume_anchor": "=== \u25b6 **2026-09-21 -- CLEANUP RAN PROPERLY (Steps 1-3/A1 substantially complete; A2-A5 lighter-touch).** HEAD 74153664d. A1: dispatched corroboration re-grounded 78 claims across 22 live specs (8 of 30 had none unsettled) -- 27 corroborated, 45 unverifiable (never blocks), 6 contradicted. 5 specs now correctly BLOCKED pending re-scope (PLAN-TRUTH-145 x2, -146, -150, -153 -- see Open Defects for the pointed-to contradictions each must absorb). PLAN-TRUTH-174 D1 was found ALREADY SHIPPED and re-scoped in place (now targets the untouched parse_toon ingestion call only). Surface half of A1: all 30 live specs already declarative, no corrections needed. A4: no true duplicates among the 30 EXCEPT PLAN-TRUTH-152, a verbatim duplicate of post-run-quality PLAN-PRQ-01 -- transitioned to transferred. High file-overlap network (mostly PLAN-TRUTH-155's broad doc-sweep nature) reviewed, no new NEVER-PAIR entries added this pass beyond what was already known. A2/A3/A5: not separately run this pass -- no live spec is missing Objective/Expected Surface/Claim Labels, and no redistribution was attempted (time-bounded pass). Phase B (compact) and Phase D (restart-check) still to run this session. PLAN-TRUTH-144's own landing (PR #1560, merged 05b5d1ac4) was independently reconciled and already landed on main as PR #1571 (two Watches recorded: W-1560-a merge-queue wait-loop hang, W-1560-b unreadable-lessons+allowed-tools gap) -- this branch's identical landing record merged cleanly against it. \u25b6 QUEUE: 224 live rows (152 now transferred, not counted staged). PLAN-TRUTH-161 remains the next emit target (not among the blocked 5), confirmed disjoint+prep-ready, N=1 R=0; do not raise parallelization_scope without an explicit operator decision. \u26d4\u26d4 PLUGIN PIN GAP STILL OPEN, OPERATOR-ONLY -- verify current executor version vs installed_plugins.json before any restart. ===",
@@ -2077,5 +459,5 @@
     "parallelization_scope": "1"
   },
   "created": "2026-07-22T18:17:00Z",
-  "updated": "2026-09-21T14:34:45Z"
+  "updated": "2026-09-21T21:36:04Z"
 }

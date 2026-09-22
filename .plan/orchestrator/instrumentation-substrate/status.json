@@ -1,0 +1,126 @@
+{
+  "kind": "orchestrator",
+  "title": "Next Level: measured instruction substrate",
+  "phase": "orchestrating",
+  "workstreams": [
+    {
+      "id": "WS-01",
+      "slug": "instruction-conformance",
+      "title": "Instruction conformance testing",
+      "status": "active"
+    },
+    {
+      "id": "WS-02",
+      "slug": "cross-model-evidence",
+      "title": "Cross-model evidence",
+      "status": "active"
+    },
+    {
+      "id": "WS-03",
+      "slug": "resident-context-economy",
+      "title": "Resident-context economy",
+      "status": "active"
+    },
+    {
+      "id": "WS-04",
+      "slug": "standard-liveness",
+      "title": "Standard liveness",
+      "status": "active"
+    },
+    {
+      "id": "WS-05",
+      "slug": "corpus-provenance-and-quality",
+      "title": "Corpus provenance and quality",
+      "status": "active"
+    }
+  ],
+  "plans": [
+    {
+      "id": "PLAN-01",
+      "slug": "conformance-harness-seam",
+      "workstream": "WS-01",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-02",
+      "slug": "baseline-conformance-corpus",
+      "workstream": "WS-01",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-03",
+      "slug": "calibration-axis-decision",
+      "workstream": "WS-02",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-04",
+      "slug": "cross-model-eval-signal",
+      "workstream": "WS-02",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-05",
+      "slug": "description-surface-economy",
+      "workstream": "WS-03",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-06",
+      "slug": "compaction-anchor-pointer",
+      "workstream": "WS-03",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-07",
+      "slug": "pbt-standard-liveness",
+      "workstream": "WS-04",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-08",
+      "slug": "hard-rule-enforcement-tier-survey",
+      "workstream": "WS-01",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-09",
+      "slug": "lessons-corpus-provenance-and-quality",
+      "workstream": "WS-05",
+      "status": "parked",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    }
+  ],
+  "resume_anchor": "RENAMED 2026-09-21 from next-level to instrumentation-substrate (operator decision, pure rename, no content change). RESTART-READY 2026-09-15 state carries over: 5 workstreams, 9 staged/parked plans, scope=1, nothing launched. NEXT ACTION: /plan-orchestrator next slug=instrumentation-substrate. ORDER: PLAN-03 is time-sensitive (antigravity in flight) and its drain-added deliverable 5 says READ arxiv 2605.03353 BEFORE deciding. PLAN-01 carries a mandatory cost-ceiling deliverable plus an early either/or on whether the three-valued verdict or a scored tolerance band holds the three values; that cannot be retrofitted. COLLISIONS RE-READ 2026-09-15: live set fell 5->2; architecture-store-query-truthfulness now hits PLAN-05/06/08/09 (08 and 09 are NEW collisions). Re-run corpus cross-check at emit time, never trust this sentence. PLAN-09/WS-05 reads a git-ignored lessons store the gate CANNOT see; two lessons epics were active pre-consolidation - check lessons-routing post-merge. Routed out: msg 003 to code-intelligence-substrate. Two drained claims were corrected (hook count is 6 events not 1; levels are config-resolved per role) - corrections live in PLAN-08 and the CIS message.",
+  "metadata": {
+    "parallelization_scope": "1"
+  },
+  "created": "2026-09-14T08:57:40Z",
+  "updated": "2026-09-21T21:27:59Z"
+}

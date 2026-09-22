@@ -27,6 +27,13 @@ layer rather than papering over symptoms. Done at the epic level means: every st
 explicitly retired, no open instance of the flagship archetype, and the closing rename (PLAN-TRUTH-015)
 landed.
 
+2026-09-21: `quality-aspect` (the finalize-lane instance of this same defect archetype)
+merged in. Its 15 live plans joined this queue, renumbered PLAN-205..221 as workstreams
+`WS-QA-01` through `WS-QA-09`. Its terminal history (3 shipped rows, renumbered
+PLAN-204/210/212) and quality-aspect's own `history.md` are in the
+`truthful-signals-26-09-21` archive, alongside this epic's own 196 terminal rows split
+out on the same date.
+
 ## START HERE
 
 <!-- GENERATED BLOCK — never hand-write or hand-edit this section.
@@ -69,202 +76,21 @@ landed.
 22. PLAN-TRUTH-175 (WS-01)
 23. PLAN-TRUTH-176 (WS-01)
 24. PLAN-TRUTH-177 (WS-01)
-- PLAN-41 (WS-01) — PR 991 — landing=landings/PLAN-41.md — status: shipped
-- PLAN-43 (WS-01) — PR 989 — landing=landings/PLAN-43.md — status: shipped
-- PLAN-69 (WS-01) — PR 1013 — landing=landings/PLAN-69.md — status: shipped
-- PLAN-66 (WS-01) — PR 1008 — landing=landings/PLAN-66.md — status: shipped
-- PLAN-53 (WS-01) — PR 1010 — landing=landings/PLAN-53.md — status: shipped
-- PLAN-44 (WS-01) — PR 990 — landing=landings/PLAN-44.md — status: shipped
-- PLAN-42 (WS-01) — PR 988 — landing=landings/PLAN-42.md — status: shipped
-- PLAN-27 (WS-01) — PR 995 — landing=landings/PLAN-27.md — status: shipped
-- PLAN-45 (WS-01) — PR 993 — landing=landings/PLAN-45.md — status: shipped
-- PLAN-46 (WS-01) — PR 994 — landing=landings/PLAN-46.md — status: shipped
-- PLAN-47 (WS-01) — PR 997 — landing=landings/PLAN-47.md — status: shipped
-- PLAN-48 (WS-01) — PR 996 — landing=landings/PLAN-48.md — status: shipped
-- PLAN-51 (WS-01) — PR 1009 — landing=landings/PLAN-51.md — status: shipped
-- PLAN-70 (WS-01) — PR 1014 — landing=landings/PLAN-70.md — status: shipped
-- PLAN-54 (WS-01) — PR 1015 — landing=landings/PLAN-54.md — status: shipped
-- PLAN-55 (WS-01) — PR 1016 — landing=landings/PLAN-55.md — status: shipped
-- PLAN-80 (WS-01) — PR 1021 — landing=landings/PLAN-80.md — status: shipped
-- PLAN-62 (WS-01) — PR 1022 — landing=landings/PLAN-62.md — status: shipped
-- PLAN-79 (WS-01) — PR 1023 — landing=landings/PLAN-79.md — status: shipped
-- PLAN-56 (WS-01) — PR 1027 — landing=landings/PLAN-56.md — status: shipped
-- PLAN-75 (WS-01) — PR 1032 — landing=landings/PLAN-75.md — status: shipped
-- PLAN-87 (WS-01) — PR 1024 — landing=landings/PLAN-87.md — status: shipped
-- PLAN-93 (WS-01) — plan=inbox-sequence-reuse-collides-with-the-archive — PR 1034 — landing=landings/PLAN-93.md — status: shipped
-- PLAN-92 (WS-01) — plan=one-coherent-automated-review-contract — PR 1041 — landing=landings/PLAN-92.md — status: shipped
-- PLAN-86 (WS-01) — plan=unchecked-finding-persist-loses-the-finding — PR 1038 — landing=landings/PLAN-86.md — status: shipped
-- PLAN-88 (WS-01) — plan=daemon-audit-logs-interactions-not-job-lifecycles — PR 1037 — landing=landings/PLAN-88.md — status: shipped
-- PLAN-90 (WS-01) — plan=lessons-corpus-is-written-and-never-read — PR 1039 — landing=landings/PLAN-90.md — status: shipped
-- PLAN-94 (WS-01) — plan=orchestrator-read-boundary-self-contradiction — PR 1040 — landing=landings/PLAN-94.md — status: shipped
-- PLAN-89 (WS-01) — plan=runnable-slice-keys-on-the-floor-not-the-measurement — PR 1044 — landing=landings/PLAN-89.md — status: shipped
-- PLAN-102 (WS-01) — plan=post-merge-review-findings-untriaged-in-main — PR 1045 — landing=landings/PLAN-102.md — status: shipped
-- PLAN-111 (WS-01) — plan=self-ingested-reply-is-a-non-terminating-barrier-loop — PR 1047 — landing=landings/PLAN-111.md — status: shipped
-- PLAN-101 (WS-01) — plan=lane-router-reads-the-wrong-body — PR 1049 — landing=landings/PLAN-101.md — status: shipped
-- PLAN-105 (WS-01) — PR 1046 — landing=landings/PLAN-105.md — status: superseded
-- PLAN-110 (WS-01) — plan=build-tests-do-not-neutralize-daemon-routing — PR 1061 — landing=landings/PLAN-110.md — status: shipped
-- PLAN-112 (WS-01) — plan=ceremony-prefilter-dropped-the-security-audit — PR 1055 — landing=landings/PLAN-112.md — status: shipped
-- PLAN-116 (WS-01) — status: transferred
-- PLAN-TRUTH-001 (WS-01) — plan=gates-do-not-refire-over-the-loop-back-diff — PR 1073 — landing=landings/PLAN-TRUTH-001.md — status: shipped
-- PLAN-114 (WS-01) — plan=orchestrated-plan-detection-fails-silently — PR 1057 — landing=landings/PLAN-114.md — status: shipped
-- PLAN-115 (WS-01) — plan=plan-less-pr-can-be-opened-but-never-corrected — PR 1065 — landing=landings/PLAN-115.md — status: shipped
-- PLAN-103 (WS-01) — plan=wrong-store-guard-refuses-project-local-lessons — PR 1050 — landing=landings/PLAN-103.md — status: shipped
-- PLAN-109 (WS-01) — plan=manage-lessons-mixes-local-time-and-utc — PR 1058 — landing=landings/PLAN-109.md — status: shipped
-- PLAN-TRUTH-002 (WS-01) — PR 1138 — landing=landings/PLAN-TRUTH-002.md — status: shipped
-- PLAN-99 (WS-01) — plan=exploration-share-is-unmeasured — PR 1043 — landing=landings/PLAN-99.md — status: shipped
-- PLAN-57 (WS-01) — plan=lane-router-scale-blind-false-negative — PR 1068 — landing=landings/PLAN-57.md — status: shipped
-- PLAN-TRUTH-003 (WS-01) — PR 1153 — landing=landings/PLAN-TRUTH-003.md — status: shipped
-- PLAN-81 (WS-01) — plan=self-review-cannot-see-an-unreachable-guard — PR 1042 — landing=landings/PLAN-81.md — status: shipped
-- PLAN-TRUTH-004 (WS-01) — PR 1150 — landing=landings/PLAN-TRUTH-004.md — status: shipped
-- PLAN-TRUTH-005 (WS-01) — PR 1152 — landing=landings/PLAN-TRUTH-005.md — status: shipped
-- PLAN-TRUTH-006 (WS-01) — status: superseded
-- PLAN-TRUTH-007 (WS-01) — PR 1156 — landing=landings/PLAN-TRUTH-007.md — status: shipped
-- PLAN-TRUTH-008 (WS-01) — status: superseded
-- PLAN-TRUTH-009 (WS-01) — PR 1155 — landing=landings/PLAN-TRUTH-009.md — status: shipped
-- PLAN-TRUTH-010 (WS-01) — PR 1082 — landing=landings/PLAN-TRUTH-010.md — status: shipped
-- PLAN-60 (WS-01) — status: transferred
-- PLAN-TRUTH-011 (WS-01) — plan=provider-logging-path-containment — PR 1123 — landing=landings/PLAN-TRUTH-011.md — status: shipped
-- PLAN-TRUTH-012 (WS-01) — PR 1158 — landing=landings/PLAN-TRUTH-012.md — status: shipped
-- PLAN-TRUTH-013 (WS-01) — plan=hook-timeout-unit-confusion — PR 1131 — landing=landings/PLAN-TRUTH-013.md — status: shipped
-- PLAN-100 (WS-01) — status: transferred
-- PLAN-TRUTH-014 (WS-01) — PR 1169 — landing=landings/PLAN-TRUTH-014.md — status: shipped
-- PLAN-TRUTH-015 (WS-01) — PR 1162 — landing=landings/PLAN-TRUTH-015.md — status: shipped
-- PLAN-117 (WS-01) — status: transferred
-- PLAN-TRUTH-016 (WS-01) — PR 1163 — landing=landings/PLAN-TRUTH-016.md — status: shipped
-- PLAN-119 (WS-01) — status: transferred
-- PLAN-TRUTH-017 (WS-01) — PR 1171 — landing=landings/PLAN-TRUTH-017.md — status: shipped
-- PLAN-202 (WS-01) — plan=compose-time-subtractions-drop-steps — PR 1066 — landing=landings/PLAN-202.md — status: shipped
-- PLAN-203 (WS-01) — plan=plan-203-inbox-consumed-vs-missing — PR 1064 — landing=landings/PLAN-203.md — status: shipped
-- PLAN-TRUTH-018 (WS-01) — PR 1172 — landing=landings/PLAN-TRUTH-018.md — status: shipped
-- PLAN-TRUTH-019 (WS-01) — PR 1174 — landing=landings/PLAN-TRUTH-019.md — status: shipped
-- PLAN-TRUTH-020 (WS-01) — PR 1296 — landing=landings/PLAN-TRUTH-020.md — status: shipped
-- PLAN-TRUTH-021 (WS-01) — status: superseded
-- PLAN-TRUTH-022 (WS-01) — PR 1183 — landing=landings/PLAN-TRUTH-022.md — status: shipped
-- PLAN-TRUTH-023 (WS-01) — PR 1179 — landing=landings/PLAN-TRUTH-023.md — status: shipped
-- PLAN-TRUTH-024 (WS-01) — PR 1181 — landing=landings/PLAN-TRUTH-024.md — status: shipped
-- PLAN-TRUTH-025 (WS-01) — PR 1186 — landing=landings/PLAN-TRUTH-025.md — status: shipped
-- PLAN-TRUTH-026 (WS-01) — plan=mandatory-plan-id-build-results-ledger — PR 1075 — landing=landings/PLAN-TRUTH-026.md — status: shipped
-- PLAN-TRUTH-027 (WS-01) — PR 1224 — landing=landings/PLAN-TRUTH-027.md — status: shipped
-- PLAN-TRUTH-028 (WS-01) — status: superseded
-- PLAN-TRUTH-030 (WS-01) — PR 1194 — landing=landings/PLAN-TRUTH-030.md — status: shipped
-- PLAN-TRUTH-031 (WS-01) — plan=finalize-step-records-are-prose-not-facts — PR 1076 — landing=landings/PLAN-TRUTH-031.md — status: shipped
-- PLAN-TRUTH-032 (WS-01) — status: superseded
-- PLAN-TRUTH-033 (WS-01) — status: superseded
-- PLAN-TRUTH-034 (WS-01) — status: superseded
-- PLAN-TRUTH-035 (WS-01) — PR 1083 — landing=landings/PLAN-TRUTH-035.md — status: shipped
-- PLAN-TRUTH-036 (WS-01) — PR 1188 — landing=landings/PLAN-TRUTH-036.md — status: shipped
-- PLAN-TRUTH-037 (WS-01) — status: superseded
-- PLAN-TRUTH-038 (WS-01) — PR 1198 — landing=landings/PLAN-TRUTH-038.md — status: shipped
-- PLAN-TRUTH-039 (WS-01) — status: superseded
-- PLAN-TRUTH-040 (WS-01) — PR 1197 — landing=landings/PLAN-TRUTH-040.md — status: shipped
-- PLAN-TRUTH-041 (WS-01) — PR 1195 — landing=landings/PLAN-TRUTH-041.md — status: shipped
-- PLAN-TRUTH-042 (WS-01) — plan=a-rule-that-is-green-because-it-examined-nothing — PR 1115 — landing=landings/PLAN-TRUTH-042.md — status: shipped
-- PLAN-TRUTH-043 (WS-01) — status: superseded
-- PLAN-TRUTH-044 (WS-01) — PR 1113 — landing=landings/PLAN-TRUTH-044.md — status: shipped
-- PLAN-TRUTH-045 (WS-01) — PR 1200 — landing=landings/PLAN-TRUTH-045.md — status: shipped
-- PLAN-TRUTH-046 (WS-01) — PR 1205 — landing=landings/PLAN-TRUTH-046.md — status: shipped
-- PLAN-TRUTH-047 (WS-01) — PR 1085 — landing=landings/PLAN-TRUTH-047.md — status: shipped
-- PLAN-TRUTH-048 (WS-01) — status: superseded
-- PLAN-TRUTH-049 (WS-01) — plan=two-producers-one-marker-field-two-encodings — PR 1125 — landing=landings/PLAN-TRUTH-049.md — status: shipped
-- PLAN-TRUTH-050 (WS-01) — PR 1211 — landing=landings/PLAN-TRUTH-050.md — status: shipped
-- PLAN-TRUTH-051 (WS-01) — status: superseded
-- PLAN-TRUTH-052 (WS-01) — status: superseded
-- PLAN-TRUTH-053 (WS-01) — status: superseded
-- PLAN-TRUTH-054 (WS-01) — PR 1206 — landing=landings/PLAN-TRUTH-054.md — status: shipped
-- PLAN-TRUTH-055 (WS-01) — plan=metrics-record-cannot-represent-re-entered-phase — PR 1129 — landing=landings/PLAN-TRUTH-055.md — status: shipped
-- PLAN-TRUTH-056 (WS-01) — status: superseded
-- PLAN-TRUTH-057 (WS-01) — status: superseded
-- PLAN-TRUTH-058 (WS-01) — status: superseded
-- PLAN-TRUTH-059 (WS-01) — PR 1213 — landing=landings/PLAN-TRUTH-059.md — status: shipped
-- PLAN-TRUTH-060 (WS-01) — plan=daemon-baseline-interpreter-is-unregistrable — PR 1122 — landing=landings/PLAN-TRUTH-060.md — status: shipped
-- PLAN-TRUTH-061 (WS-01) — PR 1112 — landing=landings/PLAN-TRUTH-061.md — status: shipped
-- PLAN-TRUTH-062 (WS-01) — PR 1117 — landing=landings/PLAN-TRUTH-062.md — status: shipped
-- PLAN-TRUTH-063 (WS-01) — PR 1137 — landing=landings/PLAN-TRUTH-063.md — status: shipped
-- PLAN-TRUTH-064 (WS-01) — PR 1217 — landing=landings/PLAN-TRUTH-064.md — status: shipped
-- PLAN-TRUTH-065 (WS-01) — status: superseded
-- PLAN-TRUTH-066 (WS-01) — status: superseded
-- PLAN-TRUTH-067 (WS-01) — PR 1222 — landing=landings/PLAN-TRUTH-067.md — status: shipped
-- PLAN-TRUTH-068 (WS-01) — PR 1221 — landing=landings/PLAN-TRUTH-068.md — status: shipped
-- PLAN-TRUTH-069 (WS-01) — PR 1223 — landing=landings/PLAN-TRUTH-069.md — status: shipped
-- PLAN-TRUTH-070 (WS-01) — plan=runtime-edge-paths-crash-or-silently-lose-data — PR 1132 — landing=landings/PLAN-TRUTH-070.md — status: shipped
-- PLAN-TRUTH-071 (WS-01) — PR 1228 — landing=landings/PLAN-TRUTH-071.md — status: shipped
-- PLAN-TRUTH-072 (WS-01) — PR 1229 — landing=landings/PLAN-TRUTH-072.md — status: shipped
-- PLAN-TRUTH-073 (WS-01) — PR 1230 — landing=landings/PLAN-TRUTH-073.md — status: shipped
-- PLAN-TRUTH-074 (WS-01) — plan=spec-corpus-review-and-cleanup-entry-point — PR 1134 — landing=landings/PLAN-TRUTH-074.md — status: shipped
-- PLAN-TRUTH-075 (WS-01) — plan=cloud-lane-build-gate-reads-one-field-short — PR 1336 — landing=landings/PLAN-TRUTH-075.md — status: shipped
-- PLAN-TRUTH-076 (WS-01) — PR 1231 — landing=landings/PLAN-TRUTH-076.md — status: shipped
-- PLAN-TRUTH-077 (WS-01) — PR 1255 — landing=landings/PLAN-TRUTH-077.md — status: shipped
-- PLAN-TRUTH-078 (WS-01) — PR 1193 — landing=landings/PLAN-TRUTH-078.md — status: shipped
-- PLAN-TRUTH-079 (WS-01) — PR 1235 — landing=landings/PLAN-TRUTH-079.md — status: shipped
-- PLAN-TRUTH-080 (WS-01) — PR 1215 — landing=landings/PLAN-TRUTH-080.md — status: shipped
-- PLAN-TRUTH-081 (WS-01) — PR 1147 — landing=landings/PLAN-TRUTH-081.md — status: shipped
-- PLAN-TRUTH-082 (WS-01) — PR 1278 — landing=landings/PLAN-TRUTH-082.md — status: shipped
-- PLAN-TRUTH-083 (WS-01) — PR 1320 — landing=landings/PLAN-TRUTH-083.md — status: shipped
-- PLAN-TRUTH-084 (WS-01) — PR 1309 — landing=landings/PLAN-TRUTH-084.md — status: shipped
-- PLAN-TRUTH-085 (WS-01) — PR 1317 — landing=landings/PLAN-TRUTH-085.md — status: shipped
-- PLAN-TRUTH-086 (WS-01) — plan=config-seeding-effort-presets-steward-upgrade — PR #1351 — landing=landings/PLAN-TRUTH-086.md — status: shipped
-- PLAN-TRUTH-087 (WS-01) — plan=build-gates-test-suite-confidence-ci-workflow-lint — PR #1340 — landing=landings/PLAN-TRUTH-087.md — status: shipped
-- PLAN-TRUTH-088 (WS-01) — plan=metrics-ledger-readers-and-timestamp-provenance — PR 1342 — landing=landings/PLAN-TRUTH-088.md — status: shipped
-- PLAN-TRUTH-089 (WS-01) — plan=planning-lane-change-type-scope-execution-manifest — PR 1399 — landing=landings/PLAN-TRUTH-089.md — status: shipped
-- PLAN-TRUTH-090 (WS-01) — plan=git-artifact-scanning-and-destructive-recovery — PR 1371 — landing=landings/PLAN-TRUTH-090.md — status: shipped
-- PLAN-TRUTH-128 (WS-01) — plan=freshness-gate-says-fresh-unexamined-tree — PR 1425 — landing=landings/PLAN-TRUTH-128.md — status: shipped
-- PLAN-TRUTH-127 (WS-01) — plan=plan-truth-127 — PR 1483 — landing=landings/PLAN-TRUTH-127.md — status: shipped
-- PLAN-TRUTH-126 (WS-01) — plan=shipped-guards-assume-the-meta-projects-own-layout — PR 1397 — landing=landings/PLAN-TRUTH-126.md — status: shipped
-- PLAN-TRUTH-125 (WS-01) — plan=one-format-several-implementations-that-disagree — PR 1427 — landing=landings/PLAN-TRUTH-125.md — status: shipped
-- PLAN-TRUTH-124 (WS-01) — status: superseded
-- PLAN-TRUTH-123 (WS-01) — status: superseded
-- PLAN-TRUTH-091 (WS-01) — status: superseded
-- PLAN-TRUTH-092 (WS-01) — status: retired
-- PLAN-TRUTH-093 (WS-01) — plan=preference-admissibility-prose-vs-auditor-code — PR 1398 — landing=landings/PLAN-TRUTH-093.md — status: shipped
-- PLAN-TRUTH-094 (WS-01) — plan=plugin-doctor-detector-coverage-residue — PR #1343 — landing=landings/PLAN-TRUTH-094.md — status: shipped
-- PLAN-TRUTH-095 (WS-01) — plan=finalize-step-contract-guard-residue — PR 1339 — landing=landings/PLAN-TRUTH-095.md — status: shipped
-- PLAN-TRUTH-096 (WS-01) — plan=orchestrator-inbox-and-landing-residue — PR 1338 — landing=landings/PLAN-TRUTH-096.md — status: shipped
-- PLAN-TRUTH-097 (WS-01) — status: superseded
-- PLAN-TRUTH-100 (WS-01) — status: superseded
-- PLAN-TRUTH-098 (WS-01) — plan=plan-footprint-is-unknowable-to-its-own-graders — PR 1359 — landing=landings/PLAN-TRUTH-098.md — status: shipped
-- PLAN-TRUTH-099 (WS-01) — plan=the-ledger-has-no-safe-single-row-append — PR 1434 — landing=landings/PLAN-TRUTH-099.md — status: shipped
-- PLAN-TRUTH-101 (WS-01) — plan=documented-invocations-cannot-succeed-as-written — PR 1386 — landing=landings/PLAN-TRUTH-101.md — status: shipped
-- PLAN-TRUTH-102 (WS-01) — plan=dual-homed-hook-install-renders-identically — PR 1384 — landing=landings/PLAN-TRUTH-102.md — status: shipped
-- PLAN-TRUTH-103 (WS-01) — plan=plan-truth-103 — PR 1475 — landing=landings/PLAN-TRUTH-103.md — status: shipped
-- PLAN-TRUTH-104 (WS-01) — status: superseded
-- PLAN-TRUTH-105 (WS-01) — status: superseded
-- PLAN-TRUTH-106 (WS-01) — status: superseded
-- PLAN-TRUTH-107 (WS-01) — status: superseded
-- PLAN-TRUTH-108 (WS-01) — status: superseded
-- PLAN-TRUTH-109 (WS-01) — plan=findings-read-absent-plan-dir-returns-clean-zero — PR 1369 — landing=landings/PLAN-TRUTH-109.md — status: shipped
-- PLAN-TRUTH-110 (WS-01) — status: superseded
-- PLAN-TRUTH-111 (WS-01) — status: superseded
-- PLAN-TRUTH-112 (WS-01) — status: superseded
-- PLAN-TRUTH-113 (WS-01) — plan=disjointness-gate-reads-declared-surface-wrong — PR 1366 — landing=landings/PLAN-TRUTH-113.md — status: shipped
-- PLAN-TRUTH-114 (WS-01) — plan=move-back-guard-resolves-through-its-own-tree — PR 1361 — landing=landings/PLAN-TRUTH-114.md — status: shipped
-- PLAN-TRUTH-115 (WS-01) — status: superseded
-- PLAN-TRUTH-116 (WS-01) — status: superseded
-- PLAN-TRUTH-117 (WS-01) — status: superseded
-- PLAN-TRUTH-118 (WS-01) — status: superseded
-- PLAN-TRUTH-119 (WS-01) — status: superseded
-- PLAN-TRUTH-120 (WS-01) — status: superseded
-- PLAN-TRUTH-121 (WS-01) — status: superseded
-- PLAN-TRUTH-122 (WS-01) — status: superseded
-- PLAN-TRUTH-129 (WS-01) — status: superseded
-- PLAN-TRUTH-130 (WS-01) — status: superseded
-- PLAN-TRUTH-131 (WS-01) — status: superseded
-- PLAN-TRUTH-132 (WS-01) — status: superseded
-- PLAN-TRUTH-133 (WS-01) — status: superseded
-- PLAN-TRUTH-134 (WS-01) — status: superseded
-- PLAN-TRUTH-135 (WS-01) — status: superseded
-- PLAN-TRUTH-136 (WS-01) — status: superseded
-- PLAN-TRUTH-137 (WS-01) — status: superseded
-- PLAN-TRUTH-138 (WS-01) — status: superseded
-- PLAN-TRUTH-139 (WS-01) — plan=plan-truth-139 — PR 1479 — landing=landings/PLAN-TRUTH-139.md — status: shipped
-- PLAN-TRUTH-140 (WS-01) — status: superseded
-- PLAN-TRUTH-141 (WS-01) — status: superseded
-- PLAN-TRUTH-142 (WS-01) — status: superseded
-- PLAN-TRUTH-143 (WS-01) — plan=truth-143-orchestrator-inbox-delivery-path — PR 1539 — landing=landings/PLAN-TRUTH-143.md — status: shipped
-- PLAN-TRUTH-144 (WS-01) — plan=lessons-corpus-producers-report-success — PR 1560 — landing=landings/PLAN-TRUTH-144.md — status: shipped
-- PLAN-TRUTH-148 (WS-01) — plan=plan-truth-148 — PR 1488 — landing=landings/PLAN-TRUTH-148.md — status: shipped
-- PLAN-TRUTH-152 (WS-01) — status: transferred
-- PLAN-TRUTH-157 (WS-01) — plan=plan-truth-157 — PR 1494 — landing=landings/PLAN-TRUTH-157.md — status: shipped
-- PLAN-TRUTH-166 (WS-01) — plan=truth-166-architecture-refresh-migration-churn — PR 1501 — landing=landings/PLAN-TRUTH-166.md — status: shipped
+25. PLAN-205 (WS-QA-01)
+26. PLAN-206 (WS-QA-02)
+27. PLAN-207 (WS-QA-02)
+28. PLAN-208 (WS-QA-03)
+29. PLAN-209 (WS-QA-03)
+30. PLAN-211 (WS-QA-04)
+31. PLAN-213 (WS-QA-06)
+32. PLAN-214 (WS-QA-06)
+33. PLAN-215 (WS-QA-06)
+34. PLAN-216 (WS-QA-07)
+35. PLAN-217 (WS-QA-07)
+36. PLAN-218 (WS-QA-09)
+37. PLAN-219 (WS-QA-08)
+38. PLAN-220 (WS-QA-08)
+39. PLAN-221 (WS-QA-02)
 <!-- END GENERATED: resume-summary -->
 
 ### Annotations
@@ -427,6 +253,21 @@ not carried; `landings/` is their record.
 | 27 | PLAN-TRUTH-175 | WS-01 | staged | marketplace/bundles/plan-marshall/skills/manage-change-ledger/**; marketplace/bundles/plan-marshall/skills/manage-metrics/**; marketplace/bundles/plan-marshall/skills/phase-6-finalize/**; marketplace/bundles/plan-marshall/skills/ref-workflow-architecture/standards/dispatch-logging.md; test/plan-marshall/manage-change-ledger/**; test/plan-marshall/manage-metrics/**; test/plan-marshall/phase-6-finalize/** |
 | 28 | PLAN-TRUTH-176 | WS-01 | staged | marketplace/bundles/plan-marshall/skills/manage-findings/SKILL.md; marketplace/bundles/plan-marshall/skills/manage-solution-outline/SKILL.md; marketplace/bundles/plan-marshall/skills/tools-script-executor/**; marketplace/bundles/pm-plugin-development/skills/recipe-fix-argparse-rejection/**; test/plan-marshall/tools-script-executor/** |
 | 29 | PLAN-TRUTH-177 | WS-01 | staged | marketplace/bundles/plan-marshall/skills/phase-1-init/**; marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/emit-landing.md; marketplace/bundles/plan-marshall/skills/plan-orchestrator/scripts/_orchestrator_inbox.py; test/plan-marshall/phase-1-init/** |
+| 30 | PLAN-205 | WS-QA-01 | staged | marketplace/bundles/plan-marshall/skills/build-pyproject/; marketplace/bundles/plan-marshall/skills/manage-build-server/; marketplace/bundles/plan-marshall/skills/manage-change-ledger/; marketplace/bundles/plan-marshall/skills/manage-locks/; marketplace/bundles/plan-marshall/skills/manage-metrics/; marketplace/bundles/plan-marshall/skills/script-shared/scripts/build/ |
+| 31 | PLAN-206 | WS-QA-02 | staged | marketplace/bundles/plan-marshall/skills/manage-metrics/; marketplace/bundles/plan-marshall/skills/phase-6-finalize/ |
+| 32 | PLAN-207 | WS-QA-02 | staged | marketplace/bundles/plan-marshall/skills/phase-5-execute/; marketplace/bundles/plan-marshall/skills/phase-6-finalize/ |
+| 33 | PLAN-208 | WS-QA-03 | staged | marketplace/bundles/plan-marshall/skills/automatic-review/ |
+| 34 | PLAN-209 | WS-QA-03 | staged | marketplace/bundles/plan-marshall/skills/automatic-review/; marketplace/bundles/plan-marshall/skills/manage-providers/ |
+| 35 | PLAN-211 | WS-QA-04 | staged | marketplace/bundles/plan-marshall/skills/manage-lessons/; marketplace/bundles/plan-marshall/skills/workflow-integration-git/ |
+| 36 | PLAN-213 | WS-QA-06 | staged | marketplace/bundles/plan-marshall/skills/manage-tasks/; marketplace/bundles/plan-marshall/skills/phase-4-plan/; marketplace/bundles/plan-marshall/skills/phase-5-execute/ |
+| 37 | PLAN-214 | WS-QA-06 | staged | marketplace/bundles/plan-marshall/skills/phase-2-refine/; marketplace/bundles/plan-marshall/skills/plan-marshall/; marketplace/bundles/plan-marshall/skills/workflow-integration-github/ |
+| 38 | PLAN-215 | WS-QA-06 | staged | marketplace/bundles/plan-marshall/skills/manage-architecture/; marketplace/bundles/plan-marshall/skills/manage-lessons/; marketplace/bundles/plan-marshall/skills/tools-script-executor/ |
+| 39 | PLAN-216 | WS-QA-07 | staged | marketplace/bundles/plan-marshall/skills/manage-findings/; marketplace/bundles/pm-plugin-development/skills/ext-self-review-plan-marshall/; marketplace/bundles/pm-plugin-development/skills/plugin-doctor/ |
+| 40 | PLAN-217 | WS-QA-07 | staged | marketplace/bundles/plan-marshall/skills/manage-logging/; marketplace/bundles/plan-marshall/skills/plan-retrospective/ |
+| 41 | PLAN-218 | WS-QA-09 | staged | marketplace/bundles/plan-marshall/skills/manage-config/ |
+| 42 | PLAN-219 | WS-QA-08 | staged | marketplace/bundles/plan-marshall/skills/phase-6-finalize/ |
+| 43 | PLAN-220 | WS-QA-08 | staged | marketplace/bundles/plan-marshall/skills/phase-6-finalize/; marketplace/bundles/plan-marshall/skills/tools-integration-ci/ |
+| 44 | PLAN-221 | WS-QA-02 | staged | marketplace/bundles/plan-marshall/skills/marshall-steward/; marketplace/bundles/plan-marshall/skills/platform-runtime/; marketplace/bundles/plan-marshall/skills/tools-script-executor/; marketplace/bundles/pm-plugin-development/skills/finalize-step-deploy-target/ |
 <!-- END GENERATED: ordered-queue -->
 
 ### Queue annotations
