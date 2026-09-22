@@ -71,7 +71,7 @@ python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons get 
   --lesson-id {lesson_id}
 ```
 
-An empty corpus is a legitimate outcome: record the empty scan as a decision (Step 6 logging shape), skip Steps 3–4, and continue with Step 5 (when `remote_lessons_dir` was supplied) or Step 7.
+An empty corpus is a legitimate outcome: skip Steps 3–4, and continue with Step 5 (when `remote_lessons_dir` was supplied) or directly to Step 6 — the sweep record is mandatory on every run, so an empty-corpus sweep still writes a dated subsection recording zero lessons scanned, before proceeding to Step 7.
 
 ### Step 3: Cluster and dispose (local dedup/aggregate obligation)
 
