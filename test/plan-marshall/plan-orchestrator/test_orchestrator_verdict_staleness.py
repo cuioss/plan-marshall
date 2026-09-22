@@ -44,15 +44,30 @@ Every arm additionally asserts the admission outcome, pinning that `stale` staye
 reported-only: `_admits` reads neither field, so no arm may move `admits` or
 `blocking_count`.
 
-Each arrangement is guarded for non-vacuity through `corpus surfaces`: a fixture
-whose declared surface silently failed to resolve would make every
-`surface_not_declarative` assertion below pass for the wrong reason, and the same
-guard is what proves the `declarative` arms really are declarative.
+Most arrangements are guarded for non-vacuity through `corpus surfaces`: a
+fixture whose declared surface silently failed to resolve would make every
+`surface_not_declarative` assertion pass for the wrong reason, and the same
+guard is what proves the `declarative` arms really are declarative. Three
+classes of arrangement never call it, and none needs it, because each settles
+its outcome by a route the guard cannot strengthen: the `head_unchanged` arms
+(`test_an_anchor_at_the_live_head_settles_before_any_comparison` and both of
+`TestAbbreviatedAnchorResolution`) decide before the declared surface is even
+consulted; the `diff_unavailable` arms
+(`test_an_unresolvable_anchor_is_not_read_as_an_empty_difference`,
+`test_an_unresolvable_abbreviation_reports_diff_unavailable_not_head_unchanged`)
+settle on a failed tree diff before the surface is compared; and the two rows
+excluded from the row population entirely
+(`test_every_row_carries_a_basis_and_the_tally_sums_to_the_population`, whose
+own basis-set assertion fails loudly on its own account, and
+`test_an_unreadable_spec_contributes_no_row_rather_than_a_fallback_one`, which
+asserts the unreadable spec never reaches a row at all) have no comparable
+surface for the guard to have silently failed to resolve.
 """
 
 import argparse
 import copy
 import json
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -190,12 +205,39 @@ _SET_VERDICT_ARGS = parse_ns(
 # =============================================================================
 
 
+#: ``GIT_*`` variables that can redirect the fixture repository despite the
+#: explicit ``-C {repo}`` on every call below — each one lets the ambient
+#: environment point git at a DIFFERENT working tree, index or object store
+#: than the fixture's own.
+_GIT_REDIRECT_ENV_VARS = ('GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_OBJECT_DIRECTORY', 'GIT_COMMON_DIR')
+
+
+def _scrubbed_git_env() -> dict[str, str]:
+    """The process environment with every ambient git-redirect and git-config source removed.
+
+    Scrubbing :data:`_GIT_REDIRECT_ENV_VARS` closes the redirect hazard those
+    variables carry. Pointing ``GIT_CONFIG_GLOBAL`` / ``GIT_CONFIG_SYSTEM`` at
+    ``os.devnull`` closes a SEPARATE hazard neither variable removal touches: a
+    global or system config can still apply ``core.excludesFile`` (changing what
+    ``git add -A`` stages) or ``core.hooksPath`` (altering or rejecting the
+    commit) even with every path variable scrubbed. The fixture's own identity
+    (``user.email`` / ``user.name``) is unaffected — :func:`epic_repo` sets both
+    with ``git config`` directly into the fixture repository's LOCAL config,
+    which neither devnull redirect touches.
+    """
+    env = {key: value for key, value in os.environ.items() if key not in _GIT_REDIRECT_ENV_VARS}
+    env['GIT_CONFIG_GLOBAL'] = os.devnull
+    env['GIT_CONFIG_SYSTEM'] = os.devnull
+    return env
+
+
 def _git(repo: Path, *args: str) -> str:
     completed = subprocess.run(
         ['git', '-C', str(repo), *args],
         capture_output=True,
         text=True,
         check=True,
+        env=_scrubbed_git_env(),
     )
     return completed.stdout.strip()
 
@@ -548,7 +590,12 @@ _FALLBACK_CASES = (
     (SURFACE_ABSENT, None),
 )
 
-_FALLBACK_IDS = (SURFACE_DERIVED, SURFACE_PROSE, SURFACE_ABSENT)
+#: Derived from :data:`_FALLBACK_CASES` rather than restated — a length-only
+#: comparison between two independently hand-typed tuples is vacuous against
+#: reordering: swap two rows in either tuple and the lengths still agree, so
+#: every parametrized case mislabels the arm it belongs to. Deriving the ids
+#: makes that class of drift structurally unreachable.
+_FALLBACK_IDS = tuple(state for state, _ in _FALLBACK_CASES)
 
 
 class TestFailClosedFallback:
@@ -580,7 +627,6 @@ class TestFailClosedFallback:
         # contributes none — which the sibling test proves on disk.
         covered = {state for state, _ in _FALLBACK_CASES}
 
-        assert len(_FALLBACK_CASES) == len(_FALLBACK_IDS)
         assert covered | {SURFACE_UNREADABLE} == set(SURFACE_INDETERMINATE_STATES), (
             f'{len(SURFACE_INDETERMINATE_STATES)} indeterminate status(es), {len(covered) + 1} accounted for'
         )
