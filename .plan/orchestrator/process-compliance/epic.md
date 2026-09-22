@@ -35,23 +35,23 @@ with every remaining gap a logged, visible exemption rather than a silent slip.
      outside the markers — never inside them. -->
 
 <!-- BEGIN GENERATED: resume-summary -->
-**Resume anchor**: Drain 2026-09-22: 6/6 consumed (1 watch + 1 defect + addenda); queue empty. Next: monitor PLAN-05 merge per landing procedure, then analyze landing.
+**Resume anchor**: PLAN-06 emitted and launched under operator order (pairwise disjoint vs PLAN-15, prep-ready clean). Next: operator runs PLAN-06 command with preamble, confirms start.
 **Phase**: orchestrating
-**Inbox (derived)**: 0 queued, 93 archived
+**Inbox (derived)**: 1 queued, 97 archived
 **Queue** (staged, in order):
-1. PLAN-06 (WS-05)
-2. PLAN-08 (WS-03)
-3. PLAN-09 (WS-03)
-4. PLAN-10 (WS-01)
-5. PLAN-11 (WS-06)
-6. PLAN-12 (WS-05)
-7. PLAN-13 (WS-07)
-8. PLAN-14 (WS-04)
+1. PLAN-08 (WS-03)
+2. PLAN-09 (WS-03)
+3. PLAN-10 (WS-01)
+4. PLAN-11 (WS-06)
+5. PLAN-12 (WS-05)
+6. PLAN-13 (WS-07)
+7. PLAN-14 (WS-04)
 - PLAN-01 (WS-01) — plan=phase-gates — PR 1540 — landing=landings/PLAN-01.md — status: shipped
 - PLAN-02 (WS-02) — plan=plan-02-worktree-discipline — PR 1547 — landing=landings/PLAN-02.md — status: shipped
 - PLAN-03 (WS-03) — plan=compliant-paths — PR 1542 — landing=landings/PLAN-03.md — status: shipped
 - PLAN-04 (WS-04) — plan=plan-04-persona-behavior — PR 1556 — landing=landings/PLAN-04.md — status: shipped
-- PLAN-05 (WS-05) — status: launched
+- PLAN-05 (WS-05) — plan=implement-dispatch-envelopes-process-compliance — PR 1583 — landing=landings/PLAN-05.md — status: shipped
+- PLAN-06 (WS-05) — status: launched
 - PLAN-07 (WS-06) — plan=plan-07-opencode-repairs — PR 1554 — landing=landings/PLAN-07.md — status: shipped
 - PLAN-15 (WS-06) — status: launched
 <!-- END GENERATED: resume-summary -->
@@ -68,11 +68,13 @@ with every remaining gap a logged, visible exemption rather than a silent slip.
   it); the argparse-rejection class (shipped as PR #1507); review-currency (shipped
   as PR #1510); the merge-gate holes (shipped). Decompose must not re-stage shipped
   work — it stages the structural guards below.
-- **Standing emit convention (operator direction 2026-09-18).** Every emitted
-  `/plan-marshall` command appends the line: "Comply strictly to the process rules.
-  All issues with the process rules, file into
-  `.plan/local/orchestrator/process-compliance/inbox`". Evidence: ~6 runs,
-  compliance much better with it than without (see Watches).
+- **Standing emit convention (operator direction 2026-09-18, strengthened
+  2026-09-22).** Every emitted `/plan-marshall` command appends: "Comply strictly
+  to the process rules. All issues with the process rules, file into
+  `.plan/orchestrator/process-compliance/inbox`. Non compliance is not faster
+  but a complete failure." Evidence: ~6 runs, much better with the base lines
+  than without; with the third line (operator report 2026-09-22, PLAN-06/15
+  running) no ignored-process issues in general — not perfect yet (see Watches).
 
 ## Ordered Queue
 
@@ -85,16 +87,15 @@ with every remaining gap a logged, visible exemption rather than a silent slip.
 <!-- BEGIN GENERATED: ordered-queue -->
 | # | Plan | Workstream | Status | Surface (expected) |
 |---|------|------------|--------|--------------------|
-| 1 | PLAN-05 | WS-05 | launched | marketplace/bundles/plan-marshall/skills/execute-task/scripts/inject_project_dir.py; marketplace/bundles/plan-marshall/skills/phase-5-execute/standards/operations.md; test/plan-marshall/phase-5-execute/ |
-| 2 | PLAN-06 | WS-05 | staged | marketplace/bundles/plan-marshall/skills/execute-task/scripts/inject_project_dir.py; marketplace/bundles/plan-marshall/skills/phase-5-execute/standards/operations.md; marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/dispatch-inline-split.md; test/plan-marshall/phase-5-execute/ |
-| 3 | PLAN-08 | WS-03 | staged | marketplace/bundles/plan-marshall/skills/tools-integration-ci/; marketplace/bundles/plan-marshall/skills/workflow-integration-github/ |
-| 4 | PLAN-09 | WS-03 | staged | AGENTS.md; marketplace/bundles/plan-marshall/skills/plan-orchestrator/SKILL.md; marketplace/bundles/plan-marshall/skills/plan-orchestrator/scripts/orchestrator.py; test/plan-marshall/plan-orchestrator/ |
-| 5 | PLAN-10 | WS-01 | staged | marketplace/bundles/plan-marshall/skills/phase-1-init/; marketplace/bundles/plan-marshall/skills/plan-marshall/; marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/planning.md; marketplace/bundles/plan-marshall/skills/plan-orchestrator/scripts/_orchestrator_inbox.py; test/plan-marshall/plan-marshall/; test/plan-marshall/plan-orchestrator/ |
-| 6 | PLAN-11 | WS-06 | staged | marketplace/bundles/plan-marshall/skills/phase-6-finalize/; marketplace/bundles/plan-marshall/skills/plan-orchestrator/scripts/orchestrator.py; test/plan-marshall/phase-5-execute/; test/plan-marshall/plan-orchestrator/ |
-| 7 | PLAN-12 | WS-05 | staged | marketplace/bundles/plan-marshall/skills/manage-locks/scripts/merge_lock.py; marketplace/bundles/plan-marshall/skills/manage-status/scripts/manage-status.py; marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/branch-cleanup.md; marketplace/bundles/plan-marshall/skills/plan-retrospective/; marketplace/bundles/plan-marshall/skills/tools-integration-ci/scripts/ci.py; marketplace/bundles/plan-marshall/skills/tools-integration-ci/standards/pr-review-operations.md; test/plan-marshall/manage-status/ |
-| 8 | PLAN-13 | WS-07 | staged | marketplace/bundles/plan-marshall/skills/phase-6-finalize/SKILL.md; marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/archive-plan.md; marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/dispatch-inline-split.md; marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/emit-landing.md; marketplace/bundles/plan-marshall/skills/phase-6-finalize/workflow/create-pr.md; marketplace/bundles/plan-marshall/skills/platform-runtime/scripts/session_binding.py; test/plan-marshall/phase-6-finalize/ |
-| 9 | PLAN-14 | WS-04 | staged | marketplace/bundles/plan-marshall/skills/persona-plan-marshall-agent/; test/plan-marshall/persona-plan-marshall-agent/ |
-| 10 | PLAN-15 | WS-06 | launched | .opencode/commands/; marketplace/bundles/plan-marshall/skills/platform-runtime/scripts/opencode_runtime.py; opencode.json; test/plan-marshall/platform-runtime/ |
+| 1 | PLAN-06 | WS-05 | launched | marketplace/bundles/plan-marshall/skills/execute-task/scripts/inject_project_dir.py; marketplace/bundles/plan-marshall/skills/phase-5-execute/standards/operations.md; marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/dispatch-inline-split.md; test/plan-marshall/phase-5-execute/ |
+| 2 | PLAN-08 | WS-03 | staged | marketplace/bundles/plan-marshall/skills/tools-integration-ci/; marketplace/bundles/plan-marshall/skills/workflow-integration-github/ |
+| 3 | PLAN-09 | WS-03 | staged | AGENTS.md; marketplace/bundles/plan-marshall/skills/plan-orchestrator/SKILL.md; marketplace/bundles/plan-marshall/skills/plan-orchestrator/scripts/orchestrator.py; test/plan-marshall/plan-orchestrator/ |
+| 4 | PLAN-10 | WS-01 | staged | marketplace/bundles/plan-marshall/skills/phase-1-init/; marketplace/bundles/plan-marshall/skills/plan-marshall/; marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/planning.md; marketplace/bundles/plan-marshall/skills/plan-orchestrator/scripts/_orchestrator_inbox.py; test/plan-marshall/plan-marshall/; test/plan-marshall/plan-orchestrator/ |
+| 5 | PLAN-11 | WS-06 | staged | marketplace/bundles/plan-marshall/skills/phase-6-finalize/; marketplace/bundles/plan-marshall/skills/plan-orchestrator/scripts/orchestrator.py; test/plan-marshall/phase-5-execute/; test/plan-marshall/plan-orchestrator/ |
+| 6 | PLAN-12 | WS-05 | staged | marketplace/bundles/plan-marshall/skills/manage-locks/scripts/merge_lock.py; marketplace/bundles/plan-marshall/skills/manage-status/scripts/manage-status.py; marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/branch-cleanup.md; marketplace/bundles/plan-marshall/skills/plan-retrospective/; marketplace/bundles/plan-marshall/skills/tools-integration-ci/scripts/ci.py; marketplace/bundles/plan-marshall/skills/tools-integration-ci/standards/pr-review-operations.md; test/plan-marshall/manage-status/ |
+| 7 | PLAN-13 | WS-07 | staged | marketplace/bundles/plan-marshall/skills/phase-6-finalize/SKILL.md; marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/archive-plan.md; marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/dispatch-inline-split.md; marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/emit-landing.md; marketplace/bundles/plan-marshall/skills/phase-6-finalize/workflow/create-pr.md; marketplace/bundles/plan-marshall/skills/platform-runtime/scripts/session_binding.py; test/plan-marshall/phase-6-finalize/ |
+| 8 | PLAN-14 | WS-04 | staged | marketplace/bundles/plan-marshall/skills/persona-plan-marshall-agent/; test/plan-marshall/persona-plan-marshall-agent/ |
+| 9 | PLAN-15 | WS-06 | launched | .opencode/commands/; marketplace/bundles/plan-marshall/skills/platform-runtime/scripts/opencode_runtime.py; opencode.json; test/plan-marshall/platform-runtime/ |
 <!-- END GENERATED: ordered-queue -->
 
 ### Queue annotations
@@ -333,6 +334,13 @@ recipe-fix-argparse-rejection remediation carrier.
 - **Installed skill copy carries no workflow documents (drain 2026-09-21,
   `test-fidelity-rules-follow-up-002.md`, unowned).** Skill-packaging gap; candidate
   future staging.
+- **Incomplete landing message (drain 2026-09-22,
+  `implement-dispatch-envelopes-process-compliance-003.md`, open).** Narrative-only
+  landing, no `landing-facts` block (`missing_keys`: schema, plan_id, pr,
+  merge_state, cleanup_owed, deliverables_total, deliverables_done,
+  total_tokens, steps). Reconciled as far as it goes against PR #1583 ground
+  truth; a manual paste from that plan could still surface a required fact the
+  inbox did not carry.
 - **Footprint helpers read stale local base (drain 2026-09-21,
   `test-fidelity-rules-follow-up-009.md`, unowned).** Should resolve the merge base;
   candidate future staging.
@@ -461,17 +469,7 @@ recipe-fix-argparse-rejection remediation carrier.
   spec citation, no double promotion. PLAN-14 needs no change. The underlying
   gap (corpus carries no promoted-by-epic field) is tracked in
   lessons-routing's own epic, not here.
-- **PLAN-05 awaiting merge queue (paste 2026-09-22, PR-corroborated, no ship).**
-  Executing plan reports D1–D4 per spec on worktree cut from origin/main (dirty
-  main left alone per orchestrator override): operations.md dispatch-body
-  contract + loop_back_target rule, inject_project_dir envelope carry/omit +
-  null-envelope rule, new closure tests, whole-tree verify green (27,585 —
-  plan-reported, not re-run here), 8 review findings triaged with 1 fix task.
-  Corroborated: PR #1583 open, mergeable, `merge_state: clean` on head
-  `feature/implement-dispatch-envelopes-process-compliance`; both inbox filings
-  (`implement-dispatch-envelopes-process-compliance-001/002.md`) live/queued.
-  Merge-queue Branch F state (enqueued, budget-out, mutex released, branch
-  intact — re-enter finalize later for the post-merge tail or re-poll) and the
-  two prior operator decisions (dirty-main override, merge-anyway grant over
-  stale bot evidence) are operator-reported and taken as record. No queue
-  transition while unmerged; the two inbox filings stay queued for drain.
+- **PLAN-05 shipped 2026-09-22 (PR #1583, squash 40cacf7d).** All 4 deliverables
+  per spec; landing record at `landings/PLAN-05.md`. Landing message was
+  narrative-only (incomplete-landing defect above). Owed per landing:
+  target-regeneration + plugin-cache sync re-run once main clean.

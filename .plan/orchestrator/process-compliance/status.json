@@ -52,16 +52,16 @@
       "id": "PLAN-05",
       "slug": "dispatch-envelopes",
       "workstream": "WS-05",
-      "status": "launched",
-      "plan_marshall_plan_id": "",
-      "pr": "",
-      "landing": ""
+      "status": "shipped",
+      "plan_marshall_plan_id": "implement-dispatch-envelopes-process-compliance",
+      "pr": "1583",
+      "landing": "landings/PLAN-05.md"
     },
     {
       "id": "PLAN-06",
       "slug": "dispatch-roster",
       "workstream": "WS-05",
-      "status": "staged",
+      "status": "launched",
       "plan_marshall_plan_id": "",
       "pr": "",
       "landing": ""
@@ -148,10 +148,10 @@
       "landing": ""
     }
   ],
-  "resume_anchor": "Drain 2026-09-22: 6/6 consumed (1 watch + 1 defect + addenda); queue empty. Next: monitor PLAN-05 merge per landing procedure, then analyze landing.",
+  "resume_anchor": "Preamble strengthened + recorded (both launched plans running clean); landing .plan dirt next.",
   "metadata": {
     "parallelization_scope": "2"
   },
   "created": "2026-09-17T19:36:11Z",
-  "updated": "2026-09-22T19:29:13Z"
+  "updated": "2026-09-22T20:43:55Z"
 }
