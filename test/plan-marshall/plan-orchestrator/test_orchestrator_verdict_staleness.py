@@ -68,6 +68,7 @@ import argparse
 import copy
 import json
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -208,24 +209,52 @@ _SET_VERDICT_ARGS = parse_ns(
 #: ``GIT_*`` variables that can redirect the fixture repository despite the
 #: explicit ``-C {repo}`` on every call below — each one lets the ambient
 #: environment point git at a DIFFERENT working tree, index or object store
-#: than the fixture's own.
-_GIT_REDIRECT_ENV_VARS = ('GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_OBJECT_DIRECTORY', 'GIT_COMMON_DIR')
+#: than the fixture's own. ``GIT_ALTERNATE_OBJECT_DIRECTORIES`` is the same
+#: hazard as ``GIT_OBJECT_DIRECTORY``: git falls back to searching this
+#: colon-separated list for objects it cannot find in the primary store, so an
+#: ambient value lets the fixture resolve objects from a foreign store even
+#: with the other four scrubbed.
+_GIT_REDIRECT_ENV_VARS = (
+    'GIT_DIR',
+    'GIT_WORK_TREE',
+    'GIT_INDEX_FILE',
+    'GIT_OBJECT_DIRECTORY',
+    'GIT_ALTERNATE_OBJECT_DIRECTORIES',
+    'GIT_COMMON_DIR',
+)
+
+#: Matches the environment-injected git-config keys ``GIT_CONFIG_KEY_<n>`` /
+#: ``GIT_CONFIG_VALUE_<n>`` for any ``<n>`` present in the ambient
+#: environment — derived from the live environment rather than a fixed-width
+#: hardcoded range, since git places no upper bound on the count.
+_GIT_CONFIG_ENV_PAIR_RE = re.compile(r'^GIT_CONFIG_(KEY|VALUE)_\d+$')
 
 
 def _scrubbed_git_env() -> dict[str, str]:
     """The process environment with every ambient git-redirect and git-config source removed.
 
     Scrubbing :data:`_GIT_REDIRECT_ENV_VARS` closes the redirect hazard those
-    variables carry. Pointing ``GIT_CONFIG_GLOBAL`` / ``GIT_CONFIG_SYSTEM`` at
-    ``os.devnull`` closes a SEPARATE hazard neither variable removal touches: a
-    global or system config can still apply ``core.excludesFile`` (changing what
-    ``git add -A`` stages) or ``core.hooksPath`` (altering or rejecting the
-    commit) even with every path variable scrubbed. The fixture's own identity
+    variables carry. A SEPARATE hazard is the environment-injected config
+    surface: per git-config(1), ``GIT_CONFIG_COUNT`` and its indexed
+    ``GIT_CONFIG_KEY_<n>`` / ``GIT_CONFIG_VALUE_<n>`` triples **override
+    values in configuration files** — they outrank, rather than get
+    overridden by, the ``GIT_CONFIG_GLOBAL`` / ``GIT_CONFIG_SYSTEM`` devnull
+    redirect below. Left in place, an ambient ``core.excludesFile`` (changing
+    what ``git add -A`` stages) or ``core.hooksPath`` (altering or rejecting
+    the commit) injected this way would survive the redirect intact — exactly
+    the hazard the redirect exists to close. Stripping ``GIT_CONFIG_COUNT``
+    and every matching indexed pair, THEN pointing ``GIT_CONFIG_GLOBAL`` /
+    ``GIT_CONFIG_SYSTEM`` at ``os.devnull``, is what actually closes both
+    routes to an ambient config value. The fixture's own identity
     (``user.email`` / ``user.name``) is unaffected — :func:`epic_repo` sets both
     with ``git config`` directly into the fixture repository's LOCAL config,
-    which neither devnull redirect touches.
+    which none of the scrubbing above touches.
     """
-    env = {key: value for key, value in os.environ.items() if key not in _GIT_REDIRECT_ENV_VARS}
+    env = {
+        key: value
+        for key, value in os.environ.items()
+        if key not in _GIT_REDIRECT_ENV_VARS and key != 'GIT_CONFIG_COUNT' and not _GIT_CONFIG_ENV_PAIR_RE.match(key)
+    }
     env['GIT_CONFIG_GLOBAL'] = os.devnull
     env['GIT_CONFIG_SYSTEM'] = os.devnull
     return env
