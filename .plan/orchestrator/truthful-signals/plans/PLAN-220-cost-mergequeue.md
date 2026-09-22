@@ -1,6 +1,6 @@
 # PLAN-18: Re-fire cost split and merge-queue proof
 
-epic: quality-aspect
+epic: truthful-signals
 workstream: WS-08
 
 > Staged plan spec — one shippable unit of work, ready for `/plan-marshall` hand-off.
@@ -42,7 +42,7 @@ against code. G24 remainder + G28 (4 lessons).
 ## Hand-Off Command
 
 ```text
-/plan-marshall task="implement .plan/orchestrator/quality-aspect/plans/PLAN-18-cost-mergequeue.md"
+/plan-marshall task="implement .plan/orchestrator/truthful-signals/plans/PLAN-220-cost-mergequeue.md"
 ```
 
 ## Write-Boundary

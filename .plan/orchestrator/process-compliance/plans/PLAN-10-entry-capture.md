@@ -12,8 +12,9 @@ workstream: WS-01
 ## Objective
 
 Close the light-lane entry gaps that force exempt-and-continue overrides at plan start:
-the 2-refine capture demanding a `pr_title` the collapsed envelope never produced, the
-mailbox probe reporting `not_orchestrated` for valid staged-spec pointers, the
+the 2-refine capture demanding a `pr_title` the collapsed envelope never produced, an
+unverified mailbox-probe classification report (re-scoped 2026-09-22: cleanup traced the
+classifier and it does NOT reproduce for any well-formed pointer — see deliverable 2), the
 recipe-match/aspect-classify lane lacking file input for verbatim narrative, the
 `phase_steps_complete` parser reading non-step bullets, and the missing phase-handshake
 captures. Every gap below was absorbed as an explicit operator-approved exemption; this
@@ -24,10 +25,20 @@ plan makes the entry lane decidable so the exemption stops recurring.
 1. Capture-source matrix + fix: `pr_title` capture source for the light-lane collapsed
    envelope (refine-artifact vs required flag), so post-exempt capture stops refusing
    with `pr_title_missing`.
-2. Mailbox-probe fix: valid staged-spec pointers resolve instead of reporting
-   `not_orchestrated`.
+2. Mailbox-probe vocabulary confirmation (re-scoped 2026-09-22, cleanup re-grounding): the
+   original incident's informal `not_orchestrated` label does not name a real token in
+   `_orchestrator_inbox.py`'s `SourceIdClassification` vocabulary
+   (`orchestrated`/`unsafe_slug`/`unrecognised_id`/`not_orchestrator_pointer`), and a
+   regex trace against 5 realistic staged-spec pointer shapes found no misclassification
+   for any well-formed pointer — reproduce the ORIGINAL incident's exact `source_id`
+   string (from `plan-09-outline-sweep-002.md`, archived) at outline; if it turns out
+   malformed (prose, or the retired `.plan/local/orchestrator/` address), close this
+   deliverable with that finding and no code change; if a well-formed pointer genuinely
+   misclassifies, fix the classifier.
 3. Recipe-match/aspect-classify file input parity (`--content-file` or equivalent) for
-   verbatim narrative ingestion.
+   verbatim narrative ingestion — implementing surface is `phase-1-init/` (added to
+   Expected Surface 2026-09-22, cleanup re-grounding; the spec previously named no file
+   for this deliverable).
 4. `phase_steps_complete` parser fix: reads step bullets only; post-archive state handled.
 5. Phase-handshake capture backfill: the zero-capture runs across two completed phases
    get a contract (capture or recorded reason), not silence.
@@ -35,24 +46,26 @@ plan makes the entry lane decidable so the exemption stops recurring.
 ## Claim Labels
 
 - OBSERVED: post-exempt 2-refine capture refuses `pr_title_missing` because the collapsed envelope never ran Step 13 — read at `.plan/orchestrator/process-compliance/inbox/ledger-joins-002.md` § body (filed, then `--override` under prior approval)
-  - verdict: unverifiable | checked_at: 93bda90 | by: process-compliance/cleanup | rescoped: n/a | evidence: ledger cite (ledger-joins-002 inbox); run-behavior premise needs outline
-- OBSERVED: mailbox probe reports `not_orchestrated` for a valid spec pointer — cited at `.plan/orchestrator/process-compliance/inbox/plan-09-outline-sweep-002.md` § body (dispatched leaf gist; body auditable in archive after drain)
-  - verdict: unverifiable | checked_at: 93bda90 | by: process-compliance/cleanup | rescoped: n/a | evidence: dispatched leaf gist (plan-09-outline-sweep-002); body in archive, not opened this pass
+  - verdict: unverifiable | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: process-compliance/cleanup | rescoped: n/a | evidence: ledger cite (ledger-joins-002 inbox, archived) unchanged; run-behavior premise still needs outline
+- OBSERVED: an original incident report used the informal label `not_orchestrated` for a mailbox-probe misclassification on a valid spec pointer — cited at `.plan/orchestrator/process-compliance/inbox/plan-09-outline-sweep-002.md` § body (dispatched leaf gist; body auditable in archive after drain) — CONTRADICTED at HEAD, see verdict below
+  - verdict: contradicted | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: process-compliance/cleanup | rescoped: yes | evidence: traced _orchestrator_inbox.py cmd_inbox_detect/SourceIdClassification (byte-unchanged since 93bda90): vocabulary is orchestrated/unsafe_slug/unrecognised_id/not_orchestrator_pointer, no 'not_orchestrated' token exists; regex-tested _SOURCE_ID_RE + PLAN_ID_SEGMENT against 5 realistic staged-spec pointer shapes (plain, PLAN-CIS-01, bare CIS-01, single-digit, dated-slug epic) — all classify correctly as orchestrated:true; no misclassification reproduces for a well-formed pointer. Deliverable 2 re-scoped from 'fix misclassification' to 'confirm probe vocabulary is documented/expected'; original incident likely involved a malformed source_id (prose or the retired .plan/local/orchestrator/ address), which correctly reads not_orchestrator_pointer/unrecognised_id
 - OBSERVED: recipe-match/aspect-classify lack file input for verbatim narrative — cited at `.plan/orchestrator/process-compliance/inbox/plan-09-outline-sweep-001.md` § body (dispatched leaf gist)
-  - verdict: unverifiable | checked_at: 93bda90 | by: process-compliance/cleanup | rescoped: n/a | evidence: dispatched leaf gist (plan-09-outline-sweep-001); CLI-flag check deferred to outline
+  - verdict: unverifiable | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: process-compliance/cleanup | rescoped: n/a | evidence: dispatched leaf gist (plan-09-outline-sweep-001, archived) unchanged; CLI-flag check still deferred to outline
 - OBSERVED: main-dirt assertion fires on pre-existing dirt; light-lane entry demands refine-artifact `pr_title`; steps parser reads non-step bullets — cited at `plan-09-outline-sweep-003.md`, `plan-09-outline-sweep-004.md`, `plan-09-outline-sweep-005.md` § bodies (dispatched leaf gists)
-  - verdict: unverifiable | checked_at: 93bda90 | by: process-compliance/cleanup | rescoped: n/a | evidence: dispatched leaf gists (sweep-003/004/005); run-behavior premises need outline
+  - verdict: unverifiable | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: process-compliance/cleanup | rescoped: n/a | evidence: dispatched leaf gists (sweep-003/004/005, archived) unchanged; run-behavior premises still need outline
 - HYPOTHESIS: zero phase-handshake captures across two completed phases is a contract gap, not operator choice — confirm/refute at `marketplace/bundles/plan-marshall/skills/plan-marshall/` § handshake capture seam (verify-at-outline; folded lead from `test-fidelity-rules-follow-up-003.md`)
-  - verdict: corroborated | checked_at: 93bda90 | by: process-compliance/cleanup | rescoped: n/a | evidence: phase-handshake.md capture/verify registry and SKILL.md capture at :273
+  - verdict: corroborated | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: process-compliance/cleanup | rescoped: n/a | evidence: phase-handshake.md unchanged since 93bda90; capture/verify registry still present at :273; re-confirmed
 - HYPOTHESIS: light-lane routing on an 8-deliverable scope without a solution outline is undocumented entry, not sanctioned entry — confirm/refute at `marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/planning.md` § light-lane entry (verify-at-outline; folded lead from `test-fidelity-rules-follow-up-004.md`)
-  - verdict: corroborated | checked_at: 93bda90 | by: process-compliance/cleanup | rescoped: n/a | evidence: planning.md light-lane branch at :222-273
+  - verdict: corroborated | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: process-compliance/cleanup | rescoped: n/a | evidence: planning.md unchanged since 93bda90; light-lane branch still present at :222-273; re-confirmed
 - Verify-first clause: the consuming phase settles both HYPOTHESIS clauses against the implementing source before scoping — refutation loops back to re-scope
+  - verdict: unverifiable | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: process-compliance/cleanup | rescoped: n/a | evidence: procedural instruction to the consuming phase, not a checkable world premise; no implementing-source check applies
 
 ## Expected Surface
 
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/planning.md` — light-lane entry + capture pairing live here
-- OBSERVED: `marketplace/bundles/plan-marshall/skills/plan-orchestrator/scripts/orchestrator.py` — mailbox probe seam lives here
+- OBSERVED: `marketplace/bundles/plan-marshall/skills/plan-orchestrator/scripts/_orchestrator_inbox.py` — mailbox probe (`cmd_inbox_detect`/`SourceIdClassification`) actually lives here, not in `orchestrator.py` directly (corrected 2026-09-22, cleanup re-grounding)
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/plan-marshall/` — entry-lane scripts and workflow docs
+- OBSERVED: `marketplace/bundles/plan-marshall/skills/phase-1-init/` — recipe-match/aspect-classify lane lives here (added 2026-09-22, cleanup re-grounding — understated surface, deliverable 3 named no implementing file before this correction)
 - OBSERVED: `test/plan-marshall/plan-orchestrator/` — probe regression tests live here
 - OBSERVED: `test/plan-marshall/plan-marshall/` — entry-lane regression tests live here
 

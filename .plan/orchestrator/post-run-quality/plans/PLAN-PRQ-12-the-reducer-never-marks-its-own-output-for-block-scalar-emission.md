@@ -86,20 +86,26 @@ instance of this failure shape, wherever it originates.
 
 - OBSERVED: `_serialize_block_scalar` (`toon_parser.py:742-765`) indents every body line, not only the
   first — read directly 2026-09-21, contradicting `-001.md`'s stated root cause.
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: post-run-quality/cleanup | rescoped: n/a | evidence: _serialize_block_scalar at toon_parser.py:742-765; every body line indented not just the first -- -001.md's stated root cause correctly refuted
 - OBSERVED: `extract-chat-signal.py`'s `_delivered_transcript` (lines 66-87) and its call sites (lines
   186, 208) correctly wrap the re-emitted transcript in `BlockScalar` — D3's fix, confirmed still present
   and correct at HEAD.
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: post-run-quality/cleanup | rescoped: n/a | evidence: extract-chat-signal.py:66-87 _delivered_transcript returns BlockScalar; D3's fix present and correct at HEAD. Imprecision only: a third call/emission site exists at lines 156/176, conclusion unaffected
 - OBSERVED: `_chat_signal_reducer.py` (platform-runtime) has no `BlockScalar` import and returns
   `reduced_transcript` as a plain `str` at line 378 — the actual gap.
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: post-run-quality/cleanup | rescoped: n/a | evidence: _chat_signal_reducer.py imports no toon_parser/BlockScalar; reduced_transcript is a plain multi-line str forwarded verbatim into toon_success. Mechanism reproduced live: value_needs_quoting flags newlines, serialize quotes without escaping, round-trip promotes transcript lines to sibling top-level keys
 - OBSERVED: on this run, `reduced_bytes: 725532` vs `reduced_transcript_delivered_bytes: 69` —
   0.01% delivered; a second aspect (`permission_prompt_analysis`) was consequently forced to report 121 of
   123 operator turns and 7 of 7 gate-decision bodies as undelivered.
+  - verdict: unverifiable | checked_at: 7d82d5d90 | by: post-run-quality/cleanup | rescoped: n/a | evidence: cited figures live in PLAN-PRQ-02's archived retrospective artifacts under .plan/, unreachable from this envelope (no archived-body read path, architecture search does not walk .plan/). Symptom shape independently reproduced under claim 2; exact values not corroborated
 - ⚠ HYPOTHESIS: `antigravity_runtime.py` and `opencode_runtime.py` cannot currently emit a non-trivial
   multi-line `reduced_transcript` (stub / empty-by-design) and so need no fix — D0 owns confirming this
   (verify-at-outline).
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: post-run-quality/cleanup | rescoped: n/a | evidence: antigravity_runtime.py:882-888 and opencode_runtime.py:1022-1045 both toon_noop with no transcript field at all -- fields absent, never empty. Conclusion (neither needs a fix) holds; Objective prose wording corrected at outline
 - Verify-first clause: D0 must re-read `_chat_signal_reducer.py` in full at outline HEAD before D1 is
   implemented — this spec's root-cause correction was derived from a partial read (the function signature
   and the one returning line), not a full-file audit.
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: post-run-quality/cleanup | rescoped: n/a | evidence: reduce_chat_signal (359-390) returns TWELVE fields not seven -- D0's list already stale at HEAD (omits kept_text_chars/bytes, signal_gate_population, residual_counts, symmetric_pair_dropped). D1's one-line fix site remains right and complete: only reduced_transcript is multi-line free text
 
 ## Expected Surface
 

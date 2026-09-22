@@ -1,6 +1,6 @@
 # PLAN-10: Task staging and phase-5 entry mechanics
 
-epic: quality-aspect
+epic: truthful-signals
 workstream: WS-06
 
 > Staged plan spec — one shippable unit of work, ready for `/plan-marshall` hand-off.
@@ -54,7 +54,7 @@ deliverable-less edits declared. G22 + G18 + G23 + 2 singletons (12 lessons).
 ## Hand-Off Command
 
 ```text
-/plan-marshall task="implement .plan/orchestrator/quality-aspect/plans/PLAN-10-plan-execute-mechanics.md"
+/plan-marshall task="implement .plan/orchestrator/truthful-signals/plans/PLAN-213-plan-execute-mechanics.md"
 ```
 
 ## Write-Boundary

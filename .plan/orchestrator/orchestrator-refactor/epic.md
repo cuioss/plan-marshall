@@ -45,9 +45,9 @@ orchestrator-substrate deliverable this epic did not absorb or explicitly declin
      outside the markers — never inside them. -->
 
 <!-- BEGIN GENERATED: resume-summary -->
-**Resume anchor**: Epic fully restart-ready: PLAN-01/PLAN-04 shipped and merged (main at 6b26e246d), ledger reconciled and clean (corpus/compaction/dedup all pass, worktree clean, no open blockers). Old .plan/local/ tree removed. Next: run next to emit from PLAN-02/03/06 (all staged, dependencies satisfied).
+**Resume anchor**: cleanup complete 2026-09-22: 23 claims re-grounded (2 real re-scopes: PLAN-02 population 13->25 ledgers, PLAN-03 redirect-sufficiency refuted by ADR-024). 5 closed sections relocated to settled.md. Scope-bloat guard evaluated for PLAN-05, proceed-unsplit rationale recorded. All ledger invariants ok. restart_verdict=not_ready: 59 uncommitted paths (this session's own writes) need commit+push before a fresh session would read ready. Blocking Open Defect unchanged: next is marketplace-wide indeterminate (candidate_comparison_determinate=false), not this epic's to fix.
 **Phase**: orchestrating
-**Inbox (derived)**: 0 queued, 13 archived
+**Inbox (derived)**: 0 queued, 14 archived
 **Parked**:
 - PLAN-07 (WS-04)
 **Queue** (staged, in order):
@@ -209,13 +209,69 @@ orchestrator-substrate deliverable this epic did not absorb or explicitly declin
   account) — reconciled, with `status.json`'s PLAN-06 transition re-applied via script once
   resolution was confirmed correct.
 
+- 2026-09-22 — **Inbox drain: 1 message, `lessons-handling-26-09-22-01-001.md`
+  (candidate-lesson, 3 items) dispositioned.** Item `2026-09-19-13-001` (channel
+  address grammar mismatch — `--target-plan` mailbox routing keys off the epic-local
+  `PLAN-NN` ordinal while a plan's own mailbox read keys off its kebab
+  `plan_marshall_plan_id`, so delivery cannot fire in any real epic) **corroborated
+  against HEAD and FOLDED into PLAN-05's D6** as first-party evidence, not theorised
+  risk — see PLAN-05 Claim Labels. Items `2026-09-21-10-010` and `2026-09-21-10-012`
+  **DISCARDED as already-covered**, contradicting the source epic's own
+  none-already-covered disposition: -010's cited bug is fixed at
+  `_cmd_lifecycle.py:183` (post PLAN-TRUTH-143/#1539); -012's principle is already
+  enforced by this epic's own `candidate_comparison_determinate` fail-closed verdict
+  (`orchestrate.md` Step 4), landed by the same PR.
+
+- 2026-09-22 — **Scope-Bloat Split Guard evaluated for PLAN-05 (9 deliverables, D0–D8) —
+  no prior rationale was on record.** Verdict: proceed unsplit. D0–D4/D6–D8 are one
+  coherent rename (`--slug`→`--epic`) bound by a hard same-commit ordering constraint
+  (`ARGUMENT_NAMING_CANONICAL_FORMS_DRIFT`) that a split would not relax — they cannot
+  land independently without breaking the gate. D5 (the `orchestrator queue`
+  mode-selector collapse) is a genuinely SEPARATE decision, staged here only because it
+  sits on the same subparser D1 touches, not because it shares the rename's ordering
+  constraint — it is the one candidate for splitting out. Not split now: D5 also depends
+  on D6 (settle first, same as D1), so a split plan would still have to sequence tightly
+  behind this one, and the corpus's own disjointness gate is currently marketplace-wide
+  blocked regardless (see Open Defects) — a split has no throughput benefit while that
+  holds. Reconsider at outline time if the executing plan finds D5 adds unwanted coupling.
+
 ## Open Defects
 
-- ~~PLAN-01 is stuck mid-finalize on an unreviewable diff~~ **RESOLVED 2026-09-21**: the
-  split executed — #1557 (code, ~48 files, merged `8c8c7bbf`), #1558 (ledger content, 3,977
-  files, `skip-bot-review`, merged `6728b738`), #1555 closed unmerged with a pointer to the
-  replacements. A follow-up, #1561, landed a fix for a hardcoded-path finding the split
-  missed. See `landings/PLAN-01.md`.
+- **NEW, discovered 2026-09-22 at `next`-time — the disjointness gate is currently
+  MARKETPLACE-WIDE INDETERMINATE, blocking emission for every candidate in this epic
+  (and presumptively every epic).** `corpus cross-check` reports
+  `candidate_comparison_determinate: false`: 95 of 581 sibling-epic-spec candidates
+  across 25 sibling epics, plus 1 `live_plan` entry (`NO_PLAN`), are indeterminate.
+  Per the fail-closed rule in `orchestrate.md` Step 4, an indeterminate comparison
+  refuses EVERY candidate rather than admitting any on an unexamined population — so
+  PLAN-02/03/05/06 all pass prep-readiness (`corpus verdicts blocking_count: 0`) but
+  none is emittable. Not this epic's defect to fix (the 95 indeterminate specs belong
+  to 25 OTHER epics), but it fully blocks this epic's own `next` progress until either
+  those specs gain declarative surfaces or the gate's global-vs-per-candidate scope is
+  reconsidered. Not sized or staged — flag for the operator; possibly a
+  `truthful-signals` or ecosystem-health item, not orchestrator-refactor's to own.
+- **NEW, operator-reported 2026-09-22 — no owner: orchestrator-session UX/mechanism gap.**
+  Three related asks surfaced during a live `status` interaction, none cleanly covered by
+  an existing staged spec: (a) when already inside a `/plan-marshall:plan-orchestrator
+  epic={slug}` session, suggestions should name the bare verb (e.g. "analyze" to drain the
+  inbox) rather than restate the full slash-command form — the epic is already bound to the
+  session; (b) after a major state change, surface the core next-verb options by name (not
+  full syntax), plus any previously-emitted `/plan-marshall` command still `launched` and
+  not yet operator-confirmed `running`; (c) candidate mechanism for (b): a single script call
+  cross-checking `launched`-status queue rows against live plan-lifecycle state (the same
+  `manage-status list`-cross-read pattern already used elsewhere to catch a queue claiming
+  `staged` while the live plan has run for a day) to positively detect whether an emitted
+  command was actually started, rather than relying on the operator to say so. Not sized or
+  staged — none of PLAN-02/03/05/06/07 owns this cleanly (PLAN-06 is ownership consolidation
+  of scattered SCHEMA/detection items, not session-presentation UX). Flag for the next
+  `decompose`/`cleanup` pass to size and place (new workstream, or fold into WS-04 if the
+  running-check script turns out to share surface with `orchestrator.py`'s existing verbs).
+- CONFIRMED NOT a new item — operator also flagged residual `slug=` example forms (e.g. the
+  `plan-orchestrator` SKILL.md Usage table's `analyze slug={slug}` line). Already inside
+  PLAN-05's sized rename surface (D1 CLI-flag rename `--slug`→`--epic`, D4's ~43-file prose
+  sweep including `plan-orchestrator/**`) — no separate item created.
+> ↪ Relocated to `settled.md` § "PLAN-01 stuck mid-finalize on an unreviewable diff" —
+> resolved 2026-09-21 via the #1557/#1558 split.
 - **NEW, CRITICAL — the orchestration-detection seam hardcodes the NEW tracked path only,
   so every plan whose `source_id` was captured before PLAN-01 landed now silently fails
   `inbox detect`.** Reproduced directly, 2026-09-21:
@@ -232,35 +288,10 @@ orchestrator-substrate deliverable this epic did not absorb or explicitly declin
   carries an old-form `source_id` too and will hit the identical failure at its own finalize.
   Folded into PLAN-03 (the migration-mechanism workstream) as first-party reproduced
   evidence, not merely theorised risk — see PLAN-03's Claim Labels.
-- ~~the epic's own ledger tree split across two locations~~ **RESOLVED 2026-09-21, root
-  cause corrected.** PLAN-01's #1558 seeded `.plan/orchestrator/orchestrator-refactor/` as a
-  ONE-TIME snapshot at merge time (`updated: 2026-09-20T10:23:39Z`), predating this epic's
-  own `cleanup` pass. The two trees then diverged for TWO DIFFERENT reasons, not one: (a)
-  during `cleanup` (2026-09-21, before PLAN-01 had landed), this orchestrator's script calls
-  correctly resolved to the OLD `.plan/local/orchestrator/` tree, since the new resolver code
-  did not exist on disk yet; (b) AFTER PLAN-01 merged into local `main` (confirmed:
-  `git log HEAD` matches `origin/main` at `441cc46c8`, so the resolver code WAS current, not
-  stale as first suspected), this orchestrator's OWN direct `Write`/`Edit` calls kept
-  hardcoding the OLD path out of habit for several turns (the PLAN-01 landing report, the
-  PLAN-03 fold, this epic.md's own Open-Defects/Watches edits) — while its SCRIPT calls
-  (`queue --transition`, `--set-row`) correctly began resolving to the NEW tree the moment
-  local `main` advanced, silently splitting `status.json` from everything else. **Both halves
-  reconciled**: `epic.md`, `plans/PLAN-02-*.md`, `plans/PLAN-03-*.md`, `plans/PLAN-06-*.md`,
-  and `landings/PLAN-01.md` copied forward into `.plan/orchestrator/orchestrator-refactor/`;
-  `status.json`'s PLAN-06 transition (`parked`→`staged`) re-applied via script now that it
-  resolves correctly. `logs/decision.log` deliberately stays local-only (by #1557's own
-  design: `*/logs/` is re-ignored after the tracking negation, to avoid line-churn conflicts)
-  — its absence from the tracked tree is expected, not a gap. **The tracked-tree write is an
-  UNCOMMITTED change in the actual git working tree** — this orchestrator does not commit or
-  push without being asked; flagging for the operator. Going forward, this orchestrator
-  writes directly to `.plan/orchestrator/orchestrator-refactor/` only.
-- ~~STILL OPEN — restart-check's worktree signal reports not_ready~~ **RESOLVED
-  2026-09-21**: operator approved the commit/push/PR/merge sequence. Landed as PR #1566
-  (`3d88b24cf`, `skip-bot-review`, merge queue) — see `landings/PLAN-01.md`. `main`
-  pulled locally; `restart-check` now reports `ready` on all 5 scored signals. The old
-  `.plan/local/orchestrator/orchestrator-refactor/` tree (21 decision-log entries it
-  alone held, since `logs/` is git-ignored) was merged into this tree's log before the
-  operator deleted it.
+> ↪ Relocated to `settled.md` § "Epic ledger tree split across two locations" — resolved
+> 2026-09-21, both halves reconciled into the tracked tree.
+> ↪ Relocated to `settled.md` § "Restart-check worktree signal reported not_ready" —
+> resolved 2026-09-21, PR #1566 landed, `restart-check` now reports `ready`.
 - **Operator-reported, not yet independently investigated**: `finalize-step-deploy-target` /
   `finalize-step-sync-plugin-cache` were skipped for PLAN-01's own branch, so the local
   `~/.claude/plugins/cache/plan-marshall/` may be stale relative to what just landed
@@ -271,11 +302,7 @@ orchestrator-substrate deliverable this epic did not absorb or explicitly declin
 
 ## Watches
 
-- ~~`truthful-signals` PLAN-TRUTH-143 is `running`...~~ **RESOLVED 2026-09-20/21**: shipped as
-  PR #1539 (merge `1c56734ce`, 2026-09-20T07:11:51Z). Both dependents unblocked: PLAN-01's
-  live-plan collision cleared (it was subsequently launched — see the new Open Defect on its
-  own stuck finalize, unrelated to this collision); PLAN-06 re-grounded and re-staged this
-  cleanup pass (D2/D3 found moot, D5 narrowed).
+> ↪ Relocated to `settled.md` § "truthful-signals PLAN-TRUTH-143 running, blocking dependents" — resolved 2026-09-20/21, shipped as PR #1539.
 - `truthful-signals` PLAN-TRUTH-151 (still `staged` as of 2026-09-21) declares
   `orchestration-model.md`, overlapping PLAN-02 — the disjointness gate cannot see this
   cross-ledger collision. No actual risk yet (nothing running there). — trigger: check before
@@ -289,10 +316,8 @@ orchestrator-substrate deliverable this epic did not absorb or explicitly declin
   this epic's WS-01 in its own Vision, but its Expected Surface is `prose` (undetectable by
   the gate). — trigger: if PLAN-LR-04 reaches for a durability substrate before WS-01 lands,
   read its spec body by hand rather than trusting the gate.
-- ~~Two "orchestrator" entities share one word in this codebase...~~ **RESOLVED by PLAN-04 /
-  ADR-023 §(d) "Telling the two tiers apart at the caller surface"** — the epic is `--epic`,
-  the plan is `--plan-id`; the two are different tokens on the same parser by construction.
-  Retired 2026-09-20.
+> ↪ Relocated to `settled.md` § "Two orchestrator entities share one word" — resolved by
+> PLAN-04/ADR-023, retired 2026-09-20.
 - **Cross-plan `2-refine` suspicious-perfect-confidence tracking** (from
   `identifier-vocabulary-decision-008`, promoted to global lessons as `2026-09-20-08-011`).
   PLAN-04 scored 100% on all six weighted refine dimensions and the Q-Gate's

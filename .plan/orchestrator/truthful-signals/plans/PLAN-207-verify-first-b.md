@@ -1,6 +1,6 @@
 # PLAN-04: Verdict admission and context-load plumbing
 
-epic: quality-aspect
+epic: truthful-signals
 workstream: WS-02
 
 > Staged plan spec — one shippable unit of work, ready for `/plan-marshall` hand-off.
@@ -55,7 +55,7 @@ phase-5 read path this deliverable closes.)
 ## Hand-Off Command
 
 ```text
-/plan-marshall task="implement .plan/orchestrator/quality-aspect/plans/PLAN-04-verify-first-b.md"
+/plan-marshall task="implement .plan/orchestrator/truthful-signals/plans/PLAN-207-verify-first-b.md"
 ```
 
 ## Write-Boundary

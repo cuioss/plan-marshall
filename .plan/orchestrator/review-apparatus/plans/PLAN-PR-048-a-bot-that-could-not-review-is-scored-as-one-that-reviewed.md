@@ -268,10 +268,10 @@ the check that it does is **population-derived over that set** rather than enume
 ## Hand-Off Command
 
 ```text
-/plan-marshall task="implement .plan/local/orchestrator/review-apparatus/plans/PLAN-PR-048-a-bot-that-could-not-review-is-scored-as-one-that-reviewed.md"
+/plan-marshall task="implement .plan/orchestrator/review-apparatus/plans/PLAN-PR-048-a-bot-that-could-not-review-is-scored-as-one-that-reviewed.md"
 ```
 
 ## Write-Boundary
 
 The plan implementing this spec touches only its own repository source and tests. It creates and
-edits NO file under `.plan/local/orchestrator/` other than its own `inbox/{sender}-{seq}` message.
+edits NO file under `.plan/orchestrator/` other than its own `inbox/{sender}-{seq}` message.

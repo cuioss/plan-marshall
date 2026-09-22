@@ -28,13 +28,13 @@ family. Lands on top of PLAN-05's settled envelope shapes.
 ## Claim Labels
 
 - OBSERVED: Producer vocabulary inconsistently enforced across two observations — read at `.plan/local/orchestrator/process-compliance/epic.md` § `Inherited Material F`
-  - verdict: unverifiable | checked_at: 93bda90 | by: process-compliance/cleanup | rescoped: n/a | evidence: ledger cite (epic Inherited Material F) not re-opened this pass; enforcement behavior not checkable by file read
+  - verdict: unverifiable | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: process-compliance/cleanup | rescoped: n/a | evidence: epic.md Inherited Material F unchanged since prior check; enforcement behavior still not checkable by file read; unchanged
 - OBSERVED: Dispatch roster should carry each step's prompt skills — read at `.plan/local/orchestrator/process-compliance/epic.md` § `Inherited Material F`
-  - verdict: unverifiable | checked_at: 93bda90 | by: process-compliance/cleanup | rescoped: n/a | evidence: ledger cite (epic Inherited Material F) not re-opened this pass; gap premise names no implementing symbol
+  - verdict: unverifiable | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: process-compliance/cleanup | rescoped: n/a | evidence: epic.md Inherited Material F unchanged since prior check; gap premise still names no implementing symbol; unchanged
 - HYPOTHESIS: The roster and vocabulary seams live beside the PLAN-05 dispatch paths — confirm/refute at `marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/dispatch-inline-split.md` § `Dispatched steps` (verify-at-outline; re-scoped 2026-09-18: not operations.md)
-  - verdict: corroborated | checked_at: 93bda90 | by: process-compliance/cleanup | rescoped: n/a | evidence: dispatch-inline-split.md Dispatched steps section present at :13
+  - verdict: corroborated | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: process-compliance/cleanup | rescoped: n/a | evidence: dispatch-inline-split.md unchanged since 93bda90; Dispatched steps section still present at :13; re-confirmed
 - Verify-first clause: The consuming phase must settle the HYPOTHESIS against the implementing source before scoping — refutation loops back to re-scope.
-  - verdict: unverifiable | checked_at: ba0317c47edacc196d383dc0110d06cdb13dcc32 | by: process-compliance/cleanup | rescoped: n/a | evidence: procedural instruction to the consuming phase, not a checkable world premise; no implementing-source check applies
+  - verdict: unverifiable | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: process-compliance/cleanup | rescoped: n/a | evidence: procedural instruction to the consuming phase, not a checkable world premise; no implementing-source check applies
 
 ## Expected Surface
 
@@ -46,7 +46,7 @@ family. Lands on top of PLAN-05's settled envelope shapes.
 ## Dependencies and Sequencing
 
 - Depends on: PLAN-05 (envelope shapes settled first — hard sequence, same family)
-- Overlaps with: PLAN-05 (same dispatch family — sequence, do not parallelize)
+- Overlaps with: PLAN-05 (same dispatch family — sequence, do not parallelize); PLAN-13 (`dispatch-inline-split.md`, discovered when PLAN-13 was staged — confirmed via `corpus cross-check` — sequence, do not parallelize)
 - Adjacent to: none
 
 ## Hand-Off Command

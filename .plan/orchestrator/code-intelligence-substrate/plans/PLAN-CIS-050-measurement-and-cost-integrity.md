@@ -200,14 +200,24 @@ tuple naming the members that belong in neither spend figure) turns a **named** 
 executable negative control that appends a fictitious member.
 
 **(e) Stop publishing `scripts_registered: 0` on the generator's dry-run path.**
-`tools-script-executor/scripts/generate_executor.py`'s dry-run early return (near `:1271-1286`)
-returns `dict(_EMPTY_SURFACE_STATS)` verbatim, so the payload states `scripts_registered: 0` beside a
-non-zero `scripts_discovered`, violating the module's own residual invariant that the three surface
-buckets sum to `scripts_registered`. The sibling OSError degradation path already sets
-`= len(mappings)`. This site is outside the ledger's bundle and is grouped here because the mechanism
-is identical: a writer defaults a count to zero on one path while its sibling sets it correctly.
+`tools-script-executor/scripts/generate_executor.py`'s dry-run early return (`:1523-1537` at HEAD
+`7d82d5d9`, previous anchor `:1271-1286` stale) returns `dict(_EMPTY_SURFACE_STATS)` verbatim, so the
+payload states `scripts_registered: 0` beside a non-zero `scripts_discovered`, violating the module's
+own residual invariant that the three surface buckets sum to `scripts_registered`. The sibling OSError
+degradation path already sets `= len(mappings)` (`:1601` and `:1314`). This site is outside the
+ledger's bundle and is grouped here because the mechanism is identical: a writer defaults a count to
+zero on one path while its sibling sets it correctly. STILL LIVE, re-confirmed 2026-09-22.
+⛔ **NEW TEST-PINS-THE-DEFECT HAZARD, discovered 2026-09-22, not present at the previous stamp.**
+`test_generate_executor.py:3025-3051` now carries
+`test_dry_run_surface_stats_is_a_copy_of_the_shared_default`, a named test that AFFIRMATIVELY PINS
+the dry-run path handing back the zero-valued shared default — exactly the behaviour this deliverable
+fixes. This fix will turn that test red. It MUST be rewritten to assert the corrected behaviour, never
+deleted and never skipped, and the rewrite is part of this deliverable's own Done-when, not a
+follow-up.
 *Done when:* a dry run over an N-script mapping returns `scripts_registered == N` and
-`surfaces_derived + surfaces_reused + surfaces_not_derivable == N`, asserted by a test.
+`surfaces_derived + surfaces_reused + surfaces_not_derivable == N`, asserted by a test;
+`test_dry_run_surface_stats_is_a_copy_of_the_shared_default` is rewritten to assert the corrected
+values rather than the zero-valued default it currently pins.
 
 **(f) Refuse booleans in a token sum.**
 `check-routing-decisions.sum_execution_log_tokens` (near `:495-499`) tests `isinstance(value, int)`,
@@ -324,18 +334,30 @@ supplies the concrete discrepancy CIS-022 could not reach.
 and declares the same phases; honest per-figure labelling was treated as sufficient and is not, because
 **the label names the phases, not the counting unit**. A consumer handed both has no way to choose and
 nothing in the pipeline compares them.
-⭐ HYPOTHESIS (consistent with the direction and magnitude; explicitly **not** established by the
-source, and not re-derived here): `execution_log` counts one row per **step** while the boundary ledger
-counts one row per dispatch **firing**, so a heavily re-firing run inflates the latter — the cited run
-re-fired `pre-submission-self-review` 8×, `pre-push-quality-gate` 4×, `automatic-review` 3×.
-Confirm/refute at `manage-execution-manifest.py` § `record-step` against `manage-metrics.py` §
-`cmd_record_dispatch_boundary` (verify-at-outline).
+⛔ **REFUTED IN DIRECTION 2026-09-22 at cleanup, re-grounded at HEAD `7d82d5d9`.** ~~HYPOTHESIS
+(consistent with the direction and magnitude; explicitly **not** established by the source, and not
+re-derived here): `execution_log` counts one row per **step** while the boundary ledger counts one row
+per dispatch **firing**, so a heavily re-firing run inflates the latter~~ — struck. Confirmed at HEAD:
+`manage-execution-manifest.py:3051` now states `record-step` already appends **one row per firing**,
+and `:2930-3099` adds a `summarize_refires` verb. Both ledgers therefore declare a **per-firing** unit,
+so the step-vs-firing hypothesis cannot explain the 2.088× discrepancy — the mismatch is unexplained
+again, not closed, and this sub-item needs a NEW account of the disagreement before it can be scoped
+at outline. The original confirm/refute site (`manage-execution-manifest.py` § `record-step` against
+`manage-metrics.py` § `cmd_record_dispatch_boundary`) is where that new account is derived from.
 ⛔ Do **not** treat the 2.088× as settled arithmetic to be "corrected" — the deliverable is to make the
 disagreement *arithmetic rather than contradiction*, by stating each ledger's counting unit, or by
 publishing a reconciliation the consumer actually receives.
 ⛔ This sub-item does **not** take the per-dispatch attribution work: `truthful-signals` owns that
 (`PLAN-TRUTH-097` F2) and explicitly withheld it. It is named here only because the plan-level total
 currently cannot be decomposed without it.
+
+⚠ **Reconcile-ledgers has zero call sites, re-confirmed 2026-09-22 — and TWO new non-call-site
+occurrences appeared in this window.** `check-dispatch-audit.py:100` now carries a docstring deferral
+("Facts only — divergence findings belong to `reconcile-ledgers`") inside a new `D4 firing_comparison`
+block, and `execution-context-dispatch-audit.md:10` states the same deferral in prose. Neither is a
+call site — the verb is still unreachable from any workflow — but the new prose DEFERS to it while
+nothing calls it, which is worth naming as a growing population of references pointing at a verb that
+still does not run.
 *Done when:* each ledger's contract states its counting unit as an explicit one-of ("one row per step"
 / "one row per dispatch firing") in `manage-metrics/standards/data-format.md` and at the
 `manage-execution-manifest` writer; `reconcile-ledgers` has at least one real workflow call site (the
@@ -557,33 +579,33 @@ chat-provenance classifiers in `_chat_provenance.py` / `_chat_gate_decisions.py`
 underneath it is a correction they may not read.** Where a label asserts a population the figure does
 not have, the label is the defect.
 
-**(a) The read-cost decomposition — four gaps, one bullet, one test.**
-⛔ **Execute (a) as a single change or the edits overwrite one another.** The render bullet
-(`manage-metrics.py`, near `:2313-2318`) and the lattice row (`data-format.md`, near `:49`) carry four
-distinct defects at once:
-  - the bullet names an identifier, `resident_context_per_call`, that is a key on no record — the
-    persisted field is `cache_read_per_tool_use`;
-  - the lattice row states the same identity under that same phantom name, while the section's own code
-    block states it correctly;
-  - the bullet's value label asserts "resident context per tool-use" and then discloses, in the same
-    bullet, that the numerator and denominator are different populations — so the reading and the
-    correction are the wrong way round. Rename the label to something that asserts no per-call meaning
-    (e.g. "read-cost factor (cache_read ÷ tool_uses)") and keep the population-span clause; apply the
-    same wording wherever `data-format.md` calls it "the resident-context factor";
-  - the second operand is labelled `turns` while it counts **dispatched-subagent tool uses**. The same
-    document defines a turn, in the paragraph governing how `cache_read_input_tokens` is billed, as
-    "one usage-bearing transcript entry"; no per-phase field carries that count at all. Label the
-    operand `tool_uses` in the bullet, the identity block and the lattice row, and replace the
-    "many turns vs few" rationale with what the ratio actually supports, stating explicitly that the
-    identity is **arithmetic, not causal**. ⛔ Do not invent a turn count — publishing one needs a new
+**(a) The read-cost decomposition — ONE gap survives, three are already closed.**
+⚠ **RE-SCOPED 2026-09-22 at cleanup, RE-GROUNDED at HEAD `7d82d5d9` (previous stamp `7a028157e`).**
+This deliverable originally named four defects; three are CORROBORATED CLOSED at HEAD and struck
+below rather than carried forward as open work — the phantom identifier `resident_context_per_call`
+appears nowhere in the tree, `data-format.md:57`/`:155` name the real persisted field
+`cache_read_per_tool_use`, and `:255` already carries the population-disclosure clause. The fourth
+survives unchanged:
+  - ~~the bullet names an identifier, `resident_context_per_call`, that is a key on no record~~ —
+    **CLOSED**, no longer present at HEAD.
+  - ~~the lattice row states the same identity under that same phantom name~~ — **CLOSED**, the row
+    now names the real field.
+  - ~~the bullet's value label... reading and the correction are the wrong way round~~ — **CLOSED**,
+    the population-disclosure clause is already in place at `data-format.md:255`.
+  - **STILL LIVE**: the second operand is labelled `turns` while it counts **dispatched-subagent tool
+    uses**. Confirmed at HEAD: `manage-metrics.py` (render bullet, re-locate near its current line —
+    the previous `:2313-2318` anchor is stale) still prints `(resident context/call) (turns)`, and
+    `data-format.md:249`/`:253` still call `tool_uses` "the turns factor". Label the operand
+    `tool_uses` in the bullet, the identity block and the lattice row, and replace the "many turns vs
+    few" rationale with what the ratio actually supports, stating explicitly that the identity is
+    **arithmetic, not causal**. ⛔ Do not invent a turn count — publishing one needs a new
     producer-side field and is out of scope.
-*Done when:* the rendered bullet contains no identifier that is not a key on the phase row; no rendered
-or documented surface calls the ratio "resident context per call/tool-use" as a measured quantity or
-calls `tool_uses` "turns"; the lattice row's identity matches the section's code block; and
-§ Read-Cost Decomposition states that the identity is arithmetic rather than a turn-count
-decomposition. The render-assertion test in `test_manage_metrics.py` pins the literal bullet substrings
-(including `'resident context per tool-use (10,000)'` and `'turns (8)'`) and **must be updated in the
-same change**.
+*Done when:* no rendered or documented surface calls `tool_uses` "turns"; the lattice row's identity
+matches the section's code block; and § Read-Cost Decomposition states that the identity is
+arithmetic rather than a turn-count decomposition. The render-assertion test in
+`test_manage_metrics.py` pins the literal bullet substring `'turns (8)'` and **must be updated in the
+same change**. The three CLOSED bullets need no Done-when of their own — they are verified already
+closed by re-reading the code, not by a change this deliverable makes.
 
 **(b) Resolve the two different quantities both named `cache_read_per_tool_use`.**
 `analyze-logs.summarize_context_position_cost` emits a per-dispatch **float** summed over the boundary
@@ -711,6 +733,13 @@ is the same defect the four Plan-290 checks have in a different form.
 ⛔ **Re-derive the population at outline — do NOT carry 4, 8, or 24 forward as a fact.** All three are
 leads measured on 2026-09-15, and the dict has demonstrably grown since this item was written. Publish
 the figure you derived alongside the denominator, per this plan's own D4.
+
+⚠ **RE-GROUNDED AGAIN 2026-09-22 at cleanup — the population moved a THIRD time, confirming the
+instruction above rather than requiring a change to it.** At HEAD `7d82d5d9`, `audit.py:369-499`'s
+`CHECK_ERA` now holds **24 entries of which NINE (not eight) carry the literal `plan-10`**
+(`:431-438` and `:498`). This is exactly the drift the "do not carry forward" instruction anticipated
+— no rescope needed, the count is confirmed unstable and outline is confirmed as the correct
+re-derivation point.
 
 `CHECK_ERA` is defined as "the boundary as of which the check's computation is known accurate" and
 rides every emitted block as `fixed_since`. Plan 290 changed the semantics of four checks and bumped
@@ -850,24 +879,32 @@ surfaces plus tests), and the alternative — staging it as its own spec — is 
 tooling gap recorded in `epic.md` § Open Defects **D15**. ⭐ If the operator prefers it split, it lifts
 out cleanly: it shares no file with D1–D6.
 
-**CORROBORATED FIRST-PARTY at HEAD `b95d78437`, not taken on the sender's word.**
+⛔ **RE-SCOPED 2026-09-22 at cleanup — LARGELY CLOSED, re-grounded at HEAD `7d82d5d9` (previous stamp
+`7a028157e`).** The remote-tracking-ref resolution below is now **CORROBORATED PRESENT**, not absent:
+`_references_core.py:220-266` `resolve_base_ref()` now resolves `origin/{base_branch}` after verifying
+the fully-qualified `refs/remotes/origin/{branch}` exists inside the worktree, falling back to the bare
+`'main'` only at `:266` when no remote-tracking ref is found. The reading this deliverable was built on
+— "nothing consults the remote-tracking ref" — is **FALSE at HEAD**. What ORIGINALLY was the primary
+ask is done; what remains is the fallback-obligation half only.
+
+~~**CORROBORATED FIRST-PARTY at HEAD `b95d78437`, not taken on the sender's word.**
 `manage-references/scripts/_references_core.py` `resolve_base_ref()` (`:157`) returns a **bare branch
 name**, falling back to the literal `'main'`, and the module contains **zero** occurrences of `origin/`
-— nothing consults the remote-tracking ref and nothing reports that the local ref is behind. A working
-branch lives for hours while local `main` trails `origin/main`, so every already-merged upstream path
-enters the plan's footprint as if the plan had touched it. **The inflation is silent: the caller sees a
-plausible file list, not an error.**
+— nothing consults the remote-tracking ref and nothing reports that the local ref is behind.~~ — struck,
+superseded by the re-grounding above; the inflation mechanism this paragraph described no longer exists
+in the primary path.
 
-*Deliver:* resolve the base against the remote-tracking ref (`origin/{base_branch}`) with a **documented**
-fallback to the local ref when no remote-tracking ref exists. ⛔ **If that resolution is not taken, the
-fallback obligation is NOT optional**: emit a `base_ref_staleness` field (commits-behind count) on
-**both** `compute-footprint` and `capture-footprint`, so a caller cannot consume an inflated footprint
-without seeing that it is inflated.
+*Deliver (re-scoped to the surviving half only):* the fallback-obligation half is NOT yet independently
+confirmed done — re-derive at outline whether the `base_ref_staleness` field (commits-behind count) is
+emitted on **both** `compute-footprint` and `capture-footprint` for the case where no remote-tracking
+ref exists and the bare-`'main'` fallback fires, since that is the one path the remote-tracking
+resolution does not itself cover.
 
-*Done when:* the resolver consults the remote-tracking ref (or emits the staleness field), a test proves
-the behaviour against a deliberately-behind local ref — ⛔ **a matched negative control is required, since
-a test that passes when local and remote agree proves nothing** — and the PR body records the before/after
-footprint count for one real plan.
+*Done when:* a test proves the fallback path — no remote-tracking ref present — either emits
+`base_ref_staleness` or is otherwise safe, with a matched negative control (remote-tracking ref
+present, no staleness field expected) so a test that passes when local and remote agree proves
+nothing; and the PR body records which of the two paths (remote-tracking resolution vs. bare-`'main'`
+fallback) governed for one real plan.
 
 ⚠ **The sender's impact figures are a LEAD, not a fact, and are NOT re-derived here.** They come from a
 machine-local archive on another machine (source: plan `fix-settings-file-scope-inconsistency`, PR #1330,
@@ -1438,7 +1475,7 @@ distribution; if the measurement finds a document stating a level rule the resol
 correction is `PLAN-CIS-054`'s, filed as a finding rather than fixed here.
 
 ## Claim Labels
-- verdict: contradicted | checked_at: 7a028157eab86d5c5e9c8ee181671c6093ac5963 | by: code-intelligence-substrate/cleanup | rescoped: yes | evidence: RE-GROUNDED 2026-09-15 at HEAD 7a028157e (previous stamp 53ab7dd2e). SCOPE OF THIS PASS, stated rather than implied: 8 of this spec's 38 declared surface entries were touched by the 334 files changed since the previous stamp - audit.py (twice), manage-execution-manifest.py, phase-5-execute/SKILL.md, phase-6-finalize/SKILL.md, effort-roles.md, effort-variants.md, generate_executor.py - and the re-derivation targeted those. Claims on untouched files retain their previous verdicts and were NOT re-executed; that is a bounded pass, not a full one. FINDINGS: (1) D1(e) CORROBORATED at HEAD and it was nearly mis-refuted - generate_executor.py's dry-run early return still hands back dict(_EMPTY_SURFACE_STATS) verbatim with scripts_registered 0 while the sibling OSError degradation path sets both scripts_registered and surfaces_not_derivable to len(mappings). A normative emission-contract docstring added nearby governs format_surface_stats_line (the greppable stdout LINE), NOT the dry-run count, and reading it as the fix would have struck a live defect. (2) D5(a)'s population is UNDERSTATED and is corrected in place: the item said four stamps; the dict carries 24 entries of which EIGHT hold the literal plan-10 instead of a commit or PR boundary. The item now says bump the non-boundary set plus the Plan-290 four, and forbids carrying 4, 8 or 24 forward without re-derivation. (3) The audit.py 1-vs-3 decimal rounding split SURVIVES but is re-framed: it is now explicitly documented in place, with a comment stating share_pct is not recomputable from the printed columns and that aligning the precisions is owned elsewhere. The condition is unchanged; what changed is that it is a declared limitation rather than a silent one, so the remedy is to assign the owner, not to discover the defect. D12's two new surfaces (effort-roles.md, effort-variants.md) also moved in this window and are freshly declared, so nothing there is stale.
+- verdict: contradicted | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: code-intelligence-substrate/cleanup | rescoped: yes | evidence: RE-GROUNDED 2026-09-22 at HEAD 7d82d5d9 (previous stamp 7a028157e). SCOPE STATED: 18 of 37 declared surface files moved in this window; the re-derivation targeted the load-bearing claims on those and claims on the other 19 retain their previous verdicts, NOT re-executed. RE-SCOPED IN PLACE THIS PASS (all three struck-and-corrected in the spec text, not merely noted): D7 the remote-tracking-ref resolution is now CORROBORATED PRESENT at _references_core.py:220-266, so the deliverable is narrowed to the base_ref_staleness fallback-obligation half only. D4(a) three of its four named defects (phantom identifier, phantom lattice name, missing disclosure clause) are CORROBORATED CLOSED and struck; the fourth (operand labelled turns instead of tool_uses, data-format.md:249/253) survives and is the sole remaining scope. D1(n)'s step-vs-firing HYPOTHESIS is REFUTED IN DIRECTION at manage-execution-manifest.py:3051/2930-3099 - both ledgers now declare a per-firing unit - so the 2.088x discrepancy is unexplained again and needs a new account before outline; the deliverable text now records the refutation and defers re-scoping the account to outline. D5(a)'s population moved a third time (24 entries, now NINE carry plan-10, was eight at the last stamp) - no rescope needed, confirms the existing do-not-carry-forward instruction rather than requiring a change to it. D1(e) STILL LIVE and unchanged in substance, but carries a NEW test-pins-the-defect hazard first seen this pass: test_generate_executor.py:3025-3051 now affirmatively pins the dry-run zero-valued default this deliverable must change, added to Done-when as a required rewrite. STILL LIVE, re-confirmed unchanged in substance: D1(a) manage-metrics.py:3525/3572 (total_tokens 0-default beside UNMEASURED_COLUMN_TOKEN), D1(c)/D4(d) compile-report.py:474-478 (.get(...,0) defaults, local "wasted" name), D1(b)/D1(d) analyze-logs.py:1379-1380/1692 (hand-written cause sets, unconditional sum), D2(a)/D2(b) analyze-logs.py:603-616 vs analyze_folded_global_logs:1909/1920 (no header-rest gate on the line-shape regex), D1(m) _ledger_reconciliation.py:557-569 (_augment unchanged), D2(e) plan_logging.py:344 (duration format), D3(b) plan-retrospective/SKILL.md:289 (--diff-file work/footprint.txt), D1(l) _boundary_measure_is_partial one production occurrence confirmed. D2(c) audit.py rounding split survives with moved anchors (rollup_total round(...,3) at :3168, share_pct at :3188, published round(...,1) at :3210, documented-limitation comment at :3142-3168) - audit.py is now 9583 lines, was ~9910. D3(d) check-artifact-consistency.py:527/547 now DOES publish footprint_resolved in the exact-match block, partially discharging it; D3(e) _resolve_footprint still called at both :510 and :855, untouched. Corroboration dispatched to execution-context-level-5 under the analyze.md Step 2 corroboration form per the Dispatch Decision Rule; this record and every edit above is the orchestrator's own application of the returned verdicts, performed inline.
 
 `OBSERVED` means the audit **and** its adversarial review both reproduced the claim by execution.
 `HYPOTHESIS` means it rests on reading alone, on a single unreplicated measurement, or on a timing or

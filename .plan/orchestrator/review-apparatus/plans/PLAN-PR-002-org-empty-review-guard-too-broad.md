@@ -112,13 +112,13 @@ things fold in that are NOT in the handover summary:
 ## Hand-Off Command
 
 ```text
-/plan-marshall task="implement .plan/local/orchestrator/review-apparatus/plans/PLAN-PR-002-org-empty-review-guard-too-broad.md"
+/plan-marshall task="implement .plan/orchestrator/review-apparatus/plans/PLAN-PR-002-org-empty-review-guard-too-broad.md"
 ```
 
 ## Write-Boundary
 
 The plan implementing this spec touches only its own repository source and tests. It creates
-and edits NO file under `.plan/local/orchestrator/` other than its own
+and edits NO file under `.plan/orchestrator/` other than its own
 `inbox/{sender}-{seq}` message — the orchestrator owns every other ledger write — and reports
 its outcome through its PR and its inbox message. The inbox exception's qualifiers and the
 sole sanctioned write mechanism are stated in

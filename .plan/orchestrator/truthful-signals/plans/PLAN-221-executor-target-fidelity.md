@@ -1,6 +1,6 @@
 # PLAN-19: Executor target fidelity under opencode
 
-epic: quality-aspect
+epic: truthful-signals
 workstream: WS-02
 
 > Staged plan spec — one shippable unit of work, ready for `/plan-marshall` hand-off.
@@ -50,7 +50,7 @@ fails closed instead of running silently outdated.
 ## Hand-Off Command
 
 ```text
-/plan-marshall task="implement .plan/orchestrator/quality-aspect/plans/PLAN-19-executor-target-fidelity.md"
+/plan-marshall task="implement .plan/orchestrator/truthful-signals/plans/PLAN-221-executor-target-fidelity.md"
 ```
 
 ## Write-Boundary

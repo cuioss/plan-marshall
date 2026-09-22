@@ -132,7 +132,7 @@ be larger than its source estimated.
 - OBSERVED (first-party, 2026-09-15, orchestrator read of `github_ops.py:405-448`): `REVIEW_THREADS_QUERY`
   carries four fixed `first:` caps and no `pageInfo`; `fetch_pr_comments_data` issues it once. Confirm/refute
   at that query and its single `run_graphql` call site.
-  - verdict: corroborated | checked_at: 7a028157e | by: review-apparatus/cleanup | rescoped: n/a | evidence: github_ops.py:405-448 REVIEW_THREADS_QUERY has reviewThreads(first:100), comments(first:10), reviews(first:100), comments(first:100), no pageInfo; single run_graphql call at :476
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: review-apparatus/cleanup | rescoped: n/a | evidence: Re-grounded FIRST-PARTY at HEAD (was 7a028157e). github_ops.py is UNMOVED in 7a028157e..HEAD - it does not appear in the diff over workflow-integration-github, where only _github_checks.py, _github_ci.py, _github_pr.py and github_pr.py moved. REVIEW_THREADS_QUERY four fixed first caps, the absent pageInfo and the single run_graphql call site are therefore unchanged. Premise intact; line references 405-448/476 undisturbed because the file did not move.
 - OBSERVED (corpus pass 2026-09-15, not re-read first-party): `ci pr comments` returned 236 against 237 on
   `cuioss/API-Sheriff#255`, dropping review `5123206655`. Confirm/refute by re-running both instruments on
   that PR.
@@ -152,10 +152,10 @@ be larger than its source estimated.
 ## Hand-Off Command
 
 ```text
-/plan-marshall task="implement .plan/local/orchestrator/review-apparatus/plans/PLAN-PR-059-what-the-pipeline-loses-on-the-way-in.md"
+/plan-marshall task="implement .plan/orchestrator/review-apparatus/plans/PLAN-PR-059-what-the-pipeline-loses-on-the-way-in.md"
 ```
 
 ## Write-Boundary
 
 The plan implementing this spec touches only its own repository source and tests. It creates and edits
-NO file under `.plan/local/orchestrator/` other than its own `inbox/{sender}-{seq}` message.
+NO file under `.plan/orchestrator/` other than its own `inbox/{sender}-{seq}` message.

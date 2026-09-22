@@ -715,7 +715,7 @@ distinguished from one that flags everything.
 
 ## Expected Surface
 ⛔⛔ **THESE ARE EPIC-TREE RECORDS, NOT REPOSITORY SOURCE — AND EDITING THEM PRODUCES NO DIFF.**
-`../cloud-runs/` resolves to `.plan/local/orchestrator/review-apparatus/cloud-runs/`, which is
+`../cloud-runs/` resolves to `.plan/orchestrator/review-apparatus/cloud-runs/`, which is
 **git-ignored**. They were deliberately moved out of `doc/plans/review-apparatus/` at the cloud-wave
 ingest (`26f2f417b`, #1333), so an edit to any record below appears in **no PR**, survives only on the
 machine that makes it, and is lost with that machine. ⛔ **This bears directly on what this plan can
@@ -787,7 +787,7 @@ rather than letting the gate absorb it.
 | The shortfall disclosure is now Step 8 **condition 5**, not condition 4, and carries a `Reopens?` clause | OBSERVED | The current § Step 8 numbered conditions; **re-verify the ordinal at the moment of writing** |
 | The lane's Step 9 bridge row forbids a *status or bookkeeping* write outside the plan's own directory, and this plan's edits are neither | OBSERVED, the reading is the point at issue | The Step 9 contract-check table's Bridge row, read in full — this is the disagreement D5 item 5 reports, not one the run resolves |
 | The 23 in-scope gap entries across 11 plan directories are as enumerated in D0 item 2 | HYPOTHESIS, both counts are leads | D0's own re-derivation from the listed gap ids and the directory listing; a collected directory or a fixed defect changes both figures, and D0 records the change |
-  - verdict: corroborated | checked_at: cc5ea40a1 | by: review-apparatus/cleanup | rescoped: n/a | evidence: Re-grounded at HEAD cc5ea40a1 (was 19453cb1b). Method: intersect the spec's DECLARED Expected Surface (via corpus surfaces, the single shared reader) against git diff --name-only 19453cb1b..cc5ea40a1 (111 paths). CORPUS-WIDE CHECK THIS PASS: PR #1392 RETIRED standards/pr-agent.md (renamed to cuioss-review-bot.md) and retired bot_kind pr-agent; all 49 specs were swept for the retired path and 11 cite it, of which 3 are staged (PR-029, PR-031, PR-042) and were CORRECTED in place. Membership-verified from corpus surfaces, not by cardinality. NOT a line-by-line re-audit of every claim: this settles the SURFACE citation only.
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: review-apparatus/cleanup | rescoped: n/a | evidence: Re-grounded at HEAD (was cc5ea40a1). Intersection over 8 declared paths: 5 hits - bot-participation-contract.md (+20), review_completeness.py, test_structural_refusal.py, github_pr.py, test_github_pr.py. cuioss-review-bot.md, coderabbit.md and _findings_core.py are UNMOVED. The pr-agent to cuioss-review-bot correction recorded at the prior stamp still holds: standards/pr-agent.md does not exist at HEAD. Premise intact.
 
 ## Verification
 
@@ -946,12 +946,12 @@ document, not in behaviour.
 ## Hand-Off Command
 
 ```text
-/plan-marshall task="implement .plan/local/orchestrator/review-apparatus/plans/PLAN-PR-031-the-record-of-what-we-did-is-itself-unverified.md"
+/plan-marshall task="implement .plan/orchestrator/review-apparatus/plans/PLAN-PR-031-the-record-of-what-we-did-is-itself-unverified.md"
 ```
 
 ## Write-Boundary
 
 The plan implementing this spec touches only its own repository source and tests. It creates and edits
-NO file under `.plan/local/orchestrator/` other than its own `inbox/{sender}-{seq}` message — the
+NO file under `.plan/orchestrator/` other than its own `inbox/{sender}-{seq}` message — the
 orchestrator owns every other ledger write — and reports its outcome through its PR and its inbox
 message.

@@ -82,22 +82,53 @@ in commercial memory platforms, not prescribing a design. Deliverable 4 may refu
 
 ## Claim Labels
 
-- OBSERVED: `manage-lessons` carries **no** confidence, freshness, decay, or precision model. A targeted
-  sweep of `marketplace/bundles/plan-marshall/skills/manage-lessons/SKILL.md` for
-  `confidence|freshness|decay|precision` returns exactly one hit, and it belongs to an unrelated
-  recipe-registry matcher's confidence floor — not to the lessons store. Measured in this checkout on
-  2026-09-14.
-- OBSERVED: The store's lifecycle is binary — live or retired via tombstones — read at
-  `marketplace/bundles/plan-marshall/skills/manage-lessons/SKILL.md`, whose own description names the
-  retirement surface and its four-state outcome without any intermediate confidence position.
+- ⛔ **CONTRADICTED IN PART at cleanup 2026-09-22 (was OBSERVED).** `manage-lessons` carries no
+  `confidence` or `precision` model — that half holds exactly as stated (the sole `confidence` hit is
+  the unrelated recipe-registry matcher's floor at line 812; `precision` appears nowhere). But
+  **freshness and decay are NOT absent**: the `arch-constraint` category carries `recurrence_count`
+  ("observation count, bumped on each reinforce") and `last_seen` ("`YYYY-MM-DD` of the latest
+  observation; anchors retire-on-quiet"), with `add --rule` reinforcing on recurrence and a
+  `retire-quiet` verb retiring every active arch-constraint lesson quiet for the window, the clock reset
+  by reinforcement — precisely "raised by corroboration, lowered by age", already shipped for one
+  category. **Consequence, absorbed into this spec's scope**: deliverable 4 should treat this as an
+  EXISTING PARTIAL implementation to generalize across categories, not a greenfield design.
+  - verdict: contradicted | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: instrumentation-substrate/cleanup | rescoped: yes | evidence: confidence/precision absence holds; freshness+decay already exist for arch-constraint category (recurrence_count/last_seen/retire-quiet); deliverable 4 reframed as generalize-existing not greenfield
+- ⛔ **REFUTED at cleanup 2026-09-22 (was OBSERVED).** The store's lifecycle is NOT binary. `list
+  --status {active|superseded|removed|all}` names **three** lifecycle states, and an orthogonal
+  location-encoded axis adds two more: unapplied lessons live in `.plan/local/lessons-learned/{id}.md`
+  and become **applied** via `convert-to-plan` (inverse: `restore-from-plan`), and `list-stalled` names
+  a fifth observable state — a lesson **stranded** in a non-terminal plan directory. Full set: active /
+  superseded / removed / applied / stalled. **Consequence, absorbed into this spec's scope**: the
+  sub-clause about "a four-state outcome" is true but names `restore-from-plan`'s own `action`
+  vocabulary, not the lesson lifecycle — deliverable 3's provenance field must be designed against the
+  five-state lifecycle above, not a binary live/retired model.
+  - verdict: contradicted | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: instrumentation-substrate/cleanup | rescoped: yes | evidence: manage-lessons list --status has 3 states plus applied/stalled orthogonal axis, 5 total not 2; deliverable 3 must design against the 5-state lifecycle
 - HYPOTHESIS: The corpus's dominant derivation source is run artifacts and tool returns rather than
   settled operator decisions — confirm/refute by a derived sweep of the live corpus (verify-at-outline).
   ⛔ This is the claim the whole provenance argument rests on, it is currently **impression rather than
   measurement**, and deliverable 3 is partly what would make it answerable at all. If refuted, the
   lowest-trust-class argument dissolves and deliverables 3 and 4 shrink accordingly.
+  ⚠ **Unverifiable at cleanup 2026-09-22 — structurally unanswerable, which is itself a finding.** No
+  provenance field exists today: the Metadata Fields table is `id`, `component`, `category`, `created`,
+  `bundle`, `rule`, `recurrence_count`, `last_seen` — nothing records where a lesson came from, so no
+  derived sweep can classify by metadata (only LLM judgment over bodies could, which is not a
+  derivation). The corpus also lives in a gitignored store outside the architecture inventory. This is
+  the sharpest confirmation of deliverable 3's necessity: the claim cannot be measured until the
+  provenance field this plan proposes to add already exists.
+  - verdict: unverifiable | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: instrumentation-substrate/cleanup | rescoped: n/a | evidence: no provenance field exists in the metadata schema and corpus is outside the inventory; structurally unanswerable, confirms deliverable 3's necessity
 - HYPOTHESIS: Trimming is the current primitive for a partially-covered lesson — confirm/refute at
   `marketplace/bundles/plan-marshall/skills/manage-lessons/SKILL.md` and the lessons-handling workflow
-  (verify-at-outline).
+  (verify-at-outline). ⭐ **Corroborated at cleanup 2026-09-22, with two refinements.** (a) The policy
+  lives in the project-local `.claude/skills/finalize-step-lessons-housekeeping/SKILL.md`, NOT in
+  `manage-lessons`, which declares no `trim` verb at all — the mechanism is `set-body` (full-body
+  replace), so this spec's own critique ("trimming edits a conclusion in place while leaving its
+  unstated derivation intact") is if anything UNDERSTATED: it is a whole-body overwrite. (b) The
+  retirement side has gained a justification contract this spec does not account for — `remove` now
+  requires `--coverage-verdict` from a closed four-value vocabulary plus a `--covering-clause`/
+  `--covering-input` evidence pair on `completely_covered`, recorded on the tombstone. **Consequence,
+  absorbed into this spec's scope**: this provenance-of-retirement mechanism is adjacent to deliverable
+  3 and worth folding into its design rather than treated as a separate later addition.
+  - verdict: corroborated | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: instrumentation-substrate/cleanup | rescoped: n/a | evidence: finalize-step-lessons-housekeeping trims via full-body set-body; remove now requires --coverage-verdict + evidence pair; both refinements absorbed into deliverable 3's scope
 - Verify-first clause: ⛔ **Never wipe or bulk-mutate the lessons directory in this plan.** The store
   carries tombstones whose loss is unrecoverable, and `manage-lessons remove` has a recorded failure mode
   in which it destroys a lesson while returning `not_found` — so a retry on `not_found` destroys a second

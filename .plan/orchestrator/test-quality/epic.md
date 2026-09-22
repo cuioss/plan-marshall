@@ -71,9 +71,9 @@ Re-derive before using. See [`landings/PLAN-110.md`](landings/PLAN-110.md).
      outside the markers — never inside them. -->
 
 <!-- BEGIN GENERATED: resume-summary -->
-**Resume anchor**: Cleanup done, restart READY (5/6 signals, inbox empty, tree clean at e8a716501). PLAN-181 STAGED awaiting launch; PLAN-140 parked. NEXT: operator launches PLAN-181 or reports.
+**Resume anchor**: Cleanup 2026-09-22 done (drain 1 promoted, A1 11/11 re-grounded at 7d82d5d90 — 6 contradicted incl. 2 gone-vacuous from the epic restructure deleting landings/, A2-A5 no findings/declined, Phase B compacted). PLAN-181 STAGED awaiting launch; PLAN-140 parked. RESTART NOT_READY: 103 uncommitted paths repo-wide (only 5 this epic's own), operator must decide commit scope — see truthful-signals' matching finding. Open: PLAN-140 claims 1/2 need re-scope (attribution vs archived sibling specs is structurally vacuous); settled.md carries 7 dangling landings/PLAN-NNN.md refs (105/110/135/145/150/155/170), unowned.
 **Phase**: orchestrating
-**Inbox (derived)**: 0 queued, 134 archived
+**Inbox (derived)**: 0 queued, 135 archived
 **Parked**:
 - PLAN-140 (WS-04) — PR #1552
 **Queue** (staged, in order):
@@ -1160,3 +1160,66 @@ population and nothing else.
   recurrence signature #5 verbatim inside the framework that documents it. A documented rule
   plus an edit-time doctor cluster has now failed to prevent the class at call time four times.
   Recorded on `2026-09-13-12-005`.
+
+### Inbox drain 2026-09-22 (1 drained, cross-epic)
+
+- **`truthful-signals-001.md` promoted to the global corpus as `2026-09-22-08-004`**
+  (`plan-marshall:persona-module-tester`, anti-pattern). Cross-epic candidate-lesson forwarded
+  from the `truthful-signals` orchestrator epic: a monkeypatched resolver makes every fixture
+  constant on its far side vacuous — a production element was reclassified mid-PR, and the
+  fixture kept passing because the resolver that would have surfaced the reclassification was
+  mocked out. `truthful-signals` routed ownership here (its house-style/test-conventions scope)
+  rather than staging it on either side, since it already holds a version as evidence inside its
+  own `PLAN-TRUTH-153`, which cannot absorb further items without a split. Promoted rather than
+  folded/staged: neither of this epic's two staged specs (PLAN-140, PLAN-181) owns
+  house-style/`test-conventions` surface, and promotion to the global corpus is this epic's
+  established disposition for a standalone rule candidate — it is picked up by the standards
+  plan / `plugin-doctor` `test-conventions` scope work the epic Vision already calls for, same
+  as the 5 promotions from the PLAN-177 drain above. Source inbox lesson `2026-09-19-21-006`
+  (already retired from the global corpus by the time this drained). Archived on consume.
+
+### Cleanup 2026-09-22 (corpus pass, A1–A5)
+
+- **A1 — 11/11 claims re-grounded at HEAD `7d82d5d90`.** 6 contradicted (PLAN-140 claims
+  0/1/2/3/5/6), 4 corroborated (PLAN-140 claim 4, PLAN-181 claims 0-2), 1 unverifiable-by-design
+  (PLAN-140 claim 7). Whole-tree test-module-line-budget moved **362 → 429** since the last
+  cleanup (+18%); `_test_shape_scan.py` moved **636 → 979** lines. Full verdicts and evidence are
+  stamped on the specs via `corpus set-verdict` (producer `test-quality/cleanup`) — not
+  duplicated here.
+- ⛔ **The restructure commit `7d82d5d90` (#1578, "restructure epics into a fresh live/archived
+  split") deleted this epic's `landings/` directory and archived every staged sibling spec except
+  PLAN-140 and PLAN-181.** Two consequences surfaced by the re-grounding pass:
+  - PLAN-140 claims 1 and 2 (epic-surface-partition attribution against sibling plans' surfaces)
+    went from *corroborated*/*contradicted-with-real-numbers* to **structurally VACUOUS**:
+    `not_derivable` is now 1335 of 1337 modules, because PLAN-030/040/050/080/155/165/020 no
+    longer have specs in `plans/` to attribute against. This is a **re-scope owed, not a
+    re-measurement** — the claims cannot be meaningfully re-checked as written until the corpus
+    carries specs to attribute against again. Left staged and reported, not silently re-derived.
+  - PLAN-140 claim 6's citation (`landings/PLAN-100.md:52-53`) went dangling — the file no longer
+    exists at HEAD. The underlying historical fact is intact (confirmed via
+    `git show 7d82d5d90^:...`); the citation is re-pointed in the verdict to
+    `archive/100-module-budget-campaign/report-01.md`.
+  - **Broader corpus-hygiene defect, unowned by this pass**: `settled.md` carries `landings/PLAN-NNN.md`
+    cross-references for PLAN-105, PLAN-110, PLAN-135, PLAN-145, PLAN-150, PLAN-155 and PLAN-170
+    that are now equally dangling for the same reason. Re-pointing all seven is a bounded editorial
+    task outside this cleanup's A1 scope (A1 re-grounds staged specs, not `settled.md`) — recorded
+    here rather than fixed silently. Stage on demand or fold into the next pass that touches
+    `settled.md`.
+- **A2/A3 — no findings.** Both staged specs carry Objective, Expected Surface and Claim Labels;
+  neither is already-fixed.
+- **A4 (duplication) — declined, no supersede applied.** `corpus cross-check` reported
+  `collision_detected: true` with 47 `file_overlap_matches`, all against PLAN-181's single
+  declared path `test/plan-marshall/tools-permission-fix/`. Reviewed all 47: 46 are containment
+  false-positives from sibling specs' broad `test/plan-marshall/` directory-level declarations
+  (unrelated doc/consistency sweeps across active and archived epics); the one exact-file match —
+  `truthful-signals-26-09-21/PLAN-TRUTH-103` (`overlap_count: 2`, naming both carve-2 files) — is
+  **archived residue from a pre-restructure snapshot**, absent from the live `truthful-signals`
+  queue (which now starts at PLAN-TRUTH-145). No live plan besides PLAN-181 claims these files.
+  `candidate_comparison_determinate: false` (93 sibling-epic specs + 2 live plans + PLAN-140 itself
+  indeterminate) is a corpus-wide declaration-completeness gap in OTHER epics' specs, not
+  actionable from here.
+- **A5 (distribution) — declined.** Population is 2 specs, already single-component/task; no
+  redistribution warranted.
+- **Declared-surface half (A1, second reader) — no correction needed.** PLAN-140 stays `derived`
+  by design (explicit union-of-other-plans declaration, permitted to stand per its own header);
+  PLAN-181 stays `declarative` with its one claimed path matching its narrative — no understatement.

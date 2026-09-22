@@ -1,6 +1,6 @@
 # PLAN-12: Worktree-pinned path resolution
 
-epic: quality-aspect
+epic: truthful-signals
 workstream: WS-06
 
 > Staged plan spec — one shippable unit of work, ready for `/plan-marshall` hand-off.
@@ -52,7 +52,7 @@ structure, argparse rejections that name the notation. G04 + 5 singletons (10 le
 ## Hand-Off Command
 
 ```text
-/plan-marshall task="implement .plan/orchestrator/quality-aspect/plans/PLAN-12-worktree-paths.md"
+/plan-marshall task="implement .plan/orchestrator/truthful-signals/plans/PLAN-215-worktree-paths.md"
 ```
 
 ## Write-Boundary

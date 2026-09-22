@@ -72,27 +72,27 @@ at the path in `## Provenance`. Re-ground each at HEAD before scoping.
 - OBSERVED: `manage-lessons` carries no confidence, freshness, decay or precision model — a targeted sweep
   of its SKILL.md for `confidence|freshness|decay|precision` returned exactly one hit, belonging to an
   unrelated recipe-registry matcher (measured 2026-09-14; re-verify at outline).
-  - verdict: corroborated | checked_at: 1605831c5 | by: post-run-quality/cleanup | rescoped: n/a | evidence: SKILL.md sweep for confidence|freshness|decay|precision returns exactly one hit (line 690, the unrelated auto-suggest recipe matcher). Live corpus header key set is {id,component,category,status,created} across all 131 files -- no confidence/freshness/decay term anywhere.
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: post-run-quality/cleanup | rescoped: n/a | evidence: manage-lessons/SKILL.md metadata schema (id,component,category,created,bundle,rule,recurrence_count,last_seen) carries no confidence/freshness/decay/precision term; live corpus rows carry id/component/category/status/title only
 - OBSERVED: the store's lifecycle is binary — live or retired via tombstones — with no intermediate
   confidence position (source spec, read at `manage-lessons/SKILL.md`).
-  - verdict: corroborated | checked_at: e8a71650 | by: post-run-quality/cleanup | rescoped: n/a | evidence: manage-lessons/SKILL.md:261 status value space active|superseded|removed|all; :350 remove=delete+tombstone; :685 supersede=tombstone+superseded_by. Both non-active states are tombstoned retirements -- binary live/retired axis holds, no intermediate confidence position. Nuances: unapplied/applied axis via file location; arch-constraint-only last_seen quiet-streak is a retirement input not a scale position. D2/D3 stand.
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: post-run-quality/cleanup | rescoped: n/a | evidence: SKILL.md:343 status is active|superseded|removed|all -- binary live/retired axis with no intermediate confidence position; D2/D3 stand
 - ⚠ HYPOTHESIS: the corpus's dominant derivation source is run artifacts and tool returns rather than
   settled operator decisions — confirm/refute by a derived sweep of the live corpus (verify-at-outline).
   ⛔ The whole provenance argument rests on this, it is impression rather than measurement, and D2 is
   partly what makes it answerable. If refuted, D2 and D3 shrink accordingly.
-  - verdict: unverifiable | checked_at: 1605831c5 | by: post-run-quality/cleanup | rescoped: n/a | evidence: Population reachable (131 active files, 0 headerless, 729 tombstones) but the discriminator does not exist in the data: header keys are id/component/category/status/created (+bundle on 5); only classifier is category (subject axis, not derivation-source axis). Answering requires body-level classification of 131 lessons -- exactly D2's job. Spec's own self-assessment is correct.
+  - verdict: unverifiable | checked_at: 7d82d5d90 | by: post-run-quality/cleanup | rescoped: n/a | evidence: corpus has drained again (10/10 at HEAD); no header key names a derivation source, only category (subject axis, not derivation-source axis) -- answering requires D2's own body-level classification work
 - ⚠ HYPOTHESIS: trimming is the current primitive for a partially-covered lesson — confirm/refute at
   `manage-lessons/SKILL.md` and the lessons-handling workflow (verify-at-outline).
-  - verdict: corroborated | checked_at: 1605831c5 | by: post-run-quality/cleanup | rescoped: n/a | evidence: manage-lessons has no trim verb (SKILL.md:684-688: remove/supersede/cleanup-superseded/retire-quiet; :306 max-per-component is explicitly NOT a routine trim). Primitive lives in finalize-step-lessons-housekeeping/SKILL.md:28,:168,:182,:260-268, decisively :66: trimming is a surgical body edit no manage-lessons verb expresses. D3(b) targets a hand-edit path with no script surface -- raises cost, does not lower it.
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: post-run-quality/cleanup | rescoped: n/a | evidence: no trim verb exists among manage-lessons' 17 verbs; the primitive lives at finalize-step-lessons-housekeeping/SKILL.md as a hand-edit path with no script surface
 - ⚠ HYPOTHESIS: the `1 of 5` contract-reach ratio holds at HEAD over the full corpus. ⛔ It was measured
   over the five process lessons of one cloud-run analysis, which is not the corpus — D4 derives it
   properly (verify-at-outline).
-  - verdict: unverifiable | checked_at: 1605831c5 | by: post-run-quality/cleanup | rescoped: n/a | evidence: Anchor exact: test-quality.adoc:738-755, 5-row table, closing 1 of 5. But denominator is 5 process lessons from 2 cloud-lane run reports, not the corpus -- a 0.5% sample of the live 131-lesson corpus. No corpus-wide reach measurement exists at HEAD. D4 must derive it; 1 of 5 is a lead, not a baseline.
+  - verdict: unverifiable | checked_at: 7d82d5d90 | by: post-run-quality/cleanup | rescoped: n/a | evidence: test-quality.adoc:738-755 anchor exact; the 1-of-5 figure is drawn from 2 cloud-lane run reports, not a corpus-wide measurement -- a lead, never a baseline; D4 must derive it
 - **Verify-first clause** ⛔ **Never wipe or bulk-mutate the lessons directory in this plan.** The store
   carries tombstones whose loss is unrecoverable, and `manage-lessons remove` has a recorded failure mode
   in which it destroys a lesson while returning `not_found` — so a retry on `not_found` destroys a second
   one. Every deliverable here is read-and-measure or additive; none is a deletion pass.
-  - verdict: corroborated | checked_at: e8a71650 | by: post-run-quality/cleanup | rescoped: n/a | evidence: SKILL.md:406-407 tombstones NEVER touched; :428 skipped_no_tombstone refuses to act rather than lose the audit trail. .plan/local/lessons-learned/.tombstones/ holds 862 files at HEAD. Directive binds unchanged.
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: post-run-quality/cleanup | rescoped: n/a | evidence: tombstones-never-touched directive intact (SKILL.md:522-525,489-495); the cited not_found-destroys-a-lesson failure mode is now CLOSED at HEAD via the three-state resolution seam and remove --allow-unreadable, but the never-wipe directive itself still binds
 
 ## Expected Surface
 
@@ -146,12 +146,16 @@ needs one — building the mechanism first is the same mistake as tuning a corpu
 ## Dependencies and Sequencing
 
 - Depends on: none.
-- ⛔⛔ **`truthful-signals` PLAN-TRUTH-144 MOVED `staged → RUNNING` (confirmed 2026-09-21, cleanup,
-  `checked_at: e8a71650`)** — that epic's own anchor confirms an operator-confirmed start. PLAN-TRUTH-144
-  and this spec both declare `manage-lessons/**`; **this spec MUST NOT launch while PLAN-TRUTH-144 is
-  running.** The collision this spec originally flagged as merely "invisible to both gates" is now a LIVE
-  in-flight collision, not a theoretical one. Check `truthful-signals`' queue immediately before emitting
-  this spec, not only at staging time.
+- ✅ **RE-GROUNDED 2026-09-22 (cleanup, `checked_at: 7d82d5d90`): the PLAN-TRUTH-144 block is LIFTED.**
+  `truthful-signals-26-09-21`'s own queue now reads PLAN-TRUTH-144 as `shipped` (PR #1560, landed as
+  `lessons-corpus-producers-report-success`) — the running-collision this spec previously flagged no longer
+  exists. Its deliverable is present at HEAD: `manage-lessons/SKILL.md` now documents the three-state
+  resolution seam (found/absent/unreadable) plus `remove --allow-unreadable`, closing the specific
+  `not_found`-destroys-a-lesson failure mode the prior collision warning was guarding against. This spec's
+  own D0/D1/D3 should be re-read against that closed state at outline — the ⭐ FOLDED closing obligation
+  ("either the store rejects a headerless file at write time, or remove gains a path that can retire one
+  with a tombstone — today NEITHER exists") is now HALF-satisfied by the second branch. This spec is no
+  longer blocked on `truthful-signals`.
 - ⚠ Adjacent to the lessons-handling epics, which route lessons and implement nothing. This plan gives
   them an instrument and does not take their routing role; if a lessons epic is mid-flight over the same
   store, sequence behind it.

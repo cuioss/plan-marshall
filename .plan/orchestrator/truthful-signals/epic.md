@@ -42,9 +42,9 @@ out on the same date.
      Paste the returned block verbatim between the markers. -->
 
 <!-- BEGIN GENERATED: resume-summary -->
-**Resume anchor**: === ▶ **2026-09-21 -- CLEANUP RAN PROPERLY (Steps 1-3/A1 substantially complete; A2-A5 lighter-touch).** HEAD 74153664d. A1: dispatched corroboration re-grounded 78 claims across 22 live specs (8 of 30 had none unsettled) -- 27 corroborated, 45 unverifiable (never blocks), 6 contradicted. 5 specs now correctly BLOCKED pending re-scope (PLAN-TRUTH-145 x2, -146, -150, -153 -- see Open Defects for the pointed-to contradictions each must absorb). PLAN-TRUTH-174 D1 was found ALREADY SHIPPED and re-scoped in place (now targets the untouched parse_toon ingestion call only). Surface half of A1: all 30 live specs already declarative, no corrections needed. A4: no true duplicates among the 30 EXCEPT PLAN-TRUTH-152, a verbatim duplicate of post-run-quality PLAN-PRQ-01 -- transitioned to transferred. High file-overlap network (mostly PLAN-TRUTH-155's broad doc-sweep nature) reviewed, no new NEVER-PAIR entries added this pass beyond what was already known. A2/A3/A5: not separately run this pass -- no live spec is missing Objective/Expected Surface/Claim Labels, and no redistribution was attempted (time-bounded pass). Phase B (compact) and Phase D (restart-check) still to run this session. PLAN-TRUTH-144's own landing (PR #1560, merged 05b5d1ac4) was independently reconciled and already landed on main as PR #1571 (two Watches recorded: W-1560-a merge-queue wait-loop hang, W-1560-b unreadable-lessons+allowed-tools gap) -- this branch's identical landing record merged cleanly against it. ▶ QUEUE: 224 live rows (152 now transferred, not counted staged). PLAN-TRUTH-161 remains the next emit target (not among the blocked 5), confirmed disjoint+prep-ready, N=1 R=0; do not raise parallelization_scope without an explicit operator decision. ⛔⛔ PLUGIN PIN GAP STILL OPEN, OPERATOR-ONLY -- verify current executor version vs installed_plugins.json before any restart. ===
+**Resume anchor**: === ▶ 2026-09-22 -- FULL CLEANUP RAN (A1 targeted re-ground, A3 clean, A4 found+FIXED 15x stale quality-aspect headers, A2/A5 no findings, Phase B compacted, Phase D restart-check). ⛔ PLAN-TRUTH-167 D3's base-ref HYPOTHESIS REFUTED by PR #1559 (fca06c4ca) -- claim 5 now contradicted+rescoped:no, spec is BLOCKED from next emission until re-scoped (narrower residue: merge-commit re-derivation, not upstream-base -- see spec's own FOLDED 2026-09-22 note). PLAN-TRUTH-173 claim 0 evidence updated (20->21 detectors, conclusion unchanged). A4: all 15 PLAN-2xx specs had dead quality-aspect Hand-Off Commands (quality-aspect is ARCHIVED, path never resolved) -- FIXED epic: field + hand-off path on all 15. Mid-drain: instrumentation-substrate declined 2 forwarded lessons (no matching population), restored to corpus as 2026-09-22-08-001/-002 (W-2026-09-22-a). ▶ QUEUE: 44 rows unchanged, N=1 R=0. NEXT EMIT TARGET CHANGED: PLAN-TRUTH-161 still confirmed disjoint+prep-ready (untouched by this pass); do NOT emit PLAN-TRUTH-167 until D3 re-scoped. RESTART VERDICT: NOT_READY -- worktree carries 59+ uncommitted paths across 5 epics (truthful-signals this session's own edits + orchestrator-refactor/lessons-routing pre-existing from before this session + cross-notice deliveries to instrumentation-substrate/code-intelligence-substrate/review-apparatus/test-quality/lessons-routing). Operator must decide commit scope before a fresh session can safely resume from a clean tree. Inbox genuinely empty (0 queued). A5 (distribution regroup) still declined -- 44-spec redistribution needs its own dedicated pass. ⛔⛔ PLUGIN PIN GAP STILL OPEN, OPERATOR-ONLY. ===
 **Phase**: orchestrating
-**Inbox (derived)**: 0 queued, 1142 archived
+**Inbox (derived)**: 0 queued, 1144 archived
 **Parked**:
 - PLAN-TRUTH-156 (WS-01)
 - PLAN-TRUTH-158 (WS-01)
@@ -245,7 +245,7 @@ not carried; `landings/` is their record.
 | 19 | PLAN-TRUTH-167 | WS-01 | staged | marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-self-review-surfacing.md; marketplace/bundles/plan-marshall/skills/manage-references/scripts/_cmd_compute_footprint.py; marketplace/bundles/plan-marshall/skills/manage-references/scripts/_references_core.py; marketplace/bundles/plan-marshall/skills/phase-6-finalize/workflow/pre-submission-self-review.md; marketplace/bundles/plan-marshall/skills/plan-orchestrator/standards/landing-payload-spec.md; marketplace/bundles/pm-plugin-development/skills/ext-self-review-plan-marshall/scripts/self_review.py; test/plan-marshall/phase-6-finalize/; test/pm-plugin-development/ext-self-review-plan-marshall/ |
 | 20 | PLAN-TRUTH-168 | WS-01 | staged | marketplace/bundles/plan-marshall/skills/manage-config/SKILL.md; marketplace/bundles/plan-marshall/skills/manage-config/scripts/_cmd_quality_phases.py; marketplace/bundles/plan-marshall/skills/manage-config/scripts/_cmd_sync_defaults.py; marketplace/bundles/plan-marshall/skills/manage-config/scripts/_config_defaults.py; test/plan-marshall/manage-config/ |
 | 21 | PLAN-TRUTH-169 | WS-01 | staged | marketplace/bundles/plan-marshall/skills/build-maven/; marketplace/bundles/plan-marshall/skills/build-pyproject/; marketplace/bundles/plan-marshall/skills/build-server-client/; marketplace/bundles/plan-marshall/skills/manage-build-server/; marketplace/bundles/plan-marshall/skills/phase-6-finalize/SKILL.md; marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/architecture-refresh.md; marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/push.md; marketplace/bundles/plan-marshall/skills/script-shared/scripts/build/; marketplace/bundles/plan-marshall/skills/script-shared/scripts/build/_gate_coverage.py; marketplace/bundles/plan-marshall/skills/script-shared/scripts/build/build.py; test/conftest.py; test/plan-marshall/build-server-client/; test/plan-marshall/manage-build-server/; test/plan-marshall/phase-6-finalize/** |
-| 22 | PLAN-TRUTH-170 | WS-01 | staged | marketplace/bundles/plan-marshall/skills/manage-status/scripts/; marketplace/bundles/plan-marshall/skills/manage-status/scripts/_cmd_lifecycle.py; marketplace/bundles/plan-marshall/skills/phase-5-execute/; marketplace/bundles/plan-marshall/skills/phase-6-finalize/SKILL.md; marketplace/bundles/plan-marshall/skills/phase-6-finalize/scripts/; marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/; marketplace/bundles/plan-marshall/skills/workflow-integration-git/scripts/; test/plan-marshall/manage-status/; test/plan-marshall/workflow-integration-git/ |
+| 22 | PLAN-TRUTH-170 | WS-01 | staged | marketplace/bundles/plan-marshall/skills/manage-status/scripts/; marketplace/bundles/plan-marshall/skills/manage-status/scripts/_cmd_lifecycle.py; marketplace/bundles/plan-marshall/skills/phase-5-execute/; marketplace/bundles/plan-marshall/skills/phase-6-finalize/SKILL.md; marketplace/bundles/plan-marshall/skills/phase-6-finalize/scripts/; marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/; marketplace/bundles/plan-marshall/skills/phase-6-finalize/workflow/create-pr.md; marketplace/bundles/plan-marshall/skills/workflow-integration-git/scripts/; test/plan-marshall/manage-status/; test/plan-marshall/workflow-integration-git/ |
 | 23 | PLAN-TRUTH-171 | WS-01 | staged | marketplace/bundles/plan-marshall/skills/manage-change-ledger/; marketplace/bundles/plan-marshall/skills/manage-status/**; marketplace/bundles/plan-marshall/skills/manage-status/scripts/; marketplace/bundles/plan-marshall/skills/phase-2-refine/; marketplace/bundles/plan-marshall/skills/phase-4-plan/; marketplace/bundles/plan-marshall/skills/plan-marshall/scripts/; marketplace/bundles/plan-marshall/skills/workflow-integration-git/scripts/; marketplace/bundles/plan-marshall/skills/workflow-integration-git/scripts/_cmd_prune_ref.py; marketplace/bundles/plan-marshall/skills/workflow-integration-git/scripts/git-workflow.py; test/plan-marshall/manage-change-ledger/; test/plan-marshall/manage-status/; test/plan-marshall/workflow-integration-git/ |
 | 24 | PLAN-TRUTH-172 | WS-01 | staged | marketplace/bundles/plan-marshall/skills/manage-status/scripts/_cmd_lifecycle.py; marketplace/bundles/plan-marshall/skills/phase-3-outline/workflow/light-lane.md; marketplace/bundles/plan-marshall/skills/phase-6-finalize/scripts/review_commitments.py; marketplace/bundles/plan-marshall/skills/phase-6-finalize/scripts/verdict_currency.py; marketplace/bundles/plan-marshall/skills/plan-marshall/scripts/_invariants.py; marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/planning.md; test/plan-marshall/manage-tasks/scripts/; test/plan-marshall/plan-marshall/ |
 | 25 | PLAN-TRUTH-173 | WS-01 | staged | marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-self-review-surfacing.md; marketplace/bundles/plan-marshall/skills/phase-6-finalize/workflow/pre-submission-self-review.md; marketplace/bundles/pm-plugin-development/skills/ext-self-review-plan-marshall/scripts/_self_review_detectors.py; marketplace/bundles/pm-plugin-development/skills/ext-self-review-plan-marshall/scripts/_self_review_patterns.py; test/pm-plugin-development/ext-self-review-plan-marshall/ |
@@ -1079,7 +1079,77 @@ cwd, even when invoked from a worktree with its own copied executor — only `gi
 tool correctly targeted this worktree. Worked around by mirroring main's post-write state into the
 worktree and reverting main to clean after each affected call.
 
+## Inbox drain — 2026-09-22, 1 message, 18 items dispositioned (no landing)
+
+**1 scanned / 1 archived / 0 invalid / 0 archive_failed.** One message, `lessons-handling-26-09-22-01-001.md`,
+bundling 18 candidate-lessons. ⛔ **7 of the 18 were this epic's own 2026-09-21 promotions round-tripped
+back to it** with their corpus copies then deleted by the sender's integrate-then-remove step — see Open
+Defects, forwarded to `lessons-routing`. All 7 restored to the corpus as `2026-09-22-07-001..007`.
+
+| Item | Disposition |
+|---|---|
+| `2026-09-21-10-003` (self-seeding fix) | discard, boomerang → restored `2026-09-22-07-002`; already folded into `PLAN-TRUTH-147` (2026-09-17) + `PLAN-TRUTH-173` D0 |
+| `2026-09-21-10-005` (self-review staleness) | discard, boomerang → restored `2026-09-22-07-003`; already folded into `PLAN-TRUTH-173` D2/D3 + `PLAN-TRUTH-167` D2 |
+| `2026-09-19-21-006` (monkeypatch vacuity) | discard here → forwarded to `test-quality` (`truthful-signals-001.md`), ambiguous owner vs local `PLAN-TRUTH-153` |
+| `2026-09-21-10-009` (publisher/registration edit) | discard, boomerang → restored `2026-09-22-07-006`; weakest-covered, no confirmed staged owner (nearest: `PLAN-TRUTH-173` D1/D3) |
+| `2026-09-21-10-011` (frozenset within-set vacuity) | discard, boomerang → restored `2026-09-22-07-007`; fully covered by `PLAN-TRUTH-153` D9, already fixed same PR (#1539) |
+| `2026-09-21-10-006` (roster split across two docs) | discard, boomerang → restored `2026-09-22-07-004`; covered by `PLAN-TRUTH-153` D9/D0 |
+| `2026-09-21-10-007` (deliverable named wrapper not module) | discard, boomerang → restored `2026-09-22-07-005`; no confirmed owner (LOW-CONFIDENCE: `PLAN-TRUTH-151` D0 / `code-intelligence-substrate`) |
+| `2026-09-21-13-003` (manage-lessons set-body header) | folded → **`PLAN-211` D3** — named mechanism REFUTED at HEAD (`set_body` fails closed, cannot destroy header), subject live: the 4 headerless lessons below ARE fresh population for D3's claim |
+| `2026-09-19-21-005` (verification-command mismatch) | recurrence, verbatim already inside `PLAN-TRUTH-151`'s § FOLDED 2026-09-15 (c) — no edit, no restage |
+| `2026-09-20-08-011` (suspicion heuristic vs orchestrated specs) | folded → **`PLAN-214` D1** — definitively NOT `PLAN-TRUTH-151` (opposite prescription, already-accepted corpus learning there); cross-ref `orchestrator-refactor`'s Watch for the derived population, do not re-derive |
+| `2026-09-20-07-001` (deploy-target doc/hook mismatch) | folded → **`PLAN-TRUTH-162` D3** — recurrence, routing hazard avoided (NOT `PLAN-TRUTH-159`, which is RETIRED/merged into 162) |
+| `2026-09-20-07-002` (sync-plugin-cache stale notation) | folded → **`PLAN-TRUTH-162` D3/D4** — corroborated first-party at `7d82d5d90` (live notation run reproduced the rejection); D4 design note: `.claude/**` is outside the architecture inventory |
+| `2026-09-21-10-002` (doc enumeration drift) | discard, boomerang → restored `2026-09-22-07-001`; covered by `PLAN-TRUTH-153` D8/D9 + `PLAN-TRUTH-173` |
+| `2026-09-20-08-007` (footprint capture pre-rebase) | folded → **`PLAN-TRUTH-167` D3** — ⚠ RE-GROUND before launch: PR #1559 (`fca06c4ca`, `orchestrator-refactor`) may already ship the upstream-base half; surviving residue is narrower (merge-commit re-derivation specifically) |
+| `2026-09-21-08-001` (PR-diff-size gate) | discard here → forwarded to `review-apparatus` (`truthful-signals-061.md`, primary, per standing dispatcher rule) + `code-intelligence-substrate` (`truthful-signals-061.md`, secondary, publish half) |
+| `2026-09-21-08-002` (sweep population re-derivation) | discard — code residue already routed to `code-intelligence-substrate` by the lesson's own text; rule half too thin (LOW-CONFIDENCE) to warrant a spec edit |
+| `2026-09-21-08-003` (done vs pending findings ledger) | folded → **`PLAN-TRUTH-146` D8/D9** — ⚠ possible duplicate of `review-apparatus` cross-notice `truthful-signals-058.md` (2026-09-15 drain), check before launch |
+| `2026-09-21-08-004` (PR pointer names dead PR) | folded → **`PLAN-TRUTH-170` D0/D1** (surface +1: `create-pr.md`) — consumer half split to **`PLAN-TRUTH-174` D2**, sequence 170 → 174 |
+
+All 18 drafted by dispatched `execution-context-level-5` (role `orchestrator.analyze`), corroborated and
+applied by the orchestrator. Zero queue rows staged/retired this pass — every disposition landed as a fold
+into an existing staged spec, a discard, or a cross-epic forward; no `queue --add-row` was warranted.
+
 ## Open Defects
+
+### 2026-09-22 — `7d82d5d90`: lessons-handling round-tripped this epic's own one-day-old promotions back to it, then deleted the corpus copies
+
+**FORWARDED to `lessons-routing`** (cross-notice `truthful-signals-002.md`, that epic's inbox). Draining
+message `lessons-handling-26-09-22-01-001.md` (18 bundled candidate-lessons), 7 of the 18
+(`2026-09-21-10-002`, `-003`, `-005`, `-006`, `-007`, `-009`, `-011`) turned out to be THIS epic's own
+promotions from the 2026-09-21 drain — a lessons-handling triage pass found them one day old and still
+`active` in the global corpus, matched them to this epic's theme, and re-routed them back here as if new.
+The sender's closing claim ("none `already-covered`") was false for all 7. Per the mode's
+integrate-then-remove ordering, the corpus copies were then deleted once the message was confirmed queued
+— silently inverting a deliberate promotion into a deletion. `manage-lessons list` returned `total: 0` at
+discovery. **Restored all 7 verbatim** from the still-archived source (`inbox/archive/
+truth-143-orchestrator-inbox-delivery-path/*.md`, which the delete-then-reroute never touched) as fresh
+lessons `2026-09-22-07-001` through `-007`. No fix staged on this side — the routing/dedup gap belongs to
+`lessons-routing`, forwarded per the standing dispatcher convention.
+
+### 2026-09-22 — `7d82d5d90`: `corpus cross-check`'s live-plan scan never excludes the `NO_PLAN` sentinel, so `candidate_comparison_determinate` is structurally false on every `next` run in this checkout
+
+**UNOWNED.** Root-caused ground-truth (not from the flagging paste alone — verified directly): `_live_plan_records()`
+(`plan-orchestrator/scripts/orchestrator.py:3339`) enumerates every active plan via `_iter_active_plan_dirs()`
+(`manage-status/scripts/_cmd_sibling_collision.py:129`), which includes ANY directory under `.plan/local/plans/`
+carrying a `status.json` file — with no exclusion for `.plan/local/plans/NO_PLAN`, the "plan-less operations
+sentinel" directory (`metadata.sentinel: true` in its own `status.json`). Confirmed: `NO_PLAN/status.json` exists,
+is a regular file, not a symlink — it passes every admission check `_iter_active_plan_dirs` applies. Grepped both
+files for `sentinel`/`NO_PLAN` — no filter exists; the one `sentinel` hit in `_iter_active_plan_dirs`'s own
+docstring ("directories carrying a `status.json` sentinel are included") is an unrelated use of the word (status.json
+as a presence marker), not a NO_PLAN exclusion, which reads as handling on a skim but isn't.
+
+Because `NO_PLAN` carries no `references.json`, `_read_affected_files` returns an empty set, so
+`_live_plan_records` flags it `comparable: False` — it lands in `corpus cross-check`'s `live_indeterminate_plans[]`
+on every single invocation, in every epic, permanently (the sentinel directory is a fixture, not a transient state).
+That makes `candidates_indeterminate >= 1` for `candidate_kind: live_plan` unconditionally, which per
+ADR-019's fail-closed rule sets `candidate_comparison_determinate: false` — the `next` verb's third disjointness
+conjunct ([orchestrate.md § Step 4](../../plan-orchestrator/workflow/orchestrate.md)) can therefore never pass
+on its own reading in this checkout; every emit that has ever cleared it did so on an operator override (as the
+2026-09-22 paste describes) or went unnoticed. Fix belongs in `_iter_active_plan_dirs` (or `_live_plan_records`):
+skip a plan dir whose `status.json` carries `metadata.sentinel: true`, or hard-code the `NO_PLAN` name exclusion.
+No spec currently owns this.
 
 ### 2026-09-21 — `74153664d`: cleanup A1 re-grounding found 5 staged specs blocking on refuted pointer claims
 
@@ -2608,6 +2678,22 @@ cannot see this: the 22 renderings pass green either way until something tries t
 > ↪ Relocated to `settled.md` § "✅ Resolved / retracted — compacted 2026-08-08, retained as the record" — the retraction record itself, retained and reachable rather than dropped
 
 ## Watches
+
+### W-2026-09-22-a — `instrumentation-substrate` declined 2 forwarded lessons, both restored to corpus
+
+Inbox message `instrumentation-substrate-001.md`: that epic (formerly `next-level`) checked forwarded
+candidate-lessons `2026-09-03-16-004` (security remedy validated against local state only) and
+`2026-09-05-08-001` (narrowed catch drops finally-less cleanup) against its 9 staged specs — none covers
+domain-skill content rules, only CLAUDE.md-bounded procedural rules. Recommended restoring both as
+standing corpus rules. Restored verbatim as `2026-09-22-08-001` / `-002`. No further action owed on
+either side — this is the round-trip's clean-decline counterpart, not a defect (unlike the 2026-09-22
+`lessons-routing` round-trip Open Defect, which silently re-routed and deleted rather than declining and
+recommending restoration).
+
+⚠ Their decline message itself cited the retired `.plan/local/orchestrator/truthful-signals/lessons/
+forwarded-to-other-epics/` path (files are actually at the current `.plan/orchestrator/...` path) —
+another instance of the pervasive path-drift already recorded under "2026-09-21 — path drift and
+unreachable evidence" above.
 
 ### W-1560-a — a `ci pr merge-queue` wait-loop hung once, recovered by manual re-enqueue
 

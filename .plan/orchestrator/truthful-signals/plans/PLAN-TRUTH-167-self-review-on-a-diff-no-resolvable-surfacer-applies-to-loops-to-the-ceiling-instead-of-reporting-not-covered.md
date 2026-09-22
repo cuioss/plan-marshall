@@ -72,29 +72,29 @@ surfacer applied" from "reviewed clean" without reading `may_close=no` from a st
 - OBSERVED: Step 1 selects "the first implementor whose notation **resolves in the current executor**" —
   `marketplace/bundles/plan-marshall/skills/phase-6-finalize/workflow/pre-submission-self-review.md` line 115,
   read at `7a028157e`.
-  - verdict: corroborated | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: pre-submission-self-review.md:119 still reads Select the first implementor whose notation resolves in the current executor (line moved from 115).
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: truthful-signals/cleanup | rescoped: n/a | evidence: pre-submission-self-review.md:119 still reads 'Select the first implementor whose notation resolves in the current executor' (unchanged since PR #1559).
 - OBSERVED: the zero-generator fallback and its not-run verdict exist but are reached only when NO
   implementor resolves — `pre-submission-self-review.md` lines 177–179 and 395, read at `7a028157e`.
-  - verdict: corroborated | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: pre-submission-self-review.md:181-183 carries the zero-generator fallback and the not-run verdict string, gated on when NO discovered implementor resolves (lines moved from 177-179).
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: truthful-signals/cleanup | rescoped: n/a | evidence: pre-submission-self-review.md:181-183 still carries the zero-generator fallback and the not-run verdict string, gated on when NO discovered implementor resolves (unchanged since PR #1559).
 - OBSERVED: `verdict_refused`, `further_round_owed`, and `verifier_unavailable` all map to `loop_back` —
   `pre-submission-self-review.md` lines 503–505, read at `7a028157e`.
-  - verdict: corroborated | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: pre-submission-self-review.md:505-509 is a three-row table mapping verdict_refused, further_round_owed and verifier_unavailable all to recorded outcome loop_back, restated as absolute at line 518.
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: truthful-signals/cleanup | rescoped: n/a | evidence: pre-submission-self-review.md:505-509 still maps verdict_refused, further_round_owed and verifier_unavailable all to loop_back (unchanged since PR #1559).
 - OBSERVED: the plan-marshall surfacer defaults its base to local `main` —
   `marketplace/bundles/pm-plugin-development/skills/ext-self-review-plan-marshall/scripts/self_review.py`
   line 285 (`base_branch = args.base_branch or 'main'`), read at `7a028157e`.
-  - verdict: corroborated | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: self_review.py:285 is exactly base_branch = args.base_branch or main - unchanged, same line number.
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: truthful-signals/cleanup | rescoped: n/a | evidence: self_review.py:292 is exactly base_branch = args.base_branch or 'main' - unchanged text, line moved from 285 by PR #1559.
 - OBSERVED: `ext-self-review-plan-marshall` is the only surfacer implementor; no detector reads Java (per the
   sender's `git ls-tree` sweep at `7a028157e`, corroborated by directory listing at staging).
-  - verdict: corroborated | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: architecture search --content over 3097 files (clean coverage) shows exactly one implementor bundle, pm-plugin-development:ext-self-review-plan-marshall; no Java/other-domain surfacer exists.
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: truthful-signals/cleanup | rescoped: n/a | evidence: grep across marketplace/bundles/*/skills/*/SKILL.md for the ext-point-self-review-surfacing implements line still returns exactly one bundle, pm-plugin-development:ext-self-review-plan-marshall; no Java/other-domain surfacer added by PR #1559.
 - HYPOTHESIS: `manage-references compute-footprint` resolves `--base-ref` to local `{base}` after a rebase
   onto `origin/{base}` — confirm/refute at
   `marketplace/bundles/plan-marshall/skills/manage-references/scripts/_cmd_compute_footprint.py` § the base-ref
   default (verify-at-outline).
-  - verdict: corroborated | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: _cmd_compute_footprint.py:69 calls resolve_base_ref, which (_references_core.py:167-176) falls back to the bare LOCAL branch name and finally the literal main. Never origin/{base}. HYPOTHESIS confirmed.
+  - verdict: contradicted | checked_at: 7d82d5d90 | by: truthful-signals/cleanup | rescoped: no | evidence: REFUTED by PR #1559 (fca06c4ca). resolve_base_ref (_references_core.py:220-250) now PREFERS origin/{base_branch} with fully-qualified remote-tracking verification before falling back to the local base_branch/main. The 'never origin/{base}' finding no longer holds. D3's premise needs re-scoping; the narrower surviving residue (capture never re-derived against the MERGE commit specifically, only against upstream base) is recorded in this spec's own FOLDED 2026-09-22 section. Not yet re-scoped.
 - HYPOTHESIS: the extension point declares no content-class domain an implementor could be matched on —
   confirm/refute at `marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-self-review-surfacing.md`
   § the implementor contract (verify-at-outline).
-  - verdict: corroborated | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: ext-point-self-review-surfacing.md declares an implementor via implements: frontmatter plus a CLI contract only; no content-class/domain declaration exists for selection to match on. delta_coverage per-content-class counts are an OUTPUT field, not an applicability declaration.
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: truthful-signals/cleanup | rescoped: n/a | evidence: ext-point-self-review-surfacing.md still declares an implementor via implements: frontmatter plus a CLI contract only; no content-class/domain declaration for selection exists. delta_coverage per-content-class (line 70) remains an OUTPUT field, not an applicability input. Unchanged by PR #1559.
 
 ## Expected Surface
 
@@ -152,6 +152,24 @@ now has its own derived key (`realized_footprint`), captured by `capture-footpri
 early capture would miss. ⛔ **Not fully closed, though**: that capture takes a `--base-ref`, so it inherits
 exactly the staleness D3 fixes. The under-recording did not survive under a new key; the base-ref defect it
 would have been measured with did.
+
+## ⚠ 2026-09-22 — D3's premise needs RE-GROUNDING against `fca06c4ca`; the surviving residue is narrower
+
+Inbox lesson `2026-09-20-08-007` (relayed via `lessons-handling-26-09-22-01`): `realized_footprint` is
+captured from pre-rebase worktree state and never re-derived against the merge commit — a rebase collapsed
+one file's change to a no-op and the record over-claimed it as shipped.
+
+⛔ **This may already be substantially SHIPPED, cross-epic, since this spec's claims were stamped
+`corroborated | checked_at: 74153664d`.** PR **#1559** (`fca06c4ca`, merged 2026-09-21, from
+`orchestrator-refactor`) — *"feat(footprint): diff realized footprint against upstream base"* — lands
+`resolve_base_ref` with merge-base semantics and fail-loud-when-behind-upstream across
+`_references_core.py`, `_cmd_compute_footprint.py`, `self_review.py` and a new `_self_review_diff.py`,
+landed AFTER D3's own claims were last corroborated. **What plausibly survives** as this lesson's distinct
+residue: the capture is still taken from pre-merge WORKTREE state and is never re-derived against the
+MERGE commit specifically — #1559's own PR body names as an explicit non-goal *"does not add
+realized-footprint capture at branch-cleanup (already in-tree)"*. D3 must be RE-GROUNDED against
+`fca06c4ca` at outline before this residue is scoped further; do not launch D3 on its current premise
+without that check. No surface change — `references.json`/footprint capture already declared.
 
 ## Write-Boundary
 

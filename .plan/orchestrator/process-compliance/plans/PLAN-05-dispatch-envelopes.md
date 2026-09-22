@@ -29,15 +29,15 @@ Each gap gets a contract plus a closure test.
 ## Claim Labels
 
 - OBSERVED: Generic dispatch must defer to step-owned dispatch bodies — read at `.plan/local/orchestrator/process-compliance/epic.md` § `Inherited Material F`
-  - verdict: unverifiable | checked_at: 93bda90 | by: process-compliance/cleanup | rescoped: n/a | evidence: ledger cite (epic Inherited Material F) not re-opened this pass; run-behavior premise needs outline evidence
+  - verdict: unverifiable | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: process-compliance/cleanup | rescoped: n/a | evidence: epic.md Inherited Material F unchanged since prior check (git diff 93bda90..HEAD confirms epic.md not in changed set); ledger-cite premise still not re-opened; unchanged
 - OBSERVED: Fix-task loop-back dispatch shape states no envelope fields — read at `.plan/local/orchestrator/process-compliance/epic.md` § `Inherited Material F`
-  - verdict: unverifiable | checked_at: 93bda90 | by: process-compliance/cleanup | rescoped: n/a | evidence: ledger cite (epic Inherited Material F) not re-opened this pass; run-behavior premise needs outline evidence
+  - verdict: unverifiable | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: process-compliance/cleanup | rescoped: n/a | evidence: epic.md Inherited Material F unchanged since prior check; ledger-cite premise still not re-opened; unchanged
 - OBSERVED: `loop_back_target` is missing on verification-feedback loop_back returns — read at `.plan/local/orchestrator/process-compliance/epic.md` § `Inherited Material F`
-  - verdict: unverifiable | checked_at: 93bda90 | by: process-compliance/cleanup | rescoped: n/a | evidence: ledger cite (epic Inherited Material F) not re-opened this pass; run-behavior premise needs outline evidence
+  - verdict: unverifiable | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: process-compliance/cleanup | rescoped: n/a | evidence: epic.md Inherited Material F unchanged since prior check; ledger-cite premise still not re-opened; unchanged
 - HYPOTHESIS: The dispatch registry seam lives under the execute-task / phase-5 dispatch paths — confirm/refute at `marketplace/bundles/plan-marshall/skills/execute-task/scripts/inject_project_dir.py` § `inject_project_dir` (verify-at-outline; corrected 2026-09-18: full symbol, subcommand dispatch at :208)
-  - verdict: corroborated | checked_at: 93bda90 | by: process-compliance/cleanup | rescoped: n/a | evidence: inject_project_dir defined at inject_project_dir.py:82 with subcommand dispatch at :208
+  - verdict: corroborated | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: process-compliance/cleanup | rescoped: n/a | evidence: inject_project_dir.py unchanged since 93bda90; inject_project_dir still defined at :82 with subcommand dispatch at :208; re-confirmed
 - Verify-first clause: The consuming phase must settle the HYPOTHESIS against the implementing source before scoping — refutation loops back to re-scope.
-  - verdict: unverifiable | checked_at: 6e239a13762514dc8e1f3fbceeb70b3d21ebac06 | by: process-compliance/cleanup | rescoped: n/a | evidence: procedural instruction to the consuming phase, not a checkable world premise; no implementing-source check applies
+  - verdict: unverifiable | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: process-compliance/cleanup | rescoped: n/a | evidence: procedural instruction to the consuming phase, not a checkable world premise; no implementing-source check applies
 
 ## Expected Surface
 

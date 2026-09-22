@@ -175,6 +175,31 @@ invented verb or flag, so every occurrence leaves its source to be guessed.
 /plan-marshall task="implement .plan/local/orchestrator/truthful-signals/plans/PLAN-TRUTH-162-argparse-rejections-recur-despite-documented-signatures-the-canonical-hint-is-not-uniform.md"
 ```
 
+## ⭐ FOLDED 2026-09-22 — two more instances of D3's class, one first-party-verified
+
+Two inbox lessons relayed via `lessons-handling-26-09-22-01`, both `.claude/skills/**` — already D3/D4's
+declared population, no surface change.
+
+- `2026-09-20-07-001`: `finalize-step-deploy-target` documents a bare `./pw generate-claude`, blocked by
+  the hard-rule hook; `architecture resolve` has no registered canonical form for it either. ⛔ Routing
+  hazard avoided: this is NOT a `PLAN-TRUTH-159` item — that spec's first six lines read "MERGED OUT
+  2026-09-18 (cleanup A5) — RETIRED, substance now lives in PLAN-TRUTH-162 as D3/D4." Pure recurrence of
+  D3's already-corroborated (`checked_at: 7a028157e`) claim, including the redirect dead-end half
+  (`architecture resolve --command generate-claude` → `Command not found`) and the binding operator
+  decision (no R4 carve-out).
+- `2026-09-20-07-002`: **corroborated first-party at `7d82d5d90`, twice.**
+  `.claude/skills/finalize-step-sync-plugin-cache/SKILL.md:175` still prescribes
+  `python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done …`; running it
+  live returns `SCRIPT_ERROR … Unknown notation … Correct format: plan-marshall:manage-status:manage-status
+  manage_status`. The step's own documented § 4 "Mark step complete" is an invocation the enforced surface
+  rejects on every run — D3's exact class. Second-order finding for D4's design: a detector for this
+  already exists (`plugin-doctor/scripts/_analyze_notation_staleness.py`) and this site survives it,
+  because `.claude/skills/**` is outside the architecture inventory (`architecture search --content` over
+  3,097 files returns 154 `manage_status` hits in 78 files, none under `.claude/`) — D4's lint-time
+  detector must not be built on the inventory or it inherits the same blind spot. ⚠ Never pair `-162` with
+  `-154` in a parallel launch: PLAN-TRUTH-154's Expected Surface declares this same
+  `.claude/skills/finalize-step-sync-plugin-cache/SKILL.md` path.
+
 ## Write-Boundary
 
 The plan implementing this spec touches only its own repository source and tests. It creates and edits

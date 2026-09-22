@@ -30,6 +30,11 @@ Classify what a bot published in both directions, refuse to credit what was neve
 | D10 | Make the pair-shaped flags self-describing at the call site | `PLAN-PR-051` § D2 | `PLAN-PR-058` D7 |
 | D11 | Prove the gate against its own documented invocations | `PLAN-PR-051` § D3 | `PLAN-PR-058` D8 |
 
+⭐ **Recurrence (lesson `2026-09-19-21-001`, drained 2026-09-22 via `lessons-handling-26-09-22-01`):** a
+required `cuioss-review-bot` still can never verify on a first clean review — no commit permalink
+exists yet to anchor the verification against. This is the currency-blind disposition D5/D6 already
+own (`reviewed_commit_sha` records coverage, not observation). No new deliverable; folds as a second
+occurrence on D5/D6.
 
 **D0 — GATE, mutates nothing.** The merged re-grounding gate. From `PLAN-PR-053` D0: re-ground both
 coverage claims at HEAD and derive the set of write sites that would have to split the two facts. From
@@ -75,6 +80,17 @@ name blocks in one place and silently inflates a ratio in the other. The concret
 is read through ONE shared surface whose refusals every consumer inherits, and a test proves an
 unregistered token reaches the same disposition on both paths. ⚠ Sits beside `epic.md`'s standing
 `bot_kind`-rename-with-no-propagation entry — the same config, the same absence of a shared reader.
+
+**D5/D6 amendment 2026-09-22 (re-grounding pass, cleanup A1).** `#1510` (sibling epic
+`instrumentation-substrate`, its PLAN-03) shipped the SHA-comparison currency guard this pair owns —
+`_github_pr.bot_claimed_sha_matches_head()`, `_github_checks.carry_currency_verdict_to_check_state()`
+and a `currency_current` overlay on `_derive_overall_status()` — **but it is NOT WIRED**:
+`bot_claimed_sha_matches_head` has no production caller in the inventoried tree, and the overlay's
+`currency_current` defaults to `None` (pre-currency behaviour) with nothing passing it. ⇒ D5/D6 are
+RE-SCOPED from *decide the disposition, then build the discriminator* to *decide, then WIRE the
+discriminator that already exists* — and their shared D1 gate must publish whether the `#1510` helpers
+are reachable from production before either edits them. ⚠ Coverage bound: the content-search tool does
+not walk `.claude/**` or `.github/**`, so "no production caller" is "none in the inventoried tree."
 
 Thirteen deliverables. ⚠ The 12 ceiling is a **guideline, not a hard limit** (operator ruling 2026-09-15):
 up to ~14 is acceptable when the aspects fit together — so a thirteenth is admissible only if it belongs
@@ -123,20 +139,27 @@ feeds an existing one):
 - OBSERVED (2026-09-18): every deliverable in this plan was carried verbatim from the theme spec named
   in its `Carried from` column, which carries the claim labels for its own deliverables. Confirm/refute
   by reading that spec's `## Claim Labels` section — this plan re-states none of them.
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: review-apparatus/cleanup | rescoped: n/a | evidence: Structural carried-verbatim claim, verified by reading this spec at HEAD: twelve pointer deliverables plus D0/D1 merged gates and the 2026-09-15 evidence amendment, none of which restates a body.
 - OBSERVED (2026-09-18, orchestrator `corpus surfaces` + per-deliverable mapping): this plan's declared
   surface is disjoint from every other live plan's in this epic. Confirm/refute with
   `orchestrator corpus cross-check --slug review-apparatus`.
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: review-apparatus/cleanup | rescoped: n/a | evidence: DISJOINTNESS HOLDS, derived by membership over corpus surfaces: this plan nine declared paths (review_completeness.py, automatic-review/SKILL.md, github_re_review.py and six test modules) appear on no other staged spec declared surface. Confirmed by derivation, NOT by corpus cross-check - that verb is non-determinate at HEAD (5628 overlap rows, candidate_comparison_determinate false) because the live/archived epic split made this epic own archived snapshot a sibling-epic candidate.
 - OBSERVED (first-party, 2026-09-15): `plan-marshall#1438` merged `2026-09-07T07:58:16Z` with no labels
   and zero `coderabbitai[bot]` reviews, after `#1407` made CodeRabbit required. Confirm/refute at
   `repos/cuioss/plan-marshall/pulls/1438` and its `/reviews`. ⭐ D0 derives, for every merged
   plan-marshall PR since `#1407`, whether each required bot actually reviewed.
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: review-apparatus/cleanup | rescoped: n/a | evidence: Historical GitHub record (plan-marshall#1438 merged 2026-09-07T07:58:16Z, no labels, zero coderabbitai[bot] reviews, after #1407 made CodeRabbit required). Immutable; no commit in this window disturbs it. Same underlying fact as PLAN-PR-058 claim 3 and the two agree. Not re-read via gh this pass.
 - OBSERVED (corpus pass 2026-09-15): 74 of 181 PRs carry a CodeRabbit refusal inside the summary
   comment, 71 as in-place edits, 54 alongside real reviews; "Review skipped: No new commits" (×5) and
   "Review failed: The pull request is closed" (×1) sit in the same structural slot and are NOT
   refusals. This is D0's starting population for the marker sample, not the sample itself.
+  - verdict: unverifiable | checked_at: 7d82d5d90 | by: review-apparatus/cleanup | rescoped: n/a | evidence: Corpus-pass population over 181 external PRs (74 carrying a CodeRabbit refusal inside the summary comment, 71 as in-place edits, 54 alongside real reviews). An external sample, unreachable by a git diff and not re-sampled. Still D0 STARTING population for the marker sample, never the sample.
 - OBSERVED (first-party, 2026-09-18): the `--measured-diff-size` crash half is SHIPPED
   (`review_completeness.py:1955-1970`, `nargs='?', const='', default=''`), landed undeclared by
   `PLAN-PR-033` (#1473). What remains for D10 is the empty-argument guarantee scope and its sweep.
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: review-apparatus/cleanup | rescoped: n/a | evidence: Re-grounded FIRST-PARTY at HEAD, with a correction and a new caveat. The --measured-diff-size flag survives: review_completeness.py carries 4 occurrences and the usage block still advertises it. LINE DRIFT: the cited 1955-1970 is stale - review_completeness.py gained 94 lines in this window (#1510 select_stale_bot_for_trigger, cmd_trigger_bot, the trigger-bot subparser). Anchor on the symbol, not the coordinate. NEW, bearing on what remains of D10: two dedicated test modules landed in this window that did not exist at the prior stamp - test_measured_diff_size_bare_flag_parsing.py and test_measured_diff_size_bare_flag_scan.py (6 matches each). D10 empty-argument guarantee scope may be partly discharged; establish that before scoping it.
+- OBSERVED (first-party, 2026-09-22, cleanup A1 re-grounding): `#1510` shipped `_github_pr.bot_claimed_sha_matches_head()`, `_github_checks.carry_currency_verdict_to_check_state()`, and the `currency_current` overlay on `_derive_overall_status()` — the SHA-comparison currency guard D5/D6 own — but none has a production caller in the inventoried tree. Confirm/refute at those three symbols and their call sites.
+  - verdict: contradicted | checked_at: 7d82d5d90 | by: review-apparatus/cleanup | rescoped: yes | evidence: The currency-blind premise D5/D6 rest on is DISTURBED AT HEAD, in a way the spec could not see before this bullet was added. #1510 shipped the SHA-comparison currency guard D5/D6 own, but it is NOT WIRED - no production caller in the inventoried tree, and the overlay currency_current defaults to None (pre-currency behaviour). RE-SCOPE applied to the deliverable body in the same edit: D5/D6 are now decide-then-WIRE the discriminator that already exists, and D1 must publish reachability before either edits it.
 
 ## Dependencies and Sequencing
 
@@ -153,10 +176,10 @@ feeds an existing one):
 ## Hand-Off Command
 
 ```text
-/plan-marshall task="implement .plan/local/orchestrator/review-apparatus/plans/PLAN-PR-070-participation-and-what-the-gate-may-credit.md"
+/plan-marshall task="implement .plan/orchestrator/review-apparatus/plans/PLAN-PR-070-participation-and-what-the-gate-may-credit.md"
 ```
 
 ## Write-Boundary
 
 The plan implementing this spec writes to its own repository source only. It creates and edits NO file
-under `.plan/local/orchestrator/` other than its own `inbox/{sender}-{seq}` message.
+under `.plan/orchestrator/` other than its own `inbox/{sender}-{seq}` message.

@@ -131,6 +131,26 @@ UNCHANGED incumbent surface ADR-023 keeps at all 282 sites) is explicitly NOT in
   the plan's own kebab key, distinct from the epic name) and a
   `queue --add-row --slug-value` argument. This spec does NOT rename that field — see
   D6 for the separate two-identity question the rename must not conflate with it.
+- OBSERVED (folded 2026-09-22, from `lessons-handling-26-09-22-01` candidate-lesson
+  `2026-09-19-13-001`, corroborated against HEAD before folding — first-party evidence
+  for D6, not theorised risk) — the `--target-plan` mailbox-delivery routing check and
+  the plan-side mailbox read already use TWO DIFFERENT plan-identity grammars for the
+  same `(epic_slug, plan_id)` address, so delivery cannot fire in any real epic today.
+  `_orchestrator_inbox.py:461-484` (`_running_plan_ids`) derives the routing set from
+  `status.json` `plans[].id` — the epic-local ordinal, `PLAN-NN` uppercase, in every
+  real epic's row shape (confirmed against this epic's own `status.json`). `manage-status`
+  `_cmd_lifecycle.py:183` (`_resolve_mailbox_checkpoint`) reads a plan's OWN mailbox
+  using its `plan_id` as passed by `manage-status` callers — the plan-marshall kebab id
+  (e.g. `tracked-orchestrator-store-resolver`), never the `PLAN-NN` ordinal a running
+  plan has no ready way to know. A `--target-plan` supplied in the vocabulary the read
+  side uses can therefore never match the write side's `_running_plan_ids()` set, so
+  routing silently falls through to `destination: queue` every time — undetected because
+  `test_inbox_channel_contract.py`'s own fixture seeds a synthetic kebab-cased `id`
+  (`'plan-alpha'`) that happens to match its own kebab `target_plan`, masking the
+  mismatch a real `PLAN-NN`-shaped row exposes. D6 must settle which grammar each of
+  `queue`'s `id`/`--plan-id` and the channel's `--target-plan`/mailbox-read `--plan-id`
+  addresses before D1/D5 touch either — this is now a reproduced, not merely theorised,
+  instance of exactly the ambiguity D6 already names.
 - OBSERVED (from `identifier-vocabulary-decision-001`, PLAN-04's D4 brief, derived from
   `git ls-files` over 3,207 tracked files at PLAN-04's HEAD, zero unreadable) — the sized
   RENAME surface is **31 source files / 43 prose files** (A∪B=31, A∪B∪C=76 total minus
@@ -175,15 +195,18 @@ UNCHANGED incumbent surface ADR-023 keeps at all 282 sites) is explicitly NOT in
   ownership must be confirmed before editing; `truthful-signals/epic.md:2160-2166`
   records the same caution for the same script. Confirm/refute at that skill's `SKILL.md`
   and its surface-derivation standard (verify-at-outline).
+  - verdict: corroborated | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: orchestrator-refactor/cleanup | rescoped: n/a | evidence: the script is cross-bundle and all four artifacts exist: pm-plugin-development/skills/tools-epic-surface-partition/{SKILL.md,scripts/_epic_partition.py,scripts/epic-surface-partition.py,standards/epic-surface-derivation.md} (git ls-files, 4 files). Caveat: the supporting truthful-signals/epic.md:2160-2166 line citation is now STALE - that range holds unrelated D-087 content post-restructuring; PLAN-06's claims 4/5 cite the same stale range.
 - HYPOTHESIS — an accepted-alias period is unnecessary because every caller is in-repo;
   confirm/refute against the four-condition checklist at
   `phase-3-outline/standards/outline-workflow-detail.md:815-829`, condition by condition,
   and record each answer on the deliverable (verify-at-outline).
+  - verdict: corroborated | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: orchestrator-refactor/cleanup | rescoped: n/a | evidence: checklist is exactly where cited: outline-workflow-detail.md:815-822 (four-condition table) + :824-829 (decision table), header :809. ADR-023 section(a):136 already took the clean break - --slug retired at every site, no alias/transition window recorded. Condition 2 holds by construction: the only two --slug sites are in-repo (orchestrator.py, platform_runtime.py:458), epic-surface-partition already on --epic. ADR-024 sets the same no-shim precedent for this epic's other retired address.
 - Verify-first clause: ADR-007 records that the deleted-symbol / renamed-identifier
   survivor class has NO whole-surface detector, and that any future detector derives its
   inputs git-natively (`list_tracked_files`/`hash_objects`), never by parsing diff text.
   D7's survivor sweep is this plan's own proof of completeness; do not assume the edit
   set was complete because the build is green.
+  - verdict: corroborated | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: orchestrator-refactor/cleanup | rescoped: n/a | evidence: ADR-007 Survivor taxonomy :39-41 - deleted symbol is the class with no dedicated whole-surface detector; :49-51 - a rename is a deletion plus an addition, stale references to the old name are exactly the deleted-symbol case. Shape of a future detector :161-172 mandates source_fingerprint.list_tracked_files/hash_objects, :176-177 forbids parsing diff text. ADR-023 Risks :269-274 independently restates the same constraint for this exact rename.
 
 ## Expected Surface
 

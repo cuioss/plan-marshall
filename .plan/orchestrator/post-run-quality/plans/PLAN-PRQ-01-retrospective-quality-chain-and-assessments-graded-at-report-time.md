@@ -14,12 +14,21 @@ PLAN-TRUTH-123 (the quality chain) and PLAN-TRUTH-130 (assessments graded at rep
 spec and both of its superseded sources stay on disk in that epic as the audit record and are the
 authority for every carried claim:
 
-- `.plan/local/orchestrator/truthful-signals/plans/PLAN-TRUTH-152-the-retrospective-quality-chain-and-assessments-graded-at-report-time.md`
-- `.plan/local/orchestrator/truthful-signals/plans/PLAN-TRUTH-123-the-quality-chain-has-no-score-and-a-disabled-gate-is-indistinguishable-from-a-clean-one.md`
-- `.plan/local/orchestrator/truthful-signals/plans/PLAN-TRUTH-130-an-assessment-is-read-at-report-time-and-grades-a-correct-action-as-a-violation.md`
+- `.plan/archived-orchestrators/truthful-signals-26-09-21/plans/PLAN-TRUTH-152-the-retrospective-quality-chain-and-assessments-graded-at-report-time.md`
+- `.plan/archived-orchestrators/truthful-signals-26-09-21/plans/PLAN-TRUTH-123-the-quality-chain-has-no-score-and-a-disabled-gate-is-indistinguishable-from-a-clean-one.md`
+- `.plan/archived-orchestrators/truthful-signals-26-09-21/plans/PLAN-TRUTH-130-an-assessment-is-read-at-report-time-and-grades-a-correct-action-as-a-violation.md`
 
-The source row is retired in `truthful-signals` with a pointer here. ⛔ It is `parked` rather than
-`transferred` because `queue --transition` cannot write that status — see the epic's `## Decisions`.
+The source row is retired in `truthful-signals-26-09-21` (now `transferred` — the earlier `parked`
+workaround note above no longer applies; `queue --transition` accepts `transferred` in the settled status
+vocabulary) with a pointer here.
+
+⛔ **RE-GROUNDED 2026-09-22 (cleanup, `checked_at: 7d82d5d90`).** The three paths above were corrected
+from `.plan/local/orchestrator/truthful-signals/plans/…` — dead at HEAD since the 7d82d5d90 live/archived
+epic-store split relocated `truthful-signals-26-09-21` (a CLOSED epic) to `archived-orchestrators/`. The
+`## Claim Labels` section's own re-derivation instruction was unexecutable against the stale paths;
+`orchestrator corpus read --slug truthful-signals --plan PLAN-TRUTH-123|-130|-152` all return
+`spec_not_found` because the epic is `truthful-signals-26-09-21`, not `truthful-signals`. D0 cannot execute
+against the source epic's live queue without the corrected slug either.
 
 ## Objective
 
@@ -74,14 +83,14 @@ restatement — D0 owns that re-grounding.
 
 - HYPOTHESIS: every scoping premise carried from PLAN-TRUTH-123 still holds at HEAD — confirm/refute at
   that spec's `## Claim Labels` (verify-at-outline)
-  - verdict: contradicted | checked_at: 1605831c5 | by: post-run-quality/cleanup | rescoped: yes | evidence: PLAN-TRUTH-123 carries persisted verdicts (checked_at 66320e70d): 18 corroborated/3 contradicted(rescoped:yes)/2 unverifiable -- not every premise holds. D0 corrected to read those verdicts rather than re-derive.
+  - verdict: contradicted | checked_at: 7d82d5d90 | by: post-run-quality/cleanup | rescoped: yes | evidence: PLAN-TRUTH-123 carries 23 claims: 18 corroborated/3 contradicted(rescoped:yes)/2 unverifiable -- not every premise holds; its own RE-SCOPED table records the 3 unrepaired. Sibling premise (review_commitments.py COMMITTED/RELEASED_RESOLUTIONS) holds byte-exact. Rescoped: D0 already owns reading persisted verdicts, contradictions narrow the reportable population rather than invalidate the plan
 - HYPOTHESIS: every scoping premise carried from PLAN-TRUTH-130 still holds at HEAD — confirm/refute at
   that spec's `## Claim Labels` (verify-at-outline)
-  - verdict: unverifiable | checked_at: 1605831c5 | by: post-run-quality/cleanup | rescoped: n/a | evidence: PLAN-TRUTH-130 carries persisted verdicts: 5 unverifiable (4 from a removed plan dir, evidence base gone), 2 corroborated. Surviving structural claim (add_assessment lacks effective-from field) grounds D5 directly; treat -130's measurements as unrecoverable evidence, not facts to re-check.
+  - verdict: contradicted | checked_at: 7d82d5d90 | by: post-run-quality/cleanup | rescoped: yes | evidence: PLAN-TRUTH-130 bullet 6 carries no verdict and is recorded REFUTED in its own RE-SCOPED table. Re-derived first-party: light-lane.md:155 documents a mainline deliverable-revision path that touches no assessment -- a carried premise demonstrably fails (contradiction, not unverifiability). Mechanism half stands: effective_from 0 hits repo-wide, add_assessment single-sited, check-outline-vs-shipped sole consumer -- D5 premise intact, refutation supplies D0's worked example
 - OBSERVED: the transfer changed no deliverable's content. The 11 above are the source's D0–D10 verbatim
   in substance; only the epic, the workstream and this provenance framing differ. Re-read the source to
   confirm before scoping.
-  - verdict: contradicted | checked_at: e8a71650 | by: post-run-quality/cleanup | rescoped: yes | evidence: Compared against truthful-signals PLAN-TRUTH-152 source. D1-D9 verbatim in substance. Three divergences: (a) D0 wording shortened and adds an unsourced 'publish population and size' obligation; (b) D10 sequencing softened -- source :35/:72 states a HARD 'must land after PLAN-TRUTH-146', PRQ-01 recorded 'Depends on: none'; (c) Expected Surface dropped the recursive glob plan-retrospective/scripts/** (source had 21 entries, PRQ-01 has 20) -- read by the disjointness gate, not cosmetic.
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: post-run-quality/cleanup | rescoped: n/a | evidence: all three divergences the prior contradicted verdict (e8a71650) found have since been REPAIRED in PRQ-01's own text: D0 now carries PLAN-TRUTH-152:25's exact wording, Dependencies now states the hard PLAN-TRUTH-146 ordering, Expected Surface re-counted 21/21 identical sets including the recursive glob. D1-D10 match -152's substance
 
 ## Expected Surface
 

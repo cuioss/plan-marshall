@@ -132,9 +132,11 @@ this cluster; the headroom is for what it returns.
 - OBSERVED (2026-09-18): every deliverable in this plan was carried verbatim from the theme spec named
   in its `Carried from` column, which carries the claim labels for its own deliverables. Confirm/refute
   by reading that spec's `## Claim Labels` section — this plan re-states none of them.
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: review-apparatus/cleanup | rescoped: n/a | evidence: Structural carried-verbatim claim, verified by reading this spec at HEAD: nine pointer deliverables plus five inline amendments, each marked as an absorbed lesson with its provenance rather than a restated body.
 - OBSERVED (2026-09-18, orchestrator `corpus surfaces` + per-deliverable mapping): this plan's declared
   surface is disjoint from every other live plan's in this epic. Confirm/refute with
   `orchestrator corpus cross-check --slug review-apparatus`.
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: review-apparatus/cleanup | rescoped: n/a | evidence: DISJOINTNESS HOLDS, derived by membership over all fourteen declared paths against every other staged spec - the phase-6-finalize split against PLAN-PR-073 (landing surface), PLAN-PR-077 (push/create-pr) and PLAN-PR-075 (telemetry) is clean, no shared path. Surface MOVED though: phase-6-finalize/SKILL.md (+14), review_commitments.py, branch-cleanup.md (+19), four test modules all changed in this window. Light method: not re-audited line by line; the D10 amendment cited review_commitments.py:402 must be re-anchored on its symbol.
 
 
 ## Dependencies and Sequencing
@@ -153,10 +155,10 @@ this cluster; the headroom is for what it returns.
 ## Hand-Off Command
 
 ```text
-/plan-marshall task="implement .plan/local/orchestrator/review-apparatus/plans/PLAN-PR-074-the-merge-gate-and-the-finalize-dispatcher.md"
+/plan-marshall task="implement .plan/orchestrator/review-apparatus/plans/PLAN-PR-074-the-merge-gate-and-the-finalize-dispatcher.md"
 ```
 
 ## Write-Boundary
 
 The plan implementing this spec writes to its own repository source only. It creates and edits NO file
-under `.plan/local/orchestrator/` other than its own `inbox/{sender}-{seq}` message.
+under `.plan/orchestrator/` other than its own `inbox/{sender}-{seq}` message.

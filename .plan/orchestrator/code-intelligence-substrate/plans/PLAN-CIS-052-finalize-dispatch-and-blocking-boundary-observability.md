@@ -215,9 +215,26 @@ collection.
 2. **D2 — The `manage-status` write path records what actually happened**
    Three places where a write reports something the write did not achieve.
 
-   a. **The fused completion marker fires for `loop_back`.** `manage-status/scripts/_cmd_mark_step.py
-      ::_emit_completion_marker` inspects only `suppress` and the phase; neither it nor its two call
-      sites inspects `outcome`. Driving `cmd_mark_step_done` with `phase='6-finalize'`,
+   a. **The fused completion marker fires for `loop_back`.**
+      ⚠ **RE-CONFIRMED 2026-09-22 at cleanup with a NARROWED claim — the defect survives, but the
+      original wording overstates it.** At HEAD `7d82d5d9`, `_cmd_mark_step.py::_emit_completion_marker`
+      NOW TAKES `outcome` and renders it — `:275` calls
+      `format_completion_marker(phase, step, outcome)`, surfaced as `(outcome=…)`
+      (`manage-status/SKILL.md:406`) — so the literal claim below ("neither it nor its two call sites
+      inspects `outcome`") is FALSE at HEAD. **The defect survives regardless**: `:269` still guards
+      the suppression only on `suppress or phase != _COMPLETION_MARKER_PHASE`, so a `loop_back` write
+      still emits a completion line — it is now a self-labelling line (`Completed step: X
+      (outcome=loop_back)`), which materially weakens the harm without closing it.
+      ⛔ **NEW TEST-PINS-THE-DEFECT HAZARD, discovered 2026-09-22.**
+      `test_mark_step_completion_emission.py:110` now carries
+      `test_fused_line_fires_for_every_terminal_outcome`, a named test that affirmatively pins the
+      CURRENT self-labelling-but-still-firing behaviour. The Done-when's "red against current code"
+      clause cannot be met without rewriting that test FIRST — it must be rewritten, never deleted, to
+      assert the suppressed (post-fix) behaviour for `loop_back` specifically while still covering the
+      other terminal outcomes it names.
+      `manage-status/scripts/_cmd_mark_step.py
+      ::_emit_completion_marker` inspects only `suppress` and the phase — the CURRENT reading is that
+      it inspects `outcome` only to LABEL the line, never to gate it. Driving `cmd_mark_step_done` with `phase='6-finalize'`,
       `outcome='loop_back'` returns a work log containing exactly `[STEP] (plan-marshall:
       phase-6-finalize) Completed step: {step}` — for a step the dispatcher will re-fire, and which
       emits a *second* line when it finally settles. **This plan makes the call, so the run does not
@@ -255,7 +272,10 @@ collection.
       earliest; check that by reading every reader of the field before writing the change, and if one
       exists, record the deliberate non-migration and that reader's name in the shim block instead.
 
-   *Done when:* (a) `test/plan-marshall/manage-status/test_mark_step_completion_emission.py` carries a
+   *Done when:* (a) `test_fused_line_fires_for_every_terminal_outcome`
+   (`test_mark_step_completion_emission.py:110`) is REWRITTEN, never deleted, to assert the suppressed
+   post-fix behaviour for `loop_back` while still covering the other terminal outcomes it names, and
+   `test/plan-marshall/manage-status/test_mark_step_completion_emission.py` carries a
    `loop_back` case that is **red against the current code** and green after, and the two SKILL.md
    sections state the same rule as the code; (b) a test asserts that no start marker is produced by
    any write path — i.e. that item 2's prose instruction is the sole emitter — and both documents
@@ -484,8 +504,18 @@ collection.
       worded; no sub-case in a cause's definition names a condition the gate excludes; and the
       brace-form value list contains exactly the causes the table defines, all of which the writer's
       enum accepts.
-   d. **The one plan-directed message stream is never told to name its target.** The inbox
-      deliverability guard refuses a write aimed at a running plan — but only when `--target-plan` is
+   d. **The one plan-directed message stream is never told to name its target.**
+      ⛔ **RE-SCOPED 2026-09-22 at cleanup — `PLAN-TRUTH-100` D1 HAS LANDED, exactly as the
+      CROSS-EPIC ORDERING CONSTRAINT below anticipated.** `inbox-envelope.md` § Write-side
+      deliverability is REWRITTEN at HEAD `7d82d5d9`: a `--target-plan` naming a running plan now
+      yields `destination: mailbox — the message is DELIVERED` (`:55`), a non-running target or an
+      unreadable `status.json` yields `destination: queue` (`:57`), and `:60` states an unreadable or
+      missing `status.json` queues and never delivers. `_orchestrator_inbox.py:1727-1738`/`:1786-1805`
+      implements the routing. **Per the constraint's own pre-written guidance, applying it now costs
+      nothing**: the obligation sentence below was already worded as the obligation, not the
+      consequence, so it survives unchanged — only the STALE "refuses a write" framing in this
+      paragraph's own description is corrected. The inbox deliverability guard now DELIVERS (rather
+      than refuses) a write aimed at a running plan — but only when `--target-plan` is
       supplied, and nothing supplies it: the argument is `required=False, default=None` with no env
       or config fallback, and the verb has no programmatic caller. Of the write sites in the bundles,
       three are self-addressed by message kind (a landing, and own-run candidate lessons) and the
@@ -505,15 +535,30 @@ collection.
       *Done when:* the `lessons-capture` command block shows `--target-plan {plan_id}` with a stated
       condition for supplying it, the envelope standard names the owing site, and a test drives the
       refusal through the argv shape that documented block produces.
-   e. **The same guard's fail-open is invisible.** When the epic queue cannot be read as a queue, the
+   e. **The same guard's fail-open is invisible.**
+      ⚠ **RE-SCOPE CHECK OWED 2026-09-22 at cleanup — per the constraint's own note below ("e is
+      preserved, not obsoleted"), re-derive whether any residue remains rather than assuming either
+      "still fully open" or "fully discharged".** Re-grounded at HEAD `7d82d5d9`: the shipped
+      `delivery_state` / `mailbox_state` pair (`inbox-envelope.md:162-169`) now includes an explicit
+      `unmeasured` state, which LARGELY DISCHARGES this item's premise — the caller CAN now
+      distinguish more than the original two-way "target is not running" vs "I could not tell". What
+      is NOT yet independently confirmed is whether `unmeasured` covers the exact case this item
+      names (an unreadable epic queue at write time specifically, as opposed to at read time) — that
+      determination is deferred to outline rather than made here, since it decides whether this
+      sub-item still owes independent work or is fully closed by the shipped pair.
+      When the epic queue cannot be read as a queue, the
       running-plan set is empty and the guard cannot fire. The fail-open is the right default — and
       is documented as intentional — but the caller cannot distinguish *"target is not running"* from
       *"I could not tell"*. Keep the fail-open; emit an advisory field (e.g.
       `target_plan_check: indeterminate`) on the success TOON when `--target-plan` was supplied and
-      the status document was unreadable. Check first that no consumer asserts an exact key set on
+      the status document was unreadable, UNLESS outline confirms the shipped `unmeasured` state
+      already covers this exact case, in which case this sub-item closes with a positive account
+      naming the covering field. Check first that no consumer asserts an exact key set on
       that output.
-      *Done when:* a `--target-plan` write against an epic with a missing **and** with a malformed
-      status document succeeds and carries the indeterminate marker, pinned by a test covering both.
+      *Done when:* EITHER a `--target-plan` write against an epic with a missing **and** with a
+      malformed status document succeeds and carries the indeterminate marker, pinned by a test
+      covering both, OR outline records the positive account that `unmeasured` already covers this
+      case and the sub-item closes without a code change.
 
       ⚠⚠ **CROSS-EPIC ORDERING CONSTRAINT ON d AND e — folded in 2026-08-24 from inbox
       `truthful-signals-044`. Read before implementing either.** The sibling epic has staged
@@ -747,6 +792,15 @@ by N3, N4 and N5.
    observed shape it must make legible: `PLAN-CIS-051`'s 14-row phase-5 boundary ledger split
    `voluntary_checkpoint` 10 / `budget_yield` 3 / `clean_exit_queue_empty` 1.
 
+   ⚠ **FOLDED 2026-09-22 from `post-run-quality` inbox residual #3.** D8 fixed the label; this cause
+   distribution still collapses the REASON a yield fired (budget pressure vs. a blocked dependency)
+   into the one classification token. `PLAN-PRQ-06` independently observed the same collapse — `5 of
+   7 (71%)` of its phase-5 yields were `voluntary_checkpoint`, a second instance of the phenomenon
+   `PLAN-CIS-051`'s 10/3/1 split already names. The ask: record the reason as DATA alongside the
+   existing classification, not a second cause predicate beside D8's. No file surface changes — the
+   yield site is already inside this deliverable's declared surface
+   (`execution.md`, `phase-5-execute/SKILL.md`, `manage-metrics.py`, `analyze-logs.py`).
+
    ⛔ **Surface contention, recorded rather than scheduled around.** This deliverable touches
    `manage-metrics.py`, `data-format.md` and `analyze-logs.py`, which `PLAN-CIS-050` also declares
    (`analyze-logs.py` was already this plan's read-only surface). Under `parallelization_scope = 1`
@@ -902,7 +956,7 @@ sequencing constraint under `parallelization_scope = 1`, not a concurrency block
 first moves those files under the other, and the survivor is re-grounded before emit.
 
 ## Claim Labels
-- verdict: contradicted | checked_at: 7a028157eab86d5c5e9c8ee181671c6093ac5963 | by: code-intelligence-substrate/cleanup | rescoped: yes | evidence: RE-GROUNDED 2026-09-15 at HEAD 7a028157e (previous stamp 53ab7dd2e). SCOPE STATED: this spec has the HEAVIEST exposure of the three staged - 13 of its 37 declared surface entries were touched by the 334 files changed since the previous stamp, including pre-submission-self-review.md and phase-6-finalize/SKILL.md, both moved by #1488 (correct declared surfaces and self-review gate), plus manage-status/SKILL.md, _status_query.py, execution.md, archive-plan.md, record-metrics.md, lessons-capture.md, automatic-review/SKILL.md, claude_runtime.py and _orchestrator_inbox.py. The re-derivation targeted the load-bearing claims on those files; claims on the other 24 entries retain their previous verdicts and were NOT re-executed. FINDINGS: (1) ROW 17 RE-CONFIRMED LIVE ON A FILE THAT MOVED, which is the whole point of re-grounding a spec after a landing - phase-6-finalize/SKILL.md item 5c (:1096) still gates the record-dispatch-boundary call on the step having did NOT time out, while the cause table at :1105 still defines blocked_session_restart to INCLUDE the per-agent timeout budget firing. So a timed-out finalize step still writes no boundary row at all, and the two statements still contradict each other inside one document. (2) D1 sub-item (e) was re-checked and is UNCHANGED at HEAD: _decision_line_shapes.py's module docstring still presents unresolved_ask_provider_drop, scope_gated_finalize, ceremony_finalize_selection and the *_inactive pre-filter line as the closed set of gates carrying no [STATUS] tag. That file was NOT in the changed set, so this is a re-read rather than a re-derivation. (3) No evidence was found that #1488 regressed the already-struck D1(a)-(d): the skill-wide exit condition still holds - a grep for the hand-written --message [DISPATCH] form over skills/phase-6-finalize/ returns nothing.
+- verdict: contradicted | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: code-intelligence-substrate/cleanup | rescoped: yes | evidence: RE-GROUNDED 2026-09-22 at HEAD 7d82d5d9 (previous stamp 7a028157e). SCOPE STATED: 19 of 37 declared surface files moved in this window; the re-derivation targeted the load-bearing claims on those and the other 18 retain their previous verdicts, NOT re-executed. The same-day post-run-quality inbox fold (D9 row) was left alone. RE-SCOPED IN PLACE THIS PASS: D6(d) PLAN-TRUTH-100 D1 has LANDED exactly as this deliverable's own cross-epic ordering constraint anticipated - inbox-envelope.md is rewritten so a target-plan naming a running plan now DELIVERS rather than refuses; the deliverable text is corrected to match the landed reality, and per the constraint's own pre-written note the obligation sentence itself needed no change, only the stale refuses-a-write framing did. D6(e) re-scope-check owed, not closed outright - the shipped delivery_state/mailbox_state pair (inbox-envelope.md:162-169) with its explicit unmeasured state largely discharges the premise; whether it covers this item's exact case is deferred to outline rather than assumed either way, and the Done-when now carries both branches. D2(a) NARROWED, not closed - _cmd_mark_step.py now takes and renders outcome (self-labelling), so the original neither-inspects-outcome claim is false at HEAD, but the suppression guard is unchanged and a loop_back write still emits a completion line; carries a NEW test-pins-the-defect hazard (test_fused_line_fires_for_every_terminal_outcome at test_mark_step_completion_emission.py:110, now required in the Done-when as a rewrite-not-delete). STILL LIVE, re-confirmed for a third consecutive pass: Row 17 (phase-6-finalize/SKILL.md:1096 vs :1105, a timed-out finalize step still writes no boundary row). STILL LIVE, re-derived: D1(e) _decision_line_shapes.py:18-20 unchanged (re-read, file did not move); D4(a) git-workflow.py:1060-1074 executor_regenerated still a presence check with no TOON parse; D4(b) :955-985 _run_generate_executor still catches only FileNotFoundError/TimeoutExpired against a never-raises docstring; D4(c) automatic-review/SKILL.md dispatches worktree-rebase-to then force-push-with-lease parsing none of executor_drift/executor_regenerated/executor_detail (zero occurrences of all three); D6(a) inject_project_dir.py:46/48 still carry the two no-script notations, :136-141 still requires the literal token run; D2(c) claude_runtime.py:1620-1645 still reads session_ids first, legacy-scalar fallback only when absent. D1(a)-(d) EXIT CONDITION STILL MET: zero hand-written [DISPATCH]/manage-logging-work hits under skills/phase-6-finalize/, SKILL.md states the prohibition at three sites. Corroboration dispatched to execution-context-level-5 under the analyze.md Step 2 corroboration form per the Dispatch Decision Rule; this record and every edit above is the orchestrator's own application of the returned verdicts, performed inline.
 
 Every premise below is a claim about the tree, carried from a ground-truth audit that was then
 **adversarially re-reviewed**. Where the two disagree, the review wins and this plan follows the
@@ -948,6 +1002,8 @@ no lead here needs re-measurement for that reason. Counts still do, per the stan
 | **[merged from `PLAN-CIS-061`]** ~~`voluntary_checkpoint` is emitted at a site that does not consult `tasks_remaining`~~ | **REFUTED-AND-ABSORBED 2026-09-12** — the emit site DOES consult it, so D8 is re-scoped from the predicate to the THRESHOLD | `execution.md:199` (the definition), `execution.md:221-243` + `phase-5-execute/SKILL.md:1173-1181` (the B7 no-progress reclassification on `in_progress_count` / `completed_tasks_delta`); `git log -S` dates it to #349/#714/#730/#842, all older than #1370. The retired spec's verify-first clause pre-authorised this narrowing |
 | **[absorbed 2026-09-12]** ~~The finalize dispatch-seam migration is outstanding (D1a–D1d)~~ | **REFUTED — STRUCK at HEAD `53ab7dd2e`** | `grep -rn -- '--message "[DISPATCH]'` over `skills/phase-6-finalize/` returns nothing — the deliverable's own skill-wide exit condition. `finalize-step-simplify.md:110` and `pre-submission-self-review.md:197` carry the full seam form and both say "Do NOT hand-write a separate `[DISPATCH]` line"; `lessons-capture.md:54` and `adr-propose.md:42` state the seam emits per firing, with no `manage-logging work` block. D1 survives as (e) only |
 | **[still live, half-resolved]** Row 16 is COMPOUND and only half closed: the brace-form invocation list now carries all five table causes, but `SKILL.md` item 5c still gates on did-NOT-time-out while the cause table defines `blocked_session_restart` to include the timeout-budget firing | PARTLY CORROBORATED — the surviving half is row 17: **a timed-out finalize step still writes no boundary row at all** | Re-derive both halves at outline and fix only the half that is still open; do not re-close the invocation list |
+
+| **[folded 2026-09-22 from `post-run-quality` inbox residual #3]** D9's cause distribution names only the yield classification, never the reason it fired | CORROBORATED — a second instance of the same collapse | `PLAN-CIS-051`'s 14-row boundary ledger (`voluntary_checkpoint` 10 / `budget_yield` 3 / `clean_exit_queue_empty` 1, already in this table) and `PLAN-PRQ-06`'s independent `5 of 7 (71%)` `voluntary_checkpoint` figure — two runs, one uncaptured dimension. D9 |
 
 ## Verification
 

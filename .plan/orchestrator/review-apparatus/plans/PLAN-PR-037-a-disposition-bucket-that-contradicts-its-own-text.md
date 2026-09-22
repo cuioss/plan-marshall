@@ -212,11 +212,11 @@ exactly the metric D2 is already making honest.
   registry-driven per-reviewer test — `review_retrospective.py`:177-191. Since pr-agent posts only
   `issue_comment`s, its `actionable_count` is structurally 0. ⛔ Re-read the function at run time;
   line numbers drift.
-  - verdict: corroborated | checked_at: 19453cb | by: review-apparatus/cleanup | rescoped: n/a | evidence: Re-grounded at HEAD 19453cb (was 7845a4b9a). METHOD CHANGED THIS PASS: intersection of the spec's DECLARED Expected Surface (via corpus surfaces, the single shared reader) against git diff --name-only 7845a4b9a..HEAD (204 paths). The former whole-spec-file method is RETIRED as non-discriminating - it scored hits on prose mentions of CLAUDE.md and .plan/marshal.json. ZERO declared paths moved in this window, so no premise of this spec was disturbed. NOT a line-by-line re-audit: this establishes the surface is UNDISTURBED, not that the premise was re-read.
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: review-apparatus/cleanup | rescoped: n/a | evidence: Re-grounded at HEAD (was 19453cb). Two-window read: over 19453cb..HEAD the 6 declared paths give 5 hits (_findings_core.py, jsonl-format.md, review_retrospective.py, test_findings_store_resolve.py, test_review_retrospective.py), but over 7a028157e..HEAD the intersection is EMPTY - every hit predates the corpus-wide baseline. The tail since 7a028157e is UNDISTURBED. Light method on the pre-7a028157e portion: not re-audited line by line this pass.
 - OBSERVED: `resolve_finding` validates `resolution` against `RESOLUTIONS` and writes
   `resolution_detail` independently, with no comparison between them —
   `_findings_core.py:456-464`, read at `e8324d241`.
-  - verdict: corroborated | checked_at: 26645688b | by: review-apparatus/cleanup | rescoped: n/a | evidence: Re-grounded at HEAD 26645688b, method: whole-spec-file intersection against git diff --name-only 1169fb5bf..HEAD (248 paths). Fail-closed by design - the scan is over the WHOLE spec file, not a parsed Expected Surface section, because two section parsers disagreed on this corpus. Basename matching was measured last pass and DISCARDED as non-discriminating. NO running-row exclusion applied this pass: the queue has no running plan. Intersection: 1 hit(s). 1 hit. Effectively unmoved. The triage-discipline cluster folded here 2026-08-27 (rejecting / accepting / softening) is new scope drawn from lessons already in the corpus, and no code movement bears on it.
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: review-apparatus/cleanup | rescoped: n/a | evidence: Same two-window read, baseline 26645688b..HEAD: 5 declared hits in the head of the window, zero in the 7a028157e..HEAD tail. The findings store and the retrospective have not moved since the corpus baseline, so no premise of this spec was disturbed in this pass window.
 - OBSERVED: `false_positives_count` is incremented solely from
   `resolution in _FALSE_POSITIVE_RESOLUTIONS` — `review_retrospective.py:301-302`.
 - HYPOTHESIS (forwarded, **unverified by this orchestrator**): two such records existed in the
@@ -254,10 +254,10 @@ exactly the metric D2 is already making honest.
 ## Hand-Off Command
 
 ```text
-/plan-marshall task="implement .plan/local/orchestrator/review-apparatus/plans/PLAN-PR-037-a-disposition-bucket-that-contradicts-its-own-text.md"
+/plan-marshall task="implement .plan/orchestrator/review-apparatus/plans/PLAN-PR-037-a-disposition-bucket-that-contradicts-its-own-text.md"
 ```
 
 ## Write-Boundary
 
 The plan implementing this spec touches only its own repository source and tests. It creates and edits
-NO file under `.plan/local/orchestrator/` other than its own `inbox/{sender}-{seq}` message.
+NO file under `.plan/orchestrator/` other than its own `inbox/{sender}-{seq}` message.

@@ -30,6 +30,20 @@ Recognise every refusal a bot actually publishes, extract its ETA under the same
 | D8 | Give a stored refusal its MODE — the two modes have different remedies | `PLAN-PR-047` § D2 | `PLAN-PR-061` D9 |
 | D9 | Name the composition — neither path alone predicts the failure | `PLAN-PR-045` § D3 | `PLAN-PR-056` D11 |
 
+⭐ **Recurrence (lesson `2026-09-19-21-002`, drained 2026-09-22 via `lessons-handling-26-09-22-01`):**
+Trigger B's stale-bot selector still cannot reach a required bot that has never published a finding —
+the same gap D1 (select the trigger-B bot from the gating set, not comment recency) already owns. No
+new deliverable; folds as a second occurrence on D1.
+
+**D1 amendment 2026-09-22 (re-grounding pass, cleanup A1) — the residue is narrower, not the whole
+deliverable.** `#1510` (sibling epic `instrumentation-substrate`, its PLAN-03) shipped
+`select_stale_bot_for_trigger(stale_bots, newest_finding_kind_bot)` in `review_completeness.py`,
+undeclared here: it selects trigger B from the STALE SET rather than from comment recency, exposed as
+the CLI verb `trigger-bot --plan-id --stale-bots --newest-kind`. ⇒ D1 is RE-SCOPED from *build the
+selector* to *close the remaining gap*: a required bot that has never published ANY finding is not in
+`stale_bots` and falls through to `newest_finding_kind_bot` or empty — that narrower case, plus whether
+`automatic-review`'s workflow actually invokes the new verb, is unestablished and is what D1 now owns.
+⚠ Coverage bound: the content-search tool does not walk `.claude/**` or `.github/**`.
 
 **D0 — GATE, mutates nothing.** The merged re-grounding gate. Re-read every symbol
 `PLAN-PR-043` § Claim Labels and `PLAN-PR-045` D0/D0a name, at HEAD, and publish the affected
@@ -61,9 +75,16 @@ mechanism held. **HALT and report** if a named symbol no longer resolves.
 - OBSERVED (2026-09-18): every deliverable in this plan was carried verbatim from the theme spec named
   in its `Carried from` column, which carries the claim labels for its own deliverables. Confirm/refute
   by reading that spec's `## Claim Labels` section — this plan re-states none of them.
-- OBSERVED (2026-09-18, orchestrator `corpus surfaces` + per-deliverable mapping): this plan's declared
-  surface is disjoint from every other live plan's in this epic. Confirm/refute with
-  `orchestrator corpus cross-check --slug review-apparatus`.
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: review-apparatus/cleanup | rescoped: n/a | evidence: Structural carried-verbatim claim, verified by reading this spec at HEAD: nine pointer deliverables plus a merged D0 gate, with the 2026-09-22 recurrence explicitly folded onto D1 rather than restated. That recurrence is now the only live half of D1 - see the contradiction on PLAN-PR-043 claim 0.
+- OBSERVED (2026-09-18, orchestrator `corpus surfaces` + per-deliverable mapping; RE-SCOPED 2026-09-22):
+  this plan's declared surface is disjoint from every other live plan's in this epic **except
+  `PLAN-PR-066`, which shares `automatic-review/standards/cuioss-review-bot.md`** (069 as a
+  refusal-standards target, 066 as a D11 rename target) — sequence, never pair. The separate
+  single-owner assertions below DO hold: `bot-participation-contract.md` is declared by no other
+  STAGED spec, and `automatic-review/SKILL.md` is declared only by `PLAN-PR-070`. Confirm/refute with
+  `orchestrator corpus cross-check --slug review-apparatus` — non-determinate at HEAD (see the claim's
+  verdict).
+  - verdict: contradicted | checked_at: 7d82d5d90 | by: review-apparatus/cleanup | rescoped: yes | evidence: DISJOINTNESS IS FALSE: PLAN-PR-069 and PLAN-PR-066 both declare automatic-review/standards/cuioss-review-bot.md (069 as a refusal-standards target, 066 as a D11 rename target). The resume_anchor already names this pair; the spec own claim does not. RE-SCOPE: name the 066 collision on cuioss-review-bot.md, as 066 own Dependencies section does. The spec separate single-owner assertions DO hold and were derived: bot-participation-contract.md is declared by no other STAGED spec, and automatic-review/SKILL.md is declared only by PLAN-PR-070.
 
 
 ## Dependencies and Sequencing
@@ -82,10 +103,10 @@ mechanism held. **HALT and report** if a named symbol no longer resolves.
 ## Hand-Off Command
 
 ```text
-/plan-marshall task="implement .plan/local/orchestrator/review-apparatus/plans/PLAN-PR-069-refusal-recognition-and-the-rate-window.md"
+/plan-marshall task="implement .plan/orchestrator/review-apparatus/plans/PLAN-PR-069-refusal-recognition-and-the-rate-window.md"
 ```
 
 ## Write-Boundary
 
 The plan implementing this spec writes to its own repository source only. It creates and edits NO file
-under `.plan/local/orchestrator/` other than its own `inbox/{sender}-{seq}` message.
+under `.plan/orchestrator/` other than its own `inbox/{sender}-{seq}` message.

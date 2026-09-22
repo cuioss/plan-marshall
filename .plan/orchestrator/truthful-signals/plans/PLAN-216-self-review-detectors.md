@@ -1,6 +1,6 @@
 # PLAN-13: Self-review detectors and finding closure
 
-epic: quality-aspect
+epic: truthful-signals
 workstream: WS-07
 
 > Staged plan spec — one shippable unit of work, ready for `/plan-marshall` hand-off.
@@ -48,7 +48,7 @@ terminal states with owners for advisory and refuted findings. G05 + G12 + G31 +
 ## Hand-Off Command
 
 ```text
-/plan-marshall task="implement .plan/orchestrator/quality-aspect/plans/PLAN-13-self-review-detectors.md"
+/plan-marshall task="implement .plan/orchestrator/truthful-signals/plans/PLAN-216-self-review-detectors.md"
 ```
 
 ## Write-Boundary

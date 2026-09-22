@@ -76,6 +76,24 @@ This plan SUPERSEDES the following specs, which stay on disk as the audit record
 - `PLAN-TRUTH-124-one-ledger-vocabulary-clean-slate-so-the-same-word-means-the-same-thing-everywhere.md` (PLAN-TRUTH-124)
 - `PLAN-TRUTH-133-the-findings-pipeline-cannot-tell-an-experiment-from-a-regression.md` (PLAN-TRUTH-133)
 
+## ⭐ FOLDED 2026-09-22 — D8/D9's prose-vs-structured divergence, a third instance
+
+Inbox lesson `2026-09-21-08-003` (relayed via `lessons-handling-26-09-22-01`): `automatic-review` recorded
+`outcome: done` while `manage-findings list --resolution pending` returned all 5 of its findings still
+pending; one (`6f47cd`, hardcoded paths in `analyze.py`) was never actually fixed. Prose and the structured
+ledger diverged and nothing cross-checked them — exactly D8's ("surface the pending actionable-findings
+count at each phase boundary") and D9's ("the barrier's refusal enumerates findings by cause and age")
+shape. No surface change — `manage-findings/**`, `automatic-review/scripts/`,
+`phase-6-finalize/standards/pre-merge-barrier` and `phase-6-finalize/scripts/review_commitments.py` already
+declared.
+
+⚠ **Precedent hazard, cross-notice owed.** The 2026-09-15 drain already forwarded a narrower instance of
+this same step's behaviour to `review-apparatus` (*"`automatic-review` closed `done` with a refused-
+structural reviewer un-triaged"* → `truthful-signals-058.md`). Sent a cross-notice there (below) — if that
+epic has since staged the done-vs-pending cross-check, this fold is a duplicate and should retire in favour
+of it. The finding this lesson says was never fixed (`6f47cd`) is the same file as a separate 2026-09-21
+lesson's residue, already forwarded to `code-intelligence-substrate`.
+
 ## Hand-Off Command
 
 ```text

@@ -1,6 +1,6 @@
 # PLAN-06: Review quota persistence and refusal currency
 
-epic: quality-aspect
+epic: truthful-signals
 workstream: WS-03
 
 > Staged plan spec — one shippable unit of work, ready for `/plan-marshall` hand-off.
@@ -47,7 +47,7 @@ G13 remainder + G03 + 1 singleton (9 lessons).
 ## Hand-Off Command
 
 ```text
-/plan-marshall task="implement .plan/orchestrator/quality-aspect/plans/PLAN-06-review-yield-b.md"
+/plan-marshall task="implement .plan/orchestrator/truthful-signals/plans/PLAN-209-review-yield-b.md"
 ```
 
 ## Write-Boundary

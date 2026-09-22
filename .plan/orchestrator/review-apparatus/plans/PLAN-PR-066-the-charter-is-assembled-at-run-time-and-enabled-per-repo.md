@@ -212,40 +212,49 @@ never reached, and an over-declaration makes the gate sequence siblings behind f
 - OBSERVED (first-party, 2026-09-14): `reusable-pr-agent-review.yml` at `v0.27.0` references neither
   `project.yml` nor `packs/` — grep count 0 over the file. Confirm/refute by re-reading that workflow
   in `cuioss/cuioss-organization`.
+  - verdict: unverifiable | checked_at: 7d82d5d90 | by: review-apparatus/cleanup | rescoped: n/a | evidence: FOREIGN-REPO-ONLY (cuioss/cuioss-organization reusable-pr-agent-review.yml v0.27.0). No path in this checkout resolves it - the spec declares it FOREIGN deliberately. Unreachable by a plan-marshall git diff; not re-read foreign this pass.
 - OBSERVED (first-party, 2026-09-14): `cuioss/pr-agent-settings` `main` carries eight pack artifacts
   totalling 12,534 bytes. Confirm/refute at that repository's `packs/`.
+  - verdict: unverifiable | checked_at: 7d82d5d90 | by: review-apparatus/cleanup | rescoped: n/a | evidence: FOREIGN-REPO-ONLY (cuioss/pr-agent-settings packs directory, eight artifacts, 12534 bytes). Unreachable by a plan-marshall git diff; not re-read foreign this pass.
 - OBSERVED (first-party, 2026-09-14): this repository declares `pr-agent.packs: [python, plugin]` and
   carries no `.pr_agent.toml`. Confirm/refute at `.github/project.yml`.
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: review-apparatus/cleanup | rescoped: n/a | evidence: First-party and UNDISTURBED: .github/project.yml does not appear in git diff --name-only 7a028157e..HEAD scoped to .github (which lists only claude-distribute.yml, dependabot-auto-merge.yml, dependency-review.yml, pr-agent.yml, python-verify.yml, scorecards.yml). The pr-agent.packs declaration and the absence of a repo-local .pr_agent.toml are unchanged in this window.
 - OBSERVED: `.github/project.yml` already carries a `sonar.enabled` key, so D7's flag follows an
   existing convention rather than introducing one. Confirm/refute at that file.
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: review-apparatus/cleanup | rescoped: n/a | evidence: First-party and UNDISTURBED: .github/project.yml did not move in 7a028157e..HEAD, so the existing sonar.enabled key D7 is shaped after is unchanged.
 - HYPOTHESIS (carried from `PLAN-PR-039`, still unexecuted): the dotted-env form generalises from
   `VERTEXAI.*` / `github_action_config.*` to `PR_REVIEWER.EXTRA_INSTRUCTIONS` — confirm/refute at the
   reviewer action's env handling (verify-at-outline). ⛔ **If refuted, D3 re-scopes and D1/D2 are
   worthless without it** — settle it EARLY, not at the end.
+  - verdict: unverifiable | checked_at: 7d82d5d90 | by: review-apparatus/cleanup | rescoped: n/a | evidence: HYPOTHESIS about the reviewer action env handling (dotted-env PR_REVIEWER.EXTRA_INSTRUCTIONS). Foreign surface, verify-at-outline, no local path resolves it. Still unexecuted - and still the hypothesis that gates D1/D2/D3, so it remains the earliest thing to settle.
 - HYPOTHESIS (carried from `PLAN-PR-039`): an injected env value OUTRANKS a repo-local
   `.pr_agent.toml` — confirm/refute at the same surface (verify-at-outline).
+  - verdict: unverifiable | checked_at: 7d82d5d90 | by: review-apparatus/cleanup | rescoped: n/a | evidence: HYPOTHESIS: an injected env value outranks a repo-local .pr_agent.toml. Same foreign surface as claim 4, same verify-at-outline status.
 - HYPOTHESIS: the repository population on the reviewer workflow is enumerable from the org without a
   per-repo clone — confirm/refute at D0 (verify-at-outline). ⛔ The count is unknown, not zero.
+  - verdict: unverifiable | checked_at: 7d82d5d90 | by: review-apparatus/cleanup | rescoped: n/a | evidence: HYPOTHESIS: the org repository population is enumerable without a per-repo clone. Foreign (org-level), D0 own job. The count is unknown, not zero - unchanged.
 - OBSERVED (corpus pass 2026-09-15, not re-read first-party): `plan-marshall#1388` removed the repo-local
   `.pr_agent.toml` and added `pr-agent.packs` to `.github/project.yml`, so this repository has run with no
   domain pack since 2026-09-03T22:04:35Z. Confirm/refute at commit `ef974632c` and the file's git history.
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: review-apparatus/cleanup | rescoped: n/a | evidence: Historical git record about this repository: plan-marshall#1388 removed the repo-local .pr_agent.toml and added pr-agent.packs at commit ef974632c. A landed commit is immutable; nothing in 7a028157e..HEAD restores a .pr_agent.toml (the literal pr-agent sweep at HEAD returns no repo-root .pr_agent.toml). The consumer gap is still live.
 - OBSERVED (first-party, 2026-09-15, `gh api repos/cuioss/pr-agent-settings/contents`): the root holds
   `.github/`, `.pr_agent.toml` (29,484 B), `README.adoc` (66,174 B) and `packs/` — **no `doc/`**; `doc` →
   HTTP 404. Both file sizes equal those recorded at `PLAN-PR-065` staging, and none of the 15 most recent
   PRs there (#50–#64) is a documentation change. Confirm/refute at that repository's `main`.
-  - verdict: corroborated | checked_at: 7a028157e | by: review-apparatus/cleanup | rescoped: n/a | evidence: gh api repos/cuioss/pr-agent-settings/contents: .github dir, .pr_agent.toml 29484, README.adoc 66174, packs dir; contents/doc -> 404; gh pr list #50-#64 has no documentation PR
+  - verdict: unverifiable | checked_at: 7d82d5d90 | by: review-apparatus/cleanup | rescoped: n/a | evidence: Re-grounded at HEAD (was 7a028157e, corroborated by a live gh api read). FOREIGN-REPO-ONLY: cuioss/pr-agent-settings contents, its absent doc directory, and its PR list #50-#64 are outside this checkout, so the intersection method that settles the rest of this corpus is inapplicable - the same exemption PLAN-PR-039 carries. The prior corroboration is NOT withdrawn; it is simply not re-established at HEAD by this pass. Re-run the gh read before D12 scopes on it.
 - HYPOTHESIS: GitHub's repository-rename redirect covers every way the fleet reaches the settings
   repository — reusable-workflow `uses:` references, API content reads, and checkout actions — so the
   D11 rename needs no flag-day. Confirm/refute against GitHub's rename-redirect behaviour for each access
   path (verify-at-outline). ⛔ If ANY path does not follow the redirect, D11 becomes a coordinated
   migration across D0's population and must run before D8.
+  - verdict: unverifiable | checked_at: 7d82d5d90 | by: review-apparatus/cleanup | rescoped: n/a | evidence: HYPOTHESIS about GitHub repository-rename redirect behavior across uses: clauses, API content reads and checkout actions. A property of GitHub, not of this tree; no git diff can settle it. Still the gate on whether D11 is a rename or a coordinated migration.
 - OBSERVED (first-party, 2026-09-15): owned `pr-agent` naming in this repository sits in the files
   listed under Expected Surface; the `.pr_agent.toml` basename references in `manage-execution-manifest`,
   `script-shared` and `targets` tests name the upstream tool and are out of D11's scope. Confirm/refute by
   a `git grep -E "pr-agent|pr_agent"` over the tree. ⚠ `architecture search --content` returned **zero**
   `.github/` hits for the same pattern while `.github/` holds 30+ — do not use it to derive D11's
   population.
-  - verdict: corroborated | checked_at: 7a028157e | by: review-apparatus/cleanup | rescoped: n/a | evidence: git grep -E pr-agent|pr_agent over the tree: owned names in .github workflows+project.yml, marketplace/targets, listed tests, cuioss-review-bot.md, landing-cycle.md, cloud-plan-lane SKILL.md, marketplace-build.adoc; .pr_agent.toml basename refs in manifest/extension_base/generator tests are upstream-tool; architecture search --content returned 0 .github hits
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: review-apparatus/cleanup | rescoped: n/a | evidence: RE-DERIVED at HEAD, and a false contradiction was avoided in the process. A literal pr-agent content sweep returns 15 files/18 matches, and every one is either on this spec Expected Surface (cuioss-review-bot.md, landing-cycle.md, marketplace/targets/README.md, component_targets.py, generate.py, pr_agent dir, test_workflow_lint.py, test/marketplace/targets/pr_agent, test_component_targets.py, test_generate_cli.py, test_analyze_target_scope.py, doc/developer/marketplace-build.adoc) or inside the stated exemption (doc/analyzis-cloud-plan records). A regex sweep pr.agent returns 71 files/123 matches; the extra hits are pr_agent Python identifiers the D11 boundary explicitly exempts - do not read that number as the rename population. The literal sweep returns zero .github hits because the content-search tool does not walk that tree, so pr-agent.yml, pr-agent-packs-publish.yml, project.yml and cloud-plan-lane SKILL.md must be added by hand.
 
 ## Dependencies and Sequencing
 
@@ -266,11 +275,11 @@ never reached, and an over-declaration makes the gate sequence siblings behind f
 ## Hand-Off Command
 
 ```text
-/plan-marshall task="implement .plan/local/orchestrator/review-apparatus/plans/PLAN-PR-066-the-charter-is-assembled-at-run-time-and-enabled-per-repo.md"
+/plan-marshall task="implement .plan/orchestrator/review-apparatus/plans/PLAN-PR-066-the-charter-is-assembled-at-run-time-and-enabled-per-repo.md"
 ```
 
 ## Write-Boundary
 
 The plan implementing this spec writes to its own repository source and to the FOREIGN repositories
-named in the Expected Surface. It creates and edits NO file under `.plan/local/orchestrator/` other
+named in the Expected Surface. It creates and edits NO file under `.plan/orchestrator/` other
 than its own `inbox/{sender}-{seq}` message.

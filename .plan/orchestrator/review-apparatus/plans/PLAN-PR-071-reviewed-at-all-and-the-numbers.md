@@ -31,6 +31,10 @@ Build the one handoff that says whether a diff was reviewed at all, persist it w
 | D9 | Make the delta's published claims about itself true | `PLAN-PR-030` § D3 | `PLAN-PR-062` D3 |
 | D10 | Pin both — **and the carve-out that cannot fire on the real record shape** (`raw_input.body` quarantine; the passing fixture is what hid it) | `PLAN-PR-037` §§ D3 + D3a | `PLAN-PR-063` D9 |
 
+⭐ **Recurrence (lesson `2026-09-20-08-002`, drained 2026-09-22 via `lessons-handling-26-09-22-01`):** no
+persisted reviewed-at-all handoff reaches `finalize-step-review-retrospective` (order:990), forcing
+`unmeasurable` for every silent reviewer — exactly the producer-to-consumer handoff D1 already builds
+and persists. No new deliverable; folds as a second occurrence on D1.
 
 **D0 — GATE, mutates nothing.** `PLAN-PR-026` D0 verbatim in scope: derive the handoff's populations
 and its persistence channel, or HALT. The derivation now also has to satisfy `PLAN-PR-047` D0's
@@ -54,15 +58,19 @@ post-merge reader, because the persisted classification is the same artifact.
 - OBSERVED (2026-09-18): every deliverable in this plan was carried verbatim from the theme spec named
   in its `Carried from` column, which carries the claim labels for its own deliverables. Confirm/refute
   by reading that spec's `## Claim Labels` section — this plan re-states none of them.
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: review-apparatus/cleanup | rescoped: n/a | evidence: Structural carried-verbatim claim, verified by reading this spec at HEAD: ten pointer deliverables plus D0, with the 2026-09-22 recurrence folded onto D1.
 - OBSERVED (2026-09-18, orchestrator `corpus surfaces` + per-deliverable mapping): this plan's declared
   surface is disjoint from every other live plan's in this epic. Confirm/refute with
   `orchestrator corpus cross-check --slug review-apparatus`.
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: review-apparatus/cleanup | rescoped: n/a | evidence: DISJOINTNESS HOLDS over the DECLARED surface: review_gate_delta.py and five test modules appear on no other staged spec declared paths. But the declaration UNDER-STATES the real footprint in both directions - this spec own Dependencies says D4 edits operator-facing strings that PLAN-PR-076 also renders, and PLAN-PR-076 says finalize-step-review-retrospective/SKILL.md is also edited by PLAN-PR-071 D4 and PLAN-PR-073 D3, yet that file is on NEITHER 071 nor 073 Expected Surface. Derived by membership, not cross-check (non-determinate at HEAD). Also: review_gate_delta.py MOVED (+50) in this window - #1510 added should_await_refusal, now consumed by review_completeness._refusal_state.
 - OBSERVED (corpus pass 2026-09-15): 152 of 156 pr-agent guides in the window are the canned table and
   21 PRs had no baseline reviewer at all, 6 of them merged (`#1380`, `#1406`, `#1407`, `#1438`,
   API-Sheriff `#288`, `#300`) — their only posted review is a canned guide. These are D2/D3's fixtures.
+  - verdict: unverifiable | checked_at: 7d82d5d90 | by: review-apparatus/cleanup | rescoped: n/a | evidence: Corpus-pass measurement over 156 external pr-agent guides (152 canned) and 21 PRs with no baseline reviewer, 6 merged. External population, unreachable by a git diff, not re-sampled. D2/D3 fixtures must be re-derived.
 - OBSERVED (corpus pass 2026-09-15): three distinct "nobody reviewed" shapes must stay apart from
   "reviewed clean" — never triggered (`cui-http#185`), re-review failed at token generation
   (`plan-marshall#1479`), and a run `queued` since 2026-09-13 (`34748813129`).
+  - verdict: unverifiable | checked_at: 7d82d5d90 | by: review-apparatus/cleanup | rescoped: n/a | evidence: Three external nobody-reviewed shapes (cui-http#185 never triggered; plan-marshall#1479 re-review failed at token generation; run 34748813129 queued). Foreign/CI-run observations; not re-sampled this pass.
 
 ## Dependencies and Sequencing
 
@@ -77,10 +85,10 @@ post-merge reader, because the persisted classification is the same artifact.
 ## Hand-Off Command
 
 ```text
-/plan-marshall task="implement .plan/local/orchestrator/review-apparatus/plans/PLAN-PR-071-reviewed-at-all-and-the-numbers.md"
+/plan-marshall task="implement .plan/orchestrator/review-apparatus/plans/PLAN-PR-071-reviewed-at-all-and-the-numbers.md"
 ```
 
 ## Write-Boundary
 
 The plan implementing this spec writes to its own repository source only. It creates and edits NO file
-under `.plan/local/orchestrator/` other than its own `inbox/{sender}-{seq}` message.
+under `.plan/orchestrator/` other than its own `inbox/{sender}-{seq}` message.

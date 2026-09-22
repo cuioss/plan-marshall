@@ -91,14 +91,17 @@ the decision surface.
   the literal `'--plan-id'` string. Confirm/refute by deriving the surface from
   `script-shared/scripts/argparse_surface.py` rather than by text search (verify-at-outline;
   this IS D0).
+  - verdict: corroborated | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: orchestrator-refactor/cleanup | rescoped: n/a | evidence: architecture search --content "'--plan-id'" --literal --category source returns 39 files; 5 of 6 named scripts (manage-tasks, manage-references, manage-metrics, manage-plan-documents, manage-solution-outline) are absent from that set yet declare the flag (manage-tasks list --help confirms). ADR-023:33-36 records 503 distinct long flags / 111 derivable notations via argparse_surface, not text search, as the authoritative D0 method.
 - HYPOTHESIS — the epic name and the plan id are genuinely different entities and should NOT
   collapse to one spelling even under a unified vocabulary; confirm/refute at
   `platform_runtime.py` § the `push-title-token` subparser, where both are required together
   (verify-at-outline).
+  - verdict: corroborated | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: orchestrator-refactor/cleanup | rescoped: n/a | evidence: ADR-023 section(b):147-152 settles it affirmatively - --plan-id stays at all 282 sites, epic and plan are distinct entities at distinct tiers. Live site: platform_runtime.py:444 (--plan-id) and :458 (--slug) on the SAME session push-title-token parser. Note: the clause's parenthetical about both being required together is inaccurate - ADR-023:283-296 corrects it, neither is argparse-required, mutually exclusive via a --store-keyed post-parse check at :460-471.
 - Verify-first clause: do NOT treat `truthful-signals` PLAN-TRUTH-124 (superseded, never
   shipped) as prior art for this plan. Its subject is VERDICT vocabularies (58 declared
   constants across 24 skills), not identifier argument names. Its live successor is
   PLAN-TRUTH-146. Confirm this boundary at outline rather than folding the two.
+  - verdict: corroborated | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: orchestrator-refactor/cleanup | rescoped: n/a | evidence: PLAN-TRUTH-124 is absent from the tracked corpus (git ls-files .plan/orchestrator/truthful-signals/plans/, 44 specs, no -124). PLAN-TRUTH-146 is present, staged, and is explicitly -124's successor (its deliverables tag PLAN-TRUTH-124 D0/D6 as sources). Its subject is the findings-ledger/verdict vocabulary, not identifier argument names - the boundary holds exactly.
 
 ## Expected Surface
 

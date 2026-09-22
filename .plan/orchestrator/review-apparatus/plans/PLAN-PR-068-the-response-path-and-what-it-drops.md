@@ -52,12 +52,19 @@ reproduces. ⛔ `PLAN-PR-035` § Dependencies: **D0 must ATTRIBUTE BY AUTHOR bef
 - OBSERVED (2026-09-18): every deliverable in this plan was carried verbatim from the theme spec named
   in its `Carried from` column, which carries the claim labels for its own deliverables. Confirm/refute
   by reading that spec's `## Claim Labels` section — this plan re-states none of them.
-- OBSERVED (2026-09-18, orchestrator `corpus surfaces` + per-deliverable mapping): this plan's declared
-  surface is disjoint from every other live plan's in this epic. Confirm/refute with
-  `orchestrator corpus cross-check --slug review-apparatus`.
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: review-apparatus/cleanup | rescoped: n/a | evidence: Structural carried-verbatim claim, verified by reading this spec at HEAD: the four deliverables are pointers and D0 names its two source gates. No git diff bears on it.
+- OBSERVED (2026-09-18, orchestrator `corpus surfaces` + per-deliverable mapping; RE-SCOPED 2026-09-22):
+  this plan's declared surface is disjoint from every other live plan's in this epic **except
+  `PLAN-PR-067`, which shares three declared files** (`github_pr.py`, `workflow-integration-github/SKILL.md`,
+  `test_github_pr.py`) — the read-path/write-path split is a split of FUNCTIONS inside one file, not of
+  files; sequenced ("Runs AFTER `PLAN-PR-067`" below), never paired. Confirm/refute with
+  `orchestrator corpus cross-check --slug review-apparatus` — non-determinate at HEAD (see the claim's
+  verdict).
+  - verdict: contradicted | checked_at: 7d82d5d90 | by: review-apparatus/cleanup | rescoped: yes | evidence: DISJOINTNESS IS FALSE - the mirror of PLAN-PR-067 claim 1. Both specs declare github_pr.py, workflow-integration-github/SKILL.md and test_github_pr.py. RE-SCOPE: state the three shared files and the ordering (Runs AFTER PLAN-PR-067) instead of asserting disjointness. The read-path/write-path split is a split of FUNCTIONS inside one file, not of files.
 - OBSERVED (corpus pass 2026-09-15): 97 of 493 plan-marshall finding units carry no posted answer, 11
   of them unresolved (6 on merged PRs); all 7 Sourcery review bodies and all 3 substantive pr-agent
   guides went unanswered. D0 attributes these, not only the original thirteen.
+  - verdict: unverifiable | checked_at: 7d82d5d90 | by: review-apparatus/cleanup | rescoped: n/a | evidence: Corpus-pass measurement over a findings population (97 of 493 plan-marshall finding units unanswered, 11 unresolved, 6 on merged PRs; 7 Sourcery bodies and 3 pr-agent guides unanswered). The substrate is a findings store, not the git tree - no diff in this window can confirm or refute it, and it was not re-derived. D0 must re-derive, not inherit.
 
 ## Dependencies and Sequencing
 
@@ -71,10 +78,10 @@ reproduces. ⛔ `PLAN-PR-035` § Dependencies: **D0 must ATTRIBUTE BY AUTHOR bef
 ## Hand-Off Command
 
 ```text
-/plan-marshall task="implement .plan/local/orchestrator/review-apparatus/plans/PLAN-PR-068-the-response-path-and-what-it-drops.md"
+/plan-marshall task="implement .plan/orchestrator/review-apparatus/plans/PLAN-PR-068-the-response-path-and-what-it-drops.md"
 ```
 
 ## Write-Boundary
 
 The plan implementing this spec writes to its own repository source only. It creates and edits NO file
-under `.plan/local/orchestrator/` other than its own `inbox/{sender}-{seq}` message.
+under `.plan/orchestrator/` other than its own `inbox/{sender}-{seq}` message.

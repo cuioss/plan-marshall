@@ -41,22 +41,37 @@ is a reason to enumerate, not a reason to stop.
   `pytest-testing/SKILL.md`, `plan-marshall/skills/recipe-lesson-cleanup/SKILL.md`), with **zero**
   source or test matches. Coverage clean: `files_scanned: 5462`, `unreadable: 0`, `truncated: false`.
   Measured in this session at `main` `77cb2e251`.
+  - verdict: corroborated | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: instrumentation-substrate/cleanup | rescoped: n/a | evidence: re-ran pattern search: count 6/file_count 3, identical files and match counts, zero source/test rows; vacuous-authority finding fully intact
 - OBSERVED: The standard is carried by two skills — `plan-marshall:persona-module-tester` (whose
   registered description names "property-based testing") and `pm-dev-python:pytest-testing` (whose
   description names "property-based / adversarial testing (Hypothesis)"). Both are registered
-  components, so the prescription is advertised in the always-resident surface.
+  components, so the prescription is advertised in the always-resident surface. ⚠ **Widened at cleanup
+  2026-09-22**: the phrase "property-based" also appears once each in
+  `pm-dev-java/java-maintenance/standards/pom-maintenance.md` and `pm-dev-python/python-security/SKILL.md`
+  — deliverable 4's derived enumeration of prescriptive techniques should sweep these two alongside the
+  named pair, not stop at two skills.
+  - verdict: corroborated | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: instrumentation-substrate/cleanup | rescoped: n/a | evidence: both skills confirmed registered via plugin.json; 2 more skills carry the phrase, deliverable 4 sweep widened
 - HYPOTHESIS: `hypothesis` is absent from the dependency declaration — confirm/refute at
   `pyproject.toml` (verify-at-outline). Carried from absorbed inbox message `truthful-signals-010`
   finding 4; the source-tree half was re-derived in this session, the dependency half was not.
+  - verdict: corroborated | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: instrumentation-substrate/cleanup | rescoped: n/a | evidence: pyproject.toml: zero case-insensitive hypothesis occurrences; dependency precondition unmet on both halves
 - OBSERVED: `pytest-testing/SKILL.md` marks the technique as carrying a "third-party `hypothesis` dep —
   user-approval" qualifier, which is why the decision has a real cost and is not a formality: adoption
   means asking for that approval.
+  - verdict: corroborated | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: instrumentation-substrate/cleanup | rescoped: n/a | evidence: pytest-testing/SKILL.md line 90 quoted verbatim: third-party hypothesis dep, user-approval qualifier confirmed
 - HYPOTHESIS: An independent team converged on materially the same scoping discriminator this
   repository uses — gating property-based testing to pure functions and serialization round-trips
   rather than mandating it blanket — confirm/refute against the recorded analysis in absorbed inbox
   message `truthful-signals-010` finding 4 (verify-at-outline). ⛔ **This is corroboration, not
   authority**, and it does exactly one thing: it refutes deletion. It does not choose between adoption
-  and demotion.
+  and demotion. ⚠ **Downgraded at cleanup 2026-09-22**: the cited `truthful-signals-010` is no longer
+  reachable in this epic's tracked inbox at HEAD (the same-named file elsewhere in the repo belongs to
+  `code-intelligence-substrate` and is an unrelated cross-repo hand-off). The discriminator ITSELF is
+  live and re-readable at `pytest-testing/SKILL.md` lines 58/89 ("scoped by the universal-contract /
+  literal-is-the-contract discriminator"), so the criterion is not lost — but the *independent-team*
+  half, which is the whole load this claim bears, stands as **spec-internal reasoning**, not an
+  externally-corroborated finding, until a reachable source is re-attached.
+  - verdict: unverifiable | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: instrumentation-substrate/cleanup | rescoped: n/a | evidence: cited truthful-signals-010 not reachable in this epic's tracked inbox at HEAD; same-named file belongs to code-intelligence-substrate; downgraded to spec-internal reasoning in spec text
 - Verify-first clause: ⛔ **Deleting the standard is refuted before it is proposed.** The content is
   independently corroborated rather than idiosyncratic, and the technique defends against a defect
   shape this repository keeps re-introducing — a model changing source or assertions after the fact so

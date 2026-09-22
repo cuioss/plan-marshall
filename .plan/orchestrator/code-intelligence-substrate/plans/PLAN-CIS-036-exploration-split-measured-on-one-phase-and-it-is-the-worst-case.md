@@ -116,9 +116,23 @@ Four deliverables (D1 a gate) — below the split guard.
 
 ## Expected Surface
 
-- **OBSERVED**: `work/metrics.toon` in plans archived after `9b689d65b` — the read-only corpus
-- **HYPOTHESIS**: `audit-archived-plan-retrospectives`' `billing-composition` check (24th), the
-  natural host for a corpus-wide split report (verify-at-outline)
+⚠ **CORRECTED 2026-09-22 at cleanup.** This section previously carried OBSERVED/HYPOTHESIS prose
+instead of path declarations and resolved to zero comparable paths — the disjointness gate read it
+as `prose` (no path entry), the indeterminate state, indistinguishable from a spec declaring nothing
+at all. The population half of the original text ("`work/metrics.toon` in plans archived after
+`9b689d65b`") is now expressed as the recursive glob below; the host half (the HYPOTHESIS naming
+`audit-archived-plan-retrospectives`' billing-composition check) is now CONFIRMED, not hypothetical —
+`PLAN-CIS-054` (which absorbed the sibling `PLAN-CIS-056` population-gate work over the same corpus)
+already declares and builds out exactly this host, at `.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py`
+and its `checks/` documents.
+
+- `.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py` — the natural host for the
+  corpus-wide split report this plan's D1 needs, confirmed rather than hypothesized (see above)
+- `.claude/skills/audit-archived-plan-retrospectives/scripts/checks/` — the `billing-composition`
+  check family
+- `.plan/local/archived-plans/**` — the read-only corpus D1 reads `work/metrics.toon` from, mirroring
+  the same recursive-glob declaration `PLAN-CIS-050` D8 already uses over the same tree (both specs
+  carry the must-not-diverge population rule)
 
 ## Dependencies and Sequencing
 

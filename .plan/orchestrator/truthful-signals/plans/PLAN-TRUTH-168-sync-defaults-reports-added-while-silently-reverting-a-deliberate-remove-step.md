@@ -15,6 +15,22 @@ PLAN-15 (PR cuioss/TokenSheriff#745, plan-marshall `0.1.1670`). The relaying orc
 mechanism against source; this orchestrator re-read it at `7a028157e`. No staged or live spec in any epic
 mentions `sync-defaults`, `_deep_merge_missing`, or `remove-step`.
 
+**Second independent repro, 2026-09-22 (operator dogfood, `7d82d5d90`), broadens the trigger surface.**
+Running `marshall-steward` against an existing repo whose `marshal.json` already carried a deliberately
+narrow `verification_steps` (`{default:verify:quality-gate, default:verify:module-tests}` — `coverage`
+never selected, no `remove-step` ever run against it) silently back-filled `default:verify:coverage` on a
+routine run. Ground-truth re-verified independently: `_deep_merge_missing` (`_cmd_sync_defaults.py:288-294`)
+back-fills ANY key present in the seed and absent from live, unconditionally, regardless of whether the gap
+is a fresh project's never-populated map or an operator's deliberately curated one; `_seed_verify_steps()`
+(`_config_defaults.py:794`, `{step_id: {} for step_id in _verify_step_ids()}`) seeds every discovered
+built-in step with no `default_on`/applicability filter; `marshall-steward/SKILL.md:648` already
+self-labels the path "silent, unconditional." So the defect's trigger is broader than "reverting a
+`remove-step`" — it fires on ANY pre-existing pruned/curated `verification_steps` selection, removal or
+not. This sharpens D1: the remedy MUST cover the no-removal case too, and the operator's own framing of the
+fix is two-fold — (a) an existing `verification_steps`/`steps` map is never expanded without consent, and
+(b) adding a not-yet-selected step is something the operator is ASKED about, not merely reported on after
+the fact. D1's note below is amended accordingly.
+
 ## Objective
 
 **An operator removes `default:verify:coverage` with the sanctioned `manage-config plan phase-5-execute
@@ -35,10 +51,14 @@ Four deliverables. D0 is a gate.
 **D0 — GATE: derive every keyed map `sync-defaults` deep-merges that an operator verb can remove from.**
 Enumerate the seeded keyed maps and the verbs that remove entries from them; publish the population.
 
-**D1 — A removal survives `sync-defaults`.** Either keyed step maps become atomic once present (seeded only
-when the whole map is absent), or `remove-step` records an explicit opt-out that `_deep_merge_missing`
-honours. D0 decides which; the choice must not strand an existing project that legitimately needs a
-newly-shipped default step back-filled.
+**D1 — A removal survives `sync-defaults`, AND a pre-existing curated map is never silently expanded.**
+Either keyed step maps become atomic once present (seeded only when the whole map is absent), or
+`remove-step` records an explicit opt-out that `_deep_merge_missing` honours. D0 decides which; the choice
+must not strand an existing project that legitimately needs a newly-shipped default step back-filled — but
+"stranding" is resolved by ASKING (`AskUserQuestion`, once per newly-discovered not-yet-selected step),
+never by auto-adding. This covers both triggers the corpus now has evidence for: reverting an explicit
+`remove-step` (2026-09-15 report), and expanding a map that simply never included the step in the first
+place (2026-09-22 repro, no `remove-step` involved) — the mechanism and the fix are the same for both.
 
 **D2 — `sync-defaults` distinguishes "new default" from "re-adding something removed"** in its report, so a
 back-fill that crosses an operator decision can never read as a routine addition.

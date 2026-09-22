@@ -1,6 +1,6 @@
 # PLAN-05: Review-bot pacing and yield primitives
 
-epic: quality-aspect
+epic: truthful-signals
 workstream: WS-03
 
 > Staged plan spec — one shippable unit of work, ready for `/plan-marshall` hand-off.
@@ -45,7 +45,7 @@ first part (8 lessons).
 ## Hand-Off Command
 
 ```text
-/plan-marshall task="implement .plan/orchestrator/quality-aspect/plans/PLAN-05-review-yield-a.md"
+/plan-marshall task="implement .plan/orchestrator/truthful-signals/plans/PLAN-208-review-yield-a.md"
 ```
 
 ## Write-Boundary

@@ -55,15 +55,23 @@ D1.
 - OBSERVED (2026-09-18): every deliverable in this plan was carried verbatim from the theme spec named
   in its `Carried from` column, which carries the claim labels for its own deliverables. Confirm/refute
   by reading that spec's `## Claim Labels` section — this plan re-states none of them.
-- OBSERVED (2026-09-18, orchestrator `corpus surfaces` + per-deliverable mapping): this plan's declared
-  surface is disjoint from every other live plan's in this epic. Confirm/refute with
-  `orchestrator corpus cross-check --slug review-apparatus`.
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: review-apparatus/cleanup | rescoped: n/a | evidence: Structural carried-verbatim claim, verified by reading this spec at HEAD: four pointer deliverables plus D0, with PLAN-PR-028 D0 explicitly struck.
+- OBSERVED (2026-09-18, orchestrator `corpus surfaces` + per-deliverable mapping; RE-SCOPED 2026-09-22):
+  this plan's declared surface is disjoint from every other live plan's in this epic **except
+  `PLAN-PR-077`, which shares `phase-6-finalize/workflow/create-pr.md`** (073 owns the landing-record
+  deliverables in that file, 077 owns its D2 gate) — sequence, never pair. This is the collision the
+  resume anchor did not previously name. Confirm/refute with
+  `orchestrator corpus cross-check --slug review-apparatus` — non-determinate at HEAD (see the claim's
+  verdict).
+  - verdict: contradicted | checked_at: 7d82d5d90 | by: review-apparatus/cleanup | rescoped: yes | evidence: DISJOINTNESS IS FALSE, and this is the collision the resume_anchor does NOT name. PLAN-PR-073 and PLAN-PR-077 both declare phase-6-finalize/workflow/create-pr.md - 073 as OBSERVED for its landing-record deliverables, 077 as OBSERVED for its D2 gate. PLAN-PR-077 stated BOTH sides four lines apart at staging (overlap none in this epic, then adjacent to PLAN-PR-073 same file). RE-SCOPE: record the create-pr.md collision with 077 and the sequencing it forces. The anchor claim that only 066/069 and 067/068 collide is refuted - there are THREE pairs, and 067/068 shares three files, not one.
 - OBSERVED (2026-09-18, lesson `2026-09-04-17-001`): `pr_intent_section` clips the PR Intent section at
   a byte offset, the renderer appends rather than replaces, and `ci pr view` does not return the body —
   so the only repair is a full `ci pr edit` rewrite. D3 reports an overflow instead of truncating.
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: review-apparatus/cleanup | rescoped: n/a | evidence: pr_intent_section.py is UNDISTURBED at HEAD - it does not appear in git diff --name-only 7a028157e..HEAD over phase-6-finalize (which lists SKILL.md, review_commitments.py and eleven standards/workflow docs, not pr_intent_section.py). The byte-offset clip, the append-not-replace renderer and the ci pr view gap are unchanged. Premise intact.
 - OBSERVED (2026-09-18, lesson `2026-09-06-16-001`): `_github_pr.py:2332-2339` returns
   `'enqueued': True` corroborated only by the branch rule; `isInMergeQueue` / `mergeQueueEntry` occur
   in zero files across the CI and GitHub script surfaces.
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: review-apparatus/cleanup | rescoped: n/a | evidence: Re-grounded FIRST-PARTY at HEAD. Mechanism holds: _github_pr.py received exactly one hunk in this window (+25 lines at line 317, the SHA-token helper), so cmd_pr_merge_queue enqueued:True corroborated only by the branch rule is unchanged, and isInMergeQueue/mergeQueueEntry still occur in zero files across the CI and GitHub script surfaces. LINE DRIFT, derived: the cited 2332-2339 now reads 2357-2364 - every coordinate below 318 shifts by exactly +25.
 
 ## Dependencies and Sequencing
 
@@ -81,10 +89,10 @@ D1.
 ## Hand-Off Command
 
 ```text
-/plan-marshall task="implement .plan/local/orchestrator/review-apparatus/plans/PLAN-PR-073-the-landing-record-and-the-pr-body.md"
+/plan-marshall task="implement .plan/orchestrator/review-apparatus/plans/PLAN-PR-073-the-landing-record-and-the-pr-body.md"
 ```
 
 ## Write-Boundary
 
 The plan implementing this spec writes to its own repository source only. It creates and edits NO file
-under `.plan/local/orchestrator/` other than its own `inbox/{sender}-{seq}` message.
+under `.plan/orchestrator/` other than its own `inbox/{sender}-{seq}` message.

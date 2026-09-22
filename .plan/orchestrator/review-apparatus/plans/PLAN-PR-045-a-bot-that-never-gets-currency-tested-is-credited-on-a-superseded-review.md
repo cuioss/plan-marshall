@@ -146,7 +146,7 @@ check before staging. It is folded here for exactly that reason and MUST NOT bec
   _reviewed_at_merge_candidate(...)`, with `_requires_update =
   bot_registry.participation_requires_update(_bot_kind)`. Read first-party at
   `workflow-integration-github/scripts/github_pr.py:1317` and `:1338`, HEAD `30cd8aaf8`.
-  - verdict: corroborated | checked_at: 19453cb | by: review-apparatus/cleanup | rescoped: n/a | evidence: Re-grounded at HEAD 19453cb (was 7845a4b9a). METHOD CHANGED THIS PASS: intersection of the spec's DECLARED Expected Surface (via corpus surfaces, the single shared reader) against git diff --name-only 7845a4b9a..HEAD (204 paths). The former whole-spec-file method is RETIRED as non-discriminating - it scored hits on prose mentions of CLAUDE.md and .plan/marshal.json. ZERO declared paths moved in this window, so no premise of this spec was disturbed. NOT a line-by-line re-audit: this establishes the surface is UNDISTURBED, not that the premise was re-read.
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: review-apparatus/cleanup | rescoped: n/a | evidence: Claim: the currency test is reached only through if _requires_update and not _reviewed_at_merge_candidate. SURVIVES at HEAD, but only because the intended replacement is INERT: #1510 added _github_pr.bot_claimed_sha_matches_head() and _github_checks._derive_overall_status(checks, currency_current=None) plus carry_currency_verdict_to_check_state, and none has a production caller in the inventoried tree - the None default preserves pre-currency behaviour. github_pr.py own diff in this window is the router plan-id re-injection only. The gate is still _requires_update-conditioned. Coverage bound: .claude and .github trees are not walked by the content-search tool.
 - OBSERVED: CodeRabbit declares `participation_requires_update: false` (`coderabbit.md:44`) and so
   does **Sourcery** (`sourcery.md:36`) — the population is TWO bots. Confirm/refute at both files.
 - OBSERVED: the gap is a documented, accepted residual whose reopening trigger is named in the
@@ -229,10 +229,10 @@ re-trigger here is legal only when the bot is stale, **not** when it is quota-re
 ## Hand-Off Command
 
 ```text
-/plan-marshall task="implement .plan/local/orchestrator/review-apparatus/plans/PLAN-PR-045-a-bot-that-never-gets-currency-tested-is-credited-on-a-superseded-review.md"
+/plan-marshall task="implement .plan/orchestrator/review-apparatus/plans/PLAN-PR-045-a-bot-that-never-gets-currency-tested-is-credited-on-a-superseded-review.md"
 ```
 
 ## Write-Boundary
 
 The plan implementing this spec touches only its own repository source and tests. It creates and
-edits NO file under `.plan/local/orchestrator/` other than its own `inbox/{sender}-{seq}` message.
+edits NO file under `.plan/orchestrator/` other than its own `inbox/{sender}-{seq}` message.

@@ -79,7 +79,7 @@ corpus, not hand-listed.
 - OBSERVED: 13 of 43 findings unanswered across #1167 (4), #1158 (2), #1198 (6), #1195 (1) — recorded
   in `../cloud-runs/090-feed-pr-findings-back-into-local-review/report-01.md` § Findings and residue,
   and confirmed by that run's `verification.md`.
-  - verdict: corroborated | checked_at: 19453cb | by: review-apparatus/cleanup | rescoped: n/a | evidence: Re-grounded at HEAD 19453cb (was 7845a4b9a). METHOD CHANGED THIS PASS: intersection of the spec's DECLARED Expected Surface (via corpus surfaces, the single shared reader) against git diff --name-only 7845a4b9a..HEAD (204 paths). The former whole-spec-file method is RETIRED as non-discriminating - it scored hits on prose mentions of CLAUDE.md and .plan/marshal.json. ZERO declared paths moved in this window, so no premise of this spec was disturbed. NOT a line-by-line re-audit: this establishes the surface is UNDISTURBED, not that the premise was re-read.
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: review-apparatus/cleanup | rescoped: n/a | evidence: Re-grounded at HEAD (was 19453cb). Intersection over 6 declared paths: 2 hits - github_pr.py and test_github_pr.py. github_pr.py diff READ: router plan-id re-injection only; cmd_post_responses is untouched. gitlab_pr.py, sonar.py, _findings_core.py and automated-review-lifecycle.md are all UNMOVED. The response path this spec is about is undisturbed.
 - OBSERVED: `mark_finding_responded` returns `{'status': 'error', …}` at `_findings_core.py:575`; its
   four call sites (`github_pr.py:1662`, `:1679`, `gitlab_pr.py:433`, `sonar.py`) are all bare
   statements.
@@ -121,10 +121,10 @@ corpus, not hand-listed.
 ## Hand-Off Command
 
 ```text
-/plan-marshall task="implement .plan/local/orchestrator/review-apparatus/plans/PLAN-PR-035-the-response-path-drops-answers-and-nothing-measures-it.md"
+/plan-marshall task="implement .plan/orchestrator/review-apparatus/plans/PLAN-PR-035-the-response-path-drops-answers-and-nothing-measures-it.md"
 ```
 
 ## Write-Boundary
 
 The plan implementing this spec touches only its own repository source and tests. It creates and edits
-NO file under `.plan/local/orchestrator/` other than its own `inbox/{sender}-{seq}` message.
+NO file under `.plan/orchestrator/` other than its own `inbox/{sender}-{seq}` message.

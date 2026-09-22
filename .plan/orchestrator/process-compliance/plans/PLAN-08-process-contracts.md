@@ -45,9 +45,9 @@ PLAN-180 — no duplication; see quality-aspect lessons-disposition.md § Transf
 ## Claim Labels
 
 - OBSERVED: nine process lessons listable but unaddressable (YAML headers), each naming a doc-vs-behavior gap — read at `.plan/local/orchestrator/quality-aspect/lessons-archive/2026-09-03-02-001.md` et seq. (title triage; bodies verified at outline).
-  - verdict: unverifiable | checked_at: 93bda90 | by: process-compliance/cleanup | rescoped: n/a | evidence: quality-aspect lessons-archive titles cited; bodies not opened this pass
+  - verdict: unverifiable | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: process-compliance/cleanup | rescoped: n/a | evidence: quality-aspect lessons-archive unchanged since prior check; titles cited, bodies still not opened this pass; unchanged
 - HYPOTHESIS: one contract pass over the plan lane closes all nine without cross-plan refactors — confirm/refute at `marketplace/bundles/plan-marshall/skills/tools-integration-ci/` § CI abstraction read surface (verify-at-outline).
-  - verdict: corroborated | checked_at: 93bda90 | by: process-compliance/cleanup | rescoped: n/a | evidence: tools-integration-ci ci.py and ci_base.py present
+  - verdict: corroborated | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: process-compliance/cleanup | rescoped: n/a | evidence: tools-integration-ci/ directory unchanged since 93bda90; ci.py and ci_base.py still present; re-confirmed
 
 ## Expected Surface
 
@@ -57,7 +57,7 @@ PLAN-180 — no duplication; see quality-aspect lessons-disposition.md § Transf
 ## Dependencies and Sequencing
 
 - Depends on: none.
-- Overlaps with: none in this epic (CI/github contract surfaces touch no staged WS-01–WS-06 surface).
+- Overlaps with: PLAN-12 (`tools-integration-ci/scripts/ci.py`, `pr-review-operations.md`, discovered when PLAN-12 folded new material — confirmed via `corpus cross-check` — sequence, do not parallelize).
 - Adjacent to: quality-aspect PLAN-18 merge-queue proof reads the same CI surface without touching it.
 
 ## Hand-Off Command

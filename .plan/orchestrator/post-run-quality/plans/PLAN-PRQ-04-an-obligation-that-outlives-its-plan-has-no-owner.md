@@ -36,6 +36,13 @@ a tracked file, so an unissued hint is a lost repository change, whichever plan 
 `truthful-signals` block, `D-087-g` ("no metric or step record captures a stall"), was previously unnamed
 here and is now folded into D0's population as a fourth known kind.
 
+⛔ **Folded 2026-09-22 from inbox `lessons-handling-26-09-22-01-001.md`, `2026-09-21-13-005`.** A fifth
+known kind for D0's population: "Owed architecture hints: preference-emitter, plan
+lessons-corpus-producers-report-success" — filed the same way D-087-e/-f/-g were, and split out at its
+source specifically because it is this spec's own pattern ("the obligation a finished plan left behind has
+no owner once archived"). No new file/module surface — the preference-emitter hint route is already the
+`architecture enrich insight` mechanism D-087-e's discharge covers structurally.
+
 ## Deliverables
 
 Four deliverables. D0 is a gate.
@@ -69,13 +76,13 @@ empty owed set that is distinguishable from a run that was never asked.
 - OBSERVED: `truthful-signals` epic.md records four unissued `architecture enrich insight` calls whose
   owning plan is archived, against a tracked file, with the verdict "the obligation has no owner"
   (D-087-e), and a deferred daemon reconcile at `owed: true`, `defer_count: 1`, marked UNOWNED (D-087-f).
-  - verdict: contradicted | checked_at: 1605831c5 | by: post-run-quality/cleanup | rescoped: yes | evidence: truthful-signals epic.md:2202 -- D-087-e is DISCHARGED 2026-08-25 via PR #1347: enriched.json on main carries 6 insights (was 2). The flagship worked example is closed; the structural point (tracked file, unissued hint = lost repository change) survives as the durable half. D-087-f stands (owed:true, defer_count:1, unowned). A third item, D-087-g (no metric/step record captures a stall), sits in the same block and was previously unnamed.
+  - verdict: contradicted | checked_at: 7d82d5d90 | by: post-run-quality/cleanup | rescoped: yes | evidence: truthful-signals epic.md:2143-2149 (moved from :2202 by the 7d82d5d90 restructure): D-087-e DISCHARGED via PR #1347, enriched.json on main carries 6 insights (ground-truth verified). D-087-f still unowned (:2160-2162), D-087-g also live (:2164-2166). Rescoped: Objective/D0 already absorb the discharge and fold D-087-g in
 - ⚠ HYPOTHESIS: the landing payload's `cleanup_owed` is the right pattern to extend rather than a
   special case — confirm/refute at `plan-orchestrator/standards/landing-payload-spec.md` (verify-at-outline).
-  - verdict: corroborated | checked_at: 1605831c5 | by: post-run-quality/cleanup | rescoped: n/a | evidence: landing-payload-spec.md unchanged in shape: :43 cleanup_owed row; :95 four-state value space (true/false/n/a/unknown); :109,:200-207 carve pr/merge_state/cleanup_owed out of the n/a-exemption. Producer side intact: emit-landing.md:189,:231; branch-cleanup.md:18. The four-state shape is exactly what D1's typed fact needs.
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: post-run-quality/cleanup | rescoped: n/a | evidence: landing-payload-spec.md:43,95,109,121,128 cleanup_owed four-state contract intact (citation drift from prior :200-207 corrected); emit-landing.md/branch-cleanup.md producer sites and test coverage confirmed. D1 premise holds
 - ⚠ HYPOTHESIS: the owed-item kinds above are the whole population. ⛔ Three kinds found by three separate
   accidents is the under-derived-population archetype; D0 owns it (verify-at-outline).
-  - verdict: contradicted | checked_at: 1605831c5 | by: post-run-quality/cleanup | rescoped: yes | evidence: Population is >=6 kinds, not 4. Two uncovered kinds found by sweep of phase-6-finalize/**: (a) owed PR-body note (architecture-refresh.md:349-352, :436-438); (b) owed source edit (source-edit-pushability.md:73, :91-93, :104, :171). The hint kind is confirmed live at 3 sites: lessons-capture.md:119, :125-127; finalize-step-preference-emitter.md:26,:154-180; disposition-to-hint-routing.md:57-105; cross-ref'd lessons-integration.md:56, dispatch-inline-split.md:46.
+  - verdict: contradicted | checked_at: 7d82d5d90 | by: post-run-quality/cleanup | rescoped: yes | evidence: population is >=6 kinds not the smaller set claimed: architecture-refresh.md:349-352 (owed PR-body note), source-edit-pushability.md:73,91-93 (owed source edit), finalize-step-preference-emitter.md:26,154-181, disposition-to-hint-routing.md:57-105, lessons-capture.md:136,144-149,235-243 (citation drift corrected from :119/:125-127). Rescoped: D0 already owns the derivation and publishes six kinds, do-not-treat-six-as-final
 
 ## Expected Surface
 

@@ -1,6 +1,6 @@
 # PLAN-08: Localized-git parsing and drift routing
 
-epic: quality-aspect
+epic: truthful-signals
 workstream: WS-04
 
 > Staged plan spec — one shippable unit of work, ready for `/plan-marshall` hand-off.
@@ -45,8 +45,25 @@ canonical keys, and the YAML-frontmatter corpus split closed. G09 (8 lessons).
 ## Hand-Off Command
 
 ```text
-/plan-marshall task="implement .plan/orchestrator/quality-aspect/plans/PLAN-08-baseline-reconcile.md"
+/plan-marshall task="implement .plan/orchestrator/truthful-signals/plans/PLAN-211-baseline-reconcile.md"
 ```
+
+## ⭐ FOLDED 2026-09-22 — D3's "population growing" claim gets fresh evidence; the specific mechanism a relayed lesson blamed is refuted at HEAD
+
+Inbox lesson `2026-09-21-13-003` (relayed via `lessons-handling-26-09-22-01`) claimed `manage-lessons set-body`
+destroys the metadata header `add` wrote. **Refuted at `7d82d5d90`**: `set_body` (`_lessons_crud.py:163–256`)
+splits the file, rebuilds it as `frontmatter_block + h1_line + body`, and fails closed with
+`error: malformed_lesson` when either is absent — it cannot destroy the header. The lesson's own PR#1560
+diff-scoping check was correct but verified the wrong hypothesis (that diff never touched `cmd_set_body`).
+
+**The subject is nevertheless live and this fold is real evidence for D3.** `_lessons_crud.py`'s module
+docstring states the canonical path-allocate flow: `add` returns a fresh lesson stub's path, the caller
+writes the body to a SEPARATE `work/lesson-body-{id}.md`, and only `set-body` (never a direct `Write` over
+the path `add` returned) populates it. A caller that writes directly over that path destroys the header —
+exactly the provenance the relayed lesson gives for four other 2026-09-21 lessons with unparseable metadata
+headers ("they look hand-authored directly into files rather than filed via `manage-lessons add`"). Those
+four are fresh, corroborated population for D3's `2026-09-21-13-003` claim: *"10–12 lessons YAML-frontmatter
+… population growing"*. Expected Surface unchanged — `manage-lessons/` already declared.
 
 ## Write-Boundary
 

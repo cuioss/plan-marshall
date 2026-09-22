@@ -1,6 +1,6 @@
 # PLAN-17: Finalize self-review round semantics
 
-epic: quality-aspect
+epic: truthful-signals
 workstream: WS-08
 
 > Staged plan spec — one shippable unit of work, ready for `/plan-marshall` hand-off.
@@ -57,7 +57,7 @@ re_entered_phases and value_scope at manage-metrics/SKILL.md and data-format.md.
 ## Hand-Off Command
 
 ```text
-/plan-marshall task="implement .plan/orchestrator/quality-aspect/plans/PLAN-17-finalize-self-review.md"
+/plan-marshall task="implement .plan/orchestrator/truthful-signals/plans/PLAN-219-finalize-self-review.md"
 ```
 
 ## Write-Boundary

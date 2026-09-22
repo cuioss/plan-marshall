@@ -36,16 +36,17 @@ the AGENTS.md precedence ruling — so rule-following is structural rather than 
 ## Claim Labels
 
 - OBSERVED: three rules govern one spec-body read with no script path before PLAN-03, forcing a direct Read in six independent runs — read at `.plan/orchestrator/process-compliance/inbox/compliant-paths-001.md` § Observation/Forced violation (6th instance; five folded predecessors named)
-  - verdict: unverifiable | checked_at: 93bda90 | by: process-compliance/cleanup | rescoped: n/a | evidence: ledger cite (compliant-paths-001 inbox); multi-run history not checkable at HEAD
+  - verdict: unverifiable | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: process-compliance/cleanup | rescoped: n/a | evidence: ledger cite (compliant-paths-001 inbox, now archived) unchanged; multi-run history still not checkable at HEAD
 - OBSERVED: contradictory `.plan/` access rules forced a violation either way with no spec-body verb exposed — read at `.plan/orchestrator/process-compliance/inbox/phase-gates-003.md` § body
-  - verdict: unverifiable | checked_at: 93bda90 | by: process-compliance/cleanup | rescoped: n/a | evidence: ledger cite (phase-gates-003 inbox body); normative premise needs outline
+  - verdict: unverifiable | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: process-compliance/cleanup | rescoped: n/a | evidence: ledger cite (phase-gates-003 inbox body, now archived) unchanged; normative premise still needs outline
 - OBSERVED: `corpus read --slug --plan` shipped in PLAN-03 (PR #1542) and resolves the spec-body half — read at `.plan/orchestrator/process-compliance/landings/PLAN-03.md` § body
-  - verdict: corroborated | checked_at: 93bda90 | by: process-compliance/cleanup | rescoped: n/a | evidence: orchestrator.py cmd_corpus_read present at :2965
+  - verdict: corroborated | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: process-compliance/cleanup | rescoped: n/a | evidence: cmd_corpus_read re-verified present, now at orchestrator.py:2979 (shifted from :2965 by unrelated additions, pure line-shift); docstring/behavior still matches the sanctioned read-only spec-body path
 - HYPOTHESIS: no compliant read path exists for queued orchestrator inbox bodies from a plan context — confirm/refute at `marketplace/bundles/plan-marshall/skills/plan-orchestrator/scripts/orchestrator.py` § `inbox read` subparser (verify-at-outline; forwarded note from `plan-140-slice-060-b0-001.md`)
-  - verdict: contradicted | checked_at: 93bda90 | by: process-compliance/cleanup | rescoped: yes | evidence: inbox write subparser exists at :5209 and emit-landing writes via orchestrator inbox write; spec re-authored to document-not-build
+  - verdict: contradicted | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: process-compliance/cleanup | rescoped: yes | evidence: _orchestrator_inbox.py confirmed byte-unchanged since 93bda90; inbox write subparser still exists; spec already re-authored to document-not-build, re-confirmed unchanged
 - OBSERVED: plan-side inbox filing EXISTS via `orchestrator inbox write` (target derived from slug + sender id, no caller-supplied output path) — read at `marketplace/bundles/plan-marshall/skills/plan-orchestrator/scripts/orchestrator.py` § `inbox write` subparser (re-scoped 2026-09-21: the cleanup re-grounding refuted the no-write-path premise; the remaining gap is discoverability of that path, the read-body verb, and the precedence ruling)
-  - verdict: corroborated | checked_at: 93bda90 | by: process-compliance/cleanup | rescoped: n/a | evidence: no read-body subparser in orchestrator.py inbox actions; landing-check at :5410 only
+  - verdict: corroborated | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: process-compliance/cleanup | rescoped: n/a | evidence: orchestrator.py inbox-verb dispatch and _orchestrator_inbox.py confirmed unchanged since 93bda90; still no read-body subparser distinct from inbox write/read (mailbox); landing-check unchanged
 - Verify-first clause: the consuming phase settles both HYPOTHESIS clauses against the implementing source before scoping — refutation loops back to re-scope (e.g. a write path already exists and only needs documenting)
+  - verdict: unverifiable | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: process-compliance/cleanup | rescoped: n/a | evidence: procedural instruction to the consuming phase, not a checkable world premise; no implementing-source check applies
 
 ## Expected Surface
 

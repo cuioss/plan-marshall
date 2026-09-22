@@ -114,7 +114,7 @@ secondary confirmation that cannot promote a third-party comment on its own.
   `_SELF_RESPONSE_HEADING = '## Triage dispositions'` at :358.
   ⚠ **LINE DRIFT CORRECTED 2026-08-29** (was :393 / :347; re-derived at HEAD `a1cae6102`). The
   PREDICATE and the CONSTANT are unchanged — only their line numbers moved.
-  - verdict: corroborated | checked_at: 19453cb | by: review-apparatus/cleanup | rescoped: n/a | evidence: Re-grounded at HEAD 19453cb (was 7845a4b9a). METHOD CHANGED THIS PASS: intersection of the spec's DECLARED Expected Surface (via corpus surfaces, the single shared reader) against git diff --name-only 7845a4b9a..HEAD (204 paths). The former whole-spec-file method is RETIRED as non-discriminating - it scored hits on prose mentions of CLAUDE.md and .plan/marshal.json. ZERO declared paths moved in this window, so no premise of this spec was disturbed. NOT a line-by-line re-audit: this establishes the surface is UNDISTURBED, not that the premise was re-read.
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: review-apparatus/cleanup | rescoped: n/a | evidence: Re-grounded at HEAD (was 19453cb). Intersection over 5 declared paths: 3 hits - github_pr.py, _github_pr.py, test_github_pr.py. Both script diffs READ: github_pr.py is router plan-id re-injection only; _github_pr.py is a single hunk adding _SHA_TOKEN and bot_claimed_sha_matches_head. Neither touches the self-response filter. Premise intact.
 - OBSERVED: an author-identity comparison already exists in the sibling module — read at
   `_github_pr.py`:1211, `(n.get('author') or {}).get('login') == viewer_login`, resolved by
   `get_viewer_login()` at :1121 and called at :1182. The identity is therefore reachable, and
@@ -122,7 +122,7 @@ secondary confirmation that cannot promote a third-party comment on its own.
   ⚠ **LINE DRIFT CORRECTED 2026-08-29** (was :982; re-derived at HEAD `a1cae6102`). This drift was
   NOT named by the drained message and is the load-bearing one of the three — D1 depends on this site
   being a usable identity comparison, so a stale citation here is worse than a stale predicate cite.
-  - verdict: corroborated | checked_at: a1cae610273dfb29c1a8031974a48774649ef7a2 | by: review-apparatus/analyze | rescoped: n/a | evidence: RE-VERIFIED FIRST-PARTY at HEAD a1cae6102. The author-identity comparison exists and D1 remains a re-key rather than new plumbing: get_viewer_login() at _github_pr.py:1121, called at :1182, compared at :1211 as (n.get('author') or {}).get('login') == viewer_login. LINE DRIFT CORRECTED: the spec cited :982. This drift was NOT named by the drained message and is the load-bearing one, because D1 depends on this exact site being usable. CAVEAT RECORDED ON THE DELIVERABLE, not here: the comparison is reachable, but an author-identity PRIMARY key would swallow the operator's own genuine review comments, since cuioss-oliver is both the emitter identity and a real reviewer (8 inline + 2 issue_comment rows on PR #1361 alone) and the recognizer docstring at :390-394 names the start anchor as a load-bearing false-positive boundary.
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: review-apparatus/cleanup | rescoped: n/a | evidence: Re-grounded FIRST-PARTY at HEAD (was a1cae6102). Mechanism holds - get_viewer_login and the author-identity comparison survive, so D1 remains a re-key rather than new plumbing. LINE DRIFT, DERIVED NOT GUESSED: _github_pr.py received exactly one hunk in this window, 25 inserted lines at line 317, so every coordinate below 318 shifts by exactly +25. The cited sites 1121/1182/1211 now read 1146/1207/1236. The recorded caveat is unchanged and still load-bearing: an author-identity primary key would swallow the operator own genuine review comments.
 - OBSERVED: the module's own docstring already concedes "the self-response filter cannot be
   complete" (`github_pr.py`:17) and carries a bounded `(self-response-loop)` guard for the case it
   misses. ⭐ The incompleteness is DOCUMENTED and not CORRECTED — the same shape as the pr-agent
@@ -212,10 +212,10 @@ required:** a genuine bot comment that happens to quote a trigger string is stil
 ## Hand-Off Command
 
 ```text
-/plan-marshall task="implement .plan/local/orchestrator/review-apparatus/plans/PLAN-PR-040-our-own-comment-is-ingested-as-a-review-finding.md"
+/plan-marshall task="implement .plan/orchestrator/review-apparatus/plans/PLAN-PR-040-our-own-comment-is-ingested-as-a-review-finding.md"
 ```
 
 ## Write-Boundary
 
 The plan implementing this spec touches only its own repository source and tests. It creates and
-edits NO file under `.plan/local/orchestrator/` other than its own `inbox/{sender}-{seq}` message.
+edits NO file under `.plan/orchestrator/` other than its own `inbox/{sender}-{seq}` message.

@@ -868,7 +868,7 @@ the conjunction. That is the vacuous-gate shape this epic already tracks, now on
 - OBSERVED (added 2026-08-31, RELAYED from `truthful-signals-041`, NOT re-derived): the
   PLAN-TRUTH-109 / PLAN-TRUTH-090 wait-vs-override pair above. Confirm/refute at PRs #1369 and
   #1371 and at those plans' landing records — ⛔ **corroborate before pricing anything on it.**
-  - verdict: corroborated | checked_at: 19453cb | by: review-apparatus/cleanup | rescoped: n/a | evidence: Re-grounded at HEAD 19453cb (was 7845a4b9a). METHOD CHANGED THIS PASS: intersection of the spec's DECLARED Expected Surface (via corpus surfaces, the single shared reader) against git diff --name-only 7845a4b9a..HEAD (204 paths). The former whole-spec-file method is RETIRED as non-discriminating - it scored hits on prose mentions of CLAUDE.md and .plan/marshal.json. ZERO declared paths moved in this window, so no premise of this spec was disturbed. NOT a line-by-line re-audit: this establishes the surface is UNDISTURBED, not that the premise was re-read.
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: review-apparatus/cleanup | rescoped: n/a | evidence: Re-grounded at HEAD (was 19453cb). Declared-surface intersection against 19453cb..HEAD: MOVED - review_completeness.py, automatic-review SKILL.md, bot-participation-contract.md, branch-cleanup.md, test/plan-marshall/automatic-review. Diffs READ at those paths: the movement is #1510 four review-currency fixes and #1514 test re-slicing. Nothing in it touches the nobody-reviewed vs reviewed-clean collapse this spec names. Premise intact; line references have drifted, re-derive at outline.
 - OBSERVED: this spec was RE-GROUNDED against HEAD `e8324d241` on 2026-08-23 during the cloud-wave ingestion; the outcome, and every spec defect that must be corrected before a run, are in § "Re-Grounding" above and in `../cloud-wave-audit.md` § 6.
 Every line number below is a **lead** — re-derive it. `OBSERVED` means the file and symbol were read
 at HEAD while authoring this plan.
@@ -895,7 +895,7 @@ at HEAD while authoring this plan.
 | `manage-files` `write`/`read` can carry a plan-dir artifact between the automatic-review step and an `order: 990` step | HYPOTHESIS | `manage-files/SKILL.md` § Operations (both verbs exist, and the retrospective's Step 4 already writes a plan-dir artifact by that route). **D0 settles it**; what is unverified is the ordering property, not the verbs |
 | The repository's build (architecture-resolved `verify`) exercises both `test/plan-marshall/automatic-review/` and `test/plan-marshall/finalize-step-review-retrospective/` | HYPOTHESIS | Run the build gate per CLAUDE.md § Build Commands — resolve via `architecture resolve`, never hard-code `./pw` — and read which test directories the report names. If the retrospective's tests are not collected, say so in the report — several *Done when* conditions rest on them |
 | `review_rate_window_await` defaults to `false`, so an awaitable refusal is discarded rather than awaited under the default posture | OBSERVED | `automatic-review/SKILL.md` § "Rate-limit refusal recovery" — the `review_rate_window_await == false` sentence and the config declaration in the frontmatter block |
-  - verdict: corroborated | checked_at: 7845a4b9a383a4d58c9314bfce89970ced67c4f7 | by: review-apparatus/cleanup | rescoped: n/a | evidence: Re-grounded at HEAD 7845a4b9a, method: whole-spec-file intersection against git diff --name-only 26645688b..HEAD (197 paths). Fail-closed by design - the scan is over the WHOLE spec file, not a parsed Expected Surface section, because two section parsers disagreed on this corpus. Basename matching stays DISCARDED as non-discriminating. NO running-row exclusion applied this pass: the queue has no running plan. Intersection: 8 hit(s), including SKILL.md; _github_pr.py; bot-participation-contract.md; bot_registry.py; branch-cleanup.md; marshal.json. Surface MOVED in this window - NOT re-audited line by line this pass; line references will have drifted, re-derive at outline. No finding in this window contradicts the premise.
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: review-apparatus/cleanup | rescoped: n/a | evidence: Same window and read as claim 0, baseline 7845a4b9a..HEAD. Surface MOVED (5 declared paths); the movement read at the diff is #1510 currency work plus #1514 test slicing, neither bearing on the one-signal collapse.
 
 ## Verification
 
@@ -1005,12 +1005,12 @@ step's path for exactly that reason.
 ## Hand-Off Command
 
 ```text
-/plan-marshall task="implement .plan/local/orchestrator/review-apparatus/plans/PLAN-PR-026-nobody-reviewed-and-reviewed-clean-are-still-one-signal.md"
+/plan-marshall task="implement .plan/orchestrator/review-apparatus/plans/PLAN-PR-026-nobody-reviewed-and-reviewed-clean-are-still-one-signal.md"
 ```
 
 ## Write-Boundary
 
 The plan implementing this spec touches only its own repository source and tests. It creates and edits
-NO file under `.plan/local/orchestrator/` other than its own `inbox/{sender}-{seq}` message — the
+NO file under `.plan/orchestrator/` other than its own `inbox/{sender}-{seq}` message — the
 orchestrator owns every other ledger write — and reports its outcome through its PR and its inbox
 message.

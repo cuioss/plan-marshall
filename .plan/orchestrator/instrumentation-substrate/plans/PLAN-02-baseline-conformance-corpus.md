@@ -22,8 +22,11 @@ rule, the CI-abstraction rule, and the Bash-composition rules.
 ## Deliverables
 
 1. A **derived** candidate list: every rule stated in `CLAUDE.md` § "Workflow Discipline (Hard Rules)"
-   enumerated, with the selection criterion applied to the whole enumeration rather than to a sample.
-   ⛔ The list's completeness is itself a claim and must be derived, not asserted.
+   **AND** every always-binding rule in `persona-plan-marshall-agent/SKILL.md` § "Hard Rules (never
+   override)" and `standards/tool-usage-patterns.md`, enumerated, with the selection criterion applied
+   to the whole enumeration rather than to a sample. ⛔ **Population widened at cleanup 2026-09-22** —
+   see Claim Labels: `CLAUDE.md` alone is refuted as the complete population. The list's completeness
+   is itself a claim and must be derived, not asserted.
 2. Scenarios for the selected rules, in PLAN-01's fixture format.
 3. A baseline run and its published result, with each verdict carrying its population.
 4. A negative control: at least one scenario whose rule the harness is **expected** to score
@@ -42,16 +45,23 @@ rule, the CI-abstraction rule, and the Bash-composition rules.
   this repository" and names a single bounded exception (the standalone plan lane under `doc/plans/`)
   — read at `CLAUDE.md`. The exception is part of the population and a scenario must not test a rule
   inside a context where that rule does not bind.
+  - verdict: corroborated | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: instrumentation-substrate/cleanup | rescoped: n/a | evidence: CLAUDE.md verbatim at HEAD: applies to ALL work, one bounded exception (doc/plans/)
 - OBSERVED: A PreToolUse hook enforces part of one rule family mechanically (the "R1" family), and its
   context gate fires only inside a plan context — read at `CLAUDE.md` § "Standalone Plan Lane". ⭐ A
   rule with a mechanical enforcer and a rule with only prose behind it are **different propositions**,
   and the baseline must report which is which or its numbers are not comparable across rules.
-- HYPOTHESIS: The hard-rule population in `CLAUDE.md` is the complete set of rules worth a baseline,
-  and no equivalent always-binding rule set lives only in `persona-plan-marshall-agent` — confirm/
-  refute at
-  `marketplace/bundles/plan-marshall/skills/persona-plan-marshall-agent/standards/tool-usage-patterns.md`
-  (verify-at-outline). ⛔ If refuted, the enumeration deliverable's population is wrong and must be
-  widened before any scenario is authored.
+  - verdict: corroborated | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: instrumentation-substrate/cleanup | rescoped: n/a | evidence: CLAUDE.md Standalone Plan Lane table + .claude/settings.local.json PreToolUse matcher-less group confirm the R1 enforcer
+- ⛔ **REFUTED at cleanup 2026-09-22 (was HYPOTHESIS).** The hard-rule population in `CLAUDE.md` is NOT
+  the complete set of rules worth a baseline. `persona-plan-marshall-agent/SKILL.md` § "Hard Rules
+  (never override)" carries 5 always-binding rules absent from `CLAUDE.md` (e.g. "Bash: Timeout from
+  architecture-resolved canonical command", "Subagents are leaves — no further dispatch", "Git
+  targeting: … never `cd {path} && git`"), and `standards/tool-usage-patterns.md` carries 5 more
+  (env-var dispatch in Bash, no heredocs with `#` lines, no sleep for external waits, the
+  `TERM_PROGRAM`-only env-var read allow-list, authoring file contents via Bash forbidden in every
+  shape). **Consequence, absorbed into this spec's scope**: deliverable 1's enumeration is widened to
+  span all three sources (see Deliverables). Shared refutation with PLAN-08 idx 3 (same population,
+  same artifacts) — reconcile the two enumerations rather than deriving the population twice.
+  - verdict: contradicted | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: instrumentation-substrate/cleanup | rescoped: yes | evidence: persona-plan-marshall-agent/SKILL.md Hard Rules (5 extra) + tool-usage-patterns.md (5 extra) absent from CLAUDE.md; deliverable 1 widened; shared with PLAN-08 idx3
 - Verify-first clause: PLAN-01's fixture format must be read at HEAD, not recalled from this spec.
   This spec deliberately does not restate the format — it points at it, because a restatement here
   would be a second copy that drifts.
@@ -62,9 +72,10 @@ rule, the CI-abstraction rule, and the Bash-composition rules.
   component PLAN-01 creates; this plan adds scenarios to it
 - OBSERVED: `test/pm-plugin-development/instruction-conformance/` — the mirror test directory
 
-⚠ **Read-only, deliberately NOT declared above**: `CLAUDE.md` is the source of the rule population and
-is **read, never modified** — a scenario tests a rule, it does not rewrite one. Declaring it would
-serialize every sibling behind a file this plan does not touch.
+⚠ **Read-only, deliberately NOT declared above**: `CLAUDE.md`, `persona-plan-marshall-agent/SKILL.md`
+and `standards/tool-usage-patterns.md` (the widened population, per Claim Labels) are all **read, never
+modified** — a scenario tests a rule, it does not rewrite one. Declaring them would serialize every
+sibling behind files this plan does not touch.
 
 ## Dependencies and Sequencing
 

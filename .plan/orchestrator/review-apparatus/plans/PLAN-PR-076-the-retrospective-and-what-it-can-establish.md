@@ -24,7 +24,18 @@ Make the retrospective compute over the populations it names, follow a split PR 
 | D1 | Make the metric state what it can and cannot establish | `PLAN-PR-037` § D2 | `PLAN-PR-063` D8 |
 | D2 | Make the actionable classifier reviewer-aware for `issue_comment` | `PLAN-PR-037` § D4 | `PLAN-PR-063` D10 |
 | D3 | Follow the split — findings and participation records reach the successor PRs | `PLAN-PR-052` § D4 | `PLAN-PR-057` D11 |
+| D5 | The kind-based CodeRabbit actionable-count metric under-counts overflow findings nested as prose | (below) | lesson `2026-09-20-08-001` |
 
+**D5 — The kind-based actionable-count metric under-reports overflow findings nested as prose (lesson
+`2026-09-20-08-001`, drained 2026-09-22 via `lessons-handling-26-09-22-01`).** GitHub's inline-comment
+posting cap makes CodeRabbit fold overflow findings into the meta status body as prose (`"Outside diff
+range comments (N)"`) instead of posting them as separate inline comments with their own `hash_id` —
+and `review_retrospective.py`'s kind-based counting reads only the inline-comment population, so it
+silently drops every folded finding. Observed on `PLAN-TRUTH-143`/#1539: measured `actionable_count: 7`,
+true yield `9`. *Done when:* the metric parses the meta-body overflow section and adds its count to the
+population it names, and a test with a review exceeding the inline-comment cap fails on the current code
+and passes after. ⚠ This is a LEAD carried from another epic's lessons drain; re-derive the overflow
+population and the cap threshold at HEAD before fixing it.
 
 **D4 — Measure the EXTERNAL review loop's self-seeded share (inbox `truthful-signals-059.md`, drained
 2026-09-18).** The in-house loop is being asked to publish its self-seeded share; the same measurement
@@ -42,7 +53,7 @@ plan's own measurement and is a LEAD: re-derive it before reporting it as this e
 plan `truth-166-architecture-refresh-migration-churn`, PR #1501.)*
 
 
-5 deliverables — within the guideline (12 nominal, ~14 when the aspects fit together, operator ruling 2026-09-15). ⛔ **Absorb nothing from another component**: the re-cut exists so this plan's surface stays disjoint.
+6 deliverables — within the guideline (12 nominal, ~14 when the aspects fit together, operator ruling 2026-09-15). ⛔ **Absorb nothing from another component**: the re-cut exists so this plan's surface stays disjoint.
 
 ## Expected Surface
 
@@ -55,9 +66,11 @@ plan `truth-166-architecture-refresh-migration-churn`, PR #1501.)*
 - OBSERVED (2026-09-18): every deliverable in this plan was carried verbatim from the theme spec named
   in its `Carried from` column, which carries the claim labels for its own deliverables. Confirm/refute
   by reading that spec's `## Claim Labels` section — this plan re-states none of them.
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: review-apparatus/cleanup | rescoped: n/a | evidence: Structural carried-verbatim claim, verified by reading this spec at HEAD: four pointer deliverables plus D4 and D5 inline, both explicitly labelled LEADS carried from another epic drain and both instructing re-derivation before use.
 - OBSERVED (2026-09-18, orchestrator `corpus surfaces` + per-deliverable mapping): this plan's declared
   surface is disjoint from every other live plan's in this epic. Confirm/refute with
   `orchestrator corpus cross-check --slug review-apparatus`.
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: review-apparatus/cleanup | rescoped: n/a | evidence: DISJOINTNESS HOLDS over the DECLARED surface - review_retrospective.py, finalize-step-review-retrospective SKILL.md and its test dir appear on no other staged spec declared paths - AND the whole declared surface is UNDISTURBED: zero of the three appear in git diff --name-only 7a028157e..HEAD. The declaration nonetheless under-states reality: this spec own Dependencies says finalize-step-review-retrospective SKILL.md is also edited by PLAN-PR-071 D4 and PLAN-PR-073 D3, and that file is on neither of their Expected Surfaces - a declaration gap, not a surface collision the gate can see.
 
 
 ## Dependencies and Sequencing
@@ -73,10 +86,10 @@ plan `truth-166-architecture-refresh-migration-churn`, PR #1501.)*
 ## Hand-Off Command
 
 ```text
-/plan-marshall task="implement .plan/local/orchestrator/review-apparatus/plans/PLAN-PR-076-the-retrospective-and-what-it-can-establish.md"
+/plan-marshall task="implement .plan/orchestrator/review-apparatus/plans/PLAN-PR-076-the-retrospective-and-what-it-can-establish.md"
 ```
 
 ## Write-Boundary
 
 The plan implementing this spec writes to its own repository source only. It creates and edits NO file
-under `.plan/local/orchestrator/` other than its own `inbox/{sender}-{seq}` message.
+under `.plan/orchestrator/` other than its own `inbox/{sender}-{seq}` message.

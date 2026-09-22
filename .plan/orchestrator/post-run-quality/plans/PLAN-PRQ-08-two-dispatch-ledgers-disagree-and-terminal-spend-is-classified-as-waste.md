@@ -14,6 +14,17 @@ different plans between 2026-08-27 and 2026-09-08, all preserved in this epic at
 `.plan/orchestrator/post-run-quality/lessons/{id}.md`. Three of them (`2026-08-27-16-002`,
 `2026-09-04-08-010`, `2026-09-05-07-002`) state one defect three times — the recurrence is the evidence.
 
+⛔ **Folded 2026-09-22 from inbox `lessons-handling-26-09-22-01-001.md`, cross-ref pair `2026-09-20-08-006`
+(primary) / `2026-09-21-13-001`.** A seventh and eighth occurrence of the same underlying gap, viewed from
+both sides of the boundary: every one of the 12 `6-finalize` rows in the execution manifest's
+`execution_log` carries `total_tokens: unmeasured` / `tool_uses: unmeasured` / `duration_ms: unmeasured` —
+no `work/metrics-dispatch-boundaries-6-finalize.toon` is written at all, though the equivalent files exist
+for `4-plan` and `5-execute` (the consumer-side symptom D0's corpus derivation should now count); and
+`plan-retrospective`'s own Phase Dispatch Boundaries section is unreachable because its trigger key is
+never registered (the producer-side symptom — "no aspect consumes it", exactly this spec's own Objective
+sentence). Expected Surface updated in the same edit to add the phase-6-finalize boundary-ledger producer,
+which the existing declaration did not name.
+
 ## Objective
 
 **A plan's spend is recorded in two ledgers that disagree, no aspect reconciles them, and the one figure
@@ -87,28 +98,31 @@ which this spec did not originally carry:
    no lesson-retirement work in this plan — retirement was completed by the sweep that staged it.
 
 ⚠ Note `2026-09-08-22-006` (this spec's D1 lesson) has **no tombstone at all** — it is a headerless,
-unretirable entry per `PLAN-PRQ-05`'s fold; see `lessons/invalid-headerless/` for its only surviving copy
-and audit trail besides the decision log.
+unretirable entry per `PLAN-PRQ-05`'s fold. ⛔ **CORRECTED 2026-09-22 (cleanup, `checked_at: 7d82d5d90`):
+"only surviving copy" is wrong at HEAD** — TWO tracked copies exist,
+`lessons/2026-09-08-22-006.md` and `lessons/invalid-headerless/2026-09-08-22-006.md`; `manage-lessons get
+2026-09-08-22-006` still correctly returns `not_found`, so the MUST-NOT-call-`remove` guard above is
+unaffected by the correction.
 
 - OBSERVED (lesson `2026-09-08-22-006`): `reconcile-ledgers` returned 24 findings over 32 union rows on one
   plan — 3 × `row_absent_from_execution_log` totalling 603,578 tokens, 17 × `row_absent_from_boundary_ledger`,
   1 × `boundary_never_closed`, 2 × `phase_re_entered` — and none reaches the report.
-  - verdict: corroborated | checked_at: 1605831c5 | by: post-run-quality/cleanup | rescoped: n/a | evidence: Structural half corroborated: producer exists (manage-metrics.py:3321 cmd_reconcile_ledgers, registered :4079-4109, documented SKILL.md:29; 4 finding classes at _ledger_reconciliation.py:108-110). Nothing reads it, confirmed by derivation: content sweep for reconcile-ledgers returns 6 hits across only 3 files, zero in plan-retrospective/**. Per-run figures not re-derivable (source lesson retired, text preserved in lessons/).
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: post-run-quality/cleanup | rescoped: n/a | evidence: producer live and unconsumed at _ledger_reconciliation.py:114-117 (4 finding classes). MATERIAL CHANGE since e8a71650: check-dispatch-audit.py D4 now reads boundary-ledger rows directly and names reconcile-ledgers as owning divergence findings -- claim holds literally but D1 narrows from 'wire a producer nothing reads' to 'replace a partial re-derivation with the producer'
 - OBSERVED (lesson `2026-09-03-23-001`): `refire-report` reads only `execution_log`.
-  - verdict: corroborated | checked_at: 1605831c5 | by: post-run-quality/cleanup | rescoped: n/a | evidence: manage-execution-manifest.py:2918 cmd_refire_report; docstring :2921 consumes ONLY execution_log[], not a second source; body :2960-2964 reads manifest.get(EXECUTION_LOG_KEY) alone; helper :2801-2849 iterates execution_log only; argparse help :3513 confirms. No boundary-ledger read anywhere in the path.
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: post-run-quality/cleanup | rescoped: n/a | evidence: summarize_refires at manage-execution-manifest.py:2929 iterates execution_log rows alone, no boundary-ledger read. NARROWING: :2954-2960 already separates loop_backs/failures/errors into three columns -- D3's thesis already implemented on the refire-report side; D2's residue is the missing second ledger, not the outcome classification
 - OBSERVED (lessons `2026-08-27-16-002`, `2026-09-04-08-010`, `2026-09-05-07-002`): the error/retryable
   token classes misattribute terminal dispatch spend; one run's waste figure was inflated by 2.32M tokens.
-  - verdict: unverifiable | checked_at: 1605831c5 | by: post-run-quality/cleanup | rescoped: n/a | evidence: All three cited lessons (2026-08-27-16-002, 2026-09-04-08-010, 2026-09-05-07-002) retired from live corpus, readable only at lessons/{id}.md. Tombstones confirm deliberate retirement not loss (superseded, moved into epic post-run-quality). The 2.32M-token figure is a per-run measurement against a plan whose artifacts were not located; not re-derivable from HEAD source.
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: post-run-quality/cleanup | rescoped: n/a | evidence: both halves check out: lessons/2026-08-27-16-002.md confirms error_total_tokens 2323435 (39%) all pre-submission-self-review, 26 real findings all fixed -- productive work stamped waste. Structural half derivable from logging-gap-analysis.md:193-195,228-242: no residual published, blocked_user_review lands in neither published class. D3 premise corroborated on current source
 - OBSERVED (lesson `2026-09-04-08-009`): four plans missed their efficiency anchors by 3.6×–6.5×, observed
   only post-merge.
-  - verdict: unverifiable | checked_at: 1605831c5 | by: post-run-quality/cleanup | rescoped: n/a | evidence: Lesson 2026-09-04-08-009 retired (superseded, moved into epic post-run-quality), text preserved at lessons/2026-09-04-08-009.md. Anchors themselves are live (plan-retrospective/references/, 15 entries incl. plan-efficiency.md), but the four-plan measurement is a historical corpus reading, not re-derivable.
+  - verdict: unverifiable | checked_at: 7d82d5d90 | by: post-run-quality/cleanup | rescoped: n/a | evidence: lesson 2026-09-04-08-009 present, manage-lessons get correctly returns not_found as the guard predicts. Anchors surface live. 4-plan 3.6x-6.5x measurement is a historical corpus reading absent at HEAD -- no current source supports or refutes. D4's FOLDED half confirmed: 0 plan-efficiency hits in phase-4-plan/**
 - ⚠ HYPOTHESIS: the two ledgers' disagreement is systemic rather than plan-specific — D0 measures it, and
   a low corpus rate re-scopes D1/D2 downward (verify-at-outline).
-  - verdict: unverifiable | checked_at: 1605831c5 | by: post-run-quality/cleanup | rescoped: n/a | evidence: D0's own corpus sweep, deliberately not run in this corroboration pass (out of scope for a claim check, legitimate for the plan itself). Prerequisite confirmed available: reconcile-ledgers is read-only and invocable, .plan/local/archived-plans/ is present. Spec's own re-scoping trigger stands: a low corpus rate shrinks D1/D2.
+  - verdict: unverifiable | checked_at: 7d82d5d90 | by: post-run-quality/cleanup | rescoped: n/a | evidence: D0's own corpus sweep, deliberately not executed in a read-only claim-check pass. reconcile-ledgers confirmed read-only/invocable. Re-scoping trigger stands and is reinforced by claim 0's narrowing -- D1's remaining delta may be smaller than staged
 - ⛔ NOT THIS PLAN'S: the four unwired context-load flags (`record-dispatch-boundary`) are owned by
   `truthful-signals` PLAN-TRUTH-160, which folded that exact lesson on 2026-09-17. D0's sweep will see the
   empty columns — report them, do not fix them here.
-  - verdict: corroborated | checked_at: 1605831c5 | by: post-run-quality/cleanup | rescoped: n/a | evidence: PLAN-TRUTH-160 present in truthful-signals status.json, row status:staged, not landed. Boundary holds: D0's sweep will see empty context-load-flag columns it must report, not fix. Same-shape check: manage-metrics/** also declared by -160 (staged); manage-execution-manifest/** declared by -145 and -147 (both staged).
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: post-run-quality/cleanup | rescoped: n/a | evidence: PLAN-TRUTH-160 staged in live truthful-signals queue, still carries its FOLDED block naming the four flags and call sites -- boundary holds (D0 reports, does not fix). NEW: PLAN-TRUTH-175 (staged) declares the identical fix with the OPPOSITE root cause and records overlaps:none -- sole-ownership reading no longer safe, cross-epic collision to record
 - ⭐ CORROBORATING EVIDENCE, folded 2026-09-21 (inbox `retrospective-aspects-publish-verdict-005.md`,
   filed by `PLAN-PRQ-02`'s own retrospective, PR #1550): first-party post-landing confirmation of D0's
   premise, NOT a new fix — the message explicitly defers to this D0. On that run: `ledger_present: true`,
@@ -117,6 +131,7 @@ and audit trail besides the decision log.
   change-ledger build-row WRITER does not record build executions — no read-side fix can repair this.
   D0's corpus sweep should expect this same absence on every plan; D0's acceptance test can use this run's
   own baseline (`summed_rows == 27` after the writer is fixed).
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: post-run-quality/cleanup | rescoped: n/a | evidence: archived inbox retrospective-aspects-publish-verdict-005.md carries every cited figure verbatim (796 rows scanned, 0 summed, 27 actual build calls); root cause and deferral to PRQ-08 D0 both explicit. PLAN-TRUTH-175 D5 now declares the identical build-time-oracle investigation on manage-change-ledger/** -- second collision to record
 - ⭐ CORROBORATING EVIDENCE, folded 2026-09-21 (inbox `retrospective-aspects-publish-verdict-006.md`,
   same source): confirms the `record-dispatch-boundary` gap cited above — on that run, `context_position_cost`
   reported `total_rows: 103`, `measured_rows: 0`, `unmeasured_rows: 103` across every phase, and every one
@@ -124,10 +139,12 @@ and audit trail besides the decision log.
   `cache_read_input_tokens`, `cache_creation_input_tokens`) in its own `unmeasured_columns`. Reinforces that
   the gap is structural (0-of-N on every plan), not incidental to one run — still `truthful-signals`
   PLAN-TRUTH-160's subject, not this plan's.
+  - verdict: corroborated | checked_at: 7d82d5d90 | by: post-run-quality/cleanup | rescoped: n/a | evidence: archived inbox retrospective-aspects-publish-verdict-006.md verbatim: 103 total rows, 0 measured, structurally unmeasurable on every plan using the current recorder -- matches 'not incidental to one run'. Same PLAN-TRUTH-175 D3 ownership contest as claim 5 applies
 
 ## Expected Surface
 
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/manage-metrics/scripts/` — `reconcile-ledgers` and the spend classes (D0, D3)
+- OBSERVED: `marketplace/bundles/plan-marshall/skills/phase-6-finalize/SKILL.md` — the `record-dispatch-boundary` call site (~L1112) that writes `work/metrics-dispatch-boundaries-6-finalize.toon`; added by the 2026-09-22 fold (`2026-09-20-08-006`/`2026-09-21-13-001`) for the boundary-ledger absence at this phase (D0)
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/manage-metrics/standards/data-format.md` — the published class contract (D3)
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/retro_sections.py` — aspect registration (D1)
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/plan-retrospective/references/` — the plan-efficiency anchors (D4)

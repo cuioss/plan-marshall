@@ -40,7 +40,12 @@ anything that ever fires.
    retained redirect the FIRST rule that kept it and for every removal the trigger that fired,
    with `knob_source` annotated and an `empty_population` state that says which zero it is.
 4. **D3 — the redirect primitive at the shared resolver**, so a retired address resolves to
-   its successor once, for every caller, per ADR-016.
+   its successor once, for every caller, per ADR-016. ⚠ Re-grounded 2026-09-22: this is
+   necessary but NOT sufficient — see the refuted HYPOTHESIS in Claim Labels. A resolver-level
+   redirect only reaches call sites that RESOLVE a filesystem path; a call site that MATCHES a
+   path-shaped string persisted elsewhere (the `_orchestrator_inbox.py` `_SOURCE_ID_RE`
+   pattern is the reproduced instance) is untouched by it and needs its own explicit class in
+   this deliverable's design, not a generic redirect assumption.
 5. **D4 — the retention knob** in `marshal.json` `system.retention`, alongside the eight that
    are already there.
 6. **D5 — an ADR**, because the tree has none governing this and the next migration will need
@@ -90,19 +95,36 @@ anything that ever fires.
 - OBSERVED — the only large-rename precedent in this repo is big-bang with no shim: commit
   `36bc12362` / PR #18 absorbed `pm-workflow` into `plan-marshall` in one commit, and a
   content search for `pm-workflow` returns zero hits across the inventoried tree today.
-- HYPOTHESIS — a redirect at the shared resolver (ADR-016) is sufficient and no call site needs
-  a shim of its own; confirm/refute at `marketplace_paths.py` § `resolve_main_anchored_path`
-  and `file_ops.py` § `get_store_dir` against the enumerated call sites (verify-at-outline).
+- ⚠ REFUTED AT HEAD (was HYPOTHESIS) — a redirect at the shared resolver is NOT sufficient on
+  two independent grounds, and D3's design must account for both. (1) **Categorical**: the
+  reproduced `_orchestrator_inbox.py` `_SOURCE_ID_RE` failure (below) is a regex matching a
+  path-shaped STRING persisted in a plan's `request.md` — no filesystem resolution happens at
+  that call site at all, so a `get_store_dir`-level redirect literally cannot reach it; some
+  call sites need their OWN accommodation by construction, not merely in this one instance.
+  (2) **Precedent**: PLAN-01 already landed the orchestrator store's own move WITHOUT any
+  redirect, and **ADR-024** (Proposed) formalises that as the decision — "no compatibility
+  shim or read-fallback to the retired address is provided because every existing tree is
+  relocated in the same change." The mechanism this plan builds must therefore not assume a
+  shared-resolver redirect is the general answer; D3 needs an explicit class for
+  string-matching call sites, and D6 (the orchestrator move as first consumer) can no longer
+  demonstrate "the mechanism end to end" via a redirect, since none was built for it — D6
+  stays a retrofit, per the Objective's own re-grounding note above. The four-condition
+  shim-or-not checklist this plan already defers to at outline (see Non-Goals) is UNCHANGED
+  by this — it still decides case by case; what changes is that "redirect, generically
+  sufficient" is no longer an assumption D3 may start from.
+  - verdict: contradicted | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: orchestrator-refactor/cleanup | rescoped: yes | evidence: refuted on two grounds: (1) _orchestrator_inbox.py _SOURCE_ID_RE matches a persisted STRING, not a resolved filesystem path, so a resolver-level redirect cannot reach it - reproduced live: inbox detect --source-id with the old prefix still returns unrecognised_id at HEAD; (2) ADR-024 (Proposed) formalises PLAN-01's own no-shim landing as the decision, ruling out a redirect as the general answer. Re-scoped in place: the HYPOTHESIS bullet and D3 now both flag that string-matching call sites need explicit handling, not a generic redirect assumption.
 - HYPOTHESIS — the expiry trigger should be release-count-based (a `marshal.json`
   `system.retention` knob, mirroring `plugin_cache_keep_versions`) rather than date-based,
   because `system.provisioned_version` already gives a monotone anchor; confirm/refute at
   `marshall-steward/scripts/cache_retention.py` § `resolve_knobs` / `read_provisioned_version`
   (verify-at-outline).
+  - verdict: unverifiable | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: orchestrator-refactor/cleanup | rescoped: n/a | evidence: cache_retention.py carries resolve_knobs/read_provisioned_version/plugin_cache_keep_versions/provisioned_version; _config_defaults.py holds the system.retention knob family; but no expiry grammar exists to evaluate release-count-vs-date against. shim-remove-when has no reader beyond _analyze_shim_marker.py's presence/well-formedness check. Design judgment with no ground truth at HEAD.
 - Verify-first clause: the sweep MUST NOT remove a redirect on marker-absence. Absence of a
   marker is not evidence the shim is dead — that inversion is exactly the archetype
   PLAN-TRUTH-003 warned against inside its own fix, and `cleanup-superseded`'s
   `skipped_no_tombstone[]` bucket is the shape that refuses it. Verify this refusal is actually
   implemented, not merely intended, before this plan is treated as done.
+  - verdict: corroborated | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: orchestrator-refactor/cleanup | rescoped: n/a | evidence: premise holds and remains unimplemented, so it is a live requirement. Precedent shape survives: cleanup-superseded's skipped_no_tombstone[] bucket lives in manage-lessons/_lessons_retention.py + manage-lessons.py, pinned by test_cleanup_superseded.py. No sweep exists to carry the refusal: shim-remove-when now appears across 21 source files (up from recorded 18), _analyze_shim_marker.py the only reader, validating well-formedness only.
 - OBSERVED (added 2026-09-21, reproduced first-party by this epic's own `analyze` verb) —
   `_orchestrator_inbox.py`'s `_SOURCE_ID_RE = re.compile(r'^\.plan/orchestrator/(?P<slug>[^/]+)/plans/' + PLAN_ID_SEGMENT + r'[^/]*\.md$')`
   requires the literal `.plan/orchestrator/` prefix. Direct reproduction:
@@ -120,6 +142,7 @@ anything that ever fires.
   pass, 2026-09-21) is a plausible affected instance; confirm/refute by reading its
   `request.md` `source_id` directly once it is reachable (verify-at-outline — it is a
   running plan and must not be touched before then).
+  - verdict: unverifiable | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: orchestrator-refactor/cleanup | rescoped: n/a | evidence: the mechanism half reproduces (see claim 9), but the named instance PLAN-TRUTH-144 shipped as PR #1560, is gone from the truthful-signals queue (44 rows, no -144), manage-status list reports only the NO_PLAN sentinel - no in-flight plan survives to check. Population is empty, not merely unreached.
 
 ## Expected Surface
 
