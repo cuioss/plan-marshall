@@ -24,7 +24,7 @@ The slug is the constant `lessons-routing` — there is nothing to derive. Deter
 python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator corpus epics
 ```
 
-`lessons-routing` present in `active[]` is the **present branch**; absent from both `active[]` and `archived[]` is the **absent branch**; present in `archived[]` and absent from `active[]` is neither — HALT and escalate to the operator rather than scaffolding a duplicate over an archived twin or silently proceeding.
+`lessons-routing` present in `active[]` and absent from `archived[]` is the **present branch**; absent from both `active[]` and `archived[]` is the **absent branch**; present in `archived[]` (whether or not it is also present in `active[]`) is neither — HALT and escalate to the operator rather than scaffolding a duplicate over an archived twin or silently proceeding over a partially relocated epic (see `plan-orchestrator/SKILL.md`'s `corpus epics` documentation for that both-homes anomaly).
 
 ⛔ **The scaffold/create pair below runs on the ABSENT branch ONLY, and idempotence is not what makes that safe.** `orchestrator scaffold` is documented idempotent and would tolerate an unconditional call, but `manage-status create` is not: it offers no idempotent-overwrite semantics, and its only overwrite path is `--force`, documented as "Overwrite existing status". So an unconditional `create` against the live `lessons-routing` tree either fails outright or — with `--force` — DESTROYS that epic's accumulated `plans` queue and its `resume_anchor`. The guard is the protection; the idempotence of the sibling call is not.
 
