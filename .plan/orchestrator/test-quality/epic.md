@@ -71,13 +71,14 @@ Re-derive before using. See [`landings/PLAN-110.md`](landings/PLAN-110.md).
      outside the markers — never inside them. -->
 
 <!-- BEGIN GENERATED: resume-summary -->
-**Resume anchor**: Cleanup 2026-09-22 done (drain 1 promoted, A1 11/11 re-grounded at 7d82d5d90 — 6 contradicted incl. 2 gone-vacuous from the epic restructure deleting landings/, A2-A5 no findings/declined, Phase B compacted). PLAN-181 STAGED awaiting launch; PLAN-140 parked. RESTART NOT_READY: 103 uncommitted paths repo-wide (only 5 this epic's own), operator must decide commit scope — see truthful-signals' matching finding. Open: PLAN-140 claims 1/2 need re-scope (attribution vs archived sibling specs is structurally vacuous); settled.md carries 7 dangling landings/PLAN-NNN.md refs (105/110/135/145/150/155/170), unowned.
+**Resume anchor**: PLAN-181 landed and reconciled (analyze 2026-09-22): shipped as #1582 (merge 1a9a672), landing complete:true, emit gate override vindicated (all 47 overlap rows inert); watch added on ruff-format unenforcement (WS-03 candidate). Next: operator disposition on PLAN-140 (parked; claims 1/2 re-scope owed - park accepted or resume), then carve 3 (tools-permission-doctor) staged on operator order. Open carried: 7 settled.md dangling landings refs; operator commit-scope decision on 103 uncommitted paths (5 epic-own).
 **Phase**: orchestrating
-**Inbox (derived)**: 0 queued, 135 archived
+**Inbox (derived)**: 0 queued, 136 archived
 **Parked**:
 - PLAN-140 (WS-04) — PR #1552
 **Queue** (staged, in order):
-1. PLAN-181 (WS-04)
+- (empty)
+- PLAN-181 (WS-04) — plan=run-3-carve-2-tools-permission-fix — PR #1582 — landing=landings/PLAN-181.md — status: shipped
 <!-- END GENERATED: resume-summary -->
 
 ### Annotations
@@ -103,7 +104,6 @@ Re-derive before using. See [`landings/PLAN-110.md`](landings/PLAN-110.md).
 | # | Plan | Workstream | Status | Surface (expected) |
 |---|------|------------|--------|--------------------|
 | 1 | PLAN-140 | WS-04 | parked | test/default/; test/finalize-step-deploy-target/; test/finalize-step-sync-plugin-cache/; test/marketplace/; test/plan-marshall/; test/pm-code-intelligence/; test/pm-dev-frontend-cui/; test/pm-dev-frontend/; test/pm-dev-java-cui/; test/pm-dev-java/; test/pm-dev-oci/; test/pm-dev-python/; test/pm-documents/; test/pm-plugin-development/; test/pm-plugin-development/plugin-doctor/test_test_conventions_rule*.py; test/sync-plugin-cache/ |
-| 2 | PLAN-181 | WS-04 | staged | test/plan-marshall/tools-permission-fix/ |
 <!-- END GENERATED: ordered-queue -->
 
 ### Queue annotations
@@ -113,6 +113,20 @@ Re-derive before using. See [`landings/PLAN-110.md`](landings/PLAN-110.md).
 survives it. This is where the per-row narrative the generator cannot derive lives — a
 sequencing caveat, a disjointness note, why a row is parked — keyed by plan id. -->
 
+- **PLAN-181 EMITTED as `launched` (operator order, 2026-09-22).** Recorded gate
+  override: strict disjointness conjuncts fail — 47 `file_overlap_matches[]` rows
+  (46 containment false-positives from sibling broad `test/plan-marshall/`
+  directory declarations across active AND archived epics; the one exact-file
+  match `truthful-signals-26-09-21/PLAN-TRUTH-103`, overlap 2 = both carve-2
+  files, is archived residue absent from the live queue post-restructure) and
+  `candidate_comparison_determinate: false` (corpus-wide sibling
+  declaration-completeness gap, not actionable from here). Disposition basis is
+  the A4 pass of the 2026-09-22 cleanup — no live plan claims these files — plus
+  the operator's explicit word, same precedent as the PLAN-140 run 3 and PLAN-165
+  overrides. N=1, R=0 at emit (PLAN-140 parked; spec's stale "RUNNING owns these
+  files" note superseded by the yield). `auto_emit=false`, so `launched` is
+  operator-confirmed; the row awaits the operator's start (`launched → running`).
+  Emit block carries the standing process-compliance trailer.
 - **Transfer-in 2026-09-19 (operator direction): PLAN-180-test-fidelity-rules (WS-01,
   staged).** Nine test-fidelity lessons from the quality-aspect full-corpus ingestion
   (G19 tester fidelity + G29 pytest mirrors + TestFindSkillsRoot + script
@@ -1223,3 +1237,42 @@ population and nothing else.
 - **Declared-surface half (A1, second reader) — no correction needed.** PLAN-140 stays `derived`
   by design (explicit union-of-other-plans declaration, permitted to stand per its own header);
   PLAN-181 stays `declarative` with its one claimed path matching its narrative — no understatement.
+
+### Added by PLAN-181's landing (#1582, 2026-09-22)
+
+- **PLAN-181 SHIPPED — carve 2 of slice-060 (tools-permission-fix) landed as
+  #1582 (merge `1a9a67229`, `origin/main` tip at the drain).** All five deliverables
+  reconcile against the corroborated diff and tree: D1 re-derived 2 over-budget
+  files (1618, 1587) matching the nomination shape; D2 hoisted
+  `_permission_fix_fixtures.py` (198) + 10 `test_*` splits (max 382), 2 originals
+  deleted, 13 files +3279/−3205; D3 pytest 141 preserved both orders, AST 124
+  preserved — `_fidelity_diff` lost=124/gained=124 on path-qualified identities is
+  the file-move axis (`Class::test` preserved), duplication + banner introduced=0
+  (2 pre-existing banner fixes) — the spec's letter "lost=0/gained=0" is unmet **by
+  instrument path-sensitivity** (disclosed, filed to process-compliance; substance
+  intact → **shipped-modified**); D4 doctor `test-conventions` error-0 (budget 0,
+  down from 2), CI 10/10 green; D5 Tier M clean (`skip-bot-review` label, CodeRabbit
+  skipped, Sourcery 1 nitpick triaged FIX → re-review DISMISSED→APPROVED via `ci pr
+  reviews`, thread cleared). Landing message arrived `complete: true` (all 9
+  required facts; the 4 `steps` parsed by last-colon split:
+  `ship-pr-1582` / `verify-in-worktree` / `merge-queue` / `branch-cleanup` all
+  `done`; `surface_delta` unmeasured — declared/realized not supplied, an optional
+  key). Row: `shipped`, pr `#1582`, `plan_marshall_plan_id`
+  `run-3-carve-2-tools-permission-fix`, landing `landings/PLAN-181.md`.
+- ✅ **The PLAN-181 emit gate override is vindicated.** The 47 overlap rows disposed
+  inert at the A4 pass stayed inert end-to-end: carve 2 touched exactly its one
+  declared path and no live sibling moved against it. Same mechanism as the
+  PLAN-165 vindication — the safety rested on the live-corpus read at emit, not a
+  judgement that the overlap "looked unlikely".
+- **Watch added — ruff-format unenforced on merge-queue triage heads.** The 3-line
+  format churn (commit `ade0e8ee2`) was frozen out by GH006 (head frozen once the
+  PR queued), CI stayed green without it, and the churn was dropped with the local
+  branches — so `ruff format` findings can silently vanish from merged PRs. WS-03
+  candidate (harness/CI gap). *Re-check at: the next landing; stage on demand.*
+- **Token figure `0` read as unmeasured, not zero** — same convention as PLAN-180;
+  no per-phase token/duration figures surfaced in this lane.
+- **Pre-existing, carried:** PLAN-140 parked (claims 1/2 re-scope owed; operator
+  disposition pending); 7 dangling `landings/` refs in `settled.md`; operator's
+  commit-scope decision on 103 uncommitted paths (5 epic-own). Carve 3
+  (tools-permission-doctor) remains unstaged per the just-in-time discipline —
+  the next emission's candidate when the operator orders it.

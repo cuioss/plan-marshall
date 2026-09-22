@@ -145,7 +145,7 @@
       "id": "PLAN-TRUTH-161",
       "slug": "adr-number-allocation-reads-the-local-tree-so-two-branches-collide-invisibly",
       "workstream": "WS-01",
-      "status": "staged",
+      "status": "running",
       "plan_marshall_plan_id": "",
       "pr": "",
       "landing": "",
@@ -452,12 +452,12 @@
       "superseded_by": ""
     }
   ],
-  "resume_anchor": "=== \u25b6 2026-09-22 -- FULL CLEANUP RAN (A1 targeted re-ground, A3 clean, A4 found+FIXED 15x stale quality-aspect headers, A2/A5 no findings, Phase B compacted, Phase D restart-check). \u26d4 PLAN-TRUTH-167 D3's base-ref HYPOTHESIS REFUTED by PR #1559 (fca06c4ca) -- claim 5 now contradicted+rescoped:no, spec is BLOCKED from next emission until re-scoped (narrower residue: merge-commit re-derivation, not upstream-base -- see spec's own FOLDED 2026-09-22 note). PLAN-TRUTH-173 claim 0 evidence updated (20->21 detectors, conclusion unchanged). A4: all 15 PLAN-2xx specs had dead quality-aspect Hand-Off Commands (quality-aspect is ARCHIVED, path never resolved) -- FIXED epic: field + hand-off path on all 15. Mid-drain: instrumentation-substrate declined 2 forwarded lessons (no matching population), restored to corpus as 2026-09-22-08-001/-002 (W-2026-09-22-a). \u25b6 QUEUE: 44 rows unchanged, N=1 R=0. NEXT EMIT TARGET CHANGED: PLAN-TRUTH-161 still confirmed disjoint+prep-ready (untouched by this pass); do NOT emit PLAN-TRUTH-167 until D3 re-scoped. RESTART VERDICT: NOT_READY -- worktree carries 59+ uncommitted paths across 5 epics (truthful-signals this session's own edits + orchestrator-refactor/lessons-routing pre-existing from before this session + cross-notice deliveries to instrumentation-substrate/code-intelligence-substrate/review-apparatus/test-quality/lessons-routing). Operator must decide commit scope before a fresh session can safely resume from a clean tree. Inbox genuinely empty (0 queued). A5 (distribution regroup) still declined -- 44-spec redistribution needs its own dedicated pass. \u26d4\u26d4 PLUGIN PIN GAP STILL OPEN, OPERATOR-ONLY. ===",
+  "resume_anchor": "2026-09-22: PLAN-TRUTH-161 running (operator-confirmed). N=1 R=1 - no further emissions until it lands. Next: await landing/PR, then analyze.",
   "metadata": {
     "successor_of": "plan-optimization",
     "origin_note": "Spawned 2026-07-22 from plan-optimization staged residue + watches; running PLAN-23/35 remain in plan-optimization until landed, then that epic self-archives.",
     "parallelization_scope": "1"
   },
   "created": "2026-07-22T18:17:00Z",
-  "updated": "2026-09-22T08:08:30Z"
+  "updated": "2026-09-22T18:43:11Z"
 }

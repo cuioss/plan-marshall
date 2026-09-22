@@ -52,7 +52,7 @@
       "id": "PLAN-05",
       "slug": "dispatch-envelopes",
       "workstream": "WS-05",
-      "status": "staged",
+      "status": "launched",
       "plan_marshall_plan_id": "",
       "pr": "",
       "landing": ""
@@ -137,12 +137,21 @@
       "plan_marshall_plan_id": "",
       "pr": "",
       "landing": ""
+    },
+    {
+      "id": "PLAN-15",
+      "slug": "opencode-enforcement-parity",
+      "workstream": "WS-06",
+      "status": "launched",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
     }
   ],
-  "resume_anchor": "Drain+cleanup complete (2026-09-22): 1 candidate-lesson dispositioned (folded 2 argparse lessons into PLAN-12, staged PLAN-13/PLAN-14 under new WS-07); re-grounded 22 claims across PLAN-05..12 at HEAD 7d82d5d90 (1 contradicted+rescoped, 1 surface correction); ledger compacted, invariants ok. Restart NOT_READY: 106 uncommitted worktree paths (multi-epic dirty state) block a fresh-session restart until committed. Next: operator reviews/commits the working tree, then run 'next' to emit PLAN-08 (or another disjoint candidate) per the parallelization gate.",
+  "resume_anchor": "Drain 2026-09-22: 6/6 consumed (1 watch + 1 defect + addenda); queue empty. Next: monitor PLAN-05 merge per landing procedure, then analyze landing.",
   "metadata": {
     "parallelization_scope": "2"
   },
   "created": "2026-09-17T19:36:11Z",
-  "updated": "2026-09-22T09:06:40Z"
+  "updated": "2026-09-22T19:29:13Z"
 }
