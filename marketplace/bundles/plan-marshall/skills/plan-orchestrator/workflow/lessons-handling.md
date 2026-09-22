@@ -102,7 +102,7 @@ Per cluster produced by Step 3, in order:
 
 2. **Stage the cluster payload to a file** with the Write tool: the cluster's bundled statement, the lessons folded into it (by lesson id), and what the receiving epic is being asked to consider. `--payload-file` takes a staged path and never inline text.
 
-3. **Route it.** All five flags below are REQUIRED — omitting any one is an argparse rejection:
+3. **Route it.** Every flag below is REQUIRED — omitting any one is an argparse rejection:
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator inbox write \
