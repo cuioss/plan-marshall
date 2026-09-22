@@ -1133,12 +1133,12 @@ class TestStalenessClassifier:
 class TestVerdictStaleness:
     """``stale`` is derived from the spec's DECLARED surface, not from HEAD alone.
 
-    BOTH git seams are stubbed rather than read live. ``_current_head_sha`` yields
-    ``''`` whenever git cannot be read, and the tree difference would otherwise
-    depend on whichever checkout the suite happens to run in — so an assertion
-    guarded on either silently does not run in some environments while the test
-    still passes green having asserted nothing. Stubbing both makes every
-    assertion below unconditional.
+    ALL THREE git seams are stubbed rather than read live. ``_current_head_sha``
+    yields ``''`` whenever git cannot be read, the anchor resolution and the tree
+    difference would otherwise depend on whichever checkout the suite happens to
+    run in — so an assertion guarded on any of them silently does not run in some
+    environments while the test still passes green having asserted nothing.
+    Stubbing all three makes every assertion below unconditional.
     """
 
     STUB_HEAD = '1234567890abcdef1234567890abcdef12345678'
@@ -1151,6 +1151,14 @@ class TestVerdictStaleness:
     def _stub_git(self, monkeypatch, changed_paths):
         monkeypatch.setattr(_orch, '_git_read', lambda operation: (self.STUB_HEAD, ''))
         monkeypatch.setattr(_orch, '_git_tree_diff', lambda base, head: changed_paths)
+        # A fixture anchor that genuinely abbreviates STUB_HEAD resolves TO it,
+        # exactly as a real HEAD abbreviation would; every other fixture anchor
+        # (OTHER_SHA, SHA — arbitrary, not real git objects) is treated as already
+        # resolved, so the stub reaches `_git_tree_diff` unchanged as it did before
+        # the caller-side resolution step existed.
+        monkeypatch.setattr(
+            _orch, '_resolve_anchor_sha', lambda anchor: self.STUB_HEAD if self.STUB_HEAD.startswith(anchor) else anchor
+        )
 
     def _declarative_spec(self, plan_context, checked_at: str = OTHER_SHA) -> Path:
         _write_status(plan_context, [_row('PLAN-01')])
@@ -1285,6 +1293,7 @@ class TestVerdictStaleness:
 
         monkeypatch.setattr(_orch, '_git_read', lambda operation: (self.STUB_HEAD, ''))
         monkeypatch.setattr(_orch, '_git_tree_diff', _record)
+        monkeypatch.setattr(_orch, '_resolve_anchor_sha', lambda anchor: anchor)
         _write_status(plan_context, [_row('PLAN-01'), _row('PLAN-02'), _row('PLAN-03')])
         for name in ('PLAN-01-alpha.md', 'PLAN-02-beta.md'):
             _write_spec(
@@ -4359,6 +4368,12 @@ def test_a_spec_whose_bytes_are_not_utf8_is_unreadable_in_both_verbs(tmp_path):
 #   header never matches, so pinning the sentence left these rows pinned by
 #   nothing — their stale counts and stale names would survive a change to either
 #   declaring tuple.
+# - ``persona-plan-orchestrator/standards/orchestration-model.md``
+#   § "Re-Grounding Verdict Field" — the ``staleness_basis`` table restating
+#   ``STALENESS_BASES``, the closed six-member staleness vocabulary. The existing
+#   staleness tests assert against the tuple and against the verb's OUTPUT, never
+#   against this table, so a basis added or renamed in one source left the other
+#   silently wrong.
 #
 # Every comparison below is a set EQUALITY, so a member added to the code and a
 # member left behind in the prose each fail — a membership test could only ever
@@ -4402,6 +4417,35 @@ _BUCKET_TO_DECLARING_SET = {
 #: backticked and the third is the bucket label; the header and divider rows
 #: carry no backticked first cell, so neither matches.
 _STATUS_ROW_RE = re.compile(r'^\|\s*`([^`]+)`\s*\|[^|]*\|\s*([^|]+?)\s*\|\s*$')
+
+#: The staleness-basis table's enclosing heading, read verbatim from the
+#: deliverable: the walk is a heading-equality match, so a heading paraphrased
+#: here finds nothing — and ``section_lines`` raises on an absent heading, which
+#: is the first of the two fail-loud routes this parse needs.
+_STALENESS_TABLE_HEADING = '### Re-Grounding Verdict Field'
+
+#: A ``###`` heading does NOT start with ``'## '``, so the sibling-section stop
+#: prefix has to be named alongside the top-level one — the same clause the
+#: status table above needs, for the same reason.
+_STALENESS_TABLE_STOPS = ('## ', '### ')
+
+#: The basis table's own header row, matched on the two backticked column names.
+#: The section carries THREE tables — the key-grammar table, the admission table,
+#: and this one — so anchoring on "the first table in the section" would parse
+#: the wrong one. Requiring exactly one match is what makes a reworded or
+#: duplicated header loud instead of silently re-pointing the parse.
+_STALENESS_HEADER_RE = re.compile(r'^\|\s*`staleness_basis`\s*\|\s*`stale`\s*\|')
+
+#: The divider row between a markdown table's header and its first data row. It
+#: is the one ``|``-led line inside the table that legitimately carries no basis
+#: token, so it is skipped explicitly rather than swept up by a lenient row
+#: pattern that would also swallow a genuinely malformed row.
+_TABLE_DIVIDER_RE = re.compile(r'^\|[\s\-:|]+\|\s*$')
+
+#: One data row of the basis table: the basis token, backticked, in the first
+#: cell. Only the ``staleness_basis`` column is read — the column the production
+#: tuple is the other copy of.
+_STALENESS_ROW_RE = re.compile(r'^\|\s*`([a-z_]+)`\s*\|')
 
 #: The token the candidate-schema sentence is anchored on. Both runs below are
 #: searched FROM it rather than from the top of the document, so a same-shaped
@@ -4475,6 +4519,68 @@ def _parse_status_table() -> list[tuple[str, str]]:
     return [(match.group(1), match.group(2)) for match in matches if match]
 
 
+def _parse_staleness_basis_table(text: str) -> list[str]:
+    """Return the ``staleness_basis`` token of every data row, in document order.
+
+    Parameterized on the document TEXT rather than reading the real file itself,
+    so the parse can be pointed at a fixture. That is what lets the controls below
+    exercise the parse's own failure modes and witness a drifted table — a parse
+    wired to one path can only ever be asserted green against that path, which is
+    the shape that leaves a lock-step check unable to fail.
+
+    Fails loudly rather than returning a short list. An absent section heading
+    (raised by ``section_lines``), an unlocatable or duplicated table header, and
+    an unparsable data row each raise, because every one of them shrinks the
+    documented vocabulary — and a shortened list read as the document's own
+    answer would make the equality below report agreement with a tuple it never
+    compared against. The import-time guard covers the remaining empty-body case.
+    """
+    body = section_lines(text, _STALENESS_TABLE_HEADING, stop_prefixes=_STALENESS_TABLE_STOPS)
+    headers = [index for index, line in enumerate(body) if _STALENESS_HEADER_RE.match(line)]
+    if len(headers) != 1:
+        raise AssertionError(
+            f'{len(headers)} `staleness_basis` table header(s) found under '
+            f'{_STALENESS_TABLE_HEADING!r} — expected exactly one. A header that moved, was '
+            'reworded, or was duplicated leaves the lock-step check with nothing (or two things) '
+            'to compare, which must fail rather than read as an empty set that trivially matches.'
+        )
+    tokens: list[str] = []
+    for line in body[headers[0] + 1 :]:
+        if not line.startswith('|'):
+            break
+        if _TABLE_DIVIDER_RE.match(line):
+            continue
+        match = _STALENESS_ROW_RE.match(line)
+        if match is None:
+            raise AssertionError(
+                'a row of the `staleness_basis` table does not carry a backtick-quoted token in '
+                f'its first cell: {line!r}. An unparsable row must fail loudly, never be skipped '
+                'into a silently shortened vocabulary.'
+            )
+        tokens.append(match.group(1))
+    return tokens
+
+
+def _staleness_table_document(bases: tuple[str, ...]) -> str:
+    """A minimal document carrying a basis table over the supplied tokens.
+
+    The fixture builder for the controls below. Built FROM the tokens it is
+    handed rather than from a transcribed copy of the vocabulary, so a control
+    that drops or reorders a member witnesses that drift and nothing else.
+    """
+    return '\n'.join(
+        [
+            _STALENESS_TABLE_HEADING,
+            '',
+            '| `staleness_basis` | `stale` | What it establishes |',
+            '|---|---|---|',
+            *(f'| `{basis}` | false | fixture row |' for basis in bases),
+            '',
+            '## The Next Section',
+        ]
+    )
+
+
 def _parse_candidate_schema() -> tuple[list[str], list[str]]:
     """Return the ``(states, kinds)`` the candidate-schema sentence enumerates.
 
@@ -4495,6 +4601,7 @@ def _parse_candidate_schema() -> tuple[list[str], list[str]]:
 
 
 _STATUS_TABLE_ROWS: list[tuple[str, str]] = _parse_status_table()
+_STALENESS_BASIS_ROWS: list[str] = _parse_staleness_basis_table(_ORCHESTRATION_MODEL_DOC.read_text(encoding='utf-8'))
 _SCHEMA_STATES, _SCHEMA_KINDS = _parse_candidate_schema()
 _POPULATION_DECLARED, _POPULATION_COLUMNS, _POPULATION_ROWS = _parse_report_block('candidate_population')
 _STATES_DECLARED, _STATES_COLUMNS, _STATES_ROWS = _parse_report_block('candidate_derivation_states')
@@ -4506,6 +4613,11 @@ _STATES_DECLARED, _STATES_COLUMNS, _STATES_ROWS = _parse_report_block('candidate
 assert _STATUS_TABLE_ROWS, (
     f'no data row parsed from {_ORCHESTRATION_MODEL_DOC.name} § {_STATUS_TABLE_HEADING!r} — '
     f'the status-table comparisons below would range over an empty set and pass without checking anything'
+)
+assert _STALENESS_BASIS_ROWS, (
+    f'no data row parsed from the `staleness_basis` table in {_ORCHESTRATION_MODEL_DOC.name} § '
+    f'{_STALENESS_TABLE_HEADING} — the lock-step comparison below would range over an empty set '
+    f'and pass without checking anything'
 )
 assert _SCHEMA_STATES and _SCHEMA_KINDS, (
     f'the candidate schema in {_ORCHESTRATE_DOC.name} yielded {len(_SCHEMA_KINDS)} kind(s) and '
@@ -4561,6 +4673,111 @@ class TestStatusTableIsSynchronizedWithItsDeclaringSets:
                 f'bucket {bucket!r} documents {sorted(by_bucket[bucket])} but its declaring set holds '
                 f'{sorted(declared)}'
             )
+
+
+class TestStalenessBasisTableIsSynchronizedWithItsDeclaringTuple:
+    """The table restates ``STALENESS_BASES``, the closed staleness vocabulary.
+
+    The vocabulary is authored twice — as the production tuple and as this
+    table's first column — and until this class nothing held the two equal: the
+    staleness tests assert against the tuple and against the verb's payload, and
+    never open the document at all. A basis added or renamed in one source
+    therefore left the other silently wrong, which is the doc-contract-divergence
+    shape.
+
+    The remedy is a parse of the shipped table rather than a generator that
+    writes both artifacts, so no build step is added: the document stays the
+    hand-written normative home it already is, and the drift is caught at test
+    time instead of being prevented at author time.
+    """
+
+    def test_the_table_names_exactly_the_declared_bases_in_declared_order(self):
+        """Set AND order: the tuple's order is the reporting order of the tally."""
+        assert _STALENESS_BASIS_ROWS == list(STALENESS_BASES), (
+            f'the {len(_STALENESS_BASIS_ROWS)}-row table and the {len(STALENESS_BASES)}-member '
+            f'tuple disagree — undocumented: {sorted(set(STALENESS_BASES) - set(_STALENESS_BASIS_ROWS))}, '
+            f'documented but not declared: {sorted(set(_STALENESS_BASIS_ROWS) - set(STALENESS_BASES))}, '
+            f'documented order {_STALENESS_BASIS_ROWS} against declared {list(STALENESS_BASES)}. '
+            'The order is load-bearing: the tuple is the reporting order of '
+            '`staleness_basis_tally`, so a reordered table misstates the payload a reader is '
+            'holding it beside.'
+        )
+
+    def test_the_fixture_builder_round_trips_the_real_vocabulary(self):
+        # The controls below drift a fixture and require the parse to notice. That
+        # only witnesses drift if the UNDRIFTED fixture round-trips first —
+        # otherwise a builder or parser the two disagree about would make every
+        # drift control pass for the wrong reason.
+        assert _parse_staleness_basis_table(_staleness_table_document(STALENESS_BASES)) == list(STALENESS_BASES)
+
+    def test_a_dropped_row_is_detected(self):
+        # Matched positive control for the equality above, which is green over the
+        # shipped document: this proves that green is a measured pass rather than
+        # a parse that cannot disagree.
+        assert len(STALENESS_BASES) > 1, 'a single-member vocabulary cannot witness a dropped row'
+        parsed = _parse_staleness_basis_table(_staleness_table_document(STALENESS_BASES[:-1]))
+
+        assert parsed != list(STALENESS_BASES)
+        assert set(STALENESS_BASES) - set(parsed) == {STALENESS_BASES[-1]}
+
+    def test_a_reordered_table_is_detected(self):
+        # The order half, which a set comparison cannot reach: the same members in
+        # a different order is precisely the drift that leaves every membership
+        # check green while the documented reporting order no longer matches the
+        # tally's.
+        assert len(STALENESS_BASES) > 1, 'a single-member vocabulary cannot witness a reordering'
+        reordered = tuple(reversed(STALENESS_BASES))
+        parsed = _parse_staleness_basis_table(_staleness_table_document(reordered))
+
+        assert set(parsed) == set(STALENESS_BASES), 'the fixture must differ only in ORDER'
+        assert parsed != list(STALENESS_BASES)
+
+    def test_an_absent_section_heading_fails_loudly(self):
+        # The first of the three fail-loud routes. An unreadable table must never
+        # resolve to an empty set: an empty documented vocabulary compared against
+        # a tuple would be reported as a mismatch only for as long as the tuple is
+        # non-empty, and it says nothing at all about the shipped document.
+        with pytest.raises(AssertionError, match='Heading not found'):
+            _parse_staleness_basis_table('# Some other document\n\n## Elsewhere\n')
+
+    def test_an_absent_table_header_fails_loudly(self):
+        without_table = '\n'.join(
+            [
+                _STALENESS_TABLE_HEADING,
+                '',
+                'Prose only — the basis table was reworded away.',
+                '',
+                '## The Next Section',
+            ]
+        )
+
+        with pytest.raises(AssertionError, match='table header'):
+            _parse_staleness_basis_table(without_table)
+
+    def test_a_duplicated_table_header_fails_loudly(self):
+        # The other arm of the same exactly-one requirement: two headers means the
+        # parse would silently pick one of them, and which one it picked would
+        # decide the answer.
+        doubled = _staleness_table_document(STALENESS_BASES).replace(
+            '## The Next Section',
+            '| `staleness_basis` | `stale` | What it establishes |\n|---|---|---|\n\n## The Next Section',
+        )
+
+        with pytest.raises(AssertionError, match='table header'):
+            _parse_staleness_basis_table(doubled)
+
+    def test_a_malformed_row_fails_loudly_rather_than_being_skipped(self):
+        # The row-level route. A lenient parse would skip this line and return a
+        # vocabulary one member short — a SHORTER list that still looks like the
+        # document's own answer, which is the failure the raise exists to prevent.
+        malformed = _staleness_table_document(STALENESS_BASES).replace(
+            f'| `{STALENESS_BASES[1]}` |',
+            f'| {STALENESS_BASES[1]} |',
+            1,
+        )
+
+        with pytest.raises(AssertionError, match='does not carry a backtick-quoted token'):
+            _parse_staleness_basis_table(malformed)
 
 
 class TestCandidateSchemaIsSynchronizedWithItsDeclaringTuples:

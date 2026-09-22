@@ -488,6 +488,52 @@ class TestUnrelatedCommitsLeaveAnUntouchedSurfaceCurrent:
 
 
 # =============================================================================
+# Abbreviated-anchor resolution (PR #1585 review finding 5d8900)
+# =============================================================================
+
+
+class TestAbbreviatedAnchorResolution:
+    """``checked_at`` admits a 7-40 hex abbreviation; the caller resolves it to a
+    full sha before the classifier ever sees it. A genuine abbreviation of HEAD
+    must still settle ``head_unchanged``, and an abbreviation git cannot resolve
+    must never fall through to ``head_unchanged`` by a bare prefix accident — it
+    must report ``tree_diff_unavailable``, the basis that already means "nothing
+    was compared", so no seventh member joins the closed six-value vocabulary.
+    """
+
+    SPEC = 'PLAN-01-alpha.md'
+
+    def test_an_abbreviated_anchor_of_head_still_resolves_to_head_unchanged(self, epic_repo):
+        _write_status(epic_repo, ['PLAN-01'])
+        _write_spec(epic_repo, self.SPEC, _surface(DECLARED_FILE))
+        head = _commit_all(epic_repo, 'stage the epic ledger')
+        _stamp('PLAN-01', head[:8])
+
+        payload = cmd_corpus_verdicts(_VERDICTS_ARGS)
+        row = _rows_by_spec(payload)[self.SPEC]
+
+        assert row['stale'] is False
+        assert row['staleness_basis'] == STALENESS_HEAD_UNCHANGED
+        assert row['admits'] is True
+
+    def test_an_unresolvable_abbreviation_reports_diff_unavailable_not_head_unchanged(self, epic_repo):
+        # A syntactically valid short abbreviation naming no object in the
+        # fixture repository — the shape the naive prefix test could have
+        # misread as `head_unchanged` had the anchor never been resolved first.
+        _write_status(epic_repo, ['PLAN-01'])
+        _write_spec(epic_repo, self.SPEC, _surface(DECLARED_FILE))
+        _commit_all(epic_repo, 'stage the epic ledger')
+        _stamp('PLAN-01', 'abc1234')
+
+        payload = cmd_corpus_verdicts(_VERDICTS_ARGS)
+        row = _rows_by_spec(payload)[self.SPEC]
+
+        assert row['stale'] is True
+        assert row['staleness_basis'] == STALENESS_DIFF_UNAVAILABLE
+        assert row['admits'] is True
+
+
+# =============================================================================
 # The fail-closed arms
 # =============================================================================
 

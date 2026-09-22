@@ -2159,14 +2159,14 @@ _GIT_READ_TIMEOUT_SECONDS = 30
 #: that unreachable. Adding a read is a one-line addition here; adding a WRITE
 #: is a visible change to a table that says it holds only reads.
 #:
-#: The table holds every ARGUMENT-FREE read. Two reads in this module take a
+#: The table holds every ARGUMENT-FREE read. Three reads in this module take a
 #: caller-supplied REVISION and therefore cannot be a constant argv at all —
-#: :func:`_resolve_footprint_base` and :func:`_git_tree_diff`. Each validates its
-#: revision against a closed regex before it reaches argv, so the caller still
-#: contributes no git ARGUMENT, only a ref or sha of a shape that was checked;
-#: both remain read-only. They are named here so this table is read as the
-#: argument-free registry it is rather than as a claim that no other git call
-#: exists.
+#: :func:`_resolve_footprint_base`, :func:`_git_tree_diff` and
+#: :func:`_resolve_anchor_sha`. Each validates its revision against a closed regex
+#: before it reaches argv, so the caller still contributes no git ARGUMENT, only a
+#: ref or sha of a shape that was checked; all three remain read-only. They are
+#: named here so this table is read as the argument-free registry it is rather
+#: than as a claim that no other git call exists.
 _GIT_READ_OPERATIONS: dict[str, tuple[str, ...]] = {
     'head-sha': ('rev-parse', 'HEAD'),
     'worktree-status': ('status', '--porcelain'),
@@ -2269,6 +2269,53 @@ def _git_tree_diff(base: str, head: str) -> list[str] | None:
     if completed.returncode != 0:
         return None
     return [line.strip() for line in completed.stdout.splitlines() if line.strip()]
+
+
+def _resolve_anchor_sha(anchor: str) -> str | None:
+    """Resolve one verdict anchor to a FULL commit sha, or ``None`` when it resolves to none.
+
+    The caller-side half of the staleness derivation's purity split, and the
+    reason :func:`classify_staleness` and :func:`_head_unchanged` can stay pure.
+    The grammar admits a 7-39 character ABBREVIATION (:data:`_CHECKED_AT_RE`), so
+    an anchor abbreviating some OTHER commit that happens to share a prefix with
+    HEAD satisfied :func:`_head_unchanged`'s prefix test — and because that branch
+    is decided FIRST, git never got the chance to report the abbreviation as
+    ambiguous or unknown. The error direction was ``stale: false``, a fail-OPEN
+    reading inside a classifier that fails CLOSED on every other uncertainty.
+    Resolving the anchor HERE removes the abbreviation before the classifier ever
+    sees it, without putting git inside a function whose contract is that it has
+    none.
+
+    ``None`` is returned on EVERY unresolved path — an anchor of the wrong shape,
+    an abbreviation git reports as ambiguous, a sha git can no longer resolve, a
+    timeout, a git that could not run, or output that is not a single commit sha.
+    The caller treats every one of them as an unresolved anchor and lets the row
+    report :data:`STALENESS_DIFF_UNAVAILABLE`, the basis that already means
+    *nothing was compared* — so no seventh member joins :data:`STALENESS_BASES`
+    and the vocabulary stays a closed six.
+
+    The argv mirrors :func:`_resolve_footprint_base`: ``rev-parse --verify
+    --end-of-options`` with a ``^{commit}`` suffix, so the anchor contributes only
+    a hex token of a shape already checked — nothing option-like or range-like can
+    ride into the command — and the answer is exactly one commit object rather
+    than a tag object or a multi-line list.
+    """
+    if not _CHECKED_AT_RE.match(anchor):
+        return None
+    try:
+        completed = subprocess.run(
+            ['git', 'rev-parse', '--verify', '--end-of-options', f'{anchor}^{{commit}}'],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=_GIT_READ_TIMEOUT_SECONDS,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if completed.returncode != 0:
+        return None
+    sha = completed.stdout.strip()
+    return sha if _CURRENCY_SHA_RE.match(sha) else None
 
 
 def _fenced_mask(lines: list[str]) -> list[bool]:
@@ -2938,13 +2985,24 @@ def _admits(verdict: str, rescoped: str) -> bool:
 def _head_unchanged(head: str, checked_at: str) -> bool:
     """Whether the verdict's anchor names the tree HEAD currently points at.
 
-    ``checked_at`` is a 7-40 hex PREFIX under :data:`_CHECKED_AT_RE`, so the test
-    is a prefix match — the same comparison the retired raw-HEAD expression made,
-    kept because the grammar still admits an abbreviated sha.
+    Pure, and deliberately so. The anchor reaching this test has ALREADY been
+    resolved to a full sha by :func:`_row_staleness` through
+    :func:`_resolve_anchor_sha`, so on the production path this prefix match IS an
+    equality. The prefix form survives only because the function is pure and must
+    accept whatever its caller hands it — a unit-test caller legitimately passes a
+    grammar-shaped abbreviation, and narrowing the comparison here would push the
+    resolution into a function that is defined by having no git.
 
-    An unreadable HEAD (the empty string) is NOT a match. Nothing was observed, so
-    nothing is proven unchanged, and the caller falls through to the fail-closed
-    branches rather than reading an unobservable tip as a quiet "still current".
+    The hazard that resolution closes was fail-OPEN, which is why it is closed at
+    the caller rather than tolerated: an anchor abbreviating a DIFFERENT commit
+    that shares a prefix with HEAD passed this test, and because
+    :func:`classify_staleness` consults it FIRST, nothing downstream ever got to
+    report the abbreviation as ambiguous.
+
+    An unreadable HEAD and an UNRESOLVED anchor are both the empty string, and
+    neither is a match. Nothing was observed, so nothing is proven unchanged, and
+    the caller falls through to the fail-closed branches rather than reading an
+    unobservable tip — or an anchor git refused — as a quiet "still current".
     """
     return bool(head) and bool(checked_at) and head.startswith(checked_at)
 
@@ -2971,9 +3029,15 @@ def classify_staleness(
     """Classify one verdict's staleness against its spec's DECLARED surface.
 
     Pure: no git, no filesystem, no spec read. The caller supplies the resolved
-    derivation status, the resolved declaration and the resolved tree difference;
-    this function owns only the stale-or-not decision, so it is unit-testable
-    without a worktree — the ``verdict_currency.classify_advance`` split.
+    anchor sha, the resolved derivation status, the resolved declaration and the
+    resolved tree difference; this function owns only the stale-or-not decision,
+    so it is unit-testable without a worktree — the
+    ``verdict_currency.classify_advance`` split. The anchor is on that list
+    because the grammar admits an ABBREVIATION, and only git can say which commit
+    one names: :func:`_row_staleness` resolves it through
+    :func:`_resolve_anchor_sha` before this function is called, so the
+    ``head_unchanged`` branch below compares two full shas rather than testing a
+    prefix that a different commit could satisfy.
 
     The branch order is the contract. ``head_unchanged`` is decided FIRST, before
     the declaration or the difference is consulted at all, so an unmoved HEAD
@@ -2984,8 +3048,13 @@ def classify_staleness(
 
     Args:
         head: The current HEAD sha, or the empty string when it could not be read.
-        checked_at: The verdict's anchor — a 7-40 hex prefix of the sha the claim
-            was re-grounded against.
+        checked_at: The verdict's anchor, ALREADY RESOLVED by the caller to a full
+            sha — or the empty string when it could not be resolved at all (an
+            ambiguous abbreviation, an object git does not know, an unobservable
+            git). The empty string matches no HEAD, so an unresolved anchor falls
+            through to the fail-closed branches instead of settling
+            ``head_unchanged``. A direct caller may still pass a grammar-shaped
+            7-40 hex prefix; this function issues no git either way.
         derivation_status: The spec's :data:`SURFACE_STATES` member, resolved
             through the single sanctioned reader via :func:`_surface_state`.
         declared_paths: The entries that spec's ``## Expected Surface`` resolves
@@ -3018,29 +3087,50 @@ class _StalenessContext:
 
     ``cmd_corpus_verdicts`` walks every spec times every claim, so resolving the
     declared surface per ROW would re-run ``classify_spec`` once per claim, and
-    resolving the tree difference per row would issue one git subprocess per
-    claim. The surface is therefore resolved once per SPEC in
-    :func:`_spec_staleness_context`, and ``diff_cache`` is shared across the WHOLE
-    run keyed by ``checked_at`` — so the diff is issued at most once per DISTINCT
-    anchor sha, however many rows cite it.
+    resolving the anchor or the tree difference per row would issue one git
+    subprocess per claim. The surface is therefore resolved once per SPEC in
+    :func:`_spec_staleness_context`, and BOTH git caches are shared across the
+    WHOLE run keyed by the anchor — so each of the two reads is issued at most
+    once per DISTINCT anchor, however many rows cite it.
 
-    The cache is deliberately a mutable mapping owned by the caller rather than a
-    per-context field: specs routinely share an anchor sha (one re-grounding pass
-    stamps the corpus at one commit), and a per-spec cache would re-issue that
-    one diff for every spec in the corpus.
+    The two caches are separate mappings because they answer different questions
+    and hold different value types: ``anchor_cache`` maps an anchor AS WRITTEN to
+    the full sha it names (or ``None``), and ``diff_cache`` maps a RESOLVED sha to
+    the tree difference against HEAD (or ``None``). Keying the second on the
+    resolved sha is what makes two specs abbreviating the same commit differently
+    share one diff rather than issue two.
+
+    Both are deliberately mutable mappings owned by the caller rather than
+    per-context fields: specs routinely share an anchor (one re-grounding pass
+    stamps the corpus at one commit), and a per-spec cache would re-issue that one
+    resolution and that one diff for every spec in the corpus.
     """
 
     head: str
     derivation_status: str
     declared_paths: frozenset[str]
     diff_cache: dict[str, list[str] | None]
+    anchor_cache: dict[str, str | None]
+
+    def resolved_anchor(self, checked_at: str) -> str | None:
+        """The memoized FULL sha one anchor names, or ``None`` when it names none.
+
+        Keyed by the anchor AS WRITTEN, because that is what varies across rows;
+        the resolution itself is :func:`_resolve_anchor_sha`. The ``None`` is
+        cached alongside a real answer for the same reason the diff's is: an
+        anchor git refuses is refused for every row that cites it, so re-issuing
+        the failing command per row would buy nothing but subprocesses.
+        """
+        if checked_at not in self.anchor_cache:
+            self.anchor_cache[checked_at] = _resolve_anchor_sha(checked_at)
+        return self.anchor_cache[checked_at]
 
     def changed_paths(self, checked_at: str) -> list[str] | None:
-        """The memoized tree difference for one anchor, or ``None`` if unanswerable.
+        """The memoized tree difference for one RESOLVED anchor, or ``None`` if unanswerable.
 
-        The ``None`` is cached alongside a real answer on purpose: a ``checked_at``
-        git cannot resolve fails for every row that cites it, so re-issuing the
-        failing command per row would buy nothing but subprocesses.
+        The ``None`` is cached alongside a real answer on purpose: a sha git
+        cannot diff fails for every row that cites it, so re-issuing the failing
+        command per row would buy nothing but subprocesses.
         """
         if checked_at not in self.diff_cache:
             self.diff_cache[checked_at] = _git_tree_diff(checked_at, self.head)
@@ -3052,6 +3142,7 @@ def _spec_staleness_context(
     repo_root: Path,
     head: str,
     diff_cache: dict[str, list[str] | None],
+    anchor_cache: dict[str, str | None],
 ) -> _StalenessContext:
     """Resolve ONE spec's declared surface once, for every row that spec contributes.
 
@@ -3067,25 +3158,33 @@ def _spec_staleness_context(
         derivation_status=state,
         declared_paths=frozenset(_claimed_paths(claim)),
         diff_cache=diff_cache,
+        anchor_cache=anchor_cache,
     )
 
 
 def _row_staleness(context: _StalenessContext, checked_at: str) -> tuple[bool, str, list[str]]:
-    """Resolve the tree difference lazily, then classify. The orchestration half.
+    """Resolve the anchor, then the tree difference lazily, then classify.
 
     Mirrors ``verdict_currency.classify_step``: the impure resolution lives here
     and the decision lives in the pure :func:`classify_staleness`, so the decision
-    stays testable without a worktree and the git call is issued only when the
-    classifier would actually consult it.
+    stays testable without a worktree and each git call is issued only when the
+    classifier would actually consult it. The anchor is resolved to a full sha
+    FIRST — before ``_needs_tree_diff`` is even consulted — because an
+    unresolved anchor must never reach ``changed_paths``: diffing against an
+    anchor git itself refused would issue a git call with no base to diff from.
+    An unresolved anchor (``None``) becomes the empty string, which
+    ``_head_unchanged`` and ``classify_staleness`` both already treat as "not a
+    match" / "nothing was compared".
     """
+    resolved_at = context.resolved_anchor(checked_at)
     changed = (
-        context.changed_paths(checked_at)
-        if _needs_tree_diff(context.head, checked_at, context.derivation_status)
+        context.changed_paths(resolved_at)
+        if resolved_at and _needs_tree_diff(context.head, resolved_at, context.derivation_status)
         else None
     )
     return classify_staleness(
         context.head,
-        checked_at,
+        resolved_at or '',
         context.derivation_status,
         context.declared_paths,
         changed,
@@ -3441,6 +3540,10 @@ def cmd_corpus_verdicts(args: argparse.Namespace) -> dict[str, Any]:
     # routinely stamps the whole corpus at one commit, so a per-spec cache would
     # re-issue that single tree diff once per spec.
     diff_cache: dict[str, list[str] | None] = {}
+    # Shared across the WHOLE run, keyed by the anchor AS WRITTEN: specs
+    # routinely share one re-grounding anchor, so a per-spec cache would
+    # re-issue that single resolution once per spec.
+    anchor_cache: dict[str, str | None] = {}
     rows: list[dict[str, Any]] = []
     unreadable: list[dict[str, str]] = []
     unreadable_sections: list[dict[str, str]] = []
@@ -3457,7 +3560,7 @@ def cmd_corpus_verdicts(args: argparse.Namespace) -> dict[str, Any]:
         section = _parse_claim_section(lines)
         state_counts[section['state']] += 1
         claims_scanned += len(section['claims'])
-        context = _spec_staleness_context(spec, repo_root, head, diff_cache)
+        context = _spec_staleness_context(spec, repo_root, head, diff_cache, anchor_cache)
         rows.extend(_spec_verdict_rows(spec.name, lines, section, context))
         if section['state'] == CLAIM_SECTION_UNREADABLE:
             unreadable_sections.append(
