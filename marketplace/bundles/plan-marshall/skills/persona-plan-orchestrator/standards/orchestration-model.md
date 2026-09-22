@@ -268,7 +268,22 @@ An **unsettled `unreadable` section is both reported and blocking**: it contribu
 
 **Section-scoped settlement is the recovery address.** The block is safe to impose because it has a one-call remedy: `corpus set-verdict --section-scope` settles the **section** rather than any one claim, writing a top-level `verdict:` bullet with the same five keys and the same grammar as a claim-scoped one. It is excluded from the claim ordinals — so `--claim-index` addresses exactly the same claims before and after — and it re-authors none of the claim prose, so a spec is never made to convert its table or paragraph into bullets in order to become emittable. A blocked spec is therefore never stuck. The mode applies only to an `unreadable` section: an `absent` one has nowhere to write, and an `empty` or `parsed` one is already read correctly at its own scope.
 
-**Staleness.** A `checked_at` that differs from current HEAD makes the verdict stale. A stale verdict **does not change the admission outcome** — it is reported alongside it. It is neither silently promoted to blocking (which would make emission unreachable as HEAD advances) nor silently dropped (which would resurrect the very refutation the field exists to carry).
+**Staleness.** A verdict is **stale** when the spec's own declared `## Expected Surface` moved between the verdict's `checked_at` sha and current HEAD — never when HEAD alone advanced. The comparison is a two-tree difference between those two shas, matched against the entries that spec's declaration resolves to through the single reader [§ The gate's reading contract](#the-gates-reading-contract) names, with `directory` and `recursive_glob` entries resolved by `/`-boundary containment. A bare `checked_at != HEAD` test answers a different question — *did anything, from any epic, land?* — and since the orchestrator ledger is itself git-tracked, a sibling epic's commit makes that test true almost always, so the flag discriminates nothing.
+
+Every row publishes the **basis** its `stale` value was computed on, drawn from a closed six-member vocabulary, so a conservative fallback is legible as a fallback rather than hiding inside a bare boolean:
+
+| `staleness_basis` | `stale` | What it establishes |
+|---|---|---|
+| `head_unchanged` | false | `checked_at` names the sha HEAD points at, so the claim is still grounded in this very tree. Decided **first**, before the declaration or the difference is consulted at all, so an unmoved HEAD settles correctly even for a spec whose surface cannot be resolved. |
+| `declared_surface_unchanged` | false | The difference was computed and touches no declared entry — the only **checked** negative. |
+| `declared_surface_touched` | **true** | At least one changed path falls inside a declared entry; the matched paths ride the row as the evidence for the reading. |
+| `surface_not_declarative` | **true** | The spec's surface is in a non-`declarative` derivation status, so it contributes no comparable path set at all. |
+| `tree_diff_unavailable` | **true** | The difference could not be computed — an unreadable HEAD, a `checked_at` git can no longer resolve, or a git failure. |
+| `verdict_unparsed` | false | The bullet does not parse, so it carries no anchor sha and no staleness was computed for it. The row is already `indeterminate` and blocking on its own account. |
+
+The three `true` bases are **fail-closed**: an uncomparable surface and an uncomputable difference are not evidence that nothing moved, and holding them apart from `declared_surface_unchanged` is what keeps *could not evaluate* separate from *evaluated and found unchanged*. Governing authority: **ADR-019**, the same separation this section's sibling [§ The gate's reading contract](#the-gates-reading-contract) applies to the disjointness verdict. The tally `corpus verdicts` publishes spans the whole vocabulary, so a basis no row reached is a stated zero rather than a missing row.
+
+A stale verdict **does not change the admission outcome** — it is reported alongside it. It is neither silently promoted to blocking (which would make emission unreachable every time a declared surface moves) nor silently dropped (which would resurrect the very refutation the field exists to carry).
 
 ## Parallelization by Surface Disjointness
 
