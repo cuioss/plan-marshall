@@ -17,6 +17,30 @@ legacy explicit override is respected untouched).
 See `plan-marshall:tools-script-executor/standards/cwd-policy.md` for the
 authoritative Bucket A/B split.
 
+Fix-task loop-back dispatch envelope (stated at this seam, reported by
+:func:`resolve_loop_back_envelope` below; wiring the report into the
+dispatcher is follow-up work, not this seam):
+
+* Carried on loop-back re-entry: ``plan_id`` (required plan identifier),
+  ``envelope_id`` (carried only when assigned as ``int``; omitted when
+  ``None`` — see the null-envelope rule), and ``worktree_materialized``
+  (carried only when known — ``True``/``False``; ``None``-unknown is
+  omitted, same three-state meaning as the ``--worktree-materialized``
+  CLI flag).
+* Omitted on loop-back re-entry: ``--project-dir`` (never forwarded by this
+  seam — a legacy explicit override on the command itself is still respected
+  untouched, but the seam never adds one), runtime cost fields
+  (``predicted_cost_tokens``, ``per_envelope_budget_tokens`` — plan-time
+  packing inputs, never re-evaluated at loop-back), and any other stale
+  envelope reference.
+* Null-envelope execution rule (reported, not enforced here): a fix task
+  arriving with ``envelope_id`` ``None`` MUST re-run the envelope assignment
+  at loop-back entry (read the packer's ``envelope_id`` for the task via
+  ``manage-tasks next``) instead of executing — otherwise it would run
+  invisible to the envelope-filtered executor. This helper reports the
+  null-envelope path as ``action`` ``assign`` with ``assignment_required``
+  ``True``; the caller owns the re-assignment.
+
 Usage (programmatic)::
 
     from inject_project_dir import inject_project_dir
@@ -143,6 +167,91 @@ def inject_project_dir(command: str, plan_id: str) -> tuple[str, bool]:
     # Insert `--plan-id {plan_id}` immediately after `run`.
     rewritten_tokens = tokens[: run_index + 1] + [_PLAN_ID_FLAG, plan_id] + tokens[run_index + 1 :]
     return shlex.join(rewritten_tokens), True
+
+
+#: Candidate fields for a fix-task loop-back re-entry. ``envelope_id`` is
+#: forwarded only when assigned (omitted when ``None`` — see the
+#: null-envelope rule); ``worktree_materialized`` is forwarded only when
+#: known (omitted when ``None``). The null-envelope path therefore carries
+#: only ``plan_id`` (plus ``worktree_materialized`` when known).
+LOOP_BACK_CARRIED_FIELDS: tuple[str, ...] = (
+    'plan_id',
+    'envelope_id',
+    'worktree_materialized',
+)
+
+#: Fields never forwarded on a loop-back re-entry. ``--project-dir`` is never
+#: added by this seam; runtime cost fields are plan-time packing inputs and
+#: are never re-evaluated at loop-back.
+LOOP_BACK_OMITTED_FIELDS: tuple[str, ...] = (
+    'project-dir',
+    'predicted_cost_tokens',
+    'per_envelope_budget_tokens',
+)
+
+
+def resolve_loop_back_envelope(
+    plan_id: str,
+    envelope_id: int | None,
+    worktree_materialized: bool | None = None,
+) -> dict[str, object]:
+    """Resolve the fix-task loop-back dispatch envelope for a re-entering task.
+
+    States which fields the loop-back dispatch carries
+    (:data:`LOOP_BACK_CARRIED_FIELDS`) and which it omits
+    (:data:`LOOP_BACK_OMITTED_FIELDS`), and enforces the null-envelope
+    execution rule: an unassigned (``None``) ``envelope_id`` MUST NOT execute
+    — the caller re-runs the envelope assignment at loop-back entry instead,
+    so the fix task never runs invisible to the envelope-filtered executor.
+
+    Args:
+        plan_id: Plan identifier carried verbatim on the re-entry dispatch.
+        envelope_id: Envelope assignment for the fix task, or ``None`` when
+            unassigned (arrived with a null envelope).
+        worktree_materialized: Admission state carried only when known;
+            ``None`` means unknown and is omitted from the carried fields.
+
+    Returns:
+        A ``status: success`` payload with ``action`` ``carry`` (assigned —
+        execute under the stated envelope) or ``assign`` (null envelope —
+        re-run the envelope assignment first), plus ``assignment_required``
+        (``True`` only for the null-envelope path), the ``carried_fields``
+        dict actually forwarded (``envelope_id`` omitted when ``None``;
+        ``worktree_materialized`` omitted when ``None``), and
+        ``omitted_fields`` listing what the re-entry dispatch leaves behind.
+        The ``assign`` verdict is a report — the caller owns re-running the
+        envelope assignment and wiring it into the dispatcher (follow-up
+        work, not this helper).
+    """
+    omitted = list(LOOP_BACK_OMITTED_FIELDS)
+    if envelope_id is None:
+        carried: dict[str, object] = {'plan_id': plan_id}
+        if worktree_materialized is not None:
+            carried['worktree_materialized'] = worktree_materialized
+        return {
+            'status': 'success',
+            'action': 'assign',
+            'assignment_required': True,
+            'plan_id': plan_id,
+            'carried_fields': carried,
+            'omitted_fields': omitted,
+            'message': (
+                f'Fix task for plan {plan_id} arrived with a null envelope — '
+                're-run the envelope assignment at loop-back entry instead of '
+                'executing invisible to the envelope-filtered executor.'
+            ),
+        }
+    carried = {'plan_id': plan_id, 'envelope_id': envelope_id}
+    if worktree_materialized is not None:
+        carried['worktree_materialized'] = worktree_materialized
+    return {
+        'status': 'success',
+        'action': 'carry',
+        'assignment_required': False,
+        'plan_id': plan_id,
+        'carried_fields': carried,
+        'omitted_fields': omitted,
+    }
 
 
 #: Refusal code emitted when a Bucket-B invocation is attempted while

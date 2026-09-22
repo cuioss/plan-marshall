@@ -19,6 +19,40 @@ All Edit/Write/Read tool calls MUST target paths under this worktree. Raw tool i
 
 Omit the header only when no worktree is active (plan runs against the main checkout). The templates below show the header inline for every dispatch example.
 
+## Step-owned dispatch bodies
+
+Each dispatch pattern below declares `requires_prompt_fields` — the prompt-body fields the step owns. The generic dispatch envelope owns routing only (`subagent_type` / `Skill` / `SlashCommand` / script notation plus the `plan_id` input contract). Whenever a step declares a step-owned body, generic dispatch defers to that body and only supplies the generic envelope otherwise: it MUST NOT re-render, paraphrase, or default any field listed in `requires_prompt_fields`.
+
+| Dispatch pattern | `requires_prompt_fields` (step-owned) |
+|------------------|----------------------------------------|
+| Maven Build (`Task:`) | `WORKTREE` header, build command (`mvn clean verify`), report shape (results plus coverage) |
+| npm Build (`Task:`) | `WORKTREE` header, build command (`npm build and test`), report shape (results plus coverage) |
+| JavaScript Implementation (`Task:`) | `WORKTREE` header, task identity (`Execute Task {N}: {name}`), `Goal`, `Criteria` |
+| Commit (`Skill:`) | `operation: commit`, `message` (conventional commit derived from task title), `push` |
+| Create PR (script) | `--plan-id`, `--title` (prepared via `pr prepare-body`) |
+| Plugin Doctor (`SlashCommand:`) | `{type}={name}` selector — marketplace repository only |
+| JSDoc Check (script) | `npm run docs:check` target |
+| Work Log Entry (script) | `--plan-id`, `--level`, `--message` |
+| Lesson Learned (script) | lesson trigger (unexpected behavior only) plus the three-gate creation policy input |
+
+Author/verifier choreography per step-owned body:
+
+- **Author — step body (pattern owner).** The step template authors every field in its `requires_prompt_fields`: it states the literal command, the prompt sentences, and the report shape the receiving side must produce. The generic dispatcher never authors these fields.
+- **Author — generic dispatcher (envelope owner).** The dispatcher authors routing only: the `Task:` / `Skill:` / `SlashCommand:` / script selector and the `plan_id` input contract value. It carries the step-owned body verbatim into the dispatch prompt.
+- **Verifier — pre-flight (dispatching side).** Before dispatch, the executor verifies that every field in the pattern's `requires_prompt_fields` is present and non-empty in the rendered prompt body. A missing field aborts the dispatch — the dispatcher MUST NOT fill it from the generic template.
+- **Verifier — receiving side.** The receiving skill or agent verifies the rendered body against its own input contract and refuses a paraphrased or partially defaulted body.
+
+Stale envelope references are step-owned-body defects, not envelope defects: when a template still names a removed envelope field or omits a current `requires_prompt_fields` entry, the fix lands in that pattern's template row above, never as a generic-envelope override.
+
+## Verification-feedback loop-back returns (`loop_back_target`)
+
+Every verification-feedback `loop_back` return MUST carry `loop_back_target`, and every `success` return MUST omit it. The computation matches `plan-marshall/workflow/triage.md` Step 7 verbatim in behaviour:
+
+- Set `loop_back_target = "5-execute"` when `fix_tasks_created > 0` OR `overflow_deferred > 0` — fix tasks are first-class work items that flow through the execute pipeline, and deferred findings need the next dispatch's fresh budget, which only re-entry through the execute pipeline guarantees.
+- Otherwise set `loop_back_target = "6-finalize"` — all loop-back-needing dispositions are SUPPRESS, narrow-rationale ACCEPT, or single-annotation FIX with no fix-task allocation and no overflow, so the calling step replays in place with no need to re-enter the execute pipeline.
+
+Callers forward the field verbatim to `mark-step-done --outcome loop_back --loop-back-target {value}`; the phase-6-finalize dispatcher routes between full-phase rollback (`5-execute`) and inline replay (`6-finalize`) off the persisted value.
+
 ## Session-Start Tree Check (Before the First Repo Edit)
 
 Before the first repo edit in a session, verify the working tree matches the plan's admitted location: the worktree path when `use_worktree=true` and the flag is materialized, else the main checkout. Run `git -C {tree} status --porcelain` against the admitted tree and refuse to edit on any unexpected dirt — stash, re-anchor, or re-run the hand-off admission gate first (see `plan-marshall:plan-marshall/workflow/planning.md` § Action: init → "Hand-off admission gate"). The check closes the session-restart hole where a re-pinned cwd lands on main with worktree state expected. Residual: no script gate binds a free agent's Edit tool — this check is the detection half of the dispatch-refusal pair (`inject_project_dir.guarded_inject` is the refusal half).
