@@ -1248,12 +1248,21 @@ class TestVerdictStaleness:
             'PLAN-01-alpha.md',
             [
                 '- HYPOTHESIS: malformed clause — confirm/refute at `a.py` § `f` (verify-at-outline)',
-                f'  - {_MALFORMED_LINE}',
+                # ``_MALFORMED_LINE`` is the line AS THE PARSER RECORDS IT, so it
+                # already carries its own ``- `` marker and only its indentation
+                # was stripped. Prefixing a second marker wrote ``  - - verdict:
+                # …``, whose bullet TEXT then began with ``- `` instead of
+                # ``verdict:`` — so the claim bound no verdict bullet at all, read
+                # as unstamped, and contributed no row. The arm then indexed an
+                # empty list rather than exercising the basis it names.
+                f'  {_MALFORMED_LINE}',
             ],
             surface_lines=_surface(self.DECLARED_PATH),
         )
 
         result = cmd_corpus_verdicts(_VERDICTS_ARGS)
+
+        assert result['claims'], 'the unparsed claim produced no row at all'
         row = result['claims'][0]
 
         assert row['verdict'] == 'indeterminate'
