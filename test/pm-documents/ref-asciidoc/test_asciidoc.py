@@ -520,3 +520,58 @@ def test_cmd_verify_links_writes_report_file_when_requested():
         persisted = json.loads(report.read_text())
         assert persisted['status'] == result['status']
         assert 'data' in persisted
+
+
+# Tier 2: ADR template / validator convergence round-trip
+
+
+def _render_adr_template() -> str:
+    """Render adr-template.adoc with sample values for every placeholder."""
+    template_path = (
+        Path(__file__).parents[3]
+        / 'marketplace'
+        / 'bundles'
+        / 'plan-marshall'
+        / 'skills'
+        / 'manage-adr'
+        / 'templates'
+        / 'adr-template.adoc'
+    )
+    content = template_path.read_text(encoding='utf-8')
+    replacements = {
+        '{{NUMBER}}': '0001',
+        '{{TITLE}}': 'Round Trip',
+        '{{STATUS}}': 'Proposed',
+        '{{SUMMARY}}': 'Convergence proof',
+        '{{TAGS}}': '',
+        '{{AFFECTS}}': '',
+        '{{SUPERSEDES}}': '',
+        '{{CONTEXT}}': 'Context body.',
+        '{{DECISION}}': 'Decision body.',
+        '{{POSITIVE_CONSEQUENCES}}': 'Positive body.',
+        '{{NEGATIVE_CONSEQUENCES}}': 'Negative body.',
+        '{{RISKS}}': 'Risk body.',
+        '{{ALTERNATIVES}}': 'Alternatives body.',
+        '{{REFERENCES}}': 'References body.',
+    }
+    for placeholder, value in replacements.items():
+        content = content.replace(placeholder, value)
+    return content
+
+
+def test_adr_template_renders_and_validates_clean():
+    """A freshly generated ADR validates clean against the converged header set."""
+    content = _render_adr_template()
+    assert '{{' not in content, 'Unreplaced template placeholder'
+
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.adoc', delete=False, encoding='utf-8') as f:
+        f.write(content)
+        temp_file = Path(f.name)
+
+    try:
+        result = _validate_mod.check_file_compliance(temp_file)
+
+        assert result['compliant'], f'Fresh template failed validation: {result["issues"]}'
+        assert result['missing_attrs'] == []
+    finally:
+        temp_file.unlink(missing_ok=True)
