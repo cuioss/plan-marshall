@@ -28,6 +28,7 @@ from _manage_adr_fixtures import (
     cmd_scan,
     cmd_update,
     get_next_number,
+    parse_adr_file,
     parse_metadata_block,
 )
 
@@ -276,3 +277,43 @@ def test_scan_gate_catches_duplicated_tree(adr_dir):
     assert result['duplicate_numbers'] == [8]
     assert result['duplicate_count'] == 1
     assert len(result['duplicate_paths']) == 2
+
+
+# =========================================================================
+# Tier 2: Malformed filenames excluded from duplicate grouping
+# =========================================================================
+
+
+def test_parse_adr_file_reports_none_for_malformed_filename(adr_dir):
+    """parse_adr_file yields number None (not 0) for a non-matching filename."""
+    malformed = adr_dir / 'notes.adoc'
+    malformed.write_text('= ADR-?: Notes\n\n== Status\n\nProposed\n\n')
+
+    assert parse_adr_file(malformed)['number'] is None
+
+
+def test_scan_two_malformed_files_are_not_a_duplicate_zero(adr_dir):
+    """Two malformed files report as malformed, never as duplicate number 0."""
+    for filename in ('notes.adoc', 'draft-idea.adoc'):
+        (adr_dir / filename).write_text('= ADR-?: Malformed\n\n== Status\n\nProposed\n\n')
+
+    result = cmd_scan(Namespace(command='scan', tag=None, affects=None))
+
+    assert result['status'] == 'success'
+    assert result['duplicate_count'] == 0
+    assert result['duplicate_numbers'] == []
+    assert result['malformed_count'] == 2
+    assert sorted(Path(path).name for path in result['malformed_paths']) == ['draft-idea.adoc', 'notes.adoc']
+
+
+def test_scan_malformed_file_beside_numbered_corpus(adr_dir):
+    """One malformed file beside a numbered corpus stays success with a report."""
+    _touch_adr(adr_dir, '0001-First.adoc', title='First')
+    (adr_dir / 'notes.adoc').write_text('= ADR-?: Notes\n\n== Status\n\nProposed\n\n')
+
+    result = cmd_scan(Namespace(command='scan', tag=None, affects=None))
+
+    assert result['status'] == 'success'
+    assert result['duplicate_count'] == 0
+    assert result['malformed_count'] == 1
+    assert [Path(path).name for path in result['malformed_paths']] == ['notes.adoc']
