@@ -59,6 +59,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from file_ops import cwd_checkout_root
 
 from conftest import load_script_module, parse_ns
 
@@ -108,6 +109,12 @@ DECLARED_DIRECTORY = 'src/'
 #: Forty lowercase hex characters, so it passes the verdict grammar and is
 #: refused by git rather than by the parser — which is the path under test.
 UNRESOLVABLE_SHA = '0' * 40
+
+#: The directory ``file_ops.cwd_checkout_root`` recognises a checkout root by.
+#: Written relative so it composes onto the fixture repository, and kept as a
+#: named constant because the fixture creates it for a reason the bare literal
+#: does not carry — see :func:`epic_repo`.
+LOCAL_STATE_MARKER = '.plan/local'
 
 
 # =============================================================================
@@ -213,12 +220,28 @@ def epic_repo(tmp_path: Path, monkeypatch) -> Path:
     ``cwd`` is moved into the repository because every git call the derivation
     makes runs there, and because the declared paths resolve against the
     checkout root the cwd sits in.
+
+    :data:`LOCAL_STATE_MARKER` is created for that second reason and is NOT
+    incidental scaffolding. ``file_ops.cwd_checkout_root`` — the resolver both
+    ``corpus surfaces`` and the verdict row builder resolve the repository root
+    through — returns the nearest ancestor of ``cwd`` that carries it, and the
+    orchestrator store this fixture builds lives on the git-tracked
+    ``.plan/orchestrator/`` tier instead, so the marker is the one thing the tmp
+    repository would otherwise lack. Without it the walk continues PAST the
+    fixture and terminates at whichever real checkout happens to be an ancestor
+    of ``tmp_path`` — which this repository's in-repo pytest basetemp guarantees
+    there is one of. Every declared path then resolves against that foreign root,
+    ``src/`` does not exist there, and the parser classes the spec ``prose``: the
+    non-vacuity guard below fires and every ``declarative`` arm asserts nothing.
+    It is an empty directory, so git tracks nothing for it and the ledger-only
+    advance the motivating case turns on stays ledger-only.
     """
     if shutil.which('git') is None:
         pytest.skip('git is not available')
     repo = tmp_path / 'repo'
     (repo / 'src').mkdir(parents=True)
     (repo / 'docs').mkdir(parents=True)
+    (repo / LOCAL_STATE_MARKER).mkdir(parents=True)
     (repo / 'src' / 'module.py').write_text('VALUE = 1\n', encoding='utf-8')
     (repo / 'docs' / 'notes.md').write_text('seed notes\n', encoding='utf-8')
     _git(repo, 'init', '--quiet')
@@ -227,6 +250,13 @@ def epic_repo(tmp_path: Path, monkeypatch) -> Path:
     _git(repo, 'config', 'commit.gpgsign', 'false')
     monkeypatch.setenv('PLAN_BASE_DIR', str(repo / '.plan'))
     monkeypatch.chdir(repo)
+    # Fail loudly rather than silently: a future basetemp or cwd change that
+    # re-opens the wrong-root path would otherwise surface far downstream as a
+    # surface that classes `prose`, and the diagnosis would have to be traced
+    # back through the parser a second time.
+    assert Path(cwd_checkout_root()).resolve() == repo.resolve(), (
+        'the declared surface must resolve against the fixture repository, not against a real checkout above tmp_path'
+    )
     _commit_all(repo, 'seed the fixture tree')
     return repo
 
