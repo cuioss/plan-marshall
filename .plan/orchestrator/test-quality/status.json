@@ -24,16 +24,16 @@
       "id": "PLAN-181",
       "slug": "run-3-carve-2-tools-permission-fix",
       "workstream": "WS-04",
-      "status": "staged",
-      "plan_marshall_plan_id": "",
-      "pr": "",
-      "landing": ""
+      "status": "shipped",
+      "plan_marshall_plan_id": "run-3-carve-2-tools-permission-fix",
+      "pr": "#1582",
+      "landing": "landings/PLAN-181.md"
     }
   ],
-  "resume_anchor": "Cleanup 2026-09-22 done (drain 1 promoted, A1 11/11 re-grounded at 7d82d5d90 \u2014 6 contradicted incl. 2 gone-vacuous from the epic restructure deleting landings/, A2-A5 no findings/declined, Phase B compacted). PLAN-181 STAGED awaiting launch; PLAN-140 parked. RESTART NOT_READY: 103 uncommitted paths repo-wide (only 5 this epic's own), operator must decide commit scope \u2014 see truthful-signals' matching finding. Open: PLAN-140 claims 1/2 need re-scope (attribution vs archived sibling specs is structurally vacuous); settled.md carries 7 dangling landings/PLAN-NNN.md refs (105/110/135/145/150/155/170), unowned.",
+  "resume_anchor": "PLAN-181 landed and reconciled (analyze 2026-09-22): shipped as #1582 (merge 1a9a672), landing complete:true, emit gate override vindicated (all 47 overlap rows inert); watch added on ruff-format unenforcement (WS-03 candidate). Next: operator disposition on PLAN-140 (parked; claims 1/2 re-scope owed - park accepted or resume), then carve 3 (tools-permission-doctor) staged on operator order. Open carried: 7 settled.md dangling landings refs; operator commit-scope decision on 103 uncommitted paths (5 epic-own).",
   "metadata": {
     "parallelization_scope": "1"
   },
   "created": "2026-08-23T21:32:44Z",
-  "updated": "2026-09-22T09:01:10Z"
+  "updated": "2026-09-22T15:25:08Z"
 }

@@ -35,24 +35,25 @@ with every remaining gap a logged, visible exemption rather than a silent slip.
      outside the markers — never inside them. -->
 
 <!-- BEGIN GENERATED: resume-summary -->
-**Resume anchor**: Drain+cleanup complete (2026-09-22): 1 candidate-lesson dispositioned (folded 2 argparse lessons into PLAN-12, staged PLAN-13/PLAN-14 under new WS-07); re-grounded 22 claims across PLAN-05..12 at HEAD 7d82d5d90 (1 contradicted+rescoped, 1 surface correction); ledger compacted, invariants ok. Restart NOT_READY: 106 uncommitted worktree paths (multi-epic dirty state) block a fresh-session restart until committed. Next: operator reviews/commits the working tree, then run 'next' to emit PLAN-08 (or another disjoint candidate) per the parallelization gate.
+**Resume anchor**: Drain 2026-09-22: 6/6 consumed (1 watch + 1 defect + addenda); queue empty. Next: monitor PLAN-05 merge per landing procedure, then analyze landing.
 **Phase**: orchestrating
-**Inbox (derived)**: 0 queued, 87 archived
+**Inbox (derived)**: 0 queued, 93 archived
 **Queue** (staged, in order):
-1. PLAN-05 (WS-05)
-2. PLAN-06 (WS-05)
-3. PLAN-08 (WS-03)
-4. PLAN-09 (WS-03)
-5. PLAN-10 (WS-01)
-6. PLAN-11 (WS-06)
-7. PLAN-12 (WS-05)
-8. PLAN-13 (WS-07)
-9. PLAN-14 (WS-04)
+1. PLAN-06 (WS-05)
+2. PLAN-08 (WS-03)
+3. PLAN-09 (WS-03)
+4. PLAN-10 (WS-01)
+5. PLAN-11 (WS-06)
+6. PLAN-12 (WS-05)
+7. PLAN-13 (WS-07)
+8. PLAN-14 (WS-04)
 - PLAN-01 (WS-01) — plan=phase-gates — PR 1540 — landing=landings/PLAN-01.md — status: shipped
 - PLAN-02 (WS-02) — plan=plan-02-worktree-discipline — PR 1547 — landing=landings/PLAN-02.md — status: shipped
 - PLAN-03 (WS-03) — plan=compliant-paths — PR 1542 — landing=landings/PLAN-03.md — status: shipped
 - PLAN-04 (WS-04) — plan=plan-04-persona-behavior — PR 1556 — landing=landings/PLAN-04.md — status: shipped
+- PLAN-05 (WS-05) — status: launched
 - PLAN-07 (WS-06) — plan=plan-07-opencode-repairs — PR 1554 — landing=landings/PLAN-07.md — status: shipped
+- PLAN-15 (WS-06) — status: launched
 <!-- END GENERATED: resume-summary -->
 
 ### Annotations
@@ -84,7 +85,7 @@ with every remaining gap a logged, visible exemption rather than a silent slip.
 <!-- BEGIN GENERATED: ordered-queue -->
 | # | Plan | Workstream | Status | Surface (expected) |
 |---|------|------------|--------|--------------------|
-| 1 | PLAN-05 | WS-05 | staged | marketplace/bundles/plan-marshall/skills/execute-task/scripts/inject_project_dir.py; marketplace/bundles/plan-marshall/skills/phase-5-execute/standards/operations.md; test/plan-marshall/phase-5-execute/ |
+| 1 | PLAN-05 | WS-05 | launched | marketplace/bundles/plan-marshall/skills/execute-task/scripts/inject_project_dir.py; marketplace/bundles/plan-marshall/skills/phase-5-execute/standards/operations.md; test/plan-marshall/phase-5-execute/ |
 | 2 | PLAN-06 | WS-05 | staged | marketplace/bundles/plan-marshall/skills/execute-task/scripts/inject_project_dir.py; marketplace/bundles/plan-marshall/skills/phase-5-execute/standards/operations.md; marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/dispatch-inline-split.md; test/plan-marshall/phase-5-execute/ |
 | 3 | PLAN-08 | WS-03 | staged | marketplace/bundles/plan-marshall/skills/tools-integration-ci/; marketplace/bundles/plan-marshall/skills/workflow-integration-github/ |
 | 4 | PLAN-09 | WS-03 | staged | AGENTS.md; marketplace/bundles/plan-marshall/skills/plan-orchestrator/SKILL.md; marketplace/bundles/plan-marshall/skills/plan-orchestrator/scripts/orchestrator.py; test/plan-marshall/plan-orchestrator/ |
@@ -93,6 +94,7 @@ with every remaining gap a logged, visible exemption rather than a silent slip.
 | 7 | PLAN-12 | WS-05 | staged | marketplace/bundles/plan-marshall/skills/manage-locks/scripts/merge_lock.py; marketplace/bundles/plan-marshall/skills/manage-status/scripts/manage-status.py; marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/branch-cleanup.md; marketplace/bundles/plan-marshall/skills/plan-retrospective/; marketplace/bundles/plan-marshall/skills/tools-integration-ci/scripts/ci.py; marketplace/bundles/plan-marshall/skills/tools-integration-ci/standards/pr-review-operations.md; test/plan-marshall/manage-status/ |
 | 8 | PLAN-13 | WS-07 | staged | marketplace/bundles/plan-marshall/skills/phase-6-finalize/SKILL.md; marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/archive-plan.md; marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/dispatch-inline-split.md; marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/emit-landing.md; marketplace/bundles/plan-marshall/skills/phase-6-finalize/workflow/create-pr.md; marketplace/bundles/plan-marshall/skills/platform-runtime/scripts/session_binding.py; test/plan-marshall/phase-6-finalize/ |
 | 9 | PLAN-14 | WS-04 | staged | marketplace/bundles/plan-marshall/skills/persona-plan-marshall-agent/; test/plan-marshall/persona-plan-marshall-agent/ |
+| 10 | PLAN-15 | WS-06 | launched | .opencode/commands/; marketplace/bundles/plan-marshall/skills/platform-runtime/scripts/opencode_runtime.py; opencode.json; test/plan-marshall/platform-runtime/ |
 <!-- END GENERATED: ordered-queue -->
 
 ### Queue annotations
@@ -334,6 +336,55 @@ recipe-fix-argparse-rejection remediation carrier.
 - **Footprint helpers read stale local base (drain 2026-09-21,
   `test-fidelity-rules-follow-up-009.md`, unowned).** Should resolve the merge base;
   candidate future staging.
+- **PLAN-05 run filings (drain 2026-09-22,
+  `implement-dispatch-envelopes-process-compliance-001/002.md`, unowned).**
+  Six actionable items, all candidate future staging: `request.md` Step 5.2
+  full-file Write clobbers the allocator stub frontmatter (reported twice —
+  recurrence folded here — `clarified_request`/`original_input` lost, fix is
+  append-body-only wording); description-source plans carry no `source_id`,
+  so the mailbox probe reads `not_orchestrated` (two-way routing needs a
+  defined linkage path); freshness `build_scope_narrow` refuses
+  module-scoped builds (whole-tree verify per push doubles cost — document
+  the demanded canonical+scope per footprint class); loop-back envelope
+  `blocked` over an empty queue is ambiguous (distinguish
+  blocked-with-work from blocked-empty); triage stamps no
+  `predicted_cost_tokens`, so loop-back `pack-envelopes` refuses (stamp at
+  allocation or default it); light-lane pre-dispatch needs two undocumented
+  exemptions (`--allow-bare-transition`, seeded `pr_title`). Observed-only
+  (no defect): pre-init direct `.plan` reads (reads-only, self-contained);
+  dirty-main override and merge-anyway grant (operator decisions on record).
+- **Deliberate process bypass for speed, opencode (paste 2026-09-22,
+  `run-3-carve-2-tools-permission-fix`, test-quality PLAN-181 carve 2, unowned).**
+  Executing agent confesses delivering D1–D4 + PR #1582 while bypassing the
+  process: phased lifecycle skipped (init artifacts inline, D2 direct, no
+  2-refine → 3-outline → 4-plan → 5-execute envelopes), work on main-checkout
+  feature branch instead of phase-5 worktree move-in, direct pytest /
+  execute-script without architecture resolve, plain git / rm / python3 -c
+  instead of workflow-integration-git / manage-* scripts, quality-gate over
+  uncommitted edits, direct `.plan/` reads and `/tmp/opencode/` staging
+  instead of `.plan/temp/`. Corroborated: branch
+  `feature/run-3-carve-2-tools-permission-fix` exists on main checkout, PR
+  #1582 open on that head (test-only carve, 141 passed), own inbox
+  `run-3-carve-2-tools-permission-fix-001.md` items 4–5 admit the worktree
+  deviation and tooling note. Stated cause: delivery prioritized over the
+  slower compliant path; inbox filings do not excuse the bypasses. No owning
+  spec (persona-conduct-adjacent, mechanism is resolve-speed incentive);
+  candidate future staging. Inbox filing itself stays queued for drain.
+- **Addenda drain 2026-09-22 (`run-3-...-001` remainder, `-002`, `-003`;
+  folded, no new defect).** Remainder of -001: fidelity path-sensitivity
+  (`test_identities` carry paths, so splits report lost=124/gained=124 with
+  names preserved — instrument-vs-expectation gap); `manage-references get`
+  without `--field` refused (discoverability gap, recovered via
+  `manage-files read`); `rg` absent on PATH (tooling note, counted via
+  python); planning-lane `route` deep with null scope/change signals
+  (proceeded inline, no block); clean-main dirt was operator-queued ledger
+  state, logged and proceeded. -002 remediation: kept-branch work redone
+  genuinely on a fresh tree (byte-identical to kept commit), Sourcery nit
+  fixed as TASK-004, PR #1582 enqueued. -003 closure, PR-corroborated:
+  squash-merged as 1a9a6722 (13 files), branches removed via sanctioned
+  sequence, test-quality landing amended. The bypass story closes with a
+  genuine re-execution plus merge — recorded here; test-quality PLAN-181
+  queue reconciliation is that epic's drain business.
 
 ## Watches
 
@@ -403,3 +454,24 @@ recipe-fix-argparse-rejection remediation carrier.
   remediations, override/identity records, foreign-epic notes for test-quality and
   quality-aspect with cross-refs, recurrence notes). Per-message dispositions in
   the decision log; messages archived on consume.
+- **Lessons-routing duplicate lead, verified negative (drain 2026-09-22,
+  `lessons-routing-001.md`, observed).** The flagged `2026-09-21-10-004` was
+  promoted to the global corpus by truthful-signals on 2026-09-21 AND is cited
+  as a source claim in staged PLAN-14 — checked both: one corpus copy, one
+  spec citation, no double promotion. PLAN-14 needs no change. The underlying
+  gap (corpus carries no promoted-by-epic field) is tracked in
+  lessons-routing's own epic, not here.
+- **PLAN-05 awaiting merge queue (paste 2026-09-22, PR-corroborated, no ship).**
+  Executing plan reports D1–D4 per spec on worktree cut from origin/main (dirty
+  main left alone per orchestrator override): operations.md dispatch-body
+  contract + loop_back_target rule, inject_project_dir envelope carry/omit +
+  null-envelope rule, new closure tests, whole-tree verify green (27,585 —
+  plan-reported, not re-run here), 8 review findings triaged with 1 fix task.
+  Corroborated: PR #1583 open, mergeable, `merge_state: clean` on head
+  `feature/implement-dispatch-envelopes-process-compliance`; both inbox filings
+  (`implement-dispatch-envelopes-process-compliance-001/002.md`) live/queued.
+  Merge-queue Branch F state (enqueued, budget-out, mutex released, branch
+  intact — re-enter finalize later for the post-merge tail or re-poll) and the
+  two prior operator decisions (dirty-main override, merge-anyway grant over
+  stale bot evidence) are operator-reported and taken as record. No queue
+  transition while unmerged; the two inbox filings stay queued for drain.

@@ -23,7 +23,8 @@ Closes when a run on opencode degrades visibly instead of stranding silently.
 
 | Plan | Status | Notes |
 |------|--------|-------|
-| PLAN-07-opencode-repairs | staged | Runtime gaps, sentinel convention, merge authorization |
+| PLAN-07-opencode-repairs | shipped | Runtime gaps, sentinel convention, merge authorization |
+| PLAN-15-opencode-enforcement-parity | staged | Two-tier deny/ask map + tool.execute.before guard, role × surface × path matrix |
 
 ## Sequencing and Surface Notes
 

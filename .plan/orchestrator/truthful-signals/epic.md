@@ -42,9 +42,11 @@ out on the same date.
      Paste the returned block verbatim between the markers. -->
 
 <!-- BEGIN GENERATED: resume-summary -->
-**Resume anchor**: === ▶ 2026-09-22 -- FULL CLEANUP RAN (A1 targeted re-ground, A3 clean, A4 found+FIXED 15x stale quality-aspect headers, A2/A5 no findings, Phase B compacted, Phase D restart-check). ⛔ PLAN-TRUTH-167 D3's base-ref HYPOTHESIS REFUTED by PR #1559 (fca06c4ca) -- claim 5 now contradicted+rescoped:no, spec is BLOCKED from next emission until re-scoped (narrower residue: merge-commit re-derivation, not upstream-base -- see spec's own FOLDED 2026-09-22 note). PLAN-TRUTH-173 claim 0 evidence updated (20->21 detectors, conclusion unchanged). A4: all 15 PLAN-2xx specs had dead quality-aspect Hand-Off Commands (quality-aspect is ARCHIVED, path never resolved) -- FIXED epic: field + hand-off path on all 15. Mid-drain: instrumentation-substrate declined 2 forwarded lessons (no matching population), restored to corpus as 2026-09-22-08-001/-002 (W-2026-09-22-a). ▶ QUEUE: 44 rows unchanged, N=1 R=0. NEXT EMIT TARGET CHANGED: PLAN-TRUTH-161 still confirmed disjoint+prep-ready (untouched by this pass); do NOT emit PLAN-TRUTH-167 until D3 re-scoped. RESTART VERDICT: NOT_READY -- worktree carries 59+ uncommitted paths across 5 epics (truthful-signals this session's own edits + orchestrator-refactor/lessons-routing pre-existing from before this session + cross-notice deliveries to instrumentation-substrate/code-intelligence-substrate/review-apparatus/test-quality/lessons-routing). Operator must decide commit scope before a fresh session can safely resume from a clean tree. Inbox genuinely empty (0 queued). A5 (distribution regroup) still declined -- 44-spec redistribution needs its own dedicated pass. ⛔⛔ PLUGIN PIN GAP STILL OPEN, OPERATOR-ONLY. ===
+**Resume anchor**: 2026-09-22: PLAN-TRUTH-161 running (operator-confirmed). N=1 R=1 - no further emissions until it lands. Next: await landing/PR, then analyze.
 **Phase**: orchestrating
 **Inbox (derived)**: 0 queued, 1144 archived
+**Running**:
+- PLAN-TRUTH-161 (WS-01)
 **Parked**:
 - PLAN-TRUTH-156 (WS-01)
 - PLAN-TRUTH-158 (WS-01)
@@ -62,35 +64,34 @@ out on the same date.
 8. PLAN-TRUTH-154 (WS-01)
 9. PLAN-TRUTH-155 (WS-01)
 10. PLAN-TRUTH-160 (WS-01)
-11. PLAN-TRUTH-161 (WS-01)
-12. PLAN-TRUTH-162 (WS-01)
-13. PLAN-TRUTH-165 (WS-01)
-14. PLAN-TRUTH-167 (WS-01)
-15. PLAN-TRUTH-168 (WS-01)
-16. PLAN-TRUTH-169 (WS-01)
-17. PLAN-TRUTH-170 (WS-01)
-18. PLAN-TRUTH-171 (WS-01)
-19. PLAN-TRUTH-172 (WS-01)
-20. PLAN-TRUTH-173 (WS-01)
-21. PLAN-TRUTH-174 (WS-01)
-22. PLAN-TRUTH-175 (WS-01)
-23. PLAN-TRUTH-176 (WS-01)
-24. PLAN-TRUTH-177 (WS-01)
-25. PLAN-205 (WS-QA-01)
-26. PLAN-206 (WS-QA-02)
-27. PLAN-207 (WS-QA-02)
-28. PLAN-208 (WS-QA-03)
-29. PLAN-209 (WS-QA-03)
-30. PLAN-211 (WS-QA-04)
-31. PLAN-213 (WS-QA-06)
-32. PLAN-214 (WS-QA-06)
-33. PLAN-215 (WS-QA-06)
-34. PLAN-216 (WS-QA-07)
-35. PLAN-217 (WS-QA-07)
-36. PLAN-218 (WS-QA-09)
-37. PLAN-219 (WS-QA-08)
-38. PLAN-220 (WS-QA-08)
-39. PLAN-221 (WS-QA-02)
+11. PLAN-TRUTH-162 (WS-01)
+12. PLAN-TRUTH-165 (WS-01)
+13. PLAN-TRUTH-167 (WS-01)
+14. PLAN-TRUTH-168 (WS-01)
+15. PLAN-TRUTH-169 (WS-01)
+16. PLAN-TRUTH-170 (WS-01)
+17. PLAN-TRUTH-171 (WS-01)
+18. PLAN-TRUTH-172 (WS-01)
+19. PLAN-TRUTH-173 (WS-01)
+20. PLAN-TRUTH-174 (WS-01)
+21. PLAN-TRUTH-175 (WS-01)
+22. PLAN-TRUTH-176 (WS-01)
+23. PLAN-TRUTH-177 (WS-01)
+24. PLAN-205 (WS-QA-01)
+25. PLAN-206 (WS-QA-02)
+26. PLAN-207 (WS-QA-02)
+27. PLAN-208 (WS-QA-03)
+28. PLAN-209 (WS-QA-03)
+29. PLAN-211 (WS-QA-04)
+30. PLAN-213 (WS-QA-06)
+31. PLAN-214 (WS-QA-06)
+32. PLAN-215 (WS-QA-06)
+33. PLAN-216 (WS-QA-07)
+34. PLAN-217 (WS-QA-07)
+35. PLAN-218 (WS-QA-09)
+36. PLAN-219 (WS-QA-08)
+37. PLAN-220 (WS-QA-08)
+38. PLAN-221 (WS-QA-02)
 <!-- END GENERATED: resume-summary -->
 
 ### Annotations
@@ -237,7 +238,7 @@ not carried; `landings/` is their record.
 | 11 | PLAN-TRUTH-158 | WS-01 | parked | marketplace/bundles/plan-marshall/skills/phase-6-finalize/SKILL.md; marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/architecture-refresh.md; marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/push.md; test/plan-marshall/phase-6-finalize/** |
 | 12 | PLAN-TRUTH-159 | WS-01 | parked | .claude/skills/**; .claude/skills/finalize-step-deploy-target/SKILL.md; marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/branch-cleanup.md; test/plan-marshall/** |
 | 13 | PLAN-TRUTH-160 | WS-01 | staged | doc/adr/022-Economy_rules_bind_the_persisted_artifact_never_the_reasoning_that_produced_it.adoc; marketplace/bundles/plan-marshall/skills/manage-metrics/scripts/**; marketplace/bundles/plan-marshall/skills/manage-metrics/standards/data-format.md; marketplace/bundles/plan-marshall/skills/phase-5-execute/**; marketplace/bundles/plan-marshall/skills/phase-6-finalize/**; test/plan-marshall/manage-metrics/** |
-| 14 | PLAN-TRUTH-161 | WS-01 | staged | marketplace/bundles/plan-marshall/skills/manage-adr/SKILL.md; marketplace/bundles/plan-marshall/skills/manage-adr/scripts/**; marketplace/bundles/plan-marshall/skills/manage-adr/templates/adr-template.adoc; marketplace/bundles/pm-documents/skills/ref-asciidoc/scripts/_cmd_validate.py; test/plan-marshall/manage-adr/**; test/pm-documents/ref-asciidoc/** |
+| 14 | PLAN-TRUTH-161 | WS-01 | running | marketplace/bundles/plan-marshall/skills/manage-adr/SKILL.md; marketplace/bundles/plan-marshall/skills/manage-adr/scripts/**; marketplace/bundles/plan-marshall/skills/manage-adr/templates/adr-template.adoc; marketplace/bundles/pm-documents/skills/ref-asciidoc/scripts/_cmd_validate.py; test/plan-marshall/manage-adr/**; test/pm-documents/ref-asciidoc/** |
 | 15 | PLAN-TRUTH-162 | WS-01 | staged | .claude/skills/**; .claude/skills/finalize-step-deploy-target/SKILL.md; marketplace/bundles/plan-marshall/skills/manage-solution-outline/SKILL.md; marketplace/bundles/plan-marshall/skills/manage-solution-outline/scripts/manage-solution-outline.py; marketplace/bundles/plan-marshall/skills/persona-plan-marshall-agent/standards/agent-behavior-rules.md; marketplace/bundles/plan-marshall/skills/phase-4-plan/SKILL.md; marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/branch-cleanup.md; marketplace/bundles/plan-marshall/skills/platform-runtime/standards/pretooluse-enforcement.md; test/plan-marshall/** |
 | 16 | PLAN-TRUTH-163 | WS-01 | parked | test/plan-marshall/plan-orchestrator/test_orchestrator_dispatch_workflow_pin.py |
 | 17 | PLAN-TRUTH-164 | WS-01 | parked | marketplace/bundles/plan-marshall/skills/manage-status/**; marketplace/bundles/plan-marshall/skills/phase-6-finalize/**; marketplace/bundles/plan-marshall/skills/workflow-integration-git/scripts/_cmd_prune_ref.py; marketplace/bundles/plan-marshall/skills/workflow-integration-git/scripts/git-workflow.py; test/plan-marshall/workflow-integration-git/** |
