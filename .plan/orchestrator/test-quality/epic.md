@@ -78,31 +78,6 @@ Re-derive before using. See [`landings/PLAN-110.md`](landings/PLAN-110.md).
 - PLAN-140 (WS-04) — PR #1552
 **Queue** (staged, in order):
 1. PLAN-181 (WS-04)
-- PLAN-010 (WS-01) — PR #1248, #1250 — landing=landings/PLAN-010.md — status: landed
-- PLAN-020 (WS-01) — PR #1247 — landing=landings/PLAN-020.md — status: landed
-- PLAN-030 (WS-02) — PR #1261, #1270 — landing=landings/PLAN-030.md — status: landed
-- PLAN-040 (WS-02) — PR #1259 — landing=landings/PLAN-040.md — status: landed
-- PLAN-050 (WS-02) — PR #1258, #1266 — landing=landings/PLAN-050.md — status: landed
-- PLAN-060 (WS-02) — PR #1263, #1265, #1272 — landing=landings/PLAN-060.md — status: landed
-- PLAN-070 (WS-02) — PR #1290 — landing=landings/PLAN-070.md — status: landed
-- PLAN-080 (WS-02) — PR #1302, #1306 — landing=landings/PLAN-080.md — status: landed
-- PLAN-090 (WS-03) — PR #1294 — landing=landings/PLAN-090.md — status: landed
-- PLAN-100 (WS-04) — PR #1314 — landing=landings/PLAN-100.md — status: landed
-- PLAN-105 (WS-04) — plan=every-module-counts-and-the-campaign-can-finish — PR #1407 — landing=landings/PLAN-105.md — status: shipped
-- PLAN-110 (WS-05) — plan=every-test-runs-and-the-suite-does-not-slow-down — PR #1426 — landing=landings/PLAN-110.md — status: shipped
-- PLAN-120 (WS-06) — plan=derive-the-partition-and-the-budget-attribution — PR #1345 — landing=landings/PLAN-120.md — status: shipped
-- PLAN-130 (WS-02) — plan=plan-130-sweep-the-prose-the-widened-rules — PR #1436, #1435 — landing=landings/PLAN-130.md — status: shipped
-- PLAN-135 (WS-02) — plan=sweep-preambles-shipped-accessors — PR #1446 — landing=landings/PLAN-135.md — status: shipped
-- PLAN-145 (WS-03) — plan=plan-145-publish-the-missing-parser-seams — PR #1395 — landing=landings/PLAN-145.md — status: shipped
-- PLAN-150 (WS-02) — plan=plan-150-close-the-namespace-conversion — PR #1383 — landing=landings/PLAN-150.md — status: shipped
-- PLAN-155 (WS-02) — plan=close-the-runtime-slice-parametrization — PR #1455 — landing=landings/PLAN-155.md — status: shipped
-- PLAN-160 (WS-03) — plan=sweep-the-three-single-instance-defect-classes — PR #1486 — landing=landings/PLAN-160.md — status: shipped
-- PLAN-165 (WS-03) — plan=implement-plan-165-close-orphan-defects — PR #1480 — landing=landings/PLAN-165.md — status: shipped
-- PLAN-170 (WS-06) — plan=plan-170-make-the-attribution-usable — PR #1385 — landing=landings/PLAN-170.md — status: shipped
-- PLAN-175 (WS-03) — plan=harden-the-shipped-shape-scanners — PR #1506 — landing=landings/PLAN-175.md — status: shipped
-- PLAN-176 (WS-04) — plan=module-budget-campaign-run-2-slice-040 — PR #1514,#1515,#1526,#1517,#1518,#1519,#1520,#1521,#1522 — landing=landings/PLAN-176.md — status: shipped
-- PLAN-177 (WS-03) — plan=close-the-leftover-gate-gaps — PR #1534 — landing=landings/PLAN-177.md — status: shipped
-- PLAN-180 (WS-01) — plan=test-fidelity-rules — PR #1538, #1549 — landing=landings/PLAN-180.md — status: shipped
 <!-- END GENERATED: resume-summary -->
 
 ### Annotations
