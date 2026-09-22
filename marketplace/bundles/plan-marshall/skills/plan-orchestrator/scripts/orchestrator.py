@@ -2176,8 +2176,8 @@ _GIT_READ_OPERATIONS: dict[str, tuple[str, ...]] = {
 def _git_read(operation: str) -> tuple[str | None, str]:
     """Run one read-only git operation BY NAME, returning ``(stdout, error)``.
 
-    The single git seam in this script. ``operation`` selects an entry of
-    :data:`_GIT_READ_OPERATIONS`; the argv is never caller-composed.
+    The single ARGUMENT-FREE git seam in this script. ``operation`` selects an
+    entry of :data:`_GIT_READ_OPERATIONS`; the argv is never caller-composed.
     ``(None, reason)`` is returned whenever the command could not be observed —
     git unreachable, a timeout, or a non-zero exit — and the reason names which.
     Callers translate that into an *unobservable* outcome, never into a failing
