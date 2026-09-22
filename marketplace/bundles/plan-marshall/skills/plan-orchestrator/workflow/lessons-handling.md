@@ -109,6 +109,17 @@ Per cluster produced by Step 3, in order:
 
    Pick the `active[]` slug whose subject matter owns the cluster. A cluster about PR review or automated-review reliability belongs to the review-apparatus epic; a cluster about a confident signal that hides a caveat belongs to the truthful-signals epic; and so on. When no active epic owns the cluster, that is a routing decision for the operator, not a licence to self-stage — record it in the sweep record and log it (Step 6).
 
+   ⛔ **A destination picked from `active[]` is not thereby OPEN — read its phase before routing to it.** This is the destination-side twin of Step 1's second HALT, which guards this sweep's OWN epic and says nothing about the siblings it routes TO. The premise is the one Step 1 already states: `corpus epics` partitions by STORE HOME alone — a read-only walk over the two store roots that opens no `status.json` and reads no phase — and `close` freezes an epic **in place**, while relocating it under `archived-orchestrators/` is a separate operation that may never happen. A closed sibling therefore sits in `active[]` indefinitely and is a selectable routing destination, and `inbox write` checks only that the destination tree exists — it reads no phase. Routing into a frozen epic files a message that epic's `analyze` verb will never drain. So read the resolved destination's phase, with the same invocation Step 1 uses:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-status:manage-status read \
+     --plan-id {owning_sibling_epic} --store orchestrator
+   ```
+
+   Proceed to item 2 only when the read returns `status: success` AND `plan.phase` is not `closed`. A destination that reads `closed`, and one whose phase could not be read at all (its `status.json` is absent or unreadable), are both treated as **no eligible active owner** for this cluster. Take the no-active-owner path this item already defines — record the cluster in the sweep record, naming the destination and which of the two verdicts disqualified it, log it per Step 6, and do NOT call `inbox write`. Do not add a HALT here: the no-active-owner path already exists and already terminates correctly, and a closed or unreadable sibling is a routing decision for the operator exactly as an unowned cluster is.
+
+   ⛔ **The guard binds BEFORE the write, not after it.** Step 5 item 4 gates removal of an integrated lesson's file from the REMOTE repo on that cluster's `inbox write` returning success — so a write that silently reached a frozen epic would license deleting the remote lesson while the message rots undrained, losing the lesson from both repos. Noting the closed phase after the write does not close that path; only refusing the write does.
+
 2. **Stage the cluster payload to a file** with the Write tool: the cluster's bundled statement, the lessons folded into it (by lesson id), and what the receiving epic is being asked to consider. `--payload-file` takes a staged path and never inline text.
 
 3. **Route it.** Every flag below is REQUIRED — omitting any one is an argparse rejection:
@@ -154,7 +165,31 @@ The sequence below is **normative and strictly ordered**: integrate FIRST, remov
 
 3. **INTEGRATE each applicable lesson locally.** Three branches, and ⛔ **every applicable lesson takes exactly one of them** — an applicable lesson that matches none has no integration path at all, while step 4 below gates its removal on an integration that would then never happen, stranding it in the remote repo forever.
 
-   **(a) Fold into an existing Step 3 cluster** — when one covers the lesson's subject. Re-run Step 4 to route the updated cluster outward.
+   **(a) Fold into an existing Step 3 cluster** — when one covers the lesson's subject. ⛔ **Do NOT re-run Step 4 for that cluster.** Step 4 already ran for it in this same sweep and already wrote ONE `finding` message to its destination epic, and the inbox channel is append-only — so a second Step 4 pass APPENDS a SECOND message for what is one disposition of one cluster. Nothing lets the destination's `analyze` verb recognise the two as the same cluster: neither this doc nor [`inbox-envelope.md`](../standards/inbox-envelope.md) defines a cluster-id key or any message-level idempotence. The cluster then presents twice, and the Output contract's per-cluster counting has two messages where it expects one.
+
+   The already-filed message is the one to CORRECT. Its bare filename is the basename of the `path` that cluster's Step 4 `inbox write` returned; when that return is no longer to hand, `orchestrator inbox list --slug {destination_epic}` re-resolves it from the `messages[]` rows' `name` field. Correct it through exactly one of the two sanctioned in-place surfaces (see [`inbox-envelope.md`](../standards/inbox-envelope.md) § Message-state vocabulary) — never by filing a bare second `write`:
+
+   - **Amend it in place** — the default, and the route to try first. Stage the updated cluster body (the original bundled statement plus the folded remote lesson) to a file with the Write tool, then:
+
+     ```bash
+     python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator inbox amend \
+       --slug {destination_epic} --message {filed_message_name} --payload-file {staged_payload_path}
+     ```
+
+     `--message` is a BARE filename inside that epic's `inbox/` directory. The amend preserves `created`, stamps `amended`, and bumps a monotonic `revision`, so the correction is visible from the envelope alone and the cluster keeps exactly one live message. Only a live, queued, currently-valid message is amendable.
+
+   - **Supersede it** — the route when `amend` refuses the correction, because the message is no longer live and queued: the destination's drain has already archived it, or the verb returns `not_live` / `not_amendable`. File the updated cluster as a fresh `finding` message using Step 4 item 3's `write` invocation unchanged, capture the successor's bare filename, then retire the original in its favour:
+
+     ```bash
+     python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator inbox supersede \
+       --slug {destination_epic} --message {filed_message_name} --by {successor_message_name}
+     ```
+
+     `--message` and `--by` are both bare filenames, and the successor must resolve in the epic's `inbox/` or `inbox/archive/`. The retired message flips to `lifecycle=superseded` and stops presenting as live, so the cluster again has exactly one drainable message — which is the whole point: a successor filed WITHOUT the supersede leaves two live messages for one cluster, the very duplication this branch exists to avoid.
+
+   **Ordering alternative.** A run that reads the remote corpus BEFORE routing needs no correction at all: fold the applicable remote lesson into the Step 3 cluster first, and let that cluster take its single Step 4 pass already carrying the folded content. The amend/supersede machinery above serves the ordering this doc documents — Step 4 before Step 5 — and is not the only admissible shape.
+
+   **Counting.** ⛔ **Branch (a) routes no NEW cluster — a cluster routed once and later amended or superseded is ONE routed cluster, not two.** It therefore adds nothing to `clusters_routed` and contributes no new row to `routed_destinations[]`; the row Step 4 already wrote for that cluster stands, amended body and all. (Branch (b) below is the branch that DOES add one of each, because it forms a cluster Step 4 never saw.)
 
    **(b) Form a standalone cluster and route it through Step 4** — when no Step 3 cluster covers the lesson (including every run where Steps 3–4 were skipped for an empty local corpus). Cluster the applicable remote lessons by the same signals Step 3 uses, give each cluster an id, and route each one outward through Step 4 exactly as a local cluster is routed: resolve the owning sibling epic against the live population, stage the payload, `inbox write`. A cluster formed here counts toward `clusters_routed` and contributes its row to `routed_destinations[]` like any other. Step 4's own no-active-owner rule applies unchanged.
 
@@ -172,7 +207,7 @@ The sequence below is **normative and strictly ordered**: integrate FIRST, remov
      --lesson-id {returned_id} --file {staged_body_path}
    ```
 
-4. **REMOVE the integrated lesson files from the remote repo — ONLY after step 3's local integration is persisted** (the cluster's `inbox write` returned success under branch (a) or (b), or `set-body` returned success under branch (c)). A lesson whose branch (b) cluster found no active owner was NOT routed, so nothing is persisted and its remote file stays put — the ordering rule binds there exactly as everywhere else. Removal happens in the REMOTE repo's tree via `git -C` (small-ops carve-out), NEVER through the current repo's `manage-lessons` store — that store's resolution is CWD-keyed (git-common-dir), so invoking `remove` for a remote lesson would mutate the WRONG store. Resolve the remote repo root:
+4. **REMOVE the integrated lesson files from the remote repo — ONLY after step 3's local integration is persisted.** What counts as persisted is per branch: under branch (a), the correction to the cluster's already-filed message returned success — the `inbox amend`, or the successor `write` plus its `inbox supersede`, on top of the `inbox write` Step 4 already made for that cluster; under branch (b), the cluster's `inbox write` returned success; under branch (c), `set-body` returned success. A lesson whose branch (b) cluster found no active owner was NOT routed, so nothing is persisted and its remote file stays put — the ordering rule binds there exactly as everywhere else, and it binds identically to a cluster Step 4 item 1's destination-phase guard disqualified. Removal happens in the REMOTE repo's tree via `git -C` (small-ops carve-out), NEVER through the current repo's `manage-lessons` store — that store's resolution is CWD-keyed (git-common-dir), so invoking `remove` for a remote lesson would mutate the WRONG store. Resolve the remote repo root:
 
    ```bash
    git -C {remote_lessons_dir} rev-parse --show-toplevel
@@ -241,4 +276,4 @@ remote_removed: {N}
 remote_not_applicable: {N}
 ```
 
-`display_detail` is ≤80 chars, ASCII, no trailing period. `slug` always reads `lessons-routing` — it is the fixed sweep epic, never a per-run value. `clusters_routed` counts the `finding` messages this run wrote to sibling epics, and `routed_destinations[]` names where each one went; `exception_plans_staged` counts the `PLAN-LR-NN` specs staged under Step 4's narrow exception, and is `0` on an ordinary sweep. The `remote_*` fields are present only when `remote_pass: true`. `remote_integrated` counts only PERSISTED local integrations — a Step 5.3 branch (a)/(b) whose `inbox write` returned success, or a branch (c) whose `set-body` returned success. A branch-(b) cluster that found no active owner (Step 5 item 4's carve-out) was never routed, so its lesson does not count toward `remote_integrated` and its remote file is expected to stay put. `remote_removed` MUST equal `remote_integrated` at a clean exit — a gap means an integrated (persisted) lesson's remote removal failed and the sweep record carries the discrepancy as an open defect.
+`display_detail` is ≤80 chars, ASCII, no trailing period. `slug` always reads `lessons-routing` — it is the fixed sweep epic, never a per-run value. `clusters_routed` counts the DISTINCT clusters this run routed to sibling epics — one per cluster, never one per message — and `routed_destinations[]` carries one row per routed cluster naming where it went. ⛔ **The two are cluster-keyed, not message-keyed**: a cluster corrected under Step 5 branch (a) (amended in place, or retired by `supersede` in favour of a successor message) is ONE routed cluster however many message files its correction touched, and a cluster Step 4 item 1's destination-phase guard disqualified was never routed at all and contributes neither. `exception_plans_staged` counts the `PLAN-LR-NN` specs staged under Step 4's narrow exception, and is `0` on an ordinary sweep. The `remote_*` fields are present only when `remote_pass: true`. `remote_integrated` counts only PERSISTED local integrations — a Step 5.3 branch (a) whose correction to the cluster's already-filed message returned success, a branch (b) whose `inbox write` returned success, or a branch (c) whose `set-body` returned success. A branch-(b) cluster that found no active owner (Step 5 item 4's carve-out) was never routed, so its lesson does not count toward `remote_integrated` and its remote file is expected to stay put. `remote_removed` MUST equal `remote_integrated` at a clean exit — a gap means an integrated (persisted) lesson's remote removal failed and the sweep record carries the discrepancy as an open defect.
