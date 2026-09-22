@@ -1,6 +1,6 @@
 # Lessons-Handling Mode Workflow
 
-Workflow doc for the `lessons` verb: a repeatable orchestrator mode that scans, dedups, and (optionally) cross-repo-integrates the lessons-learned corpus into the fixed `lessons-routing` epic, routing each disposed cluster outward to the sibling epic that owns its subject. This doc implements the **Lessons-Handling Mode Contract** in [`persona-plan-orchestrator/standards/orchestration-model.md`](../../persona-plan-orchestrator/standards/orchestration-model.md) — the fixed-epic rule, the local dedup/aggregate obligation, the outward-routing rule, and the cross-repo integrate-then-remove sequence are OWNED by that standard; this doc sequences the steps and quotes the exact script invocations. When this doc and the standard disagree, the standard wins.
+Workflow doc for the `lessons` verb: a repeatable orchestrator mode that scans, dedups, and (optionally) cross-repo-integrates the lessons-learned corpus into the fixed `lessons-routing` epic, routing each disposed cluster outward to the sibling epic that owns its subject. This doc implements the **Lessons-Handling Mode Contract** in [`persona-plan-orchestrator/standards/orchestration-model.md`](../../persona-plan-orchestrator/standards/orchestration-model.md) — every rule in that contract is OWNED by that standard; this doc sequences the steps and quotes the exact script invocations. When this doc and the standard disagree, the standard wins.
 
 ## Exit-code convention for every script call
 
@@ -88,7 +88,7 @@ Record a per-lesson disposition for EVERY scanned lesson in this run's sweep rec
 
 ### Step 4: Route each disposed cluster outward
 
-⛔ **`lessons-routing` does NOT stage its own clusters.** It is a distribution point that holds no plans (mode contract, § "Sweep findings route outward"), so this step writes nothing into its `status.json` `plans` list. Each disposed cluster is routed to the sibling epic that OWNS its subject matter, over the inbox channel.
+⛔ **`lessons-routing` does NOT stage its own clusters — except under the single narrow exception below.** It is a distribution point that holds no plans (mode contract, § "Sweep findings route outward"), so this step writes nothing into its `status.json` `plans` list for an ordinary cluster. Each disposed cluster is routed to the sibling epic that OWNS its subject matter, over the inbox channel.
 
 Per cluster produced by Step 3, in order:
 
