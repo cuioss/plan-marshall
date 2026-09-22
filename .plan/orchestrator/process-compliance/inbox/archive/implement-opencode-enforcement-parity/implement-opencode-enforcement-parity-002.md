@@ -3,7 +3,7 @@ sender_type=plan
 sender_id=implement-opencode-enforcement-parity
 epic=process-compliance
 kind=finding
-created=2026-09-22T19:33:35Z
+created=2026-09-22T19:46:11Z
 
 # Finding: phase-transition mailbox probe mis-parses real request.md, always reporting `not_orchestrator_pointer`
 

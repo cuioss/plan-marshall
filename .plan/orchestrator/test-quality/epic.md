@@ -71,13 +71,14 @@ Re-derive before using. See [`landings/PLAN-110.md`](landings/PLAN-110.md).
      outside the markers — never inside them. -->
 
 <!-- BEGIN GENERATED: resume-summary -->
-**Resume anchor**: PLAN-181 landed and reconciled (analyze 2026-09-22): shipped as #1582 (merge 1a9a672), landing complete:true, emit gate override vindicated (all 47 overlap rows inert); watch added on ruff-format unenforcement (WS-03 candidate). Next: operator disposition on PLAN-140 (parked; claims 1/2 re-scope owed - park accepted or resume), then carve 3 (tools-permission-doctor) staged on operator order. Open carried: 7 settled.md dangling landings refs; operator commit-scope decision on 103 uncommitted paths (5 epic-own).
+**Resume anchor**: PLAN-182 running (2026-09-22): module-budget-campaign-completion (WS-04) started by operator; PLAN-140 superseded wholesale; PLAN-181 shipped as #1582. Next: PLAN-183 spec (carried-defects-and-watches-closure) still to author. Open carried: 7 settled.md dangling landings refs; operator commit-scope decision on 103 uncommitted paths (5 epic-own).
 **Phase**: orchestrating
 **Inbox (derived)**: 0 queued, 136 archived
-**Parked**:
-- PLAN-140 (WS-04) — PR #1552
+**Running**:
+- PLAN-182 (WS-04)
 **Queue** (staged, in order):
 - (empty)
+- PLAN-140 (WS-04) — PR #1552 — status: superseded
 - PLAN-181 (WS-04) — plan=run-3-carve-2-tools-permission-fix — PR #1582 — landing=landings/PLAN-181.md — status: shipped
 <!-- END GENERATED: resume-summary -->
 
@@ -103,7 +104,7 @@ Re-derive before using. See [`landings/PLAN-110.md`](landings/PLAN-110.md).
 <!-- BEGIN GENERATED: ordered-queue -->
 | # | Plan | Workstream | Status | Surface (expected) |
 |---|------|------------|--------|--------------------|
-| 1 | PLAN-140 | WS-04 | parked | test/default/; test/finalize-step-deploy-target/; test/finalize-step-sync-plugin-cache/; test/marketplace/; test/plan-marshall/; test/pm-code-intelligence/; test/pm-dev-frontend-cui/; test/pm-dev-frontend/; test/pm-dev-java-cui/; test/pm-dev-java/; test/pm-dev-oci/; test/pm-dev-python/; test/pm-documents/; test/pm-plugin-development/; test/pm-plugin-development/plugin-doctor/test_test_conventions_rule*.py; test/sync-plugin-cache/ |
+| 1 | PLAN-182 | WS-04 | running | (prose) |
 <!-- END GENERATED: ordered-queue -->
 
 ### Queue annotations

@@ -59,6 +59,12 @@ plan makes the entry lane decidable so the exemption stops recurring.
   - verdict: corroborated | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: process-compliance/cleanup | rescoped: n/a | evidence: planning.md unchanged since 93bda90; light-lane branch still present at :222-273; re-confirmed
 - Verify-first clause: the consuming phase settles both HYPOTHESIS clauses against the implementing source before scoping — refutation loops back to re-scope
   - verdict: unverifiable | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: process-compliance/cleanup | rescoped: n/a | evidence: procedural instruction to the consuming phase, not a checkable world premise; no implementing-source check applies
+- OBSERVED: the mailbox probe mis-parses every production colon-format request.md — `_resolve_mailbox_checkpoint` reads `source_id` via key=value-only `parse_markdown_metadata`, which stops at the `# Request:` heading and returns `{}` — read at `marketplace/bundles/plan-marshall/skills/manage-status/scripts/_cmd_lifecycle.py`:174 and `marketplace/bundles/plan-marshall/skills/tools-file-ops/scripts/file_ops.py`:1554-1593 (folded lead from `implement-opencode-enforcement-parity-002.md`; re-opens deliverable 2's settled premise, which tested the classifier regex but never the probe's reader path)
+  - verdict: corroborated | checked_at: 048221d3c98f6ca06925ee57c4077f36496009a9 | by: process-compliance/analyze | rescoped: n/a | evidence: lifecycle174 keyvalue reader plus fileops1554 stop-at-heading yields empty dict on colon request
+- OBSERVED: the light-lane pr_title gap has a named root cause — `pr_title` is authored only in deep-lane refine Step 13 while the light lane folds refine away and the envelope authors nothing, and `_capture_pr_title_present` has no light-lane carve-out — cited at `.plan/orchestrator/process-compliance/inbox/implement-opencode-enforcement-parity-001.md` § Root cause (folded into deliverable 1 scope; mechanism not re-opened at source this pass)
+  - verdict: unverifiable | checked_at: 048221d3c98f6ca06925ee57c4077f36496009a9 | by: process-compliance/analyze | rescoped: n/a | evidence: cited inbox root cause not re-opened at source this pass
+- OBSERVED: a second same-sender inbox write silently replaced the first live message (sequence re-opened at allocation; sender-observed, mechanism not reproduced) — cited at `.plan/orchestrator/process-compliance/inbox/implement-opencode-enforcement-parity-003.md` § Evidence (folded; reproduction left to the consuming plan)
+  - verdict: unverifiable | checked_at: 048221d3c98f6ca06925ee57c4077f36496009a9 | by: process-compliance/analyze | rescoped: n/a | evidence: sender-observed allocation anomaly mechanism not reproduced
 
 ## Expected Surface
 
@@ -68,6 +74,7 @@ plan makes the entry lane decidable so the exemption stops recurring.
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/phase-1-init/` — recipe-match/aspect-classify lane lives here (added 2026-09-22, cleanup re-grounding — understated surface, deliverable 3 named no implementing file before this correction)
 - OBSERVED: `test/plan-marshall/plan-orchestrator/` — probe regression tests live here
 - OBSERVED: `test/plan-marshall/plan-marshall/` — entry-lane regression tests live here
+- OBSERVED: `marketplace/bundles/plan-marshall/skills/manage-status/scripts/_cmd_lifecycle.py` — mailbox probe reader path (added drain 2026-09-22, -002 fold; the mis-parse lives here, not in the classifier)
 
 ## Dependencies and Sequencing
 
@@ -85,6 +92,9 @@ plan makes the entry lane decidable so the exemption stops recurring.
 - `plan-09-outline-sweep-004.md` (finding): pr_title capture recurrence — folded; expected surface unchanged by this fold (recurrence note, adds no file surface — recorded explicitly)
 - `test-fidelity-rules-follow-up-003.md` (finding): handshake captures — staged into this spec
 - `test-fidelity-rules-follow-up-004.md` (finding): light-lane routing — staged into this spec
+- `implement-opencode-enforcement-parity-001.md` (finding): light-lane pr_title root cause — folded into deliverable 1 scope; expected surface unchanged by this fold (planning.md already declared — recorded explicitly)
+- `implement-opencode-enforcement-parity-002.md` (finding): mailbox probe reader mis-parse, re-opens deliverable 2 premise — folded; expected surface updated in the same act (+1 entry: _cmd_lifecycle.py)
+- `implement-opencode-enforcement-parity-003.md` (finding): inbox write sequence re-use — folded; expected surface unchanged by this fold (_orchestrator_inbox.py already declared — recorded explicitly)
 
 ## Hand-Off Command
 
