@@ -49,6 +49,14 @@ The boundary test: if the prose is "we hit this bug, watch for the pattern", it 
 
 Before proposing, the workflow body scans the existing ADR corpus via `manage-adr scan --affects {module}` and skips any decision already covered by an existing ADR's `summary`. A decision is proposed only when it is both decision-shaped AND not already in the corpus.
 
+## Landing fails closed on duplicate ADR numbers
+
+Before landing, the finalize body runs `manage-adr scan` and refuses the tree when the payload carries the `duplicate_numbers` named state (`duplicate_count > 0`). Two branches that allocated the same number from the same stale view collide invisibly at create time because `next-number` reads only the local checkout; the collision surfaces here, at landing, as a named state — `duplicate_numbers` (the colliding numbers), `duplicate_paths` (every file carrying one), `duplicate_count` (how many numbers collide) — with a fail verdict (`status: error`, `error: duplicate_numbers`).
+
+- Fail closed: a `duplicate_numbers` verdict blocks landing. It is distinct from `unresolvable` (the corpus could not be read) and `unknown` (no verdict was rendered) — both of those also block, but only `duplicate_numbers` names a concrete collision to resolve by hand.
+- No auto-renumber: the gate never rewrites filenames or reassigns numbers. Resolve the collision manually (renumber one side, consolidate, or drop) and re-run `scan` until it reports `duplicate_count: 0`.
+- No remote allocation: `create`/`next-number` still derive numbers from the local checkout only and never consult `origin/main`. The gate at landing is what makes that local-only allocation safe.
+
 ## Authoring the proposed ADR
 
 Proposed ADRs are created as `Proposed` and authored per the `manage-adr` Authoring Discipline. That standard is authoritative for the durable-decision-record shape — Context as a problem class (not an incident), Decision as a principle plus mechanisms, Consequences as steady-state properties, Alternatives Considered on their merits, References to durable artefacts only (no PR numbers, commit SHAs, lesson IDs, or dates). Do not restate the section-shape rules here; follow the `manage-adr` standard.

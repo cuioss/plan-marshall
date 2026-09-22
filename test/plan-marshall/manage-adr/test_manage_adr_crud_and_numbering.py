@@ -16,6 +16,8 @@ from pathlib import Path
 from _manage_adr_fixtures import (
     METADATA_BLOCK_END,
     METADATA_BLOCK_START,
+    _build_duplicate_tree,
+    _populate_base_tree,
     _touch_adr,
     adr_dir,
     cmd_create,
@@ -23,7 +25,9 @@ from _manage_adr_fixtures import (
     cmd_list,
     cmd_next_number,
     cmd_read,
+    cmd_scan,
     cmd_update,
+    get_next_number,
     parse_metadata_block,
 )
 
@@ -234,3 +238,41 @@ def test_delete_with_force(adr_dir):
     # Created on an empty corpus → 4-digit prefix; confirm it is gone.
     files = list(adr_dir.glob('0001-*.adoc'))
     assert len(files) == 0
+
+
+# =========================================================================
+# Tier 2: Stale-view collision fixtures and D0 catch proof
+# =========================================================================
+
+
+def test_stale_view_branches_collide_on_same_number(tmp_path, monkeypatch):
+    """Two branches on the same stale view allocate the same ADR number."""
+    branch_a = tmp_path / 'branch_a'
+    branch_b = tmp_path / 'branch_b'
+    _populate_base_tree(branch_a)
+    _populate_base_tree(branch_b)
+
+    monkeypatch.chdir(branch_a)
+    assert get_next_number() == 8
+    result_a = cmd_create(Namespace(command='create', title='Branch A Decision', status='Proposed'))
+
+    monkeypatch.chdir(branch_b)
+    assert get_next_number() == 8
+    result_b = cmd_create(Namespace(command='create', title='Branch B Decision', status='Proposed'))
+
+    assert result_a['number'] == 8
+    assert result_b['number'] == 8
+    assert Path(result_a['path']).name != Path(result_b['path']).name
+
+
+def test_scan_gate_catches_duplicated_tree(adr_dir):
+    """The D0 scan gate reports the duplicated-number named state."""
+    _build_duplicate_tree(adr_dir, number=8)
+
+    result = cmd_scan(Namespace(command='scan', tag=None, affects=None))
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'duplicate_numbers'
+    assert result['duplicate_numbers'] == [8]
+    assert result['duplicate_count'] == 1
+    assert len(result['duplicate_paths']) == 2

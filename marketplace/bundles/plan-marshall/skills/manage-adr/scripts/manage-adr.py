@@ -466,14 +466,39 @@ def cmd_scan(args: argparse.Namespace) -> dict[str, Any]:
     can assess relevance without reading full ADR files. Optional --tag and
     --affects filters select only ADRs whose corresponding metadata list
     overlaps the given value.
+
+    Duplicate-number gate: parsed ADRs are grouped by width-agnostic number.
+    When two files share one number (the stale-view collision where two
+    branches allocated the same number from the same base), the payload
+    surfaces a distinct ``duplicate_numbers`` named state (numbers, paths,
+    count) and returns a fail verdict (``status: error``,
+    ``error: duplicate_numbers``) so the landing check fails closed.
     """
     if not ADR_DIR.exists():
-        return {'status': 'success', 'operation': 'scan', 'count': 0, 'adrs': []}
+        return {
+            'status': 'success',
+            'operation': 'scan',
+            'count': 0,
+            'adrs': [],
+            'duplicate_count': 0,
+            'duplicate_numbers': [],
+            'duplicate_paths': [],
+        }
 
-    adrs = []
+    parsed: list[dict[str, Any]] = []
+    number_to_paths: dict[int, list[str]] = {}
     for filepath in sorted(ADR_DIR.glob('*.adoc')):
         adr = parse_adr_file(filepath)
+        parsed.append(adr)
+        number_to_paths.setdefault(adr['number'], []).append(str(filepath))
 
+    duplicates = {number: paths for number, paths in number_to_paths.items() if len(paths) > 1}
+    duplicate_numbers = sorted(duplicates)
+    duplicate_paths = sorted(path for paths in duplicates.values() for path in paths)
+    duplicate_count = len(duplicate_numbers)
+
+    adrs = []
+    for adr in parsed:
         if args.tag and args.tag not in adr['tags']:
             continue
         if args.affects and args.affects not in adr['affects']:
@@ -491,7 +516,39 @@ def cmd_scan(args: argparse.Namespace) -> dict[str, Any]:
             }
         )
 
-    return {'status': 'success', 'operation': 'scan', 'count': len(adrs), 'adrs': adrs}
+    if duplicate_count:
+        log_entry(
+            'script',
+            'global',
+            'ERROR',
+            f'[ADR] Duplicate ADR numbers: {duplicate_count} number(s): '
+            f'{", ".join(str(number) for number in duplicate_numbers)}',
+        )
+        return {
+            'status': 'error',
+            'error': 'duplicate_numbers',
+            'operation': 'scan',
+            'message': (
+                f'{duplicate_count} duplicate ADR number(s): '
+                f'{", ".join(str(number) for number in duplicate_numbers)}. '
+                'Resolve the collision before landing; no auto-renumber.'
+            ),
+            'count': len(adrs),
+            'adrs': adrs,
+            'duplicate_count': duplicate_count,
+            'duplicate_numbers': duplicate_numbers,
+            'duplicate_paths': duplicate_paths,
+        }
+
+    return {
+        'status': 'success',
+        'operation': 'scan',
+        'count': len(adrs),
+        'adrs': adrs,
+        'duplicate_count': 0,
+        'duplicate_numbers': [],
+        'duplicate_paths': [],
+    }
 
 
 @safe_main
