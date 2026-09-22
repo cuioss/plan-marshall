@@ -1849,6 +1849,9 @@ _EXPECTED_CANONICAL_KEY_ORDER = [
     'orchestrator',
     'build',
     'credentials_config',
+    # `interaction_mode` (the top-level scalar preference) sits in its alphabetical
+    # slot between `credentials_config` and `project`, matching production.
+    'interaction_mode',
     'project',
     'providers',
     'skill_domains',
@@ -1887,6 +1890,7 @@ def test_save_config_emits_canonical_top_level_key_order(tmp_path, monkeypatch):
         'providers': {},
         'project': {},
         'credentials_config': {},
+        'interaction_mode': 'advanced',
         'orchestrator': {},
         'plan': {},
         'extension_defaults': {},
