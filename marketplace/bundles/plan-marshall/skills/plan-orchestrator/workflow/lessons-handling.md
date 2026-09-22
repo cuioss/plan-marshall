@@ -1,6 +1,6 @@
 # Lessons-Handling Mode Workflow
 
-Workflow doc for the `lessons` verb: a repeatable orchestrator mode that scans, dedups, and (optionally) cross-repo-integrates the lessons-learned corpus into a dated epic. This doc implements the **Lessons-Handling Mode Contract** in [`persona-plan-orchestrator/standards/orchestration-model.md`](../../persona-plan-orchestrator/standards/orchestration-model.md) — the dated-slug convention, the local dedup/aggregate obligation, and the cross-repo integrate-then-remove sequence are OWNED by that standard; this doc sequences the steps and quotes the exact script invocations. When this doc and the standard disagree, the standard wins.
+Workflow doc for the `lessons` verb: a repeatable orchestrator mode that scans, dedups, and (optionally) cross-repo-integrates the lessons-learned corpus into the fixed `lessons-routing` epic, routing each disposed cluster outward to the sibling epic that owns its subject. This doc implements the **Lessons-Handling Mode Contract** in [`persona-plan-orchestrator/standards/orchestration-model.md`](../../persona-plan-orchestrator/standards/orchestration-model.md) — the fixed-epic rule, the local dedup/aggregate obligation, the outward-routing rule, and the cross-repo integrate-then-remove sequence are OWNED by that standard; this doc sequences the steps and quotes the exact script invocations. When this doc and the standard disagree, the standard wins.
 
 ## Exit-code convention for every script call
 
@@ -12,38 +12,48 @@ The exit-code contract for every `python3 .plan/execute-script.py` call in this 
 |-----------|:--------:|-------------|
 | `remote_lessons_dir` | No | Absolute path to ANOTHER repo's lessons directory (e.g. `{other_repo}/.plan/local/lessons-learned`). When supplied, the cross-repo pass (Step 5) runs after the local pass; when absent, the run is local-only and Step 5 is skipped. |
 
-The epic slug is NOT an input — it is derived in Step 1. Every invocation of this mode opens a fresh, distinct dated epic (see the mode contract); the verb never resumes or reopens a prior lessons-handling epic.
+The epic slug is neither an input nor derived — it is the fixed constant `lessons-routing` (see the mode contract). Every invocation of this mode re-enters that one standing epic; Step 1 scaffolds it only when it is absent.
 
 ## Workflow
 
-### Step 1: Derive the dated slug and scaffold the epic
+### Step 1: Resolve the fixed epic and scaffold only when absent
 
-Derive the slug as `lessons-handling-{YY-MM-DD}-{NN}` from today's date, per the dated-slug rule in the mode contract, where `{NN}` is a collision-safe two-digit per-invocation sequence suffix (`01`, `02`, …). Because every invocation opens a FRESH, distinct epic, the bare `lessons-handling-{YY-MM-DD}` form collides on the second same-day run — reopening an already-created epic instead of starting a new one. Resolve `{NN}` by checking the orchestrator store for existing `lessons-handling-{YY-MM-DD}-*` slugs and taking the next free ordinal (first run of the day is `-01`, e.g. `lessons-handling-26-07-16-01`). Then scaffold the epic tree (idempotent):
+The slug is the constant `lessons-routing` — there is nothing to derive. Determine whether that epic already exists, which decides the whole step:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator corpus epics
+```
+
+`lessons-routing` present in `active[]` is the **present branch**; absent from both `active[]` and `archived[]` is the **absent branch**.
+
+⛔ **The scaffold/create pair below runs on the ABSENT branch ONLY, and idempotence is not what makes that safe.** `orchestrator scaffold` is documented idempotent and would tolerate an unconditional call, but `manage-status create` is not: it offers no idempotent-overwrite semantics, and its only overwrite path is `--force`, documented as "Overwrite existing status". So an unconditional `create` against the live `lessons-routing` tree either fails outright or — with `--force` — DESTROYS that epic's accumulated `plans` queue and its `resume_anchor`. The guard is the protection; the idempotence of the sibling call is not.
+
+**Absent branch only.** Scaffold the epic tree:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator scaffold \
-  --slug {slug}
+  --slug lessons-routing
 ```
 
 Create the `kind=orchestrator` status document (`--phases` is ignored for this store):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status create \
-  --plan-id {slug} --title "Lessons handling {YY-MM-DD}" --store orchestrator
-```
-
-Now that `status.json` exists, push the orchestrator terminal title per the [Terminal-Title Repaint Contract](../../persona-plan-orchestrator/standards/orchestration-model.md#terminal-title-repaint-contract). The placement differs from the other verbs because this mode DERIVES its slug in this step rather than receiving it as an input, so the push cannot precede slug resolution:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime session push-title-token \
-  --store orchestrator --slug {slug}
+  --plan-id lessons-routing --title "Lessons routing" --store orchestrator
 ```
 
 Instantiate `epic.md` from `templates/epic.md` via the Write tool (direct file access inside the epic's own tree is covered by the direct-file-write carve-out). Set the epic phase to `orchestrating`:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status update-field \
-  --plan-id {slug} --field phase --value orchestrating --store orchestrator
+  --plan-id lessons-routing --field phase --value orchestrating --store orchestrator
+```
+
+**Both branches.** With `status.json` now guaranteed to exist, push the orchestrator terminal title per the [Terminal-Title Repaint Contract](../../persona-plan-orchestrator/standards/orchestration-model.md#terminal-title-repaint-contract). The placement differs from the other verbs because the push cannot resolve epic state before `status.json` exists, and on the absent branch that is only true after the create above:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime session push-title-token \
+  --store orchestrator --slug lessons-routing
 ```
 
 ### Step 2: Enumerate the local lessons corpus
@@ -65,33 +75,50 @@ An empty corpus is a legitimate outcome: record the empty scan as a decision (St
 
 ### Step 3: Cluster and dispose (local dedup/aggregate obligation)
 
-Apply the local dedup/aggregate obligation from the mode contract: cluster similar or duplicate lessons and aggregate each cluster into **ONE bundled queue item — never one queue item per lesson**. Clustering signals, in priority order: explicit cross-references between lesson bodies, shared `component`, shared subject surface (same skill/standard/workflow the lessons touch), same failure mode described in different words. The `aggregate` verb's signal-priority rules ([`manage-lessons/references/aggregate-analysis.md`](../../manage-lessons/references/aggregate-analysis.md)) are the reference model for this judgment.
+Apply the local dedup/aggregate obligation from the mode contract: cluster similar or duplicate lessons and aggregate each cluster into **ONE bundled cluster — never one cluster per lesson**. Clustering signals, in priority order: explicit cross-references between lesson bodies, shared `component`, shared subject surface (same skill/standard/workflow the lessons touch), same failure mode described in different words. The `aggregate` verb's signal-priority rules ([`manage-lessons/references/aggregate-analysis.md`](../../manage-lessons/references/aggregate-analysis.md)) are the reference model for this judgment.
 
-Record a per-lesson disposition for EVERY scanned lesson in the epic ledger (`epic.md`, Ordered Queue + Decisions sections) — no lesson may leave the scan without one:
+Record a per-lesson disposition for EVERY scanned lesson in this run's sweep record (Step 6) — no lesson may leave the scan without one:
 
 | Disposition | Meaning |
 |-------------|---------|
-| `clustered-into` | Folded into a named cluster/queue item (record the cluster id) |
-| `already-covered` | The lesson's rule/fix has already shipped or is owned by an active plan — no queue item |
-| `standalone` | No cluster match; becomes its own single-lesson queue item |
-| `stale` | Premise no longer holds (surface removed, behavior redesigned) — no queue item; candidate for corpus cleanup |
+| `clustered-into` | Folded into a named cluster (record the cluster id) |
+| `already-covered` | The lesson's rule/fix has already shipped or is owned by an active plan — no cluster |
+| `standalone` | No cluster match; becomes its own single-lesson cluster |
+| `stale` | Premise no longer holds (surface removed, behavior redesigned) — no cluster; candidate for corpus cleanup |
 
-### Step 4: Persist the queue and regenerate the derivable blocks
+### Step 4: Route each disposed cluster outward
 
-Write the clustered queue into `status.json` as the `plans` list (one entry per cluster/standalone queue item, `status: staged`), via the orchestrator-store field setter:
+⛔ **`lessons-routing` does NOT stage its own clusters.** It is a distribution point that holds no plans (mode contract, § "Sweep findings route outward"), so this step writes nothing into its `status.json` `plans` list. Each disposed cluster is routed to the sibling epic that OWNS its subject matter, over the inbox channel.
 
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage-status update-field \
-  --plan-id {slug} --field plans --value {plans_json_array} --store orchestrator
-```
+Per cluster produced by Step 3, in order:
 
-The `{plans_json_array}` placeholder is a complete JSON array that MUST be passed as ONE shell-safe `--value` argument — single-quote the whole payload so the shell never word-splits or glob-expands the brackets, commas, and quotes. Never interpolate the raw JSON unquoted onto the command line.
+1. **Resolve the owning sibling epic against the live population** — never against a remembered list of epics:
 
-The START-HERE block and the Ordered Queue table are both GENERATED blocks (reconciliation direction is always status.json → epic.md); ⛔ **do not hand-write the Ordered Queue table**. Regenerate both blocks and paste each verbatim between its own markers (`resume-summary` and `ordered-queue`):
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator corpus epics
+   ```
+
+   Pick the `active[]` slug whose subject matter owns the cluster. A cluster about PR review or automated-review reliability belongs to the review-apparatus epic; a cluster about a confident signal that hides a caveat belongs to the truthful-signals epic; and so on. When no active epic owns the cluster, that is a routing decision for the operator, not a licence to self-stage — record it in the sweep record and log it (Step 6).
+
+2. **Stage the cluster payload to a file** with the Write tool: the cluster's bundled statement, the lessons folded into it (by lesson id), and what the receiving epic is being asked to consider. `--payload-file` takes a staged path and never inline text.
+
+3. **Route it.** All five flags below are REQUIRED — omitting any one is an argparse rejection:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator inbox write \
+     --slug {owning_sibling_epic} --sender-type orchestrator --sender-id lessons-routing \
+     --kind candidate-lesson --payload-file {staged_payload_path}
+   ```
+
+   `--slug` names the DESTINATION epic, not the sender — the sender is carried by `--sender-type` / `--sender-id`. `--target-plan` is deliberately omitted so the message queues for the destination epic's drain rather than being delivered to one running plan's mailbox.
+
+**The single narrow exception.** A cluster that is a tooling defect in the routing/versioning MECHANISM itself — not lesson content — MAY be staged as a `PLAN-LR-NN` spec in `lessons-routing`. Take it only after confirming the defect is not already shipped and is not in fact `truthful-signals`' subject; failing either check, route the cluster outward like any other. The worked counter-example is `PLAN-LH2-18` → `PLAN-LR-06`: it was staged under this exception and then RETIRED the following day, which is what makes it a cautionary precedent rather than a template to copy.
+
+**Regenerate only when the exception actually fired.** A sweep that only routed outward changed no derivable block — no plan row was appended — so it regenerates nothing. When the exception path DID append a plan row, regenerate the START-HERE block and the Ordered Queue table and paste each verbatim between its own markers (`resume-summary` and `ordered-queue`); ⛔ **do not hand-write the Ordered Queue table** (reconciliation direction is always status.json → epic.md):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator resume-summary \
-  --slug {slug}
+  --slug lessons-routing
 ```
 
 ### Step 5: Cross-repo pass (only when `remote_lessons_dir` is supplied)
@@ -102,7 +129,7 @@ The sequence below is **normative and strictly ordered**: integrate FIRST, remov
 
 2. **Classify applicability** to the current repo: `applicable` (the lesson's rule or failure mode exists here) or `not-applicable` (remote-repo-specific). Log the verdict per remote lesson (Step 6 logging shape).
 
-3. **INTEGRATE each applicable lesson locally.** Either fold it into an existing cluster/queue item from Step 3 (re-run Step 4 to persist the updated queue), or — when the lesson is a standing rule worth keeping in the current repo's corpus — register it via the path-allocate flow (see `manage-lessons` Canonical invocations → `add` and → `set-body`):
+3. **INTEGRATE each applicable lesson locally.** Either fold it into an existing cluster from Step 3 (re-run Step 4 to route the updated cluster outward), or — when the lesson is a standing rule worth keeping in the current repo's corpus — register it via the path-allocate flow (see `manage-lessons` Canonical invocations → `add` and → `set-body`):
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons add \
@@ -116,7 +143,7 @@ The sequence below is **normative and strictly ordered**: integrate FIRST, remov
      --lesson-id {returned_id} --file {staged_body_path}
    ```
 
-4. **REMOVE the integrated lesson files from the remote repo — ONLY after step 3's local integration is persisted** (queue written to status.json, or `set-body` returned success). Removal happens in the REMOTE repo's tree via `git -C` (small-ops carve-out), NEVER through the current repo's `manage-lessons` store — that store's resolution is CWD-keyed (git-common-dir), so invoking `remove` for a remote lesson would mutate the WRONG store. Resolve the remote repo root:
+4. **REMOVE the integrated lesson files from the remote repo — ONLY after step 3's local integration is persisted** (the cluster's `inbox write` returned success, or `set-body` returned success). Removal happens in the REMOTE repo's tree via `git -C` (small-ops carve-out), NEVER through the current repo's `manage-lessons` store — that store's resolution is CWD-keyed (git-common-dir), so invoking `remove` for a remote lesson would mutate the WRONG store. Resolve the remote repo root:
 
    ```bash
    git -C {remote_lessons_dir} rev-parse --show-toplevel
@@ -129,39 +156,44 @@ The sequence below is **normative and strictly ordered**: integrate FIRST, remov
    ```
 
    ```bash
-   git -C {remote_repo} commit -m "chore(lessons): remove {lesson_file} — integrated into {current_repo} lessons-handling epic {slug}"
+   git -C {remote_repo} commit -m "chore(lessons): remove {lesson_file} — integrated into {current_repo} lessons-routing sweep"
    ```
 
    Not-applicable remote lessons stay untouched in the remote repo; their `not-applicable` verdict is logged in the epic ledger.
 
-### Step 6: Log decisions and set the resume anchor
+### Step 6: Write the sweep record, log decisions, and set the resume anchor
 
-Every clustering decision, disposition batch, applicability verdict, and removal is logged through the orchestrator store — never by direct writes to `logs/`:
+Every clustering decision, disposition batch, applicability verdict, routing destination, and removal is logged through the orchestrator store — never by direct writes to `logs/`:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging decision \
-  --plan-id {slug} --level INFO --message "{decision statement}" --store orchestrator
+  --plan-id lessons-routing --level INFO --message "{decision statement}" --store orchestrator
 ```
 
-Before returning, set the resume anchor to the exact next action (typically "emit the first staged queue item via /plan-orchestrator next slug={slug}"):
+**Write this run's sweep record** into `lessons-routing/epic.md` as a dated subsection under the `## Lesson Sweeps` section, using the Write tool under the [direct-file-write carve-out](../../persona-plan-orchestrator/standards/orchestration-model.md#carve-outs) — the tree is this epic's own. Create the `## Lesson Sweeps` section when it is absent; when it is present, APPEND a new dated subsection and overwrite nothing already recorded there. The subsection carries every scanned lesson's per-lesson disposition (Step 3) and, per cluster, the destination epic it was routed to. Per the mode contract's § "Sweep record", that section sits OUTSIDE any `<!-- BEGIN GENERATED: {name} -->` / `<!-- END GENERATED: {name} -->` marker pair, so the ledger-compaction stage preserves it verbatim as narrative and never regenerates it.
+
+Before returning, set the resume anchor to the outward-routing follow-up — the next action is that each destination epic drains the message this sweep routed to it, not that `lessons-routing` emits anything of its own:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status update-field \
-  --plan-id {slug} --field resume_anchor --value "{next action}" --store orchestrator
+  --plan-id lessons-routing --field resume_anchor --value "{next action}" --store orchestrator
 ```
 
 ### Step 7: Return
 
-The staged queue items are handed off like any other epic's plans — the `next` verb emits their `/plan-marshall` commands; this mode never launches a plan inline.
+Nothing is handed off from `lessons-routing` itself: each routed cluster is now an unread `candidate-lesson` message in its destination epic's inbox, and that epic's own `analyze` verb drains it. The one exception is a `PLAN-LR-NN` staged under Step 4's narrow exception, which is handed off like any other epic's plan — the `next` verb emits its `/plan-marshall` command. This mode never launches a plan inline.
 
 ## Output
 
 ```toon
 status: success | error
-display_detail: "lessons-handling {slug}: {N} lessons, {M} queue items"
-slug: {slug}
+display_detail: "lessons-routing sweep: {N} lessons, {M} clusters routed"
+slug: lessons-routing
 lessons_scanned: {N}
-queue_items: {M}
+clusters_routed: {M}
+routed_destinations[M]{epic,cluster}:
+  {destination_epic_slug},{cluster_id}
+exception_plans_staged: {N}
 dispositions:
   clustered_into: {N}
   already_covered: {N}
@@ -174,4 +206,4 @@ remote_removed: {N}
 remote_not_applicable: {N}
 ```
 
-`display_detail` is ≤80 chars, ASCII, no trailing period. The `remote_*` fields are present only when `remote_pass: true`. `remote_removed` MUST equal `remote_integrated` at a clean exit — a gap means an integrated lesson's remote removal failed and the epic ledger carries the discrepancy as an open defect.
+`display_detail` is ≤80 chars, ASCII, no trailing period. `slug` always reads `lessons-routing` — it is the fixed sweep epic, never a per-run value. `clusters_routed` counts the `candidate-lesson` messages this run wrote to sibling epics, and `routed_destinations[]` names where each one went; `exception_plans_staged` counts the `PLAN-LR-NN` specs staged under Step 4's narrow exception, and is `0` on an ordinary sweep. The `remote_*` fields are present only when `remote_pass: true`. `remote_removed` MUST equal `remote_integrated` at a clean exit — a gap means an integrated lesson's remote removal failed and the sweep record carries the discrepancy as an open defect.
