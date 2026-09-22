@@ -100,7 +100,7 @@ Count `R`, the plans currently in `launched` status, and select up to `N − R` 
 
 Four rules govern the outcome, every one of them decided by the parser rather than by a reader: an **OPEN (absent) clause does NOT fail the test** — settling it is the LAUNCHED plan's own job per [orchestration-model.md § Verify-First Contract for Inferred Claims](../../persona-plan-orchestrator/standards/orchestration-model.md#verify-first-contract-for-inferred-claims), so blocking on an unchecked clause would make the verifying phase unreachable and the spec permanently unemittable; **only a refutation the spec has not absorbed blocks**; an **`unverifiable` verdict never blocks**, because an unreachable population is not a refutation; and a **malformed field blocks**, reported as `indeterminate` with the offending line quoted, so a typo can never hide a refutation.
 
-**Staleness is reported, never promoted.** A row whose `stale` flag is set rides into the report alongside the admission outcome and does not change it — neither silently promoted to blocking as HEAD advances, nor silently dropped.
+**Staleness is reported, never promoted.** A row's `stale` flag says the spec's own declared surface moved between the sha the verdict was checked at and HEAD — or that the comparison could not be made, which its `staleness_basis` names. Either way the row rides into the report alongside the admission outcome and does not change it — neither silently promoted to blocking when a declared surface moves, nor silently dropped. The derivation and the closed basis vocabulary are defined once at [orchestration-model.md § Re-Grounding Verdict Field](../../persona-plan-orchestrator/standards/orchestration-model.md#re-grounding-verdict-field).
 
 A candidate failing either test is sequenced, not emitted. **Never emit a colliding, unresolvable, or unprepared plan merely to fill a slot** — when fewer than `N − R` candidates qualify, report the shortfall with the blocking reason per candidate instead. Every reason is **derived from the blocking row**, never hand-typed:
 
@@ -220,11 +220,11 @@ shortfall[S]{plan,reason}:
   PLAN-PP,"claim 2: contradicted, not re-scoped"
   PLAN-QQ,"claim 0: indeterminate — {offending line}"
   PLAN-RR,"claim section: unreadable, not settled — {quoted first line}"
-stale_verdicts[T]{plan,claim_index,sha}:
-  PLAN-NN,1,9f3a1c2
+stale_verdicts[T]{plan,claim_index,sha,staleness_basis}:
+  PLAN-NN,1,9f3a1c2,declared_surface_touched
 ```
 
-`display_detail` is ≤80 chars, ASCII, no trailing period. `emitted[]` is empty when no candidate qualifies; `shortfall[]` is empty when the block fills every slot, and otherwise names one blocking reason per unemittable candidate — every reason is derived from its blocking row (a `corpus verdicts` row for prep-readiness, a `corpus surfaces` row for disjointness), never hand-typed. `stale_verdicts[]` reports every row the parser flagged stale and carries no admission consequence: a candidate with stale verdicts and no blocking row is emitted normally.
+`display_detail` is ≤80 chars, ASCII, no trailing period. `emitted[]` is empty when no candidate qualifies; `shortfall[]` is empty when the block fills every slot, and otherwise names one blocking reason per unemittable candidate — every reason is derived from its blocking row (a `corpus verdicts` row for prep-readiness, a `corpus surfaces` row for disjointness), never hand-typed. `stale_verdicts[]` reports every row the parser flagged stale and carries no admission consequence: a candidate with stale verdicts and no blocking row is emitted normally. Each row carries the `staleness_basis` the flag was computed on, forwarded verbatim from its `corpus verdicts` row, so a row flagged because the spec's declared surface actually moved (`declared_surface_touched`) is distinguishable from one flagged because the comparison could not be made at all (`surface_not_declarative`, `tree_diff_unavailable`) — the fail-closed bases, which say the grounding was never checked rather than that it moved.
 
 `specs_scanned`, `claim_section_states[]` and `unreadable_claim_section_count` are forwarded from the same `corpus verdicts` read, so the reader sees how much of each section the parser could read and over what population that was computed. The tally spans the whole four-member vocabulary, so a state no spec is in reports a stated zero rather than being absent — `unreadable_claim_section_count: 0` beside a non-zero `specs_scanned` is a measured "nothing unreadable", never an unasked question.
 

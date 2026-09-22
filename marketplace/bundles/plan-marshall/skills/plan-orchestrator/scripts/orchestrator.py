@@ -129,6 +129,7 @@ import sys
 import time
 from collections import Counter
 from collections.abc import Callable, Collection
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -450,6 +451,99 @@ SURFACE_INDETERMINATE_STATES = frozenset(SURFACE_STATES) - {SURFACE_DECLARATIVE}
 #: reader to infer the rule from the field names.
 SURFACE_GOVERNING_AUTHORITY = (
     'ADR-019 — an absent or unresolvable declaration resolves to indeterminate, never to disjoint'
+)
+
+# --- verdict staleness (content-scoped derivation) ---------------------------
+#
+# A re-grounding verdict's ``stale`` flag answers *may this claim's grounding be
+# outdated?*, and the only evidence that can answer it is whether the spec's own
+# DECLARED surface moved between ``checked_at`` and HEAD. A bare
+# ``checked_at != HEAD`` inequality answers a DIFFERENT question — *did anything,
+# from any epic, land?* — and since the orchestrator ledger is itself git-tracked,
+# a sibling epic's ``.plan/orchestrator/**`` commit makes that inequality true
+# almost always, degenerating the flag into a constant that discriminates nothing.
+#
+# The six bases below are the CLOSED vocabulary every row's ``staleness_basis`` is
+# drawn from, so a conservative fallback is legible AS a fallback rather than
+# hiding inside a bare boolean. The technique mirrors ``phase-6-finalize``'s
+# ``verdict_currency`` (its ``REASON_*`` tokens plus ``_REASON_DETAIL`` map): an
+# equal-SHA short-circuit decided before anything is resolved, a two-tree
+# ``git diff`` rather than a commit walk, and fail-closed on every uncertainty.
+
+#: The two shas name the same tree, so nothing beneath the claim can have moved.
+#: Decided FIRST, before any surface resolution and before any diff, mirroring the
+#: precedent's equal-SHA short-circuit that consults none of them.
+STALENESS_HEAD_UNCHANGED = 'head_unchanged'
+
+#: The spec's declared surface WAS compared against the tree difference and no
+#: declared entry was touched — a checked negative, the only clean reading.
+STALENESS_SURFACE_UNCHANGED = 'declared_surface_unchanged'
+
+#: At least one changed path matched a declared entry, by exact match or by
+#: ``/``-boundary containment. The matched paths ride the row as the evidence.
+STALENESS_SURFACE_TOUCHED = 'declared_surface_touched'
+
+#: The spec's ``## Expected Surface`` is in some :data:`SURFACE_INDETERMINATE_STATES`
+#: member, so it contributes no comparable path set at all. Fail-closed to
+#: ``stale: true``: a surface that could not be compared is not an unchanged one.
+STALENESS_SURFACE_NOT_DECLARATIVE = 'surface_not_declarative'
+
+#: The two-tree diff could not be computed — an unreadable HEAD, a ``checked_at``
+#: git can no longer resolve, or a git failure. Fail-closed for the same reason:
+#: an empty difference read off a command that failed is not a measured zero.
+STALENESS_DIFF_UNAVAILABLE = 'tree_diff_unavailable'
+
+#: The verdict bullet did not parse, so it carries no ``checked_at`` to anchor a
+#: comparison to. The row is already :data:`VERDICT_INDETERMINATE` with
+#: ``admits: false``; its ``stale`` stays false because no staleness was ever
+#: computed, and THIS basis is what says so rather than a bare boolean.
+STALENESS_VERDICT_UNPARSED = 'verdict_unparsed'
+
+#: The WHOLE vocabulary, in reporting order. ``staleness_basis_tally`` is derived
+#: from this tuple rather than from the bases actually observed, so a basis no row
+#: is in publishes a stated zero instead of vanishing from the tally (ADR-014).
+STALENESS_BASES = (
+    STALENESS_HEAD_UNCHANGED,
+    STALENESS_SURFACE_UNCHANGED,
+    STALENESS_SURFACE_TOUCHED,
+    STALENESS_SURFACE_NOT_DECLARATIVE,
+    STALENESS_DIFF_UNAVAILABLE,
+    STALENESS_VERDICT_UNPARSED,
+)
+
+#: Human phrasing per basis, keyed by the token so the two cannot drift — the
+#: shape ``verdict_currency._REASON_DETAIL`` established. Published beside each
+#: tally row, so every basis states what it MEANS exactly once per payload rather
+#: than leaving a reader to infer it from the token spelling.
+_STALENESS_BASIS_DETAIL: dict[str, str] = {
+    STALENESS_HEAD_UNCHANGED: (
+        'the anchor sha names the current HEAD so the claim is still grounded in this very tree'
+    ),
+    STALENESS_SURFACE_UNCHANGED: (
+        'the tree difference between the anchor sha and HEAD touches no path the spec declares '
+        'so the grounding this claim rests on did not move'
+    ),
+    STALENESS_SURFACE_TOUCHED: (
+        'the tree difference touches at least one path the spec declares so the grounding may no longer hold'
+    ),
+    STALENESS_SURFACE_NOT_DECLARATIVE: (
+        'the spec declares no comparable surface so no advance can be proven non-invalidating — '
+        'reporting stale is the fail-closed answer'
+    ),
+    STALENESS_DIFF_UNAVAILABLE: (
+        'the tree difference between the anchor sha and HEAD could not be computed so nothing was compared'
+    ),
+    STALENESS_VERDICT_UNPARSED: (
+        'the verdict bullet does not parse so it carries no anchor sha and no staleness was computed for it'
+    ),
+}
+
+#: Named once so the payload states its governing authority rather than leaving a
+#: reader to infer the rule from the field names, exactly as the sibling corpus
+#: verbs already do.
+STALENESS_GOVERNING_AUTHORITY = (
+    'ADR-019 — a surface that could not be compared names the fallback basis it fell back to '
+    'and fails closed, never a bare stale flag indistinguishable from a checked one'
 )
 
 # --- the CANDIDATE side of the cross-check comparison ------------------------
@@ -2064,6 +2158,15 @@ _GIT_READ_TIMEOUT_SECONDS = 30
 #: observes without writing, and no amount of care at the call sites would make
 #: that unreachable. Adding a read is a one-line addition here; adding a WRITE
 #: is a visible change to a table that says it holds only reads.
+#:
+#: The table holds every ARGUMENT-FREE read. Three reads in this module take a
+#: caller-supplied REVISION and therefore cannot be a constant argv at all —
+#: :func:`_resolve_footprint_base`, :func:`_git_tree_diff` and
+#: :func:`_resolve_anchor_sha`. Each validates its revision against a closed regex
+#: before it reaches argv, so the caller still contributes no git ARGUMENT, only a
+#: ref or sha of a shape that was checked; all three remain read-only. They are
+#: named here so this table is read as the argument-free registry it is rather
+#: than as a claim that no other git call exists.
 _GIT_READ_OPERATIONS: dict[str, tuple[str, ...]] = {
     'head-sha': ('rev-parse', 'HEAD'),
     'worktree-status': ('status', '--porcelain'),
@@ -2073,8 +2176,8 @@ _GIT_READ_OPERATIONS: dict[str, tuple[str, ...]] = {
 def _git_read(operation: str) -> tuple[str | None, str]:
     """Run one read-only git operation BY NAME, returning ``(stdout, error)``.
 
-    The single git seam in this script. ``operation`` selects an entry of
-    :data:`_GIT_READ_OPERATIONS`; the argv is never caller-composed.
+    The single ARGUMENT-FREE git seam in this script. ``operation`` selects an
+    entry of :data:`_GIT_READ_OPERATIONS`; the argv is never caller-composed.
     ``(None, reason)`` is returned whenever the command could not be observed —
     git unreachable, a timeout, or a non-zero exit — and the reason names which.
     Callers translate that into an *unobservable* outcome, never into a failing
@@ -2111,13 +2214,108 @@ def _git_read(operation: str) -> tuple[str | None, str]:
 def _current_head_sha() -> str:
     """Return the current HEAD sha, or the empty string when it cannot be read.
 
-    Used only to derive the ``stale`` flag on a parsed verdict. An unresolvable
-    HEAD yields ``stale: false`` for every row and rides in the payload as an
-    empty ``head_sha``, so a caller can tell "not stale" from "staleness was not
-    computable" instead of reading an unqualified boolean.
+    The tip half of the staleness comparison, and the value echoed in the
+    ``head_sha`` payload field. An unresolvable HEAD is NOT read as "nothing
+    moved": the empty string matches no ``checked_at`` prefix and resolves no tree
+    diff, so any row that reaches the diff branch — a parsed verdict on a
+    ``declarative`` surface whose comparison ``head_unchanged`` did not already
+    settle — falls through to :data:`STALENESS_DIFF_UNAVAILABLE` and reports
+    ``stale: true`` with that basis named. A row that never reaches the diff
+    branch is unaffected: an unparsed verdict keeps
+    :data:`STALENESS_VERDICT_UNPARSED` with ``stale: false``, and a
+    non-``declarative`` surface resolves :data:`STALENESS_SURFACE_NOT_DECLARATIVE`
+    first. The "not stale" versus "staleness was not computable" distinction a
+    caller needs is therefore carried explicitly by ``staleness_basis`` rather
+    than inferred from an empty echo.
     """
     output, _ = _git_read('head-sha')
     return output or ''
+
+
+def _git_tree_diff(base: str, head: str) -> list[str] | None:
+    """Repo-relative paths differing between two TREES, or ``None`` when unanswerable.
+
+    ``git diff --name-only {base} {head}`` is a two-tree comparison, not a walk of
+    the commits between them, so the answer is identical whether the two shas are
+    related by a fast-forward, a rebase or a force-push, and a change plus its
+    revert cancels out instead of counting as a difference. This is the technique
+    ``phase-6-finalize``'s ``verdict_currency.resolve_changed_paths`` established;
+    it is mirrored rather than imported, because this skill cannot import across
+    bundle boundaries.
+
+    Both revisions are caller-supplied text — ``base`` comes off a verdict bullet
+    authored in a spec file — so each is validated against a closed hex shape
+    before it reaches argv: ``base`` against :data:`_CHECKED_AT_RE` (the same
+    7-40 hex prefix the grammar admits) and ``head`` against
+    :data:`_CURRENCY_SHA_RE` (a full sha). Nothing option-like, and no shell
+    metacharacter, can ride into the command.
+
+    ``None`` is returned on EVERY unanswerable path — a revision of the wrong
+    shape, a sha git can no longer resolve, a timeout, a git that could not run —
+    and the caller MUST treat it as *not compared*, never as an empty difference.
+    """
+    if not _CHECKED_AT_RE.match(base) or not _CURRENCY_SHA_RE.match(head):
+        return None
+    try:
+        completed = subprocess.run(
+            ['git', 'diff', '--name-only', base, head, '--'],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=_GIT_READ_TIMEOUT_SECONDS,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if completed.returncode != 0:
+        return None
+    return [line.strip() for line in completed.stdout.splitlines() if line.strip()]
+
+
+def _resolve_anchor_sha(anchor: str) -> str | None:
+    """Resolve one verdict anchor to a FULL commit sha, or ``None`` when it resolves to none.
+
+    The caller-side half of the staleness derivation's purity split, and the
+    reason :func:`classify_staleness` and :func:`_head_unchanged` can stay pure.
+    The grammar admits a 7-39 character ABBREVIATION (:data:`_CHECKED_AT_RE`), so
+    an anchor abbreviating some OTHER commit that happens to share a prefix with
+    HEAD satisfied :func:`_head_unchanged`'s prefix test — and because that branch
+    is decided FIRST, git never got the chance to report the abbreviation as
+    ambiguous or unknown. The error direction was ``stale: false``, a fail-OPEN
+    reading inside a classifier that fails CLOSED on every other uncertainty.
+    Resolving the anchor HERE removes the abbreviation before the classifier ever
+    sees it, without putting git inside a function whose contract is that it has
+    none.
+
+    ``None`` is returned on EVERY unresolved path — an anchor of the wrong shape,
+    an abbreviation git reports as ambiguous, a sha git can no longer resolve, a
+    timeout, a git that could not run, or output that is not a single commit sha.
+    The caller treats every one of them as an unresolved anchor and lets the row
+    report :data:`STALENESS_DIFF_UNAVAILABLE`, the basis that already means
+    *nothing was compared* — so no seventh member joins :data:`STALENESS_BASES`
+    and the vocabulary stays a closed six.
+
+    The argv mirrors :func:`_resolve_footprint_base`: ``rev-parse --verify
+    --end-of-options`` with a ``^{commit}`` suffix, so the anchor contributes only
+    a hex token of a shape already checked — nothing option-like or range-like can
+    ride into the command — and the answer is exactly one commit object rather
+    than a tag object or a multi-line list.
+    """
+    if not _CHECKED_AT_RE.match(anchor):
+        return None
+    try:
+        completed = subprocess.run(
+            ['git', 'rev-parse', '--verify', '--end-of-options', f'{anchor}^{{commit}}'],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=_GIT_READ_TIMEOUT_SECONDS,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if completed.returncode != 0:
+        return None
+    sha = completed.stdout.strip()
+    return sha if _CURRENCY_SHA_RE.match(sha) else None
 
 
 def _fenced_mask(lines: list[str]) -> list[bool]:
@@ -2438,20 +2636,11 @@ def _currency_compare(footprint: frozenset[str], spec_paths: set[str]) -> dict[s
     when the entry-level differences are empty (a footprint file inside a
     directory claim), and an untouched spec reports no overlap (clean) even
     though its sets differ.
+
+    The entry-covering rule itself is :func:`_covers`, shared with the verdict
+    staleness derivation so the two surfaces resolve a ``directory`` or
+    ``recursive_glob`` claim identically rather than each carrying its own copy.
     """
-
-    def _covers(left: str, right: str) -> bool:
-        """Whether two entries cover each other by exact match or containment.
-
-        Containment runs in BOTH directions: a directory claim covers the
-        files beneath it (``_contains(entry, path)``) AND a file beneath a
-        directory covers that directory claim (``_contains(path, entry)``) —
-        so ``footprint={'src/'}`` against ``spec_paths={'src/a.py'}`` scores
-        covered rather than leaving ``src/`` in ``footprint_not_spec`` while
-        the shared resolver treats both as covered.
-        """
-        return left == right or _contains(left, right) or _contains(right, left)
-
     overlapping = sorted(path for path in footprint if any(_covers(entry, path) for entry in spec_paths))
     footprint_not_spec = sorted(path for path in footprint if not any(_covers(entry, path) for entry in spec_paths))
     spec_not_footprint = sorted(entry for entry in spec_paths if not any(_covers(entry, path) for path in footprint))
@@ -2793,11 +2982,220 @@ def _admits(verdict: str, rescoped: str) -> bool:
     return not (verdict == CONTRADICTED and rescoped == BLOCKING_RESCOPED)
 
 
+def _head_unchanged(head: str, checked_at: str) -> bool:
+    """Whether the verdict's anchor names the tree HEAD currently points at.
+
+    Pure, and deliberately so. The anchor reaching this test has ALREADY been
+    resolved to a full sha by :func:`_row_staleness` through
+    :func:`_resolve_anchor_sha`, so on the production path this prefix match IS an
+    equality. The prefix form survives only because the function is pure and must
+    accept whatever its caller hands it — a unit-test caller legitimately passes a
+    grammar-shaped abbreviation, and narrowing the comparison here would push the
+    resolution into a function that is defined by having no git.
+
+    The hazard that resolution closes was fail-OPEN, which is why it is closed at
+    the caller rather than tolerated: an anchor abbreviating a DIFFERENT commit
+    that shares a prefix with HEAD passed this test, and because
+    :func:`classify_staleness` consults it FIRST, nothing downstream ever got to
+    report the abbreviation as ambiguous.
+
+    An unreadable HEAD and an UNRESOLVED anchor are both the empty string, and
+    neither is a match. Nothing was observed, so nothing is proven unchanged, and
+    the caller falls through to the fail-closed branches rather than reading an
+    unobservable tip — or an anchor git refused — as a quiet "still current".
+    """
+    return bool(head) and bool(checked_at) and head.startswith(checked_at)
+
+
+def _needs_tree_diff(head: str, checked_at: str, derivation_status: str) -> bool:
+    """Whether the two branches ABOVE the diff both decline to settle the basis.
+
+    :func:`classify_staleness` consults ``changed_paths`` only past those two
+    gates, so a caller resolves the diff lazily behind this same predicate and the
+    git call is never issued for a row whose basis is already decided. Derived
+    from the classifier's own two conditions rather than restated, so the lazy
+    gate cannot drift out of step with the order the classifier applies.
+    """
+    return not _head_unchanged(head, checked_at) and derivation_status not in SURFACE_INDETERMINATE_STATES
+
+
+def classify_staleness(
+    head: str,
+    checked_at: str,
+    derivation_status: str,
+    declared_paths: Collection[str],
+    changed_paths: Collection[str] | None,
+) -> tuple[bool, str, list[str]]:
+    """Classify one verdict's staleness against its spec's DECLARED surface.
+
+    Pure: no git, no filesystem, no spec read. The caller supplies the resolved
+    anchor sha, the resolved derivation status, the resolved declaration and the
+    resolved tree difference; this function owns only the stale-or-not decision,
+    so it is unit-testable without a worktree — the
+    ``verdict_currency.classify_advance`` split. The anchor is on that list
+    because the grammar admits an ABBREVIATION, and only git can say which commit
+    one names: :func:`_row_staleness` resolves it through
+    :func:`_resolve_anchor_sha` before this function is called, so the
+    ``head_unchanged`` branch below compares two full shas rather than testing a
+    prefix that a different commit could satisfy.
+
+    The branch order is the contract. ``head_unchanged`` is decided FIRST, before
+    the declaration or the difference is consulted at all, so an unmoved HEAD
+    settles correctly even for a spec whose surface could not be resolved.
+    Everything past it fails CLOSED: an uncomparable surface and an uncomputable
+    difference both report ``stale: true``, because neither is evidence that
+    nothing moved.
+
+    Args:
+        head: The current HEAD sha, or the empty string when it could not be read.
+        checked_at: The verdict's anchor, ALREADY RESOLVED by the caller to a full
+            sha — or the empty string when it could not be resolved at all (an
+            ambiguous abbreviation, an object git does not know, an unobservable
+            git). The empty string matches no HEAD, so an unresolved anchor falls
+            through to the fail-closed branches instead of settling
+            ``head_unchanged``. A direct caller may still pass a grammar-shaped
+            7-40 hex prefix; this function issues no git either way.
+        derivation_status: The spec's :data:`SURFACE_STATES` member, resolved
+            through the single sanctioned reader via :func:`_surface_state`.
+        declared_paths: The entries that spec's ``## Expected Surface`` resolves
+            to. Consulted only when ``derivation_status`` admits comparison.
+        changed_paths: Repo-relative paths differing between the ``checked_at``
+            tree and the HEAD tree. ``None`` means the difference could NOT be
+            computed, which is not an empty difference and never reads as one.
+
+    Returns:
+        A ``(stale, basis, matched_paths)`` triple. ``basis`` is a member of
+        :data:`STALENESS_BASES`; ``matched_paths`` is non-empty only on
+        :data:`STALENESS_SURFACE_TOUCHED`, where it names the evidence for the
+        stale reading so the verdict is substantiated rather than asserted.
+    """
+    if _head_unchanged(head, checked_at):
+        return False, STALENESS_HEAD_UNCHANGED, []
+    if derivation_status in SURFACE_INDETERMINATE_STATES:
+        return True, STALENESS_SURFACE_NOT_DECLARATIVE, []
+    if changed_paths is None:
+        return True, STALENESS_DIFF_UNAVAILABLE, []
+    matched = sorted({path for path in changed_paths if any(_covers(entry, path) for entry in declared_paths)})
+    if matched:
+        return True, STALENESS_SURFACE_TOUCHED, matched
+    return False, STALENESS_SURFACE_UNCHANGED, []
+
+
+@dataclass
+class _StalenessContext:
+    """One spec's staleness inputs, resolved ONCE and shared by all its rows.
+
+    ``cmd_corpus_verdicts`` walks every spec times every claim, so resolving the
+    declared surface per ROW would re-run ``classify_spec`` once per claim, and
+    resolving the anchor or the tree difference per row would issue one git
+    subprocess per claim. The surface is therefore resolved once per SPEC in
+    :func:`_spec_staleness_context`, and BOTH git caches are shared across the
+    WHOLE run keyed by the anchor — so each of the two reads is issued at most
+    once per DISTINCT anchor, however many rows cite it.
+
+    The two caches are separate mappings because they answer different questions
+    and hold different value types: ``anchor_cache`` maps an anchor AS WRITTEN to
+    the full sha it names (or ``None``), and ``diff_cache`` maps a RESOLVED sha to
+    the tree difference against HEAD (or ``None``). Keying the second on the
+    resolved sha is what makes two specs abbreviating the same commit differently
+    share one diff rather than issue two.
+
+    Both are deliberately mutable mappings owned by the caller rather than
+    per-context fields: specs routinely share an anchor (one re-grounding pass
+    stamps the corpus at one commit), and a per-spec cache would re-issue that one
+    resolution and that one diff for every spec in the corpus.
+    """
+
+    head: str
+    derivation_status: str
+    declared_paths: frozenset[str]
+    diff_cache: dict[str, list[str] | None]
+    anchor_cache: dict[str, str | None]
+
+    def resolved_anchor(self, checked_at: str) -> str | None:
+        """The memoized FULL sha one anchor names, or ``None`` when it names none.
+
+        Keyed by the anchor AS WRITTEN, because that is what varies across rows;
+        the resolution itself is :func:`_resolve_anchor_sha`. The ``None`` is
+        cached alongside a real answer for the same reason the diff's is: an
+        anchor git refuses is refused for every row that cites it, so re-issuing
+        the failing command per row would buy nothing but subprocesses.
+        """
+        if checked_at not in self.anchor_cache:
+            self.anchor_cache[checked_at] = _resolve_anchor_sha(checked_at)
+        return self.anchor_cache[checked_at]
+
+    def changed_paths(self, checked_at: str) -> list[str] | None:
+        """The memoized tree difference for one RESOLVED anchor, or ``None`` if unanswerable.
+
+        The ``None`` is cached alongside a real answer on purpose: a sha git
+        cannot diff fails for every row that cites it, so re-issuing the failing
+        command per row would buy nothing but subprocesses.
+        """
+        if checked_at not in self.diff_cache:
+            self.diff_cache[checked_at] = _git_tree_diff(checked_at, self.head)
+        return self.diff_cache[checked_at]
+
+
+def _spec_staleness_context(
+    spec_path: Path,
+    repo_root: Path,
+    head: str,
+    diff_cache: dict[str, list[str] | None],
+    anchor_cache: dict[str, str | None],
+) -> _StalenessContext:
+    """Resolve ONE spec's declared surface once, for every row that spec contributes.
+
+    Routes through the existing :func:`_surface_state` seam — and therefore through
+    ``epic_spec_parser.classify_spec``, the marketplace's single reader of
+    ``## Expected Surface`` — so the verdicts path introduces no second parse of
+    that section and reports the same ``derivation_status`` vocabulary
+    ``corpus surfaces`` and ``corpus declaration-currency`` already publish.
+    """
+    state, claim = _surface_state(spec_path, repo_root)
+    return _StalenessContext(
+        head=head,
+        derivation_status=state,
+        declared_paths=frozenset(_claimed_paths(claim)),
+        diff_cache=diff_cache,
+        anchor_cache=anchor_cache,
+    )
+
+
+def _row_staleness(context: _StalenessContext, checked_at: str) -> tuple[bool, str, list[str]]:
+    """Resolve the anchor, then the tree difference lazily, then classify.
+
+    Mirrors ``verdict_currency.classify_step``: the impure resolution lives here
+    and the decision lives in the pure :func:`classify_staleness`, so the decision
+    stays testable without a worktree and each git call is issued only when the
+    classifier would actually consult it. The anchor is resolved to a full sha
+    FIRST — before ``_needs_tree_diff`` is even consulted — because an
+    unresolved anchor must never reach ``changed_paths``: diffing against an
+    anchor git itself refused would issue a git call with no base to diff from.
+    An unresolved anchor (``None``) becomes the empty string, which
+    ``_head_unchanged`` and ``classify_staleness`` both already treat as "not a
+    match" / "nothing was compared".
+    """
+    resolved_at = context.resolved_anchor(checked_at)
+    changed = (
+        context.changed_paths(resolved_at)
+        if resolved_at and _needs_tree_diff(context.head, resolved_at, context.derivation_status)
+        else None
+    )
+    return classify_staleness(
+        context.head,
+        resolved_at or '',
+        context.derivation_status,
+        context.declared_paths,
+        changed,
+    )
+
+
 def _verdict_row(
     spec_name: str,
     claim: dict[str, Any],
     line: str,
-    head: str,
+    context: _StalenessContext,
     scope: str = SCOPE_CLAIM,
     synthesised: bool = False,
 ) -> dict[str, Any]:
@@ -2813,6 +3211,16 @@ def _verdict_row(
     including the empty one a synthesised row passes — leaves the five grammar
     keys blank, ``verdict`` at :data:`VERDICT_INDETERMINATE` and ``admits``
     false, so an unparseable bullet is never silently admitted and never dropped.
+    Its ``staleness_basis`` is seeded :data:`STALENESS_VERDICT_UNPARSED` in that
+    same base shape rather than left to default: the row has no anchor sha, so no
+    staleness was computed for it, and a bare ``stale: false`` beside every
+    computed one would be indistinguishable from a checked negative.
+
+    ``context`` carries the spec's once-resolved declared surface and the run's
+    shared tree-diff cache (:class:`_StalenessContext`); ``stale`` is derived from
+    THAT rather than from a bare HEAD inequality, and the basis it was derived on
+    rides beside it. ``admits`` is untouched by any of this — staleness stays
+    reported-only and never reaches the admission predicate.
     """
     row = {
         'spec': spec_name,
@@ -2826,6 +3234,8 @@ def _verdict_row(
         'evidence': '',
         'admits': False,
         'stale': False,
+        'staleness_basis': STALENESS_VERDICT_UNPARSED,
+        'staleness_matched_paths': '',
         'line': line,
     }
     parsed = _parse_verdict_text(str(claim['verdict_text']))
@@ -2833,11 +3243,19 @@ def _verdict_row(
         return row
     row.update(parsed)
     row['admits'] = _admits(parsed['verdict'], parsed['rescoped'])
-    row['stale'] = bool(head) and not head.startswith(parsed['checked_at'])
+    stale, basis, matched = _row_staleness(context, parsed['checked_at'])
+    row['stale'] = stale
+    row['staleness_basis'] = basis
+    row['staleness_matched_paths'] = _OVERLAP_JOIN.join(matched)
     return row
 
 
-def _spec_verdict_rows(spec_name: str, lines: list[str], section: dict[str, Any], head: str) -> list[dict[str, Any]]:
+def _spec_verdict_rows(
+    spec_name: str,
+    lines: list[str],
+    section: dict[str, Any],
+    context: _StalenessContext,
+) -> list[dict[str, Any]]:
     """Every payload row one spec contributes: its claim rows, then AT MOST one section row.
 
     The section row has two mutually exclusive causes, which is what makes "at
@@ -2858,9 +3276,12 @@ def _spec_verdict_rows(spec_name: str, lines: list[str], section: dict[str, Any]
     An ``empty`` or ``absent`` section contributes no section row: it is a
     legitimately empty population, not an unread one, and blocking it would make
     the gate fire on every spec that declares no claims.
+
+    Every row this spec contributes shares ONE :class:`_StalenessContext`, so the
+    spec's declared surface is resolved once no matter how many claims it carries.
     """
     rows = [
-        _verdict_row(spec_name, claim, lines[claim['verdict_line']].strip(), head)
+        _verdict_row(spec_name, claim, lines[claim['verdict_line']].strip(), context)
         for claim in section['claims']
         if claim['verdict_line'] >= 0
     ]
@@ -2871,7 +3292,7 @@ def _spec_verdict_rows(spec_name: str, lines: list[str], section: dict[str, Any]
                 spec_name,
                 {'index': NO_CLAIM_INDEX, 'verdict_text': section['section_verdict_text']},
                 lines[verdict_line].strip(),
-                head,
+                context,
                 scope=SCOPE_SECTION,
             )
         )
@@ -2881,7 +3302,7 @@ def _spec_verdict_rows(spec_name: str, lines: list[str], section: dict[str, Any]
                 spec_name,
                 {'index': NO_CLAIM_INDEX, 'verdict_text': ''},
                 str(section['first_line']),
-                head,
+                context,
                 scope=SCOPE_SECTION,
                 synthesised=True,
             )
@@ -3074,10 +3495,23 @@ def cmd_corpus_verdicts(args: argparse.Namespace) -> dict[str, Any]:
 
     The ONLY interpreter of the verdict line in the tree. One row per claim that
     carries a verdict bullet, with the five parsed keys plus the derived
-    ``admits`` and ``stale`` booleans. A bullet that does not parse is returned
-    with ``verdict: indeterminate``, ``admits: false`` and the offending line
-    quoted verbatim — never dropped. ``specs_scanned`` and ``claims_scanned``
-    ride the payload so a ``count: 0`` states which zero it is.
+    ``admits`` boolean and the ``stale`` / ``staleness_basis`` pair. A bullet that
+    does not parse is returned with ``verdict: indeterminate``, ``admits: false``
+    and the offending line quoted verbatim — never dropped. ``specs_scanned`` and
+    ``claims_scanned`` ride the payload so a ``count: 0`` states which zero it is.
+
+    ``stale`` is derived from CONTENT, not from a bare HEAD inequality: the spec's
+    declared ``## Expected Surface`` is resolved once per spec through the single
+    sanctioned reader, and the two-tree difference between the verdict's anchor
+    sha and HEAD is matched against it. The rule is defined once in
+    ``persona-plan-orchestrator/standards/orchestration-model.md`` § Re-Grounding
+    Verdict Field; :func:`classify_staleness` enacts it. Every row publishes the
+    ``staleness_basis`` its value was computed on — a member of
+    :data:`STALENESS_BASES`, including the indeterminate rows — so a conservative
+    fallback is legible as a fallback rather than as a checked reading, and
+    ``staleness_basis_tally`` spans the WHOLE vocabulary with stated zeros beside
+    ``stale_count``. Staleness stays REPORTED-ONLY: :func:`_admits` reads neither
+    field, so no admission outcome moves with it.
 
     Rows are addressed at two scopes (see :func:`_spec_verdict_rows`), so ``count``
     and ``blocking_count`` span claim-scoped AND section-scoped rows while
@@ -3100,7 +3534,16 @@ def cmd_corpus_verdicts(args: argparse.Namespace) -> dict[str, Any]:
     if not root.is_dir():
         return _error(args.slug, 'not_found', f'epic {args.slug!r} has no store tree')
     specs = _spec_paths(root)
+    repo_root = Path(cwd_checkout_root())
     head = _current_head_sha()
+    # Shared across the WHOLE run, keyed by ``checked_at``: one re-grounding pass
+    # routinely stamps the whole corpus at one commit, so a per-spec cache would
+    # re-issue that single tree diff once per spec.
+    diff_cache: dict[str, list[str] | None] = {}
+    # Shared across the WHOLE run, keyed by the anchor AS WRITTEN: specs
+    # routinely share one re-grounding anchor, so a per-spec cache would
+    # re-issue that single resolution once per spec.
+    anchor_cache: dict[str, str | None] = {}
     rows: list[dict[str, Any]] = []
     unreadable: list[dict[str, str]] = []
     unreadable_sections: list[dict[str, str]] = []
@@ -3117,7 +3560,8 @@ def cmd_corpus_verdicts(args: argparse.Namespace) -> dict[str, Any]:
         section = _parse_claim_section(lines)
         state_counts[section['state']] += 1
         claims_scanned += len(section['claims'])
-        rows.extend(_spec_verdict_rows(spec.name, lines, section, head))
+        context = _spec_staleness_context(spec, repo_root, head, diff_cache, anchor_cache)
+        rows.extend(_spec_verdict_rows(spec.name, lines, section, context))
         if section['state'] == CLAIM_SECTION_UNREADABLE:
             unreadable_sections.append(
                 {
@@ -3126,11 +3570,19 @@ def cmd_corpus_verdicts(args: argparse.Namespace) -> dict[str, Any]:
                     'section_verdict': ('present' if section['section_verdict_line'] >= 0 else 'absent'),
                 }
             )
+    # Derived from the WHOLE :data:`STALENESS_BASES` vocabulary rather than from
+    # the bases the corpus happens to be in, so a basis no row reached publishes a
+    # stated zero — the same construction ``claim_section_states`` uses, and the
+    # reason the tally's counts always sum to ``count``.
+    basis_counts = dict.fromkeys(STALENESS_BASES, 0)
+    for row in rows:
+        basis_counts[row['staleness_basis']] += 1
     return {
         'status': 'success',
         'operation': 'corpus-verdicts',
         'slug': args.slug,
         'store': ORCHESTRATOR_STORE,
+        'governing_authority': STALENESS_GOVERNING_AUTHORITY,
         'head_sha': head,
         'specs_total': len(specs),
         'specs_scanned': specs_scanned,
@@ -3140,6 +3592,11 @@ def cmd_corpus_verdicts(args: argparse.Namespace) -> dict[str, Any]:
         'unreadable_claim_sections': unreadable_sections,
         'count': len(rows),
         'blocking_count': sum(1 for row in rows if not row['admits']),
+        'stale_count': sum(1 for row in rows if row['stale']),
+        'staleness_basis_tally': [
+            {'staleness_basis': basis, 'count': basis_counts[basis], 'detail': _STALENESS_BASIS_DETAIL[basis]}
+            for basis in STALENESS_BASES
+        ],
         'claims': rows,
         'unreadable_count': len(unreadable),
         'unreadable': unreadable,
@@ -3413,6 +3870,24 @@ def _contains(container: str, contained: str) -> bool:
             return True
         return contained.startswith(container)
     return False
+
+
+def _covers(left: str, right: str) -> bool:
+    """Whether two entries cover each other by exact match or containment.
+
+    Containment runs in BOTH directions: a directory claim covers the files
+    beneath it (``_contains(entry, path)``) AND a file beneath a directory covers
+    that directory claim (``_contains(path, entry)``) — so ``{'src/'}`` against
+    ``{'src/a.py'}`` scores covered in either argument order, matching how the
+    shared resolver treats the pair.
+
+    Module-level, and deliberately so: :func:`_currency_compare` and
+    :func:`classify_staleness` both decide whether a changed or landed path falls
+    inside a declared entry, and two copies of that rule would let a
+    ``directory`` or ``recursive_glob`` claim resolve one way for the
+    declaration-currency surface and another for the staleness surface.
+    """
+    return left == right or _contains(left, right) or _contains(right, left)
 
 
 def _collision_rows(
