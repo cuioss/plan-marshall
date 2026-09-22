@@ -40,7 +40,7 @@ target/
 
 # Workflow artifacts (plans, lessons, memory, run-config)
 # Use .plan/* instead of .plan/ to allow exceptions below
-# Planning system (managed by /marshall-steward)
+# Planning system (managed by plan-marshall)
 # Runtime state (plans, run-configuration, lessons-learned, memory, logs — managed by plan-marshall)
 .plan/*
 !.plan/marshal.json
