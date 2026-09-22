@@ -3,20 +3,8 @@
 """Marketplace scan + add/remove/ensure/scope (carve 2 split)."""
 
 import json
-from pathlib import Path
-
-import pytest
 from _permission_fix_fixtures import (
-    RETIRED_DEFAULT,
-    allow_list,
     create_marketplace,
-    in_tmp_cwd,
-    read_allow,
-    read_settings,
-    seed_retired,
-    write_marshal,
-    write_settings,
-    write_settings_str,
 )
 
 from conftest import MARKETPLACE_ROOT, parse_ns, run_script
@@ -36,38 +24,6 @@ from permission_fix import (  # noqa: E402
 
 class TestScanMarketplaceDir:
     """Test scan_marketplace_dir function and generate-wildcards --marketplace-dir."""
-
-    def _create_marketplace(self, tmp_path, bundles: dict[str, dict]) -> str:
-        """Create a marketplace directory structure for testing.
-
-        Args:
-            tmp_path: Pytest tmp_path fixture
-            bundles: dict of bundle_name -> {skills: [...], commands: [...]}
-
-        Returns:
-            Path to marketplace directory.
-        """
-        marketplace_dir = tmp_path / 'marketplace'
-        plugin_dir = marketplace_dir / '.claude-plugin'
-        plugin_dir.mkdir(parents=True)
-
-        plugins = []
-        for name, data in bundles.items():
-            bundle_dir = marketplace_dir / 'bundles' / name
-            bundle_plugin_dir = bundle_dir / '.claude-plugin'
-            bundle_plugin_dir.mkdir(parents=True)
-
-            plugin_json = {
-                'name': name,
-                'skills': data.get('skills', []),
-                'commands': data.get('commands', []),
-            }
-            (bundle_plugin_dir / 'plugin.json').write_text(json.dumps(plugin_json))
-            plugins.append({'name': name, 'source': f'./bundles/{name}'})
-
-        marketplace_json = {'plugins': plugins}
-        (plugin_dir / 'marketplace.json').write_text(json.dumps(marketplace_json))
-        return str(marketplace_dir)
 
     def test_scans_bundles_with_skills_and_commands(self, tmp_path):
         """Should discover skills and commands from plugin.json files."""

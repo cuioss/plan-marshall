@@ -2,29 +2,12 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Executor in-process + errors (carve 2 split)."""
 
-import ast
 import json
-from argparse import Namespace
-from pathlib import Path
-
-import pytest
 from _permission_fix_fixtures import (
-    RETIRED_DEFAULT,
-    allow_list,
-    assert_declines,
-    build_project,
-    dual_file_project,
-    force_opencode,
-    force_unsupported_runtime,
     in_tmp_cwd,
     read_allow,
-    roster_handlers,
-    seam_callers,
-    seed_retired,
     setup_project,
-    write_marshal,
     write_settings,
-    write_settings_str,
 )
 
 from conftest import load_script_module, parse_ns
@@ -34,11 +17,6 @@ pf = load_script_module('plan-marshall', 'tools-permission-fix', 'permission_fix
 
 class TestExecutorSubcommandsInProcess:
     """Test executor-pattern subcommands against a chdir'd tmp project dir."""
-
-    @pytest.fixture()
-    def in_tmp_cwd(self, tmp_path, monkeypatch):
-        """Run with the process working directory inside an isolated tmp_path."""
-        monkeypatch.chdir(tmp_path)
 
     def test_ensure_executor_dry_run_would_add(self, tmp_path, in_tmp_cwd):
         """Dry-run reports 'would_add' and leaves the file untouched."""
@@ -162,11 +140,6 @@ class TestExecutorSubcommandsInProcess:
 
 class TestAddRemoveInProcess:
     """Test cmd_add / cmd_remove write and idempotent branches in-process."""
-
-    @pytest.fixture()
-    def in_tmp_cwd(self, tmp_path, monkeypatch):
-        """Run with the process working directory inside an isolated tmp_path."""
-        monkeypatch.chdir(tmp_path)
 
     def test_add_writes_new_permission(self, tmp_path, in_tmp_cwd):
         """Adding a new permission writes it and reports 'added'."""

@@ -2,21 +2,12 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Remove-redundant + scope + executor (carve 2 split)."""
 
-import json
-from pathlib import Path
-
-import pytest
 from _permission_fix_fixtures import (
     RETIRED_DEFAULT,
     allow_list,
-    create_marketplace,
-    in_tmp_cwd,
     read_allow,
-    read_settings,
     seed_retired,
-    write_marshal,
     write_settings,
-    write_settings_str,
 )
 
 from conftest import MARKETPLACE_ROOT, parse_ns, run_script
@@ -24,25 +15,12 @@ from conftest import MARKETPLACE_ROOT, parse_ns, run_script
 SCRIPT_PATH = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'tools-permission-fix' / 'scripts' / 'permission_fix.py'
 
 from permission_fix import (  # noqa: E402
-    cmd_apply_fixes,
-    cmd_apply_project_step_permissions,
-    cmd_consolidate,
-    cmd_ensure_wildcards,
-    cmd_generate_wildcards,
     cmd_remove_redundant,
-    scan_marketplace_dir,
 )
 
 
 class TestRemoveRedundant:
     """Test permission_fix.py remove-redundant subcommand via direct import."""
-
-    def write_settings(self, path, allow: list[str]) -> None:
-        path.write_text(json.dumps({'permissions': {'allow': allow, 'deny': [], 'ask': []}}))
-
-    def read_allow(self, path) -> list[str]:
-        allow: list = json.loads(path.read_text())['permissions']['allow']
-        return allow
 
     def test_dry_run_removes_nothing(self, tmp_path):
         """Dry-run should not modify any settings file."""
@@ -225,17 +203,6 @@ class TestScopeProjectResolvesTheOverridingFile:
     #: The retired default whose pruning gives every run below observable work.
     #: Any run that resolves a file will strip it, so which file lost it is the
     #: measurement — a seed with nothing to do could not tell the two apart.
-    RETIRED_DEFAULT = 'Write(.plan/**)'
-
-    def _seed(self, path: Path) -> bytes:
-        """Write a settings file carrying the retired rule; return its bytes."""
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps({'permissions': {'allow': [RETIRED_DEFAULT], 'deny': [], 'ask': []}}))
-        return path.read_bytes()
-
-    def _allow(self, path: Path) -> list[str]:
-        allow: list[str] = json.loads(path.read_text())['permissions']['allow']
-        return allow
 
     def test_with_both_files_present_the_prune_lands_in_the_local_one(self, tmp_path):
         """The overriding file is pruned and the shared file is left byte-identical.

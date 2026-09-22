@@ -3,19 +3,11 @@
 """Apply-project-step-permissions + bootstrap (carve 2 split)."""
 
 import json
-from pathlib import Path
 
 import pytest
 from _permission_fix_fixtures import (
-    RETIRED_DEFAULT,
-    allow_list,
-    create_marketplace,
-    in_tmp_cwd,
-    read_allow,
     read_settings,
-    seed_retired,
     write_marshal,
-    write_settings,
     write_settings_str,
 )
 
@@ -42,23 +34,6 @@ from permission_fix import (  # noqa: E402
 
 class TestApplyProjectStepPermissions:
     """Test permission_fix.py apply-project-step-permissions subcommand."""
-
-    def write_marshal(self, tmp_path, phase_steps: dict[str, list[str]]) -> str:
-        marshal = {'plan': {phase: {'steps': steps} for phase, steps in phase_steps.items()}}
-        marshal_file = tmp_path / 'marshal.json'
-        marshal_file.write_text(json.dumps(marshal))
-        return str(marshal_file)
-
-    def write_settings(self, tmp_path, allow: list[str]) -> str:
-        settings = {'permissions': {'allow': allow, 'deny': [], 'ask': []}}
-        settings_file = tmp_path / 'settings.json'
-        settings_file.write_text(json.dumps(settings))
-        return str(settings_file)
-
-    def read_settings(self, path: str) -> dict:
-        with open(path) as f:
-            data: dict = json.load(f)
-            return data
 
     def test_dry_run_does_not_mutate_settings(self, tmp_path):
         """--dry-run must not touch the settings file."""
