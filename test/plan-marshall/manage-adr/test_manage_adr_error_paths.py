@@ -239,18 +239,19 @@ def test_next_number_ignores_files_without_numeric_prefix(adr_dir):
 
 
 def test_parse_adr_file_unknown_fallbacks_for_malformed_file(adr_dir):
-    """parse_adr_file yields number=0 / Unknown title+status for a malformed file.
+    """parse_adr_file yields number None / Unknown title+status for a malformed file.
 
     The filename does not match the ``NNN-*.adoc`` pattern and the content
     carries neither an ``= ADR-NNN:`` title line nor a ``== Status`` section, so
-    every extractor falls back to its sentinel.
+    the number is None (never a colliding 0) and every other extractor falls
+    back to its sentinel.
     """
     malformed = adr_dir / 'not-a-real-adr.adoc'
     malformed.write_text('Just some prose with no ADR structure at all.\n')
 
     adr = parse_adr_file(malformed)
 
-    assert adr['number'] == 0
+    assert adr['number'] is None
     assert adr['title'] == 'Unknown'
     assert adr['status'] == 'Unknown'
     # Metadata fields default to empty when no metadata block is present.
@@ -267,6 +268,6 @@ def test_list_surfaces_malformed_file_with_unknown_fields(adr_dir):
     assert result['status'] == 'success'
     assert result['count'] == 1
     only = result['adrs'][0]
-    assert only['number'] == 0
+    assert only['number'] is None
     assert only['title'] == 'Unknown'
     assert only['status'] == 'Unknown'

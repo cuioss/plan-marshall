@@ -3,6 +3,7 @@
 """Marketplace scan + add/remove/ensure/scope (carve 2 split)."""
 
 import json
+
 from _permission_fix_fixtures import (
     create_marketplace,
 )

@@ -10,7 +10,11 @@ from typing import Any
 
 from plan_logging import log_entry
 
-# Required attributes for AsciiDoc files
+# Required attributes for AsciiDoc files.
+# Shared source of truth with the manage-adr ADR template header block
+# (marketplace/bundles/plan-marshall/skills/manage-adr/templates/adr-template.adoc):
+# toc, toclevels, toc-title, sectnums, source-highlighter. Template output and
+# validator agree by construction — keep both sides in sync.
 REQUIRED_ATTRS = [
     '= ',
     ':toc: left',

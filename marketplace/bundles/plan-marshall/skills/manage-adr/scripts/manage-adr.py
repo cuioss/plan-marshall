@@ -194,9 +194,12 @@ def parse_adr_file(filepath: Path) -> dict[str, Any]:
     """Parse ADR file and extract metadata."""
     content = filepath.read_text()
 
-    # Extract number from filename
+    # Extract number from filename. A filename without a numeric prefix
+    # (e.g. `notes.adoc`) carries no ADR number, so the number is None
+    # rather than a colliding 0 — callers must exclude None from any
+    # duplicate grouping and report such files separately as malformed.
     match = re.match(r'^(\d+)-(.+)\.adoc$', filepath.name)
-    number = int(match.group(1)) if match else 0
+    number = int(match.group(1)) if match else None
 
     # Extract title from first line
     title_match = re.match(r'^= ADR-\d+: (.+)$', content, re.MULTILINE)
@@ -466,14 +469,52 @@ def cmd_scan(args: argparse.Namespace) -> dict[str, Any]:
     can assess relevance without reading full ADR files. Optional --tag and
     --affects filters select only ADRs whose corresponding metadata list
     overlaps the given value.
+
+    Duplicate-number gate: parsed ADRs are grouped by width-agnostic number.
+    When two files share one number (the stale-view collision where two
+    branches allocated the same number from the same base), the payload
+    surfaces a distinct ``duplicate_numbers`` named state (numbers, paths,
+    count) and returns a fail verdict (``status: error``,
+    ``error: duplicate_numbers``) so the landing check fails closed.
+
+    Malformed-filename gate: files whose names carry no numeric prefix
+    (``parse_adr_file`` reports ``number`` None) are excluded from the
+    duplicate grouping — two malformed files must never surface as a
+    misleading ``duplicate_numbers: [0]`` collision — and are reported
+    separately as ``malformed_count`` / ``malformed_paths``.
     """
     if not ADR_DIR.exists():
-        return {'status': 'success', 'operation': 'scan', 'count': 0, 'adrs': []}
+        return {
+            'status': 'success',
+            'operation': 'scan',
+            'count': 0,
+            'adrs': [],
+            'duplicate_count': 0,
+            'duplicate_numbers': [],
+            'duplicate_paths': [],
+            'malformed_count': 0,
+            'malformed_paths': [],
+        }
 
-    adrs = []
+    parsed: list[dict[str, Any]] = []
+    number_to_paths: dict[int, list[str]] = {}
+    malformed_paths: list[str] = []
     for filepath in sorted(ADR_DIR.glob('*.adoc')):
         adr = parse_adr_file(filepath)
+        parsed.append(adr)
+        if adr['number'] is None:
+            malformed_paths.append(str(filepath))
+        else:
+            number_to_paths.setdefault(adr['number'], []).append(str(filepath))
+    malformed_paths.sort()
 
+    duplicates = {number: paths for number, paths in number_to_paths.items() if len(paths) > 1}
+    duplicate_numbers = sorted(duplicates)
+    duplicate_paths = sorted(path for paths in duplicates.values() for path in paths)
+    duplicate_count = len(duplicate_numbers)
+
+    adrs = []
+    for adr in parsed:
         if args.tag and args.tag not in adr['tags']:
             continue
         if args.affects and args.affects not in adr['affects']:
@@ -491,7 +532,43 @@ def cmd_scan(args: argparse.Namespace) -> dict[str, Any]:
             }
         )
 
-    return {'status': 'success', 'operation': 'scan', 'count': len(adrs), 'adrs': adrs}
+    if duplicate_count:
+        log_entry(
+            'script',
+            'global',
+            'ERROR',
+            f'[ADR] Duplicate ADR numbers: {duplicate_count} number(s): '
+            f'{", ".join(str(number) for number in duplicate_numbers)}',
+        )
+        return {
+            'status': 'error',
+            'error': 'duplicate_numbers',
+            'operation': 'scan',
+            'message': (
+                f'{duplicate_count} duplicate ADR number(s): '
+                f'{", ".join(str(number) for number in duplicate_numbers)}. '
+                'Resolve the collision before landing; no auto-renumber.'
+            ),
+            'count': len(adrs),
+            'adrs': adrs,
+            'duplicate_count': duplicate_count,
+            'duplicate_numbers': duplicate_numbers,
+            'duplicate_paths': duplicate_paths,
+            'malformed_count': len(malformed_paths),
+            'malformed_paths': malformed_paths,
+        }
+
+    return {
+        'status': 'success',
+        'operation': 'scan',
+        'count': len(adrs),
+        'adrs': adrs,
+        'duplicate_count': 0,
+        'duplicate_numbers': [],
+        'duplicate_paths': [],
+        'malformed_count': len(malformed_paths),
+        'malformed_paths': malformed_paths,
+    }
 
 
 @safe_main

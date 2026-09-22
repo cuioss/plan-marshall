@@ -110,3 +110,32 @@ def adr_dir(tmp_path, monkeypatch):
     directory.mkdir(parents=True)
     monkeypatch.chdir(tmp_path)
     return directory
+
+
+def _populate_base_tree(root, *, base_count=7, width=3):
+    """Populate ``root/doc/adr`` with ``base_count`` numbered ADRs.
+
+    Returns the ADR directory. Both stale-view branches start from this
+    identical base, so each computes the same next number from it.
+    """
+    from pathlib import Path
+
+    adr_directory = Path(root) / 'doc' / 'adr'
+    adr_directory.mkdir(parents=True, exist_ok=True)
+    for number in range(1, base_count + 1):
+        (adr_directory / f'{number:0{width}d}-Decision_{number}.adoc').write_text(
+            f'= ADR-{number:0{width}d}: Decision {number}\n\n== Status\n\nProposed\n\n'
+        )
+    return adr_directory
+
+
+def _build_duplicate_tree(adr_dir, *, number=8, width=4):
+    """Write two files sharing one ADR number into ``adr_dir``.
+
+    Produces the D0 gate's duplicated-number tree: two distinct titles,
+    one colliding number. Returns the colliding number.
+    """
+    prefix = f'{number:0{width}d}'
+    _touch_adr(adr_dir, f'{prefix}-First.adoc', title='First')
+    _touch_adr(adr_dir, f'{prefix}-Second.adoc', title='Second')
+    return number

@@ -221,7 +221,27 @@ count: 2
 adrs[2]{number,title,status,summary,tags,affects,supersedes}:
 1,Use PostgreSQL,Accepted,Relational store for persistence,persistence,plan-marshall,
 2,Per-tree derived state,Accepted,Each worktree owns its executor,worktree;executor,plan-marshall,
+duplicate_count: 0
+duplicate_numbers: []
+duplicate_paths: []
 ```
+
+The `duplicate_numbers` named state groups parsed ADRs by width-agnostic number: `duplicate_numbers` lists the colliding numbers, `duplicate_paths` lists every file carrying one of those numbers, and `duplicate_count` counts the colliding numbers. A clean tree reports all three empty/zero.
+
+When two files share one number, `scan` returns a fail verdict instead of a clean list:
+
+```toon
+status: error
+error: duplicate_numbers
+operation: scan
+message: "1 duplicate ADR number(s): 8. Resolve the collision before landing; no auto-renumber."
+count: 2
+duplicate_count: 1
+duplicate_numbers: [8]
+duplicate_paths: [doc/adr/0008-First.adoc, doc/adr/0008-Second.adoc]
+```
+
+Landing fails closed on that verdict: a `duplicate_numbers` error refuses the tree, distinct from `unresolvable`/`unknown`, with no auto-renumber. See `phase-6-finalize/standards/adr-integration.md` for the landing wiring.
 
 ## Workflow: validate-adr
 

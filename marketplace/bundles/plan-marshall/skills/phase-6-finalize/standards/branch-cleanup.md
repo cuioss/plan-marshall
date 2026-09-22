@@ -1378,6 +1378,43 @@ Branch on the operator's selection:
 
 **Only if `state == open` AND the pre-merge gate above resolved to `{merge_consent} == explicit_yes`** (the `final_merge_without_asking == true` bypass also sets `{merge_consent} = explicit_yes`):
 
+#### ADR duplicate-number gate
+
+The enforcement site for [`adr-integration.md`](adr-integration.md) § "Landing fails closed on duplicate ADR numbers": before EITHER merge dispatch below (`pr safe-merge` on the immediate path, the `pr merge-queue` enqueue on the queue path), run the ADR corpus scan and refuse to land on a non-clean verdict. `next-number` allocates from the local checkout only, so two branches on the same stale view collide invisibly at create time — this gate is where the collision surfaces, at landing, and nothing merges past it.
+
+Run from the worktree — `manage-adr` resolves `doc/adr` cwd-relatively and takes no `--plan-id`, so the pinned worktree cwd (ADR-002) is what binds it; never run it from the main checkout:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-adr:manage-adr scan
+```
+
+Branch on the returned TOON **before** reading `duplicate_count` — a non-`success` payload carries no verdict to count:
+
+- **`status: success` AND `duplicate_count == 0`** → clean. Log and proceed to **Merge routing** below:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-6-finalize) Pre-merge ADR gate: clean — duplicate_count=0, proceeding to merge routing"
+  ```
+
+  When `malformed_count > 0`, the corpus holds filenames with no numeric prefix. Those are reported advisory-only — they never took part in number allocation, so they never block a landing:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    work --plan-id {plan_id} --level WARNING --message "[WARNING] (plan-marshall:phase-6-finalize) Pre-merge ADR gate: {malformed_count} malformed filename(s) outside duplicate grouping: {malformed_paths} — advisory only, proceeding"
+  ```
+
+- **`status: error` with `error: duplicate_numbers`** → the corpus carries a concrete collision (`duplicate_numbers`, `duplicate_paths`, `duplicate_count`). **BLOCK**: log, release the merge mutex if held (§ "Merge-Mutex Hold Window" invariant 4), and return WITHOUT merging and WITHOUT the post-merge tail (no **Merge routing** dispatch, no wait-for-merge-CI, no worktree removal, no switch-to-base):
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    work --plan-id {plan_id} --level ERROR --message "[ERROR] (plan-marshall:phase-6-finalize) Pre-merge ADR gate: duplicate ADR number(s) {duplicate_numbers}: {duplicate_paths} — merge blocked, resolve by hand (renumber, consolidate, or drop; never auto-renumber) and re-run scan until duplicate_count=0"
+  ```
+
+- **Any other `status: error` (unresolvable — the corpus could not be read) or a non-zero exit / absent payload (unknown — no verdict was rendered)** → the gate established nothing, so it authorizes nothing. Take the SAME block path as the duplicate verdict above. An unread gate is not a clean gate, and no `merge-authorization` grant covers this gap — there is no grant site and no bypass, mirroring the UNKNOWN disposition's absolute refusal.
+
+Recovery on every blocked branch: resolve by hand and re-run finalize; the gate re-fires on re-entry.
+
 #### Merge routing (`use_merge_queue`)
 
 Read `use_merge_queue` off the same one-stop `step-params get` `params` object resolved in the **Conflict-Severity Classifier** section above (default: `false`). This routing branch is documented BEFORE the merge dispatch it selects (bypass-before-dispatch ordering).
