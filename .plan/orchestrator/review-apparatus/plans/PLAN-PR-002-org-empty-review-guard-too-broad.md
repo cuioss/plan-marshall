@@ -49,8 +49,11 @@ things fold in that are NOT in the handover summary:
    neutral) from "the runner attempted a review and produced nothing" (fail, unchanged). The
    discriminator is derived from observable runner state, not from re-deriving the push reason.
 2. The legitimately-empty population is enumerated in the workflow itself with its reasoning, so a
-   later reader does not re-broaden the guard: at minimum unchanged-SHA pushes, merge commits, and
-   bot-authored commits.
+   later reader does not re-broaden the guard: at minimum unchanged-SHA pushes, merge commits,
+   bot-authored commits, **and a PR whose entire diff resolves to files the reviewer's own `ignore`
+   config filters out** (2026-09-22 fold, evidence below) — `_get_diff_files` legitimately returns
+   zero files, `pr_reviewer._prepare_prediction` logs `Empty diff for PR` at WARNING, and
+   `REVIEW_OUTPUT` is empty through no failure of the runner at all.
 3. Consumer release fan-out handled per the org's normal release path, with the ~21-repo blast
    radius acknowledged explicitly in the PR body.
 
@@ -83,6 +86,26 @@ things fold in that are NOT in the handover summary:
 - Verify-first clause: the org repo has NO local checkout (see Dependencies). Every claim above was
   recorded from a live read at epic init and MUST be re-read against the org default branch at
   outline — a workflow file is the kind of artifact that changes without anyone telling this epic.
+- OBSERVED (2026-09-22 fold, corroborated against real logs, not the pasted diagnosis): a
+  same-day parallel-session paste claimed `cuioss/API-Sheriff` PR #340's `review / review` job
+  failed org-wide with `google-github-actions/auth produced no credentials file path` /
+  `organization variable GCP_PROJECT_ID is not set`. **That diagnosis is CONTRADICTED by the actual
+  run logs** (`ci checks logs --run-id 35709715234` and `--run-id 35716363715`, fetched against the
+  real `cuioss/API-Sheriff` checkout): both runs show `Created credentials file at ...` followed by
+  normal `pr_agent` execution through `Applying repo settings` and into `Reviewing PR: ...` — the
+  quoted `::error::` lines are the `##[group]Run ...` step SOURCE echo GitHub Actions always prints
+  before executing a `run:` block, not raised errors; auth and `GCP_PROJECT_ID` both succeeded in
+  both runs. The REAL failure in both is `Empty diff for PR: https://api.github.com/repos/cuioss/API-Sheriff/pulls/340`
+  at `pr_reviewer.py:211` — PR #340's changed files were entirely `.gitignore`/ignore-pattern
+  entries (see `_get_diff_files` `Filtered out [ignore] files`), so `_prepare_prediction` legitimately
+  produced no prediction, `REVIEW_OUTPUT` came out empty, and the workflow's own "Verify the reviewer
+  actually produced a review" step failed loud — this epic's own guard-too-broad defect, a NEW
+  instance of the same population this plan already targets, not an org Vertex/GCP outage. Confirmed
+  via `.github/workflows/pr-agent.yml` in the local `API-Sheriff` checkout: it `uses:
+  cuioss/cuioss-organization/.github/workflows/reusable-pr-agent-review.yml@...` — the SAME file
+  this spec's Expected Surface already names, so this fold adds NO new surface. Do not re-open a
+  GCP org-variable investigation on the strength of the paste alone; the org-variable claim is
+  refuted, not merely unverified.
 
 ## Expected Surface
 

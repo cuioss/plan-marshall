@@ -72,10 +72,20 @@ output field or error code changes.
 
 ## Dependencies and Sequencing
 
-- Depends on: PLAN-01, PLAN-02, PLAN-05, and PLAN-06 (all edit `orchestrator.py`). This plan
-  is sequenced STRICTLY LAST in the epic, after every other plan has landed — it collides with
-  nearly every other candidate in this corpus and has no forcing function of its own.
-- Overlaps with: PLAN-01, PLAN-02, PLAN-05, PLAN-06 (all touch `orchestrator.py`).
+- Depends on: PLAN-01, PLAN-02, PLAN-05, PLAN-06, PLAN-08, PLAN-09, and PLAN-10 (all edit
+  `orchestrator.py`). This plan is sequenced STRICTLY LAST in the epic, after every other
+  plan has landed — it collides with nearly every other candidate in this corpus and has no
+  forcing function of its own. PLAN-08 changed `corpus verdicts`' `stale` derivation (a real
+  output-field semantic change) and had to land first: PLAN-08 was explicitly a behavior
+  fix, while this plan is explicitly behavior-preserving only, so this plan's
+  behavior-preservation proof (D3) must check against PLAN-08's corrected semantics, not
+  freeze the pre-fix raw-HEAD staleness bug into the split — added 2026-09-22, since
+  satisfied (PLAN-08 shipped as #1585). PLAN-09/PLAN-10 (WS-05) add real new verbs
+  (`land`/`land-all`) and a resolver-routing seam to the same file — added 2026-09-23 when
+  WS-05 was staged, for the same reason: a behavior-preserving split must sequence after
+  behavior additions, never before.
+- Overlaps with: PLAN-01, PLAN-02, PLAN-05, PLAN-06, PLAN-08, PLAN-09, PLAN-10 (all touch
+  `orchestrator.py`).
 - Adjacent to: none beyond the above.
 
 ## Hand-Off Command

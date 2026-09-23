@@ -38,7 +38,22 @@ is fixed at the source rather than only described more honestly downstream.
 ## START HERE
 
 <!-- BEGIN GENERATED: resume-summary -->
-**Resume anchor**: === 2026-09-22 DRAIN + CLEANUP + A1 RE-GROUNDING DONE. HEAD is now 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 (was 7242b33ef, then 7a028157e). ===
+**Resume anchor**: === 2026-09-22 (post-status) FOLD: parallel-session paste re GCP_PROJECT_ID — VERIFIED AND REFUTED ===
+A parallel-session paste claimed API-Sheriff#340's PR-Agent review job failed org-wide with
+`GCP_PROJECT_ID` org variable unset. VERIFIED against real run logs (`ci checks logs --run-id
+35709715234` / `--run-id 35716363715`, local API-Sheriff checkout) and REFUTED: both runs show
+`Created credentials file at ...` and normal `pr_agent` execution through `Applying repo
+settings` — the quoted `::error::` lines are the `##[group]Run ...` step SOURCE echo GitHub
+Actions always prints before executing a `run:` block, not raised errors. The REAL failure both
+times is `Empty diff for PR` (PR#340's changed files were entirely ignore-filtered) — a NEW
+instance of PLAN-PR-002's own guard-too-broad defect population, not an org Vertex/GCP outage.
+Folded as a new OBSERVED Claim-Labels entry + a Deliverable-2 enumeration item into PLAN-PR-002
+(no new surface — same `reusable-pr-agent-review.yml`; confirmed via API-Sheriff's own
+`.github/workflows/pr-agent.yml`, which `uses:` that exact file). Logged to decision.log. Do NOT
+re-open a GCP org-variable investigation on the strength of that paste — it is refuted, not
+merely unverified. Nothing else changed this pass; queue still 12 staged (066-077), 29 parked.
+
+=== 2026-09-22 DRAIN + CLEANUP + A1 RE-GROUNDING DONE. HEAD is now 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 (was 7242b33ef, then 7a028157e). ===
 INBOX DRAINED 2/2 THIS SESSION: lessons-handling-26-09-22-01-001 (5 lesson recurrences, all folded as second-occurrence notes into existing D1/D5/D6 deliverables on PLAN-PR-067/069/070/071, plus one genuinely new D5 on PLAN-PR-076 for the kind-based actionable-count undercount) and truthful-signals-061 (the PR-diff-size gate finding, split per dispatcher convention — the gate/wait-region half staged here as PLAN-PR-077, the measurement/publish half sent to code-intelligence-substrate). Queue is now 12 staged (066-077), 29 parked. Both messages archived; inbox is EMPTY (no closed_senders, no invalid).
 
 ⛔⛔ HEADLINE FINDING — A1 re-grounding dispatched all 41 specs against HEAD and found #1510 (`dd16f521e fix(review-gate): compare bot SHAs, repair comment path, reach stale bot`) shipped FOUR of this epic's deliverables UNDECLARED, authored by the SIBLING EPIC `instrumentation-substrate` (its PLAN-03):
