@@ -1099,6 +1099,28 @@ def test_an_entry_list_without_an_advancing_cursor_is_incomplete(monkeypatch):
     assert result['enqueue_unobserved_reason'] == _github_pr.ENQUEUE_UNOBSERVED_INCOMPLETE
 
 
+def test_a_page_without_a_readable_has_next_page_is_incomplete(monkeypatch):
+    """A page whose ``pageInfo`` lacks ``hasNextPage`` is not a list read to its end.
+
+    Only ``hasNextPage: false`` proves the end of the list; an absent flag is an
+    unreadable page, so the absence of the PR from it proves nothing.
+    """
+    page = _queue_page([7, 8])
+    del page['repository']['mergeQueue']['entries']['pageInfo']['hasNextPage']
+    requested, _gh_calls = _patch_merge_queue(monkeypatch, {None: (0, page, '')})
+
+    result = _enqueue()
+
+    assert result['status'] == 'success', result
+    assert result['enqueued'] == 'indeterminate'
+    assert result['enqueue_unobserved_reason'] == 'entries_incomplete'
+    assert result['enqueue_unobserved_reason'] != _github_pr.ENQUEUE_UNOBSERVED_NOT_LISTED
+    assert result['enqueue_observation'] == (
+        'mergeQueue(branch: main).entries page carried no readable hasNextPage after 2 entries'
+    )
+    assert requested == [None]
+
+
 def test_a_head_selected_enqueue_matches_by_head_branch(monkeypatch):
     """Under ``--head`` the PR is matched by its head branch, never by reinterpreting it as a number."""
     _patch_merge_queue(monkeypatch, {None: (0, _queue_page([_MQ_PR]), '')})

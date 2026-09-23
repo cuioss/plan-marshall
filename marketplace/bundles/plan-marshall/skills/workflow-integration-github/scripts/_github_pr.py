@@ -2281,7 +2281,8 @@ ENQUEUE_UNOBSERVED_READ_FAILED = 'membership_read_failed'
 #: Not a negative either: the queue may already have merged or ejected it.
 ENQUEUE_UNOBSERVED_NOT_LISTED = 'pr_not_listed'
 #: ``entries_incomplete`` — the entry list could not be read to its end (a page
-#: reported more entries but no advancing cursor), so an absence proves nothing.
+#: reported more entries but no advancing cursor, or carried no readable
+#: ``hasNextPage``), so an absence proves nothing.
 ENQUEUE_UNOBSERVED_INCOMPLETE = 'entries_incomplete'
 
 #: Page size of one ``mergeQueue.entries`` read. A page size, never a ceiling:
@@ -2358,11 +2359,18 @@ def _read_queue_membership(base_branch: str, pr_number: str | None, head_branch:
             if matched:
                 return True, '', f'{read_name} lists the PR at position {node.get("position")}'
 
-        if page_info.get('hasNextPage') is not True:
+        has_next_page = page_info.get('hasNextPage')
+        if has_next_page is False:
             return (
                 False,
                 ENQUEUE_UNOBSERVED_NOT_LISTED,
                 f'{read_name} read to its end ({listed} entries); PR not listed',
+            )
+        if has_next_page is not True:
+            return (
+                False,
+                ENQUEUE_UNOBSERVED_INCOMPLETE,
+                f'{read_name} page carried no readable hasNextPage after {listed} entries',
             )
         next_cursor = page_info.get('endCursor')
         if not next_cursor or next_cursor == cursor:
