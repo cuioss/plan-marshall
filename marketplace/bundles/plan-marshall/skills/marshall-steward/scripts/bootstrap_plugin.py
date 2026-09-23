@@ -314,7 +314,7 @@ def get_plugin_root(refresh: bool = False, target: str | None = None) -> tuple[P
     if not refresh:
         state = read_state()
         cached_target = state.get('target')
-        if 'plugin_root' in state and (cached_target is None or cached_target == target):
+        if 'plugin_root' in state and (cached_target == target or (cached_target is None and target == 'claude')):
             cached_path = Path(state['plugin_root'])
             # Verify it still exists
             if cached_path.exists():

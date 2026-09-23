@@ -891,6 +891,8 @@ class TestDetectTargetFromEnv:
     def test_claude_session_env(self, monkeypatch):
         """_detect_target_from_env returns 'claude' when CLAUDE_CODE_SESSION_ID is set."""
         monkeypatch.delenv('ANTIGRAVITY_AGENT', raising=False)
+        monkeypatch.delenv('OPENCODE', raising=False)
+        monkeypatch.delenv('OPENCODE_PID', raising=False)
         monkeypatch.setenv('CLAUDE_CODE_SESSION_ID', 'test-session')
         assert marketplace_paths._detect_target_from_env() == 'claude'
 
