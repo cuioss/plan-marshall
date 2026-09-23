@@ -147,7 +147,8 @@ _RESPONDABLE_RESOLUTIONS = frozenset({'fixed', 'suppressed', 'accepted', 'taken_
 #      are removed first (``_own_prose``) — and a comment is noise only when that
 #      prose is non-empty, no longer than ``thresholds.acknowledgment_max_length``,
 #      and a pattern covers the WHOLE of it (``_is_whole_comment_acknowledgment``).
-#      A phrase quoted inside a block, or sitting inside a larger comment, never
+#      Each pattern is an opener followed only by courtesy and punctuation
+#      (``acknowledgment_courtesy_tail``), never arbitrary content. A phrase quoted inside a block, or sitting inside a larger comment, never
 #      makes the comment an acknowledgment. comment-patterns.json used to carry the LLM decision
 #      authority (full keyword classification); the producer-side migration moved
 #      that to the LLM consumer, so this file now holds only the shared noise
@@ -177,15 +178,21 @@ _RESPONDABLE_RESOLUTIONS = frozenset({'fixed', 'suppressed', 'accepted', 'taken_
 
 PATTERNS: dict[str, Any] = load_skill_config(__file__, 'comment-patterns.json')
 
-# Compile the SHARED ``ignore`` regexes — the bot-agnostic default layer. The
-# per-bot layer is resolved separately at match time from the registry (literal
-# substring markers, not regexes), so a bot-specific marker only ever drops that
-# bot's comments.
+# The only text an acknowledgment may carry after its opening courtesy word: further
+# courtesy (``thanks``, ``nothing further from me``, ``+1``, …) and punctuation. Data,
+# not code — defined once in comment-patterns.json and appended to every ``ignore``
+# entry, so no entry can admit arbitrary content after its opener.
+_COURTESY_TAIL: str = str(PATTERNS['acknowledgment_courtesy_tail'])
+
+# Compile the SHARED ``ignore`` regexes — the bot-agnostic default layer — each as
+# its opener followed by the courtesy tail. The per-bot layer is resolved separately
+# at match time from the registry (literal substring markers, not regexes), so a
+# bot-specific marker only ever drops that bot's comments.
 _COMPILED_IGNORE: list[re.Pattern] = []
 for _priority, _pattern_list in PATTERNS.get('ignore', {}).items():
     _COMPILED_IGNORE.extend(
         compile_patterns_from_config(
-            _pattern_list,
+            [f'(?:{opener}){_COURTESY_TAIL}' for opener in _pattern_list],
             f'comment-patterns.json [ignore][{_priority}]',
         )
     )
@@ -363,13 +370,16 @@ def _is_whole_comment_acknowledgment(body: str) -> bool:
     comment-patterns.json ``_note``):
 
     - **Coverage** — an ``ignore`` pattern must match the WHOLE of the prose
-      (``fullmatch``), never a substring of it. A phrase inside a larger comment, or
-      one quoted in a block (already removed by :func:`_own_prose`), cannot make the
-      comment an acknowledgment.
+      (``fullmatch``), never a substring of it. Each pattern is an opening
+      acknowledgment followed only by ``_COURTESY_TAIL`` — further courtesy and
+      punctuation — so the prose after the opener must itself be courtesy:
+      ``LGTM, nothing further from me.`` is an acknowledgment, while
+      ``Noted. This will crash on empty input.`` is a finding that merely opens
+      politely. A phrase inside a larger comment, or one quoted in a block (already
+      removed by :func:`_own_prose`), cannot make the comment an acknowledgment.
     - **Length** — the prose must be no longer than
-      ``_ACKNOWLEDGMENT_MAX_LENGTH``. The patterns anchor on an OPENING
-      acknowledgment and admit a short courtesy tail, so without this bound an
-      opening "LGTM, but …" would carry a finding of any length out of the store.
+      ``_ACKNOWLEDGMENT_MAX_LENGTH``, a second bound on how much a comment may say
+      and still be dropped as a courtesy.
 
     Prose that is EMPTY after the regions are removed is never an acknowledgment: a
     comment consisting only of a quote or a collapsed block said nothing of its own,
@@ -479,8 +489,7 @@ _SELF_RESPONSE_HEADING = '## Triage dispositions'
 # (``### In reply to comment_id: `<id>```). Hoisted into one constant for the same
 # no-drift reason as the heading above — the emitter renders it and
 # ``_is_emitter_bypass`` recognizes it, so the two cannot disagree. It is a
-# SUBSTRING test, not a line-anchored one: the provider fetch flattens newlines, so
-# the section heading does not reliably sit at the start of a line on the fetch side.
+# SUBSTRING test, not a line-anchored one.
 _BATCHED_SECTION_PREFIX = '### In reply to comment_id:'
 
 # How many CONSECUTIVE self-authored responses — responses belonging to the

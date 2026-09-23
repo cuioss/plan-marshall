@@ -99,7 +99,7 @@ The cross-plan merge mutex (`plan-marshall:manage-locks:merge_lock`) is held acr
 
 The widened hold obeys four invariants:
 
-1. **Release-and-FIFO-re-enqueue at every operator-wait / loop-back boundary.** The lock is held ONLY across non-interactive spans. Before EVERY `AskUserQuestion` (the Pre-Rebase Confirmation Gate, the re-review-timeout trigger-A gate, the Pre-Merge Confirmation Gate, the Pre-Merge Review-Completeness Barrier ask gate, and the merge-queue budget-exhaustion escalation), before every loop-back boundary (the loop-back-to-phase-5 disposition AND the Pre-Merge Review-Completeness Barrier's fail-closed loop-backs — both the pending-findings one and the structural-refusal one), and before every **terminating defer** that settles without merging (the barrier's UNKNOWN and pending-findings "Defer merge" branches), the orchestrator releases the lock **if held** and re-enqueues via the FIFO admission queue (preserving FIFO position). On resume it RE-ACQUIRES through the same FIFO poll loop and **re-validates** before merging — re-running `baseline-reconcile`, and re-rebasing when `origin/{base_branch}` advanced during the released window **and this run's `use_merge_queue` is `false`**. On the merge-queue path the re-rebase is the queue's job, exactly as the initial rebase is (§ "Rebase Branch onto Base"), so the re-validation re-runs the classifier and merges without rebasing; the classifier re-run is not optional on either path, because it is what anchors the merge decision to the current base. Releasing before the interactive wait is what prevents a held lock from blocking every other plan while this plan waits on a human. (At the Pre-Rebase Gate the lock is normally not yet held, so its release is a no-op; the guard is uniform for robustness.)
+1. **Release-and-FIFO-re-enqueue at every operator-wait / loop-back boundary.** The lock is held ONLY across non-interactive spans. Before EVERY `AskUserQuestion` (the Pre-Rebase Confirmation Gate, the re-review-timeout trigger-A gate, the Pre-Merge Confirmation Gate, the Pre-Merge Review-Completeness Barrier ask gate, the merge-queue budget-exhaustion escalation, and the unobserved-enqueue confirmation), before every loop-back boundary (the loop-back-to-phase-5 disposition AND the Pre-Merge Review-Completeness Barrier's fail-closed loop-backs — both the pending-findings one and the structural-refusal one), and before every **terminating defer** that settles without merging (the barrier's UNKNOWN and pending-findings "Defer merge" branches), the orchestrator releases the lock **if held** and re-enqueues via the FIFO admission queue (preserving FIFO position). On resume it RE-ACQUIRES through the same FIFO poll loop and **re-validates** before merging — re-running `baseline-reconcile`, and re-rebasing when `origin/{base_branch}` advanced during the released window **and this run's `use_merge_queue` is `false`**. On the merge-queue path the re-rebase is the queue's job, exactly as the initial rebase is (§ "Rebase Branch onto Base"), so the re-validation re-runs the classifier and merges without rebasing; the classifier re-run is not optional on either path, because it is what anchors the merge decision to the current base. Releasing before the interactive wait is what prevents a held lock from blocking every other plan while this plan waits on a human. (At the Pre-Rebase Gate the lock is normally not yet held, so its release is a no-op; the guard is uniform for robustness.)
 
 2. **Bounded hold with the `merge_hold_budget_seconds` knob.** The orchestrator records the wall-clock instant of acquire as `{hold_start}` and tracks elapsed-since-acquire. When a legitimate wait would push the held duration past `merge_hold_budget_seconds` (default 3600s), it releases + FIFO-re-enqueues + escalates via `AskUserQuestion` rather than continuing to hold. A waiter blocked on ADMISSION past budget first attempts the waiter-side reclaim before escalating:
 
@@ -1468,14 +1468,65 @@ The routing itself:
 
   Because the platform auto-deletes the remote head branch after the queue merge, no `--delete-branch` follow-up is needed; the later `prune-local-and-remote-ref` tail accounts for the local-branch prune either way — it deletes the local feature branch and, via its internal `show-ref` guard, produces a `status: partial` no-op when the remote-tracking ref is already gone (the platform already deleted the remote branch) or deletes the stale ref when it is still present.
 
-  Parse the returned TOON. `status: success` with `enqueued: true` is a **corroborated** claim on both providers — it is reported only when a queue actually exists to be enqueued onto, so a repo with no configured queue returns `status: error` here rather than a green `enqueued: true` for a PR that joined no queue. Both providers probe eligibility **before** the enqueue call and refuse without issuing it, so a refused target incurs no side effect on either. The provider-shaped detail of each probe — what it reads, and what still corroborates the enqueue after it — is owned by [`../../tools-integration-ci/standards/pr-operations.md`](../../tools-integration-ci/standards/pr-operations.md) § "Merge-Queue PR" and is deliberately not restated here; a second copy of a per-provider mechanism drifts the moment one provider's mechanism changes, which is exactly what happened to the copy this sentence replaced. `enqueued: true` still means only that the PR reached the queue — **it is not a merge**. Set `{merge_mechanism} = merge_queue` AND `{merge_landed} = false` — the enqueue is not a merge, so the landing gate below is the only site on this path that may raise `{merge_landed}` to `true`. Then proceed to § "Wait for the Queue Merge to Land (bounded)" below, which is the gate that decides whether the post-merge tail may run at all. On `status: error` (e.g. a GitLab merge-train-ineligible project, or a queue-engagement / auth-scope failure), log the **actionable** error and abort — do NOT silently fall back to an immediate merge, since the operator opted into queue serialization for a reason. The abort message MUST name BOTH remedies so the operator is never left with a bare error: (a) **disable `use_merge_queue`** (set it back to `false` via `manage-config … step set --step-id default:branch-cleanup --param use_merge_queue --value false`) to merge immediately via `pr safe-merge`, or (b) **run the marshall-steward merge-queue provisioning step** (Configuration → Merge Queue) to configure the platform merge queue so the enqueue succeeds:
+  Parse the returned TOON. Both providers probe eligibility **before** the enqueue call as a **pre-condition** and refuse without issuing it, so a repo with no configured queue returns `status: error` with no side effect; on GitHub the pre-enqueue verdict is returned as `queue_precondition`, which says the queue exists, not that this PR is in it. Past the pre-condition, `enqueued` carries one of two values, and only one of them is a queued PR. The provider-shaped detail of the pre-condition and of the membership read behind `enqueued` is owned by [`../../tools-integration-ci/standards/pr-operations.md`](../../tools-integration-ci/standards/pr-operations.md) § "Merge-Queue PR" and is deliberately not restated here — a second copy of a per-provider mechanism drifts the moment one provider's mechanism changes. Branch on `status` first, then on `enqueued`:
+
+  - **`status: success` AND `enqueued: true`** → the PR's own membership in the queue was observed (`enqueue_observation` names the read on GitHub; GitLab reports the created merge-train car). Membership in the queue is **not a merge**. Set `{merge_mechanism} = merge_queue` AND `{merge_landed} = false` — the landing gate below is the only site on this path that may raise `{merge_landed}` to `true`. Then proceed to § "Wait for the Queue Merge to Land (bounded)" below, which is the gate that decides whether the post-merge tail may run at all.
+  - **`status: success` AND `enqueued: indeterminate`** (GitHub only) → the platform accepted the enqueue call, but the PR's membership in the queue was **not observed**; `enqueue_unobserved_reason` names why (`membership_read_failed`, `entries_incomplete`, or `pr_not_listed`) and `enqueue_observation` records what the read saw. This is NOT a queued PR, and this step does not proceed as though it were: log the reason, then have the operator confirm the PR's queue membership (or that it already landed) before any queue wait begins — see **Unobserved enqueue** below.
+  - **`status: error`** (e.g. a GitLab merge-train-ineligible project, a pre-condition refusal, or a queue-engagement / auth-scope failure) → log the **actionable** error and abort — do NOT silently fall back to an immediate merge, since the operator opted into queue serialization for a reason. The abort message MUST name BOTH remedies so the operator is never left with a bare error: (a) **disable `use_merge_queue`** (set it back to `false` via `manage-config … step set --step-id default:branch-cleanup --param use_merge_queue --value false`) to merge immediately via `pr safe-merge`, or (b) **run the marshall-steward merge-queue provisioning step** (Configuration → Merge Queue) to configure the platform merge queue so the enqueue succeeds:
+
+    ```bash
+    python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+      work --plan-id {plan_id} --level ERROR --message "[ERROR] (plan-marshall:phase-6-finalize) Branch cleanup: pr merge-queue enqueue failed - {error}. Remedies: (a) disable use_merge_queue to merge immediately via pr safe-merge, or (b) run /marshall-steward → Configuration → Merge Queue to provision the platform merge queue, then re-run finalize."
+    ```
+
+    **Release-on-abort**: release the merge mutex if held before returning (§ "Merge-Mutex Hold Window" invariant 4).
+
+  **Unobserved enqueue** (`enqueued: indeterminate`). Log the reason at WARNING, naming what the membership read saw:
 
   ```bash
   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-    work --plan-id {plan_id} --level ERROR --message "[ERROR] (plan-marshall:phase-6-finalize) Branch cleanup: pr merge-queue enqueue failed - {error}. Remedies: (a) disable use_merge_queue to merge immediately via pr safe-merge, or (b) run /marshall-steward → Configuration → Merge Queue to provision the platform merge queue, then re-run finalize."
+    work --plan-id {plan_id} --level WARNING --message "[WARNING] (plan-marshall:phase-6-finalize) Branch cleanup: pr merge-queue accepted PR #{pr_number} but its queue membership was not observed (enqueue_unobserved_reason={enqueue_unobserved_reason}; {enqueue_observation}) — not treating the PR as queued until the operator confirms"
   ```
 
-  **Release-on-abort**: release the merge mutex if held before returning (§ "Merge-Mutex Hold Window" invariant 4).
+  This is an operator-wait boundary, so release the merge mutex if held before the prompt (§ "Merge-Mutex Hold Window" invariant 1). No re-acquire follows on either answer: the enqueue call has already been issued, so the platform owns the merge from here, exactly as on the **Landing-gate failure path** below.
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock release \
+    --plan-id {plan_id}
+  ```
+
+  Then ask the operator to confirm:
+
+  ```text
+  AskUserQuestion:
+    questions:
+      - question: "PR #{pr_number} was sent to the merge queue, but this run could not see it in the queue. Please check the pull request: is it in the merge queue, or has it already merged?"
+        header: "Branch Cleanup — Merge queue"
+        description: |
+          **PR**: #{pr_number}
+          **Why it was not seen**: {plain_reason}
+
+          The platform accepted the request, but reading the queue did not
+          show this pull request in it. It may already have merged, it may
+          have been removed from the queue, or the queue could not be read.
+        options:
+          - label: "It is queued or merged — wait for it"
+            description: "Waits, within the usual time limit, for the pull request to merge into {base_branch}, then tidies up the branch and the worktree once the merge is seen"
+          - label: "Stop here"
+            description: "Stops without waiting and without tidying up. The branch and the worktree stay as they are, and the cleanup is recorded as still owed"
+        multiSelect: false
+  ```
+
+  Render `{plain_reason}` from `enqueue_unobserved_reason`: `membership_read_failed` → "the queue could not be read"; `entries_incomplete` → "the queue could only be read in part"; `pr_not_listed` → "the queue was read in full and this pull request was not in it".
+
+  - **"It is queued or merged — wait for it"** → set `{merge_mechanism} = merge_queue` AND `{merge_landed} = false`, log the operator's confirmation as a decision, and proceed to § "Wait for the Queue Merge to Land (bounded)". The landing gate keys on observed PR state, so the confirmation authorizes the wait only — never the post-merge tail, which still requires the gate to observe `state == merged`.
+
+    ```bash
+    python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+      decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Branch cleanup: operator confirmed PR #{pr_number} is queued or merged after an unobserved enqueue ({enqueue_unobserved_reason}) — entering the queue-landing gate"
+    ```
+
+  - **"Stop here"** → skip the queue-landing gate and the whole post-merge tail — no CI wait, no worktree removal, no `switch-and-pull`, no `prune-local-and-remote-ref` — emit the `mark-step-done` payload using **F3** of **Branch F** in § "Mark Step Complete" (the PR's queue state was not observed, so `merge_state=unknown`), and return.
 
 The remainder of this section (the immediate `pr safe-merge` path) applies only when `use_merge_queue == false`.
 
@@ -1500,7 +1551,7 @@ On success, `pr safe-merge` returns a corroborated `merged: true` — the verb r
 
 ### Wait for the Queue Merge to Land (bounded)
 
-This gate is documented BEFORE the post-merge tail it bypasses (bypass-before-dispatch ordering). It governs **every** section that follows: **Wait for Merge CI**, **Remove Worktree**, **Switch to Base Branch, Pull, and Delete Local Branch**, the terminal merge-mutex release, and `prune-local-and-remote-ref`. Each of those is a *post-merge* action — they assume the PR has landed on the base branch. On the `use_merge_queue == true` path that assumption is false at the moment the enqueue returns: `enqueued: true` says the PR joined the queue, not that the queue merged it. Running the tail on a still-queued PR prunes the head branch (and the remote-tracking ref) out from under a merge the platform has not performed yet, and pulls a base branch that does not contain the commit.
+This gate is documented BEFORE the post-merge tail it bypasses (bypass-before-dispatch ordering). It governs **every** section that follows: **Wait for Merge CI**, **Remove Worktree**, **Switch to Base Branch, Pull, and Delete Local Branch**, the terminal merge-mutex release, and `prune-local-and-remote-ref`. Each of those is a *post-merge* action — they assume the PR has landed on the base branch. On the `use_merge_queue == true` path that assumption is false at the moment the enqueue returns: `enqueued: true` says the PR's membership in the queue was observed, not that the queue merged it — and an operator-confirmed `enqueued: indeterminate` (§ "Merge routing" → **Unobserved enqueue**) says less still. Running the tail on a still-queued PR prunes the head branch (and the remote-tracking ref) out from under a merge the platform has not performed yet, and pulls a base branch that does not contain the commit.
 
 **Short-circuit — `{merge_mechanism} == pr_safe_merge`**: the merge landed synchronously and was corroborated by the verb. `{merge_landed}` is already `true`. Skip this entire section and proceed to **Wait for Merge CI**.
 
@@ -1990,7 +2041,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
 
 This branch is reached only on `use_merge_queue == true`, and that is exactly the path § "Rebase Branch onto Base" routes AWAY from the rebase. It therefore **never reaches the rebase** and records neither `action` nor `upstream_commit_count` — their absence is the honest signal the fact table above names, and interpolating either placeholder here would fabricate a rebase that structurally cannot have happened on this branch. It performed real work — the enqueue — so `work_performed=true`. It records **no `merge_mechanism`**, because no merge landed: recording `merge_queue` here would assert exactly the fact this branch exists to deny, and would make Branch F indistinguishable from Branch A to any consumer reading the facts rather than the detail string:
 
-⚠ **Three different observations reach this branch, and they do NOT share an outcome.** § "Wait for the Queue Merge to Land (bounded)" routes the landing-gate failure path here from `state == open` with the budget exhausted, from `state == closed` (dequeued), and from `status: error` (unobservable). Collapsing them is a defect: `closed` is not `open`, an unreadable state is neither, and only ONE of the three can be improved by re-running. Pick the sub-path by the observation the landing gate actually made.
+⚠ **Three different observations reach this branch, and they do NOT share an outcome.** § "Wait for the Queue Merge to Land (bounded)" routes the landing-gate failure path here from `state == open` with the budget exhausted, from `state == closed` (dequeued), and from `status: error` (unobservable); an unobserved enqueue the operator declined to wait on reaches the third sub-path too. Collapsing them is a defect: `closed` is not `open`, an unreadable state is neither, and only ONE of the three can be improved by re-running. Pick the sub-path by the observation the landing gate actually made.
 
 **F1 — still queued, budget exhausted** (`state == open`). The merge is pending, not refused: the queue may land it at any time, so a later run CAN reach the `state == merged` path and perform the deferred cleanup. This is the only genuinely deferred sub-path, and the only one that loops back:
 
@@ -2015,7 +2066,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
   --display-detail "dequeued without merging, cleanup owed"
 ```
 
-**F3 — state unobservable** (`status: error` on `pr view`). The gate could not read the PR at all. It fails CLOSED: it must not claim `open`, which would assert a state nobody observed, and must not loop, because an unreadable provider is not a pending merge.
+**F3 — state unobservable** (`status: error` on `pr view`, or an `enqueued: indeterminate` enqueue on which the operator chose "Stop here" at § "Merge routing" → **Unobserved enqueue**). The run could not observe where the PR stands — the gate could not read the PR at all, or the queue read never showed the PR in the queue. It fails CLOSED: it must not claim `open`, which would assert a state nobody observed, and must not loop, because an unreadable provider is not a pending merge.
 
 ⚠ `unknown` is a COULD-NOT-READ marker, and the drain's completeness check treats that class as a gap at every key with no carve-out: a landing carrying `merge_state=unknown` is reported INCOMPLETE at that key. That is the intended honest outcome, not a defect to avoid — never substitute an observed-looking value for a state the run could not read, because a fabricated merge state is worse than a recorded gap. Concretely: this branch must NOT record `open` or `n/a` to keep the landing complete. The incompleteness is the signal that this run could not settle the merge state, and the epic drains it as an open gap rather than reconciling against a state nobody read.
 

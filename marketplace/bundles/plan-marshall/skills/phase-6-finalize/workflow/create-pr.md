@@ -166,7 +166,10 @@ yourself.** The character budget and its truncation are owned by the script, det
 that is what makes the outcome reproducible and keeps a clip from happening silently. Write the
 distillation at its natural length and let the renderer decide.
 
-Read `omitted`, `truncated`, and `chars_written` from the returned TOON and branch:
+Branch on `status` first. On `status: success`, read `omitted`, `truncated`, `chars_written` and
+`budget`; a rendered section (`omitted: false`) additionally carries `overflow` (the draft did not
+fit the budget), `draft_chars` (the draft's length) and `chars_not_shown` (how many of the draft's
+characters the rendered section omits). Then branch:
 
 - **`omitted: true`** — the plan has no outline intent (no `solution_outline.md`, or its `summary`
   and `overview` sections are both absent or empty). The body file is left byte-identical, with **no
@@ -179,20 +182,35 @@ Read `omitted`, `truncated`, and `chars_written` from the returned TOON and bran
     --message "(plan-marshall:phase-6-finalize:create-pr) Intent section omitted — {reason}"
   ```
 
-- **`truncated: true`** — the draft exceeded the budget and was cut at a word boundary, with the
-  truncation marker rendered INSIDE the budget so the loss is visible to the reviewer. Record it so
-  a recurring truncation is visible as a signal that the distillations are running long:
+- **`truncated: true`** (`overflow: true`) — the draft exceeded the budget. It was cut at a sentence
+  or paragraph boundary, never mid-sentence: only the complete sentences (or whole paragraphs) that
+  fit are rendered — none at all when even the first does not fit — and the truncation marker is
+  rendered INSIDE the budget so the loss is visible to the reviewer. The body is appended to, not
+  replaced, so this return is the only place the caller learns how much of the draft a reviewer will
+  not see. Record it so a recurring truncation is visible as a signal that the distillations are
+  running long:
 
   ```bash
   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
     decision --plan-id {plan_id} --level INFO \
-    --message "(plan-marshall:phase-6-finalize:create-pr) Intent section truncated to {chars_written} of {budget} chars — distillation ran long"
+    --message "(plan-marshall:phase-6-finalize:create-pr) Intent section truncated to {chars_written} of {budget} chars — {chars_not_shown} of {draft_chars} draft chars not shown; distillation ran long"
   ```
 
-- **`truncated: false`, `omitted: false`** — the section was rendered whole. No decision entry needed.
+- **`truncated: false`, `omitted: false`** — the section was rendered whole (`chars_not_shown: 0`).
+  No decision entry needed.
 
-On `status: error` (`draft_unreadable` / `empty_draft`) the renderer refused rather than emitting an
-empty heading. Fix the draft and re-invoke; do not proceed with a body carrying a hollow section.
+On `status: error` the renderer exits 1 and leaves the body file untouched; do not proceed with a
+body carrying a hollow section. The remedy depends on the `error` value, and `detail` names the
+cause:
+
+- **`outline_unreadable`** — the outline read itself failed (the `manage-solution-outline` reader
+  could not be run, exited non-zero, or printed an envelope that does not parse), so nothing is known
+  about the plan's intent. This is NOT an omission and NOT a draft defect: rewriting the draft cannot
+  clear it. Fix the outline or its reader per `detail`, then re-invoke.
+- **`draft_unreadable`** / **`empty_draft`** — the outline states an intent but the draft could not be
+  read or is empty. Fix the draft and re-invoke.
+- **`body_unreadable`** — the PR body file at `--body-path` could not be read. Re-run `prepare-body`
+  and re-invoke with the path it returns.
 
 > **What this section is NOT.** A stated intent makes a fluent, agreeable, diff-blind review *cheaper*
 > to reach — a reviewer can now echo the intent back without reading the diff. That is why the

@@ -75,6 +75,7 @@ PLAN_IDS: tuple[str, ...] = (
     'gh-pr-identity-unresolved',
     'gh-pr-noise-ai-agent-block',
     'gh-pr-noise-blockquote-e2e',
+    'gh-pr-noise-courtesy-opener',
     'gh-pr-own-trigger-bot-quote',
     'gh-pr-own-trigger-excluded',
     'gh-pr-own-trigger-foreign-exact',
@@ -635,6 +636,46 @@ def test_an_acknowledgment_phrase_inside_a_larger_comment_is_not_noise():
     body = 'Mostly fine; no objection to the rename.'
 
     assert not github_pr._is_obvious_noise(body, None)
+
+
+#: Short findings that OPEN with a courtesy word — each inside the length bound, so
+#: only the courtesy tail decides that the text after the opener is not courtesy.
+_COURTESY_OPENED_FINDINGS = (
+    'Noted. This will crash on empty input.',
+    'thanks - but this leaks the file handle',
+)
+
+
+@pytest.mark.parametrize('body', _COURTESY_OPENED_FINDINGS, ids=['noted-then-finding', 'thanks-then-finding'])
+def test_a_finding_that_opens_with_a_courtesy_word_is_not_noise(body):
+    """The text after an opening courtesy word must itself be courtesy, never arbitrary content."""
+    assert len(body) <= github_pr._ACKNOWLEDGMENT_MAX_LENGTH, 'the case must sit inside the length bound'
+
+    assert not github_pr._is_obvious_noise(body, None)
+    assert not github_pr._is_obvious_noise(body, 'coderabbit')
+
+
+@pytest.mark.parametrize(
+    'body',
+    ['LGTM, nothing further from me.', 'Thanks!', 'Noted, thanks.', 'ack, looks good to me'],
+)
+def test_an_acknowledgment_with_a_courtesy_tail_is_still_dropped(body):
+    """Matched positive control: an opener followed only by courtesy and punctuation stays noise."""
+    assert github_pr._is_obvious_noise(body, None)
+
+
+def test_courtesy_opened_findings_are_filed_end_to_end(plan_context, monkeypatch):
+    """Through ``fetch_findings``: both courtesy-opened findings are filed, the bare acknowledgment is not."""
+    plan_id = 'gh-pr-noise-courtesy-opener'
+    comments = [_comment(f'polite-{i}', OTHER_AUTHOR, body) for i, body in enumerate(_COURTESY_OPENED_FINDINGS)]
+    comments.append(_comment('ack-control', OTHER_AUTHOR, 'LGTM, nothing further from me.'))
+    _patch_provider(monkeypatch, comments)
+
+    result = _run_fetch(plan_id)
+
+    assert result['count_skipped_noise'] == 1
+    assert result['count_stored'] == len(_COURTESY_OPENED_FINDINGS)
+    assert sorted(_stored_comment_ids(plan_id)) == [f'polite-{i}' for i in range(len(_COURTESY_OPENED_FINDINGS))]
 
 
 def test_the_body_digest_edit_term_ignores_line_structure():

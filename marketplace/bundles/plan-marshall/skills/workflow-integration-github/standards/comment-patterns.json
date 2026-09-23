@@ -1,12 +1,13 @@
 {
-  "_note": "Regex patterns used by github_pr.py as a PRE-FILTER ONLY for the producer-side fetch_findings subcommand. The `ignore` category here is the SHARED / DEFAULT noise layer — bot-agnostic WHOLE-COMMENT acknowledgments applied to every comment regardless of author, under two guards that are both required. GUARD 1 (coverage): before matching, every region that is not the commenter's own bare prose is removed — closed fenced code blocks, closed <details> blocks (innermost first), and blockquoted lines — and the remainder is whitespace-collapsed and lower-cased; an `ignore.low` entry must then match the WHOLE remainder (fullmatch), and an empty remainder is never an acknowledgment. GUARD 2 (length): the remainder must be no longer than `thresholds.acknowledgment_max_length`. Neither guard suffices alone: the entries anchor on an OPENING acknowledgment and admit a short courtesy tail (`LGTM, nothing further from me.`), so coverage without the length bound would let an opening `LGTM, but ...` carry a finding of any length out of the store; and the length bound without coverage would drop every short comment that merely contains an acknowledgment phrase, including a finding whose only prose sits beside a quoted or AI-agent block. Before this rule the layer held 12 `ignore.low` entries matched by re.search against the whole lowered body, 4 of them unanchored substrings (`looks good`, `ship it`, `no objection`, `[bot]`), so a phrase inside a fenced block, a blockquote or a CodeRabbit <details> AI-agent block discarded the entire comment. The 12 entries are kept, each rewritten as a whole-comment form: the 4 formerly unanchored ones now anchor at the start of the prose, and `[bot]` became a comment that opens with a bare bot handle. Per-bot noise (walkthrough headings, marketing footers, no-op review lines) is NOT stored here: it is sourced at runtime from each bot's registry doc (automatic-review/standards/{bot_kind}.md `ignore_patterns`, matched as literal whole-comment markers) so a bot-specific marker only drops that bot's own comments. Only the `ignore` category is consulted by the script — surviving comments are persisted as `pr-comment` findings via manage-findings, and classification of surviving entries is the LLM consumer's responsibility (reading each finding's full body from `detail`). The `code_change` and `explain` categories are retained verbatim as documentation of the historical taxonomy and may guide downstream LLM prompts, but they are no longer the decision authority. Priority vocabulary uses PRIORITY_LEVELS (low, medium, high, critical) from triage_helpers.",
+  "_note": "Regex patterns used by github_pr.py as a PRE-FILTER ONLY for the producer-side fetch_findings subcommand. The `ignore` category here is the SHARED / DEFAULT noise layer — bot-agnostic WHOLE-COMMENT acknowledgments applied to every comment regardless of author, under two guards that are both required. GUARD 1 (coverage): before matching, every region that is not the commenter's own bare prose is removed — closed fenced code blocks, closed <details> blocks (innermost first), and blockquoted lines — and the remainder is whitespace-collapsed and lower-cased; each `ignore.low` entry is an OPENING acknowledgment, compiled as that opener followed by `acknowledgment_courtesy_tail`, and the result must then match the WHOLE remainder (fullmatch); an empty remainder is never an acknowledgment. The courtesy tail admits only further courtesy (`thanks`, `nothing further from me`, `+1`, ...) and punctuation, so the text after the opener must itself be courtesy: `LGTM, nothing further from me.` is an acknowledgment, while `Noted. This will crash on empty input.` and `thanks - but this leaks the file handle` are findings that merely open politely. GUARD 2 (length): the remainder must be no longer than `thresholds.acknowledgment_max_length`. Neither guard suffices alone: coverage without the length bound places no ceiling on a long run of courtesy, and the length bound without coverage would drop every short comment that merely contains an acknowledgment phrase, including a finding whose only prose sits beside a quoted or AI-agent block. Per-bot noise (walkthrough headings, marketing footers, no-op review lines) is NOT stored here: it is sourced at runtime from each bot's registry doc (automatic-review/standards/{bot_kind}.md `ignore_patterns`, matched as literal whole-comment markers) so a bot-specific marker only drops that bot's own comments. Only the `ignore` category is consulted by the script — surviving comments are persisted as `pr-comment` findings via manage-findings, and classification of surviving entries is the LLM consumer's responsibility (reading each finding's full body from `detail`). The `code_change` and `explain` categories are retained verbatim as documentation of the historical taxonomy and may guide downstream LLM prompts, but they are no longer the decision authority. Priority vocabulary uses PRIORITY_LEVELS (low, medium, high, critical) from triage_helpers.",
   "_category_rationale": {
     "code_change.high": "Security and correctness issues that demand immediate code changes — bugs, crashes, vulnerabilities.",
     "code_change.medium": "Actionable requests using directive language (please add/fix/change) or calling out specific incorrectness.",
     "code_change.low": "Style and cosmetic suggestions — typos, naming, formatting. Lower urgency but still actionable.",
     "explain.low": "Questions and clarification requests — reviewer wants understanding, not necessarily a code change.",
-    "ignore.low": "Whole-comment acknowledgments (LGTM, approved, a bare bot-handle line) — no human action needed. Each entry is matched with fullmatch against the commenter's own bare prose (see `_note`), so it must describe the WHOLE comment, never a phrase inside one."
+    "ignore.low": "Whole-comment acknowledgments (LGTM, approved, a bare bot-handle line) — no human action needed. Each entry is the OPENER only; it is compiled with `acknowledgment_courtesy_tail` appended and matched with fullmatch against the commenter's own bare prose (see `_note`), so the whole comment must be the opener plus courtesy, never a phrase inside one or an opener ahead of a finding."
   },
+  "acknowledgment_courtesy_tail": "(?:[\\s.,;:!-]*(?:thanks|thank you|thx|lgtm|looks good(?: to me)?|approved|ship it|nice(?: work| job| one| catch)?|(?:good|great) (?:work|job|catch)|well done|done|all good|ack|noted|acknowledged|no objections?|nothing (?:further|else)(?: from me)?|no further comments?|\\+1|:\\+1:|👍|🎉))*[\\s.,;:!-]*",
   "thresholds": {
     "_rationale": "acknowledgment_max_length (40): the length bound of the shared `ignore` layer (GUARD 2 in `_note`), measured over the commenter's own whitespace-collapsed prose. Derived from the existing noise-filter fixtures that must still be dropped by this layer (test_comments_stage_filters.py and test_github_pr_fetch_findings.py): `lgtm` (4), `LGTM` (4) and `LGTM, nothing further from me.` (30) — the longest is 30 characters, rounded up to the next multiple of ten above it, 40. substantial_comment_length (100): below this, comments without keyword matches are typically drive-by acknowledgments. context_match_min_length (20): below this, comments are too short to contain meaningful code references for context matching. camel_case_min_length (4): minimum word length for camelCase identifier detection in context matching.",
     "acknowledgment_max_length": 40,
@@ -78,18 +79,18 @@
   },
   "ignore": {
     "low": [
-      "lgtm\\b.*",
-      "approved\\b.*",
-      "looks good\\b.*",
-      "nice\\b.*",
-      "thanks\\b.*",
-      "acknowledged\\b.*",
-      "noted\\b.*",
-      "ack\\b.*",
+      "lgtm",
+      "approved",
+      "looks good(?: to me)?",
+      "nice(?: work| job| one| catch)?",
+      "thanks",
+      "acknowledged",
+      "noted",
+      "ack",
       "\\+1",
-      "ship it\\b.*",
-      "no objection\\b.*",
-      "@?[a-z0-9-]+\\[bot\\](?: .*)?"
+      "ship it",
+      "no objection",
+      "@?[a-z0-9-]+\\[bot\\]"
     ]
   }
 }
