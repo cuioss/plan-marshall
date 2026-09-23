@@ -44,8 +44,8 @@ Behaviour, in order:
 4. **Outline present => render the draft**, enforce the budget, and append the
    section to the body file.
 5. **Budget: cut at a sentence, and REPORT the overflow.** See
-   :data:`INTENT_BUDGET_CHARS`. A draft over budget is never cut mid-sentence:
-   only the complete sentences (or whole paragraphs) that fit are rendered — none
+   :data:`INTENT_BUDGET_CHARS`. A draft over budget is cut at a sentence or
+   paragraph boundary: only the sentences (or whole paragraphs) that fit are rendered — none
    at all when even the first does not fit — and the truncation marker is
    appended INSIDE the budget, never added on top of it, so the rendered section
    is never larger than the budget it claims to honour. **Silent truncation is
@@ -180,7 +180,11 @@ def has_outline_intent(plan_id: str) -> bool:
 # punctuation still ends as a whole unit. The pattern is matched against the WHOLE
 # draft, never against a clipped window, so a terminator that only looks final
 # because the window ends right after it (``3.5``, ``e.g.x``) is not a boundary.
-_SENTENCE_END = re.compile(r'[.!?][)\]"\'*_`]*(?=\s|$)|\n[ \t]*\n')
+# The full stop of an ellipsis (``...``) or of ``e.g.``, ``i.e.``, ``vs.`` and
+# ``etc.`` is not a boundary either.
+_SENTENCE_END = re.compile(
+    r'(?:(?<!\.)(?<!\be\.g)(?<!\bi\.e)(?<!\bvs)(?<!\betc)\.|[!?])[)\]"\'*_`]*(?=\s|$)|\n[ \t]*\n'
+)
 
 
 def _complete_sentences_within(text: str, limit: int) -> str:
@@ -222,7 +226,7 @@ def render_section(draft: str, budget: int = INTENT_BUDGET_CHARS) -> IntentRende
     prose, so the marker lands INSIDE the budget rather than pushing the section past
     it — a marker appended on top of a budget-filling body would mean the section
     silently overruns the cap it advertises. The prose that remains is cut at a
-    sentence or paragraph boundary, never mid-sentence.
+    sentence or paragraph boundary.
     """
     body = draft.strip()
     prefix = f'{_HEADING}\n\n'

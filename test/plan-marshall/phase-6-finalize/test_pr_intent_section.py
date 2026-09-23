@@ -27,7 +27,7 @@ Pinned properties:
   run, exited non-zero, or printed an unparseable envelope yields
   ``error: outline_unreadable`` and exit 1, and the body is untouched — only a read
   that succeeded and found no intent may yield ``omitted: true``.
-* **Truncation cuts at a sentence boundary**, never mid-sentence, and the return
+* **Truncation cuts at a sentence or paragraph boundary**, and the return
   reports the overflow (``overflow``, ``draft_chars``, ``chars_not_shown``).
 """
 
@@ -308,6 +308,14 @@ class TestSentenceBoundaryAndOverflow:
         text = 'Alpha is one. Version 3.5 ships soon.'
 
         assert pis._complete_sentences_within(text, len('Alpha is one. Version 3.')) == 'Alpha is one.'
+
+    @pytest.mark.parametrize('abbreviation', ['e.g.', 'i.e.', 'vs.', 'etc.', '...'])
+    def test_an_abbreviation_or_ellipsis_is_not_a_sentence_end(self, abbreviation):
+        """A budget falling right after ``e.g.`` / ``i.e.`` / ``vs.`` / ``etc.`` / ``...`` does not cut there."""
+        lead = f'Alpha is one. Route on one key {abbreviation}'
+        text = f'{lead} the comment kind, not thread presence.'
+
+        assert pis._complete_sentences_within(text, len(lead)) == 'Alpha is one.'
 
     def test_a_paragraph_without_terminal_punctuation_ends_as_a_unit(self):
         """A bullet or heading line has no full stop; the blank line after it is its boundary."""

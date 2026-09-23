@@ -623,10 +623,19 @@ def test_a_bare_acknowledgment_is_still_dropped(body):
     assert github_pr._is_obvious_noise(body, None)
 
 
-def test_an_opening_acknowledgment_beyond_the_length_bound_is_not_noise():
-    """The length guard: an opening "LGTM, but ..." cannot carry a long finding out of the store."""
+def test_an_opening_acknowledgment_ahead_of_a_finding_is_not_noise():
+    """The coverage guard: an opening "LGTM, but ..." cannot carry a finding out of the store."""
     body = 'LGTM, but the retry loop never resets its counter after a success, so the backoff grows forever.'
+
+    assert not github_pr._is_obvious_noise(body, None)
+
+
+def test_a_courtesy_only_run_beyond_the_length_bound_is_not_noise():
+    """The length guard: a run the coverage guard accepts as pure courtesy is kept once it exceeds the bound."""
+    body = 'LGTM, thanks, looks good to me, nothing further from me!'
     assert len(body) > github_pr._ACKNOWLEDGMENT_MAX_LENGTH
+    # The coverage guard alone would drop it: an ignore pattern covers the whole prose.
+    assert any(pattern.fullmatch(github_pr._own_prose(body)) for pattern in github_pr._COMPILED_IGNORE)
 
     assert not github_pr._is_obvious_noise(body, None)
 

@@ -650,7 +650,7 @@ moved in this repository independently of the configuration above.
 
 `review_gate_delta.py`'s `_is_actionable` treats a `review_body` finding as actionable unless
 `is_status_summary` matches the bot's registry `review_body_summary_patterns` against the comment
-BODY; `test_counting_rule_parity.py` pins that predicate across both implementations of the rule.
+BODY.
 Before the carve-out existed, a reviewer's `"Actionable comments posted: N"` status summary counted
 as one actionable finding.
 

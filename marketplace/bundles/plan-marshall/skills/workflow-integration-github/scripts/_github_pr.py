@@ -95,11 +95,6 @@ from command_forms import STEWARD_COMMAND
 # never misclassified as a refusal. The verbs are notice-voiced ("exceeded",
 # "reached") rather than review-voiced ("exceeds", "may exceed"), so a review
 # discussing a rate limit stays a finding.
-#
-# The comment body is newline-flattened to a single line by
-# ``fetch_pr_comments_data`` before this detector runs, so the markers are
-# searched unanchored (no ``^`` / ``re.MULTILINE``) — the callout prefix, the
-# heading marker, and the limit phrase all land on the same flattened line.
 _RATE_LIMIT_PHRASE = (
     r'(?:rate[\s-]?limit(?:ed|s)?'
     r'|(?:weekly|daily|monthly|hourly|usage|review|request|api)(?:[\s-]\w+){0,2}[\s-]limits?)'
@@ -131,7 +126,7 @@ _RATE_LIMIT_NOTICE_SHAPE_MARKERS: tuple[re.Pattern[str], ...] = (
     # Markdown heading whose leading text IS the rate/usage-limit phrase (only a
     # short emoji/symbol prefix allowed before it), e.g. ``## Rate limit
     # exceeded`` / ``### Weekly review limit reached``. A heading about something
-    # else does not match, even after newline-flattening.
+    # else does not match.
     re.compile(rf'#{{1,6}}\s+\W{{0,4}}{_RATE_LIMIT_PHRASE}\b', re.IGNORECASE),
     # Service-notice tail: the review is deferred/skipped and will resume.
     re.compile(
@@ -346,7 +341,7 @@ def bot_claimed_sha_matches_head(body: str, head_sha: str) -> bool:
 # The enumerative arm — recognising a refusal no earlier arm matched
 # ---------------------------------------------------------------------------
 
-#: Upper bound (in characters, exclusive) on the flattened body length below which
+#: Upper bound (in characters, exclusive) on the body length below which
 #: an anchor-less comment from a registered bot is read as an unrecognised refusal.
 #:
 #: ``None`` means NO THRESHOLD WAS DERIVED, and it is the shipped value. The bound
@@ -411,7 +406,7 @@ def _is_unrecognised_refusal(body: str, bot_kind: str | None = None) -> bool:
     - the body carries no marker from that bot's own ``ignore_patterns`` — its
       declared clean-review text is never a refusal.
     - the body carries no code-reference anchor at all (:func:`_has_code_anchor`).
-    - the flattened body is shorter than
+    - the body is shorter than
       :data:`UNRECOGNISED_REFUSAL_MAX_CHARS`.
 
     **Position in the pipeline is load-bearing.** This arm MUST be consulted AFTER
