@@ -30,6 +30,13 @@ only when a whole-comment acknowledgment pattern covers all of that prose within
 derived length bound. A phrase quoted in a block, or an AI-agent block riding
 beside a genuine finding, never makes the comment an acknowledgment.
 
+A recognised refusal never reaches ``actionable_count``: that count is derived
+downstream from the stored ``pr-comment`` findings, so a Sourcery weekly-quota notice
+and a Sourcery size-ceiling notice must each file NO finding, count in
+``count_skipped_refusal`` and name the bot in ``refused_bots``. An unclassified
+Sourcery ``review_body`` is the matched positive control — it is still stored, so the
+fail-closed counted default stays in force.
+
 The findings store is REAL (isolated via the autouse ``plan_context``
 ``PLAN_BASE_DIR`` sandbox); only the GitHub provider surface and the identity read
 are monkeypatched, and the raw ``run_gh`` seam is stubbed to fail so no case can
@@ -60,6 +67,9 @@ PLAN_IDS: tuple[str, ...] = (
     'gh-pr-own-trigger-excluded',
     'gh-pr-own-trigger-foreign-exact',
     'gh-pr-own-trigger-unresolved',
+    'gh-pr-refusal-pin-size-ceiling',
+    'gh-pr-refusal-pin-unclassified-control',
+    'gh-pr-refusal-pin-weekly-quota',
 )
 github_pr = load_script_module('plan-marshall', 'workflow-integration-github', 'github_pr.py', 'github_pr')
 _findings_core = load_script_module('plan-marshall', 'manage-findings', '_findings_core.py', '_findings_core')
@@ -665,3 +675,91 @@ def test_the_display_path_flattens_while_the_data_path_keeps_lines(monkeypatch):
     assert data['comments'][0]['body'] == body
     assert '\n' not in display['comments'][0]['body']
     assert display['comments'][0]['body'] == body.replace('\n', ' ')
+
+
+# ============================================================================
+# A recognised refusal never reaches actionable_count
+# ============================================================================
+
+#: Sourcery's account-level weekly diff-character quota notice, in its observed
+#: *reached* wording. The figure is synthetic: the provider owns the real one.
+_SOURCERY_WEEKLY_QUOTA_REFUSAL = 'Sorry, you have reached your weekly rate limit of 500000 diff characters.'
+
+#: Sourcery's per-PR size-ceiling notice. The figure is synthetic for the same reason.
+_SOURCERY_SIZE_CEILING_REFUSAL = (
+    'Sorry, your pull request is larger than the review limit of 4242 diff characters. '
+    'Please split it into smaller pull requests.'
+)
+
+
+def _sourcery_review_body(comment_id, body):
+    """A Sourcery comment in its declared publish shape, ``review_body``."""
+    return {
+        'id': comment_id,
+        'author': 'sourcery-ai',
+        'thread_id': '',
+        'kind': 'review_body',
+        'body': body,
+        'resolved': False,
+    }
+
+
+@pytest.mark.parametrize(
+    ('plan_id', 'body', 'cause'),
+    [
+        ('gh-pr-refusal-pin-weekly-quota', _SOURCERY_WEEKLY_QUOTA_REFUSAL, 'quota'),
+        ('gh-pr-refusal-pin-size-ceiling', _SOURCERY_SIZE_CEILING_REFUSAL, 'size'),
+    ],
+    ids=['weekly-quota', 'size-ceiling'],
+)
+def test_a_recognised_sourcery_refusal_files_no_finding(plan_context, monkeypatch, plan_id, body, cause):
+    """A refusal is reported as a refusal and stored as nothing, so no count can score it.
+
+    ``actionable_count`` is computed from the stored ``pr-comment`` findings; a notice
+    that reached the store as a ``review_body`` once scored a resolved-as-fixed rate
+    over a bot that never reviewed. Recognised here, the notice files nothing, is
+    counted as a refusal rather than as noise, names its bot, and never falls through
+    to the enumerative unrecognised-refusal arm.
+    """
+    _patch_provider(monkeypatch, [_sourcery_review_body('sr-refusal', body)])
+
+    result = _run_fetch(plan_id)
+
+    assert result['status'] == 'success'
+    assert result['count_stored'] == 0
+    assert _stored_comment_ids(plan_id) == []
+    assert result['count_skipped_refusal'] == 1
+    assert result['count_skipped_noise'] == 0
+    assert result['refused_bots'] == ['sourcery']
+    assert result['refused_causes'] == [{'bot_kind': 'sourcery', 'cause': cause}]
+    assert result['unrecognised_refusal'] == []
+    assert result['participated_bots'] == []
+    assert result['producer_mismatch_hash_id'] is None
+
+
+def test_an_unclassified_sourcery_review_body_is_still_stored(plan_context, monkeypatch):
+    """Matched positive control: a review body no refusal arm recognises is counted.
+
+    Same bot, same publish shape — only the body differs. It is stored as a finding
+    and credits Sourcery's ``review_body`` participation, so the refusal pin above
+    cannot be passing by withholding every Sourcery ``review_body``.
+    """
+    plan_id = 'gh-pr-refusal-pin-unclassified-control'
+    _patch_provider(
+        monkeypatch,
+        [
+            _sourcery_review_body(
+                'sr-review',
+                'Overall the change reads well, but the retry helper should be extracted into its own module.',
+            )
+        ],
+    )
+
+    result = _run_fetch(plan_id)
+
+    assert result['status'] == 'success'
+    assert result['count_stored'] == 1
+    assert _stored_comment_ids(plan_id) == ['sr-review']
+    assert result['count_skipped_refusal'] == 0
+    assert result['refused_bots'] == []
+    assert result['participated_bots'] == [{'bot_kind': 'sourcery', 'evidence_kind': 'review_body'}]
