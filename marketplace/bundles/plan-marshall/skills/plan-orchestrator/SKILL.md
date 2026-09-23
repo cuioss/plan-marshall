@@ -25,7 +25,7 @@ The exit-code contract for every `python3 .plan/execute-script.py` call in this 
 /plan-orchestrator resume slug={slug}       # Re-anchor a fresh session from the persisted tree
 /plan-orchestrator close slug={slug}        # Freeze the epic into history.md
 /plan-orchestrator archive slug={slug}      # Relocate a closed epic to archived-orchestrators/
-/plan-orchestrator lessons                  # Lessons-handling mode (dated-slug epic)
+/plan-orchestrator lessons                  # Lessons-handling mode (fixed lessons-routing epic)
 /plan-orchestrator cleanup slug={slug}      # Review and reconcile the spec corpus, then ledger, archive, and restart-readiness
 /plan-orchestrator preflight plan={plan_id} # Write the per-plan client.toon pre-flight artifact (best-effort, never blocks)
 ```
@@ -71,7 +71,7 @@ Resolve the verb from the invocation (default: `status`), then load and follow t
 | `resume` | `workflow/resume.md` | Re-anchor a fresh session from status.json + epic.md |
 | `close` | `workflow/close.md` | Freeze epic.md into history.md and mark the epic closed |
 | `archive` | `workflow/archive.md` | Relocate a closed epic tree to `archived-orchestrators/` (post-close, mechanical) |
-| `lessons` | `workflow/lessons-handling.md` | Lessons-handling mode: dated-slug epic, local dedup/aggregate, cross-repo integrate-then-remove |
+| `lessons` | `workflow/lessons-handling.md` | Lessons-handling mode: sweeps into the fixed `lessons-routing` epic, local dedup/aggregate, each cluster routed outward to its owning sibling epic over the inbox channel, cross-repo integrate-then-remove |
 | `cleanup` | `workflow/cleanup.md` | Review and reconcile the spec corpus, then call the ledger-compaction stage, the archive step, and the restart-readiness verdict |
 | `preflight` | `workflow/preflight.md` | Write the per-plan `client.toon` pre-flight artifact (best-effort, never blocks) |
 
