@@ -64,13 +64,11 @@ jobs:
       # description instead of replacing it. Two rounds of stronger argument bought three
       # points, which is the measurement that closes the charter lane.
       #
-      # `/improve` is a DIFFERENT tool with a different prompt and no empty-list clause. It
-      # has been fully tuned in cuioss/cuioss-review-bot since #14 — commitable_code_suggestions
-      # publishes it as inline review comments, which plan-marshall's automatic-review already
-      # declares as participation evidence for this bot — and it has never once run on a real
-      # pull request in this repository: zero inline records across the whole corpus. The
-      # ordinary opt-in is a per-PR `cuioss-review-bot-improve` label that nobody applies, so
-      # the capability has been configured and unused.
+      # `/improve` is a DIFFERENT tool with a different prompt and no empty-list clause. It is
+      # tuned in cuioss/cuioss-review-bot — commitable_code_suggestions publishes it as inline
+      # review comments, which plan-marshall's automatic-review declares as participation
+      # evidence for this bot. This input runs it on every eligible pull request; the per-PR
+      # `cuioss-review-bot-improve` label is the opt-in only where the input is false.
       #
       # ⚠ KNOWN GAP, accepted deliberately for the pilot and NOT to be mistaken for a guarded
       # surface: the reusable workflow's fail-closed gate keys on the `review` output and is
