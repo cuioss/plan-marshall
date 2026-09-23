@@ -107,7 +107,9 @@ Read `title_token` from the returned TOON, then branch:
 
 ### (e) Handle the outcome once (state-present branch only), then clear
 
-This step runs ONLY on the state-present branch of step (d). The outcome handling branches by `consumer`:
+This step runs ONLY on the state-present branch of step (d).
+
+**Missing completion TOON — check FIRST, before either consumer branch below.** `run_in_background` is lossy: the harness can reap the job with zero output, and the wake then arrives as a state-present notification carrying no completion TOON. An absent TOON answers nothing — not success, not failure, not even "still running" — so NO next action is derived from it and `build-busy` is NOT cleared (clearing would retire the idempotency gate while the wait is still outstanding, and the next genuine completion would read an absent gate as an already-handled repeat and no-op — the wait would be lost silently). Instead treat the wait as still pending: log the loss, keep the state armed, and re-issue the wait through step (c) — or through the synchronous fallback in step (g) when the background primitive is unavailable. Only a present completion TOON reaches the consumer branches below.
 
 - **`ci-wait`** — read the wait handler's return TOON directly: `final_status`, `duration_sec`, and `failing_checks` (per the Consumers table above).
 
