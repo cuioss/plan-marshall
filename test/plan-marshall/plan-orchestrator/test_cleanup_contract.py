@@ -549,7 +549,7 @@ def _write_fixture_spec(plan_context) -> Path:
         'created': '2020-01-01T00:00:00Z',
     }
     write_ledger(_epic_dir(plan_context), doc)
-    spec =_epic_dir(plan_context) / 'plans' / 'PLAN-01-alpha.md'
+    spec = _epic_dir(plan_context) / 'plans' / 'PLAN-01-alpha.md'
     spec.parent.mkdir(parents=True, exist_ok=True)
     spec.write_text(
         '\n'.join(['# PLAN-01: Fixture', '', '## Claim Labels', '', _CLAIM]) + '\n',
