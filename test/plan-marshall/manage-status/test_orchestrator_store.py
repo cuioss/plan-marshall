@@ -89,6 +89,73 @@ class TestOrchestratorCli:
         assert 'phases' not in content
         assert content['phase'] == 'init'
 
+    def test_should_refuse_plans_field_through_cli_and_write_nothing(self, plan_context):
+        env = {'PLAN_BASE_DIR': str(plan_context.fixture_dir)}
+        run_script(
+            SCRIPT_PATH,
+            'create',
+            '--store',
+            'orchestrator',
+            '--plan-id',
+            'cli-queue-epic',
+            '--title',
+            'Queue Epic',
+            env_overrides=env,
+        )
+        header_path = _orchestrator_status_file(plan_context, 'cli-queue-epic')
+        before = header_path.read_bytes()
+
+        result = run_script(
+            SCRIPT_PATH,
+            'update-field',
+            '--plan-id',
+            'cli-queue-epic',
+            '--field',
+            'plans',
+            '--value',
+            '[]',
+            env_overrides=env,
+        )
+
+        assert 'status: error' in result.stdout
+        assert 'invalid_field' in result.stdout
+        assert header_path.read_bytes() == before
+        assert not (header_path.parent / 'queue').exists()
+
+    def test_should_write_anchor_file_through_cli(self, plan_context):
+        env = {'PLAN_BASE_DIR': str(plan_context.fixture_dir)}
+        run_script(
+            SCRIPT_PATH,
+            'create',
+            '--store',
+            'orchestrator',
+            '--plan-id',
+            'cli-anchor-epic',
+            '--title',
+            'Anchor Epic',
+            env_overrides=env,
+        )
+
+        result = run_script(
+            SCRIPT_PATH,
+            'update-field',
+            '--plan-id',
+            'cli-anchor-epic',
+            '--field',
+            'resume_anchor',
+            '--value',
+            'run decompose next',
+            env_overrides=env,
+        )
+
+        assert result.returncode == 0
+        assert 'status: success' in result.stdout
+        anchor = _orchestrator_status_file(plan_context, 'cli-anchor-epic').parent / 'resume_anchor.md'
+        assert anchor.read_text(encoding='utf-8') == 'run decompose next\n'
+        assert 'resume_anchor' not in json.loads(
+            _orchestrator_status_file(plan_context, 'cli-anchor-epic').read_text(encoding='utf-8')
+        )
+
     def test_should_require_phases_for_plans_store_create(self, plan_context):
         env = {'PLAN_BASE_DIR': str(plan_context.fixture_dir)}
 

@@ -15,6 +15,21 @@ from pathlib import Path
 from typing import Any, NamedTuple, NotRequired, TypedDict, cast
 
 from _locks_core import rmw_json
+from _orchestrator_ledger import (
+    LEDGER_ABSENT,
+    LEDGER_LEGACY,
+    LEDGER_OK,
+    LEDGER_UNREADABLE,
+    assemble_view,
+    create_ledger,
+    legacy_layout_error,
+    set_metadata_field,
+    write_anchor,
+    write_header_field,
+)
+from _orchestrator_ledger import header_path as ledger_header_path
+from _orchestrator_ledger import read_anchor as read_ledger_anchor
+from _orchestrator_ledger import read_header as read_ledger_header
 from constants import (
     DIR_ARCHIVED,
     DIR_PLANS,
@@ -33,7 +48,6 @@ from file_ops import (
     now_utc_iso,
     output_toon,
     read_json,
-    write_json,
 )
 from input_validation import require_valid_plan_id
 from marketplace_paths import PLAN_DIR_NAME, resolve_main_anchored_path
@@ -320,191 +334,184 @@ def in_progress_phases(status: dict[Any, Any]) -> OpenPhaseScan:
 # Orchestrator store (kind=orchestrator)
 # =============================================================================
 #
-# The orchestrator store holds epic-level status.json documents under
+# The orchestrator store holds each epic's ledger under
 # ``.plan/orchestrator/{slug}/`` — resolved via ``get_store_dir``, which
 # composes onto the git-tracked config tier, so an epic ledger is versioned
-# with the repository. The ``kind=orchestrator`` schema is deliberately lean —
-# a three-value ``phase`` field instead of the plan phase-transition
-# machinery:
+# with the repository. The ledger is split into per-concern files — the header
+# ``status.json``, ``resume_anchor.md``, and one ``queue/{PLAN-ID}.json`` per
+# plan row — and ``_orchestrator_ledger`` is the single owner of that layout:
+# every verb below reads and writes through it and composes no ledger path of
+# its own. The header is deliberately lean — a three-value ``phase`` field
+# instead of the plan phase-transition machinery, and no ``updated`` stamp:
 #
-#   {kind, title, phase (init|orchestrating|closed), workstreams[],
-#    plans[]{id,slug,workstream,status,plan_marshall_plan_id,pr,landing},
-#    resume_anchor, metadata, created, updated}
+#   status.json       {kind, title, phase (init|orchestrating|closed),
+#                      workstreams[], metadata, created}
+#   resume_anchor.md  the anchor text
+#   queue/{ID}.json   {id, slug, workstream, status, plan_marshall_plan_id,
+#                      pr, landing, seq}
 #
-# See ``standards/status-lifecycle.md`` for the schema contract.
+# A ``status.json`` that still carries ``plans`` or ``resume_anchor`` is the
+# monolithic layout; every verb refuses it with ``legacy_layout`` and writes
+# nothing. See ``standards/status-lifecycle.md`` for the schema contract.
 
 ORCHESTRATOR_STORE = 'orchestrator'
 ORCHESTRATOR_PHASES = ('init', 'orchestrating', 'closed')
-ORCHESTRATOR_LIST_FIELDS = frozenset({'workstreams', 'plans'})
+ORCHESTRATOR_LIST_FIELDS = frozenset({'workstreams'})
 ORCHESTRATOR_UPDATABLE_FIELDS = frozenset({'phase', 'resume_anchor'}) | ORCHESTRATOR_LIST_FIELDS
 
 
-def get_store_status_path(store: str, entry_id: str, allow_archived: bool = False) -> Path:
-    """Get the status.json path for an entry of a named store.
+def get_orchestrator_root(entry_id: str, allow_archived: bool = False) -> Path:
+    """Resolve an epic's ledger root under the orchestrator store.
 
     ``allow_archived`` threads into :func:`file_ops.get_store_dir`'s
-    read-fallback: for ``store='orchestrator'``, when ``True`` and the active
-    tree is absent, the archived home is resolved (when it exists). READ verbs
-    opt in; WRITE verbs keep the default ``False`` so an archived epic is never
-    mutated at the active path.
+    read-fallback: when ``True`` and the active tree is absent, the archived
+    home is resolved (when it exists). READ verbs opt in; WRITE verbs keep the
+    default ``False`` so an archived epic is never mutated at the active path.
     """
-    return get_store_dir(store, entry_id, allow_archived=allow_archived) / FILE_STATUS
+    return cast(Path, get_store_dir(ORCHESTRATOR_STORE, entry_id, allow_archived=allow_archived))
 
 
-def read_store_status(store: str, entry_id: str, allow_archived: bool = False) -> dict[Any, Any]:
-    """Read status.json for a store entry (empty dict when absent or malformed).
-
-    ``read_json`` already degrades a missing/unreadable/unparseable file to the
-    default ``{}``, but a status.json whose top-level JSON is valid-but-non-dict
-    (an array, a bare string, ``null``) would otherwise flow straight into
-    ``cast(dict, ...)`` and crash every downstream ``.get``/subscript caller.
-    Fall back to ``{}`` on any non-dict parse so callers always receive a dict.
-
-    ``allow_archived`` threads into :func:`get_store_status_path` so READ verbs
-    resolve an archived epic transparently when its active tree is absent.
-    """
-    data = read_json(get_store_status_path(store, entry_id, allow_archived=allow_archived))
-    if not isinstance(data, dict):
-        return {}
-    return cast(dict[Any, Any], data)
+def _orchestrator_error(plan_id: str, error: str, message: str, **extra: Any) -> dict[str, Any]:
+    """Build the orchestrator-store TOON error envelope."""
+    result: dict[str, Any] = {
+        'status': 'error',
+        'plan_id': plan_id,
+        'store': ORCHESTRATOR_STORE,
+        'error': error,
+        'message': message,
+    }
+    result.update(extra)
+    return result
 
 
-def write_store_status(store: str, entry_id: str, status: dict[Any, Any]) -> None:
-    """Write status.json for a store entry, stamping ``updated``."""
-    status['updated'] = now_utc_iso()
-    write_json(get_store_status_path(store, entry_id), status)
+def _probe_orchestrator_header(
+    args: argparse.Namespace, allow_archived: bool = False
+) -> tuple[Path, dict[str, Any] | None]:
+    """Validate the slug and probe the epic header, returning ``(root, refusal)``.
 
+    ``refusal`` is ``None`` when the header reads as a per-concern header, and
+    otherwise the error envelope the verb returns unchanged:
 
-def _require_orchestrator_status(args: argparse.Namespace, allow_archived: bool = False) -> dict[Any, Any] | None:
-    """Validate the slug and read the orchestrator status, TOON error when missing.
-
-    ``allow_archived`` threads into :func:`read_store_status`: READ verbs pass
-    ``True`` so an archived-only epic resolves from ``archived-orchestrators/``;
-    WRITE verbs keep the default ``False`` so an archived-only epic is absent at
-    the strict active path and refuses with the existing ``file_not_found``
-    contract (no resurrection at the active path).
+    * ``file_not_found`` — no header at the root. With ``allow_archived=False``
+      (every WRITE verb) an archived-only epic lands here too, so it is refused
+      rather than resurrected at the active path.
+    * ``legacy_layout`` — the header still carries the queue or the anchor; the
+      envelope names ``orchestrator migrate-layout``.
+    * ``header_unreadable`` — something occupies the header path but does not
+      read as a JSON object. Reported as its own state, never as an absent one.
     """
     require_valid_plan_id(args)
-    status = read_store_status(ORCHESTRATOR_STORE, args.plan_id, allow_archived=allow_archived)
-    if not status:
-        output_toon(
-            {
-                'status': 'error',
-                'plan_id': args.plan_id,
-                'store': ORCHESTRATOR_STORE,
-                'error': 'file_not_found',
-                'message': 'status.json not found in orchestrator store',
-            }
-        )
-        return None
-    return status
+    root = get_orchestrator_root(args.plan_id, allow_archived=allow_archived)
+    state, _header, detail = read_ledger_header(root)
+    if state == LEDGER_ABSENT:
+        return root, _orchestrator_error(args.plan_id, 'file_not_found', 'status.json not found in orchestrator store')
+    if state == LEDGER_LEGACY:
+        legacy = legacy_layout_error(args.plan_id)
+        return root, _orchestrator_error(args.plan_id, legacy['error'], legacy['message'], remedy=legacy['remedy'])
+    if state == LEDGER_UNREADABLE:
+        return root, _orchestrator_error(args.plan_id, 'header_unreadable', detail)
+    return root, None
 
 
 def cmd_orchestrator_create(args: argparse.Namespace) -> dict[str, Any] | None:
-    """Create a ``kind=orchestrator`` status.json under the orchestrator store."""
+    """Create a ``kind=orchestrator`` ledger: the header and an empty anchor.
+
+    ``--force`` rewrites the header and the anchor. The queue is never touched by
+    ``create``: a new ledger has no ``queue/`` directory, which every reader takes
+    as a measured empty queue.
+    """
     require_valid_plan_id(args)
-    status_path = get_store_status_path(ORCHESTRATOR_STORE, args.plan_id)
-    if status_path.exists() and not args.force:
-        return {
-            'status': 'error',
-            'plan_id': args.plan_id,
-            'store': ORCHESTRATOR_STORE,
-            'error': 'already_exists',
-            'message': 'status.json already exists (use --force to overwrite)',
-        }
-    now = now_utc_iso()
-    status: dict[str, Any] = {
-        'kind': 'orchestrator',
-        'title': args.title,
-        'phase': ORCHESTRATOR_PHASES[0],
-        'workstreams': [],
-        'plans': [],
-        'resume_anchor': '',
-        'metadata': {},
-        'created': now,
-        'updated': now,
-    }
-    write_json(status_path, status)
+    root = get_orchestrator_root(args.plan_id)
+    if ledger_header_path(root).exists() and not args.force:
+        return _orchestrator_error(
+            args.plan_id, 'already_exists', 'status.json already exists (use --force to overwrite)'
+        )
+    header = create_ledger(root, args.title, now_utc_iso())
     return {
         'status': 'success',
         'plan_id': args.plan_id,
         'store': ORCHESTRATOR_STORE,
         'kind': 'orchestrator',
-        'phase': status['phase'],
-        'file': str(status_path),
+        'phase': header['phase'],
+        'file': str(ledger_header_path(root)),
     }
 
 
 def cmd_orchestrator_read(args: argparse.Namespace) -> dict[str, Any] | None:
-    """Read a ``kind=orchestrator`` status.json."""
-    status = _require_orchestrator_status(args, allow_archived=True)
-    if status is None:
-        return None
-    return {
+    """Read an epic ledger as one assembled document.
+
+    ``plan`` carries the assembled view — the header fields, ``plans`` ordered by
+    ``(seq, id)``, and ``resume_anchor``. A row file that could not be read is
+    listed under ``unreadable_rows`` (its file and the reason) and is absent from
+    ``plans``: nothing is known about it, and naming it keeps that absence from
+    reading as "no such row".
+    """
+    root, refusal = _probe_orchestrator_header(args, allow_archived=True)
+    if refusal is not None:
+        return refusal
+    view = assemble_view(root)
+    if view.state != LEDGER_OK:
+        return _orchestrator_error(args.plan_id, 'ledger_unreadable', view.detail)
+    result: dict[str, Any] = {
         'status': 'success',
         'plan_id': args.plan_id,
         'store': ORCHESTRATOR_STORE,
-        'plan': status,
+        'plan': view.document,
     }
+    if view.unreadable_rows:
+        result['unreadable_rows'] = [dict(row) for row in view.unreadable_rows]
+    return result
 
 
 def cmd_orchestrator_update_field(args: argparse.Namespace) -> dict[str, Any] | None:
-    """Update one top-level field of a ``kind=orchestrator`` status.json.
+    """Update one field of an epic ledger.
 
-    ``phase`` is validated against :data:`ORCHESTRATOR_PHASES`;
-    list fields (``workstreams``, ``plans``) take a JSON-array ``--value``;
-    ``resume_anchor`` stores the value verbatim.
+    ``phase`` is validated against :data:`ORCHESTRATOR_PHASES`; ``workstreams``
+    takes a JSON-array ``--value``; both are header fields. ``resume_anchor``
+    stores the value verbatim in the anchor file. The queue is NOT a field: a
+    whole-queue rewrite cannot exist over per-row files, so the plan queue is
+    written only through ``orchestrator queue`` and ``plans`` is refused here
+    with ``invalid_field``.
     """
-    status = _require_orchestrator_status(args)
-    if status is None:
-        return None
     field = args.field
     if field not in ORCHESTRATOR_UPDATABLE_FIELDS:
-        return {
-            'status': 'error',
-            'plan_id': args.plan_id,
-            'store': ORCHESTRATOR_STORE,
-            'error': 'invalid_field',
-            'message': f'--field must be one of {sorted(ORCHESTRATOR_UPDATABLE_FIELDS)}, got: {field}',
-        }
+        require_valid_plan_id(args)
+        return _orchestrator_error(
+            args.plan_id,
+            'invalid_field',
+            f'--field must be one of {sorted(ORCHESTRATOR_UPDATABLE_FIELDS)}, got: {field}. '
+            'Nothing was written. The plan queue is written only through `orchestrator queue`.',
+        )
+    root, refusal = _probe_orchestrator_header(args)
+    if refusal is not None:
+        return refusal
     value: Any = args.value
     if field == 'phase' and value not in ORCHESTRATOR_PHASES:
-        return {
-            'status': 'error',
-            'plan_id': args.plan_id,
-            'store': ORCHESTRATOR_STORE,
-            'error': 'invalid_value',
-            'message': f'--value for phase must be one of {list(ORCHESTRATOR_PHASES)}, got: {value}',
-        }
+        return _orchestrator_error(
+            args.plan_id,
+            'invalid_value',
+            f'--value for phase must be one of {list(ORCHESTRATOR_PHASES)}, got: {value}',
+        )
     if field in ORCHESTRATOR_LIST_FIELDS:
         try:
             value = json.loads(value)
         except ValueError:
             value = None
         if not isinstance(value, list):
-            return {
-                'status': 'error',
-                'plan_id': args.plan_id,
-                'store': ORCHESTRATOR_STORE,
-                'error': 'invalid_value',
-                'message': f'--value for {field} must be a JSON array',
-            }
-    # Serialize the read-modify-write behind the shared O_EXCL-guarded
-    # rmw_json critical section (the same coordination core merge_lock uses):
-    # the mutation runs against the FRESH in-lock state, so a concurrent
-    # orchestrator session mutating a DIFFERENT field cannot be clobbered by a
-    # last-writer-wins over a stale read. The orchestrator status.json is
-    # main-anchored via get_store_dir('orchestrator', ...) (ADR-002), matching
-    # rmw_json's main-anchored contract.
-    outcome: dict[str, Any] = {}
-
-    def _mutate(state: dict[str, Any]) -> dict[str, Any]:
-        outcome['previous'] = state.get(field)
-        state[field] = value
-        state['updated'] = now_utc_iso()
-        return state
-
-    rmw_json(get_store_status_path(ORCHESTRATOR_STORE, args.plan_id), _mutate)
+            return _orchestrator_error(args.plan_id, 'invalid_value', f'--value for {field} must be a JSON array')
+    outcome: dict[str, Any]
+    if field == 'resume_anchor':
+        previous_anchor, _ = read_ledger_anchor(root)
+        write_anchor(root, value)
+        outcome = {'previous': previous_anchor or None}
+    else:
+        # The header write runs inside the header's own O_EXCL-guarded
+        # read-modify-write, so a concurrent session setting a DIFFERENT header
+        # field is not clobbered by a last-writer-wins over a stale read.
+        outcome = write_header_field(root, field, value)
+        if outcome.get('legacy'):
+            legacy = legacy_layout_error(args.plan_id)
+            return _orchestrator_error(args.plan_id, legacy['error'], legacy['message'], remedy=legacy['remedy'])
     result: dict[str, Any] = {
         'status': 'success',
         'plan_id': args.plan_id,
@@ -540,9 +547,9 @@ def cmd_orchestrator_metadata(args: argparse.Namespace) -> dict[str, Any] | None
     # falls through to the --set branch below and OVERWRITES, reporting
     # ``status: success`` while destroying the value the caller meant to extend
     # — the precise defect the flag was added to eliminate, reproduced on the
-    # store that never implemented it. The orchestrator store's list fields are
-    # served by ``update-field`` (JSON-array ``--value``); see manage-status
-    # SKILL.md § Canonical invocations.
+    # store that never implemented it. The orchestrator store's list field
+    # (``workstreams``) is served by ``update-field`` (JSON-array ``--value``);
+    # see manage-status SKILL.md § Canonical invocations.
     if getattr(args, 'append', False):
         return {
             'status': 'error',
@@ -558,40 +565,24 @@ def cmd_orchestrator_metadata(args: argparse.Namespace) -> dict[str, Any] | None
     # The --get read-path resolves an archived epic transparently; the --set
     # write-path stays strict so an archived-only epic refuses with
     # file_not_found (no resurrection at the active path).
-    status = _require_orchestrator_status(args, allow_archived=bool(args.get))
-    if status is None:
-        return None
+    root, refusal = _probe_orchestrator_header(args, allow_archived=bool(args.get))
+    if refusal is not None:
+        return refusal
     if args.set:
         if args.value is None:
-            return {
-                'status': 'error',
-                'plan_id': args.plan_id,
-                'store': ORCHESTRATOR_STORE,
-                'error': 'wrong_parameters',
-                'message': '--set requires --value; refusing to store a null metadata value',
-            }
-        # Serialize the metadata read-modify-write behind the shared
-        # O_EXCL-guarded rmw_json critical section (the coordination core
-        # merge_lock reuses). The mutation runs against the FRESH in-lock
-        # state and touches only status['metadata'][field], so a concurrent
-        # orchestrator session setting a different metadata field (or a
-        # different top-level field) is not lost to a last-writer-wins over a
-        # stale read. Main-anchored via get_store_dir (ADR-002).
+            return _orchestrator_error(
+                args.plan_id, 'wrong_parameters', '--set requires --value; refusing to store a null metadata value'
+            )
+        # The metadata write runs inside the header's O_EXCL-guarded
+        # read-modify-write and touches only header['metadata'][field], so a
+        # concurrent session setting a different metadata entry (or a different
+        # header field) is not lost to a last-writer-wins over a stale read.
         field = args.field
         value = args.value
-        outcome: dict[str, Any] = {}
-
-        def _mutate(state: dict[str, Any]) -> dict[str, Any]:
-            metadata = state.get('metadata')
-            if not isinstance(metadata, dict):
-                metadata = {}
-                state['metadata'] = metadata
-            outcome['previous'] = metadata.get(field)
-            metadata[field] = value
-            state['updated'] = now_utc_iso()
-            return state
-
-        rmw_json(get_store_status_path(ORCHESTRATOR_STORE, args.plan_id), _mutate)
+        outcome = set_metadata_field(root, field, value)
+        if outcome.get('legacy'):
+            legacy = legacy_layout_error(args.plan_id)
+            return _orchestrator_error(args.plan_id, legacy['error'], legacy['message'], remedy=legacy['remedy'])
         result: dict[str, Any] = {
             'status': 'success',
             'plan_id': args.plan_id,
@@ -603,7 +594,10 @@ def cmd_orchestrator_metadata(args: argparse.Namespace) -> dict[str, Any] | None
             result['previous_value'] = outcome['previous']
         return result
     if args.get:
-        metadata = status.get('metadata', {})
+        _state, header, _detail = read_ledger_header(root)
+        metadata = header.get('metadata', {})
+        if not isinstance(metadata, dict):
+            metadata = {}
         value = metadata.get(args.field)
         if value is None:
             return {

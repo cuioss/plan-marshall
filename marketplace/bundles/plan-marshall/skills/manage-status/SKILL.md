@@ -8,7 +8,7 @@ scope: plan
 
 # Manage Status Skill
 
-Manage status.json files with phase tracking, metadata, and lifecycle operations. Handles plan status storage (JSON), phase operations, metadata management, plan discovery, phase transitions, archiving, and routing. Additionally serves the lean `kind=orchestrator` status store: `create`/`read`/`metadata` accept `--store orchestrator`, and `update-field` sets the orchestrator schema's top-level fields — no phase-transition machinery applies to the orchestrator kind (see [status-lifecycle.md](standards/status-lifecycle.md)).
+Manage status.json files with phase tracking, metadata, and lifecycle operations. Handles plan status storage (JSON), phase operations, metadata management, plan discovery, phase transitions, archiving, and routing. Additionally serves the lean `kind=orchestrator` epic ledger: `create`/`read`/`metadata` accept `--store orchestrator`, and `update-field` sets the ledger's header fields and resume anchor — no phase-transition machinery applies to the orchestrator kind (see [status-lifecycle.md](standards/status-lifecycle.md)). The ledger's per-concern file layout is owned by the private `_orchestrator_ledger.py` module every orchestrator-store verb reads and writes through.
 
 ## Enforcement
 
@@ -1392,7 +1392,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status create
   [--store {plans|orchestrator}]
 ```
 
-`--phases` is required for the default `plans` store and ignored for `--store orchestrator` (the `kind=orchestrator` schema carries a single three-value `phase` field instead of a phase list).
+`--phases` is required for the default `plans` store and ignored for `--store orchestrator` (the `kind=orchestrator` header carries a single three-value `phase` field instead of a phase list). `--store orchestrator` writes the epic header `status.json` and an empty `resume_anchor.md`; it creates no queue — an absent `queue/` directory reads as a measured empty queue.
 
 ### read
 
@@ -1402,6 +1402,8 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status read \
 ```
 
 `read` accepts no `--phase`: phase-scoped step records are returned inside `metadata.phase_steps` of the bare `read` payload, so narrowing needs no flag. A `read --phase X` spelling is rejected at exit 2 naming `--phase` and the sibling verbs that declare it.
+
+With `--store orchestrator`, `plan` is the assembled epic ledger — the header fields, `plans` (every row file, ordered by `(seq, id)`) and `resume_anchor`. A row file that cannot be read is listed under `unreadable_rows` (`file`, `reason`) and is absent from `plans`; it is never reported as a row that does not exist.
 
 ### set-phase
 
@@ -1441,7 +1443,9 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status update
   [--store orchestrator]
 ```
 
-Orchestrator store only (`--store` defaults to `orchestrator`). Sets one top-level field of a `kind=orchestrator` status.json: `phase` (`init|orchestrating|closed`), `resume_anchor` (verbatim string), or the list fields `workstreams` / `plans` (JSON-array `--value`). The plans store has no generic field setter — plan status mutations go through the dedicated verbs.
+Orchestrator store only (`--store` defaults to `orchestrator`). Sets one field of a `kind=orchestrator` epic ledger: the header fields `phase` (`init|orchestrating|closed`) and `workstreams` (JSON-array `--value`), or `resume_anchor` (verbatim string, written to `resume_anchor.md`). The plan queue is not a field: it lives in one `queue/{PLAN-ID}.json` file per row and is written only through `orchestrator queue` (see `plan-orchestrator` Canonical invocations → `queue`), so `--field plans` returns `error: invalid_field` and writes nothing. The plans store has no generic field setter — plan status mutations go through the dedicated verbs.
+
+**The monolithic layout is refused.** Every orchestrator-store verb (`create` aside) first probes the epic header. A `status.json` that still carries `plans` or `resume_anchor` returns `error: legacy_layout` with a `remedy` naming `orchestrator migrate-layout --slug {slug}`, and writes nothing — there is no read-fallback. A header that exists but does not read as a JSON object returns `error: header_unreadable`, never `file_not_found`. The per-concern layout itself is the contract in `persona-plan-orchestrator/standards/orchestration-model.md` § Directory Layout.
 
 ### get-context
 

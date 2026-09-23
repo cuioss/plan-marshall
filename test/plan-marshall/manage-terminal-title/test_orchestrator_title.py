@@ -34,7 +34,13 @@ def _token(state: str, owner: str) -> dict:
 
 
 def _write_orchestrator_status(tmp_path, slug: str, extra: dict | None = None) -> None:
-    """Write a minimal kind=orchestrator status.json under the sandboxed store."""
+    """Write a header-only kind=orchestrator status.json under the sandboxed store.
+
+    The per-concern ledger keeps the queue in ``queue/`` and the anchor in
+    ``resume_anchor.md``, so the header carries neither — only ``kind``,
+    ``title``, ``phase``, ``workstreams``, ``metadata`` and an optional
+    ``title_token``, which is all the title seam reads.
+    """
     epic_dir = tmp_path / 'orchestrator' / slug
     epic_dir.mkdir(parents=True, exist_ok=True)
     status: dict = {
@@ -42,8 +48,6 @@ def _write_orchestrator_status(tmp_path, slug: str, extra: dict | None = None) -
         'title': 'Test Epic',
         'phase': 'orchestrating',
         'workstreams': [],
-        'plans': [],
-        'resume_anchor': '',
         'metadata': {},
     }
     if extra:
@@ -196,6 +200,39 @@ class TestOrchestratorStateRead:
         monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
 
         assert claude_runtime._read_orchestrator_title_state('') is None
+
+    def test_should_read_legacy_header_identically_because_the_seam_is_header_only(self, monkeypatch, tmp_path):
+        """Matched control pinning the title seam's deliberate exclusion from the
+        ledger layout module: it reads header keys only, so a monolithic
+        ``status.json`` still carrying ``plans`` and ``resume_anchor`` yields the
+        SAME state as a header-only one. If this fails, the seam has started
+        depending on queue or anchor content and must go through the layout
+        module (orchestration-model.md § Readers outside the layout module)."""
+        monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+        token = _token('lock-owned', owner='merge-lock')
+        _write_orchestrator_status(tmp_path, 'header-epic', extra={'title_token': token})
+        _write_orchestrator_status(
+            tmp_path,
+            'legacy-epic',
+            extra={
+                'title_token': token,
+                'plans': [{'id': 'PLAN-01', 'slug': 'first', 'status': 'running'}],
+                'resume_anchor': 'await PR #1 CI',
+            },
+        )
+
+        header_state = claude_runtime._read_orchestrator_title_state('header-epic')
+        legacy_state = claude_runtime._read_orchestrator_title_state('legacy-epic')
+
+        assert header_state is not None
+        assert legacy_state is not None
+        assert {k: v for k, v in header_state.items() if k != 'slug'} == {
+            k: v for k, v in legacy_state.items() if k != 'slug'
+        }
+        assert header_state['title_token'] == token
+        assert legacy_state['title_token'] == token
+        assert header_state == {'kind': 'orchestrator', 'slug': 'header-epic', 'title_token': token}
+        assert legacy_state == {'kind': 'orchestrator', 'slug': 'legacy-epic', 'title_token': token}
 
 
 class TestPushTitleTokenSeam:

@@ -6,7 +6,9 @@ read-fallback across the store-resolver seam.
 Covers the fourth deterministic ``orchestrator.py`` operation plus the
 read-fallback flags threaded through ``file_ops.get_store_dir`` /
 ``manage-status``'s orchestrator handlers, all under ``PLAN_BASE_DIR``
-isolation (via ``plan_context``):
+isolation (via ``plan_context``). Every seeded epic is a per-concern ledger —
+header ``status.json`` plus ``resume_anchor.md`` — written through
+``_orchestrator_ledger``'s own writer.
 
 - ``cmd_archive``: relocate a ``phase=closed`` epic (active → archived);
   refuse a non-closed epic (``not_closed``, no move); idempotent re-run of an
@@ -57,11 +59,21 @@ STATUS_SCRIPT_PATH = get_script_path('plan-marshall', 'manage-status', 'manage-s
 
 _orch = load_script_module(_ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT, 'orchestrator_script')
 
+#: The per-concern ledger layout owner. Fixtures seed an epic through its own
+#: writer, so a layout change reaches this module without a hand-written document.
+_ledger = load_script_module(
+    'plan-marshall', 'manage-status', '_orchestrator_ledger.py', '_orchestrator_ledger_archive'
+)
+
 cmd_archive = _orch.cmd_archive
 cmd_resume_summary = _orch.cmd_resume_summary
 cmd_scaffold = _orch.cmd_scaffold
 
 FIXED_TIMESTAMP = '2020-01-01T00:00:00Z'
+
+#: The resume-anchor text every seeded epic carries, so a relocation test can
+#: prove the anchor file travelled with the header.
+_SEEDED_ANCHOR = 'audit record'
 
 #: The slug every hoisted base below is parsed with. Each caller overrides it
 #: through :func:`_variant`, so the value is a placeholder rather than a fixture.
@@ -135,26 +147,28 @@ def _archived_epic_dir(plan_context, slug: str) -> Path:
 
 
 def _write_epic_status(epic_dir: Path, phase: str = 'closed') -> Path:
-    """Write a minimal kind=orchestrator status.json into ``epic_dir``."""
-    doc = {
+    """Seed a per-concern kind=orchestrator ledger into ``epic_dir``; return its header path.
+
+    The header carries no queue and no anchor — those live in ``queue/`` and
+    ``resume_anchor.md`` beside it — so every verb reads it as the current layout
+    rather than refusing it as ``legacy_layout``.
+    """
+    header = {
         'kind': 'orchestrator',
         'title': 'Fixture Epic',
         'phase': phase,
         'workstreams': ['WS-01'],
-        'plans': [],
-        'resume_anchor': 'audit record',
         'metadata': {},
         'created': FIXED_TIMESTAMP,
-        'updated': FIXED_TIMESTAMP,
     }
     epic_dir.mkdir(parents=True, exist_ok=True)
-    path = epic_dir / 'status.json'
-    path.write_text(json.dumps(doc, indent=2), encoding='utf-8')
-    return path
+    _ledger.write_layout(epic_dir, header, _SEEDED_ANCHOR, ())
+    header_file: Path = _ledger.header_path(epic_dir)
+    return header_file
 
 
 def _seed_active_epic(plan_context, slug: str, phase: str = 'closed') -> Path:
-    """Scaffold the active epic tree and write its status.json at ``phase``."""
+    """Scaffold the active epic tree and seed its per-concern ledger at ``phase``."""
     cmd_scaffold(_variant(_SCAFFOLD_ARGS, slug=slug))
     return _write_epic_status(_active_epic_dir(plan_context, slug), phase=phase)
 
@@ -202,15 +216,16 @@ class TestArchiveRelocation:
         assert not active.exists()
         assert (archived / 'status.json').is_file()
 
-    def test_should_preserve_status_json_across_the_move(self, plan_context):
+    def test_should_preserve_the_ledger_across_the_move(self, plan_context):
         _seed_active_epic(plan_context, 'preserve-epic', phase='closed')
 
         cmd_archive(_variant(_ARCHIVE_ARGS, slug='preserve-epic'))
 
-        moved = _archived_epic_dir(plan_context, 'preserve-epic') / 'status.json'
-        doc = json.loads(moved.read_text(encoding='utf-8'))
+        archived = _archived_epic_dir(plan_context, 'preserve-epic')
+        doc = json.loads((archived / 'status.json').read_text(encoding='utf-8'))
         assert doc['phase'] == 'closed'
         assert doc['kind'] == 'orchestrator'
+        assert (archived / 'resume_anchor.md').read_text(encoding='utf-8') == f'{_SEEDED_ANCHOR}\n'
 
 
 # =============================================================================
