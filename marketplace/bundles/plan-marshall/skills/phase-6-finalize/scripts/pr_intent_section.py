@@ -27,23 +27,38 @@ Behaviour, in order:
    This script authors NO second outline reader and never reads
    ``solution_outline.md`` directly — a second reader is precisely the
    source-of-truth duplication that produces drift.
-2. **No outline, or both sections absent/empty => emit NOTHING.** The body file
-   is left BYTE-IDENTICAL and the verb returns ``omitted: true`` with an explicit
-   reason. Never an empty heading, never a placeholder heading: a ``## Intent``
-   with nothing under it tells a reviewer less than no section at all, while
-   implying the intent was considered and found vacuous.
-3. **Outline present => render the draft**, enforce the budget, and append the
+2. **A reader that FAILED is an error, never an omission.** When the reader
+   cannot be run (``OSError``), exits non-zero, or prints an envelope that does
+   not parse, nothing is known about the outline, so the verb returns
+   ``status: error`` / ``error: outline_unreadable`` with a ``detail`` naming the
+   section and the cause, and exits 1 — the same shape as its
+   ``draft_unreadable`` / ``empty_draft`` / ``body_unreadable`` siblings. Reading
+   a failure as "no intent" would publish a PR that silently lacks a section the
+   plan did state.
+3. **A read that SUCCEEDED and found no outline, or both sections absent/empty =>
+   emit NOTHING.** The body file is left BYTE-IDENTICAL and the verb returns
+   ``omitted: true`` with an explicit reason. Never an empty heading, never a
+   placeholder heading: a ``## Intent`` with nothing under it tells a reviewer less
+   than no section at all, while implying the intent was considered and found
+   vacuous.
+4. **Outline present => render the draft**, enforce the budget, and append the
    section to the body file.
-4. **Budget with VISIBLE truncation.** See :data:`INTENT_BUDGET_CHARS`. A draft
-   over budget is truncated at a word boundary and the truncation marker is
-   appended INSIDE the budget, never added on top of it — so the rendered
-   section is never larger than the budget it claims to honour. **Silent
-   truncation is categorically forbidden**: a clipped intent that looks complete
-   is worse than an obviously-clipped one, because a reviewer cannot tell the
-   statement was cut off mid-thought.
+5. **Budget: cut at a sentence, and REPORT the overflow.** See
+   :data:`INTENT_BUDGET_CHARS`. A draft over budget is never cut mid-sentence:
+   only the complete sentences (or whole paragraphs) that fit are rendered — none
+   at all when even the first does not fit — and the truncation marker is
+   appended INSIDE the budget, never added on top of it, so the rendered section
+   is never larger than the budget it claims to honour. **Silent truncation is
+   categorically forbidden**: a clipped intent that looks complete is worse than
+   an obviously-clipped one. The return states the overflow explicitly, because
+   the body is appended to rather than replaced and ``ci pr view`` is the only way
+   to read it back — a caller learns what was dropped from this return or not at
+   all.
 
-Return TOON carries ``status``, ``omitted``, ``truncated``, ``chars_written``,
-and ``budget``.
+Return TOON carries ``status``, ``omitted``, ``truncated``, ``chars_written`` and
+``budget``; a rendered section additionally carries ``overflow`` (the draft did
+not fit), ``draft_chars`` (the draft's length) and ``chars_not_shown`` (how much
+of it the rendered section omits).
 
 The script is registered through ``generate_executor.py`` and consumed via the
 executor proxy, which injects ``PYTHONPATH`` for ``toon_parser`` and
@@ -53,9 +68,11 @@ executor proxy, which injects ``PYTHONPATH`` for ``toon_parser`` and
 from __future__ import annotations
 
 import argparse
+import re
 import subprocess
 import sys
 from pathlib import Path
+from typing import NamedTuple
 
 from toon_parser import parse_toon, serialize_toon
 
@@ -82,6 +99,20 @@ _TRUNCATION_MARKER = (
 )
 
 
+class OutlineUnreadable(Exception):
+    """The outline reader FAILED, so nothing is known about the outline's intent.
+
+    Distinct from a read that succeeded and found nothing: that one is an omission,
+    this one is an error the caller must surface. ``section`` names the section
+    being read and ``cause`` what went wrong.
+    """
+
+    def __init__(self, section: str, cause: str) -> None:
+        super().__init__(f'section {section}: {cause}')
+        self.section = section
+        self.cause = cause
+
+
 def _run_outline_read(plan_id: str, section: str) -> dict:
     """Read one outline section through the EXISTING manage-solution-outline reader.
 
@@ -90,9 +121,11 @@ def _run_outline_read(plan_id: str, section: str) -> dict:
     absent-file handling belong to that skill, and duplicating any of them here
     would create a second source of truth that drifts.
 
-    A non-zero exit, an unparseable envelope, or a non-success status all degrade
-    to an empty dict — "no outline content" — because every one of those means
-    the same thing for this script's purposes.
+    Returns the parsed envelope of a read that RAN — including a ``status: error``
+    envelope, which is the reader's own answer (the outline or the section is
+    absent). Raises :class:`OutlineUnreadable` when the reader could not be run, exited
+    non-zero, or printed an envelope that does not parse: none of those is an answer
+    about the outline, so none may be read as "no outline content".
     """
     try:
         completed = subprocess.run(
@@ -110,23 +143,27 @@ def _run_outline_read(plan_id: str, section: str) -> dict:
             text=True,
             check=False,
         )
-    except OSError:
-        return {}
+    except OSError as exc:
+        raise OutlineUnreadable(section, f'reader could not be run: {exc}') from exc
     if completed.returncode != 0:
-        return {}
+        stderr = completed.stderr.strip()
+        raise OutlineUnreadable(section, f'reader exited {completed.returncode}: {stderr or "no stderr"}')
     try:
         parsed = parse_toon(completed.stdout)
-    except (ValueError, KeyError):
-        return {}
-    return parsed if isinstance(parsed, dict) else {}
+    except (ValueError, KeyError) as exc:
+        raise OutlineUnreadable(section, f'reader envelope does not parse: {exc}') from exc
+    if not isinstance(parsed, dict):
+        raise OutlineUnreadable(section, 'reader envelope is not a mapping')
+    return parsed
 
 
 def has_outline_intent(plan_id: str) -> bool:
     """Return True when the plan's outline states an intent worth rendering.
 
     True as soon as ANY of the declared sections carries non-whitespace content.
-    False when there is no outline at all, or when every section is absent or
-    empty — the omit-entirely case.
+    False when every read succeeded and found no outline at all, or every section
+    absent or empty — the omit-entirely case. A reader failure is neither: it
+    propagates as :class:`OutlineUnreadable`.
     """
     for section in _OUTLINE_SECTIONS:
         payload = _run_outline_read(plan_id, section)
@@ -137,59 +174,97 @@ def has_outline_intent(plan_id: str) -> bool:
     return False
 
 
-def _truncate_at_word_boundary(text: str, limit: int) -> str:
-    """Return ``text`` cut to at most ``limit`` characters, ending on a word boundary.
+# Where a unit of prose ends: a sentence terminator (with any closing bracket, quote
+# or emphasis marker riding on it) followed by whitespace or the end of the text,
+# or a blank line ending a paragraph — so a bullet or heading without terminal
+# punctuation still ends as a whole unit. The pattern is matched against the WHOLE
+# draft, never against a clipped window, so a terminator that only looks final
+# because the window ends right after it (``3.5``, ``e.g.x``) is not a boundary.
+_SENTENCE_END = re.compile(r'[.!?][)\]"\'*_`]*(?=\s|$)|\n[ \t]*\n')
 
-    Falls back to a hard cut when the first ``limit`` characters contain no
-    whitespace to break on — a hard cut is still preferable to overrunning a
-    budget the caller has already reserved space against.
+
+def _complete_sentences_within(text: str, limit: int) -> str:
+    """Return the longest prefix of ``text`` that ends on a sentence or paragraph boundary within ``limit``.
+
+    Returns the empty string when not even the first sentence fits: rendering no
+    prose is honest, a sentence cut part-way is not — it reads as a complete
+    statement that says something different.
     """
     if len(text) <= limit:
         return text
-    window = text[:limit]
-    cut = window.rstrip()
-    boundary = cut.rfind(' ')
-    if boundary > 0:
-        cut = cut[:boundary]
-    return cut.rstrip()
+    cut = 0
+    for match in _SENTENCE_END.finditer(text):
+        # A sentence keeps its terminator; a paragraph break ends before the blank line.
+        candidate = match.start() if match.group().startswith('\n') else match.end()
+        if candidate > limit:
+            break
+        cut = candidate
+    return text[:cut].rstrip()
 
 
-def render_section(draft: str, budget: int = INTENT_BUDGET_CHARS) -> tuple[str, bool]:
+class IntentRender(NamedTuple):
+    """The rendered section and the overflow facts a caller reports."""
+
+    section: str
+    #: The draft did not fit the budget, so part of it is not shown.
+    truncated: bool
+    #: Length of the (stripped) draft.
+    draft_chars: int
+    #: How many of the draft's characters the rendered section omits.
+    chars_not_shown: int
+
+
+def render_section(draft: str, budget: int = INTENT_BUDGET_CHARS) -> IntentRender:
     """Render the ``## Intent`` section from ``draft``, honouring ``budget``.
 
-    Returns ``(section_text, truncated)``. The returned text NEVER exceeds
-    ``budget``: when the draft does not fit, the truncation marker's own length is
-    subtracted from the space available to the prose, so the marker lands INSIDE
-    the budget rather than pushing the section past it. That ordering is the whole
-    point — a marker appended on top of a budget-filling body would mean the
-    section silently overruns the cap it advertises.
+    The returned section NEVER exceeds ``budget``: when the draft does not fit, the
+    truncation marker's own length is subtracted from the space available to the
+    prose, so the marker lands INSIDE the budget rather than pushing the section past
+    it — a marker appended on top of a budget-filling body would mean the section
+    silently overruns the cap it advertises. The prose that remains is cut at a
+    sentence or paragraph boundary, never mid-sentence.
     """
     body = draft.strip()
     prefix = f'{_HEADING}\n\n'
     available = budget - len(prefix)
-
-    if len(body) <= available:
-        return prefix + body, False
-
     total = len(body)
+
+    if total <= available:
+        return IntentRender(prefix + body, False, total, 0)
+
     # Reserve the marker's rendered length BEFORE deciding how much prose fits.
     # The marker's own digits depend on the numbers it reports, so render it once
     # with a provisional count and reserve that length; the count only shrinks the
     # prose, never grows the section.
     provisional = _TRUNCATION_MARKER.format(shown=available, total=total)
-    prose_room = available - len(provisional)
-    if prose_room < 0:
-        prose_room = 0
-    prose = _truncate_at_word_boundary(body, prose_room)
+    prose_room = max(available - len(provisional), 0)
+    prose = _complete_sentences_within(body, prose_room)
     marker = _TRUNCATION_MARKER.format(shown=len(prose), total=total)
-    return prefix + prose + marker, True
+    return IntentRender(prefix + prose + marker, True, total, total - len(prose))
 
 
 def cmd_render(args: argparse.Namespace) -> int:
     """Append the rendered Intent section to the PR body file, or omit it entirely."""
     body_path = Path(args.body_path)
 
-    if not has_outline_intent(args.plan_id):
+    try:
+        outline_has_intent = has_outline_intent(args.plan_id)
+    except OutlineUnreadable as exc:
+        # Nothing is known about the outline, so neither rendering nor omitting is
+        # a supported answer. The body file is left untouched.
+        print(
+            serialize_toon(
+                {
+                    'status': 'error',
+                    'operation': 'render',
+                    'error': 'outline_unreadable',
+                    'detail': str(exc),
+                }
+            )
+        )
+        return 1
+
+    if not outline_has_intent:
         # Byte-identical body. No heading, no placeholder — see the module
         # docstring for why an empty section is worse than none.
         print(
@@ -238,7 +313,7 @@ def cmd_render(args: argparse.Namespace) -> int:
         )
         return 1
 
-    section, truncated = render_section(draft)
+    rendered = render_section(draft)
 
     try:
         existing = body_path.read_text(encoding='utf-8')
@@ -256,7 +331,7 @@ def cmd_render(args: argparse.Namespace) -> int:
         return 1
 
     separator = '' if existing.endswith('\n\n') else ('\n' if existing.endswith('\n') else '\n\n')
-    body_path.write_text(existing + separator + section + '\n', encoding='utf-8')
+    body_path.write_text(existing + separator + rendered.section + '\n', encoding='utf-8')
 
     print(
         serialize_toon(
@@ -264,9 +339,15 @@ def cmd_render(args: argparse.Namespace) -> int:
                 'status': 'success',
                 'operation': 'render',
                 'omitted': False,
-                'truncated': truncated,
-                'chars_written': len(section),
+                'truncated': rendered.truncated,
+                'chars_written': len(rendered.section),
                 'budget': INTENT_BUDGET_CHARS,
+                # The overflow, stated rather than left to be inferred from the body:
+                # the section is appended, and this return is where a caller learns
+                # how much of the draft a reviewer will not see.
+                'overflow': rendered.truncated,
+                'draft_chars': rendered.draft_chars,
+                'chars_not_shown': rendered.chars_not_shown,
             }
         )
     )
