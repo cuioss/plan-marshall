@@ -99,6 +99,20 @@ The calling skill MUST continue. Metrics are recorded on a best-effort basis —
 
 The key distinction: **if the target decided not to act because the environment does not support the operation, it is `no-op`; if the target tried and encountered a problem, it is `error`.**
 
+## Permission-Fix Operations (tightened no-op surface)
+
+`permission fix` on OpenCode is a writing surface, not a no-op surface:
+
+* `ensure`, `add`, `remove`, `configure`, and `web-apply` are real
+  writes against the `permission` settings block.
+* `consolidate` and `normalize` remain no-ops: they report `success`
+  without writing anything, mirroring the Claude target's contract
+  split.
+* `protect-path` is no longer in the no-op class. It is a writing deny:
+  it renders deny entries guarding the named directory in both the
+  tilde and the absolute spelling, and the caller must treat the
+  returned `success` as a completed write.
+
 ## Cross-References
 
 - `standards/contract.md` — per-operation TOON schemas listing which statuses each operation can return

@@ -444,7 +444,7 @@ class TestScriptsDelegateToRuntime:
 
 
 # =============================================================================
-# 3. OpenCode permission ops return an honest no-op (no fake-success)
+# 3. OpenCode permission ops succeed with real writes (validated backend)
 # =============================================================================
 
 

@@ -356,13 +356,28 @@ class TestPermissionFixProtectPath:
         assert result['error'] == 'invalid_settings'
         assert settings_path.read_bytes() == before
 
-    def test_opencode_declines_with_an_honest_noop(self) -> None:
-        """A target with no permission backend declines — it does not error."""
-        result = _parse(OpenCodeRuntime().permission_fix('global', 'protect-path', ['/tmp/creds'], False))
-        assert result['status'] == 'no-op'
-        assert 'OpenCode' in result['reason']
-        assert result['alternative']
-        assert 'changes_applied' not in result
+    def test_opencode_writes_a_real_deny(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """OpenCode protect-path is a writing deny with status success.
+
+        The pre-enforcement honest no-op is retired: the op renders deny
+        entries into ``opencode.json`` and reports the real deny reason,
+        never a no-op decline.
+        """
+        monkeypatch.chdir(tmp_path)
+        protected = str(tmp_path / 'creds')
+        result = _parse(OpenCodeRuntime().permission_fix('project', 'protect-path', [protected], False))
+        assert result['status'] == 'success'
+        assert result['fix_operation'] == 'protect-path'
+        assert result['changes_applied'] >= 1
+        assert result['rules_total'] >= 1
+        assert 'changes_applied' in result
+
+        written = json.loads((tmp_path / 'opencode.json').read_text(encoding='utf-8'))
+        permission = written['permission']
+        entries = {pattern: action for tool in ('read', 'bash') for pattern, action in permission.get(tool, {}).items()}
+        guarded = {pattern: action for pattern, action in entries.items() if 'creds' in pattern}
+        assert guarded, 'protect-path wrote no guard entries for the protected directory'
+        assert all(action == 'deny' for action in guarded.values())
 
     def test_the_sweep_population_matches_the_published_operation_set(self) -> None:
         """The independent oracle and the published tuple agree, in both directions.
@@ -390,7 +405,7 @@ class TestPermissionFixProtectPath:
 
     @pytest.mark.parametrize('operation', _OPERATION_ORACLE, ids=_OPERATION_ORACLE)
     def test_both_runtimes_accept_the_operation(self, tmp_path: Path, monkeypatch, operation: str) -> None:
-        """Claude succeeds and OpenCode declines — neither rejects the operation.
+        """Both runtimes succeed — neither rejects the operation.
 
         Both runtimes are driven per row, because the claim is a COMPARISON: an
         operation one accepts and the other rejects as ``invalid_operation`` is a
@@ -407,8 +422,7 @@ class TestPermissionFixProtectPath:
         opencode = _parse(OpenCodeRuntime().permission_fix('global', operation, args, True))
 
         assert claude['status'] == 'success', operation
-        expected_opencode_status = 'no-op' if operation == 'protect-path' else 'success'
-        assert opencode['status'] == expected_opencode_status, operation
+        assert opencode['status'] == 'success', operation
 
 
 class TestEveryMutatingBranchReportsAFailedWrite:

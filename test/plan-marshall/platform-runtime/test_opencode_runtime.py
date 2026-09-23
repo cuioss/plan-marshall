@@ -3,10 +3,13 @@
 """Tests for opencode_runtime.py — OpenCode implementation of all 26 operations.
 
 Asserts the no-op contract for session/display operations that OpenCode does not
-support, the honest no-op contract for the permission operations (OpenCode has no
-validated permission backend) and for the ``wait for`` waiting op (OpenCode holds
-no wait channel), the success/no-op paths for metrics operations, and error paths
-for invalid arguments across all 26 operations defined in the Runtime ABC.
+support, the two-tier deny/ask permission contract (OpenCode carries a real
+permission backend: ``to_opencode_grant`` threads ``allow``/``ask``/``deny``
+actions, ``protect-path`` emits a real writing deny) and the ``success`` no-op
+pins for the maintenance operations (``consolidate``, ``normalize``) and for
+the ``wait for`` waiting op (OpenCode holds no wait channel), the success/no-op
+paths for metrics operations, and error paths for invalid arguments across all
+26 operations defined in the Runtime ABC.
 """
 
 import json
@@ -15,7 +18,7 @@ import pathlib
 import pytest
 
 # conftest.py sets up PYTHONPATH so imports resolve without manual sys.path work.
-from opencode_runtime import OpenCodeRuntime
+from opencode_runtime import OpenCodeRuntime, to_opencode_grant
 from runtime_base import PERMISSION_FIX_OPERATIONS
 from toon_parser import parse_toon
 
@@ -445,6 +448,65 @@ def test_permission_fix_consolidate(
     assert result['operation'] == 'permission fix'
 
 
+def test_permission_fix_normalize_is_success_noop(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """permission_fix normalize is a success no-op on OpenCode, mirroring consolidate."""
+    monkeypatch.chdir(tmp_path)
+    result = _parse(runtime.permission_fix('project', 'normalize', [], False))
+    assert result['status'] == 'success'
+    assert result['operation'] == 'permission fix'
+    assert result['fix_operation'] == 'normalize'
+
+
+def test_to_opencode_grant_threads_deny_action() -> None:
+    """A deny(...) wrapper intent survives the grant translation as deny."""
+    category, pattern, action = to_opencode_grant('deny(git push *)')
+    assert category == 'bash'
+    assert pattern == 'git push *'
+    assert action == 'deny'
+
+
+def test_to_opencode_grant_threads_ask_action() -> None:
+    """An ask(...) wrapper intent survives the grant translation as ask."""
+    category, pattern, action = to_opencode_grant('ask(git push *)')
+    assert category == 'bash'
+    assert pattern == 'git push *'
+    assert action == 'ask'
+
+
+def test_to_opencode_grant_bare_form_defaults_to_allow() -> None:
+    """Bare forms default to allow — the carve-out permit needs no wrapper."""
+    category, pattern, action = to_opencode_grant('python3 .plan/execute-script.py *')
+    assert category == 'bash'
+    assert pattern == 'python3 .plan/execute-script.py *'
+    assert action == 'allow'
+
+
+def test_permission_fix_ensure_persists_deny_action(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """permission_fix ensure persists a deny grant into the bash map."""
+    monkeypatch.chdir(tmp_path)
+    result = _parse(runtime.permission_fix('project', 'ensure', ['deny(git push *)'], False))
+    assert result['status'] == 'success'
+    assert result['added'] == 1
+    settings = json.loads((tmp_path / 'opencode.json').read_text(encoding='utf-8'))
+    assert settings['permission']['bash']['git push *'] == 'deny'
+
+
+def test_permission_fix_ensure_persists_ask_action(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """permission_fix ensure persists an ask grant into the bash map."""
+    monkeypatch.chdir(tmp_path)
+    result = _parse(runtime.permission_fix('project', 'ensure', ['ask(git fetch *)'], False))
+    assert result['status'] == 'success'
+    assert result['added'] == 1
+    settings = json.loads((tmp_path / 'opencode.json').read_text(encoding='utf-8'))
+    assert settings['permission']['bash']['git fetch *'] == 'ask'
+
+
 def test_the_permission_fix_operation_population_is_not_empty() -> None:
     """The operation set must not be empty."""
     assert PERMISSION_FIX_OPERATIONS, 'the operation set must not be empty'
@@ -456,7 +518,8 @@ def test_permission_fix_handles_every_published_operation(
 ) -> None:
     """Every published operation name is accepted without error."""
     monkeypatch.chdir(tmp_path)
-    result = _parse(runtime.permission_fix('global', operation, [], False))
+    args: list = [str(tmp_path / 'arg')] if operation == 'protect-path' else []
+    result = _parse(runtime.permission_fix('global', operation, args, True))
     assert result['status'] in ('success', 'no-op')
 
 
