@@ -328,8 +328,9 @@ CLASSIFIED_MEMBERS: dict[str, str] = {
     '_is_self_authored_response': (
         'The THIRD comment-identity in force, alongside the filing dedup key and the currency '
         'ledger key. The widened dedup identity does NOT subsume it, and cannot: this '
-        'recogniser matches by BODY SHAPE (start-anchored on the batched-response heading), '
-        'while the dedup matches by IDENTITY. Every turn of the respond -> re-fetch cycle posts '
+        'recogniser matches by AUTHOR plus BODY SHAPE (the workflow login, and the start-anchored '
+        'batched-response heading), while the dedup matches by COMMENT identity. '
+        'Every turn of the respond -> re-fetch cycle posts '
         'a comment with a NEW comment_id, so no dedup key ever matches it; adding an updated_at '
         'term makes that key strictly MORE discriminating, so it can only ever file more, never '
         'less. Both stages must stay.'

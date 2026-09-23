@@ -8,9 +8,13 @@ lives here:
 
 - ``fetch_findings`` fetches PR review comments, applies the keyword pre-filter
   from ``standards/comment-patterns.json`` to drop obvious noise, excludes the
-  batched response body ``post_responses`` itself posts (recognized start-anchored
-  on ``_SELF_RESPONSE_HEADING``, counted in ``count_skipped_self_response``), then
-  files one ``pr-comment`` finding per surviving comment via ``manage-findings
+  batched response body ``post_responses`` itself posts (recognized by AUTHOR
+  IDENTITY — the workflow's own ``gh`` login — with the start-anchored
+  ``_SELF_RESPONSE_HEADING`` as the required secondary shape, counted in
+  ``count_skipped_self_response``), reports a workflow-authored comment carrying
+  the batch structural signature without the heading as an emitter bypass
+  (``count_skipped_emitter_bypass`` plus an ``(emitter-bypass)`` Q-Gate finding),
+  then files one ``pr-comment`` finding per surviving comment via ``manage-findings
   add``. The untrusted comment body is quarantined under ``raw_input.{body}``
   (never embedded raw in the top-level ``detail``); the batched ``manage-findings
   ingest`` pass promotes it to top-level only after ``validate_struct``. Because
@@ -100,6 +104,7 @@ from _github_pr import (
     THREAD_REPLY_MUTATION,
     _is_refusal_notice,
     _is_unrecognised_refusal,
+    get_viewer_login,
     measure_diff_size,
     refusal_cause,
     refusal_layers,
@@ -387,6 +392,15 @@ def _is_obvious_noise(body: str, bot_kind: str | None = None) -> bool:
 # re-ingestion loop while every test still passed.
 _SELF_RESPONSE_HEADING = '## Triage dispositions'
 
+# The STRUCTURAL SIGNATURE of the batched comment: the prefix of the per-disposition
+# section heading ``_build_batched_response_body`` renders for every entry
+# (``### In reply to comment_id: `<id>```). Hoisted into one constant for the same
+# no-drift reason as the heading above — the emitter renders it and
+# ``_is_emitter_bypass`` recognizes it, so the two cannot disagree. It is a
+# SUBSTRING test, not a line-anchored one: the provider fetch flattens newlines, so
+# the section heading does not reliably sit at the start of a line on the fetch side.
+_BATCHED_SECTION_PREFIX = '### In reply to comment_id:'
+
 # How many CONSECUTIVE self-authored responses — responses belonging to the
 # CURRENT, still-unconverged respond → re-fetch cycle — a single fetch may observe
 # before the producer reports the loop as exhausted. Mirrors
@@ -406,35 +420,136 @@ _SELF_RESPONSE_HEADING = '## Triage dispositions'
 _SELF_RESPONSE_LOOP_BOUND = 3
 
 
-def _is_self_authored_response(body: str) -> bool:
-    """Pre-filter: True if ``body`` is the batched response ``post_responses`` posted.
+def _normalized_login(login: str | None) -> str:
+    """Return ``login`` in the form two GitHub logins are compared in.
 
-    START-ANCHORED, never a substring search. ``post_responses`` transmits
-    thread-less dispositions as a NEW PR-level comment authored by the repo-owner
-    account (``bot_kind`` None, ``kind`` ``issue_comment``), which every other
-    pre-filter stage misses: it is unresolved, it is not a refusal, no ``ignore``
-    regex matches it, and the ``(bot_kind, comment_id)`` dedup cannot fire because
-    each turn posts a comment with a NEW id. Without this stage the barrier
-    re-ingests our own reply as a fresh unaddressed finding on every pass.
-
-    The start anchor is the false-positive boundary and is load-bearing: a human
-    comment that QUOTES the heading — as a blockquote (``> ## Triage
-    dispositions``) or inside prose — is real reviewer feedback and MUST still be
-    filed. Only leading whitespace is stripped before the prefix test, so a
-    blockquote marker or any preceding prose leaves the body unmatched.
-
-    This is deliberately NOT added to ``comment-patterns.json``: that file is the
-    shared *acknowledgment-noise* layer, and a self-authored response is not noise
-    — it is our own output. Folding a structural transmission-shape recognizer into
-    the noise set would repeat exactly the mistake ``_is_obvious_noise``'s
-    docstring warns against for refusals. It gets its own counter
-    (``count_skipped_self_response``) for the same reason, following the
-    established ``count_skipped_refusal`` precedent.
+    GitHub logins are case-insensitive, and an App identity is reported with a
+    ``[bot]`` suffix on one read path and without it on another, so both sides are
+    lower-cased and stripped of that suffix before comparison.
     """
+    text = str(login or '').strip().lower()
+    return text.removesuffix('[bot]')
+
+
+def _same_login(author: str | None, workflow_login: str | None) -> bool:
+    """True when ``author`` is the workflow's own identity ``workflow_login``."""
+    if not workflow_login:
+        return False
+    return _normalized_login(author) == _normalized_login(workflow_login)
+
+
+def _opens_with_response_heading(body: str) -> bool:
+    """True when ``body`` OPENS with the batched-response heading (start-anchored)."""
     return body.lstrip().startswith(_SELF_RESPONSE_HEADING)
 
 
-def _current_cycle_self_response_count(comments: list[dict]) -> int:
+def _is_self_authored_response(body: str, author: str | None, workflow_login: str | None) -> bool:
+    """Pre-filter: True if the comment is the batched response ``post_responses`` posted.
+
+    **Author identity is the PRIMARY key; the start-anchored heading is a REQUIRED
+    secondary shape.** ``post_responses`` transmits thread-less dispositions as a
+    NEW PR-level comment authored by the account ``gh`` is authenticated as — the
+    same account ``_github_pr.get_viewer_login`` resolves, passed here as
+    ``workflow_login``. Every other pre-filter stage misses that comment: it is
+    unresolved, it is not a refusal, no ``ignore`` regex matches it, and the
+    dedup cannot fire because each turn posts a comment with a NEW id. Without
+    this stage the barrier re-ingests our own reply as a fresh unaddressed finding
+    on every pass.
+
+    The trade, stated because both halves are load-bearing:
+
+    - **Identity alone is not enough.** The repo-owner account is both this
+      workflow's emitter AND a genuine reviewer, so keying on the author alone
+      would swallow the operator's own review comments. A workflow-authored
+      comment that carries no transmission shape is therefore still filed.
+    - **The heading alone is not enough.** A heading-only test drops another
+      author's comment that happens to open with the heading and cannot see a
+      workflow-authored comment that lost it. Another author's comment that opens
+      with, or quotes, the heading is therefore still filed; a workflow-authored
+      comment that lost the heading but kept the batch structure is reported by
+      :func:`_is_emitter_bypass` instead of being filed as review feedback.
+
+    The start anchor keeps its false-positive role: a blockquote (``> ## Triage
+    dispositions``) or preceding prose leaves the body unmatched.
+
+    **An unresolved identity** (``workflow_login`` is ``None`` — the viewer read
+    failed) falls back to the heading-only test, the behaviour before identity
+    keying. The caller DISCLOSES that fallback as ``workflow_identity:
+    unresolved`` in the fetch result; it is never silently treated as resolved.
+
+    This is deliberately NOT added to ``comment-patterns.json``: that file is the
+    shared *acknowledgment-noise* layer, and a self-authored response is not noise
+    — it is our own output. It gets its own counter
+    (``count_skipped_self_response``), following the ``count_skipped_refusal``
+    precedent.
+    """
+    if workflow_login is None:
+        return _opens_with_response_heading(body)
+    return _same_login(author, workflow_login) and _opens_with_response_heading(body)
+
+
+def _is_emitter_bypass(body: str, author: str | None, workflow_login: str | None) -> bool:
+    """True when a workflow-authored comment carries the batch signature WITHOUT the heading.
+
+    The batched comment ``_build_batched_response_body`` renders carries two shapes:
+    the opening ``_SELF_RESPONSE_HEADING`` and one ``_BATCHED_SECTION_PREFIX``
+    section per disposition. A comment authored by the workflow identity that
+    carries the section signature but does NOT open with the heading was composed
+    outside the emitter — an agent bypassing ``post_responses`` — so the
+    heading-keyed recognizer cannot see it. Re-keying on identity must not lose
+    that detection: such a comment files no ``pr-comment`` finding (it is our own
+    output, never review feedback), is counted in ``count_skipped_emitter_bypass``,
+    and is REPORTED as an ``(emitter-bypass)`` Q-Gate finding rather than dropped
+    silently.
+
+    Never fires under an unresolved identity: without a resolved login there is no
+    author to key on, and the heading-only fallback applies instead.
+    """
+    if workflow_login is None or not _same_login(author, workflow_login):
+        return False
+    return not _opens_with_response_heading(body) and _BATCHED_SECTION_PREFIX in body
+
+
+def _carries_transmission_shape(body: str) -> bool:
+    """True when ``body`` carries a shape only the workflow's own identity can classify.
+
+    The two stages keyed on the workflow identity decide nothing for a comment that
+    neither opens with the batched-response heading nor carries the batch section
+    signature — such a comment is filed whoever wrote it. The identity is therefore
+    read only when at least one fetched comment passes this test.
+    """
+    return _opens_with_response_heading(body) or _BATCHED_SECTION_PREFIX in body
+
+
+#: ``workflow_identity`` values in the fetch result. ``not_needed`` is distinct from
+#: ``unresolved``: no fetched comment carried a transmission shape, so no stage asked
+#: for the identity — nothing was degraded. ``unresolved`` means a stage needed it and
+#: the viewer read failed, so the heading-only fallback ran.
+WORKFLOW_IDENTITY_RESOLVED = 'resolved'
+WORKFLOW_IDENTITY_UNRESOLVED = 'unresolved'
+WORKFLOW_IDENTITY_NOT_NEEDED = 'not_needed'
+
+
+def _resolve_workflow_login(comments: list[dict]) -> tuple[str | None, str]:
+    """Return ``(login, workflow_identity)`` for the comments of one fetch.
+
+    The login is the account this workflow posts as, read at most ONCE per fetch
+    through ``_github_pr.get_viewer_login`` — the account the authenticated ``gh``
+    resolves to, which is the account ``_github_pr.post_pr_comment`` posts the
+    batched response under. It is read only when some comment carries a
+    transmission shape (:func:`_carries_transmission_shape`); otherwise no stage
+    needs it and ``workflow_identity`` is ``not_needed``. A failed read yields
+    ``(None, 'unresolved')`` — never a guessed login.
+    """
+    if not any(_carries_transmission_shape(str(c.get('body') or '')) for c in comments):
+        return None, WORKFLOW_IDENTITY_NOT_NEEDED
+    login, _error = get_viewer_login()
+    if not login:
+        return None, WORKFLOW_IDENTITY_UNRESOLVED
+    return login, WORKFLOW_IDENTITY_RESOLVED
+
+
+def _current_cycle_self_response_count(comments: list[dict], workflow_login: str | None) -> int:
     """Count the self-responses belonging to the CURRENT, still-unconverged cycle.
 
     The bounded guard needs the number of unbroken respond → re-fetch turns in the
@@ -453,6 +568,10 @@ def _current_cycle_self_response_count(comments: list[dict]) -> int:
     therefore keeps the termination guarantee for a genuine loop while historical
     converged cycles stop counting as evidence of an active one.
 
+    A self-response is recognized by the SAME predicate the filing pre-filter uses
+    (:func:`_is_self_authored_response`, keyed on ``workflow_login``), so the guard
+    and the filter can never disagree about which comments are ours.
+
     Two comment classes are transparent to the run — neither counts nor breaks it:
 
     - A **registered re-review trigger** (``is_registered_trigger_comment``) is
@@ -460,6 +579,8 @@ def _current_cycle_self_response_count(comments: list[dict]) -> int:
       break the run would let the pipeline reset its own guard forever by
       interleaving trigger → response → trigger → response, masking the very loop
       class this bound exists to terminate.
+    - An **emitter bypass** (:func:`_is_emitter_bypass`) is pipeline-authored too,
+      for the same reason: our own output must not reset our own guard.
 
     Everything else — any reviewer bot comment, any human comment — breaks the run:
     somebody other than this pipeline spoke, so the next self-response opens a new
@@ -477,6 +598,8 @@ def _current_cycle_self_response_count(comments: list[dict]) -> int:
 
     Args:
         comments: The raw provider comment records for the PR.
+        workflow_login: The workflow's own login, or ``None`` when it could not be
+            resolved (the heading-only fallback then applies).
 
     Returns:
         The number of consecutive most-recent self-authored responses.
@@ -485,10 +608,11 @@ def _current_cycle_self_response_count(comments: list[dict]) -> int:
     count = 0
     for comment in reversed(ordered):
         body = str(comment.get('body') or '')
-        if _is_self_authored_response(body):
+        author = comment.get('author')
+        if _is_self_authored_response(body, author, workflow_login):
             count += 1
             continue
-        if is_registered_trigger_comment(body):
+        if is_registered_trigger_comment(body) or _is_emitter_bypass(body, author, workflow_login):
             continue
         break
     return count
@@ -999,10 +1123,21 @@ def cmd_fetch_findings(args):
        It files no ``pr-comment`` finding: a refusal is a signal ABOUT the review,
        not feedback about the code, so the operator is never asked to triage it.
     3. SELF-AUTHORED RESPONSE — the batched disposition comment ``post_responses``
-       itself posted, recognized start-anchored by ``_is_self_authored_response``.
-       Counted in ``count_skipped_self_response``, NEVER in ``count_skipped_noise``
-       (it is our own output, not noise), and files no finding — re-ingesting it is
-       the non-terminating barrier loop this stage exists to close.
+       itself posted, recognized by ``_is_self_authored_response``: authored by the
+       workflow identity (read at most once per fetch via ``_resolve_workflow_login``,
+       and only when a comment carries a transmission shape) AND opening with the
+       batched-response heading. Counted in ``count_skipped_self_response``, NEVER
+       in ``count_skipped_noise`` (it is our own output, not noise), and files no
+       finding — re-ingesting it is the non-terminating barrier loop this stage
+       exists to close. An unresolved identity falls back to the heading-only test
+       and is disclosed as ``workflow_identity: unresolved``.
+    3b. EMITTER BYPASS — a workflow-authored comment carrying the batch structural
+       signature but NOT the heading (``_is_emitter_bypass``). Files no finding,
+       counted in ``count_skipped_emitter_bypass``, and persisted as ONE
+       ``(emitter-bypass)`` Q-Gate finding per fetch through
+       ``add_qgate_finding_checked`` (``emitter_bypass_hash_id``; a rejected
+       persist surfaces as ``emitter_bypass_persist_failed``), so the re-key on
+       identity keeps the bypass detectable instead of swallowing it.
     4. Obvious text noise — matched via ``_is_obvious_noise`` (lgtm, bot sigs, etc.),
        counted in ``count_skipped_noise``.
     5. UNRECOGNISED REFUSAL — a comment the enumerative arm
@@ -1260,6 +1395,13 @@ def cmd_fetch_findings(args):
     raw_comments: list[dict] = fetch_result.get('comments') or []
     count_fetched = len(raw_comments)
 
+    # The workflow's own identity — the account ``post_responses`` posts under —
+    # read at most ONCE per fetch, and only when a comment carries a transmission
+    # shape. It is the primary key of the self-response and emitter-bypass stages
+    # below. ``None`` with ``unresolved`` is the degraded state: both stages fall back
+    # to their heading-only behaviour and the result discloses it.
+    workflow_login, workflow_identity = _resolve_workflow_login(raw_comments)
+
     # Cross-iteration phantom-loop guard: a resolution from a prior finalize
     # iteration cannot always be matched back to the comment on the next fetch
     # (``review_body`` comments carry no ``thread_id``, and even thread-bearing
@@ -1451,6 +1593,9 @@ def cmd_fetch_findings(args):
     skipped_duplicate = 0
     skipped_refusal = 0
     skipped_self_response = 0
+    # comment_ids of workflow-authored comments carrying the batch signature without
+    # the heading — reported, never filed (pre-filter 3b).
+    emitter_bypass_ids: list[str] = []
     refused_set: set[str] = set()
     # Per refusing bot, the CAUSE of its refusal (size vs quota) — the orthogonal
     # axis to rate_limit_class's awaitability. ``size`` is sticky: a bot that emitted
@@ -1573,14 +1718,24 @@ def cmd_fetch_findings(args):
             continue
 
         # Pre-filter 3: SELF-AUTHORED RESPONSE — the batched disposition comment
-        # this workflow's own ``post_responses`` posted. Placed AFTER the refusal
-        # branch (a refusal must never be swallowed by an earlier stage) and
-        # BEFORE the noise filter, with its OWN counter rather than folding into
+        # this workflow's own ``post_responses`` posted, keyed on the workflow
+        # identity with the heading as the required secondary shape. Placed AFTER
+        # the refusal branch (a refusal must never be swallowed by an earlier stage)
+        # and BEFORE the noise filter, with its OWN counter rather than folding into
         # ``skipped_noise``: our own output is not acknowledgment noise. Without
         # this stage the reply is filed as a fresh pending finding, the pre-merge
         # barrier blocks on it, triage responds again, and the cycle never ends.
-        if _is_self_authored_response(body):
+        if _is_self_authored_response(body, author, workflow_login):
             skipped_self_response += 1
+            continue
+
+        # Pre-filter 3b: EMITTER BYPASS — a workflow-authored comment carrying the
+        # batch structural signature without the heading. Our own output, so it is
+        # never filed as review feedback; but it was composed outside the emitter,
+        # so it is REPORTED (counter + one ``(emitter-bypass)`` Q-Gate finding below)
+        # rather than dropped silently.
+        if _is_emitter_bypass(body, author, workflow_login):
+            emitter_bypass_ids.append(str(comment.get('id') or 'unknown'))
             continue
 
         # Pre-filter 4: obvious noise — the shared acknowledgment/automation
@@ -1768,14 +1923,23 @@ def cmd_fetch_findings(args):
             unrecognised_only_bots.add(_credited_bot)
 
     count_stored = len(stored_hashes)
+    skipped_emitter_bypass = len(emitter_bypass_ids)
     # Duplicates skipped by the cross-iteration guard, refusals surfaced through
-    # ``refused_bots``, and self-authored responses are all legitimate non-stores,
-    # so they drop out of expected_stored alongside the noise skips — otherwise
-    # every deduped comment, every surfaced refusal, and every correctly-excluded
-    # self response would spuriously trip the producer-mismatch Q-Gate. An
-    # unclassified bot's comments are NOT subtracted: under the warn-but-ingest
-    # rule they are stored like any other, so they belong in expected_stored.
-    expected_stored = count_fetched - skipped_noise - skipped_duplicate - skipped_refusal - skipped_self_response
+    # ``refused_bots``, self-authored responses, and reported emitter bypasses are
+    # all legitimate non-stores, so they drop out of expected_stored alongside the
+    # noise skips — otherwise every deduped comment, every surfaced refusal, and
+    # every correctly-excluded workflow comment would spuriously trip the
+    # producer-mismatch Q-Gate. An unclassified bot's comments are NOT subtracted:
+    # under the warn-but-ingest rule they are stored like any other, so they belong
+    # in expected_stored.
+    expected_stored = (
+        count_fetched
+        - skipped_noise
+        - skipped_duplicate
+        - skipped_refusal
+        - skipped_self_response
+        - skipped_emitter_bypass
+    )
 
     # Measure the diff ONLY when a size refusal was actually seen. A recorded cap
     # without the size that hit it is a claim the reader must take on trust, so the
@@ -1802,6 +1966,7 @@ def cmd_fetch_findings(args):
             f'count_skipped_duplicate={skipped_duplicate}, '
             f'count_skipped_refusal={skipped_refusal}, '
             f'count_skipped_self_response={skipped_self_response}, '
+            f'count_skipped_emitter_bypass={skipped_emitter_bypass}, '
             f'count_stored={count_stored}, '
             f'expected_stored={expected_stored}, '
             f'failed_comment_ids={store_failures}'
@@ -1837,7 +2002,7 @@ def cmd_fetch_findings(args):
     # completed three normal triage rounds. ``skipped_self_response`` remains the
     # honest total of what the filter dropped (it must, for ``expected_stored``);
     # only the loop predicate reads the narrower signal.
-    current_cycle_self_response = _current_cycle_self_response_count(raw_comments)
+    current_cycle_self_response = _current_cycle_self_response_count(raw_comments, workflow_login)
     self_response_loop_detected = current_cycle_self_response >= _SELF_RESPONSE_LOOP_BOUND
     loop_hash: str | None = None
     loop_persist_failure: dict[str, str] | None = None
@@ -1858,6 +2023,28 @@ def cmd_fetch_findings(args):
             ),
         )
 
+    # Emitter-bypass REPORT — the detection the identity re-key must not lose. One
+    # finding per fetch naming every bypassing comment, through the same
+    # checked-persist contract as the two findings above, so a rejected persist
+    # surfaces instead of silently losing the report.
+    bypass_hash: str | None = None
+    bypass_persist_failure: dict[str, str] | None = None
+    if emitter_bypass_ids:
+        bypass_hash, bypass_persist_failure = add_qgate_finding_checked(
+            plan_id=plan_id,
+            phase='5-execute',
+            source='qgate',
+            finding_type='pr-comment',
+            title=f'(emitter-bypass) github_pr fetch_findings PR #{pr_number}',
+            detail=(
+                f'{skipped_emitter_bypass} comment(s) authored by the workflow identity carry the batched '
+                f'response structure ({_BATCHED_SECTION_PREFIX!r}) without opening with '
+                f'{_SELF_RESPONSE_HEADING!r}: comment_ids={emitter_bypass_ids}. Such a comment was composed '
+                'outside post_responses. It is not filed as review feedback; transmit dispositions through '
+                'github_pr post_responses instead of composing the body by hand.'
+            ),
+        )
+
     result: dict[str, Any] = {
         'status': 'success',
         'operation': 'fetch_findings',
@@ -1869,6 +2056,14 @@ def cmd_fetch_findings(args):
         'count_skipped_duplicate': skipped_duplicate,
         'count_skipped_refusal': skipped_refusal,
         'count_skipped_self_response': skipped_self_response,
+        'count_skipped_emitter_bypass': skipped_emitter_bypass,
+        'emitter_bypass_hash_id': bypass_hash,
+        # How the workflow identity stood for this fetch. ``unresolved`` means the
+        # self-response stage ran on the heading-only fallback and the emitter-bypass
+        # stage could not run — a disclosed degradation, never a silent one.
+        # ``not_needed`` means no comment carried a transmission shape, so no stage
+        # asked for it.
+        'workflow_identity': workflow_identity,
         'count_self_response_current_cycle': current_cycle_self_response,
         'self_response_loop_detected': self_response_loop_detected,
         'self_response_loop_hash_id': loop_hash,
@@ -1959,6 +2154,9 @@ def cmd_fetch_findings(args):
     if loop_persist_failure is not None:
         result['self_response_loop_persist_failed'] = True
         result['self_response_loop_persist_failure'] = loop_persist_failure
+    if bypass_persist_failure is not None:
+        result['emitter_bypass_persist_failed'] = True
+        result['emitter_bypass_persist_failure'] = bypass_persist_failure
     return result
 
 
@@ -2123,13 +2321,15 @@ def _build_batched_response_body(entries: list[tuple[str, str]]) -> str:
         One markdown body with a heading and one anchored section per entry.
 
     The heading is ``_SELF_RESPONSE_HEADING`` — the SAME constant
-    ``_is_self_authored_response`` recognizes on the fetch side, so this emitted
-    shape and the shape that excludes it on re-fetch cannot drift apart.
+    ``_is_self_authored_response`` recognizes on the fetch side — and every section
+    opens with ``_BATCHED_SECTION_PREFIX`` — the SAME constant ``_is_emitter_bypass``
+    recognizes — so neither emitted shape can drift from the shape that excludes it
+    on re-fetch.
     """
     parts = [_SELF_RESPONSE_HEADING, '']
     for comment_id, reply_body in entries:
-        anchor = f'comment_id: `{comment_id}`' if comment_id else 'comment_id: _(unrecorded)_'
-        parts.append(f'### In reply to {anchor}')
+        anchor = f'`{comment_id}`' if comment_id else '_(unrecorded)_'
+        parts.append(f'{_BATCHED_SECTION_PREFIX} {anchor}')
         parts.append('')
         parts.append(reply_body)
         parts.append('')

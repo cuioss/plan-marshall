@@ -155,7 +155,12 @@ def _patch_provider(monkeypatch, comments, head_sha='deadbeef', head_committed_a
     timestamps predate the commit. It defaults to the empty string, the UNREADABLE case
     under which the arm keeps its SHA-only behaviour, so every case that is not about
     commit ordering is unaffected by the guard.
+
+    The workflow identity read (``get_viewer_login``) is stubbed to ``'oliver'`` —
+    the author of every ``_self_comment`` below — so the self-response stage runs on
+    its identity-keyed path rather than on the heading-only fallback.
     """
+    monkeypatch.setattr(github_pr, 'get_viewer_login', lambda: ('oliver', ''))
     monkeypatch.setattr(github_pr._github, 'check_auth', lambda: (True, ''))
     monkeypatch.setattr(github_pr._github, 'fetch_pr_head_committed_at', lambda pr_number: head_committed_at)
     monkeypatch.setattr(
