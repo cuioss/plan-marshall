@@ -348,12 +348,24 @@ ledger's own status vocabulary is therefore partitioned in two:
 
 | Lifecycle | Statuses | Means |
 |-----------|----------|-------|
-| `terminal` | `landed`, `shipped` | The work is finished; the surface is a record |
-| `active` | `staged`, `running`, `parked` | The work is outstanding; the claim is live |
+| `terminal` | `TERMINAL_PLAN_STATUSES` | The work is finished; the surface is a record |
+| `active` | `LIVE_PLAN_STATUSES` | The work is outstanding; the claim is live |
+
+⛔ **The declaring source is `plan-orchestrator/scripts/orchestrator.py`**, whose
+`LIVE_PLAN_STATUSES` and `TERMINAL_PLAN_STATUSES` sets `_epic_partition.py`
+imports directly — this document restates no member list, so a status added to
+the vocabulary reaches the partition with no edit here. What each status means is
+[`persona-plan-orchestrator/standards/orchestration-model.md` § Plan-Status Vocabulary](../../../../plan-marshall/skills/persona-plan-orchestrator/standards/orchestration-model.md#plan-status-vocabulary).
 
 `parked` is ACTIVE because paused work is unfinished work: a parked plan resumes
 onto the surface it declared, so retiring its claim would hand that surface away
 while it waits.
+
+A row that closed WITHOUT shipping — every status in the closed-unshipped bucket
+that section defines — is TERMINAL too. Its work
+is not outstanding, so its declared surface is a record exactly as a shipped
+plan's is, and keeping it in the competing set would contest a module on behalf of
+a plan that will never touch it.
 
 ⛔ The partition is over the ledger's **own status vocabulary** — never a
 hard-coded plan-id list, and never the presence of a landing file. A status the
