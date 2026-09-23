@@ -35,9 +35,9 @@ with every remaining gap a logged, visible exemption rather than a silent slip.
      outside the markers — never inside them. -->
 
 <!-- BEGIN GENERATED: resume-summary -->
-**Resume anchor**: PLAN-06 emitted and launched under operator order (pairwise disjoint vs PLAN-15, prep-ready clean). Next: operator runs PLAN-06 command with preamble, confirms start.
+**Resume anchor**: Drain 2026-09-23: 6/6 consumed (2 defects, PLAN-06 repoint, 2 folds); module-budget parked needs operator call.
 **Phase**: orchestrating
-**Inbox (derived)**: 1 queued, 97 archived
+**Inbox (derived)**: 0 queued, 103 archived
 **Queue** (staged, in order):
 1. PLAN-08 (WS-03)
 2. PLAN-09 (WS-03)
@@ -341,6 +341,23 @@ recipe-fix-argparse-rejection remediation carrier.
   total_tokens, steps). Reconciled as far as it goes against PR #1583 ground
   truth; a manual paste from that plan could still surface a required fact the
   inbox did not carry.
+- **q-gate §2.2 unsatisfiable on the light lane (drain 2026-09-23,
+  `implement-opencode-enforcement-parity-004.md`, unowned).** Two facets:
+  the 4-plan leaf ran §§2.1–2.7 over a dispatched subset of §§2.11/2.12
+  (subset scope not enforced as hard scope), and §2.2 assessments are
+  produced only by deep-lane analysis, so ANY light-lane plan flags every
+  file permanently. Candidate future staging (subset-scope enforcement +
+  light-lane carve-out or assessment-producing envelope step).
+- **Ledger-gate absolute-cleanliness vs concurrent ledger churn (drain
+  2026-09-23, `module-budget-campaign-completion-001.md` issue 2, `-002.md`,
+  `-003.md`, open — parked awaiting operator disposition).** Post-init,
+  post-refine, and handshake-verify gates refuse on any porcelain dirt, but
+  the dirt is operator-ledger state (drain/archive/status) the phase leaf
+  cannot author and, for mid-run drift, cannot prevent. Suggested shape:
+  scope assertions and the `main_dirty` invariant to non-ledger paths, or
+  compare before/after per dispatch; alternatively a quiesce rule pausing
+  ledger reconciliation at phase boundaries. Plan parked at 2-refine, no
+  transition taken — compliantly.
 - **Footprint helpers read stale local base (drain 2026-09-21,
   `test-fidelity-rules-follow-up-009.md`, unowned).** Should resolve the merge base;
   candidate future staging.
@@ -361,6 +378,10 @@ recipe-fix-argparse-rejection remediation carrier.
   exemptions (`--allow-bare-transition`, seeded `pr_title`). Observed-only
   (no defect): pre-init direct `.plan` reads (reads-only, self-contained);
   dirty-main override and merge-anyway grant (operator decisions on record).
+- **Recurrence drain 2026-09-23 (`plan-06-dispatch-roster-002.md`, folded
+  here).** Pre-init direct `.plan` reads again, self-reported, reads-only —
+  third instance of the pattern. No new defect; the pattern's home remains
+  the persona-conduct surface (PLAN-14) and the opencode guard (PLAN-15).
 - **Deliberate process bypass for speed, opencode (paste 2026-09-22,
   `run-3-carve-2-tools-permission-fix`, test-quality PLAN-181 carve 2, unowned).**
   Executing agent confesses delivering D1–D4 + PR #1582 while bypassing the
@@ -469,6 +490,12 @@ recipe-fix-argparse-rejection remediation carrier.
   spec citation, no double promotion. PLAN-14 needs no change. The underlying
   gap (corpus carries no promoted-by-epic field) is tracked in
   lessons-routing's own epic, not here.
+- **PLAN-06 spec repointed in-drain 2026-09-23 (`plan-06-dispatch-roster-001.md`,
+  observed).** Hand-Off, Write-Boundary, and two Claim evidence pointers still
+  named the pre-migration `.plan/local/orchestrator/` tier — corrected to
+  `.plan/orchestrator/` in place. Same message corroborates the PLAN-10 D2
+  re-opening with a `source_id` present, and the ledger-gate family from the
+  plan side; both folded into their homes, no duplicate defect.
 - **PLAN-05 shipped 2026-09-22 (PR #1583, squash 40cacf7d).** All 4 deliverables
   per spec; landing record at `landings/PLAN-05.md`. Landing message was
   narrative-only (incomplete-landing defect above). Owed per landing:

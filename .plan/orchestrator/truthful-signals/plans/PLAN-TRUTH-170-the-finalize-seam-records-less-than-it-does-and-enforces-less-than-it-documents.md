@@ -100,6 +100,7 @@ each at HEAD before scoping (verify-at-outline for all).
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/manage-status/scripts/_cmd_lifecycle.py` — `mark-step-done`'s parameter surface (D4a; absorbed from PLAN-TRUTH-156)
 - HYPOTHESIS: `marketplace/bundles/plan-marshall/skills/phase-6-finalize/scripts/` — `assert-step-recorded` (D4b; absorbed from PLAN-TRUTH-155 D10) (verify-at-outline)
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/phase-6-finalize/workflow/create-pr.md` — `pr_number` stamped at create-pr and never reconciled against the PR that actually merged (D0, D1; folded 2026-09-22)
+- OBSERVED: `marketplace/bundles/plan-marshall/skills/phase-6-finalize/scripts/ci_verify.py` — green-path terminal mark without `--force`, and the write result unchecked before reporting success (D1; folded 2026-09-22)
 
 ## Dependencies and Sequencing
 
@@ -128,6 +129,24 @@ CONSUMING half — *"four of sixteen retrospective aspects could not grade the p
 tier resolved against the dead PR"* — is **PLAN-TRUTH-174** D2's exact shape (a three-state `comparison`
 that reports its unresolvable state instead of silently not grading). Sequence 170 → 174, or split the
 lesson's two halves explicitly if both launch independently.
+
+## ⭐ FOLDED 2026-09-22 — ci_verify's green-path mark reports success without persisting, D1's exact shape twice over
+
+Paste-mode finding (observed against API-Sheriff `plan-28-closeout-residual-hardening`, defect in this
+repo's marketplace code): `ci_verify run` on a green CI result returns `step_marked_done: true`, but the
+step's live record keeps its earlier `loop_back` outcome across two green invocations — confirmed by a
+later manual `mark-step-done --outcome done --force` returning `previous_outcome: loop_back`.
+
+- OBSERVED: `_run_mark_step_done` (`ci_verify.py:389-417`) issues `mark-step-done --outcome done`
+  with no `--force` — corroborated in code. `_cmd_mark_step.py:518` refuses an outcome change without
+  `--force` and writes nothing, so over a `loop_back` record the write is a silent no-op. D1's sweep
+  ("every re-fireable step's terminal `--outcome done` branch") names this branch; D0's population
+  derivation absorbs it.
+- OBSERVED: the green path (`ci_verify.py:629-648`) discards the write's return value and reports
+  `'step_marked_done': True` unconditionally — corroborated in code. D1 sub-obligation added in the
+  same act: the reported flag must reflect the write result, never the path taken.
+
+Surface added above (`ci_verify.py`). Deliverable count unchanged (extends D0/D1, adds no D).
 
 ## Write-Boundary
 
