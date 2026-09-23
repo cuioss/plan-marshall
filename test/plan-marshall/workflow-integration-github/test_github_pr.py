@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""``github_pr.cmd_fetch_findings``: the self-response filter keyed on author identity.
+"""``github_pr.cmd_fetch_findings``: the workflow-identity-keyed pre-filter stages.
 
 The self-response stage recognises this workflow's own batched ``post_responses``
 comment by WHO wrote it — the workflow identity, read through
@@ -11,6 +11,12 @@ comment by WHO wrote it — the workflow identity, read through
 - workflow identity + neither shape        -> a genuine operator comment, filed
 - any other author + heading               -> filed; another author's comment is never ours
 - identity unreadable                      -> heading-only fallback, disclosed
+
+The own-trigger stage excludes a re-review trigger this workflow posted by
+PROVENANCE — workflow identity AND a stripped body equal to a registered trigger —
+counting it apart from noise and recording which trigger it matched. An
+exact-trigger body from anyone else keeps its noise disposition, and a comment that
+merely quotes a trigger is filed.
 
 The findings store is REAL (isolated via the autouse ``plan_context``
 ``PLAN_BASE_DIR`` sandbox); only the GitHub provider surface and the identity read
@@ -33,6 +39,10 @@ PLAN_IDS: tuple[str, ...] = (
     'gh-pr-identity-plain',
     'gh-pr-identity-self',
     'gh-pr-identity-unresolved',
+    'gh-pr-own-trigger-bot-quote',
+    'gh-pr-own-trigger-excluded',
+    'gh-pr-own-trigger-foreign-exact',
+    'gh-pr-own-trigger-unresolved',
 )
 github_pr = load_script_module('plan-marshall', 'workflow-integration-github', 'github_pr.py', 'github_pr')
 _findings_core = load_script_module('plan-marshall', 'manage-findings', '_findings_core.py', '_findings_core')
@@ -262,3 +272,112 @@ def test_emitter_and_recognizer_share_the_section_signature():
     body = _batched_body(comment_id='c9')
     assert github_pr._BATCHED_SECTION_PREFIX + ' `c9`' in body
     assert body.startswith(github_pr._SELF_RESPONSE_HEADING)
+
+
+# ============================================================================
+# Own-trigger exclusion by provenance
+# ============================================================================
+
+
+def _registered_triggers() -> list[str]:
+    """Every registered re-review trigger, derived from the bot registry.
+
+    The same data the trigger poster sends and ``is_registered_trigger_comment``
+    reads, so the cases below exercise the real registered set rather than a
+    hand-copied string. Guarded non-empty: an empty registry would let every case
+    pass over no trigger at all.
+    """
+    registry = github_pr.bot_registry
+    triggers = sorted({t.strip() for t in (registry.trigger_comment(k) for k in registry.bot_kinds()) if t.strip()})
+    assert triggers, 'bot registry declares no re-review trigger — the own-trigger cases would be vacuous'
+    return triggers
+
+
+def test_workflow_authored_trigger_is_excluded_by_provenance_and_reported(plan_context, monkeypatch):
+    """A trigger this workflow posted is excluded in its own counter and recorded with its trigger.
+
+    Fail-first case: before the provenance stage the same comment was dropped inside
+    the noise filter and counted in ``count_skipped_noise``, with no record of which
+    trigger it was. Every registered trigger is covered, and one is padded with
+    whitespace to pin that the recorded trigger is the stripped, registered form.
+    """
+    plan_id = 'gh-pr-own-trigger-excluded'
+    triggers = _registered_triggers()
+    comments = [_comment(f'trig-{i}', WORKFLOW_LOGIN, trigger) for i, trigger in enumerate(triggers)]
+    comments.append(_comment('trig-padded', WORKFLOW_LOGIN, f'\n  {triggers[0]}  \n'))
+    _patch_provider(monkeypatch, comments)
+
+    result = _run_fetch(plan_id)
+
+    assert result['status'] == 'success'
+    assert result['workflow_identity'] == github_pr.WORKFLOW_IDENTITY_RESOLVED
+    assert result['count_skipped_own_trigger'] == len(triggers) + 1
+    assert result['count_skipped_noise'] == 0
+    assert result['count_stored'] == 0
+    assert _stored_comment_ids(plan_id) == []
+    assert result['producer_mismatch_hash_id'] is None
+    expected = [{'comment_id': f'trig-{i}', 'trigger': trigger} for i, trigger in enumerate(triggers)]
+    expected.append({'comment_id': 'trig-padded', 'trigger': triggers[0]})
+    assert result['own_trigger_exclusions'] == expected
+
+
+def test_another_authors_exact_trigger_keeps_the_noise_disposition(plan_context, monkeypatch):
+    """Provenance, not shape: the same exact trigger from anyone else is not excluded as ours."""
+    plan_id = 'gh-pr-own-trigger-foreign-exact'
+    trigger = _registered_triggers()[0]
+    _patch_provider(monkeypatch, [_comment('theirs-trig', OTHER_AUTHOR, trigger)])
+
+    result = _run_fetch(plan_id)
+
+    assert result['count_skipped_own_trigger'] == 0
+    assert result['own_trigger_exclusions'] == []
+    assert result['count_skipped_noise'] == 1
+    assert result['count_stored'] == 0
+
+
+def test_bot_comment_quoting_a_trigger_is_ingested(plan_context, monkeypatch):
+    """Matched negative control: a genuine bot review comment that quotes a trigger string is filed.
+
+    Quoting is not an exact match, so the comment is neither an own trigger nor
+    trigger noise — it is review feedback and must reach the store.
+    """
+    plan_id = 'gh-pr-own-trigger-bot-quote'
+    trigger = _registered_triggers()[0]
+    body = (
+        'Consider handling the None case here before dereferencing the parsed config; '
+        f'once that guard is in place, post `{trigger}` so the new commit gets a fresh pass.'
+    )
+    bot_comment = {
+        'id': 'bot-quote-1',
+        'author': 'coderabbitai',
+        'thread_id': 'PRRT_quote',
+        'kind': 'inline',
+        'body': body,
+        'path': 'src/config.py',
+        'line': 12,
+        'resolved': False,
+    }
+    _patch_provider(monkeypatch, [bot_comment])
+
+    result = _run_fetch(plan_id)
+
+    assert result['count_skipped_own_trigger'] == 0
+    assert result['count_skipped_noise'] == 0
+    assert result['count_stored'] == 1
+    assert _stored_comment_ids(plan_id) == ['bot-quote-1']
+
+
+def test_unresolved_identity_keeps_a_workflow_trigger_as_noise_and_discloses(plan_context, monkeypatch):
+    """Without a readable identity nothing can be attributed to the workflow: noise, disclosed."""
+    plan_id = 'gh-pr-own-trigger-unresolved'
+    trigger = _registered_triggers()[0]
+    identity_reads = _patch_provider(monkeypatch, [_comment('trig-1', WORKFLOW_LOGIN, trigger)], login=None)
+
+    result = _run_fetch(plan_id)
+
+    assert identity_reads == [1]
+    assert result['workflow_identity'] == github_pr.WORKFLOW_IDENTITY_UNRESOLVED
+    assert result['count_skipped_own_trigger'] == 0
+    assert result['own_trigger_exclusions'] == []
+    assert result['count_skipped_noise'] == 1
+    assert result['count_stored'] == 0

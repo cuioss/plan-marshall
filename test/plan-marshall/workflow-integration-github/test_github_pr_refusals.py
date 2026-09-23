@@ -452,24 +452,25 @@ def test_unclassified_bot_comments_are_ingested_and_reported(plan_context, monke
     assert {'coderabbit', 'cuioss-review-bot', 'sourcery'} <= bot_kinds
 
 
-def test_pipeline_trigger_is_noise_while_a_rate_limit_notice_is_a_refusal(plan_context, monkeypatch):
-    """A pipeline trigger is noise; a rate-limit notice is a REFUSAL, and the two differ.
+def test_own_pipeline_trigger_and_a_rate_limit_notice_are_counted_apart(plan_context, monkeypatch):
+    """Our own trigger is excluded by provenance; a rate-limit notice is a REFUSAL.
 
     Over a comment set carrying (a) a ``@coderabbitai review`` re-review trigger
     comment this workflow itself posts, (b) a CodeRabbit rate-limit status notice
     posted in place of a review, and (c) a genuine substantive reviewer comment,
     ``fetch_findings`` stores ONLY the genuine comment — but the two non-stores are
-    accounted for DIFFERENTLY. The trigger is noise (breaking the re-review feedback
-    loop). The rate-limit notice is positive evidence CodeRabbit declined to review,
-    so it lands in ``count_skipped_refusal`` and names the bot in ``refused_bots``
-    instead of vanishing into the noise count. Neither raises a
-    ``(producer-mismatch)`` Q-Gate false-positive.
+    accounted for DIFFERENTLY, and neither is noise. The trigger is authored by the
+    workflow identity, so it is excluded by PROVENANCE into
+    ``count_skipped_own_trigger`` (breaking the re-review feedback loop). The
+    rate-limit notice is positive evidence CodeRabbit declined to review, so it
+    lands in ``count_skipped_refusal`` and names the bot in ``refused_bots``.
+    Neither raises a ``(producer-mismatch)`` Q-Gate false-positive.
     """
     plan_id = 'gh-pr-barrier-noise'
     comments = [
         # (a) Pipeline-authored re-review trigger — the exact registered coderabbit
-        # trigger string. Dropped regardless of author (the recognizer is
-        # author-agnostic: the pipeline posts it under the authenticated account).
+        # trigger string, authored by the workflow identity ``_patch_provider``
+        # stubs (``oliver``), so it is this workflow's own trigger.
         {
             'id': 'trigger-1',
             'author': 'oliver',
@@ -514,9 +515,11 @@ def test_pipeline_trigger_is_noise_while_a_rate_limit_notice_is_a_refusal(plan_c
     assert result['status'] == 'success'
     # Only the genuine reviewer comment survives.
     assert result['count_stored'] == 1
-    # The pipeline-authored trigger is noise...
-    assert result['count_skipped_noise'] == 1
-    # ...but the rate-limit notice is a REFUSAL, counted and attributed separately.
+    # The pipeline-authored trigger is excluded by provenance, not as noise...
+    assert result['count_skipped_own_trigger'] == 1
+    assert result['own_trigger_exclusions'] == [{'comment_id': 'trigger-1', 'trigger': '@coderabbitai review'}]
+    assert result['count_skipped_noise'] == 0
+    # ...and the rate-limit notice is a REFUSAL, counted and attributed separately.
     # Collapsing it into count_skipped_noise is what hid a declined review.
     assert result['count_skipped_refusal'] == 1
     assert result['refused_bots'] == ['coderabbit']
@@ -780,8 +783,9 @@ def test_interleaved_pipeline_triggers_do_not_reset_the_run(plan_context, monkey
     assert result['count_self_response_current_cycle'] == github_pr._SELF_RESPONSE_LOOP_BOUND
     assert result['self_response_loop_detected'] is True
     assert result['self_response_loop_hash_id']
-    # The triggers are still dropped as pipeline noise, and the accounting balances.
-    assert result['count_skipped_noise'] == 2
+    # The triggers are excluded as this workflow's own, and the accounting balances.
+    assert result['count_skipped_own_trigger'] == 2
+    assert result['count_skipped_noise'] == 0
     assert result['count_stored'] == 1
     assert result['producer_mismatch_hash_id'] is None
 

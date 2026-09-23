@@ -14,6 +14,9 @@ lives here:
   ``count_skipped_self_response``), reports a workflow-authored comment carrying
   the batch structural signature without the heading as an emitter bypass
   (``count_skipped_emitter_bypass`` plus an ``(emitter-bypass)`` Q-Gate finding),
+  excludes the re-review triggers this workflow itself posted by provenance
+  (workflow identity plus an exact registered trigger body, counted in
+  ``count_skipped_own_trigger`` and listed in ``own_trigger_exclusions``),
   then files one ``pr-comment`` finding per surviving comment via ``manage-findings
   add``. The untrusted comment body is quarantined under ``raw_input.{body}``
   (never embedded raw in the top-level ``detail``); the batched ``manage-findings
@@ -332,14 +335,18 @@ def _is_obvious_noise(body: str, bot_kind: str | None = None) -> bool:
     re-ingestion; its own ``count_skipped_self_response``), both of which answer
     questions the noise count must not absorb.
 
-    One further pipeline-noise class is folded in ahead of the three layers,
-    reusing an existing data source rather than new patterns:
+    One further class is folded in ahead of the three layers, reusing an existing
+    data source rather than new patterns:
 
     - REGISTERED TRIGGER — a comment whose whitespace-stripped body EQUALS a
       registered bot re-review trigger (``github_re_review.is_registered_trigger_comment``,
-      derived from ``bot_registry``) is a pipeline-authored re-review request this
-      workflow itself posted, not reviewer feedback. Checked for every comment
-      (bot- or human-authored), since the pipeline may post under either account.
+      derived from ``bot_registry``) is a re-review request, not reviewer feedback.
+      A trigger THIS workflow posted never reaches this predicate: it is excluded
+      by provenance at the earlier own-trigger stage of ``cmd_fetch_findings``
+      (:func:`_is_own_trigger_comment`), counted in ``count_skipped_own_trigger``
+      and reported per comment. What remains here is an exact-trigger body from any
+      OTHER author, or from the workflow account when its identity could not be
+      read — both keep this noise disposition.
 
     **A REFUSAL IS NOT NOISE AND NO ARM OF THE REFUSAL-RECOGNITION STACK IS
     CONSULTED HERE.** None of the arms named in ``_github_pr.REFUSAL_LAYERS`` runs
@@ -510,21 +517,52 @@ def _is_emitter_bypass(body: str, author: str | None, workflow_login: str | None
     return not _opens_with_response_heading(body) and _BATCHED_SECTION_PREFIX in body
 
 
-def _carries_transmission_shape(body: str) -> bool:
-    """True when ``body`` carries a shape only the workflow's own identity can classify.
+def _is_own_trigger_comment(body: str, author: str | None, workflow_login: str | None) -> bool:
+    """True when the comment is a re-review trigger THIS workflow posted.
 
-    The two stages keyed on the workflow identity decide nothing for a comment that
-    neither opens with the batched-response heading nor carries the batch section
-    signature — such a comment is filed whoever wrote it. The identity is therefore
-    read only when at least one fetched comment passes this test.
+    Exclusion by PROVENANCE, not by body shape: the stripped body must EQUAL a
+    registered bot re-review trigger (``github_re_review.is_registered_trigger_comment``,
+    derived from ``bot_registry`` — the same data source the trigger poster reads)
+    AND the author must be the workflow identity, the account
+    ``github_re_review._ReReviewStrategy.request_fresh_review`` posts the trigger
+    under. Both halves are required:
+
+    - An exact-trigger body from ANY other author is not ours, so it is not excluded
+      here; it keeps the noise disposition :func:`_is_obvious_noise` gives it.
+    - A body that merely QUOTES a trigger string is not an exact match, so it is not
+      a trigger at all and is ingested like any other comment.
+
+    Never fires under an unresolved identity: without a resolved login there is no
+    author to key on, so the comment keeps the noise disposition and the fetch
+    result discloses the degradation as ``workflow_identity: unresolved``.
     """
+    if workflow_login is None or not _same_login(author, workflow_login):
+        return False
+    return is_registered_trigger_comment(body)
+
+
+def _carries_transmission_shape(body: str) -> bool:
+    """True when ``body`` carries the batched-response heading or section signature."""
     return _opens_with_response_heading(body) or _BATCHED_SECTION_PREFIX in body
 
 
+def _needs_workflow_identity(body: str) -> bool:
+    """True when ``body`` carries a shape only the workflow's own identity can classify.
+
+    The stages keyed on the workflow identity — self-response, emitter bypass, and
+    own trigger — decide nothing for a comment that carries no transmission shape
+    (:func:`_carries_transmission_shape`) and is not a registered trigger; such a
+    comment is classified the same whoever wrote it. The identity is therefore read
+    only when at least one fetched comment passes this test.
+    """
+    return _carries_transmission_shape(body) or is_registered_trigger_comment(body)
+
+
 #: ``workflow_identity`` values in the fetch result. ``not_needed`` is distinct from
-#: ``unresolved``: no fetched comment carried a transmission shape, so no stage asked
-#: for the identity — nothing was degraded. ``unresolved`` means a stage needed it and
-#: the viewer read failed, so the heading-only fallback ran.
+#: ``unresolved``: no fetched comment carried a transmission shape or a registered
+#: trigger, so no stage asked for the identity — nothing was degraded. ``unresolved``
+#: means a stage needed it and the viewer read failed, so the heading-only fallback
+#: ran and a workflow-authored trigger kept its noise disposition.
 WORKFLOW_IDENTITY_RESOLVED = 'resolved'
 WORKFLOW_IDENTITY_UNRESOLVED = 'unresolved'
 WORKFLOW_IDENTITY_NOT_NEEDED = 'not_needed'
@@ -536,12 +574,12 @@ def _resolve_workflow_login(comments: list[dict]) -> tuple[str | None, str]:
     The login is the account this workflow posts as, read at most ONCE per fetch
     through ``_github_pr.get_viewer_login`` — the account the authenticated ``gh``
     resolves to, which is the account ``_github_pr.post_pr_comment`` posts the
-    batched response under. It is read only when some comment carries a
-    transmission shape (:func:`_carries_transmission_shape`); otherwise no stage
-    needs it and ``workflow_identity`` is ``not_needed``. A failed read yields
+    batched response and the re-review triggers under. It is read only when some
+    comment needs it (:func:`_needs_workflow_identity`); otherwise no stage needs it
+    and ``workflow_identity`` is ``not_needed``. A failed read yields
     ``(None, 'unresolved')`` — never a guessed login.
     """
-    if not any(_carries_transmission_shape(str(c.get('body') or '')) for c in comments):
+    if not any(_needs_workflow_identity(str(c.get('body') or '')) for c in comments):
         return None, WORKFLOW_IDENTITY_NOT_NEEDED
     login, _error = get_viewer_login()
     if not login:
@@ -1125,7 +1163,8 @@ def cmd_fetch_findings(args):
     3. SELF-AUTHORED RESPONSE — the batched disposition comment ``post_responses``
        itself posted, recognized by ``_is_self_authored_response``: authored by the
        workflow identity (read at most once per fetch via ``_resolve_workflow_login``,
-       and only when a comment carries a transmission shape) AND opening with the
+       and only when a comment carries a transmission shape or is a registered
+       trigger) AND opening with the
        batched-response heading. Counted in ``count_skipped_self_response``, NEVER
        in ``count_skipped_noise`` (it is our own output, not noise), and files no
        finding — re-ingesting it is the non-terminating barrier loop this stage
@@ -1138,6 +1177,15 @@ def cmd_fetch_findings(args):
        ``add_qgate_finding_checked`` (``emitter_bypass_hash_id``; a rejected
        persist surfaces as ``emitter_bypass_persist_failed``), so the re-key on
        identity keeps the bypass detectable instead of swallowing it.
+    3c. OWN TRIGGER — a re-review trigger this workflow posted, excluded by
+       PROVENANCE (``_is_own_trigger_comment``): authored by the workflow identity
+       AND a stripped body equal to a registered trigger. Files no finding, counted
+       in ``count_skipped_own_trigger`` (NEVER in ``count_skipped_noise``), and
+       recorded once per exclusion in ``own_trigger_exclusions`` as
+       ``{comment_id, trigger}`` so the result says how many and why. An
+       exact-trigger body from any other author, or under an unresolved identity,
+       keeps the noise disposition of stage 4; a body that merely quotes a trigger
+       is ingested.
     4. Obvious text noise — matched via ``_is_obvious_noise`` (lgtm, bot sigs, etc.),
        counted in ``count_skipped_noise``.
     5. UNRECOGNISED REFUSAL — a comment the enumerative arm
@@ -1596,6 +1644,10 @@ def cmd_fetch_findings(args):
     # comment_ids of workflow-authored comments carrying the batch signature without
     # the heading — reported, never filed (pre-filter 3b).
     emitter_bypass_ids: list[str] = []
+    # One ``{comment_id, trigger}`` record per re-review trigger this workflow posted
+    # — excluded by provenance, reported rather than folded into the noise count
+    # (pre-filter 3c).
+    own_trigger_exclusions: list[dict[str, str]] = []
     refused_set: set[str] = set()
     # Per refusing bot, the CAUSE of its refusal (size vs quota) — the orthogonal
     # axis to rate_limit_class's awaitability. ``size`` is sticky: a bot that emitted
@@ -1736,6 +1788,19 @@ def cmd_fetch_findings(args):
         # rather than dropped silently.
         if _is_emitter_bypass(body, author, workflow_login):
             emitter_bypass_ids.append(str(comment.get('id') or 'unknown'))
+            continue
+
+        # Pre-filter 3c: OWN TRIGGER — a re-review trigger this workflow posted,
+        # recognised by PROVENANCE (workflow identity AND a stripped body equal to a
+        # registered trigger). Placed BEFORE the noise filter, which would otherwise
+        # fold it into ``skipped_noise`` on body shape alone; it gets its own counter
+        # and one record per exclusion naming the matched trigger, so the result says
+        # how many were excluded and why. An exact-trigger body from any other author
+        # (or under an unresolved identity) falls through to the noise filter, which
+        # keeps its existing disposition; a body that merely quotes a trigger is
+        # ingested.
+        if _is_own_trigger_comment(body, author, workflow_login):
+            own_trigger_exclusions.append({'comment_id': str(comment.get('id') or 'unknown'), 'trigger': body.strip()})
             continue
 
         # Pre-filter 4: obvious noise — the shared acknowledgment/automation
@@ -1924,14 +1989,15 @@ def cmd_fetch_findings(args):
 
     count_stored = len(stored_hashes)
     skipped_emitter_bypass = len(emitter_bypass_ids)
+    skipped_own_trigger = len(own_trigger_exclusions)
     # Duplicates skipped by the cross-iteration guard, refusals surfaced through
-    # ``refused_bots``, self-authored responses, and reported emitter bypasses are
-    # all legitimate non-stores, so they drop out of expected_stored alongside the
-    # noise skips — otherwise every deduped comment, every surfaced refusal, and
-    # every correctly-excluded workflow comment would spuriously trip the
-    # producer-mismatch Q-Gate. An unclassified bot's comments are NOT subtracted:
-    # under the warn-but-ingest rule they are stored like any other, so they belong
-    # in expected_stored.
+    # ``refused_bots``, self-authored responses, reported emitter bypasses, and
+    # reported own triggers are all legitimate non-stores, so they drop out of
+    # expected_stored alongside the noise skips — otherwise every deduped comment,
+    # every surfaced refusal, and every correctly-excluded workflow comment would
+    # spuriously trip the producer-mismatch Q-Gate. An unclassified bot's comments
+    # are NOT subtracted: under the warn-but-ingest rule they are stored like any
+    # other, so they belong in expected_stored.
     expected_stored = (
         count_fetched
         - skipped_noise
@@ -1939,6 +2005,7 @@ def cmd_fetch_findings(args):
         - skipped_refusal
         - skipped_self_response
         - skipped_emitter_bypass
+        - skipped_own_trigger
     )
 
     # Measure the diff ONLY when a size refusal was actually seen. A recorded cap
@@ -1967,6 +2034,7 @@ def cmd_fetch_findings(args):
             f'count_skipped_refusal={skipped_refusal}, '
             f'count_skipped_self_response={skipped_self_response}, '
             f'count_skipped_emitter_bypass={skipped_emitter_bypass}, '
+            f'count_skipped_own_trigger={skipped_own_trigger}, '
             f'count_stored={count_stored}, '
             f'expected_stored={expected_stored}, '
             f'failed_comment_ids={store_failures}'
@@ -2058,11 +2126,17 @@ def cmd_fetch_findings(args):
         'count_skipped_self_response': skipped_self_response,
         'count_skipped_emitter_bypass': skipped_emitter_bypass,
         'emitter_bypass_hash_id': bypass_hash,
+        # Re-review triggers this workflow posted, excluded by provenance: the count,
+        # and one ``{comment_id, trigger}`` record per exclusion naming the matched
+        # registered trigger — so the result says how many and why.
+        'count_skipped_own_trigger': skipped_own_trigger,
+        'own_trigger_exclusions': own_trigger_exclusions,
         # How the workflow identity stood for this fetch. ``unresolved`` means the
-        # self-response stage ran on the heading-only fallback and the emitter-bypass
-        # stage could not run — a disclosed degradation, never a silent one.
-        # ``not_needed`` means no comment carried a transmission shape, so no stage
-        # asked for it.
+        # self-response stage ran on the heading-only fallback, and the emitter-bypass
+        # and own-trigger stages could not run (a workflow-authored trigger kept its
+        # noise disposition) — a disclosed degradation, never a silent one.
+        # ``not_needed`` means no comment carried a transmission shape or a
+        # registered trigger, so no stage asked for it.
         'workflow_identity': workflow_identity,
         'count_self_response_current_cycle': current_cycle_self_response,
         'self_response_loop_detected': self_response_loop_detected,
