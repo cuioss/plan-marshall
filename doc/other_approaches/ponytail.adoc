@@ -21,8 +21,9 @@ A Claude Code plugin that pushes the model toward the simplest implementation th
   session as hidden context — the body of its `SKILL.md`, roughly 1.4k tokens, filtered to the active
   intensity level.
 * A **SubagentStart** hook injects the same ruleset into every subagent.
-* A **UserPromptSubmit** hook only tracks `/ponytail lite|full|ultra` and "stop ponytail" and stores
-  the mode in a flag file.
+* A **UserPromptSubmit** hook tracks `/ponytail lite|full|ultra` and "stop ponytail" in raw prompt
+  text and stores the mode in a flag file. Claude Code slash-skill invocations are not parsed by
+  the current hook and may not persist the mode.
 
 The ruleset is not re-injected per turn in Claude Code. Node.js must be on `PATH`.
 

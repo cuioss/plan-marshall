@@ -41,7 +41,12 @@ capability.
 == What to learn
 
 . **Cross-check the instrument against an independent enumeration.** `manage-metrics` totals and a
-  log parser such as ccusage read the same underlying session records through different code. Agreement
-  between the two over a window is evidence the instrument counts completely; disagreement is a
-  defect in one of them. The project's own rule is that a total should be derived from an independent
-  enumeration, not asserted.
+  log parser such as ccusage read the same underlying session records through different code. The
+  comparison is only meaningful once the field pair is specified and the two populations are aligned
+  — `manage-metrics`' per-phase or per-dispatch totals do not automatically cover the same window a
+  session-wide log parse does, and a coverage-partial field (a `dispatch_boundary_total`, for
+  instance) is not comparable to a whole-session total without stating that partiality first.
+  Agreement over a matched, fully-covered window is evidence the instrument counts completely;
+  disagreement there is a defect in one of them. The project's own rule is that a total should be
+  derived from an independent enumeration, not asserted — that rule applies to picking the comparable
+  population as much as to running the cross-check itself.

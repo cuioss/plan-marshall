@@ -106,8 +106,10 @@ The token size of Serena's own tool definitions is not published.
 == What to learn
 
 . **Measure uptake as a fallback-to-read rate.** The most useful number in the Serena material is not
-  a saving but a failure rate: how often a symbol lookup is followed by a full read of the same file.
-  If `lsp-client` ever moves from opt-in to default in the execute phase, that rate is the honest
-  measure of whether the lookup replaced the read or merely preceded it.
+  a saving but a fallback-to-read proxy: how often a symbol lookup is followed by a full read of the
+  same file. Count only whole-file reads; a targeted read that retrieves the located symbol body is
+  an expected follow-up, since `lsp-client:lookup` returns coordinates, not file content. If
+  `lsp-client` ever moves from opt-in to default in the execute phase, that rate is the honest measure
+  of whether the lookup replaced the read or merely preceded it.
 . **Overview before body.** A per-file symbol overview ahead of any symbol body is the same layering
   that applies to plan-marshall's own documents — list the sections, then fetch the one needed.

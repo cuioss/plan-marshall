@@ -48,8 +48,8 @@ plan-marshall's own vocabulary.
 
 They target a cost profile plan-marshall does not have. The external framing is "your prompt is
 cheap, the model's output and the files it opens are expensive". plan-marshall's own measurement puts
-roughly **99% of billing weight on context** (`cache_read` plus `cache_creation`) and roughly **1% on
-output**, and the single largest context consumer it has attributed is **plan-marshall reading its
+roughly **99% of billing weight on context** (`input`, `cache_read` and `cache_creation`) and roughly
+**1% on output**, and the single largest context consumer it has attributed is **plan-marshall reading its
 own skills, standards and workflow documents**. None of the four tools addresses that consumer, and
 two of them actively work against measured project decisions.
 ====
@@ -86,8 +86,9 @@ are not comparable:
 
 | xref:headroom.adoc[headroom]
 | Tool-result compression in a local proxy; optional output shaping and effort downgrade
-| Build output already never reaches context (log file plus a TOON error record); script output is
-  TOON. Its compressors fit JSON, logs and code; prose — the doc-residency share — barely compresses.
+| Build output already never reaches context (log file plus a TOON error record); the script executor
+  relays child output unchanged, so only scripts that emit TOON produce TOON. Its compressors fit
+  JSON, logs and code; prose — the doc-residency share — barely compresses.
 | Reject
 
 | xref:serena.adoc[Serena]
@@ -134,7 +135,8 @@ are not comparable:
   never use it and a notable share of its symbol lookups is followed by a full read of the same file.
 * **None of them fits the multi-runtime fleet.** `marketplace/targets/` has no MCP or proxy mapping;
   every plan-marshall capability is a script behind the executor precisely so it stays portable.
-  headroom's OpenCode integration is broken on current OpenCode and has no Antigravity support.
+  headroom's native OpenCode plugin is broken, while `wrap opencode` remains supported; Antigravity
+  support is only a feature request.
 
 == Ideas worth taking
 
