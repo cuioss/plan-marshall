@@ -22,6 +22,11 @@
       "id": "WS-04",
       "slug": "mechanism-consolidation",
       "title": "Mechanism Consolidation"
+    },
+    {
+      "id": "WS-05",
+      "slug": "worktree-isolated-landing",
+      "title": "Worktree-Isolated Ledger Landing"
     }
   ],
   "plans": [
@@ -87,12 +92,39 @@
       "plan_marshall_plan_id": "",
       "pr": "",
       "landing": ""
+    },
+    {
+      "id": "PLAN-08",
+      "slug": "verdict-staleness-scoping",
+      "workstream": "WS-04",
+      "status": "shipped",
+      "plan_marshall_plan_id": "verdict-staleness-scoping",
+      "pr": "#1585",
+      "landing": "landings/PLAN-08.md"
+    },
+    {
+      "id": "PLAN-09",
+      "slug": "orchestrator-worktree-substrate",
+      "workstream": "WS-05",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-10",
+      "slug": "orchestrator-land-verbs",
+      "workstream": "WS-05",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
     }
   ],
-  "resume_anchor": "cleanup complete 2026-09-22: 23 claims re-grounded (2 real re-scopes: PLAN-02 population 13->25 ledgers, PLAN-03 redirect-sufficiency refuted by ADR-024). 5 closed sections relocated to settled.md. Scope-bloat guard evaluated for PLAN-05, proceed-unsplit rationale recorded. All ledger invariants ok. restart_verdict=not_ready: 59 uncommitted paths (this session's own writes) need commit+push before a fresh session would read ready. Blocking Open Defect unchanged: next is marketplace-wide indeterminate (candidate_comparison_determinate=false), not this epic's to fix.",
+  "resume_anchor": "WS-05 staged 2026-09-23 (operator-proposed): fixed-name never-removed per-epic worktree (PLAN-09) plus land/land-all verbs (PLAN-10) to stop ad hoc orchestrator ledger commits from dirtying main. Both new, not yet emitted. PLAN-07 dependency updated to include PLAN-09/PLAN-10. Still open from the PLAN-08 landing: git-config-injection hardening routing decision (this epic vs truthful-signals), and a low-urgency mis-triage Watch. Live queue: PLAN-02/03/05/06/09/10 staged, PLAN-07 parked -- all blocked on the unchanged marketplace-wide disjointness gate (candidate_comparison_determinate=false). Next: operator decides the git-config-injection routing and/or resolves the marketplace-wide gate.",
   "metadata": {
     "parallelization_scope": "2"
   },
   "created": "2026-09-19T12:31:55Z",
-  "updated": "2026-09-22T08:06:27Z"
+  "updated": "2026-09-23T07:29:11Z"
 }

@@ -24,15 +24,26 @@ prose), and unify plan-marshall's own top-level `--plan` / `plan_id` naming onto
 every sibling orchestrator epic (active and archived) for deliverables that are actually
 orchestrator-tooling work (not domain work routed through an epic) and fold those into
 this epic's workstreams rather than leaving orchestrator-improvement work scattered
-across unrelated epics. Done = the ledger lives at the shared path with no monolithic
-file, a proven and time-boxed migration/removal path exists as a reusable pattern, the
-call surface says `name` everywhere `slug` used to, and no sibling epic still carries an
-orchestrator-substrate deliverable this epic did not absorb or explicitly decline.
+across unrelated epics; (5, added 2026-09-23, operator-proposed) confine an epic's own
+`.plan/orchestrator/{slug}/` reads/writes to a FIXED-NAME, long-lived, never-removed
+per-epic git worktree instead of the primary checkout, and replace today's ad hoc
+`git commit`/`git push` with explicit, monitored `land` (this epic) and `land-all` (every
+active epic) verbs — landing via branch/PR/CI-wait/merge/pull-both — because frequent
+unrelated orchestrator ledger commits landing directly on `main` interfere with
+plan-marshall runs that inspect `main`'s state at various lifecycle phases. Done = the
+ledger lives at the shared path with no monolithic file, a proven and time-boxed
+migration/removal path exists as a reusable pattern, the call surface says `name`
+everywhere `slug` used to, no sibling epic still carries an orchestrator-substrate
+deliverable this epic did not absorb or explicitly decline, and an epic opted into
+`orchestrator.use_worktree` lands its ledger changes through `land`/`land-all` rather than
+ad hoc commits directly against `main`.
 
 > **Aspect 1 (address) landed 2026-09-21** via PLAN-01 — the epic's own ledger now lives
 > here, at `.plan/orchestrator/orchestrator-refactor/`. **Aspect 3's literal framing was
 > corrected by PLAN-04/ADR-023**: the settled spelling is `--epic`, not `--name` — see
-> Decisions below.
+> Decisions below. **Aspect 5 staged 2026-09-23** as WS-05 (PLAN-09/PLAN-10) — not yet
+> shipped; this epic's OWN ledger writes still land ad hoc on `main` until WS-05 ships and
+> `orchestrator.use_worktree` is turned on for this epic, same as every other epic today.
 
 ## START HERE
 
@@ -45,9 +56,9 @@ orchestrator-substrate deliverable this epic did not absorb or explicitly declin
      outside the markers — never inside them. -->
 
 <!-- BEGIN GENERATED: resume-summary -->
-**Resume anchor**: cleanup complete 2026-09-22: 23 claims re-grounded (2 real re-scopes: PLAN-02 population 13->25 ledgers, PLAN-03 redirect-sufficiency refuted by ADR-024). 5 closed sections relocated to settled.md. Scope-bloat guard evaluated for PLAN-05, proceed-unsplit rationale recorded. All ledger invariants ok. restart_verdict=not_ready: 59 uncommitted paths (this session's own writes) need commit+push before a fresh session would read ready. Blocking Open Defect unchanged: next is marketplace-wide indeterminate (candidate_comparison_determinate=false), not this epic's to fix.
+**Resume anchor**: WS-05 staged 2026-09-23 (operator-proposed): fixed-name never-removed per-epic worktree (PLAN-09) plus land/land-all verbs (PLAN-10) to stop ad hoc orchestrator ledger commits from dirtying main. Both new, not yet emitted. PLAN-07 dependency updated to include PLAN-09/PLAN-10. Still open from the PLAN-08 landing: git-config-injection hardening routing decision (this epic vs truthful-signals), and a low-urgency mis-triage Watch. Live queue: PLAN-02/03/05/06/09/10 staged, PLAN-07 parked -- all blocked on the unchanged marketplace-wide disjointness gate (candidate_comparison_determinate=false). Next: operator decides the git-config-injection routing and/or resolves the marketplace-wide gate.
 **Phase**: orchestrating
-**Inbox (derived)**: 0 queued, 14 archived
+**Inbox (derived)**: 0 queued, 24 archived
 **Parked**:
 - PLAN-07 (WS-04)
 **Queue** (staged, in order):
@@ -55,8 +66,11 @@ orchestrator-substrate deliverable this epic did not absorb or explicitly declin
 2. PLAN-03 (WS-02)
 3. PLAN-05 (WS-03)
 4. PLAN-06 (WS-04)
+5. PLAN-09 (WS-05)
+6. PLAN-10 (WS-05)
 - PLAN-01 (WS-01) — plan=tracked-orchestrator-store-resolver — PR #1557, #1558, #1561 — landing=landings/PLAN-01.md — status: shipped
 - PLAN-04 (WS-03) — plan=identifier-vocabulary-decision — PR #1543 — landing=landings/PLAN-04.md — status: shipped
+- PLAN-08 (WS-04) — plan=verdict-staleness-scoping — PR #1585 — landing=landings/PLAN-08.md — status: shipped
 <!-- END GENERATED: resume-summary -->
 
 ### Annotations
@@ -88,6 +102,8 @@ orchestrator-substrate deliverable this epic did not absorb or explicitly declin
 | 3 | PLAN-05 | WS-03 | staged | marketplace/bundles/plan-marshall/skills/manage-architecture/**; marketplace/bundles/plan-marshall/skills/manage-logging/**; marketplace/bundles/plan-marshall/skills/manage-status/**; marketplace/bundles/plan-marshall/skills/persona-plan-marshall-agent/standards/argument-naming.md; marketplace/bundles/plan-marshall/skills/persona-plan-orchestrator/**; marketplace/bundles/plan-marshall/skills/plan-orchestrator/**; marketplace/bundles/plan-marshall/skills/platform-runtime/**; marketplace/bundles/plan-marshall/skills/script-shared/scripts/query/query-architecture.py; marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/doctor-marketplace.py; marketplace/bundles/pm-plugin-development/skills/tools-epic-surface-partition/**; test/plan-marshall/manage-logging/**; test/plan-marshall/manage-status/**; test/plan-marshall/plan-orchestrator/**; test/pm-plugin-development/plugin-doctor/test_doctor_marketplace.py; test/pm-plugin-development/tools-epic-surface-partition/** |
 | 4 | PLAN-06 | WS-04 | staged | marketplace/bundles/plan-marshall/skills/phase-1-init/**; marketplace/bundles/plan-marshall/skills/phase-6-finalize/**; marketplace/bundles/plan-marshall/skills/plan-orchestrator/scripts/_orchestrator_inbox.py; marketplace/bundles/plan-marshall/skills/plan-orchestrator/scripts/orchestrator.py; marketplace/bundles/plan-marshall/skills/plan-orchestrator/standards/inbox-envelope.md; marketplace/bundles/plan-marshall/skills/plan-orchestrator/standards/landing-payload-spec.md; marketplace/bundles/pm-plugin-development/skills/tools-epic-surface-partition/scripts/_epic_partition.py; marketplace/bundles/pm-plugin-development/skills/tools-epic-surface-partition/scripts/epic-surface-partition.py; test/plan-marshall/phase-1-init/**; test/plan-marshall/phase-6-finalize/**; test/plan-marshall/plan-orchestrator/**; test/pm-plugin-development/tools-epic-surface-partition/** |
 | 5 | PLAN-07 | WS-04 | parked | marketplace/bundles/plan-marshall/skills/plan-orchestrator/SKILL.md; marketplace/bundles/plan-marshall/skills/plan-orchestrator/scripts/; marketplace/bundles/plan-marshall/skills/plan-orchestrator/scripts/_orchestrator_inbox.py; marketplace/bundles/plan-marshall/skills/plan-orchestrator/scripts/orchestrator.py; test/plan-marshall/plan-orchestrator/** |
+| 6 | PLAN-09 | WS-05 | staged | marketplace/bundles/plan-marshall/skills/manage-config/scripts/_config_defaults.py; marketplace/bundles/plan-marshall/skills/manage-config/standards/data-model.md; marketplace/bundles/plan-marshall/skills/persona-plan-orchestrator/standards/orchestration-model.md; marketplace/bundles/plan-marshall/skills/plan-orchestrator/scripts/orchestrator.py; marketplace/bundles/plan-marshall/skills/tools-file-ops/**; marketplace/bundles/plan-marshall/skills/workflow-integration-git/SKILL.md; marketplace/bundles/plan-marshall/skills/workflow-integration-git/scripts/git-workflow.py; test/plan-marshall/manage-config/**; test/plan-marshall/plan-orchestrator/**; test/plan-marshall/workflow-integration-git/** |
+| 7 | PLAN-10 | WS-05 | staged | marketplace/bundles/plan-marshall/skills/manage-locks/**; marketplace/bundles/plan-marshall/skills/plan-orchestrator/SKILL.md; marketplace/bundles/plan-marshall/skills/plan-orchestrator/scripts/orchestrator.py; marketplace/bundles/plan-marshall/skills/tools-integration-ci/**; marketplace/bundles/plan-marshall/skills/workflow-integration-git/scripts/git-workflow.py; test/plan-marshall/plan-orchestrator/**; test/plan-marshall/tools-integration-ci/** |
 <!-- END GENERATED: ordered-queue -->
 
 ### Queue annotations
@@ -131,12 +147,55 @@ orchestrator-substrate deliverable this epic did not absorb or explicitly declin
   PLAN-TRUTH-144, which is `running` as of this pass. No hard dependency; independent of
   PLAN-01's finalize block.
 - PLAN-07 — **parked by design**, lowest confidence in the corpus, no external forcing
-  function. Depends on PLAN-01/02/05/06 all landing first (all touch `orchestrator.py`).
-  Operator discretion at `next`-time to keep, defer indefinitely, or drop — re-stage to
-  `staged` only once every other plan in this epic has shipped, and re-derive its line
-  attribution against the then-current HEAD before staging its command.
+  function. Depends on PLAN-01/02/05/06/08/09/10 all landing first (all touch
+  `orchestrator.py`; PLAN-08 was a behavior FIX to `stale` derivation, PLAN-09/PLAN-10 add
+  real new verbs — all three must land before PLAN-07's behavior-PRESERVING split, or the
+  split freezes pre-fix/pre-feature state). Operator discretion at `next`-time to keep,
+  defer indefinitely, or drop — re-stage to `staged` only once every other plan in this
+  epic has shipped, and re-derive its line attribution against the then-current HEAD
+  before staging its command.
+- PLAN-08 — **SHIPPED 2026-09-22** (#1585, merge `b5d0ef7e6`, verified as `main`'s current
+  HEAD). See `landings/PLAN-08.md`. Deliverables D1-D4 shipped-as-specified or better (D2
+  exceeds the spec: a full closed 6-member `staleness_basis` vocabulary, not just a named
+  fallback). Both of the spec's own re-grounding claims (HYPOTHESIS + Verify-first clause)
+  re-grounded and stamped `corroborated` against the merge commit. Landed via merge queue
+  under an operator `barrier-ask-override` after CodeRabbit's quota timeout on the final
+  loop-back HEAD — see landing record for the review-participation reasoning. Surfaced two
+  follow-ups now recorded separately (git-config-injection production hardening — new Open
+  Defect below; a mis-triaged review finding — new Watch below) plus 8 promoted lessons.
+  Emitted originally on direct operator request ahead of `next`-slot rigor, per its own
+  staging note above — that caveat is now moot; the plan shipped clean.
+- PLAN-09 — **staged 2026-09-23**, WS-05 foundation. No dependency of its own (net-new
+  capability). Overlaps PLAN-02/06 (`orchestrator.py`). PLAN-10 strictly depends on this.
+  Carries three verify-at-outline HYPOTHESES: the worktree-verb extension shape, the
+  `use_worktree` default, and the terminal-title/session-binding audit — none dictated by
+  this staging, all left for outline.
+- PLAN-10 — **staged 2026-09-23**, WS-05. Strictly depends on PLAN-09. Overlaps PLAN-07
+  (adds real verbs to `orchestrator.py` before PLAN-07's split — PLAN-07 spec updated).
+  Carries an open sequencing question for `land-all` (sequential vs bounded-parallel
+  against the merge queue) and a HYPOTHESIS on whether `ci pr merge`'s existing sub-verbs
+  suffice for D3 — both verify-at-outline, not decided here.
 
 ## Decisions
+
+- 2026-09-23 — **New workstream WS-05 (Worktree-Isolated Ledger Landing) staged, PLAN-09 +
+  PLAN-10, on operator request.** Operator observed that frequent orchestrator ledger
+  commits landing directly on `main` interfere with plan-marshall runs checking `main`'s
+  state. Proposed and staged: fixed-name, long-lived, never-removed per-epic worktree
+  (PLAN-09) plus `land`/`land-all` verbs replacing ad hoc commit/push with a monitored
+  branch/PR/CI-wait/merge/pull-both cycle (PLAN-10). Grounded against a research pass
+  confirming: (a) no commit/push mechanism exists today (fully ad hoc); (b) the existing
+  plan-worktree lifecycle (`git-workflow.py`) is reusable as a pattern but hard-coupled to
+  `--plan-id`; (c) the orchestrator config block is a closed schema needing a real
+  extension for `use_worktree`; (d) `phase-6-finalize`'s PR workflow is plan-bound and NOT
+  reusable, but the underlying `ci` primitives (`--project-dir` addressing) are generic and
+  ARE reusable directly; (e) a bounded, non-foreground CI-wait primitive already exists
+  (`ci checks wait`); (f) `corpus epics` is the correct substrate for `land-all`'s sweep.
+  Sequenced: PLAN-10 strictly depends on PLAN-09; both must land before PLAN-07 (behavior
+  additions before a behavior-preserving split) — PLAN-07's spec updated accordingly.
+  Several implementation choices deliberately left as verify-at-outline HYPOTHESES rather
+  than dictated here (worktree-verb extension shape, `use_worktree` default,
+  `land-all` sequential-vs-parallel) — orchestrating stages the work, not the mechanism.
 
 - 2026-09-19 — parallelization_scope set to 2 (operator choice over the project default
   of 1). Rationale: most staged plans in this epic touch the same shared surface
@@ -221,8 +280,26 @@ orchestrator-substrate deliverable this epic did not absorb or explicitly declin
   `_cmd_lifecycle.py:183` (post PLAN-TRUTH-143/#1539); -012's principle is already
   enforced by this epic's own `candidate_comparison_determinate` fail-closed verdict
   (`orchestrate.md` Step 4), landed by the same PR.
-
-- 2026-09-22 — **Scope-Bloat Split Guard evaluated for PLAN-05 (9 deliverables, D0–D8) —
+- 2026-09-23 — **Inbox drain: `lessons-routing-001.md` (finding) — CONFIRMED, no new action.**
+  `lessons-routing` flagged `2026-09-21-10-010`/`-012` as possible duplicates of content
+  `truthful-signals` already promoted on 2026-09-21, asking this epic to check before staging
+  or acting further. Re-verified: `manage-lessons get` returns `not_found` for both ids in the
+  global corpus, and this epic's own 2026-09-22 drain (see entry above) already independently
+  discarded both as already-covered — the exact outcome `lessons-routing`'s correction points
+  toward. Nothing to retract or re-disposition.
+- 2026-09-23 — **Inbox drain: 8 `candidate-lesson` messages from `verdict-staleness-scoping`
+  (PLAN-08's own PR #1585 retrospective) — all 8 PROMOTED to the global lessons corpus,
+  `2026-09-23-05-001` through `-008`.** None concern this epic's own substrate (`orchestrator.py`,
+  the ledger, WS-01..WS-04); all are findings about OTHER marketplace components surfaced
+  during PLAN-08's execution — `platform-runtime` (BlockScalar serialization bug in
+  `chat extract-signal`, -001), `plan-retrospective` (Tier-1 gating blind to the
+  delivered-vs-reduced byte gap, -002; `top_tags[5]` vs the fixed logging-gap vocabulary, -005;
+  `Phase Dispatch Boundaries` structurally unrenderable, -008), `phase-6-finalize` (finalize
+  cost matched execute's on a 6-file fix, -003; dispatch-audit evidence channel only 27.3%
+  populated, -007), `manage-change-ledger` (37 build calls, zero ledger rows, -004), and
+  `pm-plugin-development:ext-self-review-plan-marshall` (`self_review surface` exits 1 with
+  empty stderr, -006). Promoted rather than folded/staged because no plan in this epic owns
+  any of these components — this is the lessons-routing sweep's job to route onward from here. (9 deliverables, D0–D8) —
   no prior rationale was on record.** Verdict: proceed unsplit. D0–D4/D6–D8 are one
   coherent rename (`--slug`→`--epic`) bound by a hard same-commit ordering constraint
   (`ARGUMENT_NAMING_CANONICAL_FORMS_DRIFT`) that a split would not relax — they cannot
@@ -299,6 +376,19 @@ orchestrator-substrate deliverable this epic did not absorb or explicitly declin
   orchestrator's carve-out to perform itself.
 - (all other defects surfaced by decompose research were folded into a staged plan's Claim
   Labels; see PLAN-01 through PLAN-07)
+- **NEW, from PLAN-08's landing (2026-09-23) — unrouted: git-config-injection production
+  hardening, ~20 scripts repo-wide.** CodeRabbit finding `5ed953` on PR #1585: the test
+  fixture's env scrub was hardened in-plan (TASK-010), but the broader hardening of
+  production git seams (`orchestrator.py`'s `_git_read`, `_git_tree_diff`,
+  `_resolve_anchor_sha`, and their counterparts across ~20 other scripts repo-wide) was
+  deliberately held out of PLAN-08's `bug_fix` scope as a cross-cutting policy change. The
+  landing's own residue note names this epic OR `truthful-signals` as candidate homes
+  without picking one — `orchestrator.py` is only ONE instance of a repo-wide pattern, so
+  staging it here would under-scope it, and dropping it would lose a real security finding.
+  Not sized or staged — **operator routing decision needed**: stage a dedicated plan under
+  this epic (WS-04, narrowly for `orchestrator.py`'s own three call sites) plus a
+  `truthful-signals` item for the other ~17 sites, or route the whole thing to
+  `truthful-signals` as one cross-cutting hardening plan.
 
 ## Watches
 
@@ -316,6 +406,12 @@ orchestrator-substrate deliverable this epic did not absorb or explicitly declin
   this epic's WS-01 in its own Vision, but its Expected Surface is `prose` (undetectable by
   the gate). — trigger: if PLAN-LR-04 reaches for a durability substrate before WS-01 lands,
   read its spec body by hand rather than trusting the gate.
+- **NEW, from PLAN-08's landing (2026-09-23), low urgency.** PLAN-08's own round-2
+  verification-feedback triage mis-dispositioned finding `e79ee5` as `accepted` though its
+  own `resolution_detail` shows it was a false positive — self-flagged by
+  `project:finalize-step-review-retrospective`, not independently re-verified by this
+  analysis. — trigger: worth a spot-check if `plan-orchestrator:verification-feedback`
+  triage quality is ever audited; no action owed otherwise.
 > ↪ Relocated to `settled.md` § "Two orchestrator entities share one word" — resolved by
 > PLAN-04/ADR-023, retired 2026-09-20.
 - **Cross-plan `2-refine` suspicious-perfect-confidence tracking** (from
