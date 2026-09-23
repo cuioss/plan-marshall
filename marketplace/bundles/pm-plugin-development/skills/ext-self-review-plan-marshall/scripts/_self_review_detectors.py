@@ -193,6 +193,7 @@ def _detect_regexes(added: list[tuple[str, int, str]]) -> list[dict[str, Any]]:
 def _detect_user_facing_strings(added: list[tuple[str, int, str]]) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     prev_def_or_class = False
+    seen_def_per_path: set[str] = set()
     for path, lineno, content in added:
         if path.endswith('.md'):
             m_h = _MD_HEADING.match(content)
@@ -226,6 +227,7 @@ def _detect_user_facing_strings(added: list[tuple[str, int, str]]) -> list[dict[
             continue
         if _DEF_OR_CLASS.match(content):
             prev_def_or_class = True
+            seen_def_per_path.add(path)
             continue
         if prev_def_or_class:
             m_t = _TRIPLE_QUOTE.match(content)
@@ -240,6 +242,21 @@ def _detect_user_facing_strings(added: list[tuple[str, int, str]]) -> list[dict[
                     }
                 )
                 prev_def_or_class = False
+                continue
+        # Module docstring: triple-quote before any def/class in the added
+        # window for this path. Closes the structural unreachability blind
+        # spot where module-level prose never follows a def/class line.
+        if path not in seen_def_per_path and not prev_def_or_class:
+            m_mod = _TRIPLE_QUOTE.match(content)
+            if m_mod is not None:
+                out.append(
+                    {
+                        'file': path,
+                        'line': lineno,
+                        'context': 'module_docstring',
+                        'text': _truncate(m_mod.group(2), 200),
+                    }
+                )
                 continue
         prev_def_or_class = False
         for m in _PRINT_CALL.finditer(content):

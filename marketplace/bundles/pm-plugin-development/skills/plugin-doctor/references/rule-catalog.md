@@ -718,6 +718,66 @@ A match inside an **inline literal** — a `` `…` `` / ` ``…`` ` code span, 
 
 **Recommended fix**: Rewrite the docstring to state the invariant in the present tense. Where the invariant is genuinely non-obvious, add a second paragraph explaining *why it is load-bearing* — which survives the next refactor, unlike the citation. `plan-marshall:persona-module-tester` § "Test Docstring Content" carries a worked before/after.
 
+### unique-fixture-basenames
+
+**Rule ID**: `unique-fixture-basenames`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_test_conventions.py`
+
+**Scope**: helper modules under `--test-root` (default `test/`).
+
+**Intent**: Reject generic or colliding helper basenames so pytest's basename-keyed import surface cannot silently swap one helper for another.
+
+### subprocess-pythonpath
+
+**Rule ID**: `subprocess-pythonpath`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_test_conventions.py`
+
+**Scope**: `*.py` under `--test-root` invoking `subprocess.run([sys.executable, ...])`.
+
+**Intent**: Require PYTHONPATH propagation in spawned scripts; `conftest.run_script(...)` or an `env=` introducing PYTHONPATH satisfies it.
+
+### identifier-validator-corpus
+
+**Rule ID**: `identifier-validator-corpus`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_test_conventions.py`
+
+**Scope**: registry-driven; empty registry is a documented no-op.
+
+**Intent**: Assert each registered validator regex full-matches every ID its list command returns.
+
+### test-module-line-budget
+
+**Rule ID**: `test-module-line-budget`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_test_conventions.py`
+
+**Scope**: any test-tree module over the 400-line budget (520-line single-class ceiling exempt).
+
+**Intent**: Split oversized modules by behaviour cluster (collected) or supplied surface (helper).
+
+### test-helper-module-misnamed
+
+**Rule ID**: `test-helper-module-misnamed`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_test_conventions.py`
+
+**Scope**: modules matching pytest collection patterns declaring no test.
+
+**Intent**: Flag collected-but-empty modules; ships at error (violation count zero).
+
+### test-module-preamble-boilerplate
+
+**Rule ID**: `test-module-preamble-boilerplate`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_test_conventions.py`
+
+**Scope**: `spec_from_file_location` preambles and `Path(__file__).parent` chains of depth >= 3.
+
+**Intent**: Resolve test helpers by identity via shared loaders, not by file-location chains.
+
 ---
 
 ## Rule Pack: Allowed-tools-body drift

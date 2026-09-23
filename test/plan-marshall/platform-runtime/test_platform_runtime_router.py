@@ -32,6 +32,7 @@ from platform_runtime import (
     _parse_json_list,
     _read_marshal,
     _resolve_target,
+    list_operations,
     main,
 )
 from runtime_base import toon_success
@@ -300,22 +301,13 @@ _BUILD_OPERATION_IDS = [
     'a-single-unknown-token-is-the-operation',
 ]
 
-#: The documented group/subcommand pairs whose two tokens join into one operation
-#: string. Listed separately from the table above because the claim is different:
-#: those rows pin the SPLIT (what becomes arguments), while these pin that every
-#: published pair is recognised as a two-part operation at all.
+#: Derived from the canonical OPERATION_REGISTRY on _dispatch — no hardcoded
+#: mirror. Two-token operations split into (group, subcommand); single-token
+#: operations are covered by the split-point cases above.
 _TWO_PART_GROUPS = [
-    ('session', 'render-title'),
-    ('session', 'push-title-token'),
-    ('session', 'bind'),
-    ('session', 'resolve-plan'),
-    ('session', 'doctor'),
-    ('permission', 'configure'),
-    ('permission', 'analyze'),
-    ('permission', 'fix'),
-    ('permission', 'ensure-wildcards'),
-    ('permission', 'ensure-steps'),
-    ('permission', 'web-analyze'),
+    (op.split(' ', 1)[0], op.split(' ', 1)[1])
+    for op in list_operations()
+    if ' ' in op and op not in {c[1] for c in _BUILD_OPERATION_CASES if isinstance(c[1], str) and ' ' in c[1]}
 ]
 
 _TWO_PART_GROUP_IDS = [f'{group}-{subcommand}' for group, subcommand in _TWO_PART_GROUPS]

@@ -12,6 +12,7 @@ argv, and the refusal that fires instead of a silent ignore (an empty
 ``--filter`` is rejected; an unfiltered run carries no ``-k`` at all).
 """
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -73,6 +74,7 @@ class TestFilterRefusals:
             capture_output=True,
             text=True,
             cwd=str(REPO_ROOT),
+            env={'PYTHONPATH': os.pathsep.join(sys.path), **os.environ},
         )
         assert result.returncode == 1
         assert '--filter requires a non-empty' in result.stderr
@@ -85,6 +87,7 @@ class TestFilterRefusals:
             capture_output=True,
             text=True,
             cwd=str(REPO_ROOT),
+            env={'PYTHONPATH': os.pathsep.join(sys.path), **os.environ},
         )
         assert result.returncode == 0
         assert '--filter' in result.stdout
