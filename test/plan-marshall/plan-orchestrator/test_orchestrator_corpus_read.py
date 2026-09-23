@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from _ledger_fixtures import write_ledger
 
 from conftest import (
     load_script_module,
@@ -83,6 +84,7 @@ def _epic_dir(plan_context) -> Path:
 
 
 def _write_status(plan_context, rows: list) -> Path:
+    """Seed the per-concern ledger through ``_ledger_fixtures.write_ledger``; return the header path."""
     doc = {
         'kind': 'orchestrator',
         'title': 'Fixture Corpus Read Epic',
@@ -92,12 +94,8 @@ def _write_status(plan_context, rows: list) -> Path:
         'resume_anchor': 'fixture',
         'metadata': {},
         'created': FIXED_TIMESTAMP,
-        'updated': FIXED_TIMESTAMP,
     }
-    path = _epic_dir(plan_context) / 'status.json'
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(doc, indent=2), encoding='utf-8')
-    return path
+    return write_ledger(_epic_dir(plan_context), doc)
 
 
 def _row(plan_id: str) -> dict:

@@ -40,6 +40,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from _ledger_fixtures import write_ledger
+
 from conftest import load_script_module, parse_ns
 
 #: The subject scripts, addressed by module-level string constants so every
@@ -108,21 +110,34 @@ def _row(plan_id: str, status: str = 'staged', workstream: str = 'WS-01') -> dic
 
 
 def _write_status(plan_context, rows: list[dict[str, Any]]) -> Path:
-    doc = {
-        'kind': 'orchestrator',
-        'title': 'Fixture Plan-Id Epic',
-        'phase': 'orchestrating',
-        'workstreams': ['WS-01'],
-        'plans': rows,
-        'resume_anchor': 'await nothing',
-        'metadata': {},
-        'created': FIXED_TIMESTAMP,
-        'updated': FIXED_TIMESTAMP,
-    }
-    path = _epic_dir(plan_context) / 'status.json'
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(doc, indent=2), encoding='utf-8')
-    return path
+    """Seed a per-concern ledger holding ``rows``; return the epic root.
+
+    The header and the anchor go through ``_ledger_fixtures.write_ledger``. The
+    rows are written as row files BY HAND, each carrying a ``seq`` from its
+    position: :data:`SUFFIXED_ID` is outside the staging grammar, so no
+    production writer would create its row file — yet a row file on disk is what
+    the renderer reads, and the pair below is about what the renderer does with
+    the id a row CARRIES, whatever its filename.
+    """
+    root = _epic_dir(plan_context)
+    write_ledger(
+        root,
+        {
+            'kind': 'orchestrator',
+            'title': 'Fixture Plan-Id Epic',
+            'phase': 'orchestrating',
+            'workstreams': ['WS-01'],
+            'plans': [],
+            'resume_anchor': 'await nothing',
+            'metadata': {},
+            'created': FIXED_TIMESTAMP,
+        },
+    )
+    queue = root / 'queue'
+    queue.mkdir(parents=True, exist_ok=True)
+    for seq, row in enumerate(rows, start=1):
+        (queue / f'{row["id"]}.json').write_text(json.dumps({**row, 'seq': seq}, indent=2), encoding='utf-8')
+    return root
 
 
 def _write_spec(plan_context, name: str, surface: str) -> Path:

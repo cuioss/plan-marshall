@@ -7,8 +7,9 @@ Covers the fourth deterministic ``orchestrator.py`` operation plus the
 read-fallback flags threaded through ``file_ops.get_store_dir`` /
 ``manage-status``'s orchestrator handlers, all under ``PLAN_BASE_DIR``
 isolation (via ``plan_context``). Every seeded epic is a per-concern ledger —
-header ``status.json`` plus ``resume_anchor.md`` — written through
-``_orchestrator_ledger``'s own writer.
+header ``status.json``, ``resume_anchor.md`` and one ``queue/`` row — written
+through ``_ledger_fixtures.write_ledger``, and the relocation is asserted to carry
+the queue, the anchor and the generated ``queue-view.md`` with the tree.
 
 - ``cmd_archive``: relocate a ``phase=closed`` epic (active → archived);
   refuse a non-closed epic (``not_closed``, no move); idempotent re-run of an
@@ -44,6 +45,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from _ledger_fixtures import read_rows, write_ledger
 from plan_logging import log_entry
 
 from conftest import get_script_path, load_script_module, parse_ns, run_script
@@ -58,12 +60,6 @@ ORCH_SCRIPT_PATH = get_script_path(_ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT)
 STATUS_SCRIPT_PATH = get_script_path('plan-marshall', 'manage-status', 'manage-status.py')
 
 _orch = load_script_module(_ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT, 'orchestrator_script')
-
-#: The per-concern ledger layout owner. Fixtures seed an epic through its own
-#: writer, so a layout change reaches this module without a hand-written document.
-_ledger = load_script_module(
-    'plan-marshall', 'manage-status', '_orchestrator_ledger.py', '_orchestrator_ledger_archive'
-)
 
 cmd_archive = _orch.cmd_archive
 cmd_resume_summary = _orch.cmd_resume_summary
@@ -146,25 +142,40 @@ def _archived_epic_dir(plan_context, slug: str) -> Path:
     return Path(plan_context.fixture_dir) / 'archived-orchestrators' / slug
 
 
+#: The one queue row every seeded epic carries, so a relocation test can prove
+#: the ``queue/`` directory travelled with the header.
+_SEEDED_ROW = {
+    'id': 'PLAN-01',
+    'slug': 'plan-one',
+    'workstream': 'WS-01',
+    'status': 'shipped',
+    'plan_marshall_plan_id': '',
+    'pr': '#1',
+    'landing': 'PLAN-01.md',
+}
+
+
 def _write_epic_status(epic_dir: Path, phase: str = 'closed') -> Path:
     """Seed a per-concern kind=orchestrator ledger into ``epic_dir``; return its header path.
 
-    The header carries no queue and no anchor — those live in ``queue/`` and
-    ``resume_anchor.md`` beside it — so every verb reads it as the current layout
-    rather than refusing it as ``legacy_layout``.
+    Seeded through ``_ledger_fixtures.write_ledger``: the header carries no queue
+    and no anchor — those live in ``queue/`` and ``resume_anchor.md`` beside it —
+    so every verb reads it as the current layout rather than refusing it as
+    ``legacy_layout``.
     """
-    header = {
-        'kind': 'orchestrator',
-        'title': 'Fixture Epic',
-        'phase': phase,
-        'workstreams': ['WS-01'],
-        'metadata': {},
-        'created': FIXED_TIMESTAMP,
-    }
-    epic_dir.mkdir(parents=True, exist_ok=True)
-    _ledger.write_layout(epic_dir, header, _SEEDED_ANCHOR, ())
-    header_file: Path = _ledger.header_path(epic_dir)
-    return header_file
+    return write_ledger(
+        epic_dir,
+        {
+            'kind': 'orchestrator',
+            'title': 'Fixture Epic',
+            'phase': phase,
+            'workstreams': ['WS-01'],
+            'plans': [_SEEDED_ROW],
+            'resume_anchor': _SEEDED_ANCHOR,
+            'metadata': {},
+            'created': FIXED_TIMESTAMP,
+        },
+    )
 
 
 def _seed_active_epic(plan_context, slug: str, phase: str = 'closed') -> Path:
@@ -226,6 +237,25 @@ class TestArchiveRelocation:
         assert doc['phase'] == 'closed'
         assert doc['kind'] == 'orchestrator'
         assert (archived / 'resume_anchor.md').read_text(encoding='utf-8') == f'{_SEEDED_ANCHOR}\n'
+
+    def test_should_move_the_queue_the_anchor_and_the_view_with_the_tree(self, plan_context):
+        # Every per-concern file travels: the row files, the anchor, and the
+        # generated view — archive is a whole-tree move, not a header copy.
+        _seed_active_epic(plan_context, 'per-concern-epic', phase='closed')
+        active = _active_epic_dir(plan_context, 'per-concern-epic')
+        (active / 'queue-view.md').write_text('<!-- GENERATED FILE -->\n', encoding='utf-8')
+        before = {
+            rel: (active / rel).read_bytes() for rel in ('queue/PLAN-01.json', 'resume_anchor.md', 'queue-view.md')
+        }
+
+        result = cmd_archive(_variant(_ARCHIVE_ARGS, slug='per-concern-epic'))
+
+        archived = _archived_epic_dir(plan_context, 'per-concern-epic')
+        assert result['status'] == 'success'
+        assert not active.exists()
+        for rel, content in before.items():
+            assert (archived / rel).read_bytes() == content, rel
+        assert [row['id'] for row in read_rows(archived)] == ['PLAN-01']
 
 
 # =============================================================================

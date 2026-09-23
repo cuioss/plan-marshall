@@ -10,22 +10,27 @@ group's envelope schema and handler surface have theirs
 
 - ``scaffold``: directory-tree creation (including ``inbox/``) and idempotency.
 - ``queue``: read, transition, per-row field-set, and single-row append
-  round-trips against a fixture status.json, plus the error envelopes (missing
-  status, malformed status document, unknown plan, unknown field, invalid plan
-  id, duplicate plan id, malformed ``plans`` value, unpaired flags,
-  mutually-exclusive write forms). The append form discriminates ``status.json``
-  three ways — absent, present-but-not-a-JSON-object, and a JSON object
-  including the empty ``{}`` — and all three arms are asserted together so the
-  guard can be met neither by refusing everything nor by admitting everything.
-  One level down it holds an ABSENT ``plans`` key apart from a PRESENT non-list
-  one — the first is seeded, the second refused with nothing written — and both
-  arms are asserted for the same reason. It also carries the three-valued
-  spec-presence probe, whose ``absent`` and ``unlistable`` verdicts are asserted
-  apart so a measured negative is never confused with an unobserved one. The
-  settled status vocabulary is pinned as a matched pair — every member of
+  round-trips against a per-concern fixture ledger (seeded through
+  ``_ledger_fixtures.write_ledger``), plus the error envelopes (missing header,
+  malformed header, unknown plan, unknown field, invalid plan id, duplicate plan
+  id, unreadable row file, unpaired flags, mutually-exclusive write forms). Each
+  write form is asserted to touch ONE row file and to stamp no shared
+  ``updated`` field. The append form discriminates the header three ways —
+  absent, present-but-not-a-JSON-object, and a JSON object including the empty
+  ``{}`` — and all three arms are asserted together so the guard can be met
+  neither by refusing everything nor by admitting everything; a monolithic
+  (legacy-layout) ledger is refused with ``legacy_layout`` by every form, with a
+  migrated control beside it. It also carries the three-valued spec-presence
+  probe, whose ``absent`` and ``unlistable`` verdicts are asserted apart so a
+  measured negative is never confused with an unobserved one. The settled status
+  vocabulary is pinned as a matched pair — every member of
   ``VALID_STATUS_VOCABULARY`` transitions, and a plausible non-member is still
   refused with nothing written — because the acceptance arm alone would pass for
   a validator that accepted anything.
+- ``migrate-layout``: conversion fidelity (every row value, the anchor text, and
+  every header value survive), generated-block removal that leaves every
+  hand-written byte of ``epic.md`` identical, a written ``queue-view.md`` equal
+  to a fresh render, idempotence, archived-epic resolution, and the refusals.
 - status vocabulary: the construction the settled set rests on — the three
   declaring sets partition ``VALID_STATUS_VOCABULARY`` exactly (summed against
   distinct, so a repeat the ``frozenset`` union absorbs is still seen),
@@ -45,7 +50,7 @@ group's envelope schema and handler surface have theirs
   that tuple's order is the key order an appended row is written in; the
   whitelist's ``frozenset`` declares no order and none is pinned for it.
 - ``resume-summary``: START-HERE block generation derived purely from
-  status.json (resume anchor, phase, running/parked plans, ordered queue),
+  the ledger (resume anchor, phase, running/parked plans, ordered queue),
   including the two questions the terminal statuses answer separately — a
   closed-without-shipping row is excluded from the live queue like a shipped one
   but carries no ``(!) missing: …`` marker, asserted per rendered LINE so the
@@ -69,6 +74,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from _ledger_fixtures import read_rows, write_ledger, write_legacy_status
 
 from conftest import get_script_path, load_script_module, parse_ns, run_script
 
@@ -104,6 +110,9 @@ cmd_scaffold = _orch.cmd_scaffold
 cmd_queue = _orch.cmd_queue
 cmd_inbox_list = _orch.cmd_inbox_list
 cmd_resume_summary = _orch.cmd_resume_summary
+cmd_regenerate_view = _orch.cmd_regenerate_view
+cmd_migrate_layout = _orch.cmd_migrate_layout
+render_queue_view = _orch.render_queue_view
 EPIC_SUBDIRS = _orch.EPIC_SUBDIRS
 PLAN_ROW_FIELDS = _orch.PLAN_ROW_FIELDS
 ADD_ROW_SEED_FIELDS = _orch.ADD_ROW_SEED_FIELDS
@@ -204,6 +213,26 @@ _INBOX_LIST_ARGS = parse_ns(
     register=False,
 )
 
+_REGENERATE_VIEW_ARGS = parse_ns(
+    _ORCH_BUNDLE,
+    _ORCH_SKILL,
+    _ORCH_SCRIPT,
+    'regenerate-view',
+    '--slug',
+    _BASE_SLUG,
+    register=False,
+)
+
+_MIGRATE_ARGS = parse_ns(
+    _ORCH_BUNDLE,
+    _ORCH_SKILL,
+    _ORCH_SCRIPT,
+    'migrate-layout',
+    '--slug',
+    _BASE_SLUG,
+    register=False,
+)
+
 
 def _epic_dir(plan_context, slug: str) -> Path:
     return Path(plan_context.fixture_dir) / 'orchestrator' / slug
@@ -254,27 +283,13 @@ def _make_plan(
     }
 
 
-#: Sentinel for :func:`_write_status`: write the document with NO ``plans`` key
-#: at all. Distinct from ``None``, which keeps the default empty list — the
-#: append path treats an ABSENT key and a PRESENT value as different inputs, so
-#: a fixture that can only ever write the key cannot express the absent arm.
-_OMIT_PLANS = object()
-
-
-def _write_status(
-    plan_context,
-    slug: str,
-    plans: Any = None,
+def _fixture_doc(
+    plans: list[dict] | None = None,
     phase: str = 'orchestrating',
     resume_anchor: str = 'await PR #912 CI, then analyze landing',
-) -> Path:
-    """Write a kind=orchestrator fixture status.json into the isolated store.
-
-    ``plans`` is written VERBATIM when supplied, so a case may seed a malformed
-    non-list value; ``None`` writes the default empty queue, and
-    :data:`_OMIT_PLANS` writes a document carrying no ``plans`` key.
-    """
-    doc: dict[str, Any] = {
+) -> dict[str, Any]:
+    """A legacy-SHAPED fixture dict — the shape the assembled view hands back."""
+    return {
         'kind': 'orchestrator',
         'title': 'Fixture Epic',
         'phase': phase,
@@ -285,16 +300,44 @@ def _write_status(
         'created': FIXED_TIMESTAMP,
         'updated': FIXED_TIMESTAMP,
     }
-    if plans is _OMIT_PLANS:
-        del doc['plans']
-    path = _epic_dir(plan_context, slug) / 'status.json'
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(doc, indent=2), encoding='utf-8')
-    return path
 
 
-def _read_status_file(path: Path) -> dict:
-    return dict(json.loads(path.read_text(encoding='utf-8')))
+def _write_status(
+    plan_context,
+    slug: str,
+    plans: list[dict] | None = None,
+    phase: str = 'orchestrating',
+    resume_anchor: str = 'await PR #912 CI, then analyze landing',
+) -> Path:
+    """Seed a per-concern kind=orchestrator ledger into the isolated store; return the epic root.
+
+    The fixture dict is materialised through the production conversion
+    (:func:`_ledger_fixtures.write_ledger`): the header lands in ``status.json``,
+    the anchor in ``resume_anchor.md``, and each row in ``queue/{PLAN-ID}.json``
+    with a ``seq`` taken from its position.
+    """
+    root = _epic_dir(plan_context, slug)
+    write_ledger(root, _fixture_doc(plans, phase, resume_anchor))
+    return root
+
+
+def _rows(root: Path) -> list[dict]:
+    """The queue rows at ``root`` through the production reader, ``seq`` included."""
+    return read_rows(root)
+
+
+def _rows_without_seq(root: Path) -> list[dict]:
+    """The queue rows with ``seq`` dropped, for comparison against :func:`_make_plan` rows."""
+    return [{key: value for key, value in row.items() if key != 'seq'} for row in read_rows(root)]
+
+
+def _header(root: Path) -> dict:
+    return dict(json.loads((root / 'status.json').read_text(encoding='utf-8')))
+
+
+def _snapshot(root: Path) -> dict[str, bytes]:
+    """Every file under ``root`` keyed by its relative path, as bytes — a write detector."""
+    return {str(path.relative_to(root)): path.read_bytes() for path in sorted(root.rglob('*')) if path.is_file()}
 
 
 def _seed_inbox(plan_context, slug: str, queued: int = 0, archived: int = 0, extra_names: tuple = ()) -> Path:
@@ -387,7 +430,28 @@ class TestQueueRead:
         assert result['operation'] == 'queue'
         assert result['phase'] == 'orchestrating'
         assert result['resume_anchor'] == 'await PR #912 CI, then analyze landing'
-        assert result['plans'] == plans
+        assert result['plans'] == [{**plan, 'seq': index} for index, plan in enumerate(plans, start=1)]
+        assert result['unreadable_row_count'] == 0
+
+    def test_should_order_rows_by_seq_then_id(self, plan_context):
+        root = _write_status(plan_context, 'order-epic', plans=[_make_plan('PLAN-02'), _make_plan('PLAN-01')])
+
+        result = cmd_queue(_queue_args('order-epic'))
+
+        # Staging order (seq) wins over the id's own sort order.
+        assert [row['id'] for row in result['plans']] == ['PLAN-02', 'PLAN-01']
+        assert [row['seq'] for row in _rows(root)] == [1, 2]
+
+    def test_should_name_an_unreadable_row_rather_than_drop_it_silently(self, plan_context):
+        root = _write_status(plan_context, 'unread-epic', plans=[_make_plan('PLAN-01'), _make_plan('PLAN-02')])
+        (root / 'queue' / 'PLAN-02.json').write_text('<<<<<<< ours\n{}\n', encoding='utf-8')
+
+        result = cmd_queue(_queue_args('unread-epic'))
+
+        assert result['status'] == 'success'
+        assert [row['id'] for row in result['plans']] == ['PLAN-01']
+        assert result['unreadable_row_count'] == 1
+        assert result['unreadable_rows'] == ['PLAN-02.json']
 
     def test_should_error_when_status_json_missing(self, plan_context):
         cmd_scaffold(_variant(_SCAFFOLD_ARGS, slug='bare-epic'))
@@ -411,7 +475,7 @@ class TestQueueRead:
 
 class TestQueueTransition:
     def test_should_round_trip_status_transition(self, plan_context):
-        status_path = _write_status(plan_context, 'flow-epic', plans=[_make_plan('PLAN-01'), _make_plan('PLAN-02')])
+        root = _write_status(plan_context, 'flow-epic', plans=[_make_plan('PLAN-01'), _make_plan('PLAN-02')])
 
         result = cmd_queue(_queue_args('flow-epic', transition='PLAN-01', status='running'))
 
@@ -420,16 +484,24 @@ class TestQueueTransition:
         assert result['plan'] == 'PLAN-01'
         assert result['previous_status'] == 'staged'
         assert result['new_status'] == 'running'
-        on_disk = _read_status_file(status_path)
-        assert on_disk['plans'][0]['status'] == 'running'
-        assert on_disk['plans'][1]['status'] == 'staged'
+        on_disk = _rows(root)
+        assert on_disk[0]['status'] == 'running'
+        assert on_disk[1]['status'] == 'staged'
 
-    def test_should_stamp_updated_on_transition(self, plan_context):
-        status_path = _write_status(plan_context, 'stamp-epic', plans=[_make_plan('PLAN-01')])
+    def test_should_write_only_the_transitioned_row_file(self, plan_context):
+        # One-row-file operation: the header, the anchor and every sibling row
+        # file are byte-identical afterwards, and no shared ``updated`` stamp is
+        # written anywhere — that stamp was the collision line the per-concern
+        # layout removes.
+        root = _write_status(plan_context, 'stamp-epic', plans=[_make_plan('PLAN-01'), _make_plan('PLAN-02')])
+        before = _snapshot(root)
 
         cmd_queue(_queue_args('stamp-epic', transition='PLAN-01', status='parked'))
 
-        assert _read_status_file(status_path)['updated'] != FIXED_TIMESTAMP
+        after = _snapshot(root)
+        changed = sorted(name for name in after if after[name] != before.get(name))
+        assert changed == [str(Path('queue') / 'PLAN-01.json')]
+        assert 'updated' not in _header(root)
 
     def test_should_read_back_transitioned_state(self, plan_context):
         _write_status(plan_context, 'roundtrip-epic', plans=[_make_plan('PLAN-01')])
@@ -496,25 +568,25 @@ class TestQueueTransitionStatusVocabulary:
     @pytest.mark.parametrize('status', sorted(VALID_STATUS_VOCABULARY))
     def test_should_accept_every_vocabulary_member(self, plan_context, status):
         slug = f'vocab-{status}-epic'
-        status_path = _write_status(plan_context, slug, plans=[_make_plan('PLAN-01', status='launched')])
+        root = _write_status(plan_context, slug, plans=[_make_plan('PLAN-01', status='launched')])
 
         result = cmd_queue(_queue_args(slug, transition='PLAN-01', status=status))
 
         assert result['status'] == 'success'
         assert result['new_status'] == status
-        assert _read_status_file(status_path)['plans'][0]['status'] == status
+        assert _rows(root)[0]['status'] == status
 
     def test_should_refuse_a_non_member_leaving_the_row_untouched(self, plan_context):
         # ``abandoned`` is plausible and deliberately outside the settled set:
         # widening the vocabulary to cover the ledger's real end states must not
         # have widened it to any end state someone can name.
-        status_path = _write_status(plan_context, 'vocab-reject-epic', plans=[_make_plan('PLAN-01')])
+        root = _write_status(plan_context, 'vocab-reject-epic', plans=[_make_plan('PLAN-01')])
 
         result = cmd_queue(_queue_args('vocab-reject-epic', transition='PLAN-01', status='abandoned'))
 
         assert result['status'] == 'error'
         assert result['error'] == 'invalid_field'
-        assert _read_status_file(status_path)['plans'][0]['status'] == 'staged'
+        assert _rows(root)[0]['status'] == 'staged'
 
 
 # =============================================================================
@@ -525,7 +597,7 @@ class TestQueueTransitionStatusVocabulary:
 class TestQueueSetRow:
     def test_should_set_named_row_field_and_leave_siblings_untouched(self, plan_context):
         siblings = [_make_plan('PLAN-02'), _make_plan('PLAN-03', status='running')]
-        status_path = _write_status(plan_context, 'set-epic', plans=[_make_plan('PLAN-01'), *siblings])
+        root = _write_status(plan_context, 'set-epic', plans=[_make_plan('PLAN-01'), *siblings])
 
         result = cmd_queue(_queue_args('set-epic', set_row='PLAN-01', field='pr', value='#1001'))
 
@@ -535,9 +607,9 @@ class TestQueueSetRow:
         assert result['field'] == 'pr'
         assert result['previous_value'] == ''
         assert result['new_value'] == '#1001'
-        on_disk = _read_status_file(status_path)
-        assert on_disk['plans'][0]['pr'] == '#1001'
-        assert on_disk['plans'][1:] == siblings
+        on_disk = _rows_without_seq(root)
+        assert on_disk[0]['pr'] == '#1001'
+        assert on_disk[1:] == siblings
 
     def test_should_round_trip_every_whitelisted_field(self, plan_context):
         _write_status(plan_context, 'fields-epic', plans=[_make_plan('PLAN-01')])
@@ -563,12 +635,26 @@ class TestQueueSetRow:
         assert result['previous_value'] == '#900'
         assert result['new_value'] == '#901'
 
-    def test_should_stamp_updated_on_set_row(self, plan_context):
-        status_path = _write_status(plan_context, 'set-stamp-epic', plans=[_make_plan('PLAN-01')])
+    def test_should_leave_the_header_byte_identical_on_set_row(self, plan_context):
+        root = _write_status(plan_context, 'set-stamp-epic', plans=[_make_plan('PLAN-01')])
+        header_before = (root / 'status.json').read_bytes()
 
         cmd_queue(_queue_args('set-stamp-epic', set_row='PLAN-01', field='landing', value='x.md'))
 
-        assert _read_status_file(status_path)['updated'] != FIXED_TIMESTAMP
+        assert (root / 'status.json').read_bytes() == header_before
+        assert _rows(root)[0]['landing'] == 'x.md'
+
+    def test_should_refuse_an_unreadable_row_file_rather_than_overwrite_it(self, plan_context):
+        root = _write_status(plan_context, 'set-unread-epic', plans=[_make_plan('PLAN-01')])
+        row_file = root / 'queue' / 'PLAN-01.json'
+        conflicted = '<<<<<<< ours\n{"id": "PLAN-01"}\n=======\n{"id": "PLAN-01"}\n>>>>>>> theirs\n'
+        row_file.write_text(conflicted, encoding='utf-8')
+
+        result = cmd_queue(_queue_args('set-unread-epic', set_row='PLAN-01', field='pr', value='#1'))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'row_unreadable'
+        assert row_file.read_text(encoding='utf-8') == conflicted
 
     def test_should_error_for_unknown_plan_id(self, plan_context):
         _write_status(plan_context, 'set-miss-epic', plans=[_make_plan('PLAN-01')])
@@ -580,14 +666,14 @@ class TestQueueSetRow:
         assert result['available_plans'] == ['PLAN-01']
 
     def test_should_error_for_unknown_field(self, plan_context):
-        status_path = _write_status(plan_context, 'set-field-epic', plans=[_make_plan('PLAN-01')])
+        root = _write_status(plan_context, 'set-field-epic', plans=[_make_plan('PLAN-01')])
 
         result = cmd_queue(_queue_args('set-field-epic', set_row='PLAN-01', field='status', value='shipped'))
 
         assert result['status'] == 'error'
         assert result['error'] == 'invalid_field'
         assert 'landing' in result['message']
-        assert _read_status_file(status_path)['plans'][0]['status'] == 'staged'
+        assert _rows(root)[0]['status'] == 'staged'
 
     def test_should_require_field_and_value_with_set_row(self, plan_context):
         _write_status(plan_context, 'set-pair-epic', plans=[_make_plan('PLAN-01')])
@@ -977,24 +1063,30 @@ def _write_spec(plan_context, slug: str, name: str) -> Path:
 
 class TestQueueAddRow:
     def test_should_append_onto_an_empty_queue(self, plan_context):
-        status_path = _write_status(plan_context, 'add-empty-epic', plans=[])
+        root = _write_status(plan_context, 'add-empty-epic', plans=[])
 
         result = cmd_queue(_add_row_args('add-empty-epic'))
 
         assert result['status'] == 'success'
         assert result['operation'] == 'queue-add-row'
         assert result['plan'] == 'PLAN-07'
-        assert _read_status_file(status_path)['plans'] == [_make_plan('PLAN-07')]
+        assert _rows_without_seq(root) == [_make_plan('PLAN-07')]
+        assert (root / 'queue' / 'PLAN-07.json').is_file()
 
     def test_should_append_onto_a_populated_queue_leaving_siblings_untouched(self, plan_context):
         existing = [_make_plan('PLAN-01', status='running'), _make_plan('PLAN-02')]
-        status_path = _write_status(plan_context, 'add-populated-epic', plans=copy.deepcopy(existing))
+        root = _write_status(plan_context, 'add-populated-epic', plans=copy.deepcopy(existing))
+        before = _snapshot(root)
 
         cmd_queue(_add_row_args('add-populated-epic'))
 
-        on_disk = _read_status_file(status_path)['plans']
+        on_disk = _rows_without_seq(root)
         assert on_disk[:2] == existing
         assert on_disk[2] == _make_plan('PLAN-07')
+        # Staging created ONE new file and rewrote none.
+        after = _snapshot(root)
+        assert sorted(set(after) - set(before)) == [str(Path('queue') / 'PLAN-07.json')]
+        assert all(after[name] == before[name] for name in before)
 
     def test_should_seed_the_row_with_empty_result_fields(self, plan_context):
         _write_status(plan_context, 'add-shape-epic', plans=[])
@@ -1002,10 +1094,19 @@ class TestQueueAddRow:
         result = cmd_queue(_add_row_args('add-shape-epic'))
 
         # The seeded row is exactly the fixture shape: three identity fields, a
-        # status, and the three PLAN_ROW_FIELDS empty — an appended row has
-        # landed nothing yet.
-        assert result['row'] == _make_plan('PLAN-07')
+        # status, the three PLAN_ROW_FIELDS empty — a staged row has landed
+        # nothing yet — and the allocated ``seq``.
+        assert result['row'] == {**_make_plan('PLAN-07'), 'seq': 1}
+        assert list(result['row']) == list(ADD_ROW_SEED_FIELDS)
         assert all(result['row'][field] == '' for field in PLAN_ROW_FIELDS)
+
+    def test_should_allocate_seq_as_the_local_maximum_plus_one(self, plan_context):
+        root = _write_status(plan_context, 'add-seq-epic', plans=[_make_plan('PLAN-01'), _make_plan('PLAN-02')])
+
+        result = cmd_queue(_add_row_args('add-seq-epic'))
+
+        assert result['row']['seq'] == 3
+        assert [(row['id'], row['seq']) for row in _rows(root)] == [('PLAN-01', 1), ('PLAN-02', 2), ('PLAN-07', 3)]
 
     def test_should_default_the_seed_status_to_staged(self, plan_context):
         _write_status(plan_context, 'add-default-status-epic', plans=[])
@@ -1015,130 +1116,119 @@ class TestQueueAddRow:
         assert result['row']['status'] == 'staged'
 
     def test_should_honour_a_supplied_seed_status(self, plan_context):
-        status_path = _write_status(plan_context, 'add-status-epic', plans=[])
+        root = _write_status(plan_context, 'add-status-epic', plans=[])
 
         result = cmd_queue(_add_row_args('add-status-epic', status='running'))
 
         assert result['row']['status'] == 'running'
-        assert _read_status_file(status_path)['plans'][0]['status'] == 'running'
+        assert _rows(root)[0]['status'] == 'running'
 
     def test_should_reject_a_duplicate_plan_id_leaving_the_queue_unchanged(self, plan_context):
         existing = [_make_plan('PLAN-07', status='shipped', pr='#900')]
-        status_path = _write_status(plan_context, 'add-dup-epic', plans=copy.deepcopy(existing))
-        before = _read_status_file(status_path)
+        root = _write_status(plan_context, 'add-dup-epic', plans=copy.deepcopy(existing))
+        before = _snapshot(root)
 
         result = cmd_queue(_add_row_args('add-dup-epic'))
 
         assert result['status'] == 'error'
         assert result['error'] == 'duplicate_plan_id'
         assert result['existing_status'] == 'shipped'
-        # Rejected in-lock BEFORE any write: the document is byte-identical,
-        # including its ``updated`` stamp.
-        assert _read_status_file(status_path) == before
+        # Refused by the atomic create: every file is byte-identical.
+        assert _snapshot(root) == before
 
     def test_should_reject_a_duplicate_slug_leaving_the_queue_unchanged(self, plan_context):
         queued = _make_plan('PLAN-01')
         queued['slug'] = 'shared-slug'
-        status_path = _write_status(plan_context, 'add-dup-slug-epic', plans=[queued])
-        before = _read_status_file(status_path)
+        root = _write_status(plan_context, 'add-dup-slug-epic', plans=[queued])
+        before = _snapshot(root)
 
         result = cmd_queue(_add_row_args('add-dup-slug-epic', add_row='PLAN-07', slug_value='shared-slug'))
 
         assert result['status'] == 'error'
         assert result['error'] == 'invalid_field'
         assert result['existing_plan'] == 'PLAN-01'
-        assert _read_status_file(status_path) == before
+        assert _snapshot(root) == before
 
     def test_should_reject_a_slug_equal_to_the_epic_slug_without_writing(self, plan_context):
-        status_path = _write_status(plan_context, 'add-epic-slug-epic', plans=[])
+        root = _write_status(plan_context, 'add-epic-slug-epic', plans=[])
 
         result = cmd_queue(_add_row_args('add-epic-slug-epic', add_row='PLAN-07', slug_value='add-epic-slug-epic'))
 
         assert result['status'] == 'error'
         assert result['error'] == 'invalid_field'
-        assert _read_status_file(status_path)['plans'] == []
+        assert _rows(root) == []
 
-    def test_should_leave_non_canonical_bytes_untouched_on_epic_slug_refusal(self, plan_context):
-        status_path = _write_status(plan_context, 'add-epic-slug-raw-epic', plans=[])
-        # A compact document is non-canonical for this store: rmw_json
-        # serializes with indent=2, so had the refusal gone through the
-        # critical section the no-op return would still have normalized these
-        # bytes on commit.
-        raw = status_path.read_text(encoding='utf-8')
+    def test_should_leave_non_canonical_header_bytes_untouched_on_every_append(self, plan_context):
+        # Staging writes a row file and never the header, so a non-canonical
+        # header survives a refusal AND an admission byte-for-byte.
+        root = _write_status(plan_context, 'add-epic-slug-raw-epic', plans=[])
+        header_path = root / 'status.json'
+        raw = header_path.read_text(encoding='utf-8')
         non_canonical = json.dumps(json.loads(raw), separators=(',', ':'))
         assert non_canonical != raw
-        status_path.write_text(non_canonical, encoding='utf-8')
+        header_path.write_text(non_canonical, encoding='utf-8')
 
-        result = cmd_queue(
+        refused = cmd_queue(
             _add_row_args('add-epic-slug-raw-epic', add_row='PLAN-07', slug_value='add-epic-slug-raw-epic')
         )
+        admitted = cmd_queue(_add_row_args('add-epic-slug-raw-epic', add_row='PLAN-08', slug_value='beta-slug'))
 
-        assert result['status'] == 'error'
-        assert result['error'] == 'invalid_field'
-        assert status_path.read_text(encoding='utf-8') == non_canonical
-
-    def test_should_admit_a_distinct_slug_onto_a_non_canonical_document(self, plan_context):
-        status_path = _write_status(plan_context, 'add-raw-admit-epic', plans=[])
-        raw = status_path.read_text(encoding='utf-8')
-        status_path.write_text(json.dumps(json.loads(raw), separators=(',', ':')), encoding='utf-8')
-
-        result = cmd_queue(_add_row_args('add-raw-admit-epic', add_row='PLAN-07', slug_value='beta-slug'))
-
-        assert result['status'] == 'success'
-        assert [row['slug'] for row in _read_status_file(status_path)['plans']] == ['beta-slug']
+        assert refused['error'] == 'invalid_field'
+        assert admitted['status'] == 'success'
+        assert header_path.read_text(encoding='utf-8') == non_canonical
+        assert [row['slug'] for row in _rows(root)] == ['beta-slug']
 
     def test_should_admit_distinct_slugs_cleanly(self, plan_context):
         queued = _make_plan('PLAN-01')
         queued['slug'] = 'alpha-slug'
-        status_path = _write_status(plan_context, 'add-distinct-slug-epic', plans=[queued])
+        root = _write_status(plan_context, 'add-distinct-slug-epic', plans=[queued])
 
         result = cmd_queue(_add_row_args('add-distinct-slug-epic', add_row='PLAN-07', slug_value='beta-slug'))
 
         assert result['status'] == 'success'
         assert result['operation'] == 'queue-add-row'
-        on_disk = _read_status_file(status_path)['plans']
-        assert [row['slug'] for row in on_disk] == ['alpha-slug', 'beta-slug']
+        assert [row['slug'] for row in _rows(root)] == ['alpha-slug', 'beta-slug']
 
-    def test_should_stamp_updated_only_on_a_real_append(self, plan_context):
-        status_path = _write_status(plan_context, 'add-stamp-epic', plans=[_make_plan('PLAN-07')])
+    def test_should_never_stamp_a_shared_updated_field(self, plan_context):
+        root = _write_status(plan_context, 'add-stamp-epic', plans=[_make_plan('PLAN-07')])
 
         rejected = cmd_queue(_add_row_args('add-stamp-epic'))
-        assert _read_status_file(status_path)['updated'] == FIXED_TIMESTAMP
-
         accepted = cmd_queue(_add_row_args('add-stamp-epic', plan_id='PLAN-08'))
 
         assert rejected['status'] == 'error'
         assert accepted['status'] == 'success'
-        assert _read_status_file(status_path)['updated'] != FIXED_TIMESTAMP
+        assert 'updated' not in _header(root)
+        assert all('updated' not in row for row in _rows(root))
 
 
 class TestQueueAddRowRejections:
     def test_should_reject_a_lowercase_plan_id_without_writing(self, plan_context):
-        status_path = _write_status(plan_context, 'add-lower-epic', plans=[])
+        root = _write_status(plan_context, 'add-lower-epic', plans=[])
 
         result = cmd_queue(_add_row_args('add-lower-epic', add_row='plan-07'))
 
         assert result['status'] == 'error'
         assert result['error'] == 'invalid_plan_id'
-        assert _read_status_file(status_path)['plans'] == []
+        assert _rows(root) == []
 
     def test_should_reject_a_path_shaped_plan_id_without_writing(self, plan_context):
-        status_path = _write_status(plan_context, 'add-path-epic', plans=[])
+        root = _write_status(plan_context, 'add-path-epic', plans=[])
 
         result = cmd_queue(_add_row_args('add-path-epic', add_row='PLAN-07/evil'))
 
         assert result['status'] == 'error'
         assert result['error'] == 'invalid_plan_id'
-        assert _read_status_file(status_path)['plans'] == []
+        assert _rows(root) == []
+        assert not (root / 'queue').exists()
 
     def test_should_reject_a_traversing_plan_id_without_writing(self, plan_context):
-        status_path = _write_status(plan_context, 'add-traverse-epic', plans=[])
+        root = _write_status(plan_context, 'add-traverse-epic', plans=[])
 
         result = cmd_queue(_add_row_args('add-traverse-epic', add_row='../PLAN-07'))
 
         assert result['status'] == 'error'
         assert result['error'] == 'invalid_plan_id'
-        assert _read_status_file(status_path)['plans'] == []
+        assert _rows(root) == []
 
     def test_should_reject_a_trailing_newline_plan_id_without_writing(self, plan_context):
         """A trailing newline must not slip past the tail anchor.
@@ -1150,13 +1240,13 @@ class TestQueueAddRowRejections:
         appending the same logical plan twice and evading the
         ``duplicate_plan_id`` guard. The tail anchor is ``\\Z`` for this reason.
         """
-        status_path = _write_status(plan_context, 'add-newline-epic', plans=[])
+        root = _write_status(plan_context, 'add-newline-epic', plans=[])
 
         result = cmd_queue(_add_row_args('add-newline-epic', add_row='PLAN-07\n'))
 
         assert result['status'] == 'error'
         assert result['error'] == 'invalid_plan_id'
-        assert _read_status_file(status_path)['plans'] == []
+        assert _rows(root) == []
 
     def test_should_reject_a_newline_duplicate_of_an_already_queued_row(self, plan_context):
         """The newline variant must not append alongside its clean twin.
@@ -1166,7 +1256,7 @@ class TestQueueAddRowRejections:
         newline-bearing spelling must be refused rather than appended as a
         second row for the same logical plan.
         """
-        status_path = _write_status(
+        root = _write_status(
             plan_context,
             'add-newline-dup-epic',
             plans=[{'id': 'PLAN-07', 'slug': 'clean', 'workstream': 'WS-01', 'status': 'staged'}],
@@ -1176,7 +1266,7 @@ class TestQueueAddRowRejections:
 
         assert result['status'] == 'error'
         assert result['error'] == 'invalid_plan_id'
-        assert len(_read_status_file(status_path)['plans']) == 1
+        assert len(_rows(root)) == 1
 
     def test_should_require_slug_value_with_add_row(self, plan_context):
         _write_status(plan_context, 'add-nosl-epic', plans=[])
@@ -1240,13 +1330,13 @@ class TestQueueAddRowRejections:
         # transition form on its own. It must still be rejected when it dangles:
         # the restructured three-way guard has to keep the case the old
         # two-way pairing predicate expressed.
-        status_path = _write_status(plan_context, 'add-dangle-epic', plans=[_make_plan('PLAN-01')])
+        root = _write_status(plan_context, 'add-dangle-epic', plans=[_make_plan('PLAN-01')])
 
         result = cmd_queue(_queue_args('add-dangle-epic', status='running'))
 
         assert result['status'] == 'error'
         assert result['error'] == 'wrong_parameters'
-        assert _read_status_file(status_path)['plans'][0]['status'] == 'staged'
+        assert _rows(root)[0]['status'] == 'staged'
 
 
 def _write_raw_status(plan_context, slug: str, body: str) -> Path:
@@ -1263,7 +1353,7 @@ def _write_raw_status(plan_context, slug: str, body: str) -> Path:
 
 
 class TestQueueAddRowStatusDocumentGuard:
-    """The opening guard discriminates ``status.json`` three ways, not one.
+    """The opening guard discriminates the header ``status.json``, not one-way.
 
     A truthiness test on the PARSED document reports four different on-disk
     states as ``file_not_found``; a bare file-presence test collapses the same
@@ -1271,40 +1361,36 @@ class TestQueueAddRowStatusDocumentGuard:
     each is satisfiable alone by a guard that is wrong in the other direction:
     refusing everything satisfies (a) and (c) while breaking every first append
     at (b), and presence-only satisfies (a) and (b) while letting (c) through to
-    a write that would destroy the file.
-
-    The fourth arm — an absent ``plans`` key versus a present non-list one —
-    stays in :class:`TestQueueAddRowMalformedPlans` untouched, which is what
-    shows this caller-side guard did not disturb ``_append_plan_row``'s own
-    three-way outcome one level down.
+    a row write under a header nothing can read. The fourth arm — a header still
+    in the monolithic layout — is :class:`TestQueueLegacyLayoutRefusal`.
     """
 
     def test_should_report_file_not_found_when_status_json_is_absent(self, plan_context):
         cmd_scaffold(_variant(_SCAFFOLD_ARGS, slug='doc-absent-epic'))
-        status_path = _epic_dir(plan_context, 'doc-absent-epic') / 'status.json'
+        root = _epic_dir(plan_context, 'doc-absent-epic')
 
         result = cmd_queue(_add_row_args('doc-absent-epic'))
 
         assert result['status'] == 'error'
         assert result['error'] == 'file_not_found'
-        # Nothing was conjured: the guard refused before ``rmw_json`` could
-        # create the document it was asked to append to.
-        assert not status_path.exists()
+        # Nothing was conjured: no header and no row file beside no header.
+        assert not (root / 'status.json').exists()
+        assert not (root / 'queue').exists()
 
     def test_should_seed_the_queue_when_the_document_is_an_empty_object(self, plan_context):
-        """An empty ``{}`` document is a valid object, so the first append lands.
+        """An empty ``{}`` header is a valid object, so the first append lands.
 
         This is the arm a parsed-document truthiness guard fails: ``{}`` is
         falsy, so a present, well-formed, merely bare ledger was reported as a
         file that does not exist and the legitimate first-append seed path was
         blocked.
         """
-        status_path = _write_raw_status(plan_context, 'doc-empty-epic', '{}')
+        _write_raw_status(plan_context, 'doc-empty-epic', '{}')
 
         result = cmd_queue(_add_row_args('doc-empty-epic'))
 
         assert result['status'] == 'success'
-        assert _read_status_file(status_path)['plans'] == [_make_plan('PLAN-07')]
+        assert _rows_without_seq(_epic_dir(plan_context, 'doc-empty-epic')) == [_make_plan('PLAN-07')]
 
     @pytest.mark.parametrize(
         ('slug', 'body', 'observed_type'),
@@ -1317,12 +1403,7 @@ class TestQueueAddRowStatusDocumentGuard:
         ids=['unparseable', 'array', 'string', 'null'],
     )
     def test_should_refuse_a_present_non_object_document_without_writing(self, plan_context, slug, body, observed_type):
-        """A present-but-unusable document is refused, never reported absent.
-
-        Presence alone would not be safe here: ``rmw_json``'s own read degrades
-        every one of these to ``{}``, so admitting one would persist a document
-        holding nothing but the appended row and destroy what the file held.
-        """
+        """A present-but-unusable header is refused, never reported absent."""
         status_path = _write_raw_status(plan_context, slug, body)
 
         result = cmd_queue(_add_row_args(slug))
@@ -1330,52 +1411,83 @@ class TestQueueAddRowStatusDocumentGuard:
         assert result['status'] == 'error'
         assert result['error'] == 'invalid_status_document'
         assert result['observed_type'] == observed_type
-        # Byte-identical on disk: the refusal wrote nothing.
+        # Byte-identical on disk, and no row file beside the unusable header.
         assert status_path.read_text(encoding='utf-8') == body
+        assert not (status_path.parent / 'queue').exists()
 
 
-class TestQueueAddRowMalformedPlans:
-    """An absent ``plans`` key seeds the queue; a non-list value is refused.
+#: A monolithic-layout document — the retired shape every queue verb refuses.
+_LEGACY_DOC = _fixture_doc([_make_plan('PLAN-01', status='running')])
 
-    The two arms are asserted together on purpose. Refusing BOTH states would
-    satisfy the refusal arm on its own while breaking every first append, so the
-    absent-key arm is what makes the refusal arm mean "the malformed value was
-    held apart" rather than "the guard now rejects everything".
+
+def _legacy_epic(plan_context, slug: str) -> Path:
+    """Write the retired monolithic ``status.json`` for ``slug``; return the epic root."""
+    root = _epic_dir(plan_context, slug)
+    write_legacy_status(root, _LEGACY_DOC)
+    return root
+
+
+class TestQueueLegacyLayoutRefusal:
+    """Every queue form refuses a monolithic-layout ledger with ``legacy_layout``.
+
+    There is no read-fallback: a legacy ``status.json`` is never read as an
+    empty ledger and never written into, and the refusal names
+    ``migrate-layout`` as the one remedy. Each arm asserts the tree is
+    byte-identical afterwards and that no ``queue/`` directory was created.
+    The per-concern control shows the same forms succeed on a migrated ledger,
+    so the refusal is about the layout rather than about the verbs.
     """
 
     @pytest.mark.parametrize(
-        ('slug', 'malformed', 'observed_type'),
+        'form',
         [
-            ('add-plans-dict-epic', {'PLAN-01': 'staged'}, 'dict'),
-            ('add-plans-str-epic', 'PLAN-01,PLAN-02', 'str'),
+            {},
+            {'transition': 'PLAN-01', 'status': 'parked'},
+            {'set_row': 'PLAN-01', 'field': 'pr', 'value': '#1'},
+            {'add_row': 'PLAN-07', 'slug_value': 'plan-07', 'workstream': 'WS-01'},
         ],
-        ids=['dict', 'string'],
+        ids=['read', 'transition', 'set-row', 'add-row'],
     )
-    def test_should_refuse_a_present_non_list_plans_value_without_writing(
-        self, plan_context, slug, malformed, observed_type
-    ):
-        status_path = _write_status(plan_context, slug, plans=malformed)
-        before = _read_status_file(status_path)
+    def test_every_form_refuses_a_legacy_ledger_without_writing(self, plan_context, form):
+        root = _legacy_epic(plan_context, 'legacy-queue-epic')
+        before = _snapshot(root)
 
-        result = cmd_queue(_add_row_args(slug))
+        result = cmd_queue(_queue_args('legacy-queue-epic', **form))
 
         assert result['status'] == 'error'
-        assert result['error'] == 'invalid_plans'
-        assert result['observed_type'] == observed_type
-        # Refused in-lock before any mutation: the malformed value survives
-        # intact rather than being replaced by a queue holding only the new row,
-        # and ``updated`` is not re-stamped.
-        assert _read_status_file(status_path) == before
-        assert _read_status_file(status_path)['plans'] == malformed
+        assert result['error'] == 'legacy_layout'
+        assert 'migrate-layout' in result['remedy']
+        assert _snapshot(root) == before
+        assert not (root / 'queue').exists()
 
-    def test_should_still_seed_the_queue_when_the_plans_key_is_absent(self, plan_context):
-        status_path = _write_status(plan_context, 'add-plans-absent-epic', plans=_OMIT_PLANS)
-        assert 'plans' not in _read_status_file(status_path)
+    def test_resume_summary_refuses_a_legacy_ledger(self, plan_context):
+        _legacy_epic(plan_context, 'legacy-summary-epic')
 
-        result = cmd_queue(_add_row_args('add-plans-absent-epic'))
+        result = cmd_resume_summary(_variant(_RESUME_SUMMARY_ARGS, slug='legacy-summary-epic'))
 
-        assert result['status'] == 'success'
-        assert _read_status_file(status_path)['plans'] == [_make_plan('PLAN-07')]
+        assert result['status'] == 'error'
+        assert result['error'] == 'legacy_layout'
+
+    def test_regenerate_view_refuses_a_legacy_ledger_without_writing(self, plan_context):
+        root = _legacy_epic(plan_context, 'legacy-view-epic')
+        before = _snapshot(root)
+
+        result = cmd_regenerate_view(_variant(_REGENERATE_VIEW_ARGS, slug='legacy-view-epic'))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'legacy_layout'
+        assert _snapshot(root) == before
+        assert not (root / 'queue-view.md').exists()
+
+    def test_the_same_forms_succeed_once_the_ledger_is_migrated(self, plan_context):
+        root = _legacy_epic(plan_context, 'legacy-control-epic')
+
+        migrated = cmd_migrate_layout(_variant(_MIGRATE_ARGS, slug='legacy-control-epic'))
+        transition = cmd_queue(_queue_args('legacy-control-epic', transition='PLAN-01', status='parked'))
+
+        assert migrated['status'] == 'success'
+        assert transition['status'] == 'success'
+        assert _rows(root)[0]['status'] == 'parked'
 
 
 class TestQueueAddRowSpecPresence:
@@ -1427,13 +1539,13 @@ class TestQueueAddRowSpecPresence:
     def test_should_still_append_the_row_when_the_spec_is_absent(self, plan_context):
         # The probe REPORTS; it never gates the append. A plan is routinely
         # queued before its spec is written.
-        status_path = _write_status(plan_context, 'spec-nogate-epic', plans=[])
+        root = _write_status(plan_context, 'spec-nogate-epic', plans=[])
 
         result = cmd_queue(_add_row_args('spec-nogate-epic'))
 
         assert result['status'] == 'success'
         assert result['spec_presence'] == 'absent'
-        assert _read_status_file(status_path)['plans'] == [_make_plan('PLAN-07')]
+        assert _rows_without_seq(root) == [_make_plan('PLAN-07')]
 
 
 # =============================================================================
@@ -1789,6 +1901,181 @@ class TestResumeSummaryDerivedInbox:
         result = cmd_resume_summary(_variant(_RESUME_SUMMARY_ARGS, slug='shape-filter-epic'))
 
         assert result['inbox_archived'] == 2
+
+
+# =============================================================================
+# migrate-layout
+# =============================================================================
+
+#: The hand-written narrative a monolithic ``epic.md`` carries AROUND its two
+#: generated blocks. Both annotation zones are included, because the migration
+#: must leave every one of these bytes where it was.
+_EPIC_HEAD = (
+    '# Epic: Migration Fixture\n'
+    '\n'
+    'slug: migrate-epic\n'
+    '\n'
+    '## Vision\n'
+    '\n'
+    'A hand-written vision paragraph.\n'
+    '\n'
+    '## START HERE\n'
+    '\n'
+)
+_EPIC_SUMMARY_BLOCK = (
+    '<!-- GENERATED BLOCK — never hand-write or hand-edit this section.\n'
+    '     Paste the returned `summary` block verbatim between the markers. -->\n'
+    '\n'
+    '<!-- BEGIN GENERATED: resume-summary -->\n'
+    '**Resume anchor**: a stale pasted anchor\n'
+    '<!-- END GENERATED: resume-summary -->\n'
+    '\n'
+)
+_EPIC_MIDDLE = (
+    '### Annotations\n'
+    '\n'
+    '<!-- ANNOTATION ZONE — hand-written. -->\n'
+    '\n'
+    '- PLAN-01 — waits on the CI fix\n'
+    '\n'
+    '## Ordered Queue\n'
+    '\n'
+)
+_EPIC_QUEUE_BLOCK = (
+    '<!-- GENERATED BLOCK — never hand-write or hand-edit the table between the markers. -->\n'
+    '\n'
+    '<!-- BEGIN GENERATED: ordered-queue -->\n'
+    '| # | Plan | Workstream | Status | Surface (expected) |\n'
+    '|---|------|------------|--------|--------------------|\n'
+    '| 1 | PLAN-99 | WS-09 | staged | stale |\n'
+    '<!-- END GENERATED: ordered-queue -->\n'
+    '\n'
+)
+_EPIC_TAIL = (
+    '### Queue annotations\n'
+    '\n'
+    '<!-- ANNOTATION ZONE — hand-written queue notes. -->\n'
+    '\n'
+    '- PLAN-02 — disjoint from PLAN-01\n'
+    '\n'
+    '## Decisions\n'
+    '\n'
+    '- a recorded decision\n'
+)
+
+
+def _migration_fixture(plan_context, slug: str, *, archived: bool = False) -> Path:
+    """Write a monolithic ledger plus a marker-bearing ``epic.md``; return the epic root."""
+    base = 'archived-orchestrators' if archived else 'orchestrator'
+    root = Path(plan_context.fixture_dir) / base / slug
+    doc = _fixture_doc(
+        [
+            {**_make_plan('PLAN-01', status='running', plan_marshall_plan_id='epic-plan-1'), 'note': 'extra field'},
+            _make_plan('PLAN-02', status='shipped', pr='#12', landing='PLAN-02.md'),
+        ],
+        resume_anchor='resume at PLAN-01 CI',
+    )
+    doc['title_token'] = 'MIG'
+    write_legacy_status(root, doc)
+    epic = _EPIC_HEAD + _EPIC_SUMMARY_BLOCK + _EPIC_MIDDLE + _EPIC_QUEUE_BLOCK + _EPIC_TAIL
+    (root / 'epic.md').write_text(epic, encoding='utf-8')
+    return root
+
+
+class TestMigrateLayout:
+    """``migrate-layout`` converts a legacy tree preserving every value."""
+
+    def test_every_row_value_and_the_anchor_survive_the_conversion(self, plan_context):
+        root = _migration_fixture(plan_context, 'migrate-epic')
+
+        result = cmd_migrate_layout(_variant(_MIGRATE_ARGS, slug='migrate-epic'))
+
+        assert result['status'] == 'success'
+        assert result['already_migrated'] is False
+        assert result['rows_migrated'] == 2
+        rows = _rows(root)
+        assert rows == [
+            {
+                **_make_plan('PLAN-01', status='running', plan_marshall_plan_id='epic-plan-1'),
+                'seq': 1,
+                'note': 'extra field',
+            },
+            {**_make_plan('PLAN-02', status='shipped', pr='#12', landing='PLAN-02.md'), 'seq': 2},
+        ]
+        assert (root / 'resume_anchor.md').read_text(encoding='utf-8') == 'resume at PLAN-01 CI\n'
+        header = _header(root)
+        # Every header value survives — including one no field list names —
+        # and only the queue, the anchor and the shared stamp leave the header.
+        assert header['title_token'] == 'MIG'
+        assert header['title'] == 'Fixture Epic'
+        assert header['workstreams'] == ['WS-01']
+        assert not {'plans', 'resume_anchor', 'updated'} & set(header)
+
+    def test_the_generated_blocks_leave_and_every_hand_written_byte_stays(self, plan_context):
+        root = _migration_fixture(plan_context, 'migrate-epic')
+
+        result = cmd_migrate_layout(_variant(_MIGRATE_ARGS, slug='migrate-epic'))
+
+        assert (root / 'epic.md').read_text(encoding='utf-8') == _EPIC_HEAD + _EPIC_MIDDLE + _EPIC_TAIL
+        assert result['epic_blocks'] == [
+            {'block': 'resume-summary', 'outcome': 'removed'},
+            {'block': 'ordered-queue', 'outcome': 'removed'},
+        ]
+
+    def test_the_written_view_equals_a_fresh_render(self, plan_context):
+        root = _migration_fixture(plan_context, 'migrate-epic')
+
+        result = cmd_migrate_layout(_variant(_MIGRATE_ARGS, slug='migrate-epic'))
+        regenerated = cmd_regenerate_view(_variant(_REGENERATE_VIEW_ARGS, slug='migrate-epic'))
+
+        assert result['view_written'] is True
+        # A fresh render over the migrated ledger is byte-identical to what the
+        # migration wrote, so regenerating writes nothing.
+        assert regenerated['written'] is False
+        view = (root / 'queue-view.md').read_text(encoding='utf-8')
+        assert '| 1 | PLAN-01 | WS-01 | running |' in view
+        # The stale pasted row never reaches the view: it is rendered, not copied.
+        assert 'PLAN-99' not in view
+
+    def test_a_second_run_reports_already_migrated_and_writes_nothing(self, plan_context):
+        root = _migration_fixture(plan_context, 'migrate-epic')
+        cmd_migrate_layout(_variant(_MIGRATE_ARGS, slug='migrate-epic'))
+        before = _snapshot(root)
+
+        second = cmd_migrate_layout(_variant(_MIGRATE_ARGS, slug='migrate-epic'))
+
+        assert second['status'] == 'success'
+        assert second['already_migrated'] is True
+        assert _snapshot(root) == before
+
+    def test_an_archived_epic_is_resolved_and_converted_in_place(self, plan_context):
+        root = _migration_fixture(plan_context, 'migrate-archived-epic', archived=True)
+
+        result = cmd_migrate_layout(_variant(_MIGRATE_ARGS, slug='migrate-archived-epic'))
+
+        assert result['status'] == 'success'
+        assert result['archived'] is True
+        assert [row['id'] for row in _rows(root)] == ['PLAN-01', 'PLAN-02']
+        assert not _epic_dir(plan_context, 'migrate-archived-epic').exists()
+
+    def test_an_unmigratable_row_refuses_the_whole_conversion(self, plan_context):
+        root = _epic_dir(plan_context, 'migrate-bad-epic')
+        write_legacy_status(root, _fixture_doc([_make_plan('PLAN-01'), {'id': '../evil', 'slug': 'x'}]))
+        before = _snapshot(root)
+
+        result = cmd_migrate_layout(_variant(_MIGRATE_ARGS, slug='migrate-bad-epic'))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'unmigratable_rows'
+        assert result['rejected_rows'][0]['id'] == '../evil'
+        assert _snapshot(root) == before
+
+    def test_an_unsafe_slug_and_an_absent_tree_are_refused(self, plan_context):
+        unsafe = cmd_migrate_layout(_variant(_MIGRATE_ARGS, slug='../evil'))
+        absent = cmd_migrate_layout(_variant(_MIGRATE_ARGS, slug='ghost-epic'))
+
+        assert unsafe['error'] == 'invalid_slug'
+        assert absent['error'] == 'not_found'
 
 
 # =============================================================================

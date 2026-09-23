@@ -49,6 +49,7 @@ import re
 from pathlib import Path
 
 import pytest
+from _ledger_fixtures import write_ledger
 
 from conftest import MARKETPLACE_ROOT, get_script_path, load_script_module, run_script
 
@@ -707,10 +708,18 @@ def _mark_running(plan_context, plan_id: str = READER, slug: str = READ_EPIC) ->
     """Make the epic's queue read ``plan_id`` as running, so a write DELIVERS.
 
     The machine authority the write-side routing decision consults; without it
-    every write would queue and the mailbox would never be populated.
+    every write would queue and the mailbox would never be populated. Seeded as a
+    per-concern ledger through ``_ledger_fixtures.write_ledger``: the queue row is
+    keyed by a spec id and carries ``plan_id`` as the plan it runs under.
     """
-    (_epic_dir(plan_context, slug) / 'status.json').write_text(
-        json.dumps({'plans': [{'id': plan_id, 'status': 'running'}]}), encoding='utf-8'
+    write_ledger(
+        _epic_dir(plan_context, slug),
+        {
+            'kind': 'orchestrator',
+            'phase': 'orchestrating',
+            'plans': [{'id': 'PLAN-01', 'status': 'running', 'plan_marshall_plan_id': plan_id}],
+            'resume_anchor': '',
+        },
     )
 
 
@@ -1056,9 +1065,9 @@ class TestReadResolvesTheDeliveryAddress:
         # tree: a mailbox read is a read of messages addressed to that plan,
         # never of the epic's own state.
         _scaffold(plan_context)
+        _mark_running(plan_context)
         root = _epic_dir(plan_context)
         seeded = {
-            'status.json': '{"plans": [{"id": "reader-plan", "status": "running"}]}',
             'epic.md': '# Epic\n',
             'workstreams/WS-01-a.md': 'charter\n',
             'plans/PLAN-01-a.md': 'spec\n',
@@ -1066,12 +1075,18 @@ class TestReadResolvesTheDeliveryAddress:
         }
         for rel, content in seeded.items():
             (root / rel).write_text(content, encoding='utf-8')
-        _deliver(plan_context, _payload(tmp_path))
+        delivered = _deliver(plan_context, _payload(tmp_path)).toon()
+        assert delivered['destination'] == 'mailbox', 'the setup did not deliver, so the read would reach nothing'
+        # The ledger files are part of the epic's own state the read must not touch.
+        ledger_files = ['status.json', 'resume_anchor.md', 'queue/PLAN-01.json']
+        ledger_before = {rel: (root / rel).read_bytes() for rel in ledger_files}
 
         _read(plan_context)
 
         for rel, content in seeded.items():
             assert (root / rel).read_text(encoding='utf-8') == content, rel
+        for rel, content_bytes in ledger_before.items():
+            assert (root / rel).read_bytes() == content_bytes, rel
 
 
 class TestReadIdentifierValidationStaysFailClosed:

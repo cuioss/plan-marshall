@@ -81,6 +81,7 @@ from pathlib import Path
 from typing import Any
 
 from _dispatch_roster import parse_roster_rows, section_lines
+from _ledger_fixtures import write_ledger, write_legacy_status
 from conftest import MARKETPLACE_ROOT, load_script_module, parse_ns
 
 # =============================================================================
@@ -224,18 +225,34 @@ def _payload(tmp_path: Path, body: str = 'the advisory body', name: str = 'p.md'
     return str(path)
 
 
-def _set_plan_queue(plan_context, rows: list[tuple[str, str]], slug: str = EPIC) -> None:
-    """Record the epic's ``plans[]`` queue as the supplied ``(id, status)`` rows.
+def _queue_doc(rows: list[tuple[str, str]]) -> dict[str, Any]:
+    """A legacy-shaped ledger dict whose queue holds the supplied ``(plan id, status)`` rows.
 
-    The machine authority the routing decision reads. Writing the WHOLE queue in
+    Each row is keyed by a spec id (``PLAN-01``, ``PLAN-02``, … in the order
+    given) and carries the addressed plan in ``plan_marshall_plan_id`` — the plan
+    id it runs under, which is what ``--target-plan`` names.
+    """
+    return {
+        'kind': 'orchestrator',
+        'phase': 'orchestrating',
+        'plans': [
+            {'id': f'PLAN-{index:02d}', 'status': plan_status, 'plan_marshall_plan_id': plan_id}
+            for index, (plan_id, plan_status) in enumerate(rows, start=1)
+        ],
+        'resume_anchor': '',
+    }
+
+
+def _set_plan_queue(plan_context, rows: list[tuple[str, str]], slug: str = EPIC) -> None:
+    """Record the epic's queue as the supplied ``(plan id, status)`` rows.
+
+    The machine authority the routing decision reads, seeded as a per-concern
+    ledger through ``_ledger_fixtures.write_ledger``. Writing the WHOLE queue in
     one call — rather than marking plans running one at a time — is what lets a
     matched pair's two arms be stated side by side, differing only in the status
     token each row carries.
     """
-    status = _epic_dir(plan_context, slug) / 'status.json'
-    data = json.loads(status.read_text(encoding='utf-8')) if status.is_file() else {}
-    data['plans'] = [{'id': plan_id, 'status': plan_status} for plan_id, plan_status in rows]
-    status.write_text(json.dumps(data), encoding='utf-8')
+    write_ledger(_epic_dir(plan_context, slug), _queue_doc(rows))
 
 
 def _write(tmp_path: Path, *, target_plan: str | None, body: str, name: str) -> dict[str, Any]:
@@ -372,6 +389,52 @@ class TestDeliveryRoundTrip:
         assert drained['live_count'] == 0
         assert addressed['count'] == 1
         assert addressed['live_count'] == 1
+
+
+class TestLegacyLayoutQueuesRatherThanDelivers:
+    def test_a_legacy_ledger_naming_the_addressee_running_queues_the_message(self, plan_context, tmp_path):
+        """The ``_orchestrator_inbox`` rule for an unmigrated ledger, as a matched pair.
+
+        Both arms name the addressee as ``running`` in the SAME queue content and
+        differ only in the ledger layout: the per-concern arm delivers, while the
+        monolithic arm — whose ``plans[]`` is refused rather than read — queues,
+        and names why. A legacy document is never POSITIVELY read as running, so
+        delivery is never inferred from it.
+        """
+        cmd_scaffold(_SCAFFOLD_ARGS)
+        write_legacy_status(_epic_dir(plan_context), _queue_doc([(ADDRESSEE, RUNNING_STATUS)]))
+
+        legacy = _write(tmp_path, target_plan=ADDRESSEE, body='aimed at a legacy ledger', name='a.md')
+
+        assert legacy['status'] == 'success'
+        assert legacy['destination'] == WRITE_DESTINATION_QUEUE
+        assert legacy['routing_reason'] == _inbox.ROUTING_LEDGER_LEGACY
+        assert not _mailbox_dir(plan_context).exists()
+
+        _set_plan_queue(plan_context, [(ADDRESSEE, RUNNING_STATUS)])
+        migrated = _write(tmp_path, target_plan=ADDRESSEE, body='aimed at a migrated ledger', name='b.md')
+
+        assert migrated['destination'] == WRITE_DESTINATION_MAILBOX
+        assert migrated['routing_reason'] == _inbox.ROUTING_TARGET_RUNNING
+
+    def test_every_routing_reason_is_a_member_of_the_closed_vocabulary(self, plan_context, tmp_path):
+        cmd_scaffold(_SCAFFOLD_ARGS)
+        _set_plan_queue(plan_context, [(ADDRESSEE, RUNNING_STATUS), (SETTLED_PLAN, NOT_RUNNING_STATUS)])
+
+        reasons = {
+            _write(tmp_path, target_plan=ADDRESSEE, body='a', name='a.md')['routing_reason'],
+            _write(tmp_path, target_plan=SETTLED_PLAN, body='b', name='b.md')['routing_reason'],
+            _write(tmp_path, target_plan='absent-plan', body='c', name='c.md')['routing_reason'],
+            _write(tmp_path, target_plan=None, body='d', name='d.md')['routing_reason'],
+        }
+
+        assert reasons == {
+            _inbox.ROUTING_TARGET_RUNNING,
+            _inbox.ROUTING_TARGET_NOT_RUNNING,
+            _inbox.ROUTING_TARGET_NOT_QUEUED,
+            _inbox.ROUTING_NO_TARGET,
+        }
+        assert reasons <= _inbox.ROUTING_REASONS
 
 
 class TestTheRoundTripWalksAllThreeDeliveryStates:

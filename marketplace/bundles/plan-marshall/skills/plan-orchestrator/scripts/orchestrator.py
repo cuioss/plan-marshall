@@ -3,53 +3,59 @@
 """Thin scaffolding script for the plan-orchestrator skill.
 
 Deliberately lean, per the orchestrator's lean posture: everything that
-requires judgement stays LLM-workflow; this script owns nine deterministic
-operation groups against the git-tracked orchestrator store
+requires judgement stays LLM-workflow; this script owns the deterministic
+operation groups below against the git-tracked orchestrator store
 (``.plan/orchestrator/{slug}/``, resolved via
-``file_ops.get_store_dir('orchestrator', slug)``):
+``file_ops.get_store_dir('orchestrator', slug)``). Every read and write of the
+epic LEDGER — the header ``status.json``, the ``resume_anchor.md`` text and the
+one-file-per-row ``queue/{PLAN-ID}.json`` queue — goes through
+``manage-status``'s ``_orchestrator_ledger`` module, the single owner of that
+per-concern layout; no code path here opens a queue row or the anchor itself.
 
 - ``scaffold --slug S`` — create the epic directory tree (idempotent).
 - ``queue --slug S [--transition PLAN-NN --status X | --set-row PLAN-NN
   --field F --value V | --add-row PLAN-NN --slug-value SLUG --workstream WS-NN
-  [--status X]]`` — a four-way surface over the plan queue in ``status.json``:
-  read the whole queue, transition one plan's ``status``, set one result field
-  (:data:`PLAN_ROW_FIELDS`) of one plan row, or append one new plan row. All
-  three write forms run inside the shared ``rmw_json`` critical section — the
-  two row-locating forms mutate the row they find, and ``--add-row`` appends
-  after re-checking the FRESH in-lock queue for its id — so no unsynchronised
-  whole-array rewrite remains, and staging one plan no longer means rewriting
-  every row.
-- ``resume-summary --slug S`` — generate the two derivable ``epic.md`` blocks
-  from ``status.json`` (the machine authority) and the filesystem for the LLM to
-  paste between their generated-block markers: the ``summary`` (START-HERE) block
-  and the ``ordered_queue`` (Ordered Queue table) block. This is the lightweight
-  render path a reconciling verb calls after a queue change; ``compact`` rewrites
-  the SAME two blocks in place at ``cleanup``, sharing these renderers. Four
-  detectors run on the RENDERED START-HERE block and ride the same payload:
+  [--status X]]`` — a four-way surface over the plan queue's row files: read
+  the whole queue, transition one plan's ``status``, set one result field
+  (:data:`PLAN_ROW_FIELDS`) of one plan row, or stage one new plan row. The two
+  row-locating forms read-modify-write ONE row file, and ``--add-row`` creates
+  ONE new row file atomically (a duplicate id is refused by the exclusive
+  create), so staging one plan never touches another plan's row.
+- ``resume-summary --slug S`` — a READ that writes nothing: render the START
+  HERE block (``summary``) and the Ordered Queue table (``ordered_queue``)
+  through :func:`render_queue_view`'s renderers, and report ``view_current`` —
+  whether the committed ``queue-view.md`` equals a fresh render. Four detectors
+  run on the RENDERED START-HERE block and ride the same payload:
   ``count_divergences[]`` (a claimed count that does not match its derivation),
   ``contradictions[]`` (two mutually-exclusive claims inside one rendering),
   ``shared_slugs[]`` (N queued rows sharing one slug), and
   ``epic_slug_matches[]`` (any queued row whose slug equals the epic slug).
   All four report and none rewrites.
+- ``regenerate-view --slug S`` — write the generated, git-tracked
+  ``queue-view.md`` atomically from :func:`render_queue_view`. It is also the
+  remedy for a merge conflict in that file: it never reads the file it writes,
+  and it refuses — writing nothing — when a source file it renders from cannot
+  be read, so regeneration cannot paper over a genuine source conflict.
+- ``migrate-layout --slug S`` — convert a monolithic-layout ledger (active or
+  archived) into the per-concern files, preserving every value, strip the two
+  generated blocks out of ``epic.md`` leaving every hand-written byte in place,
+  and write a fresh ``queue-view.md``. Idempotent (``already_migrated``).
 - ``archive --slug S`` — relocate a *closed* epic tree to
   ``.plan/archived-orchestrators/{slug}/`` (a mechanical, post-close
   directory move that requires no judgement; refuses a non-closed epic).
 - ``compact --slug S`` — the ledger-compaction stage ``workflow/cleanup.md``
-  Phase B calls: regenerate every DERIVABLE surface of ``epic.md`` in place (the
-  START-HERE resume summary and the Ordered Queue table) from ``status.json``
-  and the staged specs, leaving every byte OUTSIDE the ``BEGIN/END GENERATED``
-  markers untouched, then verify the invariants (bidirectional queue
-  reconciliation, no terminal row in the live queue, relocation-pointer
-  reachability) and report every mutation and every abstention. Idempotent — a
-  second run finds every block ``unchanged`` and writes nothing. Refuses a
-  closed epic (``refused_closed``): compaction is a live-epic operation only.
-  The narrative-versus-settled RELOCATION judgement is NOT here; it stays LLM.
+  Phase B calls: verify the invariants (bidirectional queue reconciliation and
+  relocation-pointer reachability), then regenerate ``queue-view.md`` through
+  the SAME writer ``regenerate-view`` uses, and report every abstention. It
+  makes no ``epic.md`` write. Refuses a closed epic (``refused_closed``):
+  compaction is a live-epic operation only. The narrative-versus-settled
+  RELOCATION judgement is NOT here; it stays LLM.
 - ``corpus {epics,enumerate,read,cross-check,surfaces,declaration-currency,verdicts,set-verdict}`` — the
   epic population and the epic's staged
   spec corpus: enumerate every epic slug in the store (``epics`` — the one
   slug-free verb, partitioned into active and archived, publishing the roots it
   walked and the population size so a zero names the directory it came from),
-  reconcile the ``status.json`` ``plans[]`` queue against the
+  reconcile the queue rows against the
   ``plans/PLAN-*.md`` spec files in BOTH directions, return one staged spec
   file body through the sanctioned script-mediated read path (``read`` — the
   compliant alternative to a direct ``Read`` of the ledger tree), cross-check those specs
@@ -112,10 +118,13 @@ operation groups against the git-tracked orchestrator store
   Best-effort throughout: a collector failure degrades (drop, report
   ``degraded: true``) and never blocks plan start.
 
-The ``kind=orchestrator`` ``status.json`` schema is owned by
-``manage-status/standards/status-lifecycle.md``; ``status.json`` is created
-via ``manage-status create --store orchestrator``, never by this script.
-No implementation-side capability (no build/CI/source verbs) exists here.
+The ``kind=orchestrator`` ledger schema is owned by
+``manage-status/standards/status-lifecycle.md``; the header and the anchor are
+created via ``manage-status create --store orchestrator``, never by this script.
+A ledger still in the monolithic layout (a ``status.json`` carrying the queue
+or the anchor) is REFUSED with ``legacy_layout`` by every verb that reads the
+queue, naming ``migrate-layout`` as the remedy — it is never read as an empty
+ledger. No implementation-side capability (no build/CI/source verbs) exists here.
 """
 
 import argparse
@@ -139,7 +148,6 @@ from _cmd_sibling_collision import (
     _read_affected_files,
     _read_request_source,
 )
-from _locks_core import rmw_json
 from _orchestrator_inbox import (
     INBOX_SUBDIR,
     KINDS,
@@ -159,6 +167,22 @@ from _orchestrator_inbox import (
     cmd_inbox_write,
     inbox_counts,
 )
+from _orchestrator_ledger import (
+    LEDGER_ABSENT,
+    LEDGER_LEGACY,
+    LEDGER_OK,
+    LedgerRead,
+    assemble_view,
+    create_row,
+    detect_legacy,
+    legacy_layout_error,
+    migrate_document,
+    mutate_row,
+    read_header,
+    read_rows,
+    view_path,
+    write_layout,
+)
 from epic_spec_parser import (
     PLAN_ID_SEGMENT,
     SpecClaim,
@@ -171,7 +195,6 @@ from file_ops import (
     get_store_dir,
     now_utc_iso,
     output_toon,
-    read_json,
     safe_main,
 )
 from input_validation import validate_plan_id
@@ -272,13 +295,15 @@ assert _DECLARED_STATUS_COUNT == len(VALID_STATUS_VOCABULARY), (
     'difference silently'
 )
 
-#: The fields one appended ``plans[]`` row is seeded with, in the order
-#: ``--add-row`` writes them: the three identity fields the caller supplies, the
-#: status it starts at, and the three RESULT fields (:data:`PLAN_ROW_FIELDS`)
-#: seeded EMPTY because an appended row has landed nothing yet. Stated here so
-#: the seed shape is readable in one place; :data:`PLAN_ROW_FIELDS` and
-#: :func:`_set_row_field` are untouched by the append path, which writes a whole
-#: row rather than patching a field of one.
+#: The fields one staged row file is seeded with, in the order ``--add-row``
+#: writes them: the three identity fields the caller supplies, the status it
+#: starts at, the three RESULT fields (:data:`PLAN_ROW_FIELDS`) seeded EMPTY
+#: because a staged row has landed nothing yet, and ``seq`` — the queue-order
+#: key the ledger module allocates at create time as the local maximum plus one,
+#: so the rendered order reproduces staging order. Stated here so the seed shape
+#: is readable in one place; :data:`PLAN_ROW_FIELDS` and :func:`_set_row_field`
+#: are untouched by the append path, which writes a whole row rather than
+#: patching a field of one.
 ADD_ROW_SEED_FIELDS = (
     'id',
     'slug',
@@ -287,6 +312,7 @@ ADD_ROW_SEED_FIELDS = (
     'plan_marshall_plan_id',
     'pr',
     'landing',
+    'seq',
 )
 
 #: The status an appended row starts at when the caller names none. ``--status``
@@ -321,16 +347,20 @@ SPEC_PRESENCE_PRESENT = 'present'
 SPEC_PRESENCE_ABSENT = 'absent'
 SPEC_PRESENCE_UNLISTABLE = 'unlistable'
 
-#: The three-valued verdict of the ``--add-row`` pre-lock ``status.json`` probe,
-#: held apart for the same ADR-019 reason the spec-presence vocabulary above is:
-#: a document that is NOT THERE and a document that IS there but cannot be read
-#: as a JSON object are different facts, and they owe the operator different
-#: remedies. :data:`STATUS_DOC_OBJECT` deliberately includes the EMPTY document
-#: ``{}`` — a valid, if bare, object, and therefore a legitimate first-append
-#: seed rather than a missing file.
+#: The four-valued verdict of the queue-write header probe
+#: (:func:`_probe_status_document`), held apart for the same ADR-019 reason the
+#: spec-presence vocabulary above is: a header that is NOT THERE, one that IS
+#: there but cannot be read as a JSON object, and one still in the monolithic
+#: layout are different facts, and they owe the operator different remedies.
+#: :data:`STATUS_DOC_OBJECT` deliberately includes the EMPTY document ``{}`` — a
+#: valid, if bare, per-concern header. :data:`STATUS_DOC_LEGACY` is a header that
+#: still carries the queue or the anchor: it is refused with ``legacy_layout``
+#: and never written into, because a row file staged beside a legacy ``plans[]``
+#: would split one queue across two representations.
 STATUS_DOC_ABSENT = 'absent'
 STATUS_DOC_NON_OBJECT = 'non_object'
 STATUS_DOC_OBJECT = 'object'
+STATUS_DOC_LEGACY = 'legacy_layout'
 
 # --- corpus group ----------------------------------------------------------
 
@@ -750,22 +780,23 @@ NOT_AVAILABLE = 'not_available'
 #: than leaving a silent gap. This component observes that surface not at all.
 REGISTRY_PARITY_OWNER = 'PLAN-TRUTH-059'
 
-# --- compact stage (ledger compaction) -------------------------------------
+# --- the generated view and the compact stage -------------------------------
 #
-# The compact stage regenerates every DERIVABLE surface of ``epic.md`` in place
-# — the content between a ``BEGIN/END GENERATED`` marker pair, and nothing else.
-# Everything outside the markers is narrative and is left byte-identical, which
-# is what makes "a retraction survives a pass verbatim" a structural property
-# rather than a test coincidence. The narrative-versus-settled RELOCATION
-# judgement is NOT here — it stays with the orchestrator (``workflow/cleanup.md``
-# Step 8); this stage regenerates the derivable, verifies the invariants, reports.
+# START HERE and the Ordered Queue are DERIVED surfaces. They are rendered by ONE
+# pure function, :func:`render_queue_view`, and persisted in ONE generated,
+# git-tracked file, ``queue-view.md``, written by ONE writer,
+# :func:`_write_queue_view` — which ``regenerate-view``, ``compact`` and
+# ``migrate-layout`` all call. ``epic.md`` holds hand-written narrative only, so a
+# regeneration never touches a hand-written byte and a hand edit never collides
+# with a regeneration. The narrative-versus-settled RELOCATION judgement is NOT
+# here — it stays with the orchestrator (``workflow/cleanup.md`` Step 8).
 
 FILE_EPIC = 'epic.md'
 FILE_SETTLED = 'settled.md'
 
-#: The phase at which the epic is frozen. The compact stage MUTATES ``epic.md``,
-#: so it refuses a closed epic — that tree is the frozen audit record ``close``
-#: already sealed, and compaction is a live-epic operation only.
+#: The phase at which the epic is frozen. The compact stage WRITES
+#: ``queue-view.md``, so it refuses a closed epic — that tree is the frozen audit
+#: record ``close`` already sealed, and compaction is a live-epic operation only.
 CLOSED_PHASE = 'closed'
 
 #: Plan statuses whose row no longer belongs in the LIVE Ordered Queue — a
@@ -774,48 +805,38 @@ CLOSED_PHASE = 'closed'
 #: membership by construction so the two never drift; named apart to document the
 #: queue-exclusion intent. The alias is deliberately over the FINISHED set rather
 #: than the shipped one: exclusion asks whether the work is done, never whether
-#: it produced a PR.
+#: it produced a PR. The renderer excludes these rows BY CONSTRUCTION, so no
+#: post-render invariant re-checks the table.
 LIVE_QUEUE_EXCLUDED_STATUSES = TERMINAL_PLAN_STATUSES
 
-#: The two GENERATED marker pairs the compact stage regenerates, each keyed by
-#: the block name that rides in the marker comment. Order is the emission order
-#: in ``templates/epic.md``. A block whose markers are ABSENT from a given
-#: epic.md is reported as ``markers_absent`` and skipped — never fabricated,
-#: because inserting markers into a hand-authored document is a structural edit
-#: the stage has no mandate to make.
+#: The two GENERATED marker pairs a monolithic-layout ``epic.md`` carried, keyed
+#: by the block name that rides in the marker comment, in emission order. They
+#: are no longer written anywhere: ``migrate-layout`` is their only reader, and
+#: it REMOVES them (with the generated-block guidance comment above each) so the
+#: converted ``epic.md`` keeps every hand-written byte and nothing generated.
 GENERATED_BLOCKS = ('resume-summary', 'ordered-queue')
 
-#: The ``##`` section of ``templates/epic.md`` that OWNS each generated block —
-#: the heading a reader would look under to find that derivable surface. Used
-#: only to key a block's ``markers_absent`` outcome back onto the section the
-#: compaction report names, so a section the stage COULD NOT reach is
-#: distinguishable from one it deliberately left alone. Titles are matched
-#: case-insensitively after stripping, since epic.md is hand-authored. A block
-#: whose owning heading is absent from a given epic.md yields no abstained row at
-#: all; its absence is still reported as that block's ``markers_absent`` outcome
-#: in ``regenerated[]``.
-GENERATED_BLOCK_OWNING_SECTION: dict[str, str] = {
-    'resume-summary': 'START HERE',
-    'ordered-queue': 'Ordered Queue',
-}
+#: The opening of the guidance comment the monolithic template placed above each
+#: generated block. ``migrate-layout`` removes that comment together with the
+#: block it described, and only a comment opening with exactly this text: any
+#: other comment is hand-written and stays.
+_GENERATED_GUIDANCE_OPENER = '<!-- GENERATED BLOCK'
 
-#: The two ``abstained[]`` treatments. ``preserved_verbatim`` is a CHOICE — the
-#: section carries no derivable surface, so leaving it alone is the correct
-#: outcome. ``markers_absent_not_regenerated`` is a BLIND SPOT — the section
-#: carries a derivable surface whose marker pair is missing, so the stage could
-#: not reach it and regenerated nothing. Emitting the first for the second would
-#: report a deliberate abstention the stage never made.
+#: The ``abstained[]`` treatment ``compact`` reports for every ``##`` section of
+#: ``epic.md``. The stage makes no ``epic.md`` write at all, so every section is
+#: preserved verbatim — and it is still NAMED, because a report that lists only
+#: what changed cannot be told apart from one that silently dropped something.
 TREATMENT_PRESERVED = 'preserved_verbatim'
-TREATMENT_UNREACHABLE = 'markers_absent_not_regenerated'
 
-# The two block registries must name the SAME blocks. They are kept separate
-# rather than derived from one another because they answer different questions —
-# which blocks the stage regenerates, and which heading owns each — but a block
-# added to one and not the other would either lose its ownership treatment or
-# claim an ownership it has no block for. Neither direction can pass silently.
-assert frozenset(GENERATED_BLOCKS) == frozenset(GENERATED_BLOCK_OWNING_SECTION), (
-    f'GENERATED_BLOCKS {sorted(GENERATED_BLOCKS)} and GENERATED_BLOCK_OWNING_SECTION '
-    f'{sorted(GENERATED_BLOCK_OWNING_SECTION)} name different blocks'
+#: The fixed header comment every rendered ``queue-view.md`` opens with. It is the
+#: whole operating instruction for a reader who meets the file on a plain clone
+#: or in a merge conflict, and it carries no timestamp and no machine-local path,
+#: so two machines rendering the same ledger state write byte-identical files.
+_VIEW_HEADER = (
+    "<!-- GENERATED FILE — never hand-edit. Rendered from this epic's ledger (status.json, "
+    'resume_anchor.md, queue/*.json) by `orchestrator regenerate-view --slug {slug}`. '
+    'On a merge conflict in this file, do not merge it by hand: merge the source files, run '
+    '`orchestrator regenerate-view --slug {slug}`, and `git add` the result. -->'
 )
 
 
@@ -1014,47 +1035,74 @@ def _epic_root(slug: str, allow_archived: bool = False) -> Path:
     return get_store_dir(ORCHESTRATOR_STORE, slug, allow_archived=allow_archived)
 
 
-def _read_status(slug: str, allow_archived: bool = False) -> dict[str, Any]:
-    """Read the epic's status.json (empty dict when absent or malformed).
+def _read_ledger(slug: str, allow_archived: bool = False) -> LedgerRead:
+    """Assemble the epic ledger through the layout module — the ONE read path.
 
-    ``read_json`` degrades a missing/unreadable/unparseable file to ``{}``, but
-    a status.json whose top-level JSON is valid-but-non-dict (an array, a bare
-    string, ``null``) would otherwise reach ``dict(...)`` and raise. Fall back
-    to ``{}`` on any non-dict parse so callers always receive a dict.
-
-    ``allow_archived`` threads into :func:`_epic_root` so READ verbs resolve an
-    archived epic transparently when its active tree is absent.
+    Every reader of the queue or the anchor in this script comes through here, so
+    no code path opens ``status.json`` for its queue, a row file, or the anchor
+    file itself. ``allow_archived`` threads into :func:`_epic_root` so READ verbs
+    resolve an archived epic transparently when its active tree is absent.
     """
-    data = read_json(_epic_root(slug, allow_archived=allow_archived) / FILE_STATUS)
-    if not isinstance(data, dict):
-        return {}
-    return dict(data)
+    return assemble_view(_epic_root(slug, allow_archived=allow_archived))
+
+
+def _ledger_refusal(slug: str, ledger: LedgerRead) -> dict[str, Any] | None:
+    """The error envelope for a ledger read that did not assemble, else ``None``.
+
+    Each non-``ok`` state keeps its own error, because they owe different
+    remedies (ADR-019): an absent header is ``file_not_found``; a header still in
+    the monolithic layout is ``legacy_layout`` naming ``migrate-layout``, and is
+    never read as an empty ledger; a header, anchor or queue directory that could
+    not be read is ``ledger_unreadable`` with the evidence.
+    """
+    if ledger.state == LEDGER_OK:
+        return None
+    if ledger.state == LEDGER_ABSENT:
+        return _error(slug, 'file_not_found', 'status.json not found in orchestrator store')
+    if ledger.state == LEDGER_LEGACY:
+        return _error(slug, **legacy_layout_error(slug))
+    return _error(
+        slug,
+        'ledger_unreadable',
+        f'the epic ledger could not be read: {ledger.detail}; nothing was written',
+        detail=ledger.detail,
+    )
+
+
+def _read_status(slug: str, allow_archived: bool = False) -> dict[str, Any]:
+    """The assembled ledger view, or ``{}`` when the ledger did not assemble.
+
+    A convenience for the readers that only need the view and report their own
+    could-not-read outcome on an empty dict. A caller that must tell the
+    non-``ok`` states apart — every verb that returns an error for them — reads
+    :func:`_read_ledger` and maps it through :func:`_ledger_refusal` instead, so a
+    legacy ledger is refused by name rather than read as an empty one.
+    """
+    ledger = _read_ledger(slug, allow_archived=allow_archived)
+    return dict(ledger.document) if ledger.state == LEDGER_OK else {}
+
+
+def _unreadable_row_names(ledger: LedgerRead) -> list[str]:
+    """The file names of every row file the assembled read could not read."""
+    return [str(row.get('file', '')) for row in ledger.unreadable_rows]
 
 
 def _probe_status_document(slug: str) -> dict[str, str]:
-    """Classify the epic's ``status.json`` three ways for the append WRITE path.
+    """Classify the epic header four ways for the queue WRITE path.
 
-    The write-side counterpart to :func:`_read_status`, which structurally cannot
-    serve this caller: ``_read_status`` returns ``{}`` for FOUR different on-disk
-    states — an absent file, an unreadable one, an unparseable one, and one whose
-    top-level JSON is valid but not a mapping — and that coercion is a READ
-    convenience its other callers rely on. Its contract is therefore left
-    untouched and the discrimination is made here instead.
-
-    A bare presence check would not serve either, and is the reason this probe is
-    three-valued rather than two. A document that is PRESENT but not a JSON
-    object must be REFUSED, not admitted: ``rmw_json``'s own read degrades it to
-    ``{}``, so letting one reach :func:`_append_plan_row` would persist a
-    document holding nothing but the appended row and destroy whatever the file
-    held. That is exactly the destruction :func:`_append_plan_row` already
-    refuses one level down for a malformed ``plans`` value, refused here one
-    level up for a malformed document.
+    The write-side counterpart to :func:`_read_ledger`. The header is probed
+    before any row file is created or mutated, because a row write under a
+    header that is absent, not a JSON object, or still in the monolithic layout
+    would each leave the ledger in a state no reader can interpret: a row beside
+    no header, a row beside a corrupt one, or a row file beside a legacy
+    ``plans[]`` that still holds the queue.
 
     Returns ``state`` (one of :data:`STATUS_DOC_ABSENT`,
-    :data:`STATUS_DOC_NON_OBJECT` and :data:`STATUS_DOC_OBJECT`),
-    ``observed_type`` (the top-level JSON type name, or ``unparseable`` /
-    ``unreadable`` when no type could be read at all) and ``detail`` (the
-    evidence behind the verdict, so the operator sees what is in the file).
+    :data:`STATUS_DOC_NON_OBJECT`, :data:`STATUS_DOC_LEGACY` and
+    :data:`STATUS_DOC_OBJECT`), ``observed_type`` (the top-level JSON type name,
+    or ``unparseable`` / ``unreadable`` when no type could be read at all) and
+    ``detail`` (the evidence behind the verdict, so the operator sees what is in
+    the file).
     """
     path = _epic_root(slug) / FILE_STATUS
     try:
@@ -1089,10 +1137,33 @@ def _probe_status_document(slug: str) -> dict[str, str]:
             'observed_type': observed,
             'detail': f'{path} parses to a {observed} at its top level, not an object',
         }
-    # An EMPTY object reaches here deliberately: ``{}`` is a valid object, so the
-    # append proceeds and :func:`_append_plan_row` takes its absent-key branch to
-    # seed the queue with the first row.
+    if detect_legacy(parsed):
+        return {
+            'state': STATUS_DOC_LEGACY,
+            'observed_type': 'dict',
+            'detail': f'{path} still carries the queue or the resume anchor',
+        }
+    # An EMPTY object reaches here deliberately: ``{}`` is a valid, if bare,
+    # per-concern header, so a write proceeds against it.
     return {'state': STATUS_DOC_OBJECT, 'observed_type': 'dict', 'detail': ''}
+
+
+def _header_refusal(slug: str, probe: dict[str, str]) -> dict[str, Any] | None:
+    """The error envelope a queue write returns for a header it must not write under."""
+    if probe['state'] == STATUS_DOC_ABSENT:
+        return _error(slug, 'file_not_found', 'status.json not found in orchestrator store')
+    if probe['state'] == STATUS_DOC_LEGACY:
+        return _error(slug, **legacy_layout_error(slug))
+    if probe['state'] == STATUS_DOC_NON_OBJECT:
+        return _error(
+            slug,
+            'invalid_status_document',
+            f'status.json is present but is not a JSON object ({probe["detail"]}); '
+            'the queue write was refused and NOTHING was written — repair the document '
+            'before writing, so whatever it holds is not silently discarded',
+            observed_type=probe['observed_type'],
+        )
+    return None
 
 
 def _set_row_field(row: dict[str, Any], field: str, value: str) -> dict[str, Any]:
@@ -1103,138 +1174,51 @@ def _set_row_field(row: dict[str, Any], field: str, value: str) -> dict[str, Any
 
 
 def _mutate_plan_row(slug: str, plan_id: str, apply: Callable[[dict[str, Any]], dict[str, Any]]) -> dict[str, Any]:
-    """Apply ``apply`` to one ``plans[]`` row inside a serialized critical section.
+    """Apply ``apply`` to one queue row inside that row file's own critical section.
 
     The row-LOCATING write path for the plan queue: ``--transition`` and
-    ``--set-row`` route through here, so no unsynchronised read-modify-write of
-    an existing ``plans[]`` row remains. The third write form, ``--add-row``,
-    creates a row rather than locating one and therefore has its own entry point
-    (:func:`_append_plan_row`) — but it shares this function's critical section,
-    so "no unsynchronised read-modify-write of ``plans[]``" holds across all
-    three forms. The mutation runs against the FRESH in-lock state via
-    the shared ``O_EXCL``-guarded :func:`_locks_core.rmw_json` — the same
-    critical section ``manage-status update-field`` uses for this very document
-    — so a concurrent orchestrator session stamping a DIFFERENT row (or a
-    different field of the same row) cannot be clobbered by a last-writer-wins
-    over a stale read. ``updated`` is re-stamped only when a row was located.
+    ``--set-row`` route through here. It is a one-row-file operation through the
+    ledger module's :func:`_orchestrator_ledger.mutate_row`, which runs the
+    shared ``O_EXCL``-guarded read-modify-write over ``queue/{plan_id}.json``
+    alone — so a concurrent session stamping a DIFFERENT row writes a different
+    file and cannot collide with this one at all, and one stamping the same row
+    is serialized rather than clobbered. No write stamps a shared ``updated``
+    field: a stamp every write restamps is the collision line the per-concern
+    layout exists to remove.
 
-    Returns a dict carrying either ``result`` (the value ``apply`` returned for
-    the located row) or ``available_plans`` (every queued plan id) when
-    ``plan_id`` is absent from the queue.
+    Returns the module's outcome dict, carrying exactly one of ``result`` (the
+    value ``apply`` returned for the located row), ``invalid_id`` (the id does
+    not match the plan-id grammar), ``available_plans`` (no row file exists for
+    the id; every readable row id in queue order) or ``unreadable`` (the row file
+    exists but could not be read, so it was refused rather than overwritten).
     """
-    outcome: dict[str, Any] = {}
-
-    def _mutate(state: dict[str, Any]) -> dict[str, Any]:
-        plans = state.get('plans', [])
-        for row in plans:
-            if row.get('id') == plan_id:
-                outcome['result'] = apply(row)
-                state['updated'] = now_utc_iso()
-                return state
-        outcome['available_plans'] = [row.get('id', '') for row in plans]
-        return state
-
-    rmw_json(_epic_root(slug) / FILE_STATUS, _mutate)
-    return outcome
+    return mutate_row(_epic_root(slug), plan_id, apply)
 
 
 def _append_plan_row(slug: str, row: dict[str, Any]) -> dict[str, Any]:
-    """Append one row to ``plans[]`` inside the SAME serialized critical section
-    (the state-independent epic-slug refusal below returns before it, needing
-    neither lock nor file I/O).
+    """Stage one row as ONE new row file, created atomically.
 
-    The append counterpart to :func:`_mutate_plan_row`: it runs the identical
-    ``O_EXCL``-guarded :func:`_locks_core.rmw_json` over the identical
-    ``status.json`` path, so staging one plan appends one row instead of
-    re-serializing the whole array from a stale read. Two concurrent sessions
-    each staging a DIFFERENT plan therefore both land, where a read-modify-write
-    over a pre-lock snapshot would have silently dropped whichever wrote first.
+    The append counterpart to :func:`_mutate_plan_row`, routed through the ledger
+    module's :func:`_orchestrator_ledger.create_row`. Staging a plan creates
+    ``queue/{PLAN-ID}.json`` and touches no other row, so two sessions staging
+    two DIFFERENT plans write two different files and both land — on one machine
+    and across machines alike.
 
-    The duplicate check is deliberately taken against the FRESH in-lock
-    ``plans[]`` and never against a pre-lock :func:`_read_status` snapshot. That
-    is the whole point of doing it here: a snapshot read outside the lock is
-    exactly the window in which a competing session appends the same id, and a
-    check against it would report "no collision" for a row that collides by the
-    time this one writes.
+    The check-then-act window the staging opens (the id and slug checks, then the
+    create) is closed by the module, per the TOCTOU / check-then-act menu in
+    ``ref-code-quality/standards/code-organization.md``: a duplicate ID is refused
+    by the atomic exclusive publish of the row file itself, and the duplicate-slug
+    scan, the ``seq`` allocation and the publish share one critical section scoped
+    to the queue. The epic-slug refusal is decided before any lock, because its
+    verdict depends on nothing in the queue.
 
-    An ABSENT ``plans`` key and a PRESENT non-list ``plans`` value are two
-    different states and are handled as two, per ADR-019: the absent key is a
-    MEASURED empty queue, so seeding ``[]`` is correct and is what makes the
-    first staged row land; a present non-list value is a MALFORMED ledger, and
-    seeding ``[]`` over it would destroy whatever it held and persist a document
-    carrying only the new row. This is the only ``plans[]`` writer that could
-    destroy data that way — the sibling :func:`_mutate_plan_row` reads through
-    ``state.get('plans', [])`` and merely fails to locate a row, and
-    :func:`_read_status`'s coercion is a READ returning an empty view — so the
-    malformed case is REFUSED here rather than normalized away.
-
-    Returns a dict carrying exactly one of five outcomes: ``row`` (the appended
-    row), ``duplicate`` (the already-queued row bearing that id),
-    ``duplicate_slug`` (the already-queued row bearing that slug),
-    ``epic_slug`` (the epic slug the row slug must never equal), or
-    ``invalid_plans`` (the type name of the present-but-non-list ``plans``
-    value). ``updated`` is re-stamped only on a real append.
+    Returns the module's outcome dict, carrying exactly one of ``row`` (the row
+    written, ``seq`` included), ``invalid_id``, ``epic_slug``, ``duplicate`` (the
+    already-queued row bearing that id), ``duplicate_slug`` (the already-queued
+    row bearing that slug) or ``queue_unlistable`` (the queue directory could not
+    be listed, so the slug check could not run and nothing was written).
     """
-    outcome: dict[str, Any] = {}
-
-    # Epic-slug refusal BEFORE the critical section: the verdict
-    # (``row['slug'] == slug``) depends on nothing in the queue, so it needs no
-    # lock and performs no file I/O at all — not even a read. The refusal
-    # therefore leaves the document byte-identical even when the on-disk bytes
-    # are non-canonical: :func:`_locks_core.rmw_json` commits unconditionally,
-    # so a no-op return from inside the critical section would still normalize
-    # those bytes on write. The remaining refusals are queue-dependent and stay
-    # in-lock below, returning ``state`` unmutated. Precedence note: a row whose
-    # slug both duplicates a queued row and equals the epic slug now reports
-    # ``epic_slug`` rather than ``duplicate`` / ``duplicate_slug`` — every arm
-    # is an ``invalid_field``-family refusal with nothing written, and the epic
-    # verdict names the root cause.
-    if row.get('slug') == slug:
-        outcome['epic_slug'] = slug
-        return outcome
-
-    def _mutate(state: dict[str, Any]) -> dict[str, Any]:
-        if 'plans' in state:
-            plans = state['plans']
-            if not isinstance(plans, list):
-                # A MALFORMED ledger, not an empty queue. Return ``state``
-                # unmutated so ``rmw_json`` rewrites the document
-                # byte-identically — the same no-op-return shape the duplicate
-                # branch below relies on — and report the observed type so the
-                # caller can name what it found.
-                outcome['invalid_plans'] = type(plans).__name__
-                return state
-            seeded = False
-        else:
-            # A MEASURED empty queue: the key is absent, so there is nothing to
-            # destroy. Keep the seed LOCAL until an append is certain — every
-            # refusal below returns ``state`` without the key so the refusal
-            # leaves the document byte-identical per the outcome contract.
-            plans = []
-            seeded = True
-        for existing in plans:
-            if isinstance(existing, dict) and existing.get('id') == row['id']:
-                outcome['duplicate'] = existing
-                return state
-        # Duplicate-slug lint: exact-equality over every queued row with no
-        # path-shape filter. Runs against the FRESH in-lock queue so a
-        # concurrent append cannot evade it. Shares its exact-equality slug
-        # comparison vocabulary with the resume-summary shared-slug detector —
-        # no second divergent comparison lives here. (The epic-slug refusal
-        # lives above, outside the critical section — it is state-independent.)
-        for existing in plans:
-            if isinstance(existing, dict) and existing.get('slug') == row.get('slug'):
-                outcome['duplicate_slug'] = existing
-                return state
-        if seeded:
-            state['plans'] = plans
-        plans.append(row)
-        state['updated'] = now_utc_iso()
-        outcome['row'] = row
-        return state
-
-    rmw_json(_epic_root(slug) / FILE_STATUS, _mutate)
-    return outcome
+    return create_row(_epic_root(slug), row, epic_slug=slug)
 
 
 def _spec_presence(root: Path, plan_id: str) -> dict[str, Any]:
@@ -1338,65 +1322,50 @@ def _queue_add_row(args: argparse.Namespace) -> dict[str, Any]:
     The ``--add-row`` branch of :func:`cmd_queue`, split out so each write form
     reads as one path instead of three interleaved branches of one body.
 
-    The opening guard discriminates ``status.json`` THREE ways through
-    :func:`_probe_status_document`, because neither of the two-valued tests it
-    replaces is safe here. A truthiness test on the PARSED document collapses
-    four different on-disk states into one and reports every one of them as a
-    missing file — sending an operator with a corrupt ledger to the wrong remedy,
-    and blocking the legitimate first append into an empty ``{}`` document. A
-    bare file-PRESENCE test collapses the same states the other way, admitting an
-    unparseable or non-object document to a write that ``rmw_json``'s degrading
-    read would turn into a document holding only the new row. So:
+    The opening guard discriminates the header FOUR ways through
+    :func:`_probe_status_document` and refuses — writing nothing — every state a
+    row file must not be created under:
 
-    - ABSENT — ``file_not_found``, rather than letting ``rmw_json`` conjure one.
-    - PRESENT but not a JSON object — ``invalid_status_document``, refused with
-      NOTHING written and the observed type named.
-    - PRESENT and a JSON object, INCLUDING the empty document ``{}`` — proceed;
-      :func:`_append_plan_row` then takes its absent-key branch and seeds the
-      queue.
+    - ABSENT — ``file_not_found``: a row beside no header belongs to no epic.
+    - PRESENT but not a JSON object — ``invalid_status_document``, with the
+      observed type named.
+    - still in the monolithic layout — ``legacy_layout``, naming
+      ``migrate-layout``: a row file staged beside a legacy ``plans[]`` would
+      split one queue across two representations.
+    - a per-concern header, INCLUDING the empty document ``{}`` — proceed.
 
-    The guard is deliberately NOT the duplicate check: that runs against the
-    fresh in-lock queue inside :func:`_append_plan_row`, because a duplicate
-    decided from a pre-lock snapshot could be overtaken by a competing session
-    between the read and the write.
-
-    :func:`_append_plan_row`'s outcome is five-way and is discriminated as
-    five: ``invalid_plans`` (a malformed ``plans`` value, refused with nothing
-    written) is separated from ``duplicate`` before the ``'row' not in outcome``
-    test, which would otherwise read a refusal as a duplicate and raise. The
+    The guard is deliberately NOT the duplicate check: that is the ledger
+    module's atomic create inside :func:`_append_plan_row`, because a duplicate
+    decided from a pre-create snapshot could be overtaken by a competing session
+    between the read and the write. Its outcome is discriminated key by key; the
     slug refusals (``duplicate_slug``, ``epic_slug``) use the ``invalid_field``
-    family and are likewise refused with NOTHING written.
+    family, and every refusal writes NOTHING.
     """
-    probe = _probe_status_document(args.slug)
-    if probe['state'] == STATUS_DOC_ABSENT:
-        return _error(args.slug, 'file_not_found', 'status.json not found in orchestrator store')
-    if probe['state'] == STATUS_DOC_NON_OBJECT:
-        return _error(
-            args.slug,
-            'invalid_status_document',
-            f'status.json is present but is not a JSON object ({probe["detail"]}); '
-            'the row was refused and NOTHING was written — repair the document '
-            'before staging, so whatever it holds is not silently discarded',
-            observed_type=probe['observed_type'],
-        )
+    refusal = _header_refusal(args.slug, _probe_status_document(args.slug))
+    if refusal is not None:
+        return refusal
     # Seeded from the declared field tuple so the row's key ORDER is the declared
-    # order, and the three result fields start empty: an appended row has landed
-    # nothing yet.
+    # order, and the three result fields start empty: a staged row has landed
+    # nothing yet. ``seq`` is allocated by the ledger module at create time.
     row: dict[str, Any] = dict.fromkeys(ADD_ROW_SEED_FIELDS, '')
     row['id'] = args.add_row
     row['slug'] = args.slug_value
     row['workstream'] = args.workstream
     row['status'] = args.status if args.status is not None else ADD_ROW_DEFAULT_STATUS
     outcome = _append_plan_row(args.slug, row)
-    if 'invalid_plans' in outcome:
-        observed = outcome['invalid_plans']
+    if 'invalid_id' in outcome:
         return _error(
             args.slug,
-            'invalid_plans',
-            f"status.json carries a {observed} at 'plans', not a list; the row "
-            'was refused and NOTHING was written — repair the malformed value '
-            'before staging, so whatever it holds is not silently discarded',
-            observed_type=observed,
+            'invalid_plan_id',
+            f'--add-row must be a plan id ({PLAN_ID_SEGMENT}), got: {args.add_row}',
+        )
+    if 'queue_unlistable' in outcome:
+        return _error(
+            args.slug,
+            'ledger_unreadable',
+            f'the queue directory could not be listed ({outcome["queue_unlistable"]}), so the '
+            'duplicate-slug check could not run; the row was refused and NOTHING was written',
+            detail=str(outcome['queue_unlistable']),
         )
     if 'duplicate_slug' in outcome:
         duplicate = outcome['duplicate_slug']
@@ -1432,7 +1401,7 @@ def _queue_add_row(args: argparse.Namespace) -> dict[str, Any]:
         'slug': args.slug,
         'store': ORCHESTRATOR_STORE,
         'plan': args.add_row,
-        'row': row,
+        'row': outcome['row'],
         **_spec_presence(_epic_root(args.slug), args.add_row),
     }
 
@@ -1440,28 +1409,31 @@ def _queue_add_row(args: argparse.Namespace) -> dict[str, Any]:
 def cmd_queue(args: argparse.Namespace) -> dict[str, Any]:
     """Read the plan queue, transition a status, set a row field, or append a row.
 
-    Four-way surface over ``status.json``'s ``plans[]``:
+    Four-way surface over the queue's row files (``queue/{PLAN-ID}.json``):
 
     - **read** (no write flags): returns ``phase``, ``resume_anchor``, and the
-      full ``plans[]`` queue.
+      full queue as ``plans`` in ``(seq, id)`` order, plus every row file that
+      could not be read (``unreadable_rows``) so an unread row is never mistaken
+      for an absent one.
     - **transition** (``--transition PLAN-NN --status X``): sets that plan's
       ``status``. ``X`` must be a member of :data:`VALID_STATUS_VOCABULARY`;
       any other token is refused with ``invalid_field`` and nothing is written.
     - **set-row** (``--set-row PLAN-NN --field F --value V``): sets one result
       field of that plan's row, where ``F`` is one of :data:`PLAN_ROW_FIELDS`.
       This is the sanctioned way to stamp a landing (``pr``, ``landing``,
-      ``plan_marshall_plan_id``) without re-serializing the whole array.
+      ``plan_marshall_plan_id``), and it writes that one row file only.
     - **add-row** (``--add-row PLAN-NN --slug-value SLUG --workstream WS-NN
-      [--status X]``): appends ONE new plan row seeded with
+      [--status X]``): stages ONE new row file seeded with
       :data:`ADD_ROW_SEED_FIELDS`, defaulting its status to
-      :data:`ADD_ROW_DEFAULT_STATUS`. This is the sanctioned way to stage a plan
-      without rewriting every queued row.
+      :data:`ADD_ROW_DEFAULT_STATUS` and allocating its ``seq``. A duplicate id
+      is refused by the atomic create with ``duplicate_plan_id``.
 
     The three write forms are mutually exclusive and each must be supplied
-    complete. All three run inside :func:`_locks_core.rmw_json`'s critical
-    section — ``--transition`` and ``--set-row`` through
-    :func:`_mutate_plan_row`, which LOCATES a row, and ``--add-row`` through
-    :func:`_append_plan_row`, which CREATES one.
+    complete. Every write form probes the header first and refuses — writing
+    nothing — a header that is absent, not a JSON object, or still in the
+    monolithic layout (``legacy_layout``). ``--transition`` and ``--set-row`` then
+    go through :func:`_mutate_plan_row`, which LOCATES a row file, and
+    ``--add-row`` through :func:`_append_plan_row`, which CREATES one.
 
     ``--status`` is shared between two forms and its obligation differs by form:
     it is REQUIRED with ``--transition`` (a transition with no target status is
@@ -1530,29 +1502,48 @@ def cmd_queue(args: argparse.Namespace) -> dict[str, Any]:
     # Read-path resolves an archived epic transparently; every write-path stays
     # strict so an archived epic is never mutated at the active path.
     is_read = not set_row_given and not transition_given
-    status_doc = _read_status(args.slug, allow_archived=is_read)
-    if not status_doc:
-        return _error(args.slug, 'file_not_found', 'status.json not found in orchestrator store')
     if is_read:
+        ledger = _read_ledger(args.slug, allow_archived=True)
+        refusal = _ledger_refusal(args.slug, ledger)
+        if refusal is not None:
+            return refusal
+        view = ledger.document
+        unreadable = _unreadable_row_names(ledger)
         return {
             'status': 'success',
             'operation': 'queue',
             'slug': args.slug,
             'store': ORCHESTRATOR_STORE,
-            'phase': status_doc.get('phase', ''),
-            'resume_anchor': status_doc.get('resume_anchor', ''),
-            'plans': status_doc.get('plans', []),
+            'phase': view.get('phase', ''),
+            'resume_anchor': view.get('resume_anchor', ''),
+            'plans': view.get('plans', []),
+            'unreadable_row_count': len(unreadable),
+            'unreadable_rows': unreadable,
         }
+    refusal = _header_refusal(args.slug, _probe_status_document(args.slug))
+    if refusal is not None:
+        return refusal
     plan_id = args.set_row if set_row_given else args.transition
     field = args.field if set_row_given else 'status'
     value = args.value if set_row_given else args.status
     outcome = _mutate_plan_row(args.slug, plan_id, lambda row: _set_row_field(row, field, value))
+    if 'unreadable' in outcome:
+        return _error(
+            args.slug,
+            'row_unreadable',
+            f'the row file of plan {plan_id!r} could not be read ({outcome["unreadable"]}); '
+            'it was refused rather than overwritten and NOTHING was written',
+            plan=plan_id,
+            detail=str(outcome['unreadable']),
+        )
     if 'result' not in outcome:
         return _error(
             args.slug,
             'plan_not_found',
             f'plan {plan_id!r} not found in the queue',
-            available_plans=outcome['available_plans'],
+            available_plans=outcome.get(
+                'available_plans', [str(row.get('id', '')) for row in read_rows(_epic_root(args.slug)).rows]
+            ),
         )
     result = outcome['result']
     if set_row_given:
@@ -1620,17 +1611,34 @@ def _format_inbox_line(counts: InboxCounts) -> str:
     return f'**Inbox (derived)**: {counts.queued} queued, {counts.archived} archived'
 
 
-def _build_summary(status_doc: dict[str, Any], counts: InboxCounts) -> str:
-    """Build the START-HERE markdown block, derived purely from status.json.
+def _queue_order_key(row: dict[str, Any]) -> tuple[int, str]:
+    """The ``(seq, id)`` queue-order key; a row carrying no integer ``seq`` sorts first."""
+    seq = row.get('seq')
+    return (seq if isinstance(seq, int) and not isinstance(seq, bool) else 0, str(row.get('id', '')))
 
-    Renders the resume anchor, the epic phase, the derived inbox counts, the
-    running/parked plans, the staged queue (in ``plans[]`` order), and a
-    residual per-status listing for every other status value — so no plan is
-    ever invisible in the summary.
+
+def _ordered_plans(view: dict[str, Any]) -> list[dict[str, Any]]:
+    """The view's queue rows, mapping rows only, in ``(seq, id)`` order.
+
+    The assembled view already arrives in this order; the renderers re-sort
+    anyway so their output is a function of the rows alone, never of the order a
+    caller happened to hand them in.
+    """
+    plans = view.get('plans', [])
+    rows = [row for row in plans if isinstance(row, dict)] if isinstance(plans, list) else []
+    return sorted(rows, key=_queue_order_key)
+
+
+def _build_summary(status_doc: dict[str, Any], counts: InboxCounts | None = None) -> str:
+    """Build the START-HERE markdown block, derived purely from the ledger view.
+
+    Renders the resume anchor, the epic phase, the running/parked plans, the
+    staged queue (in ``(seq, id)`` order), and a residual per-status listing for
+    every other status value — so no plan is ever invisible in the summary.
 
     Terminal rows that are missing a result link carry the gap marker
     :func:`_format_plan_line` appends, so an unreconciled landing is visible in
-    the generated block rather than only in the raw status.json.
+    the generated block rather than only in the raw row file.
 
     ``resume_anchor`` is rendered VERBATIM. The fix for a narrative count that
     has gone stale is derivation beside the prose (the
@@ -1638,18 +1646,21 @@ def _build_summary(status_doc: dict[str, Any], counts: InboxCounts) -> str:
     operator wrote.
 
     Args:
-        status_doc: The epic's parsed ``status.json`` — the machine authority.
-        counts: The filesystem-derived inbox tallies from
-            :func:`inbox_counts`. Passed in rather than derived here so this
-            helper stays a pure renderer over already-resolved inputs.
+        status_doc: The epic's assembled ledger view — the machine authority.
+        counts: The filesystem-derived inbox tallies from :func:`inbox_counts`,
+            rendered as the derived inbox line when supplied. The committed
+            ``queue-view.md`` omits it (``None``): the view renders from the
+            ledger alone, so an inbox drain — which is not a queue change —
+            never makes the committed view stale. ``resume-summary`` supplies
+            the live counts for its own read.
     """
-    plans = status_doc.get('plans', [])
-    plans = [p for p in plans if isinstance(p, dict)] if isinstance(plans, list) else []
+    plans = _ordered_plans(status_doc)
     lines = [
         f'**Resume anchor**: {status_doc.get("resume_anchor") or "(not set)"}',
         f'**Phase**: {status_doc.get("phase", "")}',
-        _format_inbox_line(counts),
     ]
+    if counts is not None:
+        lines.append(_format_inbox_line(counts))
     running = [p for p in plans if p.get('status') == 'running']
     parked = [p for p in plans if p.get('status') == 'parked']
     staged = [p for p in plans if p.get('status') == 'staged']
@@ -1918,49 +1929,60 @@ def _epic_slug_rows(status_doc: dict[str, Any], epic_slug: str) -> tuple[list[di
 
 
 def cmd_resume_summary(args: argparse.Namespace) -> dict[str, Any]:
-    """Generate the two derivable ``epic.md`` blocks from status.json.
+    """Render START HERE and the Ordered Queue from the ledger. A READ: writes nothing.
 
-    The returned ``summary`` field is the START-HERE block, and ``ordered_queue``
-    is the Ordered Queue table body — both markdown the LLM pastes verbatim
-    between their respective ``BEGIN/END GENERATED`` markers (``resume-summary``
-    and ``ordered-queue``). Both are derived purely from ``status.json`` — the
-    machine authority — and the filesystem, never from the prose already in
-    ``epic.md``. This is the LIGHTWEIGHT render path a reconciling verb
-    (``decompose``, ``analyze``, ``lessons``) calls after a queue change; the
-    ``compact`` stage rewrites the SAME two blocks in place at ``cleanup``, so a
-    routine reconciliation keeps both derivable surfaces truthful without a full
-    compaction, and the two paths share the renderers rather than duplicating them.
+    The returned ``summary`` field is the START-HERE block and ``ordered_queue``
+    is the Ordered Queue table — both rendered by the SAME renderers
+    :func:`render_queue_view` composes the committed ``queue-view.md`` from, and
+    both derived purely from the assembled ledger view (the machine authority)
+    and the staged specs. Nothing is pasted anywhere: the committed view is
+    written only by ``regenerate-view`` (and ``compact``), so this verb stays a
+    query (command-query separation) and a reconciling workflow calls
+    ``regenerate-view`` when it means to persist.
 
-    The inbox counts are the one part NOT read out of ``status.json``: they are
+    ``view_current`` says whether the committed ``queue-view.md`` is
+    byte-identical to a fresh render of the current ledger. An absent
+    ``queue-view.md`` reports ``false``: there is nothing current to point at.
+
+    The inbox counts are the one part NOT read out of the ledger: they are
     derived at render time from the epic's ``inbox/`` directory via
-    :func:`inbox_counts`, and they are AUTHORITATIVE over any count sentence in
-    ``resume_anchor``. ``inbox_queued`` / ``inbox_archived`` / ``inbox_state``
-    ride the payload as top-level fields so a caller can reconcile them against
-    ``inbox list`` without parsing the markdown block.
+    :func:`inbox_counts`, they are AUTHORITATIVE over any count sentence in
+    ``resume_anchor``, and they appear in ``summary`` only — the committed view
+    renders from the ledger alone. ``inbox_queued`` / ``inbox_archived`` /
+    ``inbox_state`` ride the payload as top-level fields so a caller can
+    reconcile them against ``inbox list`` without parsing the markdown block.
 
     Four detectors run on the RENDERED START-HERE block and ride the same payload
     beside ``summary``: ``count_divergences[]`` (a count the block claims that
-    does not match its derivation from ``status.json``), ``contradictions[]``
-    (two mutually-exclusive claims inside one rendering), ``shared_slugs[]``
-    (N queued rows sharing one slug, with row identities plus the shared value),
+    does not match its derivation from the ledger), ``contradictions[]`` (two
+    mutually-exclusive claims inside one rendering), ``shared_slugs[]`` (N
+    queued rows sharing one slug, with row identities plus the shared value),
     and ``epic_slug_matches[]`` (any queued row whose slug equals the epic slug —
-    the single-row mis-fill the N-sharing check misses). All four REPORT and
-    none mutates — the block is never silently rewritten, which preserves the
-    existing derivation-beside-the-prose rule. Each list rides with the
-    population it was computed over, so a zero states which zero it is. An
-    unscannable queue resolves each slug arm to ``indeterminate``, never
-    to a checked negative.
+    the single-row mis-fill the N-sharing check misses; across machines this is
+    also where a duplicate slug staged on two machines surfaces). All four
+    REPORT and none mutates. Each list rides with the population it was computed
+    over, so a zero states which zero it is. An unscannable queue resolves each
+    slug arm to ``indeterminate``, never to a checked negative.
+
+    A ledger in the monolithic layout is refused with ``legacy_layout``; a row
+    file that could not be read is named in ``unreadable_rows`` rather than
+    silently absent from the rendering.
     """
     invalid = _validate_slug(args.slug)
     if invalid:
         return _error(args.slug, 'invalid_slug', invalid)
-    status_doc = _read_status(args.slug, allow_archived=True)
-    if not status_doc:
-        return _error(args.slug, 'file_not_found', 'status.json not found in orchestrator store')
+    ledger = _read_ledger(args.slug, allow_archived=True)
+    refusal = _ledger_refusal(args.slug, ledger)
+    if refusal is not None:
+        return refusal
+    status_doc = ledger.document
     root = _epic_root(args.slug, allow_archived=True)
     counts = inbox_counts(root / INBOX_SUBDIR)
+    surfaces = _resolve_row_surfaces(status_doc, root)
     summary = _build_summary(status_doc, counts)
-    ordered_queue = _build_ordered_queue(status_doc, root)
+    ordered_queue = _build_ordered_queue(status_doc, surfaces)
+    view_current = _committed_view_matches(root, render_queue_view(status_doc, surfaces, slug=args.slug))
+    unreadable = _unreadable_row_names(ledger)
     divergences, count_claims_scanned = _count_divergences(summary, status_doc)
     contradictions, ratio_claims_scanned = _rendering_contradictions(summary)
     shared_slugs, slugs_scanned, slug_scan_state = _shared_slug_rows(status_doc)
@@ -1987,6 +2009,9 @@ def cmd_resume_summary(args: argparse.Namespace) -> dict[str, Any]:
         'epic_slug_scan_state': epic_slug_scan_state,
         'epic_slug_matches_count': len(epic_slug_matches),
         'epic_slug_matches': epic_slug_matches,
+        'unreadable_row_count': len(unreadable),
+        'unreadable_rows': unreadable,
+        'view_current': view_current,
         'summary': summary,
         'ordered_queue': ordered_queue,
     }
@@ -2085,7 +2110,11 @@ def cmd_archive(args: argparse.Namespace) -> dict[str, Any]:
             'not_found',
             f'epic {args.slug!r} has no active or archived tree to archive',
         )
-    phase = _read_status(args.slug).get('phase', '')
+    # The phase is a HEADER field, so it is read through the header probe alone:
+    # archive is a format-agnostic directory move, and it relocates a closed epic
+    # whichever ledger layout its tree is in (the queue/, the anchor and the
+    # generated view travel with the tree).
+    phase = read_header(source)[1].get('phase', '')
     if phase != 'closed':
         return _error(
             args.slug,
@@ -3311,28 +3340,33 @@ def _spec_verdict_rows(
 
 
 def cmd_corpus_enumerate(args: argparse.Namespace) -> dict[str, Any]:
-    """Reconcile the ``plans[]`` queue against the spec files, in BOTH directions.
+    """Reconcile the queue rows against the spec files, in BOTH directions.
 
-    The enumeration authority is ``status.json``'s ``plans[]`` — never a
-    ``plans/`` directory glob, which would return a different set the moment a
-    spec is staged without a row (or a row recorded without a spec). The two
-    directions are separate fields with separate causes: ``rows_without_spec``
-    (a queue row whose spec file is absent) and ``specs_without_row`` (a spec
-    file with no queue row) are never collapsed into one symmetric-difference
-    count.
+    The enumeration authority is the queue as the ledger module assembles it
+    from ``queue/{PLAN-ID}.json`` — never a ``plans/`` directory glob, which
+    would return a different set the moment a spec is staged without a row (or a
+    row recorded without a spec). The two directions are separate fields with
+    separate causes: ``rows_without_spec`` (a queue row whose spec file is
+    absent) and ``specs_without_row`` (a spec file with no queue row) are never
+    collapsed into one symmetric-difference count. A row file that could not be
+    read is named in ``unreadable_rows`` and counted in ``unreadable_row_count``,
+    because an unread row is neither reconciled nor orphaned.
 
     Every count rides with the population it was computed over, so no figure is
     publishable without its denominator. Read-only: resolves through the
-    archived read-fallback and writes nothing.
+    archived read-fallback and writes nothing. A monolithic-layout ledger is
+    refused with ``legacy_layout``.
     """
     invalid = _validate_slug(args.slug)
     if invalid:
         return _error(args.slug, 'invalid_slug', invalid)
-    status_doc = _read_status(args.slug, allow_archived=True)
-    if not status_doc:
-        return _error(args.slug, 'file_not_found', 'status.json not found in orchestrator store')
+    ledger = _read_ledger(args.slug, allow_archived=True)
+    refusal = _ledger_refusal(args.slug, ledger)
+    if refusal is not None:
+        return refusal
+    unreadable_rows = _unreadable_row_names(ledger)
     root = _epic_root(args.slug, allow_archived=True)
-    rows = [row for row in status_doc.get('plans', []) if isinstance(row, dict)]
+    rows = _ordered_plans(ledger.document)
     specs = _spec_paths(root)
     matched: set[Path] = set()
     row_records: list[dict[str, Any]] = []
@@ -3374,6 +3408,8 @@ def cmd_corpus_enumerate(args: argparse.Namespace) -> dict[str, Any]:
         'specs_without_row': [spec.name for spec in specs if spec not in matched],
         'unreadable_count': len(unreadable),
         'unreadable': unreadable,
+        'unreadable_row_count': len(unreadable_rows),
+        'unreadable_rows': unreadable_rows,
     }
 
 
@@ -4464,24 +4500,44 @@ def _phase_signal(status_doc: dict[str, Any]) -> dict[str, Any]:
     return _signal('phase', READY, f'phase={phase}', 'status.json: 1 phase field read')
 
 
-def _running_plans_signal(status_doc: dict[str, Any]) -> dict[str, Any]:
-    """In-flight plans. A restart mid-run loses the run's context, so it blocks."""
+def _running_plans_signal(
+    status_doc: dict[str, Any],
+    unreadable_rows: Collection[str] = (),
+    unread_reason: str = 'the plan queue could not be read',
+) -> dict[str, Any]:
+    """In-flight plans. A restart mid-run loses the run's context, so it blocks.
+
+    ``status_doc`` is the assembled ledger view, or ``{}`` when the ledger did not
+    assemble — in which case ``unread_reason`` names why and the arm is
+    ``indeterminate``. ``unreadable_rows`` names every row file the read could
+    not open: a running row among the readable ones still blocks, but a queue
+    with an unread row and no readable running row is ``indeterminate``, never
+    ``ready`` — the unread row may be the running one.
+    """
     raw = status_doc.get('plans')
     if not status_doc or not isinstance(raw, list):
         return _signal(
             'running_plans',
             READINESS_INDETERMINATE,
-            'the plan queue could not be read',
-            'plans[]: not readable',
+            unread_reason,
+            'queue rows: not readable',
         )
     rows = [row for row in raw if isinstance(row, dict)]
-    population = f'plans[]: {len(rows)} row(s) scanned'
+    population = f'queue rows: {len(rows)} row(s) scanned and {len(unreadable_rows)} unreadable'
     running = sorted(str(row.get('id', '')) for row in rows if str(row.get('status', '')) == RUNNING_STATUS)
     if running:
         return _signal(
             'running_plans',
             NOT_READY,
             f'{len(running)} plan row(s) still running: {_OVERLAP_JOIN.join(running)}',
+            population,
+        )
+    if unreadable_rows:
+        return _signal(
+            'running_plans',
+            READINESS_INDETERMINATE,
+            f'no readable row is running but {len(unreadable_rows)} row file(s) could not be read: '
+            f'{_OVERLAP_JOIN.join(sorted(unreadable_rows))}',
             population,
         )
     return _signal('running_plans', READY, 'no plan row is running', population)
@@ -4527,6 +4583,12 @@ def _read_queue_spec_reconciliation(slug: str) -> tuple[str, str, str]:
             'queue rows and spec files: not enumerable',
         )
     population = f'{result["rows_total"]} queue row(s) and {result["specs_total"]} spec file(s)'
+    if result['unreadable_row_count']:
+        return (
+            RECONCILE_UNREADABLE,
+            f'{result["unreadable_row_count"]} queue row file(s) could not be read',
+            population,
+        )
     if result['unreadable_count']:
         return (
             RECONCILE_UNREADABLE,
@@ -4630,10 +4692,22 @@ def cmd_cleanup_restart_check(args: argparse.Namespace) -> dict[str, Any]:
     root = _epic_root(args.slug, allow_archived=True)
     if not root.is_dir():
         return _error(args.slug, 'not_found', f'epic {args.slug!r} has no store tree')
-    status_doc = _read_status(args.slug, allow_archived=True)
+    ledger = assemble_view(root)
+    status_doc = dict(ledger.document) if ledger.state == LEDGER_OK else {}
+    # The phase is a HEADER fact, readable on the monolithic layout too; only the
+    # queue is refused there, and it resolves to indeterminate naming why.
+    header_state, header, _ = read_header(root)
+    phase_doc = header if header_state in (LEDGER_OK, LEDGER_LEGACY) else {}
+    # Signal field values carry no commas (see :func:`_signal`), and a parse
+    # error's detail can, so the evidence folds them.
+    unread_reason = (
+        'the plan queue could not be read'
+        if ledger.state == LEDGER_OK
+        else f'the plan queue could not be read (ledger {ledger.state}: {ledger.detail})'.replace(',', ';')
+    )
     signals = [
-        _phase_signal(status_doc),
-        _running_plans_signal(status_doc),
+        _phase_signal(phase_doc),
+        _running_plans_signal(status_doc, _unreadable_row_names(ledger), unread_reason),
         _corpus_signal(args.slug),
         _inbox_signal(args.slug),
         _worktree_signal(),
@@ -4704,16 +4778,40 @@ def _row_surface(spec: Path | None, repo_root: Path) -> str:
     return _queue_cell(_SURFACE_JOIN.join(paths))
 
 
-def _build_ordered_queue(status_doc: dict[str, Any], root: Path) -> str:
-    """Render the LIVE Ordered Queue table, derived from status.json + specs.
+def _live_rows(view: dict[str, Any]) -> list[dict[str, Any]]:
+    """The queue rows that belong in the LIVE Ordered Queue, in ``(seq, id)`` order."""
+    return [row for row in _ordered_plans(view) if str(row.get('status', '')) not in LIVE_QUEUE_EXCLUDED_STATUSES]
 
-    Only non-terminal rows appear: a shipped row belongs in its landing record
-    and a row that closed without shipping is finished either way, so neither is
-    live (:data:`LIVE_QUEUE_EXCLUDED_STATUSES`). The five
-    columns are all derivable — order, plan id, workstream and status from
-    ``status.json``; the surface from each row's spec. Per-row narrative (a
-    sequencing caveat, a park reason) is NOT here — it lives in the annotation
-    zone outside the markers, which regeneration never touches.
+
+def _resolve_row_surfaces(view: dict[str, Any], root: Path) -> dict[str, str]:
+    """Resolve the Surface cell of every LIVE row from its staged spec.
+
+    The impure half of the render: it lists ``plans/`` and reads each live row's
+    spec through the single reader, so :func:`render_queue_view` can stay a pure
+    function of already-resolved inputs. Keyed by the row's own ``id``. Only live
+    rows are resolved, because only live rows are rendered.
+    """
+    specs = _spec_paths(root)
+    repo_root = Path(cwd_checkout_root())
+    surfaces: dict[str, str] = {}
+    for row in _live_rows(view):
+        plan_id = str(row.get('id', ''))
+        spec = next((path for path in specs if plan_id and _spec_matches_row(path, plan_id)), None)
+        surfaces[plan_id] = _row_surface(spec, repo_root)
+    return surfaces
+
+
+def _build_ordered_queue(status_doc: dict[str, Any], surfaces: dict[str, str]) -> str:
+    """Render the LIVE Ordered Queue table from the ledger view and resolved surfaces.
+
+    Only non-terminal rows appear, BY CONSTRUCTION: a shipped row belongs in its
+    landing record and a row that closed without shipping is finished either
+    way, so neither is live (:data:`LIVE_QUEUE_EXCLUDED_STATUSES`). Rows render in
+    ``(seq, id)`` order. The five columns are all derivable — order, plan id,
+    workstream and status from the row file; the surface from each row's spec,
+    resolved by :func:`_resolve_row_surfaces`. Per-row narrative (a sequencing
+    caveat, a park reason) is NOT here — it lives in ``epic.md``'s hand-written
+    queue annotations, which no regeneration touches.
 
     ⛔ The Plan cell is the ROW's own ``id``, never a re-derivation from the
     matched spec's filename. The row carries the exact id string as data, so
@@ -4721,29 +4819,161 @@ def _build_ordered_queue(status_doc: dict[str, Any], root: Path) -> str:
     source of the suffixed-id collapse: a filename-derived identity is read back
     through the plan-id grammar, where a letter-suffixed id has no legal form and
     is absorbed onto its unsuffixed sibling. Reading the field the queue already
-    holds cannot conflate two rows whatever their ids look like. The spec is
-    still resolved, because the Surface cell genuinely IS a property of the file.
+    holds cannot conflate two rows whatever their ids look like.
     """
     header = '| # | Plan | Workstream | Status | Surface (expected) |'
     divider = '|---|------|------------|--------|--------------------|'
     lines = [header, divider]
-    raw_plans = status_doc.get('plans', [])
-    rows = [row for row in raw_plans if isinstance(row, dict)] if isinstance(raw_plans, list) else []
-    live = [row for row in rows if str(row.get('status', '')) not in LIVE_QUEUE_EXCLUDED_STATUSES]
+    live = _live_rows(status_doc)
     if not live:
         lines.append('| — | (empty) | — | — | — |')
         return '\n'.join(lines)
-    specs = _spec_paths(root)
-    repo_root = Path(cwd_checkout_root())
     for position, row in enumerate(live, start=1):
         plan_id = str(row.get('id', ''))
-        spec = next((path for path in specs if plan_id and _spec_matches_row(path, plan_id)), None)
         plan_cell = _queue_cell(plan_id or '?')
         workstream = _queue_cell(str(row.get('workstream', '') or '?'))
         status_cell = _queue_cell(str(row.get('status', '') or '?'))
-        surface = _row_surface(spec, repo_root)
+        surface = surfaces.get(plan_id, '(spec missing)')
         lines.append(f'| {position} | {plan_cell} | {workstream} | {status_cell} | {surface} |')
     return '\n'.join(lines)
+
+
+def render_queue_view(view: dict[str, Any], specs: dict[str, str], *, slug: str) -> str:
+    """Render the full ``queue-view.md`` text. PURE and DETERMINISTIC.
+
+    The one renderer of the generated view: START HERE and the Ordered Queue,
+    under a fixed header comment that says the file is generated, is never
+    hand-edited, and is resolved on a merge conflict by running
+    ``orchestrator regenerate-view --slug {slug}`` and ``git add``. It reads no
+    file, no clock and no environment, so two machines rendering the same ledger
+    state produce byte-identical text — which is what makes a merge conflict in
+    the committed view carry no information, and regeneration its complete
+    remedy.
+
+    Args:
+        view: The epic's assembled ledger view (:func:`_read_ledger`).
+        specs: The staged-spec Surface cell of every live row, keyed by plan id,
+            as :func:`_resolve_row_surfaces` resolves it.
+        slug: The epic slug the header comment's remedy names.
+    """
+    title = str(view.get('title', '') or slug)
+    parts = [
+        _VIEW_HEADER.format(slug=slug),
+        '',
+        f'# Queue view: {title}',
+        '',
+        '## START HERE',
+        '',
+        _build_summary(view),
+        '',
+        '## Ordered Queue',
+        '',
+        _build_ordered_queue(view, specs),
+        '',
+    ]
+    return '\n'.join(parts)
+
+
+def _committed_view_matches(root: Path, rendered: str) -> bool:
+    """Whether the committed ``queue-view.md`` is byte-identical to ``rendered``.
+
+    A read for ``resume-summary``'s ``view_current``. An absent or unreadable
+    file is ``False``: there is no current view to point at.
+    """
+    try:
+        return view_path(root).read_bytes() == rendered.encode('utf-8')
+    except OSError:
+        return False
+
+
+@dataclass(frozen=True)
+class _ViewWrite:
+    """The outcome of one :func:`_write_queue_view` call.
+
+    ``refusal`` is the error envelope when the view could not be rendered from a
+    fully-readable ledger (nothing was written); otherwise ``written`` says
+    whether the file changed.
+    """
+
+    written: bool = False
+    refusal: dict[str, Any] | None = None
+
+
+def _write_queue_view(slug: str, root: Path) -> _ViewWrite:
+    """Render the ledger at ``root`` and write ``queue-view.md`` atomically. The ONE writer.
+
+    ``regenerate-view``, ``compact`` and ``migrate-layout`` all write the view
+    through here, so there is exactly one code path that writes it.
+
+    The render input is the assembled ledger alone — the existing view's CONTENT
+    never feeds it, so conflict markers a merge left in ``queue-view.md`` are
+    simply overwritten. The existing bytes are compared only to report
+    ``written: false`` for a no-op rewrite.
+
+    Refuses, writing NOTHING, when the ledger is absent, in the monolithic layout,
+    or not fully readable — including a single row file that could not be read.
+    A row file holding git conflict markers from a genuine duplicate id is the
+    case this protects: regenerating around it would publish a view that hides
+    the source conflict, so the conflict stays visible and is resolved first.
+    """
+    ledger = assemble_view(root)
+    refusal = _ledger_refusal(slug, ledger)
+    if refusal is not None:
+        return _ViewWrite(refusal=refusal)
+    unreadable = _unreadable_row_names(ledger)
+    if unreadable:
+        reasons = '; '.join(f'{row.get("file", "")}: {row.get("reason", "")}' for row in ledger.unreadable_rows)
+        return _ViewWrite(
+            refusal=_error(
+                slug,
+                'row_unreadable',
+                f'{len(unreadable)} queue row file(s) could not be read ({reasons}); resolve the source file(s) '
+                'first — queue-view.md was NOT written, so a genuine source conflict is not hidden behind a render',
+                unreadable_rows=unreadable,
+            )
+        )
+    rendered = render_queue_view(ledger.document, _resolve_row_surfaces(ledger.document, root), slug=slug)
+    if _committed_view_matches(root, rendered):
+        return _ViewWrite(written=False)
+    target = view_path(root)
+    tmp_path = target.with_name(f'.{target.name}.{os.getpid()}.tmp')
+    tmp_path.write_text(rendered, encoding='utf-8')
+    os.replace(str(tmp_path), str(target))
+    return _ViewWrite(written=True)
+
+
+def cmd_regenerate_view(args: argparse.Namespace) -> dict[str, Any]:
+    """Write the generated ``queue-view.md`` from the ledger. The regenerate-on-conflict verb.
+
+    ``queue-view.md`` is derived, so a merge conflict in it carries no
+    information: the rule is never to merge it by hand, but to merge the source
+    files, run this verb on the merged tree, and ``git add`` the result. It
+    writes atomically through :func:`_write_queue_view` and returns ``written``
+    — ``false`` when the file was already byte-identical to a fresh render.
+
+    It refuses an unsafe slug (``invalid_slug``), an absent active tree
+    (``not_found``), a monolithic-layout ledger (``legacy_layout``), and a ledger
+    whose header or any row file cannot be read (``ledger_unreadable`` /
+    ``row_unreadable``, naming the file) — writing nothing in every case, so a
+    genuine source conflict is never papered over by a regeneration.
+    """
+    invalid = _validate_slug(args.slug)
+    if invalid:
+        return _error(args.slug, 'invalid_slug', invalid)
+    root = _epic_root(args.slug)
+    if not root.is_dir():
+        return _error(args.slug, 'not_found', f'epic {args.slug!r} has no active store tree')
+    outcome = _write_queue_view(args.slug, root)
+    if outcome.refusal is not None:
+        return outcome.refusal
+    return {
+        'status': 'success',
+        'operation': 'regenerate-view',
+        'slug': args.slug,
+        'store': ORCHESTRATOR_STORE,
+        'view': view_path(root).name,
+        'written': outcome.written,
+    }
 
 
 def _marker_indices(lines: list[str], name: str) -> tuple[int, int]:
@@ -4766,36 +4996,75 @@ def _marker_indices(lines: list[str], name: str) -> tuple[int, int]:
     return (begin_idx, end_idx)
 
 
-def _replace_block(text: str, name: str, new_body: str) -> tuple[str, str, int, int, str]:
-    """Replace one GENERATED block's body in place, reporting the outcome.
+#: The per-block outcomes :func:`_strip_generated_block` reports. ``removed`` —
+#: the marker pair (and its guidance comment) was cut out; ``absent`` — the
+#: epic.md carries no begin marker for the block, so there was nothing to cut;
+#: ``incomplete`` — a begin marker with no end marker after it. An incomplete
+#: pair is left untouched and reported: guessing where the block ends would risk
+#: cutting hand-written text.
+STRIP_REMOVED = 'removed'
+STRIP_ABSENT = 'absent'
+STRIP_INCOMPLETE = 'incomplete'
 
-    Returns ``(new_text, outcome, lines_before, lines_after, replaced_body)``.
-    ``outcome`` is one of ``regenerated`` (the body changed), ``unchanged``
-    (byte-identical, so a second run is a no-op), or ``markers_absent`` (the
-    block's markers are not in this epic.md — reported, never fabricated, because
-    inserting markers into a hand-authored document is a structural edit this
-    stage has no mandate for). Splitting on ``\\n`` keeps a trailing newline as a
-    trailing element, so the re-joined text is byte-identical when nothing
-    changed.
 
-    ``replaced_body`` is the PRE-WRITE between-marker text, and it is non-empty
-    only for ``regenerated``. It exists because a line-count delta does not say
-    WHAT was overwritten: a hand-written note someone left inside a generated
-    block is legitimately replaced on the first pass (the region is the
-    generator's), and reporting only ``5 -> 7 lines`` leaves the operator unable
-    to tell which bytes went. The other two outcomes overwrite nothing, so both
-    report ``''``.
+def _guidance_comment_start(lines: list[str], begin_idx: int) -> int:
+    """The first line of the generated-block guidance comment above ``begin_idx``, or ``-1``.
+
+    Walks back over blank lines to the nearest non-blank line; when that line
+    closes an HTML comment, walks back to the comment's opening line, and
+    accepts it only when that opening line starts with
+    :data:`_GENERATED_GUIDANCE_OPENER`. Any other comment — or none — yields
+    ``-1``, so a hand-written comment above a block is never removed.
+    """
+    index = begin_idx - 1
+    while index >= 0 and not lines[index].strip():
+        index -= 1
+    if index < 0 or not lines[index].rstrip().endswith('-->'):
+        return -1
+    while index >= 0:
+        stripped = lines[index].lstrip()
+        if stripped.startswith('<!--'):
+            return index if stripped.startswith(_GENERATED_GUIDANCE_OPENER) else -1
+        index -= 1
+    return -1
+
+
+def _strip_generated_block(lines: list[str], name: str) -> tuple[list[str], str]:
+    """Cut one GENERATED block, and the guidance comment above it, out of ``lines``.
+
+    The cut span runs from the guidance comment (when present) or the begin
+    marker, through the end marker, plus ONE following blank line — the
+    separator that belonged to the block — so the surrounding hand-written text
+    is rejoined with the spacing it had on either side. Every line outside that
+    span is returned byte-identical.
+    """
+    begin_idx, end_idx = _marker_indices(lines, name)
+    if begin_idx < 0:
+        return lines, STRIP_ABSENT
+    if end_idx < 0:
+        return lines, STRIP_INCOMPLETE
+    comment_idx = _guidance_comment_start(lines, begin_idx)
+    start = comment_idx if comment_idx >= 0 else begin_idx
+    stop = end_idx + 1
+    if stop < len(lines) and not lines[stop].strip() and stop + 1 < len(lines):
+        stop += 1
+    return lines[:start] + lines[stop:], STRIP_REMOVED
+
+
+def _strip_generated_blocks(text: str) -> tuple[str, list[dict[str, str]]]:
+    """Remove every :data:`GENERATED_BLOCKS` block from an ``epic.md`` text.
+
+    Returns the new text and one ``{block, outcome}`` row per block, in
+    :data:`GENERATED_BLOCKS` order. Splitting on ``\\n`` keeps a trailing newline
+    as a trailing element, so the re-joined text is byte-identical when no block
+    was removed.
     """
     lines = text.split('\n')
-    begin_idx, end_idx = _marker_indices(lines, name)
-    if begin_idx < 0 or end_idx < 0:
-        return text, 'markers_absent', 0, 0, ''
-    before = lines[begin_idx + 1 : end_idx]
-    new_lines = new_body.split('\n')
-    if before == new_lines:
-        return text, 'unchanged', len(before), len(new_lines), ''
-    updated = lines[: begin_idx + 1] + new_lines + lines[end_idx:]
-    return '\n'.join(updated), 'regenerated', len(before), len(new_lines), '\n'.join(before)
+    outcomes: list[dict[str, str]] = []
+    for name in GENERATED_BLOCKS:
+        lines, outcome = _strip_generated_block(lines, name)
+        outcomes.append({'block': name, 'outcome': outcome})
+    return '\n'.join(lines), outcomes
 
 
 def _invariant(name: str, verdict: str, evidence: str, population: str) -> dict[str, Any]:
@@ -4824,37 +5093,6 @@ def _invariant_queue_spec(slug: str) -> dict[str, Any]:
         RECONCILE_RECONCILED: 'ok',
     }[state]
     return _invariant('queue_spec_bidirectional', verdict, evidence, population)
-
-
-def _invariant_no_terminal_in_live_queue(queue_body: str) -> dict[str, Any]:
-    """Assert the RENDERED live queue carries no terminal row.
-
-    A post-condition over the generator's own output rather than over its inputs:
-    the renderer excludes terminal rows by construction, and this reads the
-    emitted Status column back to prove none leaked. Data rows are the ones whose
-    first cell is the position integer.
-
-    It checks the freshly-BUILT body, not the on-disk table. When the
-    ``ordered-queue`` markers are absent, that body is never written, so this
-    verdict speaks to what the renderer WOULD emit — the block's actual absence
-    is surfaced separately as that block's ``markers_absent`` outcome, so the two
-    signals together are not misleading.
-    """
-    statuses: list[str] = []
-    for line in queue_body.split('\n'):
-        cells = [cell.strip() for cell in line.split('|')]
-        if len(cells) >= 7 and cells[1].isdigit():
-            statuses.append(cells[4])
-    population = f'{len(statuses)} live queue row(s) rendered'
-    leaked = sorted({status for status in statuses if status in LIVE_QUEUE_EXCLUDED_STATUSES})
-    if leaked:
-        return _invariant(
-            'no_terminal_in_live_queue',
-            'violated',
-            f'terminal status leaked into the live queue: {", ".join(leaked)}',
-            population,
-        )
-    return _invariant('no_terminal_in_live_queue', 'ok', 'no terminal row in the live queue', population)
 
 
 def _settled_headings(text: str) -> set[str]:
@@ -4925,110 +5163,54 @@ def _invariant_pointers_reachable(epic_text: str, root: Path) -> dict[str, Any]:
 _SECTION_HEADING_RE = re.compile(r'^ {0,3}##[ \t]+(?P<title>.+?)[ \t]*#*[ \t]*$')
 
 
-def _abstained_sections(text: str, unreachable_blocks: Collection[str]) -> list[dict[str, str]]:
-    """Name every ``##`` section the stage did not rewrite, and WHY it did not.
+def _abstained_sections(text: str) -> list[dict[str, str]]:
+    """Name every ``##`` section of ``epic.md``, each preserved verbatim.
 
-    A silent compaction is indistinguishable from a lossy one, so the report
-    names not only what changed but what was left alone. A section is listed
-    unless it CONTAINS a GENERATED marker (which makes it a regenerated surface),
-    and each listed section carries the treatment that says which of two very
-    different things happened to it:
-
-    - :data:`TREATMENT_PRESERVED` — a deliberate abstention. The section carries
-      no derivable surface, so leaving it verbatim is the correct outcome.
-    - :data:`TREATMENT_UNREACHABLE` — a blind spot. The section OWNS a block in
-      ``unreachable_blocks`` (one whose :func:`_replace_block` outcome was
-      ``markers_absent``), so the stage could not see the derivable surface and
-      regenerated nothing there.
-
-    That distinction is the whole point of the list — "nothing needed touching"
-    versus "the stage could not see it" — and emitting the first for the second
-    claims a choice the stage never made. On an ``epic.md`` scaffolded before the
-    ``ordered-queue`` marker pair shipped, the second case is the ordinary output,
-    not an edge case.
-
-    Args:
-        text: The ``epic.md`` content to enumerate, read BEFORE any rewrite.
-        unreachable_blocks: Block names whose markers were absent this pass.
-            Mapped onto their owning heading via
-            :data:`GENERATED_BLOCK_OWNING_SECTION`; a name with no mapping, or a
-            mapped heading absent from ``text``, contributes no row.
-            **Required, deliberately undefaulted** — an empty default would make
-            every listed section come back :data:`TREATMENT_PRESERVED`, which is
-            precisely the pre-fix behaviour this function exists to replace. A
-            caller with genuinely no unreachable block passes an empty
-            collection explicitly, so the claim is made rather than defaulted
-            into.
+    ``compact`` makes no ``epic.md`` write, so every section is an abstention —
+    and every one is still NAMED, because a report that lists only what changed
+    cannot be told apart from one that silently dropped something. Headings
+    inside a fenced block are not sections and are not listed.
     """
-    unreachable_titles = {
-        GENERATED_BLOCK_OWNING_SECTION[name].casefold()
-        for name in unreachable_blocks
-        if name in GENERATED_BLOCK_OWNING_SECTION
-    }
     lines = text.split('\n')
     fenced = _fenced_mask(lines)
-    begins = {_begin_marker(name) for name in GENERATED_BLOCKS}
-    sections: list[tuple[str, int]] = []
-    for index, line in enumerate(lines):
-        if not fenced[index] and (match := _SECTION_HEADING_RE.match(line)):
-            sections.append((match.group('title').strip(), index))
-    abstained: list[dict[str, str]] = []
-    for order, (title, start) in enumerate(sections):
-        end = sections[order + 1][1] if order + 1 < len(sections) else len(lines)
-        # An UNREACHABLE section is listed even though it contains a BEGIN marker.
-        # A partial pair — BEGIN present, END absent — is exactly that case:
-        # :func:`_replace_block` reports ``markers_absent`` because it needs BOTH
-        # indices, while a presence scan sees the BEGIN and would skip the section
-        # as a regenerated surface. The blind spot would then be reported by
-        # neither ``abstained[]`` nor ``unreachable_count``, which is the defect
-        # this treatment split exists to close, one level down. So the unreachable
-        # test is applied FIRST and the marker scan only decides whether a
-        # REACHABLE section is a regenerated surface.
-        if title.casefold() in unreachable_titles:
-            abstained.append({'section': title, 'treatment': TREATMENT_UNREACHABLE})
-            continue
-        if any(line.strip() in begins for line in lines[start:end]):
-            continue
-        abstained.append({'section': title, 'treatment': TREATMENT_PRESERVED})
-    return abstained
+    return [
+        {'section': match.group('title').strip(), 'treatment': TREATMENT_PRESERVED}
+        for index, line in enumerate(lines)
+        if not fenced[index] and (match := _SECTION_HEADING_RE.match(line))
+    ]
 
 
 def cmd_compact(args: argparse.Namespace) -> dict[str, Any]:
-    """Compact the epic ledger: regenerate the derivable surfaces, verify, report.
+    """Compact the epic ledger: verify the invariants, regenerate the view, report.
 
-    The ledger-compaction stage ``workflow/cleanup.md`` Phase B calls. It
-    regenerates every derivable GENERATED block of ``epic.md`` IN PLACE — the
-    START-HERE resume summary and the Ordered Queue table — from ``status.json``
-    and the staged specs, leaving every byte OUTSIDE the markers untouched. That
-    boundary is the safety property: a retraction, a refutation, a
-    do-not-re-derive note, or the operator-confirmed running note all sit in
-    narrative and survive a pass verbatim, because the stage never reads them as
-    regenerable. The narrative-versus-settled RELOCATION judgement is NOT here —
-    it stays with the orchestrator; this stage only VERIFIES that whatever was
-    relocated is reachable from its pointer.
+    The ledger-compaction stage ``workflow/cleanup.md`` Phase B calls. It verifies
+    the invariants — ``queue_spec_bidirectional`` (the queue rows and the staged
+    specs reconcile in both directions) and ``relocated_pointer_reachable`` (every
+    settled-narrative pointer in ``epic.md`` resolves to a ``settled.md``
+    heading) — and then regenerates ``queue-view.md`` through
+    :func:`_write_queue_view`, the SAME writer ``regenerate-view`` uses. It makes
+    NO ``epic.md`` write: ``epic.md`` is hand-written narrative, so a retraction,
+    a refutation, a do-not-re-derive note, or an operator-confirmed running note
+    survives a pass verbatim because nothing here writes that file at all. The
+    narrative-versus-settled RELOCATION judgement is NOT here — it stays with the
+    orchestrator; this stage only VERIFIES that whatever was relocated is
+    reachable from its pointer.
+
+    No invariant guards the rendered table against a terminal row: the renderer
+    excludes terminal rows by construction (:func:`_build_ordered_queue`), which a
+    renderer test pins.
 
     Refuses a closed epic (``refused_closed``): that tree is the frozen audit
     record, and compaction is a live-epic operation only. Resolves the store
     strictly (never the archived read-fallback), so an archived tree is never
-    mutated at the active path.
+    mutated at the active path. Refuses a monolithic-layout ledger with
+    ``legacy_layout`` and an unreadable one — header, anchor, queue directory or
+    a single row file — writing nothing.
 
-    The report names every mutation and every abstention: ``regenerated[]`` (per
-    block: its outcome, its line counts, and — for a ``regenerated`` block —
-    ``replaced_body``, the pre-write between-marker text, so a first pass over an
-    already-annotated ledger NAMES the content it overwrote rather than reporting
-    only a line-count delta), ``invariants[]`` (bidirectional queue
-    reconciliation, no-terminal-in-live-queue, and pointer reachability, each
-    with its verdict, evidence, and population), and ``abstained[]`` (every ``##``
-    section not rewritten, each carrying the treatment that says WHY).
-
-    The two treatments are counted apart, because they mean opposite things:
-    ``abstained_count`` counts :data:`TREATMENT_PRESERVED` — deliberate
-    abstentions over sections carrying no derivable surface — while
-    ``unreachable_count`` counts :data:`TREATMENT_UNREACHABLE`, sections whose
-    derivable surface the stage COULD NOT REACH because the block's markers are
-    absent. A blind spot reported as a choice would be the misleading signal this
-    split exists to remove. Idempotent: a second run finds every block
-    ``unchanged`` and writes nothing.
+    The report names ``view_written`` (whether ``queue-view.md`` changed — a
+    second run over an unchanged ledger reports ``false``), ``invariants[]`` (each
+    with its verdict, evidence, and population), and ``abstained[]`` (every
+    ``##`` section of ``epic.md``, each preserved verbatim).
     """
     invalid = _validate_slug(args.slug)
     if invalid:
@@ -5039,10 +5221,11 @@ def cmd_compact(args: argparse.Namespace) -> dict[str, Any]:
     epic_path = root / FILE_EPIC
     if not epic_path.is_file():
         return _error(args.slug, 'file_not_found', 'epic.md not found in orchestrator store')
-    status_doc = _read_status(args.slug)
-    if not status_doc:
-        return _error(args.slug, 'file_not_found', 'status.json not found in orchestrator store')
-    phase = str(status_doc.get('phase', '')).strip()
+    ledger = assemble_view(root)
+    refusal = _ledger_refusal(args.slug, ledger)
+    if refusal is not None:
+        return refusal
+    phase = str(ledger.document.get('phase', '')).strip()
     if phase == CLOSED_PHASE:
         return _error(
             args.slug,
@@ -5051,48 +5234,120 @@ def cmd_compact(args: argparse.Namespace) -> dict[str, Any]:
             'the frozen record is never mutated',
             phase=phase,
         )
-    counts = inbox_counts(root / INBOX_SUBDIR)
-    original = epic_path.read_text(encoding='utf-8')
-    bodies = {
-        'resume-summary': _build_summary(status_doc, counts),
-        'ordered-queue': _build_ordered_queue(status_doc, root),
-    }
-    text = original
-    regenerated: list[dict[str, Any]] = []
-    for name in GENERATED_BLOCKS:
-        text, outcome, lines_before, lines_after, replaced_body = _replace_block(text, name, bodies[name])
-        regenerated.append(
-            {
-                'surface': name,
-                'outcome': outcome,
-                'lines_before': lines_before,
-                'lines_after': lines_after,
-                'replaced_body': replaced_body,
-            }
-        )
-    changed = text != original
-    if changed:
-        epic_path.write_text(text, encoding='utf-8')
+    epic_text = epic_path.read_text(encoding='utf-8')
     invariants = [
         _invariant_queue_spec(args.slug),
-        _invariant_no_terminal_in_live_queue(bodies['ordered-queue']),
-        _invariant_pointers_reachable(text, root),
+        _invariant_pointers_reachable(epic_text, root),
     ]
-    unreachable_blocks = [row['surface'] for row in regenerated if row['outcome'] == 'markers_absent']
-    abstained = _abstained_sections(original, unreachable_blocks)
+    view = _write_queue_view(args.slug, root)
+    if view.refusal is not None:
+        return view.refusal
+    abstained = _abstained_sections(epic_text)
     return {
         'status': 'success',
         'operation': 'compact',
         'slug': args.slug,
         'store': ORCHESTRATOR_STORE,
         'relocation_target': FILE_SETTLED,
-        'epic_changed': changed,
-        'regenerated_count': sum(1 for row in regenerated if row['outcome'] == 'regenerated'),
-        'regenerated': regenerated,
+        'view': view_path(root).name,
+        'view_written': view.written,
         'invariants': invariants,
-        'abstained_count': sum(1 for row in abstained if row['treatment'] == TREATMENT_PRESERVED),
-        'unreachable_count': sum(1 for row in abstained if row['treatment'] == TREATMENT_UNREACHABLE),
+        'abstained_count': len(abstained),
         'abstained': abstained,
+    }
+
+
+def _migration_rejection(slug: str, rejected: tuple[dict[str, Any], ...]) -> dict[str, Any]:
+    """The refusal for a legacy document holding a row that cannot become a row file."""
+    names = '; '.join(
+        f'index {row.get("index", "")} ({row.get("id", "")}): {row.get("reason", "")}' for row in rejected
+    )
+    return _error(
+        slug,
+        'unmigratable_rows',
+        f'{len(rejected)} plans[] entr(y/ies) cannot become a row file ({names}); repair them in status.json and '
+        're-run migrate-layout — NOTHING was written, so no value is lost',
+        rejected_rows=[dict(row) for row in rejected],
+    )
+
+
+def cmd_migrate_layout(args: argparse.Namespace) -> dict[str, Any]:
+    """Convert a monolithic-layout epic ledger into the per-concern files.
+
+    A format-only rewrite that preserves every value, so it resolves an ARCHIVED
+    epic too (through the read-fallback): every ``plans[]`` row becomes one
+    ``queue/{PLAN-ID}.json`` carrying every field it held plus a ``seq`` taken
+    from its array position (so the rendered order reproduces the old one), the
+    ``resume_anchor`` text moves to ``resume_anchor.md``, and the header keeps
+    every other field verbatim and loses ``updated``. The header is written last,
+    so an interrupted conversion leaves the legacy document intact.
+
+    ``epic.md`` then loses the two GENERATED marker blocks and the guidance
+    comment above each (:data:`GENERATED_BLOCKS`), and every hand-written byte —
+    both annotation zones included — stays exactly where it was. A fresh
+    ``queue-view.md`` is written through the renderer rather than copied from the
+    old pasted text, which may be stale.
+
+    Idempotent: a ledger already in the per-concern layout returns
+    ``already_migrated: true`` and writes nothing. Refuses an unsafe slug
+    (``invalid_slug``), an absent tree (``not_found``), an absent header
+    (``file_not_found``), a header that is not a JSON object
+    (``invalid_status_document``), and a ``plans[]`` entry that cannot become a
+    row file (``unmigratable_rows``) — writing nothing in every case.
+    """
+    invalid = _validate_slug(args.slug)
+    if invalid:
+        return _error(args.slug, 'invalid_slug', invalid)
+    root = _epic_root(args.slug, allow_archived=True)
+    if not root.is_dir():
+        return _error(args.slug, 'not_found', f'epic {args.slug!r} has no active or archived store tree')
+    archived = root != _epic_root(args.slug)
+    state, header, detail = read_header(root)
+    if state == LEDGER_ABSENT:
+        return _error(args.slug, 'file_not_found', 'status.json not found in orchestrator store')
+    if state == LEDGER_OK:
+        return {
+            'status': 'success',
+            'operation': 'migrate-layout',
+            'slug': args.slug,
+            'store': ORCHESTRATOR_STORE,
+            'archived': archived,
+            'already_migrated': True,
+        }
+    if state != LEDGER_LEGACY:
+        return _error(
+            args.slug,
+            'invalid_status_document',
+            f'status.json could not be read as a JSON object ({detail}); NOTHING was written',
+            detail=detail,
+        )
+    migrated = migrate_document(header)
+    if migrated.rejected_rows:
+        return _migration_rejection(args.slug, migrated.rejected_rows)
+    write_layout(root, migrated.header, migrated.anchor, migrated.rows)
+    epic_path = root / FILE_EPIC
+    blocks: list[dict[str, str]] = []
+    if epic_path.is_file():
+        original = epic_path.read_text(encoding='utf-8')
+        stripped, blocks = _strip_generated_blocks(original)
+        if stripped != original:
+            epic_path.write_text(stripped, encoding='utf-8')
+    view = _write_queue_view(args.slug, root)
+    if view.refusal is not None:
+        return view.refusal
+    return {
+        'status': 'success',
+        'operation': 'migrate-layout',
+        'slug': args.slug,
+        'store': ORCHESTRATOR_STORE,
+        'archived': archived,
+        'already_migrated': False,
+        'rows_migrated': len(migrated.rows),
+        'anchor_migrated': bool(migrated.anchor),
+        'epic_present': epic_path.is_file(),
+        'epic_blocks': blocks,
+        'view': view_path(root).name,
+        'view_written': view.written,
     }
 
 
@@ -5356,8 +5611,9 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         prog='orchestrator',
         description=(
             'Thin scaffolding for plan-orchestrator epics: scaffold the '
-            'epic tree, read/transition/stamp/append the plan queue, generate '
-            'the START-HERE resume summary, archive a closed epic, reconcile '
+            'epic tree, read/transition/stamp/stage the plan queue, render '
+            'the START-HERE resume summary, regenerate the generated queue '
+            'view, migrate a monolithic ledger, archive a closed epic, reconcile '
             'the staged spec corpus and its re-grounding verdicts, report the '
             'restart-readiness verdict, drive the plan-writable inbox '
             'OUTBOX, its drain and the plan-side mailbox read, and write the '
@@ -5378,8 +5634,8 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     queue = subparsers.add_parser(
         'queue',
         help=(
-            'Read the plan queue from status.json, transition one plan status, '
-            'set one plan row field, or append one plan row.'
+            'Read the plan queue from its row files, transition one plan status, '
+            'set one plan row field, or stage one new plan row file.'
         ),
         allow_abbrev=False,
     )
@@ -5447,11 +5703,36 @@ def _build_arg_parser() -> argparse.ArgumentParser:
 
     resume = subparsers.add_parser(
         'resume-summary',
-        help='Generate the two derivable epic.md blocks (START-HERE + Ordered Queue) from status.json.',
+        help=(
+            'Render START HERE and the Ordered Queue from the ledger and report whether the '
+            'committed queue-view.md is current (read-only; writes nothing).'
+        ),
         allow_abbrev=False,
     )
     _add_slug_arg(resume)
     resume.set_defaults(handler=cmd_resume_summary)
+
+    regenerate = subparsers.add_parser(
+        'regenerate-view',
+        help=(
+            'Write the generated queue-view.md from the ledger (also the remedy for a merge '
+            'conflict in it); refuses and writes nothing when a source file is unreadable.'
+        ),
+        allow_abbrev=False,
+    )
+    _add_slug_arg(regenerate)
+    regenerate.set_defaults(handler=cmd_regenerate_view)
+
+    migrate = subparsers.add_parser(
+        'migrate-layout',
+        help=(
+            'Convert a monolithic-layout epic ledger (active or archived) into the per-concern '
+            'files, strip the generated blocks from epic.md, and write queue-view.md (idempotent).'
+        ),
+        allow_abbrev=False,
+    )
+    _add_slug_arg(migrate)
+    migrate.set_defaults(handler=cmd_migrate_layout)
 
     archive = subparsers.add_parser(
         'archive',
@@ -5464,8 +5745,8 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     compact = subparsers.add_parser(
         'compact',
         help=(
-            'Regenerate the derivable epic.md surfaces in place, verify the '
-            'invariants, and report (live-epic only; refuses a closed epic).'
+            'Verify the ledger invariants and regenerate queue-view.md, making no '
+            'epic.md write, and report (live-epic only; refuses a closed epic).'
         ),
         allow_abbrev=False,
     )
@@ -5527,7 +5808,7 @@ def _add_corpus_group(subparsers: Any) -> None:
     enumerate_specs = actions.add_parser(
         'enumerate',
         help=(
-            'Reconcile status.json plans[] against plans/PLAN-*.md in both '
+            'Reconcile the queue row files against plans/PLAN-*.md in both '
             'directions, every count carrying its population (read-only).'
         ),
         allow_abbrev=False,

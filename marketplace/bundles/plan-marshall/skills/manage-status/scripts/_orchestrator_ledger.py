@@ -96,6 +96,10 @@ HEADER_FIELDS = ('kind', 'title', 'phase', 'workstreams', 'metadata', 'created')
 #: document, whatever else it holds.
 LEGACY_KEYS = frozenset({'plans', 'resume_anchor'})
 
+#: The one legacy header field a conversion drops: the shared stamp every write
+#: restamped, which is the collision line the per-concern layout removes.
+_DROPPED_ON_MIGRATION = 'updated'
+
 #: The fields of one row, in the order a row file is written. ``seq`` is the
 #: queue-order key allocated at append time.
 ROW_FIELDS = ('id', 'slug', 'workstream', 'status', 'plan_marshall_plan_id', 'pr', 'landing', 'seq')
@@ -221,13 +225,18 @@ class MigratedLedger:
 def migrate_document(document: Mapping[str, Any]) -> MigratedLedger:
     """Convert a monolithic ``status.json`` document into the per-concern content.
 
-    Pure: nothing is read or written. Every header field carries over verbatim,
-    the anchor text moves to its own file, each ``plans[]`` row gains a ``seq``
-    taken from its ARRAY POSITION (so the rendered order reproduces the old
-    insertion order), and ``updated`` is dropped. A row that cannot become a row
-    file is returned in ``rejected_rows`` with the reason, never discarded.
+    Pure: nothing is read or written. Every header field carries over verbatim —
+    the declared :data:`HEADER_FIELDS` first, in their order, then every other
+    key the document held (``title_token``, say), so no value is lost to a field
+    list — the anchor text moves to its own file, each ``plans[]`` row gains a
+    ``seq`` taken from its ARRAY POSITION (so the rendered order reproduces the
+    old insertion order), and ``updated`` is dropped. A row that cannot become a
+    row file is returned in ``rejected_rows`` with the reason, never discarded.
     """
     header = {key: document[key] for key in HEADER_FIELDS if key in document}
+    for key, value in document.items():
+        if key not in LEGACY_KEYS and key != _DROPPED_ON_MIGRATION:
+            header.setdefault(key, value)
     anchor_value = document.get('resume_anchor', '')
     anchor = anchor_value if isinstance(anchor_value, str) else str(anchor_value)
     rows: list[dict[str, Any]] = []
@@ -254,11 +263,17 @@ def write_layout(root: Path, header: Mapping[str, Any], anchor: str, rows: tuple
 
     Overwrites whatever is at each path, so it is the writer for a conversion or a
     fixture — never for staging, which goes through :func:`create_row`.
+
+    The header is written LAST. Over a legacy document the header write is the
+    step that removes the queue and the anchor from ``status.json``, so every row
+    file and the anchor file exist before it happens: an interrupted conversion
+    leaves the legacy document intact and a re-run converts it again, rather than
+    leaving a per-concern header whose rows were never written.
     """
-    _atomic_write_json(header_path(root), dict(header))
-    write_anchor(root, anchor)
     for row in rows:
         _atomic_write_json(row_path(root, row['id']), _ordered_row(row))
+    write_anchor(root, anchor)
+    _atomic_write_json(header_path(root), dict(header))
 
 
 # =============================================================================

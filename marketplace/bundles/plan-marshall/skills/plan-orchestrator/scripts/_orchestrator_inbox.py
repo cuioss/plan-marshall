@@ -75,6 +75,14 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, NamedTuple
 
+from _orchestrator_ledger import (
+    LEDGER_ABSENT,
+    LEDGER_LEGACY,
+    LEDGER_OK,
+    assemble_view,
+    is_valid_row_id,
+    row_path,
+)
 from epic_spec_parser import PLAN_ID_SEGMENT
 from file_ops import (
     atomic_write_file,
@@ -82,16 +90,10 @@ from file_ops import (
     get_store_dir,
     now_utc_iso,
     parse_markdown_metadata,
-    read_json,
 )
 from input_validation import validate_plan_id
 
 ORCHESTRATOR_STORE = 'orchestrator'
-
-#: The epic status document, relative to the epic store root — the machine
-#: authority for per-plan lifecycle state (``plans[]`` rows carrying ``id`` and
-#: ``status``).
-STATUS_FILE = 'status.json'
 
 #: The plan-lifecycle status a plan row carries WHILE it is executing. This is
 #: the single source of the token: ``orchestrator.py`` imports it from here
@@ -459,29 +461,109 @@ def _inbox_dir(slug: str) -> Path:
 
 
 def _running_plan_ids(epic_root: Path) -> set[str]:
-    """Return the ids of every plan currently ``running`` in the epic.
+    """Return the ids of every plan the epic ledger POSITIVELY reads as ``running``.
 
-    Reads the epic's ``status.json`` — the machine authority for per-plan
-    lifecycle state — and returns the id of every ``plans[]`` row whose
-    ``status`` is :data:`RUNNING_STATUS`, mirroring the extraction
-    ``orchestrator.py`` performs for its own running-plans readiness signal.
+    Reads the queue through the ledger module's assembled view
+    (:func:`_orchestrator_ledger.assemble_view`) — the machine authority for
+    per-plan lifecycle state — and returns the id of every row whose ``status``
+    is :data:`RUNNING_STATUS`, mirroring the extraction ``orchestrator.py``
+    performs for its own running-plans readiness signal.
 
-    A missing, unreadable, or malformed status document, or one carrying no
-    ``plans[]`` array, yields an EMPTY set: with no readable queue there is no
-    plan whose running state can be confirmed, so the routing decision that
-    consumes this set does not fire on an unverifiable state — it delivers only
-    to a plan it can POSITIVELY read as running, and every other message queues
-    for the epic drain.
+    A ledger that did not assemble — an absent or unreadable header, an
+    unlistable queue, or a header still in the monolithic layout — yields an
+    EMPTY set: with no readable queue there is no plan whose running state can
+    be confirmed, so the routing decision that consumes this set does not fire on
+    an unverifiable state. A legacy ``status.json`` whose ``plans[]`` names the
+    target as running is therefore NOT read as running: the monolithic layout is
+    refused, never read, so a message aimed at it queues and is never delivered
+    on an absence. See :func:`_routing_reason` for the named reason.
+
+    A running row contributes BOTH identities it carries — its queue ``id`` and,
+    once launched, its ``plan_marshall_plan_id`` (:func:`_row_identities`) — so a
+    plan addressed by the plan id it runs under is recognised as running.
     """
-    data = read_json(epic_root / STATUS_FILE)
-    if not isinstance(data, dict):
-        return set()
-    rows = data.get('plans')
-    if not isinstance(rows, list):
+    ledger = assemble_view(epic_root)
+    if ledger.state != LEDGER_OK:
         return set()
     return {
-        str(row.get('id', '')) for row in rows if isinstance(row, dict) and str(row.get('status', '')) == RUNNING_STATUS
+        identity
+        for row in ledger.document.get('plans', [])
+        if isinstance(row, dict) and str(row.get('status', '')) == RUNNING_STATUS
+        for identity in _row_identities(row)
     }
+
+
+def _row_identities(row: dict[str, Any]) -> set[str]:
+    """The identifiers a queue row answers to: its ``id`` and its launched plan id.
+
+    A queue row is keyed by the spec id (``PLAN-NN``), while a message is aimed at
+    — and sent by — the plan-marshall plan id the row runs under, which the row
+    records in ``plan_marshall_plan_id`` at launch. Both are read as the row's
+    identity, so a message addressed by either reaches the same row; an empty
+    ``plan_marshall_plan_id`` (a row not yet launched) contributes nothing.
+    """
+    identities = {str(row.get('id', ''))}
+    launched = str(row.get('plan_marshall_plan_id', '') or '')
+    if launched:
+        identities.add(launched)
+    identities.discard('')
+    return identities
+
+
+#: The closed vocabulary :func:`cmd_inbox_write` reports as ``routing_reason`` —
+#: WHY a message went where it went. Exactly one member delivers
+#: (:data:`ROUTING_TARGET_RUNNING`); every other one queues, and each names a
+#: different fact, because *the target is not running*, *the target is not in the
+#: queue* and *the queue could not be read* owe a reader different conclusions.
+ROUTING_NO_TARGET = 'no_target_plan'
+ROUTING_TARGET_RUNNING = 'target_running'
+ROUTING_TARGET_NOT_RUNNING = 'target_not_running'
+ROUTING_TARGET_NOT_QUEUED = 'target_not_in_queue'
+ROUTING_TARGET_ROW_UNREADABLE = 'target_row_unreadable'
+ROUTING_LEDGER_ABSENT = 'ledger_absent'
+ROUTING_LEDGER_UNREADABLE = 'ledger_unreadable'
+ROUTING_LEDGER_LEGACY = 'legacy_layout'
+ROUTING_REASONS = frozenset(
+    {
+        ROUTING_NO_TARGET,
+        ROUTING_TARGET_RUNNING,
+        ROUTING_TARGET_NOT_RUNNING,
+        ROUTING_TARGET_NOT_QUEUED,
+        ROUTING_TARGET_ROW_UNREADABLE,
+        ROUTING_LEDGER_ABSENT,
+        ROUTING_LEDGER_UNREADABLE,
+        ROUTING_LEDGER_LEGACY,
+    }
+)
+
+
+def _routing_reason(epic_root: Path, target_plan: str) -> str:
+    """Name why a message aimed at ``target_plan`` is delivered or queued.
+
+    Only :data:`ROUTING_TARGET_RUNNING` delivers, and it is returned only when the
+    assembled ledger POSITIVELY reads the target's row as running — the same
+    predicate :func:`_running_plan_ids` enforces. Every could-not-read state is
+    named rather than folded into *not running*: a legacy-layout ledger, an
+    absent or unreadable one, and a target whose own row file could not be read
+    are each a queueing reason of their own (ADR-019).
+    """
+    ledger = assemble_view(epic_root)
+    if ledger.state == LEDGER_LEGACY:
+        return ROUTING_LEDGER_LEGACY
+    if ledger.state == LEDGER_ABSENT:
+        return ROUTING_LEDGER_ABSENT
+    if ledger.state != LEDGER_OK:
+        return ROUTING_LEDGER_UNREADABLE
+    for row in ledger.document.get('plans', []):
+        if isinstance(row, dict) and target_plan in _row_identities(row):
+            return (
+                ROUTING_TARGET_RUNNING if str(row.get('status', '')) == RUNNING_STATUS else ROUTING_TARGET_NOT_RUNNING
+            )
+    if is_valid_row_id(target_plan):
+        row_file = row_path(epic_root, target_plan).name
+        if any(str(row.get('file', '')) == row_file for row in ledger.unreadable_rows):
+            return ROUTING_TARGET_ROW_UNREADABLE
+    return ROUTING_TARGET_NOT_QUEUED
 
 
 def _mutate_epic_root(slug: str) -> Path:
@@ -1724,15 +1806,22 @@ def cmd_inbox_write(args: Any) -> dict[str, Any]:
     Two destinations, reported over the closed :data:`WRITE_DESTINATIONS`
     vocabulary:
 
-    - ``mailbox`` — ``--target-plan`` names a plan the epic's ``status.json``
-      POSITIVELY reads as :data:`RUNNING_STATUS`. The message is DELIVERED to
+    - ``mailbox`` — ``--target-plan`` names a plan whose queue row the epic
+      ledger's assembled view POSITIVELY reads as :data:`RUNNING_STATUS`. The
+      message is DELIVERED to
       that plan's mailbox, resolved from the channel's ``(epic_slug, plan_id)``
       address through :func:`delivery_dir_for_write` — the same composition the
       plan-side read resolves, which is what makes the address symmetric rather
       than two parallel path rules.
     - ``queue`` — every other write: ``--target-plan`` absent, or naming a plan
-      that is landed, parked, or absent from the queue. The message queues as an
-      ordinary epic-addressed message the orchestrator drains between plans.
+      that is landed, parked, or absent from the queue, or aimed at an epic whose
+      ledger could not be read or is still in the monolithic layout. The message
+      queues as an ordinary epic-addressed message the orchestrator drains
+      between plans.
+
+    ``routing_reason`` names WHY, over the closed :data:`ROUTING_REASONS`
+    vocabulary — so a message that queued because the ledger could not be read
+    is distinguishable from one that queued because its target is not running.
 
     Refuses a sender that has already closed its stream (``stream_closed``). The
     check runs BEFORE the ``--target-plan`` routing decision, because it is
@@ -1796,13 +1885,15 @@ def cmd_inbox_write(args: Any) -> dict[str, Any]:
     # is path-safety validated before it can reach a filesystem join.
     destination = WRITE_DESTINATION_QUEUE
     write_dir = root / INBOX_SUBDIR
+    routing_reason = ROUTING_NO_TARGET
     target_plan = getattr(args, 'target_plan', None)
     if target_plan is not None:
         address, address_error = resolve_channel_address(args.slug, target_plan)
         if address_error is not None:
             return address_error
         assert address is not None  # address_error is None ⇒ address resolved
-        if target_plan in _running_plan_ids(root):
+        routing_reason = _routing_reason(root, target_plan)
+        if routing_reason == ROUTING_TARGET_RUNNING:
             destination = WRITE_DESTINATION_MAILBOX
             write_dir = delivery_dir_for_write(address)
     payload_path = Path(args.payload_file)
@@ -1831,6 +1922,7 @@ def cmd_inbox_write(args: Any) -> dict[str, Any]:
         'kind': args.kind,
         'target_plan': target_plan or '',
         'destination': destination,
+        'routing_reason': routing_reason,
         'message': message_path.name,
         'path': str(message_path),
     }
@@ -2046,17 +2138,21 @@ def cmd_inbox_list(args: Any) -> dict[str, Any]:
     }
     live_plan_ids = _running_plan_ids(root)
     owed_verdict = classify_owed_landing(live_plan_ids, queued_landing_senders)
-    queue_ids: set[str] = set()
-    queue_readable = False
-    try:
-        _queue_data = read_json(root / STATUS_FILE)
-        if isinstance(_queue_data, dict):
-            _rows = _queue_data.get('plans')
-            if isinstance(_rows, list):
-                queue_ids = {str(r.get('id', '')) for r in _rows if isinstance(r, dict) and str(r.get('id', ''))}
-                queue_readable = True
-    except Exception:
-        queue_ids = set()
+    # The queue is read through the ledger module's assembled view. It counts as
+    # READABLE only when the ledger assembled AND every row file was read: a
+    # legacy-layout ledger is refused rather than read, and a single unread row
+    # file would make any delta computed over the rest a partial one.
+    ledger = assemble_view(root)
+    queue_readable = ledger.state == LEDGER_OK and not ledger.unreadable_rows
+    queue_ids: set[str] = (
+        {
+            str(row.get('id', ''))
+            for row in ledger.document.get('plans', [])
+            if isinstance(row, dict) and str(row.get('id', ''))
+        }
+        if queue_readable
+        else set()
+    )
     # An unreadable queue is UNAVAILABLE, never empty: the directional
     # deltas below are uncomputed, so they ride an explicit
     # ``queue_readable: False`` discriminator rather than a clean-looking

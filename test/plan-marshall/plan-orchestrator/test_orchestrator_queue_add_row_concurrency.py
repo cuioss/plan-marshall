@@ -4,51 +4,44 @@
 
 The claim under test is not "the append works" but "the append is safe where
 the form it replaces is not", and a single arm cannot establish that. So the two
-controls run the same two-writer race, from the same starting queue, through the
-same ``rmw_json`` critical section, under the same forced interleaving, and
-differ in EXACTLY ONE dimension — which array each writer commits:
+controls run the same two-writer race, from the same starting queue, under the
+same forced interleaving, and differ in the WRITE FORM each writer uses:
 
-* **Positive control** — each writer commits the array it finds FRESH inside the
-  lock, by calling the production :func:`_append_plan_row`. Both rows survive.
-* **Negative control** — each writer commits an array it computed from its own
-  PRE-LOCK read. One row is lost, because the value that decided the array was
-  already stale by the time the lock was held.
+* **Positive control** — each writer stages its row through the production
+  :func:`_append_plan_row`, which creates ONE row file in the per-concern
+  layout. Both rows survive: the two writers write two different files.
+* **Negative control** — each writer runs a TEST-LOCAL legacy whole-array writer
+  against a monolithic-layout fixture: it commits a ``plans[]`` array computed
+  from its own PRE-LOCK read, through the same ``rmw_json`` critical section.
+  One row is lost, because the value that decided the array was already stale
+  by the time the lock was held.
 
-**The interleaving is FORCED, not hoped for** (option (a) of the two the fix
-considered: an in-process ``threading.Barrier`` pair, chosen because it needs no
-production change — no test seam was added to ``orchestrator.py`` or
-``_locks_core.py``). Every writer performs its pre-lock read, then blocks on one
-:class:`threading.Barrier`; no writer may commit until EVERY writer has read.
-That is what makes the negative arm's loss a property of the read-read-write-write
-INTERLEAVING rather than of a single snapshot hoisted into the test body, and it
-is what makes both arms deterministic instead of reporting whichever schedule
-the OS happened to supply.
+**The interleaving is FORCED, not hoped for.** An in-process
+``threading.Barrier`` holds every writer after its pre-lock read; no writer may
+commit until EVERY writer has read. That is what makes the negative arm's loss
+a property of the read-read-write-write INTERLEAVING rather than of a single
+snapshot hoisted into the test body, and it is what makes both arms
+deterministic instead of reporting whichever schedule the OS happened to supply.
 
 What each arm can actually detect, stated without overclaim:
 
-* The **positive** arm goes RED if ``--add-row`` stops deriving its array from
-  the fresh in-lock read — moving the append outside the critical section, or
-  committing a pre-lock snapshot, loses a row under this interleaving.
+* The **positive** arm goes RED if staging stops being a one-row-file create —
+  a whole-queue rewrite from a pre-lock read loses a row under this interleaving.
 * The **negative** arm goes RED if the barrier ever stops forcing the
   interleaving (a harness regression), because the writers would then serialize
-  and both rows would survive. It is the arm that keeps the positive arm
-  honest: it demonstrates that this interleaving IS lossy for a writer that
-  commits a stale array, so the positive arm's green is a property of the write
-  form and not of the race being too weak to lose anything.
+  and both rows would survive. It keeps the positive arm honest: it demonstrates
+  that this interleaving IS lossy for a whole-array writer, so the positive arm's
+  green is a property of the layout and write form, not of a race too weak to
+  lose anything.
 
 Residual limitations, stated rather than omitted:
 
-* The negative arm's unsafe writer is a TEST-LOCAL writer, not a production
-  code path. It models the whole-array write form (compute from a pre-lock read,
-  then assign) that ``manage-status update-field --field plans`` performs for
-  ``decompose``'s bulk seed; it does not execute that script. A whole-array
-  setter takes the caller's complete array and has no merge semantics to add, so
-  "the bulk path is made safe" is not a change that could exist — the earlier
-  claim that this arm would go red on it named an impossible event and has been
-  removed.
+* The negative arm's writer is TEST-LOCAL: it models the retired whole-document
+  write form, and there is no longer a production code path that commits a
+  whole queue array.
 * The pair establishes safety against THIS interleaving (every writer reads
-  before any writer commits), which is the lost-update schedule the critical
-  section exists to defeat. It does not enumerate every possible interleaving.
+  before any writer commits), which is the lost-update schedule. It does not
+  enumerate every possible interleaving.
 
 Each arm also asserts the writer population it ACTUALLY ran, so a degenerate
 zero-writer run cannot pass green on an empty race. Accidental serialization is
@@ -67,6 +60,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from _ledger_fixtures import read_rows, write_ledger, write_legacy_status
 
 from conftest import load_script_module
 
@@ -82,47 +76,35 @@ _ORCH_SCRIPT = 'orchestrator.py'
 #: displaces the registration ``test_orchestrator.py`` publishes.
 _orch = load_script_module(_ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT, 'orchestrator_concurrency_script')
 
+#: The shared read-modify-write critical section the negative arm's legacy
+#: writer commits through — the same primitive the retired whole-array form used.
+_locks_core = load_script_module('plan-marshall', 'manage-locks', '_locks_core.py', '_locks_core_concurrency')
+
 _append_plan_row = _orch._append_plan_row
-_rmw_json = _orch.rmw_json
+_rmw_json = _locks_core.rmw_json
 
 FIXED_TIMESTAMP = '2020-01-01T00:00:00Z'
 
 #: The ids the racing writers each try to add — the raced POPULATION, and the
 #: single source of truth for how many writers there are. Distinct by
-#: construction: the subject is a LOST UPDATE, not a duplicate-id collision, so
-#: no two writers may compete for the same row.
+#: construction: the subject is a LOST UPDATE, not a duplicate-id collision.
 RACED_PLAN_IDS = ('PLAN-02', 'PLAN-03')
 
-#: The number of writers each arm races, DERIVED from the population above
-#: rather than declared beside it. The two are required to be equal by
-#: construction — :func:`_race` sizes its barrier and its pool from this count
-#: while its worker indexes ``RACED_PLAN_IDS[index]`` — and a hand-written
-#: literal enforced nothing: one SMALLER than the tuple silently races fewer
-#: writers, and both arms still pass, because every assertion is written against
-#: this count rather than against the population. Deriving it makes adding a
-#: third id raise the writer count with it. Both arms assert they actually ran
-#: this many, so neither can report success over a race that never happened.
+#: The number of writers each arm races, DERIVED from the population above so a
+#: third id raises the writer count with it.
 WRITER_COUNT = len(RACED_PLAN_IDS)
 
-#: Seconds a writer will wait at the barrier for its peers. Generous enough that
-#: a loaded CI machine never trips it, and finite so a serialized harness fails
-#: with ``BrokenBarrierError`` instead of hanging the suite.
+#: Seconds a writer will wait at the barrier for its peers — finite, so a
+#: serialized harness fails with ``BrokenBarrierError`` instead of hanging.
 BARRIER_TIMEOUT_SECONDS = 30
 
 #: The row already in the queue when each race starts. The positive control
-#: asserts it comes through unmutated, which is what separates "both appends
-#: landed" from "the whole array was rewritten and happened to keep three rows".
+#: asserts it comes through unmutated.
 PRE_EXISTING_ID = 'PLAN-01'
 
 
 def _make_plan(plan_id: str, status: str = 'staged') -> dict[str, str]:
-    """One queue row in the layout contract's shape.
-
-    Typed ``dict[str, str]`` rather than bare ``dict`` because every value in the
-    row genuinely is a string. The precision is load-bearing at one call site:
-    :func:`_race`'s worker returns ``row['id']`` under a ``-> str`` declaration,
-    which off a bare ``dict`` is an ``Any`` return.
-    """
+    """One queue row in the layout contract's seed shape."""
     return {
         'id': plan_id,
         'slug': plan_id.lower(),
@@ -138,9 +120,9 @@ def _epic_dir(plan_context, slug: str) -> Path:
     return Path(plan_context.fixture_dir) / 'orchestrator' / slug
 
 
-def _write_status(plan_context, slug: str) -> Path:
-    """Write the shared starting queue: one pre-existing row, nothing else."""
-    doc = {
+def _starting_doc() -> dict[str, Any]:
+    """The shared starting queue: one pre-existing row, nothing else."""
+    return {
         'kind': 'orchestrator',
         'title': 'Concurrency Fixture Epic',
         'phase': 'orchestrating',
@@ -151,39 +133,34 @@ def _write_status(plan_context, slug: str) -> Path:
         'created': FIXED_TIMESTAMP,
         'updated': FIXED_TIMESTAMP,
     }
-    path = _epic_dir(plan_context, slug) / 'status.json'
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(doc, indent=2), encoding='utf-8')
-    return path
 
 
-def _read_plans(path: Path) -> list[dict]:
+def _read_legacy_plans(path: Path) -> list[dict]:
     return list(json.loads(path.read_text(encoding='utf-8'))['plans'])
 
 
 def _commit_stale_array(status_path: Path, stale: list[dict], row: dict) -> None:
-    """The UNSAFE write form: commit an array decided by a PRE-LOCK read.
+    """The retired UNSAFE write form: commit an array decided by a PRE-LOCK read.
 
-    Runs through the SAME ``rmw_json`` critical section the safe form uses, so
-    the two arms are not separated by lock-vs-no-lock. What is unsafe is the
-    VALUE: the mutator discards the fresh in-lock ``plans`` and assigns an array
-    built from a read taken before the barrier released.
+    Test-local. Runs through the ``rmw_json`` critical section, so the arm is not
+    lock-vs-no-lock: what is unsafe is the VALUE — the mutator discards the fresh
+    in-lock ``plans`` and assigns an array built from a read taken before the
+    barrier released, restamping ``updated`` as every whole-document write did.
     """
 
     def _mutate(state: dict[str, Any]) -> dict[str, Any]:
         state['plans'] = [*stale, row]
+        state['updated'] = FIXED_TIMESTAMP
         return state
 
     _rmw_json(status_path, _mutate)
 
 
-def _race(status_path: Path, commit: Callable[[Path, list[dict], dict], None]) -> list[str]:
+def _race(read: Callable[[], list[dict]], commit: Callable[[list[dict], dict], None]) -> list[str]:
     """Race :data:`WRITER_COUNT` writers with the read/commit boundary FORCED.
 
     Every writer takes its own pre-lock read, then blocks on the shared barrier
-    until all its peers have read too; only then does any writer commit. The
-    barrier is what turns "two writers happened to overlap" into the specific
-    read-read-write-write interleaving both arms are judged under.
+    until all its peers have read too; only then does any writer commit.
 
     Returns the plan id each writer committed, so a writer that never ran is
     visible as a missing entry rather than as a silently smaller race.
@@ -192,9 +169,9 @@ def _race(status_path: Path, commit: Callable[[Path, list[dict], dict], None]) -
 
     def _worker(index: int) -> str:
         row = _make_plan(RACED_PLAN_IDS[index])
-        stale = _read_plans(status_path)
+        stale = read()
         barrier.wait(timeout=BARRIER_TIMEOUT_SECONDS)
-        commit(status_path, stale, row)
+        commit(stale, row)
         return row['id']
 
     with ThreadPoolExecutor(max_workers=WRITER_COUNT) as pool:
@@ -202,36 +179,41 @@ def _race(status_path: Path, commit: Callable[[Path, list[dict], dict], None]) -
 
 
 @pytest.mark.xdist_group(name='orchestrator_add_row_contention')
-class TestAddRowSharesTheCriticalSection:
+class TestAddRowIsAOneFileCreate:
     def test_concurrent_appends_both_survive(self, plan_context):
         """Positive control: both barrier-released ``--add-row`` writers land.
 
-        Each writer reaches the lock holding a stale pre-lock read — the same
+        Each writer reaches its create holding a stale pre-lock read — the same
         input the negative arm loses on — and both rows still survive, because
-        :func:`_append_plan_row` derives its array from the FRESH in-lock
-        ``plans[]`` and ignores the stale one.
+        staging creates one row file and rewrites no other row.
         """
         slug = 'race-add-row-epic'
-        status_path = _write_status(plan_context, slug)
+        root = _epic_dir(plan_context, slug)
+        write_ledger(root, _starting_doc())
+        pre_existing_before = (root / 'queue' / f'{PRE_EXISTING_ID}.json').read_bytes()
 
-        def _safe_commit(_path: Path, _stale: list[dict], row: dict) -> None:
-            _append_plan_row(slug, row)
+        def _safe_commit(_stale: list[dict], row: dict) -> None:
+            outcome = _append_plan_row(slug, row)
+            assert 'row' in outcome, f'the staging of {row["id"]} was refused: {outcome}'
 
-        committed = _race(status_path, _safe_commit)
+        committed = _race(lambda: read_rows(root), _safe_commit)
 
         # The population that actually ran — a zero-writer race cannot pass.
         assert len(committed) == WRITER_COUNT
         assert set(committed) == set(RACED_PLAN_IDS)
 
-        plans = _read_plans(status_path)
-        assert len(plans) == 1 + WRITER_COUNT
-        assert {row['id'] for row in plans} == {PRE_EXISTING_ID, *RACED_PLAN_IDS}
-        # The pre-existing row came through untouched — no writer rewrote the
-        # array around it.
-        assert _make_plan(PRE_EXISTING_ID, status='running') in plans
+        rows = read_rows(root)
+        assert len(rows) == 1 + WRITER_COUNT
+        assert {row['id'] for row in rows} == {PRE_EXISTING_ID, *RACED_PLAN_IDS}
+        # The pre-existing row file came through byte-identical — no writer
+        # rewrote the queue around it.
+        assert (root / 'queue' / f'{PRE_EXISTING_ID}.json').read_bytes() == pre_existing_before
+        # The two raced rows were serialized by the queue-scoped critical
+        # section, so they carry distinct ``seq`` values after the seeded row's.
+        assert sorted(row['seq'] for row in rows if row['id'] in RACED_PLAN_IDS) == [2, 3]
 
     def test_concurrent_stale_array_commits_lose_one(self, plan_context):
-        """Negative control: committing a pre-lock array loses a write.
+        """Negative control: the legacy whole-array writer loses a write.
 
         The barrier holds every writer until all of them have read, so both
         commit an array that no longer reflects the queue — whichever commits
@@ -240,15 +222,18 @@ class TestAddRowSharesTheCriticalSection:
         stops losing reliably; that is what it is here to detect.
         """
         slug = 'race-stale-array-epic'
-        status_path = _write_status(plan_context, slug)
+        status_path = write_legacy_status(_epic_dir(plan_context, slug), _starting_doc())
 
-        committed = _race(status_path, _commit_stale_array)
+        committed = _race(
+            lambda: _read_legacy_plans(status_path),
+            lambda stale, row: _commit_stale_array(status_path, stale, row),
+        )
 
         # Same population as the positive arm, and every writer completed.
         assert len(committed) == WRITER_COUNT
         assert set(committed) == set(RACED_PLAN_IDS)
 
-        plans = _read_plans(status_path)
+        plans = _read_legacy_plans(status_path)
         # Grew by ONE, not by WRITER_COUNT: one row was silently dropped.
         assert len(plans) == 1 + 1
         surviving = {row['id'] for row in plans} & set(RACED_PLAN_IDS)

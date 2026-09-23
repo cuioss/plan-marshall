@@ -6,8 +6,8 @@ Both detectors run on the RENDERED START-HERE block rather than on its inputs,
 because in every recorded divergence the inputs were individually fine and the
 rendering combined them wrongly — a narrated anchor sentence and the
 generator's own enumeration disagreeing inside ONE emission. Every fixture here
-is therefore built the same way: a well-formed ``status.json`` whose fields are
-each individually valid, rendered into a block that is not.
+is therefore built the same way: a well-formed per-concern ledger whose fields
+are each individually valid, rendered into a block that is not.
 
 - **Derived-count parity** (``count_divergences[]``) — a count the block claims
   against the count re-derived from ``plans[]``. Matched pair: a seeded
@@ -34,9 +34,10 @@ otherwise report the same clean zero as one that scanned and found nothing.
 
 import argparse
 import copy
-import json
 from pathlib import Path
 from typing import Any
+
+from _ledger_fixtures import write_ledger
 
 from conftest import get_script_path, load_script_module, parse_ns
 
@@ -115,11 +116,12 @@ def _row(plan_id: str, status: str = 'staged') -> dict:
 
 
 def _write_status(plan_context, rows: list, resume_anchor: str) -> Path:
-    """Write a status.json whose FIELDS are each individually well-formed.
+    """Seed a per-concern ledger whose FIELDS are each individually well-formed.
 
     The anchor is prose an operator wrote and the queue is a valid row list;
     neither is malformed on its own. Anything the detectors find therefore comes
-    from the rendering that combines them, which is the property under test.
+    from the rendering that combines them, which is the property under test. The
+    ledger is seeded through ``_ledger_fixtures.write_ledger``; returns the root.
     """
     doc = {
         'kind': 'orchestrator',
@@ -130,12 +132,10 @@ def _write_status(plan_context, rows: list, resume_anchor: str) -> Path:
         'resume_anchor': resume_anchor,
         'metadata': {},
         'created': FIXED_TIMESTAMP,
-        'updated': FIXED_TIMESTAMP,
     }
-    path = _epic_dir(plan_context) / 'status.json'
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(doc, indent=2), encoding='utf-8')
-    return path
+    root = _epic_dir(plan_context)
+    write_ledger(root, doc)
+    return root
 
 
 #: A three-row queue: two shipped, one staged. Small enough that every derived

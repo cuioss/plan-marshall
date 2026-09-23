@@ -2,36 +2,39 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the ``compact`` verb of the plan-orchestrator script.
 
-The ledger-compaction stage regenerates every DERIVABLE surface of ``epic.md``
-in place — the START-HERE resume summary and the Ordered Queue table — and
-leaves every byte OUTSIDE the ``BEGIN/END GENERATED`` markers untouched. The
-module is organised around the properties that make the stage safe to run
-unattended:
+The ledger-compaction stage verifies the ledger invariants and then regenerates
+the generated, git-tracked ``queue-view.md`` through the SAME writer
+``regenerate-view`` uses. It makes NO ``epic.md`` write: ``epic.md`` is
+hand-written narrative only. The module is organised around the properties that
+make the stage safe to run unattended:
 
-- **Derivable is regenerated** — a stale queue row is corrected from
-  ``status.json``, never preserved.
-- **Narrative survives verbatim** — a retraction, an annotation, and every
-  hand-authored section sit outside the markers and are byte-identical after a
-  pass. This is the test that protects everything the stage is for: a compaction
-  that can drop a retraction is a destructive tool wearing a tidy name.
-- **Idempotent** — a second run finds every block ``unchanged`` and writes
-  nothing.
+- **The view is regenerated from the ledger** — a queue change reaches
+  ``queue-view.md``, and a stale or conflicted view is overwritten.
+- **``epic.md`` is never written** — a retraction, an annotation, and every
+  hand-authored section are byte-identical after a pass because nothing here
+  writes that file at all.
+- **Idempotent** — a second run over an unchanged ledger reports
+  ``view_written: false`` and writes nothing.
 - **Refuses a closed epic** — that tree is the frozen audit record; compaction
-  is a live-epic operation only.
-- **Reports every mutation and every abstention** — a silent compaction is
-  indistinguishable from a lossy one.
-- **Invariants bite** — the queue<->spec reconciliation is bidirectional, no
-  terminal row leaks into the live queue, and every relocation pointer resolves.
+  is a live-epic operation only. Also refuses a monolithic-layout ledger and an
+  unreadable row file, writing nothing.
+- **Reports every abstention** — every ``##`` section of ``epic.md`` is named as
+  preserved verbatim, so a silent compaction cannot pass for a lossy one.
+- **Invariants bite** — the queue<->spec reconciliation is bidirectional and
+  every relocation pointer resolves. The retired ``no_terminal_in_live_queue``
+  invariant is gone with the pasted table it guarded; terminal-row exclusion is
+  pinned on the renderer in ``test_orchestrator_queue_view.py``.
 
 Everything runs against a SCAFFOLDED FIXTURE EPIC under ``PLAN_BASE_DIR``
-isolation — never the live ``truthful-signals`` tree.
+isolation — never a live epic tree.
 """
 
 import argparse
 import copy
-import json
 from pathlib import Path
 from typing import Any
+
+from _ledger_fixtures import write_ledger, write_legacy_status
 
 from conftest import get_script_path, load_script_module, parse_ns, run_script
 
@@ -47,7 +50,6 @@ _orch = load_script_module(_ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT, 'orchestrato
 
 cmd_compact = _orch.cmd_compact
 GENERATED_BLOCKS = _orch.GENERATED_BLOCKS
-INBOX_SUBDIR = _orch.INBOX_SUBDIR
 
 SLUG = 'fixture-compact-epic'
 FIXED_TIMESTAMP = '2020-01-01T00:00:00Z'
@@ -56,8 +58,7 @@ FIXED_TIMESTAMP = '2020-01-01T00:00:00Z'
 #: exactly the anti-rework record the stage exists to protect.
 RETRACTION = '- 2020-01-01 — RETRACTED: the spec-corruption claim was withdrawn; do not re-flag it.'
 
-#: A hand annotation in the START-HERE zone, and a per-row queue caveat — both
-#: OUTSIDE their block's markers, both must survive regeneration.
+#: A hand annotation and a per-row queue caveat — narrative that must survive.
 START_ANNOTATION = '- PLAN-01 — a hand annotation the generator does not produce.'
 QUEUE_ANNOTATION = '- PLAN-01 — sequencing caveat the generator cannot derive.'
 VISION_TEXT = 'A fixture epic exercising the compact stage.'
@@ -68,23 +69,10 @@ WATCH = '- a mid-flight watch — re-check at the next landing'
 # =============================================================================
 # Parser-derived argument namespaces
 # =============================================================================
-#
-# The ``compact`` namespace is built by the orchestrator's OWN parser, so it
-# carries every default the production CLI applies rather than only the fields a
-# test author remembered. ``parse_ns`` re-executes the script module on every
-# call, so it is hoisted to module scope and the two rejection cases derive their
-# slug through :func:`_variant` instead of parsing again. ``register=False`` so
-# it cannot displace the explicitly-named registration above.
 
 
 def _variant(base: argparse.Namespace, **overrides: Any) -> argparse.Namespace:
-    """Derive a namespace from a hoisted parser-derived base.
-
-    The base supplies every parser default; ``overrides`` names only the fields
-    this call differs in. A shallow copy is enough because a namespace's values
-    are the parser's own scalars, and the base must stay unmutated for the other
-    callers sharing it.
-    """
+    """Derive a namespace from a hoisted parser-derived base."""
     derived = copy.copy(base)
     for field, value in overrides.items():
         setattr(derived, field, value)
@@ -123,13 +111,8 @@ def _row(plan_id: str, status: str = 'staged', workstream: str = 'WS-01') -> dic
     }
 
 
-def _write_status(
-    plan_context,
-    rows: list,
-    phase: str = 'orchestrating',
-    resume_anchor: str = 'await nothing',
-) -> Path:
-    doc = {
+def _ledger_doc(rows: list, phase: str = 'orchestrating', resume_anchor: str = 'await nothing') -> dict:
+    return {
         'kind': 'orchestrator',
         'title': 'Fixture Compact Epic',
         'phase': phase,
@@ -138,12 +121,14 @@ def _write_status(
         'resume_anchor': resume_anchor,
         'metadata': {},
         'created': FIXED_TIMESTAMP,
-        'updated': FIXED_TIMESTAMP,
     }
-    path = _epic_dir(plan_context) / 'status.json'
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(doc, indent=2), encoding='utf-8')
-    return path
+
+
+def _write_status(plan_context, rows: list, phase: str = 'orchestrating', resume_anchor: str = 'await nothing') -> Path:
+    """Seed the per-concern ledger through the production conversion; return the epic root."""
+    root = _epic_dir(plan_context)
+    write_ledger(root, _ledger_doc(rows, phase, resume_anchor))
+    return root
 
 
 def _write_spec(plan_context, name: str, surface: list[str] | None = None) -> Path:
@@ -164,32 +149,8 @@ def _write_broken_spec(plan_context, name: str) -> Path:
     return path
 
 
-def _default_queue_body() -> str:
-    return (
-        '| # | Plan | Workstream | Status | Surface (expected) |\n'
-        '|---|------|------------|--------|--------------------|\n'
-        '| 1 | PLAN-01-alpha | WS-01 | STALE-STATUS | (stale surface) |'
-    )
-
-
-def _epic_md(
-    *,
-    resume_body: str = 'OLD RESUME BODY — pre-regeneration',
-    queue_body: str | None = None,
-    decisions: str = RETRACTION,
-    include_queue_markers: bool = True,
-    pointer_line: str = '',
-) -> str:
-    queue_body = _default_queue_body() if queue_body is None else queue_body
-    ordered_queue_section = (
-        [
-            _orch._begin_marker('ordered-queue'),
-            queue_body,
-            _orch._end_marker('ordered-queue'),
-        ]
-        if include_queue_markers
-        else ['| # | Plan | Workstream | Status | Surface (expected) |', queue_body]
-    )
+def _epic_md(*, decisions: str = RETRACTION, pointer_line: str = '') -> str:
+    """A narrative-only ``epic.md`` — the per-concern layout carries no generated block."""
     return (
         '\n'.join(
             [
@@ -203,19 +164,11 @@ def _epic_md(
                 '',
                 '## START HERE',
                 '',
-                _orch._begin_marker('resume-summary'),
-                resume_body,
-                _orch._end_marker('resume-summary'),
-                '',
                 '### Annotations',
                 '',
                 START_ANNOTATION,
                 '',
-                '## Ordered Queue',
-                '',
-                *ordered_queue_section,
-                '',
-                '### Queue annotations',
+                '## Queue annotations',
                 '',
                 QUEUE_ANNOTATION,
                 '',
@@ -246,7 +199,7 @@ def _write_epic(plan_context, **kwargs) -> Path:
 
 
 def _live_epic(plan_context, rows: list | None = None, **epic_kwargs) -> Path:
-    """Materialize a live epic: a status.json queue, one spec, and an epic.md."""
+    """Materialize a live epic: a per-concern queue, one spec, and an epic.md."""
     rows = rows if rows is not None else [_row('PLAN-01')]
     _write_status(plan_context, rows)
     _write_spec(plan_context, 'PLAN-01-alpha.md', surface=['scripts/a.py'])
@@ -258,34 +211,13 @@ def _run() -> dict:
     return result
 
 
-def _epic_text(plan_context) -> str:
-    return (_epic_dir(plan_context) / 'epic.md').read_text(encoding='utf-8')
-
-
-def _block_body(text: str, name: str) -> str:
-    lines = text.split('\n')
-    begin, end = _orch._marker_indices(lines, name)
-    assert begin >= 0 and end >= 0, f'block {name!r} markers not found'
-    return '\n'.join(lines[begin + 1 : end])
+def _view_text(plan_context) -> str:
+    return (_epic_dir(plan_context) / 'queue-view.md').read_text(encoding='utf-8')
 
 
 def _invariant(result: dict, name: str) -> dict:
     rows: list[dict] = [row for row in result['invariants'] if row['invariant'] == name]
     assert len(rows) == 1, f'expected exactly one {name!r} invariant, got {len(rows)}'
-    return rows[0]
-
-
-def _regenerated(result: dict, surface: str) -> dict:
-    rows: list[dict] = [row for row in result['regenerated'] if row['surface'] == surface]
-    assert len(rows) == 1, f'expected exactly one {surface!r} regenerated row'
-    return rows[0]
-
-
-def _abstained(result: dict, section: str) -> dict:
-    rows: list[dict] = [row for row in result['abstained'] if row['section'] == section]
-    assert len(rows) == 1, (
-        f'expected exactly one {section!r} abstained row, got {[row["section"] for row in result["abstained"]]}'
-    )
     return rows[0]
 
 
@@ -295,7 +227,7 @@ def _abstained(result: dict, section: str) -> dict:
 
 
 class TestCompactShape:
-    def test_reports_operation_and_relocation_target(self, plan_context):
+    def test_reports_operation_relocation_target_and_view(self, plan_context):
         _live_epic(plan_context)
 
         result = _run()
@@ -303,27 +235,16 @@ class TestCompactShape:
         assert result['status'] == 'success'
         assert result['operation'] == 'compact'
         assert result['relocation_target'] == 'settled.md'
+        assert result['view'] == 'queue-view.md'
+        assert result['view_written'] is True
 
-    def test_regenerates_every_declared_block(self, plan_context):
-        _live_epic(plan_context)
-
-        result = _run()
-
-        surfaces = {row['surface'] for row in result['regenerated']}
-        assert surfaces == set(GENERATED_BLOCKS)
-        for row in result['regenerated']:
-            assert row['outcome'] in ('regenerated', 'unchanged', 'markers_absent')
-            assert isinstance(row['lines_before'], int)
-            assert isinstance(row['lines_after'], int)
-
-    def test_carries_three_invariants_each_with_verdict_evidence_population(self, plan_context):
+    def test_carries_the_two_invariants_each_with_verdict_evidence_population(self, plan_context):
         _live_epic(plan_context)
 
         result = _run()
 
         assert {row['invariant'] for row in result['invariants']} == {
             'queue_spec_bidirectional',
-            'no_terminal_in_live_queue',
             'relocated_pointer_reachable',
         }
         for row in result['invariants']:
@@ -332,49 +253,42 @@ class TestCompactShape:
             assert row['evidence'].strip()
             assert row['population'].strip()
 
-    def test_abstained_names_the_narrative_sections_left_verbatim(self, plan_context):
+    def test_the_retired_terminal_row_invariant_is_not_reported(self, plan_context):
+        _live_epic(plan_context)
+
+        result = _run()
+
+        assert 'no_terminal_in_live_queue' not in {row['invariant'] for row in result['invariants']}
+
+    def test_abstained_names_every_epic_md_section_as_preserved(self, plan_context):
         _live_epic(plan_context)
 
         result = _run()
 
         abstained = {row['section'] for row in result['abstained']}
-        # The two sections that CONTAIN a generated block are regenerated, not abstained.
-        assert 'START HERE' not in abstained
-        assert 'Ordered Queue' not in abstained
-        # Every hand-authored section is named as preserved.
-        assert {'Vision', 'Decisions', 'Open Defects', 'Watches'} <= abstained
+        assert {'Vision', 'START HERE', 'Queue annotations', 'Decisions', 'Open Defects', 'Watches'} <= abstained
         assert result['abstained_count'] == len(result['abstained'])
-        for row in result['abstained']:
-            assert row['treatment'] == 'preserved_verbatim'
+        assert all(row['treatment'] == 'preserved_verbatim' for row in result['abstained'])
 
 
 # =============================================================================
-# Derivable is regenerated; narrative survives verbatim
+# The view is regenerated; epic.md is never written
 # =============================================================================
 
 
-class TestDerivableRegeneration:
-    def test_a_stale_queue_row_is_corrected_from_status_json(self, plan_context):
-        # status.json is authority: the row is parked; the epic.md table shows a
-        # stale status. After compaction the table reflects status.json.
+class TestViewRegeneration:
+    def test_a_queue_change_reaches_the_view(self, plan_context):
         _write_status(plan_context, [_row('PLAN-01', status='parked')])
         _write_spec(plan_context, 'PLAN-01-alpha.md', surface=['scripts/a.py'])
         _write_epic(plan_context)
 
-        result = _run()
+        _run()
 
-        queue = _block_body(_epic_text(plan_context), 'ordered-queue')
-        assert '| parked |' in queue
-        assert 'STALE-STATUS' not in queue
-        assert result['epic_changed'] is True
-        assert _regenerated(result, 'ordered-queue')['outcome'] == 'regenerated'
+        assert '| 1 | PLAN-01 | WS-01 | parked |' in _view_text(plan_context)
 
     def test_the_surface_column_is_derived_from_the_spec(self, plan_context):
         # The declared entries are ROOTED — their first segment is a real
-        # top-level repository entry. The single reader derives rootedness from
-        # the tree rather than from a hand-listed set of roots, so an entry whose
-        # first segment does not exist is recorded as unresolved rather than
-        # claimed, and the cell would render the derivation class instead.
+        # top-level repository entry — so the single reader claims them.
         declared = ['test/alpha/a.py', 'test/alpha/b.py']
         _write_status(plan_context, [_row('PLAN-01')])
         _write_spec(plan_context, 'PLAN-01-alpha.md', surface=declared)
@@ -382,9 +296,9 @@ class TestDerivableRegeneration:
 
         _run()
 
-        queue = _block_body(_epic_text(plan_context), 'ordered-queue')
+        view = _view_text(plan_context)
         for path in declared:
-            assert path in queue
+            assert path in view
 
     def test_a_row_without_a_spec_renders_a_named_marker_not_a_blank(self, plan_context):
         _write_status(plan_context, [_row('PLAN-09')])
@@ -392,60 +306,36 @@ class TestDerivableRegeneration:
 
         _run()
 
-        queue = _block_body(_epic_text(plan_context), 'ordered-queue')
-        assert '(spec missing)' in queue
+        assert '(spec missing)' in _view_text(plan_context)
 
-    def test_the_resume_summary_block_is_regenerated_from_status_json(self, plan_context):
+    def test_a_conflicted_view_is_overwritten_by_a_clean_render(self, plan_context):
+        _live_epic(plan_context)
+        view_path = _epic_dir(plan_context) / 'queue-view.md'
+        view_path.write_text('<<<<<<< ours\nA\n=======\nB\n>>>>>>> theirs\n', encoding='utf-8')
+
+        result = _run()
+
+        assert result['view_written'] is True
+        assert '<<<<<<<' not in _view_text(plan_context)
+
+
+class TestEpicMdIsNeverWritten:
+    def test_epic_md_is_byte_identical_after_a_pass(self, plan_context):
+        epic_path = _live_epic(plan_context)
+        before = epic_path.read_bytes()
+
+        _run()
+
+        assert epic_path.read_bytes() == before
+
+    def test_a_retraction_and_every_narrative_fragment_survive(self, plan_context):
         _live_epic(plan_context)
 
         _run()
 
-        summary = _block_body(_epic_text(plan_context), 'resume-summary')
-        assert 'OLD RESUME BODY' not in summary
-        assert '**Resume anchor**' in summary
-
-
-class TestNarrativeSurvivesVerbatim:
-    def test_a_retraction_survives_a_pass_byte_identical(self, plan_context):
-        _live_epic(plan_context)
-
-        _run()
-
-        assert RETRACTION in _epic_text(plan_context)
-
-    def test_every_hand_authored_section_survives_verbatim(self, plan_context):
-        """Every narrative section survives a pass, and a SECOND pass is byte-identical.
-
-        The byte-identity claim is asserted across an actually-performed second
-        pass. Comparing the settled text against a read taken BEFORE the first
-        ``_run()`` would compare two different documents (the first pass rewrites
-        the resume body), and comparing it against a re-read of the same file
-        would be true by construction because nothing wrote between the reads.
-        """
-        _live_epic(plan_context)
-        _run()
-        after_first = _epic_text(plan_context)  # the settled text, after regeneration
-
-        _run()
-
-        after_second = _epic_text(plan_context)
-        for fragment in (VISION_TEXT, START_ANNOTATION, QUEUE_ANNOTATION, OPEN_DEFECT, WATCH):
-            assert fragment in after_second
-        # A second pass changes nothing at all — across a pass that was performed.
-        assert after_second == after_first
-
-    def test_content_outside_the_markers_is_untouched_when_only_the_queue_changes(self, plan_context):
-        _write_status(plan_context, [_row('PLAN-01', status='parked')])
-        _write_spec(plan_context, 'PLAN-01-alpha.md', surface=['scripts/a.py'])
-        _write_epic(plan_context, resume_body='**Resume anchor**: kept')
-        before = _epic_text(plan_context)
-
-        _run()
-
-        after = _epic_text(plan_context)
-        # The annotation zones and every narrative section are byte-identical.
-        for fragment in (START_ANNOTATION, QUEUE_ANNOTATION, RETRACTION, VISION_TEXT):
-            assert before.count(fragment) == after.count(fragment) == 1
+        text = (_epic_dir(plan_context) / 'epic.md').read_text(encoding='utf-8')
+        for fragment in (RETRACTION, VISION_TEXT, START_ANNOTATION, QUEUE_ANNOTATION, OPEN_DEFECT, WATCH):
+            assert text.count(fragment) == 1
 
 
 # =============================================================================
@@ -454,35 +344,25 @@ class TestNarrativeSurvivesVerbatim:
 
 
 class TestIdempotence:
-    def test_a_second_run_is_a_no_op_on_disk(self, plan_context):
+    def test_a_second_run_writes_nothing(self, plan_context):
         _live_epic(plan_context)
-        _run()
-        after_first = (_epic_dir(plan_context) / 'epic.md').read_bytes()
-
-        result = _run()
-
-        after_second = (_epic_dir(plan_context) / 'epic.md').read_bytes()
-        assert result['epic_changed'] is False
-        assert result['regenerated_count'] == 0
-        assert all(row['outcome'] == 'unchanged' for row in result['regenerated'])
-        assert after_first == after_second
-
-    def test_first_run_regenerates_then_settles(self, plan_context):
-        _live_epic(plan_context)
-
         first = _run()
+        view_after_first = (_epic_dir(plan_context) / 'queue-view.md').read_bytes()
 
-        assert first['epic_changed'] is True
-        assert first['regenerated_count'] >= 1
+        second = _run()
+
+        assert first['view_written'] is True
+        assert second['view_written'] is False
+        assert (_epic_dir(plan_context) / 'queue-view.md').read_bytes() == view_after_first
 
 
 # =============================================================================
-# Refusals — the closed epic and the missing tree
+# Refusals
 # =============================================================================
 
 
 class TestRefusals:
-    def test_refuses_a_closed_epic_and_leaves_it_byte_identical(self, plan_context):
+    def test_refuses_a_closed_epic_and_writes_no_view(self, plan_context):
         _write_status(plan_context, [_row('PLAN-01')], phase='closed')
         _write_spec(plan_context, 'PLAN-01-alpha.md')
         epic_path = _write_epic(plan_context)
@@ -494,6 +374,31 @@ class TestRefusals:
         assert result['error'] == 'refused_closed'
         assert result['phase'] == 'closed'
         assert epic_path.read_bytes() == before
+        assert not (_epic_dir(plan_context) / 'queue-view.md').exists()
+
+    def test_refuses_a_legacy_layout_ledger_without_writing(self, plan_context):
+        root = _epic_dir(plan_context)
+        write_legacy_status(root, {**_ledger_doc([_row('PLAN-01')]), 'updated': FIXED_TIMESTAMP})
+        _write_epic(plan_context)
+
+        result = _run()
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'legacy_layout'
+        assert not (root / 'queue-view.md').exists()
+        assert not (root / 'queue').exists()
+
+    def test_refuses_an_unreadable_row_file_without_writing_the_view(self, plan_context):
+        root = _write_status(plan_context, [_row('PLAN-01')])
+        _write_epic(plan_context)
+        (root / 'queue' / 'PLAN-01.json').write_text('<<<<<<< ours\n', encoding='utf-8')
+
+        result = _run()
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'row_unreadable'
+        assert result['unreadable_rows'] == ['PLAN-01.json']
+        assert not (root / 'queue-view.md').exists()
 
     def test_rejects_an_invalid_slug(self, plan_context):
         result = cmd_compact(_variant(_COMPACT_ARGS, slug='../evil'))
@@ -522,190 +427,6 @@ class TestRefusals:
 
         assert result['status'] == 'error'
         assert result['error'] == 'file_not_found'
-
-
-# =============================================================================
-# markers_absent — reported, never fabricated
-# =============================================================================
-
-
-class TestMarkersAbsent:
-    def test_a_missing_block_is_reported_and_skipped_not_fabricated(self, plan_context):
-        _write_status(plan_context, [_row('PLAN-01')])
-        _write_spec(plan_context, 'PLAN-01-alpha.md')
-        _write_epic(plan_context, include_queue_markers=False)
-
-        result = _run()
-
-        assert result['status'] == 'success'
-        assert _regenerated(result, 'ordered-queue')['outcome'] == 'markers_absent'
-        # The resume-summary block IS present, so it still regenerates.
-        assert _regenerated(result, 'resume-summary')['outcome'] == 'regenerated'
-        # No ordered-queue markers were inserted into the hand-authored doc.
-        assert _orch._begin_marker('ordered-queue') not in _epic_text(plan_context)
-
-    def test_an_unreachable_surface_is_not_reported_as_preserved_verbatim(self, plan_context):
-        """A section the stage COULD NOT reach is distinguishable from one it left alone.
-
-        ``## Ordered Queue`` carries a derivable surface. With its marker pair
-        absent the stage cannot regenerate it, so reporting it as
-        ``preserved_verbatim`` — a deliberate abstention — would claim a choice
-        the stage never made.
-        """
-        _write_status(plan_context, [_row('PLAN-01')])
-        _write_spec(plan_context, 'PLAN-01-alpha.md')
-        _write_epic(plan_context, include_queue_markers=False)
-
-        result = _run()
-
-        assert _abstained(result, 'Ordered Queue')['treatment'] == ('markers_absent_not_regenerated')
-
-    def test_an_unreachable_surface_is_counted_apart_from_the_abstentions(self, plan_context):
-        """``abstained_count`` counts choices; ``unreachable_count`` counts blind spots."""
-        _write_status(plan_context, [_row('PLAN-01')])
-        _write_spec(plan_context, 'PLAN-01-alpha.md')
-        _write_epic(plan_context, include_queue_markers=False)
-
-        result = _run()
-
-        assert result['unreachable_count'] == 1
-        preserved = [row for row in result['abstained'] if row['treatment'] == 'preserved_verbatim']
-        assert result['abstained_count'] == len(preserved)
-        assert 'Ordered Queue' not in [row['section'] for row in preserved]
-
-    def test_a_purely_narrative_section_is_still_preserved_verbatim(self, plan_context):
-        """The control: a section carrying no derivable surface keeps the old treatment."""
-        _write_status(plan_context, [_row('PLAN-01')])
-        _write_spec(plan_context, 'PLAN-01-alpha.md')
-        _write_epic(plan_context, include_queue_markers=False)
-
-        result = _run()
-
-        assert _abstained(result, 'Decisions')['treatment'] == 'preserved_verbatim'
-
-    def test_a_partial_marker_pair_is_reported_unreachable(self, plan_context):
-        """A BEGIN with no END is a blind spot, and must not read as nothing at all.
-
-        ``_replace_block`` reports ``markers_absent`` for a partial pair, but the
-        owning section CONTAINS a BEGIN marker — so a section scan keyed on marker
-        presence alone skips it, and the blind spot is reported by neither
-        ``abstained[]`` nor ``unreachable_count``. That is the exact defect this
-        treatment split exists to close, one level down.
-        """
-        _write_status(plan_context, [_row('PLAN-01')])
-        _write_spec(plan_context, 'PLAN-01-alpha.md')
-        path = _epic_dir(plan_context) / 'epic.md'
-        path.parent.mkdir(parents=True, exist_ok=True)
-        # A queue section carrying BEGIN and no END.
-        path.write_text(
-            '\n'.join(
-                [
-                    '# Epic: Fixture Compact Epic',
-                    '',
-                    f'slug: {SLUG}',
-                    '',
-                    '## START HERE',
-                    '',
-                    _orch._begin_marker('resume-summary'),
-                    'body',
-                    _orch._end_marker('resume-summary'),
-                    '',
-                    '## Ordered Queue',
-                    '',
-                    _orch._begin_marker('ordered-queue'),
-                    '| # | Plan | Workstream | Status | Surface (expected) |',
-                    '',
-                    '## Decisions',
-                    '',
-                    RETRACTION,
-                    '',
-                ]
-            ),
-            encoding='utf-8',
-        )
-
-        result = _run()
-
-        assert _regenerated(result, 'ordered-queue')['outcome'] == 'markers_absent'
-        assert _abstained(result, 'Ordered Queue')['treatment'] == ('markers_absent_not_regenerated')
-        assert result['unreachable_count'] == 1
-
-    def test_a_reachable_ledger_reports_no_unreachable_section(self, plan_context):
-        """With both marker pairs present nothing is unreachable, and the count says so."""
-        _live_epic(plan_context)
-
-        result = _run()
-
-        assert result['unreachable_count'] == 0
-        assert all(row['treatment'] == 'preserved_verbatim' for row in result['abstained'])
-
-
-# =============================================================================
-# replaced_body — a regenerated block NAMES what it overwrote
-# =============================================================================
-
-
-class TestReplacedBody:
-    def test_a_regenerated_block_names_the_content_it_overwrote(self, plan_context):
-        """A regenerated block reports WHAT it replaced, not merely a line-count delta.
-
-        A hand-written line inside a generated block is overwritten by the first
-        pass — legitimately, since the region is the generator's. Reporting only
-        ``lines_before``/``lines_after`` would leave the operator unable to tell
-        which bytes were lost, so the pre-write text rides ``replaced_body``.
-        """
-        hand_written = 'HAND-WRITTEN: do not re-derive, see PLAN-04'
-        _write_status(plan_context, [_row('PLAN-01')])
-        _write_spec(plan_context, 'PLAN-01-alpha.md')
-        _write_epic(plan_context, resume_body=hand_written)
-
-        result = _run()
-
-        row = _regenerated(result, 'resume-summary')
-        assert row['outcome'] == 'regenerated'
-        assert hand_written in row['replaced_body']
-
-    def test_an_unchanged_block_reports_an_empty_replaced_body(self, plan_context):
-        """Nothing was overwritten, so there is nothing to name."""
-        _live_epic(plan_context)
-        _run()
-
-        result = _run()
-
-        for row in result['regenerated']:
-            assert row['outcome'] == 'unchanged'
-            assert row['replaced_body'] == ''
-
-
-# =============================================================================
-# Invariant — no terminal row in the live queue
-# =============================================================================
-
-
-class TestNoTerminalInLiveQueue:
-    def test_a_shipped_row_is_excluded_from_the_live_queue(self, plan_context):
-        _write_status(plan_context, [_row('PLAN-01', status='staged'), _row('PLAN-02', status='shipped')])
-        _write_spec(plan_context, 'PLAN-01-alpha.md', surface=['scripts/a.py'])
-        _write_spec(plan_context, 'PLAN-02-beta.md', surface=['scripts/b.py'])
-        _write_epic(plan_context)
-
-        result = _run()
-
-        queue = _block_body(_epic_text(plan_context), 'ordered-queue')
-        assert 'PLAN-01' in queue
-        assert 'PLAN-02' not in queue
-        assert _invariant(result, 'no_terminal_in_live_queue')['verdict'] == 'ok'
-
-    def test_an_all_terminal_queue_renders_empty_and_still_passes(self, plan_context):
-        _write_status(plan_context, [_row('PLAN-01', status='shipped')])
-        _write_spec(plan_context, 'PLAN-01-alpha.md')
-        _write_epic(plan_context)
-
-        result = _run()
-
-        queue = _block_body(_epic_text(plan_context), 'ordered-queue')
-        assert '(empty)' in queue
-        assert _invariant(result, 'no_terminal_in_live_queue')['verdict'] == 'ok'
 
 
 # =============================================================================
@@ -809,25 +530,6 @@ class TestPointerReachability:
 
 
 # =============================================================================
-# The template carries the markers this stage regenerates
-# =============================================================================
-
-
-class TestTemplateContract:
-    def test_the_epic_template_carries_every_generated_block_marker_pair(self):
-        # The stage regenerates a block only if its markers exist. Pinning the
-        # template's markers keeps the template<->script contract from drifting:
-        # a block named in GENERATED_BLOCKS with no home in the template would
-        # silently report markers_absent on every real epic.
-        template = SCRIPT_PATH.parent.parent / 'templates' / 'epic.md'
-        text = template.read_text(encoding='utf-8')
-
-        for name in GENERATED_BLOCKS:
-            assert _orch._begin_marker(name) in text, f'{name} BEGIN marker missing from template'
-            assert _orch._end_marker(name) in text, f'{name} END marker missing from template'
-
-
-# =============================================================================
 # CLI boundary
 # =============================================================================
 
@@ -843,6 +545,7 @@ class TestCompactCli:
         assert 'status: success' in result.stdout
         assert 'operation: compact' in result.stdout
         assert 'relocation_target: settled.md' in result.stdout
+        assert 'view_written: true' in result.stdout
 
     def test_refuses_a_closed_epic_through_cli(self, plan_context):
         _write_status(plan_context, [_row('PLAN-01')], phase='closed')
@@ -862,15 +565,13 @@ class TestCompactCli:
 
 
 class TestMarkerIndicesContract:
-    """Pin the two shapes ``_marker_indices`` actually returns.
+    """Pin the two shapes ``_marker_indices`` returns.
 
-    The docstring previously claimed ``(-1, -1)`` covered BOTH an absent marker
-    and an end that precedes the begin. Neither half survived contact with the
-    code: a begin with no following end returns ``(begin_idx, -1)``, not
-    ``(-1, -1)``, and the "end precedes the begin" case does not exist at all,
-    because the end is only ever searched for AFTER the begin index. A caller
-    that trusted the old contract and tested ``== (-1, -1)`` for "not fully
-    delimited" would read a begin-without-end block as fully absent.
+    ``migrate-layout`` locates the legacy GENERATED blocks through it: a begin
+    with no following end returns ``(begin_idx, -1)`` — which the migration
+    reports as ``incomplete`` and leaves untouched — and an end that precedes
+    the begin is never a candidate, because the end is only searched for AFTER
+    the begin index.
     """
 
     def test_an_absent_begin_marker_returns_the_minus_one_pair(self):
@@ -885,30 +586,34 @@ class TestMarkerIndicesContract:
 
         begin_idx, end_idx = _orch._marker_indices(lines, name)
 
-        # The begin IS located — this is the half the old docstring denied.
         assert begin_idx == 1
         assert end_idx == -1
 
     def test_an_end_before_the_begin_is_never_a_candidate(self):
-        # The retired "end precedes the begin" clause described a case the
-        # implementation cannot produce: the end scan starts at begin_idx + 1,
-        # so an earlier end is simply never considered.
         name = GENERATED_BLOCKS[0]
         lines = [_orch._end_marker(name), _orch._begin_marker(name), 'body']
 
         assert _orch._marker_indices(lines, name) == (1, -1)
 
     def test_a_fully_delimited_block_returns_both_indices(self):
-        # Matched positive control: the not-fully-delimited shapes above are only
-        # meaningful against a case that DOES resolve both markers.
         name = GENERATED_BLOCKS[0]
         lines = ['# epic', _orch._begin_marker(name), 'body', _orch._end_marker(name), 'tail']
 
         assert _orch._marker_indices(lines, name) == (1, 3)
 
     def test_a_marker_quoted_mid_sentence_is_not_matched(self):
-        # The match is the WHOLE stripped line; a quoted mention must not count.
         name = GENERATED_BLOCKS[0]
         lines = ['# epic', f'see {_orch._begin_marker(name)} for details', 'body']
 
         assert _orch._marker_indices(lines, name) == (-1, -1)
+
+    def test_an_incomplete_pair_is_left_untouched_by_the_block_strip(self):
+        # The migration's use of the not-fully-delimited shape: a BEGIN with no
+        # END is reported and never guessed at, so no hand-written line is cut.
+        name = GENERATED_BLOCKS[0]
+        text = '\n'.join(['# epic', _orch._begin_marker(name), 'hand-written tail', ''])
+
+        stripped, outcomes = _orch._strip_generated_blocks(text)
+
+        assert stripped == text
+        assert {'block': name, 'outcome': 'incomplete'} in outcomes
