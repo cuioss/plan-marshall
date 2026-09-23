@@ -1,0 +1,152 @@
+= headroom
+:toc: left
+:toclevels: 2
+
+_Analysis date: 2026-09-23_
+
+xref:README.adoc[Other approaches] » headroom
+
+Repository: https://github.com/headroomlabs-ai/headroom — Apache-2.0, Python.
+
+**Verdict: reject.** Three design ideas are worth taking (see <<_what_to_learn>>).
+
+== What it is
+
+A context-compression layer for coding agents. It runs as a local proxy, a Python/TypeScript library
+(`compress(messages, model=…)`), middleware, or an MCP server. The recommended mode is
+`headroom wrap claude`: it starts a local proxy and launches Claude Code with `ANTHROPIC_BASE_URL`
+pointing at it. Interception is at the API boundary, not through hooks.
+
+=== Compression by content type
+
+[cols="2,5",options="header"]
+|===
+| Content | Technique
+
+| JSON arrays
+| Keeps error items, statistical outliers and first/last boundary rows, selected from field-variance
+  statistics.
+
+| Code
+| AST-aware reduction for Python, JS/TS, Go, Rust, Java, C/C++ and Perl.
+
+| Prose
+| A small trained text-compression model.
+
+| Logs, search results
+| Routed to dedicated compressors.
+
+| Images
+| An ML router claiming 40–90% reduction.
+|===
+
+=== Reversibility
+
+Originals are kept in a local LRU cache under a hash, and the compressed text carries a marker such
+as `[1000 items compressed to 20. Retrieve more: hash=abc123]`. The proxy injects a
+`headroom_retrieve(hash)` tool and executes those calls itself, so the client never sees them. A
+context tracker can pre-expand earlier compressed content when a new query looks related. The full
+loop exists only in proxy mode, not in the library call.
+
+=== Prompt-cache handling
+
+Only the "live zone" — the newest tool results and the latest turn — is compressed. Older turns, the
+system prompt and tool definitions stay byte-identical, so the cached prefix survives. A separate
+cache mode freezes earlier turns entirely.
+
+=== Output shaping
+
+Two mechanisms:
+
+* **Verbosity steering** — a fixed, byte-stable "be terse" block, levels 0–4, appended after the last
+  cache breakpoint of the system prompt.
+* **Effort routing** — a turn that only resumes after a clean tool result is classified structurally
+  (block types, `is_error`) and its requested effort is lowered; on older models the thinking budget
+  is clamped to the API floor.
+
+The README describes output shaping as off by default; the shaper's source docstring says it defaults
+on through a rollout mechanism. The two were not reconciled.
+
+Savings are reported as *estimated* unless a holdout share (for example 10% of turns) runs without the
+feature, in which case they are reported as *measured*.
+
+=== Published numbers
+
+A benchmark over synthetic, MCP-shaped payloads reports 21% saved on code search, 57% on incident
+debugging, 42% on codebase exploration and 30% on issue triage, at sub-millisecond latency. Accuracy
+checks are small generic benchmarks (N=100 each: GSM8K, TruthfulQA, SQuAD v2, BFCL), not agentic
+coding tasks. None of the figures was reproduced for this evaluation.
+
+=== Side effects and defaults
+
+* `wrap` also registers **Serena** at user scope in `~/.claude.json` until `headroom unwrap`
+  (opt out with `--code-memory none`).
+* A non-Anthropic base URL disables Claude Code's Remote Control.
+* Claude Code disables deferred tool loading under a custom base URL, so the wrapper forces it back on.
+* An anonymous telemetry beacon is **on by default** (ratios, counters, provider and model ids, OS);
+  `HEADROOM_BEACON=off` or `DO_NOT_TRACK=1` disables it. Retrieval patterns feed a learning component
+  described as operating across all users.
+
+=== Known defects (open issues)
+
+* #3650 — array rows dropped with no marker by default; the JSON stays valid but contradicts its own
+  count field.
+* #389 — the retrieval hash for dropped rows never reaches the retrieve store.
+* #3545 — the search compressor merges matches onto one line, creating false line-to-content links.
+* #3652 — `ls -la` and `git status` output treated as prose and losing fields.
+* #3394, #3391 — Gemini and Bedrock paths recompress unfrozen history under a live prompt cache.
+* #1345, #3032 — cache-mode misses and mis-billed cache reads on some providers.
+
+=== Runtime coverage
+
+`wrap` supports Claude Code, Codex and a range of other CLIs and IDE agents. The OpenCode plugin is
+broken on OpenCode v2 (#3709, #3669); Antigravity is only a feature request (#3427).
+
+== Assessment against plan-marshall
+
+[cols="2,5",options="header"]
+|===
+| Aspect | Assessment
+
+| Target cost
+| Tool-result bytes. plan-marshall already keeps build output out of context entirely (the build
+  scripts write a log file and return a TOON record of `status`, `errors[]` and `log_file`) and every
+  `manage-*`/`tools-*` script returns TOON. The remaining dominant consumer is prose — skill and
+  standards documents — which the article itself concedes "barely moves".
+
+| Output shaping
+| Acts on output, roughly 1% of billing weight. The effort-routing half lowers effort on resume turns,
+  which is the "examine less" lever class the project measured and rejected.
+
+| Truthfulness
+| Silent row drops and merged grep lines produce results that look complete and are not. Adopting it
+  would inject an unowned source of exactly the confident-but-wrong signals plan-marshall's review and
+  verification machinery is built to catch.
+
+| Measurement
+| `manage-metrics` reads token usage per phase and per dispatch. Behind the proxy those figures would
+  measure the proxy's rewriting, confounding every before/after comparison the token roadmap relies on.
+
+| Portability
+| A base-URL proxy has no mapping in `marketplace/targets/`, and its non-Claude integrations are
+  broken or missing for two of plan-marshall's three runtimes.
+
+| Blast radius
+| User-scope configuration writes, default-on telemetry and loss of Remote Control are outside what a
+  project plugin may impose on an operator.
+|===
+
+== What to learn
+
+. **Elision markers are mandatory, and they carry a retrieval route.** headroom's design is right —
+  compress, keep the original, tell the model exactly what was dropped and how to get it — and its
+  defect list shows what happens where the marker became optional. Any plan-marshall script that
+  truncates or summarises should name what it dropped and point at the full artefact, as the build
+  scripts' `log_file` already does.
+. **Shrink only what is not yet cached.** The live-zone rule — never rewrite bytes already in the
+  cached prefix — matches the project's cost formula: a byte's cost is set by when it enters and how
+  many turns it survives. A shrinking lever should target early-entering, long-lived content and
+  leave the prefix byte-stable.
+. **Distinguish measured from estimated savings by holdout.** Reporting a saving as *measured* only
+  when a random share of runs executed without the lever is a cleaner design than splitting the
+  archived-plan corpus at the instant a configuration changed.

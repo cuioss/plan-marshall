@@ -112,19 +112,19 @@ anything that ever fires.
   shim-or-not checklist this plan already defers to at outline (see Non-Goals) is UNCHANGED
   by this — it still decides case by case; what changes is that "redirect, generically
   sufficient" is no longer an assumption D3 may start from.
-  - verdict: contradicted | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: orchestrator-refactor/cleanup | rescoped: yes | evidence: refuted on two grounds: (1) _orchestrator_inbox.py _SOURCE_ID_RE matches a persisted STRING, not a resolved filesystem path, so a resolver-level redirect cannot reach it - reproduced live: inbox detect --source-id with the old prefix still returns unrecognised_id at HEAD; (2) ADR-024 (Proposed) formalises PLAN-01's own no-shim landing as the decision, ruling out a redirect as the general answer. Re-scoped in place: the HYPOTHESIS bullet and D3 now both flag that string-matching call sites need explicit handling, not a generic redirect assumption.
+  - verdict: contradicted | checked_at: 14d8f3ccd74718e8258a674472e9f01b595bc2cc | by: orchestrator-refactor/cleanup | rescoped: yes | evidence: Refutation re-reproduced first-party. orchestrator inbox detect --source-id against the old .plan/local path returns orchestrated:false, detection:unrecognised_id; _orchestrator_inbox.py:357 _SOURCE_ID_RE hardcodes ^.plan/orchestrator/, :376 _RETIRED_SOURCE_ID_RE only classifies the old prefix as unrecognised (:1180-1181,:1196,:1203) -- unreachable by any resolver-level redirect. ADR-024 formalises PLAN-01's no-shim landing. Re-scope already absorbed in D3/D6 and the bullet text; no new re-scope owed.
 - HYPOTHESIS — the expiry trigger should be release-count-based (a `marshal.json`
   `system.retention` knob, mirroring `plugin_cache_keep_versions`) rather than date-based,
   because `system.provisioned_version` already gives a monotone anchor; confirm/refute at
   `marshall-steward/scripts/cache_retention.py` § `resolve_knobs` / `read_provisioned_version`
   (verify-at-outline).
-  - verdict: unverifiable | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: orchestrator-refactor/cleanup | rescoped: n/a | evidence: cache_retention.py carries resolve_knobs/read_provisioned_version/plugin_cache_keep_versions/provisioned_version; _config_defaults.py holds the system.retention knob family; but no expiry grammar exists to evaluate release-count-vs-date against. shim-remove-when has no reader beyond _analyze_shim_marker.py's presence/well-formedness check. Design judgment with no ground truth at HEAD.
+  - verdict: unverifiable | checked_at: 14d8f3ccd74718e8258a674472e9f01b595bc2cc | by: orchestrator-refactor/cleanup | rescoped: n/a | evidence: Both cited symbols survive (cache_retention.py resolve_knobs/read_provisioned_version/plugin_cache_keep_versions; _config_defaults.py system.retention knob family) but no expiry grammar exists anywhere to evaluate release-count-vs-date against -- _analyze_shim_marker.py remains the sole reader of shim-remove-when, presence/well-formedness only. Design judgment with no ground truth at HEAD.
 - Verify-first clause: the sweep MUST NOT remove a redirect on marker-absence. Absence of a
   marker is not evidence the shim is dead — that inversion is exactly the archetype
   PLAN-TRUTH-003 warned against inside its own fix, and `cleanup-superseded`'s
   `skipped_no_tombstone[]` bucket is the shape that refuses it. Verify this refusal is actually
   implemented, not merely intended, before this plan is treated as done.
-  - verdict: corroborated | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: orchestrator-refactor/cleanup | rescoped: n/a | evidence: premise holds and remains unimplemented, so it is a live requirement. Precedent shape survives: cleanup-superseded's skipped_no_tombstone[] bucket lives in manage-lessons/_lessons_retention.py + manage-lessons.py, pinned by test_cleanup_superseded.py. No sweep exists to carry the refusal: shim-remove-when now appears across 21 source files (up from recorded 18), _analyze_shim_marker.py the only reader, validating well-formedness only.
+  - verdict: corroborated | checked_at: 14d8f3ccd74718e8258a674472e9f01b595bc2cc | by: orchestrator-refactor/cleanup | rescoped: n/a | evidence: Premise holds, remains unimplemented, live requirement. skipped_no_tombstone lives in manage-lessons/scripts/manage-lessons.py(8) + manage-lessons/SKILL.md(4), pinned by two test files. Prior verdict's _lessons_retention.py citation resolves to nothing at HEAD -- was wrong when written. Population still growing with no sweep: shim-remove-when in 21 source files (recorded 18), _analyze_shim_marker.py the only reader.
 - OBSERVED (added 2026-09-21, reproduced first-party by this epic's own `analyze` verb) —
   `_orchestrator_inbox.py`'s `_SOURCE_ID_RE = re.compile(r'^\.plan/orchestrator/(?P<slug>[^/]+)/plans/' + PLAN_ID_SEGMENT + r'[^/]*\.md$')`
   requires the literal `.plan/orchestrator/` prefix. Direct reproduction:
@@ -142,7 +142,7 @@ anything that ever fires.
   pass, 2026-09-21) is a plausible affected instance; confirm/refute by reading its
   `request.md` `source_id` directly once it is reachable (verify-at-outline — it is a
   running plan and must not be touched before then).
-  - verdict: unverifiable | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: orchestrator-refactor/cleanup | rescoped: n/a | evidence: the mechanism half reproduces (see claim 9), but the named instance PLAN-TRUTH-144 shipped as PR #1560, is gone from the truthful-signals queue (44 rows, no -144), manage-status list reports only the NO_PLAN sentinel - no in-flight plan survives to check. Population is empty, not merely unreached.
+  - verdict: unverifiable | checked_at: 14d8f3ccd74718e8258a674472e9f01b595bc2cc | by: orchestrator-refactor/cleanup | rescoped: n/a | evidence: Mechanism half reproduces (see claim 9) but the population is empty, not merely unreached. manage-status list returns total:1, the NO_PLAN sentinel only. Named instance PLAN-TRUTH-144 absent from tracked truthful-signals corpus (45 specs, no -144). No in-flight plan survives whose source_id could be read.
 
 ## Expected Surface
 

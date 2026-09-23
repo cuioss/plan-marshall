@@ -31,15 +31,22 @@ the substrate only; landing the worktree's changes onto `main` is PLAN-10's job.
    (bool). Decide and document the default at outline — `false` (opt-in rollout, matches how
    `parallelization_scope`/`auto_emit` were introduced) is the safer starting point absent a
    stated reason to default `true`.
-2. **D2 — fixed-name per-epic worktree creation/attach.** Extend the existing worktree
-   lifecycle surface (`workflow-integration-git`'s `git-workflow.py worktree-create` /
-   `worktree-path` / `worktree-list`, currently hard-required `--plan-id`-only per its own
-   in-source assertion) to also address an orchestrator epic — either a sibling
+2. **D2 — fixed-name per-epic worktree creation/attach, THIN TRIO ONLY.** Extend
+   `workflow-integration-git`'s `git-workflow.py worktree-create` / `worktree-path` /
+   `worktree-list` (currently hard-required `--plan-id`-only per its own in-source
+   assertion) to also address an orchestrator epic — either a sibling
    `--store orchestrator --slug {slug}` addressing mode on the SAME verbs, or a thin
-   orchestrator-side wrapper that reuses the same underlying atomic create/attach primitive.
-   Decide which at outline; either way the path convention is fixed and deterministic
-   (e.g. `.plan/local/worktrees/orchestrator-{slug}/`), mirroring the existing
-   `.plan/local/worktrees/{plan_id}/` convention exactly, one level up.
+   orchestrator-side wrapper that reuses the same underlying `get_worktree_root() / {key}`
+   path-join primitive these three verbs share. **Re-scoped 2026-09-23 (cleanup A1):** the
+   ORIGINAL framing ("reuses the same underlying atomic create/attach primitive") pointed at
+   `prepare_execute.py`/`integrate_into_main.py`'s move-in/move-back layer, which is
+   confirmed plan-shaped by construction (relocates `.plan/local/plans/{plan_id}`, writes a
+   plan `status.json`, generates a per-plan executor, takes a `plan_id`-keyed `merge_lock`)
+   — an epic tree has none of those, so that layer is explicitly EXCLUDED from this
+   deliverable, not merely deferred. Only the thin trio's own path-join logic is generic.
+   Decide the addressing-mode question at outline; either way the path convention is fixed
+   and deterministic (e.g. `.plan/local/worktrees/orchestrator-{slug}/`), mirroring the
+   existing `.plan/local/worktrees/{plan_id}/` convention exactly, one level up.
 3. **D3 — idempotent, non-destructive lifecycle.** First use creates the worktree (a fresh
    branch off the epic's current tracking base); every subsequent use reuses it as-is. No
    normal orchestrator operation — including this workstream's own `land` (PLAN-10) — ever
@@ -100,16 +107,22 @@ the substrate only; landing the worktree's changes onto `main` is PLAN-10's job.
   `git ls-files .plan/orchestrator/` returns real tracked paths; `git check-ignore
   .plan/local/plans` confirms the blanket rule still applies there. So a worktree checking
   out `.plan/orchestrator/{slug}/`'s branch has real, committable content to work with.
-- HYPOTHESIS: extending `git-workflow.py`'s existing verbs with a `--store orchestrator`
-  addressing mode is architecturally preferable to a separate thin wrapper in
-  `orchestrator.py` reusing the same underlying primitive — confirm/refute at
-  `git-workflow.py`'s actual verb-dispatch structure and at `_cmd_prepare`/
-  `integrate_into_main.py`'s atomic move-in/move-back mechanics (do they generalize past
-  `--plan-id`, or are they deeply plan-shaped?) before committing to either form
-  (verify-at-outline).
+- HYPOTHESIS (re-scoped 2026-09-23, cleanup A1 — the original target `_cmd_prepare` does
+  not exist anywhere in the repo): extending `git-workflow.py`'s `worktree-create` /
+  `worktree-path` / `worktree-list` with a `--store orchestrator` addressing mode is
+  architecturally preferable to a separate thin wrapper in `orchestrator.py` reusing the
+  same `get_worktree_root() / {key}` path-join those three verbs share — confirm/refute at
+  `git-workflow.py`'s actual verb-dispatch structure (verify-at-outline). The move-in/
+  move-back layer (`workflow-integration-git/scripts/prepare_execute.py` §
+  `run_prepare_execute`, and `integrate_into_main.py`) is CONFIRMED plan-shaped by
+  construction — it relocates `.plan/local/plans/{plan_id}`, writes a plan `status.json`,
+  generates a per-plan executor, and takes a `plan_id`-keyed `merge_lock`, none of which an
+  epic tree has — and is explicitly OUT of this HYPOTHESIS's scope, not merely unresolved.
+  - verdict: contradicted | checked_at: 14d8f3ccd74718e8258a674472e9f01b595bc2cc | by: orchestrator-refactor/cleanup | rescoped: yes | evidence: First verdict; refuted on two grounds. (1) cited confirm/refute target _cmd_prepare does not exist anywhere in the repo (0 hits, 3108 files scanned); real successor is workflow-integration-git/scripts/prepare_execute.py run_prepare_execute :551. (2) move-in/move-back mechanics are plan-shaped by construction -- prepare_execute.py relocates .plan/local/plans/{plan_id}, writes plan status.json, generates a per-plan executor; integrate_into_main.py resolves via the plan-status channel and takes a plan_id-keyed merge_lock. An epic tree has no plan directory, no executor, no plan-status channel. Only the thin trio (worktree-create/worktree-path/worktree-list) is generic. Re-scope: replace _cmd_prepare with prepare_execute.py run_prepare_execute as the confirm/refute target; narrow extend-existing-verbs option to the thin trio and explicitly exclude the move-in/move-back layer from any epic addressing mode.
 - Verify-first clause: re-derive `git-workflow.py`'s exact verb surface and line numbers
   against HEAD at outline time — this citation is from research conducted 2026-09-23 and
   may have shifted if a sibling plan touched the same file first.
+  - verdict: corroborated | checked_at: 14d8f3ccd74718e8258a674472e9f01b595bc2cc | by: orchestrator-refactor/cleanup | rescoped: n/a | evidence: First verdict. git-workflow.py is 3054 lines, unchanged since 7d82d5d90 (no sibling plan has shifted it). Cited :886-892 resolves verbatim. Correction the spec should carry: cmd_worktree_list at :2520 takes no --plan-id despite the in-source comment's blanket claim; real verb surface is SIX not three: worktree-path :1264, branch-sync-state :1369, worktree-create :1511, worktree-remove :1981, worktree-rebase-to :2331, worktree-list :2520, plus locate-plan-checkout :2601.
 
 ## Expected Surface
 

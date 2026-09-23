@@ -82,12 +82,12 @@ admission semantics.
   changing their call sites' shape; confirm/refute at `cmd_corpus_verdicts` (`:3072`) whether
   plumbing the Expected Surface resolution through to these two functions is straightforward
   given their current signatures (verify-at-outline).
-  - verdict: corroborated | checked_at: b5d0ef7e6922e38caa4cdc8fdaaca31530c9ccd0 | by: orchestrator-refactor/analyze | rescoped: n/a | evidence: Shipped PR #1585 (merge b5d0ef7e6): _verdict_row/_spec_verdict_rows extended cleanly to carry a closed 6-member staleness_basis vocabulary (orchestrator.py:466-502,3214-3248) plumbed straight through cmd_corpus_verdicts (:3538-3597) with no material signature break; 535-line diff, 596+752-line test additions.
+  - verdict: corroborated | checked_at: 14d8f3ccd74718e8258a674472e9f01b595bc2cc | by: orchestrator-refactor/cleanup | rescoped: n/a | evidence: Shipped code live and untouched at HEAD; git diff b5d0ef7e6..HEAD on orchestrator.py is empty. Closed 6-member staleness_basis vocabulary at :456-505, plumbed through classify_staleness :3022-3081, _StalenessContext :3085-3137, _spec_staleness_context :3140-3162, _row_staleness :3165-3191, _verdict_row :3194-3250, _spec_verdict_rows :3253-3310, cmd_corpus_verdicts :3493-3603. No material signature break.
 - Verify-first clause: re-run every line citation above against HEAD at outline time — every
   other plan in this epic edits `orchestrator.py` concurrently, so exact line numbers will have
   shifted by the time this plan is picked up (the same caveat PLAN-07 already states for the
   same file).
-  - verdict: corroborated | checked_at: b5d0ef7e6922e38caa4cdc8fdaaca31530c9ccd0 | by: orchestrator-refactor/analyze | rescoped: n/a | evidence: Shipped diff targets real, current code (orchestrator.py:466-502,2796-2837,2840-,3072,3214-3248,3538-3597 in the shipped tree) rather than the stale research-time citations, so the line-shift re-derivation this clause asked for was performed at outline/execute.
+  - verdict: corroborated | checked_at: 14d8f3ccd74718e8258a674472e9f01b595bc2cc | by: orchestrator-refactor/cleanup | rescoped: n/a | evidence: Re-derivation performed at outline/execute and still resolves. orchestrator.py unchanged since landing. Declared surface moved only in orchestration-model.md (10 lines since b5d0ef7e6), confined to the lessons verb's fixed-epic contract and terminal-title entry-point placement, not the Re-Grounding Verdict Field/Staleness paragraph this plan owns. Sha-stale only, content-unaffected.
 
 ## Expected Surface
 

@@ -86,21 +86,21 @@ accident, because the ledger exists on exactly one machine and is excluded from 
   tracked tree; confirm/refute at `marketplace_paths.py` § `resolve_main_anchored_path`
   against `file_ops.py` § `get_tracked_config_dir`, and against
   `git -C <worktree> ls-files .plan` (verify-at-outline).
-  - verdict: corroborated | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: orchestrator-refactor/cleanup | rescoped: n/a | evidence: file_ops.py:597-602,637 get_store_dir routes orchestrator via get_tracked_config_dir, never main-anchored; marketplace_paths.py:640-641 documents this; ADR-024 (Proposed) records the decision; git ls-files .plan/orchestrator/truthful-signals/plans/ = 44 tracked specs. Residual: _status_core.py:496-498 still comments ADR-002/main-anchored, now stale.
+  - verdict: corroborated | checked_at: 14d8f3ccd74718e8258a674472e9f01b595bc2cc | by: orchestrator-refactor/cleanup | rescoped: n/a | evidence: file_ops.py:581 get_store_dir; :597-602 docstring states orchestrator NOT in main-anchored exception set; :637 active=get_tracked_config_dir()/orchestrator/entry_id; containment _reject_unsafe_entry_id :636/:673 per ADR-016; ADR-024 records the decision. Residual unfixed: _status_core.py:497-498,579 still comment main-anchored/ADR-002, now false.
 - HYPOTHESIS — the `PLAN_BASE_DIR` / `set_base_dir()` test-override precedence
   (`marketplace_paths.py:648-655`) must be mirrored in the new tier or every existing
   override-based test breaks; confirm/refute at
   `test/plan-marshall/script-shared/test_marketplace_paths.py` and
   `test/plan-marshall/tools-file-ops/test_store_root.py` (verify-at-outline).
-  - verdict: corroborated | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: orchestrator-refactor/cleanup | rescoped: n/a | evidence: get_tracked_config_dir():1397-1404 honours set_base_dir() override then PLAN_TRACKED_CONFIG_DIR then PLAN_BASE_DIR then cwd walk-up; get_store_dir routes every orchestrator resolution through it at :637. Both cited tests survive plus a new test_tracked_orchestrator_gitignore.py.
+  - verdict: corroborated | checked_at: 14d8f3ccd74718e8258a674472e9f01b595bc2cc | by: orchestrator-refactor/cleanup | rescoped: n/a | evidence: get_tracked_config_dir() file_ops.py:1378, precedence :1397-1408: _BASE_DIR_OVERRIDE -> PLAN_TRACKED_CONFIG_DIR -> PLAN_BASE_DIR -> _find_plan_root_from_cwd -> Path(PLAN_DIR_NAME). Every orchestrator resolution routes through it at :637/:674.
 - HYPOTHESIS — `shutil.move` over a tracked tree leaves an unstaged delete+add of every file;
   confirm/refute at `orchestrator.py` § `cmd_archive` with a fixture epic under git
   (verify-at-outline).
-  - verdict: corroborated | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: orchestrator-refactor/cleanup | rescoped: n/a | evidence: orchestrator.py _relocate_epic_tree (now at :1908-1955) docstring states a plain move leaves a whole-tree delete+add unreadable as one rename; D4 shipped: git mv subprocess at :1932-1938, shutil.move retained only as documented fallback at :1955. cmd_archive now begins at :1958 and calls _relocate_epic_tree at :2010 (the claim's original :1799 citation is stale, lines shifted).
+  - verdict: corroborated | checked_at: 14d8f3ccd74718e8258a674472e9f01b595bc2cc | by: orchestrator-refactor/cleanup | rescoped: n/a | evidence: D4 shipped and intact; lines shifted +93 from PLAN-08's constant block. _relocate_epic_tree now :2002-2049 (was :1908-1955); docstring :2005-2008 states a plain move leaves the index holding a whole-tree deletion beside addition, no longer readable as one relocation; git mv subprocess :2026-2032; shutil.move fallback :2049. cmd_archive now :2052-2112.
 - Verify-first clause: re-derive the D0 reference population against the FULL working tree
   (not the inventory-scoped 87/48 figures above, which explicitly exclude `.claude/**`,
   `.github/**`, and `.gitignore`d paths) before scoping the edit set.
-  - verdict: corroborated | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: orchestrator-refactor/cleanup | rescoped: n/a | evidence: architecture search --content .plan/local/orchestrator returns count:16/file_count:11 but MISSES .plan/orchestrator/truthful-signals/plans/PLAN-TRUTH-146*.md:31,33 (tracked-but-uninventoried), proving the inventory sweep is narrower than the working tree, exactly as the clause warns. Residual old-address hits at HEAD: SKILL.md(2), _orchestrator_inbox.py(2), 3 test files(5), doc/analyzis-cloud-plan/*(14).
+  - verdict: corroborated | checked_at: 14d8f3ccd74718e8258a674472e9f01b595bc2cc | by: orchestrator-refactor/cleanup | rescoped: n/a | evidence: architecture search --content .plan/local/orchestrator --literal returns count:16/file_count:11/files_scanned:3108, identical to last pass. Independently confirmed inventory does not walk .plan/orchestrator/** despite .gitignore:52-53 un-ignoring it (search for literal spec-title string returns 0). Residual old-address hits: plan-orchestrator/SKILL.md(2), _orchestrator_inbox.py(2), 3 test files(5), doc/analyzis-cloud-plan/*(14).
 
 ## Expected Surface
 

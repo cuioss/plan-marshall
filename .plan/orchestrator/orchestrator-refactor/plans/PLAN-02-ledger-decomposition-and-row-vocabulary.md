@@ -102,20 +102,20 @@ every metadata write re-serialises, and `epic.md` is the single file `compact` a
   files only narrow it; confirm/refute by constructing the two concurrent-staging scenarios
   against `orchestrator.py` § `_append_plan_row` and the shared `rmw_json` critical section
   (verify-at-outline).
-  - verdict: unverifiable | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: orchestrator-refactor/cleanup | rescoped: n/a | evidence: neither per-plan-row nor per-workstream file layout exists at HEAD - the claim compares two unbuilt designs, no ground truth to check. def _append_plan_row declared exactly once in orchestrator.py; rmw_json critical section is the write path (_status_core.py:507).
+  - verdict: unverifiable | checked_at: 14d8f3ccd74718e8258a674472e9f01b595bc2cc | by: orchestrator-refactor/cleanup | rescoped: n/a | evidence: Claim compares two unbuilt file layouts, neither exists at HEAD. _append_plan_row declared once at orchestrator.py:1141-1237; shared critical section is rmw_json (_status_core.py:17/:507/:594). No per-plan-row or per-workstream file exists to compare against.
 - HYPOTHESIS — `resume_anchor` belongs in its own file: it is written on almost every verb and
   is the field a fresh session reads first; confirm/refute at `orchestrator.py` §
   `cmd_resume_summary` and `_status_core.py` § `cmd_orchestrator_update_field`
   (verify-at-outline).
-  - verdict: corroborated | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: orchestrator-refactor/cleanup | rescoped: n/a | evidence: resume_anchor is an ORCHESTRATOR_UPDATABLE_FIELDS member (_status_core.py:458-517), every write is a whole-document rmw_json re-serialisation at :507. Named in 8 of 9 plan-orchestrator/workflow/*.md verbs (resume.md alone: 11 mentions) plus templates/landing-analysis.md. The own-file conclusion remains an unimplemented design proposal.
+  - verdict: corroborated | checked_at: 14d8f3ccd74718e8258a674472e9f01b595bc2cc | by: orchestrator-refactor/cleanup | rescoped: n/a | evidence: resume_anchor in ORCHESTRATOR_UPDATABLE_FIELDS (_status_core.py:339), written via cmd_orchestrator_update_field :451, sole write is whole-document rmw_json at :507. Read-first-ness re-derived: named in 8 of 9 plan-orchestrator/workflow/*.md docs (resume.md alone 11x). Own-file conclusion remains an unimplemented design proposal.
 - HYPOTHESIS — the four unexpressible statuses are four distinct concepts and must not be
   collapsed into one (`superseded` = replaced by a successor spec; `retired` = withdrawn;
   `transferred` = moved to another epic; `resolved` = closed without a plan).
-  - verdict: corroborated | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: orchestrator-refactor/cleanup | rescoped: n/a | evidence: re-confirmed at current HEAD: orchestrator.py:228 CLOSED_UNSHIPPED_PLAN_STATUSES = (superseded, transferred, retired, resolved), four meanings spelled out at :220-227. VALID_STATUS_VOCABULARY derived by union at :243; disjointness enforced by a construction-time assert at :267-272.
+  - verdict: corroborated | checked_at: 14d8f3ccd74718e8258a674472e9f01b595bc2cc | by: orchestrator-refactor/cleanup | rescoped: n/a | evidence: Four distinct concepts confirmed, +1 line shift. CLOSED_UNSHIPPED_PLAN_STATUSES=(superseded,transferred,retired,resolved) at orchestrator.py:229; meanings spelled out :221-228; VALID_STATUS_VOCABULARY derived by union :244; pairwise-disjointness enforced by construction-time assert :268-273 comparing _DECLARED_STATUS_COUNT against union size.
 - Verify-first clause: the 500-row / 12-ledger figure is derived from the ledgers present on
   this machine at research time; re-derive at outline and state which population any count is
   drawn from.
-  - verdict: contradicted | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: orchestrator-refactor/cleanup | rescoped: yes | evidence: the prior 509-row/13-ledger correction is ITSELF stale: 7d82d5d90 (#1578) restructured epic trees, orchestrator corpus epics now reports 25 distinct ledgers (9 active + 16 archived). Re-scoped in place: the OBSERVED bullet above now states the population is unstable and must be re-derived against 25 at D0 time, not trusted from any cached figure.
+  - verdict: corroborated | checked_at: 14d8f3ccd74718e8258a674472e9f01b595bc2cc | by: orchestrator-refactor/cleanup | rescoped: n/a | evidence: Flips from contradicted to corroborated -- prior re-scope has held. orchestrator corpus epics at HEAD returns distinct_count:25 (active_count:9, archived_count:16, entries_scanned:25, unreadable_count:0, both roots exists/listed true), matching the rescoped OBSERVED bullet. No further re-scope owed; the methodological instruction to state population remains a live D0 obligation.
 
 ## Expected Surface
 

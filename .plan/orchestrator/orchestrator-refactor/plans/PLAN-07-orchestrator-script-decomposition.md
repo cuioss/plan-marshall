@@ -55,12 +55,12 @@ output field or error code changes.
 - HYPOTHESIS — each group's argparse builder should move with its group, leaving the parent a
   dispatcher; confirm/refute at `_build_arg_parser` against the existing `_add_inbox_group`
   precedent, which did NOT move its builder (verify-at-outline).
-  - verdict: corroborated | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: orchestrator-refactor/cleanup | rescoped: n/a | evidence: precedent holds exactly: architecture search --content "_add_inbox_group|_add_corpus_group|def _build_arg_parser" returns 5 matches in plan-orchestrator/scripts/orchestrator.py and zero in _orchestrator_inbox.py - the inbox split left its argparse builder in the parent, as claimed. The should-move normative half remains an unbuilt design choice.
+  - verdict: corroborated | checked_at: 14d8f3ccd74718e8258a674472e9f01b595bc2cc | by: orchestrator-refactor/cleanup | rescoped: n/a | evidence: Precedent holds exactly, now measurably wider. _build_arg_parser :5354-5491, _add_corpus_group :5494-5648 (155 lines, recorded ~146), _add_cleanup_group :5651-5674, _add_inbox_group :5677-5934 (258 lines, recorded 228). _orchestrator_inbox.py contains no argparse builder -- inbox split left its builder in the parent, exactly as claimed. The should-move normative half remains an unbuilt design choice.
 - Verify-first clause: this plan MUST be sequenced last, after every other plan in this epic
   has landed. Re-derive the line attribution against the actual HEAD at outline time — every
   other plan in this epic edits `orchestrator.py`, so the research-time figures above will be
   stale by the time this plan runs.
-  - verdict: corroborated | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: orchestrator-refactor/cleanup | rescoped: n/a | evidence: the staleness it predicts has already occurred: orchestrator.py 5470 lines (recorded 4919, +551/+11.2%), _orchestrator_inbox.py 3351 (recorded 2420, +931/+38.5%) - 8821 lines in two files, not 7339. Every cited range shifted (cmd_archive now at :1958, _spec_paths now at :2021). Sequencing precondition unmet: PLAN-02/03/05/06 all staged, only PLAN-01/PLAN-04 shipped, PLAN-07 itself parked.
+  - verdict: corroborated | checked_at: 14d8f3ccd74718e8258a674472e9f01b595bc2cc | by: orchestrator-refactor/cleanup | rescoped: n/a | evidence: Predicted staleness compounded again. orchestrator.py 5945 lines/282774B (recorded 4919/227505, last pass 5470, +475 more); _orchestrator_inbox.py 3351 lines/161176B (recorded 2420/112955) -- 9296 lines in two files, not 7339. Full AST re-derivation: corpus group now 2115-4424 (2310 lines, 38.9%, recorded 1638/33.3%). Sequencing precondition still unmet: only PLAN-01/04/08 shipped, PLAN-02/03/05/06/09/10 staged, PLAN-07 itself parked.
 
 ## Expected Surface
 

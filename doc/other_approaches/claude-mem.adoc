@@ -1,0 +1,116 @@
+= claude-mem
+:toc: left
+:toclevels: 2
+
+_Analysis date: 2026-09-23_
+
+xref:README.adoc[Other approaches] » claude-mem
+
+Repository: https://github.com/thedotmack/claude-mem — Apache-2.0 (relicensed from AGPL-3.0); a
+commercial hosted tier is separated from the open-source core.
+
+**Verdict: reject.** Its retrieval layering informs the doc-residency work (see <<_what_to_learn>>).
+
+== What it is
+
+Persistent memory across sessions: it captures what the agent does, compresses it into short
+observations with a model, and injects relevant observations into later sessions.
+
+=== Hooks
+
+[cols="2,5",options="header"]
+|===
+| Hook | Action
+
+| SessionStart
+| Starts the worker service and injects context.
+
+| UserPromptSubmit
+| Session initialisation.
+
+| PostToolUse (matcher `*`, async)
+| Sends **every tool call** to the observer.
+
+| PreToolUse on Read (async)
+| Attaches file context.
+
+| Stop (async)
+| Summarises the session.
+
+| SessionEnd
+| Closes the session.
+|===
+
+=== Architecture
+
+A Bun-run worker service with a local HTTP API and web viewer, SQLite with FTS5, and a Chroma vector
+store enabled by default. An opt-in server mode uses Postgres and a Redis-backed queue.
+
+=== The observer
+
+Each tool event is processed by an LLM observer. The default provider is Claude Haiku authenticated
+through the **user's own subscription**, so observer cost lands on the user's quota. Gemini and a free
+OpenRouter model are alternatives; the interactive installer defaults to a paid hosted observer. Only a
+handful of tools (TodoWrite, Skill, SlashCommand, AskUserQuestion, ListMcpResources) are skipped by
+default — every other call produces observer work.
+
+=== Injection and retrieval
+
+At session start it injects the last 50 observations, 10 sessions and the latest summary
+(configurable; no documented token size). Retrieval is exposed as MCP tools — `search`, `timeline`,
+`get_observations` — in a three-step progressive-disclosure flow: compact search hits first, then a
+timeline around a hit, then full observation records.
+
+=== Privacy
+
+Content wrapped in `<private>` tags is stripped before storage. A leak of these tags through the last
+assistant message (#2149) has been fixed; a file-path leak through a messaging wrap-up is open (#4144).
+
+=== Known cost and quality issues
+
+* #3848 — a user measured +64% on top of their coding-model spend.
+* #3497 — unbounded observer history, about 10× token amplification billed to the subscription.
+* #3443 — single observer calls reaching about one million tokens.
+* #3839 — base64 screenshots sent to the observer uncapped.
+* #4159 — warm-up pings consuming billed calls.
+* #4121 — about 3.5 s of hook preamble per tool call on Windows.
+* #3897 — the observer records disproven hypotheses as findings.
+
+== Assessment against plan-marshall
+
+[cols="2,5",options="header"]
+|===
+| Aspect | Assessment
+
+| Capability overlap
+| plan-marshall's cross-session state is curated and structured rather than captured: `manage-lessons`
+  (consulted and validated during outline, housekept at finalize), the orchestrator ledger per epic
+  with `status.json` and its `resume_anchor` as the authoritative next action, and per-plan
+  `status.json`. Nothing is injected wholesale at session start.
+
+| Target cost
+| Re-explaining context. The injection it uses to solve that is resident context from turn one — the
+  most expensive position a byte can occupy under the project's cost formula.
+
+| Hidden spend
+| An extra model call per tool call, billed to the operator, is a cost no plan-marshall metric would
+  attribute. The measured overhead reports are large.
+
+| Truthfulness
+| An automatic observer that stores refuted hypotheses as findings creates exactly the stale,
+  confident memory the lessons workflow is built to prevent through curation, validation and
+  tombstoned retirement.
+
+| Portability
+| Hooks, a Bun worker and MCP tools — none of which has a mapping in `marketplace/targets/`.
+|===
+
+== What to learn
+
+. **Retrieve in layers.** The search → timeline → full-record flow is progressive disclosure applied
+  to recall: a compact index first, detail only on demand. The same layering applied to
+  plan-marshall's own standards and workflow documents — list sections, fetch the section, read the
+  whole document only when needed — is the one idea in this document set that targets the project's
+  dominant context consumer.
+. **Capture is not curation.** The defect list is a worked demonstration of why cross-session memory
+  needs a validation and retirement path, which the lessons workflow already has.
