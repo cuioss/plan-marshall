@@ -147,8 +147,7 @@ _RESPONDABLE_RESOLUTIONS = frozenset({'fixed', 'suppressed', 'accepted', 'taken_
 #      are removed first (``_own_prose``) — and a comment is noise only when that
 #      prose is non-empty, no longer than ``thresholds.acknowledgment_max_length``,
 #      and a pattern covers the WHOLE of it (``_is_whole_comment_acknowledgment``).
-#      Each pattern is an opener followed only by courtesy and punctuation
-#      (``acknowledgment_courtesy_tail``), never arbitrary content. A phrase quoted inside a block, or sitting inside a larger comment, never
+#      A phrase quoted inside a block, or sitting inside a larger comment, never
 #      makes the comment an acknowledgment. comment-patterns.json used to carry the LLM decision
 #      authority (full keyword classification); the producer-side migration moved
 #      that to the LLM consumer, so this file now holds only the shared noise
