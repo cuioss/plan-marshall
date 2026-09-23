@@ -418,9 +418,17 @@ def cmd_orchestrator_create(args: argparse.Namespace) -> dict[str, Any] | None:
     ``--force`` rewrites the header and the anchor. The queue is never touched by
     ``create``: a new ledger has no ``queue/`` directory, which every reader takes
     as a measured empty queue.
+
+    A header still in the monolithic layout is refused with ``legacy_layout`` —
+    ``--force`` included — and nothing is written: overwriting it would drop the
+    ``plans[]`` queue and the ``resume_anchor`` it carries, which only
+    ``orchestrator migrate-layout`` converts without loss.
     """
     require_valid_plan_id(args)
     root = get_orchestrator_root(args.plan_id)
+    state, _header, _detail = read_ledger_header(root)
+    if state == LEDGER_LEGACY:
+        return _orchestrator_error(args.plan_id, **legacy_layout_error(args.plan_id))
     if ledger_header_path(root).exists() and not args.force:
         return _orchestrator_error(
             args.plan_id, 'already_exists', 'status.json already exists (use --force to overwrite)'

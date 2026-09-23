@@ -30,7 +30,8 @@ group's envelope schema and handler surface have theirs
 - ``migrate-layout``: conversion fidelity (every row value, the anchor text, and
   every header value survive), generated-block removal that leaves every
   hand-written byte of ``epic.md`` identical, a written ``queue-view.md`` equal
-  to a fresh render, idempotence, archived-epic resolution, and the refusals.
+  to a fresh render, idempotence, a re-run that finishes a tail an interrupted
+  run left undone, archived-epic resolution, and the refusals.
 - status vocabulary: the construction the settled set rests on — the three
   declaring sets partition ``VALID_STATUS_VOCABULARY`` exactly (summed against
   distinct, so a repeat the ``frozenset`` union absorbs is still seen),
@@ -2046,7 +2047,26 @@ class TestMigrateLayout:
 
         assert second['status'] == 'success'
         assert second['already_migrated'] is True
+        assert second['tail_completed'] is False
         assert _snapshot(root) == before
+
+    def test_a_rerun_after_an_interrupted_tail_finishes_it(self, plan_context):
+        """A run interrupted after the header commit leaves per-concern ledger files
+        beside an ``epic.md`` still carrying both GENERATED blocks and no view; the
+        re-run reports ``already_migrated`` AND strips the blocks and writes the view."""
+        root = _migration_fixture(plan_context, 'migrate-epic')
+        write_ledger(root, json.loads((root / 'status.json').read_text(encoding='utf-8')))
+        assert not (root / 'queue-view.md').exists()
+
+        result = cmd_migrate_layout(_variant(_MIGRATE_ARGS, slug='migrate-epic'))
+        regenerated = cmd_regenerate_view(_variant(_REGENERATE_VIEW_ARGS, slug='migrate-epic'))
+
+        assert result['already_migrated'] is True
+        assert result['tail_completed'] is True
+        assert (root / 'epic.md').read_text(encoding='utf-8') == _EPIC_HEAD + _EPIC_MIDDLE + _EPIC_TAIL
+        assert [block['outcome'] for block in result['epic_blocks']] == ['removed', 'removed']
+        assert result['view_written'] is True
+        assert regenerated['written'] is False
 
     def test_an_archived_epic_is_resolved_and_converted_in_place(self, plan_context):
         root = _migration_fixture(plan_context, 'migrate-archived-epic', archived=True)

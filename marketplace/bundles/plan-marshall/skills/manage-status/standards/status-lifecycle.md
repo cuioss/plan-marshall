@@ -216,7 +216,7 @@ The generated `queue-view.md` beside these files is a view owned by `plan-orches
 
 ### Monolithic layout refusal
 
-A `status.json` that still carries a `plans` or `resume_anchor` key is an epic in the monolithic layout. Every orchestrator-store verb refuses it with `error: legacy_layout` and writes nothing; it is never read as an empty ledger. The one remedy is [`orchestrator migrate-layout --slug {slug}`](../../plan-orchestrator/SKILL.md#migrate-layout), which converts the document into the per-concern files.
+A `status.json` that still carries a `plans` or `resume_anchor` key is an epic in the monolithic layout. Every orchestrator-store verb refuses it with `error: legacy_layout` and writes nothing — `create` included, even under `--force`, so the queue and anchor it carries are never overwritten; it is never read as an empty ledger. The one remedy is [`orchestrator migrate-layout --slug {slug}`](../../plan-orchestrator/SKILL.md#migrate-layout), which converts the document into the per-concern files.
 
 ### Metadata
 

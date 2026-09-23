@@ -14,6 +14,7 @@ Its sections, in order:
 import json
 from argparse import Namespace
 
+import pytest
 from _orchestrator_store_fixtures import (
     _core,
     _create_args,
@@ -395,6 +396,21 @@ class TestOrchestratorLegacyLayoutRefusal:
         assert result['status'] == 'error'
         assert result['error'] == 'legacy_layout'
         assert path.read_bytes() == before
+
+    @pytest.mark.parametrize('force', [False, True], ids=['plain', 'force'])
+    def test_should_refuse_legacy_create_and_write_nothing(self, plan_context, force):
+        """``--force`` does not bypass the refusal: overwriting a monolithic header
+        would drop the queue and the anchor it still carries."""
+        root = _orchestrator_root(plan_context, 'legacy-create-epic')
+        path = _write_legacy(root, _legacy_document(plans=[_row('PLAN-01', 'first')]))
+        before = path.read_bytes()
+
+        result = cmd_orchestrator_create(_create_args('legacy-create-epic', title='Replaced', force=force))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'legacy_layout'
+        assert path.read_bytes() == before
+        assert not _orchestrator_anchor_file(plan_context, 'legacy-create-epic').exists()
 
     def test_should_refuse_a_header_carrying_only_the_anchor_key(self, plan_context):
         document = _legacy_document()

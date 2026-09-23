@@ -5266,6 +5266,43 @@ def _migration_rejection(slug: str, rejected: tuple[dict[str, Any], ...]) -> dic
     )
 
 
+def _epic_carries_generated_block(epic_path: Path) -> bool:
+    """Whether ``epic.md`` still holds a GENERATED block the migration tail would cut.
+
+    An absent ``epic.md``, or one whose blocks are all ``absent`` or
+    ``incomplete``, holds nothing the tail would remove.
+    """
+    if not epic_path.is_file():
+        return False
+    _, blocks = _strip_generated_blocks(epic_path.read_text(encoding='utf-8'))
+    return any(block['outcome'] == STRIP_REMOVED for block in blocks)
+
+
+def _migration_tail(slug: str, root: Path) -> tuple[_ViewWrite, list[dict[str, str]]]:
+    """Write ``queue-view.md``, THEN strip the GENERATED blocks out of ``epic.md``.
+
+    The tail runs after the header commit, so it must be re-runnable on its own.
+    The strip is the LAST write: an interruption anywhere in the tail leaves
+    ``epic.md`` still carrying a GENERATED block, which is the signal
+    :func:`cmd_migrate_layout` keys on to finish the tail over an
+    already-migrated ledger. The view render reads the ledger files and the
+    staged specs, never ``epic.md``, so writing it first changes nothing it
+    renders. Returns the view outcome and the per-block strip report — empty when
+    the view write was refused, in which case ``epic.md`` is not touched.
+    """
+    view = _write_queue_view(slug, root)
+    if view.refusal is not None:
+        return view, []
+    epic_path = root / FILE_EPIC
+    blocks: list[dict[str, str]] = []
+    if epic_path.is_file():
+        original = epic_path.read_text(encoding='utf-8')
+        stripped, blocks = _strip_generated_blocks(original)
+        if stripped != original:
+            epic_path.write_text(stripped, encoding='utf-8')
+    return view, blocks
+
+
 def cmd_migrate_layout(args: argparse.Namespace) -> dict[str, Any]:
     """Convert a monolithic-layout epic ledger into the per-concern files.
 
@@ -5274,17 +5311,21 @@ def cmd_migrate_layout(args: argparse.Namespace) -> dict[str, Any]:
     ``queue/{PLAN-ID}.json`` carrying every field it held plus a ``seq`` taken
     from its array position (so the rendered order reproduces the old one), the
     ``resume_anchor`` text moves to ``resume_anchor.md``, and the header keeps
-    every other field verbatim and loses ``updated``. The header is written last,
-    so an interrupted conversion leaves the legacy document intact.
+    every other field verbatim and loses ``updated``. The header is written last
+    of the ledger files, so a conversion interrupted before it leaves the legacy
+    document intact.
 
-    ``epic.md`` then loses the two GENERATED marker blocks and the guidance
-    comment above each (:data:`GENERATED_BLOCKS`), and every hand-written byte —
-    both annotation zones included — stays exactly where it was. A fresh
-    ``queue-view.md`` is written through the renderer rather than copied from the
-    old pasted text, which may be stale.
+    The tail (:func:`_migration_tail`) then writes a fresh ``queue-view.md``
+    through the renderer rather than copying the old pasted text, which may be
+    stale, and strips the two GENERATED marker blocks and the guidance comment
+    above each (:data:`GENERATED_BLOCKS`) out of ``epic.md`` — every hand-written
+    byte, both annotation zones included, stays exactly where it was.
 
     Idempotent: a ledger already in the per-concern layout returns
-    ``already_migrated: true`` and writes nothing. Refuses an unsafe slug
+    ``already_migrated: true``. It writes nothing unless ``epic.md`` still
+    carries a GENERATED block — the mark of a tail an earlier run did not finish —
+    in which case it runs the tail and reports ``tail_completed: true`` with the
+    tail's outcome. Refuses an unsafe slug
     (``invalid_slug``), an absent tree (``not_found``), an absent header
     (``file_not_found``), a header that is not a JSON object
     (``invalid_status_document``), and a ``plans[]`` entry that cannot become a
@@ -5300,14 +5341,28 @@ def cmd_migrate_layout(args: argparse.Namespace) -> dict[str, Any]:
     state, header, detail = read_header(root)
     if state == LEDGER_ABSENT:
         return _error(args.slug, 'file_not_found', 'status.json not found in orchestrator store')
+    epic_path = root / FILE_EPIC
     if state == LEDGER_OK:
-        return {
+        already: dict[str, Any] = {
             'status': 'success',
             'operation': 'migrate-layout',
             'slug': args.slug,
             'store': ORCHESTRATOR_STORE,
             'archived': archived,
             'already_migrated': True,
+            'tail_completed': False,
+        }
+        if not _epic_carries_generated_block(epic_path):
+            return already
+        view, blocks = _migration_tail(args.slug, root)
+        if view.refusal is not None:
+            return view.refusal
+        return {
+            **already,
+            'tail_completed': True,
+            'epic_blocks': blocks,
+            'view': view_path(root).name,
+            'view_written': view.written,
         }
     if state != LEDGER_LEGACY:
         return _error(
@@ -5320,14 +5375,7 @@ def cmd_migrate_layout(args: argparse.Namespace) -> dict[str, Any]:
     if migrated.rejected_rows:
         return _migration_rejection(args.slug, migrated.rejected_rows)
     write_layout(root, migrated.header, migrated.anchor, migrated.rows)
-    epic_path = root / FILE_EPIC
-    blocks: list[dict[str, str]] = []
-    if epic_path.is_file():
-        original = epic_path.read_text(encoding='utf-8')
-        stripped, blocks = _strip_generated_blocks(original)
-        if stripped != original:
-            epic_path.write_text(stripped, encoding='utf-8')
-    view = _write_queue_view(args.slug, root)
+    view, blocks = _migration_tail(args.slug, root)
     if view.refusal is not None:
         return view.refusal
     return {
