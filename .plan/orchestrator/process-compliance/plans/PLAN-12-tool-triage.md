@@ -80,6 +80,7 @@ reproducible — one triage plan, four defect closures with regression tests.
 - `plan-02-worktree-discipline-010.md` (candidate-lesson): transition silent-failure — staged as deliverable 1 of this spec
 - `plan-07-opencode-repairs-007.md` (candidate-lesson): fragment-pipeline chain — staged as deliverable 2 of this spec
 - `lessons-handling-26-09-22-01-001.md` (candidate-lesson): argparse/script-invocation recurrence pair (2026-09-20-08-014, 2026-09-20-08-013) — folded into deliverables 3-4; expected surface updated in the same act (+4 entries: merge_lock.py, branch-cleanup.md, pr-review-operations.md, ci.py hypothesis)
+- `lessons-routing-002.md` (finding, relayed API-Sheriff cluster): five argparse shape recurrences across five scripts (unregistered verb, sibling-verb flag, router flag position ×2, abbreviated typed-ID, invented flag) + one exemplary compound-flag refusal — folded into deliverable 4 as class recurrences; expected surface unchanged by this fold (instances named as evidence, no new files claimed — recorded explicitly)
 
 ## Hand-Off Command
 
