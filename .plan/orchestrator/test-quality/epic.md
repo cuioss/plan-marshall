@@ -71,11 +71,12 @@ Re-derive before using. See [`landings/PLAN-110.md`](landings/PLAN-110.md).
      outside the markers — never inside them. -->
 
 <!-- BEGIN GENERATED: resume-summary -->
-**Resume anchor**: PLAN-182 running (2026-09-22): module-budget-campaign-completion (WS-04) started by operator; PLAN-140 superseded wholesale; PLAN-181 shipped as #1582. Next: PLAN-183 spec (carried-defects-and-watches-closure) still to author. Open carried: 7 settled.md dangling landings refs; operator commit-scope decision on 103 uncommitted paths (5 epic-own).
+**Resume anchor**: PLAN-183 running (2026-09-23): carried-defects-and-watches-closure (WS-03) started by operator, concurrent with running PLAN-182 (disjoint charters); PLAN-140 superseded; PLAN-181 shipped. Open carried: 7 settled.md dangling landings refs (orchestrator-owned staging-pass work); operator commit-scope decision on 103 uncommitted paths (5 epic-own).
 **Phase**: orchestrating
-**Inbox (derived)**: 0 queued, 136 archived
+**Inbox (derived)**: 0 queued, 145 archived
 **Running**:
-- PLAN-182 (WS-04)
+- PLAN-182 (WS-04) — PR #1593 — landing=landings/PLAN-182.md
+- PLAN-183 (WS-03)
 **Queue** (staged, in order):
 - (empty)
 - PLAN-140 (WS-04) — PR #1552 — status: superseded
@@ -105,6 +106,7 @@ Re-derive before using. See [`landings/PLAN-110.md`](landings/PLAN-110.md).
 | # | Plan | Workstream | Status | Surface (expected) |
 |---|------|------------|--------|--------------------|
 | 1 | PLAN-182 | WS-04 | running | (prose) |
+| 2 | PLAN-183 | WS-03 | running | marketplace/bundles/plan-marshall/skills/platform-runtime/scripts/platform_runtime.py; marketplace/bundles/pm-plugin-development/skills/ext-self-review-plan-marshall/scripts/; marketplace/bundles/pm-plugin-development/skills/plugin-doctor/references/rule-catalog.md; marketplace/bundles/pm-plugin-development/skills/plugin-doctor/references/standards/doctor-test-conventions.md; marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_test_conventions.py; test/plan-marshall/manage-config/_manage_config_fixtures.py; test/plan-marshall/platform-runtime/test_platform_runtime_router.py; test/plan-marshall/tools-permission-fix/test_permission_fix.py; uv.lock |
 <!-- END GENERATED: ordered-queue -->
 
 ### Queue annotations
