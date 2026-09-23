@@ -8,7 +8,7 @@
 
 xref:../../README.md[Plan Marshall] » xref:README.adoc[Developer Guide]
 
-This document records the architectural design, directory layout, tool mappings, permission model, and operational runtime integration for the OpenCode distribution target in Plan Marshall.
+This document records the architectural design, directory layout, tool mappings, permission model, and operational runtime integration for the OpenCode distribution target in Plan Marshall. It covers the two-tier deny/ask permission map in `opencode.json`, the `tool.execute.before` guard plugin under `.opencode/plugin/`, and the role × surface × path permission matrix these artifacts implement together.
 
 == Overview
 
@@ -110,9 +110,9 @@ Skill and agent markdown bodies undergo deterministic transformation before emis
 3. **Slash Commands**:
    `/{name}` invocations are normalized to registered bundle-prefixed command names.
 
-== OpenCode Permission Architecture & Configuration
+== Permission Architecture & Enforcement
 
-OpenCode defines a structured configuration format governing tool execution permissions.
+OpenCode enforces tool-execution permissions from a **two-tier map**: a project-level `permission` block in `opencode.json` (host grant resolution) and a `tool.execute.before` guard plugin under `.opencode/plugin/` (hard-rule enforcement that throws to block). The two tiers are complementary: the map decides *which commands may run at all* per agent, and the guard blocks the four plan-marshall hard-rule bypass classes regardless of what the map permits.
 
 === Configuration Locations & Precedence
 
@@ -122,37 +122,101 @@ OpenCode resolves configuration from three tiered locations:
 2. **Project Subdirectory (`<project_dir>/.opencode/opencode.json`)**: Alternative project-local configuration folder.
 3. **Global User Configuration (`~/.config/opencode/opencode.json`)**: User-global configuration. Can be overridden via the `OPENCODE_CONFIG_DIR` environment variable.
 
+The per-agent `permission` rows override the global `permission` block for that agent; an agent row's `"*"` fallback governs everything the row does not name.
+
 === Permission Schema
 
-OpenCode permissions are declared under the `"permission"` object conforming to `https://opencode.ai/config.json`:
+OpenCode permissions are declared under the `"permission"` object conforming to `https://opencode.ai/config.json`. The `"bash"` property may be a blanket action (`"allow"`, `"ask"`, `"deny"`) or an explicit dictionary of command prefix patterns mapped to actions. The landed plan-marshall `opencode.json` combines both: the global block keeps the harness's default `"*": "allow"` and narrows it with never-legitimate deny rows plus rare-legitimate ask rows, and every agent row re-bases on `"*": "ask"` with explicit allow/deny overrides.
+
+=== Global Bash Permission Block
 
 [source,json]
 ----
-{
-  "$schema": "https://opencode.ai/config.json",
-  "permission": {
-    "bash": {
-      "python3 .plan/execute-script.py *": "allow",
-      "./pw *": "allow",
-      "python3 marketplace/targets/sync.py *": "allow",
-      "python3 .opencode/scripts/sync_opencode.py *": "allow"
-    },
-    "read": "allow",
-    "edit": "allow"
+"permission": {
+  "bash": {
+    "*": "allow",
+    "gh *": "deny", "glab *": "deny",
+    "rm *": "deny", "find *": "deny", "grep *": "deny", "cat *": "deny",
+    "head *": "deny", "tail *": "deny", "git grep *": "deny",
+    "pytest *": "deny", "python3 -m pytest *": "deny",
+    "mvn *": "deny", "mvnw *": "deny", "gradle *": "deny", "gradlew *": "deny",
+    "npm test *": "deny", "npm run *": "deny",
+    "git restore *": "deny", "git checkout -- *": "deny",
+    "git stash *": "deny", "git clean *": "deny",
+    "git push *": "ask", "git fetch *": "ask", "git pull *": "ask",
+    "git merge *": "ask", "git rebase *": "ask", "git reset *": "ask",
+    "python3 -m pip *": "ask", "pip install *": "ask",
+    "npm install *": "ask", "docker *": "ask"
   }
 }
 ----
 
-The `"bash"` property may be a blanket action (`"allow"`, `"ask"`, `"deny"`) or an explicit dictionary of command prefix patterns mapped to actions.
+The deny rows encode the never-legitimate classes: CI abstraction bypasses (`gh`, `glab`), shell file operations (`rm`), read-side probes treated as hard-rule violators at the global tier (`find`, `grep`, `cat`, `head`, `tail`, `git grep`), hard-coded build tools (`pytest`, `python3 -m pytest`, `mvn`, `mvnw`, `gradle`, `gradlew`, `npm test`, `npm run`), and destructive git recovery commands (`git restore`, `git checkout --`, `git stash`, `git clean`). The ask rows preserve rare legitimate escapes — network git operations, package installation, and container runs — behind operator confirmation.
 
-=== Baseline Executor Grants
+=== Guard Plugin (D2)
 
-Plan Marshall requires non-interactive execution for its generated scripts and wrapper toolchain. The default permission set includes:
+The guard plugin `.opencode/plugin/guard.js` registers a `tool.execute.before` hook. OpenCode loads every module under `{plugin,plugins}/*.{ts,js}` in the project config directory, so the singular `.opencode/plugin/` directory is a valid load location. The hook inspects each tool invocation and **throws to block** when it matches a hard-rule class, appending one audit line to `.plan/temp/guard.log` per blocked invocation:
 
-* `python3 .plan/execute-script.py *` — The universal script execution proxy.
-* `./pw *` — The Pyprojectx build toolchain wrapper.
-* `python3 marketplace/targets/sync.py *` — The multi-target deployment sync tool.
-* `python3 .opencode/scripts/sync_opencode.py *` — Project-level sync script.
+* **R1 — shell chaining** (bash): command contains `&&`, `||`, `;`, `|`, `$(`, a backtick, a trailing `&`, or a newline (quote-aware scan).
+* **R2 — shell file operations** (bash): first token is a mutation-class file op (`rm`, `mv`, `cp`, `touch`, `mkdir`, `rmdir`, `truncate`, `tee`, `chmod`, `chown`, `ln`, `dd`) or a shell spawn (`sh`, `bash`, `source`). Read-side probes (`ls`, `cat`, `head`, `tail`, `grep`, `find`) are NOT in this guard class — the two-tier permission map governs them.
+* **R3 — direct executor edits** (edit/write/patch): target resolves under `.plan/execute-script.py`.
+* **R4 — hard-coded builds** (bash): `./pw` with no verb or a build verb (`./pw generate*` and `./pw --*` pass), bare build tools (`mvn`, `mvnw`, `gradle`, `gradlew`, `make`, `cmake`, `ant`, `uv`), JS runners (`npm`, `npx`, `bun`, `pnpm`, `yarn`) followed by `test`/`run`/`build`, `python3 build.py`, `python3 -m {pytest mypy ruff}` and bare `{pytest mypy ruff}`. The executor permit `python3 .plan/execute-script.py …` is exempt.
+
+The plugin is not covered by the Python test harness; its decision table is mirrored as a behavioral contract in `test/plan-marshall/platform-runtime/test_opencode_enforcement.py`, which stays in lock-step with the plugin's rules.
+
+=== Role × Surface × Path Matrix
+
+The matrix below resolves every relevant (role, surface, path) cell. Rows are verified against the landed `opencode.json` permission block (D1) and the guard rules (D2) as implemented — the `Source` column names the exact row in the landed artifacts. Roles map to agents: **orchestrator** = `build`, **executor** = `execution-context` (and its level variants), **reader** = `execution-context-reader` (and its level variants).
+
+==== Orchestrator (`build` agent) — small-ops carve-out preserved under ask
+
+[cols="2,4,2,3", options="header"]
+|===
+| Surface | Path | Resolution | Source (landed artifact)
+| Executor | `python3 .plan/execute-script.py *` | allow | `agent.build.permission.bash` allow row; guard R4 exempts the permit
+| Build wrapper | `./pw *` | allow, narrowed by guard | `agent.build.permission.bash` allow row; guard R4 blocks build verbs, `./pw generate*` / `./pw --*` pass
+| Sync scripts | `python3 marketplace/targets/sync.py *`, `python3 .opencode/scripts/sync_opencode.py *` | allow | `agent.build.permission.bash` allow rows
+| Git read | `git status/log/diff/show/branch *` | ask | `agent.build.permission.bash` ask rows — information lookups stay available under operator confirmation
+| Read probes | `ls/cat/head/tail/grep/find *` | ask | `agent.build.permission.bash` ask rows — override the global deny for the orchestrator (carve-out as implemented)
+| Git write | `git add/commit *` and other unwritten git verbs | ask | `agent.build.permission.bash` `"*": "ask"` fallback
+| Network git | `git push/fetch/pull/merge/rebase/reset *` | ask | global ask rows (no build override)
+| Package install | `npm install *`, `pip install *`, `python3 -m pip *` | ask | global ask rows
+| Containers | `docker *` | ask | global ask row
+| CI abstraction | `gh *`, `glab *` | deny | global deny rows — PR/issue/CI work routes through `tools-integration-ci`
+| Shell file ops | `rm *`, `find *`, `cat *`, `head *`, `tail *`, `grep *`, `git grep *` | deny at global tier, read-probe carve-out above | global deny rows; guard R2 blocks mutation-class ops (`rm`) at the host layer
+| Hard-coded builds | `mvn/mvnw/gradle/gradlew *`, `pytest *`, `python3 -m pytest *`, `npm test/run *` | deny | global deny rows; guard R4 blocks them at the host layer regardless of map
+| Destructive git | `git restore/checkout --/stash/clean *` | deny | global deny rows
+|===
+
+==== Executor (`execution-context`, level variants) — confined to the executor permit
+
+[cols="2,4,2,3", options="header"]
+|===
+| Surface | Path | Resolution | Source (landed artifact)
+| Executor | `python3 .plan/execute-script.py *` | allow | per-agent allow row; guard R4 exempts the permit
+| Git read | `git status/log/diff *` | allow | per-agent allow rows
+| Git local write | `git add/commit *` | allow | per-agent allow rows
+| Everything else | `"*"` fallback | ask | per-agent `"*": "ask"` — includes `./pw *`, read probes, network git, package install
+| Destructive git | `git push/restore/checkout --/stash/clean *` | deny | per-agent deny rows
+| Test runners | `pytest *`, `python3 -m pytest *` | deny | per-agent deny rows; guard R4 blocks at the host layer
+| Shell file ops | `rm *` and other mutation ops | deny | global deny rows; guard R2 blocks at the host layer
+| CI abstraction | `gh *`, `glab *` | deny | global deny rows
+|===
+
+==== Reader (`execution-context-reader`, level variants) — read-only information surface
+
+[cols="2,4,2,3", options="header"]
+|===
+| Surface | Path | Resolution | Source (landed artifact)
+| Executor | `python3 .plan/execute-script.py *` | allow | per-agent allow row; guard R4 exempts the permit
+| Git read | `git status/log/diff *` | allow | per-agent allow rows
+| Everything else | `"*"` fallback | ask | per-agent `"*": "ask"`
+| Git write | `git add/commit/push *` | deny | per-agent deny rows
+| Test runners | `pytest *`, `python3 -m pytest *` | deny | per-agent deny rows; guard R4 blocks at the host layer
+| CI abstraction | `gh *`, `glab *` | deny | global deny rows
+|===
+
+The matrix is the authoritative record of the carve-out as implemented: the orchestrator keeps read-only file ops and git status/log as information lookups under `ask` (never silently suppressed, never auto-allowed), and the executor is confined to the `python3 .plan/execute-script.py` permit plus deny on the hard rules. Rows that carry a guard rule in the `Source` column are enforced twice — once by the map, once by the throw-to-block plugin — so a mis-merged `opencode.json` cannot silently widen a hard-rule class.
 
 == Runtime Abstraction & Platform Integration
 
@@ -170,8 +234,8 @@ The `OpenCodeRuntime` subclass implements target operations:
   ** `permission_settings_path(scope, write, project_dir)`: Resolves global or project settings paths. When `write=True` and the target file is absent, initializes a valid `opencode.json` skeleton with schema and baseline grants.
   ** `permission_load_settings(path)` / `permission_save_settings(path, settings)`: Safe JSON I/O.
   ** `permission_ensure_defaults(settings, settings_path, dry_run)`: Ensures baseline command patterns exist under `permission.bash`.
-  ** `permission_configure(scope, grants)`: Appends or updates grants translated via `to_opencode_grant()`.
-  ** `permission_fix(scope, operation, arguments, dry_run)`: Supports `ensure`, `add`, `remove`, `consolidate`, and `normalize`.
+  ** `permission_configure(scope, grants)`: Appends or updates grants translated via `to_opencode_grant()` — the mapping domain spans `allow`, `ask`, and `deny` actions.
+  ** `permission_fix(scope, operation, arguments, dry_run)`: Supports `ensure`, `add`, `remove`, `consolidate`, `normalize`, and `protect-path` (a writing deny that emits guard-path entries as `deny`).
 * **Health Check**: Inspects presence of `opencode.json` (or global config) and verifies that `python3 .plan/execute-script.py *` is permitted.
 * **Project Initial Setup**:
   ** Scaffolds `.plan/` and `.plan/temp/`.
@@ -214,6 +278,7 @@ The OpenCode target is verified by dedicated automated tests:
   ** Target registration, frontmatter and tool transformations, body rewrites, singular layout emission.
 * `test/plan-marshall/platform-runtime/`:
   ** `test_opencode_runtime.py`: Unit tests for `OpenCodeRuntime` covering layout resolution, project setup, permission settings paths, defaults injection, permission fix operations, and health checks.
+  ** `test_opencode_enforcement.py`: Deny refusals, ask prompts, and carve-out passes pinned against the runtime matrix, plus the mirror of the guard plugin decision table as a behavioral contract.
 * `test/plan-marshall/marshall-steward/`:
   ** `test_bootstrap_plugin_behavior.py`: Tests for OpenCode singular layout path resolution (`skill/{bundle}-{skill}/`).
 * `test/plan-marshall/tools-permission-fix/`:
