@@ -21,6 +21,12 @@ import re
 #: A roster row names its step as the first backticked token of a list item.
 ROSTER_ROW = re.compile(r'^-\s+`([^`]+)`')
 
+#: The explicit per-step skills column marker carrying backticked skill sets.
+SKILLS_COLUMN = re.compile(r'skills:\s*(?P<skills>(`[^`]+`\s*,?\s*)+)')
+
+#: A single backticked skill token inside the skills column.
+SKILL_TOKEN = re.compile(r'`([^`]+)`')
+
 
 def section_lines(text: str, heading: str, stop_prefixes: tuple[str, ...] = ('## ',)) -> list[str]:
     """Return the lines between ``heading`` and the next stop-prefixed line.
@@ -64,3 +70,24 @@ def parse_roster_rows(doc_text: str, heading: str) -> list[tuple[str, str]]:
 def parse_roster(doc_text: str, heading: str) -> list[str]:
     """Parse the step keys out of one roster section, preserving order."""
     return [key for key, _ in parse_roster_rows(doc_text, heading)]
+
+
+def parse_roster_skills(doc_text: str, heading: str) -> dict[str, list[str]]:
+    """Return the explicit skills column per roster row, keyed by step.
+
+    Args:
+        doc_text: The full roster document text.
+        heading: The roster section heading to parse.
+
+    Returns:
+        Mapping of step key to its backticked skill list. Rows without a
+        skills column map to an empty list so callers detect the gap.
+    """
+    skills: dict[str, list[str]] = {}
+    for key, row in parse_roster_rows(doc_text, heading):
+        match = SKILLS_COLUMN.search(row)
+        if not match:
+            skills[key] = []
+            continue
+        skills[key] = SKILL_TOKEN.findall(match.group("skills"))
+    return skills

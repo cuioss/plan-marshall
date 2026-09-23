@@ -27,7 +27,7 @@ The exit-code contract for every `python3 .plan/execute-script.py` call in this 
 
 | Prompt-body field | Required | Description |
 |-------------------|:--------:|-------------|
-| `producer` | Yes | One of `build-runner`, `sonar`, `pr-comment`, `plugin-doctor`, `pr-state`, `finalize-feedback`. Selects the Step 1 branch and which `ext-triage-{domain}` skills are pre-loaded in Step 2. |
+| `producer` | Yes | Single accept-set: one of `build-runner`, `sonar`, `pr-comment`, `plugin-doctor`, `pr-state`, `finalize-feedback`. Selects the Step 1 branch and which `ext-triage-{domain}` skills are pre-loaded in Step 2. `ci-verify-timeout` is rejected on every producer path — it is a `default:ci-verify` taxonomy producer string (row h, Timeout), not a `producer` value; the owning producer of the rejection is `default:ci-verify`. |
 | `plan_id` | Yes | Forwarded to every `manage-findings` / `manage-tasks` / `tools-integration-ci` call. |
 | `WORKTREE` | Yes | Used verbatim for `git -C {WORKTREE}` and as the root for every Edit/Write/Read. |
 | `pr_number` | Conditional | Required for `pr-comment` (thread replies) and for `pr-state` (CI wait + multi-source fetch). |
