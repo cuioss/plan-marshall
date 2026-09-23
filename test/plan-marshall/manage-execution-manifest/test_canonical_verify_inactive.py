@@ -29,11 +29,24 @@ These tests drive ``_apply_canonical_verify_inactive`` directly with a
 monkeypatched ``_resolve_footprint`` so the prefilter logic is exercised
 deterministically without a live worktree or git history. ``_footprint_has_role``
 is also covered directly.
+
+Green-report binding pins (D2 hardening): ``summarize_refires`` proves the
+verdict-artifact population — ``skipped`` rows never fold into firings, so a
+canonical that never executed cannot authorise green — and the refire
+arithmetic the triage-iteration bound consumes. The uncommitted-work half is
+pinned through ``post_run_source_guard check --fail-on-dirty`` on a hermetic
+tmp git repository: a dirty tree blocks (non-zero exit) while the default
+stays advisory.
 """
 
 # Tier 2 direct imports, resolved by (bundle, skill, script).
 
-from conftest import load_script_module
+import subprocess
+from pathlib import Path
+
+import pytest
+
+from conftest import get_script_path, load_script_module, run_script
 
 _mem = load_script_module(
     'plan-marshall', 'manage-execution-manifest', 'manage-execution-manifest.py', module_name='_mem_canonical_inactive'
@@ -41,6 +54,9 @@ _mem = load_script_module(
 _apply_canonical_verify_inactive = _mem._apply_canonical_verify_inactive
 _footprint_has_role = _mem._footprint_has_role
 _FOOTPRINT_GATED_CANONICAL_ROLES = _mem._FOOTPRINT_GATED_CANONICAL_ROLES
+_summarize_refires = _mem.summarize_refires
+
+_guard_script = get_script_path('plan-marshall', 'phase-6-finalize', 'post_run_source_guard.py')
 
 
 _PLAN_ID = 'canonical-inactive'
@@ -217,3 +233,214 @@ class TestCanonicalVerifyInactiveKeep:
         kept, dropped = _apply_canonical_verify_inactive(['default:verify:not-a-canonical'], _PLAN_ID, {})
         assert kept == ['default:verify:not-a-canonical']
         assert dropped == []
+
+
+def _execution_row(step_id: str, outcome: str) -> dict:
+    """One ``execution_log[]`` row in the shape ``record-step`` appends.
+
+    Token columns carry the unmeasured token — the writer's output when the
+    caller passes no measurement — so the firing derivation is exercised on
+    the inline-build shape, not on a measured population.
+    """
+    return {
+        'step_id': step_id,
+        'phase': '5-execute',
+        'outcome': outcome,
+        'total_tokens': 'unmeasured',
+        'tool_uses': 'unmeasured',
+        'duration_ms': 'unmeasured',
+    }
+
+
+def _entry_for(steps: list[dict], step_id: str) -> dict:
+    """The single per-step entry for ``step_id`` — the derivation emits one."""
+    matches = [entry for entry in steps if entry['step_id'] == step_id]
+    assert len(matches) == 1
+    return matches[0]
+
+
+class TestSkippedRowsNeverFire:
+    """A skipped/inactive canonical contributes no firing — green is unreachable without a verdict.
+
+    Pins the ``summarize_refires`` half of the fail-closed green-report
+    binding: only an ``executed`` row is a firing, so a canonical that never
+    ran (every row ``skipped``, or no row at all) leaves ``firings == 0`` and
+    no downstream report may read green off it.
+    """
+
+    def test_skipped_only_step_has_zero_firings(self):
+        steps, _totals = _summarize_refires(
+            [
+                _execution_row('verify:integration-tests', 'skipped'),
+                _execution_row('verify:integration-tests', 'skipped'),
+            ]
+        )
+        entry = _entry_for(steps, 'verify:integration-tests')
+        assert entry['firings'] == 0
+        assert entry['refires'] == 0
+        assert entry['skipped'] == 2
+
+    def test_skipped_rows_do_not_fold_into_firings(self):
+        steps, _totals = _summarize_refires(
+            [
+                _execution_row('verify:quality-gate', 'executed'),
+                _execution_row('verify:quality-gate', 'skipped'),
+                _execution_row('verify:quality-gate', 'skipped'),
+            ]
+        )
+        entry = _entry_for(steps, 'verify:quality-gate')
+        assert entry['firings'] == 1
+        assert entry['refires'] == 0
+        assert entry['skipped'] == 2
+
+    def test_single_executed_row_is_one_firing_with_no_refire(self):
+        steps, _totals = _summarize_refires([_execution_row('verify:module-tests', 'executed')])
+        entry = _entry_for(steps, 'verify:module-tests')
+        assert entry['firings'] == 1
+        assert entry['refires'] == 0
+
+
+class TestRefireCountingBoundsTriageIterations:
+    """The refire arithmetic the triage-iteration bound consumes.
+
+    ``refires`` is ``max(0, firings - 1)`` per step — the first ``executed``
+    row is the firing the pipeline owes, every later one is an extra firing.
+    Non-completion outcomes (``failed`` / ``error`` / ``loop_back``) are
+    counted apart and never inflate the firing count, so a thorough gate that
+    needed several triage rounds is measured, not misgraded.
+    """
+
+    def test_three_executions_yield_two_refires(self):
+        steps, totals = _summarize_refires([_execution_row('verify:quality-gate', 'executed')] * 3)
+        entry = _entry_for(steps, 'verify:quality-gate')
+        assert entry['firings'] == 3
+        assert entry['refires'] == 2
+        assert totals['refires'] == 2
+
+    def test_failures_and_errors_do_not_inflate_firings(self):
+        steps, _totals = _summarize_refires(
+            [
+                _execution_row('verify:module-tests', 'executed'),
+                _execution_row('verify:module-tests', 'failed'),
+                _execution_row('verify:module-tests', 'error'),
+                _execution_row('verify:module-tests', 'executed'),
+            ]
+        )
+        entry = _entry_for(steps, 'verify:module-tests')
+        assert entry['firings'] == 2
+        assert entry['refires'] == 1
+        assert entry['failures'] == 1
+        assert entry['errors'] == 1
+
+
+def _git(repo: Path, *args: str) -> None:
+    """Run one git command against ``repo`` with a pinned, hermetic identity.
+
+    Identity and signing travel per-invocation so the fixture behaves
+    identically on a developer machine with a global gitconfig and on a bare
+    CI runner with none.
+    """
+    subprocess.run(
+        [
+            'git',
+            '-C',
+            str(repo),
+            '-c',
+            'user.name=Test',
+            '-c',
+            'user.email=test@example.invalid',
+            '-c',
+            'commit.gpgsign=false',
+            *args,
+        ],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=True,
+    )
+
+
+@pytest.fixture
+def dirty_repo(tmp_path: Path) -> Path:
+    """A real git repository with one committed tracked file, then dirtied.
+
+    The worktree starts with exactly one dirty tracked path, so the guard's
+    verdict population is fully determined by this fixture.
+    """
+    repo = tmp_path / 'worktree'
+    repo.mkdir()
+    _git(repo, 'init', '--initial-branch=main')
+    target = repo / 'src' / 'tracked.py'
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text('print("seed")\n', encoding='utf-8')
+    _git(repo, 'add', 'src/tracked.py')
+    _git(repo, 'commit', '-m', 'chore: seed worktree')
+    target.write_text('print("dirty")\n', encoding='utf-8')
+    return repo
+
+
+@pytest.fixture
+def clean_repo(tmp_path: Path) -> Path:
+    """A real git repository with one committed tracked file and no dirt."""
+    repo = tmp_path / 'worktree'
+    repo.mkdir()
+    _git(repo, 'init', '--initial-branch=main')
+    target = repo / 'src' / 'tracked.py'
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text('print("seed")\n', encoding='utf-8')
+    _git(repo, 'add', 'src/tracked.py')
+    _git(repo, 'commit', '-m', 'chore: seed worktree')
+    return repo
+
+
+class TestUncommittedBlocksGreen:
+    """``post_run_source_guard check --fail-on-dirty`` gates the green report.
+
+    A dirty tree trips the gate (non-zero exit) while the default stays
+    advisory (exit 0 on the same tree) — the two modes share the payload and
+    differ only in whether uncommitted state blocks the caller.
+    """
+
+    def test_fail_on_dirty_blocks_dirty_tree(self, dirty_repo: Path):
+        result = run_script(
+            _guard_script,
+            'check',
+            '--step-id',
+            'phase-5-execute:final-quality-sweep',
+            '--project-dir',
+            str(dirty_repo),
+            '--fail-on-dirty',
+        )
+        assert result.returncode == 1
+        payload = result.toon()
+        assert payload['clean'] is False
+        assert 'src/tracked.py' in str(payload['offending_paths'])
+
+    def test_default_stays_advisory_on_dirty_tree(self, dirty_repo: Path):
+        result = run_script(
+            _guard_script,
+            'check',
+            '--step-id',
+            'phase-5-execute:final-quality-sweep',
+            '--project-dir',
+            str(dirty_repo),
+        )
+        assert result.returncode == 0
+        payload = result.toon()
+        assert payload['clean'] is False
+        assert 'src/tracked.py' in str(payload['offending_paths'])
+
+    def test_fail_on_dirty_passes_clean_tree(self, clean_repo: Path):
+        result = run_script(
+            _guard_script,
+            'check',
+            '--step-id',
+            'phase-5-execute:final-quality-sweep',
+            '--project-dir',
+            str(clean_repo),
+            '--fail-on-dirty',
+        )
+        assert result.returncode == 0
+        payload = result.toon()
+        assert payload['clean'] is True
+        assert payload['offending_paths'] == []

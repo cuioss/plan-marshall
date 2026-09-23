@@ -60,6 +60,10 @@ The **synchronous-blocking fallback (step (g))** applies unchanged: when the bac
 
 The seam is a fixed sequence applied by the two wait-class consumers. Neither consumes a local build slot.
 
+### Next step arrives as tool output
+
+The orchestrator's next action after a wait derives ONLY from the completion TOON the wait handler returned as tool output — the `ci-wait` return (`final_status`, `duration_sec`, `failing_checks`) or the `ci barrier` decision (`barrier_status`, `proceed` / `pending` / `failed` / `affected`). Narrative prose around the wait (chat summaries, echoed reminders) never routes: a next step read off prose instead of the TOON is an unbound yield — it names no completion the handler produced. When the completion TOON is absent, no next step is derived — the absence is handled as an uncompleted wait, never as an implicit proceed (the silence-≠-success rule from the governing `waiting.md` policy).
+
 ### (b) Arm the `build-busy` state gate
 
 Persist the `build-busy` state under the `cli` owner. It serves two purposes at once: it is the **"not-yet-handled" idempotency gate** step (d) reads, and it is the state the *next* render event composes into the title as 🔨. The call is **best-effort** — a failure never aborts the detached call.

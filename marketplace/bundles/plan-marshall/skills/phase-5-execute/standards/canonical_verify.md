@@ -87,6 +87,14 @@ Parse `decision` and `reason`. When `decision == not_necessary` (the live footpr
 
 3. **Run and report.** Run the resolved `executable` (inline at `bash_timeout_seconds`, or via orchestrator hand-off per tier). On failure, surface via the phase-5-execute Step 10/11 triage loop (fix-task creation, suppress, or accept) with `max_iterations` from config. Report pass/fail.
 
+## Fail-closed green-report binding
+
+A canonical that is inactive, skipped, or unresolved produces NO verdict artifact, and the absence binds every downstream report to `pending` rather than `pass`:
+
+- **Skipped is a non-verdict, never a pass.** The whole-tree footprint-gate skip, the unresolved-canonical skip, and the module-scoped documentation-only short-circuit each record `skipped` (phase-5-execute Step 8c) and run nothing. A `skipped` row authorises no green claim — the consuming report MUST read `pending` for that canonical.
+- **The verdict artifact is the executed success result.** Only an executed canonical that exited successfully, recorded via `manage-execution-manifest record-step --outcome executed`, authorises a `pass` report — and only together with the clean-tree observation the phase-5-execute Step 11b green-report binding requires.
+- **Unverified work reports `pending`, never green.** When the canonical never ran for any reason, green is unreachable: the report binds to `pending` until a verdict artifact exists on a clean tree.
+
 ## Return Contract
 
 Follows the standard phase-5-execute verification result shape: a non-zero exit code or findings in the build log surface as failures and are routed through the Step 11/11b triage loop. An unresolved canonical reports `skipped`, not a failure.

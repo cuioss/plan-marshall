@@ -71,6 +71,16 @@ Return shape (CLI emits TOON; programmatic callers consume
     exempted_paths[N]: [<untracked .plan/ paths dropped as plan state>]
     offending_paths[N]: [<dirty tracked source, tracked .plan/ files included>]
 
+Gating mode (``--fail-on-dirty``). The default stays advisory per decision 3
+above: ``clean: false`` rides the payload and the exit code is ``0``. Passing
+``--fail-on-dirty`` turns the same observation into a gate — a dirty result
+exits ``1`` so the caller treats uncommitted state as a red gate rather than a
+warning. The phase-5 green-report binding (``phase-5-execute`` Step 11b) is the
+sanctioned gating caller: it passes the plan WORKTREE as ``--project-dir``
+(the tree whose cleanness the green claim is about) and blocks ``pass`` on a
+non-zero exit. The phase-6 post-run caller keeps the default: its tree is the
+main checkout and its band stays advisory.
+
 ``considered_paths`` is the population the verdict was drawn from, so a
 ``clean: true`` that names the paths it examined is distinguishable from a
 looked-at-nothing pass. ``exempted_paths`` names what was dropped and (by the
@@ -204,6 +214,8 @@ def cmd_check(args: argparse.Namespace) -> int:
     if error:
         payload['error'] = error
     print(serialize_toon(payload))
+    if args.fail_on_dirty and offenders:
+        return 1
     return 0
 
 
@@ -242,6 +254,19 @@ def build_parser() -> argparse.ArgumentParser:
             "plan's worktree, so defaulting to the cwd would silently observe "
             'a deleted tree and make the check vacuous. See the module '
             'docstring.'
+        ),
+    )
+    check_parser.add_argument(
+        '--fail-on-dirty',
+        action='store_true',
+        default=False,
+        dest='fail_on_dirty',
+        help=(
+            'Gating mode: exit 1 when dirty tracked source is observed, so '
+            'uncommitted state blocks the caller green report instead of '
+            'riding the payload as an advisory warning. Default (absent) '
+            'preserves the advisory contract: the verdict rides the TOON '
+            'payload and the exit code is always 0.'
         ),
     )
     check_parser.set_defaults(func=cmd_check)

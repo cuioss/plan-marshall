@@ -92,16 +92,24 @@ no second parser exists to drift from the one the registry uses. This mirrors
 from __future__ import annotations
 
 import subprocess
+from argparse import Namespace
 from pathlib import Path
 
 import pytest
 
 import extension_discovery
-from conftest import get_script_path, load_script_module, run_script
+from conftest import get_script_path, get_skill_dir, load_script_module, run_script
 from extension_discovery import find_implementors
+from file_ops import get_plan_dir
 
 _guard = load_script_module('plan-marshall', 'phase-6-finalize', 'post_run_source_guard.py')
 check_tracked_source = _guard.check_tracked_source
+
+_yield_mark_step = load_script_module('plan-marshall', 'manage-status', '_cmd_mark_step.py', '_yield_mark_step')
+_yield_assert_step = load_script_module(
+    'plan-marshall', 'manage-status', '_cmd_assert_step_recorded.py', '_yield_assert_step'
+)
+_yield_lifecycle = load_script_module('plan-marshall', 'manage-status', '_cmd_lifecycle.py', '_yield_lifecycle')
 
 #: The canonical ext-point value whose implementors carry the fact.
 _EXT_POINT = 'plan-marshall:extension-api/standards/ext-point-finalize-step'
@@ -464,3 +472,166 @@ def test_cli_reports_offender_and_still_exits_zero(committed_repo: Path):
     assert payload['step_id'] == 'default:lessons-capture'
     assert payload['clean'] is False
     assert _TRACKED_SOURCE in str(payload['offending_paths'])
+
+
+# =============================================================================
+# Yield channel (D3 hardening)
+#
+# Every phase-6-finalize yield names itself from the CLOSED set — the composed
+# manifest's frozen phase_6.steps — carries progress in --display-detail and
+# control in --outcome/--loop-back-target, and leaves a reportable finding
+# when the yield itself is absent. The helpers below build isolated plans
+# (plan_context redirects PLAN_BASE_DIR into tmp) and write a minimal
+# execution.toon so the roster derivation runs against a real manifest read.
+# =============================================================================
+
+
+def _yield_make_plan(plan_id: str) -> None:
+    _yield_lifecycle.cmd_create(
+        Namespace(
+            plan_id=plan_id,
+            title='Yield Channel Test',
+            phases='1-init,2-refine,3-outline,4-plan,5-execute,6-finalize',
+            force=False,
+        )
+    )
+
+
+def _yield_manifest_path(plan_id: str) -> Path:
+    return get_plan_dir(plan_id) / 'execution.toon'
+
+
+def _write_roster_manifest(plan_id: str, steps: list[str]) -> None:
+    lines = ['manifest_version: 1', f'plan_id: {plan_id}', 'phase_6:', f'  steps[{len(steps)}]:']
+    lines.extend(f'    - {step}' for step in steps)
+    _yield_manifest_path(plan_id).write_text('\n'.join(lines) + '\n', encoding='utf-8')
+
+
+def _mark_args(
+    plan_id: str,
+    phase: str,
+    step: str,
+    outcome: str,
+    display_detail: str | None = None,
+    loop_back_target: str | None = None,
+) -> Namespace:
+    return Namespace(
+        plan_id=plan_id,
+        phase=phase,
+        step=step,
+        outcome=outcome,
+        force=False,
+        display_detail=display_detail,
+        head_at_completion=None,
+        loop_back_target=loop_back_target,
+        fact=None,
+    )
+
+
+def _assert_args(plan_id: str, phase: str, step: str) -> Namespace:
+    return Namespace(plan_id=plan_id, phase=phase, step=step, require_terminal=True)
+
+
+class TestClosedYieldNameSet:
+    """A 6-finalize yield must name a member of the composed manifest roster."""
+
+    def test_unknown_yield_name_is_refused_before_any_write(self, plan_context):
+        plan_id = 'yield-unknown-name'
+        _yield_make_plan(plan_id)
+        _write_roster_manifest(plan_id, ['push', 'ci-verify'])
+
+        result = _yield_mark_step.cmd_mark_step_done(_mark_args(plan_id, '6-finalize', 'not-a-real-step', 'done'))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'unknown_yield_name'
+        assert result['step'] == 'not-a-real-step'
+
+        # Nothing was written: the read side still reports the yield absent.
+        check = _yield_assert_step.cmd_assert_step_recorded(_assert_args(plan_id, '6-finalize', 'not-a-real-step'))
+        assert check['recorded'] is False
+
+    def test_roster_member_records_normally(self, plan_context):
+        plan_id = 'yield-known-name'
+        _yield_make_plan(plan_id)
+        _write_roster_manifest(plan_id, ['push', 'ci-verify'])
+
+        result = _yield_mark_step.cmd_mark_step_done(
+            _mark_args(plan_id, '6-finalize', 'push', 'skipped', display_detail='push deferred to the merge queue')
+        )
+
+        assert result['status'] == 'success'
+        assert result['changed'] is True
+        assert result['outcome'] == 'skipped'
+
+    def test_phase_without_roster_is_recorded_without_membership_check(self, plan_context):
+        plan_id = 'yield-unrostered-phase'
+        _yield_make_plan(plan_id)
+
+        result = _yield_mark_step.cmd_mark_step_done(
+            _mark_args(plan_id, '5-execute', 'any-free-form-task-yield', 'done', display_detail='tasks settled')
+        )
+
+        assert result['status'] == 'success'
+        assert result.get('warning') is None
+
+
+class TestProgressSeparatedFromControl:
+    """A bare control token as --display-detail is refused on every phase."""
+
+    @pytest.mark.parametrize('token', ['done', 'skipped', 'loop_back', 'failed', '  FAILED  '])
+    def test_bare_control_token_is_refused(self, plan_context, token):
+        plan_id = 'yield-control-token'
+        _yield_make_plan(plan_id)
+
+        result = _yield_mark_step.cmd_mark_step_done(
+            _mark_args(plan_id, '5-execute', 'some-step', 'done', display_detail=token)
+        )
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'display_detail_is_control_token'
+
+    def test_real_narrative_records_normally(self, plan_context):
+        plan_id = 'yield-real-narrative'
+        _yield_make_plan(plan_id)
+
+        result = _yield_mark_step.cmd_mark_step_done(
+            _mark_args(plan_id, '5-execute', 'some-step', 'done', display_detail='Done: all green after rebase')
+        )
+
+        assert result['status'] == 'success'
+        assert result['outcome'] == 'done'
+
+
+class TestMissingYieldFinding:
+    """An absent yield surfaces as a reportable finding, never as silence."""
+
+    def test_missing_record_carries_finding_fields(self, plan_context):
+        plan_id = 'yield-missing-finding'
+        _yield_make_plan(plan_id)
+
+        result = _yield_assert_step.cmd_assert_step_recorded(_assert_args(plan_id, '6-finalize', 'ci-verify'))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'step_record_missing'
+        assert result['finding_type'] == 'missing-yield'
+        assert result['finding_severity'] == 'error'
+        assert 'ci-verify' in result['finding_title']
+        assert '6-finalize' in result['finding_detail']
+
+
+_AWAIT_DOC = get_skill_dir('plan-marshall', 'plan-marshall') / 'workflow' / 'await-long-running.md'
+
+
+def test_next_step_binding_names_both_completion_toons():
+    """The tool-output binding section pins which TOONs route the next step.
+
+    The section must name both wait-class completion shapes — the ci-wait
+    return and the ci barrier decision — so deleting or gutting the binding
+    fails loudly instead of silently unbinding the yield path.
+    """
+    text = _AWAIT_DOC.read_text(encoding='utf-8')
+    _heading, _, after = text.partition('### Next step arrives as tool output')
+    assert after, 'the tool-output binding section is absent from await-long-running.md'
+    section, _, _rest = after.partition('\n### ')
+    assert 'final_status' in section
+    assert 'barrier_status' in section

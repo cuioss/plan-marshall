@@ -30,7 +30,14 @@ distinguished by whether a *near-miss* orphan record exists in the same phase:
   the dispatcher can report the mis-keying instead of an infinite "record under
   the wrong key, re-enter, record under the wrong key again" recovery loop.
 - ``step_record_missing``: no terminal record exists under any key in the phase
-  — a truly-absent record. This is the original behavior, retained unchanged.
+  — a truly-absent record. This is the original behavior, retained unchanged,
+  except that the verdict now also carries reportable finding fields
+  (``finding_type`` / ``finding_severity`` / ``finding_title`` /
+  ``finding_detail``) so the dispatcher can file the absent yield to the
+  Q-Gate findings store instead of merely logging an error — a missing yield
+  surfaces as a finding, never as silence. The exit code stays ``0``: the
+  post-dispatch guard branches on the TOON ``error`` field, not the process
+  exit code.
 """
 
 import argparse
@@ -180,6 +187,10 @@ def cmd_assert_step_recorded(args: argparse.Namespace) -> dict | None:
             'step': step,
             'recorded': False,
             'outcome': None,
+            'finding_type': 'missing-yield',
+            'finding_severity': 'error',
+            'finding_title': (f"Missing yield: step '{step}' in phase '{phase}' returned without a terminal record"),
+            'finding_detail': (f'status.metadata.phase_steps[{phase}] has no terminal record for step {step!r}'),
             'message': (
                 f'No terminal record for step {step!r} in phase {phase!r}: the '
                 'dispatched step returned without recording a mark-step-done '

@@ -410,7 +410,11 @@ def main() -> int:
     )
     add_plan_id_arg(mark_step_parser)
     add_phase_arg(mark_step_parser)
-    mark_step_parser.add_argument('--step', required=True, help='Step identifier within the phase')
+    mark_step_parser.add_argument(
+        '--step',
+        required=True,
+        help='Step identifier within the phase. For a 6-finalize step this must name a member of the composed manifest phase_6.steps roster (the CLOSED yield-name set) — any other name is refused with unknown_yield_name and nothing is written. Other phases carry no centrally composed roster and are recorded without a membership check.',
+    )
     mark_step_parser.add_argument(
         '--outcome',
         required=True,
@@ -427,7 +431,7 @@ def main() -> int:
     mark_step_parser.add_argument(
         '--display-detail',
         default=None,
-        help='One-line user-facing detail string describing the step outcome (required for phase-6-finalize steps).',
+        help='One-line user-facing detail string describing the step outcome (required for phase-6-finalize steps). This is the progress channel: it must carry actual progress, so a bare control token (done, skipped, loop_back, or failed) is refused with display_detail_is_control_token and nothing is written. Control intent rides --outcome / --loop-back-target.',
     )
     mark_step_parser.add_argument(
         '--head-at-completion',
@@ -501,7 +505,10 @@ def main() -> int:
             'mandated mark-step-done side-effect. With --require-terminal, a '
             'missing terminal record is escalated to status: error, '
             'error: step_record_missing so the dispatcher gets a branchable '
-            'verdict. Performs zero writes to status.json.'
+            'verdict, and the verdict carries reportable finding fields '
+            '(finding_type missing-yield, finding_severity, finding_title, '
+            'finding_detail) so the absent yield can be filed to the Q-Gate '
+            'findings store. Performs zero writes to status.json.'
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         allow_abbrev=False,

@@ -397,9 +397,9 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
 **Parameters**:
 - `--plan-id` (required): Plan identifier
 - `--phase` (required): Phase name (e.g., `5-execute`)
-- `--step` (required): Step identifier within the phase (free-form string chosen by the phase skill)
+- `--step` (required): Step identifier within the phase. For a `6-finalize` step this must name a member of the composed manifest `phase_6.steps` roster — the CLOSED yield-name set — and any other name is refused with `unknown_yield_name` before anything is written. Other phases carry no centrally composed roster and are recorded without a membership check (see "CLOSED yield-name set" below).
 - `--outcome` (required): `done`, `skipped`, `loop_back`, or `failed`
-- `--display-detail` (optional at CLI level, required-by-convention for phase-6-finalize steps per the phase-6-finalize interface contract): One-line user-facing detail string. Persisted as `null` when omitted.
+- `--display-detail` (optional at CLI level, required-by-convention for phase-6-finalize steps per the phase-6-finalize interface contract): One-line user-facing detail string. Persisted as `null` when omitted. This is the progress channel: a bare control token (`done`, `skipped`, `loop_back`, or `failed`, case-insensitively) restates the outcome instead of documenting progress and is refused with `display_detail_is_control_token` before anything is written — control intent rides `--outcome` / `--loop-back-target`, progress rides `--display-detail` (see "Progress separated from control" below).
 - `--head-at-completion` (REQUIRED when `--outcome=done` on a step declaring `head_dependent: true`, optional otherwise): Git SHA captured at step completion. Persisted alongside outcome and consulted by resumable phase dispatchers (e.g., phase-6-finalize `pre-push-quality-gate`) to detect HEAD advancement. Omitting it on a head-dependent `done` is refused with `missing_head_at_completion` and nothing is written. A supplied revision is resolved against the local object store (`git rev-parse --verify {sha}^{commit}`) before anything is persisted, and the record carries the resolved full-hex commit ID — never the supplied spelling, so `HEAD`, a branch name, or `HEAD~1` cannot move under the record. A revision resolving to no commit is refused with `unknown_head_at_completion` and nothing is written, so a fabricated anchor can never enter the record.
 - `--loop-back-target` (REQUIRED when `--outcome=loop_back`, FORBIDDEN otherwise): Loop-back target phase. Must be one of `5-execute` (full phase rollback for fix-task-required dispositions) or `6-finalize` (inline replay for inline-fixable dispositions). See "Loop-back target classification" below.
 - `--fact` (optional, repeatable): Record one structured `KEY=VALUE` per-step fact. See "Structured step facts" below.
@@ -423,6 +423,16 @@ The `--loop-back-target` flag encodes the granularity invariant from the phase-6
 - `6-finalize` — inline replay for **inline-fixable** dispositions. Use when triage resolved every finding via SUPPRESS, narrow-rationale ACCEPT, or single-annotation FIX (no fix-task allocation, no overflow). The continuation hook stays in `6-finalize`, does NOT call `set-phase`, and re-fires the loop-back-marked step from the resumable re-entry check.
 
 The flag is REQUIRED on every `loop_back` outcome (returns `error: missing_loop_back_target` when absent) and FORBIDDEN on every other outcome (returns `error: unexpected_loop_back_target`). The `argparse` `choices` enforce the two-value enumeration at parse time. There is no backwards-compat fallback — every loop-back-emitting call site MUST classify the disposition before persisting the outcome.
+
+**CLOSED yield-name set**:
+
+Every yield names itself from a CLOSED set — the phase's composed step roster — so the orchestrator routes on a name the plan actually contains rather than on free text. For `6-finalize` the set is the composed manifest's frozen `phase_6.steps` list, read through the manifest reader (never re-derived from live configuration, which `reconcile` may have moved since compose). A `6-finalize` yield naming anything outside that set is refused with `error: unknown_yield_name` and **writes nothing**; there is no `--force` override, because `--force` governs outcome conflicts, not the record's own well-formedness. Both spellings reconcile before the check (the shared `canonicalize_step_key` resolver runs first), so a `default:`-prefixed variant of a member still matches.
+
+Phases without a centrally composed step list are recorded WITHOUT a membership check — phase-5 yields are task-level records in the manage-tasks store, and phases 1-4 run inline — and that absence is stated here rather than hidden. When the roster is owed (`6-finalize`) but underivable (manifest reader unimportable, manifest missing or unreadable, `phase_6.steps` absent or empty), the record IS written and carries a `warning` naming the unresolved derivation, following the same diagnosable-WARNING idiom as head-dependence below: an unresolvable derivation must not manufacture an unsubstantiated refusal, but must not pass silently either.
+
+**Progress separated from control**:
+
+A yield record carries control and progress on separate channels that must not trade places. Control rides the closed vocabularies — `outcome` (`done` / `skipped` / `loop_back` / `failed`) and `loop_back_target` (`5-execute` / `6-finalize`) — enforced by enumeration at parse time and at the API layer. Progress rides `--display-detail`, free text describing what the step did. A `display_detail` that IS a bare control token restates the outcome instead of documenting progress — the narrative channel is empty while control sits in both — and is refused with `error: display_detail_is_control_token` before anything is persisted, on every phase and every outcome, with no `--force` override. The refusal is what keeps the split structural rather than conventional: a completion marker naming only the step already says how it finished via its outcome suffix, and the detail beside it must say what happened.
 
 **Head-anchor refusal on a `done` outcome**:
 
@@ -627,8 +637,14 @@ phase: 6-finalize
 step: automated-review
 recorded: false
 outcome: null
+finding_type: missing-yield
+finding_severity: error
+finding_title: Missing yield: step 'automated-review' in phase '6-finalize' returned without a terminal record
+finding_detail: status.metadata.phase_steps[6-finalize] has no terminal record for step 'automated-review'
 message: No terminal record for step 'automated-review' in phase '6-finalize': the dispatched step returned without recording a mark-step-done outcome (expected one of ['done', 'skipped', 'loop_back', 'failed']).
 ```
+
+The `finding_*` fields make the absent yield fileable: the dispatcher files them to the Q-Gate findings store (`manage-findings qgate add --type missing-yield …`) instead of merely logging the error, so a missing yield surfaces as a finding, never as silence. Exit code stays `0` — the guard branches on the TOON `error` field.
 
 **Output — mismatched key under `--require-terminal`** (TOON): the queried step has no record, but a terminal record exists under a near-miss key in the same phase.
 ```toon
@@ -1661,10 +1677,12 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status self-t
 | `missing_loop_back_target` | 1 | `mark-step-done`: `--outcome=loop_back` supplied without `--loop-back-target`. The flag is REQUIRED on every loop_back outcome (no backwards-compat fallback). |
 | `invalid_loop_back_target` | 1 | `mark-step-done`: `--loop-back-target` value not in `5-execute`/`6-finalize`. (Argparse `choices` normally catches this at parse time; this error fires only when the validation is bypassed at the API layer.) |
 | `unexpected_loop_back_target` | 1 | `mark-step-done`: `--loop-back-target` supplied alongside an outcome other than `loop_back`. The flag is FORBIDDEN on `done`/`skipped`/`failed` outcomes. |
+| `unknown_yield_name` | 1 | `mark-step-done`: `--step` names no member of the phase's CLOSED yield-name set (`6-finalize`: the composed manifest `phase_6.steps` roster). A yield that names nothing real is refused before anything is written; there is no `--force` override. |
 | `invalid_fact` | 1 | `mark-step-done`: a `--fact` token has no `=` separator, or an empty key. The offending token is echoed as `offending_token`; the call is rejected before any write. |
+| `display_detail_is_control_token` | 1 | `mark-step-done`: `--display-detail` is a bare control token (`done`/`skipped`/`loop_back`/`failed`, case-insensitively) instead of a progress narrative. Control intent rides `--outcome`/`--loop-back-target`; the call is rejected before any write, with no `--force` override. |
 | `missing_head_at_completion` | 1 | `mark-step-done`: `--outcome=done` on a step whose authoritative doc declares `head_dependent: true`, with no `--head-at-completion`. A `done` carrying no SHA records a verdict nobody can anchor to a tree, so the absence is refused rather than tolerated — nothing is written. Resolve the worktree HEAD immediately before the call and pass it. |
 | `unknown_head_at_completion` | 1 | `mark-step-done`: `--outcome=done` with a `--head-at-completion` revision that resolves to no commit in the local object store (`git rev-parse --verify {sha}^{commit}` fails — fabricated string, non-commit object, or leading-`-` option-injection shape). The record carries the resolved full-hex commit ID, never the supplied spelling. A fabricated anchor records a verdict nobody can locate in history, so it is refused rather than persisted — nothing is written. Resolve the worktree HEAD immediately before the call and pass the real SHA. |
-| `step_record_missing` | 0 | `assert-step-recorded --require-terminal`: no terminal record exists under any key for the named phase (the dispatched step returned without recording a `mark-step-done` outcome). Exit code is 0 — the post-dispatch guard branches on the TOON `error` field, not the process exit code. |
+| `step_record_missing` | 0 | `assert-step-recorded --require-terminal`: no terminal record exists under any key for the named phase (the dispatched step returned without recording a `mark-step-done` outcome). The verdict carries reportable finding fields (`finding_type: missing-yield`, `finding_severity: error`, `finding_title`, `finding_detail`) so the absent yield is filed to the Q-Gate findings store instead of staying silent. Exit code is 0 — the post-dispatch guard branches on the TOON `error` field, not the process exit code. |
 | `step_record_mismatched_key` | 0 | `assert-step-recorded --require-terminal`: the queried step has no terminal record, but a near-miss orphan terminal record exists under a different key in the same phase (the dispatched step recorded under the wrong key — e.g. a bare skill name instead of its fully-qualified manifest `step_id`). Carries `orphan_key` and `orphan_outcome`. Exit code is 0 — the guard branches on the TOON `error` field. |
 | `worktree_unresolved` | 1 | `phase_handshake verify`: `metadata.use_worktree==true` and `metadata.worktree_path` is non-empty but does not resolve on the filesystem. `get-worktree-path` does not emit this error — it returns `worktree_state: pending` for the pre-materialization state. |
 

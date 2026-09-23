@@ -255,6 +255,15 @@ commit_message: "chore(simplify): collapse accidental complexity in {plan_id}"
 
 `reverted_count` is emitted UNCONDITIONALLY, `0` included. A field present only when non-zero makes "no conflicts" and "the reconciliation never ran" the same absence, which is the distinction Step 3b's `status: error` branch exists to preserve.
 
+## Named honest stops — a stop by name is never a stall
+
+A run that correctly halts with nothing further to claim stops under one of TWO names, each with the matched evidence that proves idleness was correct. A stop matching a named shape passes without a stall finding; a stall finding against a simplify run must show which named shape fails and how:
+
+- **`empty-footprint`** — `compute-footprint` returned no `files`. The step marks `done` with `display_detail "Simplify: no changeset"` (see Error Handling). Evidence: the footprint call itself, `files == []`. There was no surface to review, so there was nothing to stall on.
+- **`clean-sweep`** — the full sweep ran over a non-empty footprint with zero `applied_edits`, zero `findings[]`, and a `clear` reconciliation verdict. The step marks `done` with the counts in `display_detail`. Evidence: `applied_edits == 0`, `findings == []`, Step 3b verdict `clear`. The review ran and found no surplus; running it again would not change that.
+
+Anything else — a non-empty footprint with no review performed, edits applied but unreported, a `conflict` reconciliation left unrecorded — matches NEITHER name and is not a stop. Name the stop in the record; an unnamed halt is what a stall finding attaches to.
+
 ## Error Handling
 
 | Scenario | Action |

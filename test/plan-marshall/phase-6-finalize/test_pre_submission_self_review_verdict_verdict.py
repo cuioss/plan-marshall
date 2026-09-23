@@ -323,6 +323,20 @@ def _limitation_is_recorded(doc: str, surfacer_doc: str) -> bool:
 
 _STOP_ANSWER_YES = 'may_close: yes'
 
+_STOP_PATH_CONFIRMATION_MARKERS = ('convergence', 'counts.total')
+
+_SIMPLIFY_DOC = (
+    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-6-finalize' / 'standards' / 'finalize-step-simplify.md'
+)
+
+_STOP_NAMES = ('empty-footprint', 'clean-sweep')
+
+_STALL_ATTACHMENT_MARKER = 'which named shape fails'
+
+_SURFACER_CONTROLS_HEADING = '### Stop/stall matched controls'
+
+_SURFACER_CONTROL_FIELDS = ('scope_statement', 'counts', 'files_with_candidates')
+
 _AUTHOR_PREDICATE = 'findings list is empty'
 
 _BRANCH_LABEL = re.compile(r'^\*\*Branch ([A-Z]) — (.+?)\*\*', re.MULTILINE)
@@ -652,4 +666,111 @@ def test_clean_prefix_detector_separates_the_not_run_verdict_from_its_siblings()
     assert ran.startswith(_CLEAN_PREFIX), (
         'The clean-prefix detector does not fire on a ran-and-clean verdict, so '
         'the second half of (g) would report every sibling as unmarked'
+    )
+
+
+# ---------------------------------------------------------------------------
+# Honest stop (D4 hardening)
+#
+# A runner that correctly halts with nothing further to claim stops BY NAME
+# with matched evidence; anything else is not a stop, and a clean claim
+# without its controls is a stall signature. Three pins: the simplify doc
+# names both honest stops with their evidence, the surfacer skill states the
+# stop/stall control vocabulary, and the Branch A stop path confirms
+# convergence plus deterministic evidence before it may record done.
+# ---------------------------------------------------------------------------
+
+
+def _simplify_text() -> str:
+    text: str = _SIMPLIFY_DOC.read_text(encoding='utf-8')
+    return text
+
+
+def _simplify_stop_names(text: str) -> list[str]:
+    """The honest-stop names the simplify doc actually declares."""
+    return [name for name in _STOP_NAMES if f'`{name}`' in text]
+
+
+def _surfacer_controls_section(text: str) -> str:
+    """The stop/stall matched-controls section body, or empty when absent."""
+    _heading, _, after = text.partition(_SURFACER_CONTROLS_HEADING)
+    if not after:
+        return ''
+    section, _, _rest = after.partition('\n### ')
+    return section
+
+
+def _branch_a_confirmation_markers(body: str) -> list[str]:
+    """The stop-path confirmation markers Branch A carries."""
+    return [marker for marker in _STOP_PATH_CONFIRMATION_MARKERS if marker in body]
+
+
+def test_simplify_names_both_honest_stops_with_evidence():
+    """Stop-by-name passage: both stop shapes are named with matched evidence."""
+    text = _simplify_text()
+
+    assert _simplify_stop_names(text) == list(_STOP_NAMES), (
+        f'Simplify names {_simplify_stop_names(text)}, not both honest stops {_STOP_NAMES}. '
+        f'A stop with no name is what a stall finding attaches to.'
+    )
+    assert 'Evidence:' in text, 'The named stops carry no matched evidence markers'
+    assert _STALL_ATTACHMENT_MARKER in text, (
+        'The shield rule does not bind stall findings to the named shapes'
+    )
+
+
+def test_simplify_stop_name_detector_fires_on_unnamed_prose():
+    """Mutation guard: prose with no stop names fails the detector."""
+    assert _simplify_stop_names('A run that halts records done.') == [], (
+        'The stop-name detector fired on prose naming no stop — it cannot tell '
+        'a named stop from an unnamed halt'
+    )
+
+
+def test_surfacer_controls_section_states_stop_and_stall():
+    """Stall detection: the control vocabulary names both stop and stall."""
+    section = _surfacer_controls_section(_SURFACER_SKILL_DOC.read_text(encoding='utf-8'))
+
+    assert section, (
+        f'{_SURFACER_CONTROLS_HEADING!r} is absent from the surfacer skill — '
+        f'the stop/stall vocabulary has no stated home'
+    )
+    assert 'stall' in section.lower(), 'The controls section never names the stall it separates from stop'
+    for field in _SURFACER_CONTROL_FIELDS:
+        assert field in section, (
+            f'Matched control {field!r} is absent from the controls section — '
+            f'the gate cannot consume a control the surface does not state'
+        )
+
+
+def test_surfacer_controls_detector_fires_when_section_absent():
+    """Mutation guard: a skill doc without the section yields no controls."""
+    assert _surfacer_controls_section('# Unrelated skill\n\nNo controls here.\n') == '', (
+        'The controls-section detector fired on a doc without the section'
+    )
+
+
+def test_branch_a_carries_convergence_and_evidence_confirmations():
+    """The stop path confirms convergence plus deterministic evidence."""
+    bodies = _branch_bodies()
+    assert 'A' in bodies, 'No Branch A sliced — the confirmation has no body to live in'
+
+    assert _branch_a_confirmation_markers(bodies['A']) == list(_STOP_PATH_CONFIRMATION_MARKERS), (
+        f'Branch A carries {_branch_a_confirmation_markers(bodies["A"])}, not the full '
+        f'confirmation pair {_STOP_PATH_CONFIRMATION_MARKERS}. A close without the '
+        f'convergence signal or without the deterministic-evidence match is a stop '
+        f'on an empty findings list alone.'
+    )
+
+
+def test_branch_a_confirmation_detector_fires_on_pre_fix_body():
+    """Mutation guard: a Branch A without the confirmations fails the detector."""
+    pre_fix = (
+        '**Branch A — the verifier answered the stop question `may_close: yes`**: '
+        'read the display_detail verbatim and record done.'
+    )
+
+    assert _branch_a_confirmation_markers(pre_fix) == [], (
+        'The confirmation detector fired on a Branch A carrying neither marker — '
+        'it cannot tell a confirmed close from an unconfirmed one'
     )

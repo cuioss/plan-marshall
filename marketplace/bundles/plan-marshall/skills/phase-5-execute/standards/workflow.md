@@ -83,6 +83,8 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks finalize
 
 After all steps of a task are complete and verification has passed, but **before** the orchestrator calls `manage-tasks next` to advance to the following task, two work-log entries exist for the task. They have different owners, and the split is the point:
 
+**Guard-before-report ordering.** The guard observations run BEFORE the completion report, and the report consumes their outcome: the per-task verify verdict artifact (the executed canonical's success result), the Step 6.5 scope-creep guard, and the uncommitted-work observation all settle before the task-closing emission. A task whose guards have not cleared reports `pending`, never green — the `[STEP]` completion line records that the checklist settled, while the green claim stays bound to the verdict artifact on a clean tree (phase-5-execute SKILL.md Step 11b green-report binding; `canonical_verify.md` § "Fail-closed green-report binding").
+
 1. **Per-task completion `[STEP]`** — exactly one line summarizing the task, emitted by the orchestrator. Substitute `{N}` with the task number, `{title}` with the task title, `{steps_done}` with the count of finalized steps, and `{steps_total}` with the task's total step count:
 
    ```bash

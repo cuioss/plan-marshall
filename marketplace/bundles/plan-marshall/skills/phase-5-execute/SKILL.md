@@ -1129,6 +1129,20 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
 
 This step is the single source of "did the phase end clean?" — it appends the canonical `quality-gate` once after all task-level verification has settled, providing a stable end-of-phase quality signal. Only the manifest's `verification_steps` list controls whether it fires; per-doc skip logic has been removed in favor of this manifest-driven gate (the single parameterized `canonical_verify.md` step carries no embedded skip logic).
 
+**Green-report binding (fail-closed).** A `{pass}` report from this sweep — and from the Step 11c per-bundle gate — is bound to TWO artifacts, and both must hold before the word `pass` is emitted:
+
+1. **The verdict artifact** — the executed canonical's success result, recorded via `manage-execution-manifest record-step --outcome executed` for that step id (Step 8c). A canonical that never executed — unresolved, footprint-gated to `skipped`, or otherwise absent from `execution_log[]` — produced no verdict. No verdict artifact binds the report to `pending`, never to `pass`: a skipped canonical is a non-verdict, not a pass. See [`standards/canonical_verify.md`](standards/canonical_verify.md) § "Fail-closed green-report binding" for the canonical-side statement of this rule.
+2. **The clean-tree observation** — a dirty-tracked-source observation of the worktree that returns clean:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:phase-6-finalize:post_run_source_guard check \
+     --step-id {step_id} --project-dir {worktree_path} --fail-on-dirty
+   ```
+
+   A dirty observation — `clean: false` in the payload, corroborated by the non-zero exit — blocks the `pass` report: persist the offending paths as an uncommitted-work finding (`manage-findings qgate add --type lint-issue …`) and return the `triage_required` signal (Step 11d shape, `finding_type: lint-issue`) instead of logging `pass`.
+
+Unverified work therefore reports `pending`, never green — green is unreachable without the verdict artifact on a clean tree.
+
 ### Step 11c: Execute-Exit Verify Gate (One `verify` per Affected Bundle)
 
 Per-task verification runs each task's pre-stamped `verification.commands` — the derived ladder the deriver wrote at compose time (per-class `compile` / `test-compile` / `module-tests`, scoped to the deliverable's changed module). That ladder is the per-deliverable gate. The **execute-exit verify gate** is the single end-of-phase whole-bundle `verify` that fires exactly **once per affected bundle** at the FINAL state of execute, after every deliverable has settled — replacing both the per-task full suites and the retired holistic verification tasks. Running it once at the queue tail, rather than once per task, is the asymmetric-cost collapse: a whole-bundle `verify` re-runs the same suite no matter how many deliverables touched the bundle, so one run at the final state covers them all.
@@ -1162,6 +1176,8 @@ This gate runs after Step 11b's quality sweep and before Step 12.
      work --plan-id {plan_id} --level INFO \
      --message "[STATUS] (plan-marshall:phase-5-execute) Execute-exit verify for {bundle}: {pass|fail}"
    ```
+
+   The Step 11b **Green-report binding** applies verbatim — `pass` requires the verdict artifact plus the clean-tree observation.
 
 **Skip rule**: when the affected-bundle set is empty (no buildable footprint — e.g., a documentation-only plan whose changed paths resolve to no module), skip the gate entirely. The deriver already stamped zero Python commands on each such deliverable's per-task ladder, so there is no whole-bundle `verify` to run.
 
