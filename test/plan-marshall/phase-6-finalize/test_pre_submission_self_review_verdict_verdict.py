@@ -714,16 +714,13 @@ def test_simplify_names_both_honest_stops_with_evidence():
         f'A stop with no name is what a stall finding attaches to.'
     )
     assert 'Evidence:' in text, 'The named stops carry no matched evidence markers'
-    assert _STALL_ATTACHMENT_MARKER in text, (
-        'The shield rule does not bind stall findings to the named shapes'
-    )
+    assert _STALL_ATTACHMENT_MARKER in text, 'The shield rule does not bind stall findings to the named shapes'
 
 
 def test_simplify_stop_name_detector_fires_on_unnamed_prose():
     """Mutation guard: prose with no stop names fails the detector."""
     assert _simplify_stop_names('A run that halts records done.') == [], (
-        'The stop-name detector fired on prose naming no stop — it cannot tell '
-        'a named stop from an unnamed halt'
+        'The stop-name detector fired on prose naming no stop — it cannot tell a named stop from an unnamed halt'
     )
 
 
