@@ -607,6 +607,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status assert
 - `--phase` (required): Phase name (e.g., `6-finalize`)
 - `--step` (required): Step identifier within the phase
 - `--require-terminal` (optional): Escalate a missing terminal record to a `status: error` verdict instead of returning `recorded: false`. Two error branches are distinguished: `step_record_mismatched_key` when the queried step has no record BUT a terminal record exists under a different (near-miss) key in the same phase — the dispatched step recorded under the wrong key; `step_record_missing` when no terminal record exists under any key in the phase. The post-dispatch guard passes this flag so a missing record is a branchable failure verdict rather than a soft boolean.
+- `--min-firing-count` (optional, positive integer): Guard against a stale prior-firing record. A matched terminal record counts as recorded only when its `firing_count` reaches this floor (a record without the field counts as firing 1); below the floor the verdict is `step_record_missing` naming `expected_firing_count` vs `observed_firing_count`. The post-dispatch guard passes the pre-dispatch count + 1 on re-fires so a re-fired step that returned without marking cannot hide behind its earlier record. Omit for the legacy existence check. Every success payload carries the observed `firing_count` (`null` when nothing matched).
 
 **Output — recorded** (TOON):
 ```toon
@@ -644,7 +645,17 @@ finding_detail: status.metadata.phase_steps[6-finalize] has no terminal record f
 message: No terminal record for step 'automated-review' in phase '6-finalize': the dispatched step returned without recording a mark-step-done outcome (expected one of ['done', 'skipped', 'loop_back', 'failed']).
 ```
 
-The `finding_*` fields make the absent yield fileable: the dispatcher files them to the Q-Gate findings store (`manage-findings qgate add --type missing-yield …`) instead of merely logging the error, so a missing yield surfaces as a finding, never as silence. Exit code stays `0` — the guard branches on the TOON `error` field.
+The `finding_*` fields make the absent yield fileable: instead of merely logging the error, the dispatcher files them to the Q-Gate findings store so a missing yield surfaces as a finding, never as silence. Exit code stays `0` — the guard branches on the TOON `error` field. The filing call is exact — `qgate add --type` has no `missing-yield` member, so the dispatcher maps the verdict into the accepted vocabulary rather than passing the finding type through verbatim (which the parser rejects):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qgate add \
+  --plan-id {plan_id} --phase {phase} --source qgate --type triage \
+  --title "{finding_title}" --detail "{finding_detail}" \
+  --severity {finding_severity} --rule missing-yield \
+  --component "plan-marshall:phase-6-finalize"
+```
+
+`--type triage` (the verdict is a triage event: the operator dispositions it between finalize boundaries), `--rule missing-yield` (preserves the discriminator the `--type` enum cannot carry), `--severity` forwarded from `finding_severity`, `--title`/`--detail` verbatim from `finding_title`/`finding_detail`. The same mapping applies to the stale-firing `step_record_missing` variant, whose `finding_*` fields carry the expected-vs-observed firing counts.
 
 **Output — mismatched key under `--require-terminal`** (TOON): the queried step has no record, but a terminal record exists under a near-miss key in the same phase.
 ```toon

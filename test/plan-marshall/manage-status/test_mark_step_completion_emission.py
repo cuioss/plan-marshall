@@ -98,7 +98,7 @@ def test_finalize_mark_step_done_emits_the_fused_completion_line(plan_context):
     plan_id = 'fuse-emit'
     _make_plan(plan_id)
 
-    result = _mark(plan_id, '6-finalize', 'step-a', 'done')
+    result = _mark(plan_id, '6-finalize', 'step-a', 'done', display_detail='test detail')
 
     assert result['status'] == 'success', result
     lines = _completion_lines(plan_id)
@@ -112,8 +112,8 @@ def test_fused_line_fires_for_every_terminal_outcome(plan_context):
     plan_id = 'fuse-outcomes'
     _make_plan(plan_id)
 
-    assert _mark(plan_id, '6-finalize', 'step-b', 'skipped')['status'] == 'success'
-    assert _mark(plan_id, '6-finalize', 'step-c', 'failed')['status'] == 'success'
+    assert _mark(plan_id, '6-finalize', 'step-b', 'skipped', display_detail='test detail')['status'] == 'success'
+    assert _mark(plan_id, '6-finalize', 'step-c', 'failed', display_detail='test detail')['status'] == 'success'
 
     lines = _completion_lines(plan_id)
     assert len(lines) == 2, f'skipped + failed must each emit, got {lines}'
@@ -126,12 +126,13 @@ def test_no_completion_log_suppresses_the_re_stamp_emission(plan_context):
     plan_id = 'fuse-suppress'
     _make_plan(plan_id)
 
-    assert _mark(plan_id, '6-finalize', 'step-d', 'done')['status'] == 'success'
+    assert _mark(plan_id, '6-finalize', 'step-d', 'done', display_detail='test detail')['status'] == 'success'
     restamp = _mark(
         plan_id,
         '6-finalize',
         'step-d',
         'done',
+        display_detail='test detail',
         head_at_completion=_real_head(),
         no_completion_log=True,
     )
@@ -160,8 +161,8 @@ def test_unchanged_recall_does_not_re_emit(plan_context):
     plan_id = 'fuse-idempotent'
     _make_plan(plan_id)
 
-    assert _mark(plan_id, '6-finalize', 'step-f', 'done')['status'] == 'success'
-    recall = _mark(plan_id, '6-finalize', 'step-f', 'done')
+    assert _mark(plan_id, '6-finalize', 'step-f', 'done', display_detail='test detail')['status'] == 'success'
+    recall = _mark(plan_id, '6-finalize', 'step-f', 'done', display_detail='test detail')
     assert recall['changed'] is False, 'an identical re-call must be a no-op write'
 
     lines = _completion_lines(plan_id)
@@ -191,8 +192,8 @@ def test_a_failed_firing_and_a_done_firing_are_distinguishable(plan_context):
     _make_plan('fuse-outcome-done')
     _make_plan('fuse-outcome-failed')
 
-    assert _mark('fuse-outcome-done', '6-finalize', 'step-z', 'done')['status'] == 'success'
-    assert _mark('fuse-outcome-failed', '6-finalize', 'step-z', 'failed')['status'] == 'success'
+    assert _mark('fuse-outcome-done', '6-finalize', 'step-z', 'done', display_detail='test detail')['status'] == 'success'
+    assert _mark('fuse-outcome-failed', '6-finalize', 'step-z', 'failed', display_detail='test detail')['status'] == 'success'
 
     done_lines = _completion_lines('fuse-outcome-done')
     failed_lines = _completion_lines('fuse-outcome-failed')

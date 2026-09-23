@@ -234,6 +234,8 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
   --display-detail "Simplify: {applied_edits} edits, {findings_count} findings"
 ```
 
+On the `clean-sweep` sub-case (`applied_edits == 0`, `findings == []`, Step 3b verdict `clear`), the stop name rides the detail so the record is stop-distinguishable without parsing prose for counts: render the detail as `"Simplify: 0 edits, 0 findings (stop: clean-sweep)"`.
+
 **Detail variant — a review commitment was reverted (Step 3b `conflict`).** When Step 3b reverted at least one deletion, the default detail reports only the surviving edits and is silent on the fact that the pass tried to reverse a review decision. Use the variant below instead, so the conflict is legible in the step record rather than only in the return TOON:
 
 ```text
@@ -259,8 +261,8 @@ commit_message: "chore(simplify): collapse accidental complexity in {plan_id}"
 
 A run that correctly halts with nothing further to claim stops under one of TWO names, each with the matched evidence that proves idleness was correct. A stop matching a named shape passes without a stall finding; a stall finding against a simplify run must show which named shape fails and how:
 
-- **`empty-footprint`** — `compute-footprint` returned no `files`. The step marks `done` with `display_detail "Simplify: no changeset"` (see Error Handling). Evidence: the footprint call itself, `files == []`. There was no surface to review, so there was nothing to stall on.
-- **`clean-sweep`** — the full sweep ran over a non-empty footprint with zero `applied_edits`, zero `findings[]`, and a `clear` reconciliation verdict. The step marks `done` with the counts in `display_detail`. Evidence: `applied_edits == 0`, `findings == []`, Step 3b verdict `clear`. The review ran and found no surplus; running it again would not change that.
+- **`empty-footprint`** — `compute-footprint` returned no `files`. The step marks `done` with `display_detail "Simplify: no changeset (stop: empty-footprint)"` (see Error Handling). Evidence: the footprint call itself, `files == []`. There was no surface to review, so there was nothing to stall on.
+- **`clean-sweep`** — the full sweep ran over a non-empty footprint with zero `applied_edits`, zero `findings[]`, and a `clear` reconciliation verdict. The step marks `done` with `display_detail "Simplify: {applied_edits} edits, {findings_count} findings (stop: clean-sweep)"`. Evidence: `applied_edits == 0`, `findings == []`, Step 3b verdict `clear`. The review ran and found no surplus; running it again would not change that.
 
 Anything else — a non-empty footprint with no review performed, edits applied but unreported, a `conflict` reconciliation left unrecorded — matches NEITHER name and is not a stop. Name the stop in the record; an unnamed halt is what a stall finding attaches to.
 
@@ -268,7 +270,7 @@ Anything else — a non-empty footprint with no review performed, edits applied 
 
 | Scenario | Action |
 |----------|--------|
-| Live footprint empty (`compute-footprint` returns no `files`) | Mark `done` with `display_detail "Simplify: no changeset"` — nothing to review |
+| Live footprint empty (`compute-footprint` returns no `files`) | Mark `done` with `display_detail "Simplify: no changeset (stop: empty-footprint)"` and `--fact stop=empty-footprint` — nothing to review |
 | `simplicity` field absent | Default to the `lean` posture description and proceed |
 | Dispatched agent returns an error TOON | Mark `failed` with the agent's error in `display_detail`; finalize halts per the dispatcher's error handling |
 | `review_commitments reconcile` returns `status: error` | UNKNOWN verdict, never a clear pass. Log one `[WARNING]`, revert nothing, and record `review_commitment_reconciliation: unknown` in `findings[]` (Step 3b). Do NOT mark the step `failed` — the reconciliation is a report, not a gate |

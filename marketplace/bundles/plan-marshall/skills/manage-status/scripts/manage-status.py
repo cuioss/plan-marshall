@@ -508,7 +508,10 @@ def main() -> int:
             'verdict, and the verdict carries reportable finding fields '
             '(finding_type missing-yield, finding_severity, finding_title, '
             'finding_detail) so the absent yield can be filed to the Q-Gate '
-            'findings store. Performs zero writes to status.json.'
+            'findings store. With --min-firing-count N, a matched record '
+            'below firing N fails the same way, so a re-fired step that '
+            'returned without marking cannot hide behind its prior firing '
+            'record. Performs zero writes to status.json.'
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         allow_abbrev=False,
@@ -523,6 +526,19 @@ def main() -> int:
         help=(
             'Escalate a missing terminal record to status: error, '
             'error: step_record_missing instead of returning recorded: false.'
+        ),
+    )
+    assert_step_parser.add_argument(
+        '--min-firing-count',
+        dest='min_firing_count',
+        type=int,
+        default=None,
+        help=(
+            'Guard against a stale prior-firing record: a matched terminal '
+            'record counts as recorded only when its firing_count reaches '
+            'this floor (records without the field count as firing 1). '
+            'Below the floor the verdict is step_record_missing naming the '
+            'expected vs observed firing. Omit for the legacy existence check.'
         ),
     )
     assert_step_parser.set_defaults(func=cmd_assert_step_recorded)

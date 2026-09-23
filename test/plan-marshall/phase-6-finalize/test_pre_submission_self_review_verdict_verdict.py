@@ -686,9 +686,29 @@ def _simplify_text() -> str:
     return text
 
 
+_STOP_BULLET = re.compile(r'^-\s+\*\*`?([a-z][a-z0-9-]*)`?\*\*', re.MULTILINE)
+
+_NAMED_STOPS_HEADING = '## Named honest stops'
+
+
+def _named_stops_section(text: str) -> str:
+    """The named-stops section body, or empty when the heading is absent."""
+    _heading, _, after = text.partition(_NAMED_STOPS_HEADING)
+    if not after:
+        return ''
+    section, _, _rest = after.partition('\n## ')
+    return section
+
+
 def _simplify_stop_names(text: str) -> list[str]:
-    """The honest-stop names the simplify doc actually declares."""
-    return [name for name in _STOP_NAMES if f'`{name}`' in text]
+    """The honest-stop names the simplify doc actually declares.
+
+    Parses the stop bullets under the named-stops section rather than
+    checking membership in the hardcoded expectation: a third declared name
+    must surface here as an observed difference, not pass silently because
+    the detector only looked for the two it already knew.
+    """
+    return _STOP_BULLET.findall(_named_stops_section(text))
 
 
 def _surfacer_controls_section(text: str) -> str:

@@ -393,6 +393,28 @@ def cmd_mark_step_done(args: argparse.Namespace) -> dict | None:
     head_at_completion = getattr(args, 'head_at_completion', None)
     loop_back_target = getattr(args, 'loop_back_target', None)
 
+    # 6-finalize yields MUST carry a progress narrative: an omitted, empty,
+    # or whitespace-only display_detail passes persistence today and leaves
+    # the record with no account of what the step did — an undocumented
+    # yield the new phase-6 contract forbids from entering the record.
+    # Refused before anything is persisted, for phase 6-finalize only;
+    # every other phase retains optional details. There is no --force
+    # override: --force governs outcome conflicts, not well-formedness.
+    if phase == '6-finalize' and (display_detail is None or not display_detail.strip()):
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'display_detail_required',
+            'phase': phase,
+            'step': step,
+            'message': (
+                '--display-detail is required for phase 6-finalize: an omitted, '
+                'empty, or whitespace-only detail was supplied and nothing was '
+                'written. Describe what the step did in one ASCII line — the '
+                'progress narrative is mandatory on every 6-finalize yield.'
+            ),
+        }
+
     facts, bad_fact_token = _parse_facts(getattr(args, 'fact', None))
     if bad_fact_token is not None:
         return {
@@ -681,7 +703,7 @@ def cmd_mark_step_done(args: argparse.Namespace) -> dict | None:
             'previous_loop_back_target': previous_loop_back_target,
             'previous_facts': previous_facts,
         },
-        head_derivation_warning,
+        combined_warning,
     )
 
 

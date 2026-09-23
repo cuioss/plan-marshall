@@ -14,6 +14,10 @@ the silent "agent returned ``status: success`` but skipped its mandated
 
 Without ``--require-terminal`` the verb always returns ``status: success`` and
 reports the boolean ``recorded`` (plus the matched ``outcome`` or ``null``).
+Every success payload also carries ``firing_count`` — the record's
+``firing_count`` field when present, else ``1`` for a terminal record written
+before firing history existed, else ``None`` when no record matched. The
+count lets a dispatcher tell a first firing's record from a re-fire's.
 
 With ``--require-terminal`` a missing terminal record is escalated to an error
 verdict the dispatcher can branch on directly. Two error branches are
@@ -55,6 +59,26 @@ def _terminal_outcome(entry: Any) -> str | None:
         if isinstance(candidate, str) and candidate in VALID_OUTCOMES:
             return candidate
     return None
+
+
+def _effective_firing_count(entry: Any) -> int | None:
+    """Return the firing count a terminal record represents, or ``None``.
+
+    A record carrying an integer ``firing_count`` reports it verbatim. A
+    terminal record WITHOUT the field predates firing history — it is the
+    first (and so far only) firing, so it counts as ``1``. A missing or
+    non-terminal entry counts as nothing (``None``).
+    """
+    if not isinstance(entry, dict):
+        return None
+    if _terminal_outcome(entry) is None:
+        return None
+    raw = entry.get('firing_count')
+    if isinstance(raw, bool):
+        return None
+    if isinstance(raw, int):
+        return raw
+    return 1
 
 
 def _is_near_miss(s1: str, s2: str) -> bool:
@@ -117,6 +141,14 @@ def cmd_assert_step_recorded(args: argparse.Namespace) -> dict | None:
             'error': 'invalid_argument',
             'message': '--phase and --step are required and must be non-empty',
         }
+    min_firing_count = getattr(args, 'min_firing_count', None)
+    if min_firing_count is not None and (not isinstance(min_firing_count, int) or min_firing_count < 1):
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'invalid_argument',
+            'message': '--min-firing-count must be a positive integer when supplied',
+        }
 
     metadata: dict[str, Any] = status.get('metadata') or {}
     phase_steps: dict[str, Any] = metadata.get('phase_steps') or {}
@@ -140,8 +172,44 @@ def cmd_assert_step_recorded(args: argparse.Namespace) -> dict | None:
                 break
     outcome = _terminal_outcome(matched_entry)
     recorded = outcome is not None
+    firing_count = _effective_firing_count(matched_entry)
+    # A re-fired step whose leaf returned WITHOUT marking leaves the PRIOR
+    # firing's terminal record in place; a bare existence check would read
+    # that stale record as proof the current firing yielded. When the caller
+    # names the firing it is guarding (the pre-dispatch count + 1), a record
+    # below that floor is the same absence wearing an older firing's clothes.
+    stale_firing = min_firing_count is not None and (firing_count is None or firing_count < min_firing_count)
 
-    if args.require_terminal and not recorded:
+    if args.require_terminal and (not recorded or stale_firing):
+        if recorded and stale_firing:
+            return {
+                'status': 'error',
+                'plan_id': args.plan_id,
+                'error': 'step_record_missing',
+                'phase': phase,
+                'step': step,
+                'recorded': False,
+                'outcome': None,
+                'expected_firing_count': min_firing_count,
+                'observed_firing_count': firing_count,
+                'finding_type': 'missing-yield',
+                'finding_severity': 'error',
+                'finding_title': (
+                    f"Missing yield: step '{step}' in phase '{phase}' has no record "
+                    f'from firing {min_firing_count} or later'
+                ),
+                'finding_detail': (
+                    f'status.metadata.phase_steps[{phase}][{step!r}] carries '
+                    f'{outcome!r} from firing {firing_count}, below the guarded '
+                    f'minimum {min_firing_count} — the re-fired step returned '
+                    'without recording a terminal outcome for the current firing.'
+                ),
+                'message': (
+                    f'No terminal record from firing {min_firing_count} or later '
+                    f'for step {step!r} in phase {phase!r}: the stored '
+                    f'{outcome!r} belongs to firing {firing_count}.'
+                ),
+            }
         # Near-miss detection: scan the same phase for an orphan terminal record
         # under a *genuine* near-miss key before declaring the record truly absent.
         # Bare↔``default:`` variants already reconciled to a canonical MATCH above,
@@ -203,6 +271,7 @@ def cmd_assert_step_recorded(args: argparse.Namespace) -> dict | None:
         'plan_id': args.plan_id,
         'phase': phase,
         'step': step,
-        'recorded': recorded,
-        'outcome': outcome,
+        'recorded': recorded and not stale_firing,
+        'outcome': outcome if not stale_firing else None,
+        'firing_count': firing_count,
     }

@@ -161,6 +161,7 @@ def _args(
     outcome: str,
     head_at_completion: str | None = None,
     loop_back_target: str | None = None,
+    display_detail: str | None = 'test detail',
 ) -> Namespace:
     return Namespace(
         plan_id=plan_id,
@@ -168,7 +169,7 @@ def _args(
         step=step,
         outcome=outcome,
         force=False,
-        display_detail=None,
+        display_detail=display_detail,
         head_at_completion=head_at_completion,
         loop_back_target=loop_back_target,
         fact=None,
@@ -295,7 +296,9 @@ def test_step_outside_the_finalize_population_is_written(plan_context):
 
     ``mark-step-done`` records steps for every phase. A step simply absent from
     the finalize-step population is a RESOLVED "not head-dependent", not an
-    unresolved derivation, so it neither refuses nor warns.
+    unresolved derivation, so it neither refuses nor warns on the head axis.
+    (The roster derivation warns separately: fixture plans carry no execution
+    manifest, so the CLOSED yield-name roster is underivable here.)
     """
     plan_id = 'head-anchor-foreign-step'
     _make_plan(plan_id)
@@ -303,7 +306,7 @@ def test_step_outside_the_finalize_population_is_written(plan_context):
     result = cmd_mark_step_done(_args(plan_id, 'some-phase-5-step', 'done'))
 
     assert result['status'] == 'success'
-    assert 'warning' not in result
+    assert 'manifest' in result.get('warning', '')
 
 
 # ---------------------------------------------------------------------------
@@ -357,12 +360,14 @@ def test_unresolvable_derivation_warns_and_still_writes(plan_context, monkeypatc
     assert step in _recorded_steps(plan_id)
 
 
-def test_ordinary_success_carries_no_warning_key(plan_context):
-    """The warning is omitted entirely when the derivation resolved.
+def test_resolved_head_derivation_carries_no_head_warning(plan_context):
+    """A resolved head derivation adds no head-axis warning.
 
-    Pairs with the case above: without it, a handler that attached a warning to
-    every record would satisfy the warning assertion while making the field
-    meaningless.
+    Pairs with the underivable case above: without it, a handler that attached
+    a warning to every record would satisfy the warning assertion while making
+    the field meaningless. The roster derivation warns separately here
+    (fixture plans carry no execution manifest), so the assertion pins the
+    head axis — not the absence of every warning.
     """
     plan_id = 'head-anchor-no-warning'
     _make_plan(plan_id)
@@ -371,4 +376,5 @@ def test_ordinary_success_carries_no_warning_key(plan_context):
     result = cmd_mark_step_done(_args(plan_id, step, 'done', head_at_completion=_ANCHOR()))
 
     assert result['status'] == 'success'
-    assert 'warning' not in result
+    assert 'manifest' in result.get('warning', ''), result
+    assert 'implementor' not in result.get('warning', ''), result
