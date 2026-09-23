@@ -11,13 +11,19 @@ which AUGMENTS these numbers; this script never reasons about comment content.
 
 Classification rules (kind -> actionability):
 - kind=inline                -> ACTIONABLE
-- kind=review_body           -> ACTIONABLE when substantive; META when the BODY
-                                opens with a status-summary line the reviewer's
-                                registry record declares in
+- kind=review_body           -> ACTIONABLE when substantive; META only when the
+                                BODY opens with a status-summary line the
+                                reviewer's registry record declares in
                                 `review_body_summary_patterns` (CodeRabbit's
-                                "Actionable comments posted: N"). The signature and
-                                the reviewer identity are registry data, not
-                                literals here — see `_is_status_summary`
+                                "Actionable comments posted: N") AND what remains
+                                once that line is stripped is the pure-summary
+                                shape — collapsed <details> blocks and layout, no
+                                review content. A body that opens with the status
+                                line and carries review content below it is
+                                ACTIONABLE. The signature and the reviewer identity
+                                are registry data, not literals here — see
+                                `_is_status_summary`, which delegates to
+                                `review_gate_delta.is_status_summary`
 - kind=issue_comment         -> META/non-actionable (CodeRabbit walkthrough/poem)
 - record lacking kind        -> bucketed as `unknown` kind, counted in raw_total
                                 only (never in actionable_count)

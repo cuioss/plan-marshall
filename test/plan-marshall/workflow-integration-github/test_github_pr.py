@@ -24,6 +24,12 @@ names each connection that was not. The capped and complete cases drive the REAL
 provider parse path (``github_ops.fetch_pr_comments_data``) through a stubbed
 ``run_graphql``, so the pass-through is exercised end to end.
 
+The shared noise layer reads only the commenter's OWN bare prose — fenced blocks,
+blockquoted lines and ``<details>`` blocks are removed first — and drops a comment
+only when a whole-comment acknowledgment pattern covers all of that prose within the
+derived length bound. A phrase quoted in a block, or an AI-agent block riding
+beside a genuine finding, never makes the comment an acknowledgment.
+
 The findings store is REAL (isolated via the autouse ``plan_context``
 ``PLAN_BASE_DIR`` sandbox); only the GitHub provider surface and the identity read
 are monkeypatched, and the raw ``run_gh`` seam is stubbed to fail so no case can
@@ -48,6 +54,8 @@ PLAN_IDS: tuple[str, ...] = (
     'gh-pr-identity-plain',
     'gh-pr-identity-self',
     'gh-pr-identity-unresolved',
+    'gh-pr-noise-ai-agent-block',
+    'gh-pr-noise-blockquote-e2e',
     'gh-pr-own-trigger-bot-quote',
     'gh-pr-own-trigger-excluded',
     'gh-pr-own-trigger-foreign-exact',
@@ -506,3 +514,154 @@ def test_provider_result_without_a_completeness_claim_is_not_complete(plan_conte
     assert result['fetch_complete'] is False
     assert result['capped_connections'] == []
     assert result['count_stored'] == 1
+
+
+# ============================================================================
+# Shared noise layer: whole-comment acknowledgments over the commenter's own prose
+# ============================================================================
+
+#: The four phrases the shared layer used to match as UNANCHORED substrings, each in
+#: the whole-comment form its rewritten entry recognises when it stands alone.
+_ACK_PHRASES = ('looks good', 'ship it', 'no objection', 'dependabot[bot]')
+
+_GENUINE_FINDING = 'The retry loop never resets its counter; reset it after a success.'
+
+
+def _ai_agent_block(phrase):
+    """A CodeRabbit-style collapsed AI-agent prompt block whose quoted text carries ``phrase``."""
+    return (
+        '<details>\n'
+        '<summary>Prompt for AI Agents</summary>\n\n'
+        '```\n'
+        f'In src/retry.py the reviewer said "{phrase}" about the backoff, but verify the counter reset.\n'
+        '```\n\n'
+        '</details>'
+    )
+
+
+@pytest.mark.parametrize('phrase', _ACK_PHRASES)
+def test_finding_beside_an_ai_agent_block_quoting_an_acknowledgment_is_not_noise(phrase):
+    """Fail-first case: a genuine finding is never discarded for what a collapsed block quotes.
+
+    Before the fix the shared layer searched the WHOLE lowered body, so the phrase
+    inside the AI-agent block discarded the finding as acknowledgment noise.
+    """
+    body = f'{_GENUINE_FINDING}\n\n{_ai_agent_block(phrase)}'
+
+    assert not github_pr._is_obvious_noise(body, 'coderabbit')
+    assert not github_pr._is_obvious_noise(body, None)
+    # Matched control: the same finding without the block is not noise either.
+    assert not github_pr._is_obvious_noise(_GENUINE_FINDING, 'coderabbit')
+
+
+@pytest.mark.parametrize('phrase', _ACK_PHRASES)
+@pytest.mark.parametrize(
+    'wrap',
+    [
+        pytest.param(lambda p: f'```\n{p}\n```', id='fenced'),
+        pytest.param(lambda p: f'> {p}', id='blockquote'),
+        pytest.param(lambda p: f'<details>{p}</details>', id='details'),
+    ],
+)
+def test_a_phrase_quoted_in_a_block_at_or_below_the_bound_survives(phrase, wrap):
+    """Adversarial: short enough for the length guard, yet the phrase is not the commenter's prose.
+
+    Every body here is at or below the derived length bound, so only the coverage
+    guard — the removal of quoted and collapsed regions — keeps it out of the drop.
+    """
+    body = wrap(phrase)
+    assert len(body) <= github_pr._ACKNOWLEDGMENT_MAX_LENGTH, 'the adversarial case must sit inside the length bound'
+
+    assert not github_pr._is_obvious_noise(body, None)
+    assert not github_pr._is_obvious_noise(body, 'coderabbit')
+
+
+@pytest.mark.parametrize('body', ['Looks good to me', 'Ship it!', 'No objection.', 'dependabot[bot]', 'LGTM'])
+def test_a_bare_acknowledgment_is_still_dropped(body):
+    """Matched positive control: a comment that IS an acknowledgment, as a whole, stays noise."""
+    assert github_pr._is_obvious_noise(body, None)
+
+
+def test_an_opening_acknowledgment_beyond_the_length_bound_is_not_noise():
+    """The length guard: an opening "LGTM, but ..." cannot carry a long finding out of the store."""
+    body = 'LGTM, but the retry loop never resets its counter after a success, so the backoff grows forever.'
+    assert len(body) > github_pr._ACKNOWLEDGMENT_MAX_LENGTH
+
+    assert not github_pr._is_obvious_noise(body, None)
+
+
+def test_an_acknowledgment_phrase_inside_a_larger_comment_is_not_noise():
+    """The coverage guard: a pattern must cover the WHOLE prose, never a phrase inside it."""
+    body = 'Mostly fine; no objection to the rename.'
+
+    assert not github_pr._is_obvious_noise(body, None)
+
+
+def test_the_body_digest_edit_term_ignores_line_structure():
+    """The dedup digest is computed over the flattened body the provider used to deliver.
+
+    The fetch now keeps a body's line structure, so a stored comment keyed on a body
+    digest must re-dedupe under the new shape instead of re-filing.
+    """
+    multi_line = {'body': 'Guard the bound.\n\tThen re-run.'}
+    flattened = {'body': 'Guard the bound.  Then re-run.'}
+
+    assert github_pr._comment_edit_term(multi_line) == github_pr._comment_edit_term(flattened)
+
+
+def test_blockquoted_acknowledgment_over_a_finding_is_filed_end_to_end(plan_context, monkeypatch):
+    """End to end over the REAL provider parse path: the line structure reaches the producer.
+
+    Fail-first case: the provider flattened every newline before the producer saw the
+    body, so the blockquote was invisible and the quoted ``Looks good to me`` dropped
+    the whole comment as noise.
+    """
+    plan_id = 'gh-pr-noise-blockquote-e2e'
+    body = f'> Looks good to me\n\n{_GENUINE_FINDING}'
+    _patch_graphql_provider(monkeypatch, issue_comments=_page([_issue_comment_node('ic-quote', body)]))
+
+    result = _run_fetch(plan_id)
+
+    assert result['count_skipped_noise'] == 0
+    assert result['count_stored'] == 1
+    assert _stored_comment_ids(plan_id) == ['ic-quote']
+
+
+def test_ai_agent_block_finding_is_filed_end_to_end(plan_context, monkeypatch):
+    """A CodeRabbit inline finding carrying an AI-agent block that quotes ``looks good`` is filed."""
+    plan_id = 'gh-pr-noise-ai-agent-block'
+    body = f'{_GENUINE_FINDING}\n\n{_ai_agent_block("looks good")}'
+    _patch_provider(
+        monkeypatch,
+        [
+            {
+                'id': 'cr-agent',
+                'author': 'coderabbitai',
+                'thread_id': 'PRRT_agent',
+                'kind': 'inline',
+                'body': body,
+                'path': 'src/retry.py',
+                'line': 7,
+                'resolved': False,
+            }
+        ],
+    )
+
+    result = _run_fetch(plan_id)
+
+    assert result['count_skipped_noise'] == 0
+    assert result['count_stored'] == 1
+    assert _stored_comment_ids(plan_id) == ['cr-agent']
+
+
+def test_the_display_path_flattens_while_the_data_path_keeps_lines(monkeypatch):
+    """``fetch_comments`` (the producer's input) keeps newlines; ``fetch-comments`` (display) flattens them."""
+    body = f'> Looks good to me\n\n{_GENUINE_FINDING}'
+    _patch_graphql_provider(monkeypatch, issue_comments=_page([_issue_comment_node('ic-lines', body)]))
+
+    data = github_pr.fetch_comments(301)
+    display = github_pr.cmd_fetch_comments(argparse.Namespace(pr=301, unresolved_only=False))
+
+    assert data['comments'][0]['body'] == body
+    assert '\n' not in display['comments'][0]['body']
+    assert display['comments'][0]['body'] == body.replace('\n', ' ')

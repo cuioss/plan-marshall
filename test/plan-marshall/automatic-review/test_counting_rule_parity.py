@@ -110,6 +110,16 @@ _CORPUS: tuple[tuple[str, dict, bool], ...] = (
         False,
     ),
     (
+        'a status line followed by review content is actionable',
+        {
+            'author': 'coderabbitai',
+            'bot_kind': 'coderabbit',
+            'kind': 'review_body',
+            'body': 'Actionable comments posted: 1\n\nThe guard coerces UNKNOWN into a positive.',
+        },
+        True,
+    ),
+    (
         'a review that merely mentions the phrase mid-body is actionable',
         {
             'author': 'coderabbitai',

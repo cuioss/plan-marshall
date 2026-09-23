@@ -1470,8 +1470,12 @@ def cmd_pr_reviews(args: argparse.Namespace) -> dict:
 
 
 def cmd_pr_comments(args: argparse.Namespace) -> dict:
-    """Handle 'pr comments' subcommand - fetch inline code review comments."""
-    return github_ops.fetch_pr_comments_data(args.pr_number, args.unresolved_only)
+    """Handle 'pr comments' subcommand - fetch inline code review comments.
+
+    The display path: each body is flattened to one line so every comment stays one
+    row of the printed table (``github_ops.flatten_comment_bodies``).
+    """
+    return github_ops.flatten_comment_bodies(github_ops.fetch_pr_comments_data(args.pr_number, args.unresolved_only))
 
 
 def cmd_pr_wait_for_comments(args: argparse.Namespace) -> dict:

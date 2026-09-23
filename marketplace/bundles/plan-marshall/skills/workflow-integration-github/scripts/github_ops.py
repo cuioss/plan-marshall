@@ -606,11 +606,42 @@ def _coverage_record(connection: str, observed: int, cap: int, total: int | None
     return {'connection': connection, 'observed': observed, 'cap': cap, 'total': total, 'capped': capped}
 
 
+def flatten_comment_body(body: str) -> str:
+    """Return ``body`` on one line: every tab and newline replaced by a space.
+
+    The DISPLAY form of a comment body — what ``pr comments`` prints, so each comment
+    stays one row of the output table. It is also the form the filing dedup's
+    body-digest edit term is computed over, so a stored comment's key does not move
+    with the line structure the data path now preserves.
+    """
+    return body.replace('\t', ' ').replace('\n', ' ')
+
+
+def flatten_comment_bodies(result: dict) -> dict:
+    """Return a ``fetch_pr_comments_data`` result whose comment bodies are display-flattened.
+
+    The input is not mutated; a non-success result is returned unchanged.
+    """
+    if result.get('status') != 'success':
+        return result
+    flattened = dict(result)
+    flattened['comments'] = [
+        {**comment, 'body': flatten_comment_body(str(comment.get('body') or ''))}
+        for comment in result.get('comments') or []
+    ]
+    return flattened
+
+
 def fetch_pr_comments_data(pr_number: int, unresolved_only: bool = False) -> dict:
     """Fetch PR review comments, returning structured dict.
 
     Returns dict with 'status' key ('success' or 'error').
     Importable by other scripts for direct data access without subprocess.
+
+    Each record's ``body`` is the text the provider returned, line structure intact —
+    a producer classifying the comment reads structure (a blockquoted line, a fenced
+    block) that flattening would destroy. The display path flattens it
+    (:func:`flatten_comment_bodies`).
 
     Every record kind (``inline`` / ``review_body`` / ``issue_comment``) carries
     ``updated_at`` beside ``created_at`` — the edit timestamp the provider
@@ -787,7 +818,10 @@ def fetch_pr_comments_data(pr_number: int, unresolved_only: bool = False) -> dic
     except (TypeError, AttributeError) as e:
         return {'status': 'error', 'operation': 'pr_comments', 'error': f'Failed to parse response: {e}'}
 
-    # Build result
+    # Build result. The body keeps its line structure: a producer classifying the
+    # comment needs it (a blockquote is only recognisable at the start of a line).
+    # Flattening is a DISPLAY concern and happens on the display path only
+    # (``flatten_comment_body``).
     unresolved_count = sum(1 for c in comments if not c['resolved'])
     comment_list = [
         {
@@ -795,7 +829,7 @@ def fetch_pr_comments_data(pr_number: int, unresolved_only: bool = False) -> dic
             'id': c['id'],
             'thread_id': c['thread_id'],
             'author': c['author'],
-            'body': c['body'].replace('\t', ' ').replace('\n', ' '),
+            'body': c['body'],
             'path': c['path'],
             'line': c['line'],
             'resolved': c['resolved'],

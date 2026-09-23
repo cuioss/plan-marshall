@@ -112,6 +112,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 
 import bot_registry
@@ -227,10 +228,32 @@ def resolve_bot_kind(record: dict) -> str:
     return bot_registry.bot_kind_for_login(str(record.get('author') or ''))
 
 
+#: Innermost ``<details>`` block (one containing no further opening tag) — the
+#: collapsed summary block a status summary carries below its status line. Removed
+#: repeatedly so nested blocks peel from the inside out.
+_INNERMOST_DETAILS_BLOCK = re.compile(r'<details\b[^>]*>(?:(?!<details\b)[\s\S])*?</details\s*>', re.IGNORECASE)
+_HTML_COMMENT = re.compile(r'<!--[\s\S]*?-->')
+
+
+def _carries_review_content(text: str) -> bool:
+    """True when ``text`` holds anything beyond collapsed summary blocks and markup.
+
+    Closed ``<details>`` blocks and HTML comments are removed; what is left counts as
+    review content when it carries any letter or digit. Separator rules, stray
+    emphasis and blank lines are layout, not a review claim.
+    """
+    previous = None
+    while previous != text:
+        previous = text
+        text = _INNERMOST_DETAILS_BLOCK.sub(' ', text)
+    text = _HTML_COMMENT.sub(' ', text)
+    return any(ch.isalnum() for ch in text)
+
+
 def is_status_summary(record: dict) -> bool:
     """True when a ``review_body`` record is the reviewer's META status summary.
 
-    Three properties, each load-bearing:
+    Four properties, each load-bearing:
 
     1. **The signature comes from the registry** (``review_body_summary_patterns``),
        keyed by :func:`resolve_bot_kind`. No login and no bot-kind literal appears
@@ -239,25 +262,30 @@ def is_status_summary(record: dict) -> bool:
     2. **It is matched against the BODY**, via :data:`_BODY_FIELDS`. Matching
        ``title`` / ``detail`` — which the producer builds from structured metadata
        and which never contain the comment text — is a carve-out that cannot fire.
-    3. **The body must BEGIN with the pattern**, after leading whitespace and
-       markdown emphasis are stripped. A status summary is a body that *opens* with
-       its status line; a genuine review that merely mentions the phrase further down
-       is not one.
+    3. **The status line must OPEN the body**, after leading whitespace and markdown
+       emphasis are stripped. A genuine review that merely mentions the phrase further
+       down has no status line to strip and is counted.
+    4. **The status line is stripped, then what REMAINS is classified.** The opening
+       line carrying the registry signature is removed; the body is meta only when
+       the rest is the pure-summary shape — nothing but its collapsed ``<details>``
+       summary blocks and layout (:func:`_carries_review_content`). A body that
+       opens with the status line and carries review content below it is a
+       substantive ``review_body`` and is counted.
 
-    **Why begins-with and not "the status line is the only line".** An earlier
-    attempt tested whether any later line followed, which inverted the result on both
-    realistic shapes: a real summary is ``**Actionable comments posted: 3**`` followed
-    by a details block, so it was COUNTED, while a one-line body carrying the phrase
-    plus same-line substance was DROPPED. Line position does not carry "is there
-    review content"; opening position does carry "is this a status line".
+    **Why strip-then-classify and not begins-with.** A begins-with test classified
+    the whole body by its first line, so a genuine review that opens with
+    ``Actionable comments posted: N`` and carries its findings below that line was
+    dropped from the count — the direction that flatters the gates. Opening position
+    identifies the status LINE; only the rest of the body can say whether there is a
+    review under it.
 
-    **Known residual, stated rather than hidden.** A genuine review whose body opens
-    by quoting the phrase and continues on the same line is still classified meta.
-    That under-counts by at most one finding per reviewer per PR, and it is the
-    direction that flatters the gates — so it is a real, bounded cost, accepted
-    because the alternative (matching nowhere, or anywhere) is wrong on the far more
-    common pure-summary shape. Narrowing it further needs a content predicate this
-    text match cannot supply; the registry's ``contentless_review_markers`` /
+    **Known residual, stated rather than hidden.** The stripped unit is the whole
+    opening LINE, so review text on the SAME line as the status signature is removed
+    with it and that body is still classified meta. Bodies the provider delivered
+    flattened onto one line are in this shape. It under-counts by at most one finding
+    per reviewer per PR, in the direction that flatters the gates, and it is accepted
+    because a finer split of the status line needs a content predicate this text
+    match cannot supply; the registry's ``contentless_review_markers`` /
     ``actionable_content_markers`` pair is the mechanism for that, and CodeRabbit
     declares neither today.
 
@@ -269,10 +297,14 @@ def is_status_summary(record: dict) -> bool:
     # Normalise BOTH sides of a registry comparison (the project's rule — see
     # `github_pr._is_contentless_boilerplate`): a padded registry entry must not
     # silently disable the carve-out, and an empty entry must not match everything.
-    opening = body.lstrip().lstrip('*_# ').lower()
+    opening = body.lstrip().lstrip('*_# ')
     if not opening:
         return False
-    return any(opening.startswith(cleaned) for cleaned in (p.strip().lower() for p in patterns) if cleaned)
+    lowered = opening.lower()
+    if not any(lowered.startswith(cleaned) for cleaned in (p.strip().lower() for p in patterns) if cleaned):
+        return False
+    _status_line, _, below = opening.partition('\n')
+    return not _carries_review_content(below)
 
 
 def _is_actionable(record: dict) -> bool:

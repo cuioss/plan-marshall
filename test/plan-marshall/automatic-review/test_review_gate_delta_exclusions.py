@@ -139,6 +139,63 @@ def test_a_bot_declaring_no_summary_pattern_keeps_every_review_body():
     )
 
 
+def test_a_status_line_followed_by_review_content_is_counted():
+    """Strip-then-classify: review content BELOW the status line makes the body substantive.
+
+    Fail-first case: the begins-with rule classified the whole body by its opening
+    line, so a genuine review that opens with ``Actionable comments posted: N`` and
+    carries its findings below was dropped from the escape count — the direction
+    that flatters the gates.
+    """
+    from review_gate_delta import is_status_summary
+
+    record = {
+        'hash_id': 'status-plus-review',
+        'bot_kind': 'coderabbit',
+        'kind': 'review_body',
+        'author': 'coderabbitai',
+        'body': (
+            '**Actionable comments posted: 1**\n\n'
+            'The guard coerces UNKNOWN into a positive; check the sign before the comparison.\n\n'
+            '<details>\n<summary>Review details</summary>\nconfiguration\n</details>'
+        ),
+    }
+
+    assert not is_status_summary(record)
+
+    result = assess_delta(
+        findings=[record],
+        enabled_bots=_ROSTER,
+        reviewed_bots=list(_ROSTER),
+        gates_green=True,
+        gate_head_sha=_SHA,
+        reviewed_head_sha=_SHA,
+        partitions={'status-plus-review': PARTITION_GATE_STRUCTURAL},
+    )
+
+    assert result['escapes_total'] == 1
+
+
+def test_a_pure_status_summary_with_nested_details_and_layout_stays_meta():
+    """Matched control: the status line, nested collapsed blocks and layout only — still meta.
+
+    Nested ``<details>`` peel from the inside out, and an HTML comment or a separator
+    rule is layout, not a review claim, so none of them makes the summary substantive.
+    """
+    from review_gate_delta import is_status_summary
+
+    body = (
+        '**Actionable comments posted: 3**\n\n'
+        '<details>\n<summary>Nitpick comments (2)</summary><blockquote>\n'
+        '<details>\n<summary>src/a.py (1)</summary>\nrename the helper\n</details>\n'
+        '</blockquote></details>\n\n'
+        '<!-- This is an auto-generated comment by CodeRabbit -->\n\n'
+        '---'
+    )
+
+    assert is_status_summary({'bot_kind': 'coderabbit', 'kind': 'review_body', 'body': body})
+
+
 def test_a_substantive_review_body_from_another_author_is_still_an_escape():
     """The carve-out is gated on the author AND the signature — not on the kind.
 

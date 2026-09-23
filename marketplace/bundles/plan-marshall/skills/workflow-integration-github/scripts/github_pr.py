@@ -141,9 +141,14 @@ _RESPONDABLE_RESOLUTIONS = frozenset({'fixed', 'suppressed', 'accepted', 'taken_
 # The producer noise pre-filter is a three-layer, data-not-code composition:
 #
 #   1. SHARED / DEFAULT layer — the ``ignore`` category in comment-patterns.json.
-#      These are bot-agnostic acknowledgment/automation regexes (lgtm, approved,
-#      ``[bot]`` signatures, …) matched case-insensitively against the lowered
-#      comment body. comment-patterns.json used to carry the LLM decision
+#      These are bot-agnostic WHOLE-COMMENT acknowledgments (lgtm, approved, a
+#      bare bot-handle line, …). They are matched against the commenter's OWN bare
+#      prose only — fenced code blocks, blockquoted lines and ``<details>`` blocks
+#      are removed first (``_own_prose``) — and a comment is noise only when that
+#      prose is non-empty, no longer than ``thresholds.acknowledgment_max_length``,
+#      and a pattern covers the WHOLE of it (``_is_whole_comment_acknowledgment``).
+#      A phrase quoted inside a block, or sitting inside a larger comment, never
+#      makes the comment an acknowledgment. comment-patterns.json used to carry the LLM decision
 #      authority (full keyword classification); the producer-side migration moved
 #      that to the LLM consumer, so this file now holds only the shared noise
 #      baseline. Its ``code_change`` / ``explain`` categories are retained as
@@ -184,6 +189,20 @@ for _priority, _pattern_list in PATTERNS.get('ignore', {}).items():
             f'comment-patterns.json [ignore][{_priority}]',
         )
     )
+
+# The OUTER guard of the shared layer: a commenter's own prose longer than this is
+# never an acknowledgment, whatever pattern it opens with. Data, not code — the
+# value and its derivation are recorded in comment-patterns.json.
+_ACKNOWLEDGMENT_MAX_LENGTH: int = int(PATTERNS['thresholds']['acknowledgment_max_length'])
+
+# The regions of a comment body that are NOT the commenter's own bare prose. Only
+# CLOSED regions are removed: an unclosed fence or ``<details>`` stays in the prose,
+# which can only make a comment LESS likely to read as an acknowledgment.
+_FENCED_BLOCK = re.compile(r'(`{3,}|~{3,})[\s\S]*?\1')
+# Innermost ``<details>`` block (one containing no further opening tag); removed
+# repeatedly so nested blocks peel from the inside out.
+_INNERMOST_DETAILS_BLOCK = re.compile(r'<details\b[^>]*>(?:(?!<details\b)[\s\S])*?</details\s*>', re.IGNORECASE)
+_BLOCKQUOTE_LINE = re.compile(r'^[ \t]*>.*$', re.MULTILINE)
 
 
 # ============================================================================
@@ -242,7 +261,11 @@ def fetch_comments(pr_number: int, unresolved_only: bool = False) -> dict[str, A
 
 
 def cmd_fetch_comments(args):
-    """Handle fetch-comments subcommand."""
+    """Handle fetch-comments subcommand.
+
+    The display path: each body is flattened to one line so every comment stays one
+    row of the printed table (``github_ops.flatten_comment_bodies``).
+    """
     # Determine PR number
     pr_number = args.pr
     if not pr_number:
@@ -250,8 +273,7 @@ def cmd_fetch_comments(args):
         if not pr_number:
             return make_error('No PR found for current branch. Use --pr to specify.', code=ErrorCode.NOT_FOUND)
 
-    result = fetch_comments(pr_number, getattr(args, 'unresolved_only', False))
-    return result
+    return _github.flatten_comment_bodies(fetch_comments(pr_number, getattr(args, 'unresolved_only', False)))
 
 
 # ============================================================================
@@ -315,13 +337,59 @@ def _is_participation_evidence(comment: dict, bot_kind: str) -> bool:
     return not marker or marker in str(comment.get('body') or '')
 
 
+def _own_prose(body: str) -> str:
+    """Return the commenter's own bare prose: ``body`` minus every quoted or collapsed region.
+
+    Removed, in order: closed fenced code blocks, closed ``<details>`` blocks
+    (innermost first, so nesting peels cleanly — a CodeRabbit AI-agent prompt block
+    is one), and blockquoted lines. What remains is whitespace-collapsed and
+    lower-cased, the form the shared ``ignore`` patterns are written against. Text
+    inside any removed region is someone else's words, a machine prompt, or code —
+    never the commenter acknowledging the change.
+    """
+    text = _FENCED_BLOCK.sub(' ', body)
+    previous = None
+    while previous != text:
+        previous = text
+        text = _INNERMOST_DETAILS_BLOCK.sub(' ', text)
+    text = _BLOCKQUOTE_LINE.sub(' ', text)
+    return ' '.join(text.split()).lower()
+
+
+def _is_whole_comment_acknowledgment(body: str) -> bool:
+    """True when the commenter's own prose IS an acknowledgment, as a whole.
+
+    Two guards, both required (the derivation of each is recorded in
+    comment-patterns.json ``_note``):
+
+    - **Coverage** — an ``ignore`` pattern must match the WHOLE of the prose
+      (``fullmatch``), never a substring of it. A phrase inside a larger comment, or
+      one quoted in a block (already removed by :func:`_own_prose`), cannot make the
+      comment an acknowledgment.
+    - **Length** — the prose must be no longer than
+      ``_ACKNOWLEDGMENT_MAX_LENGTH``. The patterns anchor on an OPENING
+      acknowledgment and admit a short courtesy tail, so without this bound an
+      opening "LGTM, but …" would carry a finding of any length out of the store.
+
+    Prose that is EMPTY after the regions are removed is never an acknowledgment: a
+    comment consisting only of a quote or a collapsed block said nothing of its own,
+    and dropping it would discard whatever the block carries.
+    """
+    prose = _own_prose(body)
+    if not prose or len(prose) > _ACKNOWLEDGMENT_MAX_LENGTH:
+        return False
+    return any(p.fullmatch(prose) for p in _COMPILED_IGNORE)
+
+
 def _is_obvious_noise(body: str, bot_kind: str | None = None) -> bool:
     """Pre-filter: True if the comment body is shared or per-bot noise.
 
     Three layers (see PRE-FILTER CONFIGURATION above):
 
-    1. SHARED — the bot-agnostic ``ignore`` regexes (lgtm, approved, ``[bot]``
-       signatures, …) matched case-insensitively against the lowered body.
+    1. SHARED — the bot-agnostic whole-comment ``ignore`` patterns (lgtm,
+       approved, a bare bot-handle line, …), applied by
+       :func:`_is_whole_comment_acknowledgment` to the commenter's own bare prose
+       only, and only when a pattern covers the whole of it within the length bound.
     2. PER-BOT — when ``bot_kind`` is a known reviewer bot, that bot's registry
        ``ignore_patterns`` (literal whole-comment markers) matched as
        case-sensitive substrings against the raw body. These markers are exact
@@ -389,8 +457,7 @@ def _is_obvious_noise(body: str, bot_kind: str | None = None) -> bool:
     # Pipeline-authored re-review trigger comment (exact stripped-body match).
     if is_registered_trigger_comment(body):
         return True
-    body_lower = body.lower()
-    if any(p.search(body_lower) for p in _COMPILED_IGNORE):
+    if _is_whole_comment_acknowledgment(body):
         return True
     if bot_kind:
         if any(marker in body for marker in bot_registry.ignore_patterns(bot_kind)):
@@ -769,11 +836,16 @@ def _comment_edit_term(comment: dict) -> str:
     back onto the two-term key and be dropped as a duplicate — the exact defect the
     widening closes. The digest moves when the body moves, which is the same question
     ``updated_at`` answers, read from the content instead of from the metadata.
+
+    The digest is computed over the FLATTENED body (``github_ops.flatten_comment_body``)
+    — the form the provider fetch delivered before it kept line structure — so a
+    comment stored under a digest key re-dedupes rather than re-filing.
     """
     updated_at = str(comment.get('updated_at') or '')
     if updated_at:
         return updated_at
-    digest = hashlib.sha256(str(comment.get('body') or '').encode('utf-8')).hexdigest()
+    flattened = _github.flatten_comment_body(str(comment.get('body') or ''))
+    digest = hashlib.sha256(flattened.encode('utf-8')).hexdigest()
     return f'sha256:{digest}'
 
 
