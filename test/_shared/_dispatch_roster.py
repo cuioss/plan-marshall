@@ -89,5 +89,5 @@ def parse_roster_skills(doc_text: str, heading: str) -> dict[str, list[str]]:
         if not match:
             skills[key] = []
             continue
-        skills[key] = SKILL_TOKEN.findall(match.group("skills"))
+        skills[key] = SKILL_TOKEN.findall(match.group('skills'))
     return skills
