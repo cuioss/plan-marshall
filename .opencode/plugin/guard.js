@@ -88,22 +88,9 @@ const BARE_BUILD_TOOLS = new Set(["mvn", "mvnw", "gradle", "gradlew", "make", "c
 const JS_RUNNER_BUILD_VERBS = new Set(["test", "run", "build"])
 const PYTHON_DIRECT_RUNNERS = new Set(["pytest", "mypy", "ruff"])
 
-// ---- R3: generated executor path (declared, mirrored) ----
-const EXECUTOR_RELATIVE = path.join(".plan", "execute-script.py")
-
-function firstToken(command) {
-  const match = command.trimStart().match(/^(\S+)/)
-  return match ? match[1] : ""
-}
-
-function secondToken(command) {
-  const match = command.trimStart().match(/^\S+\s+(\S+)/)
-  return match ? match[1] : ""
-}
-
-function thirdToken(command) {
-  const match = command.trimStart().match(/^\S+\s+\S+\s+(\S+)/)
-  return match ? match[1] : ""
+function tokenAt(command, index) {
+  const tokens = command.trimStart().split(/\s+/)
+  return tokens[index] ?? ""
 }
 
 function isExecutorPermit(command) {
@@ -162,7 +149,7 @@ export const GuardPlugin = async ({ worktree, directory }) => {
         )
       }
 
-      const token = firstToken(command)
+      const token = tokenAt(command, 0)
       if (token && MUTATION_FILE_OPS.has(token)) {
         audit(auditLine("R2", tool, sessionID, callID, command))
         throw new Error(
@@ -173,7 +160,7 @@ export const GuardPlugin = async ({ worktree, directory }) => {
       if (isExecutorPermit(command)) return
 
       if (token === "./pw") {
-        const verb = secondToken(command)
+        const verb = tokenAt(command, 1)
         if (!verb || PW_BUILD_VERBS.has(verb)) {
           audit(auditLine("R4", tool, sessionID, callID, command))
           throw new Error(
@@ -190,7 +177,7 @@ export const GuardPlugin = async ({ worktree, directory }) => {
         )
       }
 
-      if (JS_RUNNER_BUILD_VERBS.has(secondToken(command)) && new Set(["npm", "npx", "bun", "pnpm", "yarn"]).has(token)) {
+      if (JS_RUNNER_BUILD_VERBS.has(tokenAt(command, 1)) && new Set(["npm", "npx", "bun", "pnpm", "yarn"]).has(token)) {
         audit(auditLine("R4", tool, sessionID, callID, command))
         throw new Error(
           "[plan-marshall-guard] R4: hard-coded build command bypassing python3 .plan/execute-script.py is forbidden",
@@ -198,8 +185,8 @@ export const GuardPlugin = async ({ worktree, directory }) => {
       }
 
       if (token === "python3") {
-        const second = secondToken(command)
-        const third = thirdToken(command)
+        const second = tokenAt(command, 1)
+        const third = tokenAt(command, 2)
         if (second === "build.py" || (second === "-m" && PYTHON_DIRECT_RUNNERS.has(third))) {
           audit(auditLine("R4", tool, sessionID, callID, command))
           throw new Error(
