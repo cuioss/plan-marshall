@@ -128,7 +128,15 @@ Both operations take the same `PRRT_` thread ID — pass the comment's `thread_i
    ```bash
    python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_pr fetch_findings --pr-number {pr} --plan-id {plan_id}
    ```
-   Output reports `count_fetched`, `count_skipped_noise`, `count_skipped_duplicate`, `count_skipped_refusal`, `count_skipped_self_response`, `count_skipped_emitter_bypass`, `emitter_bypass_hash_id`, `count_skipped_own_trigger`, `own_trigger_exclusions[]`, `workflow_identity`, `count_self_response_current_cycle`, `self_response_loop_detected`, `self_response_loop_hash_id`, `count_stored`, `participated_bots[]`, `stale_participation_bots[]`, `merge_candidate_sha_resolved`, `undecidable_participation_bots[]`, `refused_bots[]`, `unrecognised_refusal[]`, `refusal_pattern_drift[]`, `refused_causes[]`, `refused_size_caps[]`, `measured_diff_size`, `unclassified_bots[]`, and `producer_mismatch_hash_id` (set when count_stored ≠ count_fetched − count_skipped_noise − count_skipped_duplicate − count_skipped_refusal − count_skipped_self_response − count_skipped_emitter_bypass − count_skipped_own_trigger; the mismatch is also persisted as a Q-Gate finding under phase `5-execute` with title prefix `(producer-mismatch)`). An unclassified bot's comments are stored like any other, so they are NOT subtracted from the expected count. When that mismatch finding's own persist is REJECTED, `producer_mismatch_hash_id` stays `null` and the output carries `qgate_persist_failed: true` plus `qgate_persist_failure{title, detail, message}` — the mismatch content that never reached the store, with the primitive's rejection message. Both fields are absent when the mismatch finding landed (or when there was no mismatch). Read `qgate_persist_failed`, not a `null` hash id, to tell a lost mismatch finding from no mismatch at all; `status` stays `success` because the fetch itself succeeded. A `status: unconfigured` return means GitHub is not authenticated — never a silent zero-findings success.
+   Output reports `fetch_complete`, `capped_connections[]`, `count_fetched`, `count_skipped_noise`, `count_skipped_duplicate`, `count_skipped_refusal`, `count_skipped_self_response`, `count_skipped_emitter_bypass`, `emitter_bypass_hash_id`, `count_skipped_own_trigger`, `own_trigger_exclusions[]`, `workflow_identity`, `count_self_response_current_cycle`, `self_response_loop_detected`, `self_response_loop_hash_id`, `count_stored`, `participated_bots[]`, `stale_participation_bots[]`, `merge_candidate_sha_resolved`, `undecidable_participation_bots[]`, `refused_bots[]`, `unrecognised_refusal[]`, `refusal_pattern_drift[]`, `refused_causes[]`, `refused_size_caps[]`, `measured_diff_size`, `unclassified_bots[]`, and `producer_mismatch_hash_id` (set when count_stored ≠ count_fetched − count_skipped_noise − count_skipped_duplicate − count_skipped_refusal − count_skipped_self_response − count_skipped_emitter_bypass − count_skipped_own_trigger; the mismatch is also persisted as a Q-Gate finding under phase `5-execute` with title prefix `(producer-mismatch)`). An unclassified bot's comments are stored like any other, so they are NOT subtracted from the expected count. When that mismatch finding's own persist is REJECTED, `producer_mismatch_hash_id` stays `null` and the output carries `qgate_persist_failed: true` plus `qgate_persist_failure{title, detail, message}` — the mismatch content that never reached the store, with the primitive's rejection message. Both fields are absent when the mismatch finding landed (or when there was no mismatch). Read `qgate_persist_failed`, not a `null` hash id, to tell a lost mismatch finding from no mismatch at all; `status` stays `success` because the fetch itself succeeded. A `status: unconfigured` return means GitHub is not authenticated — never a silent zero-findings success.
+
+   **A clipped fetch is reported, never published as the PR's whole comment set.** Every count above is computed over the comments the provider fetch returned, so the fetch's own coverage travels with them. `fetch_complete` is `true` only when the provider proved every connection read to its end — the underlying `pr comments` read paginates each connection by cursor (see Canonical invocations → `github_ops pr comments`), so a page size is never a silent ceiling — and a provider result carrying no completeness claim reads as `false`. `capped_connections[]` carries the provider's coverage record for each connection that was NOT proven whole, so the result names what was observed against what cap:
+
+   ```toon
+   capped_connections[N]{connection,observed,cap,total,capped}:
+   ```
+
+   A capped fetch still files what it fetched; it is disclosed as incomplete rather than read as reviewed-and-clean.
 
    **A failed currency test is a branch, never a discard — and it has THREE outcomes, not two.** `participated_bots[]` credits a bot only when an observed comment's `kind` matches a declared `participation_evidence` publish shape, AND — where that bot declares a `participation_evidence_markers` entry for that shape — the comment body carries the declared marker, AND — for a bot declaring `participation_requires_update` — the currency test holds. The marker gate runs FIRST, so a comment it rejects reaches neither the credited set nor the stale one.
 
@@ -445,6 +453,29 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github
 python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_ops pr comments \
   --pr-number N [--unresolved-only]
 ```
+
+Every connection the read touches — `reviewThreads`, each thread's `comments`,
+`reviews`, and the issue-level `comments` — is paginated by cursor to completion,
+so a page size is never a silent ceiling on the population. Beside `total`,
+`unresolved` and `comments[]` the return carries the coverage it established:
+
+```toon
+complete: true | false
+connections[4]{connection,observed,cap,total,capped}:
+```
+
+- `connection` — `reviewThreads`, `reviewThreads.comments` (aggregated over every
+  thread whose comments are returned), `reviews`, or `comments`.
+- `observed` — the nodes collected across every page read.
+- `cap` — the first page's size: the cliff a single unpaginated read falls off.
+- `total` — the provider's own `totalCount`, or `null` when it reported none.
+- `capped` — `true` whenever the observed population is not PROVEN whole: the
+  connection was not read to `hasNextPage: false` (no page info, no cursor to
+  continue from, or a cursor that did not advance), or `total` exceeds `observed`.
+
+`complete` is `true` only when no connection is `capped`. A failed follow-up page
+read fails the whole read with `status: error`, exactly as a failed first read
+does — the pages read so far are never published as the whole.
 
 ### github_ops pr wait-for-comments
 

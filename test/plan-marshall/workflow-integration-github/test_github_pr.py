@@ -18,6 +18,12 @@ counting it apart from noise and recording which trigger it matched. An
 exact-trigger body from anyone else keeps its noise disposition, and a comment that
 merely quotes a trigger is filed.
 
+The fetch's own coverage reaches the result: ``fetch_complete`` is True only when
+the provider proved every connection read to its end, and ``capped_connections``
+names each connection that was not. The capped and complete cases drive the REAL
+provider parse path (``github_ops.fetch_pr_comments_data``) through a stubbed
+``run_graphql``, so the pass-through is exercised end to end.
+
 The findings store is REAL (isolated via the autouse ``plan_context``
 ``PLAN_BASE_DIR`` sandbox); only the GitHub provider surface and the identity read
 are monkeypatched, and the raw ``run_gh`` seam is stubbed to fail so no case can
@@ -31,6 +37,9 @@ import pytest
 from conftest import load_script_module
 
 PLAN_IDS: tuple[str, ...] = (
+    'gh-pr-fetch-capped',
+    'gh-pr-fetch-complete',
+    'gh-pr-fetch-unclaimed',
     'gh-pr-identity-bypass',
     'gh-pr-identity-bypass-report',
     'gh-pr-identity-foreign-heading',
@@ -381,3 +390,119 @@ def test_unresolved_identity_keeps_a_workflow_trigger_as_noise_and_discloses(pla
     assert result['own_trigger_exclusions'] == []
     assert result['count_skipped_noise'] == 1
     assert result['count_stored'] == 0
+
+
+# ============================================================================
+# Fetch coverage reaches the fetch_findings result
+# ============================================================================
+
+
+def _page(nodes, *, has_next=False, cursor=None, total=None):
+    """A GraphQL connection object: nodes, ``totalCount`` and ``pageInfo``."""
+    return {
+        'totalCount': len(nodes) if total is None else total,
+        'pageInfo': {'hasNextPage': has_next, 'endCursor': cursor},
+        'nodes': nodes,
+    }
+
+
+def _issue_comment_node(comment_id, body):
+    return {
+        'id': comment_id,
+        'body': body,
+        'author': {'login': OTHER_AUTHOR},
+        'createdAt': '2026-03-03T10:00:00Z',
+        'updatedAt': '2026-03-03T10:00:00Z',
+    }
+
+
+def _patch_graphql_provider(monkeypatch, *, issue_comments):
+    """Drive the REAL provider parse path: only transport, auth and repo reads are stubbed.
+
+    Reviews and review threads are empty and exhausted; ``issue_comments`` is the
+    issue-level comment connection object the first page returns.
+    """
+    github_ops = github_pr._github
+    first_page = {
+        'repository': {
+            'pullRequest': {
+                'reviewThreads': _page([]),
+                'reviews': _page([]),
+                'comments': issue_comments,
+            }
+        }
+    }
+
+    def fake_run_graphql(query, variables):
+        assert query == github_ops.REVIEW_THREADS_QUERY, 'no follow-up page is served in these cases'
+        return 0, first_page, ''
+
+    monkeypatch.setattr(github_pr, 'get_viewer_login', lambda: (WORKFLOW_LOGIN, ''))
+    monkeypatch.setattr(github_ops, 'check_auth', lambda: (True, ''))
+    monkeypatch.setattr(github_ops, 'get_repo_info', lambda: ('cuioss', 'plan-marshall'))
+    monkeypatch.setattr(github_ops, 'run_graphql', fake_run_graphql)
+    monkeypatch.setattr(github_ops, 'fetch_pr_head_committed_at', lambda pr_number: '')
+    monkeypatch.setattr(github_ops, 'fetch_pr_head_sha', lambda pr_number: 'deadbeef')
+    monkeypatch.setattr(github_ops, 'run_gh', lambda *_a, **_k: (1, '', 'run_gh is stubbed in this module'))
+
+
+def test_capped_fetch_surfaces_as_incomplete_in_the_result(plan_context, monkeypatch):
+    """A connection the provider could not read to its end is disclosed, not read as the whole set.
+
+    Fail-first case: before the coverage fields existed the fetch_findings result
+    carried no completeness claim at all, so a clipped comment set was
+    indistinguishable from a complete one. The comment that WAS fetched is still filed.
+    """
+    plan_id = 'gh-pr-fetch-capped'
+    _patch_graphql_provider(
+        monkeypatch,
+        issue_comments=_page(
+            [_issue_comment_node('ic-1', 'The retry loop never resets its counter.')],
+            has_next=True,
+            cursor=None,
+            total=250,
+        ),
+    )
+
+    result = _run_fetch(plan_id)
+
+    assert result['status'] == 'success'
+    assert result['fetch_complete'] is False
+    assert result['capped_connections'] == [
+        {
+            'connection': github_pr._github.CONNECTION_ISSUE_COMMENTS,
+            'observed': 1,
+            'cap': github_pr._github._COMMENT_CONNECTION_PAGE_SIZE,
+            'total': 250,
+            'capped': True,
+        }
+    ]
+    assert result['count_stored'] == 1
+    assert _stored_comment_ids(plan_id) == ['ic-1']
+
+
+def test_complete_fetch_reports_complete_with_no_capped_connection(plan_context, monkeypatch):
+    """Matched positive control: every connection read to its end reads as complete."""
+    plan_id = 'gh-pr-fetch-complete'
+    _patch_graphql_provider(
+        monkeypatch,
+        issue_comments=_page([_issue_comment_node('ic-1', 'The retry loop never resets its counter.')]),
+    )
+
+    result = _run_fetch(plan_id)
+
+    assert result['fetch_complete'] is True
+    assert result['capped_connections'] == []
+    assert result['count_stored'] == 1
+
+
+def test_provider_result_without_a_completeness_claim_is_not_complete(plan_context, monkeypatch):
+    """An absent claim establishes nothing: a provider result carrying no coverage is not complete."""
+    plan_id = 'gh-pr-fetch-unclaimed'
+    _patch_provider(monkeypatch, [_comment('theirs-1', OTHER_AUTHOR, 'The retry loop never resets its counter.')])
+
+    result = _run_fetch(plan_id)
+
+    assert result['fetch_complete'] is False
+    assert result['capped_connections'] == []
+    assert result['count_stored'] == 1

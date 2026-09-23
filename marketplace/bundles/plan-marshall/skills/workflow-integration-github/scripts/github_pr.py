@@ -213,6 +213,12 @@ def fetch_comments(pr_number: int, unresolved_only: bool = False) -> dict[str, A
     preserving every field on each entry — including the ``kind`` discriminator
     (``inline``, ``review_body``, or ``issue_comment``). No field filtering is
     applied, so downstream callers see the full provider-side schema unchanged.
+
+    The provider's coverage report travels with the comments: ``connections`` (one
+    ``{connection, observed, cap, total, capped}`` record per connection) and
+    ``complete``. ``complete`` is True only when the provider SAID so — a provider
+    result that carries no completeness claim reads as not complete, because an
+    absent claim establishes nothing about whether the population was clipped.
     """
 
     result = _github.fetch_pr_comments_data(pr_number, unresolved_only)
@@ -229,6 +235,8 @@ def fetch_comments(pr_number: int, unresolved_only: bool = False) -> dict[str, A
         'comments': result.get('comments', []),
         'total_comments': result.get('total', 0),
         'unresolved_count': result.get('unresolved', 0),
+        'complete': result.get('complete') is True,
+        'connections': result.get('connections') or [],
         'status': 'success',
     }
 
@@ -1245,6 +1253,14 @@ def cmd_fetch_findings(args):
     The enclosing ``status`` stays ``success`` — it reports the fetch, which did
     succeed.
 
+    ``fetch_complete`` / ``capped_connections``: the coverage of the provider fetch
+    every count above is computed over. ``fetch_complete`` is True only when the
+    provider proved every connection read to its end (``fetch_comments`` reads an
+    absent claim as not complete); ``capped_connections`` carries the provider's
+    ``{connection, observed, cap, total, capped}`` record for each connection that
+    was not. A capped fetch still stores what it fetched — it is reported as
+    incomplete, never published as the PR's whole comment set.
+
     ``participated_bots``: the EVIDENCE-TYPED participation set — one
     ``{bot_kind, evidence_kind}`` record per bot proven to have reviewed this diff,
     computed BEFORE any noise / duplicate / resolved filtering (so a bot whose
@@ -1442,6 +1458,11 @@ def cmd_fetch_findings(args):
 
     raw_comments: list[dict] = fetch_result.get('comments') or []
     count_fetched = len(raw_comments)
+    # Whether the fetched population is PROVEN whole, and which connections are not.
+    # Carried into the result so a clipped fetch is never read as the PR's whole
+    # comment set — every count below is computed over what was fetched.
+    fetch_complete = fetch_result.get('complete') is True
+    capped_connections = [record for record in fetch_result.get('connections') or [] if record.get('capped')]
 
     # The workflow's own identity — the account ``post_responses`` posts under —
     # read at most ONCE per fetch, and only when a comment carries a transmission
@@ -2119,6 +2140,11 @@ def cmd_fetch_findings(args):
         'provider': 'github',
         'pr_number': pr_number,
         'plan_id': plan_id,
+        # Coverage of the fetch itself. ``fetch_complete`` is True only when every
+        # connection of the provider fetch was read to its end; ``capped_connections``
+        # names each connection that was not, with its observed count against its cap.
+        'fetch_complete': fetch_complete,
+        'capped_connections': capped_connections,
         'count_fetched': count_fetched,
         'count_skipped_noise': skipped_noise,
         'count_skipped_duplicate': skipped_duplicate,

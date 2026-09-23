@@ -1,6 +1,14 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for ``fetch_pr_comments_data``'s ``updated_at`` plumbing across record kinds.
+"""Tests for ``fetch_pr_comments_data``: ``updated_at`` plumbing and connection coverage.
+
+Two concerns share this file because both are only observable on the REAL parsing
+path. The first is the ``updated_at`` plumbing across record kinds, documented
+below. The second is COVERAGE: every connection of the comment fetch is paginated
+by cursor to completion, and the result reports per connection what was observed
+against its first-page cap (``connections[]``) plus a top-level ``complete`` flag,
+so a clipped population is never published as a complete one. The coverage arms
+drive the pagination through a query-dispatching ``run_graphql`` stub.
 
 ``REVIEW_THREADS_QUERY`` used to select ``updatedAt`` only on the issue-level
 ``comments`` node. The record BUILDERS read ``comment.get('updatedAt')`` /
@@ -241,3 +249,279 @@ def test_absent_updated_at_falls_back_to_empty_string(monkeypatch):
     assert set(_EXPECTED_UPDATED_AT) <= {record['kind'] for record in result['comments']}
     for record in result['comments']:
         assert record['updated_at'] == ''
+
+
+# ============================================================================
+# Connection coverage: pagination to completion, reported per connection
+# ============================================================================
+
+#: The first-page size of the three top-level connections, and of each thread's
+#: comment connection — read from the module so the fixtures below always build a
+#: population exactly one past the page the unpaginated read used to stop at.
+_PAGE = github_ops._COMMENT_CONNECTION_PAGE_SIZE
+_THREAD_PAGE = github_ops._THREAD_COMMENT_FIRST_PAGE_SIZE
+
+#: The connection openings of the FIRST-page query, each of which must select its
+#: own ``totalCount`` and ``pageInfo``.
+_CONNECTION_OPENINGS = {
+    github_ops.CONNECTION_REVIEW_THREADS: f'reviewThreads(first: {_PAGE})',
+    github_ops.CONNECTION_THREAD_COMMENTS: f'comments(first: {_THREAD_PAGE})',
+    github_ops.CONNECTION_REVIEWS: f'reviews(first: {_PAGE})',
+    github_ops.CONNECTION_ISSUE_COMMENTS: f'comments(first: {_PAGE})',
+}
+
+
+def _connection(nodes: list, *, has_next: bool = False, cursor: str | None = None, total: int | None = None) -> dict:
+    """A connection object as GitHub returns it: nodes, ``totalCount`` and ``pageInfo``."""
+    return {
+        'totalCount': len(nodes) if total is None else total,
+        'pageInfo': {'hasNextPage': has_next, 'endCursor': cursor},
+        'nodes': nodes,
+    }
+
+
+def _review(n: int) -> dict:
+    return {
+        'id': f'PRR_{n}',
+        'state': 'COMMENTED',
+        'body': f'review body {n}',
+        'author': {'login': 'coderabbitai[bot]'},
+        'submittedAt': '2026-03-02T10:00:00Z',
+        'updatedAt': '2026-03-02T10:00:00Z',
+    }
+
+
+def _thread_comment(n: int) -> dict:
+    return {
+        'id': f'PRRC_{n}',
+        'body': f'thread comment {n}',
+        'author': {'login': 'alice'},
+        'createdAt': '2026-03-01T10:00:00Z',
+        'updatedAt': '2026-03-01T10:00:00Z',
+    }
+
+
+def _first_page(*, threads: dict, reviews: dict, issue_comments: dict) -> dict:
+    return {'repository': {'pullRequest': {'reviewThreads': threads, 'reviews': reviews, 'comments': issue_comments}}}
+
+
+def _thread(thread_id: str, comments: dict) -> dict:
+    return {'id': thread_id, 'isResolved': False, 'path': 'src/foo.py', 'line': 7, 'comments': comments}
+
+
+def _wire_pages(monkeypatch, responses: dict) -> list[tuple[str, dict]]:
+    """Patch the transport with a query-dispatching stub; return the recorded calls.
+
+    ``responses`` maps each query constant to a callable taking the call's variables
+    and returning ``(returncode, data, error)``. A query the case did not declare
+    fails the case — an undeclared page read is itself a finding.
+    """
+    monkeypatch.setattr(github_ops, 'check_auth', lambda: (True, ''))
+    monkeypatch.setattr(github_ops, 'get_repo_info', lambda: ('cuioss', 'plan-marshall'))
+    calls: list[tuple[str, dict]] = []
+
+    def fake_run_graphql(query, variables):
+        calls.append((query, dict(variables)))
+        assert query in responses, f'unexpected GraphQL query issued:\n{query}'
+        return responses[query](variables)
+
+    monkeypatch.setattr(github_ops, 'run_graphql', fake_run_graphql)
+    return calls
+
+
+def _records_by_connection(result: dict) -> dict:
+    return {record['connection']: record for record in result['connections']}
+
+
+def test_query_selects_page_info_and_total_count_on_every_connection():
+    # Selection-set pin, for the same reason as the updated_at pin above: a stub
+    # carries pageInfo whatever the query asked for, so only the query text can show
+    # that a real response will carry the evidence the coverage report is built from.
+    query = github_ops.REVIEW_THREADS_QUERY
+
+    for connection, opening in _CONNECTION_OPENINGS.items():
+        block = _selection_block(query, opening)
+        for field in ('totalCount', 'hasNextPage', 'endCursor'):
+            assert field in block, f'{connection} ({opening!r}) does not select {field}'
+
+
+def test_101st_review_and_11th_thread_comment_are_fetched_and_reported(monkeypatch):
+    # THE fail-first case. Before pagination the single query stopped at the first
+    # page of every connection: the 101st review and the 11th comment of a thread were
+    # silently dropped while the fetch reported success, and the result carried no
+    # coverage field at all. Here both follow-up pages are served and must be read.
+    first = _first_page(
+        threads=_connection(
+            [
+                _thread(
+                    'PRRT_long',
+                    _connection(
+                        [_thread_comment(n) for n in range(1, _THREAD_PAGE + 1)],
+                        has_next=True,
+                        cursor='tc-page-1',
+                        total=_THREAD_PAGE + 1,
+                    ),
+                )
+            ]
+        ),
+        reviews=_connection(
+            [_review(n) for n in range(1, _PAGE + 1)], has_next=True, cursor='rev-page-1', total=_PAGE + 1
+        ),
+        issue_comments=_connection([]),
+    )
+
+    def reviews_page(variables):
+        assert variables['cursor'] == 'rev-page-1'
+        page = _connection([_review(_PAGE + 1)], total=_PAGE + 1)
+        return 0, {'repository': {'pullRequest': {'reviews': page}}}, ''
+
+    def thread_comments_page(variables):
+        assert variables == {'thread': 'PRRT_long', 'cursor': 'tc-page-1'}
+        return 0, {'node': {'comments': _connection([_thread_comment(_THREAD_PAGE + 1)], total=_THREAD_PAGE + 1)}}, ''
+
+    calls = _wire_pages(
+        monkeypatch,
+        {
+            github_ops.REVIEW_THREADS_QUERY: lambda _v: (0, first, ''),
+            github_ops.REVIEWS_PAGE_QUERY: reviews_page,
+            github_ops.THREAD_COMMENTS_PAGE_QUERY: thread_comments_page,
+        },
+    )
+
+    result = github_ops.fetch_pr_comments_data(123)
+
+    assert result['status'] == 'success'
+    review_ids = [c['id'] for c in result['comments'] if c['kind'] == 'review_body']
+    inline_ids = [c['id'] for c in result['comments'] if c['kind'] == 'inline']
+    assert len(review_ids) == _PAGE + 1
+    assert f'PRR_{_PAGE + 1}' in review_ids
+    assert len(inline_ids) == _THREAD_PAGE + 1
+    assert f'PRRC_{_THREAD_PAGE + 1}' in inline_ids
+    # Each follow-up page was read exactly once, and no exhausted connection was re-read.
+    assert [query for query, _ in calls].count(github_ops.REVIEWS_PAGE_QUERY) == 1
+    assert [query for query, _ in calls].count(github_ops.THREAD_COMMENTS_PAGE_QUERY) == 1
+    assert github_ops.REVIEW_THREADS_PAGE_QUERY not in [query for query, _ in calls]
+    assert github_ops.ISSUE_COMMENTS_PAGE_QUERY not in [query for query, _ in calls]
+
+    records = _records_by_connection(result)
+    assert set(records) == set(_CONNECTION_OPENINGS)
+    assert records[github_ops.CONNECTION_REVIEWS] == {
+        'connection': github_ops.CONNECTION_REVIEWS,
+        'observed': _PAGE + 1,
+        'cap': _PAGE,
+        'total': _PAGE + 1,
+        'capped': False,
+    }
+    assert records[github_ops.CONNECTION_THREAD_COMMENTS] == {
+        'connection': github_ops.CONNECTION_THREAD_COMMENTS,
+        'observed': _THREAD_PAGE + 1,
+        'cap': _THREAD_PAGE,
+        'total': _THREAD_PAGE + 1,
+        'capped': False,
+    }
+    assert result['complete'] is True
+
+
+def test_connection_not_proven_exhausted_is_reported_capped(monkeypatch):
+    # A page claiming more data but naming no cursor cannot be continued. The pages
+    # read are still returned, but the connection is reported capped against its cap
+    # and the fetch is not complete — never a clipped population published as whole.
+    first = _first_page(
+        threads=_connection([]),
+        reviews=_connection([_review(n) for n in range(1, _PAGE + 1)], has_next=True, cursor=None, total=_PAGE + 5),
+        issue_comments=_connection([]),
+    )
+    calls = _wire_pages(monkeypatch, {github_ops.REVIEW_THREADS_QUERY: lambda _v: (0, first, '')})
+
+    result = github_ops.fetch_pr_comments_data(123)
+
+    assert result['status'] == 'success'
+    assert len(calls) == 1
+    reviews = _records_by_connection(result)[github_ops.CONNECTION_REVIEWS]
+    assert reviews == {
+        'connection': github_ops.CONNECTION_REVIEWS,
+        'observed': _PAGE,
+        'cap': _PAGE,
+        'total': _PAGE + 5,
+        'capped': True,
+    }
+    assert result['complete'] is False
+
+
+def test_total_count_beyond_observed_is_reported_capped(monkeypatch):
+    # hasNextPage false does not outvote the provider's own totalCount: when the
+    # provider says more exist than were observed, the population is not proven whole.
+    first = _first_page(
+        threads=_connection([]),
+        reviews=_connection([]),
+        issue_comments=_connection([], total=3),
+    )
+    _wire_pages(monkeypatch, {github_ops.REVIEW_THREADS_QUERY: lambda _v: (0, first, '')})
+
+    result = github_ops.fetch_pr_comments_data(123)
+
+    records = _records_by_connection(result)
+    assert records[github_ops.CONNECTION_ISSUE_COMMENTS]['capped'] is True
+    assert records[github_ops.CONNECTION_REVIEWS]['capped'] is False
+    assert result['complete'] is False
+
+
+def test_cursor_that_does_not_advance_stops_and_reports_capped(monkeypatch):
+    # A provider repeating the same cursor with hasNextPage true would loop forever.
+    # The drain stops after the non-advancing page and reports the connection capped.
+    first = _first_page(
+        threads=_connection([]),
+        reviews=_connection([]),
+        issue_comments=_connection([], has_next=True, cursor='stuck'),
+    )
+
+    def stuck_page(variables):
+        assert variables['cursor'] == 'stuck'
+        return 0, {'repository': {'pullRequest': {'comments': _connection([], has_next=True, cursor='stuck')}}}, ''
+
+    calls = _wire_pages(
+        monkeypatch,
+        {github_ops.REVIEW_THREADS_QUERY: lambda _v: (0, first, ''), github_ops.ISSUE_COMMENTS_PAGE_QUERY: stuck_page},
+    )
+
+    result = github_ops.fetch_pr_comments_data(123)
+
+    assert [query for query, _ in calls].count(github_ops.ISSUE_COMMENTS_PAGE_QUERY) == 1
+    assert _records_by_connection(result)[github_ops.CONNECTION_ISSUE_COMMENTS]['capped'] is True
+    assert result['complete'] is False
+
+
+def test_failed_follow_up_page_fails_the_fetch(monkeypatch):
+    # The pages read before a failed follow-up are never published as the whole.
+    first = _first_page(
+        threads=_connection([]),
+        reviews=_connection([_review(1)], has_next=True, cursor='rev-page-1', total=2),
+        issue_comments=_connection([]),
+    )
+    _wire_pages(
+        monkeypatch,
+        {
+            github_ops.REVIEW_THREADS_QUERY: lambda _v: (0, first, ''),
+            github_ops.REVIEWS_PAGE_QUERY: lambda _v: (1, None, 'HTTP 502'),
+        },
+    )
+
+    result = github_ops.fetch_pr_comments_data(123)
+
+    assert result['status'] == 'error'
+    assert 'HTTP 502' in result['error']
+    assert 'comments' not in result
+
+
+def test_response_without_page_info_is_not_reported_complete(monkeypatch):
+    # A response carrying no pageInfo proves nothing about exhaustion. Every
+    # connection is reported capped rather than read as whole on absent evidence.
+    _wire(monkeypatch, with_updated_at=True)
+
+    result = github_ops.fetch_pr_comments_data(123)
+
+    assert result['status'] == 'success'
+    records = _records_by_connection(result)
+    assert set(records) == set(_CONNECTION_OPENINGS)
+    assert all(record['capped'] for record in records.values())
+    assert result['complete'] is False
