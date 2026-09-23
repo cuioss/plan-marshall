@@ -22,7 +22,7 @@ this document does not take.
 
 The degraded lifecycle read is a first-class, reported state rather than an
 error for its own reasons, which reachability never supplied: a ledger can be
-absent, unreadable, or malformed in any checkout — see
+absent, unreadable, malformed, or not yet migrated in any checkout — see
 [The degradation path](#the-degradation-path).
 
 The tool's only sanctioned write is the escalation path in
@@ -333,14 +333,20 @@ Every rule above reads what a spec SAYS. This one reads whether the plan saying
 it is still working — a fact no spec can state about itself, and the **only input
 to this derivation that is not the spec corpus**.
 
-**Where the authority comes from.** The epic ledger — `status.json`, beside the
-`plans/` corpus in the same epic directory — is the orchestrator's record of the
-plan queue, and its per-plan `status` field is authoritative there. This skill
-reads it and never writes it, exactly as it reads and never writes the specs.
-The ledger read is a **separate loader** from the corpus read: it opens one file,
-consults no spec, and resolves no path, so a ledger fact cannot reach the join
-dressed as a corpus fact. `classify` — the one verb that answers a
-purely-about-the-spec question — does not read the ledger at all.
+**Where the authority comes from.** The epic ledger, beside the `plans/` corpus
+in the same epic directory, is the orchestrator's record of the plan queue. It is
+a per-concern ledger: a header `status.json`, a `resume_anchor.md`, and one
+`queue/{PLAN-ID}.json` row file per queued plan. The per-plan `status` field on
+each row is authoritative. This skill reads the queue and never writes it, exactly
+as it reads and never writes the specs.
+
+The read goes through `manage-status`'s shared ledger reader
+(`_orchestrator_ledger.assemble_view`). That module is the one owner of the
+per-concern layout, so this skill carries no second model of where the queue
+lives. The ledger read is a **separate loader** from the corpus read: it consults
+no spec and resolves no spec path, so a ledger fact cannot reach the join dressed
+as a corpus fact. `classify` is the one verb that answers a purely-about-the-spec
+question, and it does not read the ledger at all.
 
 **What the partition means.** A plan whose work is FINISHED no longer competes
 for ownership: its declared surface is a historical record, not a live claim. The
@@ -409,9 +415,10 @@ is REPORTED rather than absorbed:
 
 | `degradation` | Cause |
 |---------------|-------|
-| `ledger_absent` | No `status.json` beside the corpus |
-| `ledger_unreadable` | Present, but not readable as JSON |
-| `ledger_malformed` | Read, but carrying no usable plan queue — the document is not an object, the queue is not a list, or a row carries no plan id |
+| `ledger_absent` | No header `status.json` beside the corpus |
+| `ledger_unreadable` | Present, but the header, the anchor, the `queue/` directory, or a single row file could not be read |
+| `ledger_malformed` | Read, but carrying no usable plan queue — a row is not an object or carries no plan id |
+| `ledger_legacy_layout` | The ledger is still in the monolithic layout: its `status.json` carries the queue. The shared reader refuses it rather than reading it, so an unmigrated ledger is never reported as an absent or an empty one. The remedy is `orchestrator migrate-layout` |
 
 Read `available` FIRST. When it is `false` the terminal set is empty because
 nothing was read, NOT because every plan is live — the two readings produce the
@@ -421,7 +428,8 @@ in a **declared state, not a defect**; the same output with no reason attached
 would be a partition that quietly attributed nothing on no evidence.
 
 An EMPTY plan queue is a read ledger, not a degraded one: an epic with nothing
-queued was measured, and reports `available: true` with no degradation.
+queued (an absent `queue/` directory, or one holding no row file) was measured,
+and reports `available: true` with no degradation.
 
 A plan whose spec is in the corpus but whose row is absent from the ledger keeps
 competing — the conservative direction, and the same one the degraded read takes.

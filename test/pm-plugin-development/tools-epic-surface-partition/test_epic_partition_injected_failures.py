@@ -13,7 +13,6 @@ under ``tmp_path``; the real orchestrator store is never touched.
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 # PLAIN import, deliberately — see the sibling suites: only a plain import gives
@@ -21,6 +20,7 @@ from pathlib import Path
 # loader would register a copy beside the plainly-imported one.
 import _epic_partition as partition_mod
 import pytest
+from _partition_ledger_fixtures import write_ledger
 from epic_spec_parser import classify_corpus
 
 # --- the clean baseline ------------------------------------------------------
@@ -64,15 +64,19 @@ def partition_of(repo: Path, plans: Path, terminal: frozenset[str] = frozenset()
 
 
 def terminal_from_ledger(epic_dir: Path, rows: dict[str, str]) -> frozenset[str]:
-    """Write a ledger and read the finished-plan set back out of it.
+    """Write a per-concern ledger and read the finished-plan set back out of it.
 
     Injected through the real reader rather than hand-built, so a control here
-    also exercises the ledger parse the live derivation depends on.
+    also exercises the ledger parse the live derivation depends on. The read is
+    asserted AVAILABLE before its terminal set is returned: a degraded read also
+    yields an empty set, and a control whose ledger silently stopped being read
+    would otherwise keep passing wherever it expects no retirement.
     """
-    epic_dir.mkdir(parents=True, exist_ok=True)
-    payload = {'plans': [{'id': pid, 'status': st} for pid, st in rows.items()]}
-    (epic_dir / 'status.json').write_text(json.dumps(payload), encoding='utf-8')
-    return partition_mod.read_plan_lifecycle(epic_dir).terminal_plans()
+    write_ledger(epic_dir, rows)
+    lifecycle = partition_mod.read_plan_lifecycle(epic_dir)
+    assert lifecycle.available is True, lifecycle.degradation
+    assert {row.plan_id for row in lifecycle.rows} == set(rows)
+    return lifecycle.terminal_plans()
 
 
 def named(result, verdict: str) -> set[str]:

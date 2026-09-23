@@ -93,19 +93,25 @@ that several plans really did claim. Both refusals are the same rule read in
 opposite directions — the narrowing applies only when it leaves exactly one live
 claimant standing.
 
-⛔ A missing or unreadable ledger degrades to treating EVERY plan as active,
-which is the behaviour that held before this input existed, and the degradation
-is STATED on :attr:`PlanLifecycle.degradation` rather than absorbed. An absent
-input reported as a clean one would attribute a terminal plan's claims on no
-evidence.
+⛔ A missing, unreadable, or not-yet-migrated ledger degrades to treating EVERY
+plan as active, which is the behaviour that held before this input existed, and
+the degradation is STATED on :attr:`PlanLifecycle.degradation` rather than
+absorbed. An absent input reported as a clean one would attribute a terminal
+plan's claims on no evidence.
 """
 
 import fnmatch
-import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from _orchestrator_ledger import (
+    LEDGER_ABSENT,
+    LEDGER_LEGACY,
+    LEDGER_OK,
+    assemble_view,
+    header_path,
+)
 from epic_spec_parser import (
     CLASS_DERIVED,
     KIND_DIRECTORY,
@@ -414,11 +420,12 @@ TEST_MODULE_GLOB = 'test_*.py'
 #: The population root. An entry spanning exactly this discriminates nothing.
 ROOT_PREFIX = 'test'
 
-#: The epic ledger, and the keys the plan queue is read through. It sits BESIDE
-#: the ``plans/`` spec corpus in the epic directory, and it is a genuinely
-#: different input source: the corpus states what a plan SAYS it will touch,
-#: the ledger states whether that plan is still doing it.
-LEDGER_FILE = 'status.json'
+#: The keys the plan queue is read through, in the assembled view the shared
+#: ledger reader returns. The ledger sits BESIDE the ``plans/`` spec corpus in
+#: the epic directory, and it is a genuinely different input source: the corpus
+#: states what a plan SAYS it will touch, the ledger states whether that plan is
+#: still doing it. Where its files live is the ledger module's to know, not this
+#: module's.
 LEDGER_QUEUE_KEY = 'plans'
 LEDGER_ROW_ID_KEY = 'id'
 LEDGER_ROW_STATUS_KEY = 'status'
@@ -481,6 +488,11 @@ assert not (TERMINAL_STATUSES & ACTIVE_STATUSES), (
 DEGRADED_LEDGER_ABSENT = 'ledger_absent'
 DEGRADED_LEDGER_UNREADABLE = 'ledger_unreadable'
 DEGRADED_LEDGER_MALFORMED = 'ledger_malformed'
+#: The ledger is still in the monolithic layout (its ``status.json`` carries the
+#: queue). The shared reader refuses it rather than reading it, and the refusal
+#: is held apart from ``ledger_absent`` / ``ledger_unreadable`` because the
+#: remedy differs: this one is ``orchestrator migrate-layout``.
+DEGRADED_LEDGER_LEGACY_LAYOUT = 'ledger_legacy_layout'
 
 
 class UnknownPlanStatusError(Exception):
@@ -548,9 +560,21 @@ def read_plan_lifecycle(epic_dir: Path) -> PlanLifecycle:
     """Read the epic ledger's plan queue and partition it terminal/active.
 
     This is the derivation's SECOND input source and is read entirely apart from
-    the spec corpus: it opens one file, consults no spec, and resolves no path.
-    Keeping the two reads separate is what stops a ledger fact and a corpus fact
-    from being mistaken for one another downstream.
+    the spec corpus: it reads the epic's per-concern ledger — the header and the
+    one-file-per-row ``queue/`` — through ``manage-status``'s shared ledger
+    reader (:func:`_orchestrator_ledger.assemble_view`), consults no spec, and
+    resolves no spec path. Keeping the two reads separate is what stops a ledger
+    fact and a corpus fact from being mistaken for one another downstream, and
+    reading the queue through the one layout owner is what keeps this module from
+    carrying a second model of where the queue lives.
+
+    Every way the ledger can fail to yield a queue is a STATED degradation, never
+    an empty one (ADR-019): an absent header (``ledger_absent``); a header,
+    queue directory or row file that could not be read (``ledger_unreadable``);
+    a row that is not a usable object (``ledger_malformed``); and a ledger still
+    in the monolithic layout (``ledger_legacy_layout``), which the shared reader
+    refuses rather than reads — so an unmigrated ledger is never reported as an
+    absent or an empty one.
 
     Raises:
         UnknownPlanStatusError: when a row carries a status outside
@@ -559,18 +583,20 @@ def read_plan_lifecycle(epic_dir: Path) -> PlanLifecycle:
             evidence, while an unrecognised status is a gap in this module's own
             model of the vocabulary, and only the latter is this module's to fix.
     """
-    ledger_path = epic_dir / LEDGER_FILE
-    if not ledger_path.is_file():
+    ledger_path = header_path(epic_dir)
+    ledger = assemble_view(epic_dir)
+    if ledger.state == LEDGER_ABSENT:
         return PlanLifecycle(str(ledger_path), False, DEGRADED_LEDGER_ABSENT)
-    try:
-        document = json.loads(ledger_path.read_text(encoding='utf-8'))
-    except (OSError, ValueError):
+    if ledger.state == LEDGER_LEGACY:
+        return PlanLifecycle(str(ledger_path), False, DEGRADED_LEDGER_LEGACY_LAYOUT)
+    if ledger.state != LEDGER_OK or ledger.unreadable_rows:
         return PlanLifecycle(str(ledger_path), False, DEGRADED_LEDGER_UNREADABLE)
-    if not isinstance(document, dict) or not isinstance(document.get(LEDGER_QUEUE_KEY), list):
+    queue = ledger.document.get(LEDGER_QUEUE_KEY)
+    if not isinstance(queue, list):
         return PlanLifecycle(str(ledger_path), False, DEGRADED_LEDGER_MALFORMED)
 
     rows: list[LifecycleRow] = []
-    for entry in document[LEDGER_QUEUE_KEY]:
+    for entry in queue:
         if not isinstance(entry, dict):
             return PlanLifecycle(str(ledger_path), False, DEGRADED_LEDGER_MALFORMED)
         plan_id = entry.get(LEDGER_ROW_ID_KEY)
