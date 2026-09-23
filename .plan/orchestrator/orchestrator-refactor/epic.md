@@ -56,18 +56,20 @@ ad hoc commits directly against `main`.
      outside the markers — never inside them. -->
 
 <!-- BEGIN GENERATED: resume-summary -->
-**Resume anchor**: cleanup complete 2026-09-23: 29 claims re-grounded at HEAD 14d8f3ccd across all 10 specs (21 corroborated, 5 contradicted/rescoped, 3 unverifiable). 2 re-scopes applied in place: PLAN-09's worktree-verb extension target corrected (_cmd_prepare -> prepare_execute.py, move-in/move-back layer excluded), PLAN-10's merge-queue settle-loop gap flagged for D3. 2 dead citations fixed in PLAN-06. Ledger invariants ok (compact idempotent). restart_verdict=not_ready: 25 uncommitted paths from this pass need commit+push before a fresh session reads ready. Blocking Open Defect unchanged: marketplace-wide disjointness gate indeterminate. Also unrouted: git-config-injection hardening (operator decision needed, from PLAN-08's landing).
+**Resume anchor**: PLAN-02 RUNNING 2026-09-23 (operator-confirmed, corroborated against manage-status list: phase=2-refine, in_progress). Do not re-scope its spec while running. Queue: PLAN-03/05/06/09/10/11 staged, PLAN-07 parked -- PLAN-11 (cross-check-dated-archive-self-collision, WS-04) appeared mid-session from another process, not yet reviewed by this session. Still blocked for any further next-slot emission: every staged candidate collides with PLAN-02 on orchestrator.py (determinate), plus the unchanged marketplace-wide indeterminate gate. Still open: git-config-injection hardening routing decision from PLAN-08's landing.
 **Phase**: orchestrating
 **Inbox (derived)**: 0 queued, 24 archived
+**Running**:
+- PLAN-02 (WS-01) — plan=ledger-decomposition-and-row-vocabulary
 **Parked**:
 - PLAN-07 (WS-04)
 **Queue** (staged, in order):
-1. PLAN-02 (WS-01)
-2. PLAN-03 (WS-02)
-3. PLAN-05 (WS-03)
-4. PLAN-06 (WS-04)
-5. PLAN-09 (WS-05)
-6. PLAN-10 (WS-05)
+1. PLAN-03 (WS-02)
+2. PLAN-05 (WS-03)
+3. PLAN-06 (WS-04)
+4. PLAN-09 (WS-05)
+5. PLAN-10 (WS-05)
+6. PLAN-11 (WS-04)
 - PLAN-01 (WS-01) — plan=tracked-orchestrator-store-resolver — PR #1557, #1558, #1561 — landing=landings/PLAN-01.md — status: shipped
 - PLAN-04 (WS-03) — plan=identifier-vocabulary-decision — PR #1543 — landing=landings/PLAN-04.md — status: shipped
 - PLAN-08 (WS-04) — plan=verdict-staleness-scoping — PR #1585 — landing=landings/PLAN-08.md — status: shipped
@@ -97,13 +99,14 @@ ad hoc commits directly against `main`.
 <!-- BEGIN GENERATED: ordered-queue -->
 | # | Plan | Workstream | Status | Surface (expected) |
 |---|------|------------|--------|--------------------|
-| 1 | PLAN-02 | WS-01 | staged | marketplace/bundles/plan-marshall/skills/manage-status/SKILL.md; marketplace/bundles/plan-marshall/skills/manage-status/scripts/_status_core.py; marketplace/bundles/plan-marshall/skills/manage-status/standards/status-lifecycle.md; marketplace/bundles/plan-marshall/skills/persona-plan-orchestrator/standards/orchestration-model.md; marketplace/bundles/plan-marshall/skills/plan-orchestrator/SKILL.md; marketplace/bundles/plan-marshall/skills/plan-orchestrator/scripts/orchestrator.py; marketplace/bundles/plan-marshall/skills/plan-orchestrator/templates/epic.md; marketplace/bundles/plan-marshall/skills/plan-orchestrator/workflow/cleanup.md; marketplace/bundles/plan-marshall/skills/plan-orchestrator/workflow/decompose.md; test/plan-marshall/manage-status/test_orchestrator_store.py; test/plan-marshall/manage-status/test_orchestrator_store_orchestrator.py; test/plan-marshall/plan-orchestrator/test_orchestrator_compact.py; test/plan-marshall/plan-orchestrator/test_orchestrator_queue_add_row_concurrency.py; test/plan-marshall/plan-orchestrator/test_orchestrator_status_regression.py |
+| 1 | PLAN-02 | WS-01 | running | marketplace/bundles/plan-marshall/skills/manage-status/SKILL.md; marketplace/bundles/plan-marshall/skills/manage-status/scripts/_status_core.py; marketplace/bundles/plan-marshall/skills/manage-status/standards/status-lifecycle.md; marketplace/bundles/plan-marshall/skills/persona-plan-orchestrator/standards/orchestration-model.md; marketplace/bundles/plan-marshall/skills/plan-orchestrator/SKILL.md; marketplace/bundles/plan-marshall/skills/plan-orchestrator/scripts/orchestrator.py; marketplace/bundles/plan-marshall/skills/plan-orchestrator/templates/epic.md; marketplace/bundles/plan-marshall/skills/plan-orchestrator/workflow/cleanup.md; marketplace/bundles/plan-marshall/skills/plan-orchestrator/workflow/decompose.md; test/plan-marshall/manage-status/test_orchestrator_store.py; test/plan-marshall/manage-status/test_orchestrator_store_orchestrator.py; test/plan-marshall/plan-orchestrator/test_orchestrator_compact.py; test/plan-marshall/plan-orchestrator/test_orchestrator_queue_add_row_concurrency.py; test/plan-marshall/plan-orchestrator/test_orchestrator_status_regression.py |
 | 2 | PLAN-03 | WS-02 | staged | doc/adr/; marketplace/bundles/plan-marshall/skills/manage-config/SKILL.md; marketplace/bundles/plan-marshall/skills/manage-config/scripts/_config_defaults.py; marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/cache_retention.py; marketplace/bundles/plan-marshall/skills/plan-orchestrator/scripts/_orchestrator_inbox.py; marketplace/bundles/plan-marshall/skills/script-shared/scripts/marketplace_paths.py; marketplace/bundles/pm-plugin-development/skills/plugin-doctor/references/rule-catalog.md; marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_shim_marker.py; marketplace/bundles/pm-plugin-development/skills/plugin-script-architecture/standards/shim-marker-convention.md; test/plan-marshall/marshall-steward/test_cache_retention.py; test/plan-marshall/plan-orchestrator/**; test/pm-plugin-development/plugin-doctor/test_analyze_shim_marker.py |
 | 3 | PLAN-05 | WS-03 | staged | marketplace/bundles/plan-marshall/skills/manage-architecture/**; marketplace/bundles/plan-marshall/skills/manage-logging/**; marketplace/bundles/plan-marshall/skills/manage-status/**; marketplace/bundles/plan-marshall/skills/persona-plan-marshall-agent/standards/argument-naming.md; marketplace/bundles/plan-marshall/skills/persona-plan-orchestrator/**; marketplace/bundles/plan-marshall/skills/plan-orchestrator/**; marketplace/bundles/plan-marshall/skills/platform-runtime/**; marketplace/bundles/plan-marshall/skills/script-shared/scripts/query/query-architecture.py; marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/doctor-marketplace.py; marketplace/bundles/pm-plugin-development/skills/tools-epic-surface-partition/**; test/plan-marshall/manage-logging/**; test/plan-marshall/manage-status/**; test/plan-marshall/plan-orchestrator/**; test/pm-plugin-development/plugin-doctor/test_doctor_marketplace.py; test/pm-plugin-development/tools-epic-surface-partition/** |
 | 4 | PLAN-06 | WS-04 | staged | marketplace/bundles/plan-marshall/skills/phase-1-init/**; marketplace/bundles/plan-marshall/skills/phase-6-finalize/**; marketplace/bundles/plan-marshall/skills/plan-orchestrator/scripts/_orchestrator_inbox.py; marketplace/bundles/plan-marshall/skills/plan-orchestrator/scripts/orchestrator.py; marketplace/bundles/plan-marshall/skills/plan-orchestrator/standards/inbox-envelope.md; marketplace/bundles/plan-marshall/skills/plan-orchestrator/standards/landing-payload-spec.md; marketplace/bundles/pm-plugin-development/skills/tools-epic-surface-partition/scripts/_epic_partition.py; marketplace/bundles/pm-plugin-development/skills/tools-epic-surface-partition/scripts/epic-surface-partition.py; test/plan-marshall/phase-1-init/**; test/plan-marshall/phase-6-finalize/**; test/plan-marshall/plan-orchestrator/**; test/pm-plugin-development/tools-epic-surface-partition/** |
 | 5 | PLAN-07 | WS-04 | parked | marketplace/bundles/plan-marshall/skills/plan-orchestrator/SKILL.md; marketplace/bundles/plan-marshall/skills/plan-orchestrator/scripts/; marketplace/bundles/plan-marshall/skills/plan-orchestrator/scripts/_orchestrator_inbox.py; marketplace/bundles/plan-marshall/skills/plan-orchestrator/scripts/orchestrator.py; test/plan-marshall/plan-orchestrator/** |
 | 6 | PLAN-09 | WS-05 | staged | marketplace/bundles/plan-marshall/skills/manage-config/scripts/_config_defaults.py; marketplace/bundles/plan-marshall/skills/manage-config/standards/data-model.md; marketplace/bundles/plan-marshall/skills/persona-plan-orchestrator/standards/orchestration-model.md; marketplace/bundles/plan-marshall/skills/plan-orchestrator/scripts/orchestrator.py; marketplace/bundles/plan-marshall/skills/tools-file-ops/**; marketplace/bundles/plan-marshall/skills/workflow-integration-git/SKILL.md; marketplace/bundles/plan-marshall/skills/workflow-integration-git/scripts/git-workflow.py; test/plan-marshall/manage-config/**; test/plan-marshall/plan-orchestrator/**; test/plan-marshall/workflow-integration-git/** |
 | 7 | PLAN-10 | WS-05 | staged | marketplace/bundles/plan-marshall/skills/manage-locks/**; marketplace/bundles/plan-marshall/skills/plan-orchestrator/SKILL.md; marketplace/bundles/plan-marshall/skills/plan-orchestrator/scripts/orchestrator.py; marketplace/bundles/plan-marshall/skills/tools-integration-ci/**; marketplace/bundles/plan-marshall/skills/workflow-integration-git/scripts/git-workflow.py; test/plan-marshall/plan-orchestrator/**; test/plan-marshall/tools-integration-ci/** |
+| 8 | PLAN-11 | WS-04 | staged | marketplace/bundles/plan-marshall/skills/plan-orchestrator/scripts/orchestrator.py; test/plan-marshall/plan-orchestrator/test_orchestrator_corpus.py |
 <!-- END GENERATED: ordered-queue -->
 
 ### Queue annotations
@@ -116,13 +119,18 @@ ad hoc commits directly against `main`.
 - PLAN-01 — **SHIPPED 2026-09-21** (#1557/#1558/#1561; #1555 closed unmerged, split
   executed). See `landings/PLAN-01.md`. Landed WITHOUT a redirect — see the new Open Defect
   on `_orchestrator_inbox.py`'s path-prefix gap, folded into PLAN-03.
-- PLAN-02 — dependency SATISFIED (PLAN-01 shipped 2026-09-21). Emittable now, subject to
-  disjointness/prep-ready checks at `next`-time. ⚠ D2 (row-status vocabulary) is LARGELY
-  ALREADY DELIVERED by PLAN-TRUTH-143 (#1539) — shrinks to a doc-reconciliation task.
-  D0/D1/D3/D4/D5 unaffected. Sharpest collision in the epic: shares `status.json` schema
-  surface with PLAN-05 (WS-03) — do not run concurrently, land PLAN-02 first. Cross-epic
-  overlap on `orchestration-model.md` with `truthful-signals` PLAN-TRUTH-151 — still `staged`
-  as of 2026-09-21, no live risk yet — check its status before emitting.
+- PLAN-02 — **EMITTED 2026-09-23 on direct operator override**, NOT via verified-safe
+  `next`-slot rigor: `corpus cross-check` reads `candidate_comparison_determinate: false`
+  (unchanged marketplace-wide Open Defect) and the operator instructed emission regardless.
+  ⚠ Independently of that gate, a DETERMINATE fact stands: every staged candidate in this
+  corpus (PLAN-03/05/06/09/10) collides with PLAN-02 on `orchestrator.py` — no second slot
+  was fillable even setting the indeterminate gate aside. Awaiting operator-confirmed
+  `launched → running`. ⚠ D2 (row-status vocabulary) is LARGELY ALREADY DELIVERED by
+  PLAN-TRUTH-143 (#1539) — shrinks to a doc-reconciliation task. D0/D1/D3/D4/D5 unaffected.
+  Sharpest collision in the epic: shares `status.json` schema surface with PLAN-05 (WS-03)
+  — do not run concurrently, land PLAN-02 first. Cross-epic overlap on
+  `orchestration-model.md` with `truthful-signals` PLAN-TRUTH-151 — check its status before
+  PLAN-02 actually starts.
 - PLAN-03 — dependency SATISFIED (PLAN-01 shipped). Emittable now, subject to
   disjointness/prep-ready checks. ⚠ **Landed without a redirect** — D6 is now a retrofit; its
   most urgent sub-target (`_orchestrator_inbox.py`'s `_SOURCE_ID_RE` path-prefix gap) is
