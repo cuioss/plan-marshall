@@ -19,6 +19,13 @@ Interactive exploration — live poking-around in a browser, Chrome for Claude, 
 
 If a future capability genuinely needs an external tool to confirm something, the right shape is a thin surface that *emits into the findings contract* — the same pipeline every other automated review feeds (xref:automatic-reviews.adoc[Concepts › Automatic Reviews]) — rather than a parallel live-run surface rebuilt in-house. The external tool runs behind that thin surface, its output is reduced to encoded findings, and the rest of the workflow consumes those findings exactly as it consumes any other. The boundary stays intact: encoded results in, no ephemeral live-run path bolted onto the model.
 
+== Producer vocabulary and dispatch roster contract
+
+The `producer` runtime input carries a single accept-set: `build-runner`, `sonar`, `pr-comment`, `plugin-doctor`, `pr-state`, `finalize-feedback` (see `verification-feedback.md` Inputs table).
+`ci-verify-timeout` is rejected on every producer path — it is a `default:ci-verify` taxonomy producer string (row h, Timeout), not a `producer` value; the owning producer of the rejection is `default:ci-verify` (see `ci-verify.md` Failure-mode taxonomy).
+The finalize dispatch roster (`dispatch-inline-split.md` Dispatched steps) carries each dispatched step's explicit prompt skill set as its `skills:` column, and the `plan-retrospective` roster entry carries the record-before-return completion guard.
+Lesson evidence: 2026-09-17-19-007 (producer vocabulary), 2026-09-17-19-008 (dispatch roster).
+
 == Related
 
 * xref:build-management.adoc[Concepts › Build Management] — the canonical-command surface (`verify`, `quality-gate`, `module-tests`, `e2e`, …) that encoded verification runs through.
