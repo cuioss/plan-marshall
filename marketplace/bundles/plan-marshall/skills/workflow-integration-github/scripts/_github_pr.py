@@ -2275,14 +2275,15 @@ ENQUEUED_INDETERMINATE = 'indeterminate'
 #: ``indeterminate`` rather than ``True``.
 #:
 #: ``membership_read_failed`` — the queue-membership read itself failed (repo
-#: unresolvable, GraphQL error, no ``mergeQueue`` object, malformed payload).
+#: unresolvable, GraphQL error, no ``mergeQueue`` object, or an entries page
+#: missing its ``nodes`` list or ``pageInfo`` object).
 ENQUEUE_UNOBSERVED_READ_FAILED = 'membership_read_failed'
 #: ``pr_not_listed`` — the entry list was read to its end and does not list the PR.
 #: Not a negative either: the queue may already have merged or ejected it.
 ENQUEUE_UNOBSERVED_NOT_LISTED = 'pr_not_listed'
 #: ``entries_incomplete`` — the entry list could not be read to its end (a page
-#: reported more entries but no advancing cursor, or carried no readable
-#: ``hasNextPage``), so an absence proves nothing.
+#: reported more entries but no advancing cursor, or its ``pageInfo`` carried
+#: no boolean ``hasNextPage``), so an absence proves nothing.
 ENQUEUE_UNOBSERVED_INCOMPLETE = 'entries_incomplete'
 
 #: Page size of one ``mergeQueue.entries`` read. A page size, never a ceiling:

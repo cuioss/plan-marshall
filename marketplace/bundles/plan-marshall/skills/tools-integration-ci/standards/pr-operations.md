@@ -450,8 +450,8 @@ On **GitHub**, the verb engages the merge queue via `gh pr merge --auto` (the PR
 
 | `enqueue_unobserved_reason` | Meaning |
 |-----------------------------|---------|
-| `membership_read_failed` | The membership read itself failed: repository unresolvable, GraphQL error, no merge queue returned for the branch, or a malformed entries page. |
-| `entries_incomplete` | The entry list could not be read to its end — a page reported further entries without an advancing cursor, or carried no readable `hasNextPage` — so the PR's absence from what was read proves nothing. |
+| `membership_read_failed` | The membership read itself failed: repository unresolvable, GraphQL error, no merge queue returned for the branch, or an entries page whose `nodes` list or `pageInfo` object is missing. |
+| `entries_incomplete` | The entry list could not be read to its end — a page's `pageInfo` reported further entries without an advancing cursor, or is present but carries no boolean `hasNextPage` — so the PR's absence from what was read proves nothing. |
 | `pr_not_listed` | The list was read to its end — the last page reported `hasNextPage: false` — and does not carry the PR. Still not a negative: the queue may already have merged or ejected it between the call and the read. |
 
 A caller that receives `indeterminate` must not proceed as though the PR were queued: report the reason and confirm the PR's queue membership before continuing. `enqueue_observation` names the read and what it saw on both GitHub values, so the verdict is auditable either way.
