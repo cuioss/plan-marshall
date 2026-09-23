@@ -48,6 +48,11 @@ share `plan-marshall:build-maven`) and the full body is too fine (two reports of
 verbatim). ⚠ Publish the population any dedup check was computed over; a "no duplicate found" over an
 unscanned corpus is a vacuous pass, an archetype the parent project has recorded repeatedly.
 
+⭐ **Real collision confirmed at cleanup 2026-09-23** (re-derive at outline, do not just cite this):
+`plan-marshall:build-maven` is stranded TWICE across two different repos — `cui-jsf-test-basic`
+(`2026-06-16-09-001`) and `nifi-extensions` (`2026-07-16-21-002`) — a live instance of the "component
+alone is too coarse" premise, not a hypothetical.
+
 **D3 — the failure path is loud and lossless.** Offline, no permission, rate-limited, or the API
 refuses: ⛔ **the finding must NOT silently fall back to the local store** — that is precisely the
 stranding this epic ends, and a silent fallback would rebuild it behind a route that reports success.
@@ -81,7 +86,12 @@ design against, not a remote one.
 ## Claim Labels
 
 - OBSERVED: `ci.py` exposes an `issue` subcommand alongside `pr` / `checks` / `branch` / `repo` — read at `tools-integration-ci/scripts/ci.py` § argparse subparsers.
+  - verdict: corroborated | checked_at: 14d8f3ccd | by: lessons-routing/cleanup | rescoped: n/a | evidence: ci --help lists {pr,checks,issue,branch,repo}; 'issue  Issue operations'
 - HYPOTHESIS: a consumer repo's credentials can open an issue on `cuioss/plan-marshall` across orgs — confirm/refute at the provider layer with a dry-run issue call from a consumer checkout (verify-at-outline). ⛔ **UNVERIFIED and gating: D0 exists solely to settle it, and a negative answer re-shapes this plan rather than killing it.**
+  - verdict: unverifiable | checked_at: 14d8f3ccd | by: lessons-routing/cleanup | rescoped: n/a | evidence: requires a live authenticated cross-org write probe from a consumer checkout; a dry-run issue create is a mutation and out of scope for a read-only cleanup pass. Remains correctly gated at D0
 - HYPOTHESIS: consumer repos on this machine run differing plan-marshall versions, so a stale-version report is the expected case — confirm/refute at each consumer `.plan/execute-script.py` § `MARSHALL_VERSION` (verify-at-outline).
+  - verdict: corroborated | checked_at: 14d8f3ccd | by: lessons-routing/cleanup | rescoped: n/a | evidence: MARSHALL_VERSION read at each consumer .plan/execute-script.py:80 - API-Sheriff 0.1.1753, TokenSheriff 0.1.1670, nifi-extensions 0.1.1137, cui-jsf-test-basic absent (predates the constant); this repo 0.1.1753 - 616-release spread confirms stale-version is the expected case
 - HYPOTHESIS: a dedup key exists that is coarser than the full body and finer than the component alone — confirm/refute at outline against the real stranded corpus (verify-at-outline). **Neither bound is assumed correct; D2 derives the key.**
+  - verdict: unverifiable | checked_at: 14d8f3ccd | by: lessons-routing/cleanup | rescoped: n/a | evidence: design derivation deliberately deferred to outline; confirmed a real collision (plan-marshall:build-maven stranded twice, cui-jsf-test-basic + nifi-extensions) strengthening the component-alone-too-coarse premise, but the key itself is still D2's to derive
 - Verify-first clause: the failure path must be demonstrated to preserve content and name its failure, since a silent fallback to the local store rebuilds the stranding this plan removes.
+  - verdict: corroborated | checked_at: 14d8f3ccd | by: lessons-routing/cleanup | rescoped: n/a | evidence: still an open design obligation - no issue-route or MARSHALL_VERSION reference exists anywhere under manage-lessons/scripts/** at HEAD, confirmed via architecture search --content

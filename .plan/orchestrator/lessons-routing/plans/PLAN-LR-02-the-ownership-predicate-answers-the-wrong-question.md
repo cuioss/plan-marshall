@@ -97,27 +97,31 @@ cross-checked against its four siblings.
 - ⚠ **PLAN-LR-03 consumes this plan's axis.** Serialize; do not build the route against a provisional
   classification.
 
-### Machine-derived collision map (2026-08-24, `corpus cross-check` — 8 epics / 7 live plans / 4 specs)
+### Machine-derived collision map — STALE, superseded below (originally 2026-08-24, 8 epics / 7 live
+plans / 4 specs)
 
-✅ **The epic's first cross-check. Exactly ONE cross-epic overlap across all four specs then staged**,
-which is the expected shape for a new epic on a surface (`manage-lessons`) no sibling owns.
-
-- ⚠ **`truthful-signals/PLAN-TRUTH-091` (`agent-facing-documentation-surfaces`) — 1 file,
-  `manage-lessons/SKILL.md`. Ordering constraint only.** Its subject is agent-facing doc surfaces across
-  many skills; this plan changes the guard's behaviour and its documented contract. Different subjects
-  on one file. ⛔ **Serialize if both are live** — a doc-surface pass and a behaviour change to the same
-  document conflict textually even though neither contests the other's claim.
-- ✅ **No overlap with any live plan, and none with `code-intelligence-substrate` or `review-apparatus`.**
-
-⛔ Re-derive at emit time — this map was taken before any plan in this epic ran, and PLAN-LR-05 has been
-staged into the epic since.
+⛔⛔ **RETIRED at cleanup 2026-09-23.** The `PLAN-TRUTH-091` ordering constraint this section named is
+now INERT: `truthful-signals-26-09-21`'s `PLAN-TRUTH-091` is `superseded` (by `PLAN-TRUTH-155`) and that
+whole epic is `phase: closed` — no live serialization constraint remains from that source. The original
+"exactly ONE overlap across 8 epics" figure is also stale on its face — the epic population has grown to
+24 active epics since (see R14/R17 in `epic.md`) — but re-deriving that FULL figure is `corpus
+cross-check`'s job at emit time, not this note's; this section only retires the one constraint it named
+that has since resolved. ⛔ **Re-derive fully with `corpus cross-check` at emit time** — do not treat
+"the named constraint is inert" as "no constraint exists."
 
 ## Claim Labels
 
 - OBSERVED: the `wrong_store` guard's ownership predicate tests whether `marketplace/bundles/{prefix}` exists in the resolved main-anchored store repo — read at `manage-lessons/SKILL.md` § `:108` and § the `wrong_store` error-table row.
+  - verdict: corroborated | checked_at: 14d8f3ccd | by: lessons-routing/cleanup | rescoped: n/a | evidence: marketplace_paths.py:691-734 main_anchored_store_owns_bundle checks (main_root / MARKETPLACE_BUNDLES_PATH / bundle).is_dir(); consumed at _lessons_io.py:226-235
 - OBSERVED: `API-Sheriff` has no `marketplace/bundles/` directory, so in a consumer repo every prefixed component is foreign including the client's own — read at `~/git/API-Sheriff/` § absent path.
+  - verdict: corroborated | checked_at: 14d8f3ccd | by: lessons-routing/cleanup | rescoped: n/a | evidence: git -C ~/git/API-Sheriff ls-files marketplace returns empty
 - OBSERVED: `--allow-foreign-store` records nothing on the filed lesson — read at `manage-lessons/SKILL.md` § `:108`.
+  - verdict: corroborated | checked_at: 14d8f3ccd | by: lessons-routing/cleanup | rescoped: n/a | evidence: manage-lessons/SKILL.md:108; _lessons_io.py:218-219 confirm no recording on override
 - OBSERVED: `PLAN-103` shipped as PR #1050 / `a7a657b00` with subject *"scope the store-ownership guard to prefixed components"*, fixing the prefix-LESS case — read at `truthful-signals/landings/PLAN-103.md` § Deliverable Fidelity.
+  - verdict: corroborated | checked_at: 14d8f3ccd | by: lessons-routing/cleanup | rescoped: n/a | evidence: git log --oneline -1 a7a657b00 -> fix(manage-lessons): scope the store-ownership guard to prefixed components (#1050); orchestrator queue row PLAN-103 = shipped, pr 1050, landings/PLAN-103.md
 - HYPOTHESIS: the prefix-less carve-out PLAN-103 shipped is still intact at HEAD and this plan need only extend the prefixed branch — confirm/refute at `manage-lessons/scripts/**` § the guard implementation (verify-at-outline).
-- HYPOTHESIS: #1050 carries untriaged post-merge CodeRabbit findings on the same code path — confirm/refute via `ci pr comments --pr-number 1050` (verify-at-outline). **Recorded because inheriting one accidentally is cheap to avoid and expensive to discover.**
+  - verdict: corroborated | checked_at: 14d8f3ccd | by: lessons-routing/cleanup | rescoped: n/a | evidence: _lessons_io.py:221-224 - if ':' not in component: return (project-local by construction), documented at SKILL.md:108; extendable branch at 226-235 as the spec assumes
+- HYPOTHESIS: #1050 carries untriaged post-merge CodeRabbit findings on the same code path — DISCHARGED at cleanup 2026-09-23: `ci pr comments --pr-number 1050` shows both inline actionable findings `resolved: true`, each tagged "Addressed in commit 28a1e04", answered, with a completed re-review. Nothing to inherit — this plan may proceed without re-checking #1050's comment thread.
+  - verdict: contradicted | checked_at: 14d8f3ccd | by: lessons-routing/cleanup | rescoped: yes | evidence: ci pr comments --pr-number 1050: both inline actionable findings resolved:true, each tagged 'Addressed in commit 28a1e04', answered, completed re-review. Discharged - spec text updated, nothing to inherit
 - Verify-first clause: the replacement predicate must be exercised in a CONSUMER-shaped repo before it is believed — in a marketplace-shaped repo the old and new predicates agree, so this repo's own suite cannot refute the defect.
+  - verdict: corroborated | checked_at: 14d8f3ccd | by: lessons-routing/cleanup | rescoped: n/a | evidence: predicate unchanged at HEAD (marketplace_paths.py:691-734); existing tests test_add_guard_component_store.py + test_add_wrong_store_guard.py override short-circuits to True at :730-731, reinforcing the clause

@@ -923,3 +923,283 @@ Both landing-check `complete: true`, both messages archived. Queue: 27 shipped /
 ⚠⚠ THE INBOX IS NOT DRAINED: 20 live messages remain (19 candidate-lesson, 1 truthful-signals finding), 0 invalid, 0 closed senders. Only the TWO LANDINGS were consumed this pass. A `/plan-orchestrator analyze slug=review-apparatus` drain is OWED and is the largest single piece of pending ledger work.
 ⭐⭐ NEXT ACTION: (a) drain the 20-message inbox; (b) stage specs for the three unowned defects above; (c) `/marshall-steward` for the owed config fix; (d) BOTH SLOTS ARE OPEN — `next` can emit two, but re-derive disjointness first.
 
+## Relocated 2026-09-23 (cleanup, operator-confirmed) — eight Open-Defects/Watches sections whose subject is closed
+
+Selected on the "closed subject, not merely old" test: each carries its own closed/resolved marker in
+its heading and no still-open item embedded as its primary subject. Several sections in the same range
+were deliberately NOT relocated because they carry an embedded live item (`RESOLVED 2026-08-24` — a
+"STILL OPEN" scoping defect; the `PLAN-PR-046` and `PLAN-PR-033` LANDING sections — each carries a live
+open-defect tail); those stay in `epic.md` for a future pass to judge on their own terms.
+
+### ⭐ CLOSED-BY-MEASUREMENT 2026-09-05 — the union-with-spec surface reading has a measured cost
+
+While PLAN-PR-042 ran, `corpus cross-check`'s `live_plan` rows named exactly
+`bot-participation-contract.md` and `cuioss-review-bot.md` — **precisely the two production files it
+actually touched** (`git show --stat` on `497261525`: those two plus one test file). This
+orchestrator treated that as a partial reading and cleared candidates against the **union** of the
+live rows and the spec's five declared entries.
+
+**The cost is now measurable.** The union reading correctly serialized `PLAN-PR-025B` (which declares
+`test/plan-marshall/automatic-review/`, where the plan did write), but also serialized **`PLAN-PR-026`,
+`-030`, `-031`, `-047` and `-048`** behind `review_completeness.py` and `review_retrospective.py` —
+**two files this plan never wrote.** Five plans sequenced behind two files that never moved.
+
+⛔ **The rule still stands and is NOT relaxed**: a running plan's live surface can be genuinely partial
+because it grows as the plan works, so clearing against the live arm alone remains unsafe. What is
+recorded here is that the conservative reading has a **throughput** cost, not a safety one — it lost
+five pairings; it admitted no collision. ⭐ **Correctness in the safe direction is still a cost, and
+naming it is how the next reader knows the trade was made deliberately.**
+
+### ✅ CORRECTED-AND-CLOSED 2026-09-05 — `2-refine` drift was REAL but did NOT survive the archive
+
+`phases[]` records `2-refine` as `in_progress` while the plan sat at `6-finalize`, and `progress`
+reports `completed_phases: 4` where **five** are genuinely complete. The **light planning lane
+collapses refine+outline+derive into one envelope and never closes `2-refine`.**
+
+⛔⛔ **THIS ORCHESTRATOR'S CONCLUSION WAS WRONG AND IS RETRACTED HERE.** Inbox message
+`apply-the-cloud-plan-lane-contract-amendments-016.md` (a self-correction filed by the same plan)
+establishes that the drift **did NOT survive the archive**: the archived record at
+`.plan/local/archived-plans/2026-09-05-apply-the-cloud-plan-lane-contract-amendments/status.json`
+does not carry it. The first half of the claim was accurate **when written** — the drift was read off
+the live `status.json` during `emit-landing` and corroborated by `manage-status progress` returning
+`completed_phases: 4` at `6-finalize`. The *conclusion* — that it would ship into the archive — is the
+part that was wrong. ⭐ **A defect that self-resolves at archive is not an open defect**, and leaving
+this standing would have sent a future plan hunting a condition that no longer exists.
+
+⭐ **The run deliberately did NOT repair it, and that was still the right call** — a hand-write to
+`status.json` that close to `archive-plan` risks more than the inaccuracy does, and the accurate
+record is that the machinery skipped the phase, not that it completed. Recorded here so the next
+reader does not treat a light-lane plan's `completed_phases` as a count.
+
+⛔ Also on the same record: `phase_steps["6-finalize"]` carries BOTH `plan-marshall:plan-retrospective`
+(written by the step) and a bare `plan-retrospective` (written by the orchestrator), both `done` with
+different `display_detail`. It inflates any count over `phase_steps` and defeats a naive
+`len(phase_steps) == len(manifest.steps)` handshake. **Staged as PLAN-PR-050 D4.**
+
+### ✅ 2026-09-04 SECOND DRAIN — 1/1 consumed, staged as PLAN-PR-047; ⛔ ONE SENDER CLAIM REFUTED BEFORE STAGING
+
+`truthful-signals-044.md` arrived at 08:29:22Z, **after** the first drain closed. `messages_scanned: 1`,
+`archived: 1`, `invalid: 0`. Disposition **staged** — a `kind: finding` escalated, not absorbed.
+
+**Staged as `PLAN-PR-047` (WS-03, D0–D4)** — *the counting stage reasons from inputs that were never
+persisted, and each gap changes a published number*. Declared surface **10 entries, `declarative`,
+`admits_disjointness_check: true`, 0 unresolved** (parser-verified). Corpus now **49/49** both directions,
+0 `rows_without_spec`, 0 `specs_without_row`, `blocking_count: 0`.
+
+⛔ **NOT folded onto `PLAN-PR-030`** despite the shared measurement subject — PR-030 already carries seven
+items (one gate + six deliverables), over the split guard. Nor onto `PLAN-PR-043`, which **this session's
+own earlier fold** took to six. Recorded so both omissions read as decisions.
+
+⛔⛔ **One of the sender's four claims was REFUTED before staging, and the spec carries the refutation so
+it cannot be re-adopted.** The claim: *"the PR-Agent registry doc states this bot posts no inline comments
+at all"*, making an observed `kind=inline` record a contradiction. **At `31d42db87` — the registry version
+the source run actually read, predating PR #1386's merge (`71279cc02`, 2026-09-03 17:53:36Z) — the doc
+declared BOTH publish shapes**: `issue_comment` unconditional plus `inline` under `/improve`, with the
+explicit note *"An absent inline count is therefore NOT evidence of non-participation, while a present one
+IS evidence of participation."* ⇒ The observed record is what the registry **predicts and endorses**, and
+the sender's drawn consequence (*a counting stage would have concluded this bot found nothing*) is
+backwards.
+
+⭐ **The inverted form survives and is what D4 carries**: the Guide `issue_comment` is declared
+**unconditional**, yet **zero** `issue_comment` records were observed for `cuioss-review-bot`. An
+unconditional shape that did not appear is a genuine mismatch — in the opposite direction.
+
+⭐ **Three claims verified first-party at HEAD `cc5ea40a1` before staging**: `sourcery.md:20-22` (no
+`review_body_summary_patterns`; the empty default keeps every `review_body` **COUNTED**), `sourcery.md:51`
+(`rate_limit_class: hard_quota`), and `github_re_review.py:394`
+(`'head_sha_verified': matched_signal == 'review'`) — the last corroborating both `9f7923` and this epic's
+own `e8bde7`.
+
+⛔⛔ **The compounding selection effect is why this is a MEASUREMENT defect, not a coverage gap.**
+`finalize-step-simplify` (order 8) and `finalize-step-security-audit` (order 9) mutate source **after** the
+gates (5, 7), and a forward pass never re-gates their edits ⇒ **the only measurable PRs are those where
+neither step committed anything** — systematically the PRs that needed no fixing. A biased population, not
+a random sample. ⛔ **A run of `excluded` rows means those PRs were never measurable. It does NOT mean the
+gates were clean.**
+
+### ✅ 2026-09-04 INBOX DRAINED — 20 of 20 consumed, 0 invalid, queue at the EMPTY zero
+
+`messages_scanned: 20`, `messages_archived: 20`, `messages_invalid: 0`, `messages_archive_failed: 0` —
+the closure equation holds. Post-drain `live_count: 0`, `closed_senders` **empty**, `invalid_count: 0`
+⇒ the **EMPTY** state, ⛔ **NOT finished**: neither sender declared closure, so more messages are expected.
+
+| Disposition | N | What |
+|---|:-:|---|
+| **promoted** | 15 | lifted to the global lessons corpus as `2026-09-04-08-001` … `-015` |
+| **folded** | 3 | into `PLAN-PR-031`, `PLAN-PR-043`, `PLAN-PR-025B` + `PLAN-PR-046` |
+| **discarded** | 2 | one dedup, one **refuted** — neither dropped silently |
+
+**The 15 promotions** span `phase-6-finalize` (4), `plan-retrospective` (2), `phase-5-execute` (2),
+`ext-self-review-plan-marshall` (2), and one each of `manage-solution-outline`, `manage-change-ledger`,
+`persona-module-tester`, `script-shared`, `automatic-review`. ⭐ Two are worth naming: `-005` *reject a
+fix-task whose files fall outside its deliverable declared surface* is the **direct remedy for the 12-of-23
+scope drift** recorded above, and `-013` *completeness asserted again inside the fix for three
+asserted-completeness defects* is the recurring archetype re-firing inside its own repair.
+
+**The 3 folds, and the same-act surface obligation discharged on all of them:**
+
+| Message | → | Surface |
+|---|---|---|
+| `rpp-015` | `PLAN-PR-031` **D6** — a posted disposition is a promise nothing re-checks against what landed | +3 entries; `claimed_count` **8**, parser-verified |
+| `rpp-009` | `PLAN-PR-043` **D6 limb A** — the rate window is a retry policy, not a flat timeout | +3 entries; `claimed_count` **14** |
+| `truthful-signals-043` | split 3 ways as its sender intended — item 1 → `PLAN-PR-025B` **D10**, item 2 → `PLAN-PR-046` **D3**, item 3 → `PLAN-PR-043` **D6 limb B** | PR-025B +4, PR-046 +2 (`claimed_count` **11**), PR-043 covered above |
+
+⭐⭐ **`truthful-signals-043` item 2 is `e8bde7` reached from the other side** — an in-place republish read as
+`declined` — observed in TokenSheriff and **corroborated first-party** on our own PR #1388. Two independent
+observations of one mechanism. ⛔ The foreign PR ids are **LEADS**, not corroborated in this checkout.
+
+⛔ **Two stale-surface corrections made in the same pass**: `PLAN-PR-031` and `PLAN-PR-043` both declared
+`standards/pr-agent.md`, **retired by #1392** — corrected to `standards/cuioss-review-bot.md`. A spec
+declaring a path that no longer exists is a surface the disjointness gate cannot match.
+
+⚠ **`PLAN-PR-025B`'s surface remains unverifiable from the parser** — it still collapses onto `plan_id`
+`PLAN-PR-025` under the known 025-family defect recorded above. The fold's +4 entries were written, but
+`corpus surfaces` cannot attribute them. **Pre-existing, not introduced here.**
+
+⛔ **`rpp-016` was DISCARDED AS REFUTED, and the distinction matters**: it reported findings *"die with the
+plan directory — there is no carry-out route"*. The store is intact and all 8 hash ids resolved on the first
+read. Its *proposal* (a carry-out route) names a real gap; its *premise* (the data is lost) is false, and
+recording it as a live signal would have preserved the false half.
+
+### ⭐⭐ RESOLVED 2026-09-04 — THE EIGHT “UNREACHABLE” FINDINGS WERE RECOVERED; THE DATA SURVIVES ARCHIVAL
+
+PLAN-PR-038's landing reported eight findings *"pending in a store that just died with the plan
+directory"* with *"no route out of the archive"*. ⛔ **The premise was wrong in the way that matters: the
+store did not die.** `.plan/local/archived-plans/2026-09-03-review-packs-become-published-artifacts/artifacts/findings/`
+is intact and readable — 13 JSONL files — and **all 8 hash ids resolved on the first read**, every one at
+`resolution: pending`, `promoted: false`.
+
+⭐ **The missing thing was a ROUTE, not the data.** Recording that distinction matters: a future run that
+believes findings are destroyed by archival will stop looking. They are not. The carry-out is a read.
+
+| Hash | Type / sev | Component | Subject | Routed |
+|---|---|---|---|---|
+| `e8bde7` | bug / warn | `workflow-integration-github` | `head_sha_verified` can never be true for pr-agent ⇒ the `participated_stale` remedy is unreachable | **stays here** (PR/review) |
+| `18f362` | triage / warn | `tools-integration-ci` | CI payload cannot establish WHICH commit was verified — `head_sha` and `elapsed_sec` contradict | → `truthful-signals` `review-apparatus-025.md` |
+| `1d5140` | bug / warn | `phase-6-finalize` | `ci_verify` reports `persisted=false` / `persist_skipped_reason=head_sha` while it DID persist | → `-026.md` |
+| `1f0c43` | improvement / warn | `manage-architecture` | script startup ~18s cold makes subprocess budgets marginal under `-n auto` | → `-027.md` |
+| `5a5761` | improvement / warn | `manage-references` | `affected_files` under-records loop-back work ⇒ every derived finalize step under-scopes | → `-028.md` |
+| `c8e4a9` | **bug / ERROR** | `manage-build-server` | a `timeout` verdict kills the daemon job but **orphans the whole pytest tree** | → `-029.md` |
+| `d4501c` | improvement / warn | `phase-6-finalize` | `review_commitments reconcile` returns `verdict=clear` over `commitments_considered: 0` | → `-030.md` |
+| `79a483` | insight / info | `phase-6-finalize` | **two ADR proposals awaiting operator confirmation** | **operator action** |
+
+Routing follows the three-way rule — PR/review here, everything else not-ours to `truthful-signals`. Six
+were filed through the sanctioned `inbox write` channel as `sender_type: orchestrator`, so this is a
+**transfer, not an offer**: each is enumerable in that epic's own queue and no longer depends on this
+ledger being read.
+
+⭐⭐ **Three of the six independently reproduce archetypes already on record**, which raises their weight:
+`c8e4a9` confirms lesson `2026-09-02-21-002` **that housekeeping had just retained as NOT covered**, with
+live pids (a killed pytest master left ten xdist workers running); `5a5761` is a **second independent
+observation** of the `affected_files` under-recording defect; `d4501c` is the **vacuous-guard archetype**
+verbatim — a `clear` verdict over an empty population, the exact thing the standing rule
+*"every set-guarding detector must publish its population size"* exists to forbid.
+
+⛔ **`79a483` is why `adr-propose` is `skipped`, not `done`** — Step 5 needs an `AskUserQuestion` per
+proposal and a dispatched leaf cannot reach the operator. Two proposals await confirmation: (1) *a published
+artifact set is orthogonal — cross-cutting text is emitted exactly once*; (2) *a fan-out CLI parameter is a
+request, not a contract*. Decisive decision-log entry `abe291`.
+
+### ✅ 2026-09-03 — a CONTROL that worked, recorded because this section is otherwise all failures
+
+From the same data-point. The operator minted the override through the designed mechanism: flipped
+the barrier to `ask` mode (whose *"Merge anyway"* branch is the documented `barrier-ask-override` mint
+site) and granted it **HEAD-bound** against `4f8b0733a` with the evidence recorded.
+
+⭐ **The gap-class binding was observed doing its job live**: `barrier-ask-override` read admissible
+for `review-barrier-gap`, while `pre-merge-consent` read **inadmissible** for that same class —
+refusing to let a routine merge confirmation authorize past a participation gap the operator never
+saw. That is the fail-closed guard behaving exactly as specified, and it is the matched positive
+control for the merge-authorization work PLAN-PR-015 landed. Do not let this section's density of
+defects imply the barrier is broadly unsound; this limb is confirmed working.
+
+### ✅ WATCH CLOSED 2026-09-15 (operator decision) — ex “we are wholly Tier 1, and this epic's defect list IS the Tier 1 trade billed back to us”
+
+⛔⛔ **PREMISE REFUTED BY THE OPERATOR — do not re-open on the original framing.** The apparatus is already
+hybrid: **Tier 1** = CodeRabbit + Sourcery, **Tier 2** = pr-agent (`cuioss-review-bot`, org CI, our model
+ladder and charter), plus the in-house finalize self-review. "Adopt Tier 2" was never an open decision.
+
+⭐ **The only residual question was merge-gate composition, and it is DECIDED: CodeRabbit stays a REQUIRED
+reviewer until pr-agent achieves similar review quality — which the operator states is not yet the case.**
+No fallback, no bypass policy, no gate change; the unattended CodeRabbit recovery protocol stays in force
+unchanged. Config agrees (verified 2026-09-15): `.plan/marshal.json` `required_bots:
+"cuioss-review-bot,coderabbit"`, `optional_bots: "sourcery"`. **Reopen condition**: pr-agent review quality
+comparable to CodeRabbit's, **measured by the existing comparison protocol** —
+[`review-practice.md`](review-practice.md) § 1 (the comparative deficit rule and its four scoring outcomes,
+run at every post-merge PR revisit). ⛔ An earlier draft of this note claimed no such instrument existed —
+REFUTED by the operator; that protocol is it. Decision logged in `decision.log`.
+
+The original watch text is kept below for its evidence (the four vendor-runtime defects remain real and
+remain owned by their specs):
+
+From `next-level-001` (sibling orchestrator, relaying *Spec-Driven Production Grade Development in the
+Age of Vibe Coding*, Boonstra, May 2026). ⚠ **An outside document: the tier model is asserted, not
+measured, and the one supporting anecdote carries no figure.** The reason it is filed here anyway is
+that its diagnosis is checkable against **our own record**, and it holds.
+
+The model splits continuous automated review by **who owns the runtime and who writes the criteria** —
+**Tier 1** managed SaaS (*"you get the vendor's review opinions, not yours"*), **Tier 2** hybrid (a
+review skill committed to the repo, run by our CI via a coding-agent CLI in non-interactive mode, on a
+model we choose), **Tier 3** custom deployed agent with durable memory.
+
+⛔ **The argument that earns the watch**: every one of these is a property of NOT owning the runtime,
+and all four are already in this ledger — CodeRabbit's one-review-per-hour window that **resets on
+every trigger**; a refusal arriving as an **in-place comment edit** invisible to `movement_matched_bots`;
+a run **reporting a review that never ran** (`count_stored: 0` read as reviewed-and-clean); and a
+vendor-side `bot_kind` rename that invalidated consumer config fleet-wide with no propagation
+mechanism, leaving TokenSheriff permanently merge-blocked. ⇒ **None is fixable inside Tier 1**, and the
+standing rule that a CodeRabbit review is mandatory makes that dependency load-bearing on the merge path.
+
+⚠ **What it does NOT argue, kept because it is the honest half**: not leaving Tier 1 — the managed
+reviewers find real findings, and a self-owned reviewer grading its own repository has an independence
+problem a vendor does not. The credible reading is **Tier 2 ALONGSIDE Tier 1**, covering house-specific
+criteria and removing the single points of failure from the merge gate.
+
+⛔ **Filed as a Watch, not staged.** It is a scoping question the message deliberately does not settle,
+and it would be the largest architectural decision this epic has taken. **Surfaced to the operator
+2026-09-14; awaiting a decision.** Note the standing-rule collision if it is ever taken: the
+unattended-recovery protocol (≥90-min sleeps, max 10 waits, close-and-reopen) exists to survive a
+constraint Tier 2 does not have.
+
+### ✅ LANDING 2026-09-14 — `PLAN-PR-065` shipped #1491, 10/10, and the FOREIGN half landed as `pr-agent-settings` #64
+
+Full record: [`landings/PLAN-PR-065.md`](landings/PLAN-PR-065.md). Landing `complete: true`; `#1491`
+corroborated first-party (`ci pr view` → `merged`).
+
+⭐⭐ **The plan repaired its own instrument BEFORE using it** — D1 made `ci pr list` derive a complete
+population instead of a page (the exact defect this orchestrator hit at staging, when the verb returned
+30 rows against an operator-reported 46), and only then did D2 derive the population and D3 close
+against it. The gate that decided what to close was fixed before it decided anything.
+
+⛔ **The review coverage of #1491 is a recorded BYPASS, not a clean review.** Bot review was explicitly
+skipped by operator decision (empty rosters, `skip-bot-review`). `0 comments found` here means **nobody
+looked** — which is precisely the conflation `PLAN-PR-061` exists to end, and the ledger must never
+later read it as evidence of quality. ⚠ The retrospective's own `indeterminate` over a "roster of 3"
+was a **false alarm**: it reads rosters from `marshal.json` rather than the plan's step-params
+override. Transferred.
+
+⛔⛔ **Declared vs realized diverged in BOTH directions for the first time**: 19 declared against a
+13-path realized footprint, not nested — 5 realized-but-undeclared (including `branch-cleanup.md`, a
+fix task appended during execute) and **4 declared-but-never-realized** (the GitLab half of the
+`--limit` contract, declared in scope and never touched). ⇒ Fourth consecutive landing with the drift,
+and over-declaration is the more dangerous half for this epic's gate: a spec that declares what it will
+not touch makes the disjointness check sequence siblings behind files nothing ever claims.
+
+⭐⭐ **Promoted as lesson `2026-09-14-19-001`** — the run's best finding: D1 fixed a producer while
+`branch-cleanup.md`'s Safety Check, **the consumer gating a branch DELETION**, still read a bare count
+with no `--limit`. A page read as a population, in the exact code path the deliverable existed to
+correct. The scope-criterion validator caught it; **nothing in the outline's own success criterion
+would have.**
+
+⭐ **`PLAN-PR-039`'s precondition is DISCHARGED** — `packs/` exists on that repository's `main` for the
+first time. ⛔ It stays unemittable for a *different* reason, and its `prose` surface was deliberately
+NOT corrected: the exemption is named, and inventing a plan-marshall path to move the metric would
+destroy the foreign-only property that makes WS-02 disjoint by construction. Emitting it is an operator
+decision to accept a candidate the gate cannot check.
+
+**Drain 22/22 archived** — `-017` promoted; `-001`…`-016`, `-018`…`-020` transferred to
+`truthful-signals` as `review-apparatus-041.md` (an invocation-discipline cluster of **ten rejections in
+one run**, three of them the same mistake repeated after the correct form had been displayed — plus
+`-014`, which is NOT discipline but a real tooling defect: the generated executor rejected a flag the
+dispatched script declares, and two regenerations did not clear it); `next-level-001` is the Watch above.
+
