@@ -1,0 +1,113 @@
+= Serena
+:toc: left
+:toclevels: 2
+
+_Analysis date: 2026-09-23_
+
+xref:README.adoc[Other approaches] » Serena
+
+Repository: https://github.com/oraios/serena — GPL-3.0-or-later for the application; the bundled
+language-server layer (`src/solidlsp`) is MIT.
+
+**Verdict: reject — duplicates `lsp-client`.** One metric is worth taking (see <<_what_to_learn>>).
+
+== What it is
+
+An MCP server that gives an agent semantic, symbol-level access to a codebase through language
+servers (or, alternatively, a JetBrains IDE backend), across more than thirty languages.
+
+=== Tool surface
+
+[cols="2,5",options="header"]
+|===
+| Group | Tools
+
+| Retrieval
+| `find_symbol`, `get_symbols_overview`, `find_referencing_symbols`, `find_declaration`,
+  `find_implementations`, `type_hierarchy`, `diagnostics`
+
+| Refactoring
+| `rename`, `move`, `inline`, `safe_delete` — move, inline and file-level rename are mostly
+  JetBrains-backed
+
+| Editing
+| `replace_symbol_body`, `insert_before_symbol`, `insert_after_symbol`, `replace_content`
+
+| Memory
+| Project memories plus an onboarding pass that runs on first start and writes memories
+|===
+
+Tool sets vary by "context". The `claude-code` context removes Serena's own file, directory, search
+and shell tools so they do not compete with the host's built-ins.
+
+=== Languages relevant here
+
+Python defaults to pyright (jedi, ty, pyrefly and basedpyright are alternatives). Markdown uses
+Marksman and is marked experimental; Markdown, JSON and YAML are treated as lowest-priority non-code
+languages.
+
+=== Indexing cost
+
+`serena project index` pre-caches symbol information once; the index then updates on file change.
+The first pass over a project costs time and tokens. Reported issues: startup slow enough that a 60 s
+MCP timeout is recommended, a 35 s startup on a large tree caused by the `.gitignore` walk (#1991), and
+incomplete results while a language server is still indexing (#1858).
+
+=== Interaction with Claude Code
+
+Serena's documentation states that Claude Code's built-in tool descriptions are large and bias the
+model strongly toward the built-in tools. The documented remedy is a forceful system prompt that
+declares Read and Edit **forbidden** for code, alpha reminder hooks, and loading Serena's tools
+through tool search. No documentation addresses the relationship to Claude Code's own language-server
+support.
+
+=== Measurements
+
+* **Maintainers' evaluation** (graded by the agent itself): built-in Edit uses about 4.5× less payload
+  for one-line edits; Serena uses about 2× less for whole-method rewrites and about 8× less for a
+  four-file rename. No aggregate session-level token saving is published.
+* **Independent usage data** (issue #1491, about 21k tool calls over 192 sessions): Serena was used at
+  all in 35.4% of sessions and accounted for 20.3% of read operations; **18.4% of its symbol queries
+  were followed by a plain Read of the same file**.
+
+The token size of Serena's own tool definitions is not published.
+
+== Assessment against plan-marshall
+
+[cols="2,5",options="header"]
+|===
+| Aspect | Assessment
+
+| Capability overlap
+| `plan-marshall:lsp-client` already offers `lookup` (definition, references, document and workspace
+  symbols), `edit` (verified multi-file rename that rolls back when diagnostics worsen) and
+  `diagnose`, fail-soft to plain read/edit when no server is configured.
+  `pm-plugin-development:tools-corpus-language-server` provides definition, references and hover over
+  the skill corpus itself. The code-intelligence substrate already decided that symbol-level
+  questions go to language servers.
+
+| Target cost
+| Codebase exploration that an index can answer. On the one six-phase plan decomposed so far, that is
+  the minority share of exploration bytes; the majority is the system reading its own corpus, which
+  Serena does not address (Markdown support is experimental and structural, not retrieval-ranked).
+
+| Form factor
+| An MCP server with a long-lived process. plan-marshall exposes every capability as an executor
+  script so it ports across runtimes; `marketplace/targets/` has no MCP mapping.
+
+| Host friction
+| Needing a system prompt that forbids the host's own tools to get uptake is a standing cost in
+  resident context and a behavioural override plan-marshall would have to carry on every runtime.
+
+| Licence
+| GPL-3.0 for the application layer; only the language-server layer is MIT.
+|===
+
+== What to learn
+
+. **Measure uptake as a fallback-to-read rate.** The most useful number in the Serena material is not
+  a saving but a failure rate: how often a symbol lookup is followed by a full read of the same file.
+  If `lsp-client` ever moves from opt-in to default in the execute phase, that rate is the honest
+  measure of whether the lookup replaced the read or merely preceded it.
+. **Overview before body.** A per-file symbol overview ahead of any symbol body is the same layering
+  that applies to plan-marshall's own documents — list the sections, then fetch the one needed.

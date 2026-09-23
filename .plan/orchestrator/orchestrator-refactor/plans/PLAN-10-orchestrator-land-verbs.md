@@ -114,10 +114,12 @@ who proposed this mechanism.
   polling beyond `ci checks wait`; confirm/refute at `ci`'s merge-queue verb behavior
   (does it block until settled, or return immediately with the queue entry still
   pending?) before designing D3's exact call sequence (verify-at-outline).
+  - verdict: contradicted | checked_at: 14d8f3ccd74718e8258a674472e9f01b595bc2cc | by: orchestrator-refactor/cleanup | rescoped: yes | evidence: First verdict; refuted at source. ci pr merge-queue does NOT block until settled -- _github_pr.py:2265 cmd_pr_merge_queue probes the base branch, shells gh pr merge --auto, returns immediately with enqueued:True (:2332-2339); nothing in that path polls. ci checks wait waits on check runs, not queue settlement, so the entry can be ejected on rebase after checks went green. Re-scope: D3 must add an explicit post-enqueue settle loop; reuse ci pr landing-state and checks wait-for-status-flip's poll_until rather than assuming merge-queue+checks-wait suffices. Makes stamping the landed PR from PR state load-bearing, not belt-and-braces.
 - Verify-first clause: PLAN-09 may change `git-workflow.py`'s addressing surface (its own
   HYPOTHESIS, D2) before this plan is picked up — re-derive this plan's exact worktree-path
   resolution call against WHATEVER PLAN-09 actually shipped, not against PLAN-09's own
   staged design, at this plan's own outline.
+  - verdict: corroborated | checked_at: 14d8f3ccd74718e8258a674472e9f01b595bc2cc | by: orchestrator-refactor/cleanup | rescoped: n/a | evidence: First verdict. Premise intact, now stronger. PLAN-09 reads staged at HEAD, nothing shipped, git-workflow.py byte-unchanged since 7d82d5d90 -- no whatever-PLAN-09-shipped to re-derive against yet, clause remains an unfulfilled precondition. PLAN-09's own D2 HYPOTHESIS (claim 6) is contradicted in this same pass, so the addressing surface this plan binds to is actively in flux. The ci primitive half is stable: tools-integration-ci/** unchanged since 7d82d5d90, ci pr --help confirms merge/auto-merge/safe-merge/merge-queue/update-branch/landing-state/create/view/prepare-body all present.
 
 ## Expected Surface
 

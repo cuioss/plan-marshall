@@ -56,7 +56,7 @@ ad hoc commits directly against `main`.
      outside the markers — never inside them. -->
 
 <!-- BEGIN GENERATED: resume-summary -->
-**Resume anchor**: WS-05 staged 2026-09-23 (operator-proposed): fixed-name never-removed per-epic worktree (PLAN-09) plus land/land-all verbs (PLAN-10) to stop ad hoc orchestrator ledger commits from dirtying main. Both new, not yet emitted. PLAN-07 dependency updated to include PLAN-09/PLAN-10. Still open from the PLAN-08 landing: git-config-injection hardening routing decision (this epic vs truthful-signals), and a low-urgency mis-triage Watch. Live queue: PLAN-02/03/05/06/09/10 staged, PLAN-07 parked -- all blocked on the unchanged marketplace-wide disjointness gate (candidate_comparison_determinate=false). Next: operator decides the git-config-injection routing and/or resolves the marketplace-wide gate.
+**Resume anchor**: cleanup complete 2026-09-23: 29 claims re-grounded at HEAD 14d8f3ccd across all 10 specs (21 corroborated, 5 contradicted/rescoped, 3 unverifiable). 2 re-scopes applied in place: PLAN-09's worktree-verb extension target corrected (_cmd_prepare -> prepare_execute.py, move-in/move-back layer excluded), PLAN-10's merge-queue settle-loop gap flagged for D3. 2 dead citations fixed in PLAN-06. Ledger invariants ok (compact idempotent). restart_verdict=not_ready: 25 uncommitted paths from this pass need commit+push before a fresh session reads ready. Blocking Open Defect unchanged: marketplace-wide disjointness gate indeterminate. Also unrouted: git-config-injection hardening (operator decision needed, from PLAN-08's landing).
 **Phase**: orchestrating
 **Inbox (derived)**: 0 queued, 24 archived
 **Parked**:

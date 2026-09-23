@@ -1,0 +1,192 @@
+= Other approaches to token reduction: findings
+:toc: left
+:toclevels: 3
+
+_Analysis date: 2026-09-23_
+
+This document set evaluates four externally published Claude Code add-ons that promise lower token
+consumption, plus the usage-meter category that is usually recommended alongside them. It answers
+two questions: should plan-marshall adopt any of them, and is there anything in their design worth
+learning from.
+
+Unlike the concept documents, these pages name external tools on purpose — they are an evaluation of
+those tools. When an idea from here lands in plan-marshall, its attribution is recorded in
+xref:../concepts/design-influences.adoc[Design Influences] and the landing documents describe it in
+plan-marshall's own vocabulary.
+
+== How to read this document set
+
+[cols="2,5",options="header"]
+|===
+| Document | Read it for
+
+| This file
+| The verdict, the reason the external cost model does not transfer, and the ideas worth taking.
+
+| xref:headroom.adoc[headroom]
+| Local proxy that compresses tool results and shapes output. Rejected; three design ideas taken.
+
+| xref:serena.adoc[Serena]
+| Language-server-backed symbol retrieval over MCP. Rejected as duplicate of `lsp-client`; one
+  metric taken.
+
+| xref:ponytail.adoc[ponytail]
+| "Write the least code" ruleset injected at session start. Rejected as duplicate; its decision
+  ladder is a wording candidate.
+
+| xref:claude-mem.adoc[claude-mem]
+| Cross-session memory captured by an LLM observer. Rejected; its retrieval layering informs
+  doc-residency work.
+
+| xref:usage-meters.adoc[Usage meters]
+| Quota meters (UsageScope, ccusage). Not relevant as tooling; one cross-check idea.
+|===
+
+[IMPORTANT]
+====
+**Verdict: adopt none of the four libraries.**
+
+They target a cost profile plan-marshall does not have. The external framing is "your prompt is
+cheap, the model's output and the files it opens are expensive". plan-marshall's own measurement puts
+roughly **99% of billing weight on context** (`cache_read` plus `cache_creation`) and roughly **1% on
+output**, and the single largest context consumer it has attributed is **plan-marshall reading its
+own skills, standards and workflow documents**. None of the four tools addresses that consumer, and
+two of them actively work against measured project decisions.
+====
+
+== Why the external cost model does not transfer
+
+The source article models spend as *what you send + what the model thinks + what it writes back +
+what you re-explain tomorrow*, and treats all four as comparable leaks. For plan-marshall the terms
+are not comparable:
+
+* **Output is about 1% of billing weight.** Every lever whose mechanism is "the model writes less" —
+  terse-output injection, shorter generated code — acts on that 1%. It can be worth doing for code
+  quality; it is not a token lever.
+* **Cost is `resident bytes × turns resident`.** A byte costs the cache-creation multiplier once and
+  the cache-read multiplier on every later turn (see
+  xref:../concepts/token-management.adoc[Token Management]). *When* a byte enters context dominates
+  how large it is. A tool that shrinks late, short-lived bytes buys little; a tool that injects bytes
+  at session start costs on every turn of the session.
+* **The dominant consumer is doc-residency, not the codebase.** On the one six-phase instrumented
+  plan measured so far, index-answerable codebase exploration was a minority of exploration bytes
+  and the system reading its own corpus was the majority. That figure is a single-plan observation
+  still awaiting its population re-derivation, so it indicates direction, not magnitude — but no
+  external tool here addresses either share better than what plan-marshall already has or is
+  building.
+* **"Examine less" is a rejected lever.** Raising effort levels measurably cut the rate of phases
+  that found nothing, while the control phases moved the other way. A tool whose saving comes from
+  reducing examination is rejected on that ground regardless of its size.
+
+== Per-tool verdict
+
+[cols="2,3,4,1",options="header"]
+|===
+| Tool | What it targets | Overlap with plan-marshall | Verdict
+
+| xref:headroom.adoc[headroom]
+| Tool-result compression in a local proxy; optional output shaping and effort downgrade
+| Build output already never reaches context (log file plus a TOON error record); script output is
+  TOON. Its compressors fit JSON, logs and code; prose — the doc-residency share — barely compresses.
+| Reject
+
+| xref:serena.adoc[Serena]
+| Symbol-level retrieval and editing through language servers, exposed over MCP
+| `lsp-client` already provides lookup, verified rename and diagnostics; the code-intelligence
+  substrate routes symbol lookup to language servers. Index-answerable bytes are the smaller share.
+| Reject
+
+| xref:ponytail.adoc[ponytail]
+| Over-building by the model (lines of generated code)
+| Three existing layers: the per-plan `simplicity` posture, "Implement the Minimum" in the agent
+  behaviour rules, and `finalize-step-simplify`.
+| Reject
+
+| xref:claude-mem.adoc[claude-mem]
+| Re-explaining the project at the start of each session
+| `manage-lessons`, the orchestrator ledger and its `resume_anchor`, and per-plan `status.json`
+  already carry curated, structured cross-session state.
+| Reject
+
+| xref:usage-meters.adoc[Usage meters]
+| Visibility of remaining quota
+| `manage-metrics` records per-phase and per-dispatch token composition.
+| Ignore
+|===
+
+== Why adoption would hurt, not merely duplicate
+
+* **headroom's effort downgrade is "examine less".** On turns that only resume after a clean tool
+  result it lowers the requested effort. That is precisely the lever class the effort-level analysis
+  rejected.
+* **headroom's compression is lossy in ways that hide the loss.** Open defects include JSON array rows
+  dropped with no marker, grep matches merged into false line associations, and `git status` / `ls`
+  output losing fields. A compressed result that reads as complete is a confident signal hiding a
+  caveat — the defect class this project works hardest to eliminate.
+* **headroom has side effects outside its stated scope.** `wrap` installs Serena at user scope,
+  a custom base URL disables Remote Control, telemetry is on by default, and every token figure
+  `manage-metrics` records would then measure the proxy rather than plan-marshall.
+* **claude-mem spends on every tool call.** Its observer sends each tool event to a model billed to
+  the user's own subscription, and it injects a block of past observations at every session start —
+  resident context re-read on every subsequent turn. It also persists refuted hypotheses as findings.
+* **Serena has to fight the host.** Its own documentation prescribes a system prompt that marks the
+  built-in Read and Edit tools as forbidden for code; independent usage data shows most sessions
+  never use it and a notable share of its symbol lookups is followed by a full read of the same file.
+* **None of them fits the multi-runtime fleet.** `marketplace/targets/` has no MCP or proxy mapping;
+  every plan-marshall capability is a script behind the executor precisely so it stays portable.
+  headroom's OpenCode integration is broken on current OpenCode and has no Antigravity support.
+
+== Ideas worth taking
+
+[cols="1,4,3",options="header"]
+|===
+| # | Idea | Source and destination
+
+| 1
+| **Progressive loading of plan-marshall's own corpus.** Serve standards and workflow docs index-first
+  (section list, then the section, then the whole document) instead of whole-file reads. This is the
+  only idea in the set aimed at the dominant consumer.
+| claude-mem's search → timeline → full-record layering; Serena's symbol overview before symbol body.
+  Filed to `code-intelligence-substrate` (WS-06 Context Economics).
+
+| 2
+| **Mandatory elision markers with a retrieval verb.** Wherever a script truncates or summarises
+  output, the result carries an explicit marker naming what was dropped and how to fetch it. The
+  build scripts' `log_file` already does half of this.
+| headroom's compress-cache-retrieve design, and its defects where the marker was optional. Filed to
+  `code-intelligence-substrate`.
+
+| 3
+| **Aim shrinking at early-entering, long-lived bytes.** Compress only content that has not yet been
+  cached, and keep everything already in the prefix byte-identical.
+| headroom's "live zone" rule; matches the project's own cost formula. Filed to
+  `code-intelligence-substrate`.
+
+| 4
+| **Holdout measurement.** Call a saving *measured* only when a random share of turns or runs executes
+  without the lever; otherwise it is an estimate. Cleaner than splitting the archive at a
+  configuration change.
+| headroom's estimated-versus-measured reporting. Recorded here.
+
+| 5
+| **An ordered restraint ladder** for "Implement the Minimum" and `finalize-step-simplify`: does it
+  need to exist → is it already in the codebase → standard library → native platform feature →
+  installed dependency → one line → only then write the minimum. Plus an explicit never-simplify list
+  (trust-boundary validation, security, data-loss error handling) and an in-code marker for
+  deliberate corner-cuts. A wording candidate, not a token lever.
+| ponytail's ruleset. Filed to `instrumentation-substrate`, which owns measuring instruction wording.
+
+| 6
+| **Fallback-to-read rate as the uptake metric for language-server lookups.** If `lsp-client` ever
+  becomes default in execute, measure how often a symbol lookup is followed by a full read of the same
+  file.
+| Independent Serena usage analysis. Recorded here.
+
+| 7
+| **An independent cross-check of `manage-metrics` totals** from the runtime's own session logs.
+| ccusage. Recorded here.
+|===
+
+Taken together the set points the same way the project's own measurements already do: the lever that
+matters is admission control over plan-marshall's own corpus, not compression or restraint applied to
+what the model writes.

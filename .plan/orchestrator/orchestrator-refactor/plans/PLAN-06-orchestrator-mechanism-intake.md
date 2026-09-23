@@ -102,15 +102,18 @@ explicitly because its finder judged it "not this epic's to fix".
   under `.plan/local/orchestrator/` and that tree is git-ignored, "so such an edit can never
   appear in a PR". This is this epic's own aspect-1 thesis (PLAN-01/PLAN-02), found
   independently from another ledger — cite it there, do not re-derive it here.
-- OBSERVED — `truthful-signals/epic.md:2146-2158`: two parsers read one `## Expected Surface`
-  and disagree — `orchestrator.py`'s queue renderer returns "(no expected surface)" and governs
-  the disjointness gate, while `epic-surface-partition classify` returns "declarative, 6
-  resolved paths" and governs only the report. `:2168-2174` records this as a live ADR-019
-  violation inside our own machinery.
-- OBSERVED — `truthful-signals/epic.md:2160-2166`: `epic-surface-partition classify` carries a
-  THIRD plan-id detector that does not recognise `PLAN-{CODE}-{NNN}`, so attribution "cannot
-  group by plan for this epic at all"; `orchestrator inbox detect` already declares itself the
-  single detection seam.
+- OBSERVED (citation corrected 2026-09-23, cleanup A1 — the range shifted after `#1578`'s
+  epic restructuring, was `:2146-2158`) — `truthful-signals/epic.md:2088-2100` (D-SWEEP-a):
+  two parsers read one `## Expected Surface` and disagree — `orchestrator.py`'s queue
+  renderer returns "(no expected surface)" and governs the disjointness gate, while
+  `epic-surface-partition classify` returns "declarative, 6 resolved paths" and governs only
+  the report. Recorded as a live ADR-019 violation inside our own machinery. Already CLOSED
+  at this epic's own HEAD per claim 9's verdict — historical evidence, not open work.
+- OBSERVED (citation corrected 2026-09-23, cleanup A1 — was `:2160-2166`) —
+  `truthful-signals/epic.md:2102-2108` (D-SWEEP-b): `epic-surface-partition classify` carries
+  a THIRD plan-id detector that does not recognise `PLAN-{CODE}-{NNN}`, so attribution
+  "cannot group by plan for this epic at all"; `orchestrator inbox detect` already declares
+  itself the single detection seam. Already CLOSED — historical evidence, not open work.
 - OBSERVED — `epic-surface-partition.py:132` calls `get_store_dir('orchestrator', epic,
   allow_archived=True)`: the orchestrator mechanism has a second implementation home in the
   `pm-plugin-development` bundle.
@@ -123,13 +126,13 @@ explicitly because its finder judged it "not this epic's to fix".
 - HYPOTHESIS — the two-parser disagreement and the third plan-id detector were closed by
   `truthful-signals` PLAN-TRUTH-113 (shipped, PR #1366); confirm/refute at `orchestrator.py`
   § the queue renderer and the partition script's `classify` path before staging any remedy.
-  - verdict: corroborated | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: orchestrator-refactor/cleanup | rescoped: n/a | evidence: re-confirmed at current HEAD, every citation still resolves exactly despite orchestrator.py growing 551 lines. orchestrator.py:785-794 declares the single-reader property in-source, pinned by test_expected_surface_single_reader.py; _epic_partition.py:109-115 imports the same reader; epic_spec_parser.plan_id_of :710 (PLAN_ID_PREFIXED_SEGMENT :116) recognises PLAN-CODE-NNN. Attribution confirmed: b758d5c02 = PR #1366.
+  - verdict: corroborated | checked_at: 14d8f3ccd74718e8258a674472e9f01b595bc2cc | by: orchestrator-refactor/cleanup | rescoped: n/a | evidence: Every citation resolves despite orchestrator.py growing to 5945 lines. Single-reader property declared in-source at :883-886 (was :785-794): both live in script-shared's epic_spec_parser, this module CONSUMES that reader. _epic_partition.py:109-115 imports the same reader unshifted. plan_id_of at :710, PLAN_ID_PREFIXED_SEGMENT at :116. Attribution confirmed: b758d5c02 = PR #1366.
 - HYPOTHESIS — the claim-parsing gates recorded at
   `code-intelligence-substrate/epic.md:1267-1292` (`orchestrator.py:389`
   `CLAIM_LABELS_HEADING_RE` case-exact, and `_parse_claims` accepting only top-level bullets,
   jointly producing a vacuous prep-ready admission) were closed by PLAN-CIS-051 (shipped, PR
   #1370); confirm/refute at those two symbols.
-  - verdict: contradicted | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: orchestrator-refactor/cleanup | rescoped: yes | evidence: re-confirmed: attribution wrong, outcome moot - already reflected in D3 above. git show --stat 7845a4b9a (PR 1370) has no orchestrator.py. Gate 1 closed by PR 1366 (CLAIM_LABELS_HEADING_RE IGNORECASE, orchestrator.py:810). Gate 2 closed by PR 1355 (91a07aaa4), three-state claim-section parse now at orchestrator.py:397-409. No further spec change needed - correction already absorbed at prior pass.
+  - verdict: contradicted | checked_at: 14d8f3ccd74718e8258a674472e9f01b595bc2cc | by: orchestrator-refactor/cleanup | rescoped: yes | evidence: Attribution wrong, outcome moot, already absorbed in D3. git show --stat 7845a4b9a on orchestrator.py is empty (PR #1370 touched no orchestrator.py). Gate 1 closed by #1366: CLAIM_LABELS_HEADING_RE now carries re.IGNORECASE at :904. Gate 2 closed by #1355. Correction: claim-section parse is a FOUR-state vocabulary (ABSENT/EMPTY/UNREADABLE/PARSED) at :398-401/:405-409, tallied at :3550/:3590. No further spec change needed.
 - Verify-first clause: `truthful-signals` PLAN-TRUTH-143 is RUNNING and declares the widest
   orchestrator surface of any live spec (`orchestrator.py`, `_orchestrator_inbox.py`,
   `SKILL.md`, `inbox-envelope.md`, `orchestration-model.md`, `workflow/analyze.md`,
@@ -137,7 +140,7 @@ explicitly because its finder judged it "not this epic's to fix".
   `orchestration-model.md` § Cleanup Contract forbids changing the brief under a running plan.
   This plan's command is BLOCKED until PLAN-TRUTH-143 lands and this spec is re-grounded
   against the new HEAD.
-  - verdict: contradicted | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: orchestrator-refactor/cleanup | rescoped: yes | evidence: re-confirmed: blocker discharged, 1c56734ce = PR 1539 shipped, PLAN-TRUTH-143 absent from live truthful-signals queue (44 rows). PLAN-06's own row reads staged, not parked. NEW adjacency worth D1's attention: truthful-signals has since staged PLAN-TRUTH-177-orchestration-detection-fails-open-without-source-id, targeting the same gap as PLAN-06's narrowed D5 - see the new OBSERVED bullet added below.
+  - verdict: contradicted | checked_at: 14d8f3ccd74718e8258a674472e9f01b595bc2cc | by: orchestrator-refactor/cleanup | rescoped: yes | evidence: Blocker discharged, already absorbed. PLAN-TRUTH-143 shipped as 1c56734ce (PR #1539), absent from the 45-spec truthful-signals corpus. PLAN-06's own row reads staged at HEAD (corpus enumerate: shipped 3/staged 6/parked 1), not parked. New adjacency persists and is now git-tracked: PLAN-TRUTH-177-orchestration-detection-fails-open-without-source-id targets the same gap as PLAN-06's narrowed D5 -- already recorded in the spec's own OBSERVED bullet idx15.
 - ⛔ CLOSED, do not re-stage: `code-intelligence-substrate/epic.md:1348-1362` ("the orchestrator
   has NO add-a-row verb") — `queue --add-row` shipped via `truthful-signals` PLAN-TRUTH-099
   (PR #1434) and is live at `orchestrator.py:896-992` and `:1090-1192`.

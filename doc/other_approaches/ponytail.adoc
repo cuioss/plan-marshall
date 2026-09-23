@@ -1,0 +1,108 @@
+= ponytail
+:toc: left
+:toclevels: 2
+
+_Analysis date: 2026-09-23_
+
+xref:README.adoc[Other approaches] » ponytail
+
+Repository: https://github.com/DietrichGebert/ponytail — MIT, Node.js hooks plus skills.
+
+**Verdict: reject — duplicates existing restraint layers.** Its decision ladder is a wording
+candidate (see <<_what_to_learn>>).
+
+== What it is
+
+A Claude Code plugin that pushes the model toward the simplest implementation that works.
+
+=== Mechanism
+
+* A **SessionStart** hook (on startup, resume, clear and compact) injects the ruleset once per
+  session as hidden context — the body of its `SKILL.md`, roughly 1.4k tokens, filtered to the active
+  intensity level.
+* A **SubagentStart** hook injects the same ruleset into every subagent.
+* A **UserPromptSubmit** hook only tracks `/ponytail lite|full|ultra` and "stop ponytail" and stores
+  the mode in a flag file.
+
+The ruleset is not re-injected per turn in Claude Code. Node.js must be on `PATH`.
+
+=== The ruleset
+
+An ordered seven-rung ladder, climbed before writing anything:
+
+. Does it need to exist at all?
+. Is it already in the codebase?
+. Does the standard library cover it?
+. Is there a native platform feature?
+. Does an already-installed dependency cover it?
+. Can it be one line?
+. Only then, write the minimum.
+
+Surrounding rules: no unrequested abstractions, deletion over addition, fewest files; code first with
+at most three short lines of explanation; bug fixes at the root cause with every caller checked;
+deliberate corner-cuts marked with a `ponytail:` comment; non-trivial logic leaves one runnable check
+behind. An explicit **never-simplify list** exempts trust-boundary input validation, data-loss error
+handling, security, accessibility and anything the user asked to keep.
+
+=== Levels and review
+
+`lite` builds what was asked and names the lazier alternative; `full` (default) enforces the ladder;
+`ultra` challenges the rest of the requirement. `/ponytail-review` reviews a diff for over-engineering
+only, one line per finding tagged `delete:`, `stdlib:`, `native:`, `yagni:` or `shrink:`.
+
+=== Evidence behind the claims
+
+* **"16% fewer tokens" and "293 → 47 lines"** come from five toy tasks, one run per cell, one unnamed
+  model, lines counted approximately from fenced blocks. **Correctness was not measured.**
+* A follow-up agentic benchmark (headless Claude Code, Haiku only, twelve feature tasks on a
+  full-stack template, four runs each) reports about −54% lines added, −22% tokens, −20% cost. Gains
+  concentrate in native-element substitutions; backend CRUD tasks show about zero change. **The
+  feature code was never executed**, so functional correctness is unverified. A separate six-task
+  safety probe against adversarial input scored 20/20 against 19/20 for a seven-word YAGNI prompt.
+
+=== Runtime coverage
+
+Native adapters for Codex, OpenCode, Gemini and several other CLIs, rule files for most IDE agents,
+and an MCP server.
+
+== Assessment against plan-marshall
+
+[cols="2,5",options="header"]
+|===
+| Aspect | Assessment
+
+| Capability overlap
+| plan-marshall already has three restraint layers (see
+  xref:../concepts/simplification.adoc[Simplification]): the per-plan `simplicity` posture set at
+  refine/outline time; Principle 7 "Implement the Minimum, Not the Maximum" in the agent behaviour
+  rules loaded by every dispatched subagent; and `finalize-step-simplify`, a diff-scoped
+  simplification pass before commit. `recipe-simplify-codebase` covers campaign-scale sweeps.
+
+| Target cost
+| Generated output — about 1% of billing weight. Fewer generated lines also mean fewer bytes re-read
+  later, but that second-order effect is small next to doc-residency.
+
+| Injection model
+| A session-start and subagent-start injection is resident context paid on every turn of every
+  dispatch. plan-marshall already loads its behaviour rules into each dispatch; a second, overlapping
+  ruleset would add cost without adding a rule.
+
+| Evidence quality
+| Neither benchmark measured correctness. The project's own simplify pass has deleted a just-added
+  regression test and made wrong deletions that had to be reverted in-run; a stronger push toward
+  deletion without a correctness measure is the wrong direction.
+|===
+
+== What to learn
+
+. **An ordered ladder is sharper than a principle.** "Implement the Minimum" states the goal; the
+  seven rungs state the order in which to look for an existing answer before writing one. That order
+  is a candidate for the agent behaviour rules and for `finalize-step-simplify`'s review criteria.
+. **Name what may never be simplified away.** An explicit exemption list — trust-boundary validation,
+  security, data-loss error handling, anything the operator asked to keep, and tests that pin a
+  behaviour — gives the simplify pass a fail-closed boundary.
+. **Mark deliberate corner-cuts in code.** An in-code marker makes an intentional shortcut
+  distinguishable from an accidental one for later reviewers and simplify passes.
+
+These are wording changes to the instruction corpus. Their effect on behaviour is a claim to be
+measured, not a token saving.
