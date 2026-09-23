@@ -11,6 +11,13 @@ Usage:
     python3 ci.py [--project-dir PATH] pr view
     python3 ci.py [--project-dir PATH] ci status --pr-number 123
     python3 ci.py [--project-dir PATH] issue create --title "Bug" --plan-id EXAMPLE-PLAN
+    python3 ci.py [--plan-id ID] org list-repos --org cuioss
+    python3 ci.py [--plan-id ID] repo file read --repo cuioss/example --path .github/project.yml
+
+The ``org`` verbs and ``repo file read`` / ``repo label list`` are read-only and
+name their target explicitly (``--org`` / ``--repo``), so they reach repositories
+other than the routed checkout. They take no verb-level ``--plan-id``: a
+``--plan-id`` for them is the router flag and goes BEFORE the verb.
 
 Top-level flags (consumed by the router before provider dispatch):
     --project-dir PATH   Run every gh/glab subprocess with ``cwd=PATH``. Required

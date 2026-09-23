@@ -25,6 +25,8 @@ Subcommands:
     issue view      View issue details
     issue close     Close an issue
     branch delete   Delete a remote branch via REST API
+    repo label list, repo file read, org list-repos, org search-code
+                    Not implemented: each returns a structured error: not_supported
 
 Usage (bodies supplied via path-allocate pattern: prepare-body → write file → consume).
 ``--plan-id`` is the ONLY body route on every body-taking verb, and the sentinel
@@ -100,6 +102,7 @@ from ci_base import (
     extract_routing_args,
     get_default_cwd,
     make_error,
+    make_not_supported,
     make_pr_number_handler,
     make_simple_handler,
     normalize_issue_ref,
@@ -2724,6 +2727,45 @@ def cmd_checks_pull_request_runs(args: argparse.Namespace) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Org-wide and foreign-repository reads — not implemented on GitLab
+# ---------------------------------------------------------------------------
+#
+# The four read verbs are registered in the SHARED ``ci_base.build_parser``, so
+# their tokens resolve on GitLab too. Each is registered here with an explicit
+# refusal for the same reason ``cmd_checks_pull_request_runs`` is: an absent
+# handler would surface as an "unknown subcommand" parser error, and a silent
+# empty success would be read as an empty population. Both are wrong answers to
+# a question GitLab was never asked.
+
+_GITLAB_READ_GAP = (
+    'not implemented for GitLab: the org-wide and foreign-repository read verbs '
+    'are implemented for GitHub only. A GitLab arm must map groups and subgroups '
+    'onto the organization population and read completeness from the GitLab '
+    'pagination headers, which has not been designed.'
+)
+
+
+def cmd_org_list_repos(args: argparse.Namespace) -> dict:
+    """Refuse ``org list-repos`` explicitly — the GitLab arm is unimplemented."""
+    return make_not_supported('org_list_repos', 'gitlab', _GITLAB_READ_GAP)
+
+
+def cmd_org_search_code(args: argparse.Namespace) -> dict:
+    """Refuse ``org search-code`` explicitly — the GitLab arm is unimplemented."""
+    return make_not_supported('org_search_code', 'gitlab', _GITLAB_READ_GAP)
+
+
+def cmd_repo_file_read(args: argparse.Namespace) -> dict:
+    """Refuse ``repo file read`` explicitly — the GitLab arm is unimplemented."""
+    return make_not_supported('repo_file_read', 'gitlab', _GITLAB_READ_GAP)
+
+
+def cmd_repo_label_list(args: argparse.Namespace) -> dict:
+    """Refuse ``repo label list`` explicitly — the GitLab arm is unimplemented."""
+    return make_not_supported('repo_label_list', 'gitlab', _GITLAB_READ_GAP)
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -2798,6 +2840,12 @@ def main() -> int:
         ('repo', 'merge-queue', 'probe'): cmd_repo_merge_queue_probe,
         ('repo', 'merge-queue', 'enable'): cmd_repo_merge_queue_enable,
         ('repo', 'label', 'ensure'): cmd_repo_label_ensure,
+        # Registered so the shared-parser tokens resolve to an explicit
+        # not_supported refusal rather than a parser error or a silent success.
+        ('repo', 'label', 'list'): cmd_repo_label_list,
+        ('repo', 'file', 'read'): cmd_repo_file_read,
+        ('org', 'list-repos'): cmd_org_list_repos,
+        ('org', 'search-code'): cmd_org_search_code,
     }
 
     # branch_sub is registered by ci_base.build_parser; acknowledge the returned

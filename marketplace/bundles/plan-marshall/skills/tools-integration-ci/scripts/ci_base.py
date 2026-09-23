@@ -953,6 +953,71 @@ def derive_landing_state(pr_states: list[str], pushed: bool) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Org-wide and foreign-repository READ verbs (shared vocabulary)
+# ---------------------------------------------------------------------------
+#
+# Four read-only verbs reach beyond the checkout the router is bound to:
+# `org list-repos`, `org search-code`, `repo file read`, and `repo label list`.
+# Each one answers a population question ("every repository", "every file
+# containing X", "every label"), so each one carries its own completeness
+# evidence rather than a bare list. The vocabulary below is provider-neutral so
+# a consumer branches on one set of values whichever provider is configured.
+
+#: `status` member a population verb returns when it read a listing that is
+#: demonstrably NOT the whole population — a page bound was reached, the
+#: provider flagged its own result as incomplete, or the rows read disagree with
+#: the provider's reported total. It is deliberately NOT `success`: a caller that
+#: branches on `status` alone must never mistake a partial listing for a whole
+#: one. The rows that were read are still returned, beside `complete: false` and
+#: an `incomplete_reason` drawn from :data:`INCOMPLETE_REASONS`.
+STATUS_INCOMPLETE = 'incomplete'
+
+#: Closed set of reasons a population verb reports `complete: false`.
+INCOMPLETE_REASONS: tuple[str, ...] = (
+    'page_bound_reached',
+    'count_mismatch',
+    'provider_incomplete_results',
+    'result_cap_reached',
+)
+
+#: The two answers `repo file read` gives to "what is at this path?". A path
+#: that holds no file is `not_found` — a successful, distinct answer — and is
+#: never reported as an empty file (`found` with empty content) or as a read
+#: error (`status: error`).
+FILE_READ_FOUND = 'found'
+FILE_READ_NOT_FOUND = 'not_found'
+FILE_READ_STATES: tuple[str, ...] = (FILE_READ_FOUND, FILE_READ_NOT_FOUND)
+
+#: The `error` token a provider returns for a verb it does not implement. The
+#: verb's parser lives in the shared :func:`build_parser`, so the token resolves
+#: on every provider; a provider that has no implementation registers a handler
+#: returning this token rather than succeeding silently or surfacing an
+#: "unknown subcommand" parser error that misattributes the gap.
+ERROR_NOT_SUPPORTED = 'not_supported'
+
+
+def make_not_supported(operation: str, provider: str, detail: str) -> dict:
+    """Build the structured refusal a provider returns for a verb it does not implement.
+
+    Args:
+        operation: Operation name for the TOON envelope (e.g. ``'org_list_repos'``).
+        provider: The configured provider refusing the verb (e.g. ``'gitlab'``).
+        detail: Why the verb is not implemented for this provider.
+
+    Returns:
+        ``status: error`` with ``error: not_supported`` — never a success envelope,
+        so a caller cannot read an unimplemented verb as an empty answer.
+    """
+    return {
+        'status': 'error',
+        'operation': operation,
+        'error': ERROR_NOT_SUPPORTED,
+        'provider': provider,
+        'message': detail,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Argument parser builder
 # ---------------------------------------------------------------------------
 
@@ -1471,15 +1536,16 @@ def build_parser(
     )
 
     # -- repo ---------------------------------------------------------
-    # Repository-level (not PR-level) operations. Carries two sub-nouns:
-    # `merge-queue` (sub-verbs `probe` / `enable`) and `label` (sub-verb
-    # `ensure`), each giving a 3-level shape — `repo merge-queue probe` /
-    # `repo label ensure`. dispatch() keys the repo branch on the three-level
-    # path, reading the third element from the matching sub-noun dest
-    # (args.merge_queue_command or args.label_command).
+    # Repository-level (not PR-level) operations. Carries three sub-nouns:
+    # `merge-queue` (sub-verbs `probe` / `enable`), `label` (sub-verbs `ensure` /
+    # `list`) and `file` (sub-verb `read`), each giving a 3-level shape —
+    # `repo merge-queue probe` / `repo label ensure` / `repo file read`.
+    # dispatch() keys the repo branch on the three-level path, reading the third
+    # element from the matching sub-noun dest (args.merge_queue_command,
+    # args.label_command or args.file_command).
     repo_parser = subparsers.add_parser(
         'repo',
-        help='Repository-level operations (merge-queue probe/enable, label ensure)',
+        help='Repository-level operations (merge-queue probe/enable, label ensure/list, file read)',
         allow_abbrev=False,
     )
     repo_sub = repo_parser.add_subparsers(dest='repo_command', required=True)
@@ -1530,6 +1596,69 @@ def build_parser(
         help='Label color as a 6-hex-digit RGB string (no leading #); provider default when omitted',
     )
     label_ensure.add_argument('--description', help='Label description text')
+
+    # repo label list — read-only: every label of a repository, all pages, with
+    # the provider's total beside the rows so a partial listing is visible.
+    label_list = label_sub.add_parser(
+        'list',
+        help='List every label of a repository (all pages; reports completeness)',
+        allow_abbrev=False,
+    )
+    label_list.add_argument(
+        '--repo',
+        help='Repository as OWNER/NAME (default: the repository of the routed working tree)',
+    )
+
+    # repo file — read a file from any repository the provider credentials can
+    # see, at its default branch or at an explicit ref.
+    file_parser = repo_sub.add_parser(
+        'file',
+        help='Repository file operations (read a file at the default branch or a ref)',
+        allow_abbrev=False,
+    )
+    file_sub = file_parser.add_subparsers(dest='file_command', required=True)
+    file_read = file_sub.add_parser(
+        'read',
+        help='Read one file; a missing path is the distinct state not_found, never an empty file or an error',
+        allow_abbrev=False,
+    )
+    file_read.add_argument('--repo', required=True, help='Repository as OWNER/NAME')
+    file_read.add_argument('--path', required=True, help='Repository-relative file path')
+    file_read.add_argument(
+        '--ref',
+        help='Branch, tag or commit SHA to read at (default: the repository default branch)',
+    )
+
+    # -- org ----------------------------------------------------------
+    # Organization-wide READ operations. Both verbs answer a population
+    # question, so both report completeness evidence beside their rows (see
+    # STATUS_INCOMPLETE / INCOMPLETE_REASONS). dispatch() keys the org branch on
+    # the two-level path (org, args.org_command).
+    org_parser = subparsers.add_parser(
+        'org',
+        help='Organization-wide read operations (list repositories, search code)',
+        allow_abbrev=False,
+    )
+    org_sub = org_parser.add_subparsers(dest='org_command', required=True)
+
+    org_list_repos = org_sub.add_parser(
+        'list-repos',
+        help='List every repository of an organization (all pages, archived flag included; reports completeness)',
+        allow_abbrev=False,
+    )
+    org_list_repos.add_argument('--org', required=True, help='Organization (or user) login')
+
+    org_search_code = org_sub.add_parser(
+        'search-code',
+        help="Search an organization's code for a literal string (reports the provider's completeness signal)",
+        allow_abbrev=False,
+    )
+    org_search_code.add_argument('--org', required=True, help='Organization (or user) login')
+    org_search_code.add_argument(
+        '--query',
+        required=True,
+        help='Literal string to search for (matched as an exact phrase; must not contain a double quote)',
+    )
 
     return parser, pr_sub, checks_sub, issue_sub, branch_sub
 
@@ -2061,9 +2190,10 @@ def _load_log_filter():
 # ---------------------------------------------------------------------------
 
 # Handler map type: maps a command-path tuple -> handler function. Most keys are
-# 2-tuples ``(command, subcommand)``; the ``repo merge-queue`` and ``repo label``
-# verbs use a 3-tuple key (``(repo, merge-queue, sub_verb)`` /
-# ``(repo, label, sub_verb)``), so the arity is variadic.
+# 2-tuples ``(command, subcommand)`` (including ``(org, sub_verb)``); the
+# ``repo merge-queue``, ``repo label`` and ``repo file`` verbs use a 3-tuple key
+# (``(repo, merge-queue, sub_verb)`` / ``(repo, label, sub_verb)`` /
+# ``(repo, file, sub_verb)``), so the arity is variadic.
 HandlerMap = dict[tuple[str | None, ...], Any]
 
 
@@ -2163,15 +2293,20 @@ def dispatch(args: argparse.Namespace, handlers: HandlerMap, parser: argparse.Ar
         key = ('issue', args.issue_command)
     elif command == 'branch':
         key = ('branch', args.branch_command)
+    elif command == 'org':
+        key = ('org', args.org_command)
     elif command == 'repo':
         # Three-level path under the `repo` noun. Each sub-noun carries its own
         # sub-verb dest, so the key's third element is read from the matching
         # attribute: `repo merge-queue {probe|enable}` uses args.merge_queue_command;
-        # `repo label {ensure}` uses args.label_command.
+        # `repo label {ensure|list}` uses args.label_command; `repo file {read}`
+        # uses args.file_command.
         if args.repo_command == 'label':
             key = ('repo', 'label', getattr(args, 'label_command', None))
         elif args.repo_command == 'merge-queue':
             key = ('repo', 'merge-queue', getattr(args, 'merge_queue_command', None))
+        elif args.repo_command == 'file':
+            key = ('repo', 'file', getattr(args, 'file_command', None))
         else:
             # Unrecognised repo sub-noun: resolve the third key element to None so
             # the handler lookup misses cleanly and falls through to the

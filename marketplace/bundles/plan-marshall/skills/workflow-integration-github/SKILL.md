@@ -739,6 +739,41 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github
   --label TEXT [--color HEX] [--description TEXT]
 ```
 
+### github_ops repo label list
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_ops repo label list \
+  [--repo OWNER/NAME]
+```
+
+### github_ops repo file read
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_ops repo file read \
+  --repo OWNER/NAME --path PATH [--ref REF]
+```
+
+### github_ops org list-repos
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_ops org list-repos \
+  --org ORG
+```
+
+### github_ops org search-code
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_ops org search-code \
+  --org ORG --query LITERAL
+```
+
+The four read-only verbs above are implemented in `_github_org.py`. Their return
+contracts — the `found` / `not_found` / error split of `repo file read`, and the
+`success` / `incomplete` / `error` completeness split of the three population
+verbs — are stated once in
+[`tools-integration-ci/SKILL.md`](../tools-integration-ci/SKILL.md) § Canonical
+invocations → `repo` and `org`, and are not restated here.
+
 ### github_pr fetch-comments
 
 ```bash
