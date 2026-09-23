@@ -569,13 +569,6 @@ def _has_pythonpath_env_kwarg(node: ast.Call, tree: ast.AST, parent_map: dict[in
     if env_value is None:
         return False
 
-    # env=existing_env_var (e.g., env=env). Trust prior assignment if the
-    # name appears in scope; we cannot reason about it statically without
-    # a full data-flow pass, so accept it conservatively when the symbol
-    # name strongly implies env construction.
-    if isinstance(env_value, ast.Name) and env_value.id in {'env', 'subprocess_env', 'child_env'}:
-        return True
-
     # env=helper_call(...) — Class 2: the env is built by a call, so the
     # detector cannot see inside it and trusts the helper to construct
     # PYTHONPATH (or deliberately omit it, as _clean_env does).

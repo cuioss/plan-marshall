@@ -32,6 +32,7 @@ from platform_runtime import (
     _parse_json_list,
     _read_marshal,
     _resolve_target,
+    list_operations,
     main,
 )
 from runtime_base import toon_success
@@ -300,25 +301,48 @@ _BUILD_OPERATION_IDS = [
     'a-single-unknown-token-is-the-operation',
 ]
 
-#: The documented group/subcommand pairs whose two tokens join into one operation
-#: string. Listed separately from the table above because the claim is different:
-#: those rows pin the SPLIT (what becomes arguments), while these pin that every
-#: published pair is recognised as a two-part operation at all.
+#: Derived from the canonical OPERATION_REGISTRY on _dispatch — no hardcoded
+#: mirror. Two-token operations split into (group, subcommand); single-token
+#: operations are covered by the split-point cases above.
 _TWO_PART_GROUPS = [
-    ('session', 'render-title'),
-    ('session', 'push-title-token'),
-    ('session', 'bind'),
-    ('session', 'resolve-plan'),
-    ('session', 'doctor'),
-    ('permission', 'configure'),
-    ('permission', 'analyze'),
-    ('permission', 'fix'),
-    ('permission', 'ensure-wildcards'),
-    ('permission', 'ensure-steps'),
-    ('permission', 'web-analyze'),
+    (op.split(' ', 1)[0], op.split(' ', 1)[1])
+    for op in list_operations()
+    if ' ' in op and op not in {c[1] for c in _BUILD_OPERATION_CASES if isinstance(c[1], str) and ' ' in c[1]}
 ]
 
+assert _TWO_PART_GROUPS, 'registry-derived two-part operation population is empty'
+
 _TWO_PART_GROUP_IDS = [f'{group}-{subcommand}' for group, subcommand in _TWO_PART_GROUPS]
+
+
+def test_operation_registry_matches_dispatch_literals() -> None:
+    """OPERATION_REGISTRY stays identical to the operations _dispatch handles.
+
+    Both populations are derived at test time — the registry by import, the
+    dispatch set by AST-walking _dispatch for ``operation == '<literal>'``
+    selections — so a handler added to one side without the other fails here
+    instead of drifting silently.
+    """
+    import ast
+    import inspect
+
+    import platform_runtime
+
+    dispatched: set[str] = set()
+    tree = ast.parse(inspect.getsource(platform_runtime._dispatch))
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Compare):
+            continue
+        if not isinstance(node.left, ast.Name) or node.left.id != 'operation':
+            continue
+        for comparator in node.comparators:
+            if isinstance(comparator, ast.Constant) and isinstance(comparator.value, str):
+                dispatched.add(comparator.value)
+
+    assert dispatched == set(platform_runtime.OPERATION_REGISTRY), (
+        f'registry/dispatch drift: registry-only={sorted(set(platform_runtime.OPERATION_REGISTRY) - dispatched)}, '
+        f'dispatch-only={sorted(dispatched - set(platform_runtime.OPERATION_REGISTRY))}'
+    )
 
 
 class TestBuildOperation:

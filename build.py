@@ -34,8 +34,13 @@ from pathlib import Path
 # _compute_mypypath() uses to reach marketplace_bundles.
 _GATE_COVERAGE_DIR = (
     Path(__file__).parent
-    / 'marketplace' / 'bundles' / 'plan-marshall'
-    / 'skills' / 'script-shared' / 'scripts' / 'build'
+    / 'marketplace'
+    / 'bundles'
+    / 'plan-marshall'
+    / 'skills'
+    / 'script-shared'
+    / 'scripts'
+    / 'build'
 )
 if str(_GATE_COVERAGE_DIR) not in sys.path:
     sys.path.insert(0, str(_GATE_COVERAGE_DIR))
@@ -275,6 +280,7 @@ def _compute_mypypath() -> str:
     if shared_scripts not in sys.path:
         sys.path.insert(0, shared_scripts)
     from marketplace_bundles import collect_script_dirs
+
     return os.pathsep.join(collect_script_dirs(bundles_root))
 
 
@@ -348,16 +354,17 @@ def _mypy_exclude_patterns(label: str = 'mypy') -> list[re.Pattern[str]]:
         with PYPROJECT_PATH.open('rb') as handle:
             config = tomllib.load(handle)
     except (OSError, tomllib.TOMLDecodeError) as exc:
-        print(f'{label}: could not read mypy excludes from {PYPROJECT_PATH} ({exc}) — assuming none',
-              file=sys.stderr)
+        print(f'{label}: could not read mypy excludes from {PYPROJECT_PATH} ({exc}) — assuming none', file=sys.stderr)
         return []
     raw = config.get('tool', {}).get('mypy', {}).get('exclude', [])
     if isinstance(raw, str):
         raw = [raw]
     elif not isinstance(raw, list):
-        print(f'{label}: ignoring malformed [tool.mypy] exclude of type '
-              f'{type(raw).__name__} (expected string or list) — assuming none',
-              file=sys.stderr)
+        print(
+            f'{label}: ignoring malformed [tool.mypy] exclude of type '
+            f'{type(raw).__name__} (expected string or list) — assuming none',
+            file=sys.stderr,
+        )
         raw = []
     patterns: list[re.Pattern[str]] = []
     for entry in raw:
@@ -387,10 +394,7 @@ def _mypy_collects_any(path: str, label: str = 'mypy') -> bool:
     else:
         return False
     patterns = _mypy_exclude_patterns(label)
-    return any(
-        not any(pattern.search(candidate.as_posix()) for pattern in patterns)
-        for candidate in candidates
-    )
+    return any(not any(pattern.search(candidate.as_posix()) for pattern in patterns) for candidate in candidates)
 
 
 def _mypy_collect_count(paths: list[str]) -> int:
@@ -480,8 +484,10 @@ def _skip_empty_mypy_scope(command: str, path: str) -> bool:
     """
     if _mypy_collects_any(path, command):
         return False
-    print(f'>>> {command}: skipping mypy for {path} — no file there survives the '
-          f'[tool.mypy] exclude patterns in {PYPROJECT_PATH} (nothing to type-check)')
+    print(
+        f'>>> {command}: skipping mypy for {path} — no file there survives the '
+        f'[tool.mypy] exclude patterns in {PYPROJECT_PATH} (nothing to type-check)'
+    )
     return True
 
 
@@ -501,8 +507,7 @@ def cmd_compile(module: str | None, boundary: CoverageBoundary | None = None) ->
                     f'{path} — no file survives the [tool.mypy] exclude patterns in {PYPROJECT_PATH}',
                 )
             return 0
-        return _run_mypy([path], f'compile: mypy {path}', mypy_env,
-                         dimension='mypy(production)', boundary=boundary)
+        return _run_mypy([path], f'compile: mypy {path}', mypy_env, dimension='mypy(production)', boundary=boundary)
     paths = [path]
     # Include .claude/ only when a file there survives mypy's excludes. Passing a
     # directory mypy collects nothing from makes it fail with "There are no
@@ -511,8 +516,9 @@ def cmd_compile(module: str | None, boundary: CoverageBoundary | None = None) ->
     # excluded .claude/worktrees/, which an exclude-blind .py count would miss.
     if _mypy_collects_any(str(CLAUDE_DIR), 'compile'):
         paths.append(str(CLAUDE_DIR))
-    return _run_mypy(paths, f'compile: mypy {" ".join(paths)}', mypy_env,
-                     dimension='mypy(production)', boundary=boundary)
+    return _run_mypy(
+        paths, f'compile: mypy {" ".join(paths)}', mypy_env, dimension='mypy(production)', boundary=boundary
+    )
 
 
 def cmd_test_compile(module: str | None, boundary: CoverageBoundary | None = None) -> int:
@@ -528,8 +534,7 @@ def cmd_test_compile(module: str | None, boundary: CoverageBoundary | None = Non
                 f'{path} — no file survives the [tool.mypy] exclude patterns in {PYPROJECT_PATH}',
             )
         return 0
-    return _run_mypy([path], f'test-compile: mypy {path}', mypy_env,
-                     dimension='mypy(test)', boundary=boundary)
+    return _run_mypy([path], f'test-compile: mypy {path}', mypy_env, dimension='mypy(test)', boundary=boundary)
 
 
 def cmd_module_tests(module: str | None, parallel: bool = True, filter_expr: str | None = None) -> int:
@@ -624,10 +629,7 @@ def ensure_executor_substrate() -> int:
     if executor.is_file():
         print(f'>>> quality-gate: executor substrate present at {executor}')
         return 0
-    generator = (
-        BUNDLES_DIR / 'plan-marshall' / 'skills' / 'tools-script-executor'
-        / 'scripts' / 'generate_executor.py'
-    )
+    generator = BUNDLES_DIR / 'plan-marshall' / 'skills' / 'tools-script-executor' / 'scripts' / 'generate_executor.py'
     # Invoked by DIRECT PATH through the sanctioned bootstrap verb, never
     # through .plan/execute-script.py — the file this step exists to create
     # cannot be the thing that dispatches its own creation.
@@ -636,15 +638,19 @@ def ensure_executor_substrate() -> int:
         'quality-gate: bootstrapping the executor substrate (absent — fresh checkout)',
     )
     if exit_code != 0:
-        print('quality-gate: executor generation FAILED — the argument-naming cluster '
-              'has no notation registry to judge against, so this gate cannot report on '
-              'it. Halting rather than running plugin-doctor over an absent substrate.',
-              file=sys.stderr)
+        print(
+            'quality-gate: executor generation FAILED — the argument-naming cluster '
+            'has no notation registry to judge against, so this gate cannot report on '
+            'it. Halting rather than running plugin-doctor over an absent substrate.',
+            file=sys.stderr,
+        )
         return exit_code
     if not executor.is_file():
-        print(f'quality-gate: executor generation reported success but {executor} does '
-              'not exist. Halting: a zero exit code is not evidence the file landed.',
-              file=sys.stderr)
+        print(
+            f'quality-gate: executor generation reported success but {executor} does '
+            'not exist. Halting: a zero exit code is not evidence the file landed.',
+            file=sys.stderr,
+        )
         return 1
     return 0
 
@@ -674,8 +680,7 @@ def cmd_quality_gate(module: str | None, boundary: CoverageBoundary | None = Non
     # certify the tree, then stop.
     if exit_code == _FRESHNESS_SUSPECT_RC:
         if owns_summary:
-            print(render_coverage_summary(
-                boundary, _quality_gate_could_run(module), _QUALITY_GATE_DIMENSIONS))
+            print(render_coverage_summary(boundary, _quality_gate_could_run(module), _QUALITY_GATE_DIMENSIONS))
         return exit_code
     if exit_code != 0:
         return exit_code
@@ -706,12 +711,28 @@ def cmd_quality_gate(module: str | None, boundary: CoverageBoundary | None = Non
     )
     if exit_code != 0:
         return exit_code
+    # Format enforcement is blocking, not silent: --check first so an
+    # unformatted tree fails the gate; auto-fix then rewrites, and the gate
+    # still returns 1 so the formatting diff must be committed before merge.
+    # Without the --check pre-pass, `ruff format` alone always exits 0 and a
+    # format finding vanishes into the working tree instead of blocking.
+    format_check_rc = run(
+        ['uv', 'run', 'ruff', 'format', '--check'] + paths,
+        f'quality-gate: ruff format --check {" ".join(paths)}',
+    )
     exit_code = run(
         ['uv', 'run', 'ruff', 'format'] + paths,
         f'quality-gate: ruff format {" ".join(paths)}',
     )
     if exit_code != 0:
         return exit_code
+    if format_check_rc != 0:
+        print(
+            'quality-gate: ruff format --check FAILED — unformatted files were '
+            'auto-fixed above; commit the formatting diff before merge.',
+            file=sys.stderr,
+        )
+        return 1
     boundary.record_checked(f'ruff [{", ".join(paths)}]')
 
     # SPDX-header enforcement: every project-owned .py file in scope must carry
@@ -725,7 +746,10 @@ def cmd_quality_gate(module: str | None, boundary: CoverageBoundary | None = Non
         print('quality-gate: SPDX-header check FAILED — missing/incorrect header:', file=sys.stderr)
         for offender in offenders:
             print(f'    {offender}', file=sys.stderr)
-        print(f'    Each file must carry "{SPDX_HEADER}" as its first non-shebang, non-encoding-cookie line.', file=sys.stderr)
+        print(
+            f'    Each file must carry "{SPDX_HEADER}" as its first non-shebang, non-encoding-cookie line.',
+            file=sys.stderr,
+        )
         return 1
     print('>>> quality-gate: SPDX-header check passed')
     boundary.record_checked(f'SPDX headers [{", ".join(spdx_paths)}]')
@@ -735,8 +759,7 @@ def cmd_quality_gate(module: str | None, boundary: CoverageBoundary | None = Non
         if exit_code != 0:
             return exit_code
         doctor_script = (
-            BUNDLES_DIR / 'pm-plugin-development' / 'skills' / 'plugin-doctor'
-            / 'scripts' / 'doctor-marketplace.py'
+            BUNDLES_DIR / 'pm-plugin-development' / 'skills' / 'plugin-doctor' / 'scripts' / 'doctor-marketplace.py'
         )
         doctor_env = {**os.environ, 'PYTHONPATH': _compute_mypypath()}
         exit_code = run(
@@ -749,8 +772,7 @@ def cmd_quality_gate(module: str | None, boundary: CoverageBoundary | None = Non
         boundary.record_checked('plugin-doctor [marketplace-wide]')
 
     if owns_summary:
-        print(render_coverage_summary(
-            boundary, _quality_gate_could_run(module), _QUALITY_GATE_DIMENSIONS))
+        print(render_coverage_summary(boundary, _quality_gate_could_run(module), _QUALITY_GATE_DIMENSIONS))
     return exit_code
 
 
@@ -776,9 +798,14 @@ def cmd_coverage(module: str | None) -> int:
 
     basetemp = _prepare_session_basetemp()
     cmd = [
-        'uv', 'run', 'pytest', test_path,
+        'uv',
+        'run',
+        'pytest',
+        test_path,
         f'--basetemp={basetemp}',
-        '-n', 'auto', '--dist=loadgroup',
+        '-n',
+        'auto',
+        '--dist=loadgroup',
         f'--cov={bundle_path}',
         '--cov-report=html:.plan/temp/htmlcov',
         '--cov-report=xml:.plan/temp/coverage.xml',
@@ -841,7 +868,7 @@ def main():
     parser = argparse.ArgumentParser(
         description='Build script with module filtering (canonical commands from extension_base.py)',
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog='''
+        epilog="""
 Examples:
   %(prog)s compile                    # mypy marketplace/bundles/
   %(prog)s compile pm-dev-frontend    # mypy marketplace/bundles/pm-dev-frontend
@@ -849,7 +876,7 @@ Examples:
   %(prog)s module-tests plan-marshall   # pytest test/plan-marshall
   %(prog)s module-tests plan-marshall --filter test_foo  # pytest -k passthrough (fast signal)
   %(prog)s verify pm-dev-java         # Full verification on single bundle
-'''
+""",
     )
 
     subparsers = parser.add_subparsers(dest='command', required=True)
@@ -868,13 +895,25 @@ Examples:
     # default); --no-parallel opts into serial single-file debug runs.
     p = subparsers.add_parser('module-tests', help='pytest on test sources')
     p.add_argument('module', nargs='?', help='Test directory (e.g., plan-marshall)')
-    p.add_argument('--parallel', '-p', dest='parallel', action='store_true', default=True,
-                   help='Run tests in parallel (default; -n auto --dist=loadgroup)')
-    p.add_argument('--no-parallel', dest='parallel', action='store_false',
-                   help='Run tests serially (single-file debug)')
-    p.add_argument('--filter', dest='filter', default=None, metavar='EXPR',
-                   help='Fast-signal passthrough: pytest -k expression forwarded verbatim '
-                        '(sanctioned alternative to direct .venv/bin/pytest -k)')
+    p.add_argument(
+        '--parallel',
+        '-p',
+        dest='parallel',
+        action='store_true',
+        default=True,
+        help='Run tests in parallel (default; -n auto --dist=loadgroup)',
+    )
+    p.add_argument(
+        '--no-parallel', dest='parallel', action='store_false', help='Run tests serially (single-file debug)'
+    )
+    p.add_argument(
+        '--filter',
+        dest='filter',
+        default=None,
+        metavar='EXPR',
+        help='Fast-signal passthrough: pytest -k expression forwarded verbatim '
+        '(sanctioned alternative to direct .venv/bin/pytest -k)',
+    )
 
     # quality-gate
     p = subparsers.add_parser('quality-gate', help='mypy + ruff check on sources')

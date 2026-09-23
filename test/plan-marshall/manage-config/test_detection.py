@@ -13,7 +13,7 @@ import json
 import shutil
 from pathlib import Path
 
-from _manage_config_fixtures import SCRIPT_PATH
+from _manage_config_fixtures import SCRIPT_PATH, create_nested_marshal_json
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
 from conftest import run_script
@@ -131,15 +131,12 @@ def create_mixed_multi_module_project(fixture_dir: Path) -> None:
 
 
 def create_minimal_marshal_json(fixture_dir: Path) -> Path:
-    """Create minimal marshal.json in fixture directory."""
-    config = {
-        'skill_domains': {'system': {'defaults': ['plan-marshall:persona-plan-marshall-agent'], 'optionals': []}},
-        'system': {'retention': {'logs_days': 1}},
-        'plan': {'defaults': {}},
-    }
-    marshal_path = fixture_dir / 'marshal.json'
-    marshal_path.write_text(json.dumps(config, indent=2))
-    return marshal_path
+    """Create minimal marshal.json in fixture directory.
+
+    Thin delegate to the single surviving builder in _manage_config_fixtures
+    (minimal=True). No independent construction site remains here.
+    """
+    return create_nested_marshal_json(fixture_dir, minimal=True)
 
 
 # =============================================================================
