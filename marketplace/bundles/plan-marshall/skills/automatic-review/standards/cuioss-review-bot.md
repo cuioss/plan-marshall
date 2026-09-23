@@ -10,8 +10,8 @@ PR-Agent comment is ingested even when the bot appears in neither list, with a w
 [`bot-participation-contract.md`](bot-participation-contract.md).
 
 PR-Agent is the third reviewer beside CodeRabbit and Sourcery, deliberately narrowed to a
-**security-weighted** charter. It is opt-in per repository (the repo must carry the
-`reusable-pr-agent-review.yml` caller workflow). Both `required_bots` and `optional_bots` ship
+**security-weighted** charter. It is opt-in per repository (the repo must carry a caller workflow
+for the org's `reusable-cuioss-review-bot.yml`). Both `required_bots` and `optional_bots` ship
 EMPTY, so `cuioss-review-bot` — like every other bot — is classified per project rather than by a
 shipped default.
 
@@ -75,12 +75,12 @@ honors_skip_label: true           # UNVERIFIED — #103 carried no skip label, s
 # See "Participation evidence" below.
 #
 # ⚠ /improve HAS TWO GATING MODES, and reading only the label one misreads participation:
-#   - repository-wide — the caller passes `auto-improve: true` to reusable-pr-agent-review.yml.
+#   - repository-wide — the caller passes `auto-improve: true` to reusable-cuioss-review-bot.yml.
 #     THIS REPOSITORY IS IN THAT MODE as of #1334 (a measured pilot; see that PR for why /review
 #     is not the finding surface). No label appears on the pull request, and none is expected.
-#   - per pull request — the `pr-agent-improve` label, the org default while `auto-improve` is
-#     false. This remains the mode for every consumer repository that has not opted in.
-# The reusable workflow ORs the two (`inputs.auto-improve || contains(labels, 'pr-agent-improve')`),
+#   - per pull request — the `cuioss-review-bot-improve` label, the org default while `auto-improve`
+#     is false. This remains the mode for every consumer repository that has not opted in.
+# The reusable workflow ORs the two (`inputs.auto-improve || contains(labels, 'cuioss-review-bot-improve')`),
 # so an ABSENT label is not evidence that /improve did not run.
 #
 # ⚠ THIRD SHAPE, CONFIRMED on #1334: when /improve runs and finds nothing it does NOT stay silent —
@@ -98,7 +98,7 @@ honors_skip_label: true           # UNVERIFIED — #103 carried no skip label, s
 participation_evidence:
   - issue_comment                 # the single persistent `## PR Reviewer Guide 🔍` comment
   - inline                        # `/improve` code suggestions, published as review comments when
-                                  # the `pr-agent-improve` label gates them on
+                                  # the `cuioss-review-bot-improve` label gates them on
 participation_requires_update: true   # a re-review EDITS that same comment in place, so continued
                                   # presence proves only that it reviewed once, at some earlier HEAD.
                                   # Evidence therefore has to clear the currency test. Its arms are
@@ -113,7 +113,7 @@ ignore_patterns:
   - "**[Persistent review]"       # contentless "updated to latest commit" notice, authored by the
                                   # reviewer identity so it reaches this pipeline as a candidate
                                   # finding. Suppressed at source by final_update_message = false
-                                  # in cuioss/pr-agent-settings; this pattern covers the ones
+                                  # in cuioss/cuioss-review-bot; this pattern covers the ones
                                   # already posted and any recurrence if that setting is lost.
   - "No code suggestions found for the PR"   # CONFIRMED on #1334 — /improve's EMPTY result. It is
                                   # published as a SECOND, separate `issue_comment` headed
@@ -196,14 +196,14 @@ Do not attempt to match these keys against comment text. There is nothing in the
 - Signal vs. noise + review anatomy: **cuioss-organization** →
   [`docs/automatic-review/pr-agent.md`](https://github.com/cuioss/cuioss-organization/blob/main/docs/automatic-review/pr-agent.md)
 - Active config + the setup's recorded learnings:
-  [`cuioss/pr-agent-settings`](https://github.com/cuioss/pr-agent-settings) (`.pr_agent.toml`,
+  [`cuioss/cuioss-review-bot`](https://github.com/cuioss/cuioss-review-bot) (`.pr_agent.toml`,
   `README.adoc`)
 - The workflow that enforces the skip rules:
-  [`reusable-pr-agent-review.yml`](https://github.com/cuioss/cuioss-organization/blob/main/.github/workflows/reusable-pr-agent-review.yml)
+  [`reusable-cuioss-review-bot.yml`](https://github.com/cuioss/cuioss-organization/blob/main/.github/workflows/reusable-cuioss-review-bot.yml)
 
 ## Central config
 
-- **File-based and central** — `cuioss/pr-agent-settings/.pr_agent.toml`, merged *beneath* any
+- **File-based and central** — `cuioss/cuioss-review-bot/.pr_agent.toml`, merged *beneath* any
   repo-local `.pr_agent.toml`, re-read on every CI invocation.
 - **`honors_skip_label: true` is true for a different reason than CodeRabbit's.** PR-Agent's own
   `ignore_pr_labels` / `ignore_pr_authors` settings are read only by `should_process_pr_logic()`,
@@ -335,7 +335,7 @@ The `ignore_patterns` entry `**[Persistent review]` is NOT a refusal: it is a co
 CONFIRMED on #103 — `/review` produces exactly one persistent `issue_comment`, headed
 `## PR Reviewer Guide 🔍`, and it is *updated in place* on re-review rather than reposted. Inline
 review comments are published by the separate `/improve` command, which is gated on the
-`pr-agent-improve` label in the reusable workflow. A pipeline stage that counts only inline review
+`cuioss-review-bot-improve` label in the reusable workflow. A pipeline stage that counts only inline review
 comments therefore concludes this bot found nothing on any repository where that label is absent —
 the Guide, not the inline count, is the shape that is always present.
 
@@ -369,7 +369,7 @@ Extract accordingly:
 2. **⚡ row** — the findings themselves, one `<details>` each: a deep-link, a bold title, prose, and
    usually a fenced excerpt. Capped centrally at `num_max_findings`; read its value from the G2
    column of "The two generations" rather than from a number restated here — and note that column
-   is itself a cache, to be re-read at `pr-agent-settings` HEAD before it is relied on. Assign
+   is itself a cache, to be re-read at `cuioss/cuioss-review-bot` HEAD before it is relied on. Assign
    `medium` absent other signal. `No major issues detected` in this row is a clean assertion, not
    a finding.
 3. **🧪 row** — a coverage assertion. `PR contains tests` is clean; the negative form on a
@@ -442,7 +442,7 @@ Getting this bot's evidence wrong is consequential in both directions:
   actually publishes rather than the ones a generic consumer might look for.
 
   **An absent inline count is not evidence of non-participation.** The shape is published only
-  where the `pr-agent-improve` label gates `/improve` on, so its absence is the normal state on
+  where the `cuioss-review-bot-improve` label gates `/improve` on, so its absence is the normal state on
   most repositories. A PRESENT inline count, however, IS evidence of participation.
 
   **The new member is a reachable mechanism, not a name.** `workflow-integration-github
@@ -487,7 +487,7 @@ Every yield figure here is stated together with the **configuration generation**
 under. That pairing is not bookkeeping: this reviewer's output has moved for a reason that is
 neither the diff nor the model, so a figure read against the wrong generation describes a reviewer
 that no longer exists. The generation boundary is fixed by reading
-[`cuioss/pr-agent-settings`](https://github.com/cuioss/pr-agent-settings) at its default-branch
+[`cuioss/cuioss-review-bot`](https://github.com/cuioss/cuioss-review-bot) at its default-branch
 HEAD — the file PR-Agent actually loads — never from a value cached here.
 
 ⚠ **The G2 column below IS such a cache, and is recorded as one rather than presented as a mirror.**
@@ -501,7 +501,7 @@ the reviewer having drifted.
 
 ### The two generations
 
-| | G1 — the suppressed charter | G2 — live at `pr-agent-settings` HEAD |
+| | G1 — the suppressed charter | G2 — live at `cuioss/cuioss-review-bot` HEAD |
 |---|---|---|
 | `extra_instructions` | "do not duplicate [the other reviewers]", "only when you can name the concrete input", "prefer one well-evidenced finding"; six classical AppSec categories | says what to look *for*; contests the empty-list permission directly; severity explicitly not a reporting threshold; anti-fabrication clause retained |
 | `num_max_findings` | 3, then 5 | 12 |
@@ -589,9 +589,9 @@ that temperature does not matter would be reading an absent experiment as a nega
 here rather than left implicit.** `SUPPORT_REASONING_EFFORT_MODELS` is transcribed from
 `litellm_ai_handler.py` **inside the reviewer image** — it is not a setting this project's
 configuration declares, so unlike every other row above it cannot be re-derived from
-`pr-agent-settings`. The image is selected by
-`cuioss/cuioss-organization/.github/workflows/reusable-pr-agent-review.yml`, which this repository's
-caller pins by commit SHA in `.github/workflows/pr-agent.yml` (`uses: …@f3b0586c…`, v0.23.0). That
+`cuioss/cuioss-review-bot`. The image is selected by
+`cuioss/cuioss-organization/.github/workflows/reusable-cuioss-review-bot.yml`, which this repository's
+caller workflow pins by commit SHA in its `uses:` line. That
 pin fixes the *workflow file*, and with it the image REFERENCE that file names; it fixes the image
 CONTENT only insofar as that reference is a digest rather than a tag — and **this record has not
 verified which form it uses**. The org workflow is not vendored in this checkout, so the form cannot

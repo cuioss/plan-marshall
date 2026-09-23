@@ -29,10 +29,16 @@ class TestGenerateCli:
         assert '--target' in result.stdout
         assert 'claude' in result.stdout
         assert 'opencode' in result.stdout
-        assert 'pr-agent' in result.stdout
+        assert 'cuioss-review-bot' in result.stdout
 
     def test_unknown_target_exits_two(self):
         result = _run_cli('--target', 'nope', '--output', '/tmp/does-not-matter')
+        assert result.returncode == 2
+        assert 'invalid choice' in (result.stderr + result.stdout)
+
+    def test_the_retired_reviewer_target_name_is_rejected(self, tmp_path):
+        """The reviewer target was renamed; its former name is an unknown choice, not an alias."""
+        result = _run_cli('--target', 'pr-agent', '--output', str(tmp_path / 'retired-out'))
         assert result.returncode == 2
         assert 'invalid choice' in (result.stderr + result.stdout)
 
@@ -53,26 +59,26 @@ class TestGenerateCli:
         assert result.returncode == 0, result.stderr
         assert 'opencode' in result.stdout
 
-    def test_pr_agent_target_known_choice(self, tmp_path):
-        out = tmp_path / 'pr-agent-out'
-        result = _run_cli('--target', 'pr-agent', '--output', str(out))
+    def test_cuioss_review_bot_target_known_choice(self, tmp_path):
+        out = tmp_path / 'cuioss-review-bot-out'
+        result = _run_cli('--target', 'cuioss-review-bot', '--output', str(out))
         assert result.returncode == 0, result.stderr
         assert (out / 'packs' / 'spine.md').is_file()
 
-    def test_pr_agent_emits_a_markdown_artifact_set(self, tmp_path):
+    def test_cuioss_review_bot_emits_a_markdown_artifact_set(self, tmp_path):
         """Shape check only: the run emits a non-empty set, and all of it is Markdown.
 
         The name and this docstring are deliberately narrower than "one artifact
         per derived domain": the body below never enumerates the derived set, so
         a claim of set identity would be one no assertion here establishes. That
-        comparison belongs to test_pr_agent_target.py, which checks the emitted
-        stems against the composer's own derived set on a fixture marketplace.
-        Re-deriving the same expectation here would share the CLI's composer and
-        cost this smoke test its independence.
+        comparison belongs to test_cuioss_review_bot_target.py, which checks the
+        emitted stems against the composer's own derived set on a fixture
+        marketplace. Re-deriving the same expectation here would share the CLI's
+        composer and cost this smoke test its independence.
         """
-        out = tmp_path / 'pr-agent-packs-out'
+        out = tmp_path / 'cuioss-review-bot-packs-out'
 
-        result = _run_cli('--target', 'pr-agent', '--output', str(out))
+        result = _run_cli('--target', 'cuioss-review-bot', '--output', str(out))
 
         assert result.returncode == 0, result.stderr
         emitted = sorted((out / 'packs').iterdir())
@@ -99,13 +105,13 @@ class TestGenerateCli:
         at all and exit non-zero — the failure is loud rather than a quietly
         shorter set.
         """
-        first = tmp_path / 'pr-agent-run-one'
-        second = tmp_path / 'pr-agent-run-two'
-        scoped = tmp_path / 'pr-agent-run-scoped'
+        first = tmp_path / 'cuioss-review-bot-run-one'
+        second = tmp_path / 'cuioss-review-bot-run-two'
+        scoped = tmp_path / 'cuioss-review-bot-run-scoped'
 
-        one = _run_cli('--target', 'pr-agent', '--output', str(first))
-        two = _run_cli('--target', 'pr-agent', '--output', str(second))
-        three = _run_cli('--target', 'pr-agent', '--output', str(scoped), '--bundles', 'plan-marshall')
+        one = _run_cli('--target', 'cuioss-review-bot', '--output', str(first))
+        two = _run_cli('--target', 'cuioss-review-bot', '--output', str(second))
+        three = _run_cli('--target', 'cuioss-review-bot', '--output', str(scoped), '--bundles', 'plan-marshall')
 
         assert one.returncode == 0, one.stderr
         assert two.returncode == 0, two.stderr
@@ -114,21 +120,21 @@ class TestGenerateCli:
         assert stems, 'the run emitted no artifact at all'
         assert stems == sorted(p.stem for p in (second / 'packs').glob('*.md'))
         assert stems == sorted(p.stem for p in (scoped / 'packs').glob('*.md')), (
-            '--bundles narrowed the pr-agent set; this target must ignore it'
+            '--bundles narrowed the cuioss-review-bot set; this target must ignore it'
         )
 
-    def test_pr_agent_emits_no_repo_local_config(self, tmp_path):
+    def test_cuioss_review_bot_emits_no_repo_local_config(self, tmp_path):
         """The output root holds the artifact set and nothing else."""
-        out = tmp_path / 'pr-agent-bad-out'
+        out = tmp_path / 'cuioss-review-bot-bad-out'
 
-        result = _run_cli('--target', 'pr-agent', '--output', str(out))
+        result = _run_cli('--target', 'cuioss-review-bot', '--output', str(out))
 
         assert result.returncode == 0, result.stderr
         assert not (out / '.pr_agent.toml').exists()
         assert sorted(path.name for path in out.iterdir()) == ['packs']
 
     def test_a_non_pack_target_emits_no_packs_directory(self, tmp_path):
-        """The ``packs/`` shape is the pr-agent target's alone."""
+        """The ``packs/`` shape is the cuioss-review-bot target's alone."""
         out = tmp_path / 'opencode-packs-out'
 
         result = _run_cli('--target', 'opencode', '--output', str(out))
@@ -142,23 +148,23 @@ class TestGenerateCli:
         assert result.returncode == 0, result.stderr
         # --target all fans out one sub-directory per registered target, and it
         # reaches the gated post-emit path for every one of them.
-        assert (out / 'pr-agent' / 'packs' / 'spine.md').is_file()
+        assert (out / 'cuioss-review-bot' / 'packs' / 'spine.md').is_file()
 
-    def test_all_target_skips_bundle_tree_post_emit_for_pr_agent(self, tmp_path):
+    def test_all_target_skips_bundle_tree_post_emit_for_cuioss_review_bot(self, tmp_path):
         """The generic post-emit steps are gated on ``emits_bundle_tree``.
 
         Version stamping and the dist-manifest are bundle-tree semantics. The
-        pr-agent output is a reviewer artifact set, so neither artifact may
-        appear there — while the bundle-tree targets keep both.
+        cuioss-review-bot output is a reviewer artifact set, so neither artifact
+        may appear there — while the bundle-tree targets keep both.
         """
         out = tmp_path / 'all-out'
 
         result = _run_cli('--target', 'all', '--output', str(out))
 
         assert result.returncode == 0, result.stderr
-        pr_agent_out = out / 'pr-agent'
-        assert not (pr_agent_out / 'dist-manifest.json').exists()
-        assert list(pr_agent_out.glob('**/plugin.json')) == []
+        reviewer_out = out / 'cuioss-review-bot'
+        assert not (reviewer_out / 'dist-manifest.json').exists()
+        assert list(reviewer_out.glob('**/plugin.json')) == []
         # positive control: the bundle-tree target still gets both artifacts
         assert (out / 'claude' / 'dist-manifest.json').is_file()
         assert list((out / 'claude').glob('*/.claude-plugin/plugin.json'))

@@ -1,8 +1,9 @@
-name: Publish PR-Agent Packs
+name: Publish cuioss-review-bot Packs
 
-# Publish the derived reviewer pack artifacts into cuioss/pr-agent-settings as a
-# pull request. The pr-agent target emits one Markdown artifact per derived review
-# domain plus the spine artifact carrying the charter once; publishing that set
+# Publish the derived reviewer pack artifacts into the settings repository
+# cuioss/cuioss-review-bot as a pull request. The cuioss-review-bot target emits
+# one Markdown artifact per derived review domain plus the spine artifact
+# carrying the charter once; publishing that set
 # once, addressably, is what lets a consumer repository NAME a selection instead
 # of carrying a regenerated copy of the charter.
 #
@@ -28,7 +29,7 @@ permissions:
 # foreign repository's packs/ directory. Runs queue (cancel-in-progress: false)
 # rather than cancel, so every landed source commit reaches the published set.
 concurrency:
-  group: pr-agent-packs-publish
+  group: cuioss-review-bot-packs-publish
   cancel-in-progress: false
 
 jobs:
@@ -63,12 +64,12 @@ jobs:
           python3 -c "import pathlib, tomllib; print('\n'.join(tomllib.loads(pathlib.Path('pyproject.toml').read_text())['project']['dependencies']))" > /tmp/generator-requirements.txt
           python3 -m pip install -r /tmp/generator-requirements.txt
 
-      - name: Generate the pr-agent artifact set
+      - name: Generate the cuioss-review-bot artifact set
         working-directory: source
         run: |
           python3 marketplace/targets/generate.py \
-            --target pr-agent \
-            --output target/pr-agent
+            --target cuioss-review-bot \
+            --output target/cuioss-review-bot
 
       # Minted here rather than as the job's first step. Nothing above needs it:
       # the source checkout, the dependency install and the derivation all run
@@ -88,15 +89,15 @@ jobs:
           # makes a missing or narrowed App installation fail loudly AT THE MINT,
           # instead of producing a token that silently lacks the scope and failing
           # later as an opaque 404. The installation must carry `contents: write`
-          # and `pull-requests: write` on cuioss/pr-agent-settings — the foreign
+          # and `pull-requests: write` on cuioss/cuioss-review-bot — the foreign
           # repository named below, not on this one.
           owner: cuioss
-          repositories: pr-agent-settings
+          repositories: cuioss-review-bot
 
-      - name: Checkout cuioss/pr-agent-settings
+      - name: Checkout cuioss/cuioss-review-bot
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: cuioss/pr-agent-settings
+          repository: cuioss/cuioss-review-bot
           token: ${{ steps.release-token.outputs.token }}
           path: settings
 
@@ -108,7 +109,7 @@ jobs:
         # pack — the destructive step never runs on unverified input.
         run: |
           set -euo pipefail
-          artifact_count=$(find source/target/pr-agent/packs -maxdepth 1 -name '*.md' | wc -l)
+          artifact_count=$(find source/target/cuioss-review-bot/packs -maxdepth 1 -name '*.md' | wc -l)
           if [ "${artifact_count}" -eq 0 ]; then
             echo "::error::the generator emitted no pack artifacts; refusing to replace the published set with nothing"
             exit 1
@@ -116,7 +117,7 @@ jobs:
           echo "Publishing ${artifact_count} pack artifact(s)"
           rm -rf settings/packs
           mkdir -p settings/packs
-          cp source/target/pr-agent/packs/*.md settings/packs/
+          cp source/target/cuioss-review-bot/packs/*.md settings/packs/
 
       - name: Open or update the publish pull request
         working-directory: settings
@@ -144,7 +145,7 @@ jobs:
           # could leave unrun. The source commit is carried in the title and body,
           # which is where a reader looks for it now that the branch name no
           # longer holds it.
-          branch="pr-agent-packs"
+          branch="cuioss-review-bot-packs"
           title="chore(packs): publish reviewer packs from ${SOURCE_REPOSITORY}@${SOURCE_SHA}"
           body="Generated artifact set, published from ${SOURCE_REPOSITORY}@${SOURCE_SHA}. The packs/ directory is REPLACED rather than merged, so a review domain that stopped deriving disappears from the published set. Do not edit these files by hand — they are regenerated from the source marketplace."
           git checkout -b "${branch}"
@@ -152,7 +153,7 @@ jobs:
           git push --force origin "${branch}"
           # The force-push above has already updated any open pull request for the
           # rolling branch in place, so only its ABSENCE calls for a create.
-          pr_number="$(gh pr list --repo cuioss/pr-agent-settings --head "${branch}" --state open --json number --jq '.[0].number // empty')"
+          pr_number="$(gh pr list --repo cuioss/cuioss-review-bot --head "${branch}" --state open --json number --jq '.[0].number // empty')"
           if [ -z "${pr_number}" ]; then
             # --label applies skip-bot-review AT CREATION TIME. That ordering is
             # load-bearing rather than stylistic: the org reusable workflow honours
@@ -160,7 +161,7 @@ jobs:
             # is scheduled, so a label added after the pull request exists loses the
             # race and the review runs anyway.
             gh pr create \
-              --repo cuioss/pr-agent-settings \
+              --repo cuioss/cuioss-review-bot \
               --base main \
               --head "${branch}" \
               --title "${title}" \
@@ -172,7 +173,7 @@ jobs:
             # place that commit is recorded, so leaving them stale would name
             # commit A on a pull request carrying commit B's derived set.
             gh pr edit "${pr_number}" \
-              --repo cuioss/pr-agent-settings \
+              --repo cuioss/cuioss-review-bot \
               --title "${title}" \
               --body "${body}"
           fi
@@ -187,6 +188,6 @@ jobs:
           # nothing downstream may read this step's exit status as evidence that
           # anything reached the settings repository's default branch.
           gh pr merge "${branch}" \
-            --repo cuioss/pr-agent-settings \
+            --repo cuioss/cuioss-review-bot \
             --auto \
             --squash

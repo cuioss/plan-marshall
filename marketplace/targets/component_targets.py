@@ -45,7 +45,7 @@ moment it is read and an invalid one aborts the build
   that would otherwise silently narrow the component's reach;
 * an empty list — a component shipped nowhere is an authoring error, not
   an intent; omitting the field is how you say "everywhere";
-* a list naming ONLY targets that emit no component tree (``pr-agent``
+* a list naming ONLY targets that emit no component tree (``cuioss-review-bot``
   derives a single reviewer configuration from skill rules, so it has no
   component to filter) — such a declaration passes a registry-membership
   check while still shipping the component nowhere;
@@ -475,7 +475,7 @@ def emits_to(path: Path, target_name: str) -> bool:
             calls this predicate. What that covers is every component-tree
             target's emit, plus the Claude target's validate-only mode (which
             re-walks each bundle's components for this check alone). A
-            ``pr-agent``-only run does NOT validate: it opens skill manifests
+            ``cuioss-review-bot``-only run does NOT validate: it opens skill manifests
             to harvest rule text, but it never asks whether a component is
             in scope, because it emits no component. The plugin-doctor
             ``targets-scope-invalid`` rule is the authoring-time net there.

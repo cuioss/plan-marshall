@@ -800,7 +800,7 @@ def test_a_file_declaring_only_non_tree_targets_fails_closed(tmp_path):
     """A file-level list naming only non-component-tree targets ships nowhere.
 
     The same registry-valid-but-shipped-nowhere shape the component level
-    rejects is rejected at the file level — a file narrowed onto ``pr-agent``
+    rejects is rejected at the file level — a file narrowed onto ``cuioss-review-bot``
     would vanish from every tree, which is the authoring error the declaration
     is supposed to name, not silently commit.
     """

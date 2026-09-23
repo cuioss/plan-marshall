@@ -21,6 +21,9 @@ marketplace/targets/
 ├── body_transform_engine.py      # Target-shared data-driven body rewrites
 ├── component_targets.py          # `targets:` frontmatter scope filter
 ├── fs_safety.py                  # Containment primitives for destructive emits
+├── cuioss_review_bot/            # Reviewer per-domain instruction packs
+│   ├── __init__.py               # Registers CuiossReviewBotTarget
+│   └── target.py                 # CuiossReviewBotTarget(TargetBase) + derivation rules
 ├── claude/                       # Verbatim mirror + plugin.json + marketplace.json
 │   ├── __init__.py               # Registers ClaudeTarget
 │   ├── target.py                 # ClaudeTarget(TargetBase) + removed-bundle prune
@@ -42,17 +45,14 @@ marketplace/targets/
 │   ├── frontmatter-rules.json
 │   └── templates/
 │       └── user-invocable-command.md
-├── opencode/                     # OpenCode singular-layout emitter
-│   ├── __init__.py               # Registers OpenCodeTarget
-│   ├── target.py                 # OpenCodeTarget(TargetBase)
-│   ├── emitter.py                # Singular-layout emit + stale-output prune
-│   ├── frontmatter.py            # Frontmatter transform + fail-closed validation
-│   ├── variant_emitter.py        # Per-level agent variant emission
-│   ├── mapping.json              # Tool/model maps
-│   └── frontmatter-rules.json
-└── pr_agent/                     # PR-Agent per-domain instruction packs
-    ├── __init__.py               # Registers PrAgentTarget
-    └── target.py                 # PrAgentTarget(TargetBase) + derivation rules
+└── opencode/                     # OpenCode singular-layout emitter
+    ├── __init__.py               # Registers OpenCodeTarget
+    ├── target.py                 # OpenCodeTarget(TargetBase)
+    ├── emitter.py                # Singular-layout emit + stale-output prune
+    ├── frontmatter.py            # Frontmatter transform + fail-closed validation
+    ├── variant_emitter.py        # Per-level agent variant emission
+    ├── mapping.json              # Tool/model maps
+    └── frontmatter-rules.json
 ```
 
 Each target lives in its own sub-package. The sub-package's `__init__.py`
@@ -92,7 +92,7 @@ validation-only modes may return an empty list).
 
 Configuration is data-driven. Per-target rules live as JSON files inside
 the target's own `config_dir/` so a mapping change is a JSON edit, not a
-code edit. The `pr-agent` target is the one exception and states its reason
+code edit. The `cuioss-review-bot` target is the one exception and states its reason
 in its module docstring: a new `marketplace/targets/**/*.json` path is
 claimed by no build extension and by no owner-less classifier rule, so it
 would resolve to the `unknown` role bucket. Its derivation rules are
@@ -131,17 +131,17 @@ and the shape rules that module owns on top of the YAML load.
 # OpenCode emit
 ./pw generate-opencode
 
-# PR-Agent reviewer packs → target/pr-agent/packs/, one Markdown artifact per
+# Reviewer packs → target/cuioss-review-bot/packs/, one Markdown artifact per
 # derived review domain plus spine.md. The run takes no selection argument: it
 # emits the whole derived set, and a consumer selects from the published one.
 # --bundles below does not narrow this target — it is ignored here.
-./pw generate --target pr-agent --output target/pr-agent
+./pw generate --target cuioss-review-bot --output target/cuioss-review-bot
 
 # Every target at once (claude → target/claude/, opencode → target/opencode/,
-# pr-agent → target/pr-agent/packs/)
+# cuioss-review-bot → target/cuioss-review-bot/packs/)
 ./pw generate --target all --output target
 
-# Scope to specific bundles (bundle-tree targets only — pr-agent ignores it)
+# Scope to specific bundles (bundle-tree targets only — cuioss-review-bot ignores it)
 ./pw generate --target opencode --output target/opencode \
     --bundles plan-marshall,pm-dev-java
 ```
@@ -282,20 +282,20 @@ step emits `target/claude/` during the finalize phase; the
 `/sync-plugin-cache` skill consumes that directory when syncing the
 Claude plugin cache.
 
-`target/pr-agent/packs/` is the same kind of output: a build artifact, not a
-committed source. The repository tracks no generated reviewer configuration —
-the artifact set is published to `cuioss/pr-agent-settings` by
-`.github/workflows/pr-agent-packs-publish.yml` on merge to `main`, and a
-consumer repository names a selection from that published set rather than
+`target/cuioss-review-bot/packs/` is the same kind of output: a build artifact,
+not a committed source. The repository tracks no generated reviewer
+configuration — the artifact set is published to `cuioss/cuioss-review-bot` by
+`.github/workflows/cuioss-review-bot-packs-publish.yml` on merge to `main`, and
+a consumer repository names a selection from that published set rather than
 carrying a copy of it.
 
-## PR-Agent target — per-domain instruction packs
+## cuioss-review-bot target — per-domain instruction packs
 
-The `pr-agent` target emits a reviewer artifact set instead of an assistant
-bundle tree: one Markdown artifact per derived review domain under
+The `cuioss-review-bot` target emits a reviewer artifact set instead of an
+assistant bundle tree: one Markdown artifact per derived review domain under
 `{output}/packs/`, plus `spine.md` carrying the cross-cutting review charter.
 The artifacts are published to the organisation-wide
-`cuioss/pr-agent-settings` repository, which is also where every other
+`cuioss/cuioss-review-bot` settings repository, which is also where every other
 reviewer key — model, token budgets, output suppression — lives.
 
 Three properties are load-bearing:
@@ -332,7 +332,7 @@ five consecutive empty reviews — is dropped from any harvested rule that
 carries it.
 
 **The category ceiling is a two-part budget, not a grouping.** The ten is an
-observed organisation rule quoted in `pr-agent-settings`' README, not an
+observed organisation rule quoted in the `cuioss/cuioss-review-bot` documentation, not an
 internal number this target may raise. The spine reserves one slot: it
 carries at most nine category bullets, and each domain artifact contributes
 exactly one. A single-domain assembly therefore lands exactly at the
@@ -342,7 +342,7 @@ exists in this repository to prove it against. Rules are not categories and
 are deliberately not governed by that ceiling — each domain artifact carries
 its own per-domain rule cap.
 
-`test/marketplace/targets/pr_agent/` enforces those invariants over the
+`test/marketplace/targets/cuioss_review_bot/` enforces those invariants over the
 emitted artifact set: one guard pins the emitted stems to the derived domain
 set plus the spine, and a second pins each charter clause and each spine
 category to `spine.md` and to nowhere else.

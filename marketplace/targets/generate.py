@@ -13,10 +13,10 @@ Usage:
     ./pw generate --target claude
     ./pw generate-claude
     ./pw generate-opencode
-    ./pw generate --target pr-agent --output target/pr-agent
+    ./pw generate --target cuioss-review-bot --output target/cuioss-review-bot
     ./pw generate --target all --output target
 
-The pr-agent target writes its artifact set under {output}/packs/ — one Markdown
+The cuioss-review-bot target writes its artifact set under {output}/packs/ — one Markdown
 file per derived review domain, plus the spine artifact carrying the review
 charter once.
 
@@ -56,7 +56,7 @@ def _build_parser() -> argparse.ArgumentParser:
         prog='marketplace-targets-generate',
         description=(
             'Generate marketplace target output (claude verbatim mirror, opencode emitter, '
-            'pr-agent reviewer instruction pack).'
+            'cuioss-review-bot reviewer instruction pack).'
         ),
         allow_abbrev=False,
     )
@@ -71,7 +71,7 @@ def _build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=None,
         help=(
-            'Output directory. Required for opencode and pr-agent (and for claude when '
+            'Output directory. Required for opencode and cuioss-review-bot (and for claude when '
             'emitting); optional for claude when running equality-check only.'
         ),
     )

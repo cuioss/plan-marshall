@@ -70,7 +70,7 @@ a second plan-less convention of its own:
     python3 github.py repo label list [--repo OWNER/NAME]
     python3 github.py repo file read --repo OWNER/NAME --path .github/project.yml [--ref main]
     python3 github.py org list-repos --org cuioss
-    python3 github.py org search-code --org cuioss --query "reusable-pr-agent-review.yml"
+    python3 github.py org search-code --org cuioss --query "reusable-cuioss-review-bot.yml"
 
 Output: TOON format
 

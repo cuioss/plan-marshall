@@ -58,8 +58,8 @@ def register_target(name: str, target_cls: type[TargetBase]) -> None:
 from marketplace.targets import (  # noqa: E402
     antigravity,  # noqa: F401
     claude,  # noqa: F401
+    cuioss_review_bot,  # noqa: F401
     opencode,  # noqa: F401
-    pr_agent,  # noqa: F401
 )
 
 __all__ = ['TargetBase', 'TARGET_REGISTRY', 'register_target']

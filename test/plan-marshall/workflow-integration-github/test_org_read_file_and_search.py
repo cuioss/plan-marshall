@@ -174,7 +174,7 @@ def _search_page(total: int, count: int, *, incomplete: bool = False, start: int
     return 0, json.dumps({'total_count': total, 'incomplete_results': incomplete, 'items': items}), ''
 
 
-def _search(query: str = 'pr-agent') -> dict:
+def _search(query: str = 'review-charter') -> dict:
     return _github_org.cmd_org_search_code(argparse.Namespace(org='cuioss', query=query))
 
 
@@ -189,7 +189,7 @@ def test_search_code_quotes_the_literal_and_scopes_it_to_the_org(monkeypatch):
     assert result['count'] == result['total_count'] == 3
     assert result['repository_count'] == 2
     assert result['scope'] == 'default_branch_index'
-    assert 'q="pr-agent" org:cuioss' in calls[0]
+    assert 'q="review-charter" org:cuioss' in calls[0]
 
 
 def test_search_code_zero_hits_is_a_complete_answer_with_its_evidence(monkeypatch):

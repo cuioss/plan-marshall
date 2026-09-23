@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Drift and orthogonality guards over the artifact set the pr-agent target emits.
+"""Drift and orthogonality guards over the artifact set the cuioss-review-bot target emits.
 
 The subject is the EMITTED ARTIFACT SET, generated once from the real
 marketplace at collection time: one spine-free body per derived review domain,
@@ -39,7 +39,7 @@ prove each assertion can fail.
 **Reach limits, stated rather than elided.**
 
 1. These guards measure the artifact set THIS repository emits, which is the set
-   the publish workflow mirrors. They do not query ``cuioss/pr-agent-settings``
+   the publish workflow mirrors. They do not query ``cuioss/cuioss-review-bot``
    and therefore prove nothing about what is currently present there.
 2. The ASSEMBLED reviewer prompt does not exist anywhere in this repository, so
    no test here can measure an assembled category total. The guards pin the
@@ -56,7 +56,7 @@ from pathlib import Path
 import pytest
 
 from conftest import PROJECT_ROOT
-from marketplace.targets.pr_agent.target import PrAgentTarget, compose_packs
+from marketplace.targets.cuioss_review_bot.target import CuiossReviewBotTarget, compose_packs
 
 MARKETPLACE_BUNDLES = PROJECT_ROOT / 'marketplace' / 'bundles'
 
@@ -70,10 +70,10 @@ SPINE_STEM = 'spine'
 
 #: Held at module scope so the directory survives the whole session and is
 #: cleaned up at interpreter exit.
-_OUTPUT_DIR = tempfile.TemporaryDirectory(prefix='pr-agent-artifact-guard-')
+_OUTPUT_DIR = tempfile.TemporaryDirectory(prefix='cuioss-review-bot-artifact-guard-')
 _OUTPUT_ROOT = Path(_OUTPUT_DIR.name)
 
-PrAgentTarget().generate(MARKETPLACE_BUNDLES, _OUTPUT_ROOT)
+CuiossReviewBotTarget().generate(MARKETPLACE_BUNDLES, _OUTPUT_ROOT)
 
 PACKS_DIR = _OUTPUT_ROOT / 'packs'
 
@@ -160,7 +160,7 @@ SPINE_ONLY_TEXT_IDS = [f'clause-{i}' for i in range(1, len(CHARTER_CLAUSES) + 1)
     f'category-{i}' for i in range(1, len(SPINE_CATEGORY_TEXTS) + 1)
 ]
 
-#: The category ceiling. `pr-agent-settings/README.adoc` § "Recall beats
+#: The category ceiling. The `cuioss/cuioss-review-bot` documentation § "Recall beats
 #: precision": past roughly ten entries the answer is a second focused pass, not
 #: an eleventh bullet.
 CATEGORY_CEILING = 10
@@ -252,7 +252,7 @@ class TestPopulation:
         report SKIPPED — not FAILED — over an empty population.
         """
         assert population_is_non_empty(ARTIFACTS), (
-            'the pr-agent target emitted NO artifacts from '
+            'the cuioss-review-bot target emitted NO artifacts from '
             f'{MARKETPLACE_BUNDLES}; every guard below would pass vacuously'
         )
 
@@ -263,7 +263,7 @@ class TestPopulation:
         is indistinguishable from one that checked nothing.
         """
         print(
-            f'pr-agent artifact guard population: {len(ARTIFACTS)} artifact(s) — '
+            f'cuioss-review-bot artifact guard population: {len(ARTIFACTS)} artifact(s) — '
             f'{len(DOMAIN_ARTIFACTS)} domain + spine: {", ".join(ARTIFACT_IDS)}'
         )
         assert len(ARTIFACTS) == len(ARTIFACT_IDS)
