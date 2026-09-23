@@ -587,7 +587,7 @@ def _is_emitter_bypass(body: str, author: str | None, workflow_login: str | None
     Never fires under an unresolved identity: without a resolved login there is no
     author to key on, and the heading-only fallback applies instead.
     """
-    if workflow_login is None or not _same_login(author, workflow_login):
+    if not _same_login(author, workflow_login):
         return False
     return not _opens_with_response_heading(body) and _BATCHED_SECTION_PREFIX in body
 
@@ -611,14 +611,7 @@ def _is_own_trigger_comment(body: str, author: str | None, workflow_login: str |
     author to key on, so the comment keeps the noise disposition and the fetch
     result discloses the degradation as ``workflow_identity: unresolved``.
     """
-    if workflow_login is None or not _same_login(author, workflow_login):
-        return False
-    return is_registered_trigger_comment(body)
-
-
-def _carries_transmission_shape(body: str) -> bool:
-    """True when ``body`` carries the batched-response heading or section signature."""
-    return _opens_with_response_heading(body) or _BATCHED_SECTION_PREFIX in body
+    return _same_login(author, workflow_login) and is_registered_trigger_comment(body)
 
 
 def _needs_workflow_identity(body: str) -> bool:
@@ -626,11 +619,11 @@ def _needs_workflow_identity(body: str) -> bool:
 
     The stages keyed on the workflow identity — self-response, emitter bypass, and
     own trigger — decide nothing for a comment that carries no transmission shape
-    (:func:`_carries_transmission_shape`) and is not a registered trigger; such a
-    comment is classified the same whoever wrote it. The identity is therefore read
-    only when at least one fetched comment passes this test.
+    (the batched-response heading or section signature) and is not a registered
+    trigger; such a comment is classified the same whoever wrote it. The identity is
+    therefore read only when at least one fetched comment passes this test.
     """
-    return _carries_transmission_shape(body) or is_registered_trigger_comment(body)
+    return _opens_with_response_heading(body) or _BATCHED_SECTION_PREFIX in body or is_registered_trigger_comment(body)
 
 
 #: ``workflow_identity`` values in the fetch result. ``not_needed`` is distinct from
