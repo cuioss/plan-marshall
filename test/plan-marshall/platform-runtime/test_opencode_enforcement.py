@@ -27,7 +27,6 @@ import pathlib
 from typing import Any
 
 import pytest
-
 from opencode_runtime import OpenCodeRuntime, to_opencode_grant
 from toon_parser import parse_toon
 
@@ -54,9 +53,7 @@ def test_deny_class_protect_path_emits_real_deny(tmp_path: pathlib.Path, monkeyp
 
     written = json.loads((tmp_path / 'opencode.json').read_text(encoding='utf-8'))
     entries = {
-        pattern: action
-        for tool in ('read', 'bash')
-        for pattern, action in written['permission'].get(tool, {}).items()
+        pattern: action for tool in ('read', 'bash') for pattern, action in written['permission'].get(tool, {}).items()
     }
     guarded = {pattern: action for pattern, action in entries.items() if 'creds' in pattern}
     assert guarded, 'protect-path wrote no guard entries for the protected directory'
@@ -117,7 +114,23 @@ def test_carve_out_executor_permit_passes(tmp_path: pathlib.Path, monkeypatch: p
 #: R2 — shell file operations, mutation class (mirrors guard.js
 #: MUTATION_FILE_OPS). Read-side probes are NOT members.
 _GUARD_MUTATION_FILE_OPS = frozenset(
-    {'rm', 'mv', 'cp', 'touch', 'mkdir', 'rmdir', 'truncate', 'tee', 'chmod', 'chown', 'ln', 'dd', 'sh', 'bash', 'source'}
+    {
+        'rm',
+        'mv',
+        'cp',
+        'touch',
+        'mkdir',
+        'rmdir',
+        'truncate',
+        'tee',
+        'chmod',
+        'chown',
+        'ln',
+        'dd',
+        'sh',
+        'bash',
+        'source',
+    }
 )
 
 #: Read-side probes governed by the two-tier permission map, never by R2.

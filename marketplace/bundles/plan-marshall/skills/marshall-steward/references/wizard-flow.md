@@ -676,6 +676,35 @@ The `ensure` subcommand is idempotent — re-running the wizard does not duplica
 
 ---
 
+## Step 14b: OpenCode Enforcement Apply (Optional, opencode-only, singular)
+
+On opencode-target projects only, apply enforcement once per project:
+copy the two-tier permission block (D1) into the project's `opencode.json`
+and place the guard plugin (D2) under `.opencode/plugin/guard.js`. The
+sources are the shipped artifacts documented in
+`doc/developer/opencode.adoc` — the landed `opencode.json` permission map
+(global deny/ask rows plus per-agent overrides) and the
+`tool.execute.before` guard plugin.
+
+**Gate.** This step runs only when the project's configured runtime target
+is `opencode` (Step 5's `runtime.target`). On any other target, skip
+silently with a STEWARD audit entry and continue to Step 15.
+
+**Singular apply semantics.** One apply action per project, no
+re-prompting on re-entry. Before applying, check whether the project's
+`opencode.json` already carries the two-tier block AND
+`.opencode/plugin/guard.js` is already present: when both hold, the step
+is already applied — record a single auto-decision STEWARD audit entry
+and continue to Step 15 without prompting. Otherwise copy both artifacts
+into place, then record one auto-decision audit entry naming the applied
+artifacts.
+
+No new script entry point backs this step: `upgrade.py` remains a
+pure-function four-stage emitter over `(integrate, project_kind)`, and
+the apply itself is the file placement described above.
+
+---
+
 ## Step 15: Summary
 
 Output final summary:

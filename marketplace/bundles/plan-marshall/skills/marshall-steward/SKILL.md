@@ -343,6 +343,19 @@ count while leaving the effective running set unchanged (opt-in preserved). See
 [`references/wizard-flow.md`](references/wizard-flow.md) Step 16 for the
 materialize-then-sort sequencing.
 
+## OpenCode Enforcement Apply (wizard Step 14b)
+
+On opencode-target projects the wizard applies enforcement once per
+project: the two-tier permission block (D1) into the project's
+`opencode.json` and the guard plugin (D2) under `.opencode/plugin/`. The
+step is gated on `runtime.target == opencode` and applies at most once —
+a re-entry that finds both artifacts in place skips silently with a
+STEWARD audit entry and never re-prompts. Step position, gate, and
+singular-apply semantics live in
+[`references/wizard-flow.md`](references/wizard-flow.md) Step 14b;
+`upgrade.py` stays a pure four-stage emitter over
+`(integrate, project_kind)` with no enforcement entry point.
+
 ## Review-Bot Participation (required_bots / optional_bots)
 
 The `plan-marshall:automatic-review` step classifies review bots into two lists —
