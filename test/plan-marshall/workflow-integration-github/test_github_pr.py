@@ -37,6 +37,12 @@ and a Sourcery size-ceiling notice must each file NO finding, count in
 Sourcery ``review_body`` is the matched positive control — it is still stored, so the
 fail-closed counted default stays in force.
 
+A zero-stored fetch names which zero it is: ``stored_zero_state`` is ``no_coverage``
+(no bot credited), ``covered_clean`` (a bot credited, nothing survived the filters)
+or ``unreachable`` (an incomplete fetch, an unreadable merge candidate, or any
+refusal), and ``unreachable`` outranks the other two — so a quota refusal riding in
+an otherwise clean pass never reads as reviewed-and-clean.
+
 The findings store is REAL (isolated via the autouse ``plan_context``
 ``PLAN_BASE_DIR`` sandbox); only the GitHub provider surface and the identity read
 are monkeypatched, and the raw ``run_gh`` seam is stubbed to fail so no case can
@@ -70,6 +76,13 @@ PLAN_IDS: tuple[str, ...] = (
     'gh-pr-refusal-pin-size-ceiling',
     'gh-pr-refusal-pin-unclassified-control',
     'gh-pr-refusal-pin-weekly-quota',
+    'gh-pr-zero-state-covered-clean',
+    'gh-pr-zero-state-no-coverage',
+    'gh-pr-zero-state-precedence-head',
+    'gh-pr-zero-state-precedence-incomplete',
+    'gh-pr-zero-state-precedence-refusal',
+    'gh-pr-zero-state-stored',
+    'gh-pr-zero-state-unreachable-quota',
 )
 github_pr = load_script_module('plan-marshall', 'workflow-integration-github', 'github_pr.py', 'github_pr')
 _findings_core = load_script_module('plan-marshall', 'manage-findings', '_findings_core.py', '_findings_core')
@@ -108,12 +121,26 @@ def _comment(comment_id, author, body):
     }
 
 
-def _patch_provider(monkeypatch, comments, login=WORKFLOW_LOGIN):
+def _patch_provider(monkeypatch, comments, login=WORKFLOW_LOGIN, *, complete=None, head_sha='deadbeef'):
     """Stub the provider surface and the workflow identity read.
 
-    ``login=None`` simulates an unreadable identity. Returns the list the identity
-    stub appends to on every call, so a case can assert whether it was read at all.
+    ``login=None`` simulates an unreadable identity. ``complete`` is the provider's
+    completeness claim: ``None`` omits it (the result then reads as not complete),
+    ``True`` claims every connection was read to its end with none capped.
+    ``head_sha=''`` simulates a failed merge-candidate read. Returns the list the
+    identity stub appends to on every call, so a case can assert whether it was read
+    at all.
     """
+    provider_result = {
+        'status': 'success',
+        'provider': 'github',
+        'comments': list(comments),
+        'total': len(comments),
+        'unresolved': len(comments),
+    }
+    if complete is not None:
+        provider_result['complete'] = complete
+        provider_result['connections'] = []
     identity_reads: list[int] = []
 
     def _viewer_login():
@@ -125,17 +152,11 @@ def _patch_provider(monkeypatch, comments, login=WORKFLOW_LOGIN):
     monkeypatch.setattr(github_pr, 'get_viewer_login', _viewer_login)
     monkeypatch.setattr(github_pr._github, 'check_auth', lambda: (True, ''))
     monkeypatch.setattr(github_pr._github, 'fetch_pr_head_committed_at', lambda pr_number: '')
-    monkeypatch.setattr(github_pr._github, 'fetch_pr_head_sha', lambda pr_number: 'deadbeef')
+    monkeypatch.setattr(github_pr._github, 'fetch_pr_head_sha', lambda pr_number: head_sha)
     monkeypatch.setattr(
         github_pr._github,
         'fetch_pr_comments_data',
-        lambda pr_number, unresolved_only=False: {
-            'status': 'success',
-            'provider': 'github',
-            'comments': list(comments),
-            'total': len(comments),
-            'unresolved': len(comments),
-        },
+        lambda pr_number, unresolved_only=False: dict(provider_result),
     )
     monkeypatch.setattr(github_pr._github, 'run_gh', lambda *_a, **_k: (1, '', 'run_gh is stubbed in this module'))
     return identity_reads
@@ -763,3 +784,125 @@ def test_an_unclassified_sourcery_review_body_is_still_stored(plan_context, monk
     assert result['count_skipped_refusal'] == 0
     assert result['refused_bots'] == []
     assert result['participated_bots'] == [{'bot_kind': 'sourcery', 'evidence_kind': 'review_body'}]
+
+
+# ============================================================================
+# A zero-stored fetch names which zero it is
+# ============================================================================
+
+#: A bare acknowledgment: the shared noise layer drops it, so it files nothing. As a
+#: Sourcery ``review_body`` it still credits Sourcery's participation, because
+#: participation is derived before any filter runs.
+_BARE_ACKNOWLEDGMENT = 'LGTM'
+
+_SOURCERY_CREDIT = [{'bot_kind': 'sourcery', 'evidence_kind': 'review_body'}]
+
+
+def _human_acknowledgment():
+    """A human's bare acknowledgment — dropped as noise, credits no bot."""
+    return _comment('human-ack', OTHER_AUTHOR, _BARE_ACKNOWLEDGMENT)
+
+
+def _sourcery_acknowledgment():
+    """A Sourcery review that found nothing — dropped as noise, credits Sourcery."""
+    return _sourcery_review_body('sr-ack', _BARE_ACKNOWLEDGMENT)
+
+
+def test_the_three_zeros_render_differently_through_the_same_call(plan_context, monkeypatch):
+    """Fail-first case: ``count_stored: 0`` alone cannot say which zero a pass is.
+
+    Three passes through the same ``fetch_findings`` call, each storing nothing:
+    a fully readable pass that credits no bot, a fully readable pass whose credited
+    Sourcery review found nothing, and the same clean pass with a Sourcery
+    weekly-quota refusal beside it. Before the verdict existed the three results
+    were identical in every stored-count field — this test read ``stored_zero_state``
+    off a result that did not carry it. Each precondition (credit, refusal count,
+    completeness) is asserted, so a zero can only name itself for the stated reason.
+    """
+    cases = [
+        ('gh-pr-zero-state-no-coverage', [_human_acknowledgment()]),
+        ('gh-pr-zero-state-covered-clean', [_sourcery_acknowledgment()]),
+        (
+            'gh-pr-zero-state-unreachable-quota',
+            [_sourcery_acknowledgment(), _sourcery_review_body('sr-quota', _SOURCERY_WEEKLY_QUOTA_REFUSAL)],
+        ),
+    ]
+    results = {}
+    for plan_id, comments in cases:
+        _patch_provider(monkeypatch, comments, complete=True)
+        results[plan_id] = _run_fetch(plan_id)
+
+    for plan_id, result in results.items():
+        assert result['status'] == 'success', plan_id
+        assert result['count_stored'] == 0, plan_id
+        assert _stored_comment_ids(plan_id) == [], plan_id
+        assert result['fetch_complete'] is True, plan_id
+        assert result['merge_candidate_sha_resolved'] is True, plan_id
+        assert result['stored_zero_state_source'] == github_pr.ZERO_STATE_SOURCE_LOCAL, plan_id
+
+    no_coverage = results['gh-pr-zero-state-no-coverage']
+    assert no_coverage['participated_bots'] == []
+    assert no_coverage['count_skipped_refusal'] == 0
+    assert no_coverage['stored_zero_state'] == github_pr.ZERO_STATE_NO_COVERAGE
+
+    covered_clean = results['gh-pr-zero-state-covered-clean']
+    assert covered_clean['participated_bots'] == _SOURCERY_CREDIT
+    assert covered_clean['count_skipped_refusal'] == 0
+    assert covered_clean['stored_zero_state'] == github_pr.ZERO_STATE_COVERED_CLEAN
+
+    # The clean pass above plus a quota refusal: the credit still stands, and the
+    # refusal alone is what makes the clean value unreachable.
+    quota = results['gh-pr-zero-state-unreachable-quota']
+    assert quota['participated_bots'] == _SOURCERY_CREDIT
+    assert quota['count_skipped_refusal'] == 1
+    assert quota['refused_causes'] == [{'bot_kind': 'sourcery', 'cause': 'quota'}]
+    assert quota['stored_zero_state'] == github_pr.ZERO_STATE_UNREACHABLE
+
+    assert len({result['stored_zero_state'] for result in results.values()}) == len(cases)
+
+
+@pytest.mark.parametrize(
+    ('plan_id', 'extra_comments', 'complete', 'head_sha'),
+    [
+        pytest.param('gh-pr-zero-state-precedence-incomplete', [], None, 'deadbeef', id='incomplete-fetch'),
+        pytest.param('gh-pr-zero-state-precedence-head', [], True, '', id='unread-merge-candidate'),
+        pytest.param(
+            'gh-pr-zero-state-precedence-refusal',
+            [_sourcery_review_body('sr-size', _SOURCERY_SIZE_CEILING_REFUSAL)],
+            True,
+            'deadbeef',
+            id='size-refusal',
+        ),
+    ],
+)
+def test_could_not_reach_outranks_covered_and_clean(plan_context, monkeypatch, plan_id, extra_comments, complete, head_sha):
+    """Precedence: each "could not reach" cause turns an otherwise clean pass into ``unreachable``.
+
+    Every case carries the credited Sourcery review that found nothing — the pass
+    that reads ``covered_clean`` on its own — plus exactly one cause: a fetch with no
+    completeness claim, a failed merge-candidate read, or a refusal. None of them may
+    surface as covered and clean.
+    """
+    _patch_provider(monkeypatch, [_sourcery_acknowledgment(), *extra_comments], complete=complete, head_sha=head_sha)
+
+    result = _run_fetch(plan_id)
+
+    assert result['status'] == 'success'
+    assert result['count_stored'] == 0
+    assert result['stored_zero_state'] == github_pr.ZERO_STATE_UNREACHABLE
+    assert result['stored_zero_state'] != github_pr.ZERO_STATE_COVERED_CLEAN
+
+
+def test_a_pass_that_stored_a_finding_is_not_a_zero(plan_context, monkeypatch):
+    """Matched control: when a comment survives the filters, no zero describes the pass."""
+    plan_id = 'gh-pr-zero-state-stored'
+    _patch_provider(
+        monkeypatch,
+        [_comment('theirs-1', OTHER_AUTHOR, 'The retry loop never resets its counter.')],
+        complete=True,
+    )
+
+    result = _run_fetch(plan_id)
+
+    assert result['count_stored'] == 1
+    assert result['stored_zero_state'] == github_pr.ZERO_STATE_NOT_APPLICABLE

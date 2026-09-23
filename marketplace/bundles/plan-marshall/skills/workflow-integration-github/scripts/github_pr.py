@@ -1229,6 +1229,61 @@ def _reviewed_at_merge_candidate(
     return bool(updated_at) and updated_at != recorded_updated_at
 
 
+#: ``stored_zero_state`` values in the fetch result. A pass in which no comment
+#: survived the filters stored nothing, and ``count_stored: 0`` alone cannot say
+#: which of three different situations produced that zero. Exactly one of the three
+#: names it; the fourth value marks a pass the question does not apply to.
+#:
+#: ``unreachable`` — the pass could not reach a review: the fetch was not proven
+#: complete, the merge-candidate read failed, or a bot refused (recognised or not).
+ZERO_STATE_UNREACHABLE = 'unreachable'
+#: ``covered_clean`` — at least one bot is credited with a review and nothing
+#: survived the filters: the review found nothing to file.
+ZERO_STATE_COVERED_CLEAN = 'covered_clean'
+#: ``no_coverage`` — the pass was fully readable, but no bot is credited with a
+#: review, so there was nothing that could have found anything.
+ZERO_STATE_NO_COVERAGE = 'no_coverage'
+#: ``not_applicable`` — at least one comment survived every filter, whether stored
+#: by this pass, already stored by an earlier one, or rejected by the store (which
+#: the ``(producer-mismatch)`` Q-Gate reports). The pass found something, so none of
+#: the three zeros describes it.
+ZERO_STATE_NOT_APPLICABLE = 'not_applicable'
+
+#: ``stored_zero_state_source`` — where the verdict came from. No persisted
+#: coverage state exists for this verb to read, so the verdict is always derived
+#: from the sets this pass computed, and the result says so.
+ZERO_STATE_SOURCE_LOCAL = 'derived_locally'
+
+
+def _stored_zero_state(
+    survivor_count: int,
+    *,
+    fetch_complete: bool,
+    head_resolved: bool,
+    refusal_count: int,
+    credited_count: int,
+) -> str:
+    """Name which zero a pass that stored nothing is, from the sets it already computed.
+
+    Precedence is fixed and load-bearing. ``unreachable`` wins over both other zeros:
+    an incomplete fetch, an unreadable merge candidate, or any refusal in the same
+    pass means some review may exist that this pass could not see or that declined
+    to run, so ``covered_clean`` — the one value a consumer may read as "reviewed and
+    clean" — must be unreachable whenever any of them holds. Only a fully readable
+    pass with no refusal reaches the other two, split on whether any bot is credited.
+
+    No second discrimination is built: every input is a count or flag the fetch
+    already produced for its own result.
+    """
+    if survivor_count > 0:
+        return ZERO_STATE_NOT_APPLICABLE
+    if not fetch_complete or not head_resolved or refusal_count > 0:
+        return ZERO_STATE_UNREACHABLE
+    if credited_count > 0:
+        return ZERO_STATE_COVERED_CLEAN
+    return ZERO_STATE_NO_COVERAGE
+
+
 def cmd_fetch_findings(args):
     """Producer-side FIND verb: fetch + pre-filter + file one finding per surviving comment.
 
@@ -1332,6 +1387,19 @@ def cmd_fetch_findings(args):
     ``{connection, observed, cap, total, capped}`` record for each connection that
     was not. A capped fetch still stores what it fetched — it is reported as
     incomplete, never published as the PR's whole comment set.
+
+    ``stored_zero_state`` / ``stored_zero_state_source``: which zero a pass that
+    filed nothing is, because ``count_stored: 0`` alone is equally the signature of a
+    review that found nothing, of no review at all, and of a fetch that never
+    reached one. ``unreachable`` — the fetch was not proven complete, the merge
+    candidate could not be read, or any refusal (recognised or unrecognised) was seen
+    — outranks both others, so none of those can surface as ``covered_clean`` (a bot
+    is credited and nothing survived the filters); ``no_coverage`` is a fully
+    readable pass that credits no bot. ``not_applicable`` marks a pass in which a
+    comment survived every filter — stored now, already stored by an earlier pass,
+    or rejected by the store. The verdict is derived by ``_stored_zero_state`` from
+    counts and flags this verb already computes, and ``stored_zero_state_source``
+    names that provenance (``derived_locally``).
 
     ``participated_bots``: the EVIDENCE-TYPED participation set — one
     ``{bot_kind, evidence_kind}`` record per bot proven to have reviewed this diff,
@@ -2083,6 +2151,20 @@ def cmd_fetch_findings(args):
     count_stored = len(stored_hashes)
     skipped_emitter_bypass = len(emitter_bypass_ids)
     skipped_own_trigger = len(own_trigger_exclusions)
+    # The credited set as emitted: bots whose every publish-shape comment was an
+    # unrecognised refusal are subtracted (see ``unrecognised_only_bots`` above).
+    credited_bots = [bot for bot in sorted(participated) if bot not in unrecognised_only_bots]
+    # Which zero a pass that filed nothing is — derived from the sets computed above.
+    # A comment that survived every filter (stored now, already stored earlier, or
+    # rejected by the store) means the pass found something, so the verdict is then
+    # not applicable rather than a zero.
+    stored_zero_state = _stored_zero_state(
+        count_stored + skipped_duplicate + len(store_failures),
+        fetch_complete=fetch_complete,
+        head_resolved=bool(reviewed_commit_sha),
+        refusal_count=skipped_refusal,
+        credited_count=len(credited_bots),
+    )
     # Duplicates skipped by the cross-iteration guard, refusals surfaced through
     # ``refused_bots``, self-authored responses, reported emitter bypasses, and
     # reported own triggers are all legitimate non-stores, so they drop out of
@@ -2240,14 +2322,16 @@ def cmd_fetch_findings(args):
         'self_response_loop_detected': self_response_loop_detected,
         'self_response_loop_hash_id': loop_hash,
         'count_stored': count_stored,
+        # Which zero a zero-stored pass is: ``unreachable`` / ``covered_clean`` /
+        # ``no_coverage``, or ``not_applicable`` when a comment survived the filters.
+        # ``unreachable`` outranks the other two, so a refusal, an incomplete fetch or
+        # an unreadable merge candidate can never be reported as covered and clean.
+        'stored_zero_state': stored_zero_state,
+        'stored_zero_state_source': ZERO_STATE_SOURCE_LOCAL,
         # Bots whose every publish-shape comment was an unrecognised refusal are
         # subtracted here — the same shape as the stale-participation subtraction
         # below. A bot with any genuine review keeps its credit.
-        'participated_bots': [
-            {'bot_kind': bot, 'evidence_kind': participated[bot]}
-            for bot in sorted(participated)
-            if bot not in unrecognised_only_bots
-        ],
+        'participated_bots': [{'bot_kind': bot, 'evidence_kind': participated[bot]} for bot in credited_bots],
         # The proven set is SUBTRACTED before emitting: a bot with one stale comment
         # and one fresh one is a participant, not a stale publisher. Without the
         # subtraction the same bot would appear in both sets and the classifier's
