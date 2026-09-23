@@ -317,7 +317,9 @@ def test_mark_step_fact_value_may_contain_equals_sign(plan_context):
     """Only the FIRST '=' separates key from value, so a value may contain '='."""
     plan_id = 'mark-step-facts-equals'
     _make_plan(plan_id)
-    result = cmd_mark_step_done(_args(plan_id, '6-finalize', 'push', 'done', display_detail='test detail', fact=['detail=a=b']))
+    result = cmd_mark_step_done(
+        _args(plan_id, '6-finalize', 'push', 'done', display_detail='test detail', fact=['detail=a=b'])
+    )
 
     assert result['status'] == 'success'
     assert result['facts'] == {'detail': 'a=b'}
@@ -350,7 +352,9 @@ def test_mark_step_omits_facts_key_when_flag_absent(plan_context):
 def test_mark_step_rejects_malformed_fact_token(plan_context, bad_token, plan_id):
     """A malformed --fact token is named in an invalid_fact error, never dropped."""
     _make_plan(plan_id)
-    result = cmd_mark_step_done(_args(plan_id, '6-finalize', 'push', 'done', display_detail='test detail', fact=[bad_token]))
+    result = cmd_mark_step_done(
+        _args(plan_id, '6-finalize', 'push', 'done', display_detail='test detail', fact=[bad_token])
+    )
 
     assert result['status'] == 'error'
     assert result['error'] == 'invalid_fact'
@@ -366,7 +370,9 @@ def test_mark_step_malformed_fact_rejected_even_alongside_valid_facts(plan_conte
     """One malformed token rejects the whole call — valid siblings are not partially applied."""
     plan_id = 'mark-step-facts-bad-mixed'
     _make_plan(plan_id)
-    result = cmd_mark_step_done(_args(plan_id, '6-finalize', 'push', 'done', display_detail='test detail', fact=['action=noop', 'bogus']))
+    result = cmd_mark_step_done(
+        _args(plan_id, '6-finalize', 'push', 'done', display_detail='test detail', fact=['action=noop', 'bogus'])
+    )
 
     assert result['status'] == 'error'
     assert result['error'] == 'invalid_fact'

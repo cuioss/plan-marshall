@@ -192,8 +192,13 @@ def test_a_failed_firing_and_a_done_firing_are_distinguishable(plan_context):
     _make_plan('fuse-outcome-done')
     _make_plan('fuse-outcome-failed')
 
-    assert _mark('fuse-outcome-done', '6-finalize', 'step-z', 'done', display_detail='test detail')['status'] == 'success'
-    assert _mark('fuse-outcome-failed', '6-finalize', 'step-z', 'failed', display_detail='test detail')['status'] == 'success'
+    assert (
+        _mark('fuse-outcome-done', '6-finalize', 'step-z', 'done', display_detail='test detail')['status'] == 'success'
+    )
+    assert (
+        _mark('fuse-outcome-failed', '6-finalize', 'step-z', 'failed', display_detail='test detail')['status']
+        == 'success'
+    )
 
     done_lines = _completion_lines('fuse-outcome-done')
     failed_lines = _completion_lines('fuse-outcome-failed')
