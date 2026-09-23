@@ -59,10 +59,11 @@ therefore reads "1 of the marketplace population", never "1 in the repository".
 
 import argparse
 import copy
-import json
 import re
 from pathlib import Path
 from typing import Any
+
+from _ledger_fixtures import write_ledger
 
 from conftest import MARKETPLACE_ROOT, PROJECT_ROOT, load_script_module, parse_ns
 
@@ -546,12 +547,9 @@ def _write_fixture_spec(plan_context) -> Path:
         'resume_anchor': 'fixture',
         'metadata': {},
         'created': '2020-01-01T00:00:00Z',
-        'updated': '2020-01-01T00:00:00Z',
     }
-    status_path = _epic_dir(plan_context) / 'status.json'
-    status_path.parent.mkdir(parents=True, exist_ok=True)
-    status_path.write_text(json.dumps(doc, indent=2), encoding='utf-8')
-    spec = _epic_dir(plan_context) / 'plans' / 'PLAN-01-alpha.md'
+    write_ledger(_epic_dir(plan_context), doc)
+    spec =_epic_dir(plan_context) / 'plans' / 'PLAN-01-alpha.md'
     spec.parent.mkdir(parents=True, exist_ok=True)
     spec.write_text(
         '\n'.join(['# PLAN-01: Fixture', '', '## Claim Labels', '', _CLAIM]) + '\n',

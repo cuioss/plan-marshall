@@ -35,7 +35,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status read \
 
 Branch on `plan.phase`. When it reads `closed`, HALT and escalate to the operator in the same shape as the both-homes HALT above — do not scaffold, do not create, do not sweep, and do not write anything into the frozen tree. Reopening a closed epic is an operator decision, not a sweep's. When the read does not return `status: success` (the epic's `status.json` is absent or unreadable), HALT likewise: an epic whose phase could not be read is not an epic whose phase is open, and proceeding would sweep over a tree nothing examined. Any other phase is the open case — proceed.
 
-⛔ **The scaffold/create pair below runs on the ABSENT branch ONLY, and idempotence is not what makes that safe.** `orchestrator scaffold` is documented idempotent and would tolerate an unconditional call, but `manage-status create` is not: it offers no idempotent-overwrite semantics, and its only overwrite path is `--force`, documented as "Overwrite existing status". So an unconditional `create` against the live `lessons-routing` tree either fails outright or — with `--force` — DESTROYS that epic's accumulated `plans` queue and its `resume_anchor`. The guard is the protection; the idempotence of the sibling call is not.
+⛔ **The scaffold/create pair below runs on the ABSENT branch ONLY, and idempotence is not what makes that safe.** `orchestrator scaffold` is documented idempotent and would tolerate an unconditional call, but `manage-status create` is not: it offers no idempotent-overwrite semantics, and its only overwrite path is `--force`, documented as "Overwrite existing status". So an unconditional `create` against the live `lessons-routing` tree either fails outright or — with `--force` — DESTROYS that epic's header (`phase`, `workstreams`, `metadata`) and empties its `resume_anchor.md`. The guard is the protection; the idempotence of the sibling call is not.
 
 **Absent branch only.** Scaffold the epic tree:
 
@@ -44,7 +44,7 @@ python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator sca
   --slug lessons-routing
 ```
 
-Create the `kind=orchestrator` status document (`--phases` is ignored for this store):
+Create the `kind=orchestrator` ledger — the header `status.json` and an empty anchor file, `resume_anchor.md` (`--phases` is ignored for this store):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status create \
@@ -97,7 +97,7 @@ Record a per-lesson disposition for EVERY scanned lesson in this run's sweep rec
 
 ### Step 4: Route each disposed cluster outward
 
-⛔ **`lessons-routing` does NOT stage its own clusters — except under the single narrow exception below.** It is a distribution point that holds no plans (mode contract, § "Sweep findings route outward"), so this step writes nothing into its `status.json` `plans` list for an ordinary cluster. Each disposed cluster is routed to the sibling epic that OWNS its subject matter, over the inbox channel.
+⛔ **`lessons-routing` does NOT stage its own clusters — except under the single narrow exception below.** It is a distribution point that holds no plans (mode contract, § "Sweep findings route outward"), so this step stages no queue row file, `queue/{PLAN-ID}.json`, for an ordinary cluster. Each disposed cluster is routed to the sibling epic that OWNS its subject matter, over the inbox channel.
 
 Per cluster produced by Step 3, in order:
 
@@ -137,7 +137,7 @@ Per cluster produced by Step 3, in order:
 | Conjunct | Evidence it requires | Verdict that SATISFIES it |
 |----------|----------------------|---------------------------|
 | The defect is not already shipped | The mechanism's own source at HEAD, read — locate the defective surface with `architecture search --content --pattern {defect marker}`, then `Read` the matched passage. The record cites the file path and quotes the passage the verdict was read off. | `still-present` — the passage still carries the defective behaviour. `already-shipped` (the fix is in the quoted passage) FAILS the conjunct. |
-| The defect is not in fact `truthful-signals`' subject | That epic's live ledger, read — never a remembered characterisation of its theme: `manage-status read --plan-id truthful-signals --store orchestrator`. Compare the cluster's subject against the returned `title` and staged `plans[]` rows. The record names the rows (or the title) compared against. | `mechanism-defect` — the cluster's subject is the routing/versioning mechanism, and no staged `truthful-signals` row already owns it. `truthful-signals-subject` FAILS the conjunct. When `corpus epics` shows no `truthful-signals` in `active[]` there is nothing to collide with; record `sibling-absent` and treat the conjunct as satisfied by that stated absence, never by an unread one. |
+| The defect is not in fact `truthful-signals`' subject | That epic's live ledger, read — never a remembered characterisation of its theme: `manage-status read --plan-id truthful-signals --store orchestrator`. Compare the cluster's subject against the returned `title` and the staged queue rows the read returns under `plans`. The record names the rows (or the title) compared against. | `mechanism-defect` — the cluster's subject is the routing/versioning mechanism, and no staged `truthful-signals` row already owns it. `truthful-signals-subject` FAILS the conjunct. When `corpus epics` shows no `truthful-signals` in `active[]` there is nothing to collide with; record `sibling-absent` and treat the conjunct as satisfied by that stated absence, never by an unread one. |
 
 Failing either conjunct, route the cluster outward like any other — the exception does not fire, and no plan row is appended. When BOTH verdicts are recorded and both satisfy, append the plan row via the sanctioned single-append form:
 
@@ -148,12 +148,7 @@ python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator que
 
 The worked counter-example is `PLAN-LH2-18` → `PLAN-LR-06`: it was staged under this exception and then RETIRED the following day, which is what makes it a cautionary precedent rather than a template to copy.
 
-**Regeneration scope: the Ordered Queue table only, not the `status.json` `resume_anchor` field.** A sweep that only routed outward appended no plan row, so the Ordered Queue table derives nothing new from it and needs no regeneration. `resume_anchor` is a SEPARATE derivable surface: Step 6 writes it unconditionally into `status.json`, but the `epic.md` START-HERE block's rendered copy of it is refreshed only when this step (or a later run) invokes `resume-summary` — an outward-only sweep therefore leaves the START-HERE block showing the PREVIOUS run's anchor text until the next regeneration or `compact`. That staleness window is tolerated: `status.json`'s `resume_anchor` field is the field a fresh session actually reads (per the mode contract), and `epic.md`'s rendered copy is a convenience view, not the source of truth. When the exception path DID append a plan row, regenerate BOTH the START-HERE block and the Ordered Queue table and paste each verbatim between its own markers (`resume-summary` and `ordered-queue`); ⛔ **do not hand-write the Ordered Queue table** (reconciliation direction is always status.json → epic.md):
-
-```bash
-python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator resume-summary \
-  --slug lessons-routing
-```
+**Regeneration.** START HERE and the Ordered Queue live in the generated `queue-view.md`, never in `epic.md`. This step does not regenerate it: Step 6 runs `regenerate-view` once, after the anchor write, so the view picks up both a row the exception path appended here and the new anchor in one pass. ⛔ **Never hand-write either block** — the reconciliation direction is always ledger files → `queue-view.md`.
 
 ### Step 5: Cross-repo pass (only when `remote_lessons_dir` is supplied)
 
@@ -244,11 +239,18 @@ Before returning, set the resume anchor — and ⛔ **condition its text on BOTH
 - **`clusters_routed > 0`** — the anchor names the outward-routing follow-up: each destination epic drains the message this sweep routed to it, not that `lessons-routing` emits anything of its own. Name the destinations so the follow-up is actionable without re-reading the sweep record.
 - **`clusters_routed == 0` AND `exception_plans_staged == 0`** — write an outcome-specific anchor instead, naming the outcome that produced the zero and the action it actually leaves owed: an empty corpus leaves nothing owed and says so; an all-`already-covered`/`stale` run points at the `stale` lessons as corpus-cleanup candidates; a no-active-owner run names the unrouted clusters and the operator routing decision they are waiting on. ⛔ Never substitute the routing anchor's text here — a zero-cluster run that reports the routing follow-up is indistinguishable from a run that routed.
 
-Either way it is one write:
+Either way it is one write, to the anchor file `resume_anchor.md`:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status update-field \
   --plan-id lessons-routing --field resume_anchor --value "{next action}" --store orchestrator
+```
+
+Then regenerate the view — START HERE renders the anchor, and the Ordered Queue renders any row Step 4's exception path staged — and commit it with the anchor file:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator regenerate-view \
+  --slug lessons-routing
 ```
 
 ### Step 7: Return

@@ -277,13 +277,25 @@ class TestLandingBranch:
             'sanctioned landing-stamping mechanism is missing'
         )
 
-    def test_the_whole_array_rewrite_is_still_forbidden_for_stamping(self):
+    def test_a_stamp_rewrites_only_the_located_row_file(self):
         section = _section(_analyze_text(), '### Step 4:', 'analyze.md')
 
-        assert 'MUST NOT be used to stamp a landing' in section, (
-            'analyze.md: Step 4 no longer forbids the whole-array '
-            '"manage-status update-field --field plans" rewrite for stamping a '
-            'landing — the lost-update prohibition has been dropped'
+        assert 'ONLY the located row file' in section, (
+            'analyze.md: Step 4 no longer states that a landing stamp rewrites only '
+            'the located queue row file — the per-row isolation that keeps a stamp '
+            'from touching another plan has been dropped'
+        )
+        assert 'There is no whole-queue write form' in section, (
+            'analyze.md: Step 4 no longer states that no whole-queue write form '
+            'exists to stamp with — a reader could reach for a bulk rewrite'
+        )
+
+    def test_the_retired_bulk_queue_rewrite_is_not_named_as_a_write_form(self):
+        section = _section(_analyze_text(), '### Step 4:', 'analyze.md')
+
+        assert 'update-field --field plans' not in section, (
+            'analyze.md: Step 4 still names the retired "update-field --field plans" '
+            'bulk queue rewrite — the queue is written one row file at a time'
         )
 
 

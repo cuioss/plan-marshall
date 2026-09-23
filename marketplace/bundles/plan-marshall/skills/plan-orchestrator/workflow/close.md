@@ -30,18 +30,37 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status read \
   --plan-id {slug} --store orchestrator
 ```
 
-Confirm the queue is settled: no `launched` plan remains unreconciled (a still-in-flight plan blocks the close — analyze its state first per [`analyze.md`](analyze.md), or record the operator's explicit decision to close with it parked). Regenerate the two derivable blocks one final time so the frozen record carries the terminal queue state:
+The read returns the assembled ledger — the header, the queue rows as `plans`, and the resume anchor. Confirm the queue is settled: no `launched` plan remains unreconciled (a still-in-flight plan blocks the close — analyze its state first per [`analyze.md`](analyze.md), or record the operator's explicit decision to close with it parked). A `legacy_layout` refusal means the ledger was never migrated: run `orchestrator migrate-layout --slug {slug}` first (see [`plan-orchestrator/SKILL.md`](../SKILL.md) § Canonical invocations → `migrate-layout`), then resume here.
+
+Render the terminal queue state. `resume-summary` is a read that writes nothing; it returns the START HERE block as `summary` and the live Ordered Queue as `ordered_queue`, both rendered from the ledger:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator resume-summary \
   --slug {slug}
 ```
 
-Write **both** returned blocks verbatim into `epic.md` (Write tool) BEFORE Step 3 freezes `history.md`: the `summary` between the `BEGIN/END GENERATED: resume-summary` markers, and the `ordered_queue` between the `BEGIN/END GENERATED: ordered-queue` markers. `history.md` is derived from the epic's final state, so `epic.md` must already carry BOTH terminal blocks when it is frozen — a stale Ordered Queue table frozen here is permanent, so do not leave either write implicit.
+Keep both returned blocks for Step 3, which writes them into `history.md`. Then bring the generated view up to the same terminal state, so the tracked `queue-view.md` the closed tree keeps agrees with the ledger it is frozen beside:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator regenerate-view \
+  --slug {slug}
+```
+
+Nothing is pasted into `epic.md` — it is hand-written narrative only, and it is frozen as it stands.
 
 ### Step 3: Freeze into history.md
 
-Write `history.md` via the Write tool: the epic's final state — vision as pursued, the shipped/dropped/parked queue outcome per plan, the decision record, unresolved defects and watches (carried forward as leads, not silently dropped), and the closing rationale. `epic.md` and the rest of the tree remain on disk untouched — close freezes, never deletes; the tree is the audit record.
+Write `history.md` via the Write tool: the epic's final state — vision as pursued, the Step 2 `summary` and `ordered_queue` blocks verbatim, the queue outcome per plan, the decision record, unresolved defects and watches (carried forward as leads, not silently dropped), and the closing rationale. `history.md` is written from the rendered blocks, never from a hand-written table, so a stale queue is never frozen permanently.
+
+Report the queue outcome over the terminal status vocabulary (see [`orchestration-model.md` § Plan-Status Vocabulary](../../persona-plan-orchestrator/standards/orchestration-model.md#plan-status-vocabulary)), per plan row read in Step 2:
+
+- **Shipped** — a row at `shipped` or `landed`: the work finished and merged.
+- **Closed unshipped** — a row at `superseded`, `transferred`, `retired`, or `resolved`, named by its own status: the work ended without shipping, and the status says how.
+- **Parked** — a row still at `parked`: live work that did not finish before the close, carried forward as a lead.
+
+A row at any other status reached this step only through the operator's explicit decision in Step 2; name it with its status and that decision.
+
+`epic.md` and the rest of the tree remain on disk untouched — close freezes, never deletes; the tree is the audit record.
 
 ### Step 4: Mark the epic closed
 
@@ -50,11 +69,18 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status update
   --plan-id {slug} --field phase --value closed --store orchestrator
 ```
 
-Set the terminal resume anchor:
+Set the terminal resume anchor, written to `resume_anchor.md`:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status update-field \
   --plan-id {slug} --field resume_anchor --value "epic closed — see history.md" --store orchestrator
+```
+
+START HERE renders the phase and the anchor, so regenerate the view once more and commit it with the closed ledger:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator regenerate-view \
+  --slug {slug}
 ```
 
 Log the close decision:
@@ -85,13 +111,17 @@ When no plan resolves, no restore push is needed — the next hook-driven render
 
 ```toon
 status: success | error
-display_detail: "epic {slug} closed: {D} shipped, {K} parked"
+display_detail: "epic {slug} closed: {D} shipped, {U} closed unshipped, {K} parked"
 slug: {slug}
 phase: closed
 plans_shipped: {D}
+plans_closed_unshipped[U]{plan,status}:
+  PLAN-NN,superseded
 plans_parked: {K}
 carried_forward_leads: {N}
 history: history.md
 ```
 
 `display_detail` is ≤80 chars, ASCII, no trailing period.
+
+`plans_shipped` counts the `shipped` and `landed` rows. `plans_closed_unshipped[]` names each row that closed without shipping together with its own status (`superseded` / `transferred` / `retired` / `resolved`), so the four different endings are never folded into one count. `plans_parked` counts the rows still `parked`.

@@ -41,24 +41,24 @@ collisions observed here feed the next pairing decision.}
 ## Reconciliation Actions
 
 {The ledger updates this landing drives — each action is executed, not just listed, and
-each names the sanctioned verb that performs it. The four `status.json` row updates are
-one call each: `queue --transition` for the status, `queue --set-row` for each of the
-three result fields. `plans[]` has three sanctioned write forms — bulk seed at
-`decompose`, single append via `queue --add-row`, single mutate via `queue --transition`
-and `queue --set-row` — stated once in
+each names the sanctioned verb that performs it. The four updates to the plan's queue
+row, `queue/PLAN-NN.json`, are one call each: `queue --transition` for the status,
+`queue --set-row` for each of the three result fields; each call rewrites only that one
+row file. The queue has two sanctioned write forms — single append via `queue --add-row`
+(also how `decompose` seeds a queue) and single mutate via `queue --transition` /
+`queue --set-row` — stated once in
 `persona-plan-orchestrator/standards/orchestration-model.md` § The queue-write boundary.
-Never edit `status.json` by direct file access, and never stamp a landing with the
-whole-array `manage-status update-field --field plans` rewrite — that form is reserved
-for `decompose`'s bulk queue seed.}
+There is no whole-queue write form, and a ledger file is never edited by direct file
+access.}
 
 - [ ] row `status` → `shipped` — `orchestrator queue --transition PLAN-NN --status shipped`
 - [ ] row `pr` stamped — `orchestrator queue --set-row PLAN-NN --field pr --value {pr}`
 - [ ] row `landing` stamped — `orchestrator queue --set-row PLAN-NN --field landing --value landings/PLAN-NN.md`
 - [ ] row `plan_marshall_plan_id` stamped — `orchestrator queue --set-row PLAN-NN --field plan_marshall_plan_id --value {plan_id}`
-- [ ] epic.md queue reconciled from status.json
+- [ ] epic.md narrative reconciled against the queue rows (queue annotations, retired items)
 - [ ] {defect/watch opened or retired}
-- [ ] resume_anchor updated — `manage-status update-field --field resume_anchor --store orchestrator`
-- [ ] START-HERE and Ordered Queue blocks regenerated — `orchestrator resume-summary` (one invocation emits both; the START-HERE block carries no `(!) missing:` marker once `pr` and `landing` above are stamped — the marker checks those two result links, not `plan_marshall_plan_id`)
+- [ ] resume anchor updated in `resume_anchor.md` — `manage-status update-field --field resume_anchor --store orchestrator`
+- [ ] `queue-view.md` regenerated and committed with the row change — `orchestrator regenerate-view` (START HERE carries no `(!) missing:` marker once `pr` and `landing` above are stamped — the marker checks those two result links, not `plan_marshall_plan_id`)
 
 ## Follow-Ups
 

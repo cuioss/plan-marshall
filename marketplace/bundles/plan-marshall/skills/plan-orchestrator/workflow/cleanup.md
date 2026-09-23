@@ -39,7 +39,9 @@ python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator cor
   --slug {slug}
 ```
 
-The returned payload is the population every later count in the report is computed over: `rows_total` / `specs_total` are the denominators, `rows_without_spec` and `specs_without_row` are the two reconciliation directions, and `unreadable` names every spec the pass could not read. A row carrying `excluded_reason: running` is enumerated and reported as excluded — never silently omitted, per the running-row exclusion in [§ Cleanup Contract](../../persona-plan-orchestrator/standards/orchestration-model.md#cleanup-contract).
+The returned payload is the population every later count in the report is computed over: `rows_total` / `specs_total` are the denominators, `rows_without_spec` and `specs_without_row` are the two reconciliation directions, and `unreadable` names every spec the pass could not read. A row carrying `excluded_reason: running` is enumerated and reported as excluded — never silently omitted, per the running-row exclusion in [§ Cleanup Contract](../../persona-plan-orchestrator/standards/orchestration-model.md#cleanup-contract). A row file that could not be read is named in `unreadable_rows[]` — neither reconciled nor orphaned.
+
+⛔ **A `legacy_layout` refusal stops the pass here.** It means the epic's ledger is still in the monolithic layout — its `status.json` still carries the queue or the anchor — which is the state of every ledger the layout change found in place until it is migrated. Nothing downstream can read that ledger, so run `orchestrator migrate-layout --slug {slug}` (see [`plan-orchestrator/SKILL.md`](../SKILL.md) § Canonical invocations → `migrate-layout`), commit the converted files and the fresh `queue-view.md` it writes, and re-run `cleanup`.
 
 ### Step 3 (A1): Re-ground each staged spec against HEAD
 
@@ -118,24 +120,24 @@ A5 is inline-only in full: it is the judgement-heaviest class and the only one t
 
 ### Step 8 (Phase B): Compact the ledger
 
-The ledger-compaction stage. Its binding contract — the derivable-versus-narrative discriminator, the GENERATED-marker mechanism, the annotation-zone rule, the `## Decisions` authority, the `settled.md` relocation target, idempotence, and the closed-epic refusal — is owned by [§ Ledger-Compaction Stage](../../persona-plan-orchestrator/standards/orchestration-model.md#ledger-compaction-stage); the deterministic surface (arguments, error codes, report shape) is [`plan-orchestrator/SKILL.md`](../SKILL.md) § Canonical invocations → `compact`.
+The ledger-compaction stage. Its binding contract — the derivable-versus-narrative discriminator, the separate generated `queue-view.md`, the annotation-zone rule, the `## Decisions` authority, the `settled.md` relocation target, idempotence, and the closed-epic refusal — is owned by [§ Ledger-Compaction Stage](../../persona-plan-orchestrator/standards/orchestration-model.md#ledger-compaction-stage); the deterministic surface (arguments, error codes, report shape) is [`plan-orchestrator/SKILL.md`](../SKILL.md) § Canonical invocations → `compact`.
 
-⛔ **Read the epic's phase FIRST, before either judgement block.** Both judgement blocks write `epic.md` directly and both run BEFORE the script, so the script's own `refused_closed` does not protect them — by the time it fires, the frozen ledger has already been hand-edited. No other `cleanup` step carries a phase gate either, so a closed-but-not-yet-archived epic reaches this step with an active store tree:
+⛔ **Read the epic's phase FIRST, before the judgement block.** The judgement block writes `epic.md` directly and runs BEFORE the script, so the script's own `refused_closed` does not protect it — by the time it fires, the frozen ledger has already been hand-edited. No other `cleanup` step carries a phase gate either, so a closed-but-not-yet-archived epic reaches this step with an active store tree:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status read \
   --plan-id {slug} --store orchestrator
 ```
 
-When `phase == closed`, **skip Phase B in its entirety** — both judgement blocks and the script call — and report `ledger_compaction: refused_closed`. Compaction is a live-epic operation, and `close` sealed that tree as the audit record.
+When `phase == closed`, **skip Phase B in its entirety** — the judgement block and the script call — and report `ledger_compaction: refused_closed`. Compaction is a live-epic operation, and `close` sealed that tree as the audit record.
 
 ⛔ **Fail closed on an unreadable phase.** A `manage-status read` that errors, or a payload carrying no `phase`, is *unobserved*, NOT *not-closed* — and the whole point of this gate is that the writes it guards happen before anything else can refuse them. Skip Phase B and report `ledger_compaction: indeterminate` with the read's own error, rather than proceeding on the assumption that a phase you could not read is a live one.
 
-The stage has two halves along the derivable-versus-narrative split, and the split IS the dispatch boundary. **Two judgement blocks** — settled-narrative relocation and the marker migration — are inline, orchestrator-performed, never dispatched and never through the script; **derivable regeneration** is the deterministic half. Run the two judgement blocks in the order they appear below.
+⛔ **A ledger still in the monolithic layout is migrated, not compacted.** When the epic's `status.json` still carries the queue or the anchor — the ledger reported `legacy_layout` at Step 2, or the `compact` call below refuses with it — this is an epic that predates the per-concern layout, typically one whose tree was untouched when the layout change merged. Skip Phase B and report `ledger_compaction: indeterminate` with `legacy_layout` as the reason; the one remedy is `orchestrator migrate-layout --slug {slug}` (see [`plan-orchestrator/SKILL.md`](../SKILL.md) § Canonical invocations → `migrate-layout`), which converts the ledger, strips the generated blocks out of `epic.md`, and writes a fresh `queue-view.md`. Run it, commit the result, and re-run `cleanup`.
 
-**The order is not load-bearing, and the reason is an invariant rather than a convention:** an annotation zone is a LIVE working surface and is therefore never a relocation candidate (see the ⛔ in the relocation block). So relocation cannot carry away the zone the migration writes into, and the migration cannot create a section relocation would then sweep. Either order yields the same ledger; the stated order is for reproducibility of the report, not for safety.
+The stage has two halves along the derivable-versus-narrative split, and the split IS the dispatch boundary. **Settled-narrative relocation** is the judgement half — inline, orchestrator-performed, never dispatched and never through the script; **invariant verification and view regeneration** is the deterministic half.
 
-**Settled-narrative relocation (judgement — inline).** Identify each `epic.md` section whose subject is **closed** — a shipped plan's residue, a resolved defect — and bulky enough to relocate. A section is settled only when its subject is closed, ⛔ **never merely because it is old**: a retraction, a refutation, and a do-not-re-derive note are the anti-rework record and stay reachable, relocated but never dropped. ⛔ **An annotation zone is NEVER a relocation candidate** — neither `### Annotations` nor `### Queue annotations`, whatever their contents' subjects. They are live working surfaces the generator's neighbours write into every pass, not narrative about a closed subject; relocating one would carry away the destination the marker migration below needs and leave a pointer where a working zone belongs. ⛔ **Do not apply the settled-versus-live call silently on a first run** — present the proposed relocations to the operator for confirmation; when no operator is reachable, relocate nothing this pass and record that the judgement was deferred (a deferred relocation is safe; a wrong one is not). For each confirmed section, move its body **verbatim** into `settled.md` (a live-epic sibling of `history.md`, created under the [direct-file-write carve-out](../../persona-plan-orchestrator/standards/orchestration-model.md#carve-outs)) under a `## {Heading}`, and leave a pointer at the origin naming that heading in double quotes so the reachability check resolves it:
+**Settled-narrative relocation (judgement — inline).** Identify each `epic.md` section whose subject is **closed** — a shipped plan's residue, a resolved defect — and bulky enough to relocate. A section is settled only when its subject is closed, ⛔ **never merely because it is old**: a retraction, a refutation, and a do-not-re-derive note are the anti-rework record and stay reachable, relocated but never dropped. ⛔ **The annotation zone is NEVER a relocation candidate** — `## Queue annotations`, whatever its contents' subjects. It is the live working surface every reconciling verb writes its per-row notes into, not narrative about a closed subject; relocating it would leave a pointer where a working zone belongs. ⛔ **Do not apply the settled-versus-live call silently on a first run** — present the proposed relocations to the operator for confirmation; when no operator is reachable, relocate nothing this pass and record that the judgement was deferred (a deferred relocation is safe; a wrong one is not). For each confirmed section, move its body **verbatim** into `settled.md` (a live-epic sibling of `history.md`, created under the [direct-file-write carve-out](../../persona-plan-orchestrator/standards/orchestration-model.md#carve-outs)) under a `## {Heading}`, and leave a pointer at the origin naming that heading in double quotes so the reachability check resolves it:
 
 ```text
 > ↪ Relocated to `settled.md` § "{Heading}" — {one-line reason the subject is settled}
@@ -143,45 +145,25 @@ The stage has two halves along the derivable-versus-narrative split, and the spl
 
 This is inline-only: it is the judgement-heaviest and least-reversible act here and it writes the ledger, so it fails the [Dispatch Decision Rule](../../persona-plan-orchestrator/standards/orchestration-model.md#dispatch-decision-rule)'s write-freedom test. No sub-step of this phase is dispatchable.
 
-**One-time marker migration (judgement — inline, and BEFORE the script call).** The script refuses to insert markers into a hand-authored document, so an `epic.md` scaffolded before a marker pair shipped never gets that block regenerated — it is reported `markers_absent` every pass, and its owning section is reported `markers_absent_not_regenerated` (unless the owning heading is itself absent, in which case there is no abstained row at all and the `markers_absent` outcome in `compaction_regenerated[]` is the only signal). The remedy is a one-time structural edit the orchestrator makes itself, under the [direct-file-write carve-out](../../persona-plan-orchestrator/standards/orchestration-model.md#carve-outs), never through the script.
-
-⛔ **This applies to EVERY generated block, not only the queue.** `GENERATED_BLOCKS` names two, and a pre-marker ledger is usually missing both. Each has its own owning section and its own annotation zone, and the migration is per block:
-
-| Block | Owning section | Annotation zone | What the pair wraps |
-|---|---|---|---|
-| `resume-summary` | `## START HERE` | `### Annotations` | the section's existing summary body (resume anchor, phase, inbox lines) |
-| `ordered-queue` | `## Ordered Queue` | `### Queue annotations` | the existing queue table, header row through last data row |
-
-Migrating only the queue leaves `resume-summary` in exactly the permanent-refusal state this block exists to end.
-
-**Two rules, each with its own condition.** Both are inline and both run BEFORE the script call below. ⛔ **Both conditions are read over the WHOLE `epic.md`, not within the owning section** — that is the same scope `_marker_indices` uses, and it is what makes them genuinely exclusive: Rule 1 requires that block's pair ABSENT from the file, Rule 2 requires it PRESENT. Reading Rule 1's condition section-locally would let a stale pair elsewhere in the file satisfy both rules at once, and the script would then regenerate the stale copy and leave the real one duplicated. **At most one applies per block; neither applying is normal.** They are not complements — a ledger with the pair present and no hand-written line between the markers matches neither. Rule 2 is not a sub-step of Rule 1.
-
-⛔ **Only Rule 1 is one-time; Rule 2 is checked EVERY pass.** Rule 1's precondition self-destructs — inserting the markers is what makes them present, so it can never fire again for that block. Rule 2's does not: a hand-written line can land between the markers at any later time, and the only thing that catches it before the next regeneration overwrites it is checking. Read "one-time migration" as naming Rule 1's character, never as licence to skip Rule 2's check.
-
-**Rule 1 — insert the marker pair.** Applies to a block when **both** hold: `epic.md` carries that block's owning section, AND the file carries no `<!-- BEGIN GENERATED: {block} -->` marker. (No owning section means nothing to wrap: Rule 1 does not apply, and the block's `markers_absent` outcome is reported without an abstained row.) Its **two steps**, in this order:
-
-1. **First, move any non-derivable content out of what the pair will wrap** — per-row `Notes` for the queue, hand-written annotation for the summary — into that block's annotation zone. The generator owns every byte between the markers and re-derives the content from `status.json`, so anything inside the block when the markers go in is overwritten on the first pass; the zone sits outside the markers and survives verbatim.
-2. **Then insert the marker pair** — `BEGIN` immediately above the wrapped content's first line and `END` immediately below its last, so the next script call finds the block and regenerates it.
-
-**Rule 2 — evacuate hand-written content already inside the markers.** Applies to a block when the file carries its marker pair AND a hand-written line sits between `BEGIN` and `END`. Move that line into that block's annotation zone, before the script call below, for the same reason: the region is the generator's, so the content is lost on the next pass unless it is moved out first.
-
-**Creating an absent annotation zone.** Both rules move content into a zone that a pre-marker `epic.md` usually lacks, since the zones and the markers shipped together. **Create it only when the rule that applies to that block has something to put in it** — an absent zone with nothing to move into it is not a defect, and an empty zone added speculatively is noise. Where it must be created, position it by the rule that is firing:
-
-- **Under Rule 2** (the pair is present): **immediately after that block's `END` marker**. Placing it after the wrapped content here would put it between the last wrapped line and `END` — inside the generated region, which is the exact loss this instruction exists to prevent.
-- **Under Rule 1** (the pair is absent): **immediately after the content the pair will wrap**. There is no `END` to position against at step-1 time; step 2 then inserts `END` immediately below that content — between it and the zone — so the zone ends up outside the pair.
-
-⛔ **Do not fabricate content.** Rule 1's markers go around what is already there; the script re-derives the contents from `status.json` on the next call. Inserting a marker pair around invented rows would make the migration itself the lossy act it exists to prevent.
-
-**The safety net, not a substitute for the move.** `cmd_compact`'s `regenerated[]` rows carry `replaced_body` — the pre-write between-marker text — for every block whose outcome is `regenerated`. So a first pass over an already-annotated ledger NAMES the content it overwrote rather than reporting only a line-count delta, and an operator can recover a line Rule 2 missed. Read it whenever a first pass reports `regenerated` on a ledger you did not just migrate.
-
-**Derivable regeneration and invariant verification (deterministic — the script).** Call the compaction script; do **not** re-implement it (two implementations of ledger compaction is a worse outcome than no verb at all). It regenerates the START-HERE resume summary and the Ordered Queue table in place, leaves every byte outside the markers untouched, verifies the invariants, and reports:
+**Invariant verification and view regeneration (deterministic — the script).** Call the compaction script; do **not** re-implement it (two implementations of ledger compaction is a worse outcome than no verb at all). It verifies the invariants — the queue rows and the staged specs reconcile in both directions, and every relocation pointer resolves — then regenerates `queue-view.md` through the same writer `regenerate-view` uses, and it writes **nothing** to `epic.md`. It reports:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator compact \
   --slug {slug}
 ```
 
-Report `ledger_compaction: compacted`, and fold the stage's `regenerated[]`, `invariants[]`, and `abstained[]` into this report as `compaction_regenerated[]`, `compaction_invariants[]` and `compaction_abstained[]` — all three **required, never omitted**, emitted empty when the stage produced no rows. **Record every migration rule that fired in `compaction_migrated[]`** (also required, also emitted empty when none did): the script ran after the migration and cannot see it, so this array is the only place a direct structural write to `epic.md` is named. Carry each `compaction_abstained[]` row's `treatment` through verbatim: a `markers_absent_not_regenerated` row is a surface the stage COULD NOT REACH, and reporting it as `preserved_verbatim` would claim an abstention nobody chose. Every relocation the judgement half applied is named in `applied[]` with its source and destination, per the apply-policy. A `violated` invariant is acted on here, not swallowed (a `relocated_pointer_reachable: violated` means a pointer names a heading `settled.md` does not carry — fix the pointer or the heading and re-run); an `indeterminate` one is an unobservable check, never a failure. The stage independently refuses a closed epic (`refused_closed`) at the script boundary — but that refusal protects only the script's own write, which is why the phase gate at the top of this step runs before the two judgement blocks rather than relying on it.
+Report `ledger_compaction: compacted`, carry the stage's `view_written` through as `compaction_view_written`, and fold its `invariants[]` and `abstained[]` into this report as `compaction_invariants[]` and `compaction_abstained[]` — both **required, never omitted**, emitted empty when the stage produced no rows. `compaction_view_written: false` on a second run over an unchanged ledger is the idempotence signal, not a failure. Every relocation the judgement half applied is named in `applied[]` with its source and destination, per the apply-policy. A `violated` invariant is acted on here, not swallowed (a `relocated_pointer_reachable: violated` means a pointer names a heading `settled.md` does not carry — fix the pointer or the heading and re-run); an `indeterminate` one is an unobservable check, never a failure. The stage independently refuses a closed epic (`refused_closed`) at the script boundary — but that refusal protects only the script's own write, which is why the phase gate at the top of this step runs before the judgement block rather than relying on it.
+
+A `row_unreadable` or `ledger_unreadable` refusal writes nothing, not even the view: a row file or the header could not be read, most often because it still holds git conflict markers from a genuine duplicate plan id staged on two machines. That is a real source conflict — resolve the named file first, then re-run the stage. Report `ledger_compaction: indeterminate` with the refusal code as the reason until it is resolved.
+
+**The regenerate-on-conflict rule.** `queue-view.md` is derived from the ledger files, so a git merge conflict in it carries no information. ⛔ **Never merge `queue-view.md` by hand.** Merge the source files — the header, the row files, the anchor — then run `regenerate-view` on the merged tree and `git add` the result:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator regenerate-view \
+  --slug {slug}
+```
+
+The verb never reads `queue-view.md` itself, so the conflict markers a merge left there are simply overwritten. If it refuses with `row_unreadable` or `ledger_unreadable`, a SOURCE file is still conflicted: resolve that file first, then regenerate. Regeneration can never paper over a genuine source conflict, because it writes nothing while one remains.
 
 ### Step 9 (Phase C): Archive — retire consumed messages
 
@@ -232,6 +214,13 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status update
   --plan-id {slug} --field resume_anchor --value "{next action}" --store orchestrator
 ```
 
+The anchor is written to `resume_anchor.md`, and START HERE renders it, so regenerate the view after writing it:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator regenerate-view \
+  --slug {slug}
+```
+
 ## Idempotence
 
 **Each applied change is keyed by `(spec id, finding class)`.** A spec already carrying the applied correction for a given finding class produces no second application, so a second run immediately after the first is a no-op: its `applied[]` is empty while its per-spec verdicts are unchanged. The key is the mechanism, not an aspiration — an apply that cannot be keyed this way is not idempotent and belongs in `declined[]` with its reason.
@@ -254,14 +243,11 @@ declined[D]{spec,finding_class,reason}:
   PLAN-09-gamma.md,redistribution,"row is running — never re-scoped mid-execution"
 ledger_compaction: compacted | refused_closed | indeterminate
 ledger_compaction_reason: "manage-status read returned file_not_found"
-compaction_regenerated[R]{surface,outcome,lines_before,lines_after,replaced_body}:
-  ordered-queue,regenerated,7,9,"| 1 | PLAN-04 | WS-01 | staged | scripts/a.py |"
+compaction_view_written: true | false
 compaction_invariants[I]{invariant,verdict,evidence,population}:
   queue_spec_bidirectional,ok,"queue and specs reconcile both ways","4 queue row(s) and 4 spec file(s)"
 compaction_abstained[B]{section,treatment}:
   Decisions,preserved_verbatim
-compaction_migrated[M]{block,rule,zone_created,moved_lines}:
-  ordered-queue,rule-1,true,3
 archive_drain: refused
 archive_drain_reason: "no epic-wide quiescence signal — closed_senders is per-sender only"
 restart_verdict: ready | not_ready | indeterminate
@@ -272,8 +258,6 @@ resume_anchor: "{next action}"
 
 Every per-spec row in `regrounded[]` carries its own `claims_scanned` population, so a row of zeros states which zero it is. `applied[]` names a source and a destination for every move — a silent application is indistinguishable from a lossy one. `declined[]` is a **required field, never omitted**: a clean report that hides a skip is exactly the failure this epic files against everyone else, so a run that declined nothing emits an empty `declined[]` rather than dropping the key.
 
-`compaction_regenerated[]`, `compaction_invariants[]` and `compaction_abstained[]` carry the compact stage's own `regenerated[]`, `invariants[]` and `abstained[]` through into this report unchanged (`compaction_migrated[]` is the fourth `compaction_*` key and is NOT one of these — it is this step's own, described below) — `replaced_body` included, since dropping it at this boundary would put the line-count delta back in place of the content it names — and each is **required and never omitted** for the same reason `declined[]` is — a run that regenerated nothing, hit no invariant, or abstained from nothing emits the empty array rather than dropping the key, because an absent key is indistinguishable from a check that never ran. `compaction_abstained[]`'s `treatment` distinguishes a **choice** (`preserved_verbatim` — the section carries no derivable surface) from a **blind spot** (`markers_absent_not_regenerated` — the section owns a derivable surface whose marker pair is absent, so the stage could not reach it); the stage counts them apart as `abstained_count` and `unreachable_count`, and this report must not collapse them.
+`compaction_view_written` carries the compact stage's own `view_written` through: whether `queue-view.md` changed on this pass. `compaction_invariants[]` and `compaction_abstained[]` carry the stage's own `invariants[]` and `abstained[]` through into this report unchanged, and each is **required and never omitted** for the same reason `declined[]` is — a run that hit no invariant or abstained from nothing emits the empty array rather than dropping the key, because an absent key is indistinguishable from a check that never ran. `compaction_abstained[]` names every `##` section of `epic.md` with `treatment: preserved_verbatim`: the stage writes nothing to `epic.md`, and saying so section by section is what keeps a silent compaction from reading like a lossy one.
 
-`ledger_compaction_reason` pairs with `ledger_compaction` exactly as `archive_drain_reason` pairs with `archive_drain`, and for the same stated reason: it is what lets an operator reading a clean report tell a compaction that was not needed from one that was REFUSED or could not be attempted. It carries the refusal's own words — the phase for `refused_closed`, the failing read's error code for `indeterminate` — and is empty for `compacted`.
-
-`compaction_migrated[]` is **this step's own** array, not the script's — the script cannot see the migration, because the migration ran before it and left no trace the script reads. It is **required and never omitted**, emitted empty when no rule fired. Without it a correct migration and an omitted one are indistinguishable in the report: `replaced_body` names what the SCRIPT overwrote, which after a correct migration is empty of the moved content precisely because the move succeeded. One row per block a rule fired on, naming which rule, whether the annotation zone had to be created, and how many lines were moved. ⛔ A direct structural write to `epic.md` under the carve-out is exactly the class this report may not leave silent — "a silent application is indistinguishable from a lossy one" is this document's own rule, and it binds its own writes first.
+`ledger_compaction_reason` pairs with `ledger_compaction` exactly as `archive_drain_reason` pairs with `archive_drain`, and for the same stated reason: it is what lets an operator reading a clean report tell a compaction that was not needed from one that was REFUSED or could not be attempted. It carries the refusal's own words — the phase for `refused_closed`, the failing read's error code or the `legacy_layout` / `row_unreadable` / `ledger_unreadable` refusal for `indeterminate` — and is empty for `compacted`.
