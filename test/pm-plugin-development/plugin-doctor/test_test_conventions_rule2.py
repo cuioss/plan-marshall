@@ -93,16 +93,45 @@ def test_explicit_env_pythonpath_dict_passes(tmp_path):
     assert findings == []
 
 
-def test_env_var_named_env_treated_as_pythonpath(tmp_path):
-    """``env=env`` passes — the named binding is trusted by the heuristic."""
+def test_env_var_named_env_without_binding_flagged(tmp_path):
+    """``env=env`` with no visible binding is flagged — the name alone proves nothing.
+
+    The pre-fix heuristic trusted any ``env``/``subprocess_env``/``child_env``
+    name by spelling; a bare parameter (or any unbound name) carries no
+    PYTHONPATH evidence, so the kwarg test must prove the behavior, not the
+    parameter name.
+    """
     test_root = tmp_path / 'test'
-    _write(
+    target = _write(
         test_root / 'foo' / 'test_thing.py',
         """
         import subprocess
         import sys
 
         def test_runs(env):
+            subprocess.run([sys.executable, '-c', 'print(1)'], env=env)
+        """,
+    )
+
+    findings = analyze_subprocess_pythonpath(test_root)
+
+    assert len(findings) == 1
+    assert findings[0]['rule_id'] == 'subprocess-pythonpath'
+    assert findings[0]['file'] == str(target)
+
+
+def test_env_var_named_env_with_pythonpath_binding_passes(tmp_path):
+    """``env=env`` passes when the visible binding constructs PYTHONPATH."""
+    test_root = tmp_path / 'test'
+    _write(
+        test_root / 'foo' / 'test_thing.py',
+        """
+        import os
+        import subprocess
+        import sys
+
+        def test_runs():
+            env = {'PYTHONPATH': os.pathsep.join(sys.path)}
             subprocess.run([sys.executable, '-c', 'print(1)'], env=env)
         """,
     )

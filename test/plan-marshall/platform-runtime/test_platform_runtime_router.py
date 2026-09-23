@@ -310,7 +310,39 @@ _TWO_PART_GROUPS = [
     if ' ' in op and op not in {c[1] for c in _BUILD_OPERATION_CASES if isinstance(c[1], str) and ' ' in c[1]}
 ]
 
+assert _TWO_PART_GROUPS, 'registry-derived two-part operation population is empty'
+
 _TWO_PART_GROUP_IDS = [f'{group}-{subcommand}' for group, subcommand in _TWO_PART_GROUPS]
+
+
+def test_operation_registry_matches_dispatch_literals() -> None:
+    """OPERATION_REGISTRY stays identical to the operations _dispatch handles.
+
+    Both populations are derived at test time — the registry by import, the
+    dispatch set by AST-walking _dispatch for ``operation == '<literal>'``
+    selections — so a handler added to one side without the other fails here
+    instead of drifting silently.
+    """
+    import ast
+    import inspect
+
+    import platform_runtime
+
+    dispatched: set[str] = set()
+    tree = ast.parse(inspect.getsource(platform_runtime._dispatch))
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Compare):
+            continue
+        if not isinstance(node.left, ast.Name) or node.left.id != 'operation':
+            continue
+        for comparator in node.comparators:
+            if isinstance(comparator, ast.Constant) and isinstance(comparator.value, str):
+                dispatched.add(comparator.value)
+
+    assert dispatched == set(platform_runtime.OPERATION_REGISTRY), (
+        f'registry/dispatch drift: registry-only={sorted(set(platform_runtime.OPERATION_REGISTRY) - dispatched)}, '
+        f'dispatch-only={sorted(dispatched - set(platform_runtime.OPERATION_REGISTRY))}'
+    )
 
 
 class TestBuildOperation:
