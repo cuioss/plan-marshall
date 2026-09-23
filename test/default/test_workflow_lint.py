@@ -263,12 +263,15 @@ def _write_scopes(scopes: dict[str, str]) -> set[str]:
 #: at execute time from a walk of .github/workflows/: eight workflows, of which
 #: seven declare a top-level block that is entirely read (python-verify.yml carries
 #: `pull-requests: read` beside `contents: read`, still a read scope).
-#: pr-agent.yml is the sole top-level write-bearing workflow, with these three.
+#: cuioss-review-bot.yml is the sole top-level write-bearing workflow, with these three.
 _TOP_LEVEL_WRITE_ALLOWLIST = {
-    ('pr-agent.yml', 'pull-requests'): 'The reviewer publishes its review as a PR review body and inline comments.',
-    ('pr-agent.yml', 'issues'): 'On-demand commands (/review, /ask, /improve) arrive as issue_comment events '
-    'and are answered on the issue/PR thread.',
-    ('pr-agent.yml', 'id-token'): 'Mints the OIDC token Workload Identity Federation exchanges for the '
+    (
+        'cuioss-review-bot.yml',
+        'pull-requests',
+    ): 'The reviewer publishes its review as a PR review body and inline comments.',
+    ('cuioss-review-bot.yml', 'issues'): 'On-demand commands (/review, /ask, /improve) arrive as issue_comment '
+    'events and are answered on the issue/PR thread.',
+    ('cuioss-review-bot.yml', 'id-token'): 'Mints the OIDC token Workload Identity Federation exchanges for the '
     'short-lived GCP credentials the reviewer uses to reach Gemini on Vertex AI.',
 }
 
@@ -352,18 +355,18 @@ def test_every_top_level_permission_scope_is_read_only_or_allowlisted() -> None:
     )
 
 
-def test_the_top_level_allowlist_holds_exactly_the_three_pr_agent_scopes() -> None:
+def test_the_top_level_allowlist_holds_exactly_the_three_cuioss_review_bot_scopes() -> None:
     """The allowlist is a closed, countable set — a fourth entry must fail here.
 
     An allowlist that can absorb a new entry silently is not a control. Three
-    entries, all pr-agent.yml, is the derived state of the tree; anything else is
-    a change that has to be argued for rather than merged into the guard.
+    entries, all cuioss-review-bot.yml, is the derived state of the tree; anything
+    else is a change that has to be argued for rather than merged into the guard.
     """
     keys = sorted(_TOP_LEVEL_WRITE_ALLOWLIST)
 
     assert len(keys) == 3, f'expected exactly three allowlisted top-level scopes, got {keys}'
-    assert {name for name, _ in keys} == {'pr-agent.yml'}, (
-        f'pr-agent.yml is the sole top-level write-bearing workflow; got {keys}'
+    assert {name for name, _ in keys} == {'cuioss-review-bot.yml'}, (
+        f'cuioss-review-bot.yml is the sole top-level write-bearing workflow; got {keys}'
     )
 
 
