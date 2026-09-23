@@ -9,7 +9,10 @@ pytest collection; each split unit imports what it needs explicitly.
 import ast
 from pathlib import Path
 
-TEST_ROOT = Path(__file__).resolve().parent
+# Resolved against the test-tree root, not this module's own directory: the
+# constant was hoisted verbatim from test_shared_harness.py (where .parent was
+# test/) into test/_shared/ (where .parent would be test/_shared).
+TEST_ROOT = Path(__file__).resolve().parent.parent
 
 #: A real script with a rich defaulted flag set, reached through the
 #: main()-interception seam. Coupling the test to a real script is deliberate:
