@@ -1324,7 +1324,7 @@ reviewer population, then record a verdict per reviewer, from the bodies.**
 its automated reviewers in a machine-readable registry — one data block per reviewer at
 `marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md`, each declaring an
 `author_login` (parsed generically by that skill's `scripts/bot_registry.py`; the same set is named in
-prose by `.github/workflows/pr-agent.yml`). Read the `author_login` of every such registry doc — that
+prose by `.github/workflows/cuioss-review-bot.yml`). Read the `author_login` of every such registry doc — that
 set **is** the expected reviewer population for this PR. Do **not** transcribe a reviewer list into
 this contract or into the report: a hand-maintained list is the defect this step exists to prevent,
 and it goes stale the instant a reviewer is added to or removed from the registry.
@@ -2283,7 +2283,7 @@ fail-open none of the four had caught.
 ## Reviewer participation
 The expected reviewer population **derived from configuration** — the `author_login` of each
 `marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md` registry doc,
-cross-named by `.github/workflows/pr-agent.yml` — never a list transcribed here. One row per
+cross-named by `.github/workflows/cuioss-review-bot.yml` — never a list transcribed here. One row per
 reviewer, each verdict derived from the stored comment bodies (§ Step 7), never from a check state or
 a summary:
 

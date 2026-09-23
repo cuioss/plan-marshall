@@ -1,13 +1,19 @@
 # Third automated PR reviewer (PR-Agent on Google Gemini), beside CodeRabbit and Sourcery.
 #
-# All review tuning is central in cuioss/pr-agent-settings (.pr_agent.toml) — nothing is
+# All review tuning is central in cuioss/cuioss-review-bot (.pr_agent.toml) — nothing is
 # configured here. The org skip rules (dependabot[bot], cuioss-release-bot[bot], the
 # skip-bot-review label, fork PRs) are enforced by the reusable workflow's job-level `if:`
 # guard, because PR-Agent's own ignore_pr_* settings are inert in GitHub Action mode.
 #
-# See https://github.com/cuioss/pr-agent-settings/blob/main/README.adoc
+# The review charter is NOT declared here. The reusable workflow reads the
+# `cuioss-review-bot:` block of .github/project.yml from the DEFAULT branch; this repository
+# sets `enabled: true` there, so its reviews run on the charter assembled from the spine plus
+# the `python` and `plugin` packs, echoed into the run log as the "Assembled review charter"
+# group.
+#
+# See https://github.com/cuioss/cuioss-review-bot/blob/main/README.adoc
 
-name: PR Agent Review
+name: cuioss-review-bot Review
 
 on:
   pull_request:
@@ -49,7 +55,7 @@ jobs:
       # total — 73% of them the bare "No major issues detected" table. Neither knob the
       # central config reaches moved it: the model was swapped across 3.5-flash / 2.5-pro /
       # 3.6-flash for byte-identical output, and the charter was rewritten twice
-      # (pr-agent-settings #5 and #13, the second explicitly to contest the empty-list
+      # (cuioss-review-bot #5 and #13, the second explicitly to contest the empty-list
       # permission and to raise num_max_findings to 12) for a silent rate of 76.5% → 73.3%.
       #
       # The cause is not reachable from configuration. `key_issues_to_review`'s own field
@@ -58,13 +64,11 @@ jobs:
       # description instead of replacing it. Two rounds of stronger argument bought three
       # points, which is the measurement that closes the charter lane.
       #
-      # `/improve` is a DIFFERENT tool with a different prompt and no empty-list clause. It
-      # has been fully tuned in cuioss/pr-agent-settings since #14 — commitable_code_suggestions
-      # publishes it as inline review comments, which plan-marshall's automatic-review already
-      # declares as participation evidence for this bot — and it has never once run on a real
-      # pull request in this repository: zero inline records across the whole corpus. The
-      # ordinary opt-in is a per-PR `pr-agent-improve` label that nobody applies, so the
-      # capability has been configured and unused.
+      # `/improve` is a DIFFERENT tool with a different prompt and no empty-list clause. It is
+      # tuned in cuioss/cuioss-review-bot — commitable_code_suggestions publishes it as inline
+      # review comments, which plan-marshall's automatic-review declares as participation
+      # evidence for this bot. This input runs it on every eligible pull request; the per-PR
+      # `cuioss-review-bot-improve` label is the opt-in only where the input is false.
       #
       # ⚠ KNOWN GAP, accepted deliberately for the pilot and NOT to be mistaken for a guarded
       # surface: the reusable workflow's fail-closed gate keys on the `review` output and is
@@ -78,8 +82,8 @@ jobs:
       # `## PR Code Suggestions ✨` reading "No code suggestions found for the PR." It announces
       # its silence rather than staying quiet. plan-marshall's automatic-review consumes that
       # surface, so the pipeline can tell the two apart even while the gate cannot — and the
-      # pr-agent registry now carries an `ignore_patterns` entry so that announcement is not
-      # filed as a finding on every clean pull request.
+      # cuioss-review-bot registry entry carries an `ignore_patterns` entry so that
+      # announcement is not filed as a finding on every clean pull request.
       #
       # Reversible in one line. Remove this input to return to label-only opt-in.
       auto-improve: true
