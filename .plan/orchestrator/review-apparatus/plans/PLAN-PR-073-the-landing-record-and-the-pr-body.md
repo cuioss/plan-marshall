@@ -55,7 +55,7 @@ D1.
 - OBSERVED (2026-09-18): every deliverable in this plan was carried verbatim from the theme spec named
   in its `Carried from` column, which carries the claim labels for its own deliverables. Confirm/refute
   by reading that spec's `## Claim Labels` section — this plan re-states none of them.
-  - verdict: corroborated | checked_at: 7d82d5d90 | by: review-apparatus/cleanup | rescoped: n/a | evidence: Structural carried-verbatim claim, verified by reading this spec at HEAD: four pointer deliverables plus D0, with PLAN-PR-028 D0 explicitly struck.
+  - verdict: corroborated | checked_at: 14d8f3ccd | by: review-apparatus/cleanup | rescoped: n/a | evidence: Structural carried-verbatim claim, re-verified by reading this spec at HEAD: four pointer deliverables plus D0, with PLAN-PR-028 D0 explicitly struck, no deliverable body restated. The spec's own diff this window is verdict-bullet stamping plus the .plan/local/orchestrator to .plan/orchestrator path correction - no deliverable text changed.
 - OBSERVED (2026-09-18, orchestrator `corpus surfaces` + per-deliverable mapping; RE-SCOPED 2026-09-22):
   this plan's declared surface is disjoint from every other live plan's in this epic **except
   `PLAN-PR-077`, which shares `phase-6-finalize/workflow/create-pr.md`** (073 owns the landing-record
@@ -63,15 +63,15 @@ D1.
   resume anchor did not previously name. Confirm/refute with
   `orchestrator corpus cross-check --slug review-apparatus` — non-determinate at HEAD (see the claim's
   verdict).
-  - verdict: contradicted | checked_at: 7d82d5d90 | by: review-apparatus/cleanup | rescoped: yes | evidence: DISJOINTNESS IS FALSE, and this is the collision the resume_anchor does NOT name. PLAN-PR-073 and PLAN-PR-077 both declare phase-6-finalize/workflow/create-pr.md - 073 as OBSERVED for its landing-record deliverables, 077 as OBSERVED for its D2 gate. PLAN-PR-077 stated BOTH sides four lines apart at staging (overlap none in this epic, then adjacent to PLAN-PR-073 same file). RE-SCOPE: record the create-pr.md collision with 077 and the sequencing it forces. The anchor claim that only 066/069 and 067/068 collide is refuted - there are THREE pairs, and 067/068 shares three files, not one.
+  - verdict: contradicted | checked_at: 14d8f3ccd | by: review-apparatus/cleanup | rescoped: yes | evidence: COLLISION RE-CONFIRMED at HEAD by reading both Expected Surface sections: this spec declares phase-6-finalize/workflow/create-pr.md (landing-record deliverables) and PLAN-PR-077 declares the same path (its D2 gate). PLAN-PR-077 was committed into the ledger this window and its own Dependencies section now names the same collision from the other side, so both specs state it - disjointness is false and the re-scope is covered at both ends. create-pr.md itself did not move this window.
 - OBSERVED (2026-09-18, lesson `2026-09-04-17-001`): `pr_intent_section` clips the PR Intent section at
   a byte offset, the renderer appends rather than replaces, and `ci pr view` does not return the body —
   so the only repair is a full `ci pr edit` rewrite. D3 reports an overflow instead of truncating.
-  - verdict: corroborated | checked_at: 7d82d5d90 | by: review-apparatus/cleanup | rescoped: n/a | evidence: pr_intent_section.py is UNDISTURBED at HEAD - it does not appear in git diff --name-only 7a028157e..HEAD over phase-6-finalize (which lists SKILL.md, review_commitments.py and eleven standards/workflow docs, not pr_intent_section.py). The byte-offset clip, the append-not-replace renderer and the ci pr view gap are unchanged. Premise intact.
+  - verdict: corroborated | checked_at: 14d8f3ccd | by: review-apparatus/cleanup | rescoped: n/a | evidence: pr_intent_section.py is UNDISTURBED: the only two files that moved under phase-6-finalize this window are standards/adr-integration.md and standards/branch-cleanup.md. The byte-offset clip, the append-not-replace renderer and the ci pr view body gap are unchanged. The declared-surface path that triggered this staleness check is test/plan-marshall/plan-orchestrator/, whose whole diff is #1585's verdict-staleness work - irrelevant to this claim.
 - OBSERVED (2026-09-18, lesson `2026-09-06-16-001`): `_github_pr.py:2332-2339` returns
   `'enqueued': True` corroborated only by the branch rule; `isInMergeQueue` / `mergeQueueEntry` occur
   in zero files across the CI and GitHub script surfaces.
-  - verdict: corroborated | checked_at: 7d82d5d90 | by: review-apparatus/cleanup | rescoped: n/a | evidence: Re-grounded FIRST-PARTY at HEAD. Mechanism holds: _github_pr.py received exactly one hunk in this window (+25 lines at line 317, the SHA-token helper), so cmd_pr_merge_queue enqueued:True corroborated only by the branch rule is unchanged, and isInMergeQueue/mergeQueueEntry still occur in zero files across the CI and GitHub script surfaces. LINE DRIFT, derived: the cited 2332-2339 now reads 2357-2364 - every coordinate below 318 shifts by exactly +25.
+  - verdict: corroborated | checked_at: 14d8f3ccd | by: review-apparatus/cleanup | rescoped: n/a | evidence: Re-grounded first-party at HEAD. _github_pr.py did not move this window, so cmd_pr_merge_queue's enqueued:True corroborated only by the branch rule is unchanged and the previously derived coordinates still hold (no further drift). A content sweep for isInMergeQueue|mergeQueueEntry over 3108 files returns count 0 - still zero occurrences across the CI and GitHub script surfaces.
 
 ## Dependencies and Sequencing
 

@@ -177,6 +177,17 @@ it. ⛔ Re-check the guard before emitting; do not absorb a sixth.
 
 ### D5a — `head_sha_verified` is UNREACHABLE for the required bot, and the cause is now LOCATED
 
+✅ **DISCHARGED at HEAD (2026-09-23 re-grounding, claim 4) — this body is HISTORICAL, do not implement
+it.** `#1473` shipped `_verifies_head_sha`, which `github_re_review.py` now resolves on the
+`issue_comment` path (3 occurrences at HEAD `14d8f3ccd`) — the exact remedy this deliverable specified.
+PLAN-PR-056 claim 3 recorded the discharge first (contradicted, 2026-09-13); this claim carried the
+opposite (stale) verdict for 5+ days before the 2026-09-22 pass corrected it. **The unwired residue
+this discharge left behind — a SECOND, independent `issue_comment` head-verification
+(`_github_ci.issue_comment_verifies_head`, shipped undeclared by `#1510`, 1 self-reference + 14 in its
+own regression suite, no production caller) — is carried forward by `PLAN-PR-056` D6, not here.** If
+this spec is ever unparked, drop D5a from its deliverable count entirely; do not re-implement a
+discharged fix.
+
 ⭐⭐⭐ **Folded from `truthful-signals-051.md` item 1 on 2026-09-07** (their `-005`, from PLAN-TRUTH-099 /
 PR #1434). This CONVERTS D5's standing `HYPOTHESIS` about `github_re_review.py` into an **OBSERVED**
 located cause, and it is the root of a defect this epic has recorded as *"still unfixed"* **three
@@ -521,7 +532,7 @@ theme, and limb C is D6 limb B's rule stated in its general form.
   `participated_stale` required bot whose peer comments more recently can never be selected.
   Confirm/refute at the trigger-B selection site in `automatic-review` (verify-at-outline —
   ⛔ **re-read it; PLAN-PR-025A moved this surface**).
-  - verdict: contradicted | checked_at: 7d82d5d90 | by: review-apparatus/cleanup | rescoped: yes | evidence: DEAD AT HEAD, first-party. Claim: trigger B selects one bot from the newest bot-authored finding, so a participated_stale required bot whose peer comments more recently can never be selected. review_completeness.py now carries select_stale_bot_for_trigger(stale_bots, newest_finding_kind_bot): selects from the STALE SET, newest-kind only as tie-breaker, exposed as CLI verb trigger-bot --plan-id --stale-bots --newest-kind. Shipped UNDECLARED by dd16f521e (#1510), authored by sibling epic instrumentation-substrate PLAN-03. RE-SCOPE: residue is narrower - a required bot that never published any finding is not in stale_bots and falls through to newest_finding_kind_bot or empty; whether automatic-review workflow actually invokes the new verb is unestablished.
+  - verdict: contradicted | checked_at: 14d8f3ccd | by: review-apparatus/cleanup | rescoped: yes | evidence: CONTRADICTION HOLDS at HEAD. select_stale_bot_for_trigger still resolves in review_completeness.py (5 occurrences); the file did not move this window - the only touched declared path is branch-cleanup.md via the ADR gate, which does not reach trigger-B selection. Narrower residue from the prior stamp unchanged: a required bot that published no finding falls through; workflow invocation of the new verb unestablished.
 - OBSERVED: on PR #1368 the CodeRabbit notice `Review rate limited` was filed as actionable
   finding `12ce1a` and remediated in-run by TASK-016. Confirm/refute at PR #1368's comment
   history and the plan's findings store.
@@ -537,7 +548,7 @@ theme, and limb C is D6 limb B's rule stated in its general form.
   `issue_comment` path therefore cannot produce `head_sha_verified: true` for any bot. ⛔ **Cite the
   SYMBOL, not the line** — the relayed report and this ledger's own prior note both carried line
   numbers (`571`, `394`) that no longer resolve; the mechanism held, the coordinates did not.
-  - verdict: contradicted | checked_at: 7d82d5d90 | by: review-apparatus/cleanup | rescoped: no | evidence: DEAD AT HEAD and stale since five days after it was stamped. Claim asserts one hard-coded head_sha_verified assignment from matched_signal == review and one _references_head_sha call site. At HEAD github_re_review.py holds 17 head_sha_verified occurrences and _verifies_head_sha resolves (3 occurrences). PLAN-PR-056 claim 3 already recorded this refutation at 38af136e (2026-09-13) while this claim stayed corroborated at b64db6671 (2026-09-08). The corpus carried two opposite verdicts on one symbol; 056 is right, this one is superseded by it.
+  - verdict: contradicted | checked_at: 14d8f3ccd | by: review-apparatus/cleanup | rescoped: yes | evidence: DEAD AT HEAD. github_re_review.py did not move this window; _verifies_head_sha still resolves there (3 occurrences). RE-SCOPE APPLIED IN THE SAME PASS: D5a body now carries a discharge note pointing at #1473 and at PLAN-PR-056 D6 for the unwired second-implementation residue (#1510's issue_comment_verifies_head). No longer the corpus's one blocking claim.
 
 ## Expected Surface
 

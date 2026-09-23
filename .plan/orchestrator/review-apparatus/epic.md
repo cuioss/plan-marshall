@@ -38,7 +38,15 @@ is fixed at the source rather than only described more honestly downstream.
 ## START HERE
 
 <!-- BEGIN GENERATED: resume-summary -->
-**Resume anchor**: === 2026-09-22 (post-status) FOLD: parallel-session paste re GCP_PROJECT_ID — VERIFIED AND REFUTED ===
+**Resume anchor**: === 2026-09-23 CLEANUP DONE at HEAD 14d8f3ccd74718e8258a674472e9f01b595bc2cc. ===
+PHASE A (A1 re-grounding, dispatched): declared-surface-scoped staleness basis (#1585, new since last pass) precisely identified 25 stale claims across 9 specs (was: whole-corpus re-check). All 25 re-corroborated, ALL VERDICTS HELD - zero refutations reversed. blocking_count 1->0: PLAN-PR-043 claim 4 (the corpus one blocking claim, though PARKED so nothing live was blocked) discharged in-place with a superseded-note in its D5a body pointing at #1473 fix + PLAN-PR-056 D6 residue, re-stamped rescoped:yes. Declared-surface half: PLAN-PR-074 gained adr-integration.md as a new understated-surface entry (a #1586-introduced cross-reference from branch-cleanup.md new ADR duplicate-number gate) - corrected, verified via corpus surfaces membership (claimed_count 14->15). corpus verdicts now: blocking_count 0, stale_count 0, 66/66 fresh at HEAD.
+A2 applicability: no spec qualifies as already-fixed. A3 ambiguity: clean, 0/41. A4 duplication: corpus cross-check STILL non-determinate at HEAD (96 indeterminate candidates, 94 sibling_epic_spec - the SAME #1578 live/archived-split double-count tool defect, now UNESCALATED FOR A THIRD PASS - a proper defect/plan is genuinely owed). Within-corpus (corpus_spec) comparison is 40/41 comparable and the 912 overlap rows are expected thematic file-sharing already governed by Class A/B/C sequencing, not new duplication. A5: corpus already component-distributed, no re-distribution this pass.
+PHASE B (compact): settled-narrative relocation APPLIED THIS PASS (operator explicitly chose full relocation over deferring a 4th time) - 8 closed Open-Defects/Watches sections moved verbatim to settled.md § "Relocated 2026-09-23 (cleanup, operator-confirmed)...", pointers left at origin. Deliberately NOT relocated (embedded live items): RESOLVED 2026-08-24 (a STILL OPEN scoping defect inside it), LANDING PLAN-PR-046, LANDING PLAN-PR-033 (each embeds a live open-defect tail) - owed to a FUTURE pass, do not re-defer silently. Fixed a real pointer-reachability defect this relocation exposed: two relocated headings carry embedded straight double-quotes that break the "settled.md § "..."" pointer regex (it stops at the first embedded quote) - converted those two headings' internal quotes to curly quotes (content otherwise byte-verbatim), matching the established convention the 2026-08-23 RETIRED-FRAMING pointer already used (apostrophes, never straight double-quotes, inside a relocatable heading). compact now reports all three invariants ok; epic_changed:false on re-run (idempotent, verified).
+PHASE C: archive_drain refused (standing reason - no epic-wide quiescence signal exists; inbox is EMPTY this pass, 0 queued/0 closed_senders/0 invalid, which is a DIFFERENT zero than FINISHED).
+PHASE D: restart_verdict NOT_READY - 28 uncommitted paths at HEAD (11 under review-apparatus from THIS pass alone, 17 pre-existing across lessons-routing/orchestrator-refactor and NOT touched here). All other signals (phase, running_plans, corpus_reconciliation, inbox) ready. registry_parity not_available, excluded from the floor (owned by PLAN-TRUTH-059). Committing is an operator decision, not made this pass.
+NEXT ACTION ON RESTART: (a) file the corpus-cross-check sibling-epic-vs-own-archive double-count defect/plan - THIRD pass carrying it unescalated, do not defer a fourth time without deciding who owns it; (b) judge the three deliberately-skipped settled-narrative candidates (RESOLVED 2026-08-24, LANDING-046, LANDING-033) on their own terms - each needs the live tail split out before its closed narrative can relocate; (c) PLAN-PR-066 remains the one emitted plan awaiting operator-confirmed launch; (d) next slot math (N=2) should re-derive R against the current queue - untouched by this pass; (e) operator decision owed on the Tier-2-alongside-Tier-1 architecture watch (now relocated to settled.md as CLOSED per the 2026-09-15 operator decision - re-open only if pr-agent quality changes).
+
+=== 2026-09-22 (post-status) FOLD: parallel-session paste re GCP_PROJECT_ID — VERIFIED AND REFUTED ===
 A parallel-session paste claimed API-Sheriff#340's PR-Agent review job failed org-wide with
 `GCP_PROJECT_ID` org variable unset. VERIFIED against real run logs (`ci checks logs --run-id
 35709715234` / `--run-id 35716363715`, local API-Sheriff checkout) and REFUTED: both runs show
@@ -63,14 +71,14 @@ INBOX DRAINED 2/2 THIS SESSION: lessons-handling-26-09-22-01-001 (5 lesson recur
   | Required-bot + await pair | PLAN-PR-069 D3/D5 | WIRED via review_gate_delta.should_await_refusal |
   | SHA-comparison currency guard | PLAN-PR-045/070 D5/D6 | ⛔ NOT WIRED — bot_claimed_sha_matches_head has NO production caller; RE-SCOPED into 070 D5/D6 in place (decide-then-WIRE, not decide-then-build) |
   | issue_comment head_sha_verified reachability | PLAN-PR-043/056 | ⛔ NOT WIRED, and a SECOND independent implementation of the SAME repair PLAN-PR-033 (#1473) already shipped — two implementations, one live in github_re_review.py, one orphaned in _github_ci.py, covered only by its own regression suite (14 refs) |
-  Two of the four "fixes" are covered only by their own new regression tests with no production caller — this epic's own test-pins-the-defect/vacuous-guard archetype, recurring INSIDE a fix for review currency, shipped by another epic. ⚠ Coverage bound on every "no production caller" claim: the content-search tool does not walk `.claude/**` or `.github/**`.
+  Two of the four \"fixes\" are covered only by their own new regression tests with no production caller — this epic's own test-pins-the-defect/vacuous-guard archetype, recurring INSIDE a fix for review currency, shipped by another epic. ⚠ Coverage bound on every \"no production caller\" claim: the content-search tool does not walk `.claude/**` or `.github/**`.
 ⛔ SECOND FINDING, now resolved: PLAN-PR-043 claim 4 (corroborated at b64db6671, 2026-09-08) and PLAN-PR-056 claim 3 (contradicted at 38af136e, 2026-09-13) carried OPPOSITE verdicts on the identical `head_sha_verified` premise for 5+ days — 056 was right, 043 cl.4 is now re-stamped contradicted. Never assume a sibling claim on the same symbol was re-checked when one was.
 ⛔ THIRD FINDING, fixed in-place this pass: disjointness was FALSE for THREE staged pairs, only two of which the anchor previously named, and one of which named itself on both sides of a contradiction:
   - PLAN-PR-066 ∩ PLAN-PR-069 on `cuioss-review-bot.md` (already known, still correct)
   - PLAN-PR-067 ∩ PLAN-PR-068 share THREE files (github_pr.py, workflow-integration-github/SKILL.md, test_github_pr.py) — anchor previously implied only 1
-  - PLAN-PR-073 ∩ PLAN-PR-077 on `create-pr.md` — NEVER named in the anchor, and PLAN-PR-077's own Dependencies section asserted "Overlaps with: none" four lines above admitting the same collision to PLAN-PR-073. All three specs' Claim Labels / Dependencies text CORRECTED in place this pass (not just verdict-stamped) — see each spec's 2026-09-22 RE-SCOPE bullet.
+  - PLAN-PR-073 ∩ PLAN-PR-077 on `create-pr.md` — NEVER named in the anchor, and PLAN-PR-077's own Dependencies section asserted \"Overlaps with: none\" four lines above admitting the same collision to PLAN-PR-073. All three specs' Claim Labels / Dependencies text CORRECTED in place this pass (not just verdict-stamped) — see each spec's 2026-09-22 RE-SCOPE bullet.
   `corpus cross-check` itself is NON-DETERMINATE at HEAD (5628 file_overlap_matches, candidate_comparison_determinate: false) because #1578's live/archived epic split made `review-apparatus-26-09-21` (this epic's own archived snapshot) a SIBLING-EPIC candidate against itself. This is a tool defect, not a corpus defect — every staged spec's disjointness claim now points at a verb that cannot fully answer it. Escalate to a future plan (likely code-intelligence-substrate or orchestrator-refactor territory, since it is the `corpus cross-check` script's own candidate-enumeration logic); do NOT hand-derive disjointness as a permanent substitute, only as this pass's stopgap (done via corpus-surfaces membership, recorded per-claim).
-✅ FOURTH FINDING, FIXED: all 40 corpus specs (every component-cut spec authored 2026-09-18, plus every parked theme spec) carried a retired `.plan/local/orchestrator/review-apparatus/` Hand-Off Command and Write-Boundary path, dead since the tracked-store migration (#1558→#1575→#1578). Every one corrected to `.plan/orchestrator/review-apparatus/` this pass. The STANDING "ENVIRONMENT: epic tree GITIGNORED, LOCAL-ONLY" line below is FALSE as of this migration — the tree is git-tracked; read it as HISTORICAL, not current.
+✅ FOURTH FINDING, FIXED: all 40 corpus specs (every component-cut spec authored 2026-09-18, plus every parked theme spec) carried a retired `.plan/local/orchestrator/review-apparatus/` Hand-Off Command and Write-Boundary path, dead since the tracked-store migration (#1558→#1575→#1578). Every one corrected to `.plan/orchestrator/review-apparatus/` this pass. The STANDING \"ENVIRONMENT: epic tree GITIGNORED, LOCAL-ONLY\" line below is FALSE as of this migration — the tree is git-tracked; read it as HISTORICAL, not current.
 ⚠ FIFTH — a near-miss worth carrying forward: a regex surface-sweep (`pr.agent`) overcounts 71 files/123 matches against a literal sweep's 15/18 on PLAN-PR-066 D11 — the gap is `pr_agent` Python identifiers D11 explicitly exempts. Derive a rename population from a LITERAL sweep, never a regex one, on this claim.
 All 66 corroborations from this pass are persisted via `corpus set-verdict` (producer `review-apparatus/cleanup`, checked_at `7d82d5d90`) — every one of the 20 previously-stamped verdicts was stale before this pass; every staged spec (066-077) now carries at least a structural + a disjointness verdict at current HEAD. `corpus verdicts blocking_count: 0` — nothing new blocks `next` admission (the two remaining contradicted+rescoped:no rows, PLAN-PR-043 cl.4, are pointer-chain history already superseded by 056/069, not admission-blocking for any STAGED spec).
 NEXT ACTION ON RESTART: (a) PLAN-PR-069 D1 and PLAN-PR-070 D5/D6 are narrower than staged — read their 2026-09-22 amendments before outline; (b) PLAN-PR-066 remains the one emitted plan awaiting operator-confirmed launch; (c) `next`'s slot math (N=2) should re-derive R against the CURRENT queue — untouched by this pass; (d) file a proper defect/plan for the `corpus cross-check` sibling-epic-vs-own-archive double-count before relying on it again.
@@ -202,7 +210,7 @@ is reconciled from it, never the reverse.
 | 35 | PLAN-PR-071 | WS-03 | staged | marketplace/bundles/plan-marshall/skills/automatic-review/scripts/review_gate_delta.py; test/plan-marshall/automatic-review/test_counting_rule_parity.py; test/plan-marshall/automatic-review/test_review_gate_delta_cli.py; test/plan-marshall/automatic-review/test_review_gate_delta_escapes.py; test/plan-marshall/automatic-review/test_review_gate_delta_exclusions.py; test/plan-marshall/automatic-review/test_review_gate_delta_shares.py |
 | 36 | PLAN-PR-072 | WS-03 | staged | marketplace/bundles/plan-marshall/skills/manage-findings/SKILL.md; marketplace/bundles/plan-marshall/skills/manage-findings/scripts/_findings_core.py; marketplace/bundles/plan-marshall/skills/manage-findings/standards/jsonl-format.md; test/plan-marshall/manage-findings/ |
 | 37 | PLAN-PR-073 | WS-04 | staged | marketplace/bundles/plan-marshall/skills/phase-6-finalize/scripts/pr_intent_section.py; marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/emit-landing.md; marketplace/bundles/plan-marshall/skills/phase-6-finalize/workflow/create-pr.md; marketplace/bundles/plan-marshall/skills/plan-orchestrator/scripts/_orchestrator_inbox.py; marketplace/bundles/plan-marshall/skills/plan-orchestrator/standards/inbox-envelope.md; marketplace/bundles/plan-marshall/skills/plan-orchestrator/standards/landing-payload-spec.md; test/plan-marshall/phase-6-finalize/test_pr_intent_section.py; test/plan-marshall/plan-orchestrator/ |
-| 38 | PLAN-PR-074 | WS-04 | staged | marketplace/bundles/plan-marshall/skills/manage-solution-outline/scripts/manage-solution-outline.py; marketplace/bundles/plan-marshall/skills/phase-6-finalize/SKILL.md; marketplace/bundles/plan-marshall/skills/phase-6-finalize/scripts/ci_verify.py; marketplace/bundles/plan-marshall/skills/phase-6-finalize/scripts/foreign_pr_gate.py; marketplace/bundles/plan-marshall/skills/phase-6-finalize/scripts/review_commitments.py; marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/archive-plan.md; marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/branch-cleanup.md; marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/dispatch-inline-split.md; marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/post-run-review.md; marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/pre-merge-barrier.md; test/plan-marshall/phase-6-finalize/test_foreign_pr_gate_cli.py; test/plan-marshall/phase-6-finalize/test_foreign_pr_gate_gate.py; test/plan-marshall/phase-6-finalize/test_review_commitments_commitments.py; test/plan-marshall/phase-6-finalize/test_review_commitments_reporting.py |
+| 38 | PLAN-PR-074 | WS-04 | staged | marketplace/bundles/plan-marshall/skills/manage-solution-outline/scripts/manage-solution-outline.py; marketplace/bundles/plan-marshall/skills/phase-6-finalize/SKILL.md; marketplace/bundles/plan-marshall/skills/phase-6-finalize/scripts/ci_verify.py; marketplace/bundles/plan-marshall/skills/phase-6-finalize/scripts/foreign_pr_gate.py; marketplace/bundles/plan-marshall/skills/phase-6-finalize/scripts/review_commitments.py; marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/adr-integration.md; marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/archive-plan.md; marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/branch-cleanup.md; marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/dispatch-inline-split.md; marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/post-run-review.md; marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/pre-merge-barrier.md; test/plan-marshall/phase-6-finalize/test_foreign_pr_gate_cli.py; test/plan-marshall/phase-6-finalize/test_foreign_pr_gate_gate.py; test/plan-marshall/phase-6-finalize/test_review_commitments_commitments.py; test/plan-marshall/phase-6-finalize/test_review_commitments_reporting.py |
 | 39 | PLAN-PR-075 | WS-04 | staged | marketplace/bundles/plan-marshall/skills/manage-logging/standards/log-format.md; marketplace/bundles/plan-marshall/skills/manage-metrics/; marketplace/bundles/plan-marshall/skills/manage-status/scripts/manage-status.py; marketplace/bundles/plan-marshall/skills/manage-status/standards/status-lifecycle.md; test/plan-marshall/manage-status/ |
 | 40 | PLAN-PR-076 | WS-03 | staged | .claude/skills/finalize-step-review-retrospective/SKILL.md; .claude/skills/finalize-step-review-retrospective/scripts/review_retrospective.py; test/plan-marshall/finalize-step-review-retrospective/ |
 | 41 | PLAN-PR-077 | WS-04 | staged | marketplace/bundles/plan-marshall/skills/manage-references/scripts/_cmd_compute_footprint.py; marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/push.md; marketplace/bundles/plan-marshall/skills/phase-6-finalize/workflow/create-pr.md; test/plan-marshall/phase-6-finalize/test_create_pr*.py; test/plan-marshall/phase-6-finalize/test_push*.py |
@@ -600,6 +608,14 @@ before trusting. The general defence is this epic's standing rule: **re-derive a
 `PLAN-PR-010` (D0 derives the population, D3b applies it).
 
 ## Relocated narrative — see `settled.md`
+
+⭐ **2026-09-23 relocation (operator-confirmed).** A further eight closed Open-Defects/Watches sections
+were moved to `settled.md` § "Relocated 2026-09-23 (cleanup, operator-confirmed) — eight Open-Defects/Watches sections whose subject is closed" verbatim, selected on
+the "closed subject, not merely old" test — each carries its own closed/resolved marker in its heading
+and no still-open item as its primary subject. Their pointers sit inline at the origin, among the still-live
+entries, rather than being listed a second time here. Sections deliberately left in place despite an old
+date: `RESOLVED 2026-08-24` (embeds a "STILL OPEN" scoping defect), and the `PLAN-PR-046` / `PLAN-PR-033`
+LANDING sections (each embeds a live open-defect tail) — a future pass should judge those on their own terms.
 
 Eight dated sections were relocated to [`settled.md`](settled.md) on 2026-08-23, verbatim and with
 nothing dropped. Each pointer below names its destination heading in the form the
@@ -1048,24 +1064,7 @@ result was **exactly the tail of the longer one**. A declared filter that silent
 Residue and in our forward. ⭐ A defect that falls outside every emitting step's population is
 invisible to the whole lesson pipeline by construction; that is worth more than the defect itself.
 
-### ⭐ CLOSED-BY-MEASUREMENT 2026-09-05 — the union-with-spec surface reading has a measured cost
-
-While PLAN-PR-042 ran, `corpus cross-check`'s `live_plan` rows named exactly
-`bot-participation-contract.md` and `cuioss-review-bot.md` — **precisely the two production files it
-actually touched** (`git show --stat` on `497261525`: those two plus one test file). This
-orchestrator treated that as a partial reading and cleared candidates against the **union** of the
-live rows and the spec's five declared entries.
-
-**The cost is now measurable.** The union reading correctly serialized `PLAN-PR-025B` (which declares
-`test/plan-marshall/automatic-review/`, where the plan did write), but also serialized **`PLAN-PR-026`,
-`-030`, `-031`, `-047` and `-048`** behind `review_completeness.py` and `review_retrospective.py` —
-**two files this plan never wrote.** Five plans sequenced behind two files that never moved.
-
-⛔ **The rule still stands and is NOT relaxed**: a running plan's live surface can be genuinely partial
-because it grows as the plan works, so clearing against the live arm alone remains unsafe. What is
-recorded here is that the conservative reading has a **throughput** cost, not a safety one — it lost
-five pairings; it admitted no collision. ⭐ **Correctness in the safe direction is still a cost, and
-naming it is how the next reader knows the trade was made deliberately.**
+> ↪ Relocated to `settled.md` § "⭐ CLOSED-BY-MEASUREMENT 2026-09-05 — the union-with-spec surface reading has a measured cost" — the throughput-cost finding is closed; the safety rule it left behind is restated in § Standing Constraints.
 
 ### ⛔⛔ NEW 2026-09-05 (PLAN-PR-032 landing, PR #1416) — the landing's own PR fact points at an UNMERGED PR
 
@@ -1103,31 +1102,7 @@ review-driven plan — this step can never promote a pattern at ANY recurrence s
 threshold knob is **not** the binding constraint; the missing attribution is. Tuning
 `preference_min_recurrence` would be a fix aimed at the wrong mechanism.
 
-### ✅ CORRECTED-AND-CLOSED 2026-09-05 — `2-refine` drift was REAL but did NOT survive the archive
-
-`phases[]` records `2-refine` as `in_progress` while the plan sat at `6-finalize`, and `progress`
-reports `completed_phases: 4` where **five** are genuinely complete. The **light planning lane
-collapses refine+outline+derive into one envelope and never closes `2-refine`.**
-
-⛔⛔ **THIS ORCHESTRATOR'S CONCLUSION WAS WRONG AND IS RETRACTED HERE.** Inbox message
-`apply-the-cloud-plan-lane-contract-amendments-016.md` (a self-correction filed by the same plan)
-establishes that the drift **did NOT survive the archive**: the archived record at
-`.plan/local/archived-plans/2026-09-05-apply-the-cloud-plan-lane-contract-amendments/status.json`
-does not carry it. The first half of the claim was accurate **when written** — the drift was read off
-the live `status.json` during `emit-landing` and corroborated by `manage-status progress` returning
-`completed_phases: 4` at `6-finalize`. The *conclusion* — that it would ship into the archive — is the
-part that was wrong. ⭐ **A defect that self-resolves at archive is not an open defect**, and leaving
-this standing would have sent a future plan hunting a condition that no longer exists.
-
-⭐ **The run deliberately did NOT repair it, and that was still the right call** — a hand-write to
-`status.json` that close to `archive-plan` risks more than the inaccuracy does, and the accurate
-record is that the machinery skipped the phase, not that it completed. Recorded here so the next
-reader does not treat a light-lane plan's `completed_phases` as a count.
-
-⛔ Also on the same record: `phase_steps["6-finalize"]` carries BOTH `plan-marshall:plan-retrospective`
-(written by the step) and a bare `plan-retrospective` (written by the orchestrator), both `done` with
-different `display_detail`. It inflates any count over `phase_steps` and defeats a naive
-`len(phase_steps) == len(manifest.steps)` handshake. **Staged as PLAN-PR-050 D4.**
+> ↪ Relocated to `settled.md` § "✅ CORRECTED-AND-CLOSED 2026-09-05 — `2-refine` drift was REAL but did NOT survive the archive" — the orchestrator's own wrong conclusion is retracted and the retraction is the closed record; the surviving remedy is staged as `PLAN-PR-050` D4.
 
 ### ⛔ RECURRENCE 2026-09-05 (PLAN-PR-032 landing) — `head_sha_verified` comment arm, THIRD occurrence on this epic
 
@@ -1199,131 +1174,11 @@ caveat was not read at emit time either.
 
 ⇒ **A sibling-epic overlap is cleared by READING that epic's queue, never by assuming a status.**
 
-### ✅ 2026-09-04 SECOND DRAIN — 1/1 consumed, staged as PLAN-PR-047; ⛔ ONE SENDER CLAIM REFUTED BEFORE STAGING
+> ↪ Relocated to `settled.md` § "✅ 2026-09-04 SECOND DRAIN — 1/1 consumed, staged as PLAN-PR-047; ⛔ ONE SENDER CLAIM REFUTED BEFORE STAGING" — the drain completed and the escalation landed as `PLAN-PR-047`.
 
-`truthful-signals-044.md` arrived at 08:29:22Z, **after** the first drain closed. `messages_scanned: 1`,
-`archived: 1`, `invalid: 0`. Disposition **staged** — a `kind: finding` escalated, not absorbed.
+> ↪ Relocated to `settled.md` § "✅ 2026-09-04 INBOX DRAINED — 20 of 20 consumed, 0 invalid, queue at the EMPTY zero" — the drain completed; every disposition (15 promoted, 3 folded, 2 discarded) is recorded there.
 
-**Staged as `PLAN-PR-047` (WS-03, D0–D4)** — *the counting stage reasons from inputs that were never
-persisted, and each gap changes a published number*. Declared surface **10 entries, `declarative`,
-`admits_disjointness_check: true`, 0 unresolved** (parser-verified). Corpus now **49/49** both directions,
-0 `rows_without_spec`, 0 `specs_without_row`, `blocking_count: 0`.
-
-⛔ **NOT folded onto `PLAN-PR-030`** despite the shared measurement subject — PR-030 already carries seven
-items (one gate + six deliverables), over the split guard. Nor onto `PLAN-PR-043`, which **this session's
-own earlier fold** took to six. Recorded so both omissions read as decisions.
-
-⛔⛔ **One of the sender's four claims was REFUTED before staging, and the spec carries the refutation so
-it cannot be re-adopted.** The claim: *"the PR-Agent registry doc states this bot posts no inline comments
-at all"*, making an observed `kind=inline` record a contradiction. **At `31d42db87` — the registry version
-the source run actually read, predating PR #1386's merge (`71279cc02`, 2026-09-03 17:53:36Z) — the doc
-declared BOTH publish shapes**: `issue_comment` unconditional plus `inline` under `/improve`, with the
-explicit note *"An absent inline count is therefore NOT evidence of non-participation, while a present one
-IS evidence of participation."* ⇒ The observed record is what the registry **predicts and endorses**, and
-the sender's drawn consequence (*a counting stage would have concluded this bot found nothing*) is
-backwards.
-
-⭐ **The inverted form survives and is what D4 carries**: the Guide `issue_comment` is declared
-**unconditional**, yet **zero** `issue_comment` records were observed for `cuioss-review-bot`. An
-unconditional shape that did not appear is a genuine mismatch — in the opposite direction.
-
-⭐ **Three claims verified first-party at HEAD `cc5ea40a1` before staging**: `sourcery.md:20-22` (no
-`review_body_summary_patterns`; the empty default keeps every `review_body` **COUNTED**), `sourcery.md:51`
-(`rate_limit_class: hard_quota`), and `github_re_review.py:394`
-(`'head_sha_verified': matched_signal == 'review'`) — the last corroborating both `9f7923` and this epic's
-own `e8bde7`.
-
-⛔⛔ **The compounding selection effect is why this is a MEASUREMENT defect, not a coverage gap.**
-`finalize-step-simplify` (order 8) and `finalize-step-security-audit` (order 9) mutate source **after** the
-gates (5, 7), and a forward pass never re-gates their edits ⇒ **the only measurable PRs are those where
-neither step committed anything** — systematically the PRs that needed no fixing. A biased population, not
-a random sample. ⛔ **A run of `excluded` rows means those PRs were never measurable. It does NOT mean the
-gates were clean.**
-
-
-### ✅ 2026-09-04 INBOX DRAINED — 20 of 20 consumed, 0 invalid, queue at the EMPTY zero
-
-`messages_scanned: 20`, `messages_archived: 20`, `messages_invalid: 0`, `messages_archive_failed: 0` —
-the closure equation holds. Post-drain `live_count: 0`, `closed_senders` **empty**, `invalid_count: 0`
-⇒ the **EMPTY** state, ⛔ **NOT finished**: neither sender declared closure, so more messages are expected.
-
-| Disposition | N | What |
-|---|:-:|---|
-| **promoted** | 15 | lifted to the global lessons corpus as `2026-09-04-08-001` … `-015` |
-| **folded** | 3 | into `PLAN-PR-031`, `PLAN-PR-043`, `PLAN-PR-025B` + `PLAN-PR-046` |
-| **discarded** | 2 | one dedup, one **refuted** — neither dropped silently |
-
-**The 15 promotions** span `phase-6-finalize` (4), `plan-retrospective` (2), `phase-5-execute` (2),
-`ext-self-review-plan-marshall` (2), and one each of `manage-solution-outline`, `manage-change-ledger`,
-`persona-module-tester`, `script-shared`, `automatic-review`. ⭐ Two are worth naming: `-005` *reject a
-fix-task whose files fall outside its deliverable declared surface* is the **direct remedy for the 12-of-23
-scope drift** recorded above, and `-013` *completeness asserted again inside the fix for three
-asserted-completeness defects* is the recurring archetype re-firing inside its own repair.
-
-**The 3 folds, and the same-act surface obligation discharged on all of them:**
-
-| Message | → | Surface |
-|---|---|---|
-| `rpp-015` | `PLAN-PR-031` **D6** — a posted disposition is a promise nothing re-checks against what landed | +3 entries; `claimed_count` **8**, parser-verified |
-| `rpp-009` | `PLAN-PR-043` **D6 limb A** — the rate window is a retry policy, not a flat timeout | +3 entries; `claimed_count` **14** |
-| `truthful-signals-043` | split 3 ways as its sender intended — item 1 → `PLAN-PR-025B` **D10**, item 2 → `PLAN-PR-046` **D3**, item 3 → `PLAN-PR-043` **D6 limb B** | PR-025B +4, PR-046 +2 (`claimed_count` **11**), PR-043 covered above |
-
-⭐⭐ **`truthful-signals-043` item 2 is `e8bde7` reached from the other side** — an in-place republish read as
-`declined` — observed in TokenSheriff and **corroborated first-party** on our own PR #1388. Two independent
-observations of one mechanism. ⛔ The foreign PR ids are **LEADS**, not corroborated in this checkout.
-
-⛔ **Two stale-surface corrections made in the same pass**: `PLAN-PR-031` and `PLAN-PR-043` both declared
-`standards/pr-agent.md`, **retired by #1392** — corrected to `standards/cuioss-review-bot.md`. A spec
-declaring a path that no longer exists is a surface the disjointness gate cannot match.
-
-⚠ **`PLAN-PR-025B`'s surface remains unverifiable from the parser** — it still collapses onto `plan_id`
-`PLAN-PR-025` under the known 025-family defect recorded above. The fold's +4 entries were written, but
-`corpus surfaces` cannot attribute them. **Pre-existing, not introduced here.**
-
-⛔ **`rpp-016` was DISCARDED AS REFUTED, and the distinction matters**: it reported findings *"die with the
-plan directory — there is no carry-out route"*. The store is intact and all 8 hash ids resolved on the first
-read. Its *proposal* (a carry-out route) names a real gap; its *premise* (the data is lost) is false, and
-recording it as a live signal would have preserved the false half.
-
-
-### ⭐⭐ RESOLVED 2026-09-04 — THE EIGHT "UNREACHABLE" FINDINGS WERE RECOVERED; THE DATA SURVIVES ARCHIVAL
-
-PLAN-PR-038's landing reported eight findings *"pending in a store that just died with the plan
-directory"* with *"no route out of the archive"*. ⛔ **The premise was wrong in the way that matters: the
-store did not die.** `.plan/local/archived-plans/2026-09-03-review-packs-become-published-artifacts/artifacts/findings/`
-is intact and readable — 13 JSONL files — and **all 8 hash ids resolved on the first read**, every one at
-`resolution: pending`, `promoted: false`.
-
-⭐ **The missing thing was a ROUTE, not the data.** Recording that distinction matters: a future run that
-believes findings are destroyed by archival will stop looking. They are not. The carry-out is a read.
-
-| Hash | Type / sev | Component | Subject | Routed |
-|---|---|---|---|---|
-| `e8bde7` | bug / warn | `workflow-integration-github` | `head_sha_verified` can never be true for pr-agent ⇒ the `participated_stale` remedy is unreachable | **stays here** (PR/review) |
-| `18f362` | triage / warn | `tools-integration-ci` | CI payload cannot establish WHICH commit was verified — `head_sha` and `elapsed_sec` contradict | → `truthful-signals` `review-apparatus-025.md` |
-| `1d5140` | bug / warn | `phase-6-finalize` | `ci_verify` reports `persisted=false` / `persist_skipped_reason=head_sha` while it DID persist | → `-026.md` |
-| `1f0c43` | improvement / warn | `manage-architecture` | script startup ~18s cold makes subprocess budgets marginal under `-n auto` | → `-027.md` |
-| `5a5761` | improvement / warn | `manage-references` | `affected_files` under-records loop-back work ⇒ every derived finalize step under-scopes | → `-028.md` |
-| `c8e4a9` | **bug / ERROR** | `manage-build-server` | a `timeout` verdict kills the daemon job but **orphans the whole pytest tree** | → `-029.md` |
-| `d4501c` | improvement / warn | `phase-6-finalize` | `review_commitments reconcile` returns `verdict=clear` over `commitments_considered: 0` | → `-030.md` |
-| `79a483` | insight / info | `phase-6-finalize` | **two ADR proposals awaiting operator confirmation** | **operator action** |
-
-Routing follows the three-way rule — PR/review here, everything else not-ours to `truthful-signals`. Six
-were filed through the sanctioned `inbox write` channel as `sender_type: orchestrator`, so this is a
-**transfer, not an offer**: each is enumerable in that epic's own queue and no longer depends on this
-ledger being read.
-
-⭐⭐ **Three of the six independently reproduce archetypes already on record**, which raises their weight:
-`c8e4a9` confirms lesson `2026-09-02-21-002` **that housekeeping had just retained as NOT covered**, with
-live pids (a killed pytest master left ten xdist workers running); `5a5761` is a **second independent
-observation** of the `affected_files` under-recording defect; `d4501c` is the **vacuous-guard archetype**
-verbatim — a `clear` verdict over an empty population, the exact thing the standing rule
-*"every set-guarding detector must publish its population size"* exists to forbid.
-
-⛔ **`79a483` is why `adr-propose` is `skipped`, not `done`** — Step 5 needs an `AskUserQuestion` per
-proposal and a dispatched leaf cannot reach the operator. Two proposals await confirmation: (1) *a published
-artifact set is orthogonal — cross-cutting text is emitted exactly once*; (2) *a fan-out CLI parameter is a
-request, not a contract*. Decisive decision-log entry `abe291`.
+> ↪ Relocated to `settled.md` § "⭐⭐ RESOLVED 2026-09-04 — THE EIGHT “UNREACHABLE” FINDINGS WERE RECOVERED; THE DATA SURVIVES ARCHIVAL" — the findings were recovered and routed (one stays here as `e8bde7`, still tracked live under the head_sha_verified entries below).
 
 ### ⛔⛔ NEW 2026-09-04 (PLAN-PR-038 landing) — 100% COVERAGE OVER A SET THAT EXCLUDES THE WORK
 
@@ -1642,18 +1497,7 @@ unchanging input. **Same signature as PLAN-PR-043 D1** (trigger B cannot select 
 detector of its own — an iteration budget spent on a fixed input should be reported as
 non-convergence, never as exhaustion.
 
-### ✅ 2026-09-03 — a CONTROL that worked, recorded because this section is otherwise all failures
-
-From the same data-point. The operator minted the override through the designed mechanism: flipped
-the barrier to `ask` mode (whose *"Merge anyway"* branch is the documented `barrier-ask-override` mint
-site) and granted it **HEAD-bound** against `4f8b0733a` with the evidence recorded.
-
-⭐ **The gap-class binding was observed doing its job live**: `barrier-ask-override` read admissible
-for `review-barrier-gap`, while `pre-merge-consent` read **inadmissible** for that same class —
-refusing to let a routine merge confirmation authorize past a participation gap the operator never
-saw. That is the fail-closed guard behaving exactly as specified, and it is the matched positive
-control for the merge-authorization work PLAN-PR-015 landed. Do not let this section's density of
-defects imply the barrier is broadly unsound; this limb is confirmed working.
+> ↪ Relocated to `settled.md` § "✅ 2026-09-03 — a CONTROL that worked, recorded because this section is otherwise all failures" — the positive control is confirmed working and needs no further tracking.
 
 ### ⛔⛔ NEW 2026-09-02 — CodeRabbit FABRICATED a finding, with a committable suggestion attached
 
@@ -2289,95 +2133,9 @@ authority, and duplicating a defect write-up here is the source-of-truth-duplica
 
 ## Watches
 
-### ✅ WATCH CLOSED 2026-09-15 (operator decision) — ex "we are wholly Tier 1, and this epic's defect list IS the Tier 1 trade billed back to us"
+> ↪ Relocated to `settled.md` § "✅ WATCH CLOSED 2026-09-15 (operator decision) — ex “we are wholly Tier 1, and this epic's defect list IS the Tier 1 trade billed back to us”" — the tier-architecture question is decided; CodeRabbit stays required until pr-agent reaches comparable quality, per `review-practice.md` § 1.
 
-⛔⛔ **PREMISE REFUTED BY THE OPERATOR — do not re-open on the original framing.** The apparatus is already
-hybrid: **Tier 1** = CodeRabbit + Sourcery, **Tier 2** = pr-agent (`cuioss-review-bot`, org CI, our model
-ladder and charter), plus the in-house finalize self-review. "Adopt Tier 2" was never an open decision.
-
-⭐ **The only residual question was merge-gate composition, and it is DECIDED: CodeRabbit stays a REQUIRED
-reviewer until pr-agent achieves similar review quality — which the operator states is not yet the case.**
-No fallback, no bypass policy, no gate change; the unattended CodeRabbit recovery protocol stays in force
-unchanged. Config agrees (verified 2026-09-15): `.plan/marshal.json` `required_bots:
-"cuioss-review-bot,coderabbit"`, `optional_bots: "sourcery"`. **Reopen condition**: pr-agent review quality
-comparable to CodeRabbit's, **measured by the existing comparison protocol** —
-[`review-practice.md`](review-practice.md) § 1 (the comparative deficit rule and its four scoring outcomes,
-run at every post-merge PR revisit). ⛔ An earlier draft of this note claimed no such instrument existed —
-REFUTED by the operator; that protocol is it. Decision logged in `decision.log`.
-
-The original watch text is kept below for its evidence (the four vendor-runtime defects remain real and
-remain owned by their specs):
-
-From `next-level-001` (sibling orchestrator, relaying *Spec-Driven Production Grade Development in the
-Age of Vibe Coding*, Boonstra, May 2026). ⚠ **An outside document: the tier model is asserted, not
-measured, and the one supporting anecdote carries no figure.** The reason it is filed here anyway is
-that its diagnosis is checkable against **our own record**, and it holds.
-
-The model splits continuous automated review by **who owns the runtime and who writes the criteria** —
-**Tier 1** managed SaaS (*"you get the vendor's review opinions, not yours"*), **Tier 2** hybrid (a
-review skill committed to the repo, run by our CI via a coding-agent CLI in non-interactive mode, on a
-model we choose), **Tier 3** custom deployed agent with durable memory.
-
-⛔ **The argument that earns the watch**: every one of these is a property of NOT owning the runtime,
-and all four are already in this ledger — CodeRabbit's one-review-per-hour window that **resets on
-every trigger**; a refusal arriving as an **in-place comment edit** invisible to `movement_matched_bots`;
-a run **reporting a review that never ran** (`count_stored: 0` read as reviewed-and-clean); and a
-vendor-side `bot_kind` rename that invalidated consumer config fleet-wide with no propagation
-mechanism, leaving TokenSheriff permanently merge-blocked. ⇒ **None is fixable inside Tier 1**, and the
-standing rule that a CodeRabbit review is mandatory makes that dependency load-bearing on the merge path.
-
-⚠ **What it does NOT argue, kept because it is the honest half**: not leaving Tier 1 — the managed
-reviewers find real findings, and a self-owned reviewer grading its own repository has an independence
-problem a vendor does not. The credible reading is **Tier 2 ALONGSIDE Tier 1**, covering house-specific
-criteria and removing the single points of failure from the merge gate.
-
-⛔ **Filed as a Watch, not staged.** It is a scoping question the message deliberately does not settle,
-and it would be the largest architectural decision this epic has taken. **Surfaced to the operator
-2026-09-14; awaiting a decision.** Note the standing-rule collision if it is ever taken: the
-unattended-recovery protocol (≥90-min sleeps, max 10 waits, close-and-reopen) exists to survive a
-constraint Tier 2 does not have.
-
-### ✅ LANDING 2026-09-14 — `PLAN-PR-065` shipped #1491, 10/10, and the FOREIGN half landed as `pr-agent-settings` #64
-
-Full record: [`landings/PLAN-PR-065.md`](landings/PLAN-PR-065.md). Landing `complete: true`; `#1491`
-corroborated first-party (`ci pr view` → `merged`).
-
-⭐⭐ **The plan repaired its own instrument BEFORE using it** — D1 made `ci pr list` derive a complete
-population instead of a page (the exact defect this orchestrator hit at staging, when the verb returned
-30 rows against an operator-reported 46), and only then did D2 derive the population and D3 close
-against it. The gate that decided what to close was fixed before it decided anything.
-
-⛔ **The review coverage of #1491 is a recorded BYPASS, not a clean review.** Bot review was explicitly
-skipped by operator decision (empty rosters, `skip-bot-review`). `0 comments found` here means **nobody
-looked** — which is precisely the conflation `PLAN-PR-061` exists to end, and the ledger must never
-later read it as evidence of quality. ⚠ The retrospective's own `indeterminate` over a "roster of 3"
-was a **false alarm**: it reads rosters from `marshal.json` rather than the plan's step-params
-override. Transferred.
-
-⛔⛔ **Declared vs realized diverged in BOTH directions for the first time**: 19 declared against a
-13-path realized footprint, not nested — 5 realized-but-undeclared (including `branch-cleanup.md`, a
-fix task appended during execute) and **4 declared-but-never-realized** (the GitLab half of the
-`--limit` contract, declared in scope and never touched). ⇒ Fourth consecutive landing with the drift,
-and over-declaration is the more dangerous half for this epic's gate: a spec that declares what it will
-not touch makes the disjointness check sequence siblings behind files nothing ever claims.
-
-⭐⭐ **Promoted as lesson `2026-09-14-19-001`** — the run's best finding: D1 fixed a producer while
-`branch-cleanup.md`'s Safety Check, **the consumer gating a branch DELETION**, still read a bare count
-with no `--limit`. A page read as a population, in the exact code path the deliverable existed to
-correct. The scope-criterion validator caught it; **nothing in the outline's own success criterion
-would have.**
-
-⭐ **`PLAN-PR-039`'s precondition is DISCHARGED** — `packs/` exists on that repository's `main` for the
-first time. ⛔ It stays unemittable for a *different* reason, and its `prose` surface was deliberately
-NOT corrected: the exemption is named, and inventing a plan-marshall path to move the metric would
-destroy the foreign-only property that makes WS-02 disjoint by construction. Emitting it is an operator
-decision to accept a candidate the gate cannot check.
-
-**Drain 22/22 archived** — `-017` promoted; `-001`…`-016`, `-018`…`-020` transferred to
-`truthful-signals` as `review-apparatus-041.md` (an invocation-discipline cluster of **ten rejections in
-one run**, three of them the same mistake repeated after the correct form had been displayed — plus
-`-014`, which is NOT discipline but a real tooling defect: the generated executor rejected a flag the
-dispatched script declares, and two regenerations did not clear it); `next-level-001` is the Watch above.
+> ↪ Relocated to `settled.md` § "✅ LANDING 2026-09-14 — `PLAN-PR-065` shipped #1491, 10/10, and the FOREIGN half landed as `pr-agent-settings` #64" — the landing is complete and corroborated; its drift/coverage findings are transferred, not owed here.
 
 ### ⛔⛔ WATCH 2026-09-13 — the marker gate `PLAN-PR-046` just shipped is UNEXERCISED, and it fails CLOSED
 

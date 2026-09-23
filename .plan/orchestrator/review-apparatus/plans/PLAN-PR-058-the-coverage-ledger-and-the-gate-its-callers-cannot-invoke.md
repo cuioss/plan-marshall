@@ -155,7 +155,7 @@ it.
 - OBSERVED (first-party, 2026-09-15, orchestrator `gh api` read): `plan-marshall#1438` merged
   `2026-09-07T07:58:16Z`, carries no labels, and has zero reviews authored by `coderabbitai[bot]`.
   Confirm/refute at `repos/cuioss/plan-marshall/pulls/1438` and its `/reviews`.
-  - verdict: corroborated | checked_at: 7d82d5d90 | by: review-apparatus/cleanup | rescoped: n/a | evidence: Re-grounded at HEAD (was 7a028157e). The claim is a merged-PR historical record (plan-marshall#1438 merged 2026-09-07T07:58:16Z, no labels, zero coderabbitai[bot] reviews). An immutable GitHub fact: no commit in 7a028157e..HEAD can disturb it, and the gh api read that established it is not re-run this pass. Corroborated as a historical record, not as a fresh API read.
+  - verdict: corroborated | checked_at: 14d8f3ccd | by: review-apparatus/cleanup | rescoped: n/a | evidence: Immutable historical GitHub record (plan-marshall#1438 merged 2026-09-07T07:58:16Z, no labels, zero coderabbitai[bot] reviews); no commit in this window can disturb it. Only declared path that moved is branch-cleanup.md, whose sole change is the ADR duplicate-number gate - a landing-time ADR check, unrelated to whether a required bot reviewed #1438. Corroborated as a historical record; the gh api read is not re-run this pass.
 - OBSERVED (corpus pass 2026-09-15, not re-read first-party): 74 of 181 PRs carry a CodeRabbit refusal
   inside the summary comment, 71 as in-place edits, 54 alongside real reviews. Confirm/refute by
   re-sampling at D0 — this figure is the starting population, not the sample D0 publishes.

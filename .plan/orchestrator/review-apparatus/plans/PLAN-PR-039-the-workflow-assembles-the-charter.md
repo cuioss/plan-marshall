@@ -59,7 +59,7 @@ that same path.
   Generate Review Token, Authenticate to Google Cloud, Resolve credentials path, Record run start,
   Review pull request, Verify the reviewer actually produced a review. Read at
   `cuioss/cuioss-organization/.github/workflows/reusable-pr-agent-review.yml`.
-  - verdict: unverifiable | checked_at: 7d82d5d90 | by: review-apparatus/cleanup | rescoped: n/a | evidence: UNVERIFIABLE BY CONSTRUCTION, unchanged from the prior stamp and re-confirmed at HEAD: corpus surfaces still reports derivation_status prose, claimed_count 0, admits_disjointness_check false - the named exemption on this spec. Its surface is FOREIGN-REPO-ONLY (cuioss/cuioss-organization). A plan-marshall git diff cannot reach that population. An unreachable population, not a refutation and not a checked negative. Note: superseded by PLAN-PR-066, which absorbed it 2026-09-14.
+  - verdict: unverifiable | checked_at: 14d8f3ccd | by: review-apparatus/cleanup | rescoped: n/a | evidence: Foreign-only reasoning re-confirmed at HEAD: every declared path is in cuioss/cuioss-organization, unreachable by a plan-marshall git diff. Anchor has drifted: claim reads the workflow at v0.27.0 while this repo's pin moved v0.28.0 to v0.29.0 in this window. Not a refutation; the named exemption stands. Superseded by PLAN-PR-066.
 - OBSERVED: dotted-key environment variables are PR-Agent's documented configuration form, already
   used by this workflow for `VERTEXAI.VERTEX_PROJECT`, `VERTEXAI.VERTEX_LOCATION` and the three
   `github_action_config.*` toggles — read in the `Review pull request` step's `env:` block.
