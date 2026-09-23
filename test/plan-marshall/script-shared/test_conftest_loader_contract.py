@@ -268,7 +268,7 @@ def test_the_scan_finds_the_loader_call_sites(tree_scan):
     # This site is the sharpest available: its fourth positional is the literal
     # 'no-such-verb', so a walker reading that position as a module name would
     # register a command-line token instead of 'manage-findings'.
-    assert 'test_shared_harness.py' in registered['manage-findings'], registered['manage-findings']
+    assert 'test_shared_harness_parse_ns_no_seam.py' in registered['manage-findings'], registered['manage-findings']
 
     # No resolved name may look like a command-line token. A name-specific check
     # ('run' is absent) only catches the tokens it happens to list; two successive
