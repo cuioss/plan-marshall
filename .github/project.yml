@@ -13,7 +13,7 @@ github-automation:
 # `packs:` names domain artifacts only, so a project can neither select nor
 # deselect the spine — a spine a project could opt out of is a review charter a
 # project could drop, which is exactly the regression this design forbids.
-pr-agent:
+cuioss-review-bot:
   # The derived domain artifacts this repository selects. It is both a Python
   # codebase and a marketplace-tooling codebase, so it needs both domains' rules.
   packs:

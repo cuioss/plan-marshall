@@ -84,8 +84,100 @@ def test_read_runtime_target_detects_antigravity_from_env(tmp_path: Path, monkey
 def test_read_runtime_target_detects_claude_from_env(tmp_path: Path, monkeypatch):
     """read_runtime_target returns 'claude' when CLAUDE_CODE_SESSION_ID is set."""
     monkeypatch.delenv('ANTIGRAVITY_AGENT', raising=False)
+    monkeypatch.delenv('OPENCODE', raising=False)
+    monkeypatch.delenv('OPENCODE_PID', raising=False)
     monkeypatch.setenv('CLAUDE_CODE_SESSION_ID', 'test-session-id')
     assert bp.read_runtime_target(cwd=str(tmp_path)) == 'claude'
+
+
+def test_read_runtime_target_detects_opencode_from_env(tmp_path: Path, monkeypatch):
+    """read_runtime_target returns 'opencode' when OPENCODE is set."""
+    monkeypatch.delenv('ANTIGRAVITY_AGENT', raising=False)
+    monkeypatch.delenv('CLAUDE_CODE_SESSION_ID', raising=False)
+    monkeypatch.delenv('OPENCODE_PID', raising=False)
+    monkeypatch.setenv('OPENCODE', '1')
+    assert bp.read_runtime_target(cwd=str(tmp_path)) == 'opencode'
+
+
+def test_read_runtime_target_detects_opencode_pid_from_env(tmp_path: Path, monkeypatch):
+    """read_runtime_target returns 'opencode' when OPENCODE_PID is set."""
+    monkeypatch.delenv('ANTIGRAVITY_AGENT', raising=False)
+    monkeypatch.delenv('CLAUDE_CODE_SESSION_ID', raising=False)
+    monkeypatch.delenv('OPENCODE', raising=False)
+    monkeypatch.setenv('OPENCODE_PID', '12345')
+    assert bp.read_runtime_target(cwd=str(tmp_path)) == 'opencode'
+
+
+def test_read_runtime_target_antigravity_precedence_over_opencode(tmp_path: Path, monkeypatch):
+    """ANTIGRAVITY_AGENT wins over OPENCODE signals."""
+    monkeypatch.setenv('ANTIGRAVITY_AGENT', '1')
+    monkeypatch.setenv('OPENCODE', '1')
+    monkeypatch.setenv('CLAUDE_CODE_SESSION_ID', 'test-session-id')
+    assert bp.read_runtime_target(cwd=str(tmp_path)) == 'antigravity'
+
+
+def test_read_runtime_target_opencode_precedence_over_claude(tmp_path: Path, monkeypatch):
+    """OPENCODE wins over CLAUDE_CODE_SESSION_ID."""
+    monkeypatch.delenv('ANTIGRAVITY_AGENT', raising=False)
+    monkeypatch.setenv('OPENCODE', '1')
+    monkeypatch.setenv('CLAUDE_CODE_SESSION_ID', 'test-session-id')
+    assert bp.read_runtime_target(cwd=str(tmp_path)) == 'opencode'
+
+
+def test_read_runtime_target_opencode_env_takes_precedence_over_marshal(tmp_path: Path, monkeypatch):
+    """OPENCODE env signal (tier 1) wins over marshal.json config (tier 2)."""
+    plan = tmp_path / '.plan'
+    plan.mkdir()
+    (plan / 'marshal.json').write_text('{"runtime": {"target": "claude"}}')
+    monkeypatch.delenv('ANTIGRAVITY_AGENT', raising=False)
+    monkeypatch.delenv('CLAUDE_CODE_SESSION_ID', raising=False)
+    monkeypatch.delenv('OPENCODE_PID', raising=False)
+    monkeypatch.setenv('OPENCODE', '1')
+    assert bp.read_runtime_target(cwd=str(tmp_path)) == 'opencode'
+
+
+def test_cmd_get_root_auto_detect_returns_opencode_target(tmp_path: Path, monkeypatch):
+    """cmd_get_root auto-detect returns target opencode without --target or config."""
+    monkeypatch.delenv('ANTIGRAVITY_AGENT', raising=False)
+    monkeypatch.delenv('CLAUDE_CODE_SESSION_ID', raising=False)
+    monkeypatch.delenv('OPENCODE_PID', raising=False)
+    monkeypatch.setenv('OPENCODE', '1')
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(bp, 'get_plugin_root', lambda refresh, target: (Path('/opencode-root'), 'detected'))
+
+    result = bp.cmd_get_root(argparse.Namespace(refresh=False, target=None))
+
+    assert result['status'] == 'success'
+    assert result['target'] == 'opencode'
+
+
+def test_cmd_get_root_opencode_bypasses_targetless_cache(bp_env, tmp_path: Path, monkeypatch):
+    """cmd_get_root on OpenCode bypasses a targetless cached root via detection."""
+    cached = tmp_path / 'cached-root'
+    cached.mkdir()
+    bp.write_state({'plugin_root': str(cached)})
+    monkeypatch.delenv('ANTIGRAVITY_AGENT', raising=False)
+    monkeypatch.delenv('CLAUDE_CODE_SESSION_ID', raising=False)
+    monkeypatch.delenv('OPENCODE_PID', raising=False)
+    monkeypatch.setenv('OPENCODE', '1')
+    monkeypatch.chdir(tmp_path)
+    fresh = tmp_path / 'opencode-root'
+    fresh.mkdir()
+    calls: dict = {}
+
+    def fake_detect(target=None):
+        calls['target'] = target
+        return fresh
+
+    monkeypatch.setattr(bp, 'detect_plugin_root', fake_detect)
+
+    result = bp.cmd_get_root(argparse.Namespace(refresh=False, target=None))
+
+    assert calls.get('target') == 'opencode'
+    assert result['status'] == 'success'
+    assert result['plugin_root'] == str(fresh)
+    assert result['target'] == 'opencode'
+    assert result['source'] == 'detected'
 
 
 def test_read_runtime_target_env_takes_precedence_over_marshal(tmp_path: Path, monkeypatch):
