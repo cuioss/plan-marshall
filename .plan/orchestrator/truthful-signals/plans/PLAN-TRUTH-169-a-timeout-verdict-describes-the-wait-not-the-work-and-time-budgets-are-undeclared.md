@@ -137,6 +137,12 @@ each against the named surface at HEAD before scoping (verify-at-outline for all
 
 ## Dependencies and Sequencing
 
+## Folded Signals
+
+- Folded 2026-09-22 from `truth-161-adr-number-allocation-001.md` (PLAN-TRUTH-161 landing): CI-wait timeout findings recurred during finalize and were taken into account as external-infrastructure noise with a verify re-run as remedy. First-party corroboration for D1's triage treatment (a timeout is a no-verdict, never a plan defect) and D4's roll-up discipline. Adds no file surface.
+
+## Dependencies and Sequencing
+
 - Depends on: none.
 - ⚠ Shares build-outcome classification with `PLAN-TRUTH-150` (build and CI verdicts that mislead on the
   healthy path). Different members, same file family — **sequence, never pair**.

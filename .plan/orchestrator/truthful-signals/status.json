@@ -35,7 +35,7 @@
       "id": "PLAN-TRUTH-147",
       "slug": "a-lane-reports-green-yields-or-transitions-without-the-artifact-its-own-gate-requires",
       "workstream": "WS-01",
-      "status": "staged",
+      "status": "running",
       "plan_marshall_plan_id": "",
       "pr": "",
       "landing": "",
@@ -145,10 +145,10 @@
       "id": "PLAN-TRUTH-161",
       "slug": "adr-number-allocation-reads-the-local-tree-so-two-branches-collide-invisibly",
       "workstream": "WS-01",
-      "status": "running",
-      "plan_marshall_plan_id": "",
-      "pr": "",
-      "landing": "",
+      "status": "shipped",
+      "plan_marshall_plan_id": "truth-161-adr-number-allocation",
+      "pr": "1586",
+      "landing": "landings/PLAN-TRUTH-161.md",
       "superseded_by": ""
     },
     {
@@ -450,14 +450,23 @@
       "pr": "",
       "landing": "",
       "superseded_by": ""
+    },
+    {
+      "id": "PLAN-TRUTH-178",
+      "slug": "scope-creep-guard-emits-a-finding-type-the-ledger-rejects",
+      "workstream": "WS-01",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
     }
   ],
-  "resume_anchor": "2026-09-22: PLAN-TRUTH-161 running (operator-confirmed). N=1 R=1 - no further emissions until it lands. Next: await landing/PR, then analyze.",
+  "resume_anchor": "2026-09-22: PLAN-TRUTH-147 running (operator-confirmed). N=1 R=1 - slot full. Inbox drained empty (0 queued, no closures). 178 staged at tail. Next: await 147 landing/PR, then analyze.",
   "metadata": {
     "successor_of": "plan-optimization",
     "origin_note": "Spawned 2026-07-22 from plan-optimization staged residue + watches; running PLAN-23/35 remain in plan-optimization until landed, then that epic self-archives.",
     "parallelization_scope": "1"
   },
   "created": "2026-07-22T18:17:00Z",
-  "updated": "2026-09-22T18:43:11Z"
+  "updated": "2026-09-23T07:08:54Z"
 }

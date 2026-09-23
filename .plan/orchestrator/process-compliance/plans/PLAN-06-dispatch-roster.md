@@ -27,9 +27,9 @@ family. Lands on top of PLAN-05's settled envelope shapes.
 
 ## Claim Labels
 
-- OBSERVED: Producer vocabulary inconsistently enforced across two observations — read at `.plan/local/orchestrator/process-compliance/epic.md` § `Inherited Material F`
+- OBSERVED: Producer vocabulary inconsistently enforced across two observations — read at `.plan/orchestrator/process-compliance/epic.md` § `Inherited Material F`
   - verdict: unverifiable | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: process-compliance/cleanup | rescoped: n/a | evidence: epic.md Inherited Material F unchanged since prior check; enforcement behavior still not checkable by file read; unchanged
-- OBSERVED: Dispatch roster should carry each step's prompt skills — read at `.plan/local/orchestrator/process-compliance/epic.md` § `Inherited Material F`
+- OBSERVED: Dispatch roster should carry each step's prompt skills — read at `.plan/orchestrator/process-compliance/epic.md` § `Inherited Material F`
   - verdict: unverifiable | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: process-compliance/cleanup | rescoped: n/a | evidence: epic.md Inherited Material F unchanged since prior check; gap premise still names no implementing symbol; unchanged
 - HYPOTHESIS: The roster and vocabulary seams live beside the PLAN-05 dispatch paths — confirm/refute at `marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/dispatch-inline-split.md` § `Dispatched steps` (verify-at-outline; re-scoped 2026-09-18: not operations.md)
   - verdict: corroborated | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: process-compliance/cleanup | rescoped: n/a | evidence: dispatch-inline-split.md unchanged since 93bda90; Dispatched steps section still present at :13; re-confirmed
@@ -52,13 +52,13 @@ family. Lands on top of PLAN-05's settled envelope shapes.
 ## Hand-Off Command
 
 ```text
-/plan-marshall task="implement .plan/local/orchestrator/process-compliance/plans/PLAN-06-dispatch-roster.md"
+/plan-marshall task="implement .plan/orchestrator/process-compliance/plans/PLAN-06-dispatch-roster.md"
 ```
 
 ## Write-Boundary
 
 The plan implementing this spec touches only its own repository source and tests. It creates
-and edits NO file under `.plan/local/orchestrator/` other than its own
+and edits NO file under `.plan/orchestrator/` other than its own
 `inbox/{sender}-{seq}` message — the orchestrator owns every other ledger write — and reports
 its outcome through its PR and its inbox message. The inbox exception's qualifiers and the
 sole sanctioned write mechanism are stated in
