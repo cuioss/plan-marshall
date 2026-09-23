@@ -80,8 +80,6 @@ from _orchestrator_ledger import (
     LEDGER_LEGACY,
     LEDGER_OK,
     assemble_view,
-    is_valid_row_id,
-    row_path,
 )
 from epic_spec_parser import PLAN_ID_SEGMENT
 from file_ops import (
@@ -541,8 +539,14 @@ def _routing_reason(epic_root: Path, target_plan: str) -> str:
     assembled ledger POSITIVELY reads the target's row as running — the same
     predicate :func:`_running_plan_ids` enforces. Every could-not-read state is
     named rather than folded into *not running*: a legacy-layout ledger, an
-    absent or unreadable one, and a target whose own row file could not be read
-    are each a queueing reason of their own (ADR-019).
+    absent or unreadable one, and a target that may sit in a row file that could
+    not be read are each a queueing reason of their own (ADR-019).
+
+    :data:`ROUTING_TARGET_NOT_QUEUED` is a measured negative, so it is returned
+    only when every row file was read. When no readable row matches and a row file
+    could not be read, the target may be that row — addressed by its ``id`` or by
+    the ``plan_marshall_plan_id`` the unread file would carry — so the reason is
+    :data:`ROUTING_TARGET_ROW_UNREADABLE`, whatever form the address took.
     """
     ledger = assemble_view(epic_root)
     if ledger.state == LEDGER_LEGACY:
@@ -556,10 +560,8 @@ def _routing_reason(epic_root: Path, target_plan: str) -> str:
             return (
                 ROUTING_TARGET_RUNNING if str(row.get('status', '')) == RUNNING_STATUS else ROUTING_TARGET_NOT_RUNNING
             )
-    if is_valid_row_id(target_plan):
-        row_file = row_path(epic_root, target_plan).name
-        if any(str(row.get('file', '')) == row_file for row in ledger.unreadable_rows):
-            return ROUTING_TARGET_ROW_UNREADABLE
+    if ledger.unreadable_rows:
+        return ROUTING_TARGET_ROW_UNREADABLE
     return ROUTING_TARGET_NOT_QUEUED
 
 

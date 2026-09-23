@@ -2068,6 +2068,37 @@ class TestMigrateLayout:
         assert result['view_written'] is True
         assert regenerated['written'] is False
 
+    def test_a_rerun_with_a_present_view_still_strips_a_remaining_generated_block(self, plan_context):
+        """A GENERATED block left in ``epic.md`` is a tail trigger on its own.
+
+        The view is written first, so the absent-view trigger cannot fire: the
+        re-run finishing the tail is attributable to the block alone.
+        """
+        root = _migration_fixture(plan_context, 'migrate-epic')
+        write_ledger(root, json.loads((root / 'status.json').read_text(encoding='utf-8')))
+        cmd_regenerate_view(_variant(_REGENERATE_VIEW_ARGS, slug='migrate-epic'))
+        assert (root / 'queue-view.md').exists()
+
+        result = cmd_migrate_layout(_variant(_MIGRATE_ARGS, slug='migrate-epic'))
+
+        assert result['already_migrated'] is True
+        assert result['tail_completed'] is True
+        assert (root / 'epic.md').read_text(encoding='utf-8') == _EPIC_HEAD + _EPIC_MIDDLE + _EPIC_TAIL
+        assert [block['outcome'] for block in result['epic_blocks']] == ['removed', 'removed']
+
+    def test_duplicate_row_ids_refuse_the_whole_conversion(self, plan_context):
+        """Two ``plans[]`` rows sharing an id would share one row file, so neither is lost silently."""
+        root = _epic_dir(plan_context, 'migrate-dup-epic')
+        write_legacy_status(root, _fixture_doc([_make_plan('PLAN-01'), _make_plan('PLAN-01', status='running')]))
+        before = _snapshot(root)
+
+        result = cmd_migrate_layout(_variant(_MIGRATE_ARGS, slug='migrate-dup-epic'))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'unmigratable_rows'
+        assert [(row['index'], row['id']) for row in result['rejected_rows']] == [('1', 'PLAN-01')]
+        assert _snapshot(root) == before
+
     def test_a_rerun_without_generated_blocks_writes_an_absent_view(self, plan_context):
         """A migrated ledger with no GENERATED block and no view gets the view written."""
         root = _write_status(plan_context, 'migrate-noblock-epic', plans=[_make_plan('PLAN-01')])

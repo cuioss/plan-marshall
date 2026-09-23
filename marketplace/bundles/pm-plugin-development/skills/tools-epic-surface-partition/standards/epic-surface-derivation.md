@@ -416,8 +416,8 @@ is REPORTED rather than absorbed:
 | `degradation` | Cause |
 |---------------|-------|
 | `ledger_absent` | No header `status.json` beside the corpus |
-| `ledger_unreadable` | Present, but the header, the anchor, the `queue/` directory, or a single row file could not be read |
-| `ledger_malformed` | Read, but carrying no usable plan queue — a row is not an object or carries no plan id |
+| `ledger_unreadable` | Present, but the header, the anchor, the `queue/` directory, or a single row file could not be read — a row file that is not a JSON object included |
+| `ledger_malformed` | Read, but carrying no usable plan queue — a row carries no plan id |
 | `ledger_legacy_layout` | The ledger is still in the monolithic layout: its `status.json` carries the queue. The shared reader refuses it rather than reading it, so an unmigrated ledger is never reported as an absent or an empty one. The remedy is `orchestrator migrate-layout` |
 
 Read `available` FIRST. When it is `false` the terminal set is empty because

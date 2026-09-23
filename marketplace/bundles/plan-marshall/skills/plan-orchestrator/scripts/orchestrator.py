@@ -129,7 +129,6 @@ ledger. No implementation-side capability (no build/CI/source verbs) exists here
 
 import argparse
 import importlib.util
-import json
 import os
 import re
 import shutil
@@ -171,13 +170,14 @@ from _orchestrator_ledger import (
     LEDGER_ABSENT,
     LEDGER_LEGACY,
     LEDGER_OK,
+    LEDGER_UNREADABLE,
     LedgerRead,
     assemble_view,
     create_row,
-    detect_legacy,
     legacy_layout_error,
     migrate_document,
     mutate_row,
+    probe_header,
     queue_order_key,
     read_header,
     read_rows,
@@ -362,6 +362,16 @@ STATUS_DOC_ABSENT = 'absent'
 STATUS_DOC_NON_OBJECT = 'non_object'
 STATUS_DOC_OBJECT = 'object'
 STATUS_DOC_LEGACY = 'legacy_layout'
+
+#: The ledger header read states (``_orchestrator_ledger``) mapped onto the
+#: write-side vocabulary above. An unreadable header — unreadable bytes, bytes
+#: that do not parse, or a non-object — is one write-side fact: not an object.
+_HEADER_STATE_TO_STATUS_DOC = {
+    LEDGER_ABSENT: STATUS_DOC_ABSENT,
+    LEDGER_UNREADABLE: STATUS_DOC_NON_OBJECT,
+    LEDGER_LEGACY: STATUS_DOC_LEGACY,
+    LEDGER_OK: STATUS_DOC_OBJECT,
+}
 
 # --- corpus group ----------------------------------------------------------
 
@@ -1104,49 +1114,18 @@ def _probe_status_document(slug: str) -> dict[str, str]:
     or ``unparseable`` / ``unreadable`` when no type could be read at all) and
     ``detail`` (the evidence behind the verdict, so the operator sees what is in
     the file).
+
+    The file is read through :func:`_orchestrator_ledger.probe_header`; this
+    function only maps the ledger read states onto the write-side vocabulary. An
+    EMPTY object maps to :data:`STATUS_DOC_OBJECT` deliberately: ``{}`` is a
+    valid, if bare, per-concern header, so a write proceeds against it.
     """
-    path = _epic_root(slug) / FILE_STATUS
-    try:
-        raw = path.read_text(encoding='utf-8')
-    except FileNotFoundError:
-        return {
-            'state': STATUS_DOC_ABSENT,
-            'observed_type': '',
-            'detail': f'{path} does not exist',
-        }
-    except OSError as exc:
-        # Something occupies the path but could not be read (a directory,
-        # permissions, I/O). Nothing was parsed, so no type may be named — and
-        # the file is emphatically NOT absent, so it must not be reported as one.
-        return {
-            'state': STATUS_DOC_NON_OBJECT,
-            'observed_type': 'unreadable',
-            'detail': f'{path} could not be read: {exc}',
-        }
-    try:
-        parsed = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        return {
-            'state': STATUS_DOC_NON_OBJECT,
-            'observed_type': 'unparseable',
-            'detail': f'{path} does not parse as JSON: {exc}',
-        }
-    if not isinstance(parsed, dict):
-        observed = type(parsed).__name__
-        return {
-            'state': STATUS_DOC_NON_OBJECT,
-            'observed_type': observed,
-            'detail': f'{path} parses to a {observed} at its top level, not an object',
-        }
-    if detect_legacy(parsed):
-        return {
-            'state': STATUS_DOC_LEGACY,
-            'observed_type': 'dict',
-            'detail': f'{path} still carries the queue or the resume anchor',
-        }
-    # An EMPTY object reaches here deliberately: ``{}`` is a valid, if bare,
-    # per-concern header, so a write proceeds against it.
-    return {'state': STATUS_DOC_OBJECT, 'observed_type': 'dict', 'detail': ''}
+    probe = probe_header(_epic_root(slug))
+    return {
+        'state': _HEADER_STATE_TO_STATUS_DOC[probe.state],
+        'observed_type': probe.observed_type,
+        'detail': probe.detail,
+    }
 
 
 def _header_refusal(slug: str, probe: dict[str, str]) -> dict[str, Any] | None:
@@ -1951,10 +1930,10 @@ def cmd_resume_summary(args: argparse.Namespace) -> dict[str, Any]:
     beside ``summary``: ``count_divergences[]`` (a count the block claims that
     does not match its derivation from the ledger), ``contradictions[]`` (two
     mutually-exclusive claims inside one rendering), ``shared_slugs[]`` (N
-    queued rows sharing one slug, with row identities plus the shared value),
-    and ``epic_slug_matches[]`` (any queued row whose slug equals the epic slug —
-    the single-row mis-fill the N-sharing check misses; across machines this is
-    also where a duplicate slug staged on two machines surfaces). All four
+    queued rows sharing one slug, with row identities plus the shared value;
+    across machines this is also where a duplicate slug staged on two machines
+    surfaces), and ``epic_slug_matches[]`` (any queued row whose slug equals the
+    epic slug — the single-row mis-fill the N-sharing check misses). All four
     REPORT and none mutates. Each list rides with the population it was computed
     over, so a zero states which zero it is. An unscannable queue resolves each
     slug arm to ``indeterminate``, never to a checked negative.

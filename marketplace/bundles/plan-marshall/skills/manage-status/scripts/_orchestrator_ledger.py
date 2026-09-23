@@ -212,8 +212,8 @@ class MigratedLedger:
     """The per-concern content a legacy document converts into.
 
     ``rejected_rows`` names every ``plans[]`` entry that could not become a row
-    file — a non-mapping entry, or an id outside the plan-id grammar — so a
-    conversion never drops a row silently.
+    file — a non-mapping entry, an id outside the plan-id grammar, or an id an
+    earlier entry already holds — so a conversion never drops a row silently.
     """
 
     header: dict[str, Any]
@@ -245,6 +245,7 @@ def migrate_document(document: Mapping[str, Any]) -> MigratedLedger:
     if not isinstance(plans, list):
         rejected.append({'index': '', 'id': '', 'reason': f'plans is a {type(plans).__name__}, not a list'})
         plans = []
+    first_index: dict[str, int] = {}
     for index, row in enumerate(plans):
         if not isinstance(row, dict):
             rejected.append({'index': str(index), 'id': '', 'reason': f'row is a {type(row).__name__}, not an object'})
@@ -254,6 +255,15 @@ def migrate_document(document: Mapping[str, Any]) -> MigratedLedger:
                 {'index': str(index), 'id': str(row.get('id', '')), 'reason': 'id does not match the plan-id grammar'}
             )
             continue
+        row_id = row['id']
+        if row_id in first_index:
+            # Both rows would be written to the same row file, the later silently
+            # overwriting the earlier, so the duplicate is refused rather than lost.
+            rejected.append(
+                {'index': str(index), 'id': row_id, 'reason': f'id duplicates the row at index {first_index[row_id]}'}
+            )
+            continue
+        first_index[row_id] = index
         rows.append(_ordered_row({**row, 'seq': index + 1}))
     return MigratedLedger(header=header, anchor=anchor, rows=tuple(rows), rejected_rows=tuple(rejected))
 
@@ -309,8 +319,23 @@ class LedgerRead:
     detail: str = ''
 
 
-def read_header(root: Path) -> tuple[str, dict[str, Any], str]:
-    """Read the header, returning ``(state, header, detail)``.
+@dataclass(frozen=True)
+class HeaderRead:
+    """One read of the epic header.
+
+    ``observed_type`` is the top-level JSON type name the file parsed to, or
+    ``unparseable`` / ``unreadable`` when no type could be read at all, and empty
+    when the file is absent — so a refusal can name what is in the file.
+    """
+
+    state: str
+    header: dict[str, Any] = field(default_factory=dict)
+    detail: str = ''
+    observed_type: str = ''
+
+
+def probe_header(root: Path) -> HeaderRead:
+    """Read the header into a :class:`HeaderRead`.
 
     ``state`` is one of :data:`LEDGER_ABSENT`, :data:`LEDGER_UNREADABLE`,
     :data:`LEDGER_LEGACY` and :data:`LEDGER_OK`. The header dict is populated for
@@ -321,18 +346,36 @@ def read_header(root: Path) -> tuple[str, dict[str, Any], str]:
     try:
         raw = path.read_text(encoding='utf-8')
     except FileNotFoundError:
-        return LEDGER_ABSENT, {}, f'{path} does not exist'
+        return HeaderRead(state=LEDGER_ABSENT, detail=f'{path} does not exist')
     except OSError as exc:
-        return LEDGER_UNREADABLE, {}, f'{path} could not be read: {exc}'
+        return HeaderRead(
+            state=LEDGER_UNREADABLE, detail=f'{path} could not be read: {exc}', observed_type='unreadable'
+        )
     try:
         parsed = json.loads(raw)
     except json.JSONDecodeError as exc:
-        return LEDGER_UNREADABLE, {}, f'{path} does not parse as JSON: {exc}'
+        return HeaderRead(
+            state=LEDGER_UNREADABLE, detail=f'{path} does not parse as JSON: {exc}', observed_type='unparseable'
+        )
+    observed = type(parsed).__name__
     if not isinstance(parsed, dict):
-        return LEDGER_UNREADABLE, {}, f'{path} parses to a {type(parsed).__name__}, not an object'
+        return HeaderRead(
+            state=LEDGER_UNREADABLE, detail=f'{path} parses to a {observed}, not an object', observed_type=observed
+        )
     if detect_legacy(parsed):
-        return LEDGER_LEGACY, parsed, f'{path} still carries the queue or the resume anchor'
-    return LEDGER_OK, parsed, ''
+        return HeaderRead(
+            state=LEDGER_LEGACY,
+            header=parsed,
+            detail=f'{path} still carries the queue or the resume anchor',
+            observed_type=observed,
+        )
+    return HeaderRead(state=LEDGER_OK, header=parsed, observed_type=observed)
+
+
+def read_header(root: Path) -> tuple[str, dict[str, Any], str]:
+    """Read the header, returning ``(state, header, detail)`` — :func:`probe_header` without the type."""
+    probe = probe_header(root)
+    return probe.state, probe.header, probe.detail
 
 
 def read_anchor(root: Path) -> tuple[str, str]:

@@ -570,8 +570,9 @@ def read_plan_lifecycle(epic_dir: Path) -> PlanLifecycle:
 
     Every way the ledger can fail to yield a queue is a STATED degradation, never
     an empty one (ADR-019): an absent header (``ledger_absent``); a header,
-    queue directory or row file that could not be read (``ledger_unreadable``);
-    a row that is not a usable object (``ledger_malformed``); and a ledger still
+    queue directory or row file that could not be read, including a row file that
+    is not a JSON object (``ledger_unreadable``); a row that carries no plan id
+    (``ledger_malformed``); and a ledger still
     in the monolithic layout (``ledger_legacy_layout``), which the shared reader
     refuses rather than reads — so an unmigrated ledger is never reported as an
     absent or an empty one.
@@ -597,8 +598,6 @@ def read_plan_lifecycle(epic_dir: Path) -> PlanLifecycle:
 
     rows: list[LifecycleRow] = []
     for entry in queue:
-        if not isinstance(entry, dict):
-            return PlanLifecycle(str(ledger_path), False, DEGRADED_LEDGER_MALFORMED)
         plan_id = entry.get(LEDGER_ROW_ID_KEY)
         status = entry.get(LEDGER_ROW_STATUS_KEY)
         if not isinstance(plan_id, str) or not plan_id:

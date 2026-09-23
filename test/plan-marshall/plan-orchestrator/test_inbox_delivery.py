@@ -436,6 +436,25 @@ class TestLegacyLayoutQueuesRatherThanDelivers:
         }
         assert reasons <= _inbox.ROUTING_REASONS
 
+    def test_a_target_addressed_by_plan_id_in_an_unreadable_row_is_not_a_measured_absence(self, plan_context, tmp_path):
+        """An unread row file may hold the target, so the negative is unconfirmed.
+
+        The target is addressed by the ``plan_marshall_plan_id`` its row carries,
+        not by the row id the file is named after, so no file name identifies it.
+        With that row unreadable, ``target_not_in_queue`` would be a measured
+        negative over a row nobody read; the message queues under the unconfirmed
+        reason instead.
+        """
+        cmd_scaffold(_SCAFFOLD_ARGS)
+        _set_plan_queue(plan_context, [(ADDRESSEE, RUNNING_STATUS)])
+        (_epic_dir(plan_context) / 'queue' / 'PLAN-01.json').write_text('{not json', encoding='utf-8')
+
+        written = _write(tmp_path, target_plan=ADDRESSEE, body='aimed at an unread row', name='a.md')
+
+        assert written['destination'] == WRITE_DESTINATION_QUEUE
+        assert written['routing_reason'] == _inbox.ROUTING_TARGET_ROW_UNREADABLE
+        assert written['routing_reason'] != _inbox.ROUTING_TARGET_NOT_QUEUED
+
 
 class TestTheRoundTripWalksAllThreeDeliveryStates:
     def test_never_then_waiting_then_taken_with_a_bystander_held_at_never(self, plan_context, tmp_path):
