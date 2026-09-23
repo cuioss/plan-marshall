@@ -1114,7 +1114,6 @@ def test_a_page_without_a_readable_has_next_page_is_incomplete(monkeypatch):
     assert result['status'] == 'success', result
     assert result['enqueued'] == 'indeterminate'
     assert result['enqueue_unobserved_reason'] == 'entries_incomplete'
-    assert result['enqueue_unobserved_reason'] != _github_pr.ENQUEUE_UNOBSERVED_NOT_LISTED
     assert result['enqueue_observation'] == (
         'mergeQueue(branch: main).entries page carried no readable hasNextPage after 2 entries'
     )
