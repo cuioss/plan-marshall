@@ -34,7 +34,7 @@ _FNMATCH_CALL = re.compile(r"\bfnmatch\.(?:fnmatch|filter)\s*\([^)]*?(['\"])([^'
 _RAW_REGEX_LITERAL = re.compile(r"\br(['\"])([^'\"]*[\^$.*+?\[\](){}|\\][^'\"]*)\1")
 
 # User-facing string detection
-_DEF_OR_CLASS = re.compile(r'^\s*(def|class)\s+\w+')
+_DEF_OR_CLASS = re.compile(r'^\s*(?:async\s+def|def|class)\s+\w+')
 _TRIPLE_QUOTE = re.compile(r"""^\s*(['"]{3})(.*)$""")
 _PRINT_CALL = re.compile(r"\bprint\s*\(\s*(?:r|f|rf|fr)?(['\"])(.*?)\1")
 _ARGPARSE_FIELD = re.compile(r"\b(description|help|epilog)\s*=\s*(?:r|f|rf|fr)?(['\"])(.*?)\2")

@@ -44,7 +44,7 @@
       "workstream": "WS-03",
       "status": "running",
       "plan_marshall_plan_id": "carried-defects-and-watches-closure",
-      "pr": "",
+      "pr": "#1602",
       "landing": ""
     }
   ],
@@ -53,5 +53,5 @@
     "parallelization_scope": "1"
   },
   "created": "2026-08-23T21:32:44Z",
-  "updated": "2026-09-23T15:37:41Z"
+  "updated": "2026-09-23T20:08:58Z"
 }

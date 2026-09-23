@@ -40,7 +40,7 @@ create_marshal_json = functools.partial(
 create_run_config = functools.partial(_create_run_config, nest_in_plan_dir=False)
 
 
-def create_nested_marshal_json(fixture_dir: Path) -> Path:
+def create_nested_marshal_json(fixture_dir: Path, minimal: bool = False) -> Path:
     """Create marshal.json with nested skill_domains structure.
 
     System domain contains defaults and optionals.
@@ -48,7 +48,19 @@ def create_nested_marshal_json(fixture_dir: Path) -> Path:
 
     NOTE: Profiles (core, implementation, module_testing, quality) are NOT stored
     in marshal.json - they are loaded from extension.py at runtime.
+
+    When minimal=True, writes the minimal shape (system defaults only) — the
+    single surviving construction site for both nested and minimal callers.
     """
+    if minimal:
+        config = {
+            'skill_domains': {'system': {'defaults': ['plan-marshall:persona-plan-marshall-agent'], 'optionals': []}},
+            'system': {'retention': {'logs_days': 1}},
+            'plan': {'defaults': {}},
+        }
+        marshal_path = fixture_dir / 'marshal.json'
+        marshal_path.write_text(json.dumps(config, indent=2))
+        return marshal_path
     config = {
         'skill_domains': {
             'system': {

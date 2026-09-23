@@ -193,7 +193,34 @@ def _detect_regexes(added: list[tuple[str, int, str]]) -> list[dict[str, Any]]:
 def _detect_user_facing_strings(added: list[tuple[str, int, str]]) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     prev_def_or_class = False
+    prev_path: str | None = None
+    seen_def_per_path: set[str] = set()
+    # Open multiline module docstring: (path, quote, body lines, opening lineno).
+    mod_span: tuple[str, str, list[str], int] | None = None
+
+    def _flush_mod_span() -> None:
+        nonlocal mod_span
+        if mod_span is not None:
+            span_path, _quote, body_lines, open_lineno = mod_span
+            text = ' '.join(line.strip() for line in body_lines if line.strip())
+            out.append(
+                {
+                    'file': span_path,
+                    'line': open_lineno,
+                    'context': 'module_docstring',
+                    'text': _truncate(text, 200),
+                }
+            )
+            mod_span = None
+
     for path, lineno, content in added:
+        if path != prev_path:
+            # Header state never crosses a file boundary: a trailing
+            # def/class header in one file must not classify the next
+            # file's opening lines as its docstring.
+            prev_def_or_class = False
+            _flush_mod_span()
+            prev_path = path
         if path.endswith('.md'):
             m_h = _MD_HEADING.match(content)
             if m_h is not None:
@@ -225,7 +252,9 @@ def _detect_user_facing_strings(added: list[tuple[str, int, str]]) -> list[dict[
             prev_def_or_class = False
             continue
         if _DEF_OR_CLASS.match(content):
+            _flush_mod_span()
             prev_def_or_class = True
+            seen_def_per_path.add(path)
             continue
         if prev_def_or_class:
             m_t = _TRIPLE_QUOTE.match(content)
@@ -240,6 +269,38 @@ def _detect_user_facing_strings(added: list[tuple[str, int, str]]) -> list[dict[
                     }
                 )
                 prev_def_or_class = False
+                continue
+        # Module docstring: triple-quote before any def/class in the added
+        # window for this path. Multiline opens collect the body across the
+        # following added lines until the closing delimiter so the common
+        # standalone-opening-quote form is covered, not just the tail of the
+        # opening line.
+        if path not in seen_def_per_path and not prev_def_or_class:
+            if mod_span is not None:
+                _span_path, span_quote, span_body, _open_lineno = mod_span
+                if span_quote in content:
+                    span_body.append(content.split(span_quote, 1)[0])
+                    _flush_mod_span()
+                else:
+                    span_body.append(content)
+                continue
+            m_mod = _TRIPLE_QUOTE.match(content)
+            if m_mod is not None:
+                mod_quote = m_mod.group(1)
+                mod_tail = m_mod.group(2)
+                if mod_quote in mod_tail:
+                    out.append(
+                        {
+                            'file': path,
+                            'line': lineno,
+                            'context': 'module_docstring',
+                            'text': _truncate(mod_tail.split(mod_quote, 1)[0], 200),
+                        }
+                    )
+                elif mod_tail.strip():
+                    mod_span = (path, mod_quote, [mod_tail], lineno)
+                else:
+                    mod_span = (path, mod_quote, [], lineno)
                 continue
         prev_def_or_class = False
         for m in _PRINT_CALL.finditer(content):
@@ -270,6 +331,7 @@ def _detect_user_facing_strings(added: list[tuple[str, int, str]]) -> list[dict[
                     'text': _truncate(m.group(2), 200),
                 }
             )
+    _flush_mod_span()
     return out
 
 

@@ -35,9 +35,9 @@ with every remaining gap a logged, visible exemption rather than a silent slip.
      outside the markers — never inside them. -->
 
 <!-- BEGIN GENERATED: resume-summary -->
-**Resume anchor**: Drain 2026-09-23: 6/6 consumed (2 defects, PLAN-06 repoint, 2 folds); module-budget parked needs operator call.
+**Resume anchor**: Drain 2026-09-23: 12/12 consumed (2 new defects, PLAN-06 repoint, folds); 2 operator dispositions owed (module-budget park, plan-06-004 outline). Next: land ledger.
 **Phase**: orchestrating
-**Inbox (derived)**: 0 queued, 103 archived
+**Inbox (derived)**: 0 queued, 115 archived
 **Queue** (staged, in order):
 1. PLAN-08 (WS-03)
 2. PLAN-09 (WS-03)
@@ -358,9 +358,30 @@ recipe-fix-argparse-rejection remediation carrier.
   compare before/after per dispatch; alternatively a quiesce rule pausing
   ledger reconciliation at phase boundaries. Plan parked at 2-refine, no
   transition taken — compliantly.
+- **Recurrences drain 2026-09-23 (folded here, still open).** `plan-06-003`
+  (PLAN-06 stopped at the post-refine gate on concurrent ledger churn,
+  asking); `truth-147-002` (post-init gate fired on the run's own sanctioned
+  inbox filing — compliance self-incriminates); `truth-179-003` (post-init
+  gate on concurrent dirt + own filings + the untracked staged spec itself,
+  disposition requested before 2-refine). Same ask in all three: attribute or
+  scope the gate, or grant an explicit advance-with-dirt-named disposition.
 - **Footprint helpers read stale local base (drain 2026-09-21,
   `test-fidelity-rules-follow-up-009.md`, unowned).** Should resolve the merge base;
   candidate future staging.
+- **Scope-creep guard unsatisfiable on worktree plans (drain 2026-09-23,
+  `implement-opencode-enforcement-parity-005.md`, unowned).** Two independent
+  defects: the diff base (`plan_creation_sha` at init) predates worktree
+  materialization, so upstream merges count as residual (49 files, zero
+  plan-authored); and the emission type `scope_creep_warning` is not a member
+  of `FINDING_TYPES`, so a genuine hit can never be persisted — the guard can
+  only fail. Candidate future staging (merge-base basis + registered emission
+  type); documented knobs (re-anchor sha, threshold) are the interim unblocks.
+- **q-gate §2.2 unsatisfiable on the light lane (drain 2026-09-23,
+  `implement-opencode-enforcement-parity-004.md`, unowned).** The 4-plan leaf
+  ran §§2.1–2.7 over a dispatched subset of §§2.11/2.12 (subset not enforced
+  as hard scope), and §2.2 assessments exist only on the deep lane — any
+  light-lane plan flags every file permanently. Candidate future staging
+  (subset-scope enforcement + light-lane carve-out).
 - **PLAN-05 run filings (drain 2026-09-22,
   `implement-dispatch-envelopes-process-compliance-001/002.md`, unowned).**
   Six actionable items, all candidate future staging: `request.md` Step 5.2
@@ -382,6 +403,10 @@ recipe-fix-argparse-rejection remediation carrier.
   here).** Pre-init direct `.plan` reads again, self-reported, reads-only —
   third instance of the pattern. No new defect; the pattern's home remains
   the persona-conduct surface (PLAN-14) and the opencode guard (PLAN-15).
+- **Recurrence drain 2026-09-23 (`carried-defects-and-watches-closure-002.md`
+  item 1, folded here).** Structured-queries-first bypass (straight to
+  Grep/Glob, minor, no impact observed) — fourth instance class of the
+  read-path discipline pattern.
 - **Deliberate process bypass for speed, opencode (paste 2026-09-22,
   `run-3-carve-2-tools-permission-fix`, test-quality PLAN-181 carve 2, unowned).**
   Executing agent confesses delivering D1–D4 + PR #1582 while bypassing the
@@ -496,6 +521,16 @@ recipe-fix-argparse-rejection remediation carrier.
   `.plan/orchestrator/` in place. Same message corroborates the PLAN-10 D2
   re-opening with a `source_id` present, and the ledger-gate family from the
   plan side; both folded into their homes, no duplicate defect.
+- **PLAN-06 repoint cross-epic recurrence (drain 2026-09-23,
+  `truth-147-lane-reports-green-001.md` item 1, observed).** Truthful-signals
+  PLAN-TRUTH-147's hand-off emits the same stale `.plan/local/` path our
+  PLAN-06 carried — foreign epic, not edited here; their drain's business.
+- **PLAN-183 remediation closed (drain 2026-09-23,
+  `carried-defects-and-watches-closure-001/002.md`, observed).** Worktree
+  deviation remediated via the sanctioned stash-move path (PR #1602 from the
+  worktree, plan-reported); quality-gate churn remediated via clean-before
+  checkout; metrics gaps recorded not backfilled. Stale-lead re-derivations
+  and task-contract frictions noted as that run's business.
 - **PLAN-05 shipped 2026-09-22 (PR #1583, squash 40cacf7d).** All 4 deliverables
   per spec; landing record at `landings/PLAN-05.md`. Landing message was
   narrative-only (incomplete-landing defect above). Owed per landing:

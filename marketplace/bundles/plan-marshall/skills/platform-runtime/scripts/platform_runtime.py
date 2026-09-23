@@ -230,6 +230,45 @@ _TARGET_BOOTSTRAP_LIBS: dict[str, tuple[str, ...]] = {
     name: rec['bootstrap_libs'] for name, rec in _TARGET_RECORDS.items()
 }
 
+#: Canonical operation registry for _dispatch. Single construction site for
+#: the operation strings the router handles; tests drive from this instead
+#: of maintaining a hardcoded mirror.
+OPERATION_REGISTRY: tuple[str, ...] = (
+    'project initial-setup',
+    'project install-hook',
+    'layout skill-roots',
+    'layout bundle-cache-root',
+    'harness bash-timeout-ceiling',
+    'session capture',
+    'session render-title',
+    'session push-title-token',
+    'session bind',
+    'session resolve-plan',
+    'session doctor',
+    'session teardown',
+    'session reload-directive',
+    'permission configure',
+    'permission analyze',
+    'permission fix',
+    'permission ensure-wildcards',
+    'permission ensure-steps',
+    'permission web-analyze',
+    'permission web-apply',
+    'metrics capture',
+    'metrics normalized-tokens',
+    'chat extract-signal',
+    'subagent dispatch',
+    'wait for',
+    'health-check',
+    'runtime-info',
+)
+
+
+def list_operations() -> tuple[str, ...]:
+    """Return the canonical operation registry for _dispatch."""
+    return OPERATION_REGISTRY
+
+
 _PLAN_DIR_NAME = os.environ.get('PLAN_DIR_NAME', '.plan')
 
 

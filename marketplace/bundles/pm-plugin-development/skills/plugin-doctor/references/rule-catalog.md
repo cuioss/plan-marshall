@@ -684,7 +684,7 @@ The three build-failing (`severity: error`) rules of the `test-conventions` scop
 | Rule ID | Intent | False-positive policy | Suppression |
 |---------|--------|-----------------------|-------------|
 | `unique-fixture-basenames` | Reject a helper module under the test tree whose basename is generic (`_fixtures.py`, `_helpers.py`, `_common.py`) or collides across sibling directories — pytest keys `sys.modules` on the basename alone, so one of a colliding pair silently wins | Only `_`-prefixed modules are in scope; dunder files are excluded. A collision reports **both** paths so the author chooses which to rename | Not provided — the failure mode is a silent import-surface swap |
-| `subprocess-pythonpath` | Flag `subprocess.run([sys.executable, ...])` under the test tree that does not propagate `PYTHONPATH`, so a spawned script cannot resolve marketplace imports in a clean CI environment | AST-based, so it survives quoting and whitespace variation. Calls routed through `conftest.run_script(...)` are exempt, as are calls whose `env=` introduces `PYTHONPATH` | Not provided |
+| `subprocess-pythonpath` | Flag `subprocess.run([sys.executable, ...])` under the test tree that neither routes through `conftest.run_script(...)` nor proves `PYTHONPATH` propagation — an inline `env=` dict carrying the key, a visible binding resolving to one, a call-built env, or a deliberate scrub; `-m` invocations without a repo import are out of scope | AST-based, so it survives quoting and whitespace variation. A bare `env=name` with no visible binding is flagged: the name alone proves nothing | Not provided |
 | `identifier-validator-corpus` | Assert that each registered identifier validator's regex full-matches every ID its `list_command` returns, so a validator cannot drift from the data it validates | Driven entirely by the Rule 3 registry. **An empty registry is a documented no-op**, which is its current live state — see the note below | Not provided |
 
 **The Rule 3 registry currently ships empty**, so `identifier-validator-corpus` reports zero findings over this tree. That zero is a no-op rather than a clean result, and the two are not the same claim: the rule fires only against pairs explicitly listed in `standards/doctor-test-conventions.md` § "Rule 3 — Validator Registry". Populating it requires, per entry, a validator whose regex constant is AST-extractable and a `list_command` that emits TOON `id:` lines — so registering a pair is a deliberate act with a runnable command behind it, not a table edit. Until an entry exists, read this rule's `0` as "not asked", never as "asked and clean".
@@ -717,6 +717,66 @@ A match inside an **inline literal** — a `` `…` `` / ` ``…`` ` code span, 
 **Both discriminators are load-bearing**, not performance choices — see the false-positive policy above.
 
 **Recommended fix**: Rewrite the docstring to state the invariant in the present tense. Where the invariant is genuinely non-obvious, add a second paragraph explaining *why it is load-bearing* — which survives the next refactor, unlike the citation. `plan-marshall:persona-module-tester` § "Test Docstring Content" carries a worked before/after.
+
+### unique-fixture-basenames
+
+**Rule ID**: `unique-fixture-basenames`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_test_conventions.py`
+
+**Scope**: helper modules under `--test-root` (default `test/`).
+
+**Intent**: Reject generic or colliding helper basenames so pytest's basename-keyed import surface cannot silently swap one helper for another.
+
+### subprocess-pythonpath
+
+**Rule ID**: `subprocess-pythonpath`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_test_conventions.py`
+
+**Scope**: `*.py` under `--test-root` invoking `subprocess.run([sys.executable, ...])`.
+
+**Intent**: Require PYTHONPATH propagation in spawned scripts; `conftest.run_script(...)` or an `env=` introducing PYTHONPATH satisfies it.
+
+### identifier-validator-corpus
+
+**Rule ID**: `identifier-validator-corpus`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_test_conventions.py`
+
+**Scope**: registry-driven; empty registry is a documented no-op.
+
+**Intent**: Assert each registered validator regex full-matches every ID its list command returns.
+
+### test-module-line-budget
+
+**Rule ID**: `test-module-line-budget`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_test_conventions.py`
+
+**Scope**: any test-tree module over the 400-line budget (520-line single-class ceiling exempt).
+
+**Intent**: Split oversized modules by behaviour cluster (collected) or supplied surface (helper).
+
+### test-helper-module-misnamed
+
+**Rule ID**: `test-helper-module-misnamed`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_test_conventions.py`
+
+**Scope**: modules matching pytest collection patterns declaring no test.
+
+**Intent**: Flag collected-but-empty modules; ships at error (violation count zero).
+
+### test-module-preamble-boilerplate
+
+**Rule ID**: `test-module-preamble-boilerplate`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_test_conventions.py`
+
+**Scope**: `spec_from_file_location` preambles and `Path(__file__).parent` chains of depth >= 3.
+
+**Intent**: Resolve test helpers by identity via shared loaders, not by file-location chains.
 
 ---
 
