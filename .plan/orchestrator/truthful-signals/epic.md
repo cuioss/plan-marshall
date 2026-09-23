@@ -44,7 +44,7 @@ out on the same date.
 <!-- BEGIN GENERATED: resume-summary -->
 **Resume anchor**: 2026-09-22: PLAN-TRUTH-147 running (operator-confirmed). N=1 R=1 - slot full. Inbox drained empty (0 queued, no closures). 178 staged at tail. Next: await 147 landing/PR, then analyze.
 **Phase**: orchestrating
-**Inbox (derived)**: 0 queued, 1146 archived
+**Inbox (derived)**: 1 queued, 1146 archived
 **Running**:
 - PLAN-TRUTH-147 (WS-01)
 **Parked**:
@@ -92,6 +92,7 @@ out on the same date.
 36. PLAN-220 (WS-QA-08)
 37. PLAN-221 (WS-QA-02)
 38. PLAN-TRUTH-178 (WS-01)
+39. PLAN-TRUTH-179 (WS-01)
 - PLAN-TRUTH-161 (WS-01) — plan=truth-161-adr-number-allocation — PR 1586 — landing=landings/PLAN-TRUTH-161.md — status: shipped
 <!-- END GENERATED: resume-summary -->
 
@@ -270,6 +271,7 @@ not carried; `landings/` is their record.
 | 42 | PLAN-220 | WS-QA-08 | staged | marketplace/bundles/plan-marshall/skills/phase-6-finalize/; marketplace/bundles/plan-marshall/skills/tools-integration-ci/ |
 | 43 | PLAN-221 | WS-QA-02 | staged | marketplace/bundles/plan-marshall/skills/marshall-steward/; marketplace/bundles/plan-marshall/skills/platform-runtime/; marketplace/bundles/plan-marshall/skills/tools-script-executor/; marketplace/bundles/pm-plugin-development/skills/finalize-step-deploy-target/ |
 | 44 | PLAN-TRUTH-178 | WS-01 | staged | marketplace/bundles/plan-marshall/skills/manage-findings/scripts/; marketplace/bundles/plan-marshall/skills/phase-5-execute/scripts/scope_creep_check.py; marketplace/bundles/plan-marshall/skills/tools-file-ops/scripts/constants.py; test/plan-marshall/manage-findings/; test/plan-marshall/phase-5-execute/ |
+| 45 | PLAN-TRUTH-179 | WS-01 | staged | marketplace/bundles/plan-marshall/skills/manage-metrics/scripts/manage-metrics.py; marketplace/bundles/plan-marshall/skills/phase-6-finalize/scripts/ci_complete_precondition.py; marketplace/bundles/plan-marshall/skills/tools-script-executor/scripts/generate_executor.py; test/plan-marshall/manage-metrics/; test/plan-marshall/phase-6-finalize/; test/plan-marshall/tools-script-executor/ |
 <!-- END GENERATED: ordered-queue -->
 
 ### Queue annotations
@@ -475,6 +477,12 @@ Binding decisions that still govern. Settled ones are removed.
   `scope_creep_check.py:180` + `constants.py:96-121` before staging; report's CLI/silent-prose
   incidentals corrected to in-process/fail-loud at HEAD). Thematic owners 145/146 are prep-blocked
   on unrelated refutations, so the defect ships staged standalone rather than coupled to a re-scope.
+- **2026-09-22 unorchestrated-landing follow-ups staged as PLAN-TRUTH-179** — PR #1595's opencode
+  detection landed with three exposed gaps (executor path shadowing, enrich declared-vs-detected
+  skew, clamp disabled for ceiling-less target; mechanisms corroborated in
+  `generate_executor.py:1492`, `manage-metrics.py:3888-3917`, `ci_complete_precondition.py:175`
+  region before staging; fourth item recorded healed). Unowned by any staged spec; staged
+  standalone, 3 deliverables.
 
 ## Inbox drain — 2026-08-09 (evening), 37 messages, every one dispositioned
 

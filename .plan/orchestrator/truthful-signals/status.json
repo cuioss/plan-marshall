@@ -459,6 +459,15 @@
       "plan_marshall_plan_id": "",
       "pr": "",
       "landing": ""
+    },
+    {
+      "id": "PLAN-TRUTH-179",
+      "slug": "opencode-target-detection-landed-three-gaps-it-exposed-still-stand",
+      "workstream": "WS-01",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
     }
   ],
   "resume_anchor": "2026-09-22: PLAN-TRUTH-147 running (operator-confirmed). N=1 R=1 - slot full. Inbox drained empty (0 queued, no closures). 178 staged at tail. Next: await 147 landing/PR, then analyze.",
@@ -468,5 +477,5 @@
     "parallelization_scope": "1"
   },
   "created": "2026-07-22T18:17:00Z",
-  "updated": "2026-09-23T07:08:54Z"
+  "updated": "2026-09-23T20:09:22Z"
 }

@@ -96,6 +96,9 @@ plan makes the entry lane decidable so the exemption stops recurring.
 - `implement-opencode-enforcement-parity-002.md` (finding): mailbox probe reader mis-parse, re-opens deliverable 2 premise — folded; expected surface updated in the same act (+1 entry: _cmd_lifecycle.py)
 - `implement-opencode-enforcement-parity-003.md` (finding): inbox write sequence re-use — folded; expected surface unchanged by this fold (_orchestrator_inbox.py already declared — recorded explicitly)
 - `module-budget-campaign-completion-001.md` issue 1 (finding): recipe-match/aspect-classify need `--body-file` for verbatim bodies — folded into deliverable 3 scope; expected surface unchanged by this fold (phase-1-init/ already declared — recorded explicitly)
+- `truth-147-lane-reports-green-001.md` item 2 (finding): same `--body-file` gap, `--request-file`/`--stdin` request — folded into deliverable 3 scope as recurrence; expected surface unchanged (recorded explicitly)
+- `truth-179-opencode-target-detection-landed-001.md` (finding): same gap, sharpest statement (three binding rules, no compliant spelling) — folded into deliverable 3 scope as recurrence; expected surface unchanged (recorded explicitly)
+- `truth-147-lane-reports-green-003.md` + `truth-179-opencode-target-detection-landed-002.md` + `carried-defects-and-watches-closure-001.md` item 1 (findings): mailbox-probe vs detect disagreement recurrences — folded into deliverable 2 mechanism note; expected surface unchanged (recorded explicitly)
 
 ## Hand-Off Command
 
