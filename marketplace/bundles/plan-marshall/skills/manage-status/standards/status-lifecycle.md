@@ -1,6 +1,6 @@
 # Status Lifecycle
 
-Phase and plan lifecycle model for manage-status. Two status kinds exist side by side: the plan status.json (the default `plans` store, everything below up to and including Metadata) and the lean `kind=orchestrator` status.json (the `orchestrator` store — see the Orchestrator Status section at the end).
+Phase and plan lifecycle model for manage-status. Two status kinds exist side by side: the plan status.json (the default `plans` store, everything below up to and including Metadata) and the lean `kind=orchestrator` epic ledger (the `orchestrator` store — see the Orchestrator Status section at the end).
 
 ## Phase State Machine
 
@@ -172,9 +172,13 @@ Metadata fields are promoted to top-level in `get-context` output for convenienc
 
 ## Orchestrator Status (`kind=orchestrator`)
 
-Orchestrator epics persist a second, deliberately lean status kind under the git-tracked orchestrator store — `.plan/orchestrator/{slug}/status.json`, resolved via `get_store_dir('orchestrator', slug)`. It is the machine authority for an epic's plan queue and resume state (see `persona-plan-orchestrator/standards/orchestration-model.md` for the consuming contract).
+Orchestrator epics persist a second, deliberately lean status kind under the git-tracked orchestrator store — the epic root `.plan/orchestrator/{slug}/`, resolved via `get_store_dir('orchestrator', slug)`. The ledger is split into files that each hold one concern, so two sessions writing different concerns write different files. Together those files are the machine authority for an epic's plan queue and resume state; the per-file layout decision and the consuming contract are in [`persona-plan-orchestrator/standards/orchestration-model.md` § Directory Layout](../../persona-plan-orchestrator/standards/orchestration-model.md#directory-layout). Every read and write of these files goes through the one layout module, `scripts/_orchestrator_ledger.py`.
 
 ### Schema
+
+The ledger has three shapes. None of them carries an `updated` stamp: a field every write restamps would put every pair of concurrent writes on one colliding line.
+
+**The header — `status.json`.** The epic's rarely-written fields only; the queue and the resume anchor are not in it:
 
 ```json
 {
@@ -182,27 +186,41 @@ Orchestrator epics persist a second, deliberately lean status kind under the git
   "title": "Epic title",
   "phase": "init | orchestrating | closed",
   "workstreams": [],
-  "plans": [
-    {
-      "id": "PLAN-01",
-      "slug": "short-slug",
-      "workstream": "WS-01",
-      "status": "staged",
-      "plan_marshall_plan_id": "",
-      "pr": "",
-      "landing": ""
-    }
-  ],
-  "resume_anchor": "the exact next action a resuming session takes",
   "metadata": {},
-  "created": "...",
-  "updated": "..."
+  "created": "..."
 }
 ```
 
+**The resume anchor — `resume_anchor.md`.** The anchor text alone: the exact next action a resuming session takes. `create` writes it empty.
+
+**One queue row — `queue/{PLAN-ID}.json`.** One file per staged plan. The plan id is checked against the shared plan-id grammar before it becomes a filename. `seq` is the queue-order key, allocated at staging time as the local maximum plus one, and readers order rows by `(seq, id)`:
+
+```json
+{
+  "id": "PLAN-01",
+  "slug": "short-slug",
+  "workstream": "WS-01",
+  "status": "staged",
+  "plan_marshall_plan_id": "",
+  "pr": "",
+  "landing": "",
+  "seq": 1
+}
+```
+
+An absent `queue/` directory is a measured empty queue. A row file that cannot be read is reported as unreadable, never as an absent row.
+
+`read --store orchestrator` assembles the three shapes into one document — the header fields plus `plans` (the rows in `(seq, id)` order) and `resume_anchor` — so every reader consumes one shape.
+
+The generated `queue-view.md` beside these files is a view owned by `plan-orchestrator`. It sits outside this schema and outside the machine authority; see the plan-orchestrator [`regenerate-view`](../../plan-orchestrator/SKILL.md#regenerate-view) block.
+
+### Monolithic layout refusal
+
+A `status.json` that still carries a `plans` or `resume_anchor` key is an epic in the monolithic layout. Every orchestrator-store verb refuses it with `error: legacy_layout` and writes nothing; it is never read as an empty ledger. The one remedy is [`orchestrator migrate-layout --slug {slug}`](../../plan-orchestrator/SKILL.md#migrate-layout), which converts the document into the per-concern files.
+
 ### Metadata
 
-Arbitrary key-value pairs stored under the epic's `metadata` object. Common fields:
+Arbitrary key-value pairs stored under the `metadata` object of the epic header. Common fields:
 
 | Field | Set By | Purpose |
 |-------|--------|---------|
@@ -230,9 +248,11 @@ The orchestrator store is served by exactly four verbs (see Canonical invocation
 
 | Verb | Operation |
 |------|-----------|
-| `create --store orchestrator` | Create the `kind=orchestrator` status.json (`--phases` ignored) |
-| `read --store orchestrator` | Read the epic status document |
-| `update-field` | Set a top-level field: `phase`, `resume_anchor`, or the JSON-array list fields `workstreams` / `plans` |
-| `metadata --store orchestrator` | Get/set entries of the `metadata` object |
+| `create --store orchestrator` | Create the `kind=orchestrator` header `status.json` and an empty `resume_anchor.md` (`--phases` ignored); no `queue/` directory is created |
+| `read --store orchestrator` | Read the assembled ledger: header fields, `plans`, and `resume_anchor` |
+| `update-field` | Set one field: `phase` or the JSON-array field `workstreams` (both written to the header), or `resume_anchor` (written to `resume_anchor.md`). No other field is accepted — `plans` returns `invalid_field` with nothing written |
+| `metadata --store orchestrator` | Get/set entries of the header's `metadata` object |
+
+The queue is not a field of any of these verbs. Rows are staged, transitioned, and stamped one row file at a time through the `plan-orchestrator` `queue` verb, which writes through the same layout module.
 
 Plan discovery (`list`), archiving, routing, title-token, and every other plan-store verb do NOT apply to the orchestrator store — orchestrator epics are structurally invisible to plan discovery because it globs only `.plan/local/plans/`.

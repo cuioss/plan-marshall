@@ -2,74 +2,39 @@
 
 slug: {slug}
 
-> Ledger document for one epic under `.plan/orchestrator/{slug}/`. The layout and
+> Hand-written narrative for one epic under `.plan/orchestrator/{slug}/`. The layout and
 > authority contract live in the central standard — see
-> `persona-plan-orchestrator/standards/orchestration-model.md`. `status.json` is the
-> machine authority; any statement here that conflicts with it is stale prose.
+> `persona-plan-orchestrator/standards/orchestration-model.md`. The ledger JSON files
+> (`status.json`, the `queue/{PLAN-ID}.json` rows) and `resume_anchor.md` are the machine
+> authority; any statement here that conflicts with them is stale prose.
+>
+> START HERE and the Ordered Queue are not in this file. They live in the generated,
+> git-tracked `queue-view.md` next to it, written by `orchestrator regenerate-view` (and by
+> `compact`). `queue-view.md` is never hand-edited. A merge conflict in it is never merged by
+> hand: merge the source files, run
+> `python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator regenerate-view --slug {slug}`
+> on the merged tree, and `git add` the result.
 
 ## Vision
 
 {2-5 sentences: the long-running goal this epic pursues, why it is too large for one plan,
 and what "done" looks like at the epic level.}
 
-## START HERE
+## Queue annotations
 
-<!-- GENERATED BLOCK — never hand-write or hand-edit this section.
-     Regenerate after every queue-touching state change via:
-     python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator resume-summary --slug {slug}
-     Paste the returned `summary` block verbatim between the markers (the same
-     invocation also emits `ordered_queue` for the Ordered Queue section below).
-     Anything a reader wants to add BY HAND goes in the annotation zone below,
-     outside the markers — never inside them. -->
+{Per-row narrative the generated view cannot derive — why a row is parked, what a running plan
+is waiting on, a sequencing caveat, a disjointness note, an operator caveat on a queue entry —
+keyed by plan id. The row's status, workstream, and surface are in `queue-view.md`; this zone
+carries only what they cannot express.}
 
-<!-- BEGIN GENERATED: resume-summary -->
-{generated resume summary — queue, running/parked plans, resume anchor}
-<!-- END GENERATED: resume-summary -->
-
-### Annotations
-
-<!-- ANNOTATION ZONE — hand-written, and deliberately OUTSIDE the generated markers.
-     A regeneration replaces only what sits BETWEEN the markers, so everything written
-     here survives it. This is what makes the block above genuinely regenerable: the
-     per-row notes the generator cannot produce (why a row is parked, what a running
-     plan is waiting on, an operator caveat on a queue entry) have a home that a
-     verbatim paste does not destroy. -->
-
-- {PLAN-NN} — {annotation the generator does not produce}
-
-## Ordered Queue
-
-<!-- GENERATED BLOCK — never hand-write or hand-edit the table between the markers.
-     Regenerated from status.json and the staged specs: emitted as `ordered_queue` by
-     orchestrator.py resume-summary --slug {slug} (paste it verbatim after a queue change),
-     and rewritten in place by the compact stage (orchestrator.py compact --slug {slug}) at
-     cleanup. Only the LIVE queue is rendered here — a row at any TERMINAL status is left
-     out, whether it shipped or closed without shipping; see the standard's
-     § Plan-Status Vocabulary. Per-row notes a reader wants to ADD go in the
-     annotation zone below, outside the markers — never inside them. -->
-
-<!-- BEGIN GENERATED: ordered-queue -->
-| # | Plan | Workstream | Status | Surface (expected) |
-|---|------|------------|--------|--------------------|
-| 1 | PLAN-01-{slug} | WS-01 | staged | {files/modules touched, from the spec's Expected Surface} |
-<!-- END GENERATED: ordered-queue -->
-
-### Queue annotations
-
-<!-- ANNOTATION ZONE — hand-written, and deliberately OUTSIDE the generated table markers.
-     A regeneration replaces only the table BETWEEN the markers, so everything written here
-     survives it. This is where the per-row narrative the generator cannot derive lives — a
-     sequencing caveat, a disjointness note, why a row is parked — keyed by plan id. -->
-
-- {PLAN-NN} — {sequencing / disjointness / caveat the generator does not derive}
+- {PLAN-NN} — {annotation the generated view does not produce}
 
 ## Decisions
 
 {One entry per recorded decision — append-only, newest last. This section is a curated
 human-facing VIEW; the authoritative append-only record is `logs/decision.log`, written via
 `manage-logging --store orchestrator` (decision verb). Because entries carry rationale and
-alternatives the log summary need not, this section is NARRATIVE — the compact stage preserves
-it verbatim and never regenerates it.}
+alternatives the log summary need not, this section is NARRATIVE — no script writes it.}
 
 - {YYYY-MM-DD} — {decision statement, alternatives considered, rationale}
 
