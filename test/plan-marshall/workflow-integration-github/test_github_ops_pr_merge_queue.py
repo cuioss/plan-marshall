@@ -185,14 +185,32 @@ def _merge_queue_ns(*, pr_number: int | None = 42, head: str | None = None):
     return argparse.Namespace(pr_number=pr_number, head=head)
 
 
-def _install_configured_queue(monkeypatch) -> dict:
-    """Stub the base-branch probe as CONFIGURED so the enqueue may proceed.
+def _queue_entries_data(*, number: int = 42, head_ref: str = 'feature/x') -> dict:
+    """One complete ``mergeQueue.entries`` page listing a single PR, as ``run_graphql`` returns it."""
+    return {
+        'repository': {
+            'mergeQueue': {
+                'entries': {
+                    'totalCount': 1,
+                    'pageInfo': {'hasNextPage': False, 'endCursor': None},
+                    'nodes': [{'position': 1, 'pullRequest': {'number': number, 'headRefName': head_ref}}],
+                }
+            }
+        }
+    }
 
-    ``cmd_pr_merge_queue`` now corroborates ``enqueued`` against the PR's own
-    base branch before calling gh, so every enqueue fixture must declare that a
-    queue actually exists to be enqueued onto.
+
+def _install_configured_queue(monkeypatch) -> dict:
+    """Stub the base-branch probe as CONFIGURED and the queue as listing the PR.
+
+    ``cmd_pr_merge_queue`` refuses before calling gh unless the PR's own base
+    branch has a configured queue (the pre-condition), and reports ``enqueued:
+    true`` only when the post-enqueue ``mergeQueue.entries`` read lists the PR. The
+    membership read is stubbed at ``run_graphql`` — not at ``run_gh`` — so the
+    captured ``run_gh`` calls stay exactly the enqueue itself.
     """
     monkeypatch.setattr(github_ops, 'view_pr_data', lambda head=None: _pr_view_success_payload())
+    monkeypatch.setattr(github_ops, 'run_graphql', lambda query, variables: (0, _queue_entries_data(), ''))
     return _install_probe(
         monkeypatch,
         discriminator=github_ops.MERGE_QUEUE_ELIGIBLE_CONFIGURED,
@@ -420,7 +438,9 @@ def test_pr_merge_queue_enqueues_auto_only(monkeypatch):
     assert result['operation'] == 'pr_merge_queue'
     assert result['enqueued'] is True
     assert result['base_branch'] == 'main', result
-    assert result['enqueue_corroboration'] == 'merge_queue rule active on branch', result
+    assert result['queue_precondition'] == 'merge_queue rule active on branch', result
+    assert result['enqueue_observation'].startswith('mergeQueue(branch: main).entries lists the PR'), result
+    assert 'enqueue_corroboration' not in result, result
     assert result['pr_number'] == 42
     # The removed keys must NOT reappear in the envelope.
     assert 'strategy' not in result, result

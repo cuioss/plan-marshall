@@ -160,18 +160,29 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr merge-q
 ```
 
 ⛔ **This dispatch requires an already-provisioned merge queue — it enqueues, it never
-provisions.** Both providers probe eligibility *before* the enqueue call and report
-`enqueued: true` only against a queue or train that actually exists. Every other
-eligibility value returns `status: error`, and the verb never falls back to an immediate merge —
-so on an unprovisioned repository the PR is left open and the landing cycle stops here rather
-than landing outside the queue. The **operator remedy is to provision the queue** — run
-`/marshall-steward` → Configuration → Merge Queue (the probe→ask→configure flow in
+provisions.** Both providers probe eligibility *before* the enqueue call as a
+**pre-condition**: every eligibility value other than a configured queue or train returns
+`status: error`, and the verb never falls back to an immediate merge — so on an unprovisioned
+repository the PR is left open and the landing cycle stops here rather than landing outside the
+queue. The **operator remedy is to provision the queue** — run `/marshall-steward` →
+Configuration → Merge Queue (the probe→ask→configure flow in
 [`merge-queue-setup.md`](merge-queue-setup.md)) — and then re-run the landing cycle. The error
 also names a second remedy, disabling a plan's `use_merge_queue` step param and merging via `ci
 pr safe-merge`; that one is for plan-bound callers and has no counterpart here, because the
-steward lands plan-lessly and always routes through the queue. See
+steward lands plan-lessly and always routes through the queue.
+
+Past the pre-condition, branch on the returned `enqueued` value:
+
+- **`enqueued: true`** — the PR's own membership in the queue was observed. Continue to (d).
+- **`enqueued: indeterminate`** — the enqueue call was accepted, but the PR's membership could
+  not be observed; `enqueue_unobserved_reason` names why (`membership_read_failed`,
+  `entries_incomplete`, or `pr_not_listed`). Do NOT continue to (d) as though the PR were
+  queued. Report the reason to the operator and have them confirm the PR's queue membership
+  (or that it already landed) before continuing.
+
+See
 [`tools-integration-ci/standards/pr-operations.md`](../../tools-integration-ci/standards/pr-operations.md)
-§ "Workflow: Merge-Queue PR" for the corroboration contract behind both.
+§ "Workflow: Merge-Queue PR" for the pre-condition and the membership-read contract behind both.
 
 **(d) Switch back to the base branch and pull** so the local checkout reflects the
 merged result:

@@ -56,7 +56,7 @@ Each verb therefore establishes its own claim from a **re-read of provider state
 |------|-------|------------------|
 | `pr merge` | `merged` | Post-merge PR/MR state re-read. GitHub: `state == MERGED` plus a parseable `mergedAt` (strategy `merge` / `rebase` additionally admit base-contains-head ancestry; `squash` does not, because a squashed commit is a new object). GitLab: `state == 'merged'` — `view_pr_data` exposes no `merged_at`, so state is the whole verdict. |
 | `pr safe-merge` | `merged` | The delegated `pr merge` corroboration, asserted positively (`merged is True`), plus its own corroboration on the GitHub admin-fallback path. |
-| `pr merge-queue` | `enqueued` | A pre-enqueue probe on **both** providers, run *before* the enqueue call so an off-routed target incurs no side effect. **GitHub** reads the PR's own base-branch queue configuration; **GitLab** reads the project's `merge_trains_enabled` flag. Any state other than `eligible_configured` refuses. GitLab's POST to the dedicated merge-train endpoint still corroborates that the car was created — it is simply no longer the only thing standing between an off-routed dispatch and a side effect. See *Merge-Queue PR* → *The enqueue is corroborated* below. |
+| `pr merge-queue` | `enqueued` | Two reads with two roles. The **pre-condition** is a pre-enqueue probe on **both** providers, run *before* the enqueue call so an off-routed target incurs no side effect — **GitHub** reads the PR's own base-branch queue configuration, **GitLab** the project's `merge_trains_enabled` flag — and any state other than `eligible_configured` refuses. The **claim** rests on the PR's own queue membership: **GitHub** reads the base branch's `mergeQueue.entries` after the call and returns `true` only when that list carries the PR, otherwise `indeterminate` with its reason; **GitLab**'s dedicated merge-train endpoint succeeds only against a real train and returns the created car, on which the arm reports `true`. See *Merge-Queue PR* → *The membership read* below. |
 | `pr auto-merge` | `disposition` | A pre-call probe on **both** providers — GitHub reads the PR's own base-branch queue configuration, GitLab the project's `merge_trains_enabled` flag — reporting which of the two dispositions occurred. |
 
 Two shape rules bind every corroboration above:
@@ -64,7 +64,7 @@ Two shape rules bind every corroboration above:
 1. **Assert the value's meaning, never a key's presence.** A record carrying a `mergedAt` key whose value is `null`, empty, or unparseable is a NON-corroboration; probing for the key alone passes on a wrongly-shaped record and reintroduces the defect.
 2. **Any parsed timestamp is timezone-aware.** A naive datetime raises the moment it is compared against an aware one, turning a corroboration check into a crash. Naive values are normalized to UTC.
 
-Every corroboration **fails closed**: an unreadable state, a failed probe, or a malformed payload is a refusal, never a permissive default.
+Every corroboration **fails closed**: an unreadable state, a failed probe, or a malformed payload is a refusal, never a permissive default. The one claim that is not a refusal when unobservable is `enqueued` on GitHub: the enqueue call has already been accepted by then, so an unobservable membership is reported as `enqueued: indeterminate` — still never `true`.
 
 ---
 
@@ -439,14 +439,24 @@ Enqueue the PR into the **platform merge queue** so the platform re-tests-and-me
 
 On **GitHub**, the verb engages the merge queue via `gh pr merge --auto` (the PR is added to the queue configured on the target branch's protection rules). On **GitLab**, the verb reads the project's `merge_trains_enabled` flag first and performs a real **merge-train** enqueue via `POST /projects/:id/merge_trains/merge_requests/:iid` only when the project actually runs a train. The merge train is a Premium/Ultimate-tier feature enabled per-project; when the project does not run one — established by the pre-POST probe, or by an HTTP 403/404 from the merge-train API on the enqueue itself — the GitLab handler returns the actionable ineligible error rather than silently falling back to an immediate merge, and names `ci pr safe-merge` as the alternative routed verb.
 
-### The enqueue is corroborated
+### The membership read: `enqueued` is observed, never inferred
 
-`enqueued: true` is a **corroborated** claim, per the *corroborate-not-report contract* above. The corroboration is provider-shaped, and so is the field that carries its evidence:
+`enqueued` has exactly two values: `true` when the PR's own membership in the queue was observed, and the string `indeterminate` when the enqueue call was accepted but that membership could not be observed. An accepted call is never reported as `true`. Two things happen on each provider, and they play different roles — a **pre-condition** that refuses an unsafe target before any side effect, and the **membership observation** that alone may produce `enqueued: true`:
 
-- **GitHub** — `gh pr merge --auto` exits zero whether or not the base branch has a queue: with no queue it quietly enables **plain auto-merge**, which is a different disposition entirely. The verb therefore probes the PR's own base branch **before** the call and returns `enqueued: true` only when that branch actually has a configured queue. The probe verdict is published as `enqueue_corroboration`. On any other eligibility value it returns `status: error` naming both remedies — run `/marshall-steward` → Configuration → Merge Queue to provision the queue, or disable the plan's `use_merge_queue` step param to merge immediately via `ci pr safe-merge`. The probe runs before the call because on an unconfigured base the call would otherwise leave the PR scheduled to merge **outside** the queue the caller asked for.
-- **GitLab** — the verb probes the project's `merge_trains_enabled` flag **before** the POST and refuses on any state other than `eligible_configured`, so an off-routed dispatch is turned away without a side effect instead of provoking a 404 that reads identically to a routing mistake. The enqueue then targets a dedicated merge-train endpoint that only succeeds against a real train, so the POST remains the corroboration that the car was created; the car is reported as `merge_train_car_id` (empty when the response carries no id). Both the pre-POST refusal and a 403/404 from the endpoint name `ci pr safe-merge` as the alternative routed verb. GitLab emits **no** `enqueue_corroboration` field, so a cross-provider caller must not branch on it.
+- **GitHub** — *Pre-condition:* `gh pr merge --auto` exits zero whether or not the base branch has a queue: with no queue it quietly enables **plain auto-merge**, a different disposition entirely. The verb therefore probes the PR's own base branch **before** the call, and on any eligibility other than a configured queue returns `status: error` naming both remedies — run `/marshall-steward` → Configuration → Merge Queue to provision the queue, or disable the plan's `use_merge_queue` step param to merge immediately via `ci pr safe-merge`. The probe runs before the call because on an unconfigured base the call would otherwise leave the PR scheduled to merge **outside** the queue the caller asked for. Its verdict is returned as `queue_precondition`; it says the queue exists, not that this PR is in it. *Membership read:* after the call succeeds, the verb reads the repository's `mergeQueue(branch: {base}).entries` list over GraphQL, paginated to its end, and matches the PR by the selector the caller supplied (its number under `--pr-number`, its head branch under `--head`). An entry for the PR → `enqueued: true`. `mergeStateStatus` is not a substitute: it reads `CLEAN` while the PR is genuinely queued.
+- **GitLab** — *Pre-condition:* the verb probes the project's `merge_trains_enabled` flag **before** the POST and refuses on any state other than `eligible_configured`, so an off-routed dispatch is turned away without a side effect instead of provoking a 404 that reads identically to a routing mistake. *Membership:* the enqueue targets a dedicated merge-train endpoint that only succeeds against a real train, and its success body is the created car — the train's own record of this MR — reported as `merge_train_car_id` (empty when the response carries no id). The GitLab arm returns `enqueued: true` on that success, performs no separate read after the POST, and never returns `indeterminate`. Both the pre-POST refusal and a 403/404 from the endpoint name `ci pr safe-merge` as the alternative routed verb.
 
-`enqueued: true` means the PR **reached the queue** — it is emphatically **not** a merge. A caller that needs the merge itself must wait for the platform to land it and confirm that separately.
+`enqueued: indeterminate` (GitHub) keeps `status: success` — the enqueue call was accepted — and carries `enqueue_unobserved_reason`:
+
+| `enqueue_unobserved_reason` | Meaning |
+|-----------------------------|---------|
+| `membership_read_failed` | The membership read itself failed: repository unresolvable, GraphQL error, no merge queue returned for the branch, or a malformed entries page. |
+| `entries_incomplete` | The entry list could not be read to its end — a page reported further entries without an advancing cursor — so the PR's absence from what was read proves nothing. |
+| `pr_not_listed` | The list was read to its end and does not carry the PR. Still not a negative: the queue may already have merged or ejected it between the call and the read. |
+
+A caller that receives `indeterminate` must not proceed as though the PR were queued: report the reason and confirm the PR's queue membership before continuing. `enqueue_observation` names the read and what it saw on both GitHub values, so the verdict is auditable either way.
+
+`enqueued: true` means the PR **is in the queue** — it is emphatically **not** a merge. A caller that needs the merge itself must wait for the platform to land it and confirm that separately.
 
 ### Step 1: Execute
 
@@ -465,12 +475,26 @@ operation: pr_merge_queue
 pr_number: 123
 base_branch: main
 enqueued: true
-enqueue_corroboration: merge_queue rule active on branch
+enqueue_observation: "mergeQueue(branch: main).entries lists the PR at position 1"
+queue_precondition: merge_queue rule active on branch
 ```
 
-`enqueue_corroboration` carries the probe evidence behind the claim. It and `base_branch` are both **GitHub-only** — the queue is a base-branch property there, so the verb has a branch to name and a pre-enqueue verdict to publish; a GitLab merge train is project-scoped and yields neither.
+The unobserved form on GitHub:
 
-On GitLab a successful enqueue returns the same `enqueued: true` envelope with `provider: gitlab` and `merge_train_car_id` — the train car id when the API surfaces one, an empty string when it does not. When the project does not run a merge train the invocation returns `status: error, operation: pr_merge_queue` with the actionable ineligible message, which names both remedies: provision merge trains for the project, or stop routing through the queue and merge via `ci pr safe-merge`. The refusal is surfaced explicitly (never a silent immediate-merge fallback) so cross-provider callers notice the mismatch. A project scope that cannot be resolved refuses the same way and posts nothing — an unread `merge_trains_enabled` setting is not evidence that the enqueue is the right call — and that message names the unresolved scope rather than interpolating a project path nothing resolved.
+```toon
+status: success
+operation: pr_merge_queue
+pr_number: 123
+base_branch: main
+enqueued: indeterminate
+enqueue_observation: "mergeQueue(branch: main).entries read to its end (3 entries); PR not listed"
+queue_precondition: merge_queue rule active on branch
+enqueue_unobserved_reason: pr_not_listed
+```
+
+`base_branch`, `queue_precondition`, `enqueue_observation` and `enqueue_unobserved_reason` are all **GitHub-only** — the queue is a base-branch property there, so the verb has a branch to name, a pre-enqueue verdict to publish and a branch-keyed entry list to read; a GitLab merge train is project-scoped and yields none of them.
+
+On GitLab a successful enqueue returns the `enqueued: true` envelope with `provider: gitlab` and `merge_train_car_id` — the train car id when the API surfaces one, an empty string when it does not. When the project does not run a merge train the invocation returns `status: error, operation: pr_merge_queue` with the actionable ineligible message, which names both remedies: provision merge trains for the project, or stop routing through the queue and merge via `ci pr safe-merge`. The refusal is surfaced explicitly (never a silent immediate-merge fallback) so cross-provider callers notice the mismatch. A project scope that cannot be resolved refuses the same way and posts nothing — an unread `merge_trains_enabled` setting is not evidence that the enqueue is the right call — and that message names the unresolved scope rather than interpolating a project path nothing resolved.
 
 ---
 

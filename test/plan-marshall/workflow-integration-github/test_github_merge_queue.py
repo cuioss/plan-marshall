@@ -61,6 +61,24 @@ def _base_view_payload(base_branch: str = 'main') -> dict:
     }
 
 
+def _membership_data(pr_numbers=(42,)) -> dict:
+    """One complete ``mergeQueue.entries`` page listing ``pr_numbers``, as ``run_graphql`` returns it."""
+    return {
+        'repository': {
+            'mergeQueue': {
+                'entries': {
+                    'totalCount': len(pr_numbers),
+                    'pageInfo': {'hasNextPage': False, 'endCursor': None},
+                    'nodes': [
+                        {'position': i + 1, 'pullRequest': {'number': n, 'headRefName': f'feature/{n}'}}
+                        for i, n in enumerate(pr_numbers)
+                    ],
+                }
+            }
+        }
+    }
+
+
 def _install(
     monkeypatch,
     run_gh_stub,
@@ -68,15 +86,18 @@ def _install(
     discriminator: str | None = None,
     detail: str = 'merge_queue rule active on branch',
     probe_error: str | None = None,
+    membership: dict | None = None,
 ) -> dict:
-    """Install the stubs ``cmd_pr_merge_queue`` needs, plus the base-branch probe.
+    """Install the stubs ``cmd_pr_merge_queue`` needs, plus the base-branch probe and membership read.
 
-    The enqueue is now CORROBORATED: the handler probes the PR's own base branch
-    for a configured merge queue before calling gh, because ``gh pr merge --auto``
-    exits zero on an unconfigured base having quietly enabled plain auto-merge.
-    The default discriminator is ``eligible_configured`` so the pre-existing
-    behavioural tests keep exercising the enqueue path they were written for.
-    Returns the probe capture dict.
+    The base-branch probe is the PRE-CONDITION: the handler refuses before calling gh
+    when the PR's own base branch has no configured merge queue, because
+    ``gh pr merge --auto`` exits zero on an unconfigured base having quietly enabled
+    plain auto-merge. ``enqueued: true`` then rests on the post-enqueue
+    ``mergeQueue.entries`` read, stubbed at ``run_graphql`` — by default a complete page
+    listing PR 42, so the pre-existing behavioural tests keep exercising the observed
+    enqueue path they were written for. The default discriminator is
+    ``eligible_configured``. Returns the probe capture dict.
     """
     if discriminator is None:
         discriminator = github_ops.MERGE_QUEUE_ELIGIBLE_CONFIGURED
@@ -94,6 +115,8 @@ def _install(
         return discriminator, detail, probe_error, None
 
     monkeypatch.setattr(github_ops, '_probe_merge_queue_state', probe_stub)
+    membership_data = _membership_data() if membership is None else membership
+    monkeypatch.setattr(github_ops, 'run_graphql', lambda query, variables: (0, membership_data, ''))
     return captured
 
 
@@ -134,9 +157,13 @@ def test_cmd_pr_merge_queue_enqueues_via_gh_auto(monkeypatch):
     assert result['operation'] == 'pr_merge_queue'
     assert result['enqueued'] is True
     assert result['pr_number'] == 42
-    # The claim is corroborated against the PR's OWN base branch, not assumed.
+    # The probe of the PR's OWN base branch is the pre-condition; the claim rests on
+    # the membership read, which names itself in the observation.
     assert result['base_branch'] == 'main'
-    assert result['enqueue_corroboration'] == 'merge_queue rule active on branch'
+    assert result['queue_precondition'] == 'merge_queue rule active on branch'
+    assert result['enqueue_observation'].startswith('mergeQueue(branch: main).entries lists the PR')
+    assert 'enqueue_unobserved_reason' not in result
+    assert 'enqueue_corroboration' not in result
     assert probe['branch'] == 'main', probe
     merge_call = next(c for c in captured if c[:2] == ['pr', 'merge'])
     assert merge_call == ['pr', 'merge', '42', '--auto']

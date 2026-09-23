@@ -197,15 +197,37 @@ _GH_MERGED_PAYLOAD = {
     'baseRefName': 'main',
     'headRefOid': 'abc123',
 }
+# The post-enqueue queue-membership read GitHub reports ``enqueued: true`` from: one
+# complete ``mergeQueue.entries`` page listing the dispatched PR (number 42).
+_GH_QUEUE_MEMBERSHIP_PAYLOAD = {
+    'data': {
+        'repository': {
+            'mergeQueue': {
+                'entries': {
+                    'totalCount': 1,
+                    'pageInfo': {'hasNextPage': False, 'endCursor': None},
+                    'nodes': [{'position': 1, 'pullRequest': {'number': 42, 'headRefName': 'feature/x'}}],
+                }
+            }
+        }
+    }
+}
 
 
 def _gh_run_stub(captured: list[list[str]]):
-    """A ``run_gh`` stub: merge/auto-merge accepted, post-merge re-read = MERGED."""
+    """A ``run_gh`` stub: merge/auto-merge accepted, post-merge re-read = MERGED.
+
+    The merge-queue membership read (``gh api graphql`` carrying the ``mergeQueue``
+    query) is answered with a complete entries page listing the dispatched PR, so the
+    compliant enqueue observes membership rather than passing on an accepted call.
+    """
 
     def stub(args, capture_json=False, timeout=60):
         captured.append(list(args))
         if args[:2] == ['pr', 'view']:
             return 0, json.dumps(_GH_MERGED_PAYLOAD), ''
+        if args[:2] == ['api', 'graphql'] and any('mergeQueue' in arg for arg in args):
+            return 0, json.dumps(_GH_QUEUE_MEMBERSHIP_PAYLOAD), ''
         return 0, '', ''
 
     return stub
@@ -481,8 +503,9 @@ def test_compliant_route_succeeds(monkeypatch, provider, verb, handler):
     A refusal that also blocked the compliant route would trade the defect for an
     outage. Each member is dispatched against the base state its verb is FOR:
     immediate-merge against an unqueued base (merges, ``merged: true``), enqueue
-    against a queued base (``enqueued: true``), and auto-merge against an unqueued
-    base (``disposition: enabled``).
+    against a queued base (``enqueued: true`` — observed on GitHub through the
+    stubbed membership read, on GitLab through the train endpoint's success), and
+    auto-merge against an unqueued base (``disposition: enabled``).
     """
     result, _captured = _dispatch(monkeypatch, provider, verb, handler, 'compliant')
     assert result.get('status') == 'success', (
@@ -493,5 +516,8 @@ def test_compliant_route_succeeds(monkeypatch, provider, verb, handler):
         assert result.get('merged') is True, result
     elif scenario == _REFUSE_UNCONFIGURED:
         assert result.get('enqueued') is True, result
+        if provider == 'github':
+            # True for the right reason: the membership read listed the PR.
+            assert 'mergeQueue(branch: main).entries lists the PR' in str(result.get('enqueue_observation')), result
     else:
         assert result.get('disposition') == 'enabled', result

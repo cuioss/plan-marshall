@@ -43,6 +43,11 @@ or ``unreachable`` (an incomplete fetch, an unreadable merge candidate, or any
 refusal), and ``unreachable`` outranks the other two — so a quota refusal riding in
 an otherwise clean pass never reads as reviewed-and-clean.
 
+``pr merge-queue`` reports ``enqueued: true`` only on an observed read of the PR's
+own queue membership (``mergeQueue.entries``, paginated to its end); a failed read,
+an incomplete list, or a complete list without the PR is ``indeterminate`` with its
+reason — never ``true`` on an accepted enqueue call alone.
+
 The findings store is REAL (isolated via the autouse ``plan_context``
 ``PLAN_BASE_DIR`` sandbox); only the GitHub provider surface and the identity read
 are monkeypatched, and the raw ``run_gh`` seam is stubbed to fail so no case can
@@ -50,6 +55,7 @@ shell out to a real ``gh``.
 """
 
 import argparse
+import sys
 
 import pytest
 
@@ -85,6 +91,9 @@ PLAN_IDS: tuple[str, ...] = (
     'gh-pr-zero-state-unreachable-quota',
 )
 github_pr = load_script_module('plan-marshall', 'workflow-integration-github', 'github_pr.py', 'github_pr')
+# The PR-handler module ``github_pr`` itself imports from — reused from sys.modules,
+# so the merge-queue cases patch the same ``github_ops`` object the handler reads.
+_github_pr = sys.modules['_github_pr']
 _findings_core = load_script_module('plan-marshall', 'manage-findings', '_findings_core.py', '_findings_core')
 query_findings = _findings_core.query_findings
 query_qgate_findings = _findings_core.query_qgate_findings
@@ -908,3 +917,151 @@ def test_a_pass_that_stored_a_finding_is_not_a_zero(plan_context, monkeypatch):
 
     assert result['count_stored'] == 1
     assert result['stored_zero_state'] == github_pr.ZERO_STATE_NOT_APPLICABLE
+
+
+# ============================================================================
+# A merge-queue enqueue is reported observed only after reading queue membership
+# ============================================================================
+
+#: The ``github_ops`` module object the handler reads its seams from — patched
+#: directly, so every stub reaches the exact module ``cmd_pr_merge_queue`` calls into.
+_MQ_GITHUB = _github_pr.github_ops
+_MQ_PR = 42
+_MQ_HEAD = 'feature/x'
+
+
+def _queue_page(numbers, *, has_next=False, cursor=None):
+    """One ``mergeQueue.entries`` page as ``run_graphql`` returns it (``data`` already unwrapped)."""
+    return {
+        'repository': {
+            'mergeQueue': {
+                'entries': {
+                    'totalCount': len(numbers),
+                    'pageInfo': {'hasNextPage': has_next, 'endCursor': cursor},
+                    'nodes': [
+                        {'position': i + 1, 'pullRequest': {'number': n, 'headRefName': f'feature/{n}'}}
+                        for i, n in enumerate(numbers)
+                    ],
+                }
+            }
+        }
+    }
+
+
+def _patch_merge_queue(monkeypatch, pages):
+    """Stub the enqueue path up to the membership read, and serve ``pages`` by cursor.
+
+    ``pages`` maps the request cursor (``None`` for the first page) to the
+    ``(returncode, data, error)`` triple ``run_graphql`` returns. Returns the list of
+    cursors the read requested and the captured ``run_gh`` argv, so a case can pin
+    how far the read walked and that the enqueue itself ran.
+    """
+    requested: list = []
+    gh_calls: list = []
+
+    def fake_run_graphql(query, variables):
+        assert query == _github_pr.MERGE_QUEUE_ENTRIES_QUERY, query
+        cursor = variables.get('cursor')
+        requested.append(cursor)
+        return pages[cursor]
+
+    def fake_run_gh(args, capture_json=False, timeout=60):
+        gh_calls.append(list(args))
+        return 0, '', ''
+
+    monkeypatch.setattr(_MQ_GITHUB, 'check_auth', lambda: (True, ''))
+    monkeypatch.setattr(_MQ_GITHUB, 'get_repo_info', lambda: ('octo', 'repo'))
+    monkeypatch.setattr(
+        _MQ_GITHUB,
+        'view_pr_data',
+        lambda head=None: {'status': 'success', 'pr_number': _MQ_PR, 'base_branch': 'main', 'head_branch': _MQ_HEAD},
+    )
+    monkeypatch.setattr(
+        _MQ_GITHUB,
+        '_probe_merge_queue_state',
+        lambda owner, repo, branch: (_MQ_GITHUB.MERGE_QUEUE_ELIGIBLE_CONFIGURED, 'merge_queue rule active', None, None),
+    )
+    monkeypatch.setattr(_MQ_GITHUB, 'run_graphql', fake_run_graphql)
+    monkeypatch.setattr(_MQ_GITHUB, 'run_gh', fake_run_gh)
+    return requested, gh_calls
+
+
+def _enqueue(pr_number=_MQ_PR, head=None):
+    return _github_pr.cmd_pr_merge_queue(argparse.Namespace(pr_number=pr_number, head=head))
+
+
+def test_observed_membership_reports_enqueued_true(monkeypatch):
+    """The PR is listed on the complete entry list: ``enqueued: true``, naming the read."""
+    requested, gh_calls = _patch_merge_queue(monkeypatch, {None: (0, _queue_page([7, _MQ_PR]), '')})
+
+    result = _enqueue()
+
+    assert result['status'] == 'success', result
+    assert result['enqueued'] is True
+    assert result['enqueue_observation'] == 'mergeQueue(branch: main).entries lists the PR at position 2'
+    assert result['queue_precondition'] == 'merge_queue rule active'
+    assert 'enqueue_unobserved_reason' not in result
+    assert requested == [None]
+    assert gh_calls == [['pr', 'merge', str(_MQ_PR), '--auto']]
+
+
+def test_membership_read_failure_is_indeterminate_never_true(monkeypatch):
+    """Fail-first case: the accepted enqueue used to be reported ``true`` with no membership read at all."""
+    _patch_merge_queue(monkeypatch, {None: (1, None, 'GraphQL: rate limited')})
+
+    result = _enqueue()
+
+    assert result['status'] == 'success', result
+    assert result['enqueued'] == _github_pr.ENQUEUED_INDETERMINATE
+    assert result['enqueued'] is not True
+    assert result['enqueue_unobserved_reason'] == _github_pr.ENQUEUE_UNOBSERVED_READ_FAILED
+    assert 'GraphQL: rate limited' in result['enqueue_observation']
+
+
+def test_pr_absent_from_a_complete_list_is_indeterminate(monkeypatch):
+    """A complete list that does not carry the PR is not a negative: it may have merged or been ejected."""
+    requested, _gh_calls = _patch_merge_queue(monkeypatch, {None: (0, _queue_page([7, 8]), '')})
+
+    result = _enqueue()
+
+    assert result['enqueued'] == _github_pr.ENQUEUED_INDETERMINATE
+    assert result['enqueue_unobserved_reason'] == _github_pr.ENQUEUE_UNOBSERVED_NOT_LISTED
+    assert (
+        result['enqueue_observation'] == 'mergeQueue(branch: main).entries read to its end (2 entries); PR not listed'
+    )
+    assert requested == [None]
+
+
+def test_pr_found_on_a_second_page_is_observed(monkeypatch):
+    """A page size is never a ceiling: the read follows the cursor and finds the PR on page two."""
+    requested, _gh_calls = _patch_merge_queue(
+        monkeypatch,
+        {
+            None: (0, _queue_page([7, 8], has_next=True, cursor='c1'), ''),
+            'c1': (0, _queue_page([_MQ_PR]), ''),
+        },
+    )
+
+    result = _enqueue()
+
+    assert result['enqueued'] is True
+    assert requested == [None, 'c1']
+
+
+def test_an_entry_list_without_an_advancing_cursor_is_incomplete(monkeypatch):
+    """More entries reported but no cursor to read them by: the absence proves nothing."""
+    _patch_merge_queue(monkeypatch, {None: (0, _queue_page([7], has_next=True, cursor=None), '')})
+
+    result = _enqueue()
+
+    assert result['enqueued'] == _github_pr.ENQUEUED_INDETERMINATE
+    assert result['enqueue_unobserved_reason'] == _github_pr.ENQUEUE_UNOBSERVED_INCOMPLETE
+
+
+def test_a_head_selected_enqueue_matches_by_head_branch(monkeypatch):
+    """Under ``--head`` the PR is matched by its head branch, never by reinterpreting it as a number."""
+    _patch_merge_queue(monkeypatch, {None: (0, _queue_page([_MQ_PR]), '')})
+
+    result = _enqueue(pr_number=None, head=f'feature/{_MQ_PR}')
+
+    assert result['enqueued'] is True
