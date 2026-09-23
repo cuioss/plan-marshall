@@ -1303,9 +1303,11 @@ def test_partition_covers_registry_exactly_once_with_no_unclassified_step():
     dispatched = _roster(_DISPATCHED_HEADING)
     inline = _roster(_INLINE_HEADING)
     classified = set(dispatched) | set(inline)
-    assert classified == registered, f"partition drift: unclassified={sorted(registered - classified)} ghosts={sorted(classified - registered)}"
-    assert not (set(dispatched) & set(inline)), "partition overlap: a step carries both classifications"
-    text = _ROSTER_DOC.read_text(encoding="utf-8")
+    assert classified == registered, (
+        f'partition drift: unclassified={sorted(registered - classified)} ghosts={sorted(classified - registered)}'
+    )
+    assert not (set(dispatched) & set(inline)), 'partition overlap: a step carries both classifications'
+    text = _ROSTER_DOC.read_text(encoding='utf-8')
     skills = parse_roster_skills(text, _DISPATCHED_HEADING)
-    assert set(skills) == set(dispatched), "skills parser population differs from the dispatched roster"
-    assert all(skills[key] for key in dispatched), "an unclassified skills column turns the family red"
+    assert set(skills) == set(dispatched), 'skills parser population differs from the dispatched roster'
+    assert all(skills[key] for key in dispatched), 'an unclassified skills column turns the family red'

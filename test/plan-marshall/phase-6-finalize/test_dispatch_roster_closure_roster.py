@@ -1283,35 +1283,35 @@ def test_every_dispatched_row_carries_a_skills_column():
     """Every Dispatched-steps row declares its explicit prompt skill set."""
     from _dispatch_roster import parse_roster_skills
 
-    text = _ROSTER_DOC.read_text(encoding="utf-8")
+    text = _ROSTER_DOC.read_text(encoding='utf-8')
     skills = parse_roster_skills(text, _DISPATCHED_HEADING)
-    assert skills, "Dispatched roster parsed empty — the check would pass vacuously."
+    assert skills, 'Dispatched roster parsed empty — the check would pass vacuously.'
     missing = sorted(key for key, values in skills.items() if not values)
-    assert not missing, f"Dispatched row(s) without an explicit skills column: {missing}"
+    assert not missing, f'Dispatched row(s) without an explicit skills column: {missing}'
 
 
 def test_producer_rows_use_the_single_accept_set_vocabulary():
     """Producer rows name a producer from the single accept-set vocabulary."""
-    text = _ROSTER_DOC.read_text(encoding="utf-8")
-    producer_values = re.findall(r"`producer=([^`]+)`", text)
-    assert producer_values, "No producer runtime input found on the roster."
+    text = _ROSTER_DOC.read_text(encoding='utf-8')
+    producer_values = re.findall(r'`producer=([^`]+)`', text)
+    assert producer_values, 'No producer runtime input found on the roster.'
     accept_set = {
-        "build-runner",
-        "sonar",
-        "pr-comment",
-        "plugin-doctor",
-        "pr-state",
-        "finalize-feedback",
+        'build-runner',
+        'sonar',
+        'pr-comment',
+        'plugin-doctor',
+        'pr-state',
+        'finalize-feedback',
     }
     outside = sorted(set(producer_values) - accept_set)
-    assert not outside, f"Producer value(s) outside the single accept-set: {outside}"
-    assert "ci-verify-timeout" not in producer_values, "ci-verify-timeout is rejected, never a producer value"
+    assert not outside, f'Producer value(s) outside the single accept-set: {outside}'
+    assert 'ci-verify-timeout' not in producer_values, 'ci-verify-timeout is rejected, never a producer value'
 
 
 def test_plan_retrospective_row_carries_the_completion_guard():
     """The plan-retrospective roster entry carries the record-before-return guard."""
-    text = _ROSTER_DOC.read_text(encoding="utf-8")
+    text = _ROSTER_DOC.read_text(encoding='utf-8')
     rows = dict(parse_roster_rows(text, _DISPATCHED_HEADING))
-    row = rows.get("plan-marshall:plan-retrospective", "")
-    assert "record-before-return" in row, "plan-retrospective row lost its completion guard"
-    assert "mark-step-done" in row, "plan-retrospective row must name its mark-step-done record"
+    row = rows.get('plan-marshall:plan-retrospective', '')
+    assert 'record-before-return' in row, 'plan-retrospective row lost its completion guard'
+    assert 'mark-step-done' in row, 'plan-retrospective row must name its mark-step-done record'
