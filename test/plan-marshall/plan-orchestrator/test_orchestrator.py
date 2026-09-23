@@ -2068,6 +2068,20 @@ class TestMigrateLayout:
         assert result['view_written'] is True
         assert regenerated['written'] is False
 
+    def test_a_rerun_without_generated_blocks_writes_an_absent_view(self, plan_context):
+        """A migrated ledger with no GENERATED block and no view gets the view written."""
+        root = _write_status(plan_context, 'migrate-noblock-epic', plans=[_make_plan('PLAN-01')])
+        assert not (root / 'epic.md').exists()
+        assert not (root / 'queue-view.md').exists()
+
+        result = cmd_migrate_layout(_variant(_MIGRATE_ARGS, slug='migrate-noblock-epic'))
+
+        assert result['already_migrated'] is True
+        assert result['tail_completed'] is True
+        assert result['epic_blocks'] == []
+        assert result['view_written'] is True
+        assert '| 1 | PLAN-01 | WS-01 | staged |' in (root / 'queue-view.md').read_text(encoding='utf-8')
+
     def test_an_archived_epic_is_resolved_and_converted_in_place(self, plan_context):
         root = _migration_fixture(plan_context, 'migrate-archived-epic', archived=True)
 

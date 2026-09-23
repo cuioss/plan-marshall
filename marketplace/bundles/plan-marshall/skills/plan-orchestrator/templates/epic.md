@@ -9,8 +9,8 @@ slug: {slug}
 > authority; any statement here that conflicts with them is stale prose.
 >
 > START HERE and the Ordered Queue are not in this file. They live in the generated,
-> git-tracked `queue-view.md` next to it, written by `orchestrator regenerate-view` (and by
-> `compact`). `queue-view.md` is never hand-edited. A merge conflict in it is never merged by
+> git-tracked `queue-view.md` next to it (see the Persist / Stop-Resume Contract in that
+> standard). `queue-view.md` is never hand-edited. A merge conflict in it is never merged by
 > hand: merge the source files, run
 > `python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator regenerate-view --slug {slug}`
 > on the merged tree, and `git add` the result.

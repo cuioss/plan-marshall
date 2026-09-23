@@ -5281,11 +5281,10 @@ def _epic_carries_generated_block(epic_path: Path) -> bool:
 def _migration_tail(slug: str, root: Path) -> tuple[_ViewWrite, list[dict[str, str]]]:
     """Write ``queue-view.md``, THEN strip the GENERATED blocks out of ``epic.md``.
 
-    The tail runs after the header commit, so it must be re-runnable on its own.
-    The strip is the LAST write: an interruption anywhere in the tail leaves
-    ``epic.md`` still carrying a GENERATED block, which is the signal
-    :func:`cmd_migrate_layout` keys on to finish the tail over an
-    already-migrated ledger. The view render reads the ledger files and the
+    The tail runs after the header commit, so it must be re-runnable on its own:
+    :func:`cmd_migrate_layout` re-runs it over an already-migrated ledger whose
+    ``queue-view.md`` is absent or whose ``epic.md`` still carries a GENERATED
+    block. The view render reads the ledger files and the
     staged specs, never ``epic.md``, so writing it first changes nothing it
     renders. Returns the view outcome and the per-block strip report — empty when
     the view write was refused, in which case ``epic.md`` is not touched.
@@ -5322,10 +5321,10 @@ def cmd_migrate_layout(args: argparse.Namespace) -> dict[str, Any]:
     byte, both annotation zones included, stays exactly where it was.
 
     Idempotent: a ledger already in the per-concern layout returns
-    ``already_migrated: true``. It writes nothing unless ``epic.md`` still
-    carries a GENERATED block — the mark of a tail an earlier run did not finish —
-    in which case it runs the tail and reports ``tail_completed: true`` with the
-    tail's outcome. Refuses an unsafe slug
+    ``already_migrated: true``. When ``queue-view.md`` is absent or ``epic.md``
+    still carries a GENERATED block, it runs the tail and reports
+    ``tail_completed: true`` with the tail's outcome; otherwise it writes
+    nothing. Refuses an unsafe slug
     (``invalid_slug``), an absent tree (``not_found``), an absent header
     (``file_not_found``), a header that is not a JSON object
     (``invalid_status_document``), and a ``plans[]`` entry that cannot become a
@@ -5352,7 +5351,7 @@ def cmd_migrate_layout(args: argparse.Namespace) -> dict[str, Any]:
             'already_migrated': True,
             'tail_completed': False,
         }
-        if not _epic_carries_generated_block(epic_path):
+        if view_path(root).is_file() and not _epic_carries_generated_block(epic_path):
             return already
         view, blocks = _migration_tail(args.slug, root)
         if view.refusal is not None:
