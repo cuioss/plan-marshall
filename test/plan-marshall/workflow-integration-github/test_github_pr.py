@@ -875,7 +875,9 @@ def test_the_three_zeros_render_differently_through_the_same_call(plan_context, 
         ),
     ],
 )
-def test_could_not_reach_outranks_covered_and_clean(plan_context, monkeypatch, plan_id, extra_comments, complete, head_sha):
+def test_could_not_reach_outranks_covered_and_clean(
+    plan_context, monkeypatch, plan_id, extra_comments, complete, head_sha
+):
     """Precedence: each "could not reach" cause turns an otherwise clean pass into ``unreachable``.
 
     Every case carries the credited Sourcery review that found nothing — the pass
