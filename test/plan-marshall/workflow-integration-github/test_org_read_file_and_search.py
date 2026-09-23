@@ -51,7 +51,8 @@ def _contents(text: str) -> str:
 
 
 def _read(ref: str | None = None, path: str = _PATH) -> dict:
-    return _github_org.cmd_repo_file_read(argparse.Namespace(repo=_REPO, path=path, ref=ref))
+    result: dict = _github_org.cmd_repo_file_read(argparse.Namespace(repo=_REPO, path=path, ref=ref))
+    return result
 
 
 def test_file_read_found_carries_content_at_the_default_branch(monkeypatch):
@@ -175,7 +176,8 @@ def _search_page(total: int, count: int, *, incomplete: bool = False, start: int
 
 
 def _search(query: str = 'review-charter') -> dict:
-    return _github_org.cmd_org_search_code(argparse.Namespace(org='cuioss', query=query))
+    result: dict = _github_org.cmd_org_search_code(argparse.Namespace(org='cuioss', query=query))
+    return result
 
 
 def test_search_code_quotes_the_literal_and_scopes_it_to_the_org(monkeypatch):

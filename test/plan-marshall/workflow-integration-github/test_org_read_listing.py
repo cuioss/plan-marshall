@@ -75,7 +75,8 @@ def _wrap_labels(page):
 
 
 def _list_repos(org: str = _ORG) -> dict:
-    return _github_org.cmd_org_list_repos(argparse.Namespace(org=org))
+    result: dict = _github_org.cmd_org_list_repos(argparse.Namespace(org=org))
+    return result
 
 
 def test_list_repos_walks_every_page_and_reports_a_complete_population(monkeypatch):
