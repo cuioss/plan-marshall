@@ -43,8 +43,8 @@
       "id": "PLAN-02",
       "slug": "ledger-decomposition-and-row-vocabulary",
       "workstream": "WS-01",
-      "status": "staged",
-      "plan_marshall_plan_id": "",
+      "status": "running",
+      "plan_marshall_plan_id": "ledger-decomposition-and-row-vocabulary",
       "pr": "",
       "landing": ""
     },
@@ -119,12 +119,21 @@
       "plan_marshall_plan_id": "",
       "pr": "",
       "landing": ""
+    },
+    {
+      "id": "PLAN-11",
+      "slug": "cross-check-dated-archive-self-collision",
+      "workstream": "WS-04",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
     }
   ],
-  "resume_anchor": "cleanup complete 2026-09-23: 29 claims re-grounded at HEAD 14d8f3ccd across all 10 specs (21 corroborated, 5 contradicted/rescoped, 3 unverifiable). 2 re-scopes applied in place: PLAN-09's worktree-verb extension target corrected (_cmd_prepare -> prepare_execute.py, move-in/move-back layer excluded), PLAN-10's merge-queue settle-loop gap flagged for D3. 2 dead citations fixed in PLAN-06. Ledger invariants ok (compact idempotent). restart_verdict=not_ready: 25 uncommitted paths from this pass need commit+push before a fresh session reads ready. Blocking Open Defect unchanged: marketplace-wide disjointness gate indeterminate. Also unrouted: git-config-injection hardening (operator decision needed, from PLAN-08's landing).",
+  "resume_anchor": "PLAN-02 RUNNING 2026-09-23 (operator-confirmed, corroborated against manage-status list: phase=2-refine, in_progress). Do not re-scope its spec while running. Queue: PLAN-03/05/06/09/10/11 staged, PLAN-07 parked -- PLAN-11 (cross-check-dated-archive-self-collision, WS-04) appeared mid-session from another process, not yet reviewed by this session. Still blocked for any further next-slot emission: every staged candidate collides with PLAN-02 on orchestrator.py (determinate), plus the unchanged marketplace-wide indeterminate gate. Still open: git-config-injection hardening routing decision from PLAN-08's landing.",
   "metadata": {
     "parallelization_scope": "2"
   },
   "created": "2026-09-19T12:31:55Z",
-  "updated": "2026-09-23T09:58:31Z"
+  "updated": "2026-09-23T13:38:02Z"
 }
