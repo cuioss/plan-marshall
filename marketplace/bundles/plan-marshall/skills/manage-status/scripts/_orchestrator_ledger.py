@@ -365,7 +365,8 @@ def _read_row_file(path: Path) -> tuple[dict[str, Any] | None, str]:
     return parsed, ''
 
 
-def _row_sort_key(row: Mapping[str, Any]) -> tuple[int, str]:
+def queue_order_key(row: Mapping[str, Any]) -> tuple[int, str]:
+    """The ``(seq, id)`` queue-order key; a row carrying no integer ``seq`` sorts first."""
     seq = row.get('seq')
     return (seq if isinstance(seq, int) and not isinstance(seq, bool) else 0, str(row.get('id', '')))
 
@@ -393,7 +394,7 @@ def read_rows(root: Path) -> QueueRead:
             unreadable.append({'file': path.name, 'reason': reason})
             continue
         rows.append(row)
-    rows.sort(key=_row_sort_key)
+    rows.sort(key=queue_order_key)
     return QueueRead(state=QUEUE_PRESENT, rows=tuple(rows), unreadable_rows=tuple(unreadable))
 
 

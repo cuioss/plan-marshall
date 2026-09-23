@@ -502,10 +502,7 @@ def _row_identities(row: dict[str, Any]) -> set[str]:
     identity, so a message addressed by either reaches the same row; an empty
     ``plan_marshall_plan_id`` (a row not yet launched) contributes nothing.
     """
-    identities = {str(row.get('id', ''))}
-    launched = str(row.get('plan_marshall_plan_id', '') or '')
-    if launched:
-        identities.add(launched)
+    identities = {str(row.get('id', '')), str(row.get('plan_marshall_plan_id', '') or '')}
     identities.discard('')
     return identities
 

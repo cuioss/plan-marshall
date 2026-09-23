@@ -406,8 +406,7 @@ def _probe_orchestrator_header(
     if state == LEDGER_ABSENT:
         return root, _orchestrator_error(args.plan_id, 'file_not_found', 'status.json not found in orchestrator store')
     if state == LEDGER_LEGACY:
-        legacy = legacy_layout_error(args.plan_id)
-        return root, _orchestrator_error(args.plan_id, legacy['error'], legacy['message'], remedy=legacy['remedy'])
+        return root, _orchestrator_error(args.plan_id, **legacy_layout_error(args.plan_id))
     if state == LEDGER_UNREADABLE:
         return root, _orchestrator_error(args.plan_id, 'header_unreadable', detail)
     return root, None
@@ -510,8 +509,7 @@ def cmd_orchestrator_update_field(args: argparse.Namespace) -> dict[str, Any] | 
         # field is not clobbered by a last-writer-wins over a stale read.
         outcome = write_header_field(root, field, value)
         if outcome.get('legacy'):
-            legacy = legacy_layout_error(args.plan_id)
-            return _orchestrator_error(args.plan_id, legacy['error'], legacy['message'], remedy=legacy['remedy'])
+            return _orchestrator_error(args.plan_id, **legacy_layout_error(args.plan_id))
     result: dict[str, Any] = {
         'status': 'success',
         'plan_id': args.plan_id,
@@ -581,8 +579,7 @@ def cmd_orchestrator_metadata(args: argparse.Namespace) -> dict[str, Any] | None
         value = args.value
         outcome = set_metadata_field(root, field, value)
         if outcome.get('legacy'):
-            legacy = legacy_layout_error(args.plan_id)
-            return _orchestrator_error(args.plan_id, legacy['error'], legacy['message'], remedy=legacy['remedy'])
+            return _orchestrator_error(args.plan_id, **legacy_layout_error(args.plan_id))
         result: dict[str, Any] = {
             'status': 'success',
             'plan_id': args.plan_id,

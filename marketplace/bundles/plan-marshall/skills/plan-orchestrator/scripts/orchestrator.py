@@ -178,6 +178,7 @@ from _orchestrator_ledger import (
     legacy_layout_error,
     migrate_document,
     mutate_row,
+    queue_order_key,
     read_header,
     read_rows,
     view_path,
@@ -1611,12 +1612,6 @@ def _format_inbox_line(counts: InboxCounts) -> str:
     return f'**Inbox (derived)**: {counts.queued} queued, {counts.archived} archived'
 
 
-def _queue_order_key(row: dict[str, Any]) -> tuple[int, str]:
-    """The ``(seq, id)`` queue-order key; a row carrying no integer ``seq`` sorts first."""
-    seq = row.get('seq')
-    return (seq if isinstance(seq, int) and not isinstance(seq, bool) else 0, str(row.get('id', '')))
-
-
 def _ordered_plans(view: dict[str, Any]) -> list[dict[str, Any]]:
     """The view's queue rows, mapping rows only, in ``(seq, id)`` order.
 
@@ -1626,7 +1621,7 @@ def _ordered_plans(view: dict[str, Any]) -> list[dict[str, Any]]:
     """
     plans = view.get('plans', [])
     rows = [row for row in plans if isinstance(row, dict)] if isinstance(plans, list) else []
-    return sorted(rows, key=_queue_order_key)
+    return sorted(rows, key=queue_order_key)
 
 
 def _build_summary(status_doc: dict[str, Any], counts: InboxCounts | None = None) -> str:
@@ -4502,8 +4497,8 @@ def _phase_signal(status_doc: dict[str, Any]) -> dict[str, Any]:
 
 def _running_plans_signal(
     status_doc: dict[str, Any],
-    unreadable_rows: Collection[str] = (),
-    unread_reason: str = 'the plan queue could not be read',
+    unreadable_rows: Collection[str],
+    unread_reason: str,
 ) -> dict[str, Any]:
     """In-flight plans. A restart mid-run loses the run's context, so it blocks.
 
