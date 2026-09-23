@@ -151,6 +151,35 @@ def test_cmd_get_root_auto_detect_returns_opencode_target(tmp_path: Path, monkey
     assert result['target'] == 'opencode'
 
 
+def test_cmd_get_root_opencode_bypasses_targetless_cache(bp_env, tmp_path: Path, monkeypatch):
+    """cmd_get_root on OpenCode bypasses a targetless cached root via detection."""
+    cached = tmp_path / 'cached-root'
+    cached.mkdir()
+    bp.write_state({'plugin_root': str(cached)})
+    monkeypatch.delenv('ANTIGRAVITY_AGENT', raising=False)
+    monkeypatch.delenv('CLAUDE_CODE_SESSION_ID', raising=False)
+    monkeypatch.delenv('OPENCODE_PID', raising=False)
+    monkeypatch.setenv('OPENCODE', '1')
+    monkeypatch.chdir(tmp_path)
+    fresh = tmp_path / 'opencode-root'
+    fresh.mkdir()
+    calls: dict = {}
+
+    def fake_detect(target=None):
+        calls['target'] = target
+        return fresh
+
+    monkeypatch.setattr(bp, 'detect_plugin_root', fake_detect)
+
+    result = bp.cmd_get_root(argparse.Namespace(refresh=False, target=None))
+
+    assert calls.get('target') == 'opencode'
+    assert result['status'] == 'success'
+    assert result['plugin_root'] == str(fresh)
+    assert result['target'] == 'opencode'
+    assert result['source'] == 'detected'
+
+
 def test_read_runtime_target_env_takes_precedence_over_marshal(tmp_path: Path, monkeypatch):
     """Env var detection (tier 1) wins over marshal.json config (tier 2)."""
     plan = tmp_path / '.plan'
