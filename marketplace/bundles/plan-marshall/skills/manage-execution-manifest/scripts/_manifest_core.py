@@ -173,10 +173,11 @@ _INFRA_CONFIG_PARENT_DIR_SUFFIXES: tuple[str, ...] = ('.yml', '.yaml')
 # test, not the list: a file belongs when an external tool resolves it by that
 # exact name, so the name is not the author's to choose and the file is that
 # tool's configuration wherever it sits. Entries are grouped by the resolving
-# tool — CI definitions, container orchestration and build context, container
-# lint/scan, review bots, and the planning system's own project configuration
-# today. The family is OPEN: it grows as tools are adopted and a new entry may
-# open a group of its own, so no size or closure claim about it is stated here or
+# tool — the groups present here include CI definitions, container orchestration
+# and build context, container lint/scan, review bots, the opencode tool's own
+# configuration, and the planning system's own project configuration. The
+# family is OPEN: it grows as tools are adopted and a new entry may open a
+# group of its own, so no size or closure claim about it is stated here or
 # anywhere else.
 #
 # ``marshal.json`` is the entry that opens the planning-system group, and it is
@@ -194,6 +195,15 @@ _INFRA_CONFIG_PARENT_DIR_SUFFIXES: tuple[str, ...] = ('.yml', '.yaml')
 # claim holds on the classifier's own reach instead: it runs only over declared
 # repository paths, so the files the sweep cannot see are files this predicate is
 # never asked to classify.
+#
+# ``opencode.json`` / ``opencode.jsonc`` are the entries that open the
+# opencode-tool group — the opencode CLI's own configuration, resolved by that
+# tool at the project root by that fixed name. They are basename-anchored for the
+# same reason as ``marshal.json``: a ``('.opencode',)`` entry in
+# :data:`_INFRA_CONFIG_DIR_TREES` would additionally reclassify every git-tracked
+# ``.opencode/plugin/**`` file — host-side plugin code, content nobody asked
+# about — where the basename entry reaches exactly the root config files the tool
+# resolves by name.
 _INFRA_CONFIG_BASENAME_GLOBS: tuple[str, ...] = (
     'docker-compose*.yml',
     'docker-compose*.yaml',
@@ -209,6 +219,8 @@ _INFRA_CONFIG_BASENAME_GLOBS: tuple[str, ...] = (
     '.coderabbit.yaml',
     '.coderabbit.yml',
     'marshal.json',
+    'opencode.json',
+    'opencode.jsonc',
 )
 
 

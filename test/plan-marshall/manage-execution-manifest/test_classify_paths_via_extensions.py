@@ -422,6 +422,18 @@ _PLANNING_SYSTEM_CONFIG = '.plan/marshal.json'
 #: a directory-tree or a suffix rule rather than the basename rule it is.
 _PLANNING_SYSTEM_SIBLING_JSON = '.plan/project-architecture/plan-marshall.json'
 
+#: The opencode tool's own configuration — the two basenames the opencode CLI
+#: resolves at the project root by that fixed name. Same basename-anchored
+#: rationale as :data:`_PLANNING_SYSTEM_CONFIG`: the entry reaches exactly the
+#: root config files, never the host-side ``.opencode/plugin/**`` tree.
+_OPENCODE_CONFIG_JSON = 'opencode.json'
+_OPENCODE_CONFIG_JSONC = 'opencode.jsonc'
+
+#: The matched negative control for the opencode entries. A repo-root `.json`
+#: that no tool resolves by a fixed name is NOT a member — otherwise the
+#: basename entries would be indistinguishable from a bare ``*.json`` suffix rule.
+_OPENCODE_SUFFIX_SIBLING_JSON = 'settings.json'
+
 # A footprint consisting exclusively of infrastructure-config paths, spanning
 # every group the table declares. Used by the D3(b) Q-Gate-outcome assertion.
 _INFRA_ONLY_FOOTPRINT = (
@@ -439,6 +451,8 @@ _INFRA_ONLY_FOOTPRINT = (
     '.coderabbit.yaml',
     '.coderabbit.yml',
     _PLANNING_SYSTEM_CONFIG,
+    _OPENCODE_CONFIG_JSON,
+    _OPENCODE_CONFIG_JSONC,
 )
 
 
@@ -480,6 +494,8 @@ def test_infra_config_family_is_location_or_basename_anchored_never_bare_suffix(
         '.coderabbit.yaml',
         '.coderabbit.yml',
         _PLANNING_SYSTEM_CONFIG,
+        _OPENCODE_CONFIG_JSON,
+        _OPENCODE_CONFIG_JSONC,
     ):
         assert _is_infrastructure_config_path(path), path
 
@@ -489,6 +505,7 @@ def test_infra_config_family_is_location_or_basename_anchored_never_bare_suffix(
         'marketplace/bundles/foo/skills/bar/scripts/thing.py',
         'mystery.xyz',
         _PLANNING_SYSTEM_SIBLING_JSON,
+        _OPENCODE_SUFFIX_SIBLING_JSON,
     ):
         assert not _is_infrastructure_config_path(path), path
 
@@ -527,6 +544,8 @@ def test_each_infra_config_family_resolves_to_a_non_unknown_bucket():
         _CONTAINER_SERVICE_YAML,
         _REVIEW_BOT_DESCRIPTOR,
         _PLANNING_SYSTEM_CONFIG,
+        _OPENCODE_CONFIG_JSON,
+        _OPENCODE_CONFIG_JSONC,
     ):
         bucket, unclaimed = _classify_paths_via_extensions([path], extensions=[])
         assert bucket != 'unknown', path
@@ -616,6 +635,49 @@ def test_planning_system_recognition_is_a_basename_rule_not_a_plan_directory_rul
 
     assert bucket == 'unknown'
     assert unclaimed == [_PLANNING_SYSTEM_SIBLING_JSON]
+
+
+def test_opencode_config_files_resolve_to_the_config_role_through_the_full_aggregator():
+    """The opencode tool's root config files stop resolving to ``unknown``.
+
+    Asserted through the FULL aggregator against the REAL discovered extension
+    set rather than against the bare predicate, because two separate facts have
+    to hold and only one of them is the predicate's: that no shipped build
+    extension claims the path first (so it reaches the stage-3 fallback at all),
+    and that the role it emerges with is ``config``. The ``unclaimed`` assertion
+    is the no-unknown-warning half: the aggregator emits the unclaimed warning
+    exactly when ``unclaimed`` is non-empty, so an empty list is the observable
+    absence of that warning.
+    """
+    extensions = _real_build_extensions()
+    assert extensions, 'discover_build_extensions() returned no build extensions'
+
+    for path in (_OPENCODE_CONFIG_JSON, _OPENCODE_CONFIG_JSONC):
+        bucket, unclaimed = _classify_paths_via_extensions([path], extensions=extensions)
+
+        assert unclaimed == [], f'{path} must not reach the unclaimed set'
+        assert bucket != 'unknown'
+        assert _resolved_role(path, extensions=extensions) == 'config'
+
+
+def test_opencode_recognition_is_a_basename_rule_not_a_json_suffix_rule():
+    """The matched negative control that keeps the opencode entries anchored.
+
+    An arbitrary repo-root ``.json`` that no tool resolves by a fixed name is
+    NOT a member and still reaches ``unknown``. Without this case the two
+    basename entries would be indistinguishable from a bare ``*.json`` suffix
+    rule — which would additionally reclassify every git-tracked JSON file in
+    the tree, the collateral reach the basename anchoring was chosen to avoid.
+    """
+    extensions = _real_build_extensions()
+    assert extensions, 'discover_build_extensions() returned no build extensions'
+
+    assert not _is_infrastructure_config_path(_OPENCODE_SUFFIX_SIBLING_JSON)
+
+    bucket, unclaimed = _classify_paths_via_extensions([_OPENCODE_SUFFIX_SIBLING_JSON], extensions=extensions)
+
+    assert bucket == 'unknown'
+    assert unclaimed == [_OPENCODE_SUFFIX_SIBLING_JSON]
 
 
 def test_extension_claim_on_a_marshal_json_path_is_never_stolen_by_the_new_entry():
