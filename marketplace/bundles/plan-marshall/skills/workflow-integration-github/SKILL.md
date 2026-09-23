@@ -145,7 +145,7 @@ Both operations take the same `PRRT_` thread ID — pass the comment's `thread_i
    | `unreachable` | The pass could not reach a review: `fetch_complete` is `false`, `merge_candidate_sha_resolved` is `false`, or `count_skipped_refusal` is non-zero (a recognised or an unrecognised refusal) |
    | `covered_clean` | The pass was fully readable, `participated_bots[]` is non-empty, and no comment survived the filters: a review covered this head and found nothing |
    | `no_coverage` | The pass was fully readable, no refusal was seen, and `participated_bots[]` is empty: no review covers this head |
-   | `not_applicable` | At least one comment survived every filter — stored by this pass, already stored by an earlier one (`count_skipped_duplicate`), or rejected by the store (reported through `producer_mismatch_hash_id`) — so the pass found something |
+   | `not_applicable` | At least one comment survived every filter — stored by this pass, already stored by a preceding fetch (`count_skipped_duplicate`), or rejected by the store (reported through `producer_mismatch_hash_id`) — so the pass found something |
 
    ⛔ **Precedence is fixed: `unreachable` outranks both other zeros.** An incomplete fetch, an unreadable merge candidate, or any refusal in the same pass makes `covered_clean` unreachable, so a quota refusal can never be read as a clean review. The verdict is derived from counts and flags the verb already computes — it builds no second discrimination — and `stored_zero_state_source` names that provenance: `derived_locally`.
 
