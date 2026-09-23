@@ -898,7 +898,48 @@ class TestDetectTargetFromEnv:
         """_detect_target_from_env returns None when no platform env var is set."""
         monkeypatch.delenv('ANTIGRAVITY_AGENT', raising=False)
         monkeypatch.delenv('CLAUDE_CODE_SESSION_ID', raising=False)
+        monkeypatch.delenv('OPENCODE', raising=False)
+        monkeypatch.delenv('OPENCODE_PID', raising=False)
         assert marketplace_paths._detect_target_from_env() is None
+
+    def test_opencode_env(self, monkeypatch):
+        """_detect_target_from_env returns 'opencode' when OPENCODE is set."""
+        monkeypatch.delenv('ANTIGRAVITY_AGENT', raising=False)
+        monkeypatch.delenv('CLAUDE_CODE_SESSION_ID', raising=False)
+        monkeypatch.delenv('OPENCODE_PID', raising=False)
+        monkeypatch.setenv('OPENCODE', '1')
+        assert marketplace_paths._detect_target_from_env() == 'opencode'
+
+    def test_opencode_pid_env(self, monkeypatch):
+        """_detect_target_from_env returns 'opencode' when OPENCODE_PID is set."""
+        monkeypatch.delenv('ANTIGRAVITY_AGENT', raising=False)
+        monkeypatch.delenv('CLAUDE_CODE_SESSION_ID', raising=False)
+        monkeypatch.delenv('OPENCODE', raising=False)
+        monkeypatch.setenv('OPENCODE_PID', '12345')
+        assert marketplace_paths._detect_target_from_env() == 'opencode'
+
+    def test_antigravity_precedence_over_opencode(self, monkeypatch):
+        """ANTIGRAVITY_AGENT wins over OPENCODE signals."""
+        monkeypatch.setenv('ANTIGRAVITY_AGENT', '1')
+        monkeypatch.setenv('OPENCODE', '1')
+        monkeypatch.setenv('CLAUDE_CODE_SESSION_ID', 'test-session')
+        assert marketplace_paths._detect_target_from_env() == 'antigravity'
+
+    def test_opencode_precedence_over_claude(self, monkeypatch):
+        """OPENCODE wins over CLAUDE_CODE_SESSION_ID."""
+        monkeypatch.delenv('ANTIGRAVITY_AGENT', raising=False)
+        monkeypatch.setenv('OPENCODE', '1')
+        monkeypatch.setenv('CLAUDE_CODE_SESSION_ID', 'test-session')
+        assert marketplace_paths._detect_target_from_env() == 'opencode'
+
+    def test_read_runtime_target_detects_opencode_from_env(self, tmp_path, monkeypatch):
+        """_read_runtime_target returns 'opencode' when OPENCODE is set without config."""
+        monkeypatch.delenv('ANTIGRAVITY_AGENT', raising=False)
+        monkeypatch.delenv('CLAUDE_CODE_SESSION_ID', raising=False)
+        monkeypatch.delenv('OPENCODE_PID', raising=False)
+        monkeypatch.setenv('OPENCODE', '1')
+        monkeypatch.chdir(tmp_path)
+        assert marketplace_paths._read_runtime_target() == 'opencode'
 
     def test_env_takes_precedence_over_marshal_json(self, tmp_path, monkeypatch):
         """Env-var tier (tier 1) wins over marshal.json config (tier 2)."""

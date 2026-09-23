@@ -180,16 +180,19 @@ def _detect_target_from_env() -> str | None:
     """Detect the runtime target from platform-injected environment variables.
 
     Antigravity injects ``ANTIGRAVITY_AGENT=1`` into every subprocess;
+    OpenCode injects ``OPENCODE=1`` (or ``OPENCODE_PID``);
     Claude Code injects ``CLAUDE_CODE_SESSION_ID``.  These ambient signals
     resolve the target before any config or filesystem probe, eliminating
     the chicken-and-egg problem on first run.
 
     Returns:
-        Target string (``'antigravity'`` or ``'claude'``), or ``None``
-        when no platform env signal is present.
+        Target string (``'antigravity'``, ``'opencode'`` or ``'claude'``),
+        or ``None`` when no platform env signal is present.
     """
     if os.environ.get('ANTIGRAVITY_AGENT'):
         return 'antigravity'
+    if os.environ.get('OPENCODE') or os.environ.get('OPENCODE_PID'):
+        return 'opencode'
     if os.environ.get('CLAUDE_CODE_SESSION_ID'):
         return 'claude'
     return None
@@ -201,6 +204,7 @@ def _read_runtime_target() -> str:
     Resolution cascade:
 
     1. **Env signal** — ``ANTIGRAVITY_AGENT`` → ``'antigravity'``,
+       ``OPENCODE`` / ``OPENCODE_PID`` → ``'opencode'``,
        ``CLAUDE_CODE_SESSION_ID`` → ``'claude'``.
     2. **Config** — ``runtime.target`` from the nearest ``.plan/marshal.json``.
     3. **Default** — ``_default_runtime_target()`` (``'claude'``).

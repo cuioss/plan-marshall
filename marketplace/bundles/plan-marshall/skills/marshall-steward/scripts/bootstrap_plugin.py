@@ -121,6 +121,7 @@ def read_runtime_target(cwd: str | None = None) -> str:
     Resolution cascade:
 
     1. **Env signal** — ``ANTIGRAVITY_AGENT`` → ``'antigravity'``,
+       ``OPENCODE`` / ``OPENCODE_PID`` → ``'opencode'``,
        ``CLAUDE_CODE_SESSION_ID`` → ``'claude'``.
     2. **Config** — ``runtime.target`` from the nearest ``.plan/marshal.json``.
     3. **Default** — ``'claude'``.
@@ -131,6 +132,8 @@ def read_runtime_target(cwd: str | None = None) -> str:
     # Tier 1: platform-injected env var (zero-cost, always present).
     if _os.environ.get('ANTIGRAVITY_AGENT'):
         return 'antigravity'
+    if _os.environ.get('OPENCODE') or _os.environ.get('OPENCODE_PID'):
+        return 'opencode'
     if _os.environ.get('CLAUDE_CODE_SESSION_ID'):
         return 'claude'
 
