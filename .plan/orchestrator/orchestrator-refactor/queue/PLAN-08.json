@@ -1,0 +1,10 @@
+{
+  "id": "PLAN-08",
+  "slug": "verdict-staleness-scoping",
+  "workstream": "WS-04",
+  "status": "shipped",
+  "plan_marshall_plan_id": "verdict-staleness-scoping",
+  "pr": "#1585",
+  "landing": "landings/PLAN-08.md",
+  "seq": 8
+}

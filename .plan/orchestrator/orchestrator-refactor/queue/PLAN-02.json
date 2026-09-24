@@ -1,0 +1,10 @@
+{
+  "id": "PLAN-02",
+  "slug": "ledger-decomposition-and-row-vocabulary",
+  "workstream": "WS-01",
+  "status": "shipped",
+  "plan_marshall_plan_id": "ledger-decomposition-and-row-vocabulary",
+  "pr": "#1609",
+  "landing": "landings/PLAN-02.md",
+  "seq": 2
+}
