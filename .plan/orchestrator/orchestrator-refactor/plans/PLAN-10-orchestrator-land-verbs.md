@@ -36,15 +36,23 @@ who proposed this mechanism.
    `manage-plan-documents request read --plan-id` — that an orchestrator epic does not have).
    Reuse an existing open PR for the same branch rather than opening a duplicate on a second
    `land` call before the first merges.
-3. **D3 — the monitor.** Wait for CI via `ci checks wait --pr-number N --project-dir
-   {worktree_path}` — already a bounded, self-timing-out primitive (`ci_complete_precondition.py`'s
-   pattern: a `--timeout` ceiling, `status: timeout` on expiry meaning "re-poll on
-   re-entry", never a foreground busy-loop). On green, merge — reusing `ci pr merge`/
-   `merge-queue` — and stamp the landed PR number from the PR's OWN state after merge,
-   never from the landing call's own return message (this epic's own memory already records
-   an incident, `project_ci_pr_merge_false_green.md`, where a merge call returned
-   `merged: true` and deleted the branch without actually merging — `land` must not repeat
-   it).
+3. **D3 — the monitor, WITH AN EXPLICIT POST-ENQUEUE SETTLE LOOP.** Wait for CI via
+   `ci checks wait --pr-number N --project-dir {worktree_path}` — already a bounded,
+   self-timing-out primitive (`ci_complete_precondition.py`'s pattern: a `--timeout` ceiling,
+   `status: timeout` on expiry meaning "re-poll on re-entry", never a foreground busy-loop).
+   On green, call `ci pr merge-queue` to enqueue — but that call returns immediately once
+   `gh pr merge --auto` succeeds (`workflow-integration-github/scripts/_github_pr.py:2265`
+   `cmd_pr_merge_queue`, confirmed live: it now corroborates that a queue is actually
+   configured before enqueueing, but nothing in that path polls for the entry to actually
+   settle — an ejection on rebase after checks went green is still possible). `land` MUST
+   NOT treat `enqueued: true` as "merged": follow the enqueue with an explicit settle loop —
+   reuse `ci pr landing-state` (poll until it reports a terminal outcome) rather than
+   assuming `merge-queue` + `checks wait` alone suffices. Only after that settle loop
+   confirms a terminal merged state does `land` stamp the landed PR number, and it does so
+   from the PR's OWN state at that point, never from the `merge-queue` call's own return
+   message (this epic's own memory already records an incident,
+   `project_ci_pr_merge_false_green.md`, where a merge call returned `merged: true` and
+   deleted the branch without actually merging — `land` must not repeat it).
 4. **D4 — pull main AND resync the worktree, without removing it.** On confirmed merge:
    fast-forward the PRIMARY checkout's `main` (so a session working there sees the landed
    state), and separately reset/resync the WORKTREE's own branch onto the new `main` so it
@@ -114,18 +122,21 @@ who proposed this mechanism.
   polling beyond `ci checks wait`; confirm/refute at `ci`'s merge-queue verb behavior
   (does it block until settled, or return immediately with the queue entry still
   pending?) before designing D3's exact call sequence (verify-at-outline).
-  - verdict: contradicted | checked_at: 14d8f3ccd74718e8258a674472e9f01b595bc2cc | by: orchestrator-refactor/cleanup | rescoped: yes | evidence: First verdict; refuted at source. ci pr merge-queue does NOT block until settled -- _github_pr.py:2265 cmd_pr_merge_queue probes the base branch, shells gh pr merge --auto, returns immediately with enqueued:True (:2332-2339); nothing in that path polls. ci checks wait waits on check runs, not queue settlement, so the entry can be ejected on rebase after checks went green. Re-scope: D3 must add an explicit post-enqueue settle loop; reuse ci pr landing-state and checks wait-for-status-flip's poll_until rather than assuming merge-queue+checks-wait suffices. Makes stamping the landed PR from PR state load-bearing, not belt-and-braces.
+  - verdict: contradicted | checked_at: 9588b30b317d0312ede90f1982122aa3145ea871 | by: orchestrator-refactor/cleanup | rescoped: yes | evidence: Refutation still holds, but the surface relocated AND partially hardened since the prior pass. _github_pr.py moved from tools-integration-ci/scripts/ to workflow-integration-github/scripts/ (provider-split refactor; tools-integration-ci/scripts/ci.py is now a 208-line thin router dispatching by provider). cmd_pr_merge_queue is still at :2265 in its new home. NEW since last pass: it now probes the base branch's merge-queue configuration via _resolve_base_queue_state BEFORE enqueueing and refuses (status:error) if no queue is configured -- 'enqueued: true' is corroborated, not assumed from the gh exit code, per its own docstring. But the ORIGINAL defect this claim names is untouched: after a successful gh pr merge --auto, the function returns immediately (enqueued:True) with nothing polling for the PR to actually settle in the queue -- an entry can still be ejected on rebase after checks went green. Re-scope: D3 must still add an explicit post-enqueue settle loop; reuse ci pr landing-state and checks wait-for-status-flip's poll_until. The spec's Expected Surface must be updated to cite workflow-integration-github/scripts/_github_pr.py, not the retired tools-integration-ci path.
 - Verify-first clause: PLAN-09 may change `git-workflow.py`'s addressing surface (its own
   HYPOTHESIS, D2) before this plan is picked up — re-derive this plan's exact worktree-path
   resolution call against WHATEVER PLAN-09 actually shipped, not against PLAN-09's own
   staged design, at this plan's own outline.
-  - verdict: corroborated | checked_at: 14d8f3ccd74718e8258a674472e9f01b595bc2cc | by: orchestrator-refactor/cleanup | rescoped: n/a | evidence: First verdict. Premise intact, now stronger. PLAN-09 reads staged at HEAD, nothing shipped, git-workflow.py byte-unchanged since 7d82d5d90 -- no whatever-PLAN-09-shipped to re-derive against yet, clause remains an unfulfilled precondition. PLAN-09's own D2 HYPOTHESIS (claim 6) is contradicted in this same pass, so the addressing surface this plan binds to is actively in flux. The ci primitive half is stable: tools-integration-ci/** unchanged since 7d82d5d90, ci pr --help confirms merge/auto-merge/safe-merge/merge-queue/update-branch/landing-state/create/view/prepare-body all present.
+  - verdict: corroborated | checked_at: 9588b30b317d0312ede90f1982122aa3145ea871 | by: orchestrator-refactor/cleanup | rescoped: n/a | evidence: Premise intact, re-confirmed. PLAN-09 reads staged at HEAD, nothing shipped -- orchestrator queue confirms row status:staged. PLAN-09's own D2 HYPOTHESIS (claim 6) is re-contradicted this same pass, so the addressing surface this plan binds to is still actively in flux. The ci primitive half is stable AT THE VERB LEVEL despite an internal provider-split refactor since the prior pass (tools-integration-ci/scripts/ci.py is now a 208-line router dispatching to workflow-integration-github/scripts/): ci pr --help still lists merge/auto-merge/safe-merge/merge-queue/update-branch/landing-state/create/view/prepare-body, all present, unchanged externally. See idx5 for the internal relocation detail.
 
 ## Expected Surface
 
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/plan-orchestrator/scripts/orchestrator.py`
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/plan-orchestrator/SKILL.md`
-- OBSERVED: `marketplace/bundles/plan-marshall/skills/tools-integration-ci/**`
+- OBSERVED: `marketplace/bundles/plan-marshall/skills/tools-integration-ci/**` (now a thin
+  provider router — the PR merge-queue implementation itself lives at
+  `marketplace/bundles/plan-marshall/skills/workflow-integration-github/scripts/_github_pr.py`,
+  re-verified at cleanup 2026-09-24 after an intervening provider-split refactor relocated it)
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/workflow-integration-git/scripts/git-workflow.py`
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/manage-locks/**`
 - OBSERVED: `test/plan-marshall/plan-orchestrator/**`
