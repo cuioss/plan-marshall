@@ -848,6 +848,7 @@ def _resolve_signal_arm(
     head_sha = inner['head_sha']
     ci_final_status = inner.get('ci_final_status')
     inner_status = inner['status']
+    clamp_state_suffix = {'clamp_state': inner['clamp_state']} if 'clamp_state' in inner else {}
 
     # CI reached a green terminal state → the arm settled cleanly → proceed.
     if inner_status in ('satisfied', 'wait_succeeded'):
@@ -857,6 +858,7 @@ def _resolve_signal_arm(
             'arm_state': 'settled',
             'head_sha': head_sha,
             'ci_final_status': ci_final_status,
+            **clamp_state_suffix,
         }
 
     # inner_status == 'wait_failed'. A timeout means CI never reached a
@@ -870,6 +872,7 @@ def _resolve_signal_arm(
             'ci_final_status': ci_final_status,
             'wait_outcome': inner.get('wait_outcome', 'deadline_exceeded'),
             'failing_checks': inner.get('failing_checks', []),
+            **clamp_state_suffix,
         }
 
     # ci_final_status in ('failure', 'no_checks'): CI reached a terminal state
@@ -884,6 +887,7 @@ def _resolve_signal_arm(
         'ci_final_status': ci_final_status,
         'failing_checks': inner.get('failing_checks', []),
         'wait_outcome': inner.get('wait_outcome', 'completed'),
+        **clamp_state_suffix,
     }
 
 
