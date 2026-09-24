@@ -239,6 +239,38 @@ _TAG_ATTRIBUTE = re.compile(r"""([^\s=/>]+)(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)
 _HTML_COMMENT = re.compile(r'<!--[\s\S]*?-->')
 #: Any remaining opening or closing HTML tag, such as an open block's ``<summary>``.
 _HTML_TAG = re.compile(r'</?[A-Za-z][^>]*>')
+#: A fenced Markdown code block: an opening run of three or more backticks or tildes
+#: (indented at most three spaces) and its info string, then the code, then a closing
+#: run of the same character at least as long — or the end of the text when no fence
+#: closes it. The ``code`` group excludes both fence lines.
+_FENCED_CODE_BLOCK = re.compile(
+    r'^[ ]{0,3}(?P<fence>(?P<char>[`~])(?P=char){2,})[^\n]*'
+    r'(?P<code>[\s\S]*?)(?:^[ ]{0,3}(?P=fence)(?P=char)*[ \t]*$|\Z)',
+    re.MULTILINE,
+)
+#: A Markdown inline code span: a backtick run, the code, and a closing run of the
+#: same length that no further backtick adjoins.
+_INLINE_CODE_SPAN = re.compile(r'(?<!`)(?P<ticks>`+)(?!`)(?P<code>[\s\S]*?[^`])(?P=ticks)(?!`)')
+#: The inert stand-in a masked code segment leaves in the text: private-use
+#: delimiters around the segment's index, so no markup pattern can match inside it.
+_CODE_PLACEHOLDER = re.compile('(\\d+)')
+
+
+def _mask_markdown_code(text: str) -> tuple[str, list[str]]:
+    """Replace every Markdown code segment in ``text`` with an inert placeholder.
+
+    Fenced blocks are masked first, then inline code spans in what remains. Returns
+    the masked text and each segment's code, indexed by its placeholder number.
+    """
+    segments: list[str] = []
+
+    def _stash(match: re.Match[str]) -> str:
+        segments.append(match.group('code'))
+        return f'{len(segments) - 1}'
+
+    text = _FENCED_CODE_BLOCK.sub(_stash, text)
+    text = _INLINE_CODE_SPAN.sub(_stash, text)
+    return text, segments
 
 
 def _is_open_details(attributes: str) -> bool:
@@ -272,14 +304,25 @@ def _carries_review_content(text: str) -> bool:
     Blocks peel from the inside out, so a collapsed block nested inside an open one
     is removed while the open block's own content stays, and an open block nested
     inside a collapsed one is removed with it.
+
+    **Markdown code is text, not markup.** Fenced code blocks (backtick or tilde
+    fences) and inline code spans are masked BEFORE any of the removals above, so a
+    literal ``<details>`` element, HTML comment or tag written inside code is never
+    peeled or stripped. A code segment that survives the removals — one not inside a
+    collapsed block or an HTML comment — counts as review content when its code
+    carries any letter or digit, because a reader sees it. Code inside a collapsed
+    block is removed with that block, exactly as its prose would be.
     """
+    text, code_segments = _mask_markdown_code(text)
     previous = None
     while previous != text:
         previous = text
         text = _INNERMOST_DETAILS_BLOCK.sub(_peel_details_block, text)
     text = _HTML_COMMENT.sub(' ', text)
     text = _HTML_TAG.sub(' ', text)
-    return any(ch.isalnum() for ch in text)
+    visible_code = [code_segments[int(index)] for index in _CODE_PLACEHOLDER.findall(text)]
+    text = _CODE_PLACEHOLDER.sub(' ', text)
+    return any(ch.isalnum() for ch in text) or any(ch.isalnum() for code in visible_code for ch in code)
 
 
 def is_status_summary(record: dict) -> bool:

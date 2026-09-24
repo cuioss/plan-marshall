@@ -266,6 +266,62 @@ def test_collapsed_details_and_empty_open_blocks_below_the_status_line_stay_meta
     assert is_status_summary(record)
 
 
+_LITERAL_DETAILS = '<details>Fix authorization</details>'
+
+
+@pytest.mark.parametrize(
+    'below_status_line',
+    [
+        f'```\n{_LITERAL_DETAILS}\n```',
+        f'~~~\n{_LITERAL_DETAILS}\n~~~',
+        f'`{_LITERAL_DETAILS}`',
+        f'<details><summary>Review details</summary>configuration</details>\n\n```\n{_LITERAL_DETAILS}\n```',
+    ],
+    ids=[
+        'backtick-fenced-block-holding-a-literal-details-element',
+        'tilde-fenced-block-holding-a-literal-details-element',
+        'inline-code-span-holding-a-literal-details-element',
+        'collapsed-block-outside-code-plus-a-fenced-example',
+    ],
+)
+def test_a_literal_details_element_inside_markdown_code_is_review_content(below_status_line):
+    """Markdown code is text, not markup: a ``<details>`` written inside code is not peeled.
+
+    A reader sees the code example, so a status-prefixed body whose only visible
+    finding is that example is a counted ``review_body``, not a status summary. A
+    collapsed block outside the code is still removed, and the example alone keeps
+    the body substantive.
+    """
+    from review_gate_delta import _is_actionable, is_status_summary
+
+    record = {'bot_kind': 'coderabbit', 'kind': 'review_body', 'body': _STATUS_LINE + below_status_line}
+
+    assert not is_status_summary(record)
+    assert _is_actionable(record)
+
+
+@pytest.mark.parametrize(
+    'below_status_line',
+    [
+        f'<details><summary>Review details</summary>\n\n```\n{_LITERAL_DETAILS}\n```\n</details>',
+        '<details><summary>Review details</summary>`example`</details>',
+        '```\n```',
+    ],
+    ids=[
+        'fenced-block-inside-a-collapsed-block',
+        'inline-code-span-inside-a-collapsed-block',
+        'empty-fenced-block',
+    ],
+)
+def test_markdown_code_a_reader_does_not_see_stays_meta(below_status_line):
+    """Matched control: code inside a collapsed block goes with the block, and empty code carries no text."""
+    from review_gate_delta import is_status_summary
+
+    record = {'bot_kind': 'coderabbit', 'kind': 'review_body', 'body': _STATUS_LINE + below_status_line}
+
+    assert is_status_summary(record)
+
+
 def test_a_substantive_review_body_from_another_author_is_still_an_escape():
     """The carve-out is gated on the author AND the signature — not on the kind.
 
