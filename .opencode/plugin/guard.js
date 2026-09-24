@@ -17,9 +17,11 @@
  *   Guarded tools: bash (R1, R2, R4), edit/write/patch (R3). Every other tool
  *   passes through untouched.
  *
- *   R1 — shell-chaining constructors (bash): the command, with single-quoted and
- *   double-quoted regions stripped, contains `&&`, `||`, `;`, `|`, `$(`,
- *   a backtick, a trailing `&`, or a newline  => block.
+  *   R1 — shell-chaining constructors (bash): the command, with single-quoted
+  *   regions stripped and double-quoted regions stripped except for command
+  *   substitution, contains `&&`, `||`, `;`, `|`, `$(`,
+  *   a backtick, a trailing `&`, or a newline  => block. `$(` and backticks
+  *   inside double quotes still block because Bash executes them there.
  *
  *   R2 — shell file operations, mutation class (bash): the command's first token
  *   is one of {rm mv cp touch mkdir rmdir truncate tee chmod chown ln dd}  => block.
@@ -51,7 +53,9 @@ function hasChainingConstructor(command) {
   let inDouble = false
   let escaped = false
   let unquoted = ""
-  for (const ch of command) {
+  let doubleQuotedSubstitution = false
+  for (let i = 0; i < command.length; i++) {
+    const ch = command[i]
     if (escaped) {
       escaped = false
       continue
@@ -68,8 +72,16 @@ function hasChainingConstructor(command) {
       inDouble = !inDouble
       continue
     }
-    if (!inSingle && !inDouble) unquoted += ch
+    if (!inSingle && !inDouble) {
+      unquoted += ch
+      continue
+    }
+    if (inDouble && !inSingle) {
+      if (ch === "`") doubleQuotedSubstitution = true
+      if (ch === "$" && command[i + 1] === "(") doubleQuotedSubstitution = true
+    }
   }
+  if (doubleQuotedSubstitution) return true
   return /&&|\|\||[;|]|\$\(|`|&\s*$|\n/.test(unquoted)
 }
 
