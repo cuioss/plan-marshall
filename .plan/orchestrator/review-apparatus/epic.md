@@ -45,6 +45,33 @@ is reconciled from it, never the reverse.
 
 ### Queue annotations
 
+**2026-09-24 — `PLAN-PR-069` SKIPPED at this emit round, sequence it behind `PLAN-PR-067` landing.**
+`069` passes the standard corpus-surfaces-membership check against `067`'s DECLARED surface (no
+overlap row), but `067`'s REALIZED worktree diff (inspected directly, read-only, after the
+066/067 collision below made declared-surface trust insufficient) touches
+`automatic-review/standards/bot-participation-contract.md` and
+`automatic-review/standards/cuioss-review-bot.md` — both undeclared by `067`, both declared by
+`069`. Emitting `069` now would repeat the exact undeclared-collision pattern `PLAN-PR-066`'s
+landing just surfaced. ⛔ **Re-check `067`'s realized footprint (not just its declared one) before
+emitting `069`** — do not trust the membership stopgap alone on this pair until `PLAN-11` lands.
+
+**2026-09-24 — `PLAN-PR-066` SHIPPED (#1611, `6df659569`) — full record `landings/PLAN-PR-066.md`.**
+Landed across 4 PRs total: `plan-marshall#1611` (this repo) plus `plan-marshall#1601`/`#1605` and
+foreign `cuioss-organization#288`/`#290`, `cuioss-review-bot#66`. All corroborated merged
+first-party, not taken from the operator's landing paste (which misattributed content between
+`#288` and `#290` and misidentified which item was "still owed" — both corrected in the landing
+report).
+
+⛔⛔ **UNDECLARED-SURFACE COLLISION WITH THE CURRENTLY-RUNNING `PLAN-PR-067` — see Open Defects.**
+`#1611` additively touched `workflow-integration-github/scripts/github_ops.py` and
+`workflow-integration-github/SKILL.md`, neither on `PLAN-PR-066`'s declared Expected Surface. Both
+files ARE on `PLAN-PR-067`'s declared surface, and that pair was emitted together 2026-09-23 on the
+strength of a corpus-surfaces-membership disjointness check (the standing stopgap while
+`corpus cross-check` remains non-determinate — `PLAN-11` in `orchestrator-refactor`). The
+membership check was correct on the DECLARED surfaces; the REALIZED footprint proved it wrong.
+`PLAN-PR-067`'s worktree branch predates `#1611` and has already made independent, substantial
+changes to both files. This is now Open Defect material, not merely a watch.
+
 **2026-09-05 — PLAN-PR-032 landed (#1416); two staged proposals are now DISCHARGED.** PR-032's own
 Dependencies section stated the consequence in advance: *"Once this plan lands, drop PLAN-PR-031 D5
 items 1-3 and PLAN-PR-026 D6's lane item — they become discharged, and leaving them staged re-opens
@@ -469,6 +496,32 @@ nothing dropped. Each pointer below names its destination heading in the form th
 another ledger). Both are restated in § Standing Constraints, which is where they bind.
 
 ## Open Defects
+
+### ⛔⛔ NEW 2026-09-24 (`PLAN-PR-066` landing) — an undeclared-surface expansion collided with the currently-running `PLAN-PR-067`
+
+`PLAN-PR-066` shipped (`plan-marshall#1611`, `6df6595699e878af7a5c4546380dfd11730d2c44`) additively
+touching `marketplace/bundles/plan-marshall/skills/workflow-integration-github/scripts/github_ops.py`
+(+25/−2, wiring 4 new `ci org`/`ci repo` read verbs) and the same skill's `SKILL.md` (+35 lines
+documenting them). **Neither file was on `PLAN-PR-066`'s declared Expected Surface** — the new verbs
+(`_github_org.py`, 516 new lines) were an unplanned mid-execute addition (operator ruling, TASK-17),
+and the spec was never amended to declare the files it landed touching.
+
+⛔ **Both files ARE declared by `PLAN-PR-067`**, currently `running`. The two plans were emitted
+together on 2026-09-23 after a disjointness check via the corpus-surfaces-membership stopgap (the
+standing workaround while `corpus cross-check` stays non-determinate — see `orchestrator-refactor`
+`PLAN-11`). That check compared DECLARED surfaces and correctly found none in common; it could not
+see a surface neither spec declared. `PLAN-PR-067`'s worktree branch (base `a41de18f5`, predating
+`#1611`) has independently made substantial changes to both files (`github_ops.py` +345 lines,
+`SKILL.md` +63) before `#1611` merged.
+
+⇒ **`PLAN-PR-067` will need to rebase onto the new `main` and reconcile against `#1611`'s additive
+changes before it can merge.** Whether that reconciliation is a clean rebase or a real textual
+conflict has not been evaluated (that plan's own session owns its worktree; this is a read-only
+orchestrator finding, not a fix). **Unowned by any staged spec** — this is a live-plan coordination
+gap, not a corpus defect; `PLAN-PR-066`'s own Expected Surface is NOT retro-corrected, per this
+epic's standing precedent that a shipped spec's surface has no consumer.
+
+Full record: [`landings/PLAN-PR-066.md`](landings/PLAN-PR-066.md) § Routing and Merge Behavior.
 
 ### ⭐⭐⭐ 2026-09-18 — THE COMPONENT RE-CUT: 9 theme specs → 10 component plans
 
@@ -1959,6 +2012,20 @@ authority, and duplicating a defect write-up here is the source-of-truth-duplica
   still has no prior-transmission term.
 
 ## Watches
+
+### ⚠ NEW 2026-09-24 (`PLAN-PR-066` landing) — 0.30.0 fleet re-pin population unconfirmed
+
+The landing message's own Residue recorded "17 consumer re-pin PRs from the 0.30.0 release were
+open at release time." This pass did not re-enumerate that population — it verified only the
+single named item the operator's paste flagged as "still owed" (`API-Sheriff#351`, which has
+since merged, `84e07c7ce4e5cfcd30ebbc682aab001dc3339481`). ⛔ **The operator's paste undercounted
+the residue** — it named one pending item where the landing's own record names seventeen, and the
+one it named turned out to already be stale. **Unowned by any staged spec here** — the fleet
+rollout beyond plan-marshall's own pilot is `PLAN-PR-066`'s D9 population, already shipped; a
+re-enumeration of the 0.30.0 re-pin population, if still incomplete, is fleet-operations work, not
+a review-apparatus defect. Recorded so the "1 of 5 still owed" framing is never repeated: it was
+wrong twice over (wrong count, and the one item it did name was already resolved by the time it
+was checked).
 
 > ↪ Relocated to `settled.md` § "✅ WATCH CLOSED 2026-09-15 (operator decision) — ex “we are wholly Tier 1, and this epic's defect list IS the Tier 1 trade billed back to us”" — the tier-architecture question is decided; CodeRabbit stays required until pr-agent reaches comparable quality, per `review-practice.md` § 1.
 
