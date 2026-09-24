@@ -17,6 +17,9 @@ directly)::
     failing_checks: [str, ...]      # present on wait_failed (may be empty)
     wait_outcome: completed | deadline_exceeded   # present on wait_failed
     mode: strict | consume-failures               # present on wait_failed
+    clamp_state: no-ceiling-fallback  # present on post-wait envelopes only
+                                      # when the target declares no harness
+                                      # ceiling (the fallback bound engaged)
 
 Outcome semantics:
 
@@ -52,7 +55,11 @@ The resolver's *consumed* inner ceiling is clamped so that
 ``harness bash-timeout-ceiling`` seam for the active target), whatever the
 inner value's origin — an explicit ``--timeout``, the
 persisted ``ci:wait`` learned value, or
-:data:`DEFAULT_CI_WAIT_TIMEOUT_SECONDS`. The script-side ceiling is therefore
+:data:`DEFAULT_CI_WAIT_TIMEOUT_SECONDS`. A target that declares NO harness
+ceiling does NOT get an unbounded wait: the consumed ceiling is bounded by
+the finite :data:`NO_CEILING_FALLBACK_INNER_SECONDS`, and the engagement is
+loud — a stderr warning plus ``clamp_state: no-ceiling-fallback`` on the
+returned envelope. The script-side ceiling is therefore
 NOT unconditionally the binding one: a CI run genuinely longer than the
 clamped ceiling returns a structured ``deadline_exceeded`` envelope
 (``wait_failed`` / ``arm_pending``) and the dispatcher re-polls on re-entry,
@@ -185,11 +192,21 @@ HARNESS_BASH_CEILING_SECONDS: int | None = _resolve_harness_bash_ceiling()
 
 #: The largest inner ceiling for which ``inner + CI_WAIT_OUTER_BUFFER_SECONDS``
 #: is still STRICTLY below the active target's per-call Bash ceiling; ``None``
-#: when the target imposes no ceiling (clamp disabled above).
+#: when the target imposes no ceiling (the no-ceiling fallback bound below
+#: applies instead of an unbounded wait).
 #: Derived, never hard-coded, so it tracks the runtime-provided value.
 _MAX_INNER_WAIT_SECONDS: int | None = (
     None if HARNESS_BASH_CEILING_SECONDS is None else HARNESS_BASH_CEILING_SECONDS - CI_WAIT_OUTER_BUFFER_SECONDS - 1
 )
+
+#: Finite inner ceiling consumed when the active target declares NO harness
+#: ceiling (``_MAX_INNER_WAIT_SECONDS`` is ``None``). Without it the upper
+#: clamp is disabled and a still-running CI waits unboundedly; with it the
+#: wait terminates inside the clamp and resolves to ``deadline_exceeded``
+#: re-poll. Tracks :data:`DEFAULT_CI_WAIT_TIMEOUT_SECONDS` — the defensive
+#: default — so a no-ceiling target waits exactly what an unconfigured caller
+#: asks for, never longer.
+NO_CEILING_FALLBACK_INNER_SECONDS: int = DEFAULT_CI_WAIT_TIMEOUT_SECONDS
 
 #: Cache file path relative to the plan directory.
 _CACHE_RELATIVE_PATH: str = 'work/ci-precondition-cache.toon'
@@ -231,8 +248,14 @@ def _clamp_wait_ceiling(inner_seconds: int) -> int:
     would crash the resolution instead of degrading to a bounded wait.
 
     When the active target imposes NO ceiling (``_MAX_INNER_WAIT_SECONDS`` is
-    ``None``), the upper clamp is disabled: the requested value is bounded from
-    below only, per the contract's allowed ``no-op`` response.
+    ``None``), the upper clamp falls back to the finite
+    :data:`NO_CEILING_FALLBACK_INNER_SECONDS` bound instead of disabling
+    itself: the requested value is bounded from above by the fallback (so a
+    still-running CI terminates inside the clamp as ``deadline_exceeded``)
+    and from below at one second. The fallback engagement is loud — the
+    resolver logs a warning and carries ``clamp_state: no-ceiling-fallback``
+    on the returned envelope — because an unbounded wait would present as a
+    hang rather than a re-pollable verdict.
 
     Args:
         inner_seconds: The requested inner ceiling, from any origin — an
@@ -244,7 +267,7 @@ def _clamp_wait_ceiling(inner_seconds: int) -> int:
         the nearest inner ceiling that does.
     """
     if _MAX_INNER_WAIT_SECONDS is None:
-        return max(1, inner_seconds)
+        return max(1, min(inner_seconds, NO_CEILING_FALLBACK_INNER_SECONDS))
     return max(1, min(inner_seconds, _MAX_INNER_WAIT_SECONDS))
 
 
@@ -626,6 +649,23 @@ def resolve(
     requested_ceiling = timeout_seconds
     timeout_seconds = _clamp_wait_ceiling(timeout_seconds)
 
+    # No-ceiling fallback loudness: when the harness declares no ceiling the
+    # consumed wait is bounded by the finite fallback instead of running
+    # unbounded. Warn once per resolve and tag every post-wait envelope with
+    # the clamp state, so a disabled clamp is never silent. The upward
+    # ratchet below is untouched — it still compares against the PRE-clamp
+    # requested ceiling, keeping the learned ``ci:wait`` value honest.
+    clamp_state: dict[str, str] = {}
+    if _MAX_INNER_WAIT_SECONDS is None:
+        print(
+            'Warning: active target declares no harness Bash ceiling — '
+            'bounding ci wait to the finite fallback inner ceiling '
+            f'({NO_CEILING_FALLBACK_INNER_SECONDS}s); a still-running CI '
+            'resolves to deadline_exceeded re-poll inside the clamp.',
+            file=sys.stderr,
+        )
+        clamp_state = {'clamp_state': 'no-ceiling-fallback'}
+
     head_sha = head_fn(worktree_path)
 
     # Cache hit?
@@ -670,6 +710,7 @@ def resolve(
             'status': 'wait_succeeded',
             'head_sha': head_sha,
             'ci_final_status': 'success',
+            **clamp_state,
         }
 
     if envelope_status == 'success' and final_status == 'failure':
@@ -681,6 +722,7 @@ def resolve(
             'failing_checks': failing_checks,
             'wait_outcome': wait_outcome,
             'mode': mode,
+            **clamp_state,
         }
 
     if envelope_status == 'success' and final_status == 'none':
@@ -693,6 +735,7 @@ def resolve(
             'failing_checks': [],
             'wait_outcome': wait_outcome,
             'mode': mode,
+            **clamp_state,
         }
 
     # Timeout or any other non-success envelope. ``ci wait`` carries
@@ -740,6 +783,7 @@ def resolve(
         'failing_checks': failing_checks,
         'wait_outcome': wait_outcome or 'deadline_exceeded',
         'mode': mode,
+        **clamp_state,
     }
 
 

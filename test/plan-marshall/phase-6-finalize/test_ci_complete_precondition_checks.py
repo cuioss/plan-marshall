@@ -1005,3 +1005,109 @@ def test_build_parser_signal_arm_defaults_none():
         ]
     )
     assert args.signal_arm is None
+
+
+# ---------------------------------------------------------------------------
+# D2 — no-ceiling fallback: bounded loud clamp with deadline_exceeded re-poll
+# ---------------------------------------------------------------------------
+
+
+def _simulate_no_ceiling_target(monkeypatch):
+    """Pretend the active target declares no harness Bash ceiling."""
+    monkeypatch.setattr(_resolver_mod, '_MAX_INNER_WAIT_SECONDS', None)
+
+
+def test_no_ceiling_clamp_bounds_above_to_finite_fallback(monkeypatch):
+    """Without a harness ceiling the clamp bounds above at the finite fallback."""
+    _simulate_no_ceiling_target(monkeypatch)
+    fallback = _resolver_mod.NO_CEILING_FALLBACK_INNER_SECONDS
+
+    assert _resolver_mod._clamp_wait_ceiling(3600) == fallback
+    assert _resolver_mod._clamp_wait_ceiling(fallback) == fallback
+    # The lower bound survives the fallback: zero never yields a
+    # zero-timeout subprocess call.
+    assert _resolver_mod._clamp_wait_ceiling(0) == 1
+
+
+def test_no_ceiling_resolve_is_loud_and_bounded(plan_context, monkeypatch, capsys):
+    """Still-running CI under no ceiling resolves to deadline_exceeded re-poll.
+
+    The consumed wait is the finite fallback (not unbounded), the
+    disabled-clamp state is loud (stderr warning + ``clamp_state`` TOON
+    field), and the timeout outcome is uncached so re-entry re-polls.
+    """
+    _simulate_no_ceiling_target(monkeypatch)
+    fallback = _resolver_mod.NO_CEILING_FALLBACK_INNER_SECONDS
+    plan_id = 'ci-precond-no-ceiling-timeout'
+    git_stub = _StubGitHead(_SHA_A)
+    timeout_set_stub = _StubTimeoutSet()
+    wait_stub = _StubCiWait(
+        [
+            {
+                'status': 'error',
+                'operation': 'ci_wait',
+                'error': 'Timeout waiting for CI',
+                'pr_number': _PR,
+                'failing_checks': [{'name': 'build', 'conclusion': None}],
+                'wait_outcome': 'deadline_exceeded',
+                'last_status': 'pending',
+            }
+        ]
+    )
+
+    result = resolve(
+        plan_id=plan_id,
+        worktree_path=_WORKTREE,
+        pr_number=_PR,
+        ci_wait_runner=wait_stub,
+        git_head_resolver=git_stub,
+        timeout_get_runner=_StubTimeoutGetMissing(),
+        timeout_set_runner=timeout_set_stub,
+    )
+
+    # Bounded: the wait consumed exactly the finite fallback ceiling.
+    assert wait_stub.calls[0][2] == fallback
+    # Verdict: still-running CI resolves to deadline_exceeded re-poll.
+    assert result['status'] == 'wait_failed'
+    assert result['ci_final_status'] == 'timeout'
+    assert result['wait_outcome'] == 'deadline_exceeded'
+    assert result['failing_checks'] == [{'name': 'build', 'conclusion': None}]
+    # Loud: the disabled-clamp state rides the envelope ...
+    assert result['clamp_state'] == 'no-ceiling-fallback'
+    # ... and the warning names the fallback on stderr.
+    captured = capsys.readouterr()
+    assert 'no harness Bash ceiling' in captured.err
+    assert str(fallback) in captured.err
+    # Uncached: re-entry re-polls.
+    assert not _cache_path(plan_id).exists()
+
+
+def test_no_ceiling_upward_ratchet_records_full_request_elapsed(plan_context, monkeypatch):
+    """The fallback does not corrupt the ratchet: a full-request elapsed records.
+
+    With the default origin the requested ceiling equals the consumed
+    fallback, so an elapsed-at-deadline at the bound still satisfies the
+    ``elapsed >= requested`` guard and the learned ``ci:wait`` value records
+    honestly instead of going silent.
+    """
+    _simulate_no_ceiling_target(monkeypatch)
+    fallback = _resolver_mod.NO_CEILING_FALLBACK_INNER_SECONDS
+    plan_id = 'ci-precond-no-ceiling-ratchet'
+    timeout_set_stub = _StubTimeoutSet()
+    wait_stub = _StubCiWait([{'status': 'error', 'error': 'Timeout waiting for CI'}])
+    clock = _StubClock([0.0, float(fallback)])
+
+    result = resolve(
+        plan_id=plan_id,
+        worktree_path=_WORKTREE,
+        pr_number=_PR,
+        ci_wait_runner=wait_stub,
+        git_head_resolver=_StubGitHead(_SHA_A),
+        timeout_get_runner=_StubTimeoutGetMissing(),
+        timeout_set_runner=timeout_set_stub,
+        monotonic_clock=clock,
+    )
+
+    assert result['ci_final_status'] == 'timeout'
+    assert result['clamp_state'] == 'no-ceiling-fallback'
+    assert timeout_set_stub.recorded == [fallback]
