@@ -57,6 +57,15 @@ deliverable-less edits declared. G22 + G18 + G23 + 2 singletons (12 lessons).
 /plan-marshall task="implement .plan/orchestrator/truthful-signals/plans/PLAN-213-plan-execute-mechanics.md"
 ```
 
+## Folded 2026-09-24 — checkpoint-majority runs need a dispatch-time share signal
+
+From `truth-147-lane-reports-green-001.md` (candidate-lesson, 5-execute dispatch distribution 4 of
+5 voluntary_checkpoint, 80%): the ledger records each termination cause faithfully but never names
+the majority share where re-dispatch stops being an exception. Adjacent to #9 (OUTCOME before
+voluntary checkpoint yield) — a checkpoint-majority run should prompt the dispatcher (budget or
+per-envelope progress requirement) before the next re-dispatch. Adds no file surface:
+measurement + threshold inside the declared `phase-5-execute/` dispatch ledger.
+
 ## Write-Boundary
 
 The plan touches only its own repository source and tests. It creates and edits NO

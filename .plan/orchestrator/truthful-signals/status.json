@@ -35,10 +35,10 @@
       "id": "PLAN-TRUTH-147",
       "slug": "a-lane-reports-green-yields-or-transitions-without-the-artifact-its-own-gate-requires",
       "workstream": "WS-01",
-      "status": "running",
-      "plan_marshall_plan_id": "",
-      "pr": "",
-      "landing": "",
+      "status": "shipped",
+      "plan_marshall_plan_id": "truth-147-lane-reports-green",
+      "pr": "1599",
+      "landing": "landings/PLAN-TRUTH-147.md",
       "superseded_by": ""
     },
     {
@@ -470,12 +470,12 @@
       "landing": ""
     }
   ],
-  "resume_anchor": "2026-09-22: PLAN-TRUTH-147 running (operator-confirmed). N=1 R=1 - slot full. Inbox drained empty (0 queued, no closures). 178 staged at tail. Next: await 147 landing/PR, then analyze.",
+  "resume_anchor": "2026-09-24 analyze: 147 shipped (PR1599/85e6e21, 6-message drain, W-1599-a opened). Proactive next: nothing emittable - 145/146/150/153/167 prep-blocked; 149 prep-ready but live-collides with 3 running plans. Unorchestrated live 179 plan observed. Next: await 147-follow-up lesson or live plans landing.",
   "metadata": {
     "successor_of": "plan-optimization",
     "origin_note": "Spawned 2026-07-22 from plan-optimization staged residue + watches; running PLAN-23/35 remain in plan-optimization until landed, then that epic self-archives.",
     "parallelization_scope": "1"
   },
   "created": "2026-07-22T18:17:00Z",
-  "updated": "2026-09-23T20:09:22Z"
+  "updated": "2026-09-24T08:47:56Z"
 }

@@ -161,6 +161,15 @@ tier down) and for `orchestration-model.md` § Verify-First Contract: a mandated
 flag that suppresses a failure mode must name a module in the command's actual reactor that would trigger
 it.
 
+## FOLDED 2026-09-24 — references entries need deliverable-surface coverage at outline time
+
+From `truth-147-lane-reports-green-002.md` (candidate-lesson, 11 references-only files outside
+every deliverable's declared surface, absorbed downstream by the manifest aspect): outline
+verification checks declared-vs-realized recall but has no references-subset-declared direction.
+Lead for D0/D4 (parser + recall coverage): an outline-phase check that every references entry is
+covered by at least one deliverable's declared file surface or carries an explicit survey-scope
+annotation. Adds no file surface: check inside the declared `manage-solution-outline/**`.
+
 ## Write-Boundary
 
 The executing plan MUST NOT create or edit any file under `.plan/local/orchestrator/truthful-signals/` except its own `inbox/{sender}-{seq}.md` messages, written through `plan-marshall:plan-orchestrator:orchestrator inbox write`. The orchestrator owns every other ledger write.
