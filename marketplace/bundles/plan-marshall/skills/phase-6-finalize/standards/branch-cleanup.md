@@ -1511,9 +1511,9 @@ The routing itself:
           have been removed from the queue, or the queue could not be read.
         options:
           - label: "It is queued or merged — wait for it"
-            description: "Waits, within the usual time limit, for the pull request to merge into {base_branch}, then tidies up the branch and the worktree once the merge is seen"
+            description: "Waits, within the usual time limit, for the pull request to merge into {base_branch}, then tidies up the branch and its working copy once the merge is seen"
           - label: "Stop here"
-            description: "Stops without waiting and without tidying up. The branch and the worktree stay as they are, and the cleanup is recorded as still owed"
+            description: "Stops without waiting and without tidying up. The branch and its working copy stay as they are, and the cleanup is recorded as still owed"
         multiSelect: false
   ```
 
