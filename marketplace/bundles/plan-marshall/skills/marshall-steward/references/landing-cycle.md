@@ -173,19 +173,25 @@ steward lands plan-lessly and always routes through the queue.
 
 Past the pre-condition, branch on the returned `enqueued` value:
 
-- **`enqueued: true`** — the PR's own membership in the queue was observed. Continue to (d).
+- **`enqueued: true`** — the PR's own membership in the queue was observed; it is queued, not
+  merged. Wait for the platform to land it before (d): poll
+  `ci pr view --pr-number {pr_number}` (the number `pr create` returned — never `--head`, which
+  stops resolving once the queue deletes the branch) until `state == merged`, as
+  [`phase-6-finalize/standards/branch-cleanup.md`](../../phase-6-finalize/standards/branch-cleanup.md)
+  § "Wait for the Queue Merge to Land (bounded)" does. `closed` or a read error is not a
+  landing — stop and report it to the operator.
 - **`enqueued: indeterminate`** — the enqueue call was accepted, but the PR's membership could
   not be observed; `enqueue_unobserved_reason` names why (`membership_read_failed`,
-  `entries_incomplete`, or `pr_not_listed`). Do NOT continue to (d) as though the PR were
-  queued. Report the reason to the operator and have them confirm the PR's queue membership
-  (or that it already landed) before continuing.
+  `entries_incomplete`, or `pr_not_listed`). Do NOT continue as though the PR were queued.
+  Report the reason to the operator and have them confirm the PR's queue membership (then wait
+  for the landing as above) or that it already landed, before continuing to (d).
 
 See
 [`tools-integration-ci/standards/pr-operations.md`](../../tools-integration-ci/standards/pr-operations.md)
 § "Workflow: Merge-Queue PR" for the pre-condition and the membership-read contract behind both.
 
-**(d) Switch back to the base branch and pull** so the local checkout reflects the
-merged result:
+**(d) Once the PR is merged, switch back to the base branch and pull** so the local
+checkout reflects the merged result:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow switch-and-pull \

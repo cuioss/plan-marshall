@@ -648,9 +648,8 @@ Rejected, each with the reason:
 A yield figure is comparable only to one computed under the same **counting** rule, and that rule
 moved in this repository independently of the configuration above.
 
-`review_gate_delta.py`'s `_is_actionable` treats a `review_body` finding as actionable unless
-`is_status_summary` matches the bot's registry `review_body_summary_patterns` against the comment
-BODY.
+The status-summary carve-out is defined by the `is_status_summary` docstring in
+[`review_gate_delta.py`](../scripts/review_gate_delta.py) — the authoritative rule, not restated here.
 Before the carve-out existed, a reviewer's `"Actionable comments posted: N"` status summary counted
 as one actionable finding.
 

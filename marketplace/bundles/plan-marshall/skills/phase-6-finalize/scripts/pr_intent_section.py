@@ -181,9 +181,9 @@ def has_outline_intent(plan_id: str) -> bool:
 # draft, never against a clipped window, so a terminator that only looks final
 # because the window ends right after it (``3.5``, ``e.g.x``) is not a boundary.
 # The full stop of an ellipsis (``...``) or of ``e.g.``, ``i.e.``, ``vs.`` and
-# ``etc.`` is not a boundary either.
+# ``etc.`` is not a boundary either, in any letter case (``E.g.`` opening a sentence).
 _SENTENCE_END = re.compile(
-    r'(?:(?<!\.)(?<!\be\.g)(?<!\bi\.e)(?<!\bvs)(?<!\betc)\.|[!?])[)\]"\'*_`]*(?=\s|$)|\n[ \t]*\n'
+    r'(?:(?<!\.)(?<!(?i:\be\.g))(?<!(?i:\bi\.e))(?<!(?i:\bvs))(?<!(?i:\betc))\.|[!?])[)\]"\'*_`]*(?=\s|$)|\n[ \t]*\n'
 )
 
 
