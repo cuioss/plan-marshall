@@ -54,6 +54,19 @@ Domain-triage extensions (`{bundle}:ext-triage-{domain}`) are loaded on demand i
 
 ## Step 1: Producer-mode branch
 
+### Guard: `producer` input validation (input boundary)
+
+Validate the `producer` runtime input against the accept-set (`build-runner`, `sonar`, `pr-comment`, `plugin-doctor`, `pr-state`, `finalize-feedback`) BEFORE entering any Step 1 branch. When the value is outside the accept-set, STOP — do not enter the shared ingestion/triage flow — and return:
+
+```toon
+status: error
+error: unknown_producer
+producer: {received value}
+display_detail: "unknown producer: {received value}"
+```
+
+`ci-verify-timeout` is rejected here on every producer path — it is a `default:ci-verify` taxonomy producer string, not a `producer` value; the owning producer of the rejection is `default:ci-verify` (see the Inputs table note).
+
 ### Branch: `producer=build-runner` | `sonar` | `pr-comment` (store-only query)
 
 The orchestrator has already populated the store via the mechanical producer (log parse, Sonar fetch, PR comments fetch). Verify the gate count and continue — the `--include-qgate` flag merges the pending per-phase Q-Gate findings into the per-plan read so the sweep is a single unified query (see `manage-findings` Canonical invocations → `list`):
