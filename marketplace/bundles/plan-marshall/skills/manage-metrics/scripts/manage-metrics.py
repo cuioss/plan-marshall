@@ -31,6 +31,7 @@ Usage:
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -3837,9 +3838,10 @@ def _inline_main_context_sum(phase_row: dict) -> int:
 # Targets that expose no session transcript. Enrichment is structurally
 # impossible there, so an absent session identity routes to the enrich-skip
 # branch rather than the missing-identity error. The set is read against the
-# live ``runtime.target`` in ``.plan/marshal.json`` at the point of use, never
-# from a documented default. ``claude`` (the default target) is transcript-
-# capable and is deliberately absent here.
+# live runtime target at the point of use — the platform-detected target
+# first (see ``_resolve_runtime_target``), then the marshal-declared
+# ``runtime.target`` — never from a documented default. ``claude`` (the
+# default target) is transcript-capable and is deliberately absent here.
 _TRANSCRIPT_LESS_TARGETS = frozenset({'opencode', 'antigravity'})
 
 # Gap flag persisted when enrichment is skipped on a transcript-less target.
@@ -3848,16 +3850,41 @@ ENRICH_SKIP_REASON_NO_SESSION_TRANSCRIPT_LESS = 'no_session_id_transcript_less'
 ENRICH_SKIP_POPULATION_UNENRICHED = 'unenriched'
 
 
-def _resolve_runtime_target() -> str:
-    """Resolve the live runtime target from ``.plan/marshal.json``.
+def _detect_target_from_env() -> str | None:
+    """Detect the runtime target from platform-injected environment variables.
 
-    Walks up from the current working directory to the nearest ``.plan``
-    directory, mirroring ``platform_runtime._read_marshal``. Returns the
-    declared ``runtime.target`` when present, otherwise the default target
+    Local mirror of ``marketplace_paths._detect_target_from_env`` (the
+    platform-runtime detection): Antigravity injects ``ANTIGRAVITY_AGENT=1``,
+    OpenCode injects ``OPENCODE=1`` (or ``OPENCODE_PID``), Claude Code injects
+    ``CLAUDE_CODE_SESSION_ID``. Mirrored here — rather than imported — because
+    ``marketplace_paths`` publishes no public detection entry point and this
+    module must not bind to its private name; the variable-to-target contract
+    is owned there, this mirror follows it.
+    """
+    if os.environ.get('ANTIGRAVITY_AGENT'):
+        return 'antigravity'
+    if os.environ.get('OPENCODE') or os.environ.get('OPENCODE_PID'):
+        return 'opencode'
+    if os.environ.get('CLAUDE_CODE_SESSION_ID'):
+        return 'claude'
+    return None
+
+
+def _resolve_runtime_target() -> str:
+    """Resolve the live runtime target: detected platform first, then marshal.
+
+    Detection (platform-injected env signals, see ``_detect_target_from_env``)
+    outranks the marshal-declared ``runtime.target``, so an enrich on a
+    detected-opencode run with a claude-declaring marshal file takes the
+    transcript-less skip branch rather than the missing-identity error.
+    Falls back to the declared target, otherwise the default target
     (``claude`` — transcript-capable). Never raises: an unreadable or missing
     marshal resolves to the default so a transcript-capable caller keeps the
     hard missing-identity error rather than silently skipping.
     """
+    detected = _detect_target_from_env()
+    if detected:
+        return detected
     cwd = Path.cwd()
     for parent in [cwd, *cwd.parents]:
         candidate = parent / '.plan' / 'marshal.json'

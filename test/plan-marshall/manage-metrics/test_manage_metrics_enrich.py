@@ -306,6 +306,95 @@ def test_enrich_absent_session_id_antigravity_skips_with_gap_flag(plan_context, 
 
 
 # =============================================================================
+# D1 detected-target enrich skip — detection outranks the marshal declaration
+# =============================================================================
+
+
+def _clear_target_env(monkeypatch):
+    """Remove every platform-detection signal so each test sets its own."""
+    monkeypatch.delenv('ANTIGRAVITY_AGENT', raising=False)
+    monkeypatch.delenv('OPENCODE', raising=False)
+    monkeypatch.delenv('OPENCODE_PID', raising=False)
+    monkeypatch.delenv('CLAUDE_CODE_SESSION_ID', raising=False)
+
+
+def _write_claude_marshal(proj_dir):
+    """Seed a claude-declaring marshal.json so detection must outrank it."""
+    import json
+
+    plan_dir = proj_dir / '.plan'
+    plan_dir.mkdir(parents=True, exist_ok=True)
+    (plan_dir / 'marshal.json').write_text(json.dumps({'runtime': {'target': 'claude'}}), encoding='utf-8')
+
+
+def test_detect_target_from_env_precedence(monkeypatch):
+    """Antigravity beats opencode beats claude when several signals are set."""
+    _clear_target_env(monkeypatch)
+    assert manage_metrics._detect_target_from_env() is None
+
+    monkeypatch.setenv('CLAUDE_CODE_SESSION_ID', 'sess-1')
+    assert manage_metrics._detect_target_from_env() == 'claude'
+
+    monkeypatch.setenv('OPENCODE', '1')
+    assert manage_metrics._detect_target_from_env() == 'opencode'
+
+    monkeypatch.setenv('ANTIGRAVITY_AGENT', '1')
+    assert manage_metrics._detect_target_from_env() == 'antigravity'
+
+
+def test_enrich_detected_opencode_skips_despite_claude_marshal(plan_context, monkeypatch, tmp_path):
+    """Detected opencode + claude-declaring marshal still takes the skip branch.
+
+    The fake project dir carries a marshal that declares ``claude``; the
+    ambient ``OPENCODE_PID`` signal must outrank it, so the enrich lands on
+    the transcript-less skip with the gap flag and the unenriched population.
+    """
+    plan_id = 'enrich-detect-01'
+    manage_metrics.write_metrics(plan_id, {'plan_id': plan_id})
+    proj = tmp_path / 'proj'
+    _write_claude_marshal(proj)
+    monkeypatch.chdir(proj)
+    _clear_target_env(monkeypatch)
+    monkeypatch.setenv('OPENCODE_PID', '4242')
+
+    assert manage_metrics._resolve_runtime_target() == 'opencode'
+
+    result = cmd_enrich(ns('enrich', '--plan-id', plan_id))
+
+    assert result['status'] == 'success'
+    assert result.get('enriched') is False
+    assert result.get('skipped') is True
+    assert result.get('gap') == manage_metrics.ENRICH_SKIP_REASON_NO_SESSION_TRANSCRIPT_LESS
+    assert result.get('population') == manage_metrics.ENRICH_SKIP_POPULATION_UNENRICHED
+    stored = manage_metrics.read_metrics_raw(plan_id)
+    assert str(stored.get('enrichment_skipped')).lower() == 'true'
+    assert stored.get('enrichment_gap_reason') == manage_metrics.ENRICH_SKIP_REASON_NO_SESSION_TRANSCRIPT_LESS
+    assert stored.get('enrichment_gap_population') == manage_metrics.ENRICH_SKIP_POPULATION_UNENRICHED
+
+
+def test_enrich_no_detection_follows_claude_marshal(plan_context, monkeypatch, tmp_path):
+    """Without a detection signal the marshal declaration still governs.
+
+    Negative control for the outranking test above: identical claude-declaring
+    marshal, no ambient signal — the transcript-capable missing-identity error
+    is preserved.
+    """
+    plan_id = 'enrich-detect-02'
+    manage_metrics.write_metrics(plan_id, {'plan_id': plan_id})
+    proj = tmp_path / 'proj'
+    _write_claude_marshal(proj)
+    monkeypatch.chdir(proj)
+    _clear_target_env(monkeypatch)
+
+    assert manage_metrics._resolve_runtime_target() == 'claude'
+
+    result = cmd_enrich(ns('enrich', '--plan-id', plan_id))
+
+    assert result['status'] == 'error'
+    assert result.get('error') == 'missing_session_id'
+
+
+# =============================================================================
 # Test: format_duration (via generate output) (Tier 2 - direct import)
 # =============================================================================
 
