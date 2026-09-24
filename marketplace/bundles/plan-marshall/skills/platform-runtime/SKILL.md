@@ -69,6 +69,36 @@ The `health-check --checks display` surface inspects each terminal-title render 
 
 The `runtime-info` operation serves the `client.toon` pre-flight artifact with best-effort drop-not-estimate semantics on `claude` and `opencode` only. See `standards/runtime-info.md` for the schema and extension-point contract.
 
+## OpenCode Permissions (two-tier deny/ask)
+
+OpenCode permission operations are real writes against the `permission`
+settings block in `opencode.json`:
+
+* The project-level `permission.bash` map keeps the harness default
+  `"*": "allow"` and narrows it with never-legitimate deny rows plus
+  rare-legitimate ask rows; every agent row re-bases on `"*": "ask"`
+  with explicit allow/deny overrides. The executor agent is confined to
+  the `python3 .plan/execute-script.py *` permit plus deny on the hard
+  rules; the orchestrator agent preserves the small-ops carve-out
+  (read-only file ops, `git status/log` seen as information lookups)
+  under ask.
+* `to_opencode_grant` carries `allow`/`ask`/`deny` actions via the
+  `allow(...)` / `ask(...)` / `deny(...)` wrapper grammar; bare forms
+  default to `allow`, and the wrapper verb is peeled first so a deny
+  intent can never degrade to `allow`.
+* `permission fix protect-path` is a real writing deny: it emits deny
+  entries guarding a named directory in both the tilde and the absolute
+  spelling. It is explicitly not in the no-op class.
+* The maintenance operations `consolidate` and `normalize` report a
+  `success` no-op, mirroring the Claude target's contract split.
+
+The `tool.execute.before` guard plugin under `.opencode/plugin/guard.js`
+enforces the four hard-rule bypass classes (shell chaining, shell file
+operations, direct executor edits, hard-coded builds) by throwing to
+block, with one audit line per blocked invocation in
+`.plan/temp/guard.log`. The full role x surface x path matrix lives in
+`doc/developer/opencode.adoc`.
+
 ## Architecture
 
 **Static Routing Pattern**: `marshal.json` stores `runtime.target`; router dispatches to target class.

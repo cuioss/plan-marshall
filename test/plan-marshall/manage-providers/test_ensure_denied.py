@@ -122,11 +122,13 @@ class TestEnsureDeniedCLI:
         assert f'protection_rules_total: {len(deny) - 1}' in reported
         assert f'rules_added: {len(deny) - 1}' in reported
 
-    def test_ensure_denied_reports_a_declining_target_as_no_op(self, claude_project, monkeypatch, capsys) -> None:
-        """A target with no permission backend declines, and that is reported.
+    def test_ensure_denied_writes_real_deny_on_opencode_target(self, claude_project, monkeypatch, capsys) -> None:
+        """Opencode protect-path is a writing deny, so ensure-denied succeeds.
 
-        Never as success: a fabricated effect count would tell an operator their
-        credentials are guarded by rules that were never written.
+        The pre-enforcement decline is retired: the op renders deny entries
+        into ``opencode.json`` and reports the real effect count — never a
+        no-op, and never a fabricated count for rules that were never written
+        (the written file below is what makes the count honest).
         """
         import _cred_ensure_denied
 
@@ -138,9 +140,14 @@ class TestEnsureDeniedCLI:
         assert _cred_ensure_denied.run_ensure_denied(Namespace(target='project')) == 0
 
         reported = capsys.readouterr().out
-        assert 'status: no-op' in reported
-        assert 'rules_added' not in reported
-        assert _deny_list(claude_project) == []
+        assert 'status: success' in reported
+        assert 'rules_added' in reported
+        assert 'status: no-op' not in reported
+        opencode_cfg = claude_project / 'opencode.json'
+        assert opencode_cfg.is_file()
+        permission = json.loads(opencode_cfg.read_text(encoding='utf-8'))['permission']
+        actions = [action for tool in ('read', 'bash') for action in permission.get(tool, {}).values()]
+        assert any(action == 'deny' for action in actions)
 
     def test_ensure_denied_reports_an_unresolvable_runtime_as_error(self, claude_project, monkeypatch, capsys) -> None:
         """No runtime is an error, not a silent success."""

@@ -12,11 +12,16 @@ OpenCode-specific behaviour:
   no-op policy.
 - project initial-setup succeeds but reports ``hook_installed: false`` for the
   same reason.
-- All permission and web operations return an honest ``no-op`` with a reason
-  and alternative: OpenCode has no validated permission backend, and the Claude
-  permission grammar (``Skill()``/``Bash()``/``WebFetch()`` patterns) does not
-  map onto OpenCode's settings format. These ops never fabricate a success that
-  claims a write happened.
+- permission operations are REAL writing operations against OpenCode's
+  ``permission`` settings block: configure writes grants into the per-tool
+  pattern maps, fix ensure/add/remove add and delete them (carrying
+  ``allow``/``ask``/``deny`` actions via ``to_opencode_grant``), and fix
+  protect-path renders deny entries guarding a named directory in BOTH the
+  tilde and the absolute spelling — counts only ever cross back, exactly as on
+  the Claude target. The maintenance operations consolidate and normalize
+  report a ``success`` no-op, mirroring the Claude target's contract split.
+- web-analyze and web-apply are real too: they read and write the ``webfetch``
+  permission key in the same settings block.
 - metrics capture declines on every input, manual count included, returning
   ``no-op`` (no token-persistence boundary is reachable from this target, so a
   success carrying the count would be a silently lost measurement).
@@ -43,6 +48,7 @@ from pathlib import Path
 from typing import Any
 
 import runtime_info
+from marketplace_paths import resolve_home
 from runtime_base import (
     PERMISSION_FIX_OPERATIONS,
     Runtime,
@@ -62,6 +68,23 @@ OPENCODE_DEFAULT_PERMISSIONS: tuple[str, ...] = (
 
 DEFAULT_OPENCODE_COMMANDS = OPENCODE_DEFAULT_PERMISSIONS
 
+#: Grant action wrappers ``to_opencode_grant`` peels before the tool grammar.
+#: The wrapper action is carried into the returned triple, so a ``deny(...)``
+#: intent can never degrade to ``allow`` by reaching the bare-form default.
+_OPENCODE_GRANT_ACTIONS = ('allow', 'ask', 'deny')
+
+#: Bash binaries that can exfiltrate a file's contents. Guarded in BOTH the
+#: tilde and the absolute spelling of a protected directory, because either
+#: can appear in a command line. Mirrors the Claude runtime's vector set.
+_OPENCODE_EXFILTRATION_BASH_VECTORS = ('cat', 'head', 'tail', 'less', 'more', 'cp', 'grep', 'base64')
+
+#: Characters a protected path may not carry. ``(`` and ``)`` delimit the
+#: generic grant grammar, and ``*`` is OpenCode's pattern metacharacter, so a
+#: path carrying one does not merely render badly — it renders as a DIFFERENT
+#: rule. The grammar has no escape, so the only fail-closed answer is to
+#: refuse. Mirrors ``claude_runtime._PATH_CHARS_THE_DSL_CANNOT_CARRY``.
+_OPENCODE_PATH_CHARS_THE_MAP_CANNOT_CARRY = ('(', ')', '*')
+
 
 def _opencode_config_dir() -> Path:
     """Return ~/.config/opencode directory path (overridable by OPENCODE_CONFIG_DIR)."""
@@ -74,33 +97,122 @@ def _opencode_config_dir() -> Path:
 def to_opencode_grant(perm: str) -> tuple[str, str, str]:
     """Translate Claude or generic permission strings to OpenCode format.
 
+    Accepts an optional action wrapper around any bare form: ``allow(<form>)``,
+    ``ask(<form>)`` or ``deny(<form>)``. Bare forms default to ``allow``. The
+    wrapper verb is peeled FIRST and its action threads through every branch, so
+    a deny intent can never degrade to ``allow`` by falling through to a
+    lower-level default; an unrecognized wrapper verb is not peeled at all and
+    the string is treated exactly as before.
+
     Returns: (tool_category, pattern_or_rule, action)
     """
     perm = perm.strip()
+    action = 'allow'
+    for verb in _OPENCODE_GRANT_ACTIONS:
+        if perm.startswith(f'{verb}(') and perm.endswith(')'):
+            action = verb
+            perm = perm[len(verb) + 1 : -1].strip()
+            break
+
     if perm.startswith('command(') and perm.endswith(')'):
         inner = perm[8:-1].strip()
-        return ('bash', inner, 'allow')
+        return ('bash', inner, action)
 
     if perm.startswith('Bash(') and perm.endswith(')'):
         inner = perm[5:-1].strip()
-        return ('bash', inner, 'allow')
+        return ('bash', inner, action)
 
     if perm.startswith('read_file(') and perm.endswith(')'):
         inner = perm[10:-1].strip()
-        return ('read', inner, 'allow')
+        return ('read', inner, action)
 
     if perm.startswith('Read(') and perm.endswith(')'):
         inner = perm[5:-1].strip()
-        return ('read', inner, 'allow')
+        return ('read', inner, action)
 
     if (perm.startswith('write_file(') or perm.startswith('Write(') or perm.startswith('Edit(')) and perm.endswith(')'):
         inner = perm[perm.index('(') + 1 : -1].strip()
-        return ('edit', inner, 'allow')
+        return ('edit', inner, action)
 
     if perm in ('read', 'edit', 'glob', 'grep', 'bash', 'webfetch', 'websearch', 'question', 'task', 'skill'):
-        return (perm, '*', 'allow')
+        return (perm, '*', action)
 
-    return ('bash', perm, 'allow')
+    return ('bash', perm, action)
+
+
+def _tilde_form(path: Path) -> str:
+    """Render *path* with a leading ``~/`` when it lies under the home directory.
+
+    Anchored on ``Path.relative_to`` rather than a string prefix test: with home
+    ``/home/user``, a plain ``startswith`` also matches ``/home/user2/x`` and
+    would render it as the nonsensical ``~2/x``. A path outside home is returned
+    unchanged. The home directory ITSELF renders as bare ``~``, not ``~/.`` —
+    the same hazard the Claude target's twin guards against.
+    """
+    try:
+        relative = path.relative_to(resolve_home())
+    except ValueError:
+        return str(path)
+    return '~' if str(relative) == '.' else '~/' + str(relative)
+
+
+def _reject_unprotectable_path(protected_dir: str) -> str | None:
+    """Return why *protected_dir* cannot be protected, or ``None`` if it can.
+
+    A deny rule is a security control, so every input this cannot render
+    faithfully is refused rather than rendered approximately. The refusal
+    families mirror ``claude_runtime._reject_unprotectable_path`` exactly:
+    empty or blank, carrying a delimiter or glob character, a control
+    character, whitespace (moves the argument boundary in a bash pattern),
+    not absolute, containing ``..``, and the filesystem root.
+    """
+    if not protected_dir or not protected_dir.strip():
+        return 'path is empty'
+    for char in _OPENCODE_PATH_CHARS_THE_MAP_CANNOT_CARRY:
+        if char in protected_dir:
+            return f'path contains {char!r}, which the permission grammar cannot carry'
+    if any(ord(char) < 0x20 or ord(char) == 0x7F for char in protected_dir):
+        return 'path contains a control character'
+    if any(char.isspace() for char in protected_dir):
+        return 'path contains whitespace, which moves the argument boundary in a bash pattern'
+    path = Path(protected_dir)
+    if not path.is_absolute():
+        return 'path is not absolute'
+    if '..' in path.parts:
+        return "path contains '..'; name the directory to protect directly"
+    if path == path.parent:
+        return 'path is the filesystem root'
+    return None
+
+
+def _protect_path_deny_entries(protected_dir: str) -> dict[str, dict[str, str]]:
+    """Render the OpenCode deny entries that guard *protected_dir* against reads.
+
+    Every entry names the directory in BOTH the tilde and the absolute form,
+    because a command line may use either. The ``python3 -c`` inline-script
+    vector matches on the distinctive path tail so it catches either spelling
+    inside a one-liner. A directory outside the home has no distinct tilde
+    spelling, so the two forms collapse to one entry per tool; the result is
+    de-duplicated, and the count a caller receives is therefore entries it will
+    actually get rather than entries that were drafted.
+
+    Defense-in-depth only: a blocklist is fundamentally incomplete, and the
+    directory's own ``0700`` mode remains the primary boundary.
+
+    Callers validate with ``_reject_unprotectable_path`` first; this renders.
+    """
+    normalized = Path(protected_dir)
+    absolute = str(normalized)
+    tilde = _tilde_form(normalized)
+    distinctive = tilde[2:] if tilde.startswith('~/') else absolute
+
+    entries: dict[str, dict[str, str]] = {'read': {}, 'bash': {}}
+    for spelling in dict.fromkeys((tilde, absolute)):
+        entries['read'][f'{spelling}/**'] = 'deny'
+        for vector in _OPENCODE_EXFILTRATION_BASH_VECTORS:
+            entries['bash'][f'{vector} {spelling}/*'] = 'deny'
+    entries['bash'][f'python3 -c *{distinctive}*'] = 'deny'
+    return entries
 
 
 class OpenCodeRuntime(Runtime):
@@ -559,6 +671,14 @@ class OpenCodeRuntime(Runtime):
                 f'--operation must be one of {sorted(valid_ops)}; got {operation!r}',
             )
 
+        # protect-path is the one deny-writing operation. It validates its
+        # arguments BEFORE loading settings, so an unprotectable path cannot
+        # reach the renderer: a deny rule is a security control, and a path
+        # this cannot render faithfully is refused, never rendered
+        # approximately (fail-closed, mirroring the Claude runtime).
+        if operation == 'protect-path':
+            return self._permission_fix_protect_path(scope, arguments, dry_run)
+
         settings_path = self.permission_settings_path(scope, write=not dry_run)
         settings = self.permission_load_settings(settings_path)
         perm = settings.setdefault('permission', {})
@@ -632,13 +752,6 @@ class OpenCodeRuntime(Runtime):
                 },
             )
 
-        if operation == 'protect-path':
-            return toon_noop(
-                'permission fix',
-                'OpenCode has no path-protection or deny-list mechanism',
-                'Protect sensitive files using filesystem permissions or outside the workspace',
-            )
-
         return toon_success(
             'permission fix',
             {
@@ -648,6 +761,116 @@ class OpenCodeRuntime(Runtime):
                 'dry_run': dry_run,
             },
         )
+
+    def _permission_fix_protect_path(self, scope: str, arguments: list[Any], dry_run: bool) -> str:
+        """Write deny entries guarding each named directory (goal-based).
+
+        The caller names DIRECTORIES; the deny patterns are rendered here as
+        native OpenCode permission-map entries and never cross back — counts
+        only. Mirrors the Claude runtime's protect-path contract: validation
+        happens before ANY settings are loaded, a failed write is an
+        ``io_error`` never a reported success, and a re-run that changes
+        nothing leaves the settings file untouched (idempotence).
+        """
+        if not arguments:
+            return toon_error(
+                'permission fix',
+                'invalid_operation',
+                "--permissions must name at least one directory path for 'protect-path'",
+            )
+        for candidate in arguments:
+            if not isinstance(candidate, str):
+                return toon_error(
+                    'permission fix',
+                    'invalid_operation',
+                    f'protect-path arguments must be directory paths; got {candidate!r}',
+                )
+            refusal = _reject_unprotectable_path(candidate)
+            if refusal is not None:
+                return toon_error(
+                    'permission fix',
+                    'invalid_operation',
+                    f'cannot protect {candidate!r}: {refusal}',
+                )
+
+        settings_path = self.permission_settings_path(scope, write=not dry_run)
+        settings = self.permission_load_settings(settings_path)
+        if 'error' in settings:
+            return toon_error(
+                'permission fix',
+                'invalid_settings',
+                settings['error'],
+            )
+        perm = settings.setdefault('permission', {})
+        if not isinstance(perm, dict):
+            perm = {}
+            settings['permission'] = perm
+
+        # De-duplicate ACROSS the named paths, not only within each: two paths
+        # can render the same entry (the same directory twice, or two spellings
+        # of one directory), and a rules_total that counted them separately
+        # would report entries the caller will not get.
+        rendered: dict[str, dict[str, str]] = {}
+        for protected_dir in arguments:
+            for tool, tool_entries in _protect_path_deny_entries(protected_dir).items():
+                for pattern, action in tool_entries.items():
+                    rendered.setdefault(tool, {})[pattern] = action
+        rules_total = sum(len(tool_entries) for tool_entries in rendered.values())
+
+        changes_applied = 0
+        proposed_count = 0
+        for tool, tool_entries in rendered.items():
+            # A blanket string action (``'allow'``) is OpenCode's catch-all; a
+            # pattern map with last-match-wins must keep it as the map's ``*``
+            # row BEFORE the deny rows so the specific denies win.
+            current = perm.get(tool)
+            if isinstance(current, dict):
+                target = current
+            elif isinstance(current, str):
+                target = {'*': current}
+                perm[tool] = target
+            else:
+                target = {}
+                perm[tool] = target
+            for pattern, action in tool_entries.items():
+                if target.get(pattern) == action:
+                    continue
+                if dry_run:
+                    proposed_count += 1
+                else:
+                    target[pattern] = action
+                    changes_applied += 1
+
+        # Write only when a row was actually added: this operation is meant to
+        # be re-run for its idempotence, and re-serializing an operator's
+        # settings file on a call that changed nothing is a modification they
+        # can see for no effect.
+        if not dry_run and changes_applied:
+            if not self.permission_save_settings(settings_path, settings):
+                # A security control that reports success when the write failed
+                # tells an operator their files are guarded by rules that
+                # reached nothing. Fail loudly instead.
+                return toon_error(
+                    'permission fix',
+                    'io_error',
+                    f'Failed to write settings to {settings_path}',
+                )
+
+        result: dict[str, Any] = {
+            'scope': scope,
+            'fix_operation': 'protect-path',
+            'dry_run': dry_run,
+            'target_file': settings_path,
+            'changes_applied': 0 if dry_run else changes_applied,
+            # Counts only — a rendered deny entry must not reach the caller.
+            # Named, not protected: three spellings of one directory are three
+            # names and one protection; rules_total is the honest measure.
+            'paths_named': len(arguments),
+            'rules_total': rules_total,
+        }
+        if dry_run:
+            result['proposed_count'] = proposed_count
+        return toon_success('permission fix', result)
 
     def permission_ensure_wildcards(self, scope: str, marketplace_dir: str, dry_run: bool) -> str:
         """Ensure baseline executor and build tool permissions in OpenCode."""
