@@ -69,6 +69,7 @@ import argparse
 import json
 import subprocess
 import sys
+from collections.abc import Callable
 from typing import Any
 from urllib.parse import quote
 
@@ -2745,24 +2746,9 @@ _GITLAB_READ_GAP = (
 )
 
 
-def cmd_org_list_repos(args: argparse.Namespace) -> dict:
-    """Refuse ``org list-repos`` explicitly — the GitLab arm is unimplemented."""
-    return make_not_supported('org_list_repos', 'gitlab', _GITLAB_READ_GAP)
-
-
-def cmd_org_search_code(args: argparse.Namespace) -> dict:
-    """Refuse ``org search-code`` explicitly — the GitLab arm is unimplemented."""
-    return make_not_supported('org_search_code', 'gitlab', _GITLAB_READ_GAP)
-
-
-def cmd_repo_file_read(args: argparse.Namespace) -> dict:
-    """Refuse ``repo file read`` explicitly — the GitLab arm is unimplemented."""
-    return make_not_supported('repo_file_read', 'gitlab', _GITLAB_READ_GAP)
-
-
-def cmd_repo_label_list(args: argparse.Namespace) -> dict:
-    """Refuse ``repo label list`` explicitly — the GitLab arm is unimplemented."""
-    return make_not_supported('repo_label_list', 'gitlab', _GITLAB_READ_GAP)
+def _refuse_read_verb(operation: str) -> Callable[[argparse.Namespace], dict]:
+    """Build the handler that refuses one read verb explicitly as ``not_supported``."""
+    return lambda _args: make_not_supported(operation, 'gitlab', _GITLAB_READ_GAP)
 
 
 # ---------------------------------------------------------------------------
@@ -2842,10 +2828,10 @@ def main() -> int:
         ('repo', 'label', 'ensure'): cmd_repo_label_ensure,
         # Registered so the shared-parser tokens resolve to an explicit
         # not_supported refusal rather than a parser error or a silent success.
-        ('repo', 'label', 'list'): cmd_repo_label_list,
-        ('repo', 'file', 'read'): cmd_repo_file_read,
-        ('org', 'list-repos'): cmd_org_list_repos,
-        ('org', 'search-code'): cmd_org_search_code,
+        ('repo', 'label', 'list'): _refuse_read_verb('repo_label_list'),
+        ('repo', 'file', 'read'): _refuse_read_verb('repo_file_read'),
+        ('org', 'list-repos'): _refuse_read_verb('org_list_repos'),
+        ('org', 'search-code'): _refuse_read_verb('org_search_code'),
     }
 
     # branch_sub is registered by ci_base.build_parser; acknowledge the returned

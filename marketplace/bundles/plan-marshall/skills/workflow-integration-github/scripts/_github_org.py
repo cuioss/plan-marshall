@@ -384,7 +384,7 @@ def cmd_repo_file_read(args: argparse.Namespace) -> dict:
 
     returncode, stdout, stderr = github_ops.run_gh(['api', endpoint])
     if returncode != 0:
-        return _classify_file_read_failure(operation, full_name, identity, stderr)
+        return _classify_file_read_failure(operation, identity, stderr)
 
     try:
         data = json.loads(stdout)
@@ -416,7 +416,7 @@ def cmd_repo_file_read(args: argparse.Namespace) -> dict:
     }
 
 
-def _classify_file_read_failure(operation: str, full_name: str, identity: dict, stderr: str) -> dict:
+def _classify_file_read_failure(operation: str, identity: dict, stderr: str) -> dict:
     """Separate an absent path from an unreadable repository or ref.
 
     GitHub answers HTTP 404 both for a missing path and for a repository the
@@ -439,6 +439,7 @@ def _classify_file_read_failure(operation: str, full_name: str, identity: dict, 
     if 'no commit found for the ref' in stderr.lower():
         return make_error(operation, f'ref_not_found: {identity["ref"]}', stderr.strip())
 
+    full_name = identity['repo']
     repo_rc, _, repo_stderr = github_ops.run_gh(['api', f'repos/{full_name}'])
     if repo_rc != 0:
         return make_error(operation, f'repository_not_accessible: {full_name}', repo_stderr.strip())

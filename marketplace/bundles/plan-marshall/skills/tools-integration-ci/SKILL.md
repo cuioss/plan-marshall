@@ -493,7 +493,7 @@ shapes and they never collapse into one another:
 |-------|---------|
 | `status: success`, `state: found` | The file exists; `content` carries it verbatim as a block scalar, with `sha` and `size`. An empty file is `found` with empty content. |
 | `status: success`, `state: not_found` | Nothing is at that path. `not_found_reason` is `path_absent` (the repository was shown readable and the path is missing) or `repository_empty`. |
-| `status: error` | The question was not answered: `repository_not_accessible`, `ref_not_found`, `not_a_file` (a directory or submodule), `content_unavailable` (past the contents-API size limit), `undecidable_content` (not UTF-8), or a failed read. |
+| `status: error` | The question was not answered: `repository_not_accessible`, `ref_not_found`, `not_a_file` (a directory or submodule), `content_unavailable` (past the contents-API size limit), `undecodable_content` (not UTF-8), or a failed read. |
 
 A GitHub 404 is ambiguous between a missing path and a repository the
 credentials cannot see, so the verb attributes it to the PATH only after reading
