@@ -56,7 +56,7 @@ function hasChainingConstructor(command) {
       escaped = false
       continue
     }
-    if (ch === "\\") {
+    if (ch === "\\" && !inSingle) {
       escaped = true
       continue
     }
