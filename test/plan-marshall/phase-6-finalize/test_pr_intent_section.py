@@ -70,6 +70,7 @@ def _outline_toon(content: str) -> str:
 #: The reader's absence codes — the only ``status: error`` envelopes that answer —
 #: read from the reader's own declaring source, never restated here.
 _ABSENCE_CODES = tuple(sorted(SECTION_READ_ABSENCE_ERRORS))
+assert _ABSENCE_CODES, 'the reader declares no absence codes, so the absence cases below would never run'
 
 
 def _absent_toon(code: str = 'document_not_found') -> str:
