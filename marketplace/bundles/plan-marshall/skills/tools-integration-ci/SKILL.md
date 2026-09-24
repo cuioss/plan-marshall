@@ -51,7 +51,8 @@ The consequence a caller must design for: an exit-code-only reading accepts a fa
 - CI status, wait, rerun, and logs (with automatic failure-log download + error-extraction filtering)
 - The PR-wide `pull_request`-run observable (`checks pull-request-runs`) behind the `not_triggered` review-participation state — GitHub only; the GitLab arm refuses explicitly
 - Issue operations (create, comment, prepare-body, prepare-comment, view, close, wait-for-close, wait-for-label)
-- Repo operations (merge-queue probe/enable — platform merge queue / merge train; label ensure — idempotent create-if-missing)
+- Repo operations (merge-queue probe/enable — platform merge queue / merge train; label ensure — idempotent create-if-missing; label list and file read — read-only, any repository, GitHub only: the GitLab arm refuses with `error: not_supported`)
+- Org-wide reads (list every repository, search code for a literal) — read-only, each reporting its own completeness; GitHub only, the GitLab arm refuses with `error: not_supported`
 - Unified TOON output format across providers
 
 ## Consumers
@@ -428,10 +429,11 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci branch del
 
 ### repo
 
-Two nouns, each grouping its own sub-verbs (the 3-level `repo {noun} {sub-verb}` shape):
+Three nouns, each grouping its own sub-verbs (the 3-level `repo {noun} {sub-verb}` shape):
 
 - `merge-queue` → `probe`, `enable`
-- `label` → `ensure`
+- `label` → `ensure`, `list`
+- `file` → `read`
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci repo merge-queue probe
@@ -466,6 +468,83 @@ duplicate); on GitLab it treats an "already exists" / HTTP 409 as a no-op succes
 `--color` is a 6-hex-digit RGB string (no leading `#`; the GitLab handler prefixes
 `#` as that platform requires). The steward landing cycle calls this to ensure the
 `skip-bot-review` label exists before creating a `--label skip-bot-review` PR.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci repo label list \
+  [--repo OWNER/NAME]
+```
+
+`repo label list` is read-only: every label of the repository (default: the
+repository of the routed working tree), all pages, as `labels[]{name,color,description}`
+beside `count` and the provider's own `total_count`. It is a population verb and
+reports completeness the way the `org` verbs below do.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci repo file read \
+  --repo OWNER/NAME --path PATH [--ref REF]
+```
+
+`repo file read` is read-only: one file of any repository the provider
+credentials can see, at the repository's default branch (`ref_source:
+default_branch`) or at `--ref` (`ref_source: explicit`). Its answer has three
+shapes and they never collapse into one another:
+
+| Shape | Meaning |
+|-------|---------|
+| `status: success`, `state: found` | The file exists; `content` carries it verbatim as a block scalar, with `sha` and `size`. An empty file is `found` with empty content. |
+| `status: success`, `state: not_found` | Nothing is at that path. `not_found_reason` is `path_absent` (the repository was shown readable and the path is missing) or `repository_empty`. |
+| `status: error` | The question was not answered: `repository_not_accessible`, `ref_not_found`, `not_a_file` (a directory or submodule), `content_unavailable` (past the contents-API size limit), `undecodable_content` (not UTF-8), or a failed read. |
+
+A GitHub 404 is ambiguous between a missing path and a repository the
+credentials cannot see, so the verb attributes it to the PATH only after reading
+the repository itself — an unreadable repository is never reported as an absent
+file.
+
+### org
+
+Sub-verbs: `list-repos`, `search-code`. Both are read-only, name their target
+with `--org` (so they reach beyond the routed checkout), and take no verb-level
+`--plan-id` — a `--plan-id` for them is the router flag and goes before the verb.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci org list-repos \
+  --org ORG
+```
+
+`org list-repos` returns every repository of the organization, all pages, as
+`repos[]{name,full_name,archived,fork,visibility,default_branch}` beside `count`,
+`archived_count`, and the provider's own `total_count`.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci org search-code \
+  --org ORG --query LITERAL
+```
+
+`org search-code` returns the indexed files GitHub's code search matches for the
+literal, sent as one quoted phrase (a query carrying a double quote is refused).
+GitHub's code search matches whole tokens and ignores most punctuation, so a hit
+is a token-phrase match rather than a guaranteed exact substring, and a zero does
+not rule out the literal occurring inside a longer token. The result is returned as
+`matches[]{repository,path,sha}` beside `count`, `repository_count`, the
+provider's `total_count` and `incomplete_results` flag, and `scope:
+default_branch_index` — GitHub's code index holds each repository's default
+branch only, so the result states the population it was computed over.
+
+**Completeness is part of every population answer.** `repo label list`,
+`org list-repos` and `org search-code` return `status: success` only when the rows
+read ARE the whole population. A listing that demonstrably is not returns
+`status: incomplete` — a distinct member, so a caller branching on `status` alone
+never mistakes a partial listing for a whole one — carrying the rows that were
+read, `complete: false`, and an `incomplete_reason` from the closed set
+`page_bound_reached` / `count_mismatch` / `provider_incomplete_results` /
+`result_cap_reached` (`ci_base.INCOMPLETE_REASONS`). A page that could not be read
+at all is `status: error`; its rows are not returned.
+
+**GitHub only.** The parsers live in the shared `ci_base.build_parser`, so the
+tokens resolve on GitLab too; the GitLab arm registers a handler for each of the
+four read verbs (`org list-repos`, `org search-code`, `repo file read`,
+`repo label list`) that returns `status: error` with `error: not_supported` rather than an empty success
+or an unrecognised-subcommand parser error.
 
 ### barrier
 

@@ -319,7 +319,7 @@ def _soundness_corpus() -> list[tuple[str, bool]]:
             'targets: [cluade]',
             'targets: [claude, cluade]',
             'targets: cluade',
-            'targets: [pr-agent]',
+            'targets: [cuioss-review-bot]',
             'targets:\n- cluade',
             'targets: ["cluade"]',
             "targets: ['cluade']",
@@ -329,7 +329,7 @@ def _soundness_corpus() -> list[tuple[str, bool]]:
             'targets: [1, 2]',
             'targets: !!str claude',
             'targets: [claude] extra',
-            'targets: [pr-agent, claude]',
+            'targets: [cuioss-review-bot, claude]',
             'name: only',
             'metadata:\n  targets: nonsense',
         )
@@ -350,10 +350,11 @@ def test_every_finding_is_a_real_build_failure(tmp_path):
     with the session, and the next divergence was always found by the next
     round rather than by the suite.
 
-    The fake tree registers the SAME target set the build has, ``pr-agent``
-    included. Registering fewer made the two sides disagree about what a name
-    means, so a false positive on a `pr-agent`-bearing declaration would have
-    been created or masked by the mismatch rather than measured.
+    The fake tree registers the SAME target set the build has,
+    ``cuioss-review-bot`` included. Registering fewer made the two sides disagree
+    about what a name means, so a false positive on a
+    `cuioss-review-bot`-bearing declaration would have been created or masked by
+    the mismatch rather than measured.
     """
     from marketplace.targets import TARGET_REGISTRY
     from marketplace.targets.component_targets import TargetScopeError, read_target_scope
@@ -393,16 +394,16 @@ def test_every_finding_is_a_real_build_failure(tmp_path):
 def test_a_hyphenated_target_name_is_derived(tmp_path):
     """The registry regex must accept every character a name may contain.
 
-    Narrowing it to ``[a-z]+`` left the suite green while `pr-agent` dropped
-    out of the derived set — so a declaration naming it was reported unknown
-    while the build accepted it. The registry-mismatch class again, and the
-    corpus alone cannot catch it: `targets: [pr-agent]` fails the build anyway
-    for naming no component-tree target, so only a MIXED declaration
-    discriminates.
+    Narrowing it to ``[a-z]+`` left the suite green while `cuioss-review-bot`
+    dropped out of the derived set — so a declaration naming it was reported
+    unknown while the build accepted it. The registry-mismatch class again, and
+    the corpus alone cannot catch it: `targets: [cuioss-review-bot]` fails the
+    build anyway for naming no component-tree target, so only a MIXED
+    declaration discriminates.
     """
-    bundles = _marketplace(tmp_path, targets=('claude', 'pr-agent'))
+    bundles = _marketplace(tmp_path, targets=('claude', 'cuioss-review-bot'))
 
-    assert registered_target_names(bundles) == frozenset({'claude', 'pr-agent'})
+    assert registered_target_names(bundles) == frozenset({'claude', 'cuioss-review-bot'})
 
 
 def test_the_rule_is_build_failing(tmp_path):

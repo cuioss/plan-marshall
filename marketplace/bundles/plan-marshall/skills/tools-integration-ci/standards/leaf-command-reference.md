@@ -149,6 +149,21 @@ Source: [pr-operations.md](pr-operations.md)
 | `repo merge-queue probe` | _(none)_ | — | Probe platform merge-queue eligibility/state; returns one of `eligible_configured` / `eligible_unconfigured` / `ineligible` / `unsupported` (GitHub merge queue / GitLab merge train). |
 | `repo merge-queue enable` | _(none)_ | — | Enable/configure the platform merge queue (idempotent — an already-configured project is left unchanged). |
 | `repo label ensure` | `--label` | `--color {6-hex-digit RGB, no leading #}`, `--description {text}` | Create the repository label if missing (idempotent — an existing label is a no-op success). |
+| `repo label list` | _(none)_ | `--repo {OWNER/NAME}` (default: the routed working tree's repository) | **GitHub only; read-only.** List every label, all pages. `status: success` only when the rows ARE the whole population; a demonstrably partial listing is `status: incomplete` with `complete: false` and an `incomplete_reason`. GitLab returns `error: not_supported` |
+| `repo file read` | `--repo {OWNER/NAME}`, `--path {file}` | `--ref {branch\|tag\|sha}` (default: the repository default branch) | **GitHub only; read-only.** Read one file from any repository the credentials can see. An absent path is `status: success` with `state: not_found` — never an empty file and never an error; an unreadable repository or unknown ref IS an error. GitLab returns `error: not_supported` |
+
+---
+
+## org — Organization-Wide Reads
+
+Source: [`../SKILL.md`](../SKILL.md) § "org"
+
+Both verbs are read-only, name their target with `--org`, and answer a population question — so both carry completeness evidence beside their rows: `status: success` only when the rows ARE the whole population, `status: incomplete` (with `complete: false` and an `incomplete_reason`) when they demonstrably are not, `status: error` when a page could not be read at all. GitLab returns `error: not_supported` for both.
+
+| Subcommand | Required Flags | Optional Flags | Purpose |
+|------------|----------------|----------------|---------|
+| `org list-repos` | `--org {login}` | — | **GitHub only.** List every repository of the organization, all pages, each row carrying `archived`, `fork`, `visibility`, and `default_branch`; `total_count` is the provider's own total the rows are checked against |
+| `org search-code` | `--org {login}`, `--query {literal}` | — | **GitHub only.** Find the indexed files GitHub's code search matches for the literal, sent as one quoted phrase (a double quote is refused). GitHub matches whole tokens and ignores most punctuation, so a hit is a token-phrase match, not a guaranteed substring, and a zero does not rule out the literal inside a longer token. Carries GitHub's `incomplete_results` flag, `total_count`, and `scope: default_branch_index` — the index covers each repository's default branch only — so a zero always states the population it was computed over |
 
 ---
 

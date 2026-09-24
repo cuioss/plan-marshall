@@ -29,6 +29,10 @@ Subcommands:
     issue comment   Post a comment on an existing issue
     issue view      View issue details
     issue close     Close an issue
+    repo label list   List every label of a repository (reports completeness)
+    repo file read    Read one file at a repository's default branch or a ref
+    org list-repos    List every repository of an organization (reports completeness)
+    org search-code   Search an organization's code for a literal (reports completeness)
 
 Usage (bodies supplied via path-allocate pattern: prepare-body → write file → consume).
 ``--plan-id`` is the ONLY body route on every body-taking verb, and the sentinel
@@ -63,6 +67,10 @@ a second plan-less convention of its own:
     python3 github.py issue comment --issue 123 --plan-id EXAMPLE-PLAN [--slot name]
     python3 github.py issue view --issue 123
     python3 github.py issue close --issue 123
+    python3 github.py repo label list [--repo OWNER/NAME]
+    python3 github.py repo file read --repo OWNER/NAME --path .github/project.yml [--ref main]
+    python3 github.py org list-repos --org cuioss
+    python3 github.py org search-code --org cuioss --query "reusable-cuioss-review-bot.yml"
 
 Output: TOON format
 
@@ -74,7 +82,7 @@ monkeypatch-sensitive data helpers (``run_gh``, ``run_graphql``, ``check_auth``,
 ``_safe_merge_stuck_state_gate``/``_safe_merge_behind_by_zero``), plus the
 shared ``_resolve_pr_identifier`` and the ``main`` dispatch. The ``cmd_*``
 handler bodies live in the co-located ``_github_pr`` / ``_github_ci`` /
-``_github_issue`` submodules and are imported back at the bottom of this file
+``_github_issue`` / ``_github_org`` submodules and are imported back at the bottom of this file
 for the dispatch table. Those submodules reach every primitive above via
 ``github_ops.<name>`` attribute access at call time, so a test's
 ``monkeypatch.setattr(github_ops, '<name>', ...)`` is seen by the handlers
@@ -1826,7 +1834,7 @@ def cmd_checks_pull_request_runs(args: argparse.Namespace) -> dict:
 #
 # ADJUDICATED — this entry-module/submodule import cycle is a reviewed and
 # ACCEPTED arrangement, not an oversight awaiting cleanup. This one comment
-# governs all three ``# noqa: E402`` sites below equally, and the reason it
+# governs every ``# noqa: E402`` site below equally, and the reason it
 # records has TWO halves that only hold together: load order, and the
 # monkeypatch-interception contract.
 #
@@ -1852,7 +1860,8 @@ def cmd_checks_pull_request_runs(args: argparse.Namespace) -> dict:
 # because each resolves the primitive off the live module object at call time
 # instead of holding a binding copied at import time. The submodules state
 # their side of the same contract in their module docstrings — see
-# ``_github_ci.py``, ``_github_issue.py`` and ``_github_pr.py``; that side and
+# ``_github_ci.py``, ``_github_issue.py``, ``_github_org.py`` and
+# ``_github_pr.py``; that side and
 # this comment are the two halves of one contract, so a change to either is a
 # change to both.
 #
@@ -1887,6 +1896,12 @@ from _github_issue import (  # noqa: E402 — bottom import: primitives must be 
     cmd_issue_view,
     cmd_issue_wait_for_close,
     cmd_issue_wait_for_label,
+)
+from _github_org import (  # noqa: E402 — bottom import: primitives must be defined first
+    cmd_org_list_repos,
+    cmd_org_search_code,
+    cmd_repo_file_read,
+    cmd_repo_label_list,
 )
 from _github_pr import (  # noqa: E402 — bottom import: primitives must be defined first
     PR_LIST_DEFAULT_LIMIT,
@@ -2042,6 +2057,10 @@ def main() -> int:
         ('repo', 'merge-queue', 'probe'): cmd_repo_merge_queue_probe,
         ('repo', 'merge-queue', 'enable'): cmd_repo_merge_queue_enable,
         ('repo', 'label', 'ensure'): cmd_repo_label_ensure,
+        ('repo', 'label', 'list'): cmd_repo_label_list,
+        ('repo', 'file', 'read'): cmd_repo_file_read,
+        ('org', 'list-repos'): cmd_org_list_repos,
+        ('org', 'search-code'): cmd_org_search_code,
     }
 
     # branch_sub is registered by ci_base.build_parser; acknowledge the returned

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for the pr-agent instruction-pack export target.
+"""Tests for the cuioss-review-bot instruction-pack export target.
 
 The subject is the target's DERIVATION, COMPOSITION and EMISSION contract: the
 domain set is scanned out of the source marketplace rather than hand-transcribed,
@@ -18,12 +18,12 @@ import pytest
 
 from marketplace.targets import TARGET_REGISTRY
 from marketplace.targets.claude.target import ClaudeTarget
-from marketplace.targets.pr_agent.target import (
+from marketplace.targets.cuioss_review_bot.target import (
     ANTI_FABRICATION_CLAUSE,
     MAX_CATEGORY_BULLETS,
     SPINE_CATEGORIES,
     SUBSTANTIATION_CLAUSE,
-    PrAgentTarget,
+    CuiossReviewBotTarget,
     compose_packs,
     compose_spine,
     discover_domains,
@@ -123,22 +123,25 @@ def _emitted_stems(out: Path) -> list[str]:
 class TestRegistration:
     """The target registers itself and declares its capability flags."""
 
-    def test_registered_under_pr_agent(self):
-        assert TARGET_REGISTRY['pr-agent'] is PrAgentTarget
+    def test_registered_under_cuioss_review_bot(self):
+        assert TARGET_REGISTRY['cuioss-review-bot'] is CuiossReviewBotTarget
 
-    def test_name_is_pr_agent(self):
-        assert PrAgentTarget().name == 'pr-agent'
+    def test_the_retired_name_is_not_registered(self):
+        assert 'pr-agent' not in TARGET_REGISTRY
+
+    def test_name_is_cuioss_review_bot(self):
+        assert CuiossReviewBotTarget().name == 'cuioss-review-bot'
 
     def test_emits_no_agents_or_commands(self):
-        target = PrAgentTarget()
+        target = CuiossReviewBotTarget()
         assert target.supports_agents() is False
         assert target.supports_commands() is False
 
     def test_config_dir_is_the_package_directory(self):
-        assert PrAgentTarget().config_dir.name == 'pr_agent'
+        assert CuiossReviewBotTarget().config_dir.name == 'cuioss_review_bot'
 
     def test_is_not_a_bundle_tree(self):
-        assert PrAgentTarget().emits_bundle_tree is False
+        assert CuiossReviewBotTarget().emits_bundle_tree is False
 
     def test_bundle_tree_target_keeps_the_default(self):
         # Positive control for the gate: the property defaults to True, so only a
@@ -361,7 +364,7 @@ class TestEmission:
         bundles = _two_domain_marketplace(tmp_path)
         out = tmp_path / 'out'
 
-        written = PrAgentTarget().generate(bundles, out)
+        written = CuiossReviewBotTarget().generate(bundles, out)
 
         assert written == [out / 'packs' / 'java.md', out / 'packs' / 'ruby.md', out / 'packs' / 'spine.md']
         assert _emitted_stems(out) == ['java', 'ruby', SPINE_STEM]
@@ -370,11 +373,11 @@ class TestEmission:
         """CONTROL for the set identity: the emitted set is derived, not fixed."""
         bundles = _fixture_marketplace(tmp_path)
         out = tmp_path / 'out'
-        PrAgentTarget().generate(bundles, out)
+        CuiossReviewBotTarget().generate(bundles, out)
         before = _emitted_stems(out)
 
         _write_skill(bundles, 'pm-fixture-ruby', 'ruby-security', prohibited=('Do not eval untrusted input',))
-        PrAgentTarget().generate(bundles, out)
+        CuiossReviewBotTarget().generate(bundles, out)
 
         assert before == ['java', SPINE_STEM]
         assert _emitted_stems(out) == ['java', 'ruby', SPINE_STEM]
@@ -392,11 +395,11 @@ class TestEmission:
         """
         bundles = _two_domain_marketplace(tmp_path)
         out = tmp_path / 'out'
-        PrAgentTarget().generate(bundles, out)
+        CuiossReviewBotTarget().generate(bundles, out)
         before = _emitted_stems(out)
 
         shutil.rmtree(bundles / 'pm-fixture-ruby')
-        written = PrAgentTarget().generate(bundles, out)
+        written = CuiossReviewBotTarget().generate(bundles, out)
 
         assert before == ['java', 'ruby', SPINE_STEM]
         assert _emitted_stems(out) == ['java', SPINE_STEM]
@@ -415,11 +418,11 @@ class TestEmission:
         """
         bundles = _fixture_marketplace(tmp_path)
         out = tmp_path / 'out'
-        PrAgentTarget().generate(bundles, out)
+        CuiossReviewBotTarget().generate(bundles, out)
         hand_written = out / 'packs' / 'notes.md'
         hand_written.write_text('# reviewer notes, not generated\n', encoding='utf-8')
 
-        PrAgentTarget().generate(bundles, out)
+        CuiossReviewBotTarget().generate(bundles, out)
 
         assert hand_written.is_file()
         assert hand_written.read_text(encoding='utf-8') == '# reviewer notes, not generated\n'
@@ -428,7 +431,7 @@ class TestEmission:
         bundles = _fixture_marketplace(tmp_path)
         out = tmp_path / 'out'
 
-        PrAgentTarget().generate(bundles, out)
+        CuiossReviewBotTarget().generate(bundles, out)
 
         assert not (out / '.pr_agent.toml').exists()
         assert sorted(p.name for p in out.iterdir()) == ['packs']
@@ -437,11 +440,11 @@ class TestEmission:
         bundles = _two_domain_marketplace(tmp_path)
         out = tmp_path / 'out'
 
-        for path in PrAgentTarget().generate(bundles, out):
+        for path in CuiossReviewBotTarget().generate(bundles, out):
             text = path.read_text(encoding='utf-8')
             assert text.startswith('<!-- GENERATED ARTIFACT — do not edit by hand.'), path.name
             assert 'cuioss/plan-marshall' in text, path.name
-            assert '--target pr-agent --output target/pr-agent' in text, path.name
+            assert './pw generate --target cuioss-review-bot --output target/cuioss-review-bot' in text, path.name
 
     def test_a_domain_artifact_points_the_reader_at_the_spine(self, tmp_path):
         """The consumer-facing half of the orthogonality contract, as a REQUEST.
@@ -460,7 +463,7 @@ class TestEmission:
         bundles = _fixture_marketplace(tmp_path)
         out = tmp_path / 'out'
 
-        PrAgentTarget().generate(bundles, out)
+        CuiossReviewBotTarget().generate(bundles, out)
 
         domain_artifact = (out / 'packs' / 'java.md').read_text(encoding='utf-8')
         spine_artifact = (out / 'packs' / 'spine.md').read_text(encoding='utf-8')
@@ -475,7 +478,7 @@ class TestEmission:
         bundles = _two_domain_marketplace(tmp_path)
         out = tmp_path / 'out'
 
-        PrAgentTarget().generate(bundles, out)
+        CuiossReviewBotTarget().generate(bundles, out)
 
         assert SUBSTANTIATION_CLAUSE in (out / 'packs' / 'spine.md').read_text(encoding='utf-8')
         for stem in ('java', 'ruby'):
@@ -485,9 +488,9 @@ class TestEmission:
         bundles = _fixture_marketplace(tmp_path)
         out = tmp_path / 'out'
 
-        PrAgentTarget().generate(bundles, out)
+        CuiossReviewBotTarget().generate(bundles, out)
         first = {path.name: path.read_bytes() for path in (out / 'packs').glob('*.md')}
-        PrAgentTarget().generate(bundles, out)
+        CuiossReviewBotTarget().generate(bundles, out)
 
         assert {path.name: path.read_bytes() for path in (out / 'packs').glob('*.md')} == first
 
@@ -495,7 +498,7 @@ class TestEmission:
         bundles = _fixture_marketplace(tmp_path)
         out = tmp_path / 'out'
 
-        PrAgentTarget().generate(bundles, out)
+        CuiossReviewBotTarget().generate(bundles, out)
 
         assert not (out / 'dist-manifest.json').exists()
         assert list(out.glob('**/plugin.json')) == []
@@ -504,7 +507,7 @@ class TestEmission:
         bundles = _fixture_marketplace(tmp_path)
 
         with pytest.raises(ValueError, match='requires --output'):
-            PrAgentTarget().generate(bundles, None)
+            CuiossReviewBotTarget().generate(bundles, None)
 
     def test_marketplace_without_any_domain_is_rejected(self, tmp_path):
         bundles = tmp_path / 'bundles'
@@ -512,6 +515,6 @@ class TestEmission:
         out = tmp_path / 'out'
 
         with pytest.raises(ValueError, match='no review domains derived'):
-            PrAgentTarget().generate(bundles, out)
+            CuiossReviewBotTarget().generate(bundles, out)
 
         assert not out.exists(), 'a rejected run must leave no half-written artifact set'

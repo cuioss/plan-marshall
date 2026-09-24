@@ -1,5 +1,9 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""PrAgentTarget — per-domain PR-Agent instruction-pack export target.
+"""CuiossReviewBotTarget — per-domain reviewer instruction-pack export target.
+
+The ``cuioss-review-bot`` target emits the instruction packs the organisation's
+reviewer (PR-Agent, running under the cuioss-review-bot identity) reads from the
+settings repository ``cuioss/cuioss-review-bot``.
 
 Reads the same source of truth as every other target (``marketplace/bundles/``)
 and emits a REVIEWER ARTIFACT SET rather than an assistant bundle tree: one
@@ -23,7 +27,7 @@ Three properties of the emission are load-bearing:
   every consumer.
 * **A run EMITS the whole set, and the set stays equal to the derivation.** One
   artifact per derived domain plus the spine, under ``{output_dir}/packs/``.
-  ``PrAgentTarget.generate`` accepts ``bundles`` for the base signature and
+  ``CuiossReviewBotTarget.generate`` accepts ``bundles`` for the base signature and
   ignores it, and ``_prune_stale_artifacts`` removes a generated artifact this
   run did not write, so a domain that stops deriving does not survive in the
   output. The spine is emitted unconditionally and is not selectable: a spine a
@@ -33,9 +37,9 @@ The substantiation clause and the anti-fabrication clause are carried VERBATIM
 into the spine artifact, and appear in no domain artifact.
 
 **The category ceiling is a two-part BUDGET, not a grouping.** The ceiling is an
-observed organisation rule quoted in ``pr-agent-settings``' README — past roughly
-ten entries the answer is a second focused pass, not an eleventh bullet — so it
-is not this module's number to raise. The spine reserves one slot: it carries at
+observed organisation rule quoted in the ``cuioss/cuioss-review-bot`` settings
+repository's documentation — past roughly ten entries the answer is a second
+focused pass, not an eleventh bullet — so it is not this module's number to raise. The spine reserves one slot: it carries at
 most :data:`MAX_CATEGORY_BULLETS` minus one category bullets, and each domain
 artifact contributes exactly one. A single-domain assembly therefore lands
 exactly at the ceiling. Grouping the domain bullets of a multi-domain assembly
@@ -116,7 +120,7 @@ _WITHHOLDING_PHRASES = (
 # Composition limits and emission layout
 # ---------------------------------------------------------------------------
 
-#: Hard ceiling on the pack's category bullet list. ``pr-agent-settings``
+#: Hard ceiling on the pack's category bullet list. ``cuioss/cuioss-review-bot``
 #: § "Recall beats precision": past roughly ten entries the answer is a second
 #: focused pass, not an eleventh bullet.
 MAX_CATEGORY_BULLETS = 10
@@ -157,7 +161,7 @@ _GENERATED_HEADER_MARKER = '<!-- GENERATED ARTIFACT — do not edit by hand.'
 #: ``.pyprojectx/`` tree and is not on ``PATH``, so a bare ``uv run …`` exits 127
 #: outside it — and this line is stamped into artifacts published to another
 #: repository, where the reader has no such tree at all.
-_REGENERATE_COMMAND = './pw generate --target pr-agent --output target/pr-agent'
+_REGENERATE_COMMAND = './pw generate --target cuioss-review-bot --output target/cuioss-review-bot'
 
 # ---------------------------------------------------------------------------
 # Charter text carried verbatim into the spine artifact
@@ -317,7 +321,7 @@ def discover_domains(marketplace_dir: Path) -> dict[str, DomainContribution]:
 
     The derivation takes NO bundle allow-list, and that absence is the contract
     rather than an omission: this target is not bundle-scopable (see
-    :meth:`PrAgentTarget.generate`), so there is no parameter by which a caller
+    :meth:`CuiossReviewBotTarget.generate`), so there is no parameter by which a caller
     could narrow the set. Removing the knob is what makes the whole-set claim
     true by construction instead of by convention.
 
@@ -601,12 +605,12 @@ def _prune_stale_artifacts(packs_dir: Path, keep: set[Path]) -> list[Path]:
 # ---------------------------------------------------------------------------
 
 
-class PrAgentTarget(TargetBase):
-    """Build target emitting the per-domain PR-Agent artifact set plus the spine."""
+class CuiossReviewBotTarget(TargetBase):
+    """Build target emitting the per-domain reviewer artifact set plus the spine."""
 
     @property
     def name(self) -> str:
-        return 'pr-agent'
+        return 'cuioss-review-bot'
 
     @property
     def config_dir(self) -> Path:
@@ -662,8 +666,8 @@ class PrAgentTarget(TargetBase):
         """
         if output_dir is None:
             raise ValueError(
-                'PrAgentTarget requires --output: pass an output directory '
-                '(e.g. target/pr-agent, under which the packs/ artifact set is written)'
+                'CuiossReviewBotTarget requires --output: pass an output directory '
+                '(e.g. target/cuioss-review-bot, under which the packs/ artifact set is written)'
             )
         bodies = compose_packs(marketplace_dir)
         if not bodies:
@@ -705,7 +709,7 @@ __all__ = [
     'INTENT_CLAUSE',
     'MAX_CATEGORY_BULLETS',
     'MAX_DOMAIN_RULES',
-    'PrAgentTarget',
+    'CuiossReviewBotTarget',
     'SEVERITY_CLAUSE',
     'SPINE_CATEGORIES',
     'SUBSTANTIATION_CLAUSE',
