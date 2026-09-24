@@ -291,9 +291,25 @@ if _PM_MARKETPLACE_ROOT_ENV:
 # Build PYTHONPATH from all skill script directories and their subdirectories.
 # Includes directories discovered at generation time (covers library-only skills like
 # script-shared that have importable modules but no registered script notations).
+# Ordering is tree-first, NOT alphabetical: a single sorted() puts a deployed
+# copy (``~/.config/...``, the Claude plugin cache) ahead of the marketplace
+# tree (``.../git/...``), so the deployed copy of a shared module shadows the
+# tree copy and its Path(__file__)-anchored resolver — which only knows nested
+# layouts — raises at import time. Marketplace/tree dirs (``/marketplace/bundles/``,
+# the same marker the PM_MARKETPLACE_ROOT rewrite above matches on) sort first,
+# cache/deployed dirs second, alphabetical within each partition. The rewrite
+# hook above only rewrites SCRIPTS (mapping parents); the baked _ALL_SCRIPT_DIRS
+# below keeps its generation-time root, so a cache-generated executor running
+# under PM_MARKETPLACE_ROOT genuinely mixes both families here.
+def _is_tree_script_dir(_p: str) -> bool:
+    return '/marketplace/bundles/' in _p
+
+
 _SCRIPT_DIRS_FROM_MAPPINGS = sorted(set(str(Path(p).parent) for p in SCRIPTS.values()))
 _ALL_SCRIPT_DIRS = [{{EXTRA_SCRIPT_DIRS}}]
-_SCRIPT_DIRS = sorted(set(_SCRIPT_DIRS_FROM_MAPPINGS + _ALL_SCRIPT_DIRS))
+_TREE_SCRIPT_DIRS = sorted({p for p in _SCRIPT_DIRS_FROM_MAPPINGS + _ALL_SCRIPT_DIRS if _is_tree_script_dir(p)})
+_CACHE_SCRIPT_DIRS = sorted({p for p in _SCRIPT_DIRS_FROM_MAPPINGS + _ALL_SCRIPT_DIRS if not _is_tree_script_dir(p)})
+_SCRIPT_DIRS = _TREE_SCRIPT_DIRS + _CACHE_SCRIPT_DIRS
 _PYTHONPATH = ':'.join(_SCRIPT_DIRS)
 
 # ============================================================================

@@ -1347,6 +1347,33 @@ def generate_surfaces_code(surfaces: dict[str, dict]) -> str:
     return '\n'.join(lines)
 
 
+def _is_tree_script_dir(path: str) -> bool:
+    """Return True when ``path`` lives in the marketplace source tree.
+
+    The tree layout carries ``/marketplace/bundles/``; deployed copies (the
+    Claude versioned plugin cache, the OpenCode flat ``plan-marshall-<skill>/``
+    skills dir) never do. The same marker the generated executor's
+    ``PM_MARKETPLACE_ROOT`` rewrite hook already matches on.
+    """
+    return '/marketplace/bundles/' in path
+
+
+def _sort_script_dirs_tree_first(dirs: list[str]) -> list[str]:
+    """Sort script dirs with marketplace/tree roots before deployed-cache roots.
+
+    A single alphabetical ``sorted()`` puts ``~/.config/...`` (and the Claude
+    cache) ahead of ``.../git/...``, so a deployed copy of a shared module
+    (e.g. ``_manifest_validation``) shadows the tree copy and its
+    ``Path(__file__)``-anchored ``resolve_bundles_root`` — which only knows
+    nested layouts — raises at import time. Partition instead: tree dirs
+    alphabetically first, then everything else alphabetically. Deterministic
+    and stable for single-family inputs (all-tree or all-cache).
+    """
+    tree = sorted(d for d in dirs if _is_tree_script_dir(d))
+    cache = sorted(d for d in dirs if not _is_tree_script_dir(d))
+    return tree + cache
+
+
 def parse_template_format_version(template: str) -> int | None:
     """Parse the ``# TEMPLATE_FORMAT_VERSION: N`` marker from template text.
 
@@ -1489,7 +1516,8 @@ def generate_executor(
     # These are injected as extra PYTHONPATH entries so subprocess-invoked scripts can
     # import from organized subdirectory layouts (e.g., script-shared/scripts/build/).
     all_script_dirs = collect_script_dirs(base_path)
-    extra_dirs_code = ', '.join(f"'{d}'" for d in sorted({Path(d).resolve().as_posix() for d in all_script_dirs}))
+    resolved_dirs = [Path(d).resolve().as_posix() for d in all_script_dirs]
+    extra_dirs_code = ', '.join(f"'{d}'" for d in _sort_script_dirs_tree_first(sorted(set(resolved_dirs))))
 
     # Provisioning stamps: the version and script-set fingerprint the executor
     # was generated at, read from the installed dist-manifest.json (emitted by
