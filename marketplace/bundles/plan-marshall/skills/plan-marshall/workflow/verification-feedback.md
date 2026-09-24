@@ -27,7 +27,7 @@ The exit-code contract for every `python3 .plan/execute-script.py` call in this 
 
 | Prompt-body field | Required | Description |
 |-------------------|:--------:|-------------|
-| `producer` | Yes | One of `build-runner`, `sonar`, `pr-comment`, `plugin-doctor`, `pr-state`, `finalize-feedback`. Selects the Step 1 branch and which `ext-triage-{domain}` skills are pre-loaded in Step 2. |
+| `producer` | Yes | Single accept-set: one of `build-runner`, `sonar`, `pr-comment`, `plugin-doctor`, `pr-state`, `finalize-feedback`. Selects the Step 1 branch and which `ext-triage-{domain}` skills are pre-loaded in Step 2. `ci-verify-timeout` is rejected on every producer path — it is a `default:ci-verify` taxonomy producer string (row h, Timeout), not a `producer` value; the owning producer of the rejection is `default:ci-verify`. |
 | `plan_id` | Yes | Forwarded to every `manage-findings` / `manage-tasks` / `tools-integration-ci` call. |
 | `WORKTREE` | Yes | Used verbatim for `git -C {WORKTREE}` and as the root for every Edit/Write/Read. |
 | `pr_number` | Conditional | Required for `pr-comment` (thread replies) and for `pr-state` (CI wait + multi-source fetch). |
@@ -53,6 +53,19 @@ Producer-specific additions:
 Domain-triage extensions (`{bundle}:ext-triage-{domain}`) are loaded on demand inside Steps 3-6 — they are NOT pre-loaded by the caller.
 
 ## Step 1: Producer-mode branch
+
+### Guard: `producer` input validation (input boundary)
+
+Validate the `producer` runtime input against the accept-set (`build-runner`, `sonar`, `pr-comment`, `plugin-doctor`, `pr-state`, `finalize-feedback`) BEFORE entering any Step 1 branch. When the value is outside the accept-set, STOP — do not enter the shared ingestion/triage flow — and return:
+
+```toon
+status: error
+error: unknown_producer
+producer: {received value}
+display_detail: "unknown producer: {received value}"
+```
+
+`ci-verify-timeout` is rejected here on every producer path — it is a `default:ci-verify` taxonomy producer string, not a `producer` value; the owning producer of the rejection is `default:ci-verify` (see the Inputs table note).
 
 ### Branch: `producer=build-runner` | `sonar` | `pr-comment` (store-only query)
 

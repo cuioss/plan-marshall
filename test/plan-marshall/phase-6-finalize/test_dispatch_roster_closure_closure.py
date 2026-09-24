@@ -1293,3 +1293,21 @@ def test_step_5c_detectors_fire_on_the_pre_fix_four_cause_block():
     )
     assert tuple(_termination_causes_in_command(post_fix)) == _TERMINATION_CAUSES
     assert [cause for cause, _rule in _termination_cause_rows(post_fix)] == list(_TERMINATION_CAUSES)
+
+
+def test_partition_covers_registry_exactly_once_with_no_unclassified_step():
+    """The dispatched/inline partition covers the registry exactly once."""
+    from _dispatch_roster import parse_roster_skills
+
+    registered = _registered_steps()
+    dispatched = _roster(_DISPATCHED_HEADING)
+    inline = _roster(_INLINE_HEADING)
+    classified = set(dispatched) | set(inline)
+    assert classified == registered, (
+        f'partition drift: unclassified={sorted(registered - classified)} ghosts={sorted(classified - registered)}'
+    )
+    assert not (set(dispatched) & set(inline)), 'partition overlap: a step carries both classifications'
+    text = _ROSTER_DOC.read_text(encoding='utf-8')
+    skills = parse_roster_skills(text, _DISPATCHED_HEADING)
+    assert set(skills) == set(dispatched), 'skills parser population differs from the dispatched roster'
+    assert all(skills[key] for key in dispatched), 'an unclassified skills column turns the family red'
