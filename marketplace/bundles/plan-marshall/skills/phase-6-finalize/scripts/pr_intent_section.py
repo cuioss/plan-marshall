@@ -27,15 +27,19 @@ Behaviour, in order:
    This script authors NO second outline reader and never reads
    ``solution_outline.md`` directly — a second reader is precisely the
    source-of-truth duplication that produces drift.
-2. **A reader that FAILED is an error, never an omission.** When the reader
-   cannot be run (``OSError``), exits non-zero, or prints an envelope that does
-   not parse, nothing is known about the outline, so the verb returns
-   ``status: error`` / ``error: outline_unreadable`` with a ``detail`` naming the
-   section and the cause, and exits 1 — the same shape as its
-   ``draft_unreadable`` / ``empty_draft`` / ``body_unreadable`` siblings. Reading
-   a failure as "no intent" would publish a PR that silently lacks a section the
-   plan did state.
-3. **A read that SUCCEEDED and found no outline, or both sections absent/empty =>
+2. **A reader that FAILED is an error, never an omission.** The reader answers
+   with ``status: success``, or with ``status: error`` carrying one of its two
+   absence codes — ``document_not_found`` (no outline) or ``section_not_found``
+   (no such section). Anything else is a failure: the reader cannot be run
+   (``OSError``), exits non-zero, prints an envelope that does not parse, or
+   prints one whose ``status`` is missing, is not one of those two values, or is
+   ``error`` with any other code. Nothing is then known about the outline, so the
+   verb returns ``status: error`` / ``error: outline_unreadable`` with a
+   ``detail`` naming the section and the cause, and exits 1 — the same shape as
+   its ``draft_unreadable`` / ``empty_draft`` / ``body_unreadable`` siblings.
+   Reading a failure as "no intent" would publish a PR that silently lacks a
+   section the plan did state.
+3. **A read that ANSWERED with no outline, or both sections absent/empty =>
    emit NOTHING.** The body file is left BYTE-IDENTICAL and the verb returns
    ``omitted: true`` with an explicit reason. Never an empty heading, never a
    placeholder heading: a ``## Intent`` with nothing under it tells a reviewer less
@@ -92,6 +96,11 @@ _OUTLINE_SECTIONS = ('summary', 'overview')
 
 _HEADING = '## Intent'
 
+# The two ``status: error`` codes with which the outline reader ANSWERS that
+# something is absent: the outline document, or the requested section of it. Every
+# other ``error`` code is a failure to read, not an answer about the outline.
+_ABSENCE_ERRORS = frozenset({'document_not_found', 'section_not_found'})
+
 # Emitted verbatim when the draft exceeds the budget. ``{shown}`` / ``{total}``
 # make the loss quantified rather than merely flagged.
 _TRUNCATION_MARKER = (
@@ -121,11 +130,14 @@ def _run_outline_read(plan_id: str, section: str) -> dict:
     absent-file handling belong to that skill, and duplicating any of them here
     would create a second source of truth that drifts.
 
-    Returns the parsed envelope of a read that RAN — including a ``status: error``
-    envelope, which is the reader's own answer (the outline or the section is
-    absent). Raises :class:`OutlineUnreadable` when the reader could not be run, exited
-    non-zero, or printed an envelope that does not parse: none of those is an answer
-    about the outline, so none may be read as "no outline content".
+    Returns the parsed envelope of a read that ANSWERED: ``status: success``, or
+    ``status: error`` carrying ``document_not_found`` (the outline is absent) or
+    ``section_not_found`` (the section is absent) — the reader's two absence codes,
+    both printed with exit 0. Raises :class:`OutlineUnreadable` when the reader could
+    not be run, exited non-zero, printed an envelope that does not parse, or printed
+    one that is none of those answers (no ``status``, a ``status`` that is neither
+    ``success`` nor ``error``, or ``error`` with any other code): none of those is an
+    answer about the outline, so none may be read as "no outline content".
     """
     try:
         completed = subprocess.run(
@@ -154,16 +166,26 @@ def _run_outline_read(plan_id: str, section: str) -> dict:
         raise OutlineUnreadable(section, f'reader envelope does not parse: {exc}') from exc
     if not isinstance(parsed, dict):
         raise OutlineUnreadable(section, 'reader envelope is not a mapping')
-    return parsed
+    status = parsed.get('status')
+    if status == 'success':
+        return parsed
+    if status == 'error' and parsed.get('error') in _ABSENCE_ERRORS:
+        return parsed
+    raise OutlineUnreadable(
+        section,
+        f'reader envelope is neither a success nor a documented absence '
+        f'(status={status!r}, error={parsed.get("error")!r})',
+    )
 
 
 def has_outline_intent(plan_id: str) -> bool:
     """Return True when the plan's outline states an intent worth rendering.
 
     True as soon as ANY of the declared sections carries non-whitespace content.
-    False when every read succeeded and found no outline at all, or every section
-    absent or empty — the omit-entirely case. A reader failure is neither: it
-    propagates as :class:`OutlineUnreadable`.
+    False when every read answered — no outline at all, or every section absent or
+    empty — the omit-entirely case. A reader failure, including an envelope that is
+    neither a success nor a documented absence, is neither: it propagates as
+    :class:`OutlineUnreadable`.
     """
     for section in _OUTLINE_SECTIONS:
         payload = _run_outline_read(plan_id, section)
@@ -182,9 +204,26 @@ def has_outline_intent(plan_id: str) -> bool:
 # because the window ends right after it (``3.5``, ``e.g.x``) is not a boundary.
 # The full stop of an ellipsis (``...``) or of ``e.g.``, ``i.e.``, ``vs.`` and
 # ``etc.`` is not a boundary either, in any letter case (``E.g.`` opening a sentence).
+# Nor is the full stop of a Markdown ordered-list marker (``1. ``, ``  12. ``):
+# :data:`_ORDERED_LIST_MARKER` rejects those matches, because the variable-length
+# line prefix a marker needs cannot be expressed as a Python lookbehind.
 _SENTENCE_END = re.compile(
     r'(?:(?<!\.)(?<!(?i:\be\.g))(?<!(?i:\bi\.e))(?<!(?i:\bvs))(?<!(?i:\betc))\.|[!?])[)\]"\'*_`]*(?=\s|$)|\n[ \t]*\n'
 )
+
+# The text between a line start and a full stop that makes that full stop an
+# ordered-list marker: optional indentation, then digits only. A sentence that
+# merely ends in a number (``released in 2024.``) carries other text before the
+# digits and stays a boundary.
+_ORDERED_LIST_MARKER = re.compile(r'[ \t]*\d+')
+
+
+def _is_ordered_list_marker(text: str, match: re.Match[str]) -> bool:
+    """True when ``match`` is the full stop of an ordered-list marker in ``text``."""
+    if not match.group().startswith('.'):
+        return False
+    line_start = text.rfind('\n', 0, match.start()) + 1
+    return _ORDERED_LIST_MARKER.fullmatch(text, line_start, match.start()) is not None
 
 
 def _complete_sentences_within(text: str, limit: int) -> str:
@@ -192,12 +231,15 @@ def _complete_sentences_within(text: str, limit: int) -> str:
 
     Returns the empty string when not even the first sentence fits: rendering no
     prose is honest, a sentence cut part-way is not — it reads as a complete
-    statement that says something different.
+    statement that says something different. An ordered-list marker's full stop is
+    never a boundary, so a cut neither renders a bare ``1.`` nor ends on one.
     """
     if len(text) <= limit:
         return text
     cut = 0
     for match in _SENTENCE_END.finditer(text):
+        if _is_ordered_list_marker(text, match):
+            continue
         # A sentence keeps its terminator; a paragraph break ends before the blank line.
         candidate = match.start() if match.group().startswith('\n') else match.end()
         if candidate > limit:

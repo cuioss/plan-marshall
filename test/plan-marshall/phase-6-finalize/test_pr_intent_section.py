@@ -24,11 +24,14 @@ Pinned properties:
   the lowest subprocess primitive per the project's constructed-argv discipline —
   never by a second reader and never by a direct file read.
 * **A reader failure is an error, never an omission.** A reader that could not be
-  run, exited non-zero, or printed an unparseable envelope yields
-  ``error: outline_unreadable`` and exit 1, and the body is untouched — only a read
-  that succeeded and found no intent may yield ``omitted: true``.
-* **Truncation cuts at a sentence or paragraph boundary**, and the return
-  reports the overflow (``overflow``, ``draft_chars``, ``chars_not_shown``).
+  run, exited non-zero, or printed an unparseable envelope — or one that is neither
+  ``status: success`` nor ``status: error`` with one of the reader's two absence
+  codes (``document_not_found`` / ``section_not_found``) — yields
+  ``error: outline_unreadable`` and exit 1, and the body is untouched. Only a read
+  that answered and found no intent may yield ``omitted: true``.
+* **Truncation cuts at a sentence or paragraph boundary**, never at the full stop
+  of an ordered-list marker, and the return reports the overflow (``overflow``,
+  ``draft_chars``, ``chars_not_shown``).
 """
 
 from __future__ import annotations
@@ -63,8 +66,12 @@ def _outline_toon(content: str) -> str:
     return f'status: success\nplan_id: p\nsection: summary\ncontent: "{content}"\n'
 
 
-def _absent_toon() -> str:
-    return 'status: error\nerror: not_found\n'
+#: The reader's two absence codes — the only ``status: error`` envelopes that answer.
+_ABSENCE_CODES = ('document_not_found', 'section_not_found')
+
+
+def _absent_toon(code: str = 'document_not_found') -> str:
+    return f'status: error\nerror: {code}\n'
 
 
 @pytest.fixture
@@ -326,6 +333,27 @@ class TestSentenceBoundaryAndOverflow:
 
         assert pis._complete_sentences_within(text, 30) == '- keep the batching path'
 
+    def test_an_over_budget_draft_opening_with_a_numbered_item_renders_no_marker_fragment(self):
+        """The first item does not fit, so no prose is shown — never a bare ``1.``."""
+        rendered = pis.render_section('1. ' + 'x' * 3000)
+
+        assert rendered.section == '## Intent\n\n' + pis._TRUNCATION_MARKER.format(shown=0, total=3003)
+
+    @pytest.mark.parametrize('marker', ['2.', '12.', '  3.', '\t4.'], ids=['one-digit', 'two-digit', 'spaces', 'tab'])
+    def test_a_cut_never_ends_on_an_ordered_list_marker(self, marker):
+        """A window ending right after the next item's marker stops at the last complete item."""
+        lead = f'1. The first item is short.\n{marker}'
+        text = f'{lead} The next item runs well past the limit of the window.'
+
+        assert pis._complete_sentences_within(text, len(lead) + 1) == '1. The first item is short.'
+
+    def test_a_sentence_ending_in_a_number_is_still_a_boundary(self):
+        """Matched control: only digits alone on the line before the full stop make a marker."""
+        lead = 'It was released in 2024.'
+        text = f'{lead} The next release follows much later than planned.'
+
+        assert pis._complete_sentences_within(text, len(lead) + 3) == lead
+
 
 # =============================================================================
 # A reader failure is an error, never an omission
@@ -376,11 +404,33 @@ class TestReaderFailureIsAnError:
 
         self._assert_unreadable(code, out, body_file, before, 'bad envelope')
 
-    def test_a_read_that_succeeded_and_found_nothing_still_omits(self, body_file, draft_file, capsys):
-        """Matched control: the reader's own ``status: error`` answer is an omission, not a failure."""
+    @pytest.mark.parametrize(
+        'envelope',
+        [
+            'plan_id: p\nsection: summary\ncontent: "A real summary."\n',
+            'status: error\nerror: permission_denied\n',
+            'status: error\n',
+            'status: 5\n',
+        ],
+        ids=['missing-status', 'unexpected-error-code', 'error-without-code', 'non-string-status'],
+    )
+    def test_an_envelope_that_is_neither_success_nor_absence_is_unreadable(
+        self, envelope, body_file, draft_file, capsys
+    ):
+        """A ``status: error`` is an answer only when it carries one of the reader's absence codes."""
+        draft_file.write_text('distillation', encoding='utf-8')
+        before = body_file.read_text(encoding='utf-8')
+
+        code, out, _ = _run('p', draft_file, body_file, envelope, capsys)
+
+        self._assert_unreadable(code, out, body_file, before, 'neither a success nor a documented absence')
+
+    @pytest.mark.parametrize('absence_code', _ABSENCE_CODES)
+    def test_a_read_that_answered_absent_still_omits(self, absence_code, body_file, draft_file, capsys):
+        """Matched control: each of the reader's absence codes is an omission, not a failure."""
         draft_file.write_text('distillation', encoding='utf-8')
 
-        code, out, _ = _run('p', draft_file, body_file, _absent_toon(), capsys)
+        code, out, _ = _run('p', draft_file, body_file, _absent_toon(absence_code), capsys)
 
         assert code == 0
         assert 'omitted: true' in out

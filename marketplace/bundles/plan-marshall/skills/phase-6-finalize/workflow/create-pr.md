@@ -203,8 +203,9 @@ body carrying a hollow section. The remedy depends on the `error` value, and `de
 cause:
 
 - **`outline_unreadable`** — the outline read itself failed (the `manage-solution-outline` reader
-  could not be run, exited non-zero, or printed an envelope that does not parse), so nothing is known
-  about the plan's intent. This is NOT an omission and NOT a draft defect: rewriting the draft cannot
+  could not be run, exited non-zero, printed an envelope that does not parse, or printed one that is
+  neither `status: success` nor `status: error` with one of its two absence codes,
+  `document_not_found` / `section_not_found`), so nothing is known about the plan's intent. This is NOT an omission and NOT a draft defect: rewriting the draft cannot
   clear it. Fix the outline or its reader per `detail`, then re-invoke.
 - **`draft_unreadable`** / **`empty_draft`** — the outline states an intent but the draft could not be
   read or is empty. Fix the draft and re-invoke.
