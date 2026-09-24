@@ -1,0 +1,10 @@
+{
+  "id": "PLAN-CIS-039",
+  "slug": "corpus-residency-admission-control",
+  "workstream": "WS-06",
+  "status": "parked",
+  "plan_marshall_plan_id": "",
+  "pr": "1149",
+  "landing": "landings/PLAN-CIS-039.md",
+  "seq": 4
+}

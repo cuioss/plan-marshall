@@ -1,0 +1,10 @@
+{
+  "id": "PLAN-LR-07",
+  "slug": "the-lessons-verb-always-resolves-to-lessons-routing",
+  "workstream": "WS-01",
+  "status": "shipped",
+  "plan_marshall_plan_id": "plan-lr-07-lessons-verb-routing",
+  "pr": "1584",
+  "landing": "landings/PLAN-LR-07.md",
+  "seq": 7
+}
