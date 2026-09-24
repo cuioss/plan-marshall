@@ -1,0 +1,10 @@
+{
+  "id": "PLAN-07",
+  "slug": "opencode-repairs",
+  "workstream": "WS-06",
+  "status": "shipped",
+  "plan_marshall_plan_id": "plan-07-opencode-repairs",
+  "pr": "1554",
+  "landing": "landings/PLAN-07.md",
+  "seq": 7
+}

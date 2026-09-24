@@ -1,0 +1,10 @@
+{
+  "id": "PLAN-04",
+  "slug": "persona-behavior",
+  "workstream": "WS-04",
+  "status": "shipped",
+  "plan_marshall_plan_id": "plan-04-persona-behavior",
+  "pr": "1556",
+  "landing": "landings/PLAN-04.md",
+  "seq": 4
+}

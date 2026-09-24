@@ -1,0 +1,10 @@
+{
+  "id": "PLAN-05",
+  "slug": "dispatch-envelopes",
+  "workstream": "WS-05",
+  "status": "shipped",
+  "plan_marshall_plan_id": "implement-dispatch-envelopes-process-compliance",
+  "pr": "1583",
+  "landing": "landings/PLAN-05.md",
+  "seq": 5
+}

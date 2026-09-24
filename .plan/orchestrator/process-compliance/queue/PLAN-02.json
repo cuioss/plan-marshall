@@ -1,0 +1,10 @@
+{
+  "id": "PLAN-02",
+  "slug": "worktree-discipline",
+  "workstream": "WS-02",
+  "status": "shipped",
+  "plan_marshall_plan_id": "plan-02-worktree-discipline",
+  "pr": "1547",
+  "landing": "landings/PLAN-02.md",
+  "seq": 2
+}

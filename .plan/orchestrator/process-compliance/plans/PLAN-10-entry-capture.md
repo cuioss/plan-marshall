@@ -94,6 +94,7 @@ plan makes the entry lane decidable so the exemption stops recurring.
 - `test-fidelity-rules-follow-up-004.md` (finding): light-lane routing — staged into this spec
 - `implement-opencode-enforcement-parity-001.md` (finding): light-lane pr_title root cause — folded into deliverable 1 scope; expected surface unchanged by this fold (planning.md already declared — recorded explicitly)
 - `implement-opencode-enforcement-parity-002.md` (finding): mailbox probe reader mis-parse, re-opens deliverable 2 premise — folded; expected surface updated in the same act (+1 entry: _cmd_lifecycle.py)
+- `module-budget-campaign-completion-004.md` (finding): same reader mis-parse, independently verified (direct invocation + fixture shape) — folded into deliverable 2 mechanism note as recurrence; expected surface unchanged (recorded explicitly)
 - `implement-opencode-enforcement-parity-003.md` (finding): inbox write sequence re-use — folded; expected surface unchanged by this fold (_orchestrator_inbox.py already declared — recorded explicitly)
 - `module-budget-campaign-completion-001.md` issue 1 (finding): recipe-match/aspect-classify need `--body-file` for verbatim bodies — folded into deliverable 3 scope; expected surface unchanged by this fold (phase-1-init/ already declared — recorded explicitly)
 - `truth-147-lane-reports-green-001.md` item 2 (finding): same `--body-file` gap, `--request-file`/`--stdin` request — folded into deliverable 3 scope as recurrence; expected surface unchanged (recorded explicitly)

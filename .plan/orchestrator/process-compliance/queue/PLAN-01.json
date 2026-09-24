@@ -1,0 +1,10 @@
+{
+  "id": "PLAN-01",
+  "slug": "phase-gates",
+  "workstream": "WS-01",
+  "status": "shipped",
+  "plan_marshall_plan_id": "phase-gates",
+  "pr": "1540",
+  "landing": "landings/PLAN-01.md",
+  "seq": 1
+}
