@@ -17,7 +17,7 @@ FSL is source-available, not closed and not classic open source. Three propertie
 
 * *Source-available now.* The full source is published and may be read, modified, and used for any purpose except the one explicitly carved out.
 * *Apache 2.0 in the future.* Each version automatically converts to the permissive Apache License 2.0 two years after its release. The restriction is time-boxed, not perpetual.
-* *One restriction: no Competing Use.* You may not make Plan-Marshall available to others in a commercial product or service that substitutes for it, substitutes for another product or service the licensor offers using it, or offers the same or substantially similar functionality. Internal use, non-commercial education and research, and professional services for a licensee are explicitly permitted.
+* *One restriction: no Competing Use.* You may not make Plan-Marshall available to others in a commercial product or service that substitutes for it, substitutes for another product or service the licensor offers using it and that already exists when the release is made available, or offers the same or substantially similar functionality. Internal use, non-commercial education and research, and professional services provided to a licensee using Plan-Marshall in accordance with the license terms are explicitly permitted.
 
 For the binding terms, see xref:../../LICENSE.md[LICENSE.md].
 
