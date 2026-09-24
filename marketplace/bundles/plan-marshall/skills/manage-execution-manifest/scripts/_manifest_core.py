@@ -13,6 +13,7 @@ This module also owns the three **owner-less recognition** rules the six-bucket
 classifier applies to content no ``BuildExtensionBase`` claims: documentation by
 suffix (:data:`_DOC_SUFFIXES` / :func:`_is_documentation_path`),
 infrastructure config by family (:data:`_INFRA_CONFIG_BASENAME_GLOBS` /
+:data:`_ROOT_ONLY_INFRA_CONFIG_BASENAMES` /
 :data:`_INFRA_CONFIG_DIR_TREES` / :data:`_INFRA_CONFIG_PARENT_DIRS` /
 :func:`_is_infrastructure_config_path`), and templates by suffix
 (:data:`_TEMPLATE_SUFFIX` / :func:`_is_template_path` /
@@ -20,10 +21,12 @@ infrastructure config by family (:data:`_INFRA_CONFIG_BASENAME_GLOBS` /
 
 The infrastructure-config table names an owner-less **family**, not a suffix.
 Membership is deliberately NOT "any ``.yml``": it is anchored either on a
-location (a CI/automation definition tree, a container service-config tree) or
+location (a CI/automation definition tree, a container service-config tree),
 on a basename (a descriptor an external tool resolves by a fixed, tool-defined
 name, spanning tool groups that include CI definitions, container orchestration
-and build context, container lint/scan, and review bots), so an arbitrary YAML
+and build context, container lint/scan, and review bots), or on a root-level
+basename (a tool configuration the tool resolves at the project root only —
+currently the opencode entries), so an arbitrary YAML
 file elsewhere in a tree is not swept in. The predicate is
 consumed **only as a fallback over the paths no build extension claimed** — it
 never runs ahead of the build extensions, so it can never take a path a build
@@ -198,12 +201,19 @@ _INFRA_CONFIG_PARENT_DIR_SUFFIXES: tuple[str, ...] = ('.yml', '.yaml')
 #
 # ``opencode.json`` / ``opencode.jsonc`` are the entries that open the
 # opencode-tool group — the opencode CLI's own configuration, resolved by that
-# tool at the project root by that fixed name. They are basename-anchored for the
-# same reason as ``marshal.json``: a ``('.opencode',)`` entry in
-# :data:`_INFRA_CONFIG_DIR_TREES` would additionally reclassify every git-tracked
-# ``.opencode/plugin/**`` file — host-side plugin code, content nobody asked
-# about — where the basename entry reaches exactly the root config files the tool
-# resolves by name.
+# tool at the project root by that fixed name. They are root-anchored, not
+# merely basename-anchored: only a root-level path is a member, so the entry
+# reaches exactly the root config files the tool resolves by name. A plain
+# basename entry would additionally reach e.g. ``fixtures/opencode.json`` —
+# test data, not tool configuration — and treat a footprint containing only
+# that file as ``documentation_only``. The ``('.opencode',)`` directory-tree
+# alternative is rejected for the same reason as before: it would additionally
+# reclassify every git-tracked ``.opencode/plugin/**`` file — host-side plugin
+# code, content nobody asked about.
+_ROOT_ONLY_INFRA_CONFIG_BASENAMES: tuple[str, ...] = (
+    'opencode.json',
+    'opencode.jsonc',
+)
 _INFRA_CONFIG_BASENAME_GLOBS: tuple[str, ...] = (
     'docker-compose*.yml',
     'docker-compose*.yaml',
@@ -219,8 +229,6 @@ _INFRA_CONFIG_BASENAME_GLOBS: tuple[str, ...] = (
     '.coderabbit.yaml',
     '.coderabbit.yml',
     'marshal.json',
-    'opencode.json',
-    'opencode.jsonc',
 )
 
 
@@ -237,8 +245,9 @@ def _is_infrastructure_config_path(path: str) -> bool:
     The generic, extension-agnostic infrastructure-config predicate consumed by
     :func:`_classify_paths_via_extensions` as a **fallback over the paths no
     build extension claimed**. Membership is location-anchored
-    (:data:`_INFRA_CONFIG_DIR_TREES`, :data:`_INFRA_CONFIG_PARENT_DIRS`) or
-    basename-anchored (:data:`_INFRA_CONFIG_BASENAME_GLOBS`) — never a bare
+    (:data:`_INFRA_CONFIG_DIR_TREES`, :data:`_INFRA_CONFIG_PARENT_DIRS`),
+    basename-anchored (:data:`_INFRA_CONFIG_BASENAME_GLOBS`), or root-anchored
+    (:data:`_ROOT_ONLY_INFRA_CONFIG_BASENAMES`) — never a bare
     suffix rule, so a YAML file a build system owns is not a member.
 
     Because the predicate runs only over the residual unclaimed set, it cannot
@@ -250,6 +259,8 @@ def _is_infrastructure_config_path(path: str) -> bool:
     basename = segments[-1]
     directories = segments[:-1]
 
+    if basename in _ROOT_ONLY_INFRA_CONFIG_BASENAMES and not directories:
+        return True
     if any(fnmatch(basename, glob) for glob in _INFRA_CONFIG_BASENAME_GLOBS):
         return True
     if any(_has_segment_run(directories, tree) for tree in _INFRA_CONFIG_DIR_TREES):
