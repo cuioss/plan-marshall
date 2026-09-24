@@ -2,9 +2,9 @@
   "id": "PLAN-PR-066",
   "slug": "the-charter-is-assembled-at-run-time-and-enabled-per-repo",
   "workstream": "WS-02",
-  "status": "running",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "status": "shipped",
+  "plan_marshall_plan_id": "charter-assembled-at-run-time",
+  "pr": "plan-marshall#1611",
+  "landing": "landings/PLAN-PR-066.md",
   "seq": 30
 }
