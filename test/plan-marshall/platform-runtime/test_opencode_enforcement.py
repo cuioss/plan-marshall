@@ -121,8 +121,8 @@ def test_carve_out_executor_permit_passes(tmp_path: pathlib.Path, monkeypatch: p
 #: passing against a stale copy.
 _GUARD_SET_NAMES = (
     'MUTATION_FILE_OPS',
-    'PW_BUILD_VERBS',
     'BARE_BUILD_TOOLS',
+    'JS_RUNNERS',
     'JS_RUNNER_BUILD_VERBS',
     'PYTHON_DIRECT_RUNNERS',
     'SHELL_WRAPPERS',
@@ -174,27 +174,8 @@ _GUARD_EXPECTED: dict[str, frozenset[str]] = {
             'source',
         }
     ),
-    'PW_BUILD_VERBS': frozenset(
-        {
-            'verify',
-            'compile',
-            'test-compile',
-            'module-tests',
-            'coverage',
-            'quality-gate',
-            'clean',
-            'gate',
-            'test',
-            'run',
-            'check',
-            'lint',
-            'format',
-            'build',
-            'install',
-            'tests',
-        }
-    ),
     'BARE_BUILD_TOOLS': frozenset({'mvn', 'mvnw', 'gradle', 'gradlew', 'make', 'cmake', 'ant', 'uv'}),
+    'JS_RUNNERS': frozenset({'npm', 'npx', 'bun', 'pnpm', 'yarn'}),
     'JS_RUNNER_BUILD_VERBS': frozenset({'test', 'run', 'build'}),
     'PYTHON_DIRECT_RUNNERS': frozenset({'pytest', 'mypy', 'ruff'}),
     'SHELL_WRAPPERS': frozenset({'command', 'env', 'sudo'}),
@@ -213,16 +194,39 @@ _GUARD_READ_PROBES = ('ls', 'cat', 'head', 'tail', 'grep', 'find')
 #: BARE_BUILD_TOOLS plus the Python direct runners).
 _GUARD_BARE_BUILD_TOOLS = _GUARD_SETS['BARE_BUILD_TOOLS']
 _GUARD_PYTHON_DIRECT_RUNNERS = _GUARD_SETS['PYTHON_DIRECT_RUNNERS']
-#: JS runner tool names are inlined (not a named set) in guard.js, so this
-#: pin stays a literal list of the tools the R4 branch names.
-_GUARD_JS_RUNNERS = frozenset({'npm', 'npx', 'bun', 'pnpm', 'yarn'})
+#: R4 — JS runner tool names (parsed from the named guard.js JS_RUNNERS set,
+#: consumed by the R4 branch — removing a runner from the plugin fails the
+#: contract test instead of passing against a stale literal).
+_GUARD_JS_RUNNERS = _GUARD_SETS['JS_RUNNERS']
 _GUARD_JS_RUNNER_BUILD_VERBS = _GUARD_SETS['JS_RUNNER_BUILD_VERBS']
 
-#: R3 — the generated executor path direct edits must target.
-_GUARD_EXECUTOR_PATH = '.plan/execute-script.py'
 
-#: R4 — the executor permit exempt from the hard-coded-build block.
-_GUARD_EXECUTOR_PERMIT_PREFIX = 'python3 .plan/execute-script.py'
+def _guard_plugin_source() -> str:
+    """Return the raw guard.js plugin source for literal and shape pins."""
+    return _guard_plugin_path().read_text(encoding='utf-8')
+
+
+def _parse_guard_executor_path(source: str) -> str:
+    """Parse the generated-executor path literal out of guard.js.
+
+    The literal is the string ``normalizedIsExecutorPath`` compares against —
+    parsing it here (instead of repeating it) keeps the R3 pin a statement
+    about the plugin rather than about a local copy: changing the path in
+    the plugin fails this pin instead of passing against a stale literal.
+    """
+    match = re.search(r'"(\.plan/execute-script\.py)"', source)
+    assert match is not None, 'guard.js carries no quoted .plan/execute-script.py path literal'
+    return match.group(1)
+
+
+#: R3 — the generated executor path direct edits must target, parsed from
+#: guard.js rather than repeated as a local literal.
+_GUARD_EXECUTOR_PATH = _parse_guard_executor_path(_guard_plugin_source())
+
+#: R4 — the executor permit exempt from the hard-coded-build block, derived
+#: from the parsed executor path (the two must stay in lock-step in the
+#: plugin: the permit is ``python3 `` plus the executor path).
+_GUARD_EXECUTOR_PERMIT_PREFIX = f'python3 {_GUARD_EXECUTOR_PATH}'
 
 
 def test_guard_r2_blocks_mutation_class_not_read_probes() -> None:
@@ -247,20 +251,50 @@ def test_guard_sets_match_plugin_contract() -> None:
         assert _GUARD_SETS[name] == expected, f'guard.js {name} drifted from its pin'
 
 
-def test_guard_r4_pins_pw_build_verbs() -> None:
-    """R4 blocks every build.py-routed ./pw verb, including test-compile."""
-    assert 'test-compile' in _GUARD_SETS['PW_BUILD_VERBS']
-    assert 'clean' in _GUARD_SETS['PW_BUILD_VERBS']
-    assert 'verify' in _GUARD_SETS['PW_BUILD_VERBS']
+def test_guard_r4_pw_allowlists_generate_prefix_only() -> None:
+    """R4 blocks `./pw` unless its verb is explicitly allowed.
+
+    The decision table allowlists by prefix, not by verb set: only
+    `./pw generate*` and `./pw --*` pass, and a missing verb blocks — so a
+    new build.py-routed alias cannot bypass R4 by omission from a set.
+    """
+    source = _guard_plugin_source()
+    assert 'PW_BUILD_VERBS' not in source, 'guard.js must not gate ./pw on a verb set'
+    assert 'verb.startsWith("generate")' in source, 'guard.js must allowlist the generate prefix'
+    assert 'verb.startsWith("--")' in source, 'guard.js must allowlist the -- prefix'
 
 
 def test_guard_r3_pins_executor_path() -> None:
-    """R3 names the generated executor path as the blocked edit target."""
+    """R3 names the generated executor path as the blocked edit target.
+
+    The path is parsed out of guard.js (not repeated as a local literal),
+    and the R3 hook branch references the ``targetsExecutor`` /
+    ``normalizedIsExecutorPath`` helpers that compare against it — so
+    changing the path in the plugin fails this pin instead of passing
+    against a stale copy.
+    """
     assert _GUARD_EXECUTOR_PATH == '.plan/execute-script.py'
     assert _GUARD_EXECUTOR_PATH.endswith('execute-script.py')
+    source = _guard_plugin_source()
+    assert 'targetsExecutor' in source
+    assert 'normalizedIsExecutorPath' in source
+    assert 'patchTextTargetsExecutor' in source
 
 
 def test_guard_r4_exempts_executor_permit() -> None:
-    """The executor permit is exempt from the R4 hard-coded-build block."""
+    """The executor permit is exempt from the R4 hard-coded-build block.
+
+    The permit prefix derives from the executor path parsed out of guard.js
+    (the two stay in lock-step), and the plugin checks the R1 chaining gate
+    before the permit and the permit before every R4 build-tool branch — so
+    the exemption cannot silently widen past the executor invocation.
+    """
+    assert _GUARD_EXECUTOR_PERMIT_PREFIX == 'python3 .plan/execute-script.py'
     command = 'python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks list --plan-id x'
     assert command.startswith(_GUARD_EXECUTOR_PERMIT_PREFIX)
+    source = _guard_plugin_source()
+    assert 'isExecutorPermit' in source
+    r1_at = source.index('hasChainingConstructor(command)')
+    permit_at = source.index('isExecutorPermit(command)) return')
+    bare_at = source.index('BARE_BUILD_TOOLS.has')
+    assert r1_at < permit_at < bare_at, 'hook order must be R1 gate, then executor permit, then R4 branches'

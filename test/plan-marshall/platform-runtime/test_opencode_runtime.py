@@ -518,6 +518,7 @@ def test_permission_fix_handles_every_published_operation(
 ) -> None:
     """Every published operation name is accepted without error."""
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv('OPENCODE_CONFIG_DIR', str(tmp_path))
     args: list = [str(tmp_path / 'arg')] if operation == 'protect-path' else []
     result = _parse(runtime.permission_fix('global', operation, args, True))
     assert result['status'] in ('success', 'no-op')

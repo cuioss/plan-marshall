@@ -100,6 +100,7 @@ const MUTATION_FILE_OPS = new Set([
 // `./pw generate*` and `./pw --*` pass. Every other `./pw` invocation
 // blocks, so a new build.py-routed alias cannot bypass R4 by omission.
 const BARE_BUILD_TOOLS = new Set(["mvn", "mvnw", "gradle", "gradlew", "make", "cmake", "ant", "uv"])
+const JS_RUNNERS = new Set(["npm", "npx", "bun", "pnpm", "yarn"])
 const JS_RUNNER_BUILD_VERBS = new Set(["test", "run", "build"])
 const PYTHON_DIRECT_RUNNERS = new Set(["pytest", "mypy", "ruff"])
 
@@ -295,7 +296,7 @@ export const GuardPlugin = async ({ worktree, directory }) => {
         )
       }
 
-      if (JS_RUNNER_BUILD_VERBS.has(normalizeToken(tokenAt(command, 1))) && new Set(["npm", "npx", "bun", "pnpm", "yarn"]).has(token)) {
+      if (JS_RUNNER_BUILD_VERBS.has(normalizeToken(tokenAt(command, 1))) && JS_RUNNERS.has(token)) {
         audit(auditLine("R4", tool, sessionID, callID, command))
         throw new Error(
           "[plan-marshall-guard] R4: hard-coded build command bypassing python3 .plan/execute-script.py is forbidden",

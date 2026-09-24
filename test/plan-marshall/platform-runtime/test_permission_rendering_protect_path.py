@@ -412,6 +412,7 @@ class TestPermissionFixProtectPath:
         gap the caller must special-case, in whichever direction it appears.
         """
         self._pin_scope_path(monkeypatch, tmp_path / 'settings.json')
+        monkeypatch.setenv('OPENCODE_CONFIG_DIR', str(tmp_path))
         args: list[Any] = []
         if operation == 'protect-path':
             args = [str(tmp_path / 'arg')]
