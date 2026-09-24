@@ -275,12 +275,14 @@ _LITERAL_DETAILS = '<details>Fix authorization</details>'
         f'```\n{_LITERAL_DETAILS}\n```',
         f'~~~\n{_LITERAL_DETAILS}\n~~~',
         f'`{_LITERAL_DETAILS}`',
+        f'\n\n    {_LITERAL_DETAILS}\n',
         f'<details><summary>Review details</summary>configuration</details>\n\n```\n{_LITERAL_DETAILS}\n```',
     ],
     ids=[
         'backtick-fenced-block-holding-a-literal-details-element',
         'tilde-fenced-block-holding-a-literal-details-element',
         'inline-code-span-holding-a-literal-details-element',
+        'indented-code-block-holding-a-literal-details-element',
         'collapsed-block-outside-code-plus-a-fenced-example',
     ],
 )

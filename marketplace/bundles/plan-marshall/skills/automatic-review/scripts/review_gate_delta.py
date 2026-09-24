@@ -248,6 +248,9 @@ _FENCED_CODE_BLOCK = re.compile(
     r'(?P<code>[\s\S]*?)(?:^[ ]{0,3}(?P=fence)(?P=char)*[ \t]*$|\Z)',
     re.MULTILINE,
 )
+#: A Markdown indented code block: a run of lines each indented by four spaces or a
+#: tab, starting at the text's start or after a blank line.
+_INDENTED_CODE_BLOCK = re.compile(r'(?:\A|(?<=\n\n))(?P<code>(?:(?:[ ]{4}|\t)[^\n]*(?:\n|\Z))+)')
 #: A Markdown inline code span: a backtick run, the code, and a closing run of the
 #: same length that no further backtick adjoins.
 _INLINE_CODE_SPAN = re.compile(r'(?<!`)(?P<ticks>`+)(?!`)(?P<code>[\s\S]*?[^`])(?P=ticks)(?!`)')
@@ -259,7 +262,8 @@ _CODE_PLACEHOLDER = re.compile('(\\d+)')
 def _mask_markdown_code(text: str) -> tuple[str, list[str]]:
     """Replace every Markdown code segment in ``text`` with an inert placeholder.
 
-    Fenced blocks are masked first, then inline code spans in what remains. Returns
+    Fenced blocks are masked first, then indented code blocks, then inline code spans
+    in what remains. Returns
     the masked text and each segment's code, indexed by its placeholder number.
     """
     segments: list[str] = []
@@ -269,6 +273,7 @@ def _mask_markdown_code(text: str) -> tuple[str, list[str]]:
         return f'{len(segments) - 1}'
 
     text = _FENCED_CODE_BLOCK.sub(_stash, text)
+    text = _INDENTED_CODE_BLOCK.sub(_stash, text)
     text = _INLINE_CODE_SPAN.sub(_stash, text)
     return text, segments
 
@@ -306,7 +311,7 @@ def _carries_review_content(text: str) -> bool:
     inside a collapsed one is removed with it.
 
     **Markdown code is text, not markup.** Fenced code blocks (backtick or tilde
-    fences) and inline code spans are masked BEFORE any of the removals above, so a
+    fences), indented code blocks and inline code spans are masked BEFORE any of the removals above, so a
     literal ``<details>`` element, HTML comment or tag written inside code is never
     peeled or stripped. A code segment that survives the removals — one not inside a
     collapsed block or an HTML comment — counts as review content when its code
