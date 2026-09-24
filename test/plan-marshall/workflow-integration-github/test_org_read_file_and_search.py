@@ -181,7 +181,7 @@ def _search(query: str = 'review-charter') -> dict:
 
 
 def test_search_code_quotes_the_literal_and_scopes_it_to_the_org(monkeypatch):
-    """The literal is searched as one exact phrase inside ``org:``; a single page completes."""
+    """The literal is sent as one quoted phrase inside ``org:``; a single page completes."""
     calls = _serve_gh(monkeypatch, [_search_page(total=3, count=3)])
 
     result = _search()

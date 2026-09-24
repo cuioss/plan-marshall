@@ -7,8 +7,9 @@ bound to:
 
 - ``cmd_org_list_repos`` — ``org list-repos``: every repository of an
   organization, all pages, archived flag included.
-- ``cmd_org_search_code`` — ``org search-code``: every indexed file of an
-  organization containing a literal, with GitHub's own completeness signal.
+- ``cmd_org_search_code`` — ``org search-code``: the indexed files of an
+  organization that GitHub's token-based code search matches for a quoted
+  literal, with GitHub's own completeness signal.
 - ``cmd_repo_file_read`` — ``repo file read``: one file at a repository's
   default branch or at an explicit ref.
 - ``cmd_repo_label_list`` — ``repo label list``: every label of a repository.
@@ -262,7 +263,7 @@ def cmd_org_list_repos(args: argparse.Namespace) -> dict:
 
 
 def cmd_org_search_code(args: argparse.Namespace) -> dict:
-    """Handle ``org search-code`` — every indexed file of an org containing a literal."""
+    """Handle ``org search-code`` — the indexed files GitHub's code search matches for a quoted literal."""
     operation = 'org_search_code'
     if not _LOGIN_RE.fullmatch(args.org or ''):
         return make_error(operation, f'invalid organization login: {args.org!r}')

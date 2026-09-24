@@ -56,7 +56,7 @@ def _build_parser() -> argparse.ArgumentParser:
         prog='marketplace-targets-generate',
         description=(
             'Generate marketplace target output (claude verbatim mirror, opencode emitter, '
-            'cuioss-review-bot reviewer instruction pack).'
+            'cuioss-review-bot reviewer pack artifact set).'
         ),
         allow_abbrev=False,
     )

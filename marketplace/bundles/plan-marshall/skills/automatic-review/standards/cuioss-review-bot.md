@@ -509,7 +509,7 @@ the reviewer having drifted.
 | `publish_output_no_suggestions` | false — a clean review and a total failure were indistinguishable | true |
 | `max_model_tokens` | 32000 (upstream default) | 256000 |
 | `max_description_tokens` | 500 (upstream default) | 2000 |
-| Charter composition | one generic central charter | central spine plus a generated per-repository domain pack |
+| Charter composition | one generic central charter | central spine plus the per-domain packs a repository selects, assembled at run time when it opts in |
 
 G1 is **not live**. The transition is recorded in that repository's own merged history — `#5` (the
 charter rewrite), `#7` (temperature), `#13` (the empty-list permission and `num_max_findings` → 12),
