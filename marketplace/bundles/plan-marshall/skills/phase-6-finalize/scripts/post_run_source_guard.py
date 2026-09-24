@@ -71,6 +71,16 @@ Return shape (CLI emits TOON; programmatic callers consume
     exempted_paths[N]: [<untracked .plan/ paths dropped as plan state>]
     offending_paths[N]: [<dirty tracked source, tracked .plan/ files included>]
 
+Gating mode (``--fail-on-dirty``). The default stays advisory per decision 3
+above: ``clean: false`` rides the payload and the exit code is ``0``. Passing
+``--fail-on-dirty`` turns the same observation into a gate — a dirty result
+exits ``1`` so the caller treats uncommitted state as a red gate rather than a
+warning. The phase-5 green-report binding (``phase-5-execute`` Step 11b) is the
+sanctioned gating caller: it passes the plan WORKTREE as ``--project-dir``
+(the tree whose cleanness the green claim is about) and blocks ``pass`` on a
+non-zero exit. The phase-6 post-run caller keeps the default: its tree is the
+main checkout and its band stays advisory.
+
 ``considered_paths`` is the population the verdict was drawn from, so a
 ``clean: true`` that names the paths it examined is distinguishable from a
 looked-at-nothing pass. ``exempted_paths`` names what was dropped and (by the
@@ -81,9 +91,12 @@ it a log line cannot tell the two apart.
 
 ``clean: true`` with an empty ``offending_paths[]`` is the expected outcome. A
 git failure (the directory is not a repository, git is unavailable) returns
-``status: error`` with ``clean: true`` and an ``error`` field — the guard is
-advisory, so an unusable observation must not manufacture an offender, and the
-zero exit keeps the caller's non-blocking contract intact.
+``status: error`` with ``clean: true`` and an ``error`` field in advisory
+mode — the guard is advisory there, so an unusable observation must not
+manufacture an offender, and the zero exit keeps the caller's non-blocking
+contract intact. In ``--fail-on-dirty`` gating mode the same failure exits
+``2`` instead: unobserved is not clean, and the phase-5 caller treats any
+non-zero exit as unverified rather than ``pass``.
 
 The script is registered through ``generate_executor.py`` and consumed via the
 executor proxy::
@@ -111,26 +124,35 @@ _GIT_TIMEOUT_SECONDS: int = 60
 
 def _observe_dirty_source(
     project_dir: Path,
+    include_untracked: bool = False,
 ) -> tuple[bool, list[str], list[str], list[str], str | None]:
     """Observe real working-tree state and split it via the shared exemption.
 
-    Runs the single tracked-only ``git status`` observation against
-    ``project_dir``, decodes it, and applies the shared trackedness-based
-    ``.plan/`` exemption
-    (:func:`_plan_state_exemption.partition_plan_state_exemption`). Because the
-    observation is ``--untracked-files=no``, git has already dropped every
-    untracked path, so the exemption's untracked-``.plan/`` arm normally finds
-    nothing here — its job at this site is to KEEP the tracked ``.plan/`` files
-    the old prefix filter wrongly dropped.
+    Runs the single ``git status`` observation against ``project_dir``,
+    decodes it, and applies the shared trackedness-based ``.plan/`` exemption
+    (:func:`_plan_state_exemption.partition_plan_state_exemption`). With the
+    default ``include_untracked=False`` the observation is ``--untracked-files=no``:
+    git has already dropped every untracked path, so the exemption's
+    untracked-``.plan/`` arm normally finds nothing here — its job at this
+    site is to KEEP the tracked ``.plan/`` files the old prefix filter
+    wrongly dropped. With ``include_untracked=True`` (the gating mode) the
+    observation lists untracked paths too: untracked ``.plan/`` plan state
+    stays exempt by the same predicate, while untracked NON-plan-state source
+    is retained as offenders — a new source file no commit contains is
+    uncommitted work exactly as a tracked modification is.
 
     Args:
         project_dir: Working tree to observe. The predicate is general, but the
             documented caller (item 5f sub-item (0)) must pass the MAIN
             CHECKOUT — see the module docstring for why the worktree is wrong.
+        include_untracked: Observe untracked paths in addition to tracked
+            ones. ``False`` preserves the tracked-only advisory behavior;
+            ``True`` is what the ``--fail-on-dirty`` gating mode passes so
+            its green claim covers staged, unstaged, AND untracked source.
 
     Returns:
         A ``(clean, offenders, exempted, considered, error)`` tuple.
-        ``considered`` is every dirty tracked path observed (the population the
+        ``considered`` is every dirty path observed (the population the
         verdict is drawn from); ``exempted`` is the untracked ``.plan/`` subset
         dropped as plan state; ``offenders`` is the retained dirty-source set
         (tracked ``.plan/`` files included). ``clean`` is ``True`` when
@@ -138,17 +160,19 @@ def _observe_dirty_source(
         ``clean`` is ``True`` with empty lists — an unusable observation never
         manufactures an offender.
     """
+    status_args = [
+        'git',
+        '-C',
+        str(project_dir),
+        'status',
+        '--porcelain',
+        '-z',
+    ]
+    if not include_untracked:
+        status_args.append('--untracked-files=no')
     try:
         completed = subprocess.run(
-            [
-                'git',
-                '-C',
-                str(project_dir),
-                'status',
-                '--porcelain',
-                '-z',
-                '--untracked-files=no',
-            ],
+            status_args,
             capture_output=True,
             # ``surrogateescape``, matching the trackedness observation these
             # paths are compared against (``_plan_state_exemption._observe_z``).
@@ -190,7 +214,8 @@ def check_tracked_source(project_dir: Path) -> tuple[bool, list[str], str | None
 def cmd_check(args: argparse.Namespace) -> int:
     """CLI wrapper around :func:`_observe_dirty_source` — emits TOON, returns 0."""
     project_dir = Path(args.project_dir).expanduser()
-    clean, offenders, exempted, considered, error = _observe_dirty_source(project_dir)
+    gating = bool(getattr(args, 'fail_on_dirty', False))
+    clean, offenders, exempted, considered, error = _observe_dirty_source(project_dir, include_untracked=gating)
 
     payload: dict[str, object] = {
         'status': 'error' if error else 'success',
@@ -204,6 +229,15 @@ def cmd_check(args: argparse.Namespace) -> int:
     if error:
         payload['error'] = error
     print(serialize_toon(payload))
+    if error and gating:
+        # Unobserved is not clean in gating mode: git could not read the
+        # tree, so no verdict exists to gate on. Exit 2 (distinct from the
+        # dirty-tree 1) so the caller cannot treat an unobserved tree as
+        # clean — the phase-5 caller treats any non-zero exit as unverified
+        # rather than pass.
+        return 2
+    if args.fail_on_dirty and offenders:
+        return 1
     return 0
 
 
@@ -242,6 +276,21 @@ def build_parser() -> argparse.ArgumentParser:
             "plan's worktree, so defaulting to the cwd would silently observe "
             'a deleted tree and make the check vacuous. See the module '
             'docstring.'
+        ),
+    )
+    check_parser.add_argument(
+        '--fail-on-dirty',
+        action='store_true',
+        default=False,
+        dest='fail_on_dirty',
+        help=(
+            'Gating mode: observe tracked AND untracked source (untracked '
+            '.plan/ plan state stays exempt) and exit non-zero unless the '
+            'tree is observably clean — 1 when dirty source is observed, 2 '
+            'when git could not observe the tree at all (unobserved is not '
+            'clean: the caller must treat it as unverified, never as pass). '
+            'Default (absent) preserves the advisory contract: tracked-only '
+            'observation, verdict on the TOON payload, exit code always 0.'
         ),
     )
     check_parser.set_defaults(func=cmd_check)

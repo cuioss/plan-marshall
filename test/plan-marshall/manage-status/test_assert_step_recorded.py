@@ -384,3 +384,56 @@ def test_invalid_plan_id_raises_system_exit(plan_context):
     """Invalid plan_id format triggers require_valid_plan_id exit."""
     with pytest.raises(SystemExit):
         cmd_assert_step_recorded(_assert_args('Invalid_Plan', '1-init', 'step-a'))
+
+
+# =============================================================================
+# --min-firing-count: the record must come from the guarded firing or later
+# =============================================================================
+
+
+def test_stale_prior_firing_record_fails_the_floor(plan_context):
+    """A first-firing record does not satisfy a second-firing guard."""
+    plan_id = 'assert-stale-firing'
+    _make_plan(plan_id)
+    _seed_step(plan_id, '6-finalize', 'push', 'done')
+
+    result = cmd_assert_step_recorded(
+        _assert_args(plan_id, '6-finalize', 'push', require_terminal=True, min_firing_count=2)
+    )
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'step_record_missing'
+    assert result['recorded'] is False
+    assert result['expected_firing_count'] == 2
+    assert result['observed_firing_count'] == 1
+    assert result['finding_type'] == 'missing-yield'
+
+
+def test_fresh_record_satisfies_the_floor_and_reports_its_count(plan_context):
+    """A record at the guarded floor passes and publishes its firing count."""
+    plan_id = 'assert-fresh-firing'
+    _make_plan(plan_id)
+    _seed_step(plan_id, '6-finalize', 'push', 'done')
+
+    result = cmd_assert_step_recorded(
+        _assert_args(plan_id, '6-finalize', 'push', require_terminal=True, min_firing_count=1)
+    )
+
+    assert result['status'] == 'success'
+    assert result['recorded'] is True
+    assert result['outcome'] == 'done'
+    assert result['firing_count'] == 1
+
+
+def test_non_positive_floor_is_rejected(plan_context):
+    """A --min-firing-count below 1 is an invalid argument, not a silent legacy check."""
+    plan_id = 'assert-bad-floor'
+    _make_plan(plan_id)
+    _seed_step(plan_id, '6-finalize', 'push', 'done')
+
+    result = cmd_assert_step_recorded(
+        _assert_args(plan_id, '6-finalize', 'push', require_terminal=True, min_firing_count=0)
+    )
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'invalid_argument'

@@ -86,14 +86,19 @@ def _make_plan(plan_id: str) -> None:
     )
 
 
-def _args(plan_id: str, outcome: str, head_at_completion: str | None = None) -> Namespace:
+def _args(
+    plan_id: str,
+    outcome: str,
+    head_at_completion: str | None = None,
+    display_detail: str | None = 'test detail',
+) -> Namespace:
     return Namespace(
         plan_id=plan_id,
         phase='6-finalize',
         step='anchor-probe-step',
         outcome=outcome,
         force=False,
-        display_detail=None,
+        display_detail=display_detail,
         head_at_completion=head_at_completion,
         loop_back_target=None,
         fact=None,

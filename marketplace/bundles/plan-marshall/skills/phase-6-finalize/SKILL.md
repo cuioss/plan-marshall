@@ -1441,6 +1441,12 @@ FOR each step_id in manifest.phase_6.steps:
 
   Cross-references: `../automatic-review/SKILL.md` § "Handle findings (loop-back)" and Branch D, `workflow/sonar-roundtrip.md` § "Handle findings (loop-back)" and Branch D — each carries the conditional `set-phase` / `mark-step-done --loop-back-target` shape described above. `plan-marshall/workflow/triage.md` § Step 7 owns the granularity classification rule (the table that maps disposition types to the two `loop_back_target` values). The dispatcher-level enforcement of the invariant lives in `plan-marshall/workflow/execution.md` § "Loop-back continuation" → ELSE branch (the persisted-phase assertion). The four-corner truth table for the `finalize_without_asking` × `loop_back_without_asking` flag combinations is documented in § 7b below.
 
+  ### Yield-Name Contract
+
+  Every phase-6-finalize yield carries its own name from the CLOSED set — the composed manifest's frozen `phase_6.steps` list — on its `mark-step-done --step` call, and the handler refuses any other name (`unknown_yield_name`, nothing written). A yield that names nothing real cannot route: the continuation hook (§ 7b) reads the recorded outcome back under the manifest step key, so a paraphrased or invented name would orphan the record and deadlock the re-entry check. See `manage-status` "CLOSED yield-name set" for the roster derivation and the warning branch.
+
+  The same call carries the execute-time doc-obligation: a one-line progress narrative in `--display-detail` saying what the step did. Control intent already rides the closed `outcome` / `loop-back-target` fields; the narrative must be actual narrative — a bare control token restated as the detail is refused (`display_detail_is_control_token`, nothing written). The check fires at yield time, so an undocumented yield never enters the record. See `manage-status` "Progress separated from control".
+
   7b. Loop-back continuation hook (consult the just-recorded outcome):
       Read the step's recorded outcome from `status.metadata.phase_steps["6-finalize"][step_id]` (the dispatched agent's `mark-step-done` call wrote it). When `outcome == "loop_back"`, also read the persisted `loop_back_target` field from the same record — it is structurally guaranteed to be present on every `loop_back` outcome (the manage-status `--loop-back-target` validation contract enforces this; absence is a dispatcher contract bug, not a routing case to handle). The two legal values are `5-execute` (full-phase rollback) and `6-finalize` (inline replay).
 

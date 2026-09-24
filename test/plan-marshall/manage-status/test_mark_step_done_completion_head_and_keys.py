@@ -122,6 +122,7 @@ def test_mark_step_persists_head_at_completion_on_first_call(plan_context):
             '6-finalize',
             'pre-push-quality-gate',
             'done',
+            display_detail='gate green',
             head_at_completion=sha,
         )
     )
@@ -130,12 +131,12 @@ def test_mark_step_persists_head_at_completion_on_first_call(plan_context):
     assert result['changed'] is True
     assert result['head_at_completion'] == sha
     assert result['outcome'] == 'done'
-    assert result['display_detail'] is None
+    assert result['display_detail'] == 'gate green'
 
     persisted = read_status(plan_id)
     assert persisted['metadata']['phase_steps']['6-finalize']['pre-push-quality-gate'] == {
         'outcome': 'done',
-        'display_detail': None,
+        'display_detail': 'gate green',
         'head_at_completion': sha,
     }
 
@@ -276,7 +277,7 @@ def test_mark_step_default_prefixed_records_under_bare_key(plan_context):
     """
     plan_id = 'mark-step-canon-prefixed'
     _make_plan(plan_id)
-    result = cmd_mark_step_done(_args(plan_id, '6-finalize', 'default:push', 'done'))
+    result = cmd_mark_step_done(_args(plan_id, '6-finalize', 'default:push', 'done', display_detail='test detail'))
 
     assert result['status'] == 'success'
     # The returned step echoes the canonical bare key, not the prefixed input.
@@ -284,7 +285,7 @@ def test_mark_step_default_prefixed_records_under_bare_key(plan_context):
 
     persisted = read_status(plan_id)
     phase_steps = persisted['metadata']['phase_steps']['6-finalize']
-    assert phase_steps == {'push': {'outcome': 'done', 'display_detail': None}}
+    assert phase_steps == {'push': {'outcome': 'done', 'display_detail': 'test detail'}}
     assert 'default:push' not in phase_steps
 
 
@@ -296,12 +297,12 @@ def test_mark_step_bare_and_default_prefixed_reconcile_to_same_key(plan_context)
     """
     plan_id = 'mark-step-canon-reconcile'
     _make_plan(plan_id)
-    first = cmd_mark_step_done(_args(plan_id, '6-finalize', 'default:push', 'done'))
+    first = cmd_mark_step_done(_args(plan_id, '6-finalize', 'default:push', 'done', display_detail='test detail'))
     assert first['status'] == 'success'
     assert first['changed'] is True
 
     # Same step, bare spelling, same outcome — idempotent no-op on the SAME entry.
-    second = cmd_mark_step_done(_args(plan_id, '6-finalize', 'push', 'done'))
+    second = cmd_mark_step_done(_args(plan_id, '6-finalize', 'push', 'done', display_detail='test detail'))
     assert second['status'] == 'success'
     assert second['changed'] is False
     assert second['step'] == 'push'
@@ -331,6 +332,7 @@ def test_mark_step_project_prefixed_records_under_verbatim_key(plan_context):
             '6-finalize',
             'project:finalize-step-plugin-doctor',
             'done',
+            display_detail='test detail',
             head_at_completion=sha,
         )
     )
@@ -343,7 +345,7 @@ def test_mark_step_project_prefixed_records_under_verbatim_key(plan_context):
     assert phase_steps == {
         'project:finalize-step-plugin-doctor': {
             'outcome': 'done',
-            'display_detail': None,
+            'display_detail': 'test detail',
             'head_at_completion': sha,
         }
     }

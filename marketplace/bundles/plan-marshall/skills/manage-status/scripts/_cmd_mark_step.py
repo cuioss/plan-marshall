@@ -53,6 +53,22 @@ check). The flag is REQUIRED on every ``loop_back`` outcome and FORBIDDEN
 on every other outcome; the validation has no backwards-compat fallback
 (breaking-change contract per the finalize-loopback plan, Deliverable 3).
 
+The ``--step`` name a yield records under is validated against the phase's
+CLOSED yield-name roster (see :func:`_derive_phase_roster`): a ``6-finalize``
+yield must name a member of the composed manifest's frozen ``phase_6.steps``
+list, so a typo'd or invented step name is refused with
+``error: unknown_yield_name`` and writes NOTHING — a yield that names nothing
+real can never enter the record. Phases without a centrally composed step
+list are recorded without a membership check, stated rather than hidden.
+
+``display_detail`` is the progress channel and ``outcome`` /
+``loop_back_target`` are the control channel: control rides closed
+vocabularies, progress rides free text, and the two must not trade places.
+A ``display_detail`` that IS a bare control token (``done``, ``skipped``,
+``loop_back``, or ``failed``, case-insensitively) carries no progress at
+all — control intent masquerading as the narrative — and is refused with
+``error: display_detail_is_control_token`` before anything is persisted.
+
 The repeatable ``--fact KEY=VALUE`` flag records structured per-step facts.
 The accumulated pairs are parsed into a ``dict[str, str]`` and persisted under
 an optional ``facts`` key, following the same omit-when-absent convention as
@@ -89,6 +105,13 @@ from plan_logging import log_entry
 
 VALID_OUTCOMES = ('done', 'skipped', 'loop_back', 'failed')
 VALID_LOOP_BACK_TARGETS = ('5-execute', '6-finalize')
+
+#: Control tokens that must never stand alone as the progress narrative. A
+#: ``display_detail`` equal to one of these (case-insensitively, after
+#: stripping) restates the outcome instead of documenting progress, so the
+#: yield's progress channel carries nothing. Derived from
+#: :data:`VALID_OUTCOMES` so the two vocabularies cannot drift apart.
+_CONTROL_TOKENS = frozenset(VALID_OUTCOMES)
 
 #: The phase whose dispatcher consumes the ``[STEP] … Completed step:`` marker and
 #: whose Step-3 loop the fused completion emission below serves. Scoping the
@@ -151,6 +174,46 @@ def _derive_head_dependence(step: str) -> tuple[bool, str | None]:
         return bool(fields.get(_HEAD_DEPENDENT_KEY, False)), None
 
     return False, None
+
+
+def _derive_phase_roster(phase: str, plan_id: str) -> tuple[set[str] | None, str | None]:
+    """Derive the CLOSED yield-name roster for ``phase``, or decline to.
+
+    Only ``6-finalize`` carries a centrally composed step list — the frozen
+    ``phase_6.steps`` of the plan's execution manifest — so only that phase
+    yields a roster to check membership against. Every other phase returns
+    ``(None, None)``: no roster exists (phase-5 yields are task-level records
+    in the manage-tasks store; phases 1-4 run inline), so nothing is checked
+    and — mirroring :func:`_derive_head_dependence` — nothing warns either.
+
+    Returns ``(members, None)`` when the roster resolved: ``members`` is the
+    canonicalized step-name set. Returns ``(None, reason)`` when a roster is
+    owed but underivable (manifest reader unimportable, manifest missing or
+    unreadable, ``phase_6.steps`` absent or empty): the caller writes the
+    record and carries the reason as a ``warning``, following this project's
+    diagnosable-WARNING idiom — an unresolvable derivation must not
+    manufacture an unsubstantiated refusal, but must not pass silently either.
+    """
+    if phase != '6-finalize':
+        return None, None
+    try:
+        from _manifest_core import read_manifest
+    except ImportError as exc:
+        return None, f'manifest reader is not importable ({exc})'
+    try:
+        manifest = read_manifest(plan_id)
+    except Exception as exc:  # any read/parse failure is diagnosable, not fatal
+        return None, f'read_manifest({plan_id!r}) failed ({exc})'
+    if not isinstance(manifest, dict):
+        return None, f'no execution manifest for plan {plan_id!r}, so the 6-finalize step roster could not be derived'
+    phase_6 = manifest.get('phase_6')
+    steps = phase_6.get('steps') if isinstance(phase_6, dict) else None
+    if not isinstance(steps, list) or not steps:
+        return None, (
+            f'manifest phase_6.steps is absent or empty for plan {plan_id!r}, '
+            'so the 6-finalize step roster could not be derived'
+        )
+    return {canonicalize_step_key(str(name)) for name in steps}, None
 
 
 def _resolve_head_to_commit(sha: str) -> str | None:
@@ -304,9 +367,53 @@ def cmd_mark_step_done(args: argparse.Namespace) -> dict | None:
             'message': '--phase and --step are required and must be non-empty',
         }
 
+    # CLOSED yield-name check: a yield must name a member of its phase's
+    # composed step roster. A 6-finalize yield that names no manifest step —
+    # a typo, a paraphrase, an invented name — is refused before anything is
+    # persisted: a yield that names nothing real can never enter the record.
+    # There is no --force override for this branch: --force governs outcome
+    # conflicts, not the record's own well-formedness.
+    roster, roster_warning = _derive_phase_roster(phase, args.plan_id)
+    if roster is not None and step not in roster:
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'unknown_yield_name',
+            'phase': phase,
+            'step': step,
+            'message': (
+                f'Step {step!r} is not a member of the {phase!r} composed step '
+                'roster. Nothing was written. Record the yield under its '
+                'manifest step name — the CLOSED yield-name set for '
+                '6-finalize is the manifest phase_6.steps list.'
+            ),
+        }
+
     display_detail = getattr(args, 'display_detail', None)
     head_at_completion = getattr(args, 'head_at_completion', None)
     loop_back_target = getattr(args, 'loop_back_target', None)
+
+    # 6-finalize yields MUST carry a progress narrative: an omitted, empty,
+    # or whitespace-only display_detail passes persistence today and leaves
+    # the record with no account of what the step did — an undocumented
+    # yield the new phase-6 contract forbids from entering the record.
+    # Refused before anything is persisted, for phase 6-finalize only;
+    # every other phase retains optional details. There is no --force
+    # override: --force governs outcome conflicts, not well-formedness.
+    if phase == '6-finalize' and (display_detail is None or not display_detail.strip()):
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'display_detail_required',
+            'phase': phase,
+            'step': step,
+            'message': (
+                '--display-detail is required for phase 6-finalize: an omitted, '
+                'empty, or whitespace-only detail was supplied and nothing was '
+                'written. Describe what the step did in one ASCII line — the '
+                'progress narrative is mandatory on every 6-finalize yield.'
+            ),
+        }
 
     facts, bad_fact_token = _parse_facts(getattr(args, 'fact', None))
     if bad_fact_token is not None:
@@ -318,6 +425,26 @@ def cmd_mark_step_done(args: argparse.Namespace) -> dict | None:
             'step': step,
             'offending_token': bad_fact_token,
             'message': (f'--fact expects KEY=VALUE with a non-empty KEY, got: {bad_fact_token!r}'),
+        }
+
+    # Progress/control split: display_detail is the progress channel and must
+    # carry actual progress — a bare control token restates the outcome
+    # instead of documenting it, so the narrative channel is empty while
+    # control sits in both. Refused before anything is persisted; there is no
+    # --force override, exactly as for the yield-name check above.
+    if isinstance(display_detail, str) and display_detail.strip().lower() in _CONTROL_TOKENS:
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'display_detail_is_control_token',
+            'phase': phase,
+            'step': step,
+            'message': (
+                f'--display-detail {display_detail!r} is a bare control token, '
+                'not a progress narrative. Nothing was written. Describe what '
+                'the step did — control intent rides --outcome / '
+                '--loop-back-target, progress rides --display-detail.'
+            ),
         }
 
     # Loop-back target validation: required for loop_back outcomes, forbidden otherwise.
@@ -410,6 +537,12 @@ def cmd_mark_step_done(args: argparse.Namespace) -> dict | None:
             # under the record and break every later delta the record scopes.
             head_at_completion = resolved_head
 
+    # Merge the derivation warnings: the yield-name roster check above may
+    # have declined (unresolvable roster for a 6-finalize step), and the
+    # head-dependence check may have declined too. Either warning rides the
+    # success record; neither blocks the write.
+    combined_warning = '; '.join(warning for warning in (roster_warning, head_derivation_warning) if warning) or None
+
     metadata: dict[str, Any] = status.setdefault('metadata', {})
     phase_steps: dict[str, Any] = metadata.setdefault('phase_steps', {})
     phase_entry: dict[str, Any] = phase_steps.setdefault(phase, {})
@@ -477,7 +610,7 @@ def cmd_mark_step_done(args: argparse.Namespace) -> dict | None:
                     'facts': facts,
                     'changed': False,
                 },
-                head_derivation_warning,
+                combined_warning,
             )
         if existing_outcome == outcome and (
             existing_detail != display_detail
@@ -513,7 +646,7 @@ def cmd_mark_step_done(args: argparse.Namespace) -> dict | None:
                     'previous_loop_back_target': existing_loop_back_target,
                     'previous_facts': existing_facts,
                 },
-                head_derivation_warning,
+                combined_warning,
             )
         if existing_outcome != outcome and not args.force:
             return {
@@ -570,7 +703,7 @@ def cmd_mark_step_done(args: argparse.Namespace) -> dict | None:
             'previous_loop_back_target': previous_loop_back_target,
             'previous_facts': previous_facts,
         },
-        head_derivation_warning,
+        combined_warning,
     )
 
 

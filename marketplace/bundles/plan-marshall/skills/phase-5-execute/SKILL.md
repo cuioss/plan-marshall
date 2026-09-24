@@ -1119,15 +1119,26 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
 
 2. **Branch on the tier the resolve in step 1 just returned.** That live `execution_tier` is the routing authority (see **Per-step `execution_tier`** above); the manifest's `verify:quality-gate` stamp is the advisory expectation, not the decision. When the live `tier == orchestrator`, the sweep is NOT in the leaf's runnable slice — do NOT run it; return the orchestrator-tier yield signal (`status: blocked`, `voluntary_checkpoint`) naming the sweep so the orchestrator runs it via `await-long-running`. Only when the live `tier == per_task` does the leaf execute the returned `executable` inline. On non-zero exit, persist the failures to the Q-Gate findings store (`manage-findings qgate add --type lint-issue …`) and **return the `triage_required` signal to the orchestrator** with `producer=build-runner` and `finding_type=lint-issue` — same leaf-returns-signal shape as Step 11d above, only the finding type changes. The leaf does NOT dispatch `verification-feedback` itself; the orchestrator owns the dispatch (see [`../plan-marshall/workflow/execution.md`](../plan-marshall/workflow/execution.md) § "Verification-feedback triage (leaf returned triage_required)") and drives the same fix-task / suppress / accept branch (Step 11e). After the orchestrator's triage resolves, the sweep is NOT re-run — Step 11b runs at most once per phase entry.
 
-3. Log the outcome:
+3. Emit the bound report — `pass` requires BOTH artifacts observed in THIS entry, in this order; the emission branches on what was actually observed, never on a bare `{pass|fail}` interpolation:
 
-   ```bash
-   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-     work --plan-id {plan_id} --level INFO \
-     --message "[STATUS] (plan-marshall:phase-5-execute) Final quality sweep: {pass|fail}"
-   ```
+   - (a) **Verdict artifact**: the sweep in step 2 above ran inline AND returned `status: success`, AND its `record-step --outcome executed` call for step id `verify:quality-gate` returned `recorded: true`. When the sweep was skipped (footprint-gated), yielded to the orchestrator (orchestrator tier), or returned anything but success, (a) does not hold — log `"Final quality sweep: pending"` and stop: a canonical that never executed produced no verdict, and a non-verdict binds the report to `pending`, never to `pass`.
+   - (b) **Clean-tree observation**: only when (a) holds, run the clean-tree observation below. On `clean: true` log `"Final quality sweep: pass"`. On `clean: false` (corroborated by the non-zero exit) do NOT log `pass`: persist the offending paths as an uncommitted-work finding (`manage-findings qgate add --type lint-issue …`) and return the `triage_required` signal (Step 11d shape, `finding_type: lint-issue`) instead.
 
 This step is the single source of "did the phase end clean?" — it appends the canonical `quality-gate` once after all task-level verification has settled, providing a stable end-of-phase quality signal. Only the manifest's `verification_steps` list controls whether it fires; per-doc skip logic has been removed in favor of this manifest-driven gate (the single parameterized `canonical_verify.md` step carries no embedded skip logic).
+
+**Green-report binding (fail-closed).** A `{pass}` report from this sweep — and from the Step 11c per-bundle gate — is bound to TWO artifacts, and both must hold before the word `pass` is emitted:
+
+1. **The verdict artifact** — the executed canonical's success result, recorded via `manage-execution-manifest record-step --outcome executed` for that step id (Step 8c). A canonical that never executed — unresolved, footprint-gated to `skipped`, or otherwise absent from `execution_log[]` — produced no verdict. No verdict artifact binds the report to `pending`, never to `pass`: a skipped canonical is a non-verdict, not a pass. See [`standards/canonical_verify.md`](standards/canonical_verify.md) § "Fail-closed green-report binding" for the canonical-side statement of this rule.
+2. **The clean-tree observation** — a dirty-tracked-source observation of the worktree that returns clean:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:phase-6-finalize:post_run_source_guard check \
+     --step-id {step_id} --project-dir {worktree_path} --fail-on-dirty
+   ```
+
+   A dirty observation — `clean: false` in the payload, corroborated by the non-zero exit — blocks the `pass` report: persist the offending paths as an uncommitted-work finding (`manage-findings qgate add --type lint-issue …`) and return the `triage_required` signal (Step 11d shape, `finding_type: lint-issue`) instead of logging `pass`.
+
+Unverified work therefore reports `pending`, never green — green is unreachable without the verdict artifact on a clean tree.
 
 ### Step 11c: Execute-Exit Verify Gate (One `verify` per Affected Bundle)
 
@@ -1155,13 +1166,12 @@ This gate runs after Step 11b's quality sweep and before Step 12.
 
 3. **On non-zero exit** — route the failure through the **same leaf-returns-signal path** as Step 11b: persist each failing finding to the Q-Gate store (`manage-findings qgate add --type lint-issue …`) and return the `triage_required` signal to the orchestrator with `producer=build-runner` and `finding_type=lint-issue`. The leaf does NOT dispatch `verification-feedback` itself. The gate runs at most once per phase entry.
 
-4. Log the outcome per affected bundle:
+4. Emit the bound report per affected bundle — `pass` requires BOTH artifacts observed in THIS entry for THAT bundle, in this order:
 
-   ```bash
-   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-     work --plan-id {plan_id} --level INFO \
-     --message "[STATUS] (plan-marshall:phase-5-execute) Execute-exit verify for {bundle}: {pass|fail}"
-   ```
+   - (a) **Verdict artifact**: that bundle's `verify` in step 2 above ran AND returned `status: success`, AND its `record-step --outcome executed` call for that bundle's verify step id returned `recorded: true`. When the bundle's verify did not run or returned anything but success, (a) does not hold — log `"Execute-exit verify for {bundle}: pending"` and stop.
+   - (b) **Clean-tree observation**: only when (a) holds, run the same clean-tree observation Step 11b uses (the `post_run_source_guard check --fail-on-dirty` gate). On `clean: true` log `"Execute-exit verify for {bundle}: pass"`. On `clean: false` do NOT log `pass`: persist the finding and return the `triage_required` signal exactly as Step 11b does.
+
+   The Step 11b **Green-report binding** applies verbatim — `pass` requires the verdict artifact plus the clean-tree observation.
 
 **Skip rule**: when the affected-bundle set is empty (no buildable footprint — e.g., a documentation-only plan whose changed paths resolve to no module), skip the gate entirely. The deriver already stamped zero Python commands on each such deliverable's per-task ladder, so there is no whole-bundle `verify` to run.
 

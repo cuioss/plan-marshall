@@ -63,6 +63,7 @@ def _mark_args(
     step: str,
     outcome: str,
     head_at_completion: str | None = None,
+    display_detail: str | None = 'test detail',
 ) -> Namespace:
     return Namespace(
         plan_id=plan_id,
@@ -70,18 +71,25 @@ def _mark_args(
         step=step,
         outcome=outcome,
         force=False,
-        display_detail=None,
+        display_detail=display_detail,
         head_at_completion=head_at_completion,
         loop_back_target=None,
     )
 
 
-def _assert_args(plan_id: str, phase: str, step: str, require_terminal: bool = False) -> Namespace:
+def _assert_args(
+    plan_id: str,
+    phase: str,
+    step: str,
+    require_terminal: bool = False,
+    min_firing_count: int | None = None,
+) -> Namespace:
     return Namespace(
         plan_id=plan_id,
         phase=phase,
         step=step,
         require_terminal=require_terminal,
+        min_firing_count=min_firing_count,
     )
 
 

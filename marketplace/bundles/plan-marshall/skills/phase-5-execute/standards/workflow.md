@@ -83,6 +83,11 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks finalize
 
 After all steps of a task are complete and verification has passed, but **before** the orchestrator calls `manage-tasks next` to advance to the following task, two work-log entries exist for the task. They have different owners, and the split is the point:
 
+**Guard-before-report ordering.** The guard observations run BEFORE the completion report, and the report consumes their outcome — but each report is bound ONLY to the guards that actually settle before it:
+
+- **Per-task emission** (below) is preceded by the per-task guards: the per-task verify verdict artifact (the executed canonical's success result), the Step 6.5 scope-creep guard, and the artifact channel's own working-tree observation (the `task_start_sha` diff plus the untracked-file walk that produces the `[ARTIFACT]` lines — an observation of uncommitted state, scoped to this task's baseline). A task whose per-task guards have not cleared reports `pending`, never green.
+- **End-of-phase report** (SKILL.md Step 11b/11c emissions and the Step 12 transition) is additionally preceded by the end-of-phase gate: the full clean-tree observation and the whole-bundle `verify` over the settled tree. That gate runs ONCE at the queue tail, after all tasks — it therefore cannot have settled before any per-task emission, and no per-task claim may borrow it. The `[STEP]` completion line records that the checklist settled, while the green claim stays bound to the verdict artifact on a clean tree (phase-5-execute SKILL.md Step 11b green-report binding; `canonical_verify.md` § "Fail-closed green-report binding").
+
 1. **Per-task completion `[STEP]`** — exactly one line summarizing the task, emitted by the orchestrator. Substitute `{N}` with the task number, `{title}` with the task title, `{steps_done}` with the count of finalized steps, and `{steps_total}` with the task's total step count:
 
    ```bash

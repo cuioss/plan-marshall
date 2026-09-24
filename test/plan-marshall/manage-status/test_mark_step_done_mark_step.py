@@ -60,7 +60,7 @@ def test_mark_step_skipped_happy_path(plan_context):
 
 
 def test_mark_step_failed_happy_path(plan_context):
-    """Outcome 'failed' persists as dict with null display_detail.
+    """Outcome 'failed' persists as dict with its display_detail.
 
     The phase-6-finalize dispatcher's graceful timeout degradation
     path uses ``--outcome failed`` (see SKILL.md and automatic-review.md
@@ -68,17 +68,17 @@ def test_mark_step_failed_happy_path(plan_context):
     """
     plan_id = 'mark-step-failed'
     _make_plan(plan_id)
-    result = cmd_mark_step_done(_args(plan_id, '6-finalize', 'automatic-review', 'failed'))
+    result = cmd_mark_step_done(_args(plan_id, '6-finalize', 'automatic-review', 'failed', display_detail='timeout'))
 
     assert result['status'] == 'success'
     assert result['changed'] is True
     assert result['outcome'] == 'failed'
-    assert result['display_detail'] is None
+    assert result['display_detail'] == 'timeout'
 
     persisted = read_status(plan_id)
     assert persisted['metadata']['phase_steps']['6-finalize']['automatic-review'] == {
         'outcome': 'failed',
-        'display_detail': None,
+        'display_detail': 'timeout',
     }
 
 

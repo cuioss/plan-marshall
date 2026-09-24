@@ -29,7 +29,7 @@ def test_mark_step_conflict_fires_against_stale_legacy_key(plan_context):
     }
     write_status(plan_id, status)
 
-    result = cmd_mark_step_done(_args(plan_id, '6-finalize', 'push', 'skipped'))
+    result = cmd_mark_step_done(_args(plan_id, '6-finalize', 'push', 'skipped', display_detail='test detail'))
 
     assert result['status'] == 'error'
     assert result['error'] == 'conflict'
@@ -292,6 +292,7 @@ def test_mark_step_multiple_fact_flags_accumulate_into_one_dict(plan_context):
             '6-finalize',
             'finalize-step-sync-baseline',
             'done',
+            display_detail='test detail',
             fact=['action=noop', 'upstream_commit_count=0', 'work_performed=true'],
         )
     )
@@ -316,7 +317,9 @@ def test_mark_step_fact_value_may_contain_equals_sign(plan_context):
     """Only the FIRST '=' separates key from value, so a value may contain '='."""
     plan_id = 'mark-step-facts-equals'
     _make_plan(plan_id)
-    result = cmd_mark_step_done(_args(plan_id, '6-finalize', 'push', 'done', fact=['detail=a=b']))
+    result = cmd_mark_step_done(
+        _args(plan_id, '6-finalize', 'push', 'done', display_detail='test detail', fact=['detail=a=b'])
+    )
 
     assert result['status'] == 'success'
     assert result['facts'] == {'detail': 'a=b'}
@@ -349,7 +352,9 @@ def test_mark_step_omits_facts_key_when_flag_absent(plan_context):
 def test_mark_step_rejects_malformed_fact_token(plan_context, bad_token, plan_id):
     """A malformed --fact token is named in an invalid_fact error, never dropped."""
     _make_plan(plan_id)
-    result = cmd_mark_step_done(_args(plan_id, '6-finalize', 'push', 'done', fact=[bad_token]))
+    result = cmd_mark_step_done(
+        _args(plan_id, '6-finalize', 'push', 'done', display_detail='test detail', fact=[bad_token])
+    )
 
     assert result['status'] == 'error'
     assert result['error'] == 'invalid_fact'
@@ -365,7 +370,9 @@ def test_mark_step_malformed_fact_rejected_even_alongside_valid_facts(plan_conte
     """One malformed token rejects the whole call — valid siblings are not partially applied."""
     plan_id = 'mark-step-facts-bad-mixed'
     _make_plan(plan_id)
-    result = cmd_mark_step_done(_args(plan_id, '6-finalize', 'push', 'done', fact=['action=noop', 'bogus']))
+    result = cmd_mark_step_done(
+        _args(plan_id, '6-finalize', 'push', 'done', display_detail='test detail', fact=['action=noop', 'bogus'])
+    )
 
     assert result['status'] == 'error'
     assert result['error'] == 'invalid_fact'
@@ -409,3 +416,27 @@ def test_mark_step_idempotent_when_facts_match(plan_context):
     assert 'previous_outcome' not in second
 
     assert read_status(plan_id)['updated'] == updated_before
+
+
+@pytest.mark.parametrize('detail', [None, '', '   '], ids=['omitted', 'empty', 'whitespace'])
+def test_mark_step_finalize_rejects_blank_display_detail(plan_context, detail):
+    """A 6-finalize yield with no progress narrative is refused before persistence."""
+    plan_id = 'mark-step-detail-required'
+    _make_plan(plan_id)
+    result = cmd_mark_step_done(_args(plan_id, '6-finalize', 'push', 'done', display_detail=detail))
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'display_detail_required'
+
+    persisted = read_status(plan_id)
+    assert 'phase_steps' not in persisted.get('metadata', {})
+
+
+@pytest.mark.parametrize('phase', ['1-init', '5-execute'], ids=['init', 'execute'])
+def test_mark_step_blank_display_detail_allowed_outside_finalize(plan_context, phase):
+    """The narrative requirement is scoped to 6-finalize; other phases keep optional details."""
+    plan_id = f'mark-step-detail-optional-{phase}'
+    _make_plan(plan_id)
+    result = cmd_mark_step_done(_args(plan_id, phase, 'step-a', 'done'))
+
+    assert result['status'] == 'success'

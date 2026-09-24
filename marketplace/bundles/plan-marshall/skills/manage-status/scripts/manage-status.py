@@ -410,7 +410,11 @@ def main() -> int:
     )
     add_plan_id_arg(mark_step_parser)
     add_phase_arg(mark_step_parser)
-    mark_step_parser.add_argument('--step', required=True, help='Step identifier within the phase')
+    mark_step_parser.add_argument(
+        '--step',
+        required=True,
+        help='Step identifier within the phase. For a 6-finalize step this must name a member of the composed manifest phase_6.steps roster (the CLOSED yield-name set) — any other name is refused with unknown_yield_name and nothing is written. Other phases carry no centrally composed roster and are recorded without a membership check.',
+    )
     mark_step_parser.add_argument(
         '--outcome',
         required=True,
@@ -427,7 +431,7 @@ def main() -> int:
     mark_step_parser.add_argument(
         '--display-detail',
         default=None,
-        help='One-line user-facing detail string describing the step outcome (required for phase-6-finalize steps).',
+        help='One-line user-facing detail string describing the step outcome (required for phase-6-finalize steps). This is the progress channel: it must carry actual progress, so a bare control token (done, skipped, loop_back, or failed) is refused with display_detail_is_control_token and nothing is written. Control intent rides --outcome / --loop-back-target.',
     )
     mark_step_parser.add_argument(
         '--head-at-completion',
@@ -501,7 +505,13 @@ def main() -> int:
             'mandated mark-step-done side-effect. With --require-terminal, a '
             'missing terminal record is escalated to status: error, '
             'error: step_record_missing so the dispatcher gets a branchable '
-            'verdict. Performs zero writes to status.json.'
+            'verdict, and the verdict carries reportable finding fields '
+            '(finding_type missing-yield, finding_severity, finding_title, '
+            'finding_detail) so the absent yield can be filed to the Q-Gate '
+            'findings store. With --min-firing-count N, a matched record '
+            'below firing N fails the same way, so a re-fired step that '
+            'returned without marking cannot hide behind its prior firing '
+            'record. Performs zero writes to status.json.'
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         allow_abbrev=False,
@@ -516,6 +526,19 @@ def main() -> int:
         help=(
             'Escalate a missing terminal record to status: error, '
             'error: step_record_missing instead of returning recorded: false.'
+        ),
+    )
+    assert_step_parser.add_argument(
+        '--min-firing-count',
+        dest='min_firing_count',
+        type=int,
+        default=None,
+        help=(
+            'Guard against a stale prior-firing record: a matched terminal '
+            'record counts as recorded only when its firing_count reaches '
+            'this floor (records without the field count as firing 1). '
+            'Below the floor the verdict is step_record_missing naming the '
+            'expected vs observed firing. Omit for the legacy existence check.'
         ),
     )
     assert_step_parser.set_defaults(func=cmd_assert_step_recorded)
