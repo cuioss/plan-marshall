@@ -196,11 +196,12 @@ The matrix below resolves every relevant (role, surface, path) cell. Rows are ve
 | Executor | `python3 .plan/execute-script.py *` | allow | per-agent allow row; guard R4 exempts the permit
 | Git read | `git status/log/diff *` | allow | per-agent allow rows
 | Git local write | `git add/commit *` | allow | per-agent allow rows
-| Everything else | `"*"` fallback | ask | per-agent `"*": "ask"` — includes `./pw *`, read probes, network git, package install
+| Everything else | `"*"` fallback | ask | per-agent `"*": "ask"` — includes `./pw *`, network git, package install
+| Read probes | `find/grep/cat/head/tail *`, `git grep *` | deny | per-agent deny rows
 | Destructive git | `git push/restore/checkout --/stash/clean *` | deny | per-agent deny rows
 | Test runners | `pytest *`, `python3 -m pytest *` | deny | per-agent deny rows; guard R4 blocks at the host layer
-| Shell file ops | `rm *` and other mutation ops | deny | global deny rows; guard R2 blocks at the host layer
-| CI abstraction | `gh *`, `glab *` | deny | global deny rows
+| Shell file ops | `rm *` and other mutation ops | deny | per-agent deny rows; guard R2 blocks at the host layer
+| CI abstraction | `gh *`, `glab *` | deny | per-agent deny rows (the agent `"*": "ask"` overrides the global deny)
 |===
 
 ==== Reader (`execution-context-reader`, level variants) — read-only information surface
@@ -211,9 +212,11 @@ The matrix below resolves every relevant (role, surface, path) cell. Rows are ve
 | Executor | `python3 .plan/execute-script.py *` | allow | per-agent allow row; guard R4 exempts the permit
 | Git read | `git status/log/diff *` | allow | per-agent allow rows
 | Everything else | `"*"` fallback | ask | per-agent `"*": "ask"`
+| Read probes | `find/grep/cat/head/tail *`, `git grep *` | deny | per-agent deny rows
 | Git write | `git add/commit/push *` | deny | per-agent deny rows
+| Shell file ops | `rm *` and other mutation ops | deny | per-agent deny rows; guard R2 blocks at the host layer
 | Test runners | `pytest *`, `python3 -m pytest *` | deny | per-agent deny rows; guard R4 blocks at the host layer
-| CI abstraction | `gh *`, `glab *` | deny | global deny rows
+| CI abstraction | `gh *`, `glab *` | deny | per-agent deny rows (the agent `"*": "ask"` overrides the global deny)
 |===
 
 The matrix is the authoritative record of the carve-out as implemented: the orchestrator keeps read-only file ops and git status/log as information lookups under `ask` (never silently suppressed, never auto-allowed), and the executor is confined to the `python3 .plan/execute-script.py` permit plus deny on the hard rules. Rows that carry a guard rule in the `Source` column are enforced twice — once by the map, once by the throw-to-block plugin — so a mis-merged `opencode.json` cannot silently widen a hard-rule class.
