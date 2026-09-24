@@ -14,8 +14,8 @@
  *
  * DECISION TABLE (authoritative — mirrored in the D4 runtime matrix):
  *
- *   Guarded tools: bash (R1, R2, R4), edit/write/patch (R3). Every other tool
- *   passes through untouched.
+  *   Guarded tools: bash (R1, R2, R4), edit/write/patch/apply_patch (R3).
+  *   Every other tool passes through untouched.
  *
   *   R1 — shell-chaining constructors (bash): the command, with single-quoted
   *   regions stripped and double-quoted regions stripped except for command
@@ -29,8 +29,9 @@
  *   the two-tier permission map governs them (global deny, orchestrator
  *   small-ops carve-out under ask). Shell spawns `sh`/`bash`/`source` also block.
  *
- *   R3 — direct edits to the generated executor path (edit/write/patch): the
- *   target resolves under `.plan/execute-script.py`  => block.
+  *   R3 — direct edits to the generated executor path (edit/write/patch/apply_patch):
+  *   the target resolves under `.plan/execute-script.py` — via filePath, or via
+  *   every add/update/move/delete target in apply_patch patchText  => block.
  *
  *   R4 — hard-coded build commands bypassing `python3 .plan/execute-script.py`
  *   (bash): route builds through the executor only. Block when:
@@ -142,10 +143,34 @@ function isExecutorPermit(command) {
 
 function targetsExecutor(args) {
   if (!args || typeof args !== "object") return false
-  const raw = typeof args.filePath === "string" ? args.filePath : ""
-  if (!raw) return false
+  if (normalizedIsExecutorPath(typeof args.filePath === "string" ? args.filePath : "")) return true
+  return patchTextTargetsExecutor(typeof args.patchText === "string" ? args.patchText : "")
+}
+
+function normalizedIsExecutorPath(raw) {
+  if (!raw || typeof raw !== "string") return false
   const normalized = raw.replace(/\\/g, "/")
   return normalized === ".plan/execute-script.py" || normalized.endsWith("/.plan/execute-script.py")
+}
+
+// OpenCode's apply_patch tool names its targets in output.args.patchText as
+// add/update/move/delete operations rather than a filePath. Inspect every
+// operation target (both paths on a move); any target resolving under
+// .plan/execute-script.py blocks.
+function patchTextTargetsExecutor(patchText) {
+  if (!patchText) return false
+  const candidates = []
+  for (const line of patchText.split("\n")) {
+    const op = line.match(/^\s*(add|update|move|delete)\b\s+(.*)$/i)
+    if (!op) continue
+    const targetPart = op[2]
+    const tokenRe = /"([^"]+)"|'([^']+)'|(\S+)/g
+    let m
+    while ((m = tokenRe.exec(targetPart)) !== null) {
+      candidates.push(m[1] ?? m[2] ?? m[3])
+    }
+  }
+  return candidates.some(normalizedIsExecutorPath)
 }
 
 function auditLine(rule, tool, sessionID, callID, detail) {
@@ -173,7 +198,7 @@ export const GuardPlugin = async ({ worktree, directory }) => {
       const args = (output && output.args) || {}
       const command = typeof args.command === "string" ? args.command : ""
 
-      if (tool === "edit" || tool === "write" || tool === "patch") {
+      if (tool === "edit" || tool === "write" || tool === "patch" || tool === "apply_patch") {
         if (targetsExecutor(args)) {
           audit(auditLine("R3", tool, sessionID, callID, command || String(args.filePath ?? "")))
           throw new Error(
