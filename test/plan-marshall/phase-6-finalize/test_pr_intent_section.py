@@ -40,6 +40,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from _plan_parsing import SECTION_READ_ABSENCE_ERRORS
 
 from conftest import get_script_path, load_script_module
 
@@ -66,8 +67,9 @@ def _outline_toon(content: str) -> str:
     return f'status: success\nplan_id: p\nsection: summary\ncontent: "{content}"\n'
 
 
-#: The reader's two absence codes — the only ``status: error`` envelopes that answer.
-_ABSENCE_CODES = ('document_not_found', 'section_not_found')
+#: The reader's absence codes — the only ``status: error`` envelopes that answer —
+#: read from the reader's own declaring source, never restated here.
+_ABSENCE_CODES = tuple(sorted(SECTION_READ_ABSENCE_ERRORS))
 
 
 def _absent_toon(code: str = 'document_not_found') -> str:
@@ -424,6 +426,15 @@ class TestReaderFailureIsAnError:
         code, out, _ = _run('p', draft_file, body_file, envelope, capsys)
 
         self._assert_unreadable(code, out, body_file, before, 'neither a success nor a documented absence')
+
+    def test_the_absence_codes_are_the_readers_declared_set(self):
+        """The recognised absence codes are exactly the set the reader declares and emits through.
+
+        A hand-copied set drifts silently: a code the reader adds or renames would
+        read here as a failure and turn an omission into ``outline_unreadable``.
+        """
+        assert pis._ABSENCE_ERRORS == SECTION_READ_ABSENCE_ERRORS
+        assert pis._ABSENCE_ERRORS, 'an empty absence set would turn every absence into a failure'
 
     @pytest.mark.parametrize('absence_code', _ABSENCE_CODES)
     def test_a_read_that_answered_absent_still_omits(self, absence_code, body_file, draft_file, capsys):

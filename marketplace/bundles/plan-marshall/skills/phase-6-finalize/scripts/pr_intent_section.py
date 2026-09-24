@@ -65,8 +65,9 @@ not fit), ``draft_chars`` (the draft's length) and ``chars_not_shown`` (how much
 of it the rendered section omits).
 
 The script is registered through ``generate_executor.py`` and consumed via the
-executor proxy, which injects ``PYTHONPATH`` for ``toon_parser`` and
-``marketplace_paths`` — so no in-script ``sys.path`` manipulation is required.
+executor proxy, which injects ``PYTHONPATH`` for ``toon_parser``,
+``marketplace_paths`` and the outline reader's ``_plan_parsing`` — so no
+in-script ``sys.path`` manipulation is required.
 """
 
 from __future__ import annotations
@@ -78,6 +79,7 @@ import sys
 from pathlib import Path
 from typing import NamedTuple
 
+from _plan_parsing import SECTION_READ_ABSENCE_ERRORS
 from toon_parser import parse_toon, serialize_toon
 
 # Character budget for the WHOLE rendered section (heading, body, and — when it
@@ -96,10 +98,12 @@ _OUTLINE_SECTIONS = ('summary', 'overview')
 
 _HEADING = '## Intent'
 
-# The two ``status: error`` codes with which the outline reader ANSWERS that
-# something is absent: the outline document, or the requested section of it. Every
-# other ``error`` code is a failure to read, not an answer about the outline.
-_ABSENCE_ERRORS = frozenset({'document_not_found', 'section_not_found'})
+# The ``status: error`` codes with which the outline reader ANSWERS that something
+# is absent: the outline document, or the requested section of it. Every other
+# ``error`` code is a failure to read, not an answer about the outline. Imported
+# from the reader's own declaring source (a runtime import, not a restated copy),
+# so a code the reader adds or renames is recognised here without an edit.
+_ABSENCE_ERRORS = SECTION_READ_ABSENCE_ERRORS
 
 # Emitted verbatim when the draft exceeds the budget. ``{shown}`` / ``{total}``
 # make the loss quantified rather than merely flagged.

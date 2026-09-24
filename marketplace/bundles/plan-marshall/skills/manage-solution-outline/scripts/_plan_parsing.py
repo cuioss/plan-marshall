@@ -62,6 +62,20 @@ _SLUG_NON_ALNUM_PATTERN = re.compile(r'[^a-z0-9_-]+')
 #: ``extract_deliverable_headings``. Do NOT inline a copy of this regex — add the caller here.
 DELIVERABLE_HEADING_PATTERN = re.compile(r'^###\s+(\d+)\.\s+(.+)$', re.MULTILINE)
 
+#: The ``error`` code ``manage-solution-outline`` emits when the solution outline
+#: document does not exist.
+ERROR_DOCUMENT_NOT_FOUND = 'document_not_found'
+#: The ``error`` code ``manage-solution-outline`` emits when a requested section of
+#: an existing outline does not exist.
+ERROR_SECTION_NOT_FOUND = 'section_not_found'
+#: The ``status: error`` codes with which ``manage-solution-outline read --section``
+#: ANSWERS that something is absent — the outline document, or the requested
+#: section of it — as opposed to failing to read. The single declaring source: the
+#: reader emits through the two constants above, and
+#: ``phase-6-finalize/scripts/pr_intent_section.py`` imports this set instead of
+#: restating the codes, so a renamed or added absence code reaches both at once.
+SECTION_READ_ABSENCE_ERRORS = frozenset({ERROR_DOCUMENT_NOT_FOUND, ERROR_SECTION_NOT_FOUND})
+
 
 def is_foreign_path(path: str, project_root: str) -> bool:
     """Return True when ``path`` resolves OUTSIDE ``project_root`` — the single
