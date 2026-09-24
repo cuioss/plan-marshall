@@ -7,7 +7,7 @@ xref:../../README.md[Plan Marshall] » xref:README.adoc[Developer Guide]
 
 == Use It, But Don't Steal It
 
-Plan-Marshall is licensed under the Functional Source License, Version 1.1, with an Apache 2.0 future grant (FSL-1.1-ALv2). The short version: use it freely, build on it, ship it inside your own products — but don't repackage Plan-Marshall itself as a competing product. After two years, every release becomes Apache 2.0 and even that restriction lifts.
+Plan-Marshall is licensed under the Functional Source License, Version 1.1, with an Apache 2.0 future grant (FSL-1.1-ALv2). The short version: use it freely, build on it, ship it inside your own products — but don't offer Plan-Marshall, or anything with substantially similar functionality, as a competing commercial product or service. After two years, every release becomes Apache 2.0 and even that restriction lifts.
 
 This document records why the project chose FSL-1.1-ALv2 over a permissive license or a strong copyleft license.
 
@@ -17,7 +17,7 @@ FSL is source-available, not closed and not classic open source. Three propertie
 
 * *Source-available now.* The full source is published and may be read, modified, and used for any purpose except the one explicitly carved out.
 * *Apache 2.0 in the future.* Each version automatically converts to the permissive Apache License 2.0 two years after its release. The restriction is time-boxed, not perpetual.
-* *One narrow restriction.* The only thing you may not do is offer Plan-Marshall — or a derivative whose primary purpose is the same — as a commercial substitute for it. Internal use, integration, and downstream products that are not competing substitutes are all permitted.
+* *One restriction: no Competing Use.* You may not make Plan-Marshall available to others in a commercial product or service that substitutes for it, substitutes for another product or service the licensor offers using it, or offers the same or substantially similar functionality. Internal use, non-commercial education and research, and professional services for a licensee are explicitly permitted.
 
 For the binding terms, see xref:../../LICENSE.md[LICENSE.md].
 
@@ -27,7 +27,7 @@ A permissive license (MIT, Apache 2.0) would let anyone take the project and off
 
 == Why Not a Strong Copyleft License
 
-A strong copyleft license would force every downstream integrator to publish their own source under the same terms. That deters the adoption the project wants: teams that embed Plan-Marshall in proprietary internal tooling. The FSL imposes no copyleft obligation on downstream code — the one restriction is the anti-substitution carve-out, nothing more.
+A strong copyleft license would force every downstream integrator to publish their own source under the same terms. That deters the adoption the project wants: teams that embed Plan-Marshall in proprietary internal tooling. The FSL imposes no copyleft obligation on downstream code — the one restriction is the Competing Use carve-out, nothing more.
 
 == What This Means for Contributors
 
@@ -35,4 +35,4 @@ Contributions are accepted under a relicensing-grant CLA, not a copyright assign
 
 == Commercial Licensing
 
-If your intended use falls under the FSL's commercial-substitution restriction, a separate commercial license is available. The pointer to the commercial-licensing contact lives in xref:../../LICENSE.md[LICENSE.md].
+If your intended use falls under the FSL's Competing Use restriction, a separate commercial license is available. The pointer to the commercial-licensing contact lives in xref:../../LICENSE.md[LICENSE.md].
