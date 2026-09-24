@@ -140,6 +140,8 @@ each against the named surface at HEAD before scoping (verify-at-outline for all
 ## Folded Signals
 
 - Folded 2026-09-22 from `truth-161-adr-number-allocation-001.md` (PLAN-TRUTH-161 landing): CI-wait timeout findings recurred during finalize and were taken into account as external-infrastructure noise with a verify re-run as remedy. First-party corroboration for D1's triage treatment (a timeout is a no-verdict, never a plan defect) and D4's roll-up discipline. Adds no file surface.
+- Recurrence 2026-09-24 from `truth-147-lane-reports-green-003.md`: CI-timeout verdicts on verify runs are a standing consideration — `deadline_exceeded` from the precondition wait is re-polled to completion, interim findings taken into account as moot (3x). Owed `architecture enrich insight --module plan-marshall` stays plan-side. Adds no file surface.
+- Recurrence 2026-09-24 from `truth-147-lane-reports-green-004.md`: same standing consideration for review-bot waits — `deadline_exceeded` CodeRabbit wait re-polled to completion, interim findings moot (2x). Adds no file surface.
 
 ## Dependencies and Sequencing
 

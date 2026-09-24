@@ -56,6 +56,12 @@ discover that deleted 10 descriptors mid-finalize was healed by the landed PR's 
 fix, the tree was restored, and the retry went clean. Recorded here so the item is dispositioned,
 not dropped; reopen only on recurrence.
 
+**Recurrences 2026-09-24 (PLAN-TRUTH-147 landing):** metrics landed unenriched on a transcript-less
+opencode target with no session identity (~25h wall, 0 measured tokens) — second live instance of
+D1's declared-vs-detected skew; and an executor-poisoning incident recovered via the steward
+bootstrap path — second live instance of D0's stale-shadow shape. Both strengthen the deliverables
+without changing them; no surface change.
+
 ## Claim Labels
 
 - OBSERVED: alphabetical emission sites order generated executor paths — `generate_executor.py:1492`

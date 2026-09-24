@@ -118,6 +118,17 @@ matched` self-review. *(Lesson `2026-09-13-20-003`; its action 3 is already ship
 /plan-marshall task="implement .plan/local/orchestrator/truthful-signals/plans/PLAN-TRUTH-173-the-in-run-self-review-instrument-detector-reach-a-bounded-terminus-and-six-vacuity-modes.md"
 ```
 
+## FOLDED 2026-09-24 — surfacer refusal fires on pipeline-created base staleness (relayed finding)
+
+Relayed via `lessons-routing` from API-Sheriff `deployment-configurability` (PLAN-28, PR #341):
+the deterministic candidate surfacer correctly refused a stale local `main` base — but the staleness
+itself was routine worktree mechanics (`finalize-step-sync-baseline` rebases the feature branch
+without fast-forwarding the main checkout's local `main` ref), and no pipeline step owns keeping
+that sibling ref current. A correct refusal that fires on pipeline-created states trains readers to
+treat it as noise. Remedy direction (unowned at file level): whichever step owns base currency must
+fetch + fast-forward before the surfacer runs; the refusal itself stays. Adds no file surface:
+calibration note, remedy file-ownership unspecified.
+
 ## Write-Boundary
 
 The plan implementing this spec touches only its own repository source and tests. It creates and edits
