@@ -9,8 +9,8 @@ collapse into one another: ``state: found`` (an empty file included),
 path and an unreadable repository, so a 404 is attributed to the PATH only
 after the repository itself is read.
 
-``org search-code`` reports GitHub's own completeness signal beside its matches,
-so a zero is never a bare negative.
+``org search-code`` reports GitHub's own completeness signal and index scope
+beside its matches, so a zero always states the population it was computed over.
 
 ``check_auth`` / ``run_gh`` are patched on ``_github_org.github_ops`` — the
 module object the handlers reach through at call time.

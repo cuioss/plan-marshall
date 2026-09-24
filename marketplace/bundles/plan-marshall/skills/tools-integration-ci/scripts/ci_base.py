@@ -1657,7 +1657,7 @@ def build_parser(
     org_search_code.add_argument(
         '--query',
         required=True,
-        help='Literal string to search for (matched as an exact phrase; must not contain a double quote)',
+        help='Literal string to search for (sent as one quoted phrase; GitHub matches whole tokens, not substrings; must not contain a double quote)',
     )
 
     return parser, pr_sub, checks_sub, issue_sub, branch_sub

@@ -163,7 +163,7 @@ Both verbs are read-only, name their target with `--org`, and answer a populatio
 | Subcommand | Required Flags | Optional Flags | Purpose |
 |------------|----------------|----------------|---------|
 | `org list-repos` | `--org {login}` | — | **GitHub only.** List every repository of the organization, all pages, each row carrying `archived`, `fork`, `visibility`, and `default_branch`; `total_count` is the provider's own total the rows are checked against |
-| `org search-code` | `--org {login}`, `--query {literal}` | — | **GitHub only.** Find every indexed file containing the literal (searched as one exact phrase; a double quote is refused). Carries GitHub's `incomplete_results` flag, `total_count`, and `scope: default_branch_index` — the index covers each repository's default branch only — so a zero is never a bare negative |
+| `org search-code` | `--org {login}`, `--query {literal}` | — | **GitHub only.** Find the indexed files GitHub's code search matches for the literal, sent as one quoted phrase (a double quote is refused). GitHub matches whole tokens and ignores most punctuation, so a hit is a token-phrase match, not a guaranteed substring, and a zero does not rule out the literal inside a longer token. Carries GitHub's `incomplete_results` flag, `total_count`, and `scope: default_branch_index` — the index covers each repository's default branch only — so a zero always states the population it was computed over |
 
 ---
 

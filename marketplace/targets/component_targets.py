@@ -46,7 +46,7 @@ moment it is read and an invalid one aborts the build
 * an empty list — a component shipped nowhere is an authoring error, not
   an intent; omitting the field is how you say "everywhere";
 * a list naming ONLY targets that emit no component tree (``cuioss-review-bot``
-  derives a single reviewer configuration from skill rules, so it has no
+  derives a set of reviewer pack artifacts from skill rules, so it has no
   component to filter) — such a declaration passes a registry-membership
   check while still shipping the component nowhere;
 * a file inside a skill declaring a scope its enclosing component does not

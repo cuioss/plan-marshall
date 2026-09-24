@@ -520,8 +520,11 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci org search
   --org ORG --query LITERAL
 ```
 
-`org search-code` returns every indexed file containing the literal (searched as
-one exact phrase; a query carrying a double quote is refused) as
+`org search-code` returns the indexed files GitHub's code search matches for the
+literal, sent as one quoted phrase (a query carrying a double quote is refused).
+GitHub's code search matches whole tokens and ignores most punctuation, so a hit
+is a token-phrase match rather than a guaranteed exact substring, and a zero does
+not rule out the literal occurring inside a longer token. The result is returned as
 `matches[]{repository,path,sha}` beside `count`, `repository_count`, the
 provider's `total_count` and `incomplete_results` flag, and `scope:
 default_branch_index` — GitHub's code index holds each repository's default
