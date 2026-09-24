@@ -249,6 +249,14 @@ SCRIPT_SURFACES = {
 # All returned paths are absolute — never relative.
 {{TARGET_AWARE_RESOLVER}}
 
+# Platform target this executor was generated for. Gates the OpenCode
+# tree-first probe in resolve_notation below: only an OpenCode executor probes
+# the live checkout ahead of its embedded mappings, so Claude and Antigravity
+# executors keep their embedded-first resolution order. Substituted at
+# generation time like the comment above; never left as a placeholder (the
+# residue guard refuses an unsubstituted generation).
+_EXECUTOR_TARGET = '{{EXECUTOR_TARGET}}'
+
 # Runtime path-rewrite hook: when PM_MARKETPLACE_ROOT is set and points at a
 # marketplace tree that differs from the one embedded at generation time,
 # rewrite every SCRIPTS path via a pure prefix substitution. No glob, no walk
@@ -1422,6 +1430,14 @@ def resolve_notation(notation: str) -> str | None:
     """Resolve notation to absolute script path.
 
     Resolution order:
+    0. OpenCode tree-first probe (OpenCode executors only) — walk up to a live
+       ``marketplace/bundles`` tree before consulting any embedded path. A
+       retained live cache path in SCRIPTS (kept because generation could not
+       resolve a tree base) still exists on disk, so the embedded checks below
+       would return it even when a checkout exists above this executor file.
+       Probing the tree first makes the generated executor resolve every
+       notation to tree code whenever a checkout is present, while preserving
+       the embedded fallbacks below when no tree file exists.
     1. Direct lookup in SCRIPTS (embedded at generation time) — returned ONLY
        when the embedded path still exists on disk. A stale/relocated embedded
        path is skipped so resolution self-heals via the dynamic fallbacks
@@ -1436,6 +1452,13 @@ def resolve_notation(notation: str) -> str | None:
        (_resolve_notation_by_cwd_walk) — covers the dev-checkout case where the
        target-aware roots are absent.
     """
+    # 0. OpenCode tree-first probe — only for OpenCode executors; every other
+    # target falls through to the embedded checks below unchanged.
+    if _EXECUTOR_TARGET == 'opencode':
+        tree_hit = _resolve_notation_by_cwd_walk(notation)
+        if tree_hit:
+            return tree_hit
+
     # 1. Direct lookup — only honour the embedded path when it still exists.
     if notation in SCRIPTS:
         direct = SCRIPTS[notation]
