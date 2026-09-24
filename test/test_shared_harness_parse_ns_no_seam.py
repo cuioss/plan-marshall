@@ -6,8 +6,8 @@ the helper invented.
 """
 
 import pytest
-
 from _shared_harness_fixtures import _NO_SEAM_CASE
+
 from conftest import ParserSeamNotFound, parse_ns
 
 # ⛔ Both no-seam cases below pass ``register=False``, and it is load-bearing rather
