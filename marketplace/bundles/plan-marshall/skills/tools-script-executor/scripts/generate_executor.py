@@ -1410,6 +1410,29 @@ def _sort_script_dirs_tree_first(dirs: list[str]) -> list[str]:
     return tree + cache
 
 
+def _resolve_tree_bases(base_path: Path) -> list[Path]:
+    """Resolve marketplace-tree bundles roots usable as the single generation source.
+
+    Two candidates, in priority order: ``base_path`` itself when it already
+    carries a ``plan-marshall/skills`` tree (i.e. generation runs against the
+    live marketplace checkout), then the shared ``marketplace`` bundles root
+    (the cwd-anchored checkout the shared resolver finds). An empty list means
+    no tree is resolvable — the caller retains the cache entrypoint, cache
+    import paths, and cache surface dependencies together.
+    """
+    candidates: list[Path] = []
+    try:
+        if (base_path / 'plan-marshall' / 'skills').is_dir():
+            candidates.append(base_path)
+    except (OSError, ValueError):
+        pass
+    try:
+        candidates.append(_shared_get_base_path('marketplace'))
+    except (FileNotFoundError, ValueError):
+        pass
+    return candidates
+
+
 def _rewrite_mappings_to_tree(mappings: dict[str, str], base_path: Path) -> dict[str, str]:
     """Rewrite discovered mappings to marketplace tree paths where they exist.
 
@@ -1422,16 +1445,7 @@ def _rewrite_mappings_to_tree(mappings: dict[str, str], base_path: Path) -> dict
     discovered path. Never raises: an unresolvable tree base returns the
     input unchanged.
     """
-    candidates: list[Path] = []
-    try:
-        if (base_path / 'plan-marshall' / 'skills').is_dir():
-            candidates.append(base_path)
-    except (OSError, ValueError):
-        pass
-    try:
-        candidates.append(_shared_get_base_path('marketplace'))
-    except (FileNotFoundError, ValueError):
-        pass
+    candidates = _resolve_tree_bases(base_path)
 
     if not candidates:
         return dict(mappings)
@@ -1573,19 +1587,29 @@ def generate_executor(
     mappings = _rewrite_mappings_to_tree(mappings, base_path)
     mappings_code = generate_mappings_code(mappings)
 
+    # Single-source-tree rule: the entrypoint rewrite above sources entrypoints
+    # from the tree whenever one resolves, so the import paths (logging dir,
+    # shared module dirs, collected script dirs) and the surface-dependency
+    # digests (hashed from those same shared dirs downstream) must follow the
+    # SAME tree together — otherwise a tree entrypoint imports older cache
+    # modules. With no resolvable tree the cache entrypoint is retained above,
+    # and the cache import paths below match it.
+    tree_bases = _resolve_tree_bases(base_path)
+    import_base = tree_bases[0] if tree_bases else base_path
+
     # Resolve platform target for target-aware resolver injection.
     resolved_target = target if target is not None else read_marshal_target()
     resolver_code = generate_target_aware_resolver_code(resolved_target)
 
     # logging module location (unified logging skill)
-    logging_scripts_dir = get_logging_scripts_dir(base_path)
+    logging_scripts_dir = get_logging_scripts_dir(import_base)
     logging_dir = logging_scripts_dir.resolve().as_posix()
 
     # Shared module directories (must be on sys.path before executor-level imports).
     # Emitted as ``(skill, pinned_dir)`` pairs so the template bootstrap can self-heal a
     # GC-pruned pinned version to the newest surviving plugin-cache version dir. The skill
     # name is the parent dir name of each resolved ``.../skills/{skill}/scripts`` path.
-    shared_dirs = get_shared_module_dirs(base_path)
+    shared_dirs = get_shared_module_dirs(import_base)
     shared_module_lines = (
         '\n'.join(f"    ('{d.parent.name}', '{d.as_posix()}')," for d in shared_dirs)
         if shared_dirs
@@ -1609,7 +1633,8 @@ def generate_executor(
     # that have no registered scripts but contain importable modules).
     # These are injected as extra PYTHONPATH entries so subprocess-invoked scripts can
     # import from organized subdirectory layouts (e.g., script-shared/scripts/build/).
-    all_script_dirs = collect_script_dirs(base_path)
+    # Sourced from the same single tree as the entrypoints and shared dirs above.
+    all_script_dirs = collect_script_dirs(import_base)
     resolved_dirs = [Path(d).resolve().as_posix() for d in all_script_dirs]
     extra_dirs_code = ', '.join(f"'{d}'" for d in _sort_script_dirs_tree_first(sorted(set(resolved_dirs))))
 
