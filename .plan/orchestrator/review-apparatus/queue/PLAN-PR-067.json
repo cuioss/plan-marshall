@@ -2,9 +2,9 @@
   "id": "PLAN-PR-067",
   "slug": "the-comment-pipeline-on-the-way-in",
   "workstream": "WS-03",
-  "status": "running",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "status": "shipped",
+  "plan_marshall_plan_id": "the-comment-pipeline-on-the-way-in",
+  "pr": "plan-marshall#1616",
+  "landing": "landings/PLAN-PR-067.md",
   "seq": 31
 }

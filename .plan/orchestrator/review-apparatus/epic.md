@@ -45,6 +45,20 @@ is reconciled from it, never the reverse.
 
 ### Queue annotations
 
+**2026-09-24 — `PLAN-PR-067` SHIPPED (#1616) — ⛔⛔ DO NOT EMIT `PLAN-PR-071` OR `PLAN-PR-073` WITHOUT
+RE-GROUNDING FIRST.** Full record `landings/PLAN-PR-067.md`. 24 of 31 realized files were undeclared
+— far larger than `PLAN-PR-066`'s 2-file gap. `PLAN-PR-071` is now **50% pre-consumed** (3 of its 6
+declared files already landed as part of `#1616`), `PLAN-PR-073` is **43% pre-consumed** (3 of 7).
+The corpus-surfaces-membership admission check **cannot see this** — it only compares DECLARED
+surfaces, and `PLAN-PR-067` never declared touching `review_gate_delta.py`,
+`bot-participation-contract.md`, `pr_intent_section.py`, `create-pr.md` or the files' test siblings.
+⛔ **`PLAN-PR-068`'s known 3-file declared overlap with `067` (`github_pr.py`,
+workflow-integration-github/SKILL.md, `test_github_pr.py`) has now fully LANDED** — this converts a
+sequencing risk this epic already knew about into a realized fact; `068` needs full re-grounding,
+not merely sequencing, before it next runs. `PLAN-PR-069`/`074`/`076`/`077` each have 1–2 files
+now pre-consumed too, lower exposure, re-check at their own re-grounding time. See Open Defects for
+the full file-by-file table and the 12 further orphan files declared by no spec at all.
+
 **2026-09-24 — `PLAN-PR-069` SKIPPED at this emit round, sequence it behind `PLAN-PR-067` landing.**
 `069` passes the standard corpus-surfaces-membership check against `067`'s DECLARED surface (no
 overlap row), but `067`'s REALIZED worktree diff (inspected directly, read-only, after the
@@ -62,14 +76,14 @@ first-party, not taken from the operator's landing paste (which misattributed co
 `#288` and `#290` and misidentified which item was "still owed" — both corrected in the landing
 report).
 
-⛔⛔ **UNDECLARED-SURFACE COLLISION WITH THE CURRENTLY-RUNNING `PLAN-PR-067` — see Open Defects.**
-`#1611` additively touched `workflow-integration-github/scripts/github_ops.py` and
-`workflow-integration-github/SKILL.md`, neither on `PLAN-PR-066`'s declared Expected Surface. Both
+✅ **UNDECLARED-SURFACE COLLISION WITH `PLAN-PR-067` — RESOLVED, `067` shipped past it cleanly (#1616,
+2026-09-24) — see Open Defects.** `#1611` additively touched `workflow-integration-github/scripts/github_ops.py`
+and `workflow-integration-github/SKILL.md`, neither on `PLAN-PR-066`'s declared Expected Surface. Both
 files ARE on `PLAN-PR-067`'s declared surface, and that pair was emitted together 2026-09-23 on the
 strength of a corpus-surfaces-membership disjointness check (the standing stopgap while
 `corpus cross-check` remains non-determinate — `PLAN-11` in `orchestrator-refactor`). The
 membership check was correct on the DECLARED surfaces; the REALIZED footprint proved it wrong.
-`PLAN-PR-067`'s worktree branch predates `#1611` and has already made independent, substantial
+`PLAN-PR-067`'s worktree branch predated `#1611` and had already made independent, substantial
 changes to both files. This is now Open Defect material, not merely a watch.
 
 **2026-09-05 — PLAN-PR-032 landed (#1416); two staged proposals are now DISCHARGED.** PR-032's own
@@ -497,7 +511,65 @@ another ledger). Both are restated in § Standing Constraints, which is where th
 
 ## Open Defects
 
-### ⛔⛔ NEW 2026-09-24 (`PLAN-PR-066` landing) — an undeclared-surface expansion collided with the currently-running `PLAN-PR-067`
+### ⛔⛔ NEW 2026-09-24 (`PLAN-PR-067` landing) — a 24-file undeclared-surface expansion pre-consumed two staged specs to 50%/43%
+
+`PLAN-PR-067` shipped (`plan-marshall#1616`, `93f5d7dbd91fea8aa59ebb158f5fa796b181e1e9`) realizing
+**31 files against a 7-file declared Expected Surface** — 24 undeclared, the largest under-declaration
+this epic has recorded (the next-largest, `PLAN-PR-066`'s landing the same week, was 2 files).
+
+**Twelve of the 24 collide with still-staged sibling specs**, each now carrying a real pre-consumption
+this pass measured precisely rather than estimated:
+
+| File | Declaring spec(s) | Pre-consumption |
+|---|---|---|
+| `pr_intent_section.py` | `PLAN-PR-073` | 1 of 7 |
+| `phase-6-finalize/workflow/create-pr.md` | `PLAN-PR-073`, `PLAN-PR-077` | 1 of 7 / 1 of N |
+| `test_pr_intent_section.py` | `PLAN-PR-073` | 1 of 7 |
+| `automatic-review/scripts/review_gate_delta.py` | `PLAN-PR-071` | 1 of 6 |
+| `test_counting_rule_parity.py` | `PLAN-PR-071` | 1 of 6 |
+| `test_review_gate_delta_exclusions.py` | `PLAN-PR-071` | 1 of 6 |
+| `automatic-review/standards/bot-participation-contract.md` | `PLAN-PR-069` | 1 of 11 |
+| `automatic-review/standards/cuioss-review-bot.md` | `PLAN-PR-069` (+ shipped `PLAN-PR-066`) | 1 of 11 |
+| `manage-solution-outline.py` | `PLAN-PR-074` | 1 of N, undisclosed in PR body |
+| `phase-6-finalize/standards/branch-cleanup.md` | `PLAN-PR-074` | 1 of N |
+| `review_retrospective.py` | `PLAN-PR-076` | 1 of 3 |
+| `marshall-steward/references/landing-cycle.md` | shipped `PLAN-PR-066` only | moot |
+
+⛔⛔ **`PLAN-PR-071` = 3 of its 6 declared files, 50%. `PLAN-PR-073` = 3 of its 7, 43%.** These two
+must be re-grounded against `93f5d7dbd` before either is emitted — see the Queue annotation above,
+which carries the operator-facing DO-NOT-EMIT flag; this entry is the evidentiary record.
+
+⛔ **`PLAN-PR-068`'s known 3-file declared overlap with `067`** (`github_pr.py`,
+`workflow-integration-github/SKILL.md`, `test_github_pr.py` — already flagged `contradicted` /
+`rescoped: yes` in `068`'s own Claim Labels as a sequencing risk) **is now realized fact.** `068`
+needs full re-grounding, not merely sequencing, before it next runs.
+
+**Twelve further files are declared by NO spec in the epic at all**: `doc/user/parallelism-and-locking.adoc`;
+`manage-solution-outline/scripts/_plan_parsing.py`; `tools-integration-ci/SKILL.md`,
+`standards/api-contract.md`, `standards/gitlab-impl.md`, `standards/pr-operations.md`; and six test
+files (`test_participation_site_population_records.py` — adjacent to but not identical to
+`PLAN-PR-070`'s declared `test_participation_site_population_guards.py`;
+`test_merge_shaped_offrouting_refusal_offrouting.py`; `test_github_merge_queue.py`;
+`test_github_ops_pr_merge_queue.py`; `test_github_pr_refusals.py`; `test_pre_merge_barrier_core.py`).
+A new `tools-integration-ci` CI-verb surface plus merge-queue/refusal test coverage that arrived with
+no owning deliverable. ⛔ **Not retro-corrected on the now-shipped spec** (this epic's standing
+precedent — a shipped spec's surface has no consumer). **Unowned by any staged spec** — a future
+cleanup pass should judge whether this needs its own spec or folds into `PLAN-PR-068`'s
+merge-queue/refusal surface, given the file names.
+
+Full record: [`landings/PLAN-PR-067.md`](landings/PLAN-PR-067.md).
+
+### ✅ RESOLVED 2026-09-24 (`PLAN-PR-067` landing) — the `066`/`067` undeclared-surface collision is now DISCHARGED, `067` merged past it cleanly
+
+`PLAN-PR-067` shipped (`#1616`, `93f5d7dbd`) with no reported conflict on `github_ops.py` or
+`workflow-integration-github/SKILL.md` — its own realized diff on those two files coexists with
+`#1611`'s earlier additive changes to them, corroborated in the landing's diff read. The rebase this
+entry warned `067`'s session would need evidently happened cleanly. **This entry's finding was
+real and the warning was correctly issued; it did not, in the event, block the landing.** Kept for
+the record of the mechanism (declared-surface trust is insufficient when a sibling's realized
+footprint diverges from its declaration), superseded operationally by the larger version of the
+same pattern `PLAN-PR-067`'s OWN landing then produced — see the entry immediately below, which is
+the current, larger version of this same class of defect.
 
 `PLAN-PR-066` shipped (`plan-marshall#1611`, `6df6595699e878af7a5c4546380dfd11730d2c44`) additively
 touching `marketplace/bundles/plan-marshall/skills/workflow-integration-github/scripts/github_ops.py`
