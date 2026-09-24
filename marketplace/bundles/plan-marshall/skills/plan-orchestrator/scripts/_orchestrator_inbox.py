@@ -458,34 +458,28 @@ def _inbox_dir(slug: str) -> Path:
     return _read_epic_root(slug) / INBOX_SUBDIR
 
 
-def _running_plan_ids(epic_root: Path) -> set[str]:
-    """Return the ids of every plan the epic ledger POSITIVELY reads as ``running``.
+def _running_plan_ids(rows: Iterable[dict[str, Any]]) -> set[str]:
+    """Return the identities of every row POSITIVELY read as ``running``.
 
-    Reads the queue through the ledger module's assembled view
-    (:func:`_orchestrator_ledger.assemble_view`) — the machine authority for
-    per-plan lifecycle state — and returns the id of every row whose ``status``
-    is :data:`RUNNING_STATUS`, mirroring the extraction ``orchestrator.py``
-    performs for its own running-plans readiness signal.
+    Pure over rows the caller has already read, so the running set and any other
+    verdict derived from the same read come from ONE ledger snapshot rather than
+    from two assembled views that may disagree. A row counts only when its
+    ``status`` is :data:`RUNNING_STATUS`, mirroring the extraction
+    ``orchestrator.py`` performs for its own running-plans readiness signal.
 
-    A ledger that did not assemble — an absent or unreadable header, an
-    unlistable queue, or a header still in the monolithic layout — yields an
-    EMPTY set: with no readable queue there is no plan whose running state can
-    be confirmed, so the routing decision that consumes this set does not fire on
-    an unverifiable state. A legacy ``status.json`` whose ``plans[]`` names the
-    target as running is therefore NOT read as running: the monolithic layout is
-    refused, never read, so a message aimed at it queues and is never delivered
-    on an absence. See :func:`_routing_reason` for the named reason.
+    Whether the rows establish anything is the CALLER'S question, answered
+    beside the result: an empty set computed over an unreadable ledger is *could
+    not look*, never *nothing is running*, so :func:`cmd_inbox_list` passes rows
+    only from a readable queue and publishes that readability on the verdict it
+    derives from this set.
 
     A running row contributes BOTH identities it carries — its queue ``id`` and,
     once launched, its ``plan_marshall_plan_id`` (:func:`_row_identities`) — so a
     plan addressed by the plan id it runs under is recognised as running.
     """
-    ledger = assemble_view(epic_root)
-    if ledger.state != LEDGER_OK:
-        return set()
     return {
         identity
-        for row in ledger.document.get('plans', [])
+        for row in rows
         if isinstance(row, dict) and str(row.get('status', '')) == RUNNING_STATUS
         for identity in _row_identities(row)
     }
@@ -537,7 +531,7 @@ def _routing_reason(epic_root: Path, target_plan: str) -> str:
 
     Only :data:`ROUTING_TARGET_RUNNING` delivers, and it is returned only when the
     assembled ledger POSITIVELY reads the target's row as running — the same
-    predicate :func:`_running_plan_ids` enforces. Every could-not-read state is
+    predicate :func:`_running_plan_ids` applies to a row set. Every could-not-read state is
     named rather than folded into *not running*: a legacy-layout ledger, an
     absent or unreadable one, and a target that may sit in a row file that could
     not be read are each a queueing reason of their own (ADR-019).
@@ -2135,28 +2129,29 @@ def cmd_inbox_list(args: Any) -> dict[str, Any]:
         for row in messages
         if row['valid'] and row['lifecycle'] == LIFECYCLE_LIVE and row['kind'] == 'landing' and row['sender_id']
     }
-    live_plan_ids = _running_plan_ids(root)
-    owed_verdict = classify_owed_landing(live_plan_ids, queued_landing_senders)
-    # The queue is read through the ledger module's assembled view. It counts as
+    # The queue is read ONCE, through the ledger module's assembled view, and both
+    # queue-derived verdicts below come from that one snapshot — two reads could
+    # straddle a concurrent write and pair an owed-landing verdict with a
+    # reconciliation computed over a different queue. The queue counts as
     # READABLE only when the ledger assembled AND every row file was read: a
     # legacy-layout ledger is refused rather than read, and a single unread row
-    # file would make any delta computed over the rest a partial one.
+    # file — possibly the running row — would make any set computed over the rest
+    # a partial one.
     ledger = assemble_view(root)
     queue_readable = ledger.state == LEDGER_OK and not ledger.unreadable_rows
-    queue_ids: set[str] = (
-        {
-            str(row.get('id', ''))
-            for row in ledger.document.get('plans', [])
-            if isinstance(row, dict) and str(row.get('id', ''))
-        }
-        if queue_readable
-        else set()
+    queue_rows: list[dict[str, Any]] = (
+        [row for row in ledger.document.get('plans', []) if isinstance(row, dict)] if queue_readable else []
     )
-    # An unreadable queue is UNAVAILABLE, never empty: the directional
-    # deltas below are uncomputed, so they ride an explicit
-    # ``queue_readable: False`` discriminator rather than a clean-looking
-    # empty diff that would file a queued landing under
+    queue_ids = {str(row.get('id', '')) for row in queue_rows if str(row.get('id', ''))}
+    # An unreadable queue is UNAVAILABLE, never empty: both verdicts ride an
+    # explicit ``queue_readable`` discriminator, so an owed-landing ``no-news``
+    # over a running set that was never measured is distinguishable from one that
+    # looked and found nothing owed, and the directional deltas are not read as a
+    # clean-looking empty diff that would file a queued landing under
     # ``landing_without_queue``.
+    owed_verdict = _classify_owed_with_availability(
+        _running_plan_ids(queue_rows), queued_landing_senders, queue_readable
+    )
     queue_reconciliation = _reconcile_queue_with_availability(queue_ids, queued_landing_senders, queue_readable)
     return {
         'status': 'success',
@@ -3444,3 +3439,22 @@ def _reconcile_queue_with_availability(
     report = reconcile_queue_vs_landings(queue_plan_ids, landing_sender_ids)
     report['queue_readable'] = queue_readable
     return report
+
+
+def _classify_owed_with_availability(
+    live_plan_ids: set[str],
+    queued_landing_senders: set[str],
+    queue_readable: bool,
+) -> dict[str, Any]:
+    """Classify the owed-landing state, carrying whether the queue was readable.
+
+    The owed-landing counterpart of :func:`_reconcile_queue_with_availability`,
+    and it carries the SAME flag for the same reason: ``live_plan_ids`` is
+    derived from the queue, so over an unreadable queue it is empty because
+    nothing was measured. The verdict then reads ``no-news`` while no running
+    plan was ever looked for, and ``queue_readable: False`` is what keeps that
+    *could not look* distinct from *looked, and nothing is owed*.
+    """
+    verdict = classify_owed_landing(live_plan_ids, queued_landing_senders)
+    verdict['queue_readable'] = queue_readable
+    return verdict
