@@ -35,7 +35,9 @@ Three arms, a matched set:
 
 Every arm asserts the writer population it actually ran, and the generated-view
 arm asserts the size of its conflicted-path population, so a run in which no
-writer fired, or no conflict existed, cannot pass.
+writer fired, or no conflict existed, cannot pass. The conflict-marker scan
+ranges over every path the repository tracks (``git ls-files``), asserted
+non-empty, rather than over a hand-copied list of the per-concern file names.
 
 Git isolation: every git call is ``git -C {repo}`` with the global and system
 configuration disabled, and the committer identity is set per repository.
@@ -256,15 +258,28 @@ def _seed_epic(plan_context, *, with_view: bool) -> Path:
 # =============================================================================
 
 
-def _ledger_files(root: Path) -> list[Path]:
-    """Every ledger file a merge can touch: header, anchor, rows, and the view."""
-    candidates = [root / 'status.json', root / 'resume_anchor.md', root / 'queue-view.md']
-    rows = sorted((root / 'queue').glob('*.json'))
-    return [path for path in (*candidates, *rows) if path.is_file()]
+def _tracked_files(repo: Path) -> list[str]:
+    """Every path the repository under test tracks, as ``git ls-files`` reports it.
+
+    The population is DERIVED from the repository rather than hand-listed: a
+    per-concern file the ledger module adds or renames is tracked by the merge
+    the moment a writer creates it, so it joins the conflict-marker scan without
+    this module learning its name. An unmerged path is listed once per index
+    stage, so the listing is de-duplicated. It is asserted non-empty, so a scan
+    over no files can never pass.
+    """
+    output = _git(repo, 'ls-files').stdout
+    tracked = sorted({line for line in output.splitlines() if line})
+    assert tracked, f'git ls-files listed nothing in {repo} — the conflict-marker scan would be vacuous'
+    return tracked
 
 
 def _files_with_conflict_markers(root: Path) -> list[str]:
-    return [path.name for path in _ledger_files(root) if CONFLICT_MARKER in path.read_text(encoding='utf-8')]
+    return [
+        rel
+        for rel in _tracked_files(root)
+        if (root / rel).is_file() and CONFLICT_MARKER in (root / rel).read_text(encoding='utf-8')
+    ]
 
 
 def _assembled_rows(root: Path) -> dict[str, dict[str, Any]]:

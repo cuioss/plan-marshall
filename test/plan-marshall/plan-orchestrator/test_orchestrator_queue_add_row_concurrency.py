@@ -25,8 +25,14 @@ deterministic instead of reporting whichever schedule the OS happened to supply.
 
 What each arm can actually detect, stated without overclaim:
 
-* The **positive** arm goes RED if staging stops being a one-row-file create —
-  a whole-queue rewrite from a pre-lock read loses a row under this interleaving.
+* The **positive** arm goes RED if staging stops being a one-row-file create:
+  if it rewrites another row file (the pre-existing row must stay
+  byte-identical), drops a raced row, or hands the two raced rows colliding
+  ``seq`` values. The barrier forces only the TEST'S OWN pre-lock read — the
+  production writer discards that read and lists the queue itself inside its
+  queue-scoped critical section after the barrier releases — so this arm does
+  not model a writer that commits from a stale read; that shape is the
+  negative arm's.
 * The **negative** arm goes RED if the barrier ever stops forcing the
   interleaving (a harness regression), because the writers would then serialize
   and both rows would survive. It keeps the positive arm honest: it demonstrates
@@ -183,9 +189,12 @@ class TestAddRowIsAOneFileCreate:
     def test_concurrent_appends_both_survive(self, plan_context):
         """Positive control: both barrier-released ``--add-row`` writers land.
 
-        Each writer reaches its create holding a stale pre-lock read — the same
-        input the negative arm loses on — and both rows still survive, because
-        staging creates one row file and rewrites no other row.
+        The barrier forces only the test's own pre-lock read; ``_safe_commit``
+        discards it, and ``_append_plan_row`` reads the queue itself after the
+        barrier releases. What this arm detects is the write form: the
+        pre-existing row file must stay byte-identical (no other row is
+        rewritten), both raced rows must land (none is dropped), and the two
+        must carry distinct ``seq`` values (no collision).
         """
         slug = 'race-add-row-epic'
         root = _epic_dir(plan_context, slug)
