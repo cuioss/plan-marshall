@@ -51,7 +51,7 @@ The consequence a caller must design for: an exit-code-only reading accepts a fa
 - CI status, wait, rerun, and logs (with automatic failure-log download + error-extraction filtering)
 - The PR-wide `pull_request`-run observable (`checks pull-request-runs`) behind the `not_triggered` review-participation state — GitHub only; the GitLab arm refuses explicitly
 - Issue operations (create, comment, prepare-body, prepare-comment, view, close, wait-for-close, wait-for-label)
-- Repo operations (merge-queue probe/enable — platform merge queue / merge train; label ensure — idempotent create-if-missing; label list and file read — read-only, any repository)
+- Repo operations (merge-queue probe/enable — platform merge queue / merge train; label ensure — idempotent create-if-missing; label list and file read — read-only, any repository, GitHub only: the GitLab arm refuses with `error: not_supported`)
 - Org-wide reads (list every repository, search code for a literal) — read-only, each reporting its own completeness; GitHub only, the GitLab arm refuses with `error: not_supported`
 - Unified TOON output format across providers
 
@@ -538,8 +538,9 @@ read, `complete: false`, and an `incomplete_reason` from the closed set
 at all is `status: error`; its rows are not returned.
 
 **GitHub only.** The parsers live in the shared `ci_base.build_parser`, so the
-tokens resolve on GitLab too; the GitLab arm registers a handler for each that
-returns `status: error` with `error: not_supported` rather than an empty success
+tokens resolve on GitLab too; the GitLab arm registers a handler for each of the
+four read verbs (`org list-repos`, `org search-code`, `repo file read`,
+`repo label list`) that returns `status: error` with `error: not_supported` rather than an empty success
 or an unrecognised-subcommand parser error.
 
 ### barrier

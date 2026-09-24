@@ -246,3 +246,24 @@ def test_search_code_refuses_an_unsearchable_literal(query):
     result = _search(query)
 
     assert result['status'] == 'error'
+
+
+@pytest.mark.parametrize(
+    'spec',
+    ['cuioss/example\n', 'cuioss/.', 'cuioss/..', 'cuioss\n/example', 'cuioss/', '/example'],
+    ids=['trailing-newline', 'dot', 'dot-dot', 'newline-in-owner', 'empty-name', 'empty-owner'],
+)
+def test_repo_spec_rejects_malformed_and_traversing_names(spec):
+    """A spec is matched whole: a trailing newline or a dot-only name never splits."""
+    assert _github_org._split_repo(spec) is None
+
+
+def test_repo_spec_accepts_a_dotted_name():
+    """A name that merely contains dots is a legitimate repository name."""
+    assert _github_org._split_repo('cuioss/.github') == ('cuioss', '.github')
+
+
+@pytest.mark.parametrize('org', ['cuioss\n', 'cuioss org', '-cuioss', ''])
+def test_org_login_is_matched_whole(org):
+    """An org login with a trailing newline or illegal character is refused before any call."""
+    assert _github_org._LOGIN_RE.fullmatch(org) is None

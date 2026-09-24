@@ -15,8 +15,10 @@ Usage:
     python3 ci.py [--plan-id ID] repo file read --repo cuioss/example --path .github/project.yml
 
 The ``org`` verbs and ``repo file read`` / ``repo label list`` are read-only and
-name their target explicitly (``--org`` / ``--repo``), so they reach repositories
-other than the routed checkout. They take no verb-level ``--plan-id``: a
+can reach repositories other than the routed checkout: the ``org`` verbs and
+``repo file read`` name their target explicitly (``--org`` / ``--repo``), while
+``repo label list`` takes an optional ``--repo`` and defaults to the routed
+checkout. They take no verb-level ``--plan-id``: a
 ``--plan-id`` for them is the router flag and goes BEFORE the verb.
 
 Top-level flags (consumed by the router before provider dispatch):

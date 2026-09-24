@@ -68,8 +68,11 @@ _CODE_SEARCH_MAX_PAGES = 10
 #: (most forks, files over its size limit).
 _CODE_SEARCH_SCOPE = 'default_branch_index'
 
-_LOGIN_RE = re.compile(r'^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$')
-_REPO_RE = re.compile(r'^([A-Za-z0-9](?:[A-Za-z0-9-]{0,38}))/([A-Za-z0-9._-]{1,100})$')
+#: Matched with ``fullmatch`` — ``$`` under ``re.match`` also accepts a trailing
+#: newline. A dot-only repository name (``.``/``..``) is rejected because it
+#: would traverse the ``repos/{owner}/{name}/contents`` path.
+_LOGIN_RE = re.compile(r'[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})')
+_REPO_RE = re.compile(r'([A-Za-z0-9](?:[A-Za-z0-9-]{0,38}))/((?!\.{1,2}$)[A-Za-z0-9._-]{1,100})')
 
 _ORG_REPOS_QUERY = """
 query($login: String!, $first: Int!, $after: String) {
@@ -103,7 +106,7 @@ query($owner: String!, $name: String!, $first: Int!, $after: String) {
 
 def _split_repo(spec: str | None) -> tuple[str, str] | None:
     """Return ``(owner, name)`` for an ``OWNER/NAME`` spec, or ``None`` when malformed."""
-    match = _REPO_RE.match(spec or '')
+    match = _REPO_RE.fullmatch(spec or '')
     if not match:
         return None
     return match.group(1), match.group(2)
@@ -212,7 +215,7 @@ def _walk_failure(operation: str, walk: dict[str, Any], subject: str) -> dict[st
 def cmd_org_list_repos(args: argparse.Namespace) -> dict:
     """Handle ``org list-repos`` — every repository of an organization, all pages."""
     operation = 'org_list_repos'
-    if not _LOGIN_RE.match(args.org or ''):
+    if not _LOGIN_RE.fullmatch(args.org or ''):
         return make_error(operation, f'invalid organization login: {args.org!r}')
 
     is_auth, err = github_ops.check_auth()
@@ -261,7 +264,7 @@ def cmd_org_list_repos(args: argparse.Namespace) -> dict:
 def cmd_org_search_code(args: argparse.Namespace) -> dict:
     """Handle ``org search-code`` — every indexed file of an org containing a literal."""
     operation = 'org_search_code'
-    if not _LOGIN_RE.match(args.org or ''):
+    if not _LOGIN_RE.fullmatch(args.org or ''):
         return make_error(operation, f'invalid organization login: {args.org!r}')
     literal = args.query or ''
     if not literal.strip():
