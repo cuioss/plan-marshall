@@ -5307,7 +5307,9 @@ def cmd_migrate_layout(args: argparse.Namespace) -> dict[str, Any]:
     (``invalid_slug``), an absent tree (``not_found``), an absent header
     (``file_not_found``), a header that is not a JSON object
     (``invalid_status_document``), and a ``plans[]`` entry that cannot become a
-    row file (``unmigratable_rows``) — writing nothing in every case.
+    row file (``unmigratable_rows``) — writing nothing. A refusal from the
+    tail's view write (``row_unreadable`` / ``ledger_unreadable``) can arrive
+    after the per-concern files were written; a re-run finishes the tail.
     """
     invalid = _validate_slug(args.slug)
     if invalid:

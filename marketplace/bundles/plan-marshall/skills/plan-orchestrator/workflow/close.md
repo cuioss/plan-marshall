@@ -58,7 +58,7 @@ Report the queue outcome over the terminal status vocabulary (see [`orchestratio
 - **Closed unshipped** — a row at `superseded`, `transferred`, `retired`, or `resolved`, named by its own status: the work ended without shipping, and the status says how.
 - **Parked** — a row still at `parked`: live work that did not finish before the close, carried forward as a lead.
 
-A row at any other status reached this step only through the operator's explicit decision in Step 2; name it with its status and that decision.
+A row at any other status is reported in `history.md` with its status as-is; no Output count includes it.
 
 `epic.md` and the rest of the tree remain on disk untouched — close freezes, never deletes; the tree is the audit record.
 

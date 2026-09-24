@@ -1403,7 +1403,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status read \
 
 `read` accepts no `--phase`: phase-scoped step records are returned inside `metadata.phase_steps` of the bare `read` payload, so narrowing needs no flag. A `read --phase X` spelling is rejected at exit 2 naming `--phase` and the sibling verbs that declare it.
 
-With `--store orchestrator`, `plan` is the assembled epic ledger — the header fields, `plans` (every row file, ordered by `(seq, id)`) and `resume_anchor`. A row file that cannot be read is listed under `unreadable_rows` (`file`, `reason`) and is absent from `plans`; it is never reported as a row that does not exist.
+With `--store orchestrator`, `plan` is the assembled epic ledger — the header fields, `plans` (every row file, ordered by `(seq, id)`) and `resume_anchor`. A row file that cannot be read is listed under `unreadable_rows` (`file`, `reason`) and is absent from `plans`; it is never reported as a row that does not exist. An anchor that cannot be read or a `queue/` directory that cannot be listed returns `ledger_unreadable`.
 
 ### set-phase
 

@@ -129,7 +129,7 @@ Which verb writes which part of the ledger, and how often. This is the collision
 | `per-queue-change` | On each change to the plan queue — a row staged, transitioned, or stamped, which in practice means every landing analysis |
 | `per-verb` | On nearly every verb invocation, including verbs that only move the next action |
 
-**How the columns are derived.** The writer column is read statically from the writer code paths — the orchestrator store verbs in `manage-status` (`create`, `update-field`, `metadata`), the three `orchestrator queue` write forms, `resume-summary`, and `compact` — and cross-checked against the verb workflow docs that call them. The frequency column is measured from the git history of the tracked ledgers: walk every commit that touched `.plan/orchestrator/*/status.json`, `.plan/orchestrator/*/epic.md`, or their `.plan/archived-orchestrators/` equivalents, and classify which fields and sections each commit changed, over the ledger population `orchestrator corpus epics` enumerates. The measurement is re-derivable rather than restated here; a count written into this document would go stale on the next ledger commit.
+**How the frequency column is derived.** It is measured from the git history of the tracked ledgers: walk every commit that touched `.plan/orchestrator/*/status.json`, `.plan/orchestrator/*/epic.md`, or their `.plan/archived-orchestrators/` equivalents, and classify which fields and sections each commit changed, over the ledger population `orchestrator corpus epics` enumerates. The measurement is re-derivable rather than restated here; a count written into this document would go stale on the next ledger commit.
 
 ### `status.json` fields
 
