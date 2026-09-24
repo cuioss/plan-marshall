@@ -4,7 +4,7 @@
 
 ## START HERE
 
-**Resume anchor**: PLAN-02 SHIPPED 2026-09-24 (#1609, merge 21578e447). Ledger layout migrated to per-concern files (status.json header-only, resume_anchor.md, queue/{PLAN-ID}.json, generated queue-view.md) -- this epic's own tree only; 24 sibling epics remain on the legacy layout, flagged as a new Open Defect (operator decision needed on the cross-epic sweep + letter-suffixed row ids). 9 inbox messages drained: 1 finding absorbed, 7 candidate-lessons promoted, 2 recorded as recurrences on existing lessons (2026-09-23-05-001, 2026-09-23-15-001), 1 landing reconciled. Self-review did not converge on this plan (4 rounds, last 6 fixes unreviewed) -- full verify/CI/CodeRabbit did cover them. Live queue: PLAN-03/05/06/09/10/11 staged, PLAN-07 parked. Still open: git-config-injection hardening routing decision (from PLAN-08's landing), marketplace-wide disjointness gate (unchanged), marshalld reconcile deferred, /marshall-steward owed (outside this epic's scope).
+**Resume anchor**: Cleanup pass shipped (PR #1621, merge 54b4bb525): 30 A1 verdicts re-grounded, PLAN-10/PLAN-11 re-scoped. restart-check: ready. Next: resume normal orchestration (status/next) or pick up an operator-authorized cross-epic migrate-layout sweep (Open Defect, not yet authorized beyond the epics already migrated).
 **Phase**: orchestrating
 **Parked**:
 - PLAN-07 (WS-04)
