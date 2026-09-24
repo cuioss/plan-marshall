@@ -31,7 +31,6 @@ Usage:
 
 import argparse
 import json
-import os
 import re
 import subprocess
 import sys
@@ -72,6 +71,7 @@ from input_validation import (
     require_valid_plan_id,
 )
 from marketplace_bundles import resolve_bundles_root
+from marketplace_paths import detect_target_from_env as _shared_detect_target_from_env
 from toon_parser import parse_toon
 
 METRICS_FILE = FILE_WORK_METRICS
@@ -3853,21 +3853,13 @@ ENRICH_SKIP_POPULATION_UNENRICHED = 'unenriched'
 def _detect_target_from_env() -> str | None:
     """Detect the runtime target from platform-injected environment variables.
 
-    Local mirror of ``marketplace_paths._detect_target_from_env`` (the
-    platform-runtime detection): Antigravity injects ``ANTIGRAVITY_AGENT=1``,
-    OpenCode injects ``OPENCODE=1`` (or ``OPENCODE_PID``), Claude Code injects
-    ``CLAUDE_CODE_SESSION_ID``. Mirrored here — rather than imported — because
-    ``marketplace_paths`` publishes no public detection entry point and this
-    module must not bind to its private name; the variable-to-target contract
-    is owned there, this mirror follows it.
+    Thin delegation to the shared public entry point
+    ``marketplace_paths.detect_target_from_env`` — the single owner of the
+    variable-to-target contract. The mirrored signal list lived here only
+    until the shared detector was public; it is removed so the two surfaces
+    cannot diverge.
     """
-    if os.environ.get('ANTIGRAVITY_AGENT'):
-        return 'antigravity'
-    if os.environ.get('OPENCODE') or os.environ.get('OPENCODE_PID'):
-        return 'opencode'
-    if os.environ.get('CLAUDE_CODE_SESSION_ID'):
-        return 'claude'
-    return None
+    return _shared_detect_target_from_env()
 
 
 def _resolve_runtime_target() -> str:

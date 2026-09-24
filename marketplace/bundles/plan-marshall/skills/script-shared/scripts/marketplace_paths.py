@@ -176,14 +176,15 @@ _BUNDLE_CACHE_ROOTS_CACHE: tuple[str, ...] | None = None
 # by ``claude_runtime.py``.
 
 
-def _detect_target_from_env() -> str | None:
+def detect_target_from_env() -> str | None:
     """Detect the runtime target from platform-injected environment variables.
 
-    Antigravity injects ``ANTIGRAVITY_AGENT=1`` into every subprocess;
-    OpenCode injects ``OPENCODE=1`` (or ``OPENCODE_PID``);
-    Claude Code injects ``CLAUDE_CODE_SESSION_ID``.  These ambient signals
-    resolve the target before any config or filesystem probe, eliminating
-    the chicken-and-egg problem on first run.
+    Public shared entry point for the platform-env target contract. Antigravity
+    injects ``ANTIGRAVITY_AGENT=1`` into every subprocess; OpenCode injects
+    ``OPENCODE=1`` (or ``OPENCODE_PID``); Claude Code injects
+    ``CLAUDE_CODE_SESSION_ID``. These ambient signals resolve the target before
+    any config or filesystem probe, eliminating the chicken-and-egg problem on
+    first run.
 
     Returns:
         Target string (``'antigravity'``, ``'opencode'`` or ``'claude'``),
@@ -198,6 +199,16 @@ def _detect_target_from_env() -> str | None:
     return None
 
 
+def _detect_target_from_env() -> str | None:
+    """Detect the runtime target from platform-injected environment variables.
+
+    Backward-compatible thin wrapper over :func:`detect_target_from_env`.
+    Retained because existing callers and tests bind to the private name; new
+    code MUST import the public entry point instead.
+    """
+    return detect_target_from_env()
+
+
 def _read_runtime_target() -> str:
     """Read ``runtime.target`` from platform env vars or ``.plan/marshal.json``.
 
@@ -210,7 +221,7 @@ def _read_runtime_target() -> str:
     3. **Default** — ``_default_runtime_target()`` (``'claude'``).
     """
     # Tier 1: platform-injected env var (zero-cost, always present).
-    env_target = _detect_target_from_env()
+    env_target = detect_target_from_env()
     if env_target:
         return env_target
     # Tier 2: marshal.json config.
