@@ -711,9 +711,56 @@ to Step 15 without prompting. Otherwise apply per the rules above, then
 record one auto-decision audit entry naming the per-artifact action
 taken (copied / merged / installed / updated-with-backup).
 
+**Apply operation.** The apply is an executable operation, not bare file
+placement. Run it in order; every command below exists — never substitute
+an invented verb:
+
+1. **Read the runtime target.** Resolve `harness` from the platform
+runtime (config-driven via `runtime.target` in `.plan/marshal.json`):
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime runtime-info
+   ```
+
+   Branch on `harness`: `opencode` continues below; anything else records
+   a STEWARD skip audit entry and continues to Step 15.
+
+2. **Check applied state.** Read the project's `opencode.json` for the
+two-tier `permission` block and check `.opencode/plugin/guard.js` for
+presence. When both hold, the step is already applied — record a single
+auto-decision STEWARD audit entry and continue to Step 15 without
+prompting.
+
+3. **Install the artifacts** per the singular-apply rules above:
+   - `opencode.json`: merge the D1 two-tier rules through the routed,
+     target-aware fix verb (idempotent; never overwrite):
+
+     ```bash
+     python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime permission fix --scope project --operation ensure --permissions '{D1 two-tier rule intents}'
+     ```
+
+     `--permissions` carries JSON semantic intent records in the same
+     shape `permission configure` takes (see
+     `platform-runtime/standards/contract.md` § `permission fix`); the
+     intents are the D1 deny/ask rows from `doc/developer/opencode.adoc`.
+   - guard plugin: Read the shipped `.opencode/plugin/guard.js` from the
+     installed plan-marshall distribution and Write it to the project's
+     `.opencode/plugin/guard.js`, applying the occupied-path backup rule.
+
+4. **Record the audit decision.** Emit one STEWARD audit entry per
+artifact action taken (copied / merged / installed /
+updated-with-backup / already-applied), following the audit-trail
+contract above:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+     decision --level INFO \
+     --message "[STEWARD] (plan-marshall:marshall-steward) Step 14b {action}: {artifact} ({reason})"
+   ```
+
 No new script entry point backs this step: `upgrade.py` remains a
-pure-function four-stage emitter over `(integrate, project_kind)`, and
-the apply itself is the file placement described above.
+pure-function four-stage emitter over `(integrate, project_kind)`; the
+operation above composes existing verbs.
 
 ---
 
