@@ -38,6 +38,8 @@ from _architecture_core import (
 )
 from _plan_parsing import (
     DECLARATION_FIELDS,
+    ERROR_DOCUMENT_NOT_FOUND,
+    ERROR_SECTION_NOT_FOUND,
     _slugify_section_name,
     declares_change,
     deliverable_write_set,
@@ -104,7 +106,7 @@ def _read_solution_or_not_found(plan_id: str) -> tuple[dict[str, Any] | None, st
     if not file_path.exists():
         return {
             'status': 'error',
-            'error': 'document_not_found',
+            'error': ERROR_DOCUMENT_NOT_FOUND,
             'plan_id': plan_id,
             'file': SOLUTION_FILE,
             'suggestions': [
@@ -573,7 +575,7 @@ def cmd_validate(args: argparse.Namespace) -> dict[str, Any]:
     if not file_path.exists():
         return {
             'status': 'error',
-            'error': 'document_not_found',
+            'error': ERROR_DOCUMENT_NOT_FOUND,
             'plan_id': args.plan_id,
             'file': SOLUTION_FILE,
             'suggestions': [
@@ -626,7 +628,7 @@ def cmd_list_deliverables(args: argparse.Namespace) -> dict[str, Any]:
     file_path = get_solution_path(args.plan_id)
 
     if not file_path.exists():
-        return {'status': 'error', 'error': 'document_not_found', 'plan_id': args.plan_id, 'file': SOLUTION_FILE}
+        return {'status': 'error', 'error': ERROR_DOCUMENT_NOT_FOUND, 'plan_id': args.plan_id, 'file': SOLUTION_FILE}
 
     content = file_path.read_text(encoding='utf-8')
     sections = parse_document_sections(content)
@@ -635,7 +637,7 @@ def cmd_list_deliverables(args: argparse.Namespace) -> dict[str, Any]:
         return {
             'status': 'error',
             'plan_id': args.plan_id,
-            'error': 'section_not_found',
+            'error': ERROR_SECTION_NOT_FOUND,
             'message': 'Deliverables section not found',
         }
 
@@ -720,7 +722,7 @@ def _lookup_deliverable(plan_id: str, content: str, deliverable_number: int) -> 
     if 'deliverables' not in sections:
         return {
             'status': 'error',
-            'error': 'section_not_found',
+            'error': ERROR_SECTION_NOT_FOUND,
             'plan_id': plan_id,
             'message': 'Deliverables section not found',
         }
@@ -766,7 +768,7 @@ def cmd_read(args: argparse.Namespace) -> dict[str, Any]:
         if normalized not in sections:
             return {
                 'status': 'error',
-                'error': 'section_not_found',
+                'error': ERROR_SECTION_NOT_FOUND,
                 'plan_id': args.plan_id,
                 'requested_section': requested_section,
                 'message': f"Section '{requested_section}' not found in {SOLUTION_FILE}",
@@ -850,7 +852,7 @@ def cmd_get_field(args: argparse.Namespace) -> dict[str, Any]:
     if not file_path.exists():
         return {
             'status': 'error',
-            'error': 'document_not_found',
+            'error': ERROR_DOCUMENT_NOT_FOUND,
             'plan_id': args.plan_id,
             'file': SOLUTION_FILE,
             'field': field_name,
@@ -906,7 +908,7 @@ def _validate_file_on_disk(plan_id: str, file_path: Path) -> tuple[int, dict[str
     if not file_path.exists():
         return 1, {
             'status': 'error',
-            'error': 'document_not_found',
+            'error': ERROR_DOCUMENT_NOT_FOUND,
             'plan_id': plan_id,
             'file': SOLUTION_FILE,
             'suggestions': [
@@ -1007,7 +1009,7 @@ def cmd_update(args: argparse.Namespace) -> dict[str, Any]:
     if not file_path.exists():
         return {
             'status': 'error',
-            'error': 'document_not_found',
+            'error': ERROR_DOCUMENT_NOT_FOUND,
             'plan_id': args.plan_id,
             'file': SOLUTION_FILE,
             'message': 'Cannot update: solution outline does not exist. Use write to create it.',

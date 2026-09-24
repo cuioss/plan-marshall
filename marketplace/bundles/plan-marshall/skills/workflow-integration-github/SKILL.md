@@ -128,7 +128,26 @@ Both operations take the same `PRRT_` thread ID — pass the comment's `thread_i
    ```bash
    python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_pr fetch_findings --pr-number {pr} --plan-id {plan_id}
    ```
-   Output reports `count_fetched`, `count_skipped_noise`, `count_skipped_duplicate`, `count_skipped_refusal`, `count_skipped_self_response`, `count_self_response_current_cycle`, `self_response_loop_detected`, `self_response_loop_hash_id`, `count_stored`, `participated_bots[]`, `stale_participation_bots[]`, `merge_candidate_sha_resolved`, `undecidable_participation_bots[]`, `refused_bots[]`, `unrecognised_refusal[]`, `refusal_pattern_drift[]`, `refused_causes[]`, `refused_size_caps[]`, `measured_diff_size`, `unclassified_bots[]`, and `producer_mismatch_hash_id` (set when count_stored ≠ count_fetched − count_skipped_noise − count_skipped_duplicate − count_skipped_refusal − count_skipped_self_response; the mismatch is also persisted as a Q-Gate finding under phase `5-execute` with title prefix `(producer-mismatch)`). An unclassified bot's comments are stored like any other, so they are NOT subtracted from the expected count. When that mismatch finding's own persist is REJECTED, `producer_mismatch_hash_id` stays `null` and the output carries `qgate_persist_failed: true` plus `qgate_persist_failure{title, detail, message}` — the mismatch content that never reached the store, with the primitive's rejection message. Both fields are absent when the mismatch finding landed (or when there was no mismatch). Read `qgate_persist_failed`, not a `null` hash id, to tell a lost mismatch finding from no mismatch at all; `status` stays `success` because the fetch itself succeeded. A `status: unconfigured` return means GitHub is not authenticated — never a silent zero-findings success.
+   Output reports `fetch_complete`, `capped_connections[]`, `count_fetched`, `count_skipped_noise`, `count_skipped_duplicate`, `count_skipped_refusal`, `count_skipped_self_response`, `count_skipped_emitter_bypass`, `emitter_bypass_hash_id`, `count_skipped_own_trigger`, `own_trigger_exclusions[]`, `workflow_identity`, `count_self_response_current_cycle`, `self_response_loop_detected`, `self_response_loop_hash_id`, `count_stored`, `stored_zero_state`, `stored_zero_state_source`, `participated_bots[]`, `stale_participation_bots[]`, `merge_candidate_sha_resolved`, `undecidable_participation_bots[]`, `refused_bots[]`, `unrecognised_refusal[]`, `refusal_pattern_drift[]`, `refused_causes[]`, `refused_size_caps[]`, `measured_diff_size`, `unclassified_bots[]`, and `producer_mismatch_hash_id` (set when count_stored ≠ count_fetched − count_skipped_noise − count_skipped_duplicate − count_skipped_refusal − count_skipped_self_response − count_skipped_emitter_bypass − count_skipped_own_trigger; the mismatch is also persisted as a Q-Gate finding under phase `5-execute` with title prefix `(producer-mismatch)`). An unclassified bot's comments are stored like any other, so they are NOT subtracted from the expected count. When that mismatch finding's own persist is REJECTED, `producer_mismatch_hash_id` stays `null` and the output carries `qgate_persist_failed: true` plus `qgate_persist_failure{title, detail, message}` — the mismatch content that never reached the store, with the primitive's rejection message. Both fields are absent when the mismatch finding landed (or when there was no mismatch). Read `qgate_persist_failed`, not a `null` hash id, to tell a lost mismatch finding from no mismatch at all; `status` stays `success` because the fetch itself succeeded. A `status: unconfigured` return means GitHub is not authenticated — never a silent zero-findings success.
+
+   **A clipped fetch is reported, never published as the PR's whole comment set.** Every count above is computed over the comments the provider fetch returned, so the fetch's own coverage travels with them. `fetch_complete` is `true` only when the provider proved every connection read to its end — the underlying `pr comments` read paginates each connection by cursor (see Canonical invocations → `github_ops pr comments`), so a page size is never a silent ceiling — and a provider result carrying no completeness claim reads as `false`. `capped_connections[]` carries the provider's coverage record for each connection that was NOT proven whole, so the result names what was observed against what cap:
+
+   ```toon
+   capped_connections[N]{connection,observed,cap,total,capped}:
+   ```
+
+   A capped fetch still files what it fetched; it is disclosed as incomplete rather than read as reviewed-and-clean.
+
+   **A zero-stored fetch names which zero it is.** `count_stored: 0` alone is equally the signature of a review that found nothing, of no review covering this head, and of a fetch that never reached a review, so every result carries `stored_zero_state`:
+
+   | Value | Meaning |
+   |-------|---------|
+   | `unreachable` | The pass could not reach a review: `fetch_complete` is `false`, `merge_candidate_sha_resolved` is `false`, or `count_skipped_refusal` is non-zero (a recognised or an unrecognised refusal) |
+   | `covered_clean` | The pass was fully readable, `participated_bots[]` is non-empty, and no comment survived the filters: a review covered this head and found nothing |
+   | `no_coverage` | The pass was fully readable, no refusal was seen, and `participated_bots[]` is empty: no review covers this head |
+   | `not_applicable` | At least one comment survived every filter — stored by this pass, already stored by a preceding fetch (`count_skipped_duplicate`), or rejected by the store (reported through `producer_mismatch_hash_id`) — so the pass found something |
+
+   ⛔ **Precedence is fixed: `unreachable` outranks both other zeros.** An incomplete fetch, an unreadable merge candidate, or any refusal in the same pass makes `covered_clean` unreachable, so a quota refusal can never be read as a clean review. The verdict is derived from counts and flags the verb already computes — it builds no second discrimination — and `stored_zero_state_source` names that provenance: `derived_locally`.
 
    **A failed currency test is a branch, never a discard — and it has THREE outcomes, not two.** `participated_bots[]` credits a bot only when an observed comment's `kind` matches a declared `participation_evidence` publish shape, AND — where that bot declares a `participation_evidence_markers` entry for that shape — the comment body carries the declared marker, AND — for a bot declaring `participation_requires_update` — the currency test holds. The marker gate runs FIRST, so a comment it rejects reaches neither the credited set nor the stale one.
 
@@ -152,7 +171,22 @@ Both operations take the same `PRRT_` thread ID — pass the comment's `thread_i
 
    **The cross-iteration filing dedup identity is `(bot_kind, comment_id, updated_at)`.** The third term is the comment's `updated_at`, falling back to a body digest where the provider supplied none, and it is stamped into every stored finding so the key can be reconstructed from the store. It makes the identity answer *"is this the same INFORMATION?"* rather than only *"is this the same COMMENT?"*: a bot that re-reviews by editing its one persistent comment in place keeps the same `comment_id` forever, so under the two-term key an edit that replaced a clean summary with a real finding was dropped as a duplicate while the currency test credited the bot as participating — the reviewer read present-and-clean and its actual feedback never became a `pr-comment` finding. An unchanged re-fetch still dedupes, because an unchanged comment carries an unchanged term. A finding stored BEFORE the term existed carries none and dedupes on the two-term key against any `updated_at`, so the widening does not re-file a PR's whole comment history once.
 
-   **A self-authored response is excluded start-anchored, and the loop is bounded.** `post_responses` transmits thread-less dispositions as a NEW PR-level comment (step 4 below) authored by the repo-owner account. On the next fetch that comment is unresolved, is not a refusal, matches no `ignore` regex, and carries a NEW `comment_id` the `(bot_kind, comment_id)` dedup cannot know — so without a dedicated stage it is filed as a fresh pending finding, the pre-merge comment barrier blocks on it, triage responds again, and the cycle never terminates. `fetch_findings` therefore drops any comment whose whitespace-stripped body **starts with** the batched-response heading, counting it in `count_skipped_self_response` (never `count_skipped_noise` — our own output is not acknowledgment noise) and subtracting it from the expected count. The match is **start-anchored, never a substring test**: a human comment that quotes or blockquotes the heading is real reviewer feedback and is still filed.
+   **A self-authored response is recognised by WHO wrote it, with its shape as a required second signal, and the loop is bounded.** `post_responses` transmits thread-less dispositions as a NEW PR-level comment (step 4 below) authored by the account `gh` is authenticated as — the same account `_github_pr.get_viewer_login()` resolves. On the next fetch that comment is unresolved, is not a refusal, matches no `ignore` regex, and carries a NEW `comment_id` the dedup cannot know — so without a dedicated stage it is filed as a fresh pending finding, the pre-merge comment barrier blocks on it, triage responds again, and the cycle never terminates. `fetch_findings` therefore resolves the workflow identity ONCE per fetch and applies this rule:
+
+   | Author | Body | Outcome |
+   |--------|------|---------|
+   | the workflow identity | opens with the batched-response heading (start-anchored) | self-response: no finding, counted in `count_skipped_self_response` |
+   | the workflow identity | carries the batch section signature (`### In reply to comment_id:`) but does not open with the heading | emitter bypass: no finding, counted in `count_skipped_emitter_bypass`, reported as ONE `(emitter-bypass)` Q-Gate finding under phase `5-execute` (`emitter_bypass_hash_id`; a rejected persist surfaces as `emitter_bypass_persist_failed: true` plus `emitter_bypass_persist_failure{title, detail, message}`) |
+   | the workflow identity | neither shape | a genuine operator comment: filed |
+   | any other author | opens with or quotes the heading | filed — another author's comment is never ours |
+
+   **The chosen trade, and why neither key suffices alone.** Identity is the PRIMARY key, but a transmission shape is REQUIRED beside it, because the repo-owner account is both this workflow's emitter and a genuine reviewer — identity alone would swallow the operator's own review comments. The heading alone cannot see a bypass and would drop another author's comment that opens with it. Both counters are subtracted from the expected count and neither is `count_skipped_noise` — our own output is not acknowledgment noise. The heading test stays start-anchored: a comment that blockquotes the heading does not open with it.
+
+   **A re-review trigger this workflow posted is excluded by provenance, and reported.** A comment authored by the workflow identity whose whitespace-stripped body EQUALS a registered bot re-review trigger (the registry-derived set `github_re_review.is_registered_trigger_comment` reads, the same data the trigger poster sends) is this workflow's own re-review request, not reviewer feedback. It files no finding, is counted in `count_skipped_own_trigger` — never in `count_skipped_noise`, since the exclusion is keyed on who posted it, not on its shape — and is subtracted from the expected count. `own_trigger_exclusions[]` carries one `{comment_id, trigger}` record per excluded comment, naming the registered trigger it matched, so the result says how many were excluded and why. An exact-trigger body from any OTHER author keeps its noise disposition (`count_skipped_noise`), and a body that merely quotes a trigger string is not an exact match and is filed.
+
+   **An unresolved identity is disclosed, never read as resolved.** The identity is read at most once per fetch, and only when some fetched comment opens with the heading, carries the section signature, or is a registered trigger. `workflow_identity` reports how it stood: `resolved`; `unresolved` — the viewer read failed, so the self-response stage fell back to the heading-only test, and the emitter-bypass and own-trigger stages could not run (a workflow-authored trigger keeps its noise disposition); or `not_needed` — no comment carried any of those shapes, so no stage asked for it.
+
+   **Transmit every thread-less disposition batch via `github_pr post_responses`; an agent never composes that body itself.** A hand-composed body is exactly what the emitter-bypass report catches, and it defeats the self-response recognition this stage depends on.
 
    The filter cannot be complete — a thread-bearing disposition whose resolve-thread failed leaves an unresolved reply carrying arbitrary `resolution_detail` text and no transmission shape at all — so a bound backs it. Every turn of the cycle leaves one permanent response comment on the PR, so the PR's own comment list IS the iteration counter: no new state store and no new config key. When one fetch observes `count_self_response_current_cycle` at or above the bound, the verb returns `self_response_loop_detected: true` and files a `(self-response-loop)` Q-Gate finding under phase `5-execute` through the same checked-persist primitive the mismatch finding uses — a rejected persist surfaces as `self_response_loop_persist_failed: true` plus `self_response_loop_persist_failure{title, detail, message}`. Exhaustion is a REPORTED coverage gap requiring an operator decision, never a silent pass; `status` stays `success` because the fetch itself succeeded.
 
@@ -169,6 +203,8 @@ Both operations take the same `PRRT_` thread ID — pass the comment's `thread_i
    ```bash
    python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_pr post_responses --pr-number {pr} --plan-id {plan_id}
    ```
+   Every thread-less disposition batch is transmitted through this call — an agent never composes the batched PR comment itself (a hand-composed batch is reported as an `(emitter-bypass)`, see step 1).
+
    `post_responses` transmits every terminal-disposition finding through a three-way branch — no decision is lost and none is guessed at. **The routing predicate is the finding's `kind` — its thread-BEARING-ness — never the presence of an extractable `thread_id`:**
 
    | Finding shape | Transmit | Recorded as |
@@ -428,6 +464,29 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github
 python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_ops pr comments \
   --pr-number N [--unresolved-only]
 ```
+
+Every connection the read touches — `reviewThreads`, each thread's `comments`,
+`reviews`, and the issue-level `comments` — is paginated by cursor to completion,
+so a page size is never a silent ceiling on the population. Beside `total`,
+`unresolved` and `comments[]` the return carries the coverage it established:
+
+```toon
+complete: true | false
+connections[4]{connection,observed,cap,total,capped}:
+```
+
+- `connection` — `reviewThreads`, `reviewThreads.comments` (aggregated over every
+  thread whose comments are returned), `reviews`, or `comments`.
+- `observed` — the nodes collected across every page read.
+- `cap` — the first page's size: the cliff a single unpaginated read falls off.
+- `total` — the provider's own `totalCount`, or `null` when it reported none.
+- `capped` — `true` whenever the observed population is not PROVEN whole: the
+  connection was not read to `hasNextPage: false` (no page info, no cursor to
+  continue from, or a cursor that did not advance), or `total` exceeds `observed`.
+
+`complete` is `true` only when no connection is `capped`. A failed follow-up page
+read fails the whole read with `status: error`, exactly as a failed first read
+does — the pages read so far are never published as the whole.
 
 ### github_ops pr wait-for-comments
 

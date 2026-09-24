@@ -137,16 +137,23 @@ identically to a routing mistake, so a verb that learns only from the POST canno
 tell the two apart. Reading the state first costs nothing on the refusal path,
 because the probe is read-only.
 
-The dedicated train endpoint still makes `enqueued: true` a **corroborated**
-claim rather than an exit-code echo: it succeeds only against a real train. The
-car read-back rides on that success and is best-effort, so `merge_train_car_id`
-may be an empty string; the corroboration rests on the endpoint, not on the id.
+**What the GitLab arm returns for `enqueued`.** The cross-provider contract is
+that `enqueued: true` means the MR's own place in the queue was observed (see
+[`pr-operations.md`](pr-operations.md) § "Workflow: Merge-Queue PR"). The GitLab
+arm reaches that value from the train endpoint's own response rather than from a
+separate membership read: the POST succeeds only against a real train, and its
+success body is the created car — the train's record of this MR. The arm returns
+`enqueued: true` on every successful POST and never returns `indeterminate`; it
+performs no read-back after the POST. The car id is taken from the response
+best-effort, so `merge_train_car_id` may be an empty string — the value rests on
+the endpoint's success, not on the id. GitLab emits none of GitHub's
+`enqueue_observation`, `enqueue_unobserved_reason` or `queue_precondition` fields.
+
 Every refusal — the pre-POST one and the endpoint's 403/404 alike — names both
 remedies: provision merge trains for the project, or stop routing through the
-queue and merge via `ci pr safe-merge`. GitLab emits no `enqueue_corroboration`
-field — that key is GitHub's, carrying its pre-enqueue base-branch probe verdict.
-The actionable-ineligible contract itself is cross-provider: GitHub refuses the
-same way when its base branch has no configured queue.
+queue and merge via `ci pr safe-merge`. The actionable-ineligible contract itself
+is cross-provider: GitHub refuses the same way when its base branch has no
+configured queue.
 
 ### Merge-shaped verbs: project-scoped preflight and state corroboration
 

@@ -82,8 +82,19 @@ _LATE_COMMENT = {
 }
 
 
+#: The account the batched self-responses below are authored by — the workflow's own
+#: identity, which the self-response stage keys on.
+_WORKFLOW_LOGIN = 'oliver'
+
+
 def _patch_provider(monkeypatch, comments):
-    """Monkeypatch the GitHub provider surface ``github_pr`` reaches through ``_github``."""
+    """Monkeypatch the GitHub provider surface ``github_pr`` reaches through ``_github``.
+
+    The workflow identity read (``get_viewer_login``) is stubbed to
+    :data:`_WORKFLOW_LOGIN` so the self-response stage runs on its identity-keyed path
+    and never shells out to a real ``gh api graphql``.
+    """
+    monkeypatch.setattr(github_pr, 'get_viewer_login', lambda: (_WORKFLOW_LOGIN, ''))
     monkeypatch.setattr(github_pr._github, 'check_auth', lambda: (True, ''))
     monkeypatch.setattr(
         github_pr._github,
@@ -121,7 +132,7 @@ def _resolve_all_pending(plan_id):
 def _self_response_comment(comment_id, anchor='c1'):
     return {
         'id': comment_id,
-        'author': 'oliver',
+        'author': _WORKFLOW_LOGIN,
         'thread_id': '',
         'kind': 'issue_comment',
         'body': github_pr._build_batched_response_body(

@@ -23,7 +23,15 @@ Pinned properties:
   ``manage-solution-outline read --section``, asserted on the CONSTRUCTED ARGV at
   the lowest subprocess primitive per the project's constructed-argv discipline —
   never by a second reader and never by a direct file read.
-* **Truncation cuts at a word boundary**, not mid-token.
+* **A reader failure is an error, never an omission.** A reader that could not be
+  run, exited non-zero, or printed an unparseable envelope — or one that is neither
+  ``status: success`` nor ``status: error`` with one of the reader's two absence
+  codes (``document_not_found`` / ``section_not_found``) — yields
+  ``error: outline_unreadable`` and exit 1, and the body is untouched. Only a read
+  that answered and found no intent may yield ``omitted: true``.
+* **Truncation cuts at a sentence or paragraph boundary**, never at the full stop
+  of an ordered-list marker, and the return reports the overflow (``overflow``,
+  ``draft_chars``, ``chars_not_shown``).
 """
 
 from __future__ import annotations
@@ -32,6 +40,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from _plan_parsing import SECTION_READ_ABSENCE_ERRORS
 
 from conftest import get_script_path, load_script_module
 
@@ -58,8 +67,14 @@ def _outline_toon(content: str) -> str:
     return f'status: success\nplan_id: p\nsection: summary\ncontent: "{content}"\n'
 
 
-def _absent_toon() -> str:
-    return 'status: error\nerror: not_found\n'
+#: The reader's absence codes — the only ``status: error`` envelopes that answer —
+#: read from the reader's own declaring source, never restated here.
+_ABSENCE_CODES = tuple(sorted(SECTION_READ_ABSENCE_ERRORS))
+assert _ABSENCE_CODES, 'the reader declares no absence codes, so the absence cases below would never run'
+
+
+def _absent_toon(code: str = 'document_not_found') -> str:
+    return f'status: error\nerror: {code}\n'
 
 
 @pytest.fixture
@@ -218,32 +233,220 @@ class TestBudgetAndTruncation:
         assert f'chars_written: {len(appended)}' in out
         assert f'budget: {BUDGET}' in out
 
-    def test_truncation_cuts_at_a_word_boundary_not_mid_token(self):
-        """A mid-token cut reads as a typo rather than as a truncation."""
-        draft = 'alpha bravo charlie delta echo foxtrot golf hotel ' * 60
-        section, truncated = pis.render_section(draft)
+    def test_a_draft_with_no_complete_sentence_in_budget_renders_only_the_marker(self):
+        """No sentence fits, so no prose is shown — never a hard cut, and never past the budget."""
+        rendered = pis.render_section('x' * 9000)
 
-        assert truncated is True
-        prose = section.split(MARKER_STEM)[0].rstrip()
-        last_word = prose.split()[-1]
-        assert last_word in draft.split(), f'{last_word!r} is a mid-token fragment'
-
-    def test_an_unbreakable_token_still_respects_the_budget(self):
-        """A hard cut is still preferable to overrunning a reserved budget."""
-        section, truncated = pis.render_section('x' * 9000)
-
-        assert truncated is True
-        assert len(section) <= BUDGET
-        assert MARKER_STEM in section
+        assert rendered.truncated is True
+        assert len(rendered.section) <= BUDGET
+        assert rendered.section == '## Intent\n\n' + pis._TRUNCATION_MARKER.format(shown=0, total=9000)
+        assert rendered.chars_not_shown == 9000
 
     def test_a_draft_exactly_at_the_boundary_is_not_falsely_marked(self):
         """Precision guard: a fitting draft must not claim to have been truncated."""
         prefix_len = len('## Intent\n\n')
-        section, truncated = pis.render_section('a' * (BUDGET - prefix_len))
+        rendered = pis.render_section('a' * (BUDGET - prefix_len))
 
-        assert truncated is False
-        assert MARKER_STEM not in section
-        assert len(section) == BUDGET
+        assert rendered.truncated is False
+        assert MARKER_STEM not in rendered.section
+        assert len(rendered.section) == BUDGET
+        assert rendered.chars_not_shown == 0
+
+
+# =============================================================================
+# Over budget: cut at a sentence, and report the overflow
+# =============================================================================
+
+#: One complete sentence, repeated to build drafts whose budget boundary falls mid-sentence.
+_SENTENCE = 'Routing keys on the comment kind so a review body reaches the right arm. '
+
+
+class TestSentenceBoundaryAndOverflow:
+    """Fail-first cases: the renderer used to cut at a word boundary, mid-sentence, and report no overflow."""
+
+    def test_an_over_budget_draft_renders_only_complete_sentences(self):
+        """The budget boundary falls mid-sentence; the rendered prose stops at the last full stop before it."""
+        draft = _SENTENCE * 40
+        body = draft.strip()
+
+        rendered = pis.render_section(draft)
+
+        prose = rendered.section[len('## Intent\n\n') :].split('\n\n' + MARKER_STEM)[0]
+        assert rendered.truncated is True
+        assert len(rendered.section) <= BUDGET
+        assert prose.endswith('.'), f'prose ends mid-sentence: {prose[-40:]!r}'
+        assert body.startswith(prose)
+        # Every rendered sentence is whole: the prose is an exact run of the sentence.
+        assert prose == (_SENTENCE * (len(prose) // len(_SENTENCE) + 1)).strip()[: len(prose)]
+        assert len(prose) % len(_SENTENCE) == len(_SENTENCE) - 1
+        # The budget really did fall mid-sentence: the room left for prose (the budget
+        # less the heading and the reserved marker) ends inside the next sentence.
+        available = BUDGET - len('## Intent\n\n')
+        prose_room = available - len(pis._TRUNCATION_MARKER.format(shown=available, total=len(body)))
+        assert len(prose) <= prose_room < len(prose) + len(_SENTENCE)
+
+    def test_the_overflow_is_reported_on_the_return(self, body_file, draft_file, capsys):
+        """The section is appended, so the return is where a caller learns what was dropped."""
+        draft = _SENTENCE * 40
+        body = draft.strip()
+        draft_file.write_text(draft, encoding='utf-8')
+        before = body_file.read_text(encoding='utf-8')
+
+        code, out, _ = _run('p', draft_file, body_file, _outline_toon('summary'), capsys)
+
+        appended = body_file.read_text(encoding='utf-8')[len(before) :].strip()
+        prose = appended[len('## Intent\n\n') :].split('\n\n' + MARKER_STEM)[0]
+        assert code == 0
+        assert 'overflow: true' in out
+        assert f'draft_chars: {len(body)}' in out
+        assert f'chars_not_shown: {len(body) - len(prose)}' in out
+        assert f'{len(prose)} of {len(body)} characters shown' in appended
+
+    def test_a_fitting_draft_reports_no_overflow(self, body_file, draft_file, capsys):
+        """Matched control: the overflow fields report a zero loss when nothing was cut."""
+        draft = _SENTENCE * 2
+        draft_file.write_text(draft, encoding='utf-8')
+
+        _code, out, _ = _run('p', draft_file, body_file, _outline_toon('summary'), capsys)
+
+        assert 'overflow: false' in out
+        assert f'draft_chars: {len(draft.strip())}' in out
+        assert 'chars_not_shown: 0' in out
+
+    def test_a_decimal_point_is_not_a_sentence_end(self):
+        """The boundary is read off the whole draft, so ``3.`` clipped by the window never ends a sentence."""
+        text = 'Alpha is one. Version 3.5 ships soon.'
+
+        assert pis._complete_sentences_within(text, len('Alpha is one. Version 3.')) == 'Alpha is one.'
+
+    @pytest.mark.parametrize(
+        'lead',
+        [f'Alpha is one. Route on one key {a}' for a in ('e.g.', 'i.e.', 'vs.', 'etc.', '...')]
+        + [f'Alpha is one. {a}' for a in ('E.g.', 'I.e.', 'Vs.', 'Etc.')],
+    )
+    def test_an_abbreviation_or_ellipsis_is_not_a_sentence_end(self, lead):
+        """A budget right after ``e.g.`` / ``i.e.`` / ``vs.`` / ``etc.`` / ``...``, in any case, does not cut there."""
+        text = f'{lead} the comment kind, not thread presence.'
+
+        assert pis._complete_sentences_within(text, len(lead)) == 'Alpha is one.'
+
+    def test_a_paragraph_without_terminal_punctuation_ends_as_a_unit(self):
+        """A bullet or heading line has no full stop; the blank line after it is its boundary."""
+        text = '- keep the batching path\n\nThe second paragraph runs well past the limit.'
+
+        assert pis._complete_sentences_within(text, 30) == '- keep the batching path'
+
+    def test_an_over_budget_draft_opening_with_a_numbered_item_renders_no_marker_fragment(self):
+        """The first item does not fit, so no prose is shown — never a bare ``1.``."""
+        rendered = pis.render_section('1. ' + 'x' * 3000)
+
+        assert rendered.section == '## Intent\n\n' + pis._TRUNCATION_MARKER.format(shown=0, total=3003)
+
+    @pytest.mark.parametrize('marker', ['2.', '12.', '  3.', '\t4.'], ids=['one-digit', 'two-digit', 'spaces', 'tab'])
+    def test_a_cut_never_ends_on_an_ordered_list_marker(self, marker):
+        """A window ending right after the next item's marker stops at the last complete item."""
+        lead = f'1. The first item is short.\n{marker}'
+        text = f'{lead} The next item runs well past the limit of the window.'
+
+        assert pis._complete_sentences_within(text, len(lead) + 1) == '1. The first item is short.'
+
+    def test_a_sentence_ending_in_a_number_is_still_a_boundary(self):
+        """Matched control: only digits alone on the line before the full stop make a marker."""
+        lead = 'It was released in 2024.'
+        text = f'{lead} The next release follows much later than planned.'
+
+        assert pis._complete_sentences_within(text, len(lead) + 3) == lead
+
+
+# =============================================================================
+# A reader failure is an error, never an omission
+# =============================================================================
+
+
+def _run_with_reader(draft: Path, body: Path, capsys, **run_kwargs):
+    """Drive ``cmd_render`` with the subprocess seam configured by ``run_kwargs``."""
+    with patch.object(pis.subprocess, 'run', **run_kwargs) as mock_run:
+        code = pis.cmd_render(_args('p', draft, body))
+    return code, capsys.readouterr().out, mock_run
+
+
+class TestReaderFailureIsAnError:
+    """Fail-first cases: each failure used to read as "no outline" and exit 0 with ``omitted: true``."""
+
+    def _assert_unreadable(self, code, out, body_file, before, cause_fragment):
+        assert code == 1
+        assert 'status: error' in out
+        assert 'error: outline_unreadable' in out
+        assert 'omitted' not in out
+        assert 'section summary' in out
+        assert cause_fragment in out
+        assert body_file.read_text(encoding='utf-8') == before, 'the body must be left untouched'
+
+    def test_a_reader_that_cannot_be_run_is_unreadable(self, body_file, draft_file, capsys):
+        draft_file.write_text('distillation', encoding='utf-8')
+        before = body_file.read_text(encoding='utf-8')
+
+        code, out, _ = _run_with_reader(draft_file, body_file, capsys, side_effect=OSError('executor missing'))
+
+        self._assert_unreadable(code, out, body_file, before, 'executor missing')
+
+    def test_a_reader_that_exits_non_zero_is_unreadable(self, body_file, draft_file, capsys):
+        draft_file.write_text('distillation', encoding='utf-8')
+        before = body_file.read_text(encoding='utf-8')
+
+        code, out, _ = _run_with_reader(draft_file, body_file, capsys, return_value=_Completed('', returncode=2))
+
+        self._assert_unreadable(code, out, body_file, before, 'reader exited 2')
+
+    def test_an_unparseable_reader_envelope_is_unreadable(self, body_file, draft_file, capsys):
+        draft_file.write_text('distillation', encoding='utf-8')
+        before = body_file.read_text(encoding='utf-8')
+
+        with patch.object(pis, 'parse_toon', side_effect=ValueError('bad envelope')):
+            code, out, _ = _run_with_reader(draft_file, body_file, capsys, return_value=_Completed('garbage'))
+
+        self._assert_unreadable(code, out, body_file, before, 'bad envelope')
+
+    @pytest.mark.parametrize(
+        'envelope',
+        [
+            'plan_id: p\nsection: summary\ncontent: "A real summary."\n',
+            'status: error\nerror: permission_denied\n',
+            'status: error\n',
+            'status: 5\n',
+        ],
+        ids=['missing-status', 'unexpected-error-code', 'error-without-code', 'non-string-status'],
+    )
+    def test_an_envelope_that_is_neither_success_nor_absence_is_unreadable(
+        self, envelope, body_file, draft_file, capsys
+    ):
+        """A ``status: error`` is an answer only when it carries one of the reader's absence codes."""
+        draft_file.write_text('distillation', encoding='utf-8')
+        before = body_file.read_text(encoding='utf-8')
+
+        code, out, _ = _run('p', draft_file, body_file, envelope, capsys)
+
+        self._assert_unreadable(code, out, body_file, before, 'neither a success nor a documented absence')
+
+    def test_the_absence_codes_are_the_readers_declared_set(self):
+        """The recognised absence codes are exactly the set the reader declares and emits through.
+
+        A hand-copied set drifts silently: a code the reader adds or renames would
+        read here as a failure and turn an omission into ``outline_unreadable``.
+        """
+        assert pis._ABSENCE_ERRORS == SECTION_READ_ABSENCE_ERRORS
+        assert pis._ABSENCE_ERRORS, 'an empty absence set would turn every absence into a failure'
+
+    @pytest.mark.parametrize('absence_code', _ABSENCE_CODES)
+    def test_a_read_that_answered_absent_still_omits(self, absence_code, body_file, draft_file, capsys):
+        """Matched control: each of the reader's absence codes is an omission, not a failure."""
+        draft_file.write_text('distillation', encoding='utf-8')
+
+        code, out, _ = _run('p', draft_file, body_file, _absent_toon(absence_code), capsys)
+
+        assert code == 0
+        assert 'omitted: true' in out
+        assert 'outline_unreadable' not in out
 
 
 # =============================================================================

@@ -160,21 +160,39 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr merge-q
 ```
 
 ⛔ **This dispatch requires an already-provisioned merge queue — it enqueues, it never
-provisions.** Both providers probe eligibility *before* the enqueue call and report
-`enqueued: true` only against a queue or train that actually exists. Every other
-eligibility value returns `status: error`, and the verb never falls back to an immediate merge —
-so on an unprovisioned repository the PR is left open and the landing cycle stops here rather
-than landing outside the queue. The **operator remedy is to provision the queue** — run
-`/marshall-steward` → Configuration → Merge Queue (the probe→ask→configure flow in
+provisions.** Both providers probe eligibility *before* the enqueue call as a
+**pre-condition**: every eligibility value other than a configured queue or train returns
+`status: error`, and the verb never falls back to an immediate merge — so on an unprovisioned
+repository the PR is left open and the landing cycle stops here rather than landing outside the
+queue. The **operator remedy is to provision the queue** — run `/marshall-steward` →
+Configuration → Merge Queue (the probe→ask→configure flow in
 [`merge-queue-setup.md`](merge-queue-setup.md)) — and then re-run the landing cycle. The error
 also names a second remedy, disabling a plan's `use_merge_queue` step param and merging via `ci
 pr safe-merge`; that one is for plan-bound callers and has no counterpart here, because the
-steward lands plan-lessly and always routes through the queue. See
-[`tools-integration-ci/standards/pr-operations.md`](../../tools-integration-ci/standards/pr-operations.md)
-§ "Workflow: Merge-Queue PR" for the corroboration contract behind both.
+steward lands plan-lessly and always routes through the queue.
 
-**(d) Switch back to the base branch and pull** so the local checkout reflects the
-merged result:
+Past the pre-condition, branch on the returned `enqueued` value:
+
+- **`enqueued: true`** — the PR's own membership in the queue was observed; it is queued, not
+  merged. Wait for the platform to land it before (d): poll
+  `ci pr view --pr-number {pr_number}` (the number `pr create` returned — never `--head`, which
+  stops resolving once the queue deletes the branch) until `state == merged`, as
+  [`phase-6-finalize/standards/branch-cleanup.md`](../../phase-6-finalize/standards/branch-cleanup.md)
+  § "Wait for the Queue Merge to Land (bounded)" does. `closed` or a read error is not a
+  landing — stop and report it to the operator.
+- **`enqueued: indeterminate`** — the enqueue call was accepted, but the PR's membership could
+  not be observed; `enqueue_unobserved_reason` names why (`membership_read_failed`,
+  `entries_incomplete`, `auto_merge_armed_awaiting_checks`, or `pr_not_listed`). Do NOT
+  continue as though the PR were queued.
+  Report the reason to the operator and have them confirm the PR's queue membership (then wait
+  for the landing as above) or that it already landed, before continuing to (d).
+
+See
+[`tools-integration-ci/standards/pr-operations.md`](../../tools-integration-ci/standards/pr-operations.md)
+§ "Workflow: Merge-Queue PR" for the pre-condition and the membership-read contract behind both.
+
+**(d) Once the PR is merged, switch back to the base branch and pull** so the local
+checkout reflects the merged result:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow switch-and-pull \

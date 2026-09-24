@@ -11,9 +11,8 @@ of truth for how a reviewer's output is counted, and two counters apply it:
 * ``.claude/skills/finalize-step-review-retrospective/scripts/review_retrospective.py``
   (the per-reviewer retrospective), project-local.
 
-They are separate implementations, so the contract's Consumers table states that a
-change to the rule must land in both. **An obligation with no mechanism is not a
-fix** — and the two were in fact already wrong in the same way, each matching the
+Each keeps its own ``_is_actionable``, so a change to the rule must reach both.
+**An obligation with no mechanism is not a fix** — and the two were in fact already wrong in the same way, each matching the
 status-summary signature against ``title``/``detail`` where the comment text never
 lives, each with a test fixture encoding that unreachable shape, so each "proved"
 a carve-out that could not fire on a real record.
@@ -110,6 +109,16 @@ _CORPUS: tuple[tuple[str, dict, bool], ...] = (
         False,
     ),
     (
+        'a status line followed by review content is actionable',
+        {
+            'author': 'coderabbitai',
+            'bot_kind': 'coderabbit',
+            'kind': 'review_body',
+            'body': 'Actionable comments posted: 1\n\nThe guard coerces UNKNOWN into a positive.',
+        },
+        True,
+    ),
+    (
         'a review that merely mentions the phrase mid-body is actionable',
         {
             'author': 'coderabbitai',
@@ -178,8 +187,7 @@ def test_both_implementations_agree_on_every_corpus_record():
     """One rule, two counters, one answer per record.
 
     A divergence here means the two are reporting different numbers over the same
-    findings store — which is exactly what the contract's "must land in both"
-    sentence asks for and, on its own, cannot enforce.
+    findings store.
     """
     disagreements = [
         (label, delta._is_actionable(record), retro._is_actionable(record))

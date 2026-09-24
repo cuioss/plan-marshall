@@ -139,6 +139,191 @@ def test_a_bot_declaring_no_summary_pattern_keeps_every_review_body():
     )
 
 
+def test_a_status_line_followed_by_review_content_is_counted():
+    """Strip-then-classify: review content BELOW the status line makes the body substantive.
+
+    Fail-first case: the begins-with rule classified the whole body by its opening
+    line, so a genuine review that opens with ``Actionable comments posted: N`` and
+    carries its findings below was dropped from the escape count — the direction
+    that flatters the gates.
+    """
+    from review_gate_delta import is_status_summary
+
+    record = {
+        'hash_id': 'status-plus-review',
+        'bot_kind': 'coderabbit',
+        'kind': 'review_body',
+        'author': 'coderabbitai',
+        'body': (
+            '**Actionable comments posted: 1**\n\n'
+            'The guard coerces UNKNOWN into a positive; check the sign before the comparison.\n\n'
+            '<details>\n<summary>Review details</summary>\nconfiguration\n</details>'
+        ),
+    }
+
+    assert not is_status_summary(record)
+
+    result = assess_delta(
+        findings=[record],
+        enabled_bots=_ROSTER,
+        reviewed_bots=list(_ROSTER),
+        gates_green=True,
+        gate_head_sha=_SHA,
+        reviewed_head_sha=_SHA,
+        partitions={'status-plus-review': PARTITION_GATE_STRUCTURAL},
+    )
+
+    assert result['escapes_total'] == 1
+
+
+def test_a_pure_status_summary_with_nested_details_and_layout_stays_meta():
+    """Matched control: the status line, nested collapsed blocks and layout only — still meta.
+
+    Nested ``<details>`` peel from the inside out, and an HTML comment or a separator
+    rule is layout, not a review claim, so none of them makes the summary substantive.
+    """
+    from review_gate_delta import is_status_summary
+
+    body = (
+        '**Actionable comments posted: 3**\n\n'
+        '<details>\n<summary>Nitpick comments (2)</summary><blockquote>\n'
+        '<details>\n<summary>src/a.py (1)</summary>\nrename the helper\n</details>\n'
+        '</blockquote></details>\n\n'
+        '<!-- This is an auto-generated comment by CodeRabbit -->\n\n'
+        '---'
+    )
+
+    assert is_status_summary({'bot_kind': 'coderabbit', 'kind': 'review_body', 'body': body})
+
+
+_STATUS_LINE = '**Actionable comments posted: 1**\n\n'
+
+
+@pytest.mark.parametrize(
+    'below_status_line',
+    [
+        '<details open><summary>Finding</summary>Fix the guard</details>',
+        '<details open=""><summary>Finding</summary>Fix the guard</details>',
+        '<details open="open"><summary>Finding</summary>Fix the guard</details>',
+        '<DETAILS class="review" OPEN>\nFix the guard\n</DETAILS>',
+        (
+            '<details open><summary>Finding</summary>Fix the guard\n'
+            '<details><summary>Review details</summary>configuration</details>\n'
+            '</details>'
+        ),
+    ],
+    ids=[
+        'bare-open-attribute',
+        'empty-valued-open-attribute',
+        'self-valued-open-attribute',
+        'uppercase-open-attribute-after-another-attribute',
+        'collapsed-block-nested-inside-an-open-block',
+    ],
+)
+def test_an_open_details_block_below_the_status_line_is_review_content(below_status_line):
+    """An open block is displayed, so its content is classified rather than removed.
+
+    ``open`` is an HTML boolean attribute: its presence alone expands the block. A
+    collapsed block nested inside an open one is still removed, but the open block's
+    own text remains and makes the body a counted ``review_body``.
+    """
+    from review_gate_delta import _is_actionable, is_status_summary
+
+    record = {'bot_kind': 'coderabbit', 'kind': 'review_body', 'body': _STATUS_LINE + below_status_line}
+
+    assert not is_status_summary(record)
+    assert _is_actionable(record)
+
+
+@pytest.mark.parametrize(
+    'below_status_line',
+    [
+        '<details><summary>Review details</summary>configuration</details>',
+        '<details class="open"><summary>Review details</summary>configuration</details>',
+        '<details data-open="true"><summary>Review details</summary>configuration</details>',
+        '<details><summary>Outer</summary><details open><summary>Inner</summary>text</details></details>',
+        '<details open></details>\n<details open><summary></summary></details>',
+    ],
+    ids=[
+        'collapsed-block',
+        'open-only-inside-a-quoted-attribute-value',
+        'attribute-name-merely-ending-in-open',
+        'open-block-nested-inside-a-collapsed-block',
+        'open-blocks-carrying-only-markup',
+    ],
+)
+def test_collapsed_details_and_empty_open_blocks_below_the_status_line_stay_meta(below_status_line):
+    """Matched control: nothing a reader sees below the status line carries text.
+
+    A collapsed block is removed whole — including an open block nested inside it —
+    an ``open`` token that is not the attribute name does not expand the block, and
+    an open block holding only tags contributes no letter or digit.
+    """
+    from review_gate_delta import is_status_summary
+
+    record = {'bot_kind': 'coderabbit', 'kind': 'review_body', 'body': _STATUS_LINE + below_status_line}
+
+    assert is_status_summary(record)
+
+
+_LITERAL_DETAILS = '<details>Fix authorization</details>'
+
+
+@pytest.mark.parametrize(
+    'below_status_line',
+    [
+        f'```\n{_LITERAL_DETAILS}\n```',
+        f'~~~\n{_LITERAL_DETAILS}\n~~~',
+        f'`{_LITERAL_DETAILS}`',
+        f'\n\n    {_LITERAL_DETAILS}\n',
+        f'<details><summary>Review details</summary>configuration</details>\n\n```\n{_LITERAL_DETAILS}\n```',
+    ],
+    ids=[
+        'backtick-fenced-block-holding-a-literal-details-element',
+        'tilde-fenced-block-holding-a-literal-details-element',
+        'inline-code-span-holding-a-literal-details-element',
+        'indented-code-block-holding-a-literal-details-element',
+        'collapsed-block-outside-code-plus-a-fenced-example',
+    ],
+)
+def test_a_literal_details_element_inside_markdown_code_is_review_content(below_status_line):
+    """Markdown code is text, not markup: a ``<details>`` written inside code is not peeled.
+
+    A reader sees the code example, so a status-prefixed body whose only visible
+    finding is that example is a counted ``review_body``, not a status summary. A
+    collapsed block outside the code is still removed, and the example alone keeps
+    the body substantive.
+    """
+    from review_gate_delta import _is_actionable, is_status_summary
+
+    record = {'bot_kind': 'coderabbit', 'kind': 'review_body', 'body': _STATUS_LINE + below_status_line}
+
+    assert not is_status_summary(record)
+    assert _is_actionable(record)
+
+
+@pytest.mark.parametrize(
+    'below_status_line',
+    [
+        f'<details><summary>Review details</summary>\n\n```\n{_LITERAL_DETAILS}\n```\n</details>',
+        '<details><summary>Review details</summary>`example`</details>',
+        '```\n```',
+    ],
+    ids=[
+        'fenced-block-inside-a-collapsed-block',
+        'inline-code-span-inside-a-collapsed-block',
+        'empty-fenced-block',
+    ],
+)
+def test_markdown_code_a_reader_does_not_see_stays_meta(below_status_line):
+    """Matched control: code inside a collapsed block goes with the block, and empty code carries no text."""
+    from review_gate_delta import is_status_summary
+
+    record = {'bot_kind': 'coderabbit', 'kind': 'review_body', 'body': _STATUS_LINE + below_status_line}
+
+    assert is_status_summary(record)
+
+
 def test_a_substantive_review_body_from_another_author_is_still_an_escape():
     """The carve-out is gated on the author AND the signature — not on the kind.
 

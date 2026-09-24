@@ -95,6 +95,8 @@ import os
 import re
 import sys
 import tempfile
+from collections.abc import Callable
+from functools import partial
 from typing import Any
 from urllib.parse import quote
 
@@ -409,51 +411,233 @@ def _extract_merge_commit_sha(data: dict) -> str | None:
     return oid.strip()
 
 
-# GraphQL query for PR review threads (inline), review submission bodies, and issue-level comments
-REVIEW_THREADS_QUERY = """
-query($owner: String!, $repo: String!, $pr: Int!) {
-  repository(owner: $owner, name: $repo) {
-    pullRequest(number: $pr) {
-      reviewThreads(first: 100) {
-        nodes {
+# Page sizes of the comment fetch's connections. Each is the size of ONE page, never
+# a ceiling on the population: every connection is paginated by cursor until the
+# provider reports ``hasNextPage: false``. Raising a literal here would only move the
+# cliff a single unpaginated read used to fall off — the population is made whole by
+# pagination, and whatever pagination cannot establish is REPORTED per connection.
+_COMMENT_CONNECTION_PAGE_SIZE = 100
+_THREAD_COMMENT_FIRST_PAGE_SIZE = 10
+
+# The four connections of the comment fetch, named as they appear in its coverage
+# records (``connections[].connection``). ``reviewThreads.comments`` is the per-thread
+# comment connection, aggregated over every thread the fetch publishes comments from.
+CONNECTION_REVIEW_THREADS = 'reviewThreads'
+CONNECTION_THREAD_COMMENTS = 'reviewThreads.comments'
+CONNECTION_REVIEWS = 'reviews'
+CONNECTION_ISSUE_COMMENTS = 'comments'
+
+# Node selections, shared by the first-page query and the per-connection follow-up
+# queries so a page read after the first can never select fewer fields than the
+# first one did.
+_COMMENT_NODE_FIELDS = """
           id
-          isResolved
-          path
-          line
-          comments(first: 10) {
-            nodes {
-              id
-              body
-              author { login }
-              createdAt
-              updatedAt
-            }
-          }
-        }
-      }
-      reviews(first: 100) {
-        nodes {
+          body
+          author { login }
+          createdAt
+          updatedAt"""
+
+_REVIEW_NODE_FIELDS = """
           id
           state
           body
           author { login }
           submittedAt
-          updatedAt
-        }
-      }
-      comments(first: 100) {
-        nodes {
+          updatedAt"""
+
+_PAGE_INFO_FIELDS = """
+        totalCount
+        pageInfo { hasNextPage endCursor }"""
+
+_THREAD_NODE_FIELDS = f"""
           id
-          body
-          author { login }
-          createdAt
-          updatedAt
-        }
-      }
-    }
-  }
-}
+          isResolved
+          path
+          line
+          comments(first: {_THREAD_COMMENT_FIRST_PAGE_SIZE}) {{{_PAGE_INFO_FIELDS}
+            nodes {{{_COMMENT_NODE_FIELDS}
+            }}
+          }}"""
+
+# GraphQL query for the FIRST page of PR review threads (inline), review submission
+# bodies, and issue-level comments. Every connection selects ``totalCount`` and
+# ``pageInfo`` so the fetch can tell a complete population from a clipped one.
+REVIEW_THREADS_QUERY = f"""
+query($owner: String!, $repo: String!, $pr: Int!) {{
+  repository(owner: $owner, name: $repo) {{
+    pullRequest(number: $pr) {{
+      reviewThreads(first: {_COMMENT_CONNECTION_PAGE_SIZE}) {{{_PAGE_INFO_FIELDS}
+        nodes {{{_THREAD_NODE_FIELDS}
+        }}
+      }}
+      reviews(first: {_COMMENT_CONNECTION_PAGE_SIZE}) {{{_PAGE_INFO_FIELDS}
+        nodes {{{_REVIEW_NODE_FIELDS}
+        }}
+      }}
+      comments(first: {_COMMENT_CONNECTION_PAGE_SIZE}) {{{_PAGE_INFO_FIELDS}
+        nodes {{{_COMMENT_NODE_FIELDS}
+        }}
+      }}
+    }}
+  }}
+}}
 """
+
+# Follow-up page queries: one per connection, each resuming from the cursor the
+# previous page ended on. A connection already exhausted is never re-read.
+REVIEW_THREADS_PAGE_QUERY = f"""
+query($owner: String!, $repo: String!, $pr: Int!, $cursor: String!) {{
+  repository(owner: $owner, name: $repo) {{
+    pullRequest(number: $pr) {{
+      reviewThreads(first: {_COMMENT_CONNECTION_PAGE_SIZE}, after: $cursor) {{{_PAGE_INFO_FIELDS}
+        nodes {{{_THREAD_NODE_FIELDS}
+        }}
+      }}
+    }}
+  }}
+}}
+"""
+
+REVIEWS_PAGE_QUERY = f"""
+query($owner: String!, $repo: String!, $pr: Int!, $cursor: String!) {{
+  repository(owner: $owner, name: $repo) {{
+    pullRequest(number: $pr) {{
+      reviews(first: {_COMMENT_CONNECTION_PAGE_SIZE}, after: $cursor) {{{_PAGE_INFO_FIELDS}
+        nodes {{{_REVIEW_NODE_FIELDS}
+        }}
+      }}
+    }}
+  }}
+}}
+"""
+
+ISSUE_COMMENTS_PAGE_QUERY = f"""
+query($owner: String!, $repo: String!, $pr: Int!, $cursor: String!) {{
+  repository(owner: $owner, name: $repo) {{
+    pullRequest(number: $pr) {{
+      comments(first: {_COMMENT_CONNECTION_PAGE_SIZE}, after: $cursor) {{{_PAGE_INFO_FIELDS}
+        nodes {{{_COMMENT_NODE_FIELDS}
+        }}
+      }}
+    }}
+  }}
+}}
+"""
+
+THREAD_COMMENTS_PAGE_QUERY = f"""
+query($thread: ID!, $cursor: String!) {{
+  node(id: $thread) {{
+    ... on PullRequestReviewThread {{
+      comments(first: {_COMMENT_CONNECTION_PAGE_SIZE}, after: $cursor) {{{_PAGE_INFO_FIELDS}
+        nodes {{{_COMMENT_NODE_FIELDS}
+        }}
+      }}
+    }}
+  }}
+}}
+"""
+
+
+def _pull_request_connection(data: dict, connection: str) -> dict | None:
+    """Return ``repository.pullRequest.{connection}`` from a page-query response."""
+    return ((data.get('repository') or {}).get('pullRequest') or {}).get(connection)
+
+
+def _thread_comment_connection(data: dict) -> dict | None:
+    """Return ``node.comments`` from a per-thread page-query response."""
+    return (data.get('node') or {}).get('comments')
+
+
+def _drain_connection(
+    first_page: dict | None,
+    page_query: str,
+    variables: dict,
+    extract: Callable[[dict], dict | None],
+    can_follow: bool = True,
+) -> tuple[list, bool, int | None, str | None]:
+    """Collect every node of one connection by following its cursor to exhaustion.
+
+    ``first_page`` is the connection object the first query returned; each further
+    page is read with ``page_query`` (``variables`` plus the ``cursor`` the previous
+    page ended on) and located in the response by ``extract``. ``can_follow`` is
+    False when the follow-up query cannot be addressed at all (a thread carrying no
+    id), in which case only the first page is collected.
+
+    Returns ``(nodes, exhausted, total, error)``:
+
+    - ``exhausted`` is True only when the LAST page read reported
+      ``hasNextPage: false`` in so many words. A page carrying no ``pageInfo``, a
+      ``hasNextPage: true`` with no cursor to continue from or no addressable
+      follow-up query, and a cursor that does not advance all leave it False — none
+      of them proves the population whole.
+    - ``total`` is the provider's ``totalCount`` from the first page, or ``None``
+      when the provider reported none.
+    - ``error`` is set when a follow-up page read failed; the caller surfaces it as
+      a failed fetch rather than publishing the pages read so far as the whole.
+    """
+    connection = first_page if isinstance(first_page, dict) else {}
+    nodes: list = list(connection.get('nodes') or [])
+    raw_total = connection.get('totalCount')
+    total = raw_total if isinstance(raw_total, int) and not isinstance(raw_total, bool) else None
+    page_info = connection.get('pageInfo') or {}
+    has_next = page_info.get('hasNextPage')
+    cursor = page_info.get('endCursor')
+
+    while has_next is True:
+        if not cursor or not can_follow:
+            return nodes, False, total, None
+        returncode, data, err = run_graphql(page_query, {**variables, 'cursor': cursor})
+        if returncode != 0 or data is None:
+            return nodes, False, total, f'GraphQL page query failed: {err}'
+        page = extract(data)
+        page = page if isinstance(page, dict) else {}
+        nodes.extend(page.get('nodes') or [])
+        page_info = page.get('pageInfo') or {}
+        next_cursor = page_info.get('endCursor')
+        has_next = page_info.get('hasNextPage')
+        if has_next is True and next_cursor == cursor:
+            return nodes, False, total, None
+        cursor = next_cursor
+
+    return nodes, has_next is False, total, None
+
+
+def _coverage_record(connection: str, observed: int, cap: int, total: int | None, exhausted: bool) -> dict:
+    """Build one ``connections[]`` coverage record of the comment fetch.
+
+    ``capped`` is True whenever the observed population is not PROVEN whole: the
+    connection was not read to ``hasNextPage: false``, or the provider's own
+    ``totalCount`` exceeds what was observed. ``cap`` is the first page's size — the
+    cliff a single unpaginated read would have silently fallen off.
+    """
+    capped = not exhausted or (total is not None and observed < total)
+    return {'connection': connection, 'observed': observed, 'cap': cap, 'total': total, 'capped': capped}
+
+
+def flatten_comment_body(body: str) -> str:
+    """Return ``body`` on one line: every tab and newline replaced by a space.
+
+    The DISPLAY form of a comment body — what ``pr comments`` prints, so each comment
+    stays one row of the output table. It is also the form the filing dedup's
+    body-digest edit term is computed over, so a stored comment's key does not move
+    with the line structure the data path now preserves.
+    """
+    return body.replace('\t', ' ').replace('\n', ' ')
+
+
+def flatten_comment_bodies(result: dict) -> dict:
+    """Return a ``fetch_pr_comments_data`` result whose comment bodies are display-flattened.
+
+    The input is not mutated; a non-success result is returned unchanged.
+    """
+    if result.get('status') != 'success':
+        return result
+    flattened = dict(result)
+    flattened['comments'] = [
+        {**comment, 'body': flatten_comment_body(str(comment.get('body') or ''))}
+        for comment in result.get('comments') or []
+    ]
+    return flattened
 
 
 def fetch_pr_comments_data(pr_number: int, unresolved_only: bool = False) -> dict:
@@ -462,6 +646,11 @@ def fetch_pr_comments_data(pr_number: int, unresolved_only: bool = False) -> dic
     Returns dict with 'status' key ('success' or 'error').
     Importable by other scripts for direct data access without subprocess.
 
+    Each record's ``body`` is the text the provider returned, line structure intact —
+    a producer classifying the comment reads structure (a blockquoted line, a fenced
+    block) that flattening would destroy. The display path flattens it
+    (:func:`flatten_comment_bodies`).
+
     Every record kind (``inline`` / ``review_body`` / ``issue_comment``) carries
     ``updated_at`` beside ``created_at`` — the edit timestamp the provider
     reported, or an empty string when the provider genuinely returned none. It is
@@ -469,6 +658,16 @@ def fetch_pr_comments_data(pr_number: int, unresolved_only: bool = False) -> dic
     reposted — visible as fresh activity to a consumer comparing against a
     trigger time; a ``created_at``-only comparison would silently report no new
     activity from the second edit onward.
+
+    **Coverage.** Every connection — ``reviewThreads``, each thread's ``comments``,
+    ``reviews`` and the issue-level ``comments`` — is paginated by cursor to
+    completion, so the page size is never a silent ceiling on the population. The
+    result reports what was established per connection in ``connections`` (one
+    ``{connection, observed, cap, total, capped}`` record each; the per-thread
+    comment connection is aggregated over the threads whose comments are published)
+    and ``complete``, which is True only when no connection is ``capped``. A clipped
+    population is therefore never published as a complete one. A failed follow-up
+    page read fails the whole fetch, exactly as a failed first read does.
     """
     # Check auth
     is_auth, err = check_auth()
@@ -481,7 +680,8 @@ def fetch_pr_comments_data(pr_number: int, unresolved_only: bool = False) -> dic
         return {'status': 'error', 'operation': 'pr_comments', 'error': 'Could not determine repository owner/name'}
 
     # Run GraphQL query
-    returncode, data, err = run_graphql(REVIEW_THREADS_QUERY, {'owner': owner, 'repo': repo, 'pr': pr_number})
+    variables = {'owner': owner, 'repo': repo, 'pr': pr_number}
+    returncode, data, err = run_graphql(REVIEW_THREADS_QUERY, variables)
     if returncode != 0 or data is None:
         return {'status': 'error', 'operation': 'pr_comments', 'error': f'GraphQL query failed: {err}'}
 
@@ -489,11 +689,34 @@ def fetch_pr_comments_data(pr_number: int, unresolved_only: bool = False) -> dic
     # The entire parsing block is wrapped so any malformed node (non-dict, null nested field)
     # is caught and surfaced as a structured error rather than crashing the caller.
     comments: list[dict] = []
+    connections: list[dict] = []
     try:
         pull_request = (data.get('repository') or {}).get('pullRequest') or {}
-        threads = (pull_request.get('reviewThreads') or {}).get('nodes') or []
-        reviews = (pull_request.get('reviews') or {}).get('nodes') or []
-        issue_comments = (pull_request.get('comments') or {}).get('nodes') or []
+        drained: dict[str, tuple[list, bool, int | None]] = {}
+        for connection, page_query in (
+            (CONNECTION_REVIEW_THREADS, REVIEW_THREADS_PAGE_QUERY),
+            (CONNECTION_REVIEWS, REVIEWS_PAGE_QUERY),
+            (CONNECTION_ISSUE_COMMENTS, ISSUE_COMMENTS_PAGE_QUERY),
+        ):
+            nodes, exhausted, total, page_err = _drain_connection(
+                pull_request.get(connection),
+                page_query,
+                variables,
+                partial(_pull_request_connection, connection=connection),
+            )
+            if page_err is not None:
+                return {'status': 'error', 'operation': 'pr_comments', 'error': page_err}
+            drained[connection] = (nodes, exhausted, total)
+
+        threads = drained[CONNECTION_REVIEW_THREADS][0]
+        reviews = drained[CONNECTION_REVIEWS][0]
+        issue_comments = drained[CONNECTION_ISSUE_COMMENTS][0]
+
+        # Aggregate coverage of the per-thread comment connections of every thread
+        # whose comments are published by this fetch.
+        thread_comments_observed = 0
+        thread_comments_total: int | None = 0
+        thread_comments_exhausted = True
 
         # 1. Inline review thread comments
         for thread in threads:
@@ -509,7 +732,19 @@ def fetch_pr_comments_data(pr_number: int, unresolved_only: bool = False) -> dic
             line = thread.get('line') or 0
             thread_id = thread.get('id') or ''
 
-            thread_comments = (thread.get('comments') or {}).get('nodes') or []
+            thread_comments, comments_exhausted, comments_total, page_err = _drain_connection(
+                thread.get('comments'),
+                THREAD_COMMENTS_PAGE_QUERY,
+                {'thread': thread_id},
+                _thread_comment_connection,
+                can_follow=bool(thread_id),
+            )
+            if page_err is not None:
+                return {'status': 'error', 'operation': 'pr_comments', 'error': page_err}
+            thread_comments_observed += len(thread_comments)
+            thread_comments_exhausted = thread_comments_exhausted and comments_exhausted
+            if thread_comments_total is not None:
+                thread_comments_total = None if comments_total is None else thread_comments_total + comments_total
             for comment in thread_comments:
                 if not isinstance(comment, dict):
                     continue
@@ -571,10 +806,30 @@ def fetch_pr_comments_data(pr_number: int, unresolved_only: bool = False) -> dic
                     'thread_id': '',
                 }
             )
+
+        def _top_level_record(connection: str) -> dict:
+            nodes, exhausted, total = drained[connection]
+            return _coverage_record(connection, len(nodes), _COMMENT_CONNECTION_PAGE_SIZE, total, exhausted)
+
+        connections = [
+            _top_level_record(CONNECTION_REVIEW_THREADS),
+            _coverage_record(
+                CONNECTION_THREAD_COMMENTS,
+                thread_comments_observed,
+                _THREAD_COMMENT_FIRST_PAGE_SIZE,
+                thread_comments_total,
+                thread_comments_exhausted,
+            ),
+            _top_level_record(CONNECTION_REVIEWS),
+            _top_level_record(CONNECTION_ISSUE_COMMENTS),
+        ]
     except (TypeError, AttributeError) as e:
         return {'status': 'error', 'operation': 'pr_comments', 'error': f'Failed to parse response: {e}'}
 
-    # Build result
+    # Build result. The body keeps its line structure: a producer classifying the
+    # comment needs it (a blockquote is only recognisable at the start of a line).
+    # Flattening is a DISPLAY concern and happens on the display path only
+    # (``flatten_comment_body``).
     unresolved_count = sum(1 for c in comments if not c['resolved'])
     comment_list = [
         {
@@ -582,7 +837,7 @@ def fetch_pr_comments_data(pr_number: int, unresolved_only: bool = False) -> dic
             'id': c['id'],
             'thread_id': c['thread_id'],
             'author': c['author'],
-            'body': c['body'].replace('\t', ' ').replace('\n', ' '),
+            'body': c['body'],
             'path': c['path'],
             'line': c['line'],
             'resolved': c['resolved'],
@@ -598,6 +853,8 @@ def fetch_pr_comments_data(pr_number: int, unresolved_only: bool = False) -> dic
         'pr_number': pr_number,
         'total': len(comments),
         'unresolved': unresolved_count,
+        'complete': not any(record['capped'] for record in connections),
+        'connections': connections,
         'comments': comment_list,
     }
 
