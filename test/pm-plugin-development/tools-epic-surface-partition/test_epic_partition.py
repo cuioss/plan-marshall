@@ -32,15 +32,22 @@ real orchestrator store and the real ``test/`` tree are neither read nor written
 
 from __future__ import annotations
 
-import json
 import re
+from collections.abc import Callable
 from pathlib import Path
 
 # PLAIN import, deliberately: the annotations below name ``partition_mod.Partition``,
 # and only a plain import gives mypy the real module — the shared loader returns
 # ``Any``, which turns every such annotation into an undefined name.
 import _epic_partition as partition_mod
+import _orchestrator_ledger as ledger_mod
 import pytest
+from _partition_ledger_fixtures import (
+    write_ledger,
+    write_legacy_ledger,
+    write_raw_header,
+    write_raw_row,
+)
 from epic_spec_parser import (
     KIND_DIRECTORY,
     KIND_FILE,
@@ -1005,11 +1012,12 @@ def test_a_genuine_two_slice_overlap_is_still_reported_as_contested(residual_rep
 # else — which is what a plan-id list, the mechanism this input must never
 # degenerate into, could not produce.
 
-#: The ledger filename and its two row keys, written as literals: they ARE the
-#: external contract this module reads, so a rename must surface here as a
-#: failing assertion rather than travel silently through an import.
+#: The ledger header's filename, written as a literal: it is the path the
+#: lifecycle block reports as ``ledger_path``, so a rename must surface here as a
+#: failing assertion rather than travel silently through an import. Every ledger
+#: below is seeded through the per-concern layout owner's own writers (see
+#: ``_partition_ledger_fixtures``), never by hand-writing a queue into this file.
 _LEDGER_FILE = 'status.json'
-_LEDGER_QUEUE_KEY = 'plans'
 
 #: Two ordinary slice plans claiming the SAME directory.
 _RIVAL_SPECS = {
@@ -1019,15 +1027,6 @@ _RIVAL_SPECS = {
 _RIVAL_MODULE = 'test/beta/test_three.py'
 _RIVAL_ONE = 'PLAN-RIVAL-10'
 _RIVAL_TWO = 'PLAN-RIVAL-20'
-
-
-def write_ledger(epic_dir: Path, rows: dict[str, str]) -> Path:
-    """Write an epic ledger carrying one queue row per ``plan_id -> status``."""
-    epic_dir.mkdir(parents=True, exist_ok=True)
-    path = epic_dir / _LEDGER_FILE
-    payload = {_LEDGER_QUEUE_KEY: [{'id': pid, 'status': st} for pid, st in rows.items()]}
-    path.write_text(json.dumps(payload), encoding='utf-8')
-    return path
 
 
 def rival_world(tmp_path: Path, name: str) -> tuple[Path, Path]:
@@ -1224,10 +1223,7 @@ def test_an_unknown_status_raises_rather_than_defaulting(tmp_path: Path) -> None
 def test_a_non_string_status_is_also_refused_by_name(tmp_path: Path) -> None:
     """A row whose status is not even a token is an unknown status, not a gap."""
     epic_dir = tmp_path / 'epic_nonstring'
-    epic_dir.mkdir()
-    (epic_dir / _LEDGER_FILE).write_text(
-        json.dumps({_LEDGER_QUEUE_KEY: [{'id': _RIVAL_ONE, 'status': None}]}), encoding='utf-8'
-    )
+    write_ledger(epic_dir, {_RIVAL_ONE: None})
 
     with pytest.raises(partition_mod.UnknownPlanStatusError) as raised:
         partition_mod.read_plan_lifecycle(epic_dir)
@@ -1239,22 +1235,75 @@ def test_a_non_string_status_is_also_refused_by_name(tmp_path: Path) -> None:
 # --- a ledger that cannot be read degrades, and SAYS so ----------------------
 
 
+def _seed_nothing(epic_dir: Path) -> None:
+    """No header at all — the epic has never had a ledger."""
+
+
+def _seed_unparseable_header(epic_dir: Path) -> None:
+    write_raw_header(epic_dir, '{not json at all')
+
+
+def _seed_header_not_an_object(epic_dir: Path) -> None:
+    write_raw_header(epic_dir, '["not an object"]')
+
+
+def _seed_unparseable_row(epic_dir: Path) -> None:
+    """A readable header and live row beside a row file that does not parse.
+
+    The unreadable row is the FINISHED rival's, so a reader that dropped it and
+    carried on would still read a clean ledger — just one missing the row whose
+    status decides the contest.
+    """
+    write_ledger(epic_dir, {_RIVAL_TWO: 'staged'})
+    write_raw_row(epic_dir, _RIVAL_ONE, '{not json at all')
+
+
+def _seed_row_not_an_object(epic_dir: Path) -> None:
+    write_ledger(epic_dir, {_RIVAL_TWO: 'staged'})
+    write_raw_row(epic_dir, _RIVAL_ONE, '["not an object"]')
+
+
+def _seed_row_without_a_plan_id(epic_dir: Path) -> None:
+    write_ledger(epic_dir, {})
+    write_raw_row(epic_dir, _RIVAL_ONE, '{"status": "landed"}')
+
+
+def _seed_legacy_layout(epic_dir: Path) -> None:
+    """⛔ The ONE monolithic-layout fixture: ``status.json`` carrying ``plans[]``.
+
+    It records a finished rival and a live one, so a reader that fell back to
+    reading the legacy queue would retire a claim — which is exactly what the
+    refusal must prevent. An unmigrated ledger is refused, never read.
+    """
+    write_legacy_ledger(epic_dir, {_RIVAL_ONE: 'landed', _RIVAL_TWO: 'staged'})
+
+
 @pytest.fixture(
     params=[
-        (None, partition_mod.DEGRADED_LEDGER_ABSENT),
-        ('{not json at all', partition_mod.DEGRADED_LEDGER_UNREADABLE),
-        ('{"plans": "not a list"}', partition_mod.DEGRADED_LEDGER_MALFORMED),
-        ('{"plans": [{"status": "landed"}]}', partition_mod.DEGRADED_LEDGER_MALFORMED),
-        ('["not an object"]', partition_mod.DEGRADED_LEDGER_MALFORMED),
+        (_seed_nothing, partition_mod.DEGRADED_LEDGER_ABSENT),
+        (_seed_unparseable_header, partition_mod.DEGRADED_LEDGER_UNREADABLE),
+        (_seed_header_not_an_object, partition_mod.DEGRADED_LEDGER_UNREADABLE),
+        (_seed_unparseable_row, partition_mod.DEGRADED_LEDGER_UNREADABLE),
+        (_seed_row_not_an_object, partition_mod.DEGRADED_LEDGER_UNREADABLE),
+        (_seed_row_without_a_plan_id, partition_mod.DEGRADED_LEDGER_MALFORMED),
+        (_seed_legacy_layout, partition_mod.DEGRADED_LEDGER_LEGACY_LAYOUT),
     ],
-    ids=['absent', 'unreadable', 'queue_not_a_list', 'row_without_a_plan_id', 'not_an_object'],
+    ids=[
+        'absent',
+        'header_unparseable',
+        'header_not_an_object',
+        'row_file_unparseable',
+        'row_file_not_an_object',
+        'row_without_a_plan_id',
+        'legacy_layout',
+    ],
 )
 def unusable_ledger(request, tmp_path: Path) -> tuple[Path, str]:
-    body, reason = request.param
+    seed: Callable[[Path], None]
+    seed, reason = request.param
     epic_dir = tmp_path / 'epic_degraded'
     epic_dir.mkdir()
-    if body is not None:
-        (epic_dir / _LEDGER_FILE).write_text(body, encoding='utf-8')
+    seed(epic_dir)
     return epic_dir, reason
 
 
@@ -1298,6 +1347,31 @@ def test_an_empty_queue_is_a_read_ledger_not_a_degraded_one(tmp_path: Path) -> N
     assert lifecycle.available is True
     assert lifecycle.degradation == ''
     assert lifecycle.terminal_plans() == frozenset()
+
+
+def test_an_unmigrated_ledger_reads_once_it_is_converted(repo: Path, tmp_path: Path) -> None:
+    """The legacy refusal is a refusal of the LAYOUT, not of the ledger's content.
+
+    The same rows, refused in the monolithic layout, are read — and retire the
+    finished rival's claim — once the layout owner has converted them. Without
+    this matched half, a reader that refused every ledger would pass the legacy
+    control above while never reading a real one.
+    """
+    plans, epic_dir = rival_world(tmp_path, 'converted')
+    write_legacy_ledger(epic_dir, {_RIVAL_ONE: 'landed', _RIVAL_TWO: 'staged'})
+    refused = partition_mod.read_plan_lifecycle(epic_dir)
+    _, header, _ = ledger_mod.read_header(epic_dir)
+    migrated = ledger_mod.migrate_document(header)
+    ledger_mod.write_layout(epic_dir, migrated.header, migrated.anchor, migrated.rows)
+
+    lifecycle, result = rival_partition(repo, plans, epic_dir)
+
+    assert refused.degradation == partition_mod.DEGRADED_LEDGER_LEGACY_LAYOUT
+    assert migrated.rejected_rows == ()
+    assert lifecycle.available is True
+    assert lifecycle.terminal_plans() == frozenset({_RIVAL_ONE})
+    assert plans_of(result, _RIVAL_MODULE) == (_RIVAL_TWO,)
+    assert retired_of(result, _RIVAL_MODULE) == (_RIVAL_ONE,)
 
 
 # --- the ten observed contested shapes, end to end ---------------------------

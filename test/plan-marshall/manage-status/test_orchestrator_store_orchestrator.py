@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for the manage-status orchestrator store (kind=orchestrator, D5).
+"""Tests for the manage-status orchestrator store (kind=orchestrator epic ledger).
 
 Its sections, in order:
 
@@ -8,19 +8,38 @@ Its sections, in order:
 * Read
 * update-field
 * Metadata
+* Legacy layout refusal
 """
 
 import json
 from argparse import Namespace
 
+import pytest
 from _orchestrator_store_fixtures import (
+    _core,
     _create_args,
+    _legacy_document,
+    _orchestrator_anchor_file,
+    _orchestrator_queue_dir,
+    _orchestrator_root,
     _orchestrator_status_file,
+    _read_header,
+    _row,
+    _seed_ledger,
+    _write_legacy,
     cmd_orchestrator_create,
     cmd_orchestrator_metadata,
     cmd_orchestrator_read,
     cmd_orchestrator_update_field,
 )
+
+#: One valid ``--value`` per updatable field, paired with the value the assembled
+#: ledger must then carry. Each differs from what ``create`` writes.
+_SWEEP_VALUES = {
+    'phase': ('closed', 'closed'),
+    'resume_anchor': ('run decompose next', 'run decompose next'),
+    'workstreams': ('["WS-09"]', ['WS-09']),
+}
 
 # =============================================================================
 # Create
@@ -28,21 +47,24 @@ from _orchestrator_store_fixtures import (
 
 
 class TestOrchestratorCreate:
-    def test_should_create_status_with_orchestrator_schema(self, plan_context):
+    def test_should_create_header_and_empty_anchor(self, plan_context):
         result = cmd_orchestrator_create(_create_args('test-epic'))
 
         assert result['status'] == 'success'
         assert result['store'] == 'orchestrator'
-        content = json.loads(_orchestrator_status_file(plan_context, 'test-epic').read_text(encoding='utf-8'))
-        assert content['kind'] == 'orchestrator'
-        assert content['title'] == 'Test Epic'
-        assert content['phase'] == 'init'
-        assert content['workstreams'] == []
-        assert content['plans'] == []
-        assert content['resume_anchor'] == ''
-        assert content['metadata'] == {}
-        assert 'created' in content
-        assert 'updated' in content
+        header = _read_header(plan_context, 'test-epic')
+        assert header['kind'] == 'orchestrator'
+        assert header['title'] == 'Test Epic'
+        assert header['phase'] == 'init'
+        assert header['workstreams'] == []
+        assert header['metadata'] == {}
+        assert 'created' in header
+        # The header carries no queue, no anchor and no shared `updated` stamp.
+        assert 'plans' not in header
+        assert 'resume_anchor' not in header
+        assert 'updated' not in header
+        assert _orchestrator_anchor_file(plan_context, 'test-epic').read_text(encoding='utf-8') == '\n'
+        assert not _orchestrator_queue_dir(plan_context, 'test-epic').exists()
 
     def test_should_reject_duplicate_create_without_force(self, plan_context):
         cmd_orchestrator_create(_create_args('dup-epic'))
@@ -52,14 +74,17 @@ class TestOrchestratorCreate:
         assert result['status'] == 'error'
         assert result['error'] == 'already_exists'
 
-    def test_should_overwrite_with_force(self, plan_context):
-        cmd_orchestrator_create(_create_args('force-epic', title='Original'))
+    def test_should_overwrite_header_with_force_and_leave_queue_untouched(self, plan_context):
+        root = _orchestrator_root(plan_context, 'force-epic')
+        _seed_ledger(root, header={'title': 'Original'}, rows=(_row('PLAN-01', 'first'),))
+        row_file = _orchestrator_queue_dir(plan_context, 'force-epic') / 'PLAN-01.json'
+        row_bytes = row_file.read_bytes()
 
         result = cmd_orchestrator_create(_create_args('force-epic', title='Replaced', force=True))
 
         assert result['status'] == 'success'
-        content = json.loads(_orchestrator_status_file(plan_context, 'force-epic').read_text(encoding='utf-8'))
-        assert content['title'] == 'Replaced'
+        assert _read_header(plan_context, 'force-epic')['title'] == 'Replaced'
+        assert row_file.read_bytes() == row_bytes
 
 
 # =============================================================================
@@ -68,7 +93,7 @@ class TestOrchestratorCreate:
 
 
 class TestOrchestratorRead:
-    def test_should_read_created_status(self, plan_context):
+    def test_should_read_created_ledger_as_assembled_document(self, plan_context):
         cmd_orchestrator_create(_create_args('read-epic'))
 
         result = cmd_orchestrator_read(Namespace(plan_id='read-epic'))
@@ -77,12 +102,51 @@ class TestOrchestratorRead:
         assert result['store'] == 'orchestrator'
         assert result['plan']['kind'] == 'orchestrator'
         assert result['plan']['phase'] == 'init'
+        assert result['plan']['plans'] == []
+        assert result['plan']['resume_anchor'] == ''
+        assert 'unreadable_rows' not in result
 
-    def test_should_return_none_for_missing_status(self, plan_context, capsys):
+    def test_should_assemble_rows_in_seq_order(self, plan_context):
+        root = _orchestrator_root(plan_context, 'order-epic')
+        _seed_ledger(
+            root,
+            anchor='next: analyze PLAN-02',
+            rows=(_row('PLAN-02', 'second', seq=1), _row('PLAN-01', 'first', seq=2)),
+        )
+
+        result = cmd_orchestrator_read(Namespace(plan_id='order-epic'))
+
+        assert [row['id'] for row in result['plan']['plans']] == ['PLAN-02', 'PLAN-01']
+        assert result['plan']['resume_anchor'] == 'next: analyze PLAN-02'
+
+    def test_should_report_file_not_found_for_missing_status(self, plan_context):
         result = cmd_orchestrator_read(Namespace(plan_id='absent-epic'))
 
-        assert result is None
-        assert 'file_not_found' in capsys.readouterr().out
+        assert result['status'] == 'error'
+        assert result['error'] == 'file_not_found'
+
+    def test_should_report_unreadable_row_instead_of_dropping_it(self, plan_context):
+        root = _orchestrator_root(plan_context, 'bad-row-epic')
+        _seed_ledger(root, rows=(_row('PLAN-01', 'first'),))
+        (_orchestrator_queue_dir(plan_context, 'bad-row-epic') / 'PLAN-02.json').write_text(
+            '<<<<<<< HEAD\n', encoding='utf-8'
+        )
+
+        result = cmd_orchestrator_read(Namespace(plan_id='bad-row-epic'))
+
+        assert result['status'] == 'success'
+        assert [row['id'] for row in result['plan']['plans']] == ['PLAN-01']
+        assert [row['file'] for row in result['unreadable_rows']] == ['PLAN-02.json']
+
+    def test_should_report_unreadable_header_distinctly_from_absent(self, plan_context):
+        root = _orchestrator_root(plan_context, 'bad-header-epic')
+        root.mkdir(parents=True)
+        (root / 'status.json').write_text('[1, 2]', encoding='utf-8')
+
+        result = cmd_orchestrator_read(Namespace(plan_id='bad-header-epic'))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'header_unreadable'
 
 
 # =============================================================================
@@ -98,8 +162,9 @@ class TestOrchestratorUpdateField:
             result = cmd_orchestrator_update_field(Namespace(plan_id='phase-epic', field='phase', value=phase))
             assert result['status'] == 'success'
 
-        content = json.loads(_orchestrator_status_file(plan_context, 'phase-epic').read_text(encoding='utf-8'))
-        assert content['phase'] == 'closed'
+        header = _read_header(plan_context, 'phase-epic')
+        assert header['phase'] == 'closed'
+        assert 'updated' not in header
 
     def test_should_reject_invalid_phase_value(self, plan_context):
         cmd_orchestrator_create(_create_args('bad-phase-epic'))
@@ -117,36 +182,33 @@ class TestOrchestratorUpdateField:
         assert result['status'] == 'error'
         assert result['error'] == 'invalid_field'
 
-    def test_should_update_resume_anchor_verbatim(self, plan_context):
+    def test_should_write_resume_anchor_to_its_own_file(self, plan_context):
         cmd_orchestrator_create(_create_args('anchor-epic'))
+        header_bytes = _orchestrator_status_file(plan_context, 'anchor-epic').read_bytes()
 
         result = cmd_orchestrator_update_field(
             Namespace(plan_id='anchor-epic', field='resume_anchor', value='await PR #912 CI, then analyze landing')
         )
 
         assert result['status'] == 'success'
-        content = json.loads(_orchestrator_status_file(plan_context, 'anchor-epic').read_text(encoding='utf-8'))
-        assert content['resume_anchor'] == 'await PR #912 CI, then analyze landing'
+        anchor = _orchestrator_anchor_file(plan_context, 'anchor-epic').read_text(encoding='utf-8')
+        assert anchor == 'await PR #912 CI, then analyze landing\n'
+        # The anchor write does not touch the header at all.
+        assert _orchestrator_status_file(plan_context, 'anchor-epic').read_bytes() == header_bytes
 
-    def test_should_update_plans_list_from_json_array(self, plan_context):
+    def test_should_refuse_plans_field_and_write_nothing(self, plan_context):
+        """The queue is no longer an update-field target: a whole-array rewrite
+        cannot exist over per-row files, so ``plans`` left the updatable set."""
         cmd_orchestrator_create(_create_args('queue-epic'))
-        plans = [
-            {
-                'id': 'PLAN-01',
-                'slug': 'first-plan',
-                'workstream': 'WS-01',
-                'status': 'staged',
-                'plan_marshall_plan_id': '',
-                'pr': '',
-                'landing': '',
-            }
-        ]
+        header_bytes = _orchestrator_status_file(plan_context, 'queue-epic').read_bytes()
+        plans = [_row('PLAN-01', 'first-plan')]
 
         result = cmd_orchestrator_update_field(Namespace(plan_id='queue-epic', field='plans', value=json.dumps(plans)))
 
-        assert result['status'] == 'success'
-        content = json.loads(_orchestrator_status_file(plan_context, 'queue-epic').read_text(encoding='utf-8'))
-        assert content['plans'] == plans
+        assert result['status'] == 'error'
+        assert result['error'] == 'invalid_field'
+        assert _orchestrator_status_file(plan_context, 'queue-epic').read_bytes() == header_bytes
+        assert not _orchestrator_queue_dir(plan_context, 'queue-epic').exists()
 
     def test_should_update_workstreams_list_from_json_array(self, plan_context):
         cmd_orchestrator_create(_create_args('ws-epic'))
@@ -156,16 +218,35 @@ class TestOrchestratorUpdateField:
         )
 
         assert result['status'] == 'success'
-        content = json.loads(_orchestrator_status_file(plan_context, 'ws-epic').read_text(encoding='utf-8'))
-        assert content['workstreams'] == ['WS-01', 'WS-02']
+        assert _read_header(plan_context, 'ws-epic')['workstreams'] == ['WS-01', 'WS-02']
 
     def test_should_reject_non_json_array_for_list_field(self, plan_context):
         cmd_orchestrator_create(_create_args('bad-list-epic'))
 
-        result = cmd_orchestrator_update_field(Namespace(plan_id='bad-list-epic', field='plans', value='not-json'))
+        result = cmd_orchestrator_update_field(
+            Namespace(plan_id='bad-list-epic', field='workstreams', value='not-json')
+        )
 
         assert result['status'] == 'error'
         assert result['error'] == 'invalid_value'
+
+    def test_should_change_every_updatable_field_and_exclude_the_queue(self, plan_context):
+        """Every member of ``ORCHESTRATOR_UPDATABLE_FIELDS`` lands its new value in
+        the assembled ledger, and ``plans`` is not a member. The sweep's value
+        table must equal the membership, so a field joining the set without a
+        sweep value fails here instead of going unexercised."""
+        assert set(_SWEEP_VALUES) == set(_core.ORCHESTRATOR_UPDATABLE_FIELDS)
+        assert 'plans' not in _core.ORCHESTRATOR_UPDATABLE_FIELDS
+        cmd_orchestrator_create(_create_args('sweep-epic'))
+
+        for field, (value, _expected) in _SWEEP_VALUES.items():
+            result = cmd_orchestrator_update_field(Namespace(plan_id='sweep-epic', field=field, value=value))
+            assert result['status'] == 'success', field
+
+        document = cmd_orchestrator_read(Namespace(plan_id='sweep-epic'))['plan']
+        assert {field: document[field] for field in _SWEEP_VALUES} == {
+            field: expected for field, (_value, expected) in _SWEEP_VALUES.items()
+        }
 
 
 # =============================================================================
@@ -187,6 +268,7 @@ class TestOrchestratorMetadata:
         assert set_result['status'] == 'success'
         assert get_result['status'] == 'success'
         assert get_result['value'] == 'operator'
+        assert _read_header(plan_context, 'meta-epic')['metadata'] == {'owner': 'operator'}
 
     def test_should_refuse_append_and_write_nothing(self, plan_context):
         """REGRESSION: `--append` is on the SHARED subparser but implemented only
@@ -250,24 +332,7 @@ class TestOrchestratorMetadata:
         slug = 'meta-archived-both-epic'
         active_dir = plan_context.fixture_dir / 'orchestrator' / slug
         archived_dir = plan_context.fixture_dir / 'archived-orchestrators' / slug
-        archived_dir.mkdir(parents=True, exist_ok=True)
-        (archived_dir / 'status.json').write_text(
-            json.dumps(
-                {
-                    'kind': 'orchestrator',
-                    'title': 'Archived Epic',
-                    'phase': 'closed',
-                    'workstreams': [],
-                    'plans': [],
-                    'resume_anchor': 'epic closed — see history.md',
-                    'metadata': {},
-                    'created': '2020-01-01T00:00:00Z',
-                    'updated': '2020-01-01T00:00:00Z',
-                },
-                indent=2,
-            ),
-            encoding='utf-8',
-        )
+        _seed_ledger(archived_dir, header={'title': 'Archived Epic', 'phase': 'closed'})
 
         result = cmd_orchestrator_metadata(Namespace(plan_id=slug, set=True, get=True, field='owner', value='operator'))
 
@@ -275,3 +340,83 @@ class TestOrchestratorMetadata:
         assert result['error'] == 'wrong_parameters'
         # The refused call performed no read/write: the active tree stays absent.
         assert not active_dir.exists()
+
+    def test_should_read_archived_metadata_through_read_fallback(self, plan_context):
+        slug = 'meta-archived-get-epic'
+        archived_dir = plan_context.fixture_dir / 'archived-orchestrators' / slug
+        _seed_ledger(archived_dir, header={'phase': 'closed', 'metadata': {'parallelization_scope': '2'}})
+
+        result = cmd_orchestrator_metadata(
+            Namespace(plan_id=slug, set=False, get=True, field='parallelization_scope', value=None)
+        )
+
+        assert result['status'] == 'success'
+        assert result['value'] == '2'
+
+
+# =============================================================================
+# Legacy layout refusal
+# =============================================================================
+
+
+class TestOrchestratorLegacyLayoutRefusal:
+    """A monolithic ``status.json`` is refused by every verb with ``legacy_layout``
+    naming ``orchestrator migrate-layout``, and nothing is written — there is no
+    read-fallback that would read a legacy queue or anchor as empty."""
+
+    def test_should_refuse_legacy_read(self, plan_context):
+        _write_legacy(_orchestrator_root(plan_context, 'legacy-read-epic'))
+
+        result = cmd_orchestrator_read(Namespace(plan_id='legacy-read-epic'))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'legacy_layout'
+        assert 'orchestrator migrate-layout --slug legacy-read-epic' in result['remedy']
+
+    def test_should_refuse_legacy_update_field_and_write_nothing(self, plan_context):
+        path = _write_legacy(_orchestrator_root(plan_context, 'legacy-write-epic'))
+        before = path.read_bytes()
+
+        for field, value in (('phase', 'closed'), ('resume_anchor', 'new'), ('workstreams', '[]')):
+            result = cmd_orchestrator_update_field(Namespace(plan_id='legacy-write-epic', field=field, value=value))
+            assert result['status'] == 'error'
+            assert result['error'] == 'legacy_layout'
+
+        assert path.read_bytes() == before
+        assert not _orchestrator_anchor_file(plan_context, 'legacy-write-epic').exists()
+
+    def test_should_refuse_legacy_metadata_set_and_write_nothing(self, plan_context):
+        path = _write_legacy(_orchestrator_root(plan_context, 'legacy-meta-epic'))
+        before = path.read_bytes()
+
+        result = cmd_orchestrator_metadata(
+            Namespace(plan_id='legacy-meta-epic', set=True, get=False, field='owner', value='operator')
+        )
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'legacy_layout'
+        assert path.read_bytes() == before
+
+    @pytest.mark.parametrize('force', [False, True], ids=['plain', 'force'])
+    def test_should_refuse_legacy_create_and_write_nothing(self, plan_context, force):
+        """``--force`` does not bypass the refusal: overwriting a monolithic header
+        would drop the queue and the anchor it still carries."""
+        root = _orchestrator_root(plan_context, 'legacy-create-epic')
+        path = _write_legacy(root, _legacy_document(plans=[_row('PLAN-01', 'first')]))
+        before = path.read_bytes()
+
+        result = cmd_orchestrator_create(_create_args('legacy-create-epic', title='Replaced', force=force))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'legacy_layout'
+        assert path.read_bytes() == before
+        assert not _orchestrator_anchor_file(plan_context, 'legacy-create-epic').exists()
+
+    def test_should_refuse_a_header_carrying_only_the_anchor_key(self, plan_context):
+        document = _legacy_document()
+        del document['plans']
+        _write_legacy(_orchestrator_root(plan_context, 'legacy-anchor-epic'), document)
+
+        result = cmd_orchestrator_read(Namespace(plan_id='legacy-anchor-epic'))
+
+        assert result['error'] == 'legacy_layout'

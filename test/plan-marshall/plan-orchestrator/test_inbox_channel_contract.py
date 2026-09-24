@@ -15,8 +15,8 @@ point with constructed argv at the subprocess boundary (``run_script``), under
   once in ``test_inbox_envelope.py``'s in-process unit tests. This module's job
   at the CLI level is to prove the wiring (argv -> handler -> TOON ``error``)
   transports a rejection faithfully, not to re-enumerate the schema.
-- **``--target-plan`` routing**: a message aimed at a plan the epic's
-  ``status.json`` positively reads as ``running`` is DELIVERED to that plan's
+- **``--target-plan`` routing**: a message aimed at a plan the epic's queue
+  row positively reads as ``running`` is DELIVERED to that plan's
   mailbox at ``inbox/to/{plan_id}/`` rather than queued; every other target
   queues. The sender-side ``stream_closed`` refusal is pinned to run AHEAD of
   that routing decision by a matched pair whose two arms differ ONLY in whether
@@ -58,6 +58,8 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
+
+from _ledger_fixtures import write_ledger
 
 from conftest import MARKETPLACE_ROOT, get_script_path, load_script_module, run_script
 
@@ -168,13 +170,28 @@ def _write(
 
 
 def _write_status(plan_context, plans: list[dict], slug: str = EPIC) -> None:
-    """Write the epic's ``status.json`` with a ``plans[]`` queue.
+    """Seed the epic's queue with one row per ``{'id': plan id, 'status': ...}`` entry.
 
     The machine authority the routing decision reads to decide whether a named
     target plan is currently running — and therefore whether its message is
-    delivered to that plan's mailbox or queued for the epic drain.
+    delivered to that plan's mailbox or queued for the epic drain. Seeded as a
+    per-concern ledger through ``_ledger_fixtures.write_ledger``: each row is
+    keyed by a spec id and carries the addressed plan id as the plan it runs
+    under (``plan_marshall_plan_id``), which is the identity ``--target-plan``
+    names.
     """
-    (_epic_dir(plan_context, slug) / 'status.json').write_text(json.dumps({'plans': plans}), encoding='utf-8')
+    write_ledger(
+        _epic_dir(plan_context, slug),
+        {
+            'kind': 'orchestrator',
+            'phase': 'orchestrating',
+            'plans': [
+                {'id': f'PLAN-{index:02d}', 'status': plan['status'], 'plan_marshall_plan_id': plan['id']}
+                for index, plan in enumerate(plans, start=1)
+            ],
+            'resume_anchor': '',
+        },
+    )
 
 
 def _close_stream(plan_context, sender: str = SENDER, slug: str = EPIC):

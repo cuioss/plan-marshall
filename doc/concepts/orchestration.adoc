@@ -12,14 +12,14 @@ A single plan is the right unit for one shippable change — but a roadmap, a ca
 
 == What an epic is
 
-An epic is a long-running goal too large for one plan — validated by migrating the live token-optimization roadmap (its hand-run `HANDOVER.md` ledger) into an epic tree as the skill's acceptance test. It is persisted as one git-tracked directory tree under `.plan/orchestrator/{slug}/`: a human-facing ledger (`epic.md`), a machine-authoritative `status.json`, workstream charters, staged plan specs, landing-analysis records, logs, and — when the epic closes — a frozen `history.md`. An epic is never "in memory": any session can stop at any point, and a fresh session re-anchors from the persisted tree alone.
+An epic is a long-running goal too large for one plan — validated by migrating the live token-optimization roadmap (its hand-run `HANDOVER.md` ledger) into an epic tree as the skill's acceptance test. It is persisted as one git-tracked directory tree under `.plan/orchestrator/{slug}/`: a hand-written narrative (`epic.md`), the machine-authoritative ledger files (the `status.json` header, one `queue/{PLAN-ID}.json` row per staged plan, and `resume_anchor.md`), the generated `queue-view.md`, workstream charters, staged plan specs, landing-analysis records, logs, and — when the epic closes — a frozen `history.md`. An epic is never "in memory": any session can stop at any point, and a fresh session re-anchors from the persisted tree alone.
 
 == Epic → Workstream → Plan
 
 Orchestration operates on exactly three tiers:
 
 * **Epic** — the whole goal, one `.plan/orchestrator/{slug}/` tree.
-* **Workstream** — a coherent slice with its own charter (a surface, a theme, a dependency chain), persisted as `workstreams/WS-NN-{slug}.md` and tracked in the `workstreams[]` status field. A single-plan workstream is legitimate — the tier exists for grouping and charter, not mandatory fan-out.
+* **Workstream** — a coherent slice with its own charter (a surface, a theme, a dependency chain), persisted as `workstreams/WS-NN-{slug}.md` and tracked in the `workstreams[]` field of the epic header. A single-plan workstream is legitimate — the tier exists for grouping and charter, not mandatory fan-out.
 * **Plan** — one shippable unit executed by the ordinary six-phase plan lifecycle (xref:planning-workflow.adoc[Planning Workflow]). Staged as a `plans/PLAN-NN-{slug}.md` spec, it becomes a running plan only via an emitted `/plan-marshall` command.
 
 The tier vocabulary is closed and the mid-tier name is *workstream* — no synonym appears in orchestrator artifacts. The canonical tier contract lives in link:../../marketplace/bundles/plan-marshall/skills/persona-plan-orchestrator/standards/orchestration-model.md[`orchestration-model.md`].
@@ -28,14 +28,26 @@ The tier vocabulary is closed and the mid-tier name is *workstream* — no synon
 
 The orchestrator sits *above* the six-phase lifecycle and only ever hands work down to it. Its prime directive: it writes no production code, edits no repository source, authors no tests, and runs no implementation builds. Its outputs are exactly ledger state, emitted `/plan-marshall` commands, decisions, and reconciliations. Two bounded carve-outs define what it may do directly:
 
-* **Direct file writes** — Write/Edit only within its own `.plan/orchestrator/{slug}/` tree (the ledger documents are free-form authored artifacts); logging and status transitions stay script-mediated even inside the tree.
+* **Direct file writes** — Write/Edit only within its own `.plan/orchestrator/{slug}/` tree (the narrative documents are free-form authored artifacts); logging, the ledger files, and the generated view stay script-mediated even inside the tree.
 * **Small ops** — read-side git and CI-abstraction calls (through the xref:tools-and-scripts.adoc[scripted integration layer], never `gh`/`glab` directly) and read-only analysis to verify claims against ground truth. Reads are unrestricted in location — repository source, plan artifacts, other epics' trees, PRs, and logs — because reading mutates nothing; the bound is the category threshold below, not a path.
 
 Anything larger becomes a plan. The `next` verb *emits* the ready-to-run command — it never launches a plan inline; implementation happens exclusively inside plan sessions. Plans are parallelized by surface disjointness, never by count (the same contention discipline xref:parallelism-and-locking.adoc[Parallelism and Locking] serializes at the merge boundary), and a staged spec approaching six or more deliverables is presumptively split.
 
 == Persist, stop, resume
 
-Orchestration is resumable by construction. `status.json` (a lean `kind=orchestrator` schema served by `manage-status --store orchestrator`) is the machine authority for the plan queue, workstream states, and the `resume_anchor` — the exact next action a resuming session takes. The `epic.md` "START HERE" block and the Ordered Queue table are both *generated* from `status.json` (one `orchestrator.py resume-summary` invocation emits both, and the `compact` stage rewrites them in place at cleanup), never hand-written, so the human narrative cannot silently diverge from the machine state; reconciliation always flows status.json → epic.md. Because every decision, interaction, plan-status change, and reconciliation is persisted as it happens, stop is always safe — no orchestration state lives only in model context. Closing an epic freezes the final state into `history.md` and retains the tree as the audit record; nothing is deleted.
+Orchestration is resumable by construction. The machine authority is the ledger — a lean `kind=orchestrator` schema served by `manage-status --store orchestrator` and the `orchestrator queue` verb — and it is split into files that each hold one concern:
+
+* **`status.json`** — the epic header: title, phase, workstreams, and metadata. Written rarely.
+* **`resume_anchor.md`** — the anchor file: the exact next action a resuming session takes, and nothing else.
+* **`queue/{PLAN-ID}.json`** — one row file per staged plan, carrying its status, its launched plan id, its PR and landing, and a `seq` key that fixes queue order. Staging a plan creates one new file.
+
+The split exists for merging. The ledger is git-tracked, so two sessions on two machines each commit their own writes, and those commits have to merge. In a single document every write rewrites the same file, so two sessions staging two different plans conflict even though they changed unrelated things. With one file per concern, those two sessions create two different row files and git merges them without a conflict. The one conflict that remains genuine is two sessions rewriting the resume anchor, because they disagree about the next action — and a person resolves that.
+
+The human-facing START HERE block and the Ordered Queue table are *generated* from the ledger into their own file, `queue-view.md`, by `orchestrator regenerate-view` (the `compact` stage at cleanup calls the same writer). The view never lives in `epic.md`, which holds only hand-written narrative, so a hand edit to the narrative never collides with a regeneration, and the narrative cannot silently diverge from machine state; reconciliation always flows ledger → view. The view is a separate file for that reason, and it is tracked so the queue stays readable on a plain clone that has no executor to render it. It is derived, never hand-edited, and never part of the authority. Two sessions that each regenerate it after a queue change will conflict on it, and that conflict carries no information — so it is never merged by hand: merge the source files, run `regenerate-view` on the merged tree, and `git add` the result. The render is deterministic and carries no timestamp, so two machines rendering the same ledger state write identical files. A regeneration refuses, writing nothing, when a source file cannot be read, so it can never paper over a genuine conflict in a row file.
+
+A ledger still in the older single-document layout is refused with `legacy_layout` rather than read as an empty one, and `orchestrator migrate-layout` converts it. The schema is in link:../../marketplace/bundles/plan-marshall/skills/manage-status/standards/status-lifecycle.md[`status-lifecycle.md`], and the per-file layout decision is in the orchestration standard.
+
+Because every decision, interaction, plan-status change, and reconciliation is persisted as it happens, stop is always safe — no orchestration state lives only in model context. Closing an epic freezes the final state into `history.md` and retains the tree as the audit record; nothing is deleted.
 
 == The store separation — structural boundary, not name filter
 
@@ -47,14 +59,14 @@ Every verb runs under `persona-plan-orchestrator` (see xref:personas.adoc[Person
 
 == Log everything
 
-The orchestrator inherits the exhaustive-record posture of the xref:audit-trail.adoc[Audit Trail], applied to its own store: every decision, operator interaction, plan-status change, and reconciliation is written to `logs/decision.log` and `logs/work.log` under the epic tree via `manage-logging --store orchestrator` — never by direct file writes, even though the ledger documents themselves are directly authored. The epic tree is therefore replayable the same way a plan directory is: the ledger says what the epic believes, `status.json` says what is true, and the logs say why every change happened.
+The orchestrator inherits the exhaustive-record posture of the xref:audit-trail.adoc[Audit Trail], applied to its own store: every decision, operator interaction, plan-status change, and reconciliation is written to `logs/decision.log` and `logs/work.log` under the epic tree via `manage-logging --store orchestrator` — never by direct file writes, even though the narrative documents (`epic.md`, workstream charters, staged plan specs) are directly authored. The epic tree is therefore replayable the same way a plan directory is: the narrative says what the epic believes, the ledger files say what is true, and the logs say why every change happened.
 
 == Related
 
 * link:../../marketplace/bundles/plan-marshall/skills/persona-plan-orchestrator/standards/orchestration-model.md[`orchestration-model.md`] — the canonical orchestration standard: tiers, layout, persist/resume contract, carve-outs, lessons-handling mode
 * link:../../marketplace/bundles/plan-marshall/skills/plan-orchestrator/SKILL.md[`plan-orchestrator/SKILL.md`] — the verb router, which carries the authoritative verb set
 * link:../../marketplace/bundles/plan-marshall/skills/persona-plan-orchestrator/SKILL.md[`persona-plan-orchestrator/SKILL.md`] — the orchestrator work identity
-* link:../../marketplace/bundles/plan-marshall/skills/manage-status/standards/status-lifecycle.md[`status-lifecycle.md`] — the `kind=orchestrator` status schema and three-phase lifecycle
+* link:../../marketplace/bundles/plan-marshall/skills/manage-status/standards/status-lifecycle.md[`status-lifecycle.md`] — the `kind=orchestrator` ledger schema and three-phase lifecycle
 * xref:planning-workflow.adoc[Concepts › Planning Workflow] — the six-phase plan lifecycle the orchestrator sits above
 * xref:personas.adoc[Concepts › Personas] — the persona model `persona-plan-orchestrator` slots into
 * xref:audit-trail.adoc[Concepts › Audit Trail] — the record-everything posture the orchestrator store extends

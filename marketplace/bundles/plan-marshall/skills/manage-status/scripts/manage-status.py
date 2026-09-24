@@ -133,7 +133,8 @@ def main() -> int:
         help=(
             'Target store. plans (default) creates the plan status.json under '
             '.plan/local/plans/{plan_id}/; orchestrator creates a kind=orchestrator '
-            'status.json under the git-tracked .plan/orchestrator/{plan_id}/ tree.'
+            'ledger (header status.json + resume_anchor.md) under the git-tracked '
+            '.plan/orchestrator/{plan_id}/ tree.'
         ),
     )
     create_parser.add_argument('--force', action='store_true', help='Overwrite existing status')
@@ -207,12 +208,15 @@ def main() -> int:
     # update-field — orchestrator-store top-level field setter
     update_field_parser = subparsers.add_parser(
         'update-field',
-        help='Update a top-level field of a kind=orchestrator status.json (orchestrator store only)',
+        help='Update one field of a kind=orchestrator epic ledger (orchestrator store only)',
         description=(
-            'Set one top-level field of an orchestrator-store status.json: phase '
-            '(init|orchestrating|closed), resume_anchor (verbatim string), or the '
-            'list fields workstreams / plans (JSON-array --value). The plans store '
-            'has no generic field setter — plan status mutations go through the '
+            'Set one field of an orchestrator-store epic ledger: the header fields '
+            'phase (init|orchestrating|closed) and workstreams (JSON-array --value), '
+            'or resume_anchor (verbatim string, written to resume_anchor.md). The '
+            'plan queue is not a field — it is written one row at a time through '
+            '`orchestrator queue`, and plans is refused with invalid_field. A ledger '
+            'still in the monolithic layout is refused with legacy_layout. The plans '
+            'store has no generic field setter — plan status mutations go through the '
             'dedicated verbs (set-phase, update-phase, metadata, transition).'
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -220,7 +224,9 @@ def main() -> int:
     )
     add_plan_id_arg(update_field_parser)
     add_field_arg(update_field_parser)
-    update_field_parser.add_argument('--value', required=True, help='New field value (JSON array for list fields)')
+    update_field_parser.add_argument(
+        '--value', required=True, help='New field value (JSON array for workstreams; verbatim for resume_anchor)'
+    )
     update_field_parser.add_argument(
         '--store',
         choices=['orchestrator'],

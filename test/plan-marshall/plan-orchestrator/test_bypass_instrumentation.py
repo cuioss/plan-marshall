@@ -19,9 +19,10 @@ module proves the D4-new epic-slug arm and the registry contract.
 
 import argparse
 import copy
-import json
 from pathlib import Path
 from typing import Any
+
+from _ledger_fixtures import read_rows, write_ledger
 
 from conftest import get_script_path, load_script_module, parse_ns
 
@@ -99,6 +100,7 @@ def _row(plan_id: str, slug: str, status: str = 'staged') -> dict:
 
 
 def _write_status(plan_context, rows: list) -> Path:
+    """Seed the per-concern ledger through ``_ledger_fixtures.write_ledger``; return the root."""
     doc = {
         'kind': 'orchestrator',
         'title': 'Fixture Bypass Epic',
@@ -108,16 +110,15 @@ def _write_status(plan_context, rows: list) -> Path:
         'resume_anchor': 'await PLAN-08 landing',
         'metadata': {},
         'created': FIXED_TIMESTAMP,
-        'updated': FIXED_TIMESTAMP,
     }
-    path = _epic_dir(plan_context) / 'status.json'
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(doc, indent=2), encoding='utf-8')
-    return path
+    root = _epic_dir(plan_context)
+    write_ledger(root, doc)
+    return root
 
 
-def _read_status_file(path: Path) -> dict:
-    return dict(json.loads(path.read_text(encoding='utf-8')))
+def _snapshot(root: Path) -> dict[str, bytes]:
+    """Every file under the epic root, as bytes — a write detector."""
+    return {str(path.relative_to(root)): path.read_bytes() for path in sorted(root.rglob('*')) if path.is_file()}
 
 
 def _add_row_args(slug_value: str, plan_id: str = 'PLAN-07') -> argparse.Namespace:
@@ -143,14 +144,14 @@ def _add_row_args(slug_value: str, plan_id: str = 'PLAN-07') -> argparse.Namespa
 class TestEpicSlugGate:
     def test_should_refuse_an_epic_slug_row_leaving_the_queue_unchanged(self, plan_context):
         existing = [_row('PLAN-01', 'plan-one')]
-        status_path = _write_status(plan_context, existing)
-        before = _read_status_file(status_path)
+        root = _write_status(plan_context, existing)
+        before = _snapshot(root)
 
         result = cmd_queue(_add_row_args(SLUG))
 
         assert result['status'] == 'error'
         assert result['error'] == 'invalid_field'
-        assert _read_status_file(status_path) == before
+        assert _snapshot(root) == before
 
     def test_should_report_an_epic_slug_row_at_resume_summary(self, plan_context):
         rows = [
@@ -171,7 +172,7 @@ class TestEpicSlugGate:
         # model-provisioning ledger did) are reported with every row identity,
         # while a NEW epic-slug append at the write path is refused.
         rows = [_row('PLAN-01', SLUG), _row('PLAN-02', SLUG)]
-        status_path = _write_status(plan_context, rows)
+        root = _write_status(plan_context, rows)
 
         reported = cmd_resume_summary(_RESUME_SUMMARY_ARGS)
         refused = cmd_queue(_add_row_args(SLUG, plan_id='PLAN-03'))
@@ -180,18 +181,18 @@ class TestEpicSlugGate:
         assert sorted(match['id'] for match in reported['epic_slug_matches']) == ['PLAN-01', 'PLAN-02']
         assert refused['status'] == 'error'
         assert refused['error'] == 'invalid_field'
-        assert len(_read_status_file(status_path)['plans']) == 2
+        assert len(read_rows(root)) == 2
 
     def test_should_admit_plan_short_slugs_and_stay_silent(self, plan_context):
         # Matched control: the legitimate shape admits at the write path and
         # stays silent at the render path.
-        status_path = _write_status(plan_context, [_row('PLAN-01', 'plan-one')])
+        root = _write_status(plan_context, [_row('PLAN-01', 'plan-one')])
 
         admitted = cmd_queue(_add_row_args('plan-seven'))
         reported = cmd_resume_summary(_RESUME_SUMMARY_ARGS)
 
         assert admitted['status'] == 'success'
-        assert [row['slug'] for row in _read_status_file(status_path)['plans']] == [
+        assert [row['slug'] for row in read_rows(root)] == [
             'plan-one',
             'plan-seven',
         ]

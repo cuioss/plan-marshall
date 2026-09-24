@@ -39,6 +39,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from _ledger_fixtures import write_ledger
 
 from conftest import load_script_module, parse_ns
 
@@ -152,7 +153,7 @@ def _epic_dir(plan_context) -> Path:
 
 
 def _write_status(plan_context, plan_ids: list) -> Path:
-    """Write a kind=orchestrator fixture status.json into the isolated store."""
+    """Seed a per-concern kind=orchestrator ledger through ``_ledger_fixtures.write_ledger``."""
     doc = {
         'kind': 'orchestrator',
         'title': 'Fixture Integrity Epic',
@@ -173,12 +174,8 @@ def _write_status(plan_context, plan_ids: list) -> Path:
         'resume_anchor': 'fixture',
         'metadata': {},
         'created': FIXED_TIMESTAMP,
-        'updated': FIXED_TIMESTAMP,
     }
-    path = _epic_dir(plan_context) / 'status.json'
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(doc, indent=2), encoding='utf-8')
-    return path
+    return write_ledger(_epic_dir(plan_context), doc)
 
 
 def _spec_text(claim_lines: list | None) -> str:

@@ -3,8 +3,8 @@
 epic: {slug}
 
 > Charter document for one workstream — a coherent slice of the epic with its own goal
-> and surface. Lives at `workstreams/WS-NN-{slug}.md` and is tracked in the epic
-> `status.json` `workstreams[]` field. See
+> and surface. Lives at `workstreams/WS-NN-{slug}.md` and is tracked in the
+> `workstreams[]` field of the epic header, `status.json`. See
 > `persona-plan-orchestrator/standards/orchestration-model.md` for the tier contract.
 
 ## Charter
@@ -23,7 +23,7 @@ be assigned to exactly one workstream without ambiguity.}
 ## Plans
 
 {One row per plan belonging to this workstream — staged specs and launched plans alike.
-Status mirrors status.json.}
+Status mirrors the plan's queue row, `queue/{PLAN-ID}.json`.}
 
 | Plan | Status | Notes |
 |------|--------|-------|

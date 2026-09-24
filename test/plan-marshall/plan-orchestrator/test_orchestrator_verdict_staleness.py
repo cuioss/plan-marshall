@@ -75,6 +75,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from _ledger_fixtures import write_ledger
 from file_ops import cwd_checkout_root
 
 from conftest import load_script_module, parse_ns
@@ -357,12 +358,10 @@ def _write_status(repo: Path, plan_ids: list) -> Path:
         'resume_anchor': 'fixture',
         'metadata': {},
         'created': FIXED_TIMESTAMP,
-        'updated': FIXED_TIMESTAMP,
     }
-    path = _epic_dir(repo) / 'status.json'
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(doc, indent=2), encoding='utf-8')
-    return path
+    # Seeded as a per-concern ledger through ``_ledger_fixtures.write_ledger``,
+    # so the queue lands as row files rather than as a ``plans[]`` array.
+    return write_ledger(_epic_dir(repo), doc)
 
 
 #: The one claim every fixture spec carries. Unstamped on disk — the verdict is

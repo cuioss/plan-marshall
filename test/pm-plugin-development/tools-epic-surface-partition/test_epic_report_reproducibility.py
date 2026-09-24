@@ -22,12 +22,12 @@ never read and never written.
 from __future__ import annotations
 
 import argparse
-import json
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 import pytest
+from _partition_ledger_fixtures import write_ledger
 
 from conftest import add_skill_scripts_to_path, get_script_path, load_script_module, run_script
 
@@ -122,7 +122,12 @@ def write(path: Path, text: str) -> None:
 
 
 def build_world(root: Path) -> tuple[Path, Path]:
-    """Return ``(epic_dir, repo_root)`` for the corpus and tree built under ``root``."""
+    """Return ``(epic_dir, repo_root)`` for the corpus and tree built under ``root``.
+
+    The ledger is seeded into the per-concern layout through the layout owner's
+    own writers, once per world, so every verb a run invokes reads one and the
+    same ledger state.
+    """
     repo = root / 'repo'
     (repo / 'test').mkdir(parents=True)
     (repo / 'marketplace').mkdir(parents=True)
@@ -132,10 +137,7 @@ def build_world(root: Path) -> tuple[Path, Path]:
     epic_dir = root / 'epic'
     for name, body in SPECS.items():
         write(epic_dir / 'plans' / name, body)
-    write(
-        epic_dir / 'status.json',
-        json.dumps({'plans': [{'id': pid, 'status': st} for pid, st in LEDGER.items()]}),
-    )
+    write_ledger(epic_dir, LEDGER)
     return epic_dir, repo
 
 

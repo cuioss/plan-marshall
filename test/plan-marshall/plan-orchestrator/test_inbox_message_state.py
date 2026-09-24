@@ -62,6 +62,8 @@ import os
 from pathlib import Path
 from typing import Any
 
+from _ledger_fixtures import write_ledger
+
 from conftest import load_script_module, parse_ns
 
 #: The orchestrator script's address, as module-level string constants so every
@@ -364,15 +366,25 @@ def _mailbox_dir(plan_context, plan_id: str = READER, slug: str = EPIC) -> Path:
 def _mark_running(plan_context, *plan_ids: str, slug: str = EPIC) -> None:
     """Record the named plans as ``running`` in the epic's status queue.
 
-    Delivery fires only for a plan the epic's ``status.json`` POSITIVELY reads as
-    running, so a mailbox case that skipped this would silently QUEUE its message
-    and then assert against an empty mailbox — a green test over a delivery that
-    never happened. :func:`_deliver` pins the destination for that reason.
+    Delivery fires only for a plan the epic's ledger POSITIVELY reads as running,
+    so a mailbox case that skipped this would silently QUEUE its message and then
+    assert against an empty mailbox — a green test over a delivery that never
+    happened. :func:`_deliver` pins the destination for that reason. Seeded as a
+    per-concern ledger through ``_ledger_fixtures.write_ledger``: each row is keyed
+    by a spec id and carries the addressed plan as the plan it runs under.
     """
-    status = _epic_dir(plan_context, slug) / 'status.json'
-    data = json.loads(status.read_text(encoding='utf-8')) if status.is_file() else {}
-    data['plans'] = [{'id': plan_id, 'status': 'running'} for plan_id in plan_ids]
-    status.write_text(json.dumps(data), encoding='utf-8')
+    write_ledger(
+        _epic_dir(plan_context, slug),
+        {
+            'kind': 'orchestrator',
+            'phase': 'orchestrating',
+            'plans': [
+                {'id': f'PLAN-{index:02d}', 'status': 'running', 'plan_marshall_plan_id': plan_id}
+                for index, plan_id in enumerate(plan_ids, start=1)
+            ],
+            'resume_anchor': '',
+        },
+    )
 
 
 def _deliver(

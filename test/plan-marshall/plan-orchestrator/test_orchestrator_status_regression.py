@@ -18,9 +18,10 @@ Five cases, each through the ``orchestrator.py`` entry point:
   interleaved with claim bullets.
 """
 
-import json
 from pathlib import Path
 from typing import Any
+
+from _ledger_fixtures import read_rows, write_ledger
 
 from conftest import get_script_path, run_script
 
@@ -53,6 +54,7 @@ def _make_plan(plan_id: str, status: str = 'staged') -> dict[str, Any]:
 
 
 def _write_status(plan_context: Any, slug: str, plans: list[dict[str, Any]]) -> Path:
+    """Seed the per-concern ledger for ``slug``; return the epic root."""
     doc: dict[str, Any] = {
         'kind': 'orchestrator',
         'title': 'Regression Epic',
@@ -62,12 +64,10 @@ def _write_status(plan_context: Any, slug: str, plans: list[dict[str, Any]]) -> 
         'resume_anchor': 'regression',
         'metadata': {},
         'created': FIXED_TIMESTAMP,
-        'updated': FIXED_TIMESTAMP,
     }
-    path = _epic_dir(plan_context, slug) / 'status.json'
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(doc, indent=2), encoding='utf-8')
-    return path
+    root = _epic_dir(plan_context, slug)
+    write_ledger(root, doc)
+    return root
 
 
 def _spec_text(claim_lines: list[str]) -> str:
@@ -115,7 +115,7 @@ def _set_verdict_argv(slug: str, plan: str, claim_index: int) -> list[str]:
 class TestQueueStatusVocabularyRegression:
     def test_should_reject_invalid_status_on_transition_through_cli(self, plan_context: Any) -> None:
         env = {'PLAN_BASE_DIR': str(plan_context.fixture_dir)}
-        status_path = _write_status(plan_context, 'regression-status-epic', [_make_plan('PLAN-01')])
+        root = _write_status(plan_context, 'regression-status-epic', [_make_plan('PLAN-01')])
 
         result = run_script(
             SCRIPT_PATH,
@@ -133,12 +133,11 @@ class TestQueueStatusVocabularyRegression:
         assert 'status: error' in result.stdout
         assert 'invalid_field' in result.stdout
         assert '--status must be one of' in result.stdout
-        before = json.loads(status_path.read_text(encoding='utf-8'))
-        assert before['plans'][0]['status'] == 'staged'
+        assert read_rows(root)[0]['status'] == 'staged'
 
     def test_should_reject_invalid_status_on_add_row_through_cli(self, plan_context: Any) -> None:
         env = {'PLAN_BASE_DIR': str(plan_context.fixture_dir)}
-        status_path = _write_status(plan_context, 'regression-addrow-epic', [])
+        root = _write_status(plan_context, 'regression-addrow-epic', [])
 
         result = run_script(
             SCRIPT_PATH,
@@ -160,8 +159,8 @@ class TestQueueStatusVocabularyRegression:
         assert 'status: error' in result.stdout
         assert 'invalid_field' in result.stdout
         assert '--status must be one of' in result.stdout
-        after = json.loads(status_path.read_text(encoding='utf-8'))
-        assert after['plans'] == []
+        assert read_rows(root) == []
+        assert not (root / 'queue').exists()
 
     def test_should_accept_staged_status_on_transition_through_cli(self, plan_context: Any) -> None:
         env = {'PLAN_BASE_DIR': str(plan_context.fixture_dir)}

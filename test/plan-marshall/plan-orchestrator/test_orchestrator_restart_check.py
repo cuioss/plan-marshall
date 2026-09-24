@@ -33,9 +33,10 @@ whether the developer's tree happened to be clean.
 
 import argparse
 import copy
-import json
 from pathlib import Path
 from typing import Any
+
+from _ledger_fixtures import write_ledger, write_legacy_status
 
 from conftest import get_script_path, load_script_module, parse_ns, run_script
 
@@ -129,9 +130,8 @@ def _row(plan_id: str, status: str = 'shipped') -> dict:
     }
 
 
-def _write_status(plan_context, rows: list, phase: str = 'orchestrating') -> Path:
-    """Write a kind=orchestrator fixture status.json into the isolated store."""
-    doc = {
+def _status_doc(rows: list, phase: str = 'orchestrating') -> dict:
+    return {
         'kind': 'orchestrator',
         'title': 'Fixture Restart Epic',
         'phase': phase,
@@ -142,10 +142,13 @@ def _write_status(plan_context, rows: list, phase: str = 'orchestrating') -> Pat
         'created': FIXED_TIMESTAMP,
         'updated': FIXED_TIMESTAMP,
     }
-    path = _epic_dir(plan_context) / 'status.json'
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(doc, indent=2), encoding='utf-8')
-    return path
+
+
+def _write_status(plan_context, rows: list, phase: str = 'orchestrating') -> Path:
+    """Seed a per-concern kind=orchestrator ledger into the isolated store; return its root."""
+    root = _epic_dir(plan_context)
+    write_ledger(root, _status_doc(rows, phase))
+    return root
 
 
 def _write_spec(plan_context, name: str) -> Path:
@@ -272,7 +275,7 @@ class TestRestartCheckShape:
 
         result = _run()
 
-        assert 'plans[]: 1 row(s) scanned' == _signal_row(result, 'running_plans')['population']
+        assert 'queue rows: 1 row(s) scanned and 0 unreadable' == _signal_row(result, 'running_plans')['population']
         assert '1 queue row(s) and 1 spec file(s)' == _signal_row(result, 'corpus_reconciliation')['population']
         assert 'inbox/: 0 queued and 3 archived' == _signal_row(result, 'inbox')['population']
         assert CLEAN_SHA in _signal_row(result, 'worktree')['population']
@@ -339,7 +342,7 @@ class TestRunningPlansSignal:
         row = _signal_row(_run(), 'running_plans')
 
         assert row['verdict'] == READY
-        assert row['population'] == 'plans[]: 2 row(s) scanned'
+        assert row['population'] == 'queue rows: 2 row(s) scanned and 0 unreadable'
 
     def test_an_in_flight_plan_is_not_ready_and_is_named(self, plan_context, monkeypatch):
         # Positive control for the DEFINITE hazard arm — a restart mid-run loses
@@ -354,7 +357,7 @@ class TestRunningPlansSignal:
 
         assert row['verdict'] == NOT_READY
         assert 'PLAN-02' in row['evidence']
-        assert row['population'] == 'plans[]: 2 row(s) scanned'
+        assert row['population'] == 'queue rows: 2 row(s) scanned and 0 unreadable'
 
     def test_an_unreadable_queue_is_indeterminate_not_not_ready(self, plan_context, monkeypatch):
         _write_spec(plan_context, 'PLAN-01-alpha.md')
@@ -364,7 +367,34 @@ class TestRunningPlansSignal:
 
         assert row['verdict'] == INDETERMINATE
         assert row['verdict'] != NOT_READY
-        assert row['population'] == 'plans[]: not readable'
+        assert row['population'] == 'queue rows: not readable'
+
+    def test_a_legacy_layout_ledger_is_indeterminate_and_names_the_layout(self, plan_context, monkeypatch):
+        # The monolithic layout is refused rather than read: its plans[] names a
+        # running row, yet the arm may not read it as one — nor as a quiet queue.
+        write_legacy_status(_epic_dir(plan_context), _status_doc([_row('PLAN-01', status='running')]))
+        monkeypatch.setattr(_orch, '_git_read', _git_stub())
+
+        result = _run()
+
+        row = _signal_row(result, 'running_plans')
+        assert row['verdict'] == INDETERMINATE
+        assert 'legacy_layout' in row['evidence']
+        # The phase is a header fact and stays readable on the legacy layout.
+        assert _signal_row(result, 'phase')['verdict'] == READY
+
+    def test_an_unreadable_row_with_no_readable_running_row_is_indeterminate(self, plan_context, monkeypatch):
+        # Matched pair with the quiet-queue control: the unread row might be the
+        # running one, so the arm may not report a confident ``ready``.
+        root = _write_status(plan_context, [_row('PLAN-01'), _row('PLAN-02')])
+        (root / 'queue' / 'PLAN-02.json').write_text('<<<<<<< ours\n', encoding='utf-8')
+        monkeypatch.setattr(_orch, '_git_read', _git_stub())
+
+        row = _signal_row(_run(), 'running_plans')
+
+        assert row['verdict'] == INDETERMINATE
+        assert 'PLAN-02.json' in row['evidence']
+        assert row['population'] == 'queue rows: 1 row(s) scanned and 1 unreadable'
 
 
 class TestCorpusSignal:

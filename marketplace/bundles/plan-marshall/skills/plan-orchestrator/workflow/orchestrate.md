@@ -36,16 +36,27 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status read \
   --plan-id {slug} --store orchestrator
 ```
 
-The on-query epic discovery / store scan enumerates BOTH `.plan/orchestrator/` and `.plan/archived-orchestrators/`, and the `read` verb resolves an archived epic transparently via the read-fallback — so a slug naming an archived (closed-and-relocated) epic is still discoverable and reportable here without re-anchoring.
-
-### Step 3 (verb = `status`): Report
-
-Render the queue report from the machine authority: per-plan status (staged / launched / shipped / parked), workstream grouping, open defects and watches from `epic.md`, and the `resume_anchor`. An archived epic reports identically — its tree is resolved from `archived-orchestrators/` and its `status.json` is the same machine authority. When the report reveals stale prose in `epic.md` (a queue row disagreeing with `status.json`), reconcile status.json → epic.md and regenerate both derivable blocks (START-HERE and the Ordered Queue table — the one invocation emits both):
-
 ```bash
 python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator resume-summary \
   --slug {slug}
 ```
+
+The `queue` read returns the queue rows from `queue/{PLAN-ID}.json` in `(seq, id)` order, plus `unreadable_rows` naming any row file it could not read. The `manage-status read` returns the header and the anchor from `resume_anchor.md`. `resume-summary` renders START HERE and the Ordered Queue from the same ledger and writes nothing; its `view_current` says whether the committed `queue-view.md` still matches. A `legacy_layout` refusal from any of the three means the ledger was never migrated — run `orchestrator migrate-layout --slug {slug}` (see [`plan-orchestrator/SKILL.md`](../SKILL.md) § Canonical invocations → `migrate-layout`) before continuing.
+
+The on-query epic discovery / store scan enumerates BOTH `.plan/orchestrator/` and `.plan/archived-orchestrators/`, and the `read` verb resolves an archived epic transparently via the read-fallback — so a slug naming an archived (closed-and-relocated) epic is still discoverable and reportable here without re-anchoring.
+
+### Step 3 (verb = `status`): Report
+
+Render the queue report from the Step 2 reads: per-plan status from the queue rows (staged / launched / running / parked, and the terminal rows by their own status), workstream grouping, open defects and watches from `epic.md`, and the resume anchor. An archived epic reports identically — its tree is resolved from `archived-orchestrators/` and its ledger files are the same machine authority. Name every row file `unreadable_rows` reports, rather than omitting it from the report.
+
+When `resume-summary` reported `view_current: false`, the committed `queue-view.md` is behind the ledger; bring it level:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator regenerate-view \
+  --slug {slug}
+```
+
+When the report reveals stale prose in `epic.md` (a queue annotation disagreeing with the queue rows), correct the narrative — the reconciliation direction is always ledger files → `queue-view.md` and `epic.md`.
 
 Skip Steps 4–6 and return.
 
@@ -151,6 +162,8 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging deci
   --plan-id {slug} --level INFO --message "{emit decision: PLAN-NN emitted, disjointness verdict}" --store orchestrator
 ```
 
+The anchor is written to the anchor file, `resume_anchor.md`:
+
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status update-field \
   --plan-id {slug} --field resume_anchor --value "{next action}" --store orchestrator
@@ -158,7 +171,14 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status update
 
 Word the `resume_anchor` to reflect the Step 5 `auto_emit` branch: under `auto_emit == true` the `launched` transitions are already recorded, so the anchor names the auto-emitted `launched` block awaiting the operator-confirmed start (`launched → running`); under `auto_emit == false` (default) it names the emitted block awaiting operator-confirmed launch. Neither wording ever asserts a `running`/started state the orchestrator did not observe the operator confirm — the emit≠running invariant holds here too.
 
-Regenerate both derivable blocks — START-HERE and the Ordered Queue table (the single `resume-summary` invocation emits both) — after any queue-touching change, and paste each between its own markers.
+START HERE renders the anchor and the Ordered Queue renders each `launched` transition Step 5 recorded, so regenerate the view after the anchor write, and commit it with the anchor file and any row file Step 5 changed:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator regenerate-view \
+  --slug {slug}
+```
+
+⛔ Never paste either block into `epic.md`, and never hand-edit `queue-view.md`.
 
 ## Output
 

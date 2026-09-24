@@ -15,11 +15,11 @@ implementation, which is the entire reason it exists.
 from __future__ import annotations
 
 import argparse
-import json
 from pathlib import Path
 from typing import Any
 
 import pytest
+from _partition_ledger_fixtures import write_ledger
 
 from conftest import add_skill_scripts_to_path, get_script_path, load_script_module, run_script
 
@@ -62,7 +62,8 @@ def build_world(
 ) -> tuple[Path, Path]:
     """Return ``(epic_dir, repo_root)`` for a corpus and a tree built under ``root``.
 
-    ``ledger`` is the epic's plan queue as ``plan_id -> status``. Omitting it
+    ``ledger`` is the epic's plan queue as ``plan_id -> status``, seeded into the
+    per-concern layout through the layout owner's own writers. Omitting it
     leaves the epic directory with no ledger at all, which is the DEGRADED input
     state the report must state rather than absorb — so the default here is a
     fixture of that state, never a stand-in for a read one.
@@ -77,8 +78,7 @@ def build_world(
     for name, body in specs.items():
         write(epic_dir / 'plans' / name, body)
     if ledger is not None:
-        payload = {'plans': [{'id': pid, 'status': st} for pid, st in ledger.items()]}
-        write(epic_dir / 'status.json', json.dumps(payload))
+        write_ledger(epic_dir, ledger)
     return epic_dir, repo
 
 

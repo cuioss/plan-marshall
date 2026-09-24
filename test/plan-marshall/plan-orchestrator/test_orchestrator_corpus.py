@@ -5,9 +5,11 @@
 Covers the four sub-verbs against a SCAFFOLDED FIXTURE EPIC under
 ``PLAN_BASE_DIR`` isolation — never the live ``truthful-signals`` tree:
 
-- ``corpus enumerate``: the bidirectional reconciliation of ``status.json``'s
-  ``plans[]`` queue against the ``plans/PLAN-*.md`` spec files, with every count
-  riding beside the population it was computed over.
+- ``corpus enumerate``: the bidirectional reconciliation of the queue's
+  ``queue/{PLAN-ID}.json`` row files against the ``plans/PLAN-*.md`` spec files,
+  with every count riding beside the population it was computed over, an
+  unreadable row file named rather than dropped, and a monolithic-layout ledger
+  refused with ``legacy_layout``.
 - ``corpus cross-check``: the cross-ledger duplication arm — this epic's specs
   scored against sibling epics (active and archived), the live plan set, and
   this epic's own corpus, on the two ``sibling-collision-check`` classes. BOTH
@@ -80,6 +82,7 @@ from typing import Any
 
 import pytest
 from _dispatch_roster import section_lines
+from _ledger_fixtures import write_ledger, write_legacy_status
 
 from conftest import (
     MARKETPLACE_ROOT,
@@ -367,7 +370,11 @@ def _row(plan_id: str, status: str = 'staged') -> dict:
 
 
 def _write_status(plan_context, rows: list, slug: str = SLUG) -> Path:
-    """Write a kind=orchestrator fixture status.json into the isolated store."""
+    """Seed a per-concern kind=orchestrator ledger; return the header path.
+
+    Seeded through ``_ledger_fixtures.write_ledger``, so the queue lands as one
+    ``queue/{PLAN-ID}.json`` per row rather than as a ``plans[]`` array.
+    """
     doc = {
         'kind': 'orchestrator',
         'title': 'Fixture Corpus Epic',
@@ -377,12 +384,8 @@ def _write_status(plan_context, rows: list, slug: str = SLUG) -> Path:
         'resume_anchor': 'fixture',
         'metadata': {},
         'created': FIXED_TIMESTAMP,
-        'updated': FIXED_TIMESTAMP,
     }
-    path = _epic_dir(plan_context, slug) / 'status.json'
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(doc, indent=2), encoding='utf-8')
-    return path
+    return write_ledger(_epic_dir(plan_context, slug), doc)
 
 
 #: The default ``## Expected Surface`` body. ``a.py`` carries no ``/`` segment,
@@ -648,6 +651,33 @@ class TestCorpusEnumeratePopulation:
         assert result['status'] == 'error'
         assert result['error'] == 'file_not_found'
 
+    def test_should_refuse_a_legacy_layout_ledger_rather_than_read_it_as_empty(self, plan_context):
+        write_legacy_status(
+            _epic_dir(plan_context),
+            {'kind': 'orchestrator', 'phase': 'orchestrating', 'plans': [_row('PLAN-01')], 'resume_anchor': ''},
+        )
+        _write_spec(plan_context, 'PLAN-01-alpha.md')
+
+        result = cmd_corpus_enumerate(_ENUMERATE_ARGS)
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'legacy_layout'
+
+    def test_should_name_an_unreadable_row_file_apart_from_the_orphans(self, plan_context):
+        # An unread row is neither reconciled nor orphaned: it is named, and it
+        # contributes to neither direction's count.
+        _write_status(plan_context, [_row('PLAN-01'), _row('PLAN-02')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md')
+        (_epic_dir(plan_context) / 'queue' / 'PLAN-02.json').write_text('<<<<<<< ours\n', encoding='utf-8')
+
+        result = cmd_corpus_enumerate(_ENUMERATE_ARGS)
+
+        assert result['status'] == 'success'
+        assert result['unreadable_row_count'] == 1
+        assert result['unreadable_rows'] == ['PLAN-02.json']
+        assert result['rows_total'] == 1
+        assert result['rows_without_spec_count'] == 0
+
     def test_should_reject_invalid_slug(self, plan_context):
         result = cmd_corpus_enumerate(_variant(_ENUMERATE_ARGS, slug='../evil'))
 
@@ -707,8 +737,8 @@ class TestCorpusEnumerateDirections:
         assert result['rows_without_spec_count'] == 1
         assert result['specs_without_row'] == ['PLAN-10-decoy.md']
 
-    def test_should_enumerate_from_status_json_not_from_a_plans_glob(self, plan_context):
-        """The authority is ``plans[]``; a directory glob returns a DIFFERENT set."""
+    def test_should_enumerate_from_the_queue_rows_not_from_a_plans_glob(self, plan_context):
+        """The authority is the queue rows; a ``plans/`` glob returns a DIFFERENT set."""
         _write_status(plan_context, [_row('PLAN-01')])
         _write_spec(plan_context, 'PLAN-02-orphan.md')
 

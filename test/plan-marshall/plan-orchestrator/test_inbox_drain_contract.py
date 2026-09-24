@@ -40,6 +40,11 @@ The module additionally carries the READ side of the channel — the plan-side
 - **Identifier validation stays fail-CLOSED**, pinned by a matched control
   against the fail-open cases, so the bounded exception cannot silently widen
   into "this verb never errors".
+
+The drain side's ``inbox list`` is driven the same way for its owed-landing
+verdict: a legacy-layout ledger and an unreadable running row file each report
+``queue_readable: False`` on that verdict, against a matched readable arm, so an
+unmeasured ``no-news`` never reads as a measured one.
 """
 
 from __future__ import annotations
@@ -49,6 +54,7 @@ import re
 from pathlib import Path
 
 import pytest
+from _ledger_fixtures import write_ledger, write_legacy_status
 
 from conftest import MARKETPLACE_ROOT, get_script_path, load_script_module, run_script
 
@@ -276,13 +282,25 @@ class TestLandingBranch:
             'sanctioned landing-stamping mechanism is missing'
         )
 
-    def test_the_whole_array_rewrite_is_still_forbidden_for_stamping(self):
+    def test_a_stamp_rewrites_only_the_located_row_file(self):
         section = _section(_analyze_text(), '### Step 4:', 'analyze.md')
 
-        assert 'MUST NOT be used to stamp a landing' in section, (
-            'analyze.md: Step 4 no longer forbids the whole-array '
-            '"manage-status update-field --field plans" rewrite for stamping a '
-            'landing — the lost-update prohibition has been dropped'
+        assert 'ONLY the located row file' in section, (
+            'analyze.md: Step 4 no longer states that a landing stamp rewrites only '
+            'the located queue row file — the per-row isolation that keeps a stamp '
+            'from touching another plan has been dropped'
+        )
+        assert 'There is no whole-queue write form' in section, (
+            'analyze.md: Step 4 no longer states that no whole-queue write form '
+            'exists to stamp with — a reader could reach for a bulk rewrite'
+        )
+
+    def test_the_retired_bulk_queue_rewrite_is_not_named_as_a_write_form(self):
+        section = _section(_analyze_text(), '### Step 4:', 'analyze.md')
+
+        assert 'update-field --field plans' not in section, (
+            'analyze.md: Step 4 still names the retired "update-field --field plans" '
+            'bulk queue rewrite — the queue is written one row file at a time'
         )
 
 
@@ -681,6 +699,91 @@ class TestQueueAvailability:
         assert report['queue_readable'] is True
         assert report['queue_without_landing'] == ['plan-a']
 
+    def test_owed_verdict_carries_the_queue_readability(self):
+        unreadable = _inbox._classify_owed_with_availability(set(), {'plan-a'}, False)
+        readable = _inbox._classify_owed_with_availability({'plan-a'}, {'plan-a'}, True)
+
+        assert unreadable['queue_readable'] is False
+        assert unreadable['state'] == 'no-news'
+        assert readable['queue_readable'] is True
+        assert readable['state'] == 'owed'
+
+
+# =============================================================================
+# (10b) inbox list: the owed-landing verdict says whether it could look
+# =============================================================================
+
+
+def _list(plan_context, slug: str = READ_EPIC):
+    return run_script(SCRIPT_PATH, 'inbox', 'list', '--slug', slug, env_overrides=_env(plan_context))
+
+
+#: The running row every arm below stages, in the legacy fixture shape. The
+#: landing message each arm queues is sent by the plan this row runs under, so a
+#: queue that IS read yields ``owed`` and one that is not yields a ``no-news``
+#: whose only honest reading is "could not look".
+_RUNNING_ROW = {'id': 'PLAN-01', 'slug': 'reader', 'status': 'running', 'plan_marshall_plan_id': READER}
+
+
+def _queue_landing_from_reader(plan_context, tmp_path: Path) -> None:
+    written = _queue_write(plan_context, _payload(tmp_path, 'landed', 'landing.md'), kind='landing', sender=READER)
+    assert written.toon()['destination'] == 'queue', 'the arrangement did not queue the landing message'
+
+
+class TestInboxListOwedLandingReadability:
+    """``owed_landing`` distinguishes *could not look* from *looked, nothing owed*.
+
+    Every arm queues the SAME landing message from the running plan and differs
+    only in whether the ledger can be read, so the ``queue_readable`` flag is
+    the one field that separates the unmeasured ``no-news`` from a measured one.
+    """
+
+    def test_a_readable_ledger_measures_the_running_set(self, plan_context, tmp_path):
+        _scaffold(plan_context)
+        write_ledger(
+            _epic_dir(plan_context), {'kind': 'orchestrator', 'phase': 'orchestrating', 'plans': [_RUNNING_ROW]}
+        )
+        _queue_landing_from_reader(plan_context, tmp_path)
+
+        data = _list(plan_context).toon()
+
+        assert data['owed_landing']['queue_readable'] is True
+        assert data['owed_landing']['state'] == 'owed'
+        assert data['queue_reconciliation']['queue_readable'] is True
+
+    def test_a_legacy_layout_ledger_reports_the_running_set_unmeasured(self, plan_context, tmp_path):
+        _scaffold(plan_context)
+        write_legacy_status(
+            _epic_dir(plan_context),
+            {'kind': 'orchestrator', 'phase': 'orchestrating', 'plans': [_RUNNING_ROW], 'resume_anchor': ''},
+        )
+        _queue_landing_from_reader(plan_context, tmp_path)
+
+        data = _list(plan_context).toon()
+
+        assert data['owed_landing']['queue_readable'] is False, (
+            'a legacy-layout ledger is refused rather than read, yet owed_landing reports a clean '
+            'no-news with no sign that the running set was never measured'
+        )
+        assert data['owed_landing']['state'] == 'no-news'
+        assert data['queue_reconciliation']['queue_readable'] is False
+
+    def test_an_unreadable_running_row_reports_the_running_set_unmeasured(self, plan_context, tmp_path):
+        _scaffold(plan_context)
+        root = _epic_dir(plan_context)
+        write_ledger(root, {'kind': 'orchestrator', 'phase': 'orchestrating', 'plans': [_RUNNING_ROW]})
+        (root / 'queue' / 'PLAN-01.json').write_text('<<<<<<< HEAD\n', encoding='utf-8')
+        _queue_landing_from_reader(plan_context, tmp_path)
+
+        data = _list(plan_context).toon()
+
+        assert data['owed_landing']['queue_readable'] is False, (
+            'the running row sits in an unreadable row file, yet owed_landing reports a clean '
+            'no-news with no sign that the running set was only partly read'
+        )
+        assert data['owed_landing']['state'] == 'no-news'
+        assert data['queue_reconciliation']['queue_readable'] is False
+
 
 # =============================================================================
 # (11) The plan-side read verb — fail-open, and never vacuously green
@@ -707,10 +810,18 @@ def _mark_running(plan_context, plan_id: str = READER, slug: str = READ_EPIC) ->
     """Make the epic's queue read ``plan_id`` as running, so a write DELIVERS.
 
     The machine authority the write-side routing decision consults; without it
-    every write would queue and the mailbox would never be populated.
+    every write would queue and the mailbox would never be populated. Seeded as a
+    per-concern ledger through ``_ledger_fixtures.write_ledger``: the queue row is
+    keyed by a spec id and carries ``plan_id`` as the plan it runs under.
     """
-    (_epic_dir(plan_context, slug) / 'status.json').write_text(
-        json.dumps({'plans': [{'id': plan_id, 'status': 'running'}]}), encoding='utf-8'
+    write_ledger(
+        _epic_dir(plan_context, slug),
+        {
+            'kind': 'orchestrator',
+            'phase': 'orchestrating',
+            'plans': [{'id': 'PLAN-01', 'status': 'running', 'plan_marshall_plan_id': plan_id}],
+            'resume_anchor': '',
+        },
     )
 
 
@@ -1056,9 +1167,9 @@ class TestReadResolvesTheDeliveryAddress:
         # tree: a mailbox read is a read of messages addressed to that plan,
         # never of the epic's own state.
         _scaffold(plan_context)
+        _mark_running(plan_context)
         root = _epic_dir(plan_context)
         seeded = {
-            'status.json': '{"plans": [{"id": "reader-plan", "status": "running"}]}',
             'epic.md': '# Epic\n',
             'workstreams/WS-01-a.md': 'charter\n',
             'plans/PLAN-01-a.md': 'spec\n',
@@ -1066,12 +1177,18 @@ class TestReadResolvesTheDeliveryAddress:
         }
         for rel, content in seeded.items():
             (root / rel).write_text(content, encoding='utf-8')
-        _deliver(plan_context, _payload(tmp_path))
+        delivered = _deliver(plan_context, _payload(tmp_path)).toon()
+        assert delivered['destination'] == 'mailbox', 'the setup did not deliver, so the read would reach nothing'
+        # The ledger files are part of the epic's own state the read must not touch.
+        ledger_files = ['status.json', 'resume_anchor.md', 'queue/PLAN-01.json']
+        ledger_before = {rel: (root / rel).read_bytes() for rel in ledger_files}
 
         _read(plan_context)
 
         for rel, content in seeded.items():
             assert (root / rel).read_text(encoding='utf-8') == content, rel
+        for rel, content_bytes in ledger_before.items():
+            assert (root / rel).read_bytes() == content_bytes, rel
 
 
 class TestReadIdentifierValidationStaysFailClosed:

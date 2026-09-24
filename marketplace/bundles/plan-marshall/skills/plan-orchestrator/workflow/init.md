@@ -35,9 +35,9 @@ python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator sca
 
 The scaffold is idempotent — re-running against an existing tree creates nothing and fails nothing.
 
-### Step 3: Create the status document
+### Step 3: Create the ledger
 
-Create the `kind=orchestrator` machine authority (`--phases` is ignored for this store; the schema carries a single three-value `phase` field starting at `init`):
+Create the `kind=orchestrator` machine authority. The call writes the epic header, `status.json` (`--phases` is ignored for this store; the header carries a single three-value `phase` field starting at `init`), and an empty anchor file, `resume_anchor.md`. It creates no `queue/` directory — an absent queue is a measured empty one, and `decompose` stages the first row file:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status create \
@@ -60,7 +60,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metada
   --plan-id {slug} --get --field parallelization_scope --store orchestrator
 ```
 
-The read has two branches, and BOTH are gated on the same reduction: a fresh operator answer and a pre-existing stored value are equally untrusted, because a legacy or hand-edited `status.json` can carry a `0`, a negative number, or non-numeric text that no prompt ever validated.
+The read has two branches, and BOTH are gated on the same reduction: a fresh operator answer and a pre-existing stored value are equally untrusted, because a hand-edited header `status.json` can carry a `0`, a negative number, or non-numeric text that no prompt ever validated.
 
 **Positive-integer reduction** (the shared gate). `orchestrate.md`'s `next` verb Step 4 computes `N - R` from the persisted value, so a zero, a negative number, or non-numeric text yields a nonsensical slot count or an unusable comparison downstream. Reduce the candidate value to a positive integer `N ≥ 1`:
 
@@ -95,15 +95,22 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging deci
 
 ### Step 5: Write the epic skeleton
 
-Instantiate `epic.md` from [`templates/epic.md`](../templates/epic.md) via the Write tool — direct file access inside the epic's own tree is the direct-file-write carve-out. Fill the Vision section from the operator's framing; leave both generated blocks' markers in place — the START-HERE and the Ordered Queue table markers, populated by `decompose` — with the queue empty. Optionally seed `references.json` (external repos, PRs, source documents) the same way.
+Instantiate `epic.md` from [`templates/epic.md`](../templates/epic.md) via the Write tool — direct file access inside the epic's own tree is the direct-file-write carve-out. Fill the Vision section from the operator's framing and leave the `## Queue annotations` zone empty. `epic.md` is hand-written narrative only: START HERE and the Ordered Queue are not in it — they live in the generated `queue-view.md` (Step 6). Optionally seed `references.json` (external repos, PRs, source documents) the same way.
 
-### Step 6: Set the resume anchor and log
+### Step 6: Set the resume anchor, render the view, and log
 
-Set the resume anchor to the exact next action (typically "run /plan-orchestrator decompose slug={slug}"):
+Set the first resume anchor — the exact next action, typically "run /plan-orchestrator decompose slug={slug}". The value is written to the anchor file, `resume_anchor.md`, which Step 3 created empty:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status update-field \
   --plan-id {slug} --field resume_anchor --value "{next action}" --store orchestrator
+```
+
+Render the first `queue-view.md` — START HERE with the anchor and an empty Ordered Queue — so the tracked view exists from the start:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator regenerate-view \
+  --slug {slug}
 ```
 
 Log the init decision:
