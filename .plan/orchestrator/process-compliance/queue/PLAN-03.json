@@ -1,0 +1,10 @@
+{
+  "id": "PLAN-03",
+  "slug": "compliant-paths",
+  "workstream": "WS-03",
+  "status": "shipped",
+  "plan_marshall_plan_id": "compliant-paths",
+  "pr": "1542",
+  "landing": "landings/PLAN-03.md",
+  "seq": 3
+}

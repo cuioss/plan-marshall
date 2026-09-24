@@ -1,0 +1,10 @@
+{
+  "id": "PLAN-06",
+  "slug": "dispatch-roster",
+  "workstream": "WS-05",
+  "status": "shipped",
+  "plan_marshall_plan_id": "plan-06-dispatch-roster",
+  "pr": "1606",
+  "landing": "landings/PLAN-06.md",
+  "seq": 6
+}
