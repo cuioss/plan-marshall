@@ -958,9 +958,12 @@ def derive_landing_state(pr_states: list[str], pushed: bool) -> str:
 #
 # Four read-only verbs reach beyond the checkout the router is bound to:
 # `org list-repos`, `org search-code`, `repo file read`, and `repo label list`.
-# Each one answers a population question ("every repository", "every file
-# containing X", "every label"), so each one carries its own completeness
-# evidence rather than a bare list. The vocabulary below is provider-neutral so
+# Three of them answer a population question — `org list-repos` (every
+# repository), `org search-code` (the files GitHub's token-based code search
+# matches for X) and `repo label list` (every label) — so each of those three
+# carries its own completeness evidence rather than a bare list. `repo file read`
+# answers a single-file question with a found / not_found / error state. The
+# vocabulary below is provider-neutral so
 # a consumer branches on one set of values whichever provider is configured.
 
 #: `status` member a population verb returns when it read a listing that is

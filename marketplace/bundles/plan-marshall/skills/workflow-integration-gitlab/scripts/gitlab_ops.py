@@ -2735,7 +2735,8 @@ def cmd_checks_pull_request_runs(args: argparse.Namespace) -> dict:
 # their tokens resolve on GitLab too. Each is registered here with an explicit
 # refusal for the same reason ``cmd_checks_pull_request_runs`` is: an absent
 # handler would surface as an "unknown subcommand" parser error, and a silent
-# empty success would be read as an empty population. Both are wrong answers to
+# empty success would be read as an empty population (or, for ``repo file read``,
+# as an absent file). Both are wrong answers to
 # a question GitLab was never asked.
 
 _GITLAB_READ_GAP = (
