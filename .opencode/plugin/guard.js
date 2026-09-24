@@ -107,13 +107,37 @@ const BARE_BUILD_TOOLS = new Set(["mvn", "mvnw", "gradle", "gradlew", "make", "c
 const JS_RUNNER_BUILD_VERBS = new Set(["test", "run", "build"])
 const PYTHON_DIRECT_RUNNERS = new Set(["pytest", "mypy", "ruff"])
 
-function tokenAt(command, index) {
+// Shell wrappers (`command`, `env`, `sudo`) and leading `NAME=value`
+// assignments are transparent to the shell: `command rm -f file` still runs
+// `rm`. Strip them before first-token checks so R2/R4 cannot be bypassed
+// by prefixing a blocked invocation.
+const SHELL_WRAPPERS = new Set(["command", "env", "sudo"])
+
+function commandTokens(command) {
   const tokens = command.trimStart().split(/\s+/)
+  let i = 0
+  while (i < tokens.length) {
+    const t = tokens[i]
+    if (SHELL_WRAPPERS.has(t)) {
+      i++
+      continue
+    }
+    if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(t)) {
+      i++
+      continue
+    }
+    break
+  }
+  return tokens.slice(i)
+}
+
+function tokenAt(command, index) {
+  const tokens = commandTokens(command)
   return tokens[index] ?? ""
 }
 
 function isExecutorPermit(command) {
-  return /^python3\s+\.plan\/execute-script\.py\b/.test(command.trimStart())
+  return /^python3\s+\.plan\/execute-script\.py\b/.test(commandTokens(command).join(" "))
 }
 
 function targetsExecutor(args) {
