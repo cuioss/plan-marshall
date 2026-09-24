@@ -35,9 +35,9 @@ with every remaining gap a logged, visible exemption rather than a silent slip.
      outside the markers — never inside them. -->
 
 <!-- BEGIN GENERATED: resume-summary -->
-**Resume anchor**: Drain 2026-09-23: 12/12 consumed (2 new defects, PLAN-06 repoint, folds); 2 operator dispositions owed (module-budget park, plan-06-004 outline). Next: land ledger.
+**Resume anchor**: Landing 3 done (PR1604 merged 5689afcd, main pulled); 2 fresh filings queued. Next: drain inbox.
 **Phase**: orchestrating
-**Inbox (derived)**: 0 queued, 115 archived
+**Inbox (derived)**: 1 queued, 115 archived
 **Queue** (staged, in order):
 1. PLAN-08 (WS-03)
 2. PLAN-09 (WS-03)

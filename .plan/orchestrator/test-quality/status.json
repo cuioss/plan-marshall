@@ -42,16 +42,16 @@
       "id": "PLAN-183",
       "slug": "carried-defects-and-watches-closure",
       "workstream": "WS-03",
-      "status": "running",
+      "status": "shipped",
       "plan_marshall_plan_id": "carried-defects-and-watches-closure",
       "pr": "#1602",
-      "landing": ""
+      "landing": "landings/PLAN-183.md"
     }
   ],
-  "resume_anchor": "PLAN-183 running (2026-09-23): carried-defects-and-watches-closure (WS-03) started by operator, concurrent with running PLAN-182 (disjoint charters); PLAN-140 superseded; PLAN-181 shipped. Open carried: 7 settled.md dangling landings refs (orchestrator-owned staging-pass work); operator commit-scope decision on 103 uncommitted paths (5 epic-own).",
+  "resume_anchor": "PLAN-183 shipped (analyze 2026-09-24): #1602 merged (4ef2efd), D1-D8 closed, landing landings/PLAN-183.md, inbox 5/5 archived; both overrulings ruled (pull-skip upheld, 002 re-allocation sound). PLAN-182 running (slices 2+). Open carried: 7 settled.md dangling landings refs (orchestrator-owned); operator commit-scope decision on uncommitted paths.",
   "metadata": {
     "parallelization_scope": "1"
   },
   "created": "2026-08-23T21:32:44Z",
-  "updated": "2026-09-23T20:08:58Z"
+  "updated": "2026-09-24T05:36:15Z"
 }
