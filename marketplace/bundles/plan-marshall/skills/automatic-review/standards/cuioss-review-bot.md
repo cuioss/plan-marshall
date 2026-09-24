@@ -334,8 +334,9 @@ The `ignore_patterns` entry `**[Persistent review]` is NOT a refusal: it is a co
 **`/review` output is one persistent comment; inline comments come only from `/improve`.**
 CONFIRMED on #103 — `/review` produces exactly one persistent `issue_comment`, headed
 `## PR Reviewer Guide 🔍`, and it is *updated in place* on re-review rather than reposted. Inline
-review comments are published by the separate `/improve` command, which runs only in one of its two
-gating modes (above). A pipeline stage that counts only inline review comments therefore concludes
+review comments are published by the separate `/improve` command. Its automatic runs are gated by
+one of the two modes above; an explicit `/improve` comment is a separate, manual trigger that
+neither mode governs. A pipeline stage that counts only inline review comments therefore concludes
 this bot found nothing on any repository where /improve did not run — the Guide, not the inline
 count, is the shape that is always present.
 

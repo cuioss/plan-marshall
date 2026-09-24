@@ -178,6 +178,26 @@ def test_list_repos_cursor_missing_while_more_pages_is_malformed(monkeypatch):
     assert result['reason'] == 'malformed_response'
 
 
+def test_list_repos_cursor_that_does_not_advance_is_malformed(monkeypatch):
+    """A repeated ``endCursor`` while ``hasNextPage`` is refused, not re-read to the page bound."""
+    calls = _serve_pages(
+        monkeypatch,
+        [
+            _page([_repo_node('a')], total=3, next_cursor='C1'),
+            _page([_repo_node('b')], total=3, next_cursor='C1'),
+        ],
+        wrap=_wrap_repos,
+    )
+
+    result = _list_repos()
+
+    assert result['status'] == 'error'
+    assert result['reason'] == 'malformed_response'
+    assert result['pages_read'] == 2
+    assert len(calls) == 2
+    assert 'repos' not in result
+
+
 @pytest.mark.parametrize('org', ['', 'bad org', '-leading-hyphen', 'a' * 40])
 def test_list_repos_rejects_an_invalid_login_before_any_call(monkeypatch, org):
     """A malformed login is refused before auth or any provider call."""

@@ -132,7 +132,8 @@ def _paginate_connection(
         'pages_read'}`` when a page could not be read. ``reason`` is
         ``owner_not_found`` when the owning node is absent, ``page_read_failed``
         when the provider call failed, and ``malformed_response`` when a page
-        lacked the connection fields.
+        lacked the connection fields or reported more pages without an
+        ``endCursor`` that advances past the one it was requested with.
     """
     nodes: list[dict] = []
     after: str | None = None
@@ -162,11 +163,11 @@ def _paginate_connection(
                 'pages_read': page,
                 'bound_reached': False,
             }
-        if not after:
+        if not after or after == page_vars.get('after'):
             return {
                 'ok': False,
                 'reason': 'malformed_response',
-                'detail': 'hasNextPage is true but endCursor is empty',
+                'detail': 'hasNextPage is true but endCursor is empty or did not advance',
                 'pages_read': page,
             }
     return {

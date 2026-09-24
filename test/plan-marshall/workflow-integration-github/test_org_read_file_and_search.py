@@ -241,8 +241,15 @@ def test_search_code_failed_page_is_an_error(monkeypatch):
 
 
 @pytest.mark.parametrize('query', ['', '   ', 'has "quote"'])
-def test_search_code_refuses_an_unsearchable_literal(query):
+def test_search_code_refuses_an_unsearchable_literal(monkeypatch, query):
     """An empty literal or one carrying a double quote is refused before any call."""
+
+    def _unexpected_call(*_args, **_kwargs):
+        pytest.fail('an unsearchable literal reached GitHub authentication or the API')
+
+    monkeypatch.setattr(_github_org.github_ops, 'check_auth', _unexpected_call)
+    monkeypatch.setattr(_github_org.github_ops, 'run_gh', _unexpected_call)
+
     result = _search(query)
 
     assert result['status'] == 'error'
