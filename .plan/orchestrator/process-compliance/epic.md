@@ -338,6 +338,13 @@ recipe-fix-argparse-rejection remediation carrier.
   resolution ambiguous and the whole-tree gate false-red. Candidate future
   staging (single reader + fail-closed partial coverage + no-shadow
   registration).
+- **Recurrence drain 2026-09-24 (`implement-opencode-enforcement-parity-008.md`,
+  folded here).** On-main regen via sync-plugin-cache wrote an executor that
+  crashes every call (`plan_logging` unresolvable in cache context) — total
+  lockout recovered via direct-path bootstrap. New facet beyond the defect
+  above: no fail-safe caught it (py_compile guards syntax, not runtime
+  imports). Fails the defect's premise upward: smoke-import before atomic
+  replace, or pin `--marketplace` context.
 - **Scope-creep guard unsatisfiable on worktree plans (drain 2026-09-23,
   `implement-opencode-enforcement-parity-005.md`, unowned).** Two independent
   defects: the diff base (`plan_creation_sha` at init) predates worktree
@@ -511,3 +518,8 @@ recipe-fix-argparse-rejection remediation carrier.
   `landings/PLAN-06.md` with a complete facts block. Residue on record:
   override push basis, unenriched metrics floor, missing kind=change rows,
   mailbox probe flip (folded into PLAN-10 D2 note).
+- **PLAN-15 shipped 2026-09-24 (PR #1618, merge e37e4720).** All 6 deliverables
+  per spec plus review-driven hardening (R1–R4 bypass closures, decision-table
+  tests); landing record at `landings/PLAN-15.md`. Landed via operator paste
+  (no kind=landing message queued — reconciled against PR ground truth).
+  Overrides and disclaimed out-of-scope defects on record as reported.
