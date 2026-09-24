@@ -1219,6 +1219,9 @@ def _parse_canonical_forms(md_path: Path) -> list[tuple[int, str]]:
 # e.g. ``manage-tasks read``) to an executor notation. The Canonical Forms
 # table elides the bundle/skill segments — we resolve them by searching the
 # script index for a notation whose third segment matches the shorthand.
+# The generated ``default-bundle:`` mirror duplicates every marketplace script
+# for the OpenCode target; it is ignored when a marketplace-native candidate
+# exists, per the D0 resolver-root priority (tree code wins over the mirror).
 def _resolve_shorthand_to_notation(
     shorthand: str,
     script_index: dict[str, _ScriptEntry],
@@ -1228,7 +1231,8 @@ def _resolve_shorthand_to_notation(
     Matches when the third segment of a registered notation equals ``shorthand``
     OR when the second segment equals ``shorthand`` (some scripts share name
     with their containing skill, e.g. ``architecture`` under ``manage-architecture``).
-    Returns ``None`` if no match (or ambiguous match across bundles).
+    Returns ``None`` if no match (or genuinely ambiguous match across
+    marketplace-native bundles).
     """
     matches = [n for n in script_index if n.endswith(f':{shorthand}') or n.split(':')[1] == shorthand]
     if len(matches) == 1:
@@ -1238,6 +1242,14 @@ def _resolve_shorthand_to_notation(
     exact = [m for m in matches if m.split(':')[2] == shorthand]
     if len(exact) == 1:
         return exact[0]
+    candidates = exact if exact else matches
+    non_default = [m for m in candidates if not m.startswith('default-bundle:')]
+    if len(non_default) == 1:
+        return non_default[0]
+    if len(non_default) > 1:
+        native = [m for m in non_default if m.startswith('plan-marshall:')]
+        if len(native) == 1:
+            return native[0]
     return None
 
 
