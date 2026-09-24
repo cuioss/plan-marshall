@@ -10,8 +10,10 @@ Covers deliverable 5's enforcement surface:
   through ``to_opencode_grant`` into the persisted bash map).
 * Carve-out operations pass (the executor permit resolves to ``allow``).
 * The D2 guard decision table (``.opencode/plugin/guard.js``,
-  ``tool.execute.before``) is mirrored here as a behavioral contract:
-  the R1-R4 declared sets below must stay in lock-step with the plugin.
+  ``tool.execute.before``) is read from the plugin at test time as a
+  behavioral contract: the R1-R4 declared sets below are parsed out of
+  guard.js and compared to the expected pins, so plugin drift fails the
+  contract test instead of passing against a stale literal.
   Read-side probes (``ls``, ``cat``, ``head``, ``tail``, ``grep``,
   ``find``) are NOT in the R2 guard class — the two-tier permission map
   governs them.
@@ -24,6 +26,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+import re
 from typing import Any
 
 import pytest
@@ -111,36 +114,109 @@ def test_carve_out_executor_permit_passes(tmp_path: pathlib.Path, monkeypatch: p
 # Guard decision-table mirror (D2 behavioral contract)
 # =============================================================================
 
-#: R2 — shell file operations, mutation class (mirrors guard.js
-#: MUTATION_FILE_OPS). Read-side probes are NOT members.
-_GUARD_MUTATION_FILE_OPS = frozenset(
-    {
-        'rm',
-        'mv',
-        'cp',
-        'touch',
-        'mkdir',
-        'rmdir',
-        'truncate',
-        'tee',
-        'chmod',
-        'chown',
-        'ln',
-        'dd',
-        'sh',
-        'bash',
-        'source',
-    }
+#: Guard decision-table sets parsed from the plugin at test time (D2
+#: behavioral contract). Every `const <NAME> = new Set([...])` below is read
+#: out of `.opencode/plugin/guard.js` — never a hand-maintained literal — so
+#: removing an entry from the plugin fails the contract test instead of
+#: passing against a stale copy.
+_GUARD_SET_NAMES = (
+    'MUTATION_FILE_OPS',
+    'PW_BUILD_VERBS',
+    'BARE_BUILD_TOOLS',
+    'JS_RUNNER_BUILD_VERBS',
+    'PYTHON_DIRECT_RUNNERS',
+    'SHELL_WRAPPERS',
 )
+
+
+def _guard_plugin_path() -> pathlib.Path:
+    """Locate `.opencode/plugin/guard.js` by walking up from this file."""
+    for parent in pathlib.Path(__file__).resolve().parents:
+        candidate = parent / '.opencode' / 'plugin' / 'guard.js'
+        if candidate.is_file():
+            return candidate
+    raise AssertionError('.opencode/plugin/guard.js not found above the test file')
+
+
+def _parse_guard_sets(path: pathlib.Path) -> dict[str, frozenset[str]]:
+    """Parse every declared set out of the guard plugin source."""
+    source = path.read_text(encoding='utf-8')
+    parsed: dict[str, frozenset[str]] = {}
+    for name in _GUARD_SET_NAMES:
+        match = re.search(r'\bconst\s+' + name + r'\s*=\s*new\s+Set\(\[(.*?)\]\)', source, re.DOTALL)
+        assert match is not None, f'guard.js carries no {name} set'
+        members = frozenset(re.findall(r'"([^"]+)"', match.group(1)))
+        assert members, f'guard.js {name} parsed empty'
+        parsed[name] = members
+    return parsed
+
+
+#: Expected guard decision-table pins. The parsed sets above must equal
+#: these exactly — drift in either direction (a removed or an added entry)
+#: fails the contract test.
+_GUARD_EXPECTED: dict[str, frozenset[str]] = {
+    'MUTATION_FILE_OPS': frozenset(
+        {
+            'rm',
+            'mv',
+            'cp',
+            'touch',
+            'mkdir',
+            'rmdir',
+            'truncate',
+            'tee',
+            'chmod',
+            'chown',
+            'ln',
+            'dd',
+            'sh',
+            'bash',
+            'source',
+        }
+    ),
+    'PW_BUILD_VERBS': frozenset(
+        {
+            'verify',
+            'compile',
+            'test-compile',
+            'module-tests',
+            'coverage',
+            'quality-gate',
+            'clean',
+            'gate',
+            'test',
+            'run',
+            'check',
+            'lint',
+            'format',
+            'build',
+            'install',
+            'tests',
+        }
+    ),
+    'BARE_BUILD_TOOLS': frozenset({'mvn', 'mvnw', 'gradle', 'gradlew', 'make', 'cmake', 'ant', 'uv'}),
+    'JS_RUNNER_BUILD_VERBS': frozenset({'test', 'run', 'build'}),
+    'PYTHON_DIRECT_RUNNERS': frozenset({'pytest', 'mypy', 'ruff'}),
+    'SHELL_WRAPPERS': frozenset({'command', 'env', 'sudo'}),
+}
+
+_GUARD_SETS = _parse_guard_sets(_guard_plugin_path())
+
+#: R2 — shell file operations, mutation class (parsed from guard.js
+#: MUTATION_FILE_OPS). Read-side probes are NOT members.
+_GUARD_MUTATION_FILE_OPS = _GUARD_SETS['MUTATION_FILE_OPS']
 
 #: Read-side probes governed by the two-tier permission map, never by R2.
 _GUARD_READ_PROBES = ('ls', 'cat', 'head', 'tail', 'grep', 'find')
 
-#: R4 — bare build tools bypassing the executor (mirrors guard.js
+#: R4 — bare build tools bypassing the executor (parsed from guard.js
 #: BARE_BUILD_TOOLS plus the Python direct runners).
-_GUARD_BARE_BUILD_TOOLS = frozenset({'mvn', 'mvnw', 'gradle', 'gradlew', 'make', 'cmake', 'ant', 'uv'})
-_GUARD_PYTHON_DIRECT_RUNNERS = frozenset({'pytest', 'mypy', 'ruff'})
+_GUARD_BARE_BUILD_TOOLS = _GUARD_SETS['BARE_BUILD_TOOLS']
+_GUARD_PYTHON_DIRECT_RUNNERS = _GUARD_SETS['PYTHON_DIRECT_RUNNERS']
+#: JS runner tool names are inlined (not a named set) in guard.js, so this
+#: pin stays a literal list of the tools the R4 branch names.
 _GUARD_JS_RUNNERS = frozenset({'npm', 'npx', 'bun', 'pnpm', 'yarn'})
+_GUARD_JS_RUNNER_BUILD_VERBS = _GUARD_SETS['JS_RUNNER_BUILD_VERBS']
 
 #: R3 — the generated executor path direct edits must target.
 _GUARD_EXECUTOR_PATH = '.plan/execute-script.py'
@@ -162,6 +238,20 @@ def test_guard_r4_pins_bare_build_tools() -> None:
     assert 'mvn' in _GUARD_BARE_BUILD_TOOLS
     assert 'pytest' in _GUARD_PYTHON_DIRECT_RUNNERS
     assert 'npm' in _GUARD_JS_RUNNERS
+
+
+def test_guard_sets_match_plugin_contract() -> None:
+    """Every set parsed from guard.js equals its expected pin exactly."""
+    assert set(_GUARD_SETS) == set(_GUARD_EXPECTED), 'parsed set names drifted from the contract'
+    for name, expected in _GUARD_EXPECTED.items():
+        assert _GUARD_SETS[name] == expected, f'guard.js {name} drifted from its pin'
+
+
+def test_guard_r4_pins_pw_build_verbs() -> None:
+    """R4 blocks every build.py-routed ./pw verb, including test-compile."""
+    assert 'test-compile' in _GUARD_SETS['PW_BUILD_VERBS']
+    assert 'clean' in _GUARD_SETS['PW_BUILD_VERBS']
+    assert 'verify' in _GUARD_SETS['PW_BUILD_VERBS']
 
 
 def test_guard_r3_pins_executor_path() -> None:
