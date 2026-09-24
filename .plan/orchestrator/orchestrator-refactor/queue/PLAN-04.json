@@ -1,0 +1,10 @@
+{
+  "id": "PLAN-04",
+  "slug": "identifier-vocabulary-decision",
+  "workstream": "WS-03",
+  "status": "shipped",
+  "plan_marshall_plan_id": "identifier-vocabulary-decision",
+  "pr": "#1543",
+  "landing": "landings/PLAN-04.md",
+  "seq": 4
+}

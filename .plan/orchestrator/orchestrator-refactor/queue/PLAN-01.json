@@ -1,0 +1,10 @@
+{
+  "id": "PLAN-01",
+  "slug": "tracked-orchestrator-store-resolver",
+  "workstream": "WS-01",
+  "status": "shipped",
+  "plan_marshall_plan_id": "tracked-orchestrator-store-resolver",
+  "pr": "#1557, #1558, #1561",
+  "landing": "landings/PLAN-01.md",
+  "seq": 1
+}
