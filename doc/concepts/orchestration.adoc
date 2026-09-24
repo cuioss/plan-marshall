@@ -59,7 +59,7 @@ Every verb runs under `persona-plan-orchestrator` (see xref:personas.adoc[Person
 
 == Log everything
 
-The orchestrator inherits the exhaustive-record posture of the xref:audit-trail.adoc[Audit Trail], applied to its own store: every decision, operator interaction, plan-status change, and reconciliation is written to `logs/decision.log` and `logs/work.log` under the epic tree via `manage-logging --store orchestrator` — never by direct file writes, even though the ledger documents themselves are directly authored. The epic tree is therefore replayable the same way a plan directory is: the narrative says what the epic believes, the ledger files say what is true, and the logs say why every change happened.
+The orchestrator inherits the exhaustive-record posture of the xref:audit-trail.adoc[Audit Trail], applied to its own store: every decision, operator interaction, plan-status change, and reconciliation is written to `logs/decision.log` and `logs/work.log` under the epic tree via `manage-logging --store orchestrator` — never by direct file writes, even though the narrative documents (`epic.md`, workstream charters, staged plan specs) are directly authored. The epic tree is therefore replayable the same way a plan directory is: the narrative says what the epic believes, the ledger files say what is true, and the logs say why every change happened.
 
 == Related
 
