@@ -35,8 +35,8 @@
  *   R4 — hard-coded build commands bypassing `python3 .plan/execute-script.py`
  *   (bash): route builds through the executor only. Block when:
  *     - first token is `./pw` with no verb or a build verb
- *       {verify compile module-tests coverage quality-gate gate test run check
- *        lint format build install tests} (`./pw generate*` and `./pw --*` pass);
+  *       {verify compile test-compile module-tests coverage quality-gate clean gate
+  *        test run check lint format build install tests} (`./pw generate*` and `./pw --*` pass);
  *     - first token is a bare build tool {mvn mvnw gradle gradlew make cmake ant
  *       uv}; or a JS runner {npm npx bun pnpm yarn} followed by
  *       {test run build};
@@ -92,8 +92,15 @@ const MUTATION_FILE_OPS = new Set([
 ])
 
 // ---- R4: hard-coded build bypasses (declared sets, mirrored) ----
+// PW_BUILD_VERBS is derived from the authoritative aliases in
+// pyproject.toml [tool.pyprojectx.aliases]: every alias routing through
+// build.py (build, clean, compile, coverage, module-tests, quality-gate,
+// test-compile, verify) plus the direct-tool aliases that bypass the
+// executor (install, lint, format) and legacy typo guards. When a new
+// build.py subcommand or alias lands, extend this set in lock-step.
 const PW_BUILD_VERBS = new Set([
-  "verify", "compile", "module-tests", "coverage", "quality-gate", "gate",
+  "verify", "compile", "test-compile", "module-tests", "coverage",
+  "quality-gate", "clean", "gate",
   "test", "run", "check", "lint", "format", "build", "install", "tests",
 ])
 const BARE_BUILD_TOOLS = new Set(["mvn", "mvnw", "gradle", "gradlew", "make", "cmake", "ant", "uv"])
