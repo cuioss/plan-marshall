@@ -228,25 +228,57 @@ def resolve_bot_kind(record: dict) -> str:
     return bot_registry.bot_kind_for_login(str(record.get('author') or ''))
 
 
-#: Innermost ``<details>`` block (one containing no further opening tag) — the
-#: collapsed summary block a status summary carries below its status line. Removed
-#: repeatedly so nested blocks peel from the inside out.
-_INNERMOST_DETAILS_BLOCK = re.compile(r'<details\b[^>]*>(?:(?!<details\b)[\s\S])*?</details\s*>', re.IGNORECASE)
+#: Innermost ``<details>`` block (one containing no further opening tag). Group 1 is
+#: the opening tag's attribute text, group 2 the block's content. Peeled repeatedly
+#: so nested blocks resolve from the inside out.
+_INNERMOST_DETAILS_BLOCK = re.compile(r'<details\b([^>]*)>((?:(?!<details\b)[\s\S])*?)</details\s*>', re.IGNORECASE)
+#: One attribute of an opening tag: its name, then an optional value in any of the
+#: three HTML value forms. Values are consumed whole, so a quoted value that
+#: contains the word ``open`` is never read as the attribute name.
+_TAG_ATTRIBUTE = re.compile(r"""([^\s=/>]+)(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+))?""")
 _HTML_COMMENT = re.compile(r'<!--[\s\S]*?-->')
+#: Any remaining opening or closing HTML tag, such as an open block's ``<summary>``.
+_HTML_TAG = re.compile(r'</?[A-Za-z][^>]*>')
+
+
+def _is_open_details(attributes: str) -> bool:
+    """True when a ``<details>`` opening tag carries the ``open`` attribute.
+
+    ``open`` is an HTML boolean attribute, so its presence alone renders the block
+    expanded: ``open``, ``open=""`` and ``open="open"`` all qualify, in any case.
+    """
+    return any(match.group(1).lower() == 'open' for match in _TAG_ATTRIBUTE.finditer(attributes))
+
+
+def _peel_details_block(match: re.Match[str]) -> str:
+    """Resolve one innermost ``<details>`` block to what a reader sees of it.
+
+    A collapsed block is removed whole. An open block is displayed, so only its tags
+    are removed and its content stays to be classified.
+    """
+    attributes, content = match.group(1), match.group(2)
+    return f' {content} ' if _is_open_details(attributes) else ' '
 
 
 def _carries_review_content(text: str) -> bool:
     """True when ``text`` holds anything beyond collapsed summary blocks and markup.
 
-    Closed ``<details>`` blocks and HTML comments are removed; what is left counts as
-    review content when it carries any letter or digit. Separator rules, stray
-    emphasis and blank lines are layout, not a review claim.
+    Collapsed ``<details>`` blocks (no ``open`` attribute) and HTML comments are
+    removed; an open block keeps its content, because a reader sees it. The tags
+    that remain — an open block's ``<summary>`` among them — are then removed. What
+    is left counts as review content when it carries any letter or digit. Separator
+    rules, stray emphasis and blank lines are layout, not a review claim.
+
+    Blocks peel from the inside out, so a collapsed block nested inside an open one
+    is removed while the open block's own content stays, and an open block nested
+    inside a collapsed one is removed with it.
     """
     previous = None
     while previous != text:
         previous = text
-        text = _INNERMOST_DETAILS_BLOCK.sub(' ', text)
+        text = _INNERMOST_DETAILS_BLOCK.sub(_peel_details_block, text)
     text = _HTML_COMMENT.sub(' ', text)
+    text = _HTML_TAG.sub(' ', text)
     return any(ch.isalnum() for ch in text)
 
 
