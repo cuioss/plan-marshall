@@ -1,1 +1,1 @@
-PLAN-06 is now shipped with PR1606; 9 drained with 2 defects and folds filed; 1 slot free.
+PLAN-15 is now shipped with PR1618; inbox drained; 7 staged plans remain (08 through 14).

@@ -2,9 +2,9 @@
   "id": "PLAN-15",
   "slug": "opencode-enforcement-parity",
   "workstream": "WS-06",
-  "status": "launched",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "status": "shipped",
+  "plan_marshall_plan_id": "implement-opencode-enforcement-parity",
+  "pr": "1618",
+  "landing": "landings/PLAN-15.md",
   "seq": 15
 }
