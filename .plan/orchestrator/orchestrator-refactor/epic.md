@@ -45,27 +45,11 @@ ad hoc commits directly against `main`.
 > shipped; this epic's OWN ledger writes still land ad hoc on `main` until WS-05 ships and
 > `orchestrator.use_worktree` is turned on for this epic, same as every other epic today.
 
-## START HERE
+## Queue annotations
 
-### Annotations
-
-<!-- ANNOTATION ZONE — hand-written, and deliberately OUTSIDE the generated markers.
-     A regeneration replaces only what sits BETWEEN the markers, so everything written
-     here survives it. This is what makes the block above genuinely regenerable: the
-     per-row notes the generator cannot produce (why a row is parked, what a running
-     plan is waiting on, an operator caveat on a queue entry) have a home that a
-     verbatim paste does not destroy. -->
-
-- (none yet)
-
-## Ordered Queue
-
-### Queue annotations
-
-<!-- ANNOTATION ZONE — hand-written, and deliberately OUTSIDE the generated table markers.
-     A regeneration replaces only the table BETWEEN the markers, so everything written here
-     survives it. This is where the per-row narrative the generator cannot derive lives — a
-     sequencing caveat, a disjointness note, why a row is parked — keyed by plan id. -->
+{Per-row narrative the generated `queue-view.md` cannot derive — keyed by plan id. The row's
+status, workstream, and surface are in `queue-view.md`; this zone carries only what it
+cannot express.}
 
 - PLAN-01 — **SHIPPED 2026-09-21** (#1557/#1558/#1561; #1555 closed unmerged, split
   executed). See `landings/PLAN-01.md`. Landed WITHOUT a redirect — see the new Open Defect
@@ -132,6 +116,11 @@ ad hoc commits directly against `main`.
   Carries an open sequencing question for `land-all` (sequential vs bounded-parallel
   against the merge queue) and a HYPOTHESIS on whether `ci pr merge`'s existing sub-verbs
   suffice for D3 — both verify-at-outline, not decided here.
+- PLAN-11 — **appeared 2026-09-23 from a concurrent process, not authored this session.**
+  Title (`cross-check-dated-archive-self-collision`, WS-04) matches a previously-recorded
+  defect: `corpus cross-check` self-colliding against this epic's own archived snapshot as
+  a sibling-epic candidate. Plausible on that basis; content not independently reviewed by
+  this session — see the spec itself before relying on its Claim Labels.
 
 ## Decisions
 

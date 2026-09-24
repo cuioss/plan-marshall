@@ -17,10 +17,15 @@ Routed from `review-apparatus`, first observed and recorded as a "tool defect, n
 defect" in that epic's 2026-09-22 A1 re-grounding pass, carried unescalated across two further
 cleanup/next passes (2026-09-22, 2026-09-23), and staged here on the third at operator
 instruction rather than deferred a fourth time. `review-apparatus`'s own `corpus cross-check`
-runs currently report `candidate_comparison_determinate: false` every pass because of this
-defect, which means its `next` verb's disjointness admission test fails closed on EVERY staged
-candidate, every round, until this lands — not a one-epic nuisance, a structural block on that
-epic's ability to emit anything under the documented admission rule.
+runs currently report `candidate_comparison_determinate: false` every pass, and this defect is
+A cause of it, which means its `next` verb's disjointness admission test currently fails closed
+on EVERY staged candidate, every round. **Overclaim corrected at cleanup 2026-09-24**: landing
+this plan is not confirmed to fully clear that block — see D3's revised acceptance criterion.
+The self-collision this plan fixes accounts for roughly half of the observed
+`candidates_indeterminate` count on that epic; the remainder may have an independent cause this
+plan does not address. Still worth landing regardless — it measurably shrinks the block and is
+the only staged fix for its own mechanism — but "until this lands [it is fully unblocked]" is
+too strong a claim to carry forward unverified.
 
 ## Objective
 
@@ -31,10 +36,25 @@ enumerates every OTHER epic directory under both `.plan/orchestrator/` and
 (the `archive` verb's own pre-#1578 naming habit, e.g. `review-apparatus` live vs
 `review-apparatus-26-09-21` archived) the name-equality dedup does not recognise the two as the
 same epic, so the live epic's own corpus is enumerated a second time as a "sibling" and compared
-against itself — every one of its own specs collides with its own earlier-snapshot self on every
-shared path, manufacturing thousands of false `sibling_epic_spec` overlap rows and driving
-`candidates_indeterminate` (and therefore `candidate_comparison_determinate: false`) on every
-run that has such a snapshot.
+against itself.
+
+**Causal chain CORRECTED at cleanup 2026-09-24** — the original framing above ("collides on
+every shared path, manufacturing thousands of false overlap rows and driving
+`candidates_indeterminate`") conflated two different populations read from `orchestrator.py`
+source (`_spec_candidate_state` :3946-3965, `cmd_corpus_cross_check` :4008 onward). A
+`sibling_epic_spec` candidate is classified `CANDIDATE_INDETERMINATE`
+(`candidate_tally`/`candidates_indeterminate`, :4151-4152) purely from ITS OWN
+`derivation_status` being in `SURFACE_INDETERMINATE_STATES` — a per-candidate property,
+independent of whether it collides with anything. A candidate that IS comparable and DOES
+collide contributes to `file_overlap_matches` instead, a separate count. So the true mechanism
+is: the self-collision duplicates the WHOLE candidate population (both comparable and
+indeterminate specs) once per affected epic, and since roughly half of `review-apparatus`'s own
+corpus apparently has a non-declarative Expected Surface, doubling that population via the
+duplicate `review-apparatus-26-09-21` sibling is what produces the observed
+`sibling_epic_spec indeterminate: 94` — not "false overlap rows" manufacturing indeterminacy.
+Practical consequence for D3: excluding the duplicate removes roughly HALF of
+`candidates_indeterminate`'s current sibling-side contribution, not necessarily all of it — see
+D3's revised acceptance criterion.
 
 ## Deliverables
 
@@ -43,21 +63,40 @@ run that has such a snapshot.
    count and the exact slugs, since the live/archived directory listing can change between
    staging and outline.
 2. **D1 — recognise a live epic's own dated archive snapshot in `_sibling_epic_roots`, and
-   exclude it from the sibling-candidate population.** The discriminator is NOT a fixed date
-   suffix pattern to strip and re-compare (fragile, and the naming convention may not be
-   `{slug}-{YY-MM-DD}` forever) — read the archived directory's own `status.json` epic
-   identity (or an equivalent stable marker) and compare it against the queried epic's own
-   identity, so the exclusion holds regardless of naming convention. State and justify the
-   chosen discriminator; a string-prefix heuristic is licensed only if the identity-based read
-   is established as unavailable or unreliable, with that finding recorded.
+   exclude it from the sibling-candidate population. Discriminator SETTLED at cleanup
+   2026-09-24: string-prefix / date-suffix, not an identity-field read.** The original framing
+   ("read the archived directory's own `status.json` epic identity and compare it against the
+   queried epic's own identity") is now established as unreliable, not merely deferred: a
+   direct read of `.plan/archived-orchestrators/review-apparatus-26-09-21/status.json`'s
+   `title` (`"Review Apparatus — archived 2026-09-21"`) against the LIVE
+   `.plan/orchestrator/review-apparatus/status.json`'s `title`
+   (`"Automated PR review apparatus reliability"`) shows the two share no substring — `title`
+   diverges freely between an epic's live and archived self and is not comparable, and no
+   other identity field (slug, epic id) exists in either `status.json`. Per this deliverable's
+   own licensed fallback clause, the chosen discriminator is therefore the string-prefix /
+   date-suffix heuristic: recognise an archived directory name of the form
+   `{live_slug}-{YY-MM-DD}` against a live directory named `{live_slug}` under
+   `.plan/orchestrator/`, matching the `archive` verb's own current naming convention. Record
+   in the implementing plan that this IS the licensed fallback (identity-based read confirmed
+   unreliable, not merely unavailable) — the naming-convention fragility this D1 originally
+   worried about is accepted as the exclusion mechanism's known limitation, not solved.
 3. **D2 — a regression test pinning the exact defect**: an epic with BOTH a live directory and
    a dated-suffix archived directory of its own corpus must NOT appear as a sibling candidate
    against itself, with a matched negative control (a genuinely distinct sibling epic still
    IS enumerated and compared).
-4. **D3 — verify `candidate_comparison_determinate` recovers on the real corpus.** After the
-   fix, `corpus cross-check --slug review-apparatus` must report `candidate_comparison_determinate: true`
-   (or name a DIFFERENT, unrelated cause for any remaining indeterminate candidate) — this is
-   the acceptance criterion the defect was actually blocking, not merely the unit-level fix.
+4. **D3 — verify `candidates_indeterminate` measurably drops on the real corpus; do not assume
+   it reaches zero.** Per the Objective's corrected causal chain, D1 removes the SELF-COLLISION
+   contribution to `candidates_indeterminate` (roughly half of `review-apparatus`'s current
+   `sibling_epic_spec indeterminate: 94`, since that count doubles a population that is itself
+   already partly non-comparable) — it does NOT touch whatever indeterminate candidates exist
+   for reasons unrelated to this defect (an epic's own specs with a genuinely non-declarative
+   Expected Surface, unreadable siblings, etc.). After the fix, `corpus cross-check --slug
+   review-apparatus` must report a candidate count and `candidate_comparison_determinate`
+   verdict CONSISTENT with only the self-collision contribution being removed — `true` is the
+   best case, not the required one; a remaining `false` is acceptable ONLY if the remaining
+   `candidates_indeterminate` count is accounted for by candidates this plan never claimed to
+   fix (named individually, not waved past). This is the acceptance criterion the defect was
+   actually blocking, calibrated to what D1 can actually deliver, not the unit-level fix alone.
 
 ## Non-Goals
 
@@ -84,6 +123,7 @@ run that has such a snapshot.
   epic's `title`) stable enough to compare against the live epic's identity for D1's
   discriminator — confirm/refute by reading `.plan/archived-orchestrators/review-apparatus-26-09-21/status.json`
   at outline (verify-at-outline).
+  - verdict: contradicted | checked_at: 9588b30b317d0312ede90f1982122aa3145ea871 | by: orchestrator-refactor/cleanup | rescoped: yes | evidence: First verdict; refuted by direct read. .plan/archived-orchestrators/review-apparatus-26-09-21/status.json's title is 'Review Apparatus — archived 2026-09-21', while the LIVE .plan/orchestrator/review-apparatus/status.json's title is 'Automated PR review apparatus reliability' -- the two titles share no substring, so title is NOT a usable identity-based discriminator: it can diverge freely between an epic's live and archived self, and a live/archived comparison keyed on it would produce false negatives (failing to recognise a genuine self-collision) as readily as it fixes false positives. No other identity field (slug, epic id) exists in status.json at either location. Per this deliverable's own licensed fallback clause, this establishes that an identity-based read is unreliable, so D1's discriminator should be the string-prefix/date-suffix heuristic (matching the archive verb's own {slug}-{YY-MM-DD} naming convention) with that unreliability finding recorded in the plan, not a status.json field read.
 
 ## Expected Surface
 
@@ -98,10 +138,11 @@ run that has such a snapshot.
 - Depends on: none in-epic.
 - Overlaps with: none declared against this epic's other staged specs (single-file surface,
   `orchestrator.py`'s own candidate-enumeration function).
-- Unblocks (cross-epic, not this plan's to touch): `review-apparatus`'s `next` verb, whose
-  disjointness admission test fails closed on `candidate_comparison_determinate: false` for
-  every staged candidate until this lands. Recorded here so the urgency is visible; this plan
-  does not edit `review-apparatus`'s ledger.
+- Partially unblocks (cross-epic, not this plan's to touch): `review-apparatus`'s `next` verb,
+  whose disjointness admission test fails closed on `candidate_comparison_determinate: false`
+  for every staged candidate today. This plan removes the self-collision's contribution to that
+  count but is not confirmed to clear it entirely — see D3. Recorded here so the urgency is
+  visible; this plan does not edit `review-apparatus`'s ledger.
 
 ## Hand-Off Command
 
@@ -116,4 +157,4 @@ and edits NO file under `.plan/orchestrator/` other than its own
 `inbox/{sender}-{seq}` message — the orchestrator owns every other ledger write — and reports
 its outcome through its PR and its inbox message. The inbox exception's qualifiers and the
 sole sanctioned write mechanism are stated in
-`persona-marshall-orchestrator/standards/orchestration-model.md` § Ledger Write-Boundary.
+`persona-plan-orchestrator/standards/orchestration-model.md` § Ledger Write-Boundary.
