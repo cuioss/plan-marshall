@@ -351,6 +351,12 @@ def probe_header(root: Path) -> HeaderRead:
         return HeaderRead(
             state=LEDGER_UNREADABLE, detail=f'{path} could not be read: {exc}', observed_type='unreadable'
         )
+    except UnicodeDecodeError as exc:
+        # A ValueError, neither an OSError nor a JSONDecodeError: without this arm
+        # a header holding non-UTF-8 bytes escapes every reader as an exception.
+        return HeaderRead(
+            state=LEDGER_UNREADABLE, detail=f'{path} is not valid UTF-8: {exc}', observed_type='unreadable'
+        )
     try:
         parsed = json.loads(raw)
     except json.JSONDecodeError as exc:
@@ -383,13 +389,16 @@ def read_anchor(root: Path) -> tuple[str, str]:
 
     An absent anchor file reads as the empty anchor — a created ledger starts
     with one, so absence carries no information a reader acts on. An unreadable
-    one raises :class:`OSError` rather than reading as empty.
+    one — including one holding bytes that are not valid UTF-8 — raises
+    :class:`OSError` rather than reading as empty.
     """
     path = anchor_path(root)
     try:
         text = path.read_text(encoding='utf-8')
     except FileNotFoundError:
         return '', f'{path} does not exist'
+    except UnicodeDecodeError as exc:
+        raise OSError(f'{path} is not valid UTF-8: {exc}') from exc
     return (text[:-1] if text.endswith('\n') else text), ''
 
 
@@ -399,6 +408,8 @@ def _read_row_file(path: Path) -> tuple[dict[str, Any] | None, str]:
         raw = path.read_text(encoding='utf-8')
     except OSError as exc:
         return None, f'could not be read: {exc}'
+    except UnicodeDecodeError as exc:
+        return None, f'is not valid UTF-8: {exc}'
     try:
         parsed = json.loads(raw)
     except json.JSONDecodeError as exc:

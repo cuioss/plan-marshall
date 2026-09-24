@@ -171,6 +171,7 @@ from _orchestrator_ledger import (
     LEDGER_LEGACY,
     LEDGER_OK,
     LEDGER_UNREADABLE,
+    ROW_FIELDS,
     LedgerRead,
     assemble_view,
     create_row,
@@ -301,20 +302,13 @@ assert _DECLARED_STATUS_COUNT == len(VALID_STATUS_VOCABULARY), (
 #: starts at, the three RESULT fields (:data:`PLAN_ROW_FIELDS`) seeded EMPTY
 #: because a staged row has landed nothing yet, and ``seq`` — the queue-order
 #: key the ledger module allocates at create time as the local maximum plus one,
-#: so the rendered order reproduces staging order. Stated here so the seed shape
-#: is readable in one place; :data:`PLAN_ROW_FIELDS` and :func:`_set_row_field`
-#: are untouched by the append path, which writes a whole row rather than
-#: patching a field of one.
-ADD_ROW_SEED_FIELDS = (
-    'id',
-    'slug',
-    'workstream',
-    'status',
-    'plan_marshall_plan_id',
-    'pr',
-    'landing',
-    'seq',
-)
+#: so the rendered order reproduces staging order. A seeded row carries every
+#: field of a row file, so the order is NOT re-listed here: it is the ledger
+#: module's :data:`_orchestrator_ledger.ROW_FIELDS`, the single definition of the
+#: row field order, and a field added there is seeded here by construction.
+#: :data:`PLAN_ROW_FIELDS` and :func:`_set_row_field` are untouched by the append
+#: path, which writes a whole row rather than patching a field of one.
+ADD_ROW_SEED_FIELDS = ROW_FIELDS
 
 #: The status an appended row starts at when the caller names none. ``--status``
 #: is OPTIONAL on the append form precisely because this default is the

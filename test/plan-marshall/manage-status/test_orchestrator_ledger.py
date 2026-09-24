@@ -6,8 +6,9 @@ Covers every module entry point: path resolution (including the refusal of a
 plan id outside the grammar), the assembled view round-trip ordered by
 ``(seq, id)``, the atomic duplicate-id and duplicate-slug refusals of
 ``create_row``, per-row mutate isolation, legacy-layout detection, migration
-fidelity (``seq`` follows array order), and the absent-queue versus
-unreadable-row distinction.
+fidelity (``seq`` follows array order), the absent-queue versus
+unreadable-row distinction, and the non-UTF-8 header, anchor and row file each
+reported as unreadable rather than raised.
 """
 
 import json
@@ -150,6 +151,41 @@ class TestAssembleView:
 
         assert view.state == _ledger.LEDGER_UNREADABLE
         assert view.document == {}
+
+    def test_should_report_a_non_utf8_row_file_as_unreadable_without_raising(self, root):
+        _ledger.write_layout(root, _header(), '', (_row('PLAN-01', 'first', seq=1),))
+        (_ledger.queue_dir(root) / 'PLAN-02.json').write_bytes(b'\xff\xfe')
+
+        view = _ledger.assemble_view(root)
+
+        assert view.state == _ledger.LEDGER_OK
+        assert [row['id'] for row in view.document['plans']] == ['PLAN-01']
+        assert [row['file'] for row in view.unreadable_rows] == ['PLAN-02.json']
+        assert 'not valid UTF-8' in view.unreadable_rows[0]['reason']
+
+    def test_should_report_a_non_utf8_header_as_unreadable_without_raising(self, root):
+        _ledger.header_path(root).write_bytes(b'\xff\xfe')
+
+        probe = _ledger.probe_header(root)
+        view = _ledger.assemble_view(root)
+
+        assert probe.state == _ledger.LEDGER_UNREADABLE
+        assert probe.observed_type == 'unreadable'
+        assert 'not valid UTF-8' in probe.detail
+        assert view.state == _ledger.LEDGER_UNREADABLE
+        assert view.document == {}
+
+    def test_should_report_a_non_utf8_anchor_as_unreadable_without_raising(self, root):
+        _ledger.write_layout(root, _header(), '', (_row('PLAN-01', 'first', seq=1),))
+        _ledger.anchor_path(root).write_bytes(b'\xff\xfe')
+
+        with pytest.raises(OSError, match='not valid UTF-8'):
+            _ledger.read_anchor(root)
+        view = _ledger.assemble_view(root)
+
+        assert view.state == _ledger.LEDGER_UNREADABLE
+        assert view.document == {}
+        assert 'not valid UTF-8' in view.detail
 
     def test_should_ignore_non_row_files_in_the_queue(self, root):
         _ledger.write_layout(root, _header(), '', (_row('PLAN-01', 'first', seq=1),))
