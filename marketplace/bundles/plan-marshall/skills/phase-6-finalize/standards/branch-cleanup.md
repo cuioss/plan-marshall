@@ -1518,7 +1518,7 @@ The routing itself:
         multiSelect: false
   ```
 
-  Render `{plain_reason}` from `enqueue_unobserved_reason`: `membership_read_failed` → "the queue could not be read"; `entries_incomplete` → "the queue could only be read in part"; `auto_merge_armed_awaiting_checks` → "auto-merge is switched on and the pull request joins the queue once its required checks pass"; `pr_not_listed` → "the queue was read in full and this pull request was not in it".
+  Render `{plain_reason}` from `enqueue_unobserved_reason`: `membership_read_failed` → "the queue could not be read"; `entries_incomplete` → "the queue could only be read in part"; `auto_merge_armed_awaiting_checks` → "auto-merge is switched on and the pull request joins the queue once its required checks pass"; `pr_not_listed` → "the queue was read in full and this pull request was not in it"; any other value → "the queue read did not show it (reason: {enqueue_unobserved_reason})". The four named keys are exactly the `ENQUEUE_UNOBSERVED_*` values declared in `workflow-integration-github/scripts/_github_pr.py`, held equal by a parity test; the fallback keeps any value this rendering does not name from rendering an empty or invented `{plain_reason}`.
 
   - **"It is queued or merged — wait for it"** → set `{merge_mechanism} = merge_queue` AND `{merge_landed} = false`, log the operator's confirmation as a decision, and proceed to § "Wait for the Queue Merge to Land (bounded)". The landing gate keys on observed PR state, so the confirmation authorizes the wait only — never the post-merge tail, which still requires the gate to observe `state == merged`.
 

@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the GitHub `pr merge-queue` verb.
 
-Covers three surfaces:
+Covers four surfaces:
 
 * The shared `ci_base.build_parser` accepts `pr merge-queue` with the
   `--pr-number` | `--head` flags only — no `--strategy` / `--delete-branch`.
@@ -14,6 +14,10 @@ Covers three surfaces:
   captured `run_gh` invocation (the lowest subprocess primitive), with no live
   provider.
 * The auth-failure and gh-error paths return the unified error TOON.
+* The plain-language ``{plain_reason}`` rendering in
+  ``phase-6-finalize/standards/branch-cleanup.md`` names exactly the
+  ``ENQUEUE_UNOBSERVED_*`` values ``_github_pr`` declares, read from the module's
+  constants rather than restated here.
 
 The dispatch wiring (`('pr', 'merge-queue') -> cmd_pr_merge_queue` in
 `github_ops.main`) is exercised transitively: the parser round-trips the
@@ -22,10 +26,30 @@ the imported `github_ops.cmd_pr_merge_queue`.
 """
 
 import argparse
+import re
+from pathlib import Path
 
+import _github_pr
 import ci_base
 import github_ops
 from _ci_wait_contract import _ok_auth
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+BRANCH_CLEANUP_MD = (
+    REPO_ROOT
+    / 'marketplace'
+    / 'bundles'
+    / 'plan-marshall'
+    / 'skills'
+    / 'phase-6-finalize'
+    / 'standards'
+    / 'branch-cleanup.md'
+)
+
+#: The line that renders ``{plain_reason}`` from ``enqueue_unobserved_reason``.
+_RENDERING_LINE_PREFIX = 'Render `{plain_reason}` from `enqueue_unobserved_reason`'
+#: One rendered reason key on that line: a backticked key followed by the arrow.
+_RENDERED_REASON_KEY = re.compile(r'`([a-z_]+)` →')
 
 
 def _capture_run_gh(*, merge_ok: bool = True):
@@ -213,6 +237,31 @@ def test_cmd_pr_merge_queue_gh_error_returns_error(monkeypatch):
     # Assert
     assert result['status'] == 'error'
     assert result['operation'] == 'pr_merge_queue'
+
+
+# ---------------------------------------------------------------------------
+# Reason-key parity with the branch-cleanup rendering
+# ---------------------------------------------------------------------------
+
+
+def test_branch_cleanup_renders_exactly_the_declared_unobserved_reasons():
+    """The hand-written ``{plain_reason}`` keys equal the ``ENQUEUE_UNOBSERVED_*`` values the code declares.
+
+    The plain wording cannot be derived at run time, so this test is the binding: a
+    reason added to or renamed in ``_github_pr`` fails here until the rendering names
+    it, and the rendering keeps its fallback clause for any value it does not name.
+    """
+    declared = {value for name, value in vars(_github_pr).items() if name.startswith('ENQUEUE_UNOBSERVED_')}
+    rendering_lines = [
+        line
+        for line in BRANCH_CLEANUP_MD.read_text(encoding='utf-8').splitlines()
+        if line.lstrip().startswith(_RENDERING_LINE_PREFIX)
+    ]
+
+    assert declared, 'no ENQUEUE_UNOBSERVED_* constant was read from _github_pr'
+    assert len(rendering_lines) == 1, rendering_lines
+    assert set(_RENDERED_REASON_KEY.findall(rendering_lines[0])) == declared
+    assert 'any other value →' in rendering_lines[0]
 
 
 def test_github_ops_exposes_merge_queue_handler():

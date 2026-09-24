@@ -44,9 +44,11 @@ refusal), and ``unreachable`` outranks the other two — so a quota refusal ridi
 an otherwise clean pass never reads as reviewed-and-clean.
 
 ``pr merge-queue`` reports ``enqueued: true`` only on an observed read of the PR's
-own queue membership (``mergeQueue.entries``, paginated to its end); a failed read,
-an incomplete list, or a complete list without the PR is ``indeterminate`` with its
-reason — never ``true`` on an accepted enqueue call alone.
+own queue membership (``mergeQueue.entries``, paginated to its end, then — when the
+complete list does not carry the PR — the PR's own ``mergeQueueEntry``); a failed
+read, an incomplete list, or a complete list without the PR whose own state shows no
+``mergeQueueEntry`` is ``indeterminate`` with its reason — never ``true`` on an
+accepted enqueue call alone.
 
 The findings store is REAL (isolated via the autouse ``plan_context``
 ``PLAN_BASE_DIR`` sandbox); only the GitHub provider surface and the identity read
