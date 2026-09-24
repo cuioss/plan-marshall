@@ -28,75 +28,8 @@
       "status": "active"
     }
   ],
-  "plans": [
-    {
-      "id": "PLAN-LR-01",
-      "slug": "derive-the-corpus-and-the-audience-axis",
-      "workstream": "WS-01",
-      "status": "staged",
-      "plan_marshall_plan_id": "",
-      "pr": "",
-      "landing": ""
-    },
-    {
-      "id": "PLAN-LR-02",
-      "slug": "the-ownership-predicate-answers-the-wrong-question",
-      "workstream": "WS-01",
-      "status": "staged",
-      "plan_marshall_plan_id": "",
-      "pr": "",
-      "landing": ""
-    },
-    {
-      "id": "PLAN-LR-03",
-      "slug": "an-upstream-finding-becomes-an-issue",
-      "workstream": "WS-02",
-      "status": "staged",
-      "plan_marshall_plan_id": "",
-      "pr": "",
-      "landing": ""
-    },
-    {
-      "id": "PLAN-LR-04",
-      "slug": "route-the-corpus-that-is-already-stranded",
-      "workstream": "WS-04",
-      "status": "staged",
-      "plan_marshall_plan_id": "",
-      "pr": "",
-      "landing": ""
-    },
-    {
-      "id": "PLAN-LR-05",
-      "slug": "a-lesson-does-not-record-what-was-running-when-it-was-observed",
-      "workstream": "WS-01",
-      "status": "staged",
-      "plan_marshall_plan_id": "",
-      "pr": "",
-      "landing": ""
-    },
-    {
-      "id": "PLAN-LR-06",
-      "slug": "manage-lessons-corpus-integrity",
-      "workstream": "WS-05",
-      "status": "retired",
-      "plan_marshall_plan_id": "",
-      "pr": "",
-      "landing": ""
-    },
-    {
-      "id": "PLAN-LR-07",
-      "slug": "the-lessons-verb-always-resolves-to-lessons-routing",
-      "workstream": "WS-01",
-      "status": "shipped",
-      "plan_marshall_plan_id": "plan-lr-07-lessons-verb-routing",
-      "pr": "1584",
-      "landing": "landings/PLAN-LR-07.md"
-    }
-  ],
-  "resume_anchor": "=== R19 (2026-09-23). Drained + distributed 3 new inbox messages from api-sheriff-deployment-configurability (a real consumer repo forwarding findings, manually, ahead of PLAN-LR-03's transport shipping). None was lessons-routing's own subject; all 3 discarded here and forwarded as kind=finding to their real owners: post-run-quality (manage-findings type-enum gap), truthful-signals (self-review refusal miscalibrated against routine rebase mechanics), process-compliance (5 argparse rejections across 5 scripts in one plan). Inbox now empty. Queue and R1-R18 unchanged. Next action: emit PLAN-LR-01 once corpus-wide indeterminacy clears (see R17); otherwise await the 3 destination epics' own drains and PLAN-LR-07's follow-on lessons sweep. READ R1-R19. ===\nR1-R18: unchanged, see prior anchor text in epic.md's Decisions/Lesson-Sweeps history and logs/decision.log.",
   "metadata": {
     "parallelization_scope": "1"
   },
-  "created": "2026-08-24T09:20:49Z",
-  "updated": "2026-09-23T10:10:44Z"
+  "created": "2026-08-24T09:20:49Z"
 }

@@ -1,0 +1,10 @@
+{
+  "id": "PLAN-CIS-036",
+  "slug": "exploration-split-measured-on-one-phase-and-it-is-the-worst-case",
+  "workstream": "WS-04",
+  "status": "parked",
+  "plan_marshall_plan_id": "",
+  "pr": "1178",
+  "landing": "landings/PLAN-CIS-036.md",
+  "seq": 5
+}

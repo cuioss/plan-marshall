@@ -1,0 +1,10 @@
+{
+  "id": "PLAN-PRQ-02",
+  "slug": "retrospective-aspects-publish-a-verdict-over-a-population-they-never-read",
+  "workstream": "WS-01",
+  "status": "shipped",
+  "plan_marshall_plan_id": "retrospective-aspects-publish-verdict",
+  "pr": "1550",
+  "landing": "landings/PLAN-PRQ-02.md",
+  "seq": 1
+}

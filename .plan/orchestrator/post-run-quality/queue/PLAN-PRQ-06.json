@@ -1,0 +1,10 @@
+{
+  "id": "PLAN-PRQ-06",
+  "slug": "a-lane-override-that-cannot-take-effect-is-accepted-and-reported-set",
+  "workstream": "WS-04",
+  "status": "shipped",
+  "plan_marshall_plan_id": "prq-06-a-lane-override-that-cannot-take-effect-is",
+  "pr": "1541",
+  "landing": "landings/PLAN-PRQ-06.md",
+  "seq": 6
+}
