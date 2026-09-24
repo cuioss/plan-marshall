@@ -691,13 +691,25 @@ is `opencode` (Step 5's `runtime.target`). On any other target, skip
 silently with a STEWARD audit entry and continue to Step 15.
 
 **Singular apply semantics.** One apply action per project, no
-re-prompting on re-entry. Before applying, check whether the project's
-`opencode.json` already carries the two-tier block AND
-`.opencode/plugin/guard.js` is already present: when both hold, the step
-is already applied — record a single auto-decision STEWARD audit entry
-and continue to Step 15 without prompting. Otherwise copy both artifacts
-into place, then record one auto-decision audit entry naming the applied
-artifacts.
+re-prompting on re-entry. Check each artifact independently — a missing
+artifact never triggers a rewrite of the artifact that is already in
+place:
+
+- `opencode.json`: when the file is absent, copy the shipped
+configuration. When it is present, merge the two-tier permission rules
+into the existing file and preserve every project-specific setting;
+never overwrite the file wholesale.
+- `.opencode/plugin/guard.js`: when the path is absent, install the
+shipped plugin. When the path is occupied, back the existing file up to
+`.opencode/plugin/guard.js.bak` (overwriting a stale backup) and then
+install the shipped plugin.
+
+When `opencode.json` already carries the two-tier block AND
+`.opencode/plugin/guard.js` is already present, the step is already
+applied — record a single auto-decision STEWARD audit entry and continue
+to Step 15 without prompting. Otherwise apply per the rules above, then
+record one auto-decision audit entry naming the per-artifact action
+taken (copied / merged / installed / updated-with-backup).
 
 No new script entry point backs this step: `upgrade.py` remains a
 pure-function four-stage emitter over `(integrate, project_kind)`, and
