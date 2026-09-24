@@ -705,11 +705,13 @@ shipped plugin. When the path is occupied, back the existing file up to
 install the shipped plugin.
 
 When `opencode.json` already carries the two-tier block AND
-`.opencode/plugin/guard.js` is already present, the step is already
+`.opencode/plugin/guard.js` matches the shipped D2 plugin, the step is already
 applied — record a single auto-decision STEWARD audit entry and continue
 to Step 15 without prompting. Otherwise apply per the rules above, then
-record one auto-decision audit entry naming the per-artifact action
-taken (copied / merged / installed / updated-with-backup).
+record one auto-decision audit entry per artifact action taken
+(one entry per artifact: copied / merged / installed /
+updated-with-backup), preserving the audit trail's one-to-one decision
+mapping.
 
 **Apply operation.** The apply is an executable operation, not bare file
 placement. Run it in order; every command below exists — never substitute
@@ -726,10 +728,12 @@ runtime (config-driven via `runtime.target` in `.plan/marshal.json`):
    a STEWARD skip audit entry and continues to Step 15.
 
 2. **Check applied state.** Read the project's `opencode.json` for the
-two-tier `permission` block and check `.opencode/plugin/guard.js` for
-presence. When both hold, the step is already applied — record a single
-auto-decision STEWARD audit entry and continue to Step 15 without
-prompting.
+two-tier `permission` block and compare `.opencode/plugin/guard.js` with
+the shipped D2 plugin. When both checks pass, the step is already
+applied — record a single auto-decision STEWARD audit entry and continue
+to Step 15 without prompting. When the guard file is present but differs
+from the shipped plugin, follow the occupied-path backup-and-install rule
+in step 3 instead of treating the step as applied.
 
 3. **Install the artifacts** per the singular-apply rules above:
    - `opencode.json`: merge the D1 two-tier rules through the routed,
