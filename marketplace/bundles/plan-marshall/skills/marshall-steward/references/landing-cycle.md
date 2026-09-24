@@ -182,7 +182,8 @@ Past the pre-condition, branch on the returned `enqueued` value:
   landing — stop and report it to the operator.
 - **`enqueued: indeterminate`** — the enqueue call was accepted, but the PR's membership could
   not be observed; `enqueue_unobserved_reason` names why (`membership_read_failed`,
-  `entries_incomplete`, or `pr_not_listed`). Do NOT continue as though the PR were queued.
+  `entries_incomplete`, `auto_merge_armed_awaiting_checks`, or `pr_not_listed`). Do NOT
+  continue as though the PR were queued.
   Report the reason to the operator and have them confirm the PR's queue membership (then wait
   for the landing as above) or that it already landed, before continuing to (d).
 

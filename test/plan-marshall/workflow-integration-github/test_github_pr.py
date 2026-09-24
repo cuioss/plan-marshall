@@ -998,18 +998,30 @@ def _queue_page(numbers, *, has_next=False, cursor=None):
     }
 
 
-def _patch_merge_queue(monkeypatch, pages):
+#: The PR's own queue state when it carries neither a queue entry nor an armed auto-merge.
+_MQ_PR_STATE_NEITHER = (
+    0,
+    {'repository': {'pullRequest': {'state': 'OPEN', 'autoMergeRequest': None, 'mergeQueueEntry': None}}},
+    '',
+)
+
+
+def _patch_merge_queue(monkeypatch, pages, pr_state=_MQ_PR_STATE_NEITHER):
     """Stub the enqueue path up to the membership read, and serve ``pages`` by cursor.
 
     ``pages`` maps the request cursor (``None`` for the first page) to the
-    ``(returncode, data, error)`` triple ``run_graphql`` returns. Returns the list of
-    cursors the read requested and the captured ``run_gh`` argv, so a case can pin
-    how far the read walked and that the enqueue itself ran.
+    ``(returncode, data, error)`` triple ``run_graphql`` returns; ``pr_state`` is the
+    triple the PR's own queue-state read returns once a complete list does not carry
+    the PR. Returns the list of cursors the entry read requested and the captured
+    ``run_gh`` argv, so a case can pin how far the read walked and that the enqueue
+    itself ran.
     """
     requested: list = []
     gh_calls: list = []
 
     def fake_run_graphql(query, variables):
+        if query == _github_pr.PULL_REQUEST_QUEUE_STATE_QUERY:
+            return pr_state
         assert query == _github_pr.MERGE_QUEUE_ENTRIES_QUERY, query
         cursor = variables.get('cursor')
         requested.append(cursor)
@@ -1069,15 +1081,20 @@ def test_membership_read_failure_is_indeterminate_never_true(monkeypatch):
 
 
 def test_pr_absent_from_a_complete_list_is_indeterminate(monkeypatch):
-    """A complete list that does not carry the PR is not a negative: it may have merged or been ejected."""
+    """A complete list that does not carry the PR is not a negative: it may have merged or been ejected.
+
+    The PR's own state is read before settling, and here it carries neither a queue
+    entry nor an armed auto-merge, so ``pr_not_listed`` stands.
+    """
     requested, _gh_calls = _patch_merge_queue(monkeypatch, {None: (0, _queue_page([7, 8]), '')})
 
     result = _enqueue()
 
     assert result['enqueued'] == _github_pr.ENQUEUED_INDETERMINATE
     assert result['enqueue_unobserved_reason'] == _github_pr.ENQUEUE_UNOBSERVED_NOT_LISTED
-    assert (
-        result['enqueue_observation'] == 'mergeQueue(branch: main).entries read to its end (2 entries); PR not listed'
+    assert result['enqueue_observation'] == (
+        'mergeQueue(branch: main).entries read to its end (2 entries); PR not listed; '
+        'pullRequest(number: 42) carries neither a mergeQueueEntry nor an autoMergeRequest'
     )
     assert requested == [None]
 

@@ -1471,7 +1471,7 @@ The routing itself:
   Parse the returned TOON. Both providers probe eligibility **before** the enqueue call as a **pre-condition** and refuse without issuing it, so a repo with no configured queue returns `status: error` with no side effect; on GitHub the pre-enqueue verdict is returned as `queue_precondition`, which says the queue exists, not that this PR is in it. Past the pre-condition, `enqueued` carries one of two values, and only one of them is a queued PR. The provider-shaped detail of the pre-condition and of the membership read behind `enqueued` is owned by [`../../tools-integration-ci/standards/pr-operations.md`](../../tools-integration-ci/standards/pr-operations.md) § "Merge-Queue PR" and is deliberately not restated here — a second copy of a per-provider mechanism drifts the moment one provider's mechanism changes. Branch on `status` first, then on `enqueued`:
 
   - **`status: success` AND `enqueued: true`** → the PR's own membership in the queue was observed (`enqueue_observation` names the read on GitHub; GitLab reports the created merge-train car). Membership in the queue is **not a merge**. Set `{merge_mechanism} = merge_queue` AND `{merge_landed} = false` — the landing gate below is the only site on this path that may raise `{merge_landed}` to `true`. Then proceed to § "Wait for the Queue Merge to Land (bounded)" below, which is the gate that decides whether the post-merge tail may run at all.
-  - **`status: success` AND `enqueued: indeterminate`** (GitHub only) → the platform accepted the enqueue call, but the PR's membership in the queue was **not observed**; `enqueue_unobserved_reason` names why (`membership_read_failed`, `entries_incomplete`, or `pr_not_listed`) and `enqueue_observation` records what the read saw. This is NOT a queued PR, and this step does not proceed as though it were: log the reason, then have the operator confirm the PR's queue membership (or that it already landed) before any queue wait begins — see **Unobserved enqueue** below.
+  - **`status: success` AND `enqueued: indeterminate`** (GitHub only) → the platform accepted the enqueue call, but the PR's membership in the queue was **not observed**; `enqueue_unobserved_reason` names why (`membership_read_failed`, `entries_incomplete`, `auto_merge_armed_awaiting_checks`, or `pr_not_listed`) and `enqueue_observation` records what the read saw. This is NOT a queued PR, and this step does not proceed as though it were: log the reason, then have the operator confirm the PR's queue membership (or that it already landed) before any queue wait begins — see **Unobserved enqueue** below.
   - **`status: error`** (e.g. a GitLab merge-train-ineligible project, a pre-condition refusal, or a queue-engagement / auth-scope failure) → log the **actionable** error and abort — do NOT silently fall back to an immediate merge, since the operator opted into queue serialization for a reason. The abort message MUST name BOTH remedies so the operator is never left with a bare error: (a) **disable `use_merge_queue`** (set it back to `false` via `manage-config … step set --step-id default:branch-cleanup --param use_merge_queue --value false`) to merge immediately via `pr safe-merge`, or (b) **run the marshall-steward merge-queue provisioning step** (Configuration → Merge Queue) to configure the platform merge queue so the enqueue succeeds:
 
     ```bash
@@ -1508,7 +1508,8 @@ The routing itself:
 
           The platform accepted the request, but reading the queue did not
           show this pull request in it. It may already have merged, it may
-          have been removed from the queue, or the queue could not be read.
+          have been removed from the queue, it may still be waiting for its
+          required checks before it joins, or the queue could not be read.
         options:
           - label: "It is queued or merged — wait for it"
             description: "Waits, within the usual time limit, for the pull request to merge into {base_branch}, then tidies up the branch and its working copy once the merge is seen"
@@ -1517,7 +1518,7 @@ The routing itself:
         multiSelect: false
   ```
 
-  Render `{plain_reason}` from `enqueue_unobserved_reason`: `membership_read_failed` → "the queue could not be read"; `entries_incomplete` → "the queue could only be read in part"; `pr_not_listed` → "the queue was read in full and this pull request was not in it".
+  Render `{plain_reason}` from `enqueue_unobserved_reason`: `membership_read_failed` → "the queue could not be read"; `entries_incomplete` → "the queue could only be read in part"; `auto_merge_armed_awaiting_checks` → "auto-merge is switched on and the pull request joins the queue once its required checks pass"; `pr_not_listed` → "the queue was read in full and this pull request was not in it".
 
   - **"It is queued or merged — wait for it"** → set `{merge_mechanism} = merge_queue` AND `{merge_landed} = false`, log the operator's confirmation as a decision, and proceed to § "Wait for the Queue Merge to Land (bounded)". The landing gate keys on observed PR state, so the confirmation authorizes the wait only — never the post-merge tail, which still requires the gate to observe `state == merged`.
 

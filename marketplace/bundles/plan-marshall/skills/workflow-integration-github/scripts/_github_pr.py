@@ -2273,9 +2273,18 @@ ENQUEUED_INDETERMINATE = 'indeterminate'
 #: unresolvable, GraphQL error, no ``mergeQueue`` object, or an entries page
 #: missing its ``nodes`` list or ``pageInfo`` object).
 ENQUEUE_UNOBSERVED_READ_FAILED = 'membership_read_failed'
-#: ``pr_not_listed`` — the entry list was read to its end and does not list the PR.
-#: Not a negative either: the queue may already have merged or ejected it.
+#: ``pr_not_listed`` — the entry list was read to its end and does not list the PR,
+#: and the PR's own state carries neither a ``mergeQueueEntry`` nor an
+#: ``autoMergeRequest`` (or could not be read). Not a negative either: the queue may
+#: already have merged or ejected it.
 ENQUEUE_UNOBSERVED_NOT_LISTED = 'pr_not_listed'
+#: ``auto_merge_armed_awaiting_checks`` — the entry list does not list the PR and
+#: the PR's own state carries no ``mergeQueueEntry``, but it does carry an
+#: ``autoMergeRequest``: ``gh pr merge --auto`` armed auto-merge, and GitHub adds
+#: the PR to the queue once its required checks pass (the admission can also lag
+#: the call). An armed auto-merge is NOT a membership, so it never yields
+#: ``enqueued: true``.
+ENQUEUE_UNOBSERVED_AUTO_MERGE_ARMED = 'auto_merge_armed_awaiting_checks'
 #: ``entries_incomplete`` — the entry list could not be read to its end (a page
 #: reported more entries but no advancing cursor, or its ``pageInfo`` carried
 #: no boolean ``hasNextPage``), so an absence proves nothing.
@@ -2378,6 +2387,85 @@ def _read_queue_membership(base_branch: str, pr_number: str | None, head_branch:
         cursor = next_cursor
 
 
+# The PR's OWN queue state, read by number when the queue's entry list does not
+# list it: the entry list can lag an admission, and an armed auto-merge whose
+# required checks have not passed yet is not in the list at all.
+PULL_REQUEST_QUEUE_STATE_QUERY = """
+query($owner: String!, $repo: String!, $number: Int!) {
+  repository(owner: $owner, name: $repo) {
+    pullRequest(number: $number) {
+      state
+      autoMergeRequest { enabledAt }
+      mergeQueueEntry { position state }
+    }
+  }
+}
+"""
+
+
+def _read_unlisted_pr_queue_state(pr_number: str | None) -> tuple[bool, str, str]:
+    """Return ``(observed, unobserved_reason, observation)`` from the PR's own queue state.
+
+    Called only after the queue's entry list was read to its end without the PR.
+    ``pr_number`` selects the PR; ``None`` means the number could not be resolved.
+
+    - a non-null ``mergeQueueEntry`` is an observed membership (``observed`` True);
+    - a null entry beside a non-null ``autoMergeRequest`` is
+      :data:`ENQUEUE_UNOBSERVED_AUTO_MERGE_ARMED` — armed, not a membership;
+    - neither, or a PR state that could not be read, keeps
+      :data:`ENQUEUE_UNOBSERVED_NOT_LISTED`, so a failed read never reads as armed
+      or as a membership.
+    """
+    if pr_number is None:
+        return False, ENQUEUE_UNOBSERVED_NOT_LISTED, 'pullRequest read skipped: PR number unresolvable'
+    owner, repo = github_ops.get_repo_info()
+    if not owner or not repo:
+        return False, ENQUEUE_UNOBSERVED_NOT_LISTED, 'pullRequest read skipped: repository owner/name unresolvable'
+    read_name = f'pullRequest(number: {pr_number})'
+    try:
+        number = int(pr_number)
+    except ValueError:
+        return False, ENQUEUE_UNOBSERVED_NOT_LISTED, f'{read_name} read skipped: PR number is not an integer'
+    returncode, data, err = github_ops.run_graphql(
+        PULL_REQUEST_QUEUE_STATE_QUERY, {'owner': owner, 'repo': repo, 'number': number}
+    )
+    if returncode != 0 or data is None:
+        return False, ENQUEUE_UNOBSERVED_NOT_LISTED, f'{read_name} read failed: {err}'
+    try:
+        pull_request = data['repository']['pullRequest']
+    except (KeyError, TypeError):
+        pull_request = None
+    if not isinstance(pull_request, dict):
+        return False, ENQUEUE_UNOBSERVED_NOT_LISTED, f'{read_name} read returned no repository.pullRequest'
+    entry = pull_request.get('mergeQueueEntry')
+    if isinstance(entry, dict):
+        return (
+            True,
+            '',
+            f'{read_name}.mergeQueueEntry lists the PR at position {entry.get("position")} (state {entry.get("state")})',
+        )
+    if isinstance(pull_request.get('autoMergeRequest'), dict):
+        return (
+            False,
+            ENQUEUE_UNOBSERVED_AUTO_MERGE_ARMED,
+            f'{read_name} carries an autoMergeRequest and no mergeQueueEntry',
+        )
+    return (
+        False,
+        ENQUEUE_UNOBSERVED_NOT_LISTED,
+        f'{read_name} carries neither a mergeQueueEntry nor an autoMergeRequest',
+    )
+
+
+def _unlisted_pr_number(args: argparse.Namespace, identifier: str) -> str | None:
+    """The PR number for the PR-state read: ``--pr-number``, else the number ``pr view`` resolves for ``--head``."""
+    if args.pr_number:
+        return str(args.pr_number)
+    view = github_ops.view_pr_data(head=identifier)
+    number = view.get('pr_number') if view.get('status') == 'success' else None
+    return str(number) if number else None
+
+
 def cmd_pr_merge_queue(args: argparse.Namespace) -> dict:
     """Handle 'pr merge-queue' subcommand — enqueue the PR into the GitHub merge queue.
 
@@ -2408,10 +2496,19 @@ def cmd_pr_merge_queue(args: argparse.Namespace) -> dict:
     - ``enqueued: true`` — an entry for the PR was read;
     - ``enqueued: indeterminate`` — the call was accepted but membership could not
       be observed; ``enqueue_unobserved_reason`` names why (the read failed, the
-      list could not be read to its end, or the complete list does not carry the
-      PR). ``status`` stays ``success``: the enqueue itself was accepted.
+      list could not be read to its end, the PR has armed auto-merge awaiting its
+      required checks, or the complete list does not carry the PR).
+      ``status`` stays ``success``: the enqueue itself was accepted.
 
-    ``enqueue_observation`` names the read and what it saw on both paths.
+    When the complete list does not carry the PR, the PR's own state is read by
+    number (:func:`_read_unlisted_pr_queue_state`) before settling on
+    ``pr_not_listed``: a ``mergeQueueEntry`` there is an observed membership
+    (``enqueued: true``), and an ``autoMergeRequest`` without one is
+    ``auto_merge_armed_awaiting_checks`` — ``gh pr merge --auto`` only arms
+    auto-merge while required checks are pending, and GitHub admits the PR to the
+    queue after they pass. An armed auto-merge is never reported as a membership.
+
+    ``enqueue_observation`` names the read(s) and what they saw on both paths.
     ``mergeStateStatus`` is not consulted — it reads ``CLEAN`` while queued.
     """
     is_auth, err = github_ops.check_auth()
@@ -2457,6 +2554,11 @@ def cmd_pr_merge_queue(args: argparse.Namespace) -> dict:
         str(args.pr_number) if args.pr_number else None,
         None if args.pr_number else identifier,
     )
+    if unobserved_reason == ENQUEUE_UNOBSERVED_NOT_LISTED:
+        observed, unobserved_reason, pr_observation = _read_unlisted_pr_queue_state(
+            _unlisted_pr_number(args, identifier)
+        )
+        observation = f'{observation}; {pr_observation}'
     result: dict = {
         'status': 'success',
         'operation': 'pr_merge_queue',

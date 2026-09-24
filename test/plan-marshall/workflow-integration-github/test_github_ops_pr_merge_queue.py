@@ -554,6 +554,94 @@ def test_cmd_pr_merge_queue_returns_error_when_base_has_no_configured_queue(monk
     assert probe['calls'] == 1, probe
 
 
+def _pr_state_data(*, entry: dict | None = None, auto_merge: dict | None = None) -> dict:
+    """The PR's own ``pullRequest`` queue state, as ``run_graphql`` returns it."""
+    return {
+        'repository': {
+            'pullRequest': {'state': 'OPEN', 'autoMergeRequest': auto_merge, 'mergeQueueEntry': entry},
+        }
+    }
+
+
+def _install_unlisted_queue(monkeypatch, pr_state) -> list[dict]:
+    """Configured queue whose complete entry list does NOT carry PR 42; the PR-state read answers ``pr_state``.
+
+    ``pr_state`` is the ``(returncode, data, err)`` triple the PR-state query returns.
+    Returns the captured variables of every PR-state read.
+    """
+    _install_configured_queue(monkeypatch)
+    pr_reads: list[dict] = []
+
+    def run_graphql_stub(query, variables):
+        if 'mergeQueue(branch' in query:
+            return 0, _queue_entries_data(number=7, head_ref='feature/other'), ''
+        pr_reads.append(dict(variables))
+        return pr_state
+
+    monkeypatch.setattr(github_ops, 'run_graphql', run_graphql_stub)
+    monkeypatch.setattr(github_ops, 'run_gh', lambda args, capture_json=False, timeout=60: (0, '', ''))
+    return pr_reads
+
+
+@pytest.mark.parametrize(
+    ('pr_state', 'enqueued', 'reason', 'observation_tail'),
+    [
+        (
+            (0, _pr_state_data(entry={'position': 2, 'state': 'AWAITING_CHECKS'}), ''),
+            True,
+            None,
+            'mergeQueueEntry lists the PR at position 2 (state AWAITING_CHECKS)',
+        ),
+        (
+            (0, _pr_state_data(auto_merge={'enabledAt': '2026-01-01T00:00:00Z'}), ''),
+            'indeterminate',
+            'auto_merge_armed_awaiting_checks',
+            'carries an autoMergeRequest and no mergeQueueEntry',
+        ),
+        (
+            (0, _pr_state_data(), ''),
+            'indeterminate',
+            'pr_not_listed',
+            'carries neither a mergeQueueEntry nor an autoMergeRequest',
+        ),
+        ((1, None, 'graphql error'), 'indeterminate', 'pr_not_listed', 'read failed: graphql error'),
+        ((0, {'repository': {}}, ''), 'indeterminate', 'pr_not_listed', 'read returned no repository.pullRequest'),
+    ],
+    ids=['queue-entry-observed', 'auto-merge-armed', 'neither', 'pr-read-failed', 'pr-read-malformed'],
+)
+def test_an_unlisted_pr_is_classified_by_its_own_queue_state(monkeypatch, pr_state, enqueued, reason, observation_tail):
+    """A PR absent from the entry list is read by number; only an entry there is a membership.
+
+    An armed auto-merge is never ``enqueued: true``, and a failed PR read keeps
+    ``pr_not_listed`` rather than guessing either way.
+    """
+    _install_common(monkeypatch)
+    pr_reads = _install_unlisted_queue(monkeypatch, pr_state)
+
+    result = github_ops.cmd_pr_merge_queue(_merge_queue_ns(pr_number=42))
+
+    assert result['status'] == 'success', result
+    assert result['enqueued'] == enqueued, result
+    assert result.get('enqueue_unobserved_reason') == reason, result
+    assert result['enqueue_observation'].startswith('mergeQueue(branch: main).entries read to its end'), result
+    assert result['enqueue_observation'].endswith(observation_tail), result
+    assert [read['number'] for read in pr_reads] == [42], pr_reads
+
+
+def test_an_unlisted_pr_under_head_is_read_by_the_number_pr_view_resolves(monkeypatch):
+    """The ``--head`` path selects the PR-state read by the number ``pr view`` returns for the branch."""
+    _install_common(monkeypatch)
+    pr_reads = _install_unlisted_queue(
+        monkeypatch, (0, _pr_state_data(auto_merge={'enabledAt': '2026-01-01T00:00:00Z'}), '')
+    )
+
+    result = github_ops.cmd_pr_merge_queue(_merge_queue_ns(pr_number=None, head='feature/x'))
+
+    assert result['enqueued'] == 'indeterminate', result
+    assert result['enqueue_unobserved_reason'] == 'auto_merge_armed_awaiting_checks', result
+    assert [read['number'] for read in pr_reads] == [42], pr_reads
+
+
 def test_cmd_pr_merge_queue_probe_error_fails_closed(monkeypatch):
     """An unresolvable queue state refuses the enqueue rather than guessing."""
     _install_common(monkeypatch)
