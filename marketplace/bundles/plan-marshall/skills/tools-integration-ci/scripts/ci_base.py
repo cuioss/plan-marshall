@@ -1653,7 +1653,7 @@ def build_parser(
         help="Search an organization's code for a literal string (reports the provider's completeness signal)",
         allow_abbrev=False,
     )
-    org_search_code.add_argument('--org', required=True, help='Organization (or user) login')
+    org_search_code.add_argument('--org', required=True, help='Organization login')
     org_search_code.add_argument(
         '--query',
         required=True,

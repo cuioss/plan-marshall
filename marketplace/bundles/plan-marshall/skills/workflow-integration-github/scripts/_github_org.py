@@ -369,6 +369,8 @@ def cmd_repo_file_read(args: argparse.Namespace) -> dict:
     path = (args.path or '').strip('/')
     if not path:
         return make_error(operation, 'path must not be empty')
+    if any(segment in ('.', '..') for segment in path.split('/')):
+        return make_error(operation, f'path must not contain "." or ".." segments: {args.path!r}')
 
     is_auth, err = github_ops.check_auth()
     if not is_auth:

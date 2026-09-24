@@ -258,6 +258,17 @@ def test_repo_spec_rejects_malformed_and_traversing_names(spec):
     assert _github_org._split_repo(spec) is None
 
 
+@pytest.mark.parametrize('path', ['../../o2/r2/contents/x.yml', 'a/../b', './x', 'a/./b'])
+def test_file_read_refuses_dot_segments_before_any_call(monkeypatch, path):
+    """A '.' or '..' path segment is refused before auth or any provider call."""
+    calls = _serve_gh(monkeypatch, [])
+
+    result = _read(path=path)
+
+    assert result['status'] == 'error'
+    assert calls == []
+
+
 def test_repo_spec_accepts_a_dotted_name():
     """A name that merely contains dots is a legitimate repository name."""
     assert _github_org._split_repo('cuioss/.github') == ('cuioss', '.github')

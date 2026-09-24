@@ -98,7 +98,7 @@ honors_skip_label: true           # UNVERIFIED — #103 carried no skip label, s
 participation_evidence:
   - issue_comment                 # the single persistent `## PR Reviewer Guide 🔍` comment
   - inline                        # `/improve` code suggestions, published as review comments when
-                                  # the `cuioss-review-bot-improve` label gates them on
+                                  # /improve runs (either gating mode — see above)
 participation_requires_update: true   # a re-review EDITS that same comment in place, so continued
                                   # presence proves only that it reviewed once, at some earlier HEAD.
                                   # Evidence therefore has to clear the currency test. Its arms are
@@ -334,10 +334,10 @@ The `ignore_patterns` entry `**[Persistent review]` is NOT a refusal: it is a co
 **`/review` output is one persistent comment; inline comments come only from `/improve`.**
 CONFIRMED on #103 — `/review` produces exactly one persistent `issue_comment`, headed
 `## PR Reviewer Guide 🔍`, and it is *updated in place* on re-review rather than reposted. Inline
-review comments are published by the separate `/improve` command, which is gated on the
-`cuioss-review-bot-improve` label in the reusable workflow. A pipeline stage that counts only inline review
-comments therefore concludes this bot found nothing on any repository where that label is absent —
-the Guide, not the inline count, is the shape that is always present.
+review comments are published by the separate `/improve` command, which runs only in one of its two
+gating modes (above). A pipeline stage that counts only inline review comments therefore concludes
+this bot found nothing on any repository where /improve did not run — the Guide, not the inline
+count, is the shape that is always present.
 
 **Observed body structure** (#103 and #1078): an HTML `<table>` of `<tr><td>` rows. Each cell is an
 emoji, a `&nbsp;`, and a `<strong>` assertion; the two are separated by nothing else. Each
@@ -442,8 +442,7 @@ Getting this bot's evidence wrong is consequential in both directions:
   actually publishes rather than the ones a generic consumer might look for.
 
   **An absent inline count is not evidence of non-participation.** The shape is published only
-  where the `cuioss-review-bot-improve` label gates `/improve` on, so its absence is the normal state on
-  most repositories. A PRESENT inline count, however, IS evidence of participation.
+  where `/improve` runs, so its absence is the normal state on most repositories. A PRESENT inline count, however, IS evidence of participation.
 
   **The new member is a reachable mechanism, not a name.** `workflow-integration-github
   fetch_findings` files an inline PR-Agent comment to the ledger exactly as it does for the other

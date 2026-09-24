@@ -14,12 +14,14 @@ All scripts output TOON format for consistency and easy parsing.
 
 **Structure**:
 ```toon
-status: success|error
+status: success|incomplete|error
 operation: <operation_name>
 {operation_specific_fields}
 
 {optional_tables}
 ```
+
+`incomplete` is emitted only by the paginated read verbs (`org list-repos`, `org search-code`, `repo label list`) when the answer is demonstrably partial; it is never a success with fewer rows. See [`../SKILL.md`](../SKILL.md) § org for its semantics.
 
 ---
 
