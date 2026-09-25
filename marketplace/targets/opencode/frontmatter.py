@@ -234,9 +234,32 @@ def transform_skill_frontmatter(
 ) -> str:
     """Transform Claude skill frontmatter into OpenCode form.
 
-    Output keys per the Agent Skills spec: ``name`` (``{bundle}-{skill}``),
-    ``description`` (passed through, single line), and an explicit
-    ``compatibility`` annotation noting the source.
+    Output keys: ``name`` (``{bundle}-{skill}``), ``description`` (passed
+    through, single line), an explicit ``compatibility`` annotation noting the
+    source, and ``mode`` — the skill's declared execution archetype.
+
+    ``mode`` is passed through **verbatim, or omitted when the source declares
+    none**. It is the load-bearing field: ``persona-plan-marshall-agent``'s
+    "Skill mode: comply with the declared archetype" rule names it as *the*
+    source of truth for how a skill is consumed, and the unconditionally-active
+    ``skill-missing-mode`` plugin-doctor rule fails a skill that declares no
+    archetype. A dropped ``mode`` is therefore not a cosmetic field loss — it
+    makes 150+ deployed skills unclassifiable and reds every whole-tree gate
+    that reaches the deployed cache.
+
+    Two properties this deliberately does NOT have:
+
+    * **No invented default.** A source with no ``mode`` emits no ``mode`` key.
+      Defaulting it (to ``workflow``, say) would fabricate an archetype the
+      author never chose, and the ``skill-missing-mode`` rule would stop
+      reporting the genuine source-level gap it exists to report.
+    * **No coercion.** The value is emitted as written. An unrecognised value
+      stays unrecognised so the plugin-doctor rule surfaces it, rather than
+      being silently normalised into something that looks valid.
+
+    ``mode`` is already declared in ``frontmatter-rules.json``'s
+    ``optional_fields``, so this is the documented passthrough rather than a
+    new capability.
     """
     label = source_label or f'{bundle}/{skill_name}'
     _ensure_required(fm, rules, label)
@@ -246,6 +269,11 @@ def transform_skill_frontmatter(
         '---',
         f'name: {bundle}-{skill_name}',
         f'description: {desc}',
+    ]
+    mode = (fm.get('mode') or '').strip()
+    if mode:
+        lines.append(f'mode: {mode}')
+    lines += [
         'compatibility: Adapted from plan-marshall marketplace (Claude Code native)',
         '---',
     ]

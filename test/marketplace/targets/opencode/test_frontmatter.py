@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import PROJECT_ROOT
+from conftest import PROJECT_ROOT, load_script_module
 from marketplace.targets.opencode.frontmatter import (
     OPENCODE_MODEL_PREFIX,
     UnmappedFrontmatterError,
@@ -19,6 +19,16 @@ from marketplace.targets.opencode.frontmatter import (
     transform_command_frontmatter,
     transform_skill_frontmatter,
 )
+
+# The closed `mode` vocabulary, read from the rule that OWNS it rather than
+# restated here. The plugin-doctor analyzer that fails a skill with no `mode`
+# is the same component that defines which values are legal, so it is the
+# declaring source for that set; duplicating the four literals in this file
+# would let a fifth mode be added to the validator while these passthrough
+# cases kept asserting the old four — a green test covering a vocabulary that
+# no longer exists.
+_skill_mode_analyzer = load_script_module('pm-plugin-development', 'plugin-doctor', '_analyze_skill_mode.py')
+VALID_MODES: frozenset[str] = _skill_mode_analyzer._VALID_MODES
 
 
 @pytest.fixture()
@@ -235,6 +245,141 @@ class TestRequiredFieldValidation:
         assert 'name: demo-x' in result
         assert 'description: a skill' in result
         assert 'compatibility:' in result
+
+
+# ---------------------------------------------------------------------------
+# Skill `mode` passthrough — the execution archetype
+# ---------------------------------------------------------------------------
+
+
+class TestSkillModePassthrough:
+    """``mode`` names a skill's execution archetype and must survive emission.
+
+    ``persona-plan-marshall-agent`` treats ``mode`` as *the* source of truth for
+    how a skill is consumed, and the unconditionally-active ``skill-missing-mode``
+    plugin-doctor rule fails a skill that declares none. An emitter that drops the
+    field therefore makes every emitted skill unclassifiable — and reds any
+    whole-tree gate that reaches the deployed cache. ``mode`` is already listed in
+    ``frontmatter-rules.json``'s ``optional_fields``, so this is the documented
+    passthrough, not a new capability.
+    """
+
+    def test_mode_is_emitted_verbatim(self, rules: dict[str, list[str]]):
+        result = transform_skill_frontmatter(
+            {'description': 'a skill', 'mode': 'script-executor'},
+            'demo',
+            'x',
+            rules,
+            source_label='skills/x/SKILL.md',
+        )
+        assert 'mode: script-executor' in result
+
+    @pytest.mark.parametrize('mode', sorted(VALID_MODES))
+    def test_every_valid_mode_survives(self, mode: str, rules: dict[str, list[str]]):
+        """The whole closed vocabulary, taken from the validator that owns it.
+
+        A transformer that hard-coded a single value would pass a one-case
+        test and still corrupt the rest, so every legal mode is asserted. The
+        set is read from ``_VALID_MODES`` rather than restated, so adding a
+        fifth mode to the rule extends these cases instead of silently
+        leaving them covering a vocabulary that no longer exists.
+        """
+        result = transform_skill_frontmatter(
+            {'description': 'a skill', 'mode': mode},
+            'demo',
+            'x',
+            rules,
+            source_label='skills/x/SKILL.md',
+        )
+        assert f'mode: {mode}' in result
+
+    def test_valid_modes_set_is_not_empty(self):
+        """Guard on the guard.
+
+        A parametrized suite over an empty set collects nothing and reports
+        green, so the derived set is asserted non-empty — the same
+        confident-empty defect the coverage rules elsewhere in this repo
+        refuse.
+        """
+        assert VALID_MODES, 'the derived mode vocabulary must not be empty'
+
+    def test_absent_mode_emits_no_mode_key(self, rules: dict[str, list[str]]):
+        """No invented default.
+
+        Defaulting a missing ``mode`` would fabricate an archetype the author
+        never chose, and would silence the ``skill-missing-mode`` rule on the
+        very source-level gap that rule exists to report.
+        """
+        result = transform_skill_frontmatter(
+            {'description': 'a skill'},
+            'demo',
+            'x',
+            rules,
+            source_label='skills/x/SKILL.md',
+        )
+        assert 'mode:' not in result
+
+    @pytest.mark.parametrize('declared', ['', '   '])
+    def test_blank_mode_is_treated_as_absent(self, declared: str, rules: dict[str, list[str]]):
+        """An empty or whitespace-only value declares nothing.
+
+        Emitting ``mode:`` with no value would produce a key that satisfies a
+        naive substring check while classifying nothing.
+        """
+        result = transform_skill_frontmatter(
+            {'description': 'a skill', 'mode': declared},
+            'demo',
+            'x',
+            rules,
+            source_label='skills/x/SKILL.md',
+        )
+        assert 'mode:' not in result
+
+    def test_unrecognised_mode_is_not_coerced(self, rules: dict[str, list[str]]):
+        """An invalid value stays invalid so the doctor rule can surface it.
+
+        Normalising it into a legal-looking token would make the emitted skill
+        claim an archetype its author never wrote.
+        """
+        result = transform_skill_frontmatter(
+            {'description': 'a skill', 'mode': 'not-a-real-mode'},
+            'demo',
+            'x',
+            rules,
+            source_label='skills/x/SKILL.md',
+        )
+        assert 'mode: not-a-real-mode' in result
+        assert 'mode: workflow' not in result
+
+    def test_mode_is_stripped(self, rules: dict[str, list[str]]):
+        """Surrounding whitespace is normalised away, the token is not."""
+        result = transform_skill_frontmatter(
+            {'description': 'a skill', 'mode': '  workflow  '},
+            'demo',
+            'x',
+            rules,
+            source_label='skills/x/SKILL.md',
+        )
+        assert 'mode: workflow' in result
+        assert 'mode:   workflow' not in result
+
+    def test_mode_lives_inside_the_frontmatter_block(self, rules: dict[str, list[str]]):
+        """The key must be between the fences, not appended past the closing one.
+
+        A ``mode:`` line after the closing ``---`` is body text, so the emitted
+        skill would parse as declaring no archetype at all — the exact defect
+        this passthrough closes, reintroduced by a formatting slip.
+        """
+        result = transform_skill_frontmatter(
+            {'description': 'a skill', 'mode': 'workflow'},
+            'demo',
+            'x',
+            rules,
+            source_label='skills/x/SKILL.md',
+        )
+        block = result.split('---')[1]
+        assert 'mode: workflow' in block
+        assert result.count('---') == 2
 
 
 # ---------------------------------------------------------------------------
