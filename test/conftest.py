@@ -22,9 +22,10 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from types import ModuleType
-from typing import Any
+from typing import Any, Literal, overload
 from unittest import mock
 
 # =============================================================================
@@ -349,6 +350,56 @@ class ScriptResult:
 
     def __repr__(self) -> str:
         return f'ScriptResult(returncode={self.returncode}, stdout={len(self.stdout)}b, stderr={len(self.stderr)}b)'
+
+
+@overload
+def run_clean_python_subprocess(
+    args: Sequence[str | Path],
+    *,
+    input: str | bytes | None = None,
+    text: Literal[False] = False,
+    timeout: int = 30,
+    env_overrides: Mapping[str, str] | None = None,
+) -> subprocess.CompletedProcess[bytes]: ...
+
+
+@overload
+def run_clean_python_subprocess(
+    args: Sequence[str | Path],
+    *,
+    input: str | bytes | None = None,
+    text: Literal[True],
+    timeout: int = 30,
+    env_overrides: Mapping[str, str] | None = None,
+) -> subprocess.CompletedProcess[str]: ...
+
+
+def run_clean_python_subprocess(
+    args: Sequence[str | Path],
+    *,
+    input: str | bytes | None = None,
+    text: bool = False,
+    timeout: int = 30,
+    env_overrides: Mapping[str, str] | None = None,
+) -> subprocess.CompletedProcess[Any]:
+    """Run Python without inheriting ``PYTHONPATH`` and return the raw result.
+
+    Tests that exercise import bootstraps need a genuinely clean interpreter.
+    Keeping the scrub in the shared harness prevents each test from rebuilding the
+    same environment independently.
+    """
+    env = {key: value for key, value in os.environ.items() if key != 'PYTHONPATH'}
+    if env_overrides:
+        env.update(env_overrides)
+    argv = [sys.executable, *(str(arg) for arg in args)]
+    return subprocess.run(
+        argv,
+        input=input,
+        capture_output=True,
+        text=text,
+        timeout=timeout,
+        env=env,
+    )
 
 
 def run_script(

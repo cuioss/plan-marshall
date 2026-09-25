@@ -17,14 +17,13 @@ test that only replays it through the same reader.
 from __future__ import annotations
 
 import json
-import os
 import subprocess
-import sys
 from pathlib import Path
+from typing import cast
 
 from test_corpus_index import build_corpus
 
-from conftest import get_script_path, load_script_module
+from conftest import get_script_path, load_script_module, run_clean_python_subprocess
 
 corpus_lsp = load_script_module('pm-plugin-development', 'tools-corpus-language-server', 'corpus_lsp.py')
 
@@ -40,16 +39,16 @@ def _framed(payload: dict) -> bytes:
 
 def _handshake(project_path: Path) -> subprocess.CompletedProcess[bytes]:
     """Spawn `serve` the way a client does — no PYTHONPATH — and initialize."""
-    env = {k: v for k, v in os.environ.items() if k != 'PYTHONPATH'}
     stdin = _framed({'jsonrpc': '2.0', 'id': 1, 'method': 'initialize', 'params': {}}) + _framed(
         {'jsonrpc': '2.0', 'method': 'exit'}
     )
-    return subprocess.run(
-        [sys.executable, str(SCRIPT), 'serve', '--project-path', str(project_path)],
-        input=stdin,
-        capture_output=True,
-        env=env,
-        timeout=120,
+    return cast(
+        subprocess.CompletedProcess[bytes],
+        run_clean_python_subprocess(
+            [SCRIPT, 'serve', '--project-path', str(project_path)],
+            input=stdin,
+            timeout=120,
+        ),
     )
 
 
@@ -343,7 +342,6 @@ class TestCorpusPathResolvesThroughTheRealClient:
         root = self._project_with_custom_corpus(tmp_path)
         skill = root / 'my-corpus' / 'beta' / 'skills' / 'caller' / 'SKILL.md'
         line_no = skill.read_text(encoding='utf-8').split('\n').index(CURSOR_LINE)
-        env = {k: v for k, v in os.environ.items() if k != 'PYTHONPATH'}
         stdin = (
             _framed({'jsonrpc': '2.0', 'id': 1, 'method': 'initialize', 'params': {}})
             + _framed(
@@ -360,11 +358,9 @@ class TestCorpusPathResolvesThroughTheRealClient:
             + _framed({'jsonrpc': '2.0', 'method': 'exit'})
         )
 
-        result = subprocess.run(
-            [sys.executable, str(SCRIPT), 'serve', '--project-path', str(root)],
+        result = run_clean_python_subprocess(
+            [SCRIPT, 'serve', '--project-path', str(root)],
             input=stdin,
-            capture_output=True,
-            env=env,
             timeout=120,
         )
 
@@ -388,7 +384,6 @@ class TestCorpusPathResolvesThroughTheRealClient:
         (root / '.plan' / 'marshal.json').write_text(json.dumps(marshal), encoding='utf-8')
         skill = root / 'my-corpus' / 'beta' / 'skills' / 'caller' / 'SKILL.md'
         line_no = skill.read_text(encoding='utf-8').split('\n').index(CURSOR_LINE)
-        env = {k: v for k, v in os.environ.items() if k != 'PYTHONPATH'}
         stdin = (
             _framed({'jsonrpc': '2.0', 'id': 1, 'method': 'initialize', 'params': {}})
             + _framed(
@@ -405,11 +400,9 @@ class TestCorpusPathResolvesThroughTheRealClient:
             + _framed({'jsonrpc': '2.0', 'method': 'exit'})
         )
 
-        result = subprocess.run(
-            [sys.executable, str(SCRIPT), 'serve', '--project-path', str(root)],
+        result = run_clean_python_subprocess(
+            [SCRIPT, 'serve', '--project-path', str(root)],
             input=stdin,
-            capture_output=True,
-            env=env,
             timeout=120,
         )
 
@@ -440,7 +433,6 @@ class TestMissingCorpusDegradesWithoutCorruptingTheSession:
         root = self._project_with_missing_corpus(tmp_path)
         doc = root / 'doc.md'
         doc.write_text('Run alpha:target-skill here.\n', encoding='utf-8')
-        env = {k: v for k, v in os.environ.items() if k != 'PYTHONPATH'}
         stdin = (
             _framed({'jsonrpc': '2.0', 'id': 1, 'method': 'initialize', 'params': {}})
             + _framed(
@@ -457,11 +449,9 @@ class TestMissingCorpusDegradesWithoutCorruptingTheSession:
             + _framed({'jsonrpc': '2.0', 'method': 'exit'})
         )
 
-        result = subprocess.run(
-            [sys.executable, str(SCRIPT), 'serve', '--project-path', str(root)],
+        result = run_clean_python_subprocess(
+            [SCRIPT, 'serve', '--project-path', str(root)],
             input=stdin,
-            capture_output=True,
-            env=env,
             timeout=120,
         )
 
