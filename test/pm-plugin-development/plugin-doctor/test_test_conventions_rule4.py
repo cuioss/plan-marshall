@@ -64,6 +64,25 @@ def test_module_over_budget_is_flagged(tmp_path):
     assert findings[0]['severity'] == 'warning'
 
 
+def test_nested_collected_and_helper_modules_are_enumerated(tmp_path):
+    """The line-budget sweep covers collected and helper modules at nested depths."""
+    collected = _write(
+        tmp_path,
+        'pkg/nested/deeper/test_big.py',
+        '# filler\n' * (TEST_MODULE_LINE_BUDGET + 1),
+    )
+    helper = _write(
+        tmp_path,
+        'pkg/fixtures/nested/_domain_fixtures.py',
+        '# filler\n' * (TEST_MODULE_LINE_BUDGET + 1),
+    )
+
+    findings = analyze_test_module_line_budget(tmp_path)
+
+    assert {finding['file'] for finding in findings} == {str(collected), str(helper)}
+    assert {finding['details']['kind'] for finding in findings} == {'collected', 'helper'}
+
+
 def test_module_within_budget_is_not_flagged(tmp_path):
     """A collected test module at or under the budget produces no finding."""
     _write(tmp_path, 'test_small.py', 'def test_x():\n    assert True\n')

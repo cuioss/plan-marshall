@@ -98,7 +98,7 @@ def skill_exists(skill_ref, marketplace_root: Path) -> bool:
     return skill_path.is_dir() and (
         (skill_path / 'SKILL.md').exists()
         or len(list(skill_path.glob('*.md'))) > 0
-        or len(list(skill_path.glob('scripts/*.py'))) > 0
+        or len(list(skill_path.glob('scripts/**/*.py'))) > 0
     )
 
 
@@ -898,7 +898,7 @@ def validate_extension_contracts(
                 scripts_dir = impl_path.parent / 'scripts'
                 has_execute_config = False
                 if scripts_dir.is_dir():
-                    for py_file in scripts_dir.glob('*.py'):
+                    for py_file in scripts_dir.rglob('*.py'):
                         try:
                             content = py_file.read_text(encoding='utf-8')
                             if 'ExecuteConfig' in content:

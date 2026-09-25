@@ -55,6 +55,17 @@ def test_generic_basename_fixtures_flagged(tmp_path):
     assert finding['severity'] == 'error'
 
 
+def test_nested_helper_module_is_enumerated(tmp_path):
+    """A helper module nested several levels below the test root is still scanned."""
+    test_root = tmp_path / 'test'
+    target = _write(test_root / 'domain' / 'surface' / 'nested' / '_fixtures.py')
+
+    findings = analyze_unique_fixture_basenames(test_root)
+
+    assert [finding['file'] for finding in findings] == [str(target)]
+    assert findings[0]['details']['basename'] == '_fixtures.py'
+
+
 def test_generic_basename_helpers_and_common_flagged(tmp_path):
     """Both ``_helpers.py`` and ``_common.py`` count as generic."""
     test_root = tmp_path / 'test'

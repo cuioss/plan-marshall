@@ -119,6 +119,22 @@ _GUARD_REVERSED = "\n\nif '__main__' == __name__:\n    main()\n"
 #: A compare against a different constant — an ordinary module-level branch.
 _GUARD_UNRELATED = "\n\nif __name__ == '__not_main__':\n    main()\n"
 
+
+def test_owned_entry_scripts_includes_nested_entry_script(tmp_path: Path) -> None:
+    """Nested entry scripts are part of the same documented-verb population."""
+    skill_dir = _materialize(
+        tmp_path,
+        {
+            'bundles/demo/skills/demo/scripts/nested/entry.py': _script_under_guard(_GUARD_CANONICAL),
+        },
+    ) / 'bundles' / 'demo' / 'skills' / 'demo'
+
+    entries = _mod.owned_entry_scripts(skill_dir)
+
+    assert set(entries) == {'demo:demo:entry'}
+    assert entries['demo:demo:entry'] == skill_dir / 'scripts' / 'nested' / 'entry.py'
+
+
 #: A guard nested inside a function body. Never executes at import, and says
 #: nothing about how the file is invoked.
 _GUARD_FUNCTION_LOCAL = "\n\ndef _run() -> None:\n    if __name__ == '__main__':\n        main()\n"

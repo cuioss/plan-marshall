@@ -268,7 +268,8 @@ def discover_in_scope_scripts(
 
     A script is in-scope when ALL of the following hold:
 
-    - it is a top-level ``*.py`` file under a skill's ``scripts/`` directory,
+    - it is a ``*.py`` file under a skill's ``scripts/`` directory, including
+      nested script packages,
     - its filename does not start with ``_`` (underscore-prefixed modules are
       helpers, not entry points),
     - it declares an argparse CLI surface,
@@ -298,14 +299,14 @@ def discover_in_scope_scripts(
             scripts_dir = skill_dir / 'scripts'
             if not scripts_dir.is_dir():
                 continue
-            for script_file in sorted(scripts_dir.glob('*.py')):
+            for script_file in sorted(scripts_dir.rglob('*.py')):
                 stem = script_file.stem
                 if stem.startswith('_'):
                     continue
                 if not _script_declares_argparse(script_file):
                     continue
                 notation = f'{bundle}:{skill}:{stem}'
-                script_relpath = f'bundles/{bundle}/skills/{skill}/scripts/{script_file.name}'
+                script_relpath = f'bundles/{bundle}/skills/{skill}/scripts/{script_file.relative_to(scripts_dir)}'
                 skill_dir_relpath = f'bundles/{bundle}/skills/{skill}'
                 descriptors.append(
                     _ScriptDescriptor(
