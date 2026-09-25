@@ -7,8 +7,12 @@ union of the three-dot ``{base_ref}...HEAD`` diff and the porcelain working-tree
 state — without consulting any persisted ledger. The footprint is computed
 on-demand from the worktree, which is the single source of truth.
 
-This handler is read-only: it never mutates ``references.json``. It reads
-``references.json`` only to resolve ``base_branch`` for the diff range.
+This handler is read-only with respect to ``references.json``: it never mutates
+it. It reads ``references.json`` only to resolve ``base_branch`` for the diff
+range. The one opt-in write it performs is ``--files-out``, which writes the
+computed list to a caller-named file and nothing else — the faithful hand-off
+for a consumer that takes the footprint as a file rather than as a
+hand-composed command-line string.
 
 Resolution rule:
     files = sorted live footprint set
@@ -95,7 +99,7 @@ def cmd_compute_footprint(args: argparse.Namespace) -> dict:
         }
     files = sorted(live_set)
 
-    return {
+    payload = {
         'status': 'success',
         'plan_id': args.plan_id,
         'base_ref': base_ref,
@@ -103,6 +107,24 @@ def cmd_compute_footprint(args: argparse.Namespace) -> dict:
         'files': files,
         'live_count': len(files),
     }
+
+    files_out = getattr(args, 'files_out', None)
+    if files_out:
+        try:
+            out_path = Path(files_out).expanduser()
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_path.write_text(''.join(f'{path}\n' for path in files), encoding='utf-8')
+        except OSError as exc:
+            return {
+                'status': 'error',
+                'plan_id': args.plan_id,
+                'error': 'files_out_unwritable',
+                'message': f'Failed to write the footprint to {files_out}: {exc}',
+            }
+        payload['files_out'] = str(out_path)
+        payload['files_out_count'] = len(files)
+
+    return payload
 
 
 def cmd_capture_footprint(args: argparse.Namespace) -> dict:

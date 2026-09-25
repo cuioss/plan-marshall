@@ -123,6 +123,19 @@ def main() -> int:
         '--base-ref',
         help='Base ref for the diff, verified with rev-parse --verify (defaults to origin/{base_branch} when its remote-tracking ref resolves, falling back to references.base_branch then main)',
     )
+    compute_footprint_parser.add_argument(
+        '--files-out',
+        dest='files_out',
+        help=(
+            'Also write the computed footprint to this path, one repo-relative '
+            'path per line. The faithful hand-off to a consumer that takes the '
+            'list as a file (e.g. phase-6-finalize derive_gate_bundles '
+            '--files-file): a long list retyped into a command line is not '
+            'transcribed faithfully, and a wrong list derives a narrower '
+            'population that reads as a green gate. Opt-in, and it writes only '
+            'this caller-named file — references.json is still never touched.'
+        ),
+    )
 
     # capture-footprint — compute the live footprint AND persist it to
     # references.realized_footprint (the capture-while-true side effect).

@@ -22,6 +22,13 @@ so the "is a real bundle directory" predicate is exercised, not stubbed:
   (rule 4). That contrast with the bullet above is the point: "matched no glob"
   and "matched a glob but resolves to no bundle" are different answers, and
   only the second is diagnosable.
+* The ``--files-file`` hand-off: the file form derives exactly what the inline
+  CSV form derives over the same paths (a transport, not a second derivation),
+  its reader skips blank lines and ``#`` comments without dropping the real
+  paths around them, it preserves order and duplicates, an **absent file
+  raises** rather than deriving an empty population (an empty list iterates the
+  per-bundle loop zero times and reads as a green gate over nothing), and the
+  two input forms are mutually exclusive and jointly required.
 
 This module is the **sole owner** of the rule-4 behavioural pair — the
 consumer-shaped negative AND its matched positive control. The control is not
@@ -39,6 +46,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from conftest import (
     MARKETPLACE_ROOT,
     PROJECT_ROOT,
@@ -49,6 +58,7 @@ from conftest import (
 
 _mod = load_script_module('plan-marshall', 'phase-6-finalize', 'derive_gate_bundles.py')
 derive_gate_bundles = _mod.derive_gate_bundles
+read_files_file = _mod.read_files_file
 
 # Globs broad enough to admit both a bundle-rooted path and a test-rooted path.
 # fnmatch ``*`` spans ``/``, so these match any depth beneath the prefix.
@@ -264,6 +274,190 @@ def test_cli_emits_toon_bundles_and_unresolved():
     assert data['status'] == 'success'
     assert _as_list(data['bundles']) == ['plan-marshall', 'pm-dev-java']
     assert _as_list(data['unresolved']) == ['test/marketplace/targets/test_frontmatter.py']
+
+
+# ---------------------------------------------------------------------------
+# --files-file: the faithful hand-off (the retyped-CSV defect class)
+# ---------------------------------------------------------------------------
+
+
+def test_files_file_derives_the_same_bundles_as_the_inline_form(tmp_path):
+    """The file form is a transport, not a different derivation.
+
+    Both inputs carry the same paths, so both must yield the same bundle set and
+    the same ``unresolved`` list. A difference would mean the file path silently
+    gates a different population than the caller believes it gated.
+    """
+    paths = [
+        'test/marketplace/targets/test_frontmatter.py',
+        'test/plan-marshall/test_bar.py',
+        'marketplace/bundles/pm-dev-java/skills/foo.py',
+    ]
+    listed = tmp_path / 'footprint.txt'
+    listed.write_text(''.join(f'{p}\n' for p in paths), encoding='utf-8')
+
+    from_file, unresolved_file = derive_gate_bundles(
+        read_files_file(listed),
+        ['test/*', 'marketplace/bundles/*'],
+        MARKETPLACE_ROOT,
+    )
+    from_csv, unresolved_csv = derive_gate_bundles(
+        paths,
+        ['test/*', 'marketplace/bundles/*'],
+        MARKETPLACE_ROOT,
+    )
+
+    assert from_file == from_csv == ['plan-marshall', 'pm-dev-java']
+    assert unresolved_file == unresolved_csv == [paths[0]]
+
+
+def test_files_file_skips_blank_lines_and_comments_but_keeps_every_path(tmp_path):
+    """A comment-tolerant reader is only safe if it drops comments, not paths.
+
+    Blank lines and ``#`` comments are noise; a real path that happens to sit
+    next to them is not, so the reader must not drop the tail of the file after
+    it starts skipping.
+    """
+    listed = tmp_path / 'footprint.txt'
+    listed.write_text(
+        '# live footprint\n'
+        '\n'
+        'test/plan-marshall/test_bar.py\n'
+        '   \n'
+        '   # indented comment\n'
+        'test/plan-marshall/test_baz.py\n',
+        encoding='utf-8',
+    )
+
+    assert read_files_file(listed) == [
+        'test/plan-marshall/test_bar.py',
+        'test/plan-marshall/test_baz.py',
+    ]
+
+
+def test_files_file_preserves_duplicates_and_file_order(tmp_path):
+    """A repeated path must not be collapsed on the way in.
+
+    The seam de-duplicates the derived bundle SET, so collapsing duplicates in
+    the reader would be redundant at best; it would also make the reader
+    disagree with the producer's list, and the producer's list is the
+    authoritative record of what was gated over.
+    """
+    listed = tmp_path / 'footprint.txt'
+    listed.write_text(
+        'test/plan-marshall/test_b.py\ntest/plan-marshall/test_a.py\ntest/plan-marshall/test_b.py\n',
+        encoding='utf-8',
+    )
+
+    assert read_files_file(listed) == [
+        'test/plan-marshall/test_b.py',
+        'test/plan-marshall/test_a.py',
+        'test/plan-marshall/test_b.py',
+    ]
+
+
+def test_missing_files_file_raises_rather_than_deriving_nothing(tmp_path):
+    """An unreadable file is an error, never an empty population.
+
+    This is the load-bearing negative: an empty list would derive no bundles,
+    the per-bundle loop would iterate zero times, and the gate would report
+    green over a population it never saw — the exact false green the file form
+    exists to prevent.
+    """
+    with pytest.raises(OSError):
+        read_files_file(tmp_path / 'absent.txt')
+
+
+def test_cli_reports_an_unreadable_files_file_as_a_typed_error(tmp_path):
+    """The failure must be a branchable envelope, not a stack trace.
+
+    The caller is a gate reading a step record, so an unreadable input has to
+    arrive as ``status: error`` with a named code — a traceback on stderr leaves
+    the failure legible only to someone reading the console, and a
+    ``status: success`` with an empty bundle list would be the false green the
+    option exists to prevent.
+    """
+    script = get_script_path('plan-marshall', 'phase-6-finalize', 'derive_gate_bundles.py')
+
+    result = run_script(
+        script,
+        'derive',
+        '--files-file',
+        str(tmp_path / 'absent.txt'),
+        '--globs',
+        'test/*',
+        '--marketplace-root',
+        str(PROJECT_ROOT),
+    )
+
+    data = result.toon()
+    assert data['status'] == 'error'
+    assert data['error'] == 'files_file_unreadable'
+    assert 'bundles' not in data
+
+
+def test_cli_accepts_files_file(tmp_path):
+    script = get_script_path('plan-marshall', 'phase-6-finalize', 'derive_gate_bundles.py')
+    listed = tmp_path / 'footprint.txt'
+    listed.write_text(
+        'test/plan-marshall/test_bar.py\ntest/marketplace/targets/test_frontmatter.py\n',
+        encoding='utf-8',
+    )
+
+    result = run_script(
+        script,
+        'derive',
+        '--files-file',
+        str(listed),
+        '--globs',
+        'test/*,marketplace/bundles/*',
+        '--marketplace-root',
+        str(PROJECT_ROOT),
+    )
+
+    assert result.success, result.stderr
+    data = result.toon()
+    assert data['status'] == 'success'
+    assert _as_list(data['bundles']) == ['plan-marshall']
+    assert _as_list(data['unresolved']) == ['test/marketplace/targets/test_frontmatter.py']
+
+
+def test_cli_refuses_both_files_forms_together():
+    """The two forms are mutually exclusive, so the safe path cannot be half-used."""
+    script = get_script_path('plan-marshall', 'phase-6-finalize', 'derive_gate_bundles.py')
+
+    result = run_script(
+        script,
+        'derive',
+        '--files',
+        'test/plan-marshall/test_bar.py',
+        '--files-file',
+        '/dev/null',
+        '--globs',
+        'test/*',
+        '--marketplace-root',
+        str(PROJECT_ROOT),
+    )
+
+    assert not result.success
+    assert 'not allowed with argument' in result.stderr
+
+
+def test_cli_refuses_neither_files_form():
+    """Omitting both is a refusal too — the footprint is not optional."""
+    script = get_script_path('plan-marshall', 'phase-6-finalize', 'derive_gate_bundles.py')
+
+    result = run_script(
+        script,
+        'derive',
+        '--globs',
+        'test/*',
+        '--marketplace-root',
+        str(PROJECT_ROOT),
+    )
+
+    assert not result.success
+    assert 'one of the arguments' in result.stderr
 
 
 # ---------------------------------------------------------------------------

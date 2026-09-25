@@ -49,9 +49,20 @@ executor proxy::
 
     python3 .plan/execute-script.py \
       plan-marshall:phase-6-finalize:derive_gate_bundles derive \
-      --files "<comma-separated footprint paths>" \
+      --files-file "<path to a one-path-per-line footprint list>" \
       --globs "<comma-separated build_map globs>" \
       --marketplace-root "<repo/worktree root containing marketplace/bundles/>"
+
+**Why ``--files-file`` exists.** The footprint reaches this seam as a list, and a
+list crossing a process boundary as a hand-composed command-line string is not
+transcribed faithfully at scale: the documented caller pastes the paths one by
+one, and a 434-path list is long enough that plausible-looking path names get
+substituted for real ones. A wrong list is not detectable from the outside — it
+derives a *narrower* bundle set, the gate runs fewer bundles, and the run reads
+as green. ``--files-file`` removes the human from the hand-off: the producer
+writes the exact list to disk and this verb reads those bytes. ``--files`` remains
+for the small inputs where composing the string is not a risk, and the two are
+mutually exclusive so a caller can never half-use the safe path.
 
 The executor injects ``PYTHONPATH`` for ``toon_parser`` and
 ``marketplace_paths``, so no in-script ``sys.path`` manipulation is required.
@@ -137,12 +148,66 @@ def _split_csv(value: str) -> list[str]:
     return [item.strip() for item in value.split(',') if item.strip()]
 
 
+def read_files_file(path: Path) -> list[str]:
+    """Read a one-path-per-line footprint list written by its producer.
+
+    The file is the transport, so the reader is deliberately permissive about
+    what it accepts — blank lines and ``#`` comments are skipped, and each
+    remaining line is stripped — and deliberately strict about one thing: an
+    unreadable or absent file is an error, never an empty list. An empty list
+    would derive no bundles, the per-bundle loop would iterate zero times, and
+    the gate would report green over a population it never saw.
+
+    Args:
+        path: File holding one repo-relative footprint path per line.
+
+    Returns:
+        The parsed paths in file order, duplicates preserved (the seam
+        de-duplicates the derived *bundle* set, and a repeated path must not be
+        silently collapsed on the way in).
+
+    Raises:
+        OSError: The file does not exist or cannot be read.
+    """
+    lines = path.read_text(encoding='utf-8').splitlines()
+    return [stripped for line in lines if (stripped := line.strip()) and not stripped.startswith('#')]
+
+
+def _resolve_files(args: argparse.Namespace) -> list[str]:
+    """Resolve the footprint from whichever of the two input forms was given.
+
+    Exactly one of ``--files`` / ``--files-file`` is required; the parser's
+    mutually-exclusive group enforces that, so this only has to dispatch.
+    """
+    if args.files_file is not None:
+        return read_files_file(Path(args.files_file).expanduser())
+    return _split_csv(args.files)
+
+
 def cmd_derive(args: argparse.Namespace) -> int:
     """CLI wrapper around :func:`derive_gate_bundles` — emits TOON, returns 0."""
     marketplace_root = Path(args.marketplace_root).expanduser()
     bundles_root = marketplace_root / _BUNDLES_SUBPATH
+    try:
+        files = _resolve_files(args)
+    except OSError as exc:
+        # An unreadable footprint file is reported, never degraded to an empty
+        # list. The caller is a gate: a bare traceback would leave the failure
+        # legible only to a reader of stderr, while a typed envelope lets it be
+        # branched on and named in the step's own record.
+        print(
+            serialize_toon(
+                {
+                    'status': 'error',
+                    'error': 'files_file_unreadable',
+                    'files_file': str(args.files_file),
+                    'message': f'Failed to read the footprint file: {exc}',
+                }
+            )
+        )
+        return 0
     bundles, unresolved = derive_gate_bundles(
-        _split_csv(args.files),
+        files,
         _split_csv(args.globs),
         bundles_root,
     )
@@ -173,10 +238,24 @@ def build_parser() -> argparse.ArgumentParser:
         help='Derive the bundle set from a footprint and the build_map globs',
         allow_abbrev=False,
     )
-    derive_parser.add_argument(
+    files_group = derive_parser.add_mutually_exclusive_group(required=True)
+    files_group.add_argument(
         '--files',
-        required=True,
-        help='Comma-separated live-footprint paths (repo-relative).',
+        help=(
+            'Comma-separated live-footprint paths (repo-relative). Small '
+            'inputs only: a long list composed by hand is not transcribed '
+            'faithfully, and a wrong list derives a narrower bundle set that '
+            'reads as a green gate. Use --files-file for anything sizeable.'
+        ),
+    )
+    files_group.add_argument(
+        '--files-file',
+        dest='files_file',
+        help=(
+            'Path to a file holding one repo-relative footprint path per '
+            'line (blank lines and # comments ignored). The faithful hand-off: '
+            'the producer writes the exact list, this verb reads those bytes.'
+        ),
     )
     derive_parser.add_argument(
         '--globs',
@@ -209,4 +288,4 @@ if __name__ == '__main__':
     sys.exit(main())
 
 
-__all__ = ['derive_gate_bundles']
+__all__ = ['derive_gate_bundles', 'read_files_file']

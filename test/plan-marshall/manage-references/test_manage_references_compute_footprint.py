@@ -287,6 +287,114 @@ def test_footprint_is_read_only(tmp_path):
 
 
 # =============================================================================
+# --files-out — the faithful hand-off to a consumer that reads a file
+# =============================================================================
+
+
+def test_files_out_writes_the_computed_footprint_exactly(tmp_path):
+    """The written file must carry the SAME list the TOON returned.
+
+    That equality is the whole point of the option: it exists so a consumer can
+    read the producer's bytes instead of a retyped copy, which is only faithful
+    if the two are the same list.
+    """
+    repo = tmp_path / 'worktree'
+    _build_absorb_scenario(repo)
+    base_dir = tmp_path / 'plan-base'
+    _write_references(base_dir, FOOTPRINT_PLAN_ID, {'base_branch': 'main'})
+    out = tmp_path / 'nested' / 'footprint.txt'
+
+    result = _run_footprint(base_dir, FOOTPRINT_PLAN_ID, repo, '--files-out', str(out))
+    data = result.toon()
+
+    assert data['status'] == 'success', result.stderr
+    assert out.exists(), '--files-out must create the (parent-)file it was given'
+    written = out.read_text().splitlines()
+    assert written == data['files']
+    assert data['files_out_count'] == len(written)
+    assert data['live_count'] == len(written)
+
+
+def test_files_out_omitted_writes_nothing_and_reports_no_path(tmp_path):
+    """Without the flag there is no file and no files_out key — the default
+    stays a pure read whose only observable output is the TOON."""
+    repo = tmp_path / 'worktree'
+    _build_absorb_scenario(repo)
+    base_dir = tmp_path / 'plan-base'
+    _write_references(base_dir, FOOTPRINT_PLAN_ID, {'base_branch': 'main'})
+
+    result = _run_footprint(base_dir, FOOTPRINT_PLAN_ID, repo)
+    data = result.toon()
+
+    assert data['status'] == 'success'
+    assert 'files_out' not in data
+    assert 'files_out_count' not in data
+
+
+def test_files_out_does_not_touch_references_json(tmp_path):
+    """The opt-in write is scoped to the caller-named file.
+
+    ``compute-footprint`` is documented as read-only with respect to
+    ``references.json``; adding a write option must not quietly weaken that
+    claim for the one verb that others rely on to be a pure read.
+    """
+    repo = tmp_path / 'worktree'
+    _build_absorb_scenario(repo)
+    base_dir = tmp_path / 'plan-base'
+    original = {'base_branch': 'main'}
+    _write_references(base_dir, FOOTPRINT_PLAN_ID, dict(original))
+
+    before = _read_references(base_dir, FOOTPRINT_PLAN_ID)
+    result = _run_footprint(
+        base_dir,
+        FOOTPRINT_PLAN_ID,
+        repo,
+        '--files-out',
+        str(tmp_path / 'footprint.txt'),
+    )
+    after = _read_references(base_dir, FOOTPRINT_PLAN_ID)
+
+    assert result.toon()['status'] == 'success'
+    assert before == after
+
+
+def test_files_out_unwritable_reports_a_typed_error_and_no_success_payload(tmp_path):
+    """A failed export is an error, not a success with a missing file.
+
+    A ``status: success`` whose file was never written is precisely the
+    half-hand-off the option exists to prevent, so the failure must be visible
+    at the call site.
+    """
+    repo = tmp_path / 'worktree'
+    _build_absorb_scenario(repo)
+    base_dir = tmp_path / 'plan-base'
+    _write_references(base_dir, FOOTPRINT_PLAN_ID, {'base_branch': 'main'})
+    # A path whose parent is an existing FILE cannot be created as a directory.
+    blocker = tmp_path / 'blocker'
+    blocker.write_text('not a directory')
+
+    result = _run_footprint(
+        base_dir,
+        FOOTPRINT_PLAN_ID,
+        repo,
+        '--files-out',
+        str(blocker / 'sub' / 'footprint.txt'),
+    )
+    data = result.toon()
+
+    assert data['status'] == 'error'
+    assert data['error'] == 'files_out_unwritable'
+    assert 'files' not in data
+
+
+def test_compute_footprint_help_declares_files_out():
+    """The option must be discoverable from --help, or no caller will find it."""
+    result = run_script(SCRIPT_PATH, 'compute-footprint', '--help')
+    assert result.success, f'--help failed: {result.stderr}'
+    assert '--files-out' in result.stdout
+
+
+# =============================================================================
 # Error contract
 # =============================================================================
 
