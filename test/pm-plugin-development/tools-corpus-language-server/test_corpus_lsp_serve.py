@@ -19,7 +19,6 @@ from __future__ import annotations
 import json
 import subprocess
 from pathlib import Path
-from typing import cast
 
 from test_corpus_index import build_corpus
 
@@ -42,13 +41,10 @@ def _handshake(project_path: Path) -> subprocess.CompletedProcess[bytes]:
     stdin = _framed({'jsonrpc': '2.0', 'id': 1, 'method': 'initialize', 'params': {}}) + _framed(
         {'jsonrpc': '2.0', 'method': 'exit'}
     )
-    return cast(
-        subprocess.CompletedProcess[bytes],
-        run_clean_python_subprocess(
-            [SCRIPT, 'serve', '--project-path', str(project_path)],
-            input=stdin,
-            timeout=120,
-        ),
+    return run_clean_python_subprocess(
+        [SCRIPT, 'serve', '--project-path', str(project_path)],
+        input=stdin,
+        timeout=120,
     )
 
 
