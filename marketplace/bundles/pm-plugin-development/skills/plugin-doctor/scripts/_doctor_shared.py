@@ -24,6 +24,7 @@ from file_ops import get_temp_dir
 from marketplace_bundles import resolve_bundles_root
 from marketplace_paths import (
     _read_runtime_target,
+    get_bundle_cache_roots,
     get_project_skill_roots,
 )
 
@@ -330,6 +331,76 @@ def resolve_runtime_target() -> str:
     return _read_runtime_target()
 
 
+def _resolved_deployed_cache_roots(repo_root: Path) -> list[Path]:
+    """Return the deployed-bundle cache roots that exist, resolved to absolute paths.
+
+    Resolution mirrors :func:`resolve_project_skill_trees` — ``~`` is expanded,
+    a relative root is anchored at the repo root, and only roots that exist on
+    disk are returned — so a cache root and a project root are comparable by
+    path identity without either side's spelling getting in the way.
+    """
+    resolved: list[Path] = []
+    for root in get_bundle_cache_roots():
+        expanded = Path(root).expanduser()
+        candidate = expanded if expanded.is_absolute() else repo_root / root
+        if candidate.is_dir():
+            resolved.append(candidate)
+    return resolved
+
+
+def _is_deployed_cache_tree(candidate: Path, cache_roots: list[Path]) -> bool:
+    """Return whether ``candidate`` IS, or lives INSIDE, a deployed-cache root.
+
+    Containment in one direction only, deliberately. A candidate that CONTAINS a
+    cache root is not treated as a cache tree: a project-local tree with a cache
+    nested somewhere beneath it is mostly genuine source, and discarding all of
+    it because of a subdirectory would trade a false red for silent
+    under-scanning — the more dangerous of the two, since an unscanned source
+    defect is invisible while a scanned generated file is merely noisy.
+
+    Both sides are resolved before comparison so a symlinked or
+    differently-spelled route to the same directory is still recognised.
+    """
+    try:
+        target = candidate.resolve()
+    except OSError:
+        return False
+    for cache_root in cache_roots:
+        try:
+            cache = cache_root.resolve()
+        except OSError:
+            continue
+        if target == cache or cache in target.parents:
+            return True
+    return False
+
+
+def excluded_deployed_cache_roots(marketplace_root: Path) -> list[Path]:
+    """Return the project-skill roots that are EXCLUDED because they are deployed cache.
+
+    The audit face of :func:`resolve_project_skill_trees`. Excluding a tree from
+    a gate's scope is a narrowing of coverage, and a narrowing nobody can see is
+    indistinguishable from a clean run — so the excluded set is published rather
+    than applied silently. A caller that reports scope states it with this.
+
+    The excluded roots are, by construction, generated output: a regeneration
+    would rewrite them, so a finding anchored in one describes the deployed tree
+    rather than the repository, and reds a *source* gate on the state of a cache
+    the operator did not author.
+    """
+    repo_root = marketplace_root.parent.parent
+    cache_roots = _resolved_deployed_cache_roots(repo_root)
+    if not cache_roots:
+        return []
+    excluded: list[Path] = []
+    for root in get_project_skill_roots():
+        expanded = Path(root).expanduser()
+        candidate = expanded if expanded.is_absolute() else repo_root / root
+        if candidate.is_dir() and _is_deployed_cache_tree(candidate, cache_roots):
+            excluded.append(candidate)
+    return excluded
+
+
 def resolve_project_skill_trees(marketplace_root: Path) -> list[Path]:
     """Return every project-local-skill root directory for the active target.
 
@@ -344,14 +415,32 @@ def resolve_project_skill_trees(marketplace_root: Path) -> list[Path]:
 
     Analyzers that previously inlined ``marketplace_root.parent.parent /
     '.claude' / 'skills'`` call this helper instead so both layouts are scanned.
+
+    **Deployed-cache roots are excluded**, per the target's own declaration
+    (``get_bundle_cache_roots``). On OpenCode that op returns the ``~``-anchored
+    user-global skill roots, because OpenCode has no separate plugin cache — and
+    the deployed OpenCode tree lands in exactly those roots. Linting them means
+    linting GENERATED OUTPUT: a regeneration rewrites it, so a finding anchored
+    there describes the cache rather than the repository and reds a source gate
+    on state the operator never authored. The exclusion is target-driven rather
+    than hardcoded, so Claude keeps scanning ``~/.claude/skills`` (its cache is
+    the separate ``~/.claude/plugins/cache/...`` tree, which is not a
+    project-skill root).
+
+    Call :func:`excluded_deployed_cache_roots` to report what was left out; a
+    narrowing of scope that is not published reads as a clean run.
     """
     repo_root = marketplace_root.parent.parent
+    cache_roots = _resolved_deployed_cache_roots(repo_root)
     trees: list[Path] = []
     for root in get_project_skill_roots():
         expanded = Path(root).expanduser()
         candidate = expanded if expanded.is_absolute() else repo_root / root
-        if candidate.is_dir():
-            trees.append(candidate)
+        if not candidate.is_dir():
+            continue
+        if _is_deployed_cache_tree(candidate, cache_roots):
+            continue
+        trees.append(candidate)
     return trees
 
 
