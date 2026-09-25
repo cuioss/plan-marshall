@@ -35,6 +35,7 @@ import json
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 from _analyze_manage_invocation import (
     _NOTATION_RE,
@@ -897,7 +898,13 @@ def cmd_quality_gate(args) -> dict:
     # is too expensive for the build gate. Invoke via
     # ``analyze --rules script_call_drift`` for explicit drift sweeps.
 
-    payload = {
+    # Annotated `Any`: the payload is deliberately heterogeneous (a status
+    # string, an int count, a list of rule summaries, a list of findings, and
+    # the excluded-roots string list). Without the annotation mypy infers the
+    # value union from the initial literals and then rejects the later
+    # ``list[str]`` assignment as incompatible — a false positive about a shape
+    # that is intentional, not a real type error.
+    payload: dict[str, Any] = {
         'status': 'fail' if all_issues else 'pass',
         'total_issues': len(all_issues),
         'rules_run': rule_summaries,
@@ -912,10 +919,10 @@ def cmd_quality_gate(args) -> dict:
     # run, so the excluded roots ride in the gate payload: a reader can see what
     # was omitted and why, rather than having to trust that ``pass`` meant
     # "nothing to find" rather than "not looked at here".
-    excluded = [str(p) for p in excluded_deployed_cache_roots(marketplace_root)]
-    if excluded:
-        payload['excluded_deployed_cache_roots'] = excluded
-        payload['excluded_deployed_cache_root_count'] = len(excluded)
+    excluded_cache_roots = [str(p) for p in excluded_deployed_cache_roots(marketplace_root)]
+    if excluded_cache_roots:
+        payload['excluded_deployed_cache_roots'] = excluded_cache_roots
+        payload['excluded_deployed_cache_root_count'] = len(excluded_cache_roots)
 
     return payload
 
