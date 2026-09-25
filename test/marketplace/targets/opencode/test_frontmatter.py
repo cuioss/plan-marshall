@@ -273,6 +273,7 @@ class TestSkillModePassthrough:
             source_label='skills/x/SKILL.md',
         )
         assert 'mode: script-executor' in result
+
     @pytest.mark.parametrize('mode', sorted(VALID_MODES))
     def test_every_valid_mode_survives(self, mode: str, rules: dict[str, list[str]]):
         """The whole closed vocabulary, taken from the validator that owns it.
