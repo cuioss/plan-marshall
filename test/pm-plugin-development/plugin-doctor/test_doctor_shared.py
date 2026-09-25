@@ -339,6 +339,194 @@ def test_resolve_project_skill_trees_returns_existing_dirs(tmp_path):
 
 
 # =============================================================================
+# Deployed-cache exclusion
+#
+# The defect: on OpenCode the `layout skill-roots` op returns the `~`-anchored
+# user-global skill roots among its candidates (OpenCode has no separate plugin
+# cache, so those roots ARE the cache), and every on-disk candidate was scanned.
+# The deployed OpenCode tree lands in exactly those roots, so the gate linted
+# GENERATED OUTPUT — a finding anchored there describes a tree a regeneration
+# rewrites, and reds a *source* gate on state the operator never authored.
+# =============================================================================
+
+
+def test_a_cache_root_is_excluded_from_the_scanned_trees(monkeypatch, tmp_path):
+    """The root that IS the cache must not be scanned.
+
+    This is the exact shape that produced 53 findings anchored in the deployed
+    OpenCode cache: the candidate root and the declared cache root are the same
+    directory.
+    """
+    cache = tmp_path / 'home' / '.config' / 'opencode' / 'skills'
+    cache.mkdir(parents=True)
+    project = tmp_path / 'repo' / '.claude' / 'skills'
+    project.mkdir(parents=True)
+    repo = tmp_path / 'repo'
+    (repo / 'marketplace' / 'bundles').mkdir(parents=True)
+
+    monkeypatch.setattr(_shared, 'get_project_skill_roots', lambda: (str(cache), str(project)))
+    monkeypatch.setattr(_shared, 'get_bundle_cache_roots', lambda: (str(cache),))
+
+    trees = _shared.resolve_project_skill_trees(repo / 'marketplace' / 'bundles')
+
+    assert project.resolve() in [t.resolve() for t in trees]
+    assert cache.resolve() not in [t.resolve() for t in trees]
+
+
+def test_a_root_inside_a_cache_root_is_excluded(monkeypatch, tmp_path):
+    """A subdirectory of the cache is still cache.
+
+    Containment, not equality: a nested root resolves to the same generated
+    tree and would reintroduce the identical false red one level down.
+    """
+    cache = tmp_path / 'home' / 'cache'
+    nested = cache / 'plan-marshall'
+    nested.mkdir(parents=True)
+    repo = tmp_path / 'repo'
+    (repo / 'marketplace' / 'bundles').mkdir(parents=True)
+
+    monkeypatch.setattr(_shared, 'get_project_skill_roots', lambda: (str(nested),))
+    monkeypatch.setattr(_shared, 'get_bundle_cache_roots', lambda: (str(cache),))
+
+    trees = _shared.resolve_project_skill_trees(repo / 'marketplace' / 'bundles')
+
+    assert trees == []
+
+
+def test_a_tree_containing_a_cache_root_is_still_scanned(monkeypatch, tmp_path):
+    """Containment is one-directional, and this is why.
+
+    A project-local tree with a cache nested somewhere beneath it is mostly
+    genuine source. Discarding all of it would trade a false red for silent
+    UNDER-scanning, which is the more dangerous of the two: an unscanned source
+    defect is invisible, while a scanned generated file is merely noisy.
+    """
+    project = tmp_path / 'repo' / '.claude'
+    (project / 'skills').mkdir(parents=True)
+    (project / 'plugins' / 'cache' / 'plan-marshall').mkdir(parents=True)
+    repo = tmp_path / 'repo'
+    (repo / 'marketplace' / 'bundles').mkdir(parents=True)
+
+    monkeypatch.setattr(_shared, 'get_project_skill_roots', lambda: (str(project),))
+    monkeypatch.setattr(_shared, 'get_bundle_cache_roots', lambda: (str(project / 'plugins' / 'cache'),))
+
+    trees = _shared.resolve_project_skill_trees(repo / 'marketplace' / 'bundles')
+
+    assert [t.resolve() for t in trees] == [project.resolve()]
+
+
+def test_a_symlinked_route_to_the_cache_is_excluded(monkeypatch, tmp_path):
+    """Identity, not spelling.
+
+    A differently-spelled or symlinked route to the same directory is the same
+    generated tree, so comparing the raw strings would let it back in.
+    """
+    cache = tmp_path / 'home' / 'cache'
+    cache.mkdir(parents=True)
+    alias = tmp_path / 'alias'
+    alias.symlink_to(cache, target_is_directory=True)
+    repo = tmp_path / 'repo'
+    (repo / 'marketplace' / 'bundles').mkdir(parents=True)
+
+    monkeypatch.setattr(_shared, 'get_project_skill_roots', lambda: (str(alias),))
+    monkeypatch.setattr(_shared, 'get_bundle_cache_roots', lambda: (str(cache),))
+
+    trees = _shared.resolve_project_skill_trees(repo / 'marketplace' / 'bundles')
+
+    assert trees == []
+
+
+def test_with_no_declared_cache_root_nothing_is_excluded(monkeypatch, tmp_path):
+    """No declaration, no narrowing.
+
+    A target that declares no cache root must have its full root set scanned;
+    the exclusion is driven by the target's own declaration, never assumed.
+    """
+    project = tmp_path / 'repo' / '.claude' / 'skills'
+    project.mkdir(parents=True)
+    repo = tmp_path / 'repo'
+    (repo / 'marketplace' / 'bundles').mkdir(parents=True)
+
+    monkeypatch.setattr(_shared, 'get_project_skill_roots', lambda: (str(project),))
+    monkeypatch.setattr(_shared, 'get_bundle_cache_roots', lambda: ())
+
+    trees = _shared.resolve_project_skill_trees(repo / 'marketplace' / 'bundles')
+
+    assert [t.resolve() for t in trees] == [project.resolve()]
+
+
+def test_a_missing_cache_root_on_disk_excludes_nothing(monkeypatch, tmp_path):
+    """The predicate is over roots that EXIST, matching the scanned-root rule.
+
+    A declared cache root that is not on disk cannot be a scan candidate either,
+    so pairing with a real project root must leave that root scanned.
+    """
+    project = tmp_path / 'repo' / '.claude' / 'skills'
+    project.mkdir(parents=True)
+    repo = tmp_path / 'repo'
+    (repo / 'marketplace' / 'bundles').mkdir(parents=True)
+
+    monkeypatch.setattr(_shared, 'get_project_skill_roots', lambda: (str(project),))
+    monkeypatch.setattr(_shared, 'get_bundle_cache_roots', lambda: (str(tmp_path / 'home' / 'absent' / 'cache'),))
+
+    trees = _shared.resolve_project_skill_trees(repo / 'marketplace' / 'bundles')
+
+    assert [t.resolve() for t in trees] == [project.resolve()]
+
+
+def test_the_excluded_set_is_publishable(monkeypatch, tmp_path):
+    """A narrowing of scope that cannot be seen reads as a clean run.
+
+    Excluding a tree is a reduction in coverage, so the excluded set has to be
+    reportable by the same resolver — otherwise a caller cannot state what it
+    did not scan, and a green run is indistinguishable from a narrowed one.
+    """
+    cache = tmp_path / 'home' / 'cache'
+    cache.mkdir(parents=True)
+    project = tmp_path / 'repo' / '.claude' / 'skills'
+    project.mkdir(parents=True)
+    repo = tmp_path / 'repo'
+    (repo / 'marketplace' / 'bundles').mkdir(parents=True)
+
+    monkeypatch.setattr(_shared, 'get_project_skill_roots', lambda: (str(cache), str(project)))
+    monkeypatch.setattr(_shared, 'get_bundle_cache_roots', lambda: (str(cache),))
+
+    excluded = _shared.excluded_deployed_cache_roots(repo / 'marketplace' / 'bundles')
+
+    assert [p.resolve() for p in excluded] == [cache.resolve()]
+
+
+def test_the_excluded_set_partitions_the_scanned_and_cache_roots(monkeypatch, tmp_path):
+    """Excluded ∪ scanned covers every on-disk candidate exactly once.
+
+    Without the partition, a root could be dropped entirely — neither scanned
+    nor reported as excluded — which is the silent under-scan this whole change
+    is trying to avoid.
+    """
+    cache = tmp_path / 'home' / 'cache'
+    cache.mkdir(parents=True)
+    project = tmp_path / 'repo' / '.claude' / 'skills'
+    project.mkdir(parents=True)
+    other = tmp_path / 'repo' / '.agents' / 'skills'
+    other.mkdir(parents=True)
+    absent = tmp_path / 'repo' / '.nope'
+    repo = tmp_path / 'repo'
+    (repo / 'marketplace' / 'bundles').mkdir(parents=True)
+
+    candidates = (str(cache), str(project), str(other), str(absent))
+    monkeypatch.setattr(_shared, 'get_project_skill_roots', lambda: candidates)
+    monkeypatch.setattr(_shared, 'get_bundle_cache_roots', lambda: (str(cache),))
+
+    scanned = {p.resolve() for p in _shared.resolve_project_skill_trees(repo / 'marketplace' / 'bundles')}
+    excluded = {p.resolve() for p in _shared.excluded_deployed_cache_roots(repo / 'marketplace' / 'bundles')}
+
+    on_disk = {Path(c).resolve() for c in candidates if Path(c).is_dir()}
+    assert scanned | excluded == on_disk
+    assert not (scanned & excluded), 'no root may be both scanned and excluded'
+    assert absent.resolve() not in scanned | excluded, 'a non-existent root is neither'
+
+
+# =============================================================================
 # Finding — the single uniform finding record
 #
 # ``Finding`` is the only finding-construction path across the migrated analyzer
