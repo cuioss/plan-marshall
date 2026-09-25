@@ -1235,19 +1235,22 @@ def _resolve_shorthand_to_notation(
     marketplace-native bundles).
     """
     matches = [n for n in script_index if n.endswith(f':{shorthand}') or n.split(':')[1] == shorthand]
-    if len(matches) == 1:
-        return matches[0]
+    # D0 resolver-root priority: tree code wins over the mirror — filter
+    # default-bundle mirrors before preferring the exact third-segment match.
+    non_mirror = [m for m in matches if not m.startswith('default-bundle:')]
+    pool = non_mirror if non_mirror else matches
+    if len(pool) == 1:
+        return pool[0]
     # If multiple, prefer the one whose third segment equals the shorthand
-    # exactly (the most precise match).
-    exact = [m for m in matches if m.split(':')[2] == shorthand]
+    # exactly (the most precise match) among the mirror-filtered pool.
+    exact = [m for m in pool if m.split(':')[2] == shorthand]
     if len(exact) == 1:
         return exact[0]
-    candidates = exact if exact else matches
-    non_default = [m for m in candidates if not m.startswith('default-bundle:')]
-    if len(non_default) == 1:
-        return non_default[0]
-    if len(non_default) > 1:
-        native = [m for m in non_default if m.startswith('plan-marshall:')]
+    candidates = exact if exact else pool
+    if len(candidates) == 1:
+        return candidates[0]
+    if len(candidates) > 1:
+        native = [m for m in candidates if m.startswith('plan-marshall:')]
         if len(native) == 1:
             return native[0]
     return None
