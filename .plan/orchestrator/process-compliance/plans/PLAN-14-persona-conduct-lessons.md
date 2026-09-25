@@ -50,31 +50,33 @@ none touches a second file surface independently.)
   rejection not script-internal error — read at
   `.plan/orchestrator/process-compliance/inbox/lessons-handling-26-09-22-01-001.md`
   § Persona-plan-marshall-agent foundational conduct (lesson 2026-09-21-10-001, primary)
-  - verdict: unverifiable | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: process-compliance/analyze | rescoped: n/a | evidence: ledger cite (lessons-handling drain message); the cited plan's 20/12 tally not re-opened this pass
+  - verdict: unverifiable | checked_at: e995df45ce86e76575106d323602e1d58906bda8 | by: process-compliance/cleanup | rescoped: n/a | evidence: ledger cite tally not reopened
 - OBSERVED: a fix's unit is the derived co-reference population, never the site the
   finding named — read at same message § Persona-plan-marshall-agent foundational conduct
   (lesson 2026-09-19-21-003)
-  - verdict: unverifiable | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: process-compliance/analyze | rescoped: n/a | evidence: ledger cite (lessons-handling drain message); not opened this pass
+  - verdict: unverifiable | checked_at: e995df45ce86e76575106d323602e1d58906bda8 | by: process-compliance/cleanup | rescoped: n/a | evidence: ledger cite not opened
 - OBSERVED: every only/all/none/the-set-is-N claim carries the enumeration and the scope
   it was derived over — read at same message § Persona-plan-marshall-agent foundational
   conduct (lesson 2026-09-19-21-004)
-  - verdict: unverifiable | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: process-compliance/analyze | rescoped: n/a | evidence: ledger cite (lessons-handling drain message); not opened this pass
+  - verdict: unverifiable | checked_at: e995df45ce86e76575106d323602e1d58906bda8 | by: process-compliance/cleanup | rescoped: n/a | evidence: ledger cite not opened
 - OBSERVED: a closed-vocabulary rule's escape hatch must place the out-of-scope case
   OUTSIDE the set, not assign it a set member — read at same message §
   Persona-plan-marshall-agent foundational conduct (lesson 2026-09-20-08-012)
-  - verdict: unverifiable | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: process-compliance/analyze | rescoped: n/a | evidence: ledger cite (lessons-handling drain message); not opened this pass
+  - verdict: unverifiable | checked_at: e995df45ce86e76575106d323602e1d58906bda8 | by: process-compliance/cleanup | rescoped: n/a | evidence: ledger cite not opened
 - OBSERVED: coverage figures re-derived in transit produce structurally impossible zeros
   — read at same message § Persona-plan-marshall-agent foundational conduct (lesson
   2026-09-21-10-004)
-  - verdict: unverifiable | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: process-compliance/analyze | rescoped: n/a | evidence: ledger cite (lessons-handling drain message); not opened this pass
+  - verdict: unverifiable | checked_at: e995df45ce86e76575106d323602e1d58906bda8 | by: process-compliance/cleanup | rescoped: n/a | evidence: ledger cite not opened
 - HYPOTHESIS: the foundational conduct rules governing all five lessons live in
   `persona-plan-marshall-agent`'s own standard, the single base every persona inherits —
   confirm/refute at
   `marketplace/bundles/plan-marshall/skills/persona-plan-marshall-agent/` § conduct rules
   (verify-at-outline)
+  - verdict: corroborated | checked_at: e995df45ce86e76575106d323602e1d58906bda8 | by: process-compliance/cleanup | rescoped: n/a | evidence: argparse signatures closure checklist coverage rules present
 - Verify-first clause: the consuming phase settles the HYPOTHESIS against the
   implementing source before scoping — refutation loops back to re-scope onto the
   correct owning surface.
+  - verdict: unverifiable | checked_at: e995df45ce86e76575106d323602e1d58906bda8 | by: process-compliance/cleanup | rescoped: n/a | evidence: procedural instruction no source check
 
 ## Expected Surface
 

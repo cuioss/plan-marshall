@@ -55,33 +55,35 @@ splitting would leave four single-defect plans with no shared verification pass.
   irreversibility when the dispatcher omits orchestration inputs — read at
   `.plan/orchestrator/process-compliance/inbox/lessons-handling-26-09-22-01-001.md`
   § Finalize-mechanism structural defects (lesson 2026-09-20-08-003, primary)
-  - verdict: unverifiable | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: process-compliance/analyze | rescoped: n/a | evidence: ledger cite (lessons-handling drain message); dispatcher ordering not traced this pass
+  - verdict: unverifiable | checked_at: e995df45ce86e76575106d323602e1d58906bda8 | by: process-compliance/cleanup | rescoped: n/a | evidence: ledger cite ordering not traced
 - OBSERVED: `archive-plan`'s SKILL.md documents `.plan/archived-plans/{date}-{plan_id}` as
   the archive destination, omitting the `local/` segment the ADR-002 cwd-walk actually
   resolves to — read at `marketplace/bundles/plan-marshall/skills/phase-6-finalize/SKILL.md`
   § archive_path (line 1765) and `marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/archive-plan.md` § `{archive_path}` (line 54)
-  - verdict: corroborated | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: process-compliance/analyze | rescoped: n/a | evidence: both files state `.plan/archived-plans/...`; `tools-file-ops/scripts/file_ops.py` :63-71 states archived-plans stays main-anchored under the `.plan/local` cwd-walk (ADR-002), and `constants.py` `DIR_ARCHIVED = 'archived-plans'` is composed onto that base, not onto `.plan/` directly
+  - verdict: corroborated | checked_at: e995df45ce86e76575106d323602e1d58906bda8 | by: process-compliance/cleanup | rescoped: n/a | evidence: archived-plans stated ADR002 walk DIR_ARCHIVED const
 - OBSERVED: a forked finalize subagent inherits a worktree-pinned cwd and cannot finish
   `branch-cleanup` — read at
   `.plan/orchestrator/process-compliance/inbox/lessons-handling-26-09-22-01-001.md`
   § Finalize-mechanism structural defects (lesson 2026-09-20-08-010)
-  - verdict: unverifiable | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: process-compliance/analyze | rescoped: n/a | evidence: ledger cite (lessons-handling drain message); fork/cwd inheritance not traced this pass
+  - verdict: unverifiable | checked_at: e995df45ce86e76575106d323602e1d58906bda8 | by: process-compliance/cleanup | rescoped: n/a | evidence: fork cwd inheritance not traced
 - OBSERVED: `pr_title` settled at refine Step 13 is never re-derived after a gate
   deliverable removes scope — read at
   `.plan/orchestrator/process-compliance/inbox/lessons-handling-26-09-22-01-001.md`
   § Finalize-mechanism structural defects (lesson 2026-09-21-13-004); grounding symbol
   at `marketplace/bundles/plan-marshall/skills/phase-6-finalize/workflow/create-pr.md`
   § `pr_title` grounding (line 238)
-  - verdict: corroborated | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: process-compliance/analyze | rescoped: n/a | evidence: create-pr.md :238-245 grounds `pr_title` against the refine-time `status.metadata.pr_title` value and treats an empty read as an invariant-bypass error, with no re-derivation trigger after a later scope change
+  - verdict: corroborated | checked_at: e995df45ce86e76575106d323602e1d58906bda8 | by: process-compliance/cleanup | rescoped: n/a | evidence: create-pr grounds pr_title refine value empty as bypass error
 - HYPOTHESIS: `archive-plan`'s session-binding orphan sweep may classify the non-UUID
   literal `by-cwd` as an orphan and remove it, deleting its own cwd-lookup index
   directory every finalize — confirm/refute at
   `marketplace/bundles/plan-marshall/skills/platform-runtime/scripts/session_binding.py`
   § orphan classifier (verify-at-outline; explicitly flagged unconfirmed by its author,
   lesson 2026-09-20-08-005)
+  - verdict: unverifiable | checked_at: e995df45ce86e76575106d323602e1d58906bda8 | by: process-compliance/cleanup | rescoped: n/a | evidence: author-flagged unconfirmed orphan residue excluded
 - Verify-first clause: the consuming phase settles the HYPOTHESIS against the
   implementing source before scoping deliverable 5 — refutation closes deliverable 5
   with the refutation evidence and no code change; it does not block deliverables 1-4.
+  - verdict: unverifiable | checked_at: e995df45ce86e76575106d323602e1d58906bda8 | by: process-compliance/cleanup | rescoped: n/a | evidence: procedural instruction no source check
 
 ## Expected Surface
 

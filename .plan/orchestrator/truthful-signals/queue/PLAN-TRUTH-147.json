@@ -1,0 +1,11 @@
+{
+  "id": "PLAN-TRUTH-147",
+  "slug": "a-lane-reports-green-yields-or-transitions-without-the-artifact-its-own-gate-requires",
+  "workstream": "WS-01",
+  "status": "shipped",
+  "plan_marshall_plan_id": "truth-147-lane-reports-green",
+  "pr": "1599",
+  "landing": "landings/PLAN-TRUTH-147.md",
+  "seq": 3,
+  "superseded_by": ""
+}

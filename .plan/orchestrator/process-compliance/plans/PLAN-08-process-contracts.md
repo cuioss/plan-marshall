@@ -45,9 +45,9 @@ PLAN-180 — no duplication; see quality-aspect lessons-disposition.md § Transf
 ## Claim Labels
 
 - OBSERVED: nine process lessons listable but unaddressable (YAML headers), each naming a doc-vs-behavior gap — read at `.plan/local/orchestrator/quality-aspect/lessons-archive/2026-09-03-02-001.md` et seq. (title triage; bodies verified at outline).
-  - verdict: unverifiable | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: process-compliance/cleanup | rescoped: n/a | evidence: quality-aspect lessons-archive unchanged since prior check; titles cited, bodies still not opened this pass; unchanged
+  - verdict: unverifiable | checked_at: e995df45ce86e76575106d323602e1d58906bda8 | by: process-compliance/cleanup | rescoped: n/a | evidence: ledger cite archived out of inventory no symbol named
 - HYPOTHESIS: one contract pass over the plan lane closes all nine without cross-plan refactors — confirm/refute at `marketplace/bundles/plan-marshall/skills/tools-integration-ci/` § CI abstraction read surface (verify-at-outline).
-  - verdict: corroborated | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: process-compliance/cleanup | rescoped: n/a | evidence: tools-integration-ci/ directory unchanged since 93bda90; ci.py and ci_base.py still present; re-confirmed
+  - verdict: corroborated | checked_at: e995df45ce86e76575106d323602e1d58906bda8 | by: process-compliance/cleanup | rescoped: n/a | evidence: ci.py ci_base.py present github four verbs present
 
 ## Expected Surface
 
